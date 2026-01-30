@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+:root {
+  --background: #111827;
+  --foreground: #f9fafb;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Prevent pull-to-refresh on mobile */
+html, body {
+  overscroll-behavior: none;
+}
+
+/* Score grid scrolling */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Number input - hide spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Selection color */
+::selection {
+  background: #15803d;
+  color: white;
+}
+
+/* Focus styles */
+:focus-visible {
+  outline: 2px solid #22c55e;
+  outline-offset: 2px;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Safe area padding for mobile */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+}

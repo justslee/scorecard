@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" fill="#15803d" rx="32"/>
+  <circle cx="96" cy="96" r="20" fill="white"/>
+  <path d="M96 40 L96 76" stroke="white" stroke-width="8" stroke-linecap="round"/>
+  <text x="96" y="160" text-anchor="middle" font-family="Arial" font-size="24" font-weight="bold" fill="white">GOLF</text>
+</svg>

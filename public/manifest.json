@@ -1,0 +1,22 @@
+{
+  "name": "Scorecard - Golf Scoring App",
+  "short_name": "Scorecard",
+  "description": "Track your golf rounds with OCR scorecard scanning",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#15803d",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
