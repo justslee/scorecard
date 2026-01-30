@@ -1,10 +1,11 @@
 'use client';
 
-import { Round, Course, Tournament, TeeOption, HoleInfo } from './types';
+import { Round, Course, Tournament, TeeOption, HoleInfo, GolferProfile } from './types';
 
 const ROUNDS_KEY = 'scorecard_rounds';
 const COURSES_KEY = 'scorecard_courses';
 const TOURNAMENTS_KEY = 'scorecard_tournaments';
+const PROFILE_KEY = 'scorecard_profile';
 
 // -----------------
 // Rounds
@@ -214,6 +215,20 @@ export function addPlayerToTournament(tournamentId: string, player: { id: string
   };
 
   saveTournament(tournament);
+}
+
+// -----------------
+// Golfer profile
+// -----------------
+export function getGolferProfile(): GolferProfile | null {
+  if (typeof window === 'undefined') return null;
+  const data = localStorage.getItem(PROFILE_KEY);
+  return data ? (JSON.parse(data) as GolferProfile) : null;
+}
+
+export function saveGolferProfile(profile: GolferProfile): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
 }
 
 // Initialize with defaults

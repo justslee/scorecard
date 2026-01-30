@@ -66,6 +66,30 @@ export interface Tournament {
   playerNamesById?: Record<string, string>;
 }
 
+export interface GolferProfile {
+  id: string;
+  name: string;
+  handicap: number | null;
+  homeCourse: string | null;
+  clubDistances: {
+    driver?: number;
+    threeWood?: number;
+    fiveWood?: number;
+    hybrid?: number;
+    fourIron?: number;
+    fiveIron?: number;
+    sixIron?: number;
+    sevenIron?: number;
+    eightIron?: number;
+    nineIron?: number;
+    pitchingWedge?: number;
+    gapWedge?: number;
+    sandWedge?: number;
+    lobWedge?: number;
+    putter?: number;
+  };
+}
+
 // Helper to create a standard 18-hole course with default pars
 export function createDefaultCourse(name: string): Course {
   const holes: HoleInfo[] = [];

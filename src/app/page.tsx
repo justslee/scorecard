@@ -165,6 +165,10 @@ export default function Home() {
             <span className="text-xl">➕</span>
             <span className="text-xs">New Round</span>
           </Link>
+          <Link href="/profile" className="flex flex-col items-center p-2 text-gray-400 hover:text-white">
+            <span className="text-xl">👤</span>
+            <span className="text-xs">Profile</span>
+          </Link>
           <Link href="/settings" className="flex flex-col items-center p-2 text-gray-400 hover:text-white">
             <span className="text-xl">⚙️</span>
             <span className="text-xs">Settings</span>
