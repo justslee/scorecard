@@ -38,7 +38,23 @@ export interface Score {
 // -----------------
 // Games overlay system
 // -----------------
-export type GameFormat = 'skins' | 'nassau' | 'bestBall' | 'scramble' | 'wolf' | 'threePoint';
+export type GameFormat =
+  | 'skins'
+  | 'nassau'
+  | 'bestBall'
+  | 'scramble'
+  | 'wolf'
+  | 'threePoint'
+  | 'stableford'
+  | 'modifiedStableford'
+  | 'matchPlay'
+  | 'bingoBangoBongo'
+  | 'vegas'
+  | 'hammer'
+  | 'rabbit'
+  | 'trash'
+  | 'chicago'
+  | 'defender';
 
 export interface GameTeam {
   id: string;
@@ -57,6 +73,26 @@ export interface GameSettings {
   // nassau
   nassauMode?: 'stroke' | 'match';
   nassauScope?: 'individual' | 'team';
+
+  // match play
+  matchPlayMode?: 'individual';
+  matchPlayPlayers?: { player1Id: string; player2Id: string };
+
+  // 3-point system (2v2)
+  threePointPairs?: {
+    teamAPlayer1Id: string;
+    teamAPlayer2Id: string;
+    teamBPlayer1Id: string;
+    teamBPlayer2Id: string;
+  };
+
+  // wolf (4 players)
+  wolfOrderPlayerIds?: string[]; // length 4
+  wolfHoleChoices?: Record<
+    number,
+    | { mode: 'lone' }
+    | { mode: 'partner'; partnerId: string }
+  >;
 }
 
 export interface Game {
