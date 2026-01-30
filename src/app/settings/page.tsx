@@ -8,19 +8,19 @@ export default function Settings() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    const key = localStorage.getItem('openai_api_key') || '';
+    const key = localStorage.getItem('anthropic_api_key') || '';
     setApiKey(key);
   }, []);
 
   const handleSave = () => {
-    localStorage.setItem('openai_api_key', apiKey);
+    localStorage.setItem('anthropic_api_key', apiKey);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   const handleClear = () => {
     if (confirm('Clear API key?')) {
-      localStorage.removeItem('openai_api_key');
+      localStorage.removeItem('anthropic_api_key');
       setApiKey('');
     }
   };
@@ -43,17 +43,17 @@ export default function Settings() {
           <h2 className="text-lg font-semibold mb-4">📷 Scorecard Scanning</h2>
           
           <p className="text-sm text-gray-400 mb-4">
-            To use the scorecard scanning feature, you need an OpenAI API key with access to GPT-4 Vision.
+            To use the scorecard scanning feature, you need a Claude API key from Anthropic.
           </p>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">OpenAI API Key</label>
+              <label className="block text-sm font-medium mb-2">Claude API Key</label>
               <input
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-..."
+                placeholder="sk-ant-..."
                 className="w-full p-3 bg-gray-700 rounded-lg"
               />
             </div>
@@ -79,8 +79,8 @@ export default function Settings() {
           <div className="mt-4 p-3 bg-gray-700 rounded-lg text-sm">
             <p className="font-medium mb-2">How to get an API key:</p>
             <ol className="list-decimal list-inside space-y-1 text-gray-400">
-              <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-green-400 underline">platform.openai.com/api-keys</a></li>
-              <li>Create a new secret key</li>
+              <li>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-green-400 underline">console.anthropic.com</a></li>
+              <li>Create a new API key</li>
               <li>Copy and paste it above</li>
             </ol>
           </div>

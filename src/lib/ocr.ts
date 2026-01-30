@@ -8,15 +8,15 @@ interface OCRResult {
   rawText?: string;
 }
 
-// Parse scorecard image using OpenAI Vision API
+// Parse scorecard image using Claude Vision API
 export async function parseScorecard(
   imageBase64: string,
   existingPlayers?: Player[]
 ): Promise<OCRResult> {
-  const apiKey = localStorage.getItem('openai_api_key');
+  const apiKey = localStorage.getItem('anthropic_api_key');
   
   if (!apiKey) {
-    throw new Error('OpenAI API key not configured. Go to Settings to add it.');
+    throw new Error('Claude API key not configured. Go to Settings to add it.');
   }
 
   const prompt = `Analyze this golf scorecard image and extract the scores.
@@ -43,32 +43,49 @@ ${existingPlayers?.length ? `Hint: Expected player names might include: ${existi
 
 Return ONLY the JSON, no other text.`;
 
+  // Extract base64 data and media type
+  let base64Data = imageBase64;
+  let mediaType = 'image/jpeg';
+  
+  if (imageBase64.startsWith('data:')) {
+    const matches = imageBase64.match(/^data:([^;]+);base64,(.+)$/);
+    if (matches) {
+      mediaType = matches[1];
+      base64Data = matches[2];
+    }
+  }
+
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
         messages: [
           {
             role: 'user',
             content: [
-              { type: 'text', text: prompt },
               {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64.startsWith('data:') 
-                    ? imageBase64 
-                    : `data:image/jpeg;base64,${imageBase64}`,
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mediaType,
+                  data: base64Data,
                 },
+              },
+              {
+                type: 'text',
+                text: prompt,
               },
             ],
           },
         ],
-        max_tokens: 1000,
       }),
     });
 
@@ -78,7 +95,7 @@ Return ONLY the JSON, no other text.`;
     }
 
     const data = await response.json();
-    const content = data.choices[0]?.message?.content || '';
+    const content = data.content?.[0]?.text || '';
     
     // Parse the JSON from the response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
