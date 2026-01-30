@@ -1,7 +1,7 @@
 'use client';
 
 import { Round, Score, HoleInfo, calculateTotals, getScoreClass } from '@/lib/types';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 
 interface ScoreGridProps {
   round: Round;
@@ -25,30 +25,45 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     onHoleSelect?.(hole);
   };
 
-  const handleScoreInput = (value: string) => {
+  const submitScore = useCallback((strokes: number | null) => {
     if (!selectedCell) return;
     
-    const strokes = value === '' ? null : parseInt(value);
-    if (value !== '' && (isNaN(strokes!) || strokes! < 1 || strokes! > 15)) return;
+    // Capture the current selected cell values before any state changes
+    const { playerId, hole } = selectedCell;
     
-    onScoreChange(selectedCell.playerId, selectedCell.hole, strokes);
+    // Submit the score for THIS specific player and hole
+    onScoreChange(playerId, hole, strokes);
     
-    // Auto-advance to next cell
-    const currentPlayerIndex = round.players.findIndex(p => p.id === selectedCell.playerId);
+    // Find next cell to select (next player same hole, or first player next hole)
+    const currentPlayerIndex = round.players.findIndex(p => p.id === playerId);
+    
     if (currentPlayerIndex < round.players.length - 1) {
       // Move to next player same hole
+      const nextPlayer = round.players[currentPlayerIndex + 1];
       setSelectedCell({
-        playerId: round.players[currentPlayerIndex + 1].id,
-        hole: selectedCell.hole,
+        playerId: nextPlayer.id,
+        hole: hole,
       });
-    } else if (selectedCell.hole < 18) {
+    } else if (hole < 18) {
       // Move to first player next hole
+      const nextHole = hole + 1;
       setSelectedCell({
         playerId: round.players[0].id,
-        hole: selectedCell.hole + 1,
+        hole: nextHole,
       });
-      onHoleSelect?.(selectedCell.hole + 1);
+      onHoleSelect?.(nextHole);
+    } else {
+      // Done with all holes
+      setSelectedCell(null);
     }
+  }, [selectedCell, round.players, onScoreChange, onHoleSelect]);
+
+  const handleNumberPadClick = (num: number) => {
+    submitScore(num);
+  };
+
+  const handleClearScore = () => {
+    submitScore(null);
   };
 
   const renderHoleHeader = (start: number, end: number, label: string) => (
@@ -99,7 +114,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
           
           return (
             <td
-              key={hole.number}
+              key={`${player.id}-${hole.number}`}
               className={`p-1 text-center cursor-pointer transition-all ${
                 isSelected
                   ? 'ring-2 ring-yellow-400 bg-yellow-900'
@@ -109,25 +124,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
               }`}
               onClick={() => handleCellClick(player.id, hole.number)}
             >
-              {isSelected ? (
-                <input
-                  type="number"
-                  min="1"
-                  max="15"
-                  autoFocus
-                  className="w-full bg-transparent text-center outline-none text-lg font-bold"
-                  value={score ?? ''}
-                  onChange={(e) => handleScoreInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') setSelectedCell(null);
-                    if (e.key >= '1' && e.key <= '9') {
-                      handleScoreInput(e.key);
-                    }
-                  }}
-                />
-              ) : (
-                <span className="text-lg font-bold">{score ?? '-'}</span>
-              )}
+              <span className="text-lg font-bold">{score ?? '-'}</span>
             </td>
           );
         })}
@@ -186,30 +183,42 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
         </div>
       </div>
 
-      {/* Quick Input Pad */}
+      {/* Number Pad Modal */}
       {selectedCell && (
         <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 p-4 z-50">
           <div className="max-w-md mx-auto">
             <p className="text-center text-sm text-gray-400 mb-2">
-              {round.players.find(p => p.id === selectedCell.playerId)?.name} - Hole {selectedCell.hole}
+              <span className="font-bold text-white">
+                {round.players.find(p => p.id === selectedCell.playerId)?.name}
+              </span>
+              {' '}- Hole {selectedCell.hole}
+              {' '}(Par {round.holes[selectedCell.hole - 1]?.par})
             </p>
             <div className="grid grid-cols-6 gap-2">
               {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(num => (
                 <button
                   key={num}
-                  onClick={() => handleScoreInput(num.toString())}
-                  className="p-3 bg-gray-700 rounded-lg text-xl font-bold hover:bg-gray-600 active:bg-gray-500"
+                  onClick={() => handleNumberPadClick(num)}
+                  className="p-3 bg-gray-700 rounded-lg text-xl font-bold hover:bg-gray-600 active:bg-green-600 transition-colors"
                 >
                   {num}
                 </button>
               ))}
             </div>
-            <button
-              onClick={() => setSelectedCell(null)}
-              className="w-full mt-2 p-2 bg-gray-700 rounded text-sm"
-            >
-              Done
-            </button>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={handleClearScore}
+                className="flex-1 p-2 bg-red-900 hover:bg-red-800 rounded text-sm"
+              >
+                Clear
+              </button>
+              <button
+                onClick={() => setSelectedCell(null)}
+                className="flex-1 p-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
