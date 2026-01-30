@@ -1,4 +1,4 @@
-import { Game, Round, Score } from './types';
+import { Round, Score, Game } from './types';
 
 export interface SkinsResults {
   byPlayer: { playerId: string; skins: number; holesWon: number[] }[];
@@ -22,59 +22,70 @@ export interface NassauResults {
   scope: 'individual' | 'team';
 }
 
+export interface ThreePointResults {
+  teamAId: string;
+  teamBId: string;
+  teamPointsByHole: Record<string, number[]>; // teamId -> 18-length array (hole points)
+  runningTotalsByHole: Record<string, number[]>; // teamId -> 18-length array (running totals)
+  totals: Record<string, number>; // teamId -> total points
+  holeDetails: {
+    holeNumber: number;
+    a1vsb1: { teamA: number; teamB: number } | null;
+    a2vsb2: { teamA: number; teamB: number } | null;
+    bestBall: { teamA: number; teamB: number } | null;
+    holeTotal: { teamA: number; teamB: number };
+  }[];
+}
+
 export interface StablefordResults {
-  byPlayer: { playerId: string; points: number; holesPlayed: number }[];
-  pointsByHole: Record<string, (number | null)[]>; // playerId -> 18-length
-  scoring: 'stableford' | 'modifiedStableford';
+  pointsByPlayer: {
+    playerId: string;
+    total: number;
+    pointsByHole: (number | null)[];
+    holesPlayed: number;
+  }[];
+  winnerPlayerId: string | null;
 }
 
 export interface MatchPlayResults {
   player1Id: string;
   player2Id: string;
-  holeResults: { holeNumber: number; winnerPlayerId: string | null; statusAfter: string }[];
-  currentStatus: string; // e.g. "A/S", "2 up", "1 dn"
-  holesPlayed: number;
+  holes: {
+    holeNumber: number;
+    result: 'P1' | 'P2' | 'HALVED' | 'NO_SCORE';
+    matchDiffAfter: number; // positive => P1 up, negative => P2 up
+    statusAfter: string; // "AS", "2 UP", "1 DN"...
+    ended?: boolean;
+  }[];
+  currentStatus: string;
+  endedAtHole: number | null;
+  winnerPlayerId: string | null;
 }
 
-export interface ThreePointResults {
-  teamAId: string;
-  teamBId: string;
-  pairings: {
-    teamAPlayer1Id: string;
-    teamAPlayer2Id: string;
-    teamBPlayer1Id: string;
-    teamBPlayer2Id: string;
-  };
-  holePoints: {
+export interface WolfResults {
+  orderPlayerIds: string[];
+  holes: {
     holeNumber: number;
-    a1Points: number;
-    b1Points: number;
-    a2Points: number;
-    b2Points: number;
-    bestBallA: number;
-    bestBallB: number;
+    wolfPlayerId: string;
+    choice: { mode: 'lone' } | { mode: 'partner'; partnerId: string } | null;
+    pointsDelta: Record<string, number>; // only players affected on this hole
+    totalsAfter: Record<string, number>; // running totals after this hole
   }[];
-  totals: { teamId: string; points: number }[];
+  totals: Record<string, number>; // final totals
 }
 
 export interface GameResults {
   skins?: SkinsResults;
   bestBall?: BestBallResults;
   nassau?: NassauResults;
-  stableford?: StablefordResults;
-  modifiedStableford?: StablefordResults;
-  matchPlay?: MatchPlayResults;
   threePoint?: ThreePointResults;
+  stableford?: StablefordResults;
+  matchPlay?: MatchPlayResults;
+  wolf?: WolfResults;
   // stubs for later
   scramble?: unknown;
-  wolf?: unknown;
   bingoBangoBongo?: unknown;
   vegas?: unknown;
-  hammer?: unknown;
-  rabbit?: unknown;
-  trash?: unknown;
-  chicago?: unknown;
-  defender?: unknown;
 }
 
 export function computeGameResults(round: Round, game: Game): GameResults {
@@ -85,14 +96,15 @@ export function computeGameResults(round: Round, game: Game): GameResults {
       return { bestBall: computeBestBall(round, game) };
     case 'nassau':
       return { nassau: computeNassau(round, game) };
-    case 'stableford':
-      return { stableford: computeStableford(round, game, 'stableford') };
-    case 'modifiedStableford':
-      return { modifiedStableford: computeStableford(round, game, 'modifiedStableford') };
-    case 'matchPlay':
-      return { matchPlay: computeMatchPlay(round, game) };
     case 'threePoint':
       return { threePoint: computeThreePoint(round, game) };
+    case 'stableford':
+    case 'modifiedStableford':
+      return { stableford: computeStableford(round, game) };
+    case 'matchPlay':
+      return { matchPlay: computeMatchPlay(round, game) };
+    case 'wolf':
+      return { wolf: computeWolf(round, game) };
     default:
       return {};
   }
@@ -108,8 +120,10 @@ function scoreByHole(scores: Score[], playerId: string): Map<number, number> {
   return m;
 }
 
-function parByHole(round: Round): Map<number, number> {
-  return new Map<number, number>(round.holes.map(h => [h.number, h.par]));
+function pointsForComparison(a: number, b: number): { a: number; b: number } {
+  if (a < b) return { a: 1, b: 0 };
+  if (b < a) return { a: 0, b: 1 };
+  return { a: 0.5, b: 0.5 };
 }
 
 // -----------------
@@ -148,11 +162,13 @@ export function computeSkins(round: Round, game: Game): SkinsResults {
       holeWinners.push({ holeNumber, winnerPlayerId: winner, value, carried: carry > 1 });
 
       const list = holesWonByPlayer.get(winner) ?? [];
+      // Record hole number once per skin value (for quick totals + detail)
       for (let i = 0; i < value; i++) list.push(holeNumber);
       holesWonByPlayer.set(winner, list);
 
       carry = 1;
     } else {
+      // tie
       holeWinners.push({ holeNumber, winnerPlayerId: null, value: carry, carried: carry > 1 });
       if (carryoverEnabled) carry += 1;
     }
@@ -228,7 +244,7 @@ export function computeNassau(round: Round, game: Game): NassauResults {
     if (scope === 'team') {
       const team = (game.teams ?? []).find(t => t.id === competitorId);
       if (!team) return [];
-      // Team Nassau defaults to best-ball total.
+      // For Nassau team stroke-play, use Best Ball logic (lowest ball) by default.
       const maps = team.playerIds.map(pid => scoreByHole(round.scores, pid));
       const out: number[] = [];
       for (let h = startHole; h <= endHole; h++) {
@@ -238,7 +254,8 @@ export function computeNassau(round: Round, game: Game): NassauResults {
       return out;
     }
 
-    const m = scoreByHole(round.scores, competitorId);
+    const pid = competitorId;
+    const m = scoreByHole(round.scores, pid);
     const out: number[] = [];
     for (let h = startHole; h <= endHole; h++) {
       const v = m.get(h);
@@ -266,7 +283,7 @@ export function computeNassau(round: Round, game: Game): NassauResults {
     return null;
   };
 
-  // Match-play Nassau is stubbed; stroke totals used.
+  // Match-play Nassau is not implemented yet; fall back to stroke totals.
   const front9WinnerId = winnerFor(front9Totals);
   const back9WinnerId = winnerFor(back9Totals);
   const overallWinnerId = winnerFor(overallTotals);
@@ -284,191 +301,295 @@ export function computeNassau(round: Round, game: Game): NassauResults {
 }
 
 // -----------------
-// Stableford + Modified Stableford
-// -----------------
-export function computeStableford(round: Round, game: Game, scoring: 'stableford' | 'modifiedStableford'): StablefordResults {
-  const playerIds = game.playerIds.length ? game.playerIds : round.players.map(p => p.id);
-  const pars = parByHole(round);
-
-  const pointsByHole: StablefordResults['pointsByHole'] = {};
-  const byPlayer: StablefordResults['byPlayer'] = [];
-
-  for (const pid of playerIds) {
-    const m = scoreByHole(round.scores, pid);
-    const holePoints: (number | null)[] = [];
-
-    for (let h = 1; h <= 18; h++) {
-      const strokes = m.get(h);
-      const par = pars.get(h);
-      if (typeof strokes !== 'number' || typeof par !== 'number') {
-        holePoints.push(null);
-        continue;
-      }
-      const diff = strokes - par;
-
-      let pts = 0;
-      if (scoring === 'stableford') {
-        // double bogey+ = 0, bogey=1, par=2, birdie=3, eagle=4, albatross=5
-        if (diff <= -3) pts = 5;
-        else if (diff === -2) pts = 4;
-        else if (diff === -1) pts = 3;
-        else if (diff === 0) pts = 2;
-        else if (diff === 1) pts = 1;
-        else pts = 0;
-      } else {
-        // Modified Stableford: bogey=-1, par=0, birdie=+2, eagle=+5, double eagle=+8
-        if (diff <= -3) pts = 8;
-        else if (diff === -2) pts = 5;
-        else if (diff === -1) pts = 2;
-        else if (diff === 0) pts = 0;
-        else if (diff === 1) pts = -1;
-        else pts = -1; // treat worse than bogey as -1 (common variant)
-      }
-
-      holePoints.push(pts);
-    }
-
-    pointsByHole[pid] = holePoints;
-    const played = holePoints.filter(v => typeof v === 'number') as number[];
-    byPlayer.push({ playerId: pid, points: played.reduce((a, b) => a + b, 0), holesPlayed: played.length });
-  }
-
-  byPlayer.sort((a, b) => b.points - a.points);
-
-  return { byPlayer, pointsByHole, scoring };
-}
-
-// -----------------
-// Match Play (1v1)
-// -----------------
-export function computeMatchPlay(round: Round, game: Game): MatchPlayResults {
-  const [p1, p2] = game.playerIds;
-  const m1 = scoreByHole(round.scores, p1);
-  const m2 = scoreByHole(round.scores, p2);
-
-  let diff = 0; // positive => p1 up
-  let holesPlayed = 0;
-
-  const holeResults: MatchPlayResults['holeResults'] = [];
-  for (let h = 1; h <= 18; h++) {
-    const s1 = m1.get(h);
-    const s2 = m2.get(h);
-    if (typeof s1 !== 'number' || typeof s2 !== 'number') {
-      holeResults.push({ holeNumber: h, winnerPlayerId: null, statusAfter: formatMatchStatus(diff) });
-      continue;
-    }
-
-    holesPlayed += 1;
-    let winner: string | null = null;
-    if (s1 < s2) {
-      diff += 1;
-      winner = p1;
-    } else if (s2 < s1) {
-      diff -= 1;
-      winner = p2;
-    }
-
-    holeResults.push({ holeNumber: h, winnerPlayerId: winner, statusAfter: formatMatchStatus(diff) });
-  }
-
-  return {
-    player1Id: p1,
-    player2Id: p2,
-    holeResults,
-    currentStatus: formatMatchStatus(diff),
-    holesPlayed,
-  };
-}
-
-function formatMatchStatus(diff: number): string {
-  if (diff === 0) return 'A/S';
-  if (diff > 0) return `${diff} up`;
-  return `${Math.abs(diff)} dn`;
-}
-
-// -----------------
-// 3-Point System (2v2) - corrected rules
+// 3-Point System (2v2)
 // -----------------
 export function computeThreePoint(round: Round, game: Game): ThreePointResults {
   const teams = game.teams ?? [];
   const teamA = teams[0];
   const teamB = teams[1];
 
-  const fallbackTeamAId = teamA?.id ?? 'A';
-  const fallbackTeamBId = teamB?.id ?? 'B';
+  const teamAId = teamA?.id ?? 'A';
+  const teamBId = teamB?.id ?? 'B';
 
-  const pairings = game.settings.threePointPairs;
-  if (!pairings) {
-    return {
-      teamAId: fallbackTeamAId,
-      teamBId: fallbackTeamBId,
-      pairings: {
-        teamAPlayer1Id: teamA?.playerIds?.[0] ?? '',
-        teamAPlayer2Id: teamA?.playerIds?.[1] ?? '',
-        teamBPlayer1Id: teamB?.playerIds?.[0] ?? '',
-        teamBPlayer2Id: teamB?.playerIds?.[1] ?? '',
-      },
-      holePoints: [],
-      totals: [
-        { teamId: fallbackTeamAId, points: 0 },
-        { teamId: fallbackTeamBId, points: 0 },
-      ],
+  const pairs = game.settings.threePointPairs;
+
+  const pointsByHoleA: number[] = [];
+  const pointsByHoleB: number[] = [];
+  const runningA: number[] = [];
+  const runningB: number[] = [];
+  const holeDetails: ThreePointResults['holeDetails'] = [];
+
+  const scoreMaps = new Map<string, Map<number, number>>(
+    (game.playerIds.length ? game.playerIds : round.players.map(p => p.id)).map(pid => [pid, scoreByHole(round.scores, pid)])
+  );
+
+  let totalA = 0;
+  let totalB = 0;
+
+  for (let holeNumber = 1; holeNumber <= 18; holeNumber++) {
+    let holeA = 0;
+    let holeB = 0;
+
+    const get = (pid: string | undefined) => (pid ? scoreMaps.get(pid)?.get(holeNumber) : undefined);
+
+    const detail: ThreePointResults['holeDetails'][number] = {
+      holeNumber,
+      a1vsb1: null,
+      a2vsb2: null,
+      bestBall: null,
+      holeTotal: { teamA: 0, teamB: 0 },
     };
-  }
 
-  const a1 = scoreByHole(round.scores, pairings.teamAPlayer1Id);
-  const a2 = scoreByHole(round.scores, pairings.teamAPlayer2Id);
-  const b1 = scoreByHole(round.scores, pairings.teamBPlayer1Id);
-  const b2 = scoreByHole(round.scores, pairings.teamBPlayer2Id);
+    if (pairs) {
+      const a1 = get(pairs.teamAPlayer1Id);
+      const b1 = get(pairs.teamBPlayer1Id);
+      const a2 = get(pairs.teamAPlayer2Id);
+      const b2 = get(pairs.teamBPlayer2Id);
 
-  const holePoints: ThreePointResults['holePoints'] = [];
+      if (typeof a1 === 'number' && typeof b1 === 'number') {
+        const pts = pointsForComparison(a1, b1);
+        holeA += pts.a;
+        holeB += pts.b;
+        detail.a1vsb1 = { teamA: pts.a, teamB: pts.b };
+      }
 
-  let teamAPoints = 0;
-  let teamBPoints = 0;
+      if (typeof a2 === 'number' && typeof b2 === 'number') {
+        const pts = pointsForComparison(a2, b2);
+        holeA += pts.a;
+        holeB += pts.b;
+        detail.a2vsb2 = { teamA: pts.a, teamB: pts.b };
+      }
 
-  const award = (sa: number | undefined, sb: number | undefined): { a: number; b: number } => {
-    if (typeof sa !== 'number' || typeof sb !== 'number') return { a: 0, b: 0 };
-    if (sa < sb) return { a: 1, b: 0 };
-    if (sb < sa) return { a: 0, b: 1 };
-    return { a: 0.5, b: 0.5 };
-  };
+      const aTeam = [a1, a2].filter((v): v is number => typeof v === 'number');
+      const bTeam = [b1, b2].filter((v): v is number => typeof v === 'number');
+      if (aTeam.length && bTeam.length) {
+        const aBest = Math.min(...aTeam);
+        const bBest = Math.min(...bTeam);
+        const pts = pointsForComparison(aBest, bBest);
+        holeA += pts.a;
+        holeB += pts.b;
+        detail.bestBall = { teamA: pts.a, teamB: pts.b };
+      }
+    }
 
-  for (let h = 1; h <= 18; h++) {
-    const sa1 = a1.get(h);
-    const sb1 = b1.get(h);
-    const sa2 = a2.get(h);
-    const sb2 = b2.get(h);
+    totalA += holeA;
+    totalB += holeB;
 
-    const m1 = award(sa1, sb1);
-    const m2 = award(sa2, sb2);
+    pointsByHoleA.push(holeA);
+    pointsByHoleB.push(holeB);
+    runningA.push(totalA);
+    runningB.push(totalB);
 
-    const bestA = [sa1, sa2].filter((v): v is number => typeof v === 'number');
-    const bestB = [sb1, sb2].filter((v): v is number => typeof v === 'number');
-
-    const bestBall = award(bestA.length ? Math.min(...bestA) : undefined, bestB.length ? Math.min(...bestB) : undefined);
-
-    teamAPoints += m1.a + m2.a + bestBall.a;
-    teamBPoints += m1.b + m2.b + bestBall.b;
-
-    holePoints.push({
-      holeNumber: h,
-      a1Points: m1.a,
-      b1Points: m1.b,
-      a2Points: m2.a,
-      b2Points: m2.b,
-      bestBallA: bestBall.a,
-      bestBallB: bestBall.b,
-    });
+    detail.holeTotal = { teamA: holeA, teamB: holeB };
+    holeDetails.push(detail);
   }
 
   return {
-    teamAId: fallbackTeamAId,
-    teamBId: fallbackTeamBId,
-    pairings,
-    holePoints,
-    totals: [
-      { teamId: fallbackTeamAId, points: teamAPoints },
-      { teamId: fallbackTeamBId, points: teamBPoints },
-    ],
+    teamAId,
+    teamBId,
+    teamPointsByHole: { [teamAId]: pointsByHoleA, [teamBId]: pointsByHoleB },
+    runningTotalsByHole: { [teamAId]: runningA, [teamBId]: runningB },
+    totals: { [teamAId]: totalA, [teamBId]: totalB },
+    holeDetails,
   };
+}
+
+// -----------------
+// Stableford
+// -----------------
+export function computeStableford(round: Round, game: Game): StablefordResults {
+  const playerIds = game.playerIds.length ? game.playerIds : round.players.map(p => p.id);
+  const parByHole = new Map<number, number>(round.holes.map(h => [h.number, h.par]));
+  const scoreMaps = new Map<string, Map<number, number>>(playerIds.map(pid => [pid, scoreByHole(round.scores, pid)]));
+
+  const pointsFor = (strokes: number, par: number): number => {
+    const diff = strokes - par;
+    if (diff <= -3) return 5; // albatross or better
+    if (diff === -2) return 4; // eagle
+    if (diff === -1) return 3; // birdie
+    if (diff === 0) return 2; // par
+    if (diff === 1) return 1; // bogey
+    return 0; // double+ bogey
+  };
+
+  const pointsByPlayer = playerIds.map(pid => {
+    const m = scoreMaps.get(pid)!;
+    const pointsByHole: (number | null)[] = [];
+    let total = 0;
+    let holesPlayed = 0;
+
+    for (let hole = 1; hole <= 18; hole++) {
+      const strokes = m.get(hole);
+      const par = parByHole.get(hole);
+      if (typeof strokes !== 'number' || typeof par !== 'number') {
+        pointsByHole.push(null);
+        continue;
+      }
+      const pts = pointsFor(strokes, par);
+      pointsByHole.push(pts);
+      total += pts;
+      holesPlayed += 1;
+    }
+
+    return { playerId: pid, total, pointsByHole, holesPlayed };
+  });
+
+  let winnerPlayerId: string | null = null;
+  const withScores = pointsByPlayer.filter(p => p.holesPlayed > 0);
+  if (withScores.length >= 2) {
+    const max = Math.max(...withScores.map(p => p.total));
+    const w = withScores.filter(p => p.total === max);
+    if (w.length === 1) winnerPlayerId = w[0].playerId;
+  }
+
+  return { pointsByPlayer, winnerPlayerId };
+}
+
+// -----------------
+// Match Play (1v1)
+// -----------------
+export function computeMatchPlay(round: Round, game: Game): MatchPlayResults {
+  const p1 = game.settings.matchPlayPlayers?.player1Id ?? game.playerIds[0];
+  const p2 = game.settings.matchPlayPlayers?.player2Id ?? game.playerIds[1];
+
+  const m1 = p1 ? scoreByHole(round.scores, p1) : new Map<number, number>();
+  const m2 = p2 ? scoreByHole(round.scores, p2) : new Map<number, number>();
+
+  const holes: MatchPlayResults['holes'] = [];
+  let diff = 0;
+  let endedAtHole: number | null = null;
+  let winnerPlayerId: string | null = null;
+
+  const statusFor = (d: number): string => {
+    if (d === 0) return 'AS';
+    if (d > 0) return `${d} UP`;
+    return `${Math.abs(d)} DN`;
+  };
+
+  for (let holeNumber = 1; holeNumber <= 18; holeNumber++) {
+    const s1 = m1.get(holeNumber);
+    const s2 = m2.get(holeNumber);
+
+    let result: MatchPlayResults['holes'][number]['result'] = 'NO_SCORE';
+
+    if (typeof s1 === 'number' && typeof s2 === 'number') {
+      if (s1 < s2) {
+        diff += 1;
+        result = 'P1';
+      } else if (s2 < s1) {
+        diff -= 1;
+        result = 'P2';
+      } else {
+        result = 'HALVED';
+      }
+    }
+
+    const holesRemaining = 18 - holeNumber;
+    const ended = endedAtHole === null && Math.abs(diff) > holesRemaining;
+    if (ended) {
+      endedAtHole = holeNumber;
+      winnerPlayerId = diff > 0 ? p1 ?? null : p2 ?? null;
+    }
+
+    holes.push({
+      holeNumber,
+      result,
+      matchDiffAfter: diff,
+      statusAfter: statusFor(diff),
+      ended: endedAtHole !== null && holeNumber >= endedAtHole,
+    });
+  }
+
+  const currentStatus = statusFor(diff);
+
+  return {
+    player1Id: p1 ?? 'P1',
+    player2Id: p2 ?? 'P2',
+    holes,
+    currentStatus: endedAtHole ? `${currentStatus} (Final)` : currentStatus,
+    endedAtHole,
+    winnerPlayerId,
+  };
+}
+
+// -----------------
+// Wolf (4 players)
+// -----------------
+export function computeWolf(round: Round, game: Game): WolfResults {
+  const order = game.settings.wolfOrderPlayerIds && game.settings.wolfOrderPlayerIds.length === 4
+    ? game.settings.wolfOrderPlayerIds
+    : (game.playerIds.length === 4 ? game.playerIds : round.players.slice(0, 4).map(p => p.id));
+
+  const choices = game.settings.wolfHoleChoices ?? {};
+
+  const scoreMaps = new Map<string, Map<number, number>>(order.map(pid => [pid, scoreByHole(round.scores, pid)]));
+  const totals: Record<string, number> = {};
+  for (const pid of order) totals[pid] = 0;
+
+  const holes: WolfResults['holes'] = [];
+
+  for (let holeNumber = 1; holeNumber <= 18; holeNumber++) {
+    const wolfPlayerId = order[(holeNumber - 1) % 4];
+    const choice = choices[holeNumber] ?? null;
+
+    const delta: Record<string, number> = {};
+
+    const wolfScore = scoreMaps.get(wolfPlayerId)?.get(holeNumber);
+
+    if (choice && typeof wolfScore === 'number') {
+      if (choice.mode === 'lone') {
+        const others = order.filter(pid => pid !== wolfPlayerId);
+        const otherScores = others
+          .map(pid => scoreMaps.get(pid)?.get(holeNumber))
+          .filter((v): v is number => typeof v === 'number');
+
+        if (otherScores.length) {
+          const otherBest = Math.min(...otherScores);
+          if (wolfScore < otherBest) {
+            delta[wolfPlayerId] = 3;
+          } else if (wolfScore > otherBest) {
+            delta[wolfPlayerId] = -3;
+          } else {
+            delta[wolfPlayerId] = 0;
+          }
+        }
+      } else if (choice.mode === 'partner') {
+        const partnerId = choice.partnerId;
+        if (partnerId && partnerId !== wolfPlayerId && order.includes(partnerId)) {
+          const otherTeam = order.filter(pid => pid !== wolfPlayerId && pid !== partnerId);
+
+          const partnerScore = scoreMaps.get(partnerId)?.get(holeNumber);
+          const otherScores = otherTeam
+            .map(pid => scoreMaps.get(pid)?.get(holeNumber))
+            .filter((v): v is number => typeof v === 'number');
+
+          if (typeof partnerScore === 'number' && otherScores.length === 2) {
+            const teamWolfBest = Math.min(wolfScore, partnerScore);
+            const teamOtherBest = Math.min(...otherScores);
+            if (teamWolfBest < teamOtherBest) {
+              delta[wolfPlayerId] = 1;
+              delta[partnerId] = 1;
+            } else if (teamOtherBest < teamWolfBest) {
+              for (const pid of otherTeam) delta[pid] = 1;
+            }
+          }
+        }
+      }
+    }
+
+    // apply deltas
+    for (const [pid, d] of Object.entries(delta)) {
+      totals[pid] = (totals[pid] ?? 0) + d;
+    }
+
+    holes.push({
+      holeNumber,
+      wolfPlayerId,
+      choice,
+      pointsDelta: delta,
+      totalsAfter: { ...totals },
+    });
+  }
+
+  return { orderPlayerIds: order, holes, totals };
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Game, GameFormat, Player, Round } from '@/lib/types';
+import { Game, GameFormat, Round } from '@/lib/types';
 
 interface AddGameModalProps {
   round: Round;

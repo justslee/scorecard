@@ -91,7 +91,14 @@ export default function GamesPanel({ round, onUpdateRound }: GamesPanelProps) {
               <div className="text-xl font-bold">{activeGame.name}</div>
             </div>
           </div>
-          <GameResults round={round} game={activeGame} />
+          <GameResults
+            round={round}
+            game={activeGame}
+            onUpdateGame={(nextGame) => {
+              const nextGames = (round.games ?? []).map(g => (g.id === nextGame.id ? nextGame : g));
+              onUpdateRound({ ...round, games: nextGames });
+            }}
+          />
         </div>
       )}
 
