@@ -1,11 +1,14 @@
 'use client';
 
-import { Round, Course, Player } from './types';
+import { Round, Course, Tournament, TeeOption, HoleInfo } from './types';
 
 const ROUNDS_KEY = 'scorecard_rounds';
 const COURSES_KEY = 'scorecard_courses';
+const TOURNAMENTS_KEY = 'scorecard_tournaments';
 
+// -----------------
 // Rounds
+// -----------------
 export function getRounds(): Round[] {
   if (typeof window === 'undefined') return [];
   const data = localStorage.getItem(ROUNDS_KEY);
@@ -20,24 +23,40 @@ export function getRound(id: string): Round | null {
 export function saveRound(round: Round): void {
   const rounds = getRounds();
   const index = rounds.findIndex(r => r.id === round.id);
-  
+
   round.updatedAt = new Date().toISOString();
-  
+
   if (index >= 0) {
     rounds[index] = round;
   } else {
     rounds.unshift(round);
   }
-  
+
   localStorage.setItem(ROUNDS_KEY, JSON.stringify(rounds));
 }
 
 export function deleteRound(id: string): void {
   const rounds = getRounds().filter(r => r.id !== id);
   localStorage.setItem(ROUNDS_KEY, JSON.stringify(rounds));
+
+  // Also unlink from tournaments (best-effort)
+  const tournaments = getTournaments();
+  let changed = false;
+  tournaments.forEach(t => {
+    const next = t.roundIds.filter(rid => rid !== id);
+    if (next.length !== t.roundIds.length) {
+      t.roundIds = next;
+      changed = true;
+    }
+  });
+  if (changed) {
+    localStorage.setItem(TOURNAMENTS_KEY, JSON.stringify(tournaments));
+  }
 }
 
+// -----------------
 // Courses
+// -----------------
 export function getCourses(): Course[] {
   if (typeof window === 'undefined') return [];
   const data = localStorage.getItem(COURSES_KEY);
@@ -51,19 +70,40 @@ export function getCourses(): Course[] {
 export function saveCourse(course: Course): void {
   const courses = getCourses();
   const index = courses.findIndex(c => c.id === course.id);
-  
+
   if (index >= 0) {
     courses[index] = course;
   } else {
     courses.push(course);
   }
-  
+
   localStorage.setItem(COURSES_KEY, JSON.stringify(courses));
+}
+
+function withTeeOptions(course: Omit<Course, 'tees'> & { holes: HoleInfo[] }): Course {
+  // If a course already includes yards, tee yardages are scaled.
+  const scale = (holes: HoleInfo[], mult: number): HoleInfo[] =>
+    holes.map(h => ({
+      ...h,
+      yards: typeof h.yards === 'number' ? Math.round(h.yards * mult) : h.yards,
+    }));
+
+  const blue = scale(course.holes, 1.05);
+  const white = scale(course.holes, 1.0);
+  const red = scale(course.holes, 0.9);
+
+  const tees: TeeOption[] = [
+    { id: `${course.id}-blue`, name: 'Blue', holes: blue },
+    { id: `${course.id}-white`, name: 'White', holes: white },
+    { id: `${course.id}-red`, name: 'Red', holes: red },
+  ];
+
+  return { ...course, tees };
 }
 
 function getDefaultCourses(): Course[] {
   return [
-    {
+    withTeeOptions({
       id: 'pebble-beach',
       name: 'Pebble Beach Golf Links',
       location: 'Pebble Beach, CA',
@@ -87,8 +127,8 @@ function getDefaultCourses(): Course[] {
         { number: 17, par: 3, yards: 178 },
         { number: 18, par: 5, yards: 543 },
       ],
-    },
-    {
+    }),
+    withTeeOptions({
       id: 'augusta',
       name: 'Augusta National',
       location: 'Augusta, GA',
@@ -112,15 +152,60 @@ function getDefaultCourses(): Course[] {
         { number: 17, par: 4, yards: 440 },
         { number: 18, par: 4, yards: 465 },
       ],
-    },
+    }),
   ];
+}
+
+// -----------------
+// Tournaments
+// -----------------
+export function getTournaments(): Tournament[] {
+  if (typeof window === 'undefined') return [];
+  const data = localStorage.getItem(TOURNAMENTS_KEY);
+  return data ? JSON.parse(data) : [];
+}
+
+export function getTournament(id: string): Tournament | null {
+  const tournaments = getTournaments();
+  return tournaments.find(t => t.id === id) || null;
+}
+
+export function saveTournament(tournament: Tournament): void {
+  const tournaments = getTournaments();
+  const index = tournaments.findIndex(t => t.id === tournament.id);
+
+  if (index >= 0) {
+    tournaments[index] = tournament;
+  } else {
+    tournaments.unshift(tournament);
+  }
+
+  localStorage.setItem(TOURNAMENTS_KEY, JSON.stringify(tournaments));
+}
+
+export function deleteTournament(id: string): void {
+  const tournaments = getTournaments().filter(t => t.id !== id);
+  localStorage.setItem(TOURNAMENTS_KEY, JSON.stringify(tournaments));
+}
+
+export function addRoundToTournament(tournamentId: string, roundId: string): void {
+  const tournament = getTournament(tournamentId);
+  if (!tournament) return;
+  if (!tournament.roundIds.includes(roundId)) {
+    tournament.roundIds = [...tournament.roundIds, roundId];
+    saveTournament(tournament);
+  }
 }
 
 // Initialize with defaults
 export function initializeStorage(): void {
   if (typeof window === 'undefined') return;
-  
+
   if (!localStorage.getItem(COURSES_KEY)) {
     localStorage.setItem(COURSES_KEY, JSON.stringify(getDefaultCourses()));
+  }
+
+  if (!localStorage.getItem(TOURNAMENTS_KEY)) {
+    localStorage.setItem(TOURNAMENTS_KEY, JSON.stringify([]));
   }
 }
