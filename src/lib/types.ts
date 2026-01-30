@@ -35,6 +35,42 @@ export interface Score {
   strokes: number | null;
 }
 
+// -----------------
+// Games overlay system
+// -----------------
+export type GameFormat = 'skins' | 'nassau' | 'bestBall' | 'scramble' | 'wolf' | 'threePoint';
+
+export interface GameTeam {
+  id: string;
+  name: string;
+  playerIds: string[];
+}
+
+export interface GameSettings {
+  // shared
+  pointValue?: number;
+  handicapped?: boolean;
+
+  // skins
+  carryover?: boolean;
+
+  // nassau
+  nassauMode?: 'stroke' | 'match';
+  nassauScope?: 'individual' | 'team';
+}
+
+export interface Game {
+  id: string;
+  roundId: string;
+  format: GameFormat;
+  name: string;
+  /** Player ids included in the game (used for individual formats; also useful for filtering). */
+  playerIds: string[];
+  /** Teams for team formats (Best Ball, Team Nassau, Scramble, etc.) */
+  teams?: GameTeam[];
+  settings: GameSettings;
+}
+
 export interface Round {
   id: string;
   courseId: string;
@@ -45,6 +81,8 @@ export interface Round {
   players: Player[];
   scores: Score[];
   holes: HoleInfo[];
+  /** Side games (skins, nassau, best ball, etc.) attached to this round */
+  games?: Game[];
   status: 'active' | 'completed';
   /** If present, this round is part of a tournament */
   tournamentId?: string;

@@ -82,6 +82,7 @@ export default function NewRound() {
       players: validPlayers.map(p => ({ ...p, name: p.name.trim() })),
       scores: [],
       holes: selectedTee?.holes ?? selectedCourse.holes,
+      games: [],
       status: 'active',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

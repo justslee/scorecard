@@ -8,6 +8,7 @@ import { getRound, saveRound } from '@/lib/storage';
 import { parseScorecard, ocrResultToScores } from '@/lib/ocr';
 import ScoreGrid from '@/components/ScoreGrid';
 import CameraCapture from '@/components/CameraCapture';
+import GamesPanel from '@/components/GamesPanel';
 
 export default function RoundPage() {
   const params = useParams();
@@ -18,14 +19,17 @@ export default function RoundPage() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [currentHole, setCurrentHole] = useState(1);
+  const [activeTab, setActiveTab] = useState<'scores' | 'games'>('scores');
 
   useEffect(() => {
     const id = params.id as string;
     const data = getRound(id);
     if (data) {
-      setRound(data);
+      // ensure migration defaults
+      const migrated = { ...data, games: Array.isArray((data as any).games) ? (data as any).games : [] };
+      setRound(migrated);
       // Find first hole without scores
-      const holesWithScores = new Set(data.scores.map(s => s.holeNumber));
+      const holesWithScores = new Set(migrated.scores.map(s => s.holeNumber));
       for (let h = 1; h <= 18; h++) {
         if (!holesWithScores.has(h)) {
           setCurrentHole(h);
@@ -57,6 +61,11 @@ export default function RoundPage() {
     const updatedRound = { ...round, scores: updatedScores };
     setRound(updatedRound);
     saveRound(updatedRound);
+  };
+
+  const handleUpdateRound = (next: Round) => {
+    setRound(next);
+    saveRound(next);
   };
 
   const handleOCRCapture = async (imageBase64: string) => {
@@ -203,53 +212,75 @@ export default function RoundPage() {
 
       {/* Main Content */}
       <main className="max-w-4xl mx-auto p-4 pb-32">
-        <ScoreGrid
-          round={round}
-          onScoreChange={handleScoreChange}
-          currentHole={currentHole}
-          onHoleSelect={setCurrentHole}
-        />
-
-        {/* Actions */}
-        <div className="mt-6 space-y-3">
+        {/* Tabs */}
+        <div className="flex gap-2 mb-4">
           <button
-            onClick={() => setShowCamera(true)}
-            className="w-full p-4 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold flex items-center justify-center gap-2"
+            onClick={() => setActiveTab('scores')}
+            className={`flex-1 p-3 rounded-lg font-semibold ${activeTab === 'scores' ? 'bg-green-700' : 'bg-gray-800'}`}
           >
-            📷 Scan Physical Scorecard
+            Scores
           </button>
-          
-          {round.status === 'active' && (
-            <button
-              onClick={handleCompleteRound}
-              className="w-full p-4 bg-gray-700 hover:bg-gray-600 rounded-xl font-bold"
-            >
-              ✓ Complete Round
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab('games')}
+            className={`flex-1 p-3 rounded-lg font-semibold ${activeTab === 'games' ? 'bg-green-700' : 'bg-gray-800'}`}
+          >
+            Games
+          </button>
         </div>
 
-        {/* Score Legend */}
-        <div className="mt-6 p-4 bg-gray-800 rounded-lg">
-          <h3 className="text-sm font-semibold text-gray-400 mb-2">Score Colors</h3>
-          <div className="flex flex-wrap gap-3 text-sm">
-            <span className="flex items-center gap-1">
-              <span className="w-6 h-6 bg-yellow-400 rounded"></span> Eagle
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-6 h-6 bg-red-500 rounded"></span> Birdie
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-6 h-6 bg-green-500 rounded"></span> Par
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-6 h-6 bg-blue-400 rounded"></span> Bogey
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-6 h-6 bg-blue-600 rounded"></span> Double+
-            </span>
-          </div>
-        </div>
+        {activeTab === 'scores' ? (
+          <>
+            <ScoreGrid
+              round={round}
+              onScoreChange={handleScoreChange}
+              currentHole={currentHole}
+              onHoleSelect={setCurrentHole}
+            />
+
+            {/* Actions */}
+            <div className="mt-6 space-y-3">
+              <button
+                onClick={() => setShowCamera(true)}
+                className="w-full p-4 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold flex items-center justify-center gap-2"
+              >
+                📷 Scan Physical Scorecard
+              </button>
+
+              {round.status === 'active' && (
+                <button
+                  onClick={handleCompleteRound}
+                  className="w-full p-4 bg-gray-700 hover:bg-gray-600 rounded-xl font-bold"
+                >
+                  ✓ Complete Round
+                </button>
+              )}
+            </div>
+
+            {/* Score Legend */}
+            <div className="mt-6 p-4 bg-gray-800 rounded-lg">
+              <h3 className="text-sm font-semibold text-gray-400 mb-2">Score Colors</h3>
+              <div className="flex flex-wrap gap-3 text-sm">
+                <span className="flex items-center gap-1">
+                  <span className="w-6 h-6 bg-yellow-400 rounded"></span> Eagle
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-6 h-6 bg-red-500 rounded"></span> Birdie
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-6 h-6 bg-green-500 rounded"></span> Par
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-6 h-6 bg-blue-400 rounded"></span> Bogey
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-6 h-6 bg-blue-600 rounded"></span> Double+
+                </span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <GamesPanel round={round} onUpdateRound={handleUpdateRound} />
+        )}
       </main>
 
       {/* Camera Modal */}

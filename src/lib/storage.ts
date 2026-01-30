@@ -13,7 +13,13 @@ const PROFILE_KEY = 'scorecard_profile';
 export function getRounds(): Round[] {
   if (typeof window === 'undefined') return [];
   const data = localStorage.getItem(ROUNDS_KEY);
-  return data ? JSON.parse(data) : [];
+  const parsed: Round[] = data ? JSON.parse(data) : [];
+
+  // Migration/defaults: older rounds won't have games.
+  return parsed.map(r => ({
+    ...r,
+    games: Array.isArray((r as any).games) ? (r as any).games : [],
+  }));
 }
 
 export function getRound(id: string): Round | null {
