@@ -97,17 +97,41 @@ export function calculateTotals(scores: Score[], holes: HoleInfo[], playerId: st
 
   const front9 = playerScores
     .filter(s => s.holeNumber <= 9 && s.strokes !== null)
-    .reduce((sum, s) => sum + (s.strokes || 0), 0);
+    .reduce((sum, s) => sum + (s.strokes ?? 0), 0);
 
   const back9 = playerScores
     .filter(s => s.holeNumber > 9 && s.strokes !== null)
-    .reduce((sum, s) => sum + (s.strokes || 0), 0);
+    .reduce((sum, s) => sum + (s.strokes ?? 0), 0);
 
   const total = front9 + back9;
 
+  // Full-course pars (useful for displaying a scorecard)
   const frontPar = holes.slice(0, 9).reduce((sum, h) => sum + h.par, 0);
   const backPar = holes.slice(9).reduce((sum, h) => sum + h.par, 0);
   const totalPar = frontPar + backPar;
+
+  // Played-to-par: only count holes where the player has a score.
+  // This fixes partial rounds (don't compare to the full course par).
+  const holeParByNumber = new Map<number, number>(holes.map(h => [h.number, h.par]));
+
+  let playedFrontPar = 0;
+  let playedBackPar = 0;
+  let playedHoles = 0;
+
+  const playedToPar = playerScores
+    .filter(s => s.strokes !== null)
+    .reduce((sum, s) => {
+      const par = holeParByNumber.get(s.holeNumber);
+      if (typeof par !== 'number') return sum;
+
+      playedHoles += 1;
+      if (s.holeNumber <= 9) playedFrontPar += par;
+      else playedBackPar += par;
+
+      return sum + ((s.strokes ?? 0) - par);
+    }, 0);
+
+  const playedTotalPar = playedFrontPar + playedBackPar;
 
   return {
     front9,
@@ -116,7 +140,13 @@ export function calculateTotals(scores: Score[], holes: HoleInfo[], playerId: st
     frontPar,
     backPar,
     totalPar,
-    toPar: total - totalPar,
+    // new fields
+    playedHoles,
+    playedFrontPar,
+    playedBackPar,
+    playedTotalPar,
+    // toPar is now computed only from played holes
+    toPar: playedToPar,
   };
 }
 

@@ -171,10 +171,18 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
                 <div className="flex gap-4 text-sm">
                   <span>F9: {totals.front9 || '-'}</span>
                   <span>B9: {totals.back9 || '-'}</span>
-                  <span className={`font-bold text-lg ${
-                    totals.toPar < 0 ? 'text-red-400' : totals.toPar > 0 ? 'text-blue-400' : 'text-green-400'
-                  }`}>
-                    {totals.total || '-'} ({totals.toPar >= 0 ? '+' : ''}{totals.toPar || 'E'})
+                  <span
+                    className={`font-bold text-lg ${
+                      totals.toPar < 0 ? 'text-red-400' : totals.toPar > 0 ? 'text-blue-400' : 'text-green-400'
+                    }`}
+                  >
+                    {totals.playedHoles > 0 ? totals.total : '-'} ({
+                      totals.playedHoles === 0
+                        ? '-'
+                        : totals.toPar === 0
+                          ? 'E'
+                          : `${totals.toPar > 0 ? '+' : ''}${totals.toPar}`
+                    })
                   </span>
                 </div>
               </div>
