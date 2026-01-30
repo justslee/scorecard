@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { Round, Tournament } from '@/lib/types';
-import { getRound, getRounds, getTournament } from '@/lib/storage';
+import { addPlayerToTournament, getRound, getRounds, getTournament } from '@/lib/storage';
 import TournamentLeaderboard from '@/components/TournamentLeaderboard';
 
 export default function TournamentPage() {
@@ -14,6 +14,9 @@ export default function TournamentPage() {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [loaded, setLoaded] = useState(false);
+
+  const [addingPlayer, setAddingPlayer] = useState(false);
+  const [newPlayerName, setNewPlayerName] = useState('');
 
   const refresh = () => {
     if (!id) return;
@@ -82,16 +85,66 @@ export default function TournamentPage() {
               </div>
             </div>
           </div>
-          <Link
-            href={`/tournament/${tournament.id}/round/new`}
-            className="px-3 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-bold"
-          >
-            + Round
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setAddingPlayer(true);
+                setNewPlayerName('');
+              }}
+              className="px-3 py-2 bg-green-600/70 hover:bg-green-600 rounded-lg text-sm font-bold"
+            >
+              + Player
+            </button>
+            <Link
+              href={`/tournament/${tournament.id}/round/new`}
+              className="px-3 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-bold"
+            >
+              + Round
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="max-w-2xl mx-auto p-4 pb-24 space-y-6">
+        {addingPlayer && (
+          <section className="bg-gray-800 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-bold">Add Player</h2>
+              <button
+                onClick={() => setAddingPlayer(false)}
+                className="text-gray-300 hover:text-white"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={newPlayerName}
+                onChange={e => setNewPlayerName(e.target.value)}
+                placeholder="Player name"
+                className="flex-1 p-3 bg-gray-700 rounded-lg"
+              />
+              <button
+                onClick={() => {
+                  const name = newPlayerName.trim();
+                  if (!name) return;
+                  addPlayerToTournament(tournament.id, { id: crypto.randomUUID(), name });
+                  setAddingPlayer(false);
+                  setNewPlayerName('');
+                  refresh();
+                }}
+                className="px-4 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold"
+              >
+                Add
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Added players will show up on the leaderboard and will be included in future rounds.
+            </p>
+          </section>
+        )}
+
         <TournamentLeaderboard tournament={tournament} rounds={roundsSorted} />
 
         <section className="bg-gray-800 rounded-xl p-4">

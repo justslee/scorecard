@@ -197,6 +197,25 @@ export function addRoundToTournament(tournamentId: string, roundId: string): voi
   }
 }
 
+export function addPlayerToTournament(tournamentId: string, player: { id: string; name: string }): void {
+  const tournament = getTournament(tournamentId);
+  if (!tournament) return;
+
+  const name = player.name.trim();
+  if (!name) return;
+
+  if (!tournament.playerIds.includes(player.id)) {
+    tournament.playerIds = [...tournament.playerIds, player.id];
+  }
+
+  tournament.playerNamesById = {
+    ...(tournament.playerNamesById ?? {}),
+    [player.id]: name,
+  };
+
+  saveTournament(tournament);
+}
+
 // Initialize with defaults
 export function initializeStorage(): void {
   if (typeof window === 'undefined') return;
