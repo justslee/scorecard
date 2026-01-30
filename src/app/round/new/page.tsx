@@ -10,6 +10,7 @@ export default function NewRound() {
   const router = useRouter();
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const [selectedTeeId, setSelectedTeeId] = useState<string>('');
   const [customCourseName, setCustomCourseName] = useState('');
   const [players, setPlayers] = useState<Player[]>([{ id: crypto.randomUUID(), name: '' }]);
   const [showCustom, setShowCustom] = useState(false);
@@ -35,6 +36,12 @@ export default function NewRound() {
 
   const handleSelectCourse = (course: Course) => {
     setSelectedCourse(course);
+    // Default tee selection
+    if (course.tees && course.tees.length > 0) {
+      setSelectedTeeId(course.tees[0].id);
+    } else {
+      setSelectedTeeId('');
+    }
     setShowCustom(false);
     setStep('players');
   };
@@ -45,6 +52,11 @@ export default function NewRound() {
     const course = createDefaultCourse(customCourseName.trim());
     saveCourse(course);
     setSelectedCourse(course);
+    if (course.tees && course.tees.length > 0) {
+      setSelectedTeeId(course.tees[0].id);
+    } else {
+      setSelectedTeeId('');
+    }
     setShowCustom(false);
     setStep('players');
   };
@@ -58,14 +70,18 @@ export default function NewRound() {
       return;
     }
 
+    const selectedTee = selectedCourse.tees?.find(t => t.id === selectedTeeId);
+
     const round: Round = {
       id: crypto.randomUUID(),
       courseId: selectedCourse.id,
       courseName: selectedCourse.name,
+      teeId: selectedTee?.id,
+      teeName: selectedTee?.name,
       date: new Date().toISOString(),
       players: validPlayers.map(p => ({ ...p, name: p.name.trim() })),
       scores: [],
-      holes: selectedCourse.holes,
+      holes: selectedTee?.holes ?? selectedCourse.holes,
       status: 'active',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -174,6 +190,23 @@ export default function NewRound() {
             <div className="bg-gray-800 rounded-lg p-3 mb-4">
               <div className="text-sm text-gray-400">Playing at</div>
               <div className="font-bold">{selectedCourse?.name}</div>
+
+              {(selectedCourse?.tees?.length ?? 0) > 0 && (
+                <div className="mt-3">
+                  <div className="text-sm text-gray-400 mb-1">Tee box</div>
+                  <select
+                    value={selectedTeeId}
+                    onChange={(e) => setSelectedTeeId(e.target.value)}
+                    className="w-full p-3 bg-gray-700 rounded-lg"
+                  >
+                    {selectedCourse?.tees?.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Player List */}

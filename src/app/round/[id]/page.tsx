@@ -156,11 +156,14 @@ export default function RoundPage() {
       <header className="bg-green-700 p-4 sticky top-0 z-20">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-4">
-            <Link href="/" className="p-2 hover:bg-green-600 rounded">
+            <Link
+              href={round.tournamentId ? `/tournament/${round.tournamentId}` : '/'}
+              className="p-2 hover:bg-green-600 rounded"
+            >
               ←
             </Link>
             <div className="flex-1">
-              <h1 className="text-lg font-bold truncate">{round.courseName}</h1>
+              <h1 className="text-lg font-bold truncate">{round.courseName}{round.teeName ? ` (${round.teeName})` : ''}</h1>
               <p className="text-sm text-green-200">
                 Hole {currentHole} • {round.players.length} player{round.players.length !== 1 ? 's' : ''}
               </p>

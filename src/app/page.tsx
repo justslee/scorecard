@@ -2,16 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Round } from '@/lib/types';
-import { getRounds, deleteRound, initializeStorage } from '@/lib/storage';
+import { Round, Tournament } from '@/lib/types';
+import { getRounds, deleteRound, initializeStorage, getTournaments } from '@/lib/storage';
 
 export default function Home() {
   const [rounds, setRounds] = useState<Round[]>([]);
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     initializeStorage();
     setRounds(getRounds());
+    setTournaments(getTournaments());
     setLoaded(true);
   }, []);
 
@@ -21,6 +23,7 @@ export default function Home() {
     if (confirm('Delete this round?')) {
       deleteRound(id);
       setRounds(getRounds());
+      setTournaments(getTournaments());
     }
   };
 
@@ -62,6 +65,46 @@ export default function Home() {
         >
           + Start New Round
         </Link>
+
+        {/* Tournaments */}
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-gray-400">Tournaments</h2>
+            <Link href="/tournament/new" className="text-sm text-green-400 hover:text-green-300">
+              + New Tournament
+            </Link>
+          </div>
+
+          {tournaments.length === 0 ? (
+            <div className="bg-gray-800 rounded-lg p-4 text-gray-500">
+              No tournaments yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {tournaments.map(t => (
+                <Link
+                  key={t.id}
+                  href={`/tournament/${t.id}`}
+                  className="block bg-gray-800 rounded-lg p-4 hover:bg-gray-750 transition-colors"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-bold text-lg">🏆 {t.name}</h3>
+                      <p className="text-gray-500 text-sm mt-1">
+                        {t.playerIds.length} players • {t.roundIds.length} rounds
+                      </p>
+                    </div>
+                    {t.numRounds ? (
+                      <span className="px-3 py-1 rounded-full text-sm bg-gray-700 text-gray-300">
+                        {t.roundIds.length}/{t.numRounds}
+                      </span>
+                    ) : null}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
 
         {/* Recent Rounds */}
         <section>
