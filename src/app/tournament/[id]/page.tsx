@@ -7,6 +7,7 @@ import { Round, Tournament } from '@/lib/types';
 import { addPlayerToTournament, getRound, getRounds, getTournament } from '@/lib/storage';
 import TournamentLeaderboard from '@/components/TournamentLeaderboard';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Flag, X } from 'lucide-react';
 
 export default function TournamentPage() {
   const params = useParams<{ id: string }>();
@@ -125,7 +126,7 @@ export default function TournamentPage() {
                   <p className="text-lg font-semibold tracking-tight">New tournament player</p>
                 </div>
                 <button onClick={() => setAddingPlayer(false)} className="btn btn-icon" aria-label="Close">
-                  ✕
+                  <X className="h-5 w-5" aria-hidden="true" />
                 </button>
               </div>
               <div className="flex gap-2">
@@ -171,7 +172,9 @@ export default function TournamentPage() {
 
           {roundsSorted.length === 0 ? (
             <div className="text-center py-10 text-zinc-400">
-              <div className="text-4xl mb-2">⛳</div>
+              <div className="flex justify-center mb-2">
+                <Flag className="h-10 w-10 text-zinc-600" aria-hidden="true" />
+              </div>
               <div className="text-zinc-300 font-medium">No rounds yet</div>
               <div className="text-sm text-zinc-500 mt-1">Start round one when you’re ready.</div>
               <div className="mt-5">

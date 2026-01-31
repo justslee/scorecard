@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Player, Tournament } from '@/lib/types';
 import { initializeStorage, saveTournament } from '@/lib/storage';
+import { Trophy, X } from 'lucide-react';
 
 export default function NewTournamentPage() {
   const router = useRouter();
@@ -121,7 +122,7 @@ export default function NewTournamentPage() {
                     className="btn rounded-2xl px-4 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200"
                     aria-label="Remove player"
                   >
-                    ✕
+                    <X className="h-5 w-5" aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -130,7 +131,10 @@ export default function NewTournamentPage() {
         </section>
 
         <button onClick={handleCreate} className="btn btn-primary w-full">
-          🏆 Create Tournament
+          <span className="inline-flex items-center justify-center gap-2">
+            <Trophy className="h-5 w-5" aria-hidden="true" />
+            <span>Create Tournament</span>
+          </span>
         </button>
       </main>
     </div>

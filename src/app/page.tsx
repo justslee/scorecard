@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Round, Tournament } from '@/lib/types';
 import { deleteRound, getRounds, getTournaments, initializeStorage } from '@/lib/storage';
 import { motion } from 'framer-motion';
+import { Flag, Settings, Trophy, Trash2, Home as HomeIcon, Plus, User } from 'lucide-react';
 
 export default function Home() {
   const [rounds, setRounds] = useState<Round[]>([]);
@@ -53,10 +54,10 @@ export default function Home() {
           <div className="flex items-center justify-between">
             <div className="flex items-baseline gap-2">
               <h1 className="text-xl font-semibold tracking-tight">Scorecard</h1>
-              <span className="text-sm text-zinc-400">⛳</span>
+              <Flag className="h-4 w-4 text-zinc-400" aria-hidden="true" />
             </div>
             <Link href="/settings" className="btn btn-icon" aria-label="Settings">
-              ⚙️
+              <Settings className="h-5 w-5" aria-hidden="true" />
             </Link>
           </div>
         </div>
@@ -103,7 +104,10 @@ export default function Home() {
                 >
                   <div className="flex justify-between items-start gap-3">
                     <div>
-                      <h3 className="font-semibold text-lg tracking-tight">🏆 {t.name}</h3>
+                      <h3 className="font-semibold text-lg tracking-tight flex items-center gap-2">
+                        <Trophy className="h-5 w-5 text-zinc-300" aria-hidden="true" />
+                        <span>{t.name}</span>
+                      </h3>
                       <p className="text-zinc-400 text-sm mt-1">
                         {t.playerIds.length} players • {t.roundIds.length} rounds
                       </p>
@@ -127,7 +131,9 @@ export default function Home() {
 
           {rounds.length === 0 ? (
             <div className="card p-8 text-center">
-              <div className="text-5xl">🏌️</div>
+              <div className="flex justify-center">
+                <Flag className="h-12 w-12 text-zinc-600" aria-hidden="true" />
+              </div>
               <p className="mt-4 text-zinc-300 font-medium">No rounds yet</p>
               <p className="mt-1 text-sm text-zinc-500">Start your first round to begin tracking scores.</p>
             </div>
@@ -160,7 +166,7 @@ export default function Home() {
                         aria-label="Delete round"
                         title="Delete"
                       >
-                        🗑️
+                        <Trash2 className="h-5 w-5" aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -174,28 +180,28 @@ export default function Home() {
       <footer className="fixed bottom-0 left-0 right-0 backdrop-blur-xl bg-zinc-950/60 border-t border-white/10">
         <div className="max-w-2xl mx-auto flex justify-around px-2 py-2">
           <Link href="/" className="flex flex-col items-center p-2 text-emerald-300">
-            <span className="text-xl">🏠</span>
+            <HomeIcon className="h-5 w-5" aria-hidden="true" />
             <span className="text-[11px] font-medium">Home</span>
           </Link>
           <Link
             href="/round/new"
             className="flex flex-col items-center p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
           >
-            <span className="text-xl">➕</span>
+            <Plus className="h-5 w-5" aria-hidden="true" />
             <span className="text-[11px] font-medium">New</span>
           </Link>
           <Link
             href="/profile"
             className="flex flex-col items-center p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
           >
-            <span className="text-xl">👤</span>
+            <User className="h-5 w-5" aria-hidden="true" />
             <span className="text-[11px] font-medium">Profile</span>
           </Link>
           <Link
             href="/settings"
             className="flex flex-col items-center p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
           >
-            <span className="text-xl">⚙️</span>
+            <Settings className="h-5 w-5" aria-hidden="true" />
             <span className="text-[11px] font-medium">Settings</span>
           </Link>
         </div>

@@ -3,6 +3,7 @@
 import { useRef, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Camera, Upload, X } from 'lucide-react';
 
 interface CameraCaptureProps {
   onCapture: (imageBase64: string) => void;
@@ -101,7 +102,7 @@ export default function CameraCapture({ onCapture, onClose }: CameraCaptureProps
             <p className="text-sm text-zinc-400">Use camera or upload an image.</p>
           </div>
           <button onClick={handleClose} className="btn btn-icon" aria-label="Close">
-            ✕
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
         <div className="header-divider" />
@@ -132,11 +133,17 @@ export default function CameraCapture({ onCapture, onClose }: CameraCaptureProps
 
               <div className="mt-5 grid gap-3">
                 <button onClick={startCamera} className="btn btn-primary w-full">
-                  📸 Take Photo
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Camera className="h-5 w-5" aria-hidden="true" />
+                    <span>Take Photo</span>
+                  </span>
                 </button>
 
                 <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary w-full">
-                  📁 Upload Image
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Upload className="h-5 w-5" aria-hidden="true" />
+                    <span>Upload Image</span>
+                  </span>
                 </button>
 
                 <input

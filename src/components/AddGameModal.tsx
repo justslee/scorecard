@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Game, GameFormat, Round } from '@/lib/types';
+import { X } from 'lucide-react';
 
 interface AddGameModalProps {
   round: Round;
@@ -245,7 +246,7 @@ export default function AddGameModal({ round, onClose, onAddGame }: AddGameModal
             <p className="text-sm text-zinc-400">Choose a format and configure players.</p>
           </div>
           <button onClick={onClose} className="btn btn-icon" aria-label="Close">
-            ✕
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 

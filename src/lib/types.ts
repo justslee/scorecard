@@ -252,11 +252,12 @@ export function calculateTotals(scores: Score[], holes: HoleInfo[], playerId: st
 export function scoreDisplay(strokes: number | null, par: number): string {
   if (strokes === null) return '-';
   const diff = strokes - par;
-  if (diff === -2) return '🦅'; // Eagle
-  if (diff === -1) return '🐦'; // Birdie
-  if (diff === 0) return '⚪'; // Par
-  if (diff === 1) return '⬜'; // Bogey
-  if (diff === 2) return '🟨'; // Double
+  // Minimal, non-emoji display helpers.
+  if (diff === -2) return 'Eagle';
+  if (diff === -1) return 'Birdie';
+  if (diff === 0) return 'Par';
+  if (diff === 1) return 'Bogey';
+  if (diff === 2) return 'Double';
   return `+${diff}`;
 }
 

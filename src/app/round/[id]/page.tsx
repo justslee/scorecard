@@ -10,6 +10,7 @@ import ScoreGrid from '@/components/ScoreGrid';
 import CameraCapture from '@/components/CameraCapture';
 import GamesPanel from '@/components/GamesPanel';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Camera, Check } from 'lucide-react';
 
 export default function RoundPage() {
   const params = useParams();
@@ -114,7 +115,7 @@ export default function RoundPage() {
       setRound(updatedRound);
       saveRound(updatedRound);
 
-      alert(`✅ Imported ${ocrScores.filter((s) => s.strokes !== null).length} scores!`);
+      alert(`Imported ${ocrScores.filter((s) => s.strokes !== null).length} scores.`);
     } catch (error) {
       console.error('OCR error:', error);
       setOcrError(error instanceof Error ? error.message : 'Failed to scan scorecard');
@@ -181,7 +182,7 @@ export default function RoundPage() {
             </div>
 
             <button onClick={() => setShowCamera(true)} className="btn btn-icon" title="Scan scorecard" aria-label="Scan scorecard">
-              📷
+              <Camera className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -255,12 +256,18 @@ export default function RoundPage() {
 
               <div className="mt-6 space-y-3">
                 <button onClick={() => setShowCamera(true)} className="btn btn-secondary w-full">
-                  📷 Scan Physical Scorecard
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Camera className="h-5 w-5" aria-hidden="true" />
+                    <span>Scan Physical Scorecard</span>
+                  </span>
                 </button>
 
                 {round.status === 'active' && (
                   <button onClick={handleCompleteRound} className="btn btn-primary w-full">
-                    ✓ Complete Round
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Check className="h-5 w-5" aria-hidden="true" />
+                      <span>Complete Round</span>
+                    </span>
                   </button>
                 )}
               </div>

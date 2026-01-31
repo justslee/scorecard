@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Course, Round, Player } from '@/lib/types';
 import { addRoundToTournament, getCourses, getTournament, saveRound } from '@/lib/storage';
+import { Flag } from 'lucide-react';
 
 export default function NewTournamentRoundPage() {
   const router = useRouter();
@@ -139,7 +140,10 @@ export default function NewTournamentRoundPage() {
         </section>
 
         <button onClick={handleStartRound} className="btn btn-primary w-full">
-          ⛳ Start Round
+          <span className="inline-flex items-center justify-center gap-2">
+            <Flag className="h-5 w-5" aria-hidden="true" />
+            <span>Start Round</span>
+          </span>
         </button>
       </main>
     </div>

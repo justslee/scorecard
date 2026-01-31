@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Trash2 } from 'lucide-react';
 
 export default function Settings() {
   const [apiKey, setApiKey] = useState('');
@@ -116,7 +117,10 @@ export default function Settings() {
             }}
             className="btn w-full rounded-full py-3 mt-4 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200"
           >
-            🗑️ Clear All Data
+            <span className="inline-flex items-center justify-center gap-2">
+              <Trash2 className="h-5 w-5" aria-hidden="true" />
+              <span>Clear All Data</span>
+            </span>
           </button>
         </section>
       </main>
