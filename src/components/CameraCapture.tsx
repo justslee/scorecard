@@ -1,6 +1,8 @@
 'use client';
 
 import { useRef, useState, useCallback } from 'react';
+import Image from 'next/image';
+import { AnimatePresence, motion } from 'framer-motion';
 
 interface CameraCaptureProps {
   onCapture: (imageBase64: string) => void;
@@ -21,12 +23,12 @@ export default function CameraCapture({ onCapture, onClose }: CameraCaptureProps
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
       });
-      
+
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
         await videoRef.current.play();
       }
-      
+
       setStream(mediaStream);
       setMode('camera');
       setError(null);
@@ -38,7 +40,7 @@ export default function CameraCapture({ onCapture, onClose }: CameraCaptureProps
 
   const stopCamera = useCallback(() => {
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach((track) => track.stop());
       setStream(null);
     }
   }, [stream]);
@@ -48,16 +50,16 @@ export default function CameraCapture({ onCapture, onClose }: CameraCaptureProps
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
     ctx.drawImage(video, 0, 0);
     const imageData = canvas.toDataURL('image/jpeg', 0.8);
-    
+
     setPreviewImage(imageData);
     setMode('preview');
     stopCamera();
@@ -77,9 +79,7 @@ export default function CameraCapture({ onCapture, onClose }: CameraCaptureProps
   };
 
   const confirmCapture = () => {
-    if (previewImage) {
-      onCapture(previewImage);
-    }
+    if (previewImage) onCapture(previewImage);
   };
 
   const retake = () => {
@@ -93,118 +93,124 @@ export default function CameraCapture({ onCapture, onClose }: CameraCaptureProps
   };
 
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col">
-      {/* Header */}
-      <div className="flex justify-between items-center p-4 bg-gray-900">
-        <h2 className="text-lg font-bold">📷 Scan Scorecard</h2>
-        <button onClick={handleClose} className="p-2 text-gray-400 hover:text-white">
-          ✕
-        </button>
+    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950">
+      <div className="app-header">
+        <div className="px-4 py-4 max-w-3xl mx-auto flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight">Scan Scorecard</h2>
+            <p className="text-sm text-zinc-400">Use camera or upload an image.</p>
+          </div>
+          <button onClick={handleClose} className="btn btn-icon" aria-label="Close">
+            ✕
+          </button>
+        </div>
+        <div className="header-divider" />
       </div>
 
-      {/* Content */}
-      <div className="flex-1 flex flex-col items-center justify-center p-4">
-        {error && (
-          <div className="bg-red-900 text-red-200 p-4 rounded-lg mb-4 max-w-md">
-            {error}
-          </div>
-        )}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 py-6">
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              key="error"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              transition={{ duration: 0.16 }}
+              className="card border border-red-400/20 text-red-200 px-4 py-3 mb-4 max-w-md w-full"
+            >
+              {error}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {mode === 'select' && (
-          <div className="flex flex-col gap-4 w-full max-w-md">
-            <p className="text-center text-gray-400 mb-4">
-              Take a photo of your scorecard or upload an existing image
-            </p>
-            
-            <button
-              onClick={startCamera}
-              className="p-6 bg-green-600 hover:bg-green-700 rounded-xl text-xl font-bold flex items-center justify-center gap-3"
-            >
-              📸 Take Photo
-            </button>
-            
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="p-6 bg-blue-600 hover:bg-blue-700 rounded-xl text-xl font-bold flex items-center justify-center gap-3"
-            >
-              📁 Upload Image
-            </button>
-            
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
+          <div className="w-full max-w-md">
+            <div className="card p-5">
+              <p className="text-zinc-300 leading-relaxed">
+                Take a photo of the scorecard with good lighting and keep it as flat as possible.
+              </p>
+
+              <div className="mt-5 grid gap-3">
+                <button onClick={startCamera} className="btn btn-primary w-full">
+                  📸 Take Photo
+                </button>
+
+                <button onClick={() => fileInputRef.current?.click()} className="btn btn-secondary w-full">
+                  📁 Upload Image
+                </button>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+              </div>
+            </div>
           </div>
         )}
 
         {mode === 'camera' && (
-          <div className="relative w-full max-w-2xl">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full rounded-lg"
-            />
-            <div className="absolute inset-0 border-4 border-dashed border-white/30 rounded-lg pointer-events-none m-4" />
-            <p className="absolute bottom-20 left-0 right-0 text-center text-white/80 text-sm">
-              Position the scorecard within the frame
-            </p>
+          <div className="relative w-full max-w-3xl">
+            <div className="card p-2">
+              <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-2xl" />
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="absolute inset-5 rounded-2xl border border-dashed border-white/20" />
+              </div>
+            </div>
+            <p className="mt-3 text-center text-sm text-zinc-400">Position the scorecard within the frame.</p>
           </div>
         )}
 
         {mode === 'preview' && previewImage && (
-          <div className="w-full max-w-2xl">
-            <img
-              src={previewImage}
-              alt="Captured scorecard"
-              className="w-full rounded-lg"
-            />
+          <div className="w-full max-w-3xl">
+            <div className="card p-2">
+              <Image
+                src={previewImage}
+                alt="Captured scorecard"
+                width={1600}
+                height={1200}
+                unoptimized
+                className="w-full h-auto rounded-2xl"
+              />
+            </div>
           </div>
         )}
       </div>
 
-      {/* Footer */}
-      <div className="p-4 bg-gray-900">
-        {mode === 'camera' && (
-          <div className="flex justify-center gap-4">
-            <button
-              onClick={() => { stopCamera(); setMode('select'); }}
-              className="px-6 py-3 bg-gray-700 rounded-lg"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={capturePhoto}
-              className="px-8 py-3 bg-green-600 rounded-full text-xl"
-            >
-              📸 Capture
-            </button>
-          </div>
-        )}
+      <div className="backdrop-blur-xl bg-zinc-950/70 border-t border-white/10 px-4 py-4">
+        <div className="max-w-3xl mx-auto">
+          {mode === 'camera' && (
+            <div className="flex justify-center gap-3">
+              <button
+                onClick={() => {
+                  stopCamera();
+                  setMode('select');
+                }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button onClick={capturePhoto} className="btn btn-primary">
+                Capture
+              </button>
+            </div>
+          )}
 
-        {mode === 'preview' && (
-          <div className="flex justify-center gap-4">
-            <button
-              onClick={retake}
-              className="px-6 py-3 bg-gray-700 rounded-lg"
-            >
-              Retake
-            </button>
-            <button
-              onClick={confirmCapture}
-              className="px-8 py-3 bg-green-600 rounded-lg font-bold"
-            >
-              ✓ Use This Photo
-            </button>
-          </div>
-        )}
+          {mode === 'preview' && (
+            <div className="flex justify-center gap-3">
+              <button onClick={retake} className="btn btn-secondary">
+                Retake
+              </button>
+              <button onClick={confirmCapture} className="btn btn-primary">
+                Use Photo
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Hidden canvas for capture */}
       <canvas ref={canvasRef} className="hidden" />
     </div>
   );

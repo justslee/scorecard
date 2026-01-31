@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Tournament, Player } from '@/lib/types';
+import { Player, Tournament } from '@/lib/types';
 import { initializeStorage, saveTournament } from '@/lib/storage';
 
 export default function NewTournamentPage() {
@@ -16,14 +16,14 @@ export default function NewTournamentPage() {
     initializeStorage();
   }, []);
 
-  const addPlayer = () => setPlayers(p => [...p, { id: crypto.randomUUID(), name: '' }]);
+  const addPlayer = () => setPlayers((p) => [...p, { id: crypto.randomUUID(), name: '' }]);
 
   const removePlayer = (id: string) => {
-    setPlayers(p => (p.length > 1 ? p.filter(x => x.id !== id) : p));
+    setPlayers((p) => (p.length > 1 ? p.filter((x) => x.id !== id) : p));
   };
 
   const setPlayerName = (id: string, value: string) => {
-    setPlayers(p => p.map(x => (x.id === id ? { ...x, name: value } : x)));
+    setPlayers((p) => p.map((x) => (x.id === id ? { ...x, name: value } : x)));
   };
 
   const handleCreate = () => {
@@ -33,14 +33,14 @@ export default function NewTournamentPage() {
       return;
     }
 
-    const validPlayers = players.map(p => ({ ...p, name: p.name.trim() })).filter(p => p.name);
+    const validPlayers = players.map((p) => ({ ...p, name: p.name.trim() })).filter((p) => p.name);
     if (validPlayers.length === 0) {
       alert('Add at least one player');
       return;
     }
 
-    const playerIds = validPlayers.map(p => p.id);
-    const playerNamesById = Object.fromEntries(validPlayers.map(p => [p.id, p.name]));
+    const playerIds = validPlayers.map((p) => p.id);
+    const playerNamesById = Object.fromEntries(validPlayers.map((p) => [p.id, p.name]));
 
     const tournament: Tournament = {
       id: crypto.randomUUID(),
@@ -57,43 +57,50 @@ export default function NewTournamentPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <header className="bg-green-700 p-4 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto flex items-center gap-4">
-          <Link href="/" className="p-2 hover:bg-green-600 rounded">
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
+          <Link href="/" className="btn btn-icon" aria-label="Back">
             ←
           </Link>
-          <h1 className="text-xl font-bold">New Tournament</h1>
+          <div>
+            <h1 className="text-base font-semibold tracking-tight">New Tournament</h1>
+            <p className="text-sm text-zinc-400">Create a multi-round event.</p>
+          </div>
         </div>
+        <div className="header-divider" />
       </header>
 
-      <main className="max-w-2xl mx-auto p-4 pb-24 space-y-6">
-        <section className="bg-gray-800 rounded-xl p-4">
-          <label className="block text-sm text-gray-300 mb-2">Tournament name</label>
+      <main className="max-w-2xl mx-auto px-4 pt-5 pb-24 space-y-4">
+        <section className="card p-5">
+          <label className="block text-xs font-medium text-zinc-400 tracking-wide uppercase mb-2">Tournament name</label>
           <input
             value={name}
-            onChange={e => setName(e.target.value)}
+            onChange={(e) => setName(e.target.value)}
             placeholder='e.g., "Boys Trip 2026"'
-            className="w-full p-3 bg-gray-700 rounded-lg"
+            className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 focus:bg-white/7"
           />
 
-          <label className="block text-sm text-gray-300 mb-2 mt-4">Number of rounds</label>
+          <label className="block text-xs font-medium text-zinc-400 tracking-wide uppercase mb-2 mt-4">Number of rounds</label>
           <input
             type="number"
             min={1}
             max={10}
             value={numRounds}
-            onChange={e => setNumRounds(parseInt(e.target.value || '1', 10))}
-            className="w-full p-3 bg-gray-700 rounded-lg"
+            onChange={(e) => setNumRounds(parseInt(e.target.value || '1', 10))}
+            className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 focus:bg-white/7"
           />
-          <p className="text-xs text-gray-500 mt-2">You can add rounds later as you play.</p>
+          <p className="text-xs text-zinc-500 mt-2">You can add rounds later as you play.</p>
         </section>
 
-        <section className="bg-gray-800 rounded-xl p-4">
+        <section className="card p-5">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold">Players</h2>
+            <div>
+              <h2 className="text-sm font-medium text-zinc-400 tracking-wide uppercase">Players</h2>
+              <p className="text-lg font-semibold tracking-tight">Who’s in?</p>
+            </div>
             {players.length < 12 && (
-              <button onClick={addPlayer} className="text-sm text-green-400 hover:text-green-300">
+              <button onClick={addPlayer} className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors">
                 + Add
               </button>
             )}
@@ -104,14 +111,14 @@ export default function NewTournamentPage() {
               <div key={p.id} className="flex gap-2">
                 <input
                   value={p.name}
-                  onChange={e => setPlayerName(p.id, e.target.value)}
+                  onChange={(e) => setPlayerName(p.id, e.target.value)}
                   placeholder={`Player ${idx + 1}`}
-                  className="flex-1 p-3 bg-gray-700 rounded-lg"
+                  className="flex-1 px-4 py-3 rounded-2xl bg-white/5 border border-white/10 focus:bg-white/7"
                 />
                 {players.length > 1 && (
                   <button
                     onClick={() => removePlayer(p.id)}
-                    className="p-3 bg-red-900/50 text-red-300 rounded-lg hover:bg-red-900"
+                    className="btn rounded-2xl px-4 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200"
                     aria-label="Remove player"
                   >
                     ✕
@@ -122,10 +129,7 @@ export default function NewTournamentPage() {
           </div>
         </section>
 
-        <button
-          onClick={handleCreate}
-          className="w-full p-4 bg-green-600 hover:bg-green-700 rounded-xl text-xl font-bold"
-        >
+        <button onClick={handleCreate} className="btn btn-primary w-full">
           🏆 Create Tournament
         </button>
       </main>

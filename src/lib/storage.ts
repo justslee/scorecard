@@ -18,7 +18,7 @@ export function getRounds(): Round[] {
   // Migration/defaults: older rounds won't have games.
   return parsed.map(r => ({
     ...r,
-    games: Array.isArray((r as any).games) ? (r as any).games : [],
+    games: Array.isArray(r.games) ? r.games : [],
   }));
 }
 

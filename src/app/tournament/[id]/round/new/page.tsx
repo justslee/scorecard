@@ -21,21 +21,14 @@ export default function NewTournamentRoundPage() {
     setCourses(getCourses());
   }, []);
 
-  const selectedCourse = useMemo(
-    () => courses.find(c => c.id === selectedCourseId) || null,
-    [courses, selectedCourseId]
-  );
+  const selectedCourse = useMemo(() => courses.find((c) => c.id === selectedCourseId) || null, [courses, selectedCourseId]);
 
   const teeOptions = selectedCourse?.tees ?? [];
 
   useEffect(() => {
-    // Auto-select first tee when course changes
     if (!selectedCourse) return;
-    if (teeOptions.length > 0) {
-      setSelectedTeeId(teeOptions[0].id);
-    } else {
-      setSelectedTeeId('');
-    }
+    if (teeOptions.length > 0) setSelectedTeeId(teeOptions[0].id);
+    else setSelectedTeeId('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCourseId]);
 
@@ -46,12 +39,12 @@ export default function NewTournamentRoundPage() {
       return;
     }
 
-    const players: Player[] = tournament.playerIds.map(pid => ({
+    const players: Player[] = tournament.playerIds.map((pid) => ({
       id: pid,
       name: tournament.playerNamesById?.[pid] ?? 'Player',
     }));
 
-    const selectedTee = teeOptions.find(t => t.id === selectedTeeId);
+    const selectedTee = teeOptions.find((t) => t.id === selectedTeeId);
 
     const round: Round = {
       id: crypto.randomUUID(),
@@ -76,57 +69,65 @@ export default function NewTournamentRoundPage() {
 
   if (!tournament) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white p-6">
-        <Link href="/" className="text-green-400">← Back</Link>
-        <p className="mt-6 text-gray-300">Tournament not found.</p>
+      <div className="min-h-screen px-6 py-8">
+        <Link href="/" className="text-emerald-400 hover:text-emerald-300 transition-colors">
+          ← Back
+        </Link>
+        <p className="mt-6 text-zinc-300">Tournament not found.</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <header className="bg-green-700 p-4 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto flex items-center gap-4">
-          <Link href={`/tournament/${tournament.id}`} className="p-2 hover:bg-green-600 rounded">
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
+          <Link href={`/tournament/${tournament.id}`} className="btn btn-icon" aria-label="Back">
             ←
           </Link>
-          <h1 className="text-xl font-bold">Add Round</h1>
+          <div>
+            <h1 className="text-base font-semibold tracking-tight">Add Round</h1>
+            <p className="text-sm text-zinc-400">For {tournament.name}</p>
+          </div>
         </div>
+        <div className="header-divider" />
       </header>
 
-      <main className="max-w-2xl mx-auto p-4 pb-24 space-y-6">
-        <section className="bg-gray-800 rounded-xl p-4">
-          <div className="text-sm text-gray-400">Tournament</div>
-          <div className="font-bold">{tournament.name}</div>
-          <div className="text-xs text-gray-500 mt-1">Players: {tournament.playerIds.length}</div>
+      <main className="max-w-2xl mx-auto px-4 pt-5 pb-24 space-y-4">
+        <section className="card p-5">
+          <div className="text-xs font-medium text-zinc-400 tracking-wide uppercase">Tournament</div>
+          <div className="font-semibold text-zinc-100 mt-1">{tournament.name}</div>
+          <div className="text-xs text-zinc-500 mt-1">Players: {tournament.playerIds.length}</div>
         </section>
 
-        <section className="bg-gray-800 rounded-xl p-4">
-          <label className="block text-sm text-gray-300 mb-2">Course</label>
+        <section className="card p-5">
+          <label className="block text-xs font-medium text-zinc-400 tracking-wide uppercase mb-2">Course</label>
           <select
             value={selectedCourseId}
-            onChange={e => setSelectedCourseId(e.target.value)}
-            className="w-full p-3 bg-gray-700 rounded-lg"
+            onChange={(e) => setSelectedCourseId(e.target.value)}
+            className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10"
           >
-            <option value="" disabled>Select a course...</option>
-            {courses.map(c => (
+            <option value="" disabled>
+              Select a course…
+            </option>
+            {courses.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
             ))}
           </select>
 
-          <label className="block text-sm text-gray-300 mb-2 mt-4">Tee box</label>
+          <label className="block text-xs font-medium text-zinc-400 tracking-wide uppercase mb-2 mt-4">Tee box</label>
           <select
             value={selectedTeeId}
-            onChange={e => setSelectedTeeId(e.target.value)}
-            className="w-full p-3 bg-gray-700 rounded-lg"
+            onChange={(e) => setSelectedTeeId(e.target.value)}
+            className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10"
             disabled={!selectedCourse || teeOptions.length === 0}
           >
             {teeOptions.length === 0 ? (
               <option value="">Default</option>
             ) : (
-              teeOptions.map(t => (
+              teeOptions.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
                 </option>
@@ -134,13 +135,10 @@ export default function NewTournamentRoundPage() {
             )}
           </select>
 
-          <p className="text-xs text-gray-500 mt-2">Tee boxes can change yardage/pars.</p>
+          <p className="text-xs text-zinc-500 mt-2">Tee boxes can change yardage/pars.</p>
         </section>
 
-        <button
-          onClick={handleStartRound}
-          className="w-full p-4 bg-green-600 hover:bg-green-700 rounded-xl text-xl font-bold"
-        >
+        <button onClick={handleStartRound} className="btn btn-primary w-full">
           ⛳ Start Round
         </button>
       </main>

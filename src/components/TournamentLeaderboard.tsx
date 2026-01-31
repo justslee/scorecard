@@ -12,23 +12,16 @@ type LeaderboardRow = {
 };
 
 function formatToPar(value: number | null): string {
-  if (value === null) return '-';
+  if (value === null) return '–';
   if (value === 0) return 'E';
   return `${value > 0 ? '+' : ''}${value}`;
 }
 
-export default function TournamentLeaderboard({
-  tournament,
-  rounds,
-}: {
-  tournament: Tournament;
-  rounds: Round[];
-}) {
-  const rows: LeaderboardRow[] = tournament.playerIds.map(playerId => {
+export default function TournamentLeaderboard({ tournament, rounds }: { tournament: Tournament; rounds: Round[] }) {
+  const rows: LeaderboardRow[] = tournament.playerIds.map((playerId) => {
     const name =
       tournament.playerNamesById?.[playerId] ||
-      // fallback: first occurrence in any round
-      rounds.flatMap(r => r.players).find(p => p.id === playerId)?.name ||
+      rounds.flatMap((r) => r.players).find((p) => p.id === playerId)?.name ||
       'Player';
 
     const roundToPar: Record<string, number | null> = {};
@@ -37,9 +30,9 @@ export default function TournamentLeaderboard({
     let totalStrokes: number | null = 0;
     let totalToPar: number | null = 0;
 
-    rounds.forEach(r => {
+    rounds.forEach((r) => {
       const totals = calculateTotals(r.scores, r.holes, playerId);
-      const anyScore = r.scores.some(s => s.playerId === playerId && s.strokes !== null);
+      const anyScore = r.scores.some((s) => s.playerId === playerId && s.strokes !== null);
 
       if (!anyScore) {
         roundToPar[r.id] = null;
@@ -53,21 +46,13 @@ export default function TournamentLeaderboard({
       totalToPar = (totalToPar ?? 0) + totals.toPar;
     });
 
-    // If player has literally no scores across all rounds, keep totals null
-    const anyAcross = rounds.some(r => r.scores.some(s => s.playerId === playerId && s.strokes !== null));
+    const anyAcross = rounds.some((r) => r.scores.some((s) => s.playerId === playerId && s.strokes !== null));
     if (!anyAcross) {
       totalStrokes = null;
       totalToPar = null;
     }
 
-    return {
-      playerId,
-      name,
-      roundToPar,
-      roundStrokes,
-      totalStrokes,
-      totalToPar,
-    };
+    return { playerId, name, roundToPar, roundStrokes, totalStrokes, totalToPar };
   });
 
   rows.sort((a, b) => {
@@ -78,71 +63,68 @@ export default function TournamentLeaderboard({
   });
 
   return (
-    <div className="bg-gray-800 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-bold">Leaderboard</h2>
-        <div className="text-xs text-gray-400">Total strokes (lower is better)</div>
+    <section className="card p-5">
+      <div className="flex items-end justify-between gap-3 mb-3">
+        <div>
+          <h2 className="text-sm font-medium text-zinc-400 tracking-wide uppercase">Leaderboard</h2>
+          <p className="text-lg font-semibold tracking-tight">Total strokes</p>
+        </div>
+        <div className="text-xs text-zinc-500">Lower is better</div>
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="text-gray-300">
-              <th className="text-left p-2">#</th>
-              <th className="text-left p-2">Player</th>
+            <tr className="text-zinc-400 border-b border-white/10">
+              <th className="text-left py-2 pr-2">#</th>
+              <th className="text-left py-2 px-2">Player</th>
               {rounds.map((r, idx) => (
-                <th key={r.id} className="text-center p-2 min-w-[70px]">
+                <th key={r.id} className="text-center py-2 px-2 min-w-[70px]">
                   R{idx + 1}
                 </th>
               ))}
-              <th className="text-center p-2 min-w-[90px]">Total</th>
+              <th className="text-center py-2 pl-2 min-w-[90px]">Total</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-white/6">
             {rows.map((row, i) => (
-              <tr key={row.playerId} className="border-t border-gray-700">
-                <td className="p-2 text-gray-400">{i + 1}</td>
-                <td className="p-2 font-medium">{row.name}</td>
-                {rounds.map(r => {
+              <tr key={row.playerId} className="">
+                <td className="py-3 pr-2 text-zinc-500">{i + 1}</td>
+                <td className="py-3 px-2 font-medium text-zinc-200">{row.name}</td>
+                {rounds.map((r) => {
                   const tp = row.roundToPar[r.id];
                   const strokes = row.roundStrokes[r.id];
                   const color =
-                    tp === null
-                      ? 'text-gray-500'
-                      : tp < 0
-                        ? 'text-red-400'
-                        : tp > 0
-                          ? 'text-blue-300'
-                          : 'text-green-300';
+                    tp === null ? 'text-zinc-500' : tp < 0 ? 'text-red-300' : tp > 0 ? 'text-sky-300' : 'text-emerald-300';
 
                   return (
-                    <td key={r.id} className={`p-2 text-center ${color}`}>
-                      <div className="font-bold">{formatToPar(tp)}</div>
-                      <div className="text-xs text-gray-500">{strokes ?? '-'}</div>
+                    <td key={r.id} className={`py-3 px-2 text-center ${color}`}>
+                      <div className="font-semibold">{formatToPar(tp)}</div>
+                      <div className="text-xs text-zinc-500">{strokes ?? '–'}</div>
                     </td>
                   );
                 })}
-                <td className="p-2 text-center">
+                <td className="py-3 pl-2 text-center">
                   <div
-                    className={`font-bold text-lg ${
+                    className={`font-semibold text-base ${
                       row.totalToPar === null
-                        ? 'text-gray-500'
+                        ? 'text-zinc-500'
                         : row.totalToPar < 0
-                          ? 'text-red-400'
+                          ? 'text-red-300'
                           : row.totalToPar > 0
-                            ? 'text-blue-300'
-                            : 'text-green-300'
+                            ? 'text-sky-300'
+                            : 'text-emerald-300'
                     }`}
                   >
                     {formatToPar(row.totalToPar)}
                   </div>
-                  <div className="text-xs text-gray-400">{row.totalStrokes ?? '-'}</div>
+                  <div className="text-xs text-zinc-500">{row.totalStrokes ?? '–'}</div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
   );
 }

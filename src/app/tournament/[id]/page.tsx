@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { Round, Tournament } from '@/lib/types';
 import { addPlayerToTournament, getRound, getRounds, getTournament } from '@/lib/storage';
 import TournamentLeaderboard from '@/components/TournamentLeaderboard';
+import { AnimatePresence, motion } from 'framer-motion';
 
 export default function TournamentPage() {
   const params = useParams<{ id: string }>();
@@ -23,10 +24,9 @@ export default function TournamentPage() {
     const t = getTournament(id);
     setTournament(t);
     if (t) {
-      // Prefer linked rounds, fallback to filter-by tournamentId
-      const linked = t.roundIds.map(rid => getRound(rid)).filter(Boolean) as Round[];
-      const byTid = getRounds().filter(r => r.tournamentId === t.id);
-      const merged = [...linked, ...byTid.filter(r => !linked.some(l => l.id === r.id))];
+      const linked = t.roundIds.map((rid) => getRound(rid)).filter(Boolean) as Round[];
+      const byTid = getRounds().filter((r) => r.tournamentId === t.id);
+      const merged = [...linked, ...byTid.filter((r) => !linked.some((l) => l.id === r.id))];
       setRounds(merged);
     } else {
       setRounds([]);
@@ -36,7 +36,6 @@ export default function TournamentPage() {
 
   useEffect(() => {
     refresh();
-    // Update when returning to tab / page
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => {
@@ -57,113 +56,126 @@ export default function TournamentPage() {
 
   if (!loaded) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500" />
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500/80" />
       </div>
     );
   }
 
   if (!tournament) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white p-6">
-        <Link href="/" className="text-green-400">← Back</Link>
-        <p className="mt-6 text-gray-300">Tournament not found.</p>
+      <div className="min-h-screen px-6 py-8">
+        <Link href="/" className="text-emerald-400 hover:text-emerald-300 transition-colors">
+          ← Back
+        </Link>
+        <p className="mt-6 text-zinc-300">Tournament not found.</p>
       </div>
     );
   }
 
+  const addRoundHref = `/tournament/${tournament.id}/round/new`;
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <header className="bg-green-700 p-4 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="p-2 hover:bg-green-600 rounded">←</Link>
-            <div>
-              <h1 className="text-xl font-bold">{tournament.name}</h1>
-              <div className="text-xs text-green-100/80">
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="max-w-2xl mx-auto px-4 py-4 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <Link href="/" className="btn btn-icon" aria-label="Back">
+              ←
+            </Link>
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg font-semibold tracking-tight truncate">{tournament.name}</h1>
+              <div className="text-xs text-zinc-400">
                 {tournament.playerIds.length} players • {rounds.length}/{tournament.numRounds ?? rounds.length} rounds
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => {
                 setAddingPlayer(true);
                 setNewPlayerName('');
               }}
-              className="px-3 py-2 bg-green-600/70 hover:bg-green-600 rounded-lg text-sm font-bold"
+              className="btn btn-secondary"
             >
               + Player
             </button>
-            <Link
-              href={`/tournament/${tournament.id}/round/new`}
-              className="px-3 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-bold"
-            >
+            <Link href={addRoundHref} className="btn btn-primary">
               + Round
             </Link>
           </div>
         </div>
+        <div className="header-divider" />
       </header>
 
-      <main className="max-w-2xl mx-auto p-4 pb-24 space-y-6">
-        {addingPlayer && (
-          <section className="bg-gray-800 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-bold">Add Player</h2>
-              <button
-                onClick={() => setAddingPlayer(false)}
-                className="text-gray-300 hover:text-white"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <input
-                value={newPlayerName}
-                onChange={e => setNewPlayerName(e.target.value)}
-                placeholder="Player name"
-                className="flex-1 p-3 bg-gray-700 rounded-lg"
-              />
-              <button
-                onClick={() => {
-                  const name = newPlayerName.trim();
-                  if (!name) return;
-                  addPlayerToTournament(tournament.id, { id: crypto.randomUUID(), name });
-                  setAddingPlayer(false);
-                  setNewPlayerName('');
-                  refresh();
-                }}
-                className="px-4 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold"
-              >
-                Add
-              </button>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Added players will show up on the leaderboard and will be included in future rounds.
-            </p>
-          </section>
-        )}
+      <main className="max-w-2xl mx-auto px-4 pt-5 pb-24 space-y-4">
+        <AnimatePresence initial={false}>
+          {addingPlayer && (
+            <motion.section
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.16 }}
+              className="card p-5"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-sm font-medium text-zinc-400 tracking-wide uppercase">Add player</h2>
+                  <p className="text-lg font-semibold tracking-tight">New tournament player</p>
+                </div>
+                <button onClick={() => setAddingPlayer(false)} className="btn btn-icon" aria-label="Close">
+                  ✕
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={newPlayerName}
+                  onChange={(e) => setNewPlayerName(e.target.value)}
+                  placeholder="Player name"
+                  className="flex-1 px-4 py-3 rounded-2xl bg-white/5 border border-white/10 focus:bg-white/7"
+                />
+                <button
+                  onClick={() => {
+                    const name = newPlayerName.trim();
+                    if (!name) return;
+                    addPlayerToTournament(tournament.id, { id: crypto.randomUUID(), name });
+                    setAddingPlayer(false);
+                    setNewPlayerName('');
+                    refresh();
+                  }}
+                  className="btn btn-primary"
+                >
+                  Add
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500 mt-2">
+                Added players will show up on the leaderboard and will be included in future rounds.
+              </p>
+            </motion.section>
+          )}
+        </AnimatePresence>
 
         <TournamentLeaderboard tournament={tournament} rounds={roundsSorted} />
 
-        <section className="bg-gray-800 rounded-xl p-4">
+        <section className="card p-5">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold">Rounds</h2>
-            <Link href={`/tournament/${tournament.id}/round/new`} className="text-sm text-green-400 hover:text-green-300">
-              + Add Round
+            <div>
+              <h2 className="text-sm font-medium text-zinc-400 tracking-wide uppercase">Rounds</h2>
+              <p className="text-lg font-semibold tracking-tight">Play history</p>
+            </div>
+            <Link href={addRoundHref} className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors">
+              + Add
             </Link>
           </div>
 
           {roundsSorted.length === 0 ? (
-            <div className="text-center py-10 text-gray-500">
+            <div className="text-center py-10 text-zinc-400">
               <div className="text-4xl mb-2">⛳</div>
-              <div>No rounds yet.</div>
-              <div className="mt-4">
-                <Link
-                  href={`/tournament/${tournament.id}/round/new`}
-                  className="inline-block px-4 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold"
-                >
+              <div className="text-zinc-300 font-medium">No rounds yet</div>
+              <div className="text-sm text-zinc-500 mt-1">Start round one when you’re ready.</div>
+              <div className="mt-5">
+                <Link href={addRoundHref} className="btn btn-primary">
                   Start Round 1
                 </Link>
               </div>
@@ -171,21 +183,24 @@ export default function TournamentPage() {
           ) : (
             <div className="space-y-3">
               {roundsSorted.map((r, idx) => (
-                <Link
-                  key={r.id}
-                  href={`/round/${r.id}`}
-                  className="block bg-gray-700/60 hover:bg-gray-700 rounded-lg p-4 transition-colors"
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-bold">Round {idx + 1}: {r.courseName}{r.teeName ? ` (${r.teeName})` : ''}</div>
-                      <div className="text-sm text-gray-400">{formatDate(r.date)}</div>
-                      <div className="text-xs text-gray-500 mt-1">{r.players.map(p => p.name).join(', ')}</div>
+                <Link key={r.id} href={`/round/${r.id}`} className="block card card-hover p-5 bg-white/3">
+                  <div className="flex justify-between items-start gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold tracking-tight truncate">
+                        Round {idx + 1}: {r.courseName}
+                        {r.teeName ? ` (${r.teeName})` : ''}
+                      </div>
+                      <div className="text-sm text-zinc-400">{formatDate(r.date)}</div>
+                      <div className="text-xs text-zinc-500 mt-1 truncate">{r.players.map((p) => p.name).join(', ')}</div>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-sm ${
-                      r.status === 'active' ? 'bg-yellow-600 text-yellow-100' : 'bg-gray-600 text-gray-300'
-                    }`}>
-                      {r.status === 'active' ? '⏳ In Progress' : '✓ Complete'}
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs border ${
+                        r.status === 'active'
+                          ? 'bg-amber-500/10 border-amber-400/20 text-amber-200'
+                          : 'bg-white/5 border-white/10 text-zinc-300'
+                      }`}
+                    >
+                      {r.status === 'active' ? 'In Progress' : 'Complete'}
                     </span>
                   </div>
                 </Link>

@@ -1,18 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Round, Score } from '@/lib/types';
+import { Round } from '@/lib/types';
 import { getRound, saveRound } from '@/lib/storage';
 import { parseScorecard, ocrResultToScores } from '@/lib/ocr';
 import ScoreGrid from '@/components/ScoreGrid';
 import CameraCapture from '@/components/CameraCapture';
 import GamesPanel from '@/components/GamesPanel';
+import { AnimatePresence, motion } from 'framer-motion';
 
 export default function RoundPage() {
   const params = useParams();
-  const router = useRouter();
   const [round, setRound] = useState<Round | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCamera, setShowCamera] = useState(false);
@@ -26,10 +26,11 @@ export default function RoundPage() {
     const data = getRound(id);
     if (data) {
       // ensure migration defaults
-      const migrated = { ...data, games: Array.isArray((data as any).games) ? (data as any).games : [] };
+      const migrated: Round = { ...data, games: Array.isArray(data.games) ? data.games : [] };
       setRound(migrated);
+
       // Find first hole without scores
-      const holesWithScores = new Set(migrated.scores.map(s => s.holeNumber));
+      const holesWithScores = new Set(migrated.scores.map((s) => s.holeNumber));
       for (let h = 1; h <= 18; h++) {
         if (!holesWithScores.has(h)) {
           setCurrentHole(h);
@@ -44,9 +45,7 @@ export default function RoundPage() {
     if (!round) return;
 
     const updatedScores = [...round.scores];
-    const existingIndex = updatedScores.findIndex(
-      s => s.playerId === playerId && s.holeNumber === holeNumber
-    );
+    const existingIndex = updatedScores.findIndex((s) => s.playerId === playerId && s.holeNumber === holeNumber);
 
     if (existingIndex >= 0) {
       if (strokes === null) {
@@ -70,14 +69,14 @@ export default function RoundPage() {
 
   const handleOCRCapture = async (imageBase64: string) => {
     if (!round) return;
-    
+
     setShowCamera(false);
     setOcrLoading(true);
     setOcrError(null);
 
     try {
       const result = await parseScorecard(imageBase64, round.players);
-      
+
       if (result.players.length === 0) {
         setOcrError('Could not read scorecard. Please try again with a clearer image.');
         return;
@@ -85,13 +84,13 @@ export default function RoundPage() {
 
       // Convert OCR result to scores
       const ocrScores = ocrResultToScores(result, round.players);
-      
+
       if (ocrScores.length === 0) {
         // If no matches, try to add players from OCR
         setOcrError(
-          `Found players: ${result.players.map(p => p.name).join(', ')}. ` +
-          `Expected: ${round.players.map(p => p.name).join(', ')}. ` +
-          `Player names must match to import scores.`
+          `Found players: ${result.players.map((p) => p.name).join(', ')}. ` +
+            `Expected: ${round.players.map((p) => p.name).join(', ')}. ` +
+            `Player names must match to import scores.`
         );
         return;
       }
@@ -100,7 +99,7 @@ export default function RoundPage() {
       const mergedScores = [...round.scores];
       for (const ocrScore of ocrScores) {
         const existingIndex = mergedScores.findIndex(
-          s => s.playerId === ocrScore.playerId && s.holeNumber === ocrScore.holeNumber
+          (s) => s.playerId === ocrScore.playerId && s.holeNumber === ocrScore.holeNumber
         );
         if (ocrScore.strokes !== null) {
           if (existingIndex >= 0) {
@@ -115,7 +114,7 @@ export default function RoundPage() {
       setRound(updatedRound);
       saveRound(updatedRound);
 
-      alert(`✅ Imported ${ocrScores.filter(s => s.strokes !== null).length} scores!`);
+      alert(`✅ Imported ${ocrScores.filter((s) => s.strokes !== null).length} scores!`);
     } catch (error) {
       console.error('OCR error:', error);
       setOcrError(error instanceof Error ? error.message : 'Failed to scan scorecard');
@@ -126,7 +125,7 @@ export default function RoundPage() {
 
   const handleCompleteRound = () => {
     if (!round) return;
-    
+
     const hasAnyScores = round.scores.length > 0;
     if (!hasAnyScores) {
       alert('Enter at least some scores before completing the round.');
@@ -142,154 +141,172 @@ export default function RoundPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500/80" />
       </div>
     );
   }
 
   if (!round) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-4">
-        <p className="text-xl mb-4">Round not found</p>
-        <Link href="/" className="text-green-400 hover:underline">
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 text-zinc-100">
+        <p className="text-xl font-semibold mb-2">Round not found</p>
+        <Link href="/" className="text-emerald-400 hover:text-emerald-300 transition-colors">
           ← Back to Home
         </Link>
       </div>
     );
   }
 
+  const backHref = round.tournamentId ? `/tournament/${round.tournamentId}` : '/';
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      {/* Header */}
-      <header className="bg-green-700 p-4 sticky top-0 z-20">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-4">
-            <Link
-              href={round.tournamentId ? `/tournament/${round.tournamentId}` : '/'}
-              className="p-2 hover:bg-green-600 rounded"
-            >
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-3">
+            <Link href={backHref} className="btn btn-icon" aria-label="Back">
               ←
             </Link>
-            <div className="flex-1">
-              <h1 className="text-lg font-bold truncate">{round.courseName}{round.teeName ? ` (${round.teeName})` : ''}</h1>
-              <p className="text-sm text-green-200">
-                Hole {currentHole} • {round.players.length} player{round.players.length !== 1 ? 's' : ''}
+
+            <div className="flex-1 min-w-0">
+              <h1 className="text-base sm:text-lg font-semibold tracking-tight truncate">
+                {round.courseName}
+                {round.teeName ? ` (${round.teeName})` : ''}
+              </h1>
+              <p className="text-sm text-zinc-400">
+                Hole <span className="text-zinc-200 font-medium">{currentHole}</span> • {round.players.length} player
+                {round.players.length !== 1 ? 's' : ''}
               </p>
             </div>
-            <button
-              onClick={() => setShowCamera(true)}
-              className="p-2 bg-green-600 hover:bg-green-500 rounded-lg flex items-center gap-2"
-              title="Scan scorecard"
-            >
+
+            <button onClick={() => setShowCamera(true)} className="btn btn-icon" title="Scan scorecard" aria-label="Scan scorecard">
               📷
             </button>
           </div>
         </div>
+        <div className="header-divider" />
       </header>
 
-      {/* OCR Status */}
-      {ocrLoading && (
-        <div className="bg-blue-900 p-4 text-center">
-          <div className="flex items-center justify-center gap-2">
-            <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
-            <span>Scanning scorecard...</span>
-          </div>
-        </div>
-      )}
-
-      {ocrError && (
-        <div className="bg-red-900 p-4 text-center">
-          <p className="text-red-200">{ocrError}</p>
-          <button
-            onClick={() => setOcrError(null)}
-            className="text-sm underline mt-2"
+      <AnimatePresence initial={false}>
+        {ocrLoading ? (
+          <motion.div
+            key="ocr-loading"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.16 }}
+            className="px-4"
           >
-            Dismiss
-          </button>
-        </div>
-      )}
+            <div className="max-w-4xl mx-auto mt-4 card px-4 py-3">
+              <div className="flex items-center justify-center gap-2 text-sm text-zinc-200">
+                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white/80" />
+                <span>Scanning scorecard…</span>
+              </div>
+            </div>
+          </motion.div>
+        ) : null}
 
-      {/* Main Content */}
-      <main className="max-w-4xl mx-auto p-4 pb-32">
-        {/* Tabs */}
-        <div className="flex gap-2 mb-4">
+        {ocrError ? (
+          <motion.div
+            key="ocr-error"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.16 }}
+            className="px-4"
+          >
+            <div className="max-w-4xl mx-auto mt-4 card px-4 py-3 border border-red-400/20">
+              <p className="text-sm text-red-200">{ocrError}</p>
+              <button onClick={() => setOcrError(null)} className="text-sm text-zinc-300 hover:text-white underline mt-2">
+                Dismiss
+              </button>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <main className="max-w-4xl mx-auto px-4 pt-5 pb-32">
+        <div className="pill-tabs flex gap-1 mb-4">
           <button
             onClick={() => setActiveTab('scores')}
-            className={`flex-1 p-3 rounded-lg font-semibold ${activeTab === 'scores' ? 'bg-green-700' : 'bg-gray-800'}`}
+            className={`pill-tab ${activeTab === 'scores' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
           >
             Scores
           </button>
           <button
             onClick={() => setActiveTab('games')}
-            className={`flex-1 p-3 rounded-lg font-semibold ${activeTab === 'games' ? 'bg-green-700' : 'bg-gray-800'}`}
+            className={`pill-tab ${activeTab === 'games' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
           >
             Games
           </button>
         </div>
 
-        {activeTab === 'scores' ? (
-          <>
-            <ScoreGrid
-              round={round}
-              onScoreChange={handleScoreChange}
-              currentHole={currentHole}
-              onHoleSelect={setCurrentHole}
-            />
+        <AnimatePresence mode="wait" initial={false}>
+          {activeTab === 'scores' ? (
+            <motion.div
+              key="scores"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
+              <ScoreGrid round={round} onScoreChange={handleScoreChange} currentHole={currentHole} onHoleSelect={setCurrentHole} />
 
-            {/* Actions */}
-            <div className="mt-6 space-y-3">
-              <button
-                onClick={() => setShowCamera(true)}
-                className="w-full p-4 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold flex items-center justify-center gap-2"
-              >
-                📷 Scan Physical Scorecard
-              </button>
-
-              {round.status === 'active' && (
-                <button
-                  onClick={handleCompleteRound}
-                  className="w-full p-4 bg-gray-700 hover:bg-gray-600 rounded-xl font-bold"
-                >
-                  ✓ Complete Round
+              <div className="mt-6 space-y-3">
+                <button onClick={() => setShowCamera(true)} className="btn btn-secondary w-full">
+                  📷 Scan Physical Scorecard
                 </button>
-              )}
-            </div>
 
-            {/* Score Legend */}
-            <div className="mt-6 p-4 bg-gray-800 rounded-lg">
-              <h3 className="text-sm font-semibold text-gray-400 mb-2">Score Colors</h3>
-              <div className="flex flex-wrap gap-3 text-sm">
-                <span className="flex items-center gap-1">
-                  <span className="w-6 h-6 bg-yellow-400 rounded"></span> Eagle
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-6 h-6 bg-red-500 rounded"></span> Birdie
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-6 h-6 bg-green-500 rounded"></span> Par
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-6 h-6 bg-blue-400 rounded"></span> Bogey
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-6 h-6 bg-blue-600 rounded"></span> Double+
-                </span>
+                {round.status === 'active' && (
+                  <button onClick={handleCompleteRound} className="btn btn-primary w-full">
+                    ✓ Complete Round
+                  </button>
+                )}
               </div>
-            </div>
-          </>
-        ) : (
-          <GamesPanel round={round} onUpdateRound={handleUpdateRound} />
-        )}
+
+              <div className="mt-6 card p-4">
+                <h3 className="text-xs font-medium text-zinc-400 tracking-wide uppercase mb-3">Score Colors</h3>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <span className="flex items-center gap-2 text-zinc-300">
+                    <span className="w-4 h-4 rounded-md bg-yellow-400/90" /> Eagle
+                  </span>
+                  <span className="flex items-center gap-2 text-zinc-300">
+                    <span className="w-4 h-4 rounded-md bg-red-500/90" /> Birdie
+                  </span>
+                  <span className="flex items-center gap-2 text-zinc-300">
+                    <span className="w-4 h-4 rounded-md bg-emerald-500/90" /> Par
+                  </span>
+                  <span className="flex items-center gap-2 text-zinc-300">
+                    <span className="w-4 h-4 rounded-md bg-sky-400/90" /> Bogey
+                  </span>
+                  <span className="flex items-center gap-2 text-zinc-300">
+                    <span className="w-4 h-4 rounded-md bg-blue-600/90" /> Double+
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="games"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
+              <GamesPanel round={round} onUpdateRound={handleUpdateRound} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
-      {/* Camera Modal */}
-      {showCamera && (
-        <CameraCapture
-          onCapture={handleOCRCapture}
-          onClose={() => setShowCamera(false)}
-        />
-      )}
+      <AnimatePresence>
+        {showCamera && (
+          <motion.div key="camera" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
+            <CameraCapture onCapture={handleOCRCapture} onClose={() => setShowCamera(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

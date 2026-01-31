@@ -9,6 +9,7 @@ export default function Settings() {
 
   useEffect(() => {
     const key = localStorage.getItem('anthropic_api_key') || '';
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setApiKey(key);
   }, []);
 
@@ -26,83 +27,86 @@ export default function Settings() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      {/* Header */}
-      <header className="bg-green-700 p-4 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto flex items-center gap-4">
-          <Link href="/" className="p-2 hover:bg-green-600 rounded">
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
+          <Link href="/" className="btn btn-icon" aria-label="Back">
             ←
           </Link>
-          <h1 className="text-xl font-bold">Settings</h1>
+          <div>
+            <h1 className="text-base font-semibold tracking-tight">Settings</h1>
+            <p className="text-sm text-zinc-400">Scanning + data options.</p>
+          </div>
         </div>
+        <div className="header-divider" />
       </header>
 
-      <main className="max-w-2xl mx-auto p-4">
-        {/* OCR Settings */}
-        <section className="bg-gray-800 rounded-lg p-4 mb-6">
-          <h2 className="text-lg font-semibold mb-4">📷 Scorecard Scanning</h2>
-          
-          <p className="text-sm text-gray-400 mb-4">
-            To use the scorecard scanning feature, you need a Claude API key from Anthropic.
+      <main className="max-w-2xl mx-auto px-4 pt-5 pb-24 space-y-4">
+        <section className="card p-5">
+          <h2 className="text-lg font-semibold tracking-tight">Scorecard Scanning</h2>
+          <p className="text-sm text-zinc-400 mt-1 leading-relaxed">
+            To use OCR scanning, add your Claude API key from Anthropic. Your key is stored locally in your browser.
           </p>
 
-          <div className="space-y-4">
+          <div className="mt-4 space-y-3">
             <div>
-              <label className="block text-sm font-medium mb-2">Claude API Key</label>
+              <label className="block text-xs font-medium text-zinc-400 tracking-wide uppercase mb-2">Claude API key</label>
               <input
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder="sk-ant-..."
-                className="w-full p-3 bg-gray-700 rounded-lg"
+                className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 focus:bg-white/7"
               />
             </div>
 
             <div className="flex gap-2">
-              <button
-                onClick={handleSave}
-                className="flex-1 p-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold"
-              >
-                {saved ? '✓ Saved!' : 'Save'}
+              <button onClick={handleSave} className="btn btn-primary flex-1">
+                {saved ? 'Saved' : 'Save'}
               </button>
               {apiKey && (
-                <button
-                  onClick={handleClear}
-                  className="p-3 bg-red-900/50 text-red-400 rounded-lg hover:bg-red-900"
-                >
+                <button onClick={handleClear} className="btn rounded-full px-5 py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200">
                   Clear
                 </button>
               )}
             </div>
           </div>
 
-          <div className="mt-4 p-3 bg-gray-700 rounded-lg text-sm">
-            <p className="font-medium mb-2">How to get an API key:</p>
-            <ol className="list-decimal list-inside space-y-1 text-gray-400">
-              <li>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-green-400 underline">console.anthropic.com</a></li>
+          <div className="mt-4 rounded-2xl bg-white/4 border border-white/10 p-4 text-sm">
+            <p className="font-medium text-zinc-200 mb-2">Get an API key</p>
+            <ol className="list-decimal list-inside space-y-1 text-zinc-400">
+              <li>
+                Go to{' '}
+                <a
+                  href="https://console.anthropic.com/settings/keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-400 hover:text-emerald-300 underline"
+                >
+                  console.anthropic.com
+                </a>
+              </li>
               <li>Create a new API key</li>
               <li>Copy and paste it above</li>
             </ol>
           </div>
         </section>
 
-        {/* About */}
-        <section className="bg-gray-800 rounded-lg p-4">
-          <h2 className="text-lg font-semibold mb-4">About Scorecard</h2>
-          <p className="text-gray-400 text-sm">
-            A simple golf scoring app with OCR scorecard scanning. 
-            Track your rounds, enter scores hole-by-hole, or snap a photo 
-            of your paper scorecard to auto-fill scores.
+        <section className="card p-5">
+          <h2 className="text-lg font-semibold tracking-tight">About</h2>
+          <p className="text-sm text-zinc-400 mt-2 leading-relaxed">
+            A simple golf scoring app with optional OCR scorecard scanning. Track your rounds, enter scores hole-by-hole,
+            or snap a photo of your paper scorecard to auto-fill.
           </p>
-          <div className="mt-4 pt-4 border-t border-gray-700 text-sm text-gray-500">
+          <div className="mt-4 pt-4 border-t border-white/10 text-sm text-zinc-500">
             <p>Version 1.0.0</p>
-            <p className="mt-1">Data stored locally in your browser.</p>
+            <p className="mt-1">Data is stored locally in your browser.</p>
           </div>
         </section>
 
-        {/* Data Management */}
-        <section className="mt-6 bg-gray-800 rounded-lg p-4">
-          <h2 className="text-lg font-semibold mb-4">Data</h2>
+        <section className="card p-5">
+          <h2 className="text-lg font-semibold tracking-tight">Data</h2>
+          <p className="text-sm text-zinc-400 mt-1">Reset local app data (rounds, tournaments, profile).</p>
           <button
             onClick={() => {
               if (confirm('This will delete ALL rounds and data. Continue?')) {
@@ -110,7 +114,7 @@ export default function Settings() {
                 window.location.href = '/';
               }
             }}
-            className="w-full p-3 bg-red-900/50 text-red-400 rounded-lg hover:bg-red-900"
+            className="btn w-full rounded-full py-3 mt-4 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200"
           >
             🗑️ Clear All Data
           </button>

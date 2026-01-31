@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Round, Tournament } from '@/lib/types';
-import { getRounds, deleteRound, initializeStorage, getTournaments } from '@/lib/storage';
+import { deleteRound, getRounds, getTournaments, initializeStorage } from '@/lib/storage';
+import { motion } from 'framer-motion';
 
 export default function Home() {
   const [rounds, setRounds] = useState<Round[]>([]);
@@ -12,6 +13,7 @@ export default function Home() {
 
   useEffect(() => {
     initializeStorage();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRounds(getRounds());
     setTournaments(getTournaments());
     setLoaded(true);
@@ -38,64 +40,76 @@ export default function Home() {
 
   if (!loaded) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500/80" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      {/* Header */}
-      <header className="bg-green-700 p-4 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto flex justify-between items-center">
-          <h1 className="text-2xl font-bold">⛳ Scorecard</h1>
-          <Link href="/settings" className="p-2 hover:bg-green-600 rounded">
-            ⚙️
-          </Link>
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-baseline gap-2">
+              <h1 className="text-xl font-semibold tracking-tight">Scorecard</h1>
+              <span className="text-sm text-zinc-400">⛳</span>
+            </div>
+            <Link href="/settings" className="btn btn-icon" aria-label="Settings">
+              ⚙️
+            </Link>
+          </div>
         </div>
+        <div className="header-divider" />
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-2xl mx-auto p-4">
-        {/* New Round Button */}
-        <Link
-          href="/round/new"
-          className="block w-full p-6 bg-green-600 hover:bg-green-700 rounded-xl text-center text-xl font-bold mb-6 transition-colors"
+      <main className="max-w-2xl mx-auto px-4 pt-5 pb-28">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          className="mb-6"
         >
-          + Start New Round
-        </Link>
+          <Link href="/round/new" className="btn btn-primary w-full">
+            + Start New Round
+          </Link>
+          <p className="mt-3 text-sm text-zinc-400 leading-relaxed">
+            Quick scoring, fast totals, and optional scorecard scanning.
+          </p>
+        </motion.div>
 
-        {/* Tournaments */}
         <section className="mb-8">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-400">Tournaments</h2>
-            <Link href="/tournament/new" className="text-sm text-green-400 hover:text-green-300">
-              + New Tournament
+            <h2 className="text-sm font-medium text-zinc-400 tracking-wide uppercase">Tournaments</h2>
+            <Link href="/tournament/new" className="text-sm text-emerald-400 hover:text-emerald-300 transition-colors">
+              + New
             </Link>
           </div>
 
           {tournaments.length === 0 ? (
-            <div className="bg-gray-800 rounded-lg p-4 text-gray-500">
-              No tournaments yet.
+            <div className="card p-5">
+              <p className="text-zinc-400">No tournaments yet.</p>
+              <p className="text-sm text-zinc-500 mt-1">
+                Create one to group rounds and track multiple players.
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
-              {tournaments.map(t => (
+              {tournaments.map((t) => (
                 <Link
                   key={t.id}
                   href={`/tournament/${t.id}`}
-                  className="block bg-gray-800 rounded-lg p-4 hover:bg-gray-750 transition-colors"
+                  className="block card card-hover p-5"
                 >
-                  <div className="flex justify-between items-start">
+                  <div className="flex justify-between items-start gap-3">
                     <div>
-                      <h3 className="font-bold text-lg">🏆 {t.name}</h3>
-                      <p className="text-gray-500 text-sm mt-1">
+                      <h3 className="font-semibold text-lg tracking-tight">🏆 {t.name}</h3>
+                      <p className="text-zinc-400 text-sm mt-1">
                         {t.playerIds.length} players • {t.roundIds.length} rounds
                       </p>
                     </div>
                     {t.numRounds ? (
-                      <span className="px-3 py-1 rounded-full text-sm bg-gray-700 text-gray-300">
+                      <span className="px-3 py-1 rounded-full text-xs bg-white/7 border border-white/10 text-zinc-300">
                         {t.roundIds.length}/{t.numRounds}
                       </span>
                     ) : null}
@@ -106,42 +120,45 @@ export default function Home() {
           )}
         </section>
 
-        {/* Recent Rounds */}
         <section>
-          <h2 className="text-lg font-semibold text-gray-400 mb-3">Recent Rounds</h2>
-          
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium text-zinc-400 tracking-wide uppercase">Recent Rounds</h2>
+          </div>
+
           {rounds.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <p className="text-5xl mb-4">🏌️</p>
-              <p>No rounds yet. Start your first round!</p>
+            <div className="card p-8 text-center">
+              <div className="text-5xl">🏌️</div>
+              <p className="mt-4 text-zinc-300 font-medium">No rounds yet</p>
+              <p className="mt-1 text-sm text-zinc-500">Start your first round to begin tracking scores.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {rounds.map(round => (
-                <Link
-                  key={round.id}
-                  href={`/round/${round.id}`}
-                  className="block bg-gray-800 rounded-lg p-4 hover:bg-gray-750 transition-colors"
-                >
-                  <div className="flex justify-between items-start">
+              {rounds.map((round) => (
+                <Link key={round.id} href={`/round/${round.id}`} className="block card card-hover p-5">
+                  <div className="flex justify-between items-start gap-3">
                     <div>
-                      <h3 className="font-bold text-lg">{round.courseName}</h3>
-                      <p className="text-gray-400 text-sm">{formatDate(round.date)}</p>
-                      <p className="text-gray-500 text-sm mt-1">
-                        {round.players.map(p => p.name).join(', ')}
+                      <h3 className="font-semibold text-lg tracking-tight">{round.courseName}</h3>
+                      <p className="text-zinc-400 text-sm">{formatDate(round.date)}</p>
+                      <p className="text-zinc-500 text-sm mt-1 line-clamp-1">
+                        {round.players.map((p) => p.name).join(', ')}
                       </p>
                     </div>
+
                     <div className="flex items-center gap-2">
-                      <span className={`px-3 py-1 rounded-full text-sm ${
-                        round.status === 'active' 
-                          ? 'bg-yellow-600 text-yellow-100' 
-                          : 'bg-gray-600 text-gray-300'
-                      }`}>
-                        {round.status === 'active' ? '⏳ In Progress' : '✓ Complete'}
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs border ${
+                          round.status === 'active'
+                            ? 'bg-amber-500/10 border-amber-400/20 text-amber-200'
+                            : 'bg-white/5 border-white/10 text-zinc-300'
+                        }`}
+                      >
+                        {round.status === 'active' ? 'In Progress' : 'Complete'}
                       </span>
                       <button
                         onClick={(e) => handleDelete(round.id, e)}
-                        className="p-2 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded"
+                        className="btn btn-icon text-red-300 hover:text-red-200 hover:bg-red-500/10 border-red-400/20"
+                        aria-label="Delete round"
+                        title="Delete"
                       >
                         🗑️
                       </button>
@@ -154,24 +171,32 @@ export default function Home() {
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 p-2">
-        <div className="max-w-2xl mx-auto flex justify-around">
-          <Link href="/" className="flex flex-col items-center p-2 text-green-400">
+      <footer className="fixed bottom-0 left-0 right-0 backdrop-blur-xl bg-zinc-950/60 border-t border-white/10">
+        <div className="max-w-2xl mx-auto flex justify-around px-2 py-2">
+          <Link href="/" className="flex flex-col items-center p-2 text-emerald-300">
             <span className="text-xl">🏠</span>
-            <span className="text-xs">Home</span>
+            <span className="text-[11px] font-medium">Home</span>
           </Link>
-          <Link href="/round/new" className="flex flex-col items-center p-2 text-gray-400 hover:text-white">
+          <Link
+            href="/round/new"
+            className="flex flex-col items-center p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
+          >
             <span className="text-xl">➕</span>
-            <span className="text-xs">New Round</span>
+            <span className="text-[11px] font-medium">New</span>
           </Link>
-          <Link href="/profile" className="flex flex-col items-center p-2 text-gray-400 hover:text-white">
+          <Link
+            href="/profile"
+            className="flex flex-col items-center p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
+          >
             <span className="text-xl">👤</span>
-            <span className="text-xs">Profile</span>
+            <span className="text-[11px] font-medium">Profile</span>
           </Link>
-          <Link href="/settings" className="flex flex-col items-center p-2 text-gray-400 hover:text-white">
+          <Link
+            href="/settings"
+            className="flex flex-col items-center p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
+          >
             <span className="text-xl">⚙️</span>
-            <span className="text-xs">Settings</span>
+            <span className="text-[11px] font-medium">Settings</span>
           </Link>
         </div>
       </footer>

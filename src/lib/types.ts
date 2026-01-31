@@ -263,10 +263,12 @@ export function scoreDisplay(strokes: number | null, par: number): string {
 export function getScoreClass(strokes: number | null, par: number): string {
   if (strokes === null) return '';
   const diff = strokes - par;
-  if (diff <= -2) return 'bg-yellow-400 text-black'; // Eagle or better
-  if (diff === -1) return 'bg-red-500 text-white'; // Birdie
-  if (diff === 0) return 'bg-green-500 text-white'; // Par
-  if (diff === 1) return 'bg-blue-400 text-white'; // Bogey
-  if (diff === 2) return 'bg-blue-600 text-white'; // Double
-  return 'bg-blue-900 text-white'; // Triple+
+
+  // These are intentionally subtle (modern dark UI): mostly text color + slight emphasis.
+  if (diff <= -2) return 'text-yellow-200'; // Eagle or better
+  if (diff === -1) return 'text-red-300'; // Birdie
+  if (diff === 0) return 'text-emerald-300'; // Par
+  if (diff === 1) return 'text-sky-300'; // Bogey
+  if (diff === 2) return 'text-blue-300'; // Double
+  return 'text-indigo-200'; // Triple+
 }
