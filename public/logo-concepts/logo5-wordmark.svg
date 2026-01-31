@@ -1,0 +1,16 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Option 5: Bold SC Monogram with Flag -->
+  <defs>
+    <linearGradient id="grad5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#059669"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="512" height="512" rx="100" fill="#0f0f10"/>
+  <!-- S letter -->
+  <text x="130" y="340" font-family="Inter, system-ui, sans-serif" font-size="280" font-weight="800" fill="url(#grad5)">S</text>
+  <!-- Small flag accent coming off the S -->
+  <rect x="340" y="140" width="6" height="100" rx="3" fill="#71717a"/>
+  <path d="M346 140 L420 165 L346 190 Z" fill="#10b981"/>
+</svg>

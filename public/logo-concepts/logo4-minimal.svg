@@ -1,0 +1,22 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Option 4: Ultra Minimal - Golf Ball with Checkmark -->
+  <defs>
+    <linearGradient id="grad4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#047857"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <circle cx="256" cy="256" r="240" fill="#18181b"/>
+  <!-- Golf ball (outer ring) -->
+  <circle cx="256" cy="256" r="160" fill="none" stroke="url(#grad4)" stroke-width="16"/>
+  <!-- Dimple pattern hint -->
+  <circle cx="200" cy="200" r="20" fill="#27272a"/>
+  <circle cx="280" cy="180" r="20" fill="#27272a"/>
+  <circle cx="320" cy="240" r="20" fill="#27272a"/>
+  <circle cx="300" cy="320" r="20" fill="#27272a"/>
+  <circle cx="210" cy="300" r="20" fill="#27272a"/>
+  <circle cx="180" cy="250" r="20" fill="#27272a"/>
+  <!-- Checkmark overlay -->
+  <path d="M180 260 L230 310 L340 200" stroke="#10b981" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

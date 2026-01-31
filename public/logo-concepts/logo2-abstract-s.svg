@@ -1,0 +1,16 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Option 2: Abstract S with Golf Ball texture hint -->
+  <defs>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#047857"/>
+    </linearGradient>
+  </defs>
+  <!-- Dark background -->
+  <rect width="512" height="512" rx="96" fill="#0a0a0b"/>
+  <!-- Stylized S made of two curved strokes -->
+  <path d="M320 140 C320 140 380 140 380 200 C380 260 256 260 256 260 C256 260 132 260 132 320 C132 380 200 380 200 380" 
+        stroke="url(#grad2)" stroke-width="56" stroke-linecap="round" fill="none"/>
+  <!-- Small accent dot (like a golf ball) -->
+  <circle cx="380" cy="380" r="24" fill="#10b981"/>
+</svg>
