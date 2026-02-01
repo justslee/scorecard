@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { Course, Player, Round, createDefaultCourse } from '@/lib/types';
 import { getCourses, saveCourse, saveRound } from '@/lib/storage';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Flag, X } from 'lucide-react';
+import { Flag, X, Mic } from 'lucide-react';
+import VoiceRoundSetup from '@/components/VoiceRoundSetup';
 
 export default function NewRound() {
   const router = useRouter();
@@ -16,12 +17,53 @@ export default function NewRound() {
   const [customCourseName, setCustomCourseName] = useState('');
   const [players, setPlayers] = useState<Player[]>([{ id: crypto.randomUUID(), name: '' }]);
   const [showCustom, setShowCustom] = useState(false);
+  const [showVoice, setShowVoice] = useState(false);
   const [step, setStep] = useState<'course' | 'players'>('course');
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCourses(getCourses());
   }, []);
+
+  const handleVoiceSetup = (config: { courseName: string; playerNames: string[]; teeName?: string }) => {
+    // Create or find the course
+    const existingCourse = courses.find(
+      (c) => c.name.toLowerCase() === config.courseName.toLowerCase()
+    );
+    
+    if (existingCourse) {
+      setSelectedCourse(existingCourse);
+      if (existingCourse.tees && existingCourse.tees.length > 0) {
+        // Try to match tee name
+        const matchedTee = config.teeName
+          ? existingCourse.tees.find((t) => t.name.toLowerCase().includes(config.teeName!.toLowerCase()))
+          : existingCourse.tees[0];
+        setSelectedTeeId(matchedTee?.id || existingCourse.tees[0].id);
+      }
+    } else {
+      // Create new custom course
+      const newCourse = createDefaultCourse(config.courseName);
+      saveCourse(newCourse);
+      setCourses((prev) => [...prev, newCourse]);
+      setSelectedCourse(newCourse);
+      if (newCourse.tees && newCourse.tees.length > 0) {
+        setSelectedTeeId(newCourse.tees[0].id);
+      }
+    }
+
+    // Set up players
+    if (config.playerNames.length > 0) {
+      setPlayers(
+        config.playerNames.map((name) => ({
+          id: crypto.randomUUID(),
+          name,
+        }))
+      );
+    }
+
+    setStep('players');
+    setShowVoice(false);
+  };
 
   const handleAddPlayer = () => setPlayers([...players, { id: crypto.randomUUID(), name: '' }]);
 
@@ -93,10 +135,18 @@ export default function NewRound() {
           <Link href="/" className="btn btn-icon" aria-label="Back">
             ←
           </Link>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="text-base font-semibold tracking-tight">New Round</h1>
             <p className="text-sm text-zinc-400">Set course and players.</p>
           </div>
+          <button
+            onClick={() => setShowVoice(true)}
+            className="btn btn-secondary flex items-center gap-2"
+            title="Voice setup"
+          >
+            <Mic className="h-4 w-4" />
+            <span className="hidden sm:inline">Voice</span>
+          </button>
         </div>
         <div className="header-divider" />
       </header>
@@ -254,6 +304,23 @@ export default function NewRound() {
           )}
         </AnimatePresence>
       </main>
+
+      <AnimatePresence>
+        {showVoice && (
+          <motion.div
+            key="voice-round"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+          >
+            <VoiceRoundSetup
+              onSetupRound={handleVoiceSetup}
+              onClose={() => setShowVoice(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
