@@ -1,30 +1,16 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-// Define public routes that don't require authentication
-const isPublicRoute = createRouteMatcher([
-  "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
-  "/api/webhook(.*)",
-  "/round(.*)", // Allow rounds without auth for now
-  "/tournament(.*)",
-  "/profile(.*)",
-  "/settings(.*)",
-]);
-
-export default clerkMiddleware(async (auth, request) => {
-  // Protect all routes except public ones
-  // Note: When CLERK keys are not set, Clerk will skip auth checks
-  if (!isPublicRoute(request)) {
-    await auth.protect();
-  }
-});
+// Simple middleware that passes through all requests
+// Clerk auth is optional - only active when keys are configured
+export default function middleware(request: NextRequest) {
+  // Just pass through - auth is handled at component level when Clerk is configured
+  return NextResponse.next();
+}
 
 export const config = {
   matcher: [
     // Skip Next.js internals and static files
     "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    // Always run for API routes
-    "/(api|trpc)(.*)",
   ],
 };
