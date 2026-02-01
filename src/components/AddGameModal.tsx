@@ -32,6 +32,7 @@ const formatLabel: Record<GameFormat, string> = {
 export default function AddGameModal({ round, onClose, onAddGame }: AddGameModalProps) {
   const [format, setFormat] = useState<GameFormat>('skins');
   const [name, setName] = useState('');
+  const [betAmount, setBetAmount] = useState<number>(0);
 
   // skins
   const [skinsPlayerIds, setSkinsPlayerIds] = useState<string[]>(round.players.map((p) => p.id));
@@ -135,17 +136,19 @@ export default function AddGameModal({ round, onClose, onAddGame }: AddGameModal
 
     const gameId = crypto.randomUUID();
 
+    const baseSettings = betAmount > 0 ? { pointValue: betAmount } : {};
+
     const base: Game = {
       id: gameId,
       roundId: round.id,
       format,
       name: (name.trim() || defaultName).trim(),
       playerIds: [],
-      settings: {},
+      settings: baseSettings,
     };
 
     if (format === 'skins') {
-      onAddGame({ ...base, playerIds: skinsPlayerIds, settings: { carryover } });
+      onAddGame({ ...base, playerIds: skinsPlayerIds, settings: { ...baseSettings, carryover } });
       return;
     }
 
@@ -157,7 +160,7 @@ export default function AddGameModal({ round, onClose, onAddGame }: AddGameModal
           { id: `${gameId}-A`, name: 'Team A', playerIds: teamAPlayerIds },
           { id: `${gameId}-B`, name: 'Team B', playerIds: teamBPlayerIds },
         ],
-        settings: {},
+        settings: baseSettings,
       });
       return;
     }
@@ -171,7 +174,7 @@ export default function AddGameModal({ round, onClose, onAddGame }: AddGameModal
             { id: `${gameId}-A`, name: 'Team A', playerIds: teamAPlayerIds },
             { id: `${gameId}-B`, name: 'Team B', playerIds: teamBPlayerIds },
           ],
-          settings: { nassauScope, nassauMode },
+          settings: { ...baseSettings, nassauScope, nassauMode },
         });
         return;
       }
@@ -179,7 +182,7 @@ export default function AddGameModal({ round, onClose, onAddGame }: AddGameModal
       onAddGame({
         ...base,
         playerIds: round.players.map((p) => p.id),
-        settings: { nassauScope, nassauMode },
+        settings: { ...baseSettings, nassauScope, nassauMode },
       });
       return;
     }
@@ -188,7 +191,7 @@ export default function AddGameModal({ round, onClose, onAddGame }: AddGameModal
       onAddGame({
         ...base,
         playerIds: [matchPlayP1, matchPlayP2],
-        settings: { matchPlayMode: 'individual', matchPlayPlayers: { player1Id: matchPlayP1, player2Id: matchPlayP2 } },
+        settings: { ...baseSettings, matchPlayMode: 'individual', matchPlayPlayers: { player1Id: matchPlayP1, player2Id: matchPlayP2 } },
       });
       return;
     }
@@ -202,6 +205,7 @@ export default function AddGameModal({ round, onClose, onAddGame }: AddGameModal
           { id: `${gameId}-B`, name: 'Team B', playerIds: teamBPlayerIds },
         ],
         settings: {
+          ...baseSettings,
           threePointPairs: {
             teamAPlayer1Id: threeA1,
             teamAPlayer2Id: threeA2,
@@ -214,17 +218,17 @@ export default function AddGameModal({ round, onClose, onAddGame }: AddGameModal
     }
 
     if (format === 'stableford' || format === 'modifiedStableford') {
-      onAddGame({ ...base, playerIds: round.players.map((p) => p.id), settings: {} });
+      onAddGame({ ...base, playerIds: round.players.map((p) => p.id), settings: baseSettings });
       return;
     }
 
     if (format === 'wolf') {
       const order = [wolf1, wolf2, wolf3, wolf4];
-      onAddGame({ ...base, playerIds: order, settings: { wolfOrderPlayerIds: order, wolfHoleChoices: {} } });
+      onAddGame({ ...base, playerIds: order, settings: { ...baseSettings, wolfOrderPlayerIds: order, wolfHoleChoices: {} } });
       return;
     }
 
-    onAddGame({ ...base, playerIds: round.players.map((p) => p.id), settings: {} });
+    onAddGame({ ...base, playerIds: round.players.map((p) => p.id), settings: baseSettings });
   };
 
   const renderPlayerChips = (ids: string[]) => {
@@ -274,6 +278,23 @@ export default function AddGameModal({ round, onClose, onAddGame }: AddGameModal
               placeholder={defaultName}
               className="w-full mt-2 px-4 py-3 rounded-2xl bg-white/5 border border-white/10 focus:bg-white/7"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 tracking-wide uppercase">
+              Bet Amount {format === 'skins' ? '(per skin)' : format === 'nassau' ? '(per bet)' : format === 'threePoint' || format === 'wolf' ? '(per point)' : ''}
+            </label>
+            <div className="relative mt-2">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 font-medium">$</span>
+              <input
+                type="number"
+                value={betAmount || ''}
+                onChange={(e) => setBetAmount(Number(e.target.value) || 0)}
+                placeholder="0"
+                className="w-full pl-8 pr-4 py-3 rounded-2xl bg-white/5 border border-white/10 focus:bg-white/7 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+            </div>
+            <p className="text-xs text-zinc-500 mt-1">Optional — set how much is on the line</p>
           </div>
 
           {format === 'skins' && (

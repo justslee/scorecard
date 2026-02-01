@@ -309,6 +309,55 @@ Parse: "${transcript}"`,
                         score !== null
                           ? getScoreClass(score, hole.par)
                           : 'text-zinc-300';
+                      
+                      // Golf score indicator: circle for birdie, square for bogey, etc.
+                      const diff = score !== null ? score - hole.par : 0;
+                      const getScoreIndicator = () => {
+                        if (score === null) return null;
+                        if (diff <= -2) {
+                          // Eagle or better: double circle
+                          return (
+                            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="w-7 h-7 rounded-full border-2 border-yellow-400" />
+                              <span className="absolute w-5 h-5 rounded-full border-2 border-yellow-400" />
+                            </span>
+                          );
+                        }
+                        if (diff === -1) {
+                          // Birdie: circle
+                          return (
+                            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="w-7 h-7 rounded-full border-2 border-red-400" />
+                            </span>
+                          );
+                        }
+                        if (diff === 1) {
+                          // Bogey: square
+                          return (
+                            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="w-6 h-6 rounded-sm border-2 border-sky-400" />
+                            </span>
+                          );
+                        }
+                        if (diff === 2) {
+                          // Double bogey: double square
+                          return (
+                            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="w-7 h-7 rounded-sm border-2 border-blue-400" />
+                              <span className="absolute w-5 h-5 rounded-sm border-2 border-blue-400" />
+                            </span>
+                          );
+                        }
+                        if (diff >= 3) {
+                          // Triple+ bogey: filled square
+                          return (
+                            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <span className="w-7 h-7 rounded-sm border-2 border-indigo-400 bg-indigo-400/20" />
+                            </span>
+                          );
+                        }
+                        return null; // Par: no indicator
+                      };
 
                       return (
                         <button
@@ -323,7 +372,8 @@ Parse: "${transcript}"`,
                               : '')
                           }
                         >
-                          <span className={`text-[15px] font-semibold ${scoreStateClass}`}>{score ?? '–'}</span>
+                          {getScoreIndicator()}
+                          <span className={`relative z-10 text-[15px] font-semibold ${scoreStateClass}`}>{score ?? '–'}</span>
                           {isSelected ? <span className="absolute inset-x-2 bottom-1 h-[2px] rounded-full bg-emerald-400/70" /> : null}
                         </button>
                       );
@@ -489,6 +539,19 @@ Parse: "${transcript}"`,
               onScoreChange(playerId, holeModalHole, score);
             }}
             onClose={() => setHoleModalHole(null)}
+            onPrevHole={() => {
+              if (holeModalHole > 1) {
+                setHoleModalHole(holeModalHole - 1);
+                onHoleSelect?.(holeModalHole - 1);
+              }
+            }}
+            onNextHole={() => {
+              if (holeModalHole < 18) {
+                setHoleModalHole(holeModalHole + 1);
+                onHoleSelect?.(holeModalHole + 1);
+              }
+            }}
+            totalHoles={18}
           />
         )}
       </AnimatePresence>

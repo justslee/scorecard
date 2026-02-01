@@ -9,7 +9,9 @@ import { parseScorecard, ocrResultToScores } from '@/lib/ocr';
 import ScoreGrid from '@/components/ScoreGrid';
 import CameraCapture from '@/components/CameraCapture';
 import GamesPanel from '@/components/GamesPanel';
+import GameLeaderboards from '@/components/GameLeaderboards';
 import GPSMapView from '@/components/GPSMapView';
+import RoundSummary from '@/components/RoundSummary';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Check, Map } from 'lucide-react';
 import { getCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
@@ -25,6 +27,7 @@ export default function RoundPage() {
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [currentHole, setCurrentHole] = useState(1);
   const [activeTab, setActiveTab] = useState<'scores' | 'games'>('scores');
+  const [showSummary, setShowSummary] = useState(false);
 
   useEffect(() => {
     const id = params.id as string;
@@ -137,11 +140,10 @@ export default function RoundPage() {
       return;
     }
 
-    if (confirm('Mark this round as complete?')) {
-      const updatedRound = { ...round, status: 'completed' as const };
-      setRound(updatedRound);
-      saveRound(updatedRound);
-    }
+    const updatedRound = { ...round, status: 'completed' as const };
+    setRound(updatedRound);
+    saveRound(updatedRound);
+    setShowSummary(true);
   };
 
   const handleOpenMap = async () => {
@@ -281,6 +283,7 @@ export default function RoundPage() {
               transition={{ duration: 0.18, ease: 'easeOut' }}
             >
               <ScoreGrid round={round} onScoreChange={handleScoreChange} currentHole={currentHole} onHoleSelect={setCurrentHole} />
+              <GameLeaderboards round={round} />
 
               <div className="mt-6 space-y-3">
                 <button onClick={() => setShowCamera(true)} className="btn btn-secondary w-full">
@@ -354,6 +357,14 @@ export default function RoundPage() {
               onHoleChange={setCurrentHole}
               onClose={() => setShowMap(false)}
             />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSummary && (
+          <motion.div key="summary" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
+            <RoundSummary round={round} onClose={() => setShowSummary(false)} />
           </motion.div>
         )}
       </AnimatePresence>

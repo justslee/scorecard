@@ -1,16 +1,19 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
-import { X, Mic, MicOff, Loader2 } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Player, HoleInfo } from "@/lib/types";
 
 interface HoleScoreModalProps {
   hole: HoleInfo;
   players: Player[];
-  scores: Record<string, number | null>; // playerId -> score
+  scores: Record<string, number | null>;
   onScoreChange: (playerId: string, score: number | null) => void;
   onClose: () => void;
+  onPrevHole?: () => void;
+  onNextHole?: () => void;
+  totalHoles?: number;
 }
 
 export default function HoleScoreModal({
@@ -19,272 +22,242 @@ export default function HoleScoreModal({
   scores,
   onScoreChange,
   onClose,
+  onPrevHole,
+  onNextHole,
+  totalHoles = 18,
 }: HoleScoreModalProps) {
-  const [isListening, setIsListening] = useState(false);
-  const [voiceTranscript, setVoiceTranscript] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const [slideDirection, setSlideDirection] = useState<'left' | 'right' | null>(null);
+  const swipeStartX = useRef(0);
+  const swipeStartY = useRef(0);
+  const swipeAxis = useRef<'horizontal' | 'vertical' | null>(null);
+  const swipeDelta = useRef(0);
 
-  // Initialize speech recognition
+  // Lock body scroll when modal is open
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = "en-US";
-
-      recognition.onresult = (event: any) => {
-        const transcript = Array.from(event.results)
-          .map((result: any) => result[0].transcript)
-          .join("");
-        setVoiceTranscript(transcript);
-
-        // If final result, process it
-        if (event.results[0].isFinal) {
-          processVoiceInput(transcript);
-        }
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      recognition.onerror = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-    }
-
+    const originalStyle = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     return () => {
-      recognitionRef.current?.stop();
+      document.body.style.overflow = originalStyle;
     };
   }, []);
 
-  const processVoiceInput = async (transcript: string) => {
-    setIsProcessing(true);
-    try {
-      // Try API first
-      const response = await fetch("/api/parse-voice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript,
-          systemPrompt: `Parse golf scores from voice. Players: ${players.map(p => p.name).join(", ")}. Hole par: ${hole.par}.
-
-Common patterns:
-- "[Name] got a [number]" or "[Name] [number]"
-- "par for [Name]" means score = ${hole.par}
-- "birdie for [Name]" means score = ${hole.par - 1}
-- "bogey for [Name]" means score = ${hole.par + 1}
-- "double for [Name]" means score = ${hole.par + 2}
-- "eagle for [Name]" means score = ${hole.par - 2}
-- "everyone par" or "all par" means everyone gets ${hole.par}
-- "everyone par except [Name] who got [X]"
-
-Return JSON only: {"scores": {"PlayerName": number, ...}}
-
-Parse: "${transcript}"`,
-        }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.scores) {
-          applyParsedScores(result.scores);
-        }
-      } else {
-        // Fallback to local parsing
-        const parsed = parseScoresLocally(transcript);
-        applyParsedScores(parsed);
-      }
-    } catch (err) {
-      // Fallback to local parsing
-      const parsed = parseScoresLocally(transcript);
-      applyParsedScores(parsed);
-    } finally {
-      setIsProcessing(false);
-      setVoiceTranscript("");
+  const handlePrevHole = () => {
+    if (hole.number > 1 && onPrevHole) {
+      setSlideDirection('right');
+      onPrevHole();
     }
   };
 
-  const parseScoresLocally = (text: string): Record<string, number> => {
-    const result: Record<string, number> = {};
-    const lower = text.toLowerCase();
-
-    // Check for "everyone/all par" patterns
-    if (lower.includes("everyone par") || lower.includes("all par") || lower.includes("all pars")) {
-      players.forEach((p) => {
-        result[p.name] = hole.par;
-      });
-
-      // Check for exceptions: "except [Name] who got [X]"
-      const exceptPattern = /except\s+(\w+)\s+(?:who\s+)?(?:got\s+)?(?:a\s+)?(\d+|par|birdie|bogey|double|eagle)/gi;
-      const exceptMatches = text.matchAll(exceptPattern);
-      for (const match of exceptMatches) {
-        const name = match[1];
-        const scoreText = match[2].toLowerCase();
-        const player = players.find((p) => p.name.toLowerCase().includes(name.toLowerCase()));
-        if (player) {
-          result[player.name] = textToScore(scoreText, hole.par);
-        }
-      }
-      return result;
-    }
-
-    // Parse individual scores
-    for (const player of players) {
-      // Pattern 1: "[score] for [Name]" - check first (more specific)
-      const pattern1 = new RegExp(
-        `(\\d+|par|birdie|bogey|double|eagle)\\s+for\\s+${player.name}(?:\\s|$|,)`,
-        "i"
-      );
-      const match1 = text.match(pattern1);
-      if (match1 && match1[1]) {
-        result[player.name] = textToScore(match1[1], hole.par);
-        continue;
-      }
-
-      // Pattern 2: "[Name] got a [X]" or "[Name] [X]"
-      const pattern2 = new RegExp(
-        `${player.name}\\s+(?:got\\s+)?(?:a\\s+)?(\\d+|par|birdie|bogey|double|eagle)(?:\\s|$|,)`,
-        "i"
-      );
-      const match2 = text.match(pattern2);
-      if (match2 && match2[1]) {
-        result[player.name] = textToScore(match2[1], hole.par);
-        continue;
-      }
-    }
-
-    return result;
-  };
-
-  const textToScore = (text: string, par: number): number => {
-    const lower = text.toLowerCase();
-    if (lower === "par") return par;
-    if (lower === "birdie") return par - 1;
-    if (lower === "eagle") return par - 2;
-    if (lower === "bogey") return par + 1;
-    if (lower === "double") return par + 2;
-    const num = parseInt(text, 10);
-    return isNaN(num) ? par : num;
-  };
-
-  const applyParsedScores = (parsed: Record<string, number>) => {
-    for (const [name, score] of Object.entries(parsed)) {
-      const player = players.find(
-        (p) => p.name.toLowerCase() === name.toLowerCase()
-      );
-      if (player) {
-        onScoreChange(player.id, score);
-      }
+  const handleNextHole = () => {
+    if (hole.number < totalHoles && onNextHole) {
+      setSlideDirection('left');
+      onNextHole();
     }
   };
 
-  const toggleVoice = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-    } else {
-      setVoiceTranscript("");
-      recognitionRef.current?.start();
-      setIsListening(true);
+  // Handle swipe for hole navigation
+  const handleContainerTouchStart = (e: React.TouchEvent) => {
+    swipeStartX.current = e.touches[0].clientX;
+    swipeStartY.current = e.touches[0].clientY;
+    swipeAxis.current = null;
+    swipeDelta.current = 0;
+  };
+
+  const handleContainerTouchMove = (e: React.TouchEvent) => {
+    if (!swipeStartX.current) return;
+    
+    const deltaX = e.touches[0].clientX - swipeStartX.current;
+    const deltaY = e.touches[0].clientY - swipeStartY.current;
+    
+    // Determine axis on first significant movement
+    if (!swipeAxis.current) {
+      if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+        swipeAxis.current = Math.abs(deltaX) > Math.abs(deltaY) ? 'horizontal' : 'vertical';
+      }
     }
+    
+    // Track horizontal swipe progress
+    if (swipeAxis.current === 'horizontal') {
+      swipeDelta.current = deltaX;
+    }
+  };
+
+  const handleContainerTouchEnd = () => {
+    if (swipeAxis.current === 'horizontal') {
+      // Lower threshold (50px) for faster response
+      if (swipeDelta.current > 50 && hole.number > 1) {
+        handlePrevHole();
+      } else if (swipeDelta.current < -50 && hole.number < totalHoles) {
+        handleNextHole();
+      }
+    }
+    swipeStartX.current = 0;
+    swipeStartY.current = 0;
+    swipeAxis.current = null;
+    swipeDelta.current = 0;
+  };
+
+  const gridPlayers = players.slice(0, 4);
+  const canGoPrev = hole.number > 1;
+  const canGoNext = hole.number < totalHoles;
+
+  // Animation variants for the content - fast and snappy
+  const contentVariants = {
+    enter: (direction: 'left' | 'right' | null) => ({
+      x: direction === 'left' ? 60 : direction === 'right' ? -60 : 0,
+      opacity: 0,
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+    },
+    exit: (direction: 'left' | 'right' | null) => ({
+      x: direction === 'left' ? -60 : direction === 'right' ? 60 : 0,
+      opacity: 0,
+    }),
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onTouchStart={handleContainerTouchStart}
+      onTouchMove={handleContainerTouchMove}
+      onTouchEnd={handleContainerTouchEnd}
+      style={{ touchAction: 'pan-y' }}
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.15 }}
-        className="w-full max-w-sm bg-zinc-900 rounded-2xl border border-zinc-800 shadow-2xl overflow-hidden"
+        transition={{ duration: 0.1 }}
+        className="w-full max-w-sm px-4 py-8 overflow-hidden"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-zinc-800">
-          <div>
-            <h3 className="font-semibold text-white">Hole {hole.number}</h3>
-            <p className="text-sm text-zinc-400">Par {hole.par}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleVoice}
-              disabled={isProcessing}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-                isListening
-                  ? "bg-red-500 text-white"
-                  : "bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700"
-              }`}
+        {/* Header with navigation */}
+        <div className="flex items-center justify-between mb-3">
+          {/* Prev button */}
+          <motion.button
+            onClick={handlePrevHole}
+            disabled={!canGoPrev}
+            whileTap={{ scale: 0.9 }}
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+              canGoPrev 
+                ? 'bg-zinc-800/80 hover:bg-zinc-700 text-white' 
+                : 'bg-zinc-900/50 text-zinc-600 cursor-not-allowed'
+            }`}
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </motion.button>
+
+          {/* Hole info with animation */}
+          <AnimatePresence mode="wait" custom={slideDirection}>
+            <motion.div
+              key={hole.number}
+              custom={slideDirection}
+              variants={contentVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.1, ease: "easeOut" }}
+              className="text-center"
             >
-              {isProcessing ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : isListening ? (
-                <MicOff className="w-5 h-5" />
-              ) : (
-                <Mic className="w-5 h-5" />
-              )}
-            </button>
-            <button
-              onClick={onClose}
-              className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center hover:bg-zinc-700"
-            >
-              <X className="w-5 h-5 text-zinc-400" />
-            </button>
-          </div>
+              <h3 className="text-xl font-bold text-white">Hole {hole.number}</h3>
+              <p className="text-sm text-zinc-400">Par {hole.par}</p>
+            </motion.div>
+          </AnimatePresence>
+
+          {/* Next button */}
+          <motion.button
+            onClick={handleNextHole}
+            disabled={!canGoNext}
+            whileTap={{ scale: 0.9 }}
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+              canGoNext 
+                ? 'bg-zinc-800/80 hover:bg-zinc-700 text-white' 
+                : 'bg-zinc-900/50 text-zinc-600 cursor-not-allowed'
+            }`}
+          >
+            <ChevronRight className="w-6 h-6" />
+          </motion.button>
         </div>
 
-        {/* Voice feedback */}
-        {(isListening || voiceTranscript) && (
-          <div className="px-4 py-2 bg-zinc-800/50 border-b border-zinc-800">
-            <p className="text-sm text-zinc-300">
-              {isListening && !voiceTranscript && (
-                <span className="text-emerald-400">Listening...</span>
-              )}
-              {voiceTranscript && <span className="italic">"{voiceTranscript}"</span>}
-            </p>
-          </div>
-        )}
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-zinc-800/80 flex items-center justify-center hover:bg-zinc-700 z-10"
+        >
+          <X className="w-4 h-4 text-zinc-400" />
+        </button>
 
-        {/* Player scores grid */}
-        <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
-          {players.map((player) => (
-            <ScoreScrollInput
-              key={player.id}
-              playerName={player.name}
-              score={scores[player.id] ?? null}
-              par={hole.par}
-              onChange={(score) => onScoreChange(player.id, score)}
-            />
-          ))}
-        </div>
+        {/* 2x2 Grid with slide animation */}
+        <AnimatePresence mode="wait" custom={slideDirection}>
+          <motion.div
+            key={hole.number}
+            custom={slideDirection}
+            variants={contentVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.1, ease: "easeOut" }}
+            className="grid grid-cols-2 gap-2"
+          >
+            {gridPlayers.map((player) => (
+              <ScoreCell
+                key={player.id}
+                playerName={player.name}
+                score={scores[player.id] ?? null}
+                par={hole.par}
+                onChange={(score) => onScoreChange(player.id, score)}
+              />
+            ))}
+          </motion.div>
+        </AnimatePresence>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-zinc-800 space-y-2">
-          <button
+        {/* Quick actions */}
+        <div className="flex gap-2 mt-3">
+          <motion.button
+            whileTap={{ scale: 0.97 }}
             onClick={() => {
               players.forEach((p) => onScoreChange(p.id, hole.par));
             }}
-            className="btn btn-secondary w-full text-sm"
+            className="flex-1 py-3 rounded-xl bg-emerald-500/20 text-emerald-300 text-sm font-semibold border border-emerald-500/30"
           >
-            Set All to Par ({hole.par})
-          </button>
-          <button onClick={onClose} className="btn btn-primary w-full">
+            All Par
+          </motion.button>
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl bg-white/10 text-white text-sm font-semibold border border-white/20"
+          >
             Done
-          </button>
+          </motion.button>
         </div>
+
+        {/* Hole indicator dots */}
+        <div className="flex justify-center gap-1 mt-3">
+          {[...Array(Math.min(9, totalHoles))].map((_, i) => {
+            const holeNum = hole.number <= 9 ? i + 1 : i + 10;
+            const isActive = hole.number === holeNum;
+            const inRange = hole.number <= 9 ? holeNum <= 9 : holeNum > 9;
+            if (!inRange) return null;
+            return (
+              <div
+                key={i}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  isActive ? 'bg-emerald-400 scale-125' : 'bg-zinc-600'
+                }`}
+              />
+            );
+          })}
+        </div>
+        <p className="text-center text-xs text-zinc-600 mt-1">
+          {hole.number <= 9 ? 'Front 9' : 'Back 9'} • Swipe ← →
+        </p>
       </motion.div>
     </div>
   );
 }
 
-// Scroll-to-change score input component with quick buttons
-function ScoreScrollInput({
+function ScoreCell({
   playerName,
   score,
   par,
@@ -297,7 +270,10 @@ function ScoreScrollInput({
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const startY = useRef(0);
+  const startX = useRef(0);
   const startScore = useRef(score ?? par);
+  const isVerticalSwipe = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const getScoreColor = (s: number | null): string => {
     if (s === null) return "text-zinc-500";
@@ -310,13 +286,13 @@ function ScoreScrollInput({
   };
 
   const getScoreLabel = (s: number | null): string => {
-    if (s === null) return "";
+    if (s === null) return "–";
     const diff = s - par;
-    if (diff <= -2) return "Eagle";
-    if (diff === -1) return "Birdie";
-    if (diff === 0) return "Par";
-    if (diff === 1) return "Bogey";
-    if (diff === 2) return "Double";
+    if (diff <= -2) return "🦅";
+    if (diff === -1) return "🐦";
+    if (diff === 0) return "✓";
+    if (diff === 1) return "+1";
+    if (diff === 2) return "+2";
     return `+${diff}`;
   };
 
@@ -329,95 +305,111 @@ function ScoreScrollInput({
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    setIsDragging(true);
+    e.stopPropagation();
     startY.current = e.touches[0].clientY;
+    startX.current = e.touches[0].clientX;
     startScore.current = score ?? par;
+    isVerticalSwipe.current = false;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return;
-    const deltaY = startY.current - e.touches[0].clientY;
-    const deltaScore = Math.round(deltaY / 25);
+    const deltaX = Math.abs(e.touches[0].clientX - startX.current);
+    const deltaY = Math.abs(e.touches[0].clientY - startY.current);
+    
+    if (!isVerticalSwipe.current && (deltaX > 10 || deltaY > 10)) {
+      isVerticalSwipe.current = deltaY > deltaX;
+    }
+    
+    if (!isVerticalSwipe.current) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    
+    const actualDeltaY = startY.current - e.touches[0].clientY;
+    const deltaScore = Math.round(actualDeltaY / 20);
     const newScore = Math.max(1, Math.min(15, startScore.current + deltaScore));
-    onChange(newScore);
+    if (newScore !== score) {
+      onChange(newScore);
+    }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.stopPropagation();
     setIsDragging(false);
+    isVerticalSwipe.current = false;
   };
 
-  const increment = () => {
+  const increment = (e: React.MouseEvent) => {
+    e.stopPropagation();
     const current = score ?? par;
     if (current < 15) onChange(current + 1);
   };
 
-  const decrement = () => {
+  const decrement = (e: React.MouseEvent) => {
+    e.stopPropagation();
     const current = score ?? par;
     if (current > 1) onChange(current - 1);
   };
 
-  // Quick score buttons
-  const quickScores = [
-    { label: "Birdie", value: par - 1, color: "bg-red-500/20 text-red-300 border-red-500/30" },
-    { label: "Par", value: par, color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
-    { label: "Bogey", value: par + 1, color: "bg-sky-500/20 text-sky-300 border-sky-500/30" },
-    { label: "+2", value: par + 2, color: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
-  ];
+  const handleTap = () => {
+    if (score === null) {
+      onChange(par);
+    }
+  };
 
   return (
-    <div className="p-3 rounded-xl bg-zinc-800/50 border border-zinc-700">
-      <div className="flex items-center justify-between mb-2">
-        <span className="font-medium text-white truncate">{playerName}</span>
-        <span className={`text-xs ${getScoreColor(score)}`}>{getScoreLabel(score)}</span>
+    <motion.div
+      ref={containerRef}
+      onWheel={handleWheel}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onClick={handleTap}
+      whileTap={{ scale: 0.98 }}
+      style={{ touchAction: "pan-x" }}
+      className={`relative aspect-square rounded-2xl flex flex-col items-center justify-center cursor-ns-resize select-none transition-colors ${
+        isDragging
+          ? "bg-emerald-500/20 border-emerald-500"
+          : "bg-zinc-800/80 border-zinc-700 hover:bg-zinc-800"
+      } border-2`}
+    >
+      <div className="absolute top-2 left-0 right-0 text-center">
+        <span className="text-xs font-medium text-zinc-400 truncate px-2">
+          {playerName}
+        </span>
       </div>
-      
-      <div className="flex items-center gap-2">
-        {/* Quick score buttons */}
-        <div className="flex gap-1 flex-1">
-          {quickScores.map((qs) => (
-            <button
-              key={qs.label}
-              onClick={() => onChange(qs.value)}
-              className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-all ${
-                score === qs.value ? qs.color + " scale-105" : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700"
-              }`}
-            >
-              {qs.label}
-            </button>
-          ))}
-        </div>
 
-        {/* Manual adjustment */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={decrement}
-            className="w-8 h-8 rounded-lg bg-zinc-700 hover:bg-zinc-600 flex items-center justify-center text-zinc-300 text-lg font-bold active:scale-95"
-          >
-            −
-          </button>
+      <span className={`text-4xl font-bold ${getScoreColor(score)}`}>
+        {score ?? "–"}
+      </span>
 
-          <div
-            onWheel={handleWheel}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            className={`w-12 h-10 rounded-lg flex items-center justify-center cursor-ns-resize select-none transition-all ${
-              isDragging ? "bg-emerald-500/20 border-emerald-500 scale-105" : "bg-zinc-900 border-zinc-600"
-            } border-2`}
-          >
-            <span className={`text-xl font-bold ${getScoreColor(score)}`}>
-              {score ?? "–"}
-            </span>
-          </div>
+      <span className={`text-xs mt-1 ${getScoreColor(score)}`}>
+        {getScoreLabel(score)}
+      </span>
 
-          <button
-            onClick={increment}
-            className="w-8 h-8 rounded-lg bg-zinc-700 hover:bg-zinc-600 flex items-center justify-center text-zinc-300 text-lg font-bold active:scale-95"
-          >
-            +
-          </button>
-        </div>
+      <div className="absolute bottom-2 left-2 right-2 flex justify-between">
+        <motion.button
+          whileTap={{ scale: 0.85 }}
+          onClick={decrement}
+          className="w-8 h-8 rounded-full bg-zinc-900/80 flex items-center justify-center text-zinc-400 text-lg font-bold hover:bg-zinc-700"
+        >
+          −
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.85 }}
+          onClick={increment}
+          className="w-8 h-8 rounded-full bg-zinc-900/80 flex items-center justify-center text-zinc-400 text-lg font-bold hover:bg-zinc-700"
+        >
+          +
+        </motion.button>
       </div>
-    </div>
+
+      {isDragging && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 bg-emerald-500/10 rounded-2xl" />
+        </div>
+      )}
+    </motion.div>
   );
 }

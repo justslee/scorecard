@@ -5,13 +5,15 @@ import Link from 'next/link';
 import AuthButtons from '@/components/AuthButtons';
 import { Round, Tournament } from '@/lib/types';
 import { deleteRound, getRounds, getTournaments, initializeStorage } from '@/lib/storage';
-import { motion } from 'framer-motion';
-import { Flag, Settings, Trophy, Trash2, Home as HomeIcon, Plus, User } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Flag, Settings, Trophy, Trash2, Home as HomeIcon, Plus, User, ChartBar, Navigation } from 'lucide-react';
+import RoundSummary from '@/components/RoundSummary';
 
 export default function Home() {
   const [rounds, setRounds] = useState<Round[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [summaryRound, setSummaryRound] = useState<Round | null>(null);
 
   useEffect(() => {
     initializeStorage();
@@ -143,38 +145,68 @@ export default function Home() {
             </div>
           ) : (
             <div className="space-y-3">
-              {rounds.map((round) => (
-                <Link key={round.id} href={`/round/${round.id}`} className="block card card-hover p-5">
-                  <div className="flex justify-between items-start gap-3">
-                    <div>
-                      <h3 className="font-semibold text-lg tracking-tight">{round.courseName}</h3>
-                      <p className="text-zinc-400 text-sm">{formatDate(round.date)}</p>
-                      <p className="text-zinc-500 text-sm mt-1 line-clamp-1">
-                        {round.players.map((p) => p.name).join(', ')}
-                      </p>
-                    </div>
+              {rounds.map((round, index) => (
+                <motion.div
+                  key={round.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2, delay: index * 0.05 }}
+                >
+                  <Link href={`/round/${round.id}`}>
+                    <motion.div
+                      whileTap={{ scale: 0.95, opacity: 0.8 }}
+                      whileHover={{ scale: 1.02, y: -2 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                      className="card card-hover p-5 cursor-pointer active:bg-white/10"
+                    >
+                      <div className="flex justify-between items-start gap-3">
+                        <div>
+                          <h3 className="font-semibold text-lg tracking-tight">{round.courseName}</h3>
+                          <p className="text-zinc-400 text-sm">{formatDate(round.date)}</p>
+                          <p className="text-zinc-500 text-sm mt-1 line-clamp-1">
+                            {round.players.map((p) => p.name).join(', ')}
+                          </p>
+                        </div>
 
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs border ${
-                          round.status === 'active'
-                            ? 'bg-amber-500/10 border-amber-400/20 text-amber-200'
-                            : 'bg-white/5 border-white/10 text-zinc-300'
-                        }`}
-                      >
-                        {round.status === 'active' ? 'In Progress' : 'Complete'}
-                      </span>
-                      <button
-                        onClick={(e) => handleDelete(round.id, e)}
-                        className="btn btn-icon text-red-300 hover:text-red-200 hover:bg-red-500/10 border-red-400/20"
-                        aria-label="Delete round"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-5 w-5" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </div>
-                </Link>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs border ${
+                              round.status === 'active'
+                                ? 'bg-amber-500/10 border-amber-400/20 text-amber-200'
+                                : 'bg-white/5 border-white/10 text-zinc-300'
+                            }`}
+                          >
+                            {round.status === 'active' ? 'In Progress' : 'Complete'}
+                          </span>
+                          {round.status === 'completed' && (
+                            <motion.button
+                              whileTap={{ scale: 0.9 }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setSummaryRound(round);
+                              }}
+                              className="btn btn-icon text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10 border-emerald-400/20"
+                              aria-label="View summary"
+                              title="View Summary"
+                            >
+                              <ChartBar className="h-5 w-5" aria-hidden="true" />
+                            </motion.button>
+                          )}
+                          <motion.button
+                            whileTap={{ scale: 0.9 }}
+                            onClick={(e) => handleDelete(round.id, e)}
+                            className="btn btn-icon text-red-300 hover:text-red-200 hover:bg-red-500/10 border-red-400/20"
+                            aria-label="Delete round"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-5 w-5" aria-hidden="true" />
+                          </motion.button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  </Link>
+                </motion.div>
               ))}
             </div>
           )}
@@ -195,21 +227,36 @@ export default function Home() {
             <span className="text-[11px] font-medium">New</span>
           </Link>
           <Link
+            href="/caddie"
+            className="flex flex-col items-center p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
+          >
+            <Flag className="h-5 w-5" aria-hidden="true" />
+            <span className="text-[11px] font-medium">Caddie</span>
+          </Link>
+          <Link
             href="/profile"
             className="flex flex-col items-center p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
           >
             <User className="h-5 w-5" aria-hidden="true" />
             <span className="text-[11px] font-medium">Profile</span>
           </Link>
-          <Link
-            href="/settings"
-            className="flex flex-col items-center p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
-          >
-            <Settings className="h-5 w-5" aria-hidden="true" />
-            <span className="text-[11px] font-medium">Settings</span>
-          </Link>
         </div>
       </footer>
+
+      {/* Round Summary Modal */}
+      <AnimatePresence>
+        {summaryRound && (
+          <motion.div
+            key="summary"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+          >
+            <RoundSummary round={summaryRound} onClose={() => setSummaryRound(null)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
