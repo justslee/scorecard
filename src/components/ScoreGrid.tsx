@@ -1,8 +1,10 @@
 'use client';
 
 import { Round, calculateTotals, getScoreClass } from '@/lib/types';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Mic, MicOff, Loader2 } from 'lucide-react';
+import HoleScoreModal from './HoleScoreModal';
 
 interface ScoreGridProps {
   round: Round;
@@ -13,6 +15,182 @@ interface ScoreGridProps {
 
 export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSelect }: ScoreGridProps) {
   const [selectedCell, setSelectedCell] = useState<{ playerId: string; hole: number } | null>(null);
+  const [holeModalHole, setHoleModalHole] = useState<number | null>(null);
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [isProcessingVoice, setIsProcessingVoice] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  // Initialize voice recognition
+  useEffect(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0].transcript)
+          .join("");
+        setVoiceTranscript(transcript);
+
+        if (event.results[0].isFinal) {
+          processVoiceScores(transcript);
+        }
+      };
+
+      recognition.onend = () => {
+        setIsVoiceActive(false);
+      };
+
+      recognition.onerror = () => {
+        setIsVoiceActive(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+
+    return () => {
+      recognitionRef.current?.stop();
+    };
+  }, []);
+
+  const processVoiceScores = async (transcript: string) => {
+    setIsProcessingVoice(true);
+    const targetHole = currentHole || 1;
+
+    try {
+      const response = await fetch("/api/parse-voice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript,
+          systemPrompt: `Parse golf scores from voice. Players: ${round.players.map(p => p.name).join(", ")}. Current hole: ${targetHole}. Hole par: ${round.holes[targetHole - 1]?.par}.
+
+Common patterns:
+- "[Name] got a [number]" or "[Name] [number]"
+- "par for [Name]" means par score
+- "birdie for [Name]" means par - 1
+- "bogey for [Name]" means par + 1
+- "double for [Name]" or "double bogey" means par + 2
+- "eagle for [Name]" means par - 2
+- "everyone par" or "all par" means everyone gets par
+- "everyone par except [Name] [score]"
+- Can also specify hole: "hole 5 Justin 4 Dan 5"
+
+Return JSON: {"hole": number (use ${targetHole} if not specified), "scores": {"PlayerName": number}}
+
+Parse: "${transcript}"`,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        applyVoiceScores(result);
+      } else {
+        applyVoiceScores(parseVoiceLocally(transcript, targetHole));
+      }
+    } catch {
+      applyVoiceScores(parseVoiceLocally(transcript, targetHole));
+    } finally {
+      setIsProcessingVoice(false);
+      setVoiceTranscript("");
+    }
+  };
+
+  const parseVoiceLocally = (text: string, defaultHole: number) => {
+    const result: { hole: number; scores: Record<string, number> } = {
+      hole: defaultHole,
+      scores: {},
+    };
+    const lower = text.toLowerCase();
+    const par = round.holes[defaultHole - 1]?.par || 4;
+
+    // Check for hole number
+    const holeMatch = text.match(/hole\s+(\d+)/i);
+    if (holeMatch) {
+      result.hole = parseInt(holeMatch[1], 10);
+    }
+
+    const textToScore = (t: string): number => {
+      const l = t.toLowerCase();
+      if (l === "par") return par;
+      if (l === "birdie") return par - 1;
+      if (l === "eagle") return par - 2;
+      if (l === "bogey") return par + 1;
+      if (l === "double") return par + 2;
+      const num = parseInt(t, 10);
+      return isNaN(num) ? par : num;
+    };
+
+    // "everyone par" pattern
+    if (lower.includes("everyone par") || lower.includes("all par")) {
+      round.players.forEach((p) => {
+        result.scores[p.name] = par;
+      });
+      // Check for exceptions
+      const exceptPattern = /except\s+(\w+)\s+(?:got\s+)?(?:a\s+)?(\d+|par|birdie|bogey|double|eagle)/gi;
+      for (const match of text.matchAll(exceptPattern)) {
+        const name = match[1];
+        const player = round.players.find((p) => 
+          p.name.toLowerCase().includes(name.toLowerCase())
+        );
+        if (player) {
+          result.scores[player.name] = textToScore(match[2]);
+        }
+      }
+      return result;
+    }
+
+    // Individual scores
+    for (const player of round.players) {
+      // Pattern 1: "[score] for [Name]" - check this first (more specific)
+      const pattern1 = new RegExp(`(\\d+|par|birdie|bogey|double|eagle)\\s+for\\s+${player.name}(?:\\s|$|,)`, "i");
+      const match1 = text.match(pattern1);
+      if (match1 && match1[1]) {
+        result.scores[player.name] = textToScore(match1[1]);
+        continue;
+      }
+
+      // Pattern 2: "[Name] got a [X]" or "[Name] [X]" 
+      const pattern2 = new RegExp(`${player.name}\\s+(?:got\\s+)?(?:a\\s+)?(\\d+|par|birdie|bogey|double|eagle)(?:\\s|$|,)`, "i");
+      const match2 = text.match(pattern2);
+      if (match2 && match2[1]) {
+        result.scores[player.name] = textToScore(match2[1]);
+        continue;
+      }
+    }
+
+    return result;
+  };
+
+  const applyVoiceScores = (parsed: { hole: number; scores: Record<string, number> }) => {
+    for (const [name, score] of Object.entries(parsed.scores)) {
+      const player = round.players.find(
+        (p) => p.name.toLowerCase() === name.toLowerCase()
+      );
+      if (player) {
+        onScoreChange(player.id, parsed.hole, score);
+      }
+    }
+    onHoleSelect?.(parsed.hole);
+  };
+
+  const toggleVoice = () => {
+    if (isVoiceActive) {
+      recognitionRef.current?.stop();
+      setIsVoiceActive(false);
+    } else {
+      setVoiceTranscript("");
+      recognitionRef.current?.start();
+      setIsVoiceActive(true);
+    }
+  };
 
   const getScore = (playerId: string, holeNumber: number): number | null => {
     const score = round.scores.find((s) => s.playerId === playerId && s.holeNumber === holeNumber);
@@ -24,12 +202,16 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     onHoleSelect?.(hole);
   };
 
+  const handleHoleClick = (holeNumber: number) => {
+    setHoleModalHole(holeNumber);
+    onHoleSelect?.(holeNumber);
+  };
+
   const submitScore = useCallback(
     (strokes: number | null) => {
       if (!selectedCell) return;
 
       const { playerId, hole } = selectedCell;
-
       onScoreChange(playerId, hole, strokes);
 
       const currentPlayerIndex = round.players.findIndex((p) => p.id === playerId);
@@ -57,7 +239,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
       <button
         key={holeNumber}
         type="button"
-        onClick={() => onHoleSelect?.(holeNumber)}
+        onClick={() => handleHoleClick(holeNumber)}
         className={
           `min-w-[40px] w-full px-2 py-2 text-center text-xs font-medium transition-colors ` +
           (isCurrent
@@ -81,7 +263,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
             <h3 className="text-sm font-semibold tracking-tight">{label}</h3>
             <span className="text-xs text-zinc-500">Par {totalPar}</span>
           </div>
-          <span className="text-xs text-zinc-500">Tap a cell to enter scores</span>
+          <span className="text-xs text-zinc-500">Tap hole # for all players</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -162,6 +344,53 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
 
   return (
     <div>
+      {/* Voice input bar */}
+      <div className="mb-4 p-3 rounded-2xl bg-zinc-800/50 border border-zinc-700">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleVoice}
+            disabled={isProcessingVoice}
+            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
+              isVoiceActive
+                ? "bg-red-500 text-white scale-110 animate-pulse"
+                : "bg-emerald-500 text-white hover:bg-emerald-600"
+            } disabled:opacity-50`}
+          >
+            {isProcessingVoice ? (
+              <Loader2 className="w-6 h-6 animate-spin" />
+            ) : isVoiceActive ? (
+              <MicOff className="w-6 h-6" />
+            ) : (
+              <Mic className="w-6 h-6" />
+            )}
+          </button>
+          <div className="flex-1 min-w-0">
+            {isVoiceActive && !voiceTranscript && (
+              <p className="text-emerald-400 text-sm font-medium">Listening...</p>
+            )}
+            {voiceTranscript && (
+              <p className="text-white text-sm truncate">"{voiceTranscript}"</p>
+            )}
+            {!isVoiceActive && !voiceTranscript && !isProcessingVoice && (
+              <div>
+                <p className="text-zinc-300 text-sm font-medium">Voice Score Entry</p>
+                <p className="text-zinc-500 text-xs">Hole {currentHole || 1}</p>
+              </div>
+            )}
+            {isProcessingVoice && (
+              <p className="text-emerald-400 text-sm">Updating scores...</p>
+            )}
+          </div>
+        </div>
+        {!isVoiceActive && !isProcessingVoice && (
+          <div className="mt-2 pt-2 border-t border-zinc-700/50">
+            <p className="text-zinc-500 text-xs">
+              Try: "{round.players[0]?.name || 'Justin'} 4, {round.players[1]?.name || 'Dan'} 5" • "everyone par" • "par except {round.players[0]?.name || 'Justin'} bogey"
+            </p>
+          </div>
+        )}
+      </div>
+
       {renderNine(1, 9, 'Front 9')}
       {renderNine(10, 18, 'Back 9')}
 
@@ -194,6 +423,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
         </div>
       </div>
 
+      {/* Number pad for individual cell */}
       <AnimatePresence>
         {selectedCell && (
           <motion.div
@@ -243,6 +473,23 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
               </div>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Hole score modal */}
+      <AnimatePresence>
+        {holeModalHole !== null && (
+          <HoleScoreModal
+            hole={round.holes[holeModalHole - 1]}
+            players={round.players}
+            scores={Object.fromEntries(
+              round.players.map((p) => [p.id, getScore(p.id, holeModalHole)])
+            )}
+            onScoreChange={(playerId, score) => {
+              onScoreChange(playerId, holeModalHole, score);
+            }}
+            onClose={() => setHoleModalHole(null)}
+          />
         )}
       </AnimatePresence>
     </div>
