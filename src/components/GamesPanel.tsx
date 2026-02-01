@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react';
 import { Game, Round } from '@/lib/types';
 import AddGameModal from './AddGameModal';
 import GameResults from './GameResults';
+import VoiceGameSetup from './VoiceGameSetup';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Mic } from 'lucide-react';
 
 interface GamesPanelProps {
   round: Round;
@@ -14,6 +16,7 @@ interface GamesPanelProps {
 export default function GamesPanel({ round, onUpdateRound }: GamesPanelProps) {
   const games = useMemo(() => round.games ?? [], [round.games]);
   const [showAdd, setShowAdd] = useState(false);
+  const [showVoice, setShowVoice] = useState(false);
   const [activeGameId, setActiveGameId] = useState<string | null>(() => (round.games ?? [])[0]?.id ?? null);
 
   const activeGame = useMemo(() => games.find((g) => g.id === activeGameId) ?? null, [games, activeGameId]);
@@ -36,6 +39,16 @@ export default function GamesPanel({ round, onUpdateRound }: GamesPanelProps) {
     if (activeGameId === id) setActiveGameId(nextGames[0]?.id ?? null);
   };
 
+  const handleVoiceGame = (gameConfig: Omit<Game, 'id' | 'roundId'>) => {
+    const game: Game = {
+      ...gameConfig,
+      id: crypto.randomUUID(),
+      roundId: round.id,
+    };
+    handleAddGame(game);
+    setShowVoice(false);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -43,9 +56,19 @@ export default function GamesPanel({ round, onUpdateRound }: GamesPanelProps) {
           <h2 className="text-lg font-semibold tracking-tight">Games</h2>
           <p className="text-sm text-zinc-400">Add side bets and formats on top of the round.</p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="btn btn-primary">
-          + Add Game
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setShowVoice(true)} 
+            className="btn btn-secondary flex items-center gap-2"
+            title="Voice setup"
+          >
+            <Mic className="h-4 w-4" />
+            <span className="hidden sm:inline">Voice</span>
+          </button>
+          <button onClick={() => setShowAdd(true)} className="btn btn-primary">
+            + Add Game
+          </button>
+        </div>
       </div>
 
       {games.length === 0 ? (
@@ -109,6 +132,18 @@ export default function GamesPanel({ round, onUpdateRound }: GamesPanelProps) {
         {showAdd && (
           <motion.div key="add-game" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
             <AddGameModal round={round} onClose={() => setShowAdd(false)} onAddGame={handleAddGame} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showVoice && (
+          <motion.div key="voice-game" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
+            <VoiceGameSetup 
+              players={round.players} 
+              onCreateGame={handleVoiceGame} 
+              onClose={() => setShowVoice(false)} 
+            />
           </motion.div>
         )}
       </AnimatePresence>

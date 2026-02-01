@@ -5,17 +5,45 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Player, Tournament } from '@/lib/types';
 import { initializeStorage, saveTournament } from '@/lib/storage';
-import { Trophy, X } from 'lucide-react';
+import { Trophy, X, Mic } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import VoiceTournamentSetup from '@/components/VoiceTournamentSetup';
 
 export default function NewTournamentPage() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [numRounds, setNumRounds] = useState<number>(3);
   const [players, setPlayers] = useState<Player[]>([{ id: crypto.randomUUID(), name: '' }]);
+  const [showVoice, setShowVoice] = useState(false);
 
   useEffect(() => {
     initializeStorage();
   }, []);
+
+  const handleVoiceTournament = (config: {
+    name: string;
+    numRounds: number;
+    courses: string[];
+    playerNames: string[];
+    handicaps?: Record<string, number>;
+  }) => {
+    // Populate form with voice data
+    setName(config.name);
+    setNumRounds(config.numRounds);
+    
+    // Create players from names
+    const newPlayers = config.playerNames.map((playerName) => ({
+      id: crypto.randomUUID(),
+      name: playerName,
+      handicap: config.handicaps?.[playerName],
+    }));
+    
+    if (newPlayers.length > 0) {
+      setPlayers(newPlayers);
+    }
+    
+    setShowVoice(false);
+  };
 
   const addPlayer = () => setPlayers((p) => [...p, { id: crypto.randomUUID(), name: '' }]);
 
@@ -64,10 +92,18 @@ export default function NewTournamentPage() {
           <Link href="/" className="btn btn-icon" aria-label="Back">
             ←
           </Link>
-          <div>
+          <div className="flex-1">
             <h1 className="text-base font-semibold tracking-tight">New Tournament</h1>
             <p className="text-sm text-zinc-400">Create a multi-round event.</p>
           </div>
+          <button 
+            onClick={() => setShowVoice(true)} 
+            className="btn btn-secondary flex items-center gap-2"
+            title="Voice setup"
+          >
+            <Mic className="h-4 w-4" />
+            <span className="hidden sm:inline">Voice</span>
+          </button>
         </div>
         <div className="header-divider" />
       </header>
@@ -137,6 +173,17 @@ export default function NewTournamentPage() {
           </span>
         </button>
       </main>
+
+      <AnimatePresence>
+        {showVoice && (
+          <motion.div key="voice-tournament" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
+            <VoiceTournamentSetup 
+              onCreateTournament={handleVoiceTournament} 
+              onClose={() => setShowVoice(false)} 
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import AuthButtons from '@/components/AuthButtons';
 import { Round, Tournament } from '@/lib/types';
 import { deleteRound, getRounds, getTournaments, initializeStorage } from '@/lib/storage';
 import { motion } from 'framer-motion';
@@ -56,9 +57,12 @@ export default function Home() {
               <h1 className="text-xl font-semibold tracking-tight">Scorecard</h1>
               <Flag className="h-4 w-4 text-zinc-400" aria-hidden="true" />
             </div>
-            <Link href="/settings" className="btn btn-icon" aria-label="Settings">
-              <Settings className="h-5 w-5" aria-hidden="true" />
-            </Link>
+            <div className="flex items-center gap-2">
+              <AuthButtons />
+              <Link href="/settings" className="btn btn-icon" aria-label="Settings">
+                <Settings className="h-5 w-5" aria-hidden="true" />
+              </Link>
+            </div>
           </div>
         </div>
         <div className="header-divider" />

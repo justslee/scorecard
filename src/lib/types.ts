@@ -21,6 +21,18 @@ export interface Course {
   /** Optional tee boxes with different yardages/pars */
   tees?: TeeOption[];
   location?: string;
+  /** GolfAPI.io course ID for GPS features */
+  golfApiCourseId?: number;
+  /** GolfAPI.io club ID */
+  golfApiClubId?: number;
+  /** Hole coordinates for GPS map view */
+  holeCoordinates?: Array<{
+    holeNumber: number;
+    green: { lat: number; lng: number };
+    tee?: { lat: number; lng: number };
+    front?: { lat: number; lng: number };
+    back?: { lat: number; lng: number };
+  }>;
 }
 
 export interface Player {

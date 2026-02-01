@@ -9,14 +9,18 @@ import { parseScorecard, ocrResultToScores } from '@/lib/ocr';
 import ScoreGrid from '@/components/ScoreGrid';
 import CameraCapture from '@/components/CameraCapture';
 import GamesPanel from '@/components/GamesPanel';
+import GPSMapView from '@/components/GPSMapView';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Camera, Check } from 'lucide-react';
+import { Camera, Check, Map } from 'lucide-react';
+import { getCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
 
 export default function RoundPage() {
   const params = useParams();
   const [round, setRound] = useState<Round | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCamera, setShowCamera] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  const [mapCoordinates, setMapCoordinates] = useState<CourseCoordinates[]>([]);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [currentHole, setCurrentHole] = useState(1);
@@ -140,6 +144,27 @@ export default function RoundPage() {
     }
   };
 
+  const handleOpenMap = async () => {
+    if (!round) return;
+    
+    // Check if we have a GolfAPI course ID
+    // For now, use demo coordinates or fetch from API
+    // TODO: Load actual coordinates from GolfAPI based on golfApiCourseId
+    
+    // Demo: Generate sample coordinates for testing
+    // In production, this would come from GolfAPI.io
+    const demoCoordinates: CourseCoordinates[] = [];
+    
+    // If round has stored coordinates, use those
+    // Otherwise show error that GPS isn't available for this course
+    if (mapCoordinates.length === 0 && demoCoordinates.length === 0) {
+      alert('GPS map data not available for this course yet. Course data will be available after connecting to GolfAPI.io.');
+      return;
+    }
+    
+    setShowMap(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -181,6 +206,9 @@ export default function RoundPage() {
               </p>
             </div>
 
+            <button onClick={handleOpenMap} className="btn btn-icon" title="GPS Map" aria-label="GPS Map">
+              <Map className="h-5 w-5" aria-hidden="true" />
+            </button>
             <button onClick={() => setShowCamera(true)} className="btn btn-icon" title="Scan scorecard" aria-label="Scan scorecard">
               <Camera className="h-5 w-5" aria-hidden="true" />
             </button>
@@ -311,6 +339,21 @@ export default function RoundPage() {
         {showCamera && (
           <motion.div key="camera" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
             <CameraCapture onCapture={handleOCRCapture} onClose={() => setShowCamera(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showMap && mapCoordinates.length > 0 && (
+          <motion.div key="map" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
+            <GPSMapView
+              courseId={parseInt(round.courseId) || 0}
+              courseName={round.courseName}
+              holeCoordinates={mapCoordinates}
+              currentHole={currentHole}
+              onHoleChange={setCurrentHole}
+              onClose={() => setShowMap(false)}
+            />
           </motion.div>
         )}
       </AnimatePresence>
