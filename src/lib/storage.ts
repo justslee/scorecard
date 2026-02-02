@@ -251,8 +251,103 @@ export function initializeStorage(): void {
   }
 
   if (!localStorage.getItem(PLAYERS_KEY)) {
-    localStorage.setItem(PLAYERS_KEY, JSON.stringify([]));
+    localStorage.setItem(PLAYERS_KEY, JSON.stringify(getDefaultPlayers()));
   }
+}
+
+function getDefaultPlayers(): SavedPlayer[] {
+  const now = new Date().toISOString();
+  return [
+    {
+      id: 'player-mike-chen',
+      name: 'Mike Chen',
+      nickname: 'Bomber',
+      handicap: 8.2,
+      email: 'mike.chen@email.com',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'player-sarah-park',
+      name: 'Sarah Park',
+      nickname: 'Steady',
+      handicap: 12.5,
+      email: 'sarah.p@email.com',
+      phone: '+1 555-234-5678',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'player-james-wilson',
+      name: 'James Wilson',
+      nickname: 'JW',
+      handicap: 18.4,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'player-david-kim',
+      name: 'David Kim',
+      nickname: 'DK',
+      handicap: 5.1,
+      email: 'dkim@email.com',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'player-alex-rodriguez',
+      name: 'Alex Rodriguez',
+      nickname: 'A-Rod',
+      handicap: 14.8,
+      phone: '+1 555-876-5432',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'player-tom-bradley',
+      name: 'Tom Bradley',
+      nickname: 'TB',
+      handicap: 22.1,
+      email: 'tom.bradley@email.com',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'player-chris-nguyen',
+      name: 'Chris Nguyen',
+      nickname: 'Slice King',
+      handicap: 16.7,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'player-emily-watson',
+      name: 'Emily Watson',
+      nickname: 'Em',
+      handicap: 10.3,
+      email: 'emily.w@email.com',
+      phone: '+1 555-345-6789',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'player-ryan-murphy',
+      name: 'Ryan Murphy',
+      nickname: 'Murph',
+      handicap: 25.6,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'player-kevin-zhang',
+      name: 'Kevin Zhang',
+      nickname: 'KZ',
+      handicap: 7.4,
+      email: 'kevin.z@email.com',
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
 }
 
 // -----------------
