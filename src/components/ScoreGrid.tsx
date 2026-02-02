@@ -165,16 +165,28 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
         
         if (result.scores && Object.keys(result.scores).length > 0) {
           setPendingScores({ hole: result.hole || targetHole, scores: result.scores });
+        } else if (result.error) {
+          console.log('API error:', result.error);
+          // Fallback to local
+          const localResult = parseVoiceLocally(transcript, targetHole);
+          if (Object.keys(localResult.scores).length > 0) {
+            setPendingScores(localResult);
+          } else {
+            alert(`API error: ${result.error}`);
+          }
         } else {
           alert(`Couldn't parse scores from: "${transcript}"\n\nTry: "Justin 4 Mike 5" or "everyone par"`);
         }
       } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.log('API failed:', response.status, errorData);
         // Fallback to local parsing
         const localResult = parseVoiceLocally(transcript, targetHole);
+        console.log('Local fallback result:', localResult);
         if (Object.keys(localResult.scores).length > 0) {
           setPendingScores(localResult);
         } else {
-          alert(`Couldn't parse scores from: "${transcript}"`);
+          alert(`Couldn't parse scores from: "${transcript}"\n\nAPI: ${errorData.error || 'Failed'}`);
         }
       }
     } catch (err) {
@@ -272,33 +284,48 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
       return result;
     }
 
+    // Word to number mapping
+    const wordToNum: Record<string, number> = {
+      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+      'won': 1, 'to': 2, 'too': 2, 'for': 4, 'fore': 4,
+    };
+
     // Individual scores - try full name and first name
     for (const player of round.players) {
       const fullName = player.name;
       const firstName = fullName.split(' ')[0].toLowerCase();
       
-      // Look for this player's name anywhere in the text followed by a number
-      // Very forgiving - just find "name" ... "number" pattern
       const lowerText = text.toLowerCase();
       
       // Check if player's first name appears
       const nameIndex = lowerText.indexOf(firstName);
       if (nameIndex === -1) continue;
       
-      // Look for a number after the name (within reasonable distance)
-      const afterName = text.substring(nameIndex + firstName.length);
+      // Look for a number/word after the name
+      const afterName = lowerText.substring(nameIndex + firstName.length);
       
-      // Find first number in the text after the name
+      // Try digit first
       const numberMatch = afterName.match(/(\d+)/);
       if (numberMatch) {
         const score = parseInt(numberMatch[1], 10);
-        // Sanity check - golf scores are typically 1-15
         if (score >= 1 && score <= 15) {
           result.scores[player.name] = score;
-          console.log(`Matched ${player.name} (via "${firstName}") -> ${score}`);
+          console.log(`Matched ${player.name} -> ${score} (digit)`);
           continue;
         }
       }
+      
+      // Try word numbers (four, five, six, etc.)
+      for (const [word, num] of Object.entries(wordToNum)) {
+        const wordMatch = afterName.match(new RegExp(`\\b${word}\\b`));
+        if (wordMatch) {
+          result.scores[player.name] = num;
+          console.log(`Matched ${player.name} -> ${num} (word: ${word})`);
+          break;
+        }
+      }
+      if (result.scores[player.name]) continue;
       
       // Also check for words like par, birdie, bogey
       const scoreWords = ['par', 'birdie', 'eagle', 'bogey', 'double'];
