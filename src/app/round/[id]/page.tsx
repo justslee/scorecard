@@ -388,39 +388,33 @@ export default function RoundPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              className="absolute inset-0 bg-black/60"
               onClick={() => setShowCaddie(false)}
             />
             
-            {/* Panel */}
+            {/* Panel - swipe down to dismiss */}
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="relative w-full max-w-2xl max-h-[85vh] bg-zinc-950 rounded-t-3xl border-t border-x border-zinc-800 overflow-hidden"
+              drag="y"
+              dragConstraints={{ top: 0, bottom: 0 }}
+              dragElastic={{ top: 0, bottom: 0.8 }}
+              onDragEnd={(_, info) => {
+                if (info.offset.y > 100 || info.velocity.y > 500) {
+                  setShowCaddie(false);
+                }
+              }}
+              className="relative w-full max-w-2xl h-[92vh] bg-zinc-950 rounded-t-3xl border-t border-x border-zinc-800 overflow-hidden flex flex-col"
             >
-              {/* Handle */}
-              <div className="flex justify-center py-3">
-                <div className="w-10 h-1 rounded-full bg-zinc-700" />
+              {/* Drag handle */}
+              <div className="flex justify-center py-3 cursor-grab active:cursor-grabbing shrink-0">
+                <div className="w-10 h-1 rounded-full bg-zinc-600" />
               </div>
               
-              {/* Header */}
-              <div className="px-4 pb-3 flex items-center justify-between border-b border-zinc-800">
-                <div>
-                  <h2 className="text-lg font-semibold text-white">Caddie</h2>
-                  <p className="text-sm text-zinc-400">Hole {currentHole} • {round.courseName}</p>
-                </div>
-                <button
-                  onClick={() => setShowCaddie(false)}
-                  className="btn btn-icon text-zinc-400 hover:text-white"
-                >
-                  ✕
-                </button>
-              </div>
-              
-              {/* Content */}
-              <div className="overflow-y-auto max-h-[calc(85vh-100px)] px-4 py-4">
+              {/* Content - full height for map */}
+              <div className="flex-1 overflow-hidden">
                 <CaddiePanel round={round} currentHole={currentHole} onHoleChange={setCurrentHole} />
               </div>
             </motion.div>
