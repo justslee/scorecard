@@ -64,7 +64,7 @@ function getHoleInfo(round: Round, holeNumber: number): HoleInfo {
     return {
       number: holeNumber,
       par: holeData.par,
-      yards: holeData.yards || holeData.distance || 400,
+      yards: holeData.yards || 400,
       handicap: holeData.handicap || holeNumber,
       hazards: holeData.hazards || [],
       dogleg: holeData.dogleg || null,
