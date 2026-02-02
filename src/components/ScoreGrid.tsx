@@ -123,6 +123,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
   }, []);
 
   const processVoiceScores = async (transcript: string) => {
+    console.log('Processing voice transcript:', transcript);
     setIsProcessingVoice(true);
     const targetHole = currentHole || 1;
 
@@ -153,11 +154,14 @@ Parse: "${transcript}"`,
 
       if (response.ok) {
         const result = await response.json();
+        console.log('API parse result:', result);
         applyVoiceScores(result);
       } else {
+        console.log('API failed, using local parsing');
         applyVoiceScores(parseVoiceLocally(transcript, targetHole));
       }
-    } catch {
+    } catch (err) {
+      console.log('API error, using local parsing:', err);
       applyVoiceScores(parseVoiceLocally(transcript, targetHole));
     } finally {
       setIsProcessingVoice(false);
@@ -209,35 +213,76 @@ Parse: "${transcript}"`,
       return result;
     }
 
-    // Individual scores
+    // Individual scores - try full name and first name
     for (const player of round.players) {
-      // Pattern 1: "[score] for [Name]" - check this first (more specific)
-      const pattern1 = new RegExp(`(\\d+|par|birdie|bogey|double|eagle)\\s+for\\s+${player.name}(?:\\s|$|,)`, "i");
-      const match1 = text.match(pattern1);
-      if (match1 && match1[1]) {
-        result.scores[player.name] = textToScore(match1[1]);
-        continue;
-      }
+      const fullName = player.name;
+      const firstName = fullName.split(' ')[0];
+      const namesToTry = [fullName, firstName].filter(Boolean);
+      
+      let found = false;
+      for (const name of namesToTry) {
+        if (found) break;
+        
+        // Escape special regex characters in name
+        const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        // Pattern 1: "[score] for [Name]"
+        const pattern1 = new RegExp(`(\\d+|par|birdie|bogey|double|eagle)\\s+for\\s+${escapedName}(?:\\s|$|,|\\.)`, "i");
+        const match1 = text.match(pattern1);
+        if (match1 && match1[1]) {
+          result.scores[player.name] = textToScore(match1[1]);
+          found = true;
+          continue;
+        }
 
-      // Pattern 2: "[Name] got a [X]" or "[Name] [X]" 
-      const pattern2 = new RegExp(`${player.name}\\s+(?:got\\s+)?(?:a\\s+)?(\\d+|par|birdie|bogey|double|eagle)(?:\\s|$|,)`, "i");
-      const match2 = text.match(pattern2);
-      if (match2 && match2[1]) {
-        result.scores[player.name] = textToScore(match2[1]);
-        continue;
+        // Pattern 2: "[Name] got a [X]" or "[Name] [X]"
+        const pattern2 = new RegExp(`${escapedName}\\s+(?:got\\s+)?(?:a\\s+)?(\\d+|par|birdie|bogey|double|eagle)(?:\\s|$|,|\\.)`, "i");
+        const match2 = text.match(pattern2);
+        if (match2 && match2[1]) {
+          result.scores[player.name] = textToScore(match2[1]);
+          found = true;
+          continue;
+        }
+        
+        // Pattern 3: "[Name] [score]" (simpler, just name followed by score)
+        const pattern3 = new RegExp(`${escapedName}\\s+(\\d+)(?:\\s|$|,|\\.)`, "i");
+        const match3 = text.match(pattern3);
+        if (match3 && match3[1]) {
+          result.scores[player.name] = parseInt(match3[1], 10);
+          found = true;
+          continue;
+        }
       }
     }
-
+    
+    console.log('Local parse result:', result);
     return result;
   };
 
   const applyVoiceScores = (parsed: { hole: number; scores: Record<string, number> }) => {
+    console.log('Applying voice scores:', parsed);
+    
     for (const [name, score] of Object.entries(parsed.scores)) {
-      const player = round.players.find(
-        (p) => p.name.toLowerCase() === name.toLowerCase()
-      );
+      // Fuzzy match player name (first name, last name, or full name)
+      const nameLower = name.toLowerCase().trim();
+      const player = round.players.find((p) => {
+        const fullName = p.name.toLowerCase();
+        const firstName = fullName.split(' ')[0];
+        const lastName = fullName.split(' ').slice(-1)[0];
+        return (
+          fullName === nameLower ||
+          firstName === nameLower ||
+          lastName === nameLower ||
+          fullName.includes(nameLower) ||
+          nameLower.includes(firstName)
+        );
+      });
+      
       if (player) {
+        console.log(`Setting ${player.name} hole ${parsed.hole} = ${score}`);
         onScoreChange(player.id, parsed.hole, score);
+      } else {
+        console.log(`Could not match player: "${name}"`);
       }
     }
     onHoleSelect?.(parsed.hole);
