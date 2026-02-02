@@ -12,7 +12,7 @@ import GamesPanel from '@/components/GamesPanel';
 import GameLeaderboards from '@/components/GameLeaderboards';
 import GPSMapView from '@/components/GPSMapView';
 import RoundSummary from '@/components/RoundSummary';
-import CaddiePanel from '@/components/CaddiePanel';
+import CaddieModal from '@/components/CaddieModal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Check, Map } from 'lucide-react';
 import { getCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
@@ -377,29 +377,12 @@ export default function RoundPage() {
       {/* Caddie Panel Modal */}
       <AnimatePresence>
         {showCaddie && (
-          <motion.div
-            key="caddie-modal"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-50"
-          >
-            <motion.div
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="absolute inset-0"
-            >
-              <CaddiePanel 
-                round={round} 
-                currentHole={currentHole} 
-                onHoleChange={setCurrentHole}
-                onClose={() => setShowCaddie(false)}
-              />
-            </motion.div>
-          </motion.div>
+          <CaddieModal
+            round={round}
+            currentHole={currentHole}
+            onHoleChange={setCurrentHole}
+            onClose={() => setShowCaddie(false)}
+          />
         )}
       </AnimatePresence>
     </div>

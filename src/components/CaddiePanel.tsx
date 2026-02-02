@@ -110,7 +110,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
   const caddieAdvice = getCaddieAdvice();
 
   return (
-    <div className="relative h-full flex flex-col bg-black">
+    <div className="relative h-full flex flex-col bg-black overscroll-none">
       {/* MAP AREA */}
       <div 
         className="bg-gradient-to-b from-emerald-950 to-zinc-950 relative"
@@ -191,7 +191,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
         </button>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto px-4 pb-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-6">
           <div className="space-y-4">
             {/* Distance + Club */}
             <div className="flex gap-3">
