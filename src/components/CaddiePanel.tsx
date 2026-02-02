@@ -104,10 +104,29 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
     return null;
   };
 
-  // Handle swipe down on map to dismiss
+  // Handle swipe on map - down to dismiss, left/right for holes
   const handleMapDragEnd = (_: any, info: PanInfo) => {
-    if (info.offset.y > 100 || info.velocity.y > 500) {
+    const { offset, velocity } = info;
+    
+    // Swipe down to dismiss
+    if (offset.y > 100 || velocity.y > 500) {
       onClose();
+      return;
+    }
+    
+    // Swipe left for next hole
+    if (offset.x < -50 || velocity.x < -300) {
+      if (currentHole < 18) {
+        onHoleChange(currentHole + 1);
+      }
+      return;
+    }
+    
+    // Swipe right for previous hole
+    if (offset.x > 50 || velocity.x > 300) {
+      if (currentHole > 1) {
+        onHoleChange(currentHole - 1);
+      }
     }
   };
 
@@ -138,12 +157,12 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
 
   return (
     <div ref={containerRef} className="relative h-full flex flex-col bg-black overscroll-none">
-      {/* MAP AREA - Swipe down to dismiss */}
+      {/* MAP AREA - Swipe down to dismiss, left/right for holes */}
       <motion.div 
         className="flex-1 bg-gradient-to-b from-emerald-950 to-zinc-950 relative"
-        drag="y"
-        dragConstraints={{ top: 0, bottom: 0 }}
-        dragElastic={{ top: 0, bottom: 0.5 }}
+        drag
+        dragConstraints={{ top: 0, bottom: 0, left: 0, right: 0 }}
+        dragElastic={{ top: 0, bottom: 0.5, left: 0.3, right: 0.3 }}
         onDragEnd={handleMapDragEnd}
       >
         {/* Close button */}
@@ -171,9 +190,27 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
           <Locate className={`w-5 h-5 ${gpsLoading ? 'animate-pulse' : ''}`} />
         </button>
 
-        {/* Swipe hint */}
+        {/* Navigation arrows */}
+        {currentHole > 1 && (
+          <button
+            onClick={() => onHoleChange(currentHole - 1)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/30 flex items-center justify-center text-white/60 z-10"
+          >
+            ‹
+          </button>
+        )}
+        {currentHole < 18 && (
+          <button
+            onClick={() => onHoleChange(currentHole + 1)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/30 flex items-center justify-center text-white/60 z-10"
+          >
+            ›
+          </button>
+        )}
+
+        {/* Map placeholder */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-          <div className="relative w-40 h-56 mx-auto mb-4">
+          <div className="relative w-40 h-48 mx-auto mb-2">
             <div className="absolute inset-x-6 top-16 bottom-0 bg-emerald-800/30 rounded-t-full" />
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-20 h-20 bg-emerald-600/40 rounded-full" />
             <div className="absolute top-6 left-1/2 -translate-x-1/2">
@@ -181,8 +218,30 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
             </div>
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-4 h-4 bg-white/50 rounded-full" />
           </div>
-          <p className="text-zinc-500 text-xs">Swipe down to close</p>
         </div>
+
+        {/* Hole dots */}
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+          {Array.from({ length: currentHole <= 9 ? 9 : 9 }, (_, i) => {
+            const holeNum = currentHole <= 9 ? i + 1 : i + 10;
+            return (
+              <button
+                key={holeNum}
+                onClick={() => onHoleChange(holeNum)}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  holeNum === currentHole 
+                    ? 'bg-emerald-400 w-4' 
+                    : 'bg-zinc-600 hover:bg-zinc-500'
+                }`}
+              />
+            );
+          })}
+        </div>
+
+        {/* Swipe hints */}
+        <p className="absolute bottom-12 left-1/2 -translate-x-1/2 text-zinc-600 text-xs">
+          ← swipe for holes • down to close →
+        </p>
 
         {/* Distance overlay */}
         {distanceToPin && sheetState === 'peek' && (
