@@ -6,12 +6,94 @@ import { useParams, useRouter } from 'next/navigation';
 import { Course, Round, Player, PlayerGroup } from '@/lib/types';
 import { addRoundToTournament, getCourses, getTournament, saveRound } from '@/lib/storage';
 import { Flag, Users, Plus, X, Clock, GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+  DragOverEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface GroupDraft {
   id: string;
   name: string;
   teeTime: string;
   playerIds: string[];
+}
+
+// Sortable player item component
+function SortablePlayer({ 
+  id, 
+  name, 
+  onRemove 
+}: { 
+  id: string; 
+  name: string; 
+  onRemove?: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/5 ${
+        isDragging ? 'opacity-50 shadow-lg ring-2 ring-emerald-500/50' : ''
+      }`}
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="touch-none cursor-grab active:cursor-grabbing p-0.5 -ml-1"
+      >
+        <GripVertical className="w-4 h-4 text-zinc-500" />
+      </button>
+      <span className="flex-1 text-sm text-zinc-200">{name}</span>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="p-1 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Dragged player overlay
+function DraggedPlayer({ name }: { name: string }) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/50 shadow-xl">
+      <GripVertical className="w-4 h-4 text-emerald-400" />
+      <span className="text-sm text-emerald-200 font-medium">{name}</span>
+    </div>
+  );
 }
 
 export default function NewTournamentRoundPage() {
@@ -26,6 +108,7 @@ export default function NewTournamentRoundPage() {
   // Group management
   const [groups, setGroups] = useState<GroupDraft[]>([]);
   const [showGroupSetup, setShowGroupSetup] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const tournament = useMemo(() => (tournamentId ? getTournament(tournamentId) : null), [tournamentId]);
 
@@ -43,6 +126,18 @@ export default function NewTournamentRoundPage() {
     const assignedIds = new Set(groups.flatMap(g => g.playerIds));
     return allPlayers.filter(p => !assignedIds.has(p.id));
   }, [allPlayers, groups]);
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     setCourses(getCourses());
@@ -107,23 +202,103 @@ export default function NewTournamentRoundPage() {
     setGroups(groups.map(g => g.id === groupId ? { ...g, ...updates } : g));
   };
 
-  // Add player to group
-  const addPlayerToGroup = (groupId: string, playerId: string) => {
-    setGroups(groups.map(g => 
-      g.id === groupId 
-        ? { ...g, playerIds: [...g.playerIds, playerId] }
-        : g
-    ));
+  // Find which group contains a player
+  const findGroupContainingPlayer = (playerId: string): string | null => {
+    for (const group of groups) {
+      if (group.playerIds.includes(playerId)) {
+        return group.id;
+      }
+    }
+    return null;
   };
 
-  // Remove player from group
-  const removePlayerFromGroup = (groupId: string, playerId: string) => {
-    setGroups(groups.map(g => 
-      g.id === groupId 
-        ? { ...g, playerIds: g.playerIds.filter(id => id !== playerId) }
-        : g
-    ));
+  // DnD handlers
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
   };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activePlayerId = active.id as string;
+    const overId = over.id as string;
+
+    // Find source and destination groups
+    const sourceGroupId = findGroupContainingPlayer(activePlayerId);
+    
+    // Determine target group - could be over a player or a group droppable
+    let targetGroupId: string | null = null;
+    
+    // Check if over a group directly
+    const overGroup = groups.find(g => g.id === overId);
+    if (overGroup) {
+      targetGroupId = overGroup.id;
+    } else {
+      // Check if over a player in a group
+      targetGroupId = findGroupContainingPlayer(overId);
+    }
+
+    // Check if dropping on unassigned area
+    if (overId === 'unassigned' || unassignedPlayers.some(p => p.id === overId)) {
+      // Remove from current group
+      if (sourceGroupId) {
+        setGroups(groups.map(g => 
+          g.id === sourceGroupId 
+            ? { ...g, playerIds: g.playerIds.filter(id => id !== activePlayerId) }
+            : g
+        ));
+      }
+      return;
+    }
+
+    if (sourceGroupId === targetGroupId) return;
+
+    // Move player to new group
+    if (targetGroupId) {
+      setGroups(groups.map(g => {
+        if (g.id === sourceGroupId) {
+          return { ...g, playerIds: g.playerIds.filter(id => id !== activePlayerId) };
+        }
+        if (g.id === targetGroupId) {
+          if (!g.playerIds.includes(activePlayerId)) {
+            return { ...g, playerIds: [...g.playerIds, activePlayerId] };
+          }
+        }
+        return g;
+      }));
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
+    
+    const { active, over } = event;
+    if (!over) return;
+
+    const activePlayerId = active.id as string;
+    const overId = over.id as string;
+
+    // If dropping on a group, add to that group
+    const overGroup = groups.find(g => g.id === overId);
+    if (overGroup && !overGroup.playerIds.includes(activePlayerId)) {
+      // Remove from any existing group first
+      const updatedGroups = groups.map(g => ({
+        ...g,
+        playerIds: g.playerIds.filter(id => id !== activePlayerId)
+      }));
+      
+      // Add to target group
+      setGroups(updatedGroups.map(g => 
+        g.id === overId 
+          ? { ...g, playerIds: [...g.playerIds, activePlayerId] }
+          : g
+      ));
+    }
+  };
+
+  // Get active player name for drag overlay
+  const activePlayer = activeId ? allPlayers.find(p => p.id === activeId) : null;
 
   const handleStartRound = () => {
     if (!tournamentId || !tournament) return;
@@ -250,7 +425,7 @@ export default function NewTournamentRoundPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-xs font-medium text-zinc-400 tracking-wide uppercase">Groups & Tee Times</div>
-              <p className="text-xs text-zinc-500 mt-1">Optional: Organize players into groups</p>
+              <p className="text-xs text-zinc-500 mt-1">Drag players between groups</p>
             </div>
             {!showGroupSetup && (
               <button
@@ -265,102 +440,134 @@ export default function NewTournamentRoundPage() {
           </div>
 
           {showGroupSetup ? (
-            <div className="space-y-4">
-              {/* Groups */}
-              {groups.map((group, groupIndex) => (
-                <div key={group.id} className="border border-white/10 rounded-xl p-3 bg-white/2">
-                  <div className="flex items-center gap-2 mb-3">
-                    <input
-                      type="text"
-                      value={group.name}
-                      onChange={(e) => updateGroup(group.id, { name: e.target.value })}
-                      className="flex-1 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm font-medium"
-                      placeholder="Group name"
-                    />
-                    <div className="flex items-center gap-1 bg-white/5 rounded-lg px-2 py-1.5 border border-white/10">
-                      <Clock className="w-4 h-4 text-zinc-400" />
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="space-y-4">
+                {/* Groups */}
+                {groups.map((group) => (
+                  <div 
+                    key={group.id} 
+                    className="border border-white/10 rounded-xl p-3 bg-white/2"
+                  >
+                    <div className="flex items-center gap-2 mb-3">
                       <input
                         type="text"
-                        value={group.teeTime}
-                        onChange={(e) => updateGroup(group.id, { teeTime: e.target.value })}
-                        className="w-20 bg-transparent text-sm text-center"
-                        placeholder="8:00 AM"
+                        value={group.name}
+                        onChange={(e) => updateGroup(group.id, { name: e.target.value })}
+                        className="flex-1 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-sm font-medium"
+                        placeholder="Group name"
                       />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeGroup(group.id)}
-                      className="p-1.5 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-red-400"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Players in group */}
-                  <div className="space-y-1.5">
-                    {group.playerIds.map((playerId) => {
-                      const player = allPlayers.find(p => p.id === playerId);
-                      return (
-                        <div key={playerId} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/3">
-                          <GripVertical className="w-4 h-4 text-zinc-600" />
-                          <span className="flex-1 text-sm text-zinc-200">{player?.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => removePlayerFromGroup(group.id, playerId)}
-                            className="p-1 rounded hover:bg-white/5 text-zinc-500 hover:text-zinc-300"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      );
-                    })}
-
-                    {/* Add player dropdown */}
-                    {unassignedPlayers.length > 0 && (
-                      <select
-                        value=""
-                        onChange={(e) => {
-                          if (e.target.value) addPlayerToGroup(group.id, e.target.value);
-                        }}
-                        className="w-full px-3 py-1.5 rounded-lg bg-white/5 border border-dashed border-white/10 text-sm text-zinc-400"
+                      <div className="flex items-center gap-1 bg-white/5 rounded-lg px-2 py-1.5 border border-white/10">
+                        <Clock className="w-4 h-4 text-zinc-400" />
+                        <input
+                          type="text"
+                          value={group.teeTime}
+                          onChange={(e) => updateGroup(group.id, { teeTime: e.target.value })}
+                          className="w-20 bg-transparent text-sm text-center"
+                          placeholder="8:00 AM"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeGroup(group.id)}
+                        className="p-1.5 rounded-lg hover:bg-white/5 text-zinc-400 hover:text-red-400"
                       >
-                        <option value="">+ Add player...</option>
-                        {unassignedPlayers.map((p) => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
-                    )}
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Droppable area for players */}
+                    <SortableContext
+                      items={group.playerIds}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div 
+                        className="space-y-1.5 min-h-[40px] p-2 rounded-lg bg-white/2 border border-dashed border-white/10"
+                        data-group-id={group.id}
+                      >
+                        {group.playerIds.length === 0 ? (
+                          <div className="text-xs text-zinc-500 text-center py-2">
+                            Drop players here
+                          </div>
+                        ) : (
+                          group.playerIds.map((playerId) => {
+                            const player = allPlayers.find(p => p.id === playerId);
+                            if (!player) return null;
+                            return (
+                              <SortablePlayer
+                                key={playerId}
+                                id={playerId}
+                                name={player.name}
+                                onRemove={() => {
+                                  setGroups(groups.map(g => 
+                                    g.id === group.id 
+                                      ? { ...g, playerIds: g.playerIds.filter(id => id !== playerId) }
+                                      : g
+                                  ));
+                                }}
+                              />
+                            );
+                          })
+                        )}
+                      </div>
+                    </SortableContext>
                   </div>
-                </div>
-              ))}
+                ))}
 
-              {/* Add group button */}
-              <button
-                type="button"
-                onClick={addGroup}
-                className="w-full py-2.5 rounded-xl border border-dashed border-white/10 text-sm text-zinc-400 hover:bg-white/2 hover:text-zinc-200 flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Add Group
-              </button>
+                {/* Add group button */}
+                <button
+                  type="button"
+                  onClick={addGroup}
+                  className="w-full py-2.5 rounded-xl border border-dashed border-white/10 text-sm text-zinc-400 hover:bg-white/2 hover:text-zinc-200 flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Group
+                </button>
 
-              {/* Unassigned players warning */}
-              {unassignedPlayers.length > 0 && (
-                <div className="text-xs text-amber-400 bg-amber-500/10 px-3 py-2 rounded-lg">
-                  {unassignedPlayers.length} player{unassignedPlayers.length > 1 ? 's' : ''} not assigned to a group:
-                  {' '}{unassignedPlayers.map(p => p.name).join(', ')}
-                </div>
-              )}
+                {/* Unassigned players */}
+                {unassignedPlayers.length > 0 && (
+                  <div className="border border-amber-500/30 rounded-xl p-3 bg-amber-500/5">
+                    <div className="text-xs font-medium text-amber-400 mb-2 flex items-center gap-2">
+                      <Users className="w-3.5 h-3.5" />
+                      Unassigned Players
+                    </div>
+                    <SortableContext
+                      items={unassignedPlayers.map(p => p.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-1.5">
+                        {unassignedPlayers.map((player) => (
+                          <SortablePlayer
+                            key={player.id}
+                            id={player.id}
+                            name={player.name}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </div>
+                )}
 
-              {/* Clear groups */}
-              <button
-                type="button"
-                onClick={() => { setGroups([]); setShowGroupSetup(false); }}
-                className="text-xs text-zinc-500 hover:text-zinc-300"
-              >
-                Clear all groups
-              </button>
-            </div>
+                {/* Clear groups */}
+                <button
+                  type="button"
+                  onClick={() => { setGroups([]); setShowGroupSetup(false); }}
+                  className="text-xs text-zinc-500 hover:text-zinc-300"
+                >
+                  Clear all groups
+                </button>
+              </div>
+
+              {/* Drag overlay */}
+              <DragOverlay>
+                {activePlayer ? <DraggedPlayer name={activePlayer.name} /> : null}
+              </DragOverlay>
+            </DndContext>
           ) : (
             <div className="text-center py-4 text-zinc-500 text-sm">
               All {allPlayers.length} players will be shown together on the scorecard.
