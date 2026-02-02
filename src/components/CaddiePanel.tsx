@@ -159,8 +159,6 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
     return { main: mainTip || "🏌️ Play smart, commit to your shot", details: advice };
   };
 
-  const caddieAdvice = getCaddieAdvice();
-
   // Handle swipe on map - down to dismiss, left/right for holes
   const handleMapDragEnd = (_: any, info: PanInfo) => {
     const { offset, velocity } = info;
@@ -366,7 +364,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
                 {/* Caddie Strategy */}
                 <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
                   <p className="text-base font-medium text-emerald-300">{caddieAdvice.main}</p>
-                  {caddieAdvice.details.length > 0 && sheetState !== 'peek' && (
+                  {caddieAdvice.details.length > 0 && (
                     <ul className="mt-2 space-y-1">
                       {caddieAdvice.details.slice(0, sheetState === 'full' ? undefined : 2).map((tip, i) => (
                         <li key={i} className="text-sm text-emerald-400/80 flex items-start gap-2">
