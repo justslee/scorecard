@@ -39,6 +39,16 @@ export interface Player {
   id: string;
   name: string;
   handicap?: number;
+  /** Group ID this player belongs to (for tournament rounds) */
+  groupId?: string;
+}
+
+export interface PlayerGroup {
+  id: string;
+  name: string; // e.g., "Group 1", "Morning Flight"
+  teeTime?: string; // e.g., "8:00 AM"
+  startingHole?: number; // For shotgun starts (1-18)
+  playerIds: string[];
 }
 
 export interface Score {
@@ -131,6 +141,8 @@ export interface Round {
   holes: HoleInfo[];
   /** Side games (skins, nassau, best ball, etc.) attached to this round */
   games?: Game[];
+  /** Player groups with tee times (for tournament rounds) */
+  groups?: PlayerGroup[];
   status: 'active' | 'completed';
   /** If present, this round is part of a tournament */
   tournamentId?: string;

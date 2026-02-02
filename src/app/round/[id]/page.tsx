@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Round } from '@/lib/types';
-import { getRound, saveRound } from '@/lib/storage';
+import { Round, Tournament } from '@/lib/types';
+import { getRound, saveRound, getTournament, getRounds } from '@/lib/storage';
 import { parseScorecard, ocrResultToScores } from '@/lib/ocr';
 import ScoreGrid from '@/components/ScoreGrid';
 import CameraCapture from '@/components/CameraCapture';
@@ -13,8 +13,9 @@ import GameLeaderboards from '@/components/GameLeaderboards';
 import GPSMapView from '@/components/GPSMapView';
 import RoundSummary from '@/components/RoundSummary';
 import CaddieModal from '@/components/CaddieModal';
+import TournamentLeaderboard from '@/components/TournamentLeaderboard';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Camera, Check, Map } from 'lucide-react';
+import { Camera, Check, Map, Trophy, ChevronRight, Users } from 'lucide-react';
 import { getCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
 import { hapticCelebration, hapticSuccess } from '@/lib/haptics';
 
@@ -28,9 +29,24 @@ export default function RoundPage() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [currentHole, setCurrentHole] = useState(1);
-  const [activeTab, setActiveTab] = useState<'scores' | 'games'>('scores');
+  const [activeTab, setActiveTab] = useState<'scores' | 'games' | 'tournament'>('scores');
   const [showCaddie, setShowCaddie] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+
+  // Tournament data (if this round is part of one)
+  const tournament = useMemo(() => {
+    if (!round?.tournamentId) return null;
+    return getTournament(round.tournamentId);
+  }, [round?.tournamentId]);
+
+  // All rounds in this tournament (for leaderboard)
+  const tournamentRounds = useMemo(() => {
+    if (!tournament) return [];
+    const allRounds = getRounds();
+    return allRounds.filter(r => 
+      tournament.roundIds.includes(r.id) || r.tournamentId === tournament.id
+    );
+  }, [tournament]);
 
   useEffect(() => {
     const id = params.id as string;
@@ -223,6 +239,34 @@ export default function RoundPage() {
         <div className="header-divider" />
       </header>
 
+      {/* Tournament Banner - shows when round is part of a tournament */}
+      {tournament && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-500/20">
+          <div className="max-w-4xl mx-auto px-4 py-2">
+            <Link 
+              href={`/tournament/${tournament.id}`}
+              className="flex items-center justify-between group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                  <Trophy className="w-4 h-4 text-amber-400" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-amber-200 group-hover:text-amber-100 transition-colors">
+                    {tournament.name}
+                  </div>
+                  <div className="text-xs text-amber-400/70">
+                    Round {tournamentRounds.findIndex(r => r.id === round?.id) + 1} of {tournament.numRounds || tournamentRounds.length}
+                    {' • '}{tournament.playerIds.length} players
+                  </div>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-amber-400/50 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
+            </Link>
+          </div>
+        </div>
+      )}
+
       <AnimatePresence initial={false}>
         {ocrLoading ? (
           <motion.div
@@ -275,6 +319,15 @@ export default function RoundPage() {
           >
             Games
           </button>
+          {tournament && (
+            <button
+              onClick={() => setActiveTab('tournament')}
+              className={`pill-tab flex items-center gap-1.5 ${activeTab === 'tournament' ? 'pill-tab-active text-amber-200' : 'text-zinc-400 hover:text-zinc-200'}`}
+            >
+              <Trophy className="w-3.5 h-3.5" />
+              Leaderboard
+            </button>
+          )}
         </div>
 
         <AnimatePresence mode="wait" initial={false}>
@@ -338,6 +391,90 @@ export default function RoundPage() {
               transition={{ duration: 0.18, ease: 'easeOut' }}
             >
               <GamesPanel round={round} onUpdateRound={handleUpdateRound} />
+            </motion.div>
+          )}
+          {activeTab === 'tournament' && tournament && (
+            <motion.div
+              key="tournament"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
+              {/* Tournament header */}
+              <div className="card p-5 mb-4 bg-gradient-to-br from-amber-500/10 to-transparent border-amber-500/20">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                    <Trophy className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div>
+                    <h2 className="font-semibold text-lg text-amber-100">{tournament.name}</h2>
+                    <p className="text-sm text-amber-400/70">
+                      {tournamentRounds.length} round{tournamentRounds.length !== 1 ? 's' : ''} • {tournament.playerIds.length} players
+                    </p>
+                  </div>
+                </div>
+                <Link 
+                  href={`/tournament/${tournament.id}`}
+                  className="text-sm text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                >
+                  View full tournament page
+                  <ChevronRight className="w-4 h-4" />
+                </Link>
+              </div>
+
+              {/* Live leaderboard */}
+              <div className="card p-4 mb-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <h3 className="text-sm font-medium text-zinc-200">Live Leaderboard</h3>
+                </div>
+                <TournamentLeaderboard tournament={tournament} rounds={tournamentRounds} />
+              </div>
+
+              {/* This round's scores by group */}
+              {round.groups && round.groups.length > 0 && (
+                <div className="card p-4">
+                  <h3 className="text-sm font-medium text-zinc-200 mb-3 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-zinc-400" />
+                    Groups Playing Now
+                  </h3>
+                  <div className="space-y-3">
+                    {round.groups.map((group, idx) => {
+                      const groupPlayers = round.players.filter(p => 
+                        group.playerIds.includes(p.id) || p.groupId === group.id
+                      );
+                      return (
+                        <div key={group.id} className="bg-white/5 rounded-lg p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-zinc-200">{group.name}</span>
+                            {group.teeTime && (
+                              <span className="text-xs text-zinc-500">{group.teeTime}</span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {groupPlayers.map(player => {
+                              const playerScores = round.scores.filter(s => s.playerId === player.id);
+                              const holesPlayed = playerScores.filter(s => s.strokes !== null).length;
+                              const totalStrokes = playerScores.reduce((sum, s) => sum + (s.strokes || 0), 0);
+                              return (
+                                <div key={player.id} className="bg-white/5 px-2 py-1 rounded text-xs">
+                                  <span className="text-zinc-300">{player.name}</span>
+                                  {holesPlayed > 0 && (
+                                    <span className="text-zinc-500 ml-1">
+                                      ({totalStrokes} thru {holesPlayed})
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

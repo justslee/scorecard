@@ -1,9 +1,9 @@
 'use client';
 
-import { Round, calculateTotals, getScoreClass } from '@/lib/types';
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { Round, Player, PlayerGroup, calculateTotals, getScoreClass } from '@/lib/types';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Mic, MicOff, Loader2 } from 'lucide-react';
+import { Mic, MicOff, Loader2, Users } from 'lucide-react';
 import HoleScoreModal from './HoleScoreModal';
 
 interface ScoreGridProps {
@@ -13,6 +13,22 @@ interface ScoreGridProps {
   onHoleSelect?: (hole: number) => void;
 }
 
+// Group colors for visual distinction
+const GROUP_COLORS = [
+  { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400', badge: 'bg-emerald-500/20' },
+  { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', badge: 'bg-blue-500/20' },
+  { bg: 'bg-purple-500/10', border: 'border-purple-500/30', text: 'text-purple-400', badge: 'bg-purple-500/20' },
+  { bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-400', badge: 'bg-amber-500/20' },
+  { bg: 'bg-rose-500/10', border: 'border-rose-500/30', text: 'text-rose-400', badge: 'bg-rose-500/20' },
+  { bg: 'bg-cyan-500/10', border: 'border-cyan-500/30', text: 'text-cyan-400', badge: 'bg-cyan-500/20' },
+];
+
+interface GroupedPlayers {
+  group: PlayerGroup | null;
+  players: Player[];
+  colorIndex: number;
+}
+
 export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSelect }: ScoreGridProps) {
   const [selectedCell, setSelectedCell] = useState<{ playerId: string; hole: number } | null>(null);
   const [holeModalHole, setHoleModalHole] = useState<number | null>(null);
@@ -20,6 +36,49 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
   const recognitionRef = useRef<any>(null);
+
+  // Organize players by group
+  const groupedPlayers = useMemo((): GroupedPlayers[] => {
+    if (!round.groups || round.groups.length === 0) {
+      // No groups defined - return all players in one "group"
+      return [{ group: null, players: round.players, colorIndex: 0 }];
+    }
+
+    const result: GroupedPlayers[] = [];
+    const assignedPlayerIds = new Set<string>();
+
+    // Sort groups by tee time
+    const sortedGroups = [...round.groups].sort((a, b) => {
+      if (!a.teeTime && !b.teeTime) return 0;
+      if (!a.teeTime) return 1;
+      if (!b.teeTime) return -1;
+      return a.teeTime.localeCompare(b.teeTime);
+    });
+
+    sortedGroups.forEach((group, index) => {
+      const groupPlayers = round.players.filter(p => 
+        group.playerIds.includes(p.id) || p.groupId === group.id
+      );
+      groupPlayers.forEach(p => assignedPlayerIds.add(p.id));
+      result.push({
+        group,
+        players: groupPlayers,
+        colorIndex: index % GROUP_COLORS.length,
+      });
+    });
+
+    // Add any unassigned players
+    const unassignedPlayers = round.players.filter(p => !assignedPlayerIds.has(p.id));
+    if (unassignedPlayers.length > 0) {
+      result.push({
+        group: null,
+        players: unassignedPlayers,
+        colorIndex: result.length % GROUP_COLORS.length,
+      });
+    }
+
+    return result;
+  }, [round.groups, round.players]);
 
   // Initialize voice recognition
   useEffect(() => {
@@ -286,101 +345,138 @@ Parse: "${transcript}"`,
               <div className="px-2 py-2 text-center text-xs font-semibold text-zinc-300">{totalPar}</div>
             </div>
 
-            {/* Players */}
-            <div className="divide-y divide-white/6 border-x border-b border-white/10 rounded-b-xl overflow-hidden">
-              {round.players.map((player) => {
-                const totals = calculateTotals(round.scores, round.holes, player.id);
-                const nineTotal = start === 1 ? totals.front9 : totals.back9;
-
+            {/* Players - grouped by tee time */}
+            <div className="border-x border-b border-white/10 rounded-b-xl overflow-hidden">
+              {groupedPlayers.map(({ group, players, colorIndex }) => {
+                const colors = GROUP_COLORS[colorIndex];
+                const hasGroups = round.groups && round.groups.length > 0;
+                
                 return (
-                  <div
-                    key={`${player.id}-${start}`}
-                    className="grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch bg-white/0"
-                  >
-                    <div className="px-3 py-2 text-sm font-medium text-zinc-200 truncate">
-                      {player.name}
-                    </div>
+                  <div key={group?.id || 'ungrouped'}>
+                    {/* Group header - only show if groups are defined */}
+                    {hasGroups && (
+                      <div className={`grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch ${colors.bg} border-t ${colors.border}`}>
+                        <div className="col-span-11 px-3 py-1.5 flex items-center gap-2">
+                          <Users className={`w-3.5 h-3.5 ${colors.text}`} />
+                          <span className={`text-xs font-medium ${colors.text}`}>
+                            {group?.name || 'Unassigned'}
+                          </span>
+                          {group?.teeTime && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${colors.badge} ${colors.text}`}>
+                              {group.teeTime}
+                            </span>
+                          )}
+                          {group?.startingHole && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${colors.badge} ${colors.text}`}>
+                              Hole {group.startingHole}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Players in this group */}
+                    <div className="divide-y divide-white/6">
+                      {players.map((player) => {
+                        const totals = calculateTotals(round.scores, round.holes, player.id);
+                        const nineTotal = start === 1 ? totals.front9 : totals.back9;
 
-                    {holes.map((hole) => {
-                      const score = getScore(player.id, hole.number);
-                      const isSelected = selectedCell?.playerId === player.id && selectedCell?.hole === hole.number;
+                        return (
+                          <div
+                            key={`${player.id}-${start}`}
+                            className={`grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch ${hasGroups ? colors.bg + '/30' : 'bg-white/0'}`}
+                          >
+                            <div className="px-3 py-2 text-sm font-medium text-zinc-200 truncate flex items-center gap-2">
+                              {hasGroups && (
+                                <span className={`w-2 h-2 rounded-full ${colors.badge}`} />
+                              )}
+                              {player.name}
+                            </div>
 
-                      const scoreStateClass =
-                        score !== null
-                          ? getScoreClass(score, hole.par)
-                          : 'text-zinc-300';
-                      
-                      // Golf score indicator: circle for birdie, square for bogey, etc.
-                      const diff = score !== null ? score - hole.par : 0;
-                      const getScoreIndicator = () => {
-                        if (score === null) return null;
-                        if (diff <= -2) {
-                          // Eagle or better: double circle
-                          return (
-                            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="w-7 h-7 rounded-full border-2 border-yellow-400" />
-                              <span className="absolute w-5 h-5 rounded-full border-2 border-yellow-400" />
-                            </span>
-                          );
-                        }
-                        if (diff === -1) {
-                          // Birdie: circle
-                          return (
-                            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="w-7 h-7 rounded-full border-2 border-red-400" />
-                            </span>
-                          );
-                        }
-                        if (diff === 1) {
-                          // Bogey: square
-                          return (
-                            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="w-6 h-6 rounded-sm border-2 border-sky-400" />
-                            </span>
-                          );
-                        }
-                        if (diff === 2) {
-                          // Double bogey: double square
-                          return (
-                            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="w-7 h-7 rounded-sm border-2 border-blue-400" />
-                              <span className="absolute w-5 h-5 rounded-sm border-2 border-blue-400" />
-                            </span>
-                          );
-                        }
-                        if (diff >= 3) {
-                          // Triple+ bogey: filled square
-                          return (
-                            <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <span className="w-7 h-7 rounded-sm border-2 border-indigo-400 bg-indigo-400/20" />
-                            </span>
-                          );
-                        }
-                        return null; // Par: no indicator
-                      };
+                            {holes.map((hole) => {
+                              const score = getScore(player.id, hole.number);
+                              const isSelected = selectedCell?.playerId === player.id && selectedCell?.hole === hole.number;
 
-                      return (
-                        <button
-                          key={`${player.id}-${hole.number}`}
-                          type="button"
-                          onClick={() => handleCellClick(player.id, hole.number)}
-                          className={
-                            `relative px-2 py-2 text-center transition-all duration-150 ` +
-                            `hover:bg-white/5 active:scale-[0.99] ` +
-                            (isSelected
-                              ? 'bg-emerald-500/10 shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_0_24px_rgba(16,185,129,0.18)]'
-                              : '')
-                          }
-                        >
-                          {getScoreIndicator()}
-                          <span className={`relative z-10 text-[15px] font-semibold ${scoreStateClass}`}>{score ?? '–'}</span>
-                          {isSelected ? <span className="absolute inset-x-2 bottom-1 h-[2px] rounded-full bg-emerald-400/70" /> : null}
-                        </button>
-                      );
-                    })}
+                              const scoreStateClass =
+                                score !== null
+                                  ? getScoreClass(score, hole.par)
+                                  : 'text-zinc-300';
+                              
+                              // Golf score indicator: circle for birdie, square for bogey, etc.
+                              const diff = score !== null ? score - hole.par : 0;
+                              const getScoreIndicator = () => {
+                                if (score === null) return null;
+                                if (diff <= -2) {
+                                  // Eagle or better: double circle
+                                  return (
+                                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                      <span className="w-7 h-7 rounded-full border-2 border-yellow-400" />
+                                      <span className="absolute w-5 h-5 rounded-full border-2 border-yellow-400" />
+                                    </span>
+                                  );
+                                }
+                                if (diff === -1) {
+                                  // Birdie: circle
+                                  return (
+                                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                      <span className="w-7 h-7 rounded-full border-2 border-red-400" />
+                                    </span>
+                                  );
+                                }
+                                if (diff === 1) {
+                                  // Bogey: square
+                                  return (
+                                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                      <span className="w-6 h-6 rounded-sm border-2 border-sky-400" />
+                                    </span>
+                                  );
+                                }
+                                if (diff === 2) {
+                                  // Double bogey: double square
+                                  return (
+                                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                      <span className="w-7 h-7 rounded-sm border-2 border-blue-400" />
+                                      <span className="absolute w-5 h-5 rounded-sm border-2 border-blue-400" />
+                                    </span>
+                                  );
+                                }
+                                if (diff >= 3) {
+                                  // Triple+ bogey: filled square
+                                  return (
+                                    <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                      <span className="w-7 h-7 rounded-sm border-2 border-indigo-400 bg-indigo-400/20" />
+                                    </span>
+                                  );
+                                }
+                                return null; // Par: no indicator
+                              };
 
-                    <div className="px-2 py-2 text-center text-sm font-semibold text-zinc-100 bg-white/3">
-                      {nineTotal || '–'}
+                              return (
+                                <button
+                                  key={`${player.id}-${hole.number}`}
+                                  type="button"
+                                  onClick={() => handleCellClick(player.id, hole.number)}
+                                  className={
+                                    `relative px-2 py-2 text-center transition-all duration-150 ` +
+                                    `hover:bg-white/5 active:scale-[0.99] ` +
+                                    (isSelected
+                                      ? 'bg-emerald-500/10 shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_0_24px_rgba(16,185,129,0.18)]'
+                                      : '')
+                                  }
+                                >
+                                  {getScoreIndicator()}
+                                  <span className={`relative z-10 text-[15px] font-semibold ${scoreStateClass}`}>{score ?? '–'}</span>
+                                  {isSelected ? <span className="absolute inset-x-2 bottom-1 h-[2px] rounded-full bg-emerald-400/70" /> : null}
+                                </button>
+                              );
+                            })}
+
+                            <div className="px-2 py-2 text-center text-sm font-semibold text-zinc-100 bg-white/3">
+                              {nineTotal || '–'}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );
