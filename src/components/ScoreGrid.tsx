@@ -232,46 +232,43 @@ Parse: "${transcript}"`,
     // Individual scores - try full name and first name
     for (const player of round.players) {
       const fullName = player.name;
-      const firstName = fullName.split(' ')[0];
-      const namesToTry = [fullName, firstName].filter(Boolean);
+      const firstName = fullName.split(' ')[0].toLowerCase();
       
-      let found = false;
-      for (const name of namesToTry) {
-        if (found) break;
-        
-        // Escape special regex characters in name
-        const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        
-        // Pattern 1: "[score] for [Name]"
-        const pattern1 = new RegExp(`(\\d+|par|birdie|bogey|double|eagle)\\s+for\\s+${escapedName}(?:\\s|$|,|\\.)`, "i");
-        const match1 = text.match(pattern1);
-        if (match1 && match1[1]) {
-          result.scores[player.name] = textToScore(match1[1]);
-          found = true;
+      // Look for this player's name anywhere in the text followed by a number
+      // Very forgiving - just find "name" ... "number" pattern
+      const lowerText = text.toLowerCase();
+      
+      // Check if player's first name appears
+      const nameIndex = lowerText.indexOf(firstName);
+      if (nameIndex === -1) continue;
+      
+      // Look for a number after the name (within reasonable distance)
+      const afterName = text.substring(nameIndex + firstName.length);
+      
+      // Find first number in the text after the name
+      const numberMatch = afterName.match(/(\d+)/);
+      if (numberMatch) {
+        const score = parseInt(numberMatch[1], 10);
+        // Sanity check - golf scores are typically 1-15
+        if (score >= 1 && score <= 15) {
+          result.scores[player.name] = score;
+          console.log(`Matched ${player.name} (via "${firstName}") -> ${score}`);
           continue;
         }
-
-        // Pattern 2: "[Name] got a [X]" or "[Name] [X]"
-        const pattern2 = new RegExp(`${escapedName}\\s+(?:got\\s+)?(?:a\\s+)?(\\d+|par|birdie|bogey|double|eagle)(?:\\s|$|,|\\.)`, "i");
-        const match2 = text.match(pattern2);
-        if (match2 && match2[1]) {
-          result.scores[player.name] = textToScore(match2[1]);
-          found = true;
-          continue;
-        }
-        
-        // Pattern 3: "[Name] [score]" (simpler, just name followed by score)
-        const pattern3 = new RegExp(`${escapedName}\\s+(\\d+)(?:\\s|$|,|\\.)`, "i");
-        const match3 = text.match(pattern3);
-        if (match3 && match3[1]) {
-          result.scores[player.name] = parseInt(match3[1], 10);
-          found = true;
-          continue;
+      }
+      
+      // Also check for words like par, birdie, bogey
+      const scoreWords = ['par', 'birdie', 'eagle', 'bogey', 'double'];
+      for (const word of scoreWords) {
+        if (afterName.toLowerCase().includes(word)) {
+          result.scores[player.name] = textToScore(word);
+          console.log(`Matched ${player.name} (via "${firstName}") -> ${word} = ${textToScore(word)}`);
+          break;
         }
       }
     }
     
-    console.log('Local parse result:', result);
+    console.log('Final local parse result:', result);
     return result;
   };
 
