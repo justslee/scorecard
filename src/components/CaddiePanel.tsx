@@ -110,6 +110,42 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
 
   const suggestion = distanceToPin ? getSuggestedClub(distanceToPin) : null;
 
+  // Generate caddie advice based on conditions
+  const getCaddieAdvice = (): string | null => {
+    if (!distanceToPin) return null;
+    
+    const tips: string[] = [];
+    
+    // Wind advice
+    if (windDirection === 'headwind') {
+      tips.push("Club up for the wind");
+    } else if (windDirection === 'tailwind') {
+      tips.push("Take less club, it'll fly");
+    } else if (windDirection === 'crosswind') {
+      tips.push("Aim into the wind");
+    }
+    
+    // Distance-based advice
+    if (distanceToPin <= 100) {
+      tips.push("Smooth tempo, let the club do the work");
+    } else if (distanceToPin >= 200) {
+      tips.push("Full swing, trust your line");
+    } else if (distanceToPin >= 150 && distanceToPin <= 170) {
+      tips.push("Stock shot distance — commit to it");
+    }
+    
+    // Par-based advice
+    if (hole.par === 3) {
+      tips.push("Par 3 — aim for the fat part of the green");
+    } else if (hole.par === 5 && distanceToPin > 220) {
+      tips.push("Lay up to your favorite wedge number");
+    }
+    
+    return tips[0] || null;
+  };
+
+  const caddieAdvice = getCaddieAdvice();
+
   return (
     <div className="relative h-full flex flex-col bg-black">
       {/* MAP AREA - Takes all available space */}
@@ -212,6 +248,13 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
             )}
           </div>
 
+          {/* Caddie advice - Always visible when available */}
+          {caddieAdvice && (
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-3 py-2">
+              <p className="text-sm text-emerald-300">🏌️ {caddieAdvice}</p>
+            </div>
+          )}
+
           {/* Quick distances - Always visible */}
           <div className="flex gap-1.5">
             {[75, 100, 125, 150, 175, 200].map((d) => (
@@ -263,12 +306,6 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
                 </div>
               </div>
 
-              {/* Tip */}
-              {hole.par === 3 && (
-                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
-                  <p className="text-xs text-amber-200">🎯 Par 3 — commit to your club</p>
-                </div>
-              )}
             </motion.div>
           )}
         </div>
