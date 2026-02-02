@@ -47,14 +47,14 @@ function getHoleInfo(round: Round, holeNumber: number) {
   };
 }
 
-// Sheet states: peek (just handle), half (basic controls), full (all details)
-type SheetState = 'peek' | 'half' | 'full';
+// Sheet states: collapsed (just handle) or expanded (all content)
+type SheetState = 'collapsed' | 'expanded';
 
 export default function CaddiePanel({ round, currentHole, onHoleChange, onClose }: CaddiePanelProps) {
   const [distanceToPin, setDistanceToPin] = useState<number | null>(null);
   const [windDirection, setWindDirection] = useState<'headwind' | 'tailwind' | 'crosswind' | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
-  const [sheetState, setSheetState] = useState<SheetState>('peek');
+  const [sheetState, setSheetState] = useState<SheetState>('collapsed');
   const [slideDirection, setSlideDirection] = useState<'left' | 'right'>('left');
   const containerRef = useRef<HTMLDivElement>(null);
   const prevHoleRef = useRef(currentHole);
@@ -193,26 +193,23 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
     }
   };
 
-  // Handle sheet drag
+  // Handle sheet drag - simple toggle
   const handleSheetDragEnd = (_: any, info: PanInfo) => {
     const velocity = info.velocity.y;
     const offset = info.offset.y;
 
-    if (velocity < -300 || offset < -50) {
-      // Swiping up
-      if (sheetState === 'peek') setSheetState('half');
-      else if (sheetState === 'half') setSheetState('full');
-    } else if (velocity > 300 || offset > 50) {
-      // Swiping down
-      if (sheetState === 'full') setSheetState('half');
-      else if (sheetState === 'half') setSheetState('peek');
+    if (velocity < -200 || offset < -30) {
+      // Swiping up - expand
+      setSheetState('expanded');
+    } else if (velocity > 200 || offset > 30) {
+      // Swiping down - collapse
+      setSheetState('collapsed');
     }
   };
 
   const sheetHeights: Record<SheetState, string> = {
-    peek: '80px',
-    half: '45%',
-    full: '75%',
+    collapsed: '70px',
+    expanded: '70%',
   };
 
   const suggestion = distanceToPin ? getSuggestedClub(distanceToPin) : null;
@@ -325,7 +322,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
         </p>
 
         {/* Distance overlay */}
-        {distanceToPin && sheetState === 'peek' && (
+        {distanceToPin && sheetState === 'collapsed' && (
           <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-sm rounded-full px-5 py-2 z-10">
             <span className="text-2xl font-bold text-white">{distanceToPin}</span>
             <span className="text-zinc-400 ml-1 text-sm">yds</span>
@@ -349,17 +346,15 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
         {/* Handle */}
         <div className="w-full py-3 flex flex-col items-center cursor-grab active:cursor-grabbing">
           <div className="w-12 h-1.5 rounded-full bg-zinc-600" />
-          {sheetState === 'peek' && (
-            <div className="flex items-center gap-1 text-zinc-500 text-xs mt-2">
-              <ChevronUp className="w-4 h-4" />
-              <span>Pull up for caddie</span>
-            </div>
-          )}
+          <div className="flex items-center gap-1 text-zinc-500 text-xs mt-2">
+            <ChevronUp className={`w-4 h-4 transition-transform ${sheetState === 'expanded' ? 'rotate-180' : ''}`} />
+            <span>{sheetState === 'collapsed' ? 'Pull up for caddie' : 'Pull down to close'}</span>
+          </div>
         </div>
 
         {/* Sheet content - only show when not peek */}
         <AnimatePresence>
-          {sheetState !== 'peek' && (
+          {sheetState === 'expanded' && (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -392,15 +387,12 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
                   <p className="text-base font-medium text-emerald-300">{caddieAdvice.main}</p>
                   {caddieAdvice.details.length > 0 && (
                     <ul className="mt-2 space-y-1">
-                      {caddieAdvice.details.slice(0, sheetState === 'full' ? undefined : 2).map((tip, i) => (
+                      {caddieAdvice.details.map((tip, i) => (
                         <li key={i} className="text-sm text-emerald-400/80 flex items-start gap-2">
                           <span className="text-emerald-500/60">•</span>
                           <span>{tip}</span>
                         </li>
                       ))}
-                      {sheetState === 'half' && caddieAdvice.details.length > 2 && (
-                        <li className="text-xs text-zinc-500 mt-1">Pull up for more tips...</li>
-                      )}
                     </ul>
                   )}
                 </div>
@@ -451,12 +443,8 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
                 </div>
 
                 {/* Full state - more details */}
-                {sheetState === 'full' && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="space-y-4 pt-2"
-                  >
+                {/* Additional details */}
+                <div className="space-y-4 pt-2">
                     {/* Hole details */}
                     <div className="bg-zinc-800/50 rounded-xl p-4">
                       <h3 className="text-sm font-medium text-zinc-400 mb-3">Hole {currentHole}</h3>
@@ -506,8 +494,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
                         ))}
                       </div>
                     </div>
-                  </motion.div>
-                )}
+                  </div>
               </div>
             </motion.div>
           )}
