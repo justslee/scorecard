@@ -92,17 +92,74 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
     );
   };
 
-  const getCaddieAdvice = (): string | null => {
-    if (!distanceToPin) return null;
-    if (windDirection === 'headwind') return "Club up for the wind";
-    if (windDirection === 'tailwind') return "Take less club, it'll fly";
-    if (windDirection === 'crosswind') return "Aim into the wind";
-    if (distanceToPin <= 100) return "Smooth tempo, let the club do the work";
-    if (distanceToPin >= 200) return "Full swing, trust your line";
-    if (hole.par === 3) return "Par 3 — aim for the fat part of the green";
-    if (hole.par === 5 && distanceToPin > 220) return "Lay up to your favorite wedge number";
-    return null;
+  // Comprehensive caddie advice based on hole knowledge
+  const getCaddieAdvice = (): { main: string; details: string[] } => {
+    const advice: string[] = [];
+    let mainTip = "";
+
+    // Par-specific strategy
+    if (hole.par === 3) {
+      mainTip = "🎯 Par 3 — Club selection is everything";
+      advice.push("Take one extra club, most miss short");
+      advice.push("Aim for the center of the green, not the pin");
+      if (hole.yards > 180) advice.push("Long par 3 — consider laying up short of trouble");
+    } else if (hole.par === 4) {
+      if (hole.yards < 350) {
+        mainTip = "📍 Short Par 4 — Position over power";
+        advice.push("Consider 3-wood or hybrid off the tee");
+        advice.push("Leave yourself a full wedge in");
+      } else if (hole.yards > 430) {
+        mainTip = "💪 Long Par 4 — Two good shots needed";
+        advice.push("Driver to maximize distance");
+        advice.push("Don't force the green, bogey is okay");
+      } else {
+        mainTip = "⛳ Standard Par 4 — Find the fairway";
+        advice.push("Fairway first, then attack");
+      }
+    } else if (hole.par === 5) {
+      mainTip = "📐 Par 5 — Think backwards from the green";
+      advice.push("Where's your ideal 3rd shot from?");
+      if (hole.yards < 500) {
+        advice.push("Reachable in 2 — go for it if the lie is good");
+      } else {
+        advice.push("Lay up to your favorite wedge distance");
+      }
+      advice.push("Par is a good score, birdie is a bonus");
+    }
+
+    // Distance-specific tips
+    if (distanceToPin) {
+      if (distanceToPin <= 50) {
+        advice.push("Inside 50 — soft hands, let gravity work");
+      } else if (distanceToPin <= 100) {
+        advice.push("Scoring zone — smooth tempo, commit to distance");
+      } else if (distanceToPin >= 150 && distanceToPin <= 170) {
+        advice.push("Stock yardage — trust your swing");
+      } else if (distanceToPin >= 200) {
+        advice.push("Long approach — aim for the fat part of the green");
+      }
+    }
+
+    // Wind adjustments
+    if (windDirection === 'headwind') {
+      advice.push("Into wind: Take 1-2 more clubs, swing smooth");
+    } else if (windDirection === 'tailwind') {
+      advice.push("Downwind: Ball will fly further and release more");
+    } else if (windDirection === 'crosswind') {
+      advice.push("Crosswind: Aim into the wind, let it bring it back");
+    }
+
+    // Handicap-based difficulty
+    if (hole.handicap <= 3) {
+      advice.push("⚠️ Tough hole (#" + hole.handicap + " handicap) — par is a WIN here");
+    } else if (hole.handicap >= 16) {
+      advice.push("✨ Birdie opportunity (#" + hole.handicap + " handicap) — be aggressive");
+    }
+
+    return { main: mainTip || "🏌️ Play smart, commit to your shot", details: advice };
   };
+
+  const caddieAdvice = getCaddieAdvice();
 
   // Handle swipe on map - down to dismiss, left/right for holes
   const handleMapDragEnd = (_: any, info: PanInfo) => {
@@ -306,12 +363,23 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
                   )}
                 </div>
 
-                {/* Caddie advice */}
-                {caddieAdvice && (
-                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
-                    <p className="text-sm text-emerald-300">🏌️ {caddieAdvice}</p>
-                  </div>
-                )}
+                {/* Caddie Strategy */}
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3">
+                  <p className="text-base font-medium text-emerald-300">{caddieAdvice.main}</p>
+                  {caddieAdvice.details.length > 0 && sheetState !== 'peek' && (
+                    <ul className="mt-2 space-y-1">
+                      {caddieAdvice.details.slice(0, sheetState === 'full' ? undefined : 2).map((tip, i) => (
+                        <li key={i} className="text-sm text-emerald-400/80 flex items-start gap-2">
+                          <span className="text-emerald-500/60">•</span>
+                          <span>{tip}</span>
+                        </li>
+                      ))}
+                      {sheetState === 'half' && caddieAdvice.details.length > 2 && (
+                        <li className="text-xs text-zinc-500 mt-1">Pull up for more tips...</li>
+                      )}
+                    </ul>
+                  )}
+                </div>
 
                 {/* Quick distances */}
                 <div className="flex gap-2">
@@ -384,17 +452,22 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
                       </div>
                     </div>
 
-                    {/* Strategy */}
+                    {/* Course Knowledge */}
                     <div className="bg-zinc-800/50 rounded-xl p-4">
-                      <h3 className="text-sm font-medium text-zinc-400 mb-2">Strategy</h3>
-                      <p className="text-sm text-zinc-300">
+                      <h3 className="text-sm font-medium text-zinc-400 mb-2">Course Knowledge</h3>
+                      <p className="text-sm text-zinc-300 mb-3">
                         {hole.par === 3 
-                          ? "Take dead aim at the center. Club selection is everything."
+                          ? "Par 3s are all about club selection. Trust the number, not the ego. Most amateurs miss short — take one more club."
                           : hole.par === 5
-                          ? "Think backwards. Where's your ideal approach from?"
-                          : "Find the fairway first. Position beats distance."
+                          ? "Par 5s reward smart course management. Know your distances, pick your targets, and don't force shots you don't have."
+                          : hole.yards < 380 
+                          ? "Shorter par 4s tempt you to bomb driver. Often better to place it in the fairway with a 3-wood and attack from there."
+                          : "Long par 4s demand two quality shots. Accept that and play accordingly — a stress-free bogey beats a blow-up hole."
                         }
                       </p>
+                      <div className="text-xs text-zinc-500 italic">
+                        💡 Tip: Course-specific knowledge will improve as you play more rounds here.
+                      </div>
                     </div>
 
                     {/* Club reference */}
