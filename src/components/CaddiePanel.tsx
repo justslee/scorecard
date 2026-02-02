@@ -55,9 +55,17 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
   const [windDirection, setWindDirection] = useState<'headwind' | 'tailwind' | 'crosswind' | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [sheetState, setSheetState] = useState<SheetState>('peek');
+  const [slideDirection, setSlideDirection] = useState<'left' | 'right'>('left');
   const containerRef = useRef<HTMLDivElement>(null);
+  const prevHoleRef = useRef(currentHole);
 
   const hole = getHoleInfo(round, currentHole);
+
+  // Track slide direction when hole changes
+  if (prevHoleRef.current !== currentHole) {
+    setSlideDirection(currentHole > prevHoleRef.current ? 'left' : 'right');
+    prevHoleRef.current = currentHole;
+  }
 
   const getSuggestedClub = (distance: number): { club: string; yards: number } => {
     let adjustedDistance = distance;
@@ -228,12 +236,21 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
           ✕
         </button>
 
-        {/* Hole info */}
+        {/* Hole info - animated */}
         <div className="absolute top-4 left-4 z-10">
-          <div className="bg-black/50 backdrop-blur-sm rounded-xl px-4 py-2">
-            <div className="text-2xl font-bold text-white">Hole {currentHole}</div>
-            <div className="text-sm text-zinc-400">Par {hole.par} • {hole.yards} yds</div>
-          </div>
+          <AnimatePresence mode="wait">
+            <motion.div 
+              key={currentHole}
+              initial={{ opacity: 0, x: slideDirection === 'left' ? 20 : -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: slideDirection === 'left' ? -20 : 20 }}
+              transition={{ duration: 0.2 }}
+              className="bg-black/50 backdrop-blur-sm rounded-xl px-4 py-2"
+            >
+              <div className="text-2xl font-bold text-white">Hole {currentHole}</div>
+              <div className="text-sm text-zinc-400">Par {hole.par} • {hole.yards} yds</div>
+            </motion.div>
+          </AnimatePresence>
         </div>
 
         {/* GPS button */}
@@ -263,17 +280,26 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
           </button>
         )}
 
-        {/* Map placeholder */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-          <div className="relative w-40 h-48 mx-auto mb-2">
-            <div className="absolute inset-x-6 top-16 bottom-0 bg-emerald-800/30 rounded-t-full" />
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-20 h-20 bg-emerald-600/40 rounded-full" />
-            <div className="absolute top-6 left-1/2 -translate-x-1/2">
-              <Flag className="w-6 h-6 text-red-400" />
+        {/* Map placeholder - animated */}
+        <AnimatePresence mode="wait">
+          <motion.div 
+            key={currentHole}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none"
+          >
+            <div className="relative w-40 h-48 mx-auto mb-2">
+              <div className="absolute inset-x-6 top-16 bottom-0 bg-emerald-800/30 rounded-t-full" />
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-20 h-20 bg-emerald-600/40 rounded-full" />
+              <div className="absolute top-6 left-1/2 -translate-x-1/2">
+                <Flag className="w-6 h-6 text-red-400" />
+              </div>
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-4 h-4 bg-white/50 rounded-full" />
             </div>
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-4 h-4 bg-white/50 rounded-full" />
-          </div>
-        </div>
+          </motion.div>
+        </AnimatePresence>
 
         {/* Hole dots */}
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
