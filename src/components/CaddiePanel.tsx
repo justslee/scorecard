@@ -158,19 +158,13 @@ export default function CaddiePanel({ round, currentHole, onHoleChange }: Caddie
       </div>
 
       {/* Shot Planner Sheet */}
-      <motion.div 
-        className="bg-zinc-900 border-t border-zinc-800 rounded-t-2xl"
-        animate={{ height: sheetExpanded ? 'auto' : 'auto' }}
-      >
+      <div className="bg-zinc-900 border-t border-zinc-800 shrink-0 max-h-[45%] flex flex-col">
         {/* Drag handle */}
-        <div 
-          className="flex justify-center py-2 cursor-pointer"
-          onClick={() => setSheetExpanded(!sheetExpanded)}
-        >
+        <div className="flex justify-center py-2 shrink-0">
           <div className="w-10 h-1 rounded-full bg-zinc-700" />
         </div>
 
-        <div className="px-4 pb-4 space-y-4">
+        <div className="px-4 pb-4 space-y-4 overflow-y-auto touch-pan-y">
           {/* Distance input + club suggestion */}
           <div className="flex gap-3 items-stretch">
             <div className="relative flex-1">
@@ -254,7 +248,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange }: Caddie
             </div>
           )}
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

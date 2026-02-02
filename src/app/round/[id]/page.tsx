@@ -392,26 +392,21 @@ export default function RoundPage() {
               onClick={() => setShowCaddie(false)}
             />
             
-            {/* Panel - swipe down to dismiss */}
+            {/* Panel */}
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              drag="y"
-              dragConstraints={{ top: 0, bottom: 0 }}
-              dragElastic={{ top: 0, bottom: 0.8 }}
-              onDragEnd={(_, info) => {
-                if (info.offset.y > 100 || info.velocity.y > 500) {
-                  setShowCaddie(false);
-                }
-              }}
               className="relative w-full max-w-2xl h-[98vh] bg-zinc-950 rounded-t-2xl overflow-hidden flex flex-col"
             >
-              {/* Drag handle */}
-              <div className="flex justify-center py-3 cursor-grab active:cursor-grabbing shrink-0">
+              {/* Close handle - tap to dismiss */}
+              <button 
+                onClick={() => setShowCaddie(false)}
+                className="flex justify-center py-3 shrink-0 w-full"
+              >
                 <div className="w-10 h-1 rounded-full bg-zinc-600" />
-              </div>
+              </button>
               
               {/* Content - full height for map */}
               <div className="flex-1 overflow-hidden">
