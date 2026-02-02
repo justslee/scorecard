@@ -43,6 +43,21 @@ export interface Player {
   groupId?: string;
 }
 
+/** Saved player in user's network (persisted contacts) */
+export interface SavedPlayer {
+  id: string;
+  name: string;
+  nickname?: string;
+  email?: string;
+  phone?: string;
+  handicap?: number;
+  avatarUrl?: string;
+  /** Clerk user ID if they have an account */
+  clerkUserId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PlayerGroup {
   id: string;
   name: string; // e.g., "Group 1", "Morning Flight"

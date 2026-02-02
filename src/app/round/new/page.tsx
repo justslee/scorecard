@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Course, Player, Round, createDefaultCourse } from '@/lib/types';
-import { getCourses, saveCourse, saveRound } from '@/lib/storage';
+import { Course, Player, Round, SavedPlayer, createDefaultCourse } from '@/lib/types';
+import { getCourses, saveCourse, saveRound, getSavedPlayers } from '@/lib/storage';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Flag, X, Mic } from 'lucide-react';
+import { Flag, X, Mic, Users, ChevronDown } from 'lucide-react';
 import VoiceRoundSetup from '@/components/VoiceRoundSetup';
 
 export default function NewRound() {
@@ -19,10 +19,14 @@ export default function NewRound() {
   const [showCustom, setShowCustom] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
   const [step, setStep] = useState<'course' | 'players'>('course');
+  const [savedPlayers, setSavedPlayers] = useState<SavedPlayer[]>([]);
+  const [showPlayerPicker, setShowPlayerPicker] = useState(false);
+  const [focusedInputId, setFocusedInputId] = useState<string | null>(null);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCourses(getCourses());
+    setSavedPlayers(getSavedPlayers());
   }, []);
 
   const handleVoiceSetup = (config: { courseName: string; playerNames: string[]; teeName?: string }) => {
@@ -73,6 +77,51 @@ export default function NewRound() {
 
   const handlePlayerNameChange = (id: string, name: string) => {
     setPlayers(players.map((p) => (p.id === id ? { ...p, name } : p)));
+  };
+
+  const handleSelectSavedPlayer = (savedPlayer: SavedPlayer, targetId?: string) => {
+    const newPlayer: Player = {
+      id: savedPlayer.id, // Use saved player's ID for linking
+      name: savedPlayer.name,
+      handicap: savedPlayer.handicap,
+    };
+
+    if (targetId) {
+      // Replace the focused input
+      setPlayers(players.map((p) => (p.id === targetId ? newPlayer : p)));
+    } else {
+      // Add as new player if not already added
+      if (!players.some((p) => p.id === savedPlayer.id)) {
+        const emptyIndex = players.findIndex((p) => !p.name.trim());
+        if (emptyIndex >= 0) {
+          // Replace first empty slot
+          const updated = [...players];
+          updated[emptyIndex] = newPlayer;
+          setPlayers(updated);
+        } else if (players.length < 6) {
+          // Add new
+          setPlayers([...players, newPlayer]);
+        }
+      }
+    }
+    setShowPlayerPicker(false);
+    setFocusedInputId(null);
+  };
+
+  // Filter saved players not already in the round
+  const availableSavedPlayers = savedPlayers.filter(
+    (sp) => !players.some((p) => p.id === sp.id)
+  );
+
+  // Get suggestions based on current input
+  const getSuggestions = (input: string) => {
+    if (!input.trim()) return availableSavedPlayers.slice(0, 5);
+    const lower = input.toLowerCase();
+    return availableSavedPlayers.filter(
+      (sp) =>
+        sp.name.toLowerCase().includes(lower) ||
+        sp.nickname?.toLowerCase().includes(lower)
+    ).slice(0, 5);
   };
 
   const handleSelectCourse = (course: Course) => {
@@ -262,27 +311,100 @@ export default function NewRound() {
                 )}
               </div>
 
-              <div className="space-y-3 mb-4">
-                {players.map((player, index) => (
-                  <div key={player.id} className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder={`Player ${index + 1}`}
-                      value={player.name}
-                      onChange={(e) => handlePlayerNameChange(player.id, e.target.value)}
-                      className="flex-1 px-4 py-3 rounded-2xl bg-white/5 border border-white/10 focus:bg-white/7"
-                    />
-                    {players.length > 1 && (
-                      <button
-                        onClick={() => handleRemovePlayer(player.id)}
-                        className="btn rounded-2xl px-4 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200"
-                        aria-label="Remove player"
-                      >
-                        <X className="h-5 w-5" aria-hidden="true" />
-                      </button>
-                    )}
+              {/* Quick add from saved players */}
+              {availableSavedPlayers.length > 0 && (
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Users className="h-4 w-4 text-zinc-500" />
+                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">My Players</span>
                   </div>
-                ))}
+                  <div className="flex flex-wrap gap-2">
+                    {availableSavedPlayers.slice(0, 8).map((sp) => (
+                      <button
+                        key={sp.id}
+                        onClick={() => handleSelectSavedPlayer(sp)}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 hover:border-emerald-400/30 transition-colors"
+                      >
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center text-xs font-medium text-emerald-300">
+                          {sp.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-sm">{sp.nickname || sp.name.split(' ')[0]}</span>
+                        {sp.handicap !== undefined && (
+                          <span className="text-xs text-zinc-500">({sp.handicap})</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-3 mb-4">
+                {players.map((player, index) => {
+                  const suggestions = focusedInputId === player.id ? getSuggestions(player.name) : [];
+                  const isSavedPlayer = savedPlayers.some((sp) => sp.id === player.id);
+                  
+                  return (
+                    <div key={player.id} className="relative">
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <input
+                            type="text"
+                            placeholder={`Player ${index + 1}`}
+                            value={player.name}
+                            onChange={(e) => handlePlayerNameChange(player.id, e.target.value)}
+                            onFocus={() => setFocusedInputId(player.id)}
+                            onBlur={() => setTimeout(() => setFocusedInputId(null), 200)}
+                            className={`w-full px-4 py-3 rounded-2xl bg-white/5 border focus:bg-white/7 ${
+                              isSavedPlayer ? 'border-emerald-400/30 pl-10' : 'border-white/10'
+                            }`}
+                          />
+                          {isSavedPlayer && (
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                              <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                                <span className="text-xs text-emerald-300">✓</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {players.length > 1 && (
+                          <button
+                            onClick={() => handleRemovePlayer(player.id)}
+                            className="btn rounded-2xl px-4 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200"
+                            aria-label="Remove player"
+                          >
+                            <X className="h-5 w-5" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Suggestions dropdown */}
+                      {suggestions.length > 0 && focusedInputId === player.id && (
+                        <div className="absolute z-10 mt-1 w-full rounded-xl bg-zinc-900 border border-white/10 shadow-xl overflow-hidden">
+                          {suggestions.map((sp) => (
+                            <button
+                              key={sp.id}
+                              onMouseDown={() => handleSelectSavedPlayer(sp, player.id)}
+                              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors text-left"
+                            >
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center text-sm font-medium text-emerald-300">
+                                {sp.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-medium">{sp.name}</div>
+                                {sp.nickname && (
+                                  <div className="text-xs text-zinc-500">&quot;{sp.nickname}&quot;</div>
+                                )}
+                              </div>
+                              {sp.handicap !== undefined && (
+                                <div className="ml-auto text-xs text-zinc-500">HCP {sp.handicap}</div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {players.length < 6 && (

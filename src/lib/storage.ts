@@ -1,11 +1,12 @@
 'use client';
 
-import { Round, Course, Tournament, TeeOption, HoleInfo, GolferProfile } from './types';
+import { Round, Course, Tournament, TeeOption, HoleInfo, GolferProfile, SavedPlayer } from './types';
 
 const ROUNDS_KEY = 'scorecard_rounds';
 const COURSES_KEY = 'scorecard_courses';
 const TOURNAMENTS_KEY = 'scorecard_tournaments';
 const PROFILE_KEY = 'scorecard_profile';
+const PLAYERS_KEY = 'scorecard_players';
 
 // -----------------
 // Rounds
@@ -248,4 +249,46 @@ export function initializeStorage(): void {
   if (!localStorage.getItem(TOURNAMENTS_KEY)) {
     localStorage.setItem(TOURNAMENTS_KEY, JSON.stringify([]));
   }
+
+  if (!localStorage.getItem(PLAYERS_KEY)) {
+    localStorage.setItem(PLAYERS_KEY, JSON.stringify([]));
+  }
+}
+
+// -----------------
+// Saved Players (Network)
+// -----------------
+export function getSavedPlayers(): SavedPlayer[] {
+  if (typeof window === 'undefined') return [];
+  const data = localStorage.getItem(PLAYERS_KEY);
+  return data ? JSON.parse(data) : [];
+}
+
+export function getSavedPlayer(id: string): SavedPlayer | null {
+  const players = getSavedPlayers();
+  return players.find(p => p.id === id) || null;
+}
+
+export function saveSavedPlayer(player: SavedPlayer): void {
+  const players = getSavedPlayers();
+  const index = players.findIndex(p => p.id === player.id);
+  const now = new Date().toISOString();
+
+  player.updatedAt = now;
+  if (!player.createdAt) {
+    player.createdAt = now;
+  }
+
+  if (index >= 0) {
+    players[index] = player;
+  } else {
+    players.unshift(player);
+  }
+
+  localStorage.setItem(PLAYERS_KEY, JSON.stringify(players));
+}
+
+export function deleteSavedPlayer(id: string): void {
+  const players = getSavedPlayers().filter(p => p.id !== id);
+  localStorage.setItem(PLAYERS_KEY, JSON.stringify(players));
 }

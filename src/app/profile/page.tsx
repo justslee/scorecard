@@ -85,6 +85,15 @@ export default function ProfilePage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 pt-5 pb-24 space-y-4">
+        {/* My Players Link */}
+        <Link href="/players" className="card card-hover p-5 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">My Players</h2>
+            <p className="text-sm text-zinc-400">Manage your golf buddies</p>
+          </div>
+          <span className="text-zinc-500">→</span>
+        </Link>
+
         <section className="card p-5">
           <h2 className="text-lg font-semibold tracking-tight">Golfer Info</h2>
 
