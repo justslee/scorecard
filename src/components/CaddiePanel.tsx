@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { motion, useMotionValue, useTransform, animate, PanInfo } from 'framer-motion';
+import { motion, useMotionValue, animate, PanInfo, useDragControls } from 'framer-motion';
 import {
   Wind,
   Locate,
@@ -59,6 +59,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
   
   const sheetHeight = useMotionValue(COLLAPSED_HEIGHT);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const dragControls = useDragControls();
 
   const hole = getHoleInfo(round, currentHole);
 
@@ -208,24 +209,27 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
         )}
       </div>
 
-      {/* BOTTOM SHEET - Draggable */}
+      {/* BOTTOM SHEET - Draggable via handle only */}
       <motion.div
         ref={sheetRef}
         style={{ height: sheetHeight }}
         drag="y"
+        dragControls={dragControls}
+        dragListener={false}
         dragConstraints={{ top: 0, bottom: 0 }}
         dragElastic={{ top: 0.1, bottom: 0.1 }}
         onDragEnd={handleDragEnd}
-        className="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl border-t border-zinc-800 overflow-hidden touch-none"
+        className="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl border-t border-zinc-800 overflow-hidden"
       >
-        {/* Drag handle */}
-        <button 
+        {/* Drag handle - only this initiates drag */}
+        <div 
+          onPointerDown={(e) => dragControls.start(e)}
           onClick={toggleExpand}
-          className="w-full py-2 flex flex-col items-center gap-1"
+          className="w-full py-2 flex flex-col items-center gap-1 cursor-grab active:cursor-grabbing touch-none"
         >
           <div className="w-10 h-1 rounded-full bg-zinc-600" />
           <ChevronUp className={`w-4 h-4 text-zinc-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-        </button>
+        </div>
 
         {/* Sheet content */}
         <div className="px-4 pb-4 space-y-3">
