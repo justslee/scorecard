@@ -67,6 +67,22 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
     prevHoleRef.current = currentHole;
   }
 
+  // Animation variants - fast and snappy like HoleScoreModal
+  const slideVariants = {
+    enter: (direction: 'left' | 'right') => ({
+      x: direction === 'left' ? 80 : -80,
+      opacity: 0,
+    }),
+    center: {
+      x: 0,
+      opacity: 1,
+    },
+    exit: (direction: 'left' | 'right') => ({
+      x: direction === 'left' ? -80 : 80,
+      opacity: 0,
+    }),
+  };
+
   const getSuggestedClub = (distance: number): { club: string; yards: number } => {
     let adjustedDistance = distance;
     if (windDirection === 'headwind') adjustedDistance += 10;
@@ -235,13 +251,15 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
 
         {/* Hole info - animated */}
         <div className="absolute top-4 left-4 z-10">
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="wait" custom={slideDirection}>
             <motion.div 
               key={currentHole}
-              initial={{ opacity: 0, x: slideDirection === 'left' ? 20 : -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: slideDirection === 'left' ? -20 : 20 }}
-              transition={{ duration: 0.2 }}
+              custom={slideDirection}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className="bg-black/50 backdrop-blur-sm rounded-xl px-4 py-2"
             >
               <div className="text-2xl font-bold text-white">Hole {currentHole}</div>
@@ -278,13 +296,15 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
         )}
 
         {/* Map placeholder - animated */}
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="wait" custom={slideDirection}>
           <motion.div 
             key={currentHole}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
+            custom={slideDirection}
+            variants={slideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.15, ease: "easeOut" }}
             className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none"
           >
             <div className="relative w-40 h-48 mx-auto mb-2">
