@@ -82,7 +82,7 @@ export default function PlayersPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search players..."
-              className="input pl-10 w-full"
+              className="w-full pl-10 pr-4 py-3 rounded-2xl bg-white/5 border border-white/10 focus:bg-white/7 focus:border-white/20 focus:outline-none transition-colors placeholder:text-zinc-500"
             />
           </div>
           <button onClick={openNewPlayer} className="btn btn-primary px-4">
