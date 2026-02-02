@@ -124,9 +124,23 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
 
   const processVoiceScores = async (transcript: string) => {
     console.log('Processing voice transcript:', transcript);
+    console.log('Players in round:', round.players.map(p => p.name));
     setIsProcessingVoice(true);
     const targetHole = currentHole || 1;
 
+    // Use local parsing directly - it's fast and works offline
+    const localResult = parseVoiceLocally(transcript, targetHole);
+    console.log('Local parse result:', localResult);
+    
+    // If local parsing found scores, use them
+    if (Object.keys(localResult.scores).length > 0) {
+      applyVoiceScores(localResult);
+      setIsProcessingVoice(false);
+      setVoiceTranscript("");
+      return;
+    }
+
+    // Otherwise try API for more complex parsing
     try {
       const response = await fetch("/api/parse-voice", {
         method: "POST",
@@ -155,14 +169,16 @@ Parse: "${transcript}"`,
       if (response.ok) {
         const result = await response.json();
         console.log('API parse result:', result);
-        applyVoiceScores(result);
-      } else {
-        console.log('API failed, using local parsing');
-        applyVoiceScores(parseVoiceLocally(transcript, targetHole));
+        
+        // Check if result has scores
+        if (result.scores && Object.keys(result.scores).length > 0) {
+          applyVoiceScores(result);
+        } else {
+          console.log('API returned no scores');
+        }
       }
     } catch (err) {
-      console.log('API error, using local parsing:', err);
-      applyVoiceScores(parseVoiceLocally(transcript, targetHole));
+      console.log('API error:', err);
     } finally {
       setIsProcessingVoice(false);
       setVoiceTranscript("");
