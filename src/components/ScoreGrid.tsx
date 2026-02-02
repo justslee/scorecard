@@ -128,6 +128,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     setIsProcessingVoice(true);
     const targetHole = currentHole || 1;
     const par = round.holes[targetHole - 1]?.par || 4;
+    const playerNames = round.players.map(p => p.name);
 
     // SIMPLE MODE: If a cell is selected, just parse a single score
     if (selectedCell) {
@@ -141,16 +142,46 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
       return;
     }
 
-    // MULTI-PLAYER MODE: Parse and show confirmation
-    const localResult = parseVoiceLocally(transcript, targetHole);
-    console.log('Multi-player parse result:', localResult);
-    
-    if (Object.keys(localResult.scores).length > 0) {
-      // Show confirmation UI instead of applying directly
-      setPendingScores(localResult);
-    } else {
-      // No scores found - show error
-      alert(`Couldn't parse scores from: "${transcript}"\n\nTry: "Justin 4 Mike 5" or "everyone par"`);
+    // MULTI-PLAYER MODE: Use Claude to parse
+    try {
+      const response = await fetch("/api/parse-voice-scores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript,
+          playerNames,
+          hole: targetHole,
+          par,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Claude parse result:', result);
+        
+        if (result.scores && Object.keys(result.scores).length > 0) {
+          setPendingScores({ hole: result.hole || targetHole, scores: result.scores });
+        } else {
+          alert(`Couldn't parse scores from: "${transcript}"\n\nTry: "Justin 4 Mike 5" or "everyone par"`);
+        }
+      } else {
+        // Fallback to local parsing
+        const localResult = parseVoiceLocally(transcript, targetHole);
+        if (Object.keys(localResult.scores).length > 0) {
+          setPendingScores(localResult);
+        } else {
+          alert(`Couldn't parse scores from: "${transcript}"`);
+        }
+      }
+    } catch (err) {
+      console.error('Voice parse error:', err);
+      // Fallback to local parsing
+      const localResult = parseVoiceLocally(transcript, targetHole);
+      if (Object.keys(localResult.scores).length > 0) {
+        setPendingScores(localResult);
+      } else {
+        alert(`Couldn't parse scores from: "${transcript}"`);
+      }
     }
     
     setIsProcessingVoice(false);
