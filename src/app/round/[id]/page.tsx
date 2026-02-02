@@ -380,38 +380,22 @@ export default function RoundPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 flex items-end justify-center"
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-50"
           >
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/60"
-              onClick={() => setShowCaddie(false)}
-            />
-            
-            {/* Panel */}
             <motion.div
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="relative w-full max-w-2xl h-[98vh] bg-zinc-950 rounded-t-2xl overflow-hidden flex flex-col"
+              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              className="absolute inset-0"
             >
-              {/* Close handle - tap to dismiss */}
-              <button 
-                onClick={() => setShowCaddie(false)}
-                className="flex justify-center py-3 shrink-0 w-full"
-              >
-                <div className="w-10 h-1 rounded-full bg-zinc-600" />
-              </button>
-              
-              {/* Content - full height for map */}
-              <div className="flex-1 overflow-hidden">
-                <CaddiePanel round={round} currentHole={currentHole} onHoleChange={setCurrentHole} />
-              </div>
+              <CaddiePanel 
+                round={round} 
+                currentHole={currentHole} 
+                onHoleChange={setCurrentHole}
+                onClose={() => setShowCaddie(false)}
+              />
             </motion.div>
           </motion.div>
         )}
