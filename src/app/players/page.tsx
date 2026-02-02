@@ -144,15 +144,15 @@ export default function PlayersPage() {
                         {player.nickname && (
                           <p className="text-zinc-400 text-sm truncate">&quot;{player.nickname}&quot;</p>
                         )}
-                        <div className="flex items-center gap-3 mt-1">
+                        <div className="flex items-center gap-3 mt-1 flex-wrap">
                           {player.handicap !== undefined && (
                             <span className="text-xs text-zinc-500">
                               HCP: {player.handicap}
                             </span>
                           )}
-                          {player.email && (
-                            <span className="text-xs text-zinc-500 truncate">
-                              {player.email}
+                          {player.roundsPlayed > 0 && (
+                            <span className="text-xs text-zinc-500">
+                              {player.roundsPlayed} rounds
                             </span>
                           )}
                         </div>
@@ -216,6 +216,7 @@ function PlayerModal({ player, onSave, onClose }: PlayerModalProps) {
       handicap: handicap ? parseFloat(handicap) : undefined,
       clerkUserId: player?.clerkUserId,
       avatarUrl: player?.avatarUrl,
+      roundsPlayed: player?.roundsPlayed || 0,
       createdAt: player?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

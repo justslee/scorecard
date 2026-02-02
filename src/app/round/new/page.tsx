@@ -105,6 +105,11 @@ export default function NewRound() {
     (sp) => !players.some((p) => p.id === sp.id)
   );
 
+  // Get top 4 most frequent players (sorted by roundsPlayed)
+  const frequentPlayers = [...availableSavedPlayers]
+    .sort((a, b) => (b.roundsPlayed || 0) - (a.roundsPlayed || 0))
+    .slice(0, 4);
+
   // Get all selected player IDs
   const selectedPlayerIds = players.map((p) => p.id);
 
@@ -295,15 +300,15 @@ export default function NewRound() {
                 )}
               </div>
 
-              {/* Quick add from saved players */}
-              {availableSavedPlayers.length > 0 && (
+              {/* Quick add - top 4 frequent players */}
+              {frequentPlayers.length > 0 && (
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Users className="h-4 w-4 text-zinc-500" />
-                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">My Players</span>
+                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Frequent Players</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {availableSavedPlayers.slice(0, 8).map((sp) => (
+                    {frequentPlayers.map((sp) => (
                       <button
                         key={sp.id}
                         onClick={() => handleSelectSavedPlayer(sp)}
@@ -325,8 +330,9 @@ export default function NewRound() {
               <div className="space-y-3 mb-4">
                 {players.map((player, index) => (
                   <PlayerAutocomplete
-                    key={player.id}
+                    key={index}
                     value={player}
+                    index={index}
                     savedPlayers={savedPlayers}
                     selectedIds={selectedPlayerIds}
                     placeholder={`Player ${index + 1}`}

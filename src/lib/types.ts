@@ -54,6 +54,8 @@ export interface SavedPlayer {
   avatarUrl?: string;
   /** Clerk user ID if they have an account */
   clerkUserId?: string;
+  /** Number of rounds played together */
+  roundsPlayed: number;
   createdAt: string;
   updatedAt: string;
 }

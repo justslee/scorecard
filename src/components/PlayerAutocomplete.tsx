@@ -7,6 +7,7 @@ import { SavedPlayer, Player } from '@/lib/types';
 
 interface PlayerAutocompleteProps {
   value: Player;
+  index: number; // Position in the players array (for stable ID generation)
   savedPlayers: SavedPlayer[];
   selectedIds: string[]; // IDs already in the round (to exclude from suggestions)
   placeholder?: string;
@@ -17,6 +18,7 @@ interface PlayerAutocompleteProps {
 
 export default function PlayerAutocomplete({
   value,
+  index,
   savedPlayers,
   selectedIds,
   placeholder = 'Player name',
@@ -29,13 +31,18 @@ export default function PlayerAutocomplete({
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  
+  // Stable ID for custom (non-saved) players based on position
+  const customPlayerId = `custom-player-${index}`;
 
   // Check if current player is from saved players
   const isLinkedPlayer = savedPlayers.some((sp) => sp.id === value.id);
 
-  // Filter available players (not already selected, except current)
+  // Filter available players (not already selected by other inputs)
+  // We use savedPlayer IDs only for filtering, not custom IDs
+  const selectedSavedIds = selectedIds.filter(id => !id.startsWith('custom-player-'));
   const availablePlayers = savedPlayers.filter(
-    (sp) => !selectedIds.includes(sp.id) || sp.id === value.id
+    (sp) => !selectedSavedIds.includes(sp.id) || sp.id === value.id
   );
 
   // Get suggestions based on input
@@ -90,9 +97,9 @@ export default function PlayerAutocomplete({
     setInputValue(newValue);
     setIsOpen(true);
     
-    // Update the player with typed name (creates new unlinked player)
+    // Update the player with typed name (use stable custom ID)
     onChange({
-      id: crypto.randomUUID(),
+      id: customPlayerId,
       name: newValue,
     });
   };
