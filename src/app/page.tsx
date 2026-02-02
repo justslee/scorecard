@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AuthButtons from '@/components/AuthButtons';
 import { Round, Tournament } from '@/lib/types';
-import { deleteRound, getRounds, getTournaments, initializeStorage } from '@/lib/storage';
+import { deleteRound, deleteTournament, getRounds, getTournaments, initializeStorage } from '@/lib/storage';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flag, Settings, Trophy, Trash2, Home as HomeIcon, Plus, User, ChartBar } from 'lucide-react';
+import { Flag, Settings, Trophy, Home as HomeIcon, Plus, User, ChartBar } from 'lucide-react';
+import SwipeableRow from '@/components/SwipeableRow';
 import RoundSummary from '@/components/RoundSummary';
 
 export default function Home() {
@@ -23,14 +24,16 @@ export default function Home() {
     setLoaded(true);
   }, []);
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (confirm('Delete this round?')) {
-      deleteRound(id);
-      setRounds(getRounds());
-      setTournaments(getTournaments());
-    }
+  const handleDeleteRound = (id: string) => {
+    deleteRound(id);
+    setRounds(getRounds());
+    setTournaments(getTournaments());
+  };
+
+  const handleDeleteTournament = (id: string) => {
+    deleteTournament(id);
+    setTournaments(getTournaments());
+    setRounds(getRounds());
   };
 
   const formatDate = (dateStr: string) => {
@@ -102,29 +105,37 @@ export default function Home() {
             </div>
           ) : (
             <div className="space-y-3">
-              {tournaments.map((t) => (
-                <Link
+              {tournaments.map((t, index) => (
+                <motion.div
                   key={t.id}
-                  href={`/tournament/${t.id}`}
-                  className="block card card-hover p-5"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2, delay: index * 0.05 }}
                 >
-                  <div className="flex justify-between items-start gap-3">
-                    <div>
-                      <h3 className="font-semibold text-lg tracking-tight flex items-center gap-2">
-                        <Trophy className="h-5 w-5 text-zinc-300" aria-hidden="true" />
-                        <span>{t.name}</span>
-                      </h3>
-                      <p className="text-zinc-400 text-sm mt-1">
-                        {t.playerIds.length} players • {t.roundIds.length} rounds
-                      </p>
-                    </div>
-                    {t.numRounds ? (
-                      <span className="px-3 py-1 rounded-full text-xs bg-white/7 border border-white/10 text-zinc-300">
-                        {t.roundIds.length}/{t.numRounds}
-                      </span>
-                    ) : null}
-                  </div>
-                </Link>
+                  <SwipeableRow onDelete={() => handleDeleteTournament(t.id)}>
+                    <Link
+                      href={`/tournament/${t.id}`}
+                      className="block card card-hover p-5"
+                    >
+                      <div className="flex justify-between items-start gap-3">
+                        <div>
+                          <h3 className="font-semibold text-lg tracking-tight flex items-center gap-2">
+                            <Trophy className="h-5 w-5 text-zinc-300" aria-hidden="true" />
+                            <span>{t.name}</span>
+                          </h3>
+                          <p className="text-zinc-400 text-sm mt-1">
+                            {t.playerIds.length} players • {t.roundIds.length} rounds
+                          </p>
+                        </div>
+                        {t.numRounds ? (
+                          <span className="px-3 py-1 rounded-full text-xs bg-white/7 border border-white/10 text-zinc-300">
+                            {t.roundIds.length}/{t.numRounds}
+                          </span>
+                        ) : null}
+                      </div>
+                    </Link>
+                  </SwipeableRow>
+                </motion.div>
               ))}
             </div>
           )}
@@ -152,60 +163,52 @@ export default function Home() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.2, delay: index * 0.05 }}
                 >
-                  <Link href={`/round/${round.id}`}>
-                    <motion.div
-                      whileTap={{ scale: 0.95, opacity: 0.8 }}
-                      whileHover={{ scale: 1.02, y: -2 }}
-                      transition={{ type: "spring", stiffness: 400, damping: 25 }}
-                      className="card card-hover p-5 cursor-pointer active:bg-white/10"
-                    >
-                      <div className="flex justify-between items-start gap-3">
-                        <div>
-                          <h3 className="font-semibold text-lg tracking-tight">{round.courseName}</h3>
-                          <p className="text-zinc-400 text-sm">{formatDate(round.date)}</p>
-                          <p className="text-zinc-500 text-sm mt-1 line-clamp-1">
-                            {round.players.map((p) => p.name).join(', ')}
-                          </p>
-                        </div>
+                  <SwipeableRow onDelete={() => handleDeleteRound(round.id)}>
+                    <Link href={`/round/${round.id}`}>
+                      <motion.div
+                        whileTap={{ scale: 0.98, opacity: 0.9 }}
+                        transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                        className="card card-hover p-5 cursor-pointer active:bg-white/10"
+                      >
+                        <div className="flex justify-between items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-lg tracking-tight">{round.courseName}</h3>
+                            <p className="text-zinc-400 text-sm">{formatDate(round.date)}</p>
+                            <p className="text-zinc-500 text-sm mt-1 line-clamp-1">
+                              {round.players.map((p) => p.name).join(', ')}
+                            </p>
+                          </div>
 
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs border ${
-                              round.status === 'active'
-                                ? 'bg-amber-500/10 border-amber-400/20 text-amber-200'
-                                : 'bg-white/5 border-white/10 text-zinc-300'
-                            }`}
-                          >
-                            {round.status === 'active' ? 'In Progress' : 'Complete'}
-                          </span>
-                          {round.status === 'completed' && (
-                            <motion.button
-                              whileTap={{ scale: 0.9 }}
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setSummaryRound(round);
-                              }}
-                              className="btn btn-icon text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10 border-emerald-400/20"
-                              aria-label="View summary"
-                              title="View Summary"
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs border ${
+                                round.status === 'active'
+                                  ? 'bg-amber-500/10 border-amber-400/20 text-amber-200'
+                                  : 'bg-white/5 border-white/10 text-zinc-300'
+                              }`}
                             >
-                              <ChartBar className="h-5 w-5" aria-hidden="true" />
-                            </motion.button>
-                          )}
-                          <motion.button
-                            whileTap={{ scale: 0.9 }}
-                            onClick={(e) => handleDelete(round.id, e)}
-                            className="btn btn-icon text-red-300 hover:text-red-200 hover:bg-red-500/10 border-red-400/20"
-                            aria-label="Delete round"
-                            title="Delete"
-                          >
-                            <Trash2 className="h-5 w-5" aria-hidden="true" />
-                          </motion.button>
+                              {round.status === 'active' ? 'In Progress' : 'Complete'}
+                            </span>
+                            {round.status === 'completed' && (
+                              <motion.button
+                                whileTap={{ scale: 0.9 }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setSummaryRound(round);
+                                }}
+                                className="btn btn-icon text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10 border-emerald-400/20"
+                                aria-label="View summary"
+                                title="View Summary"
+                              >
+                                <ChartBar className="h-5 w-5" aria-hidden="true" />
+                              </motion.button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </motion.div>
-                  </Link>
+                      </motion.div>
+                    </Link>
+                  </SwipeableRow>
                 </motion.div>
               ))}
             </div>
