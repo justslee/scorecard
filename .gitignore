@@ -52,3 +52,6 @@ venv/
 .Python
 *.egg-info/
 dist/
+
+# Backend data (local storage)
+backend/data/
