@@ -60,28 +60,17 @@ function getHoleInfo(round: Round, holeNumber: number): HoleInfo {
   // Check if round has hole data from API
   const holeData = round.holes?.[holeNumber - 1];
   
-  if (holeData) {
-    return {
-      number: holeNumber,
-      par: holeData.par,
-      yards: holeData.yards || 400,
-      handicap: holeData.handicap || holeNumber,
-      hazards: holeData.hazards || [],
-      dogleg: holeData.dogleg || null,
-    };
-  }
-
-  // Default mock data if no hole info available
+  // Default mock data
   const defaultPars = [4, 4, 3, 5, 4, 4, 3, 4, 5, 4, 3, 4, 5, 4, 4, 3, 4, 5];
   const defaultYards = [385, 410, 175, 520, 395, 365, 195, 430, 545, 400, 165, 425, 510, 380, 405, 185, 440, 530];
   
   return {
     number: holeNumber,
-    par: defaultPars[holeNumber - 1] || 4,
-    yards: defaultYards[holeNumber - 1] || 400,
-    handicap: holeNumber,
-    hazards: [],
-    dogleg: null,
+    par: holeData?.par ?? defaultPars[holeNumber - 1] ?? 4,
+    yards: holeData?.yards ?? defaultYards[holeNumber - 1] ?? 400,
+    handicap: holeData?.handicap ?? holeNumber,
+    hazards: [], // Will be populated when course data includes hazards
+    dogleg: null, // Will be populated when course data includes dogleg info
   };
 }
 
