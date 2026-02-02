@@ -124,65 +124,68 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
 
   const processVoiceScores = async (transcript: string) => {
     console.log('Processing voice transcript:', transcript);
-    console.log('Players in round:', round.players.map(p => p.name));
     setIsProcessingVoice(true);
     const targetHole = currentHole || 1;
+    const par = round.holes[targetHole - 1]?.par || 4;
 
-    // Use local parsing directly - it's fast and works offline
-    const localResult = parseVoiceLocally(transcript, targetHole);
-    console.log('Local parse result:', localResult);
-    
-    // If local parsing found scores, use them
-    if (Object.keys(localResult.scores).length > 0) {
-      applyVoiceScores(localResult);
+    // SIMPLE MODE: If a cell is selected, just parse a single score
+    if (selectedCell) {
+      const score = parseSimpleScore(transcript, par);
+      console.log('Simple score parse:', transcript, '->', score);
+      if (score !== null) {
+        submitScore(score);
+      }
       setIsProcessingVoice(false);
       setVoiceTranscript("");
       return;
     }
 
-    // Otherwise try API for more complex parsing
-    try {
-      const response = await fetch("/api/parse-voice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript,
-          systemPrompt: `Parse golf scores from voice. Players: ${round.players.map(p => p.name).join(", ")}. Current hole: ${targetHole}. Hole par: ${round.holes[targetHole - 1]?.par}.
-
-Common patterns:
-- "[Name] got a [number]" or "[Name] [number]"
-- "par for [Name]" means par score
-- "birdie for [Name]" means par - 1
-- "bogey for [Name]" means par + 1
-- "double for [Name]" or "double bogey" means par + 2
-- "eagle for [Name]" means par - 2
-- "everyone par" or "all par" means everyone gets par
-- "everyone par except [Name] [score]"
-- Can also specify hole: "hole 5 Justin 4 Dan 5"
-
-Return JSON: {"hole": number (use ${targetHole} if not specified), "scores": {"PlayerName": number}}
-
-Parse: "${transcript}"`,
-        }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log('API parse result:', result);
-        
-        // Check if result has scores
-        if (result.scores && Object.keys(result.scores).length > 0) {
-          applyVoiceScores(result);
-        } else {
-          console.log('API returned no scores');
-        }
-      }
-    } catch (err) {
-      console.log('API error:', err);
-    } finally {
-      setIsProcessingVoice(false);
-      setVoiceTranscript("");
+    // MULTI-PLAYER MODE: Try to parse scores for multiple players
+    const localResult = parseVoiceLocally(transcript, targetHole);
+    console.log('Multi-player parse result:', localResult);
+    
+    if (Object.keys(localResult.scores).length > 0) {
+      applyVoiceScores(localResult);
     }
+    
+    setIsProcessingVoice(false);
+    setVoiceTranscript("");
+  };
+
+  // Parse a single score from voice (just a number or golf term)
+  const parseSimpleScore = (text: string, par: number): number | null => {
+    const lower = text.toLowerCase().trim();
+    
+    // Direct numbers
+    const numMatch = lower.match(/\b(\d+)\b/);
+    if (numMatch) {
+      const num = parseInt(numMatch[1], 10);
+      if (num >= 1 && num <= 15) return num;
+    }
+    
+    // Word numbers
+    const wordNumbers: Record<string, number> = {
+      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+      'won': 1, 'to': 2, 'too': 2, 'for': 4, 'fore': 4,
+    };
+    for (const [word, num] of Object.entries(wordNumbers)) {
+      if (lower.includes(word)) return num;
+    }
+    
+    // Golf terms
+    if (lower.includes('ace') || lower.includes('hole in one')) return 1;
+    if (lower.includes('albatross') || lower.includes('double eagle')) return par - 3;
+    if (lower.includes('eagle')) return par - 2;
+    if (lower.includes('birdie')) return par - 1;
+    if (lower.includes('par')) return par;
+    if (lower.includes('bogey') && lower.includes('double')) return par + 2;
+    if (lower.includes('bogey') && lower.includes('triple')) return par + 3;
+    if (lower.includes('bogey')) return par + 1;
+    if (lower.includes('double')) return par + 2;
+    if (lower.includes('triple')) return par + 3;
+    
+    return null;
   };
 
   const parseVoiceLocally = (text: string, defaultHole: number) => {
@@ -593,7 +596,12 @@ Parse: "${transcript}"`,
             {!isVoiceActive && !voiceTranscript && !isProcessingVoice && (
               <div>
                 <p className="text-zinc-300 text-sm font-medium">Voice Score Entry</p>
-                <p className="text-zinc-500 text-xs">Hole {currentHole || 1}</p>
+                <p className="text-zinc-500 text-xs">
+                  {selectedCell 
+                    ? `${round.players.find(p => p.id === selectedCell.playerId)?.name} • Hole ${selectedCell.hole}`
+                    : `Hole ${currentHole || 1}`
+                  }
+                </p>
               </div>
             )}
             {isProcessingVoice && (
@@ -604,7 +612,10 @@ Parse: "${transcript}"`,
         {!isVoiceActive && !isProcessingVoice && (
           <div className="mt-2 pt-2 border-t border-zinc-700/50">
             <p className="text-zinc-500 text-xs">
-              Try: "{round.players[0]?.name || 'Justin'} 4, {round.players[1]?.name || 'Dan'} 5" • "everyone par" • "par except {round.players[0]?.name || 'Justin'} bogey"
+              {selectedCell 
+                ? 'Tap mic and say: "4", "par", "birdie", "bogey"'
+                : 'Tap a score cell first, then use voice to enter the score'
+              }
             </p>
           </div>
         )}
