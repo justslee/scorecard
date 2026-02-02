@@ -27,7 +27,8 @@ export default function RoundPage() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [currentHole, setCurrentHole] = useState(1);
-  const [activeTab, setActiveTab] = useState<'scores' | 'games' | 'caddie'>('scores');
+  const [activeTab, setActiveTab] = useState<'scores' | 'games'>('scores');
+  const [showCaddie, setShowCaddie] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
 
   useEffect(() => {
@@ -209,7 +210,7 @@ export default function RoundPage() {
               </p>
             </div>
 
-            <button onClick={handleOpenMap} className="btn btn-icon" title="GPS Map" aria-label="GPS Map">
+            <button onClick={() => setShowCaddie(true)} className="btn btn-icon" title="Caddie" aria-label="Caddie">
               <Map className="h-5 w-5" aria-hidden="true" />
             </button>
             <button onClick={() => setShowCamera(true)} className="btn btn-icon" title="Scan scorecard" aria-label="Scan scorecard">
@@ -265,12 +266,6 @@ export default function RoundPage() {
             className={`pill-tab ${activeTab === 'scores' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
           >
             Scores
-          </button>
-          <button
-            onClick={() => setActiveTab('caddie')}
-            className={`pill-tab ${activeTab === 'caddie' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
-          >
-            Caddie
           </button>
           <button
             onClick={() => setActiveTab('games')}
@@ -332,17 +327,6 @@ export default function RoundPage() {
               </div>
             </motion.div>
           )}
-          {activeTab === 'caddie' && (
-            <motion.div
-              key="caddie"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
-            >
-              <CaddiePanel round={round} currentHole={currentHole} onHoleChange={setCurrentHole} />
-            </motion.div>
-          )}
           {activeTab === 'games' && (
             <motion.div
               key="games"
@@ -384,6 +368,62 @@ export default function RoundPage() {
         {showSummary && (
           <motion.div key="summary" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
             <RoundSummary round={round} onClose={() => setShowSummary(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Caddie Panel Modal */}
+      <AnimatePresence>
+        {showCaddie && (
+          <motion.div
+            key="caddie-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex items-end justify-center"
+          >
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowCaddie(false)}
+            />
+            
+            {/* Panel */}
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative w-full max-w-2xl max-h-[85vh] bg-zinc-950 rounded-t-3xl border-t border-x border-zinc-800 overflow-hidden"
+            >
+              {/* Handle */}
+              <div className="flex justify-center py-3">
+                <div className="w-10 h-1 rounded-full bg-zinc-700" />
+              </div>
+              
+              {/* Header */}
+              <div className="px-4 pb-3 flex items-center justify-between border-b border-zinc-800">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Caddie</h2>
+                  <p className="text-sm text-zinc-400">Hole {currentHole} • {round.courseName}</p>
+                </div>
+                <button
+                  onClick={() => setShowCaddie(false)}
+                  className="btn btn-icon text-zinc-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              {/* Content */}
+              <div className="overflow-y-auto max-h-[calc(85vh-100px)] px-4 py-4">
+                <CaddiePanel round={round} currentHole={currentHole} onHoleChange={setCurrentHole} />
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
