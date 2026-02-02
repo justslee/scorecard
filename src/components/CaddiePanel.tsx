@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { motion, useMotionValue, animate, PanInfo, useDragControls } from 'framer-motion';
+import { motion, useMotionValue, animate, PanInfo } from 'framer-motion';
 import {
   Wind,
   Locate,
@@ -59,7 +59,6 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
   
   const sheetHeight = useMotionValue(COLLAPSED_HEIGHT);
   const sheetRef = useRef<HTMLDivElement>(null);
-  const dragControls = useDragControls();
 
   const hole = getHoleInfo(round, currentHole);
 
@@ -209,23 +208,20 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
         )}
       </div>
 
-      {/* BOTTOM SHEET - Draggable via handle only */}
+      {/* BOTTOM SHEET - Draggable */}
       <motion.div
         ref={sheetRef}
         style={{ height: sheetHeight }}
         drag="y"
-        dragControls={dragControls}
-        dragListener={false}
         dragConstraints={{ top: 0, bottom: 0 }}
         dragElastic={{ top: 0.1, bottom: 0.1 }}
         onDragEnd={handleDragEnd}
-        className="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl border-t border-zinc-800 overflow-hidden"
+        className="absolute bottom-0 left-0 right-0 bg-zinc-900 rounded-t-2xl border-t border-zinc-800 overflow-hidden cursor-grab active:cursor-grabbing"
       >
-        {/* Drag handle - only this initiates drag */}
+        {/* Drag handle */}
         <div 
-          onPointerDown={(e) => dragControls.start(e)}
           onClick={toggleExpand}
-          className="w-full py-2 flex flex-col items-center gap-1 cursor-grab active:cursor-grabbing touch-none"
+          className="w-full py-2 flex flex-col items-center gap-1"
         >
           <div className="w-10 h-1 rounded-full bg-zinc-600" />
           <ChevronUp className={`w-4 h-4 text-zinc-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
