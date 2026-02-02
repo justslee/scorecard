@@ -406,7 +406,7 @@ export default function RoundPage() {
                   setShowCaddie(false);
                 }
               }}
-              className="relative w-full max-w-2xl h-[92vh] bg-zinc-950 rounded-t-3xl border-t border-x border-zinc-800 overflow-hidden flex flex-col"
+              className="relative w-full max-w-2xl h-[98vh] bg-zinc-950 rounded-t-2xl overflow-hidden flex flex-col"
             >
               {/* Drag handle */}
               <div className="flex justify-center py-3 cursor-grab active:cursor-grabbing shrink-0">

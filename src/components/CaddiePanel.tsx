@@ -171,47 +171,30 @@ export default function CaddiePanel({ round, currentHole, onHoleChange }: Caddie
         </div>
 
         <div className="px-4 pb-4 space-y-4">
-          {/* Quick distance + club (always visible) */}
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <div className="relative">
-                <input
-                  type="number"
-                  value={distanceToPin ?? ''}
-                  onChange={(e) => setDistanceToPin(e.target.value ? Number(e.target.value) : null)}
-                  placeholder="Distance"
-                  className="w-full px-4 py-3 rounded-xl bg-zinc-800 border border-zinc-700 text-white text-xl font-bold text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">yds</span>
-              </div>
+          {/* Distance input + club suggestion */}
+          <div className="flex gap-3 items-stretch">
+            <div className="relative flex-1">
+              <input
+                type="number"
+                value={distanceToPin ?? ''}
+                onChange={(e) => setDistanceToPin(e.target.value ? Number(e.target.value) : null)}
+                placeholder="Yards"
+                className="w-full h-full px-4 py-3 rounded-xl bg-zinc-800 border border-zinc-700 text-white text-xl font-bold text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder:text-zinc-600 placeholder:font-normal placeholder:text-base"
+              />
             </div>
 
-            <AnimatePresence mode="wait">
-              {suggestion ? (
-                <motion.div
-                  key="club"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="flex-1 px-4 py-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-center"
-                >
-                  <div className="text-xl font-bold text-emerald-400 uppercase">
-                    {suggestion.club.replace(/(\d)/, ' $1')}
-                  </div>
-                  <div className="text-xs text-emerald-400/60">{suggestion.yards} yds</div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="placeholder"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="flex-1 px-4 py-3 rounded-xl bg-zinc-800/50 border border-zinc-700/50 text-center flex items-center justify-center"
-                >
-                  <span className="text-zinc-500 text-sm">Enter distance</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {suggestion && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex-1 px-4 py-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-center"
+              >
+                <div className="text-xl font-bold text-emerald-400 uppercase">
+                  {suggestion.club.replace(/(\d)/, ' $1')}
+                </div>
+                <div className="text-xs text-emerald-400/60">{suggestion.yards} yds</div>
+              </motion.div>
+            )}
           </div>
 
           {/* Quick distance buttons */}
