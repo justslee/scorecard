@@ -14,8 +14,9 @@ import GPSMapView from '@/components/GPSMapView';
 import RoundSummary from '@/components/RoundSummary';
 import CaddieModal from '@/components/CaddieModal';
 import TournamentLeaderboard from '@/components/TournamentLeaderboard';
+import EditGroupsModal from '@/components/EditGroupsModal';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Camera, Check, Map, Trophy, ChevronRight, Users } from 'lucide-react';
+import { Camera, Check, Map, Trophy, ChevronRight, Users, Settings2 } from 'lucide-react';
 import { getCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
 import { hapticCelebration, hapticSuccess } from '@/lib/haptics';
 
@@ -32,6 +33,7 @@ export default function RoundPage() {
   const [activeTab, setActiveTab] = useState<'scores' | 'games' | 'tournament'>('scores');
   const [showCaddie, setShowCaddie] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  const [showEditGroups, setShowEditGroups] = useState(false);
 
   // Tournament data (if this round is part of one)
   const tournament = useMemo(() => {
@@ -228,6 +230,17 @@ export default function RoundPage() {
               </p>
             </div>
 
+            {/* Edit Groups button - only show if round has groups or is a tournament round */}
+            {(round.groups || round.tournamentId) && (
+              <button 
+                onClick={() => setShowEditGroups(true)} 
+                className="btn btn-icon" 
+                title="Edit Groups" 
+                aria-label="Edit Groups"
+              >
+                <Users className="h-5 w-5" aria-hidden="true" />
+              </button>
+            )}
             <button onClick={() => setShowCaddie(true)} className="btn btn-icon" title="Caddie" aria-label="Caddie">
               <Map className="h-5 w-5" aria-hidden="true" />
             </button>
@@ -519,6 +532,32 @@ export default function RoundPage() {
             currentHole={currentHole}
             onHoleChange={setCurrentHole}
             onClose={() => setShowCaddie(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Edit Groups Modal */}
+      <AnimatePresence>
+        {showEditGroups && (
+          <EditGroupsModal
+            round={round}
+            onSave={(groups) => {
+              // Update players with new group assignments
+              const updatedPlayers = round.players.map(p => {
+                const playerGroup = groups.find(g => g.playerIds.includes(p.id));
+                return { ...p, groupId: playerGroup?.id };
+              });
+              
+              const updatedRound = {
+                ...round,
+                groups: groups.length > 0 ? groups : undefined,
+                players: updatedPlayers,
+              };
+              setRound(updatedRound);
+              saveRound(updatedRound);
+              setShowEditGroups(false);
+            }}
+            onClose={() => setShowEditGroups(false)}
           />
         )}
       </AnimatePresence>
