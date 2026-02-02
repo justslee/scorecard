@@ -162,6 +162,8 @@ export interface Tournament {
   numRounds?: number;
   /** Optional: name lookup for rendering (since players are otherwise stored per-round) */
   playerNamesById?: Record<string, string>;
+  /** Tournament-level games (skins, nassau, etc.) that span all rounds */
+  games?: Game[];
 }
 
 export interface GolferProfile {

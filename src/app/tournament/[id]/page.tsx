@@ -6,8 +6,9 @@ import { useParams } from 'next/navigation';
 import { Round, Tournament } from '@/lib/types';
 import { addPlayerToTournament, getRound, getRounds, getTournament } from '@/lib/storage';
 import TournamentLeaderboard from '@/components/TournamentLeaderboard';
+import TournamentGamesPanel from '@/components/TournamentGamesPanel';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Flag, X } from 'lucide-react';
+import { Flag, X, Trophy, Gamepad2 } from 'lucide-react';
 
 export default function TournamentPage() {
   const params = useParams<{ id: string }>();
@@ -19,6 +20,7 @@ export default function TournamentPage() {
 
   const [addingPlayer, setAddingPlayer] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
+  const [activeTab, setActiveTab] = useState<'leaderboard' | 'games' | 'rounds'>('leaderboard');
 
   const refresh = () => {
     if (!id) return;
@@ -157,9 +159,65 @@ export default function TournamentPage() {
           )}
         </AnimatePresence>
 
-        <TournamentLeaderboard tournament={tournament} rounds={roundsSorted} />
+        {/* Tabs */}
+        <div className="pill-tabs flex gap-1 mb-4">
+          <button
+            onClick={() => setActiveTab('leaderboard')}
+            className={`pill-tab flex items-center gap-1.5 ${activeTab === 'leaderboard' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            <Trophy className="w-3.5 h-3.5" />
+            Leaderboard
+          </button>
+          <button
+            onClick={() => setActiveTab('games')}
+            className={`pill-tab flex items-center gap-1.5 ${activeTab === 'games' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            <Gamepad2 className="w-3.5 h-3.5" />
+            Games
+          </button>
+          <button
+            onClick={() => setActiveTab('rounds')}
+            className={`pill-tab flex items-center gap-1.5 ${activeTab === 'rounds' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            <Flag className="w-3.5 h-3.5" />
+            Rounds
+          </button>
+        </div>
 
-        <section className="card p-5">
+        <AnimatePresence mode="wait">
+          {activeTab === 'leaderboard' && (
+            <motion.div
+              key="leaderboard"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+            >
+              <TournamentLeaderboard tournament={tournament} rounds={roundsSorted} />
+            </motion.div>
+          )}
+
+          {activeTab === 'games' && (
+            <motion.div
+              key="games"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+            >
+              <TournamentGamesPanel tournament={tournament} rounds={roundsSorted} onUpdate={refresh} />
+            </motion.div>
+          )}
+
+          {activeTab === 'rounds' && (
+            <motion.div
+              key="rounds"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+            >
+              <section className="card p-5">
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-sm font-medium text-zinc-400 tracking-wide uppercase">Rounds</h2>
@@ -210,7 +268,10 @@ export default function TournamentPage() {
               ))}
             </div>
           )}
-        </section>
+              </section>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );
