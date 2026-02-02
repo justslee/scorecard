@@ -16,6 +16,7 @@ import CaddiePanel from '@/components/CaddiePanel';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Check, Map } from 'lucide-react';
 import { getCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
+import { hapticCelebration, hapticSuccess } from '@/lib/haptics';
 
 export default function RoundPage() {
   const params = useParams();
@@ -146,6 +147,7 @@ export default function RoundPage() {
     setRound(updatedRound);
     saveRound(updatedRound);
     setShowSummary(true);
+    hapticCelebration(); // 🎉 Festive haptics!
   };
 
   const handleOpenMap = async () => {

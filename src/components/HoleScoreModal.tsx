@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Player, HoleInfo } from "@/lib/types";
+import { hapticLight, hapticSuccess } from "@/lib/haptics";
 
 interface HoleScoreModalProps {
   hole: HoleInfo;
@@ -218,6 +219,7 @@ export default function HoleScoreModal({
             whileTap={{ scale: 0.97 }}
             onClick={() => {
               players.forEach((p) => onScoreChange(p.id, hole.par));
+              hapticSuccess();
             }}
             className="flex-1 py-3 rounded-xl bg-emerald-500/20 text-emerald-300 text-sm font-semibold border border-emerald-500/30"
           >
@@ -225,7 +227,10 @@ export default function HoleScoreModal({
           </motion.button>
           <motion.button
             whileTap={{ scale: 0.97 }}
-            onClick={onClose}
+            onClick={() => {
+              hapticLight();
+              onClose();
+            }}
             className="flex-1 py-3 rounded-xl bg-white/10 text-white text-sm font-semibold border border-white/20"
           >
             Done
@@ -343,18 +348,25 @@ function ScoreCell({
   const increment = (e: React.MouseEvent) => {
     e.stopPropagation();
     const current = score ?? par;
-    if (current < 15) onChange(current + 1);
+    if (current < 15) {
+      onChange(current + 1);
+      hapticLight();
+    }
   };
 
   const decrement = (e: React.MouseEvent) => {
     e.stopPropagation();
     const current = score ?? par;
-    if (current > 1) onChange(current - 1);
+    if (current > 1) {
+      onChange(current - 1);
+      hapticLight();
+    }
   };
 
   const handleTap = () => {
     if (score === null) {
       onChange(par);
+      hapticSuccess();
     }
   };
 
