@@ -12,6 +12,7 @@ import GamesPanel from '@/components/GamesPanel';
 import GameLeaderboards from '@/components/GameLeaderboards';
 import GPSMapView from '@/components/GPSMapView';
 import RoundSummary from '@/components/RoundSummary';
+import CaddiePanel from '@/components/CaddiePanel';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Check, Map } from 'lucide-react';
 import { getCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
@@ -26,7 +27,7 @@ export default function RoundPage() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [currentHole, setCurrentHole] = useState(1);
-  const [activeTab, setActiveTab] = useState<'scores' | 'games'>('scores');
+  const [activeTab, setActiveTab] = useState<'scores' | 'games' | 'caddie'>('scores');
   const [showSummary, setShowSummary] = useState(false);
 
   useEffect(() => {
@@ -266,6 +267,12 @@ export default function RoundPage() {
             Scores
           </button>
           <button
+            onClick={() => setActiveTab('caddie')}
+            className={`pill-tab ${activeTab === 'caddie' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+          >
+            Caddie
+          </button>
+          <button
             onClick={() => setActiveTab('games')}
             className={`pill-tab ${activeTab === 'games' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
           >
@@ -274,7 +281,7 @@ export default function RoundPage() {
         </div>
 
         <AnimatePresence mode="wait" initial={false}>
-          {activeTab === 'scores' ? (
+          {activeTab === 'scores' && (
             <motion.div
               key="scores"
               initial={{ opacity: 0, y: 8 }}
@@ -324,7 +331,19 @@ export default function RoundPage() {
                 </div>
               </div>
             </motion.div>
-          ) : (
+          )}
+          {activeTab === 'caddie' && (
+            <motion.div
+              key="caddie"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+            >
+              <CaddiePanel round={round} currentHole={currentHole} onHoleChange={setCurrentHole} />
+            </motion.div>
+          )}
+          {activeTab === 'games' && (
             <motion.div
               key="games"
               initial={{ opacity: 0, y: 8 }}

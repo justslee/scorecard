@@ -6,7 +6,7 @@ import AuthButtons from '@/components/AuthButtons';
 import { Round, Tournament } from '@/lib/types';
 import { deleteRound, getRounds, getTournaments, initializeStorage } from '@/lib/storage';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flag, Settings, Trophy, Trash2, Home as HomeIcon, Plus, User, ChartBar, Navigation } from 'lucide-react';
+import { Flag, Settings, Trophy, Trash2, Home as HomeIcon, Plus, User, ChartBar } from 'lucide-react';
 import RoundSummary from '@/components/RoundSummary';
 
 export default function Home() {
@@ -225,13 +225,6 @@ export default function Home() {
           >
             <Plus className="h-5 w-5" aria-hidden="true" />
             <span className="text-[11px] font-medium">New</span>
-          </Link>
-          <Link
-            href="/caddie"
-            className="flex flex-col items-center p-2 text-zinc-400 hover:text-zinc-100 transition-colors"
-          >
-            <Flag className="h-5 w-5" aria-hidden="true" />
-            <span className="text-[11px] font-medium">Caddie</span>
           </Link>
           <Link
             href="/profile"
