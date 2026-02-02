@@ -144,6 +144,9 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
 
     // MULTI-PLAYER MODE: Use Claude to parse
     try {
+      // Get API key from localStorage (user's own key from Settings)
+      const apiKey = typeof window !== 'undefined' ? localStorage.getItem('anthropic_api_key') : null;
+      
       const response = await fetch("/api/parse-voice-scores", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -152,6 +155,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
           playerNames,
           hole: targetHole,
           par,
+          apiKey,
         }),
       });
 

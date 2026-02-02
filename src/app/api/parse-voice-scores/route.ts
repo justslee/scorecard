@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-
 export async function POST(request: NextRequest) {
   try {
-    const { transcript, playerNames, hole, par } = await request.json();
+    const { transcript, playerNames, hole, par, apiKey } = await request.json();
 
     if (!transcript || !playerNames || !Array.isArray(playerNames)) {
       return NextResponse.json(
@@ -13,9 +11,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Use provided API key or fall back to env variable
+    const ANTHROPIC_API_KEY = apiKey || process.env.ANTHROPIC_API_KEY;
+
     if (!ANTHROPIC_API_KEY) {
       return NextResponse.json(
-        { error: "No API key configured" },
+        { error: "No API key. Add your Claude API key in Settings." },
         { status: 500 }
       );
     }
