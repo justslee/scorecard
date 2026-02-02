@@ -13,14 +13,14 @@ interface ScoreGridProps {
   onHoleSelect?: (hole: number) => void;
 }
 
-// Group colors for visual distinction
+// Group colors for visual distinction - more prominent colors
 const GROUP_COLORS = [
-  { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400', badge: 'bg-emerald-500/20' },
-  { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', badge: 'bg-blue-500/20' },
-  { bg: 'bg-purple-500/10', border: 'border-purple-500/30', text: 'text-purple-400', badge: 'bg-purple-500/20' },
-  { bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-400', badge: 'bg-amber-500/20' },
-  { bg: 'bg-rose-500/10', border: 'border-rose-500/30', text: 'text-rose-400', badge: 'bg-rose-500/20' },
-  { bg: 'bg-cyan-500/10', border: 'border-cyan-500/30', text: 'text-cyan-400', badge: 'bg-cyan-500/20' },
+  { bg: 'bg-emerald-500/20', border: 'border-emerald-500/40', text: 'text-emerald-300', badge: 'bg-emerald-500', row: 'bg-emerald-500/10' },
+  { bg: 'bg-blue-500/20', border: 'border-blue-500/40', text: 'text-blue-300', badge: 'bg-blue-500', row: 'bg-blue-500/10' },
+  { bg: 'bg-purple-500/20', border: 'border-purple-500/40', text: 'text-purple-300', badge: 'bg-purple-500', row: 'bg-purple-500/10' },
+  { bg: 'bg-amber-500/20', border: 'border-amber-500/40', text: 'text-amber-300', badge: 'bg-amber-500', row: 'bg-amber-500/10' },
+  { bg: 'bg-rose-500/20', border: 'border-rose-500/40', text: 'text-rose-300', badge: 'bg-rose-500', row: 'bg-rose-500/10' },
+  { bg: 'bg-cyan-500/20', border: 'border-cyan-500/40', text: 'text-cyan-300', badge: 'bg-cyan-500', row: 'bg-cyan-500/10' },
 ];
 
 interface GroupedPlayers {
@@ -384,11 +384,11 @@ Parse: "${transcript}"`,
                         return (
                           <div
                             key={`${player.id}-${start}`}
-                            className={`grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch ${hasGroups ? colors.bg + '/30' : 'bg-white/0'}`}
+                            className={`grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch ${hasGroups ? colors.row : 'bg-white/0'}`}
                           >
                             <div className="px-3 py-2 text-sm font-medium text-zinc-200 truncate flex items-center gap-2">
                               {hasGroups && (
-                                <span className={`w-2 h-2 rounded-full ${colors.badge}`} />
+                                <span className={`w-2.5 h-2.5 rounded-full ${colors.badge}`} />
                               )}
                               {player.name}
                             </div>
