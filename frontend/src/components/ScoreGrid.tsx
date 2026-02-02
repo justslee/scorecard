@@ -142,12 +142,11 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
       return;
     }
 
-    // MULTI-PLAYER MODE: Use Claude to parse
+    // MULTI-PLAYER MODE: Use Claude to parse via Python backend
     try {
-      // Get API key from localStorage (user's own key from Settings)
-      const apiKey = typeof window !== 'undefined' ? localStorage.getItem('anthropic_api_key') : null;
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       
-      const response = await fetch("/api/parse-voice-scores", {
+      const response = await fetch(`${backendUrl}/api/parse-voice-scores`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -155,7 +154,6 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
           playerNames,
           hole: targetHole,
           par,
-          apiKey,
         }),
       });
 
