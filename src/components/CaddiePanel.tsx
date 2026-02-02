@@ -183,30 +183,38 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
     return { main: mainTip || "🏌️ Play smart, commit to your shot", details: advice };
   };
 
-  // Handle swipe on map - down to dismiss, left/right for holes
-  const handleMapDragEnd = (_: any, info: PanInfo) => {
-    const { offset, velocity } = info;
+  // Touch handling for swipe gestures (no visual drag)
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStart.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+  };
+  
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStart.current) return;
     
-    // Swipe down to dismiss
-    if (offset.y > 100 || velocity.y > 500) {
-      onClose();
-      return;
-    }
+    const deltaX = e.changedTouches[0].clientX - touchStart.current.x;
+    const deltaY = e.changedTouches[0].clientY - touchStart.current.y;
     
-    // Swipe left for next hole
-    if (offset.x < -50 || velocity.x < -300) {
-      if (currentHole < 18) {
-        onHoleChange(currentHole + 1);
+    // Determine if horizontal or vertical swipe
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      // Horizontal swipe
+      if (deltaX < -50 && currentHole < 18) {
+        onHoleChange(currentHole + 1); // Swipe left = next
+      } else if (deltaX > 50 && currentHole > 1) {
+        onHoleChange(currentHole - 1); // Swipe right = prev
       }
-      return;
-    }
-    
-    // Swipe right for previous hole
-    if (offset.x > 50 || velocity.x > 300) {
-      if (currentHole > 1) {
-        onHoleChange(currentHole - 1);
+    } else {
+      // Vertical swipe
+      if (deltaY > 80) {
+        onClose(); // Swipe down = close
       }
     }
+    
+    touchStart.current = null;
   };
 
   // Handle sheet drag - simple toggle
@@ -234,12 +242,10 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
   return (
     <div ref={containerRef} className="relative h-full flex flex-col bg-black overscroll-none">
       {/* MAP AREA - Swipe down to dismiss, left/right for holes */}
-      <motion.div 
+      <div 
         className="flex-1 bg-gradient-to-b from-emerald-950 to-zinc-950 relative"
-        drag
-        dragConstraints={{ top: 0, bottom: 0, left: 0, right: 0 }}
-        dragElastic={{ top: 0, bottom: 0.5, left: 0.3, right: 0.3 }}
-        onDragEnd={handleMapDragEnd}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
       >
         {/* Close button */}
         <button
@@ -351,7 +357,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
             )}
           </div>
         )}
-      </motion.div>
+      </div>
 
       {/* BOTTOM SHEET */}
       <motion.div 
