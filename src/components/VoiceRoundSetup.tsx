@@ -118,8 +118,14 @@ export default function VoiceRoundSetup({
 
   const stopListening = useCallback(() => {
     if (!recognitionRef.current) return;
-    recognitionRef.current.stop();
+    try {
+      recognitionRef.current.stop();
+      recognitionRef.current.abort?.();
+    } catch {
+      // Ignore errors on stop
+    }
     setIsListening(false);
+    setInterimTranscript("");
   }, []);
 
   const handleParse = async () => {

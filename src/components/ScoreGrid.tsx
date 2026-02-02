@@ -105,10 +105,13 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
 
       recognition.onend = () => {
         setIsVoiceActive(false);
+        setVoiceTranscript("");
       };
 
-      recognition.onerror = () => {
+      recognition.onerror = (event: any) => {
+        console.log('Speech recognition error:', event.error);
         setIsVoiceActive(false);
+        setVoiceTranscript("");
       };
 
       recognitionRef.current = recognition;
@@ -242,12 +245,24 @@ Parse: "${transcript}"`,
 
   const toggleVoice = () => {
     if (isVoiceActive) {
-      recognitionRef.current?.stop();
+      // Force stop recognition
+      try {
+        recognitionRef.current?.stop();
+        recognitionRef.current?.abort?.();
+      } catch {
+        // Ignore errors on stop
+      }
       setIsVoiceActive(false);
+      setVoiceTranscript("");
     } else {
       setVoiceTranscript("");
-      recognitionRef.current?.start();
-      setIsVoiceActive(true);
+      try {
+        recognitionRef.current?.start();
+        setIsVoiceActive(true);
+      } catch {
+        // Recognition might already be running or unavailable
+        setIsVoiceActive(false);
+      }
     }
   };
 
