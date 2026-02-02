@@ -35,6 +35,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
+  const [pendingScores, setPendingScores] = useState<{ hole: number; scores: Record<string, number> } | null>(null);
   const recognitionRef = useRef<any>(null);
 
   // Organize players by group
@@ -140,12 +141,16 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
       return;
     }
 
-    // MULTI-PLAYER MODE: Try to parse scores for multiple players
+    // MULTI-PLAYER MODE: Parse and show confirmation
     const localResult = parseVoiceLocally(transcript, targetHole);
     console.log('Multi-player parse result:', localResult);
     
     if (Object.keys(localResult.scores).length > 0) {
-      applyVoiceScores(localResult);
+      // Show confirmation UI instead of applying directly
+      setPendingScores(localResult);
+    } else {
+      // No scores found - show error
+      alert(`Couldn't parse scores from: "${transcript}"\n\nTry: "Justin 4 Mike 5" or "everyone par"`);
     }
     
     setIsProcessingVoice(false);
@@ -275,33 +280,22 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     return result;
   };
 
-  const applyVoiceScores = (parsed: { hole: number; scores: Record<string, number> }) => {
-    console.log('Applying voice scores:', parsed);
+  const confirmPendingScores = () => {
+    if (!pendingScores) return;
     
-    for (const [name, score] of Object.entries(parsed.scores)) {
-      // Fuzzy match player name (first name, last name, or full name)
-      const nameLower = name.toLowerCase().trim();
-      const player = round.players.find((p) => {
-        const fullName = p.name.toLowerCase();
-        const firstName = fullName.split(' ')[0];
-        const lastName = fullName.split(' ').slice(-1)[0];
-        return (
-          fullName === nameLower ||
-          firstName === nameLower ||
-          lastName === nameLower ||
-          fullName.includes(nameLower) ||
-          nameLower.includes(firstName)
-        );
-      });
-      
+    console.log('Confirming scores:', pendingScores);
+    for (const [playerName, score] of Object.entries(pendingScores.scores)) {
+      const player = round.players.find(p => p.name === playerName);
       if (player) {
-        console.log(`Setting ${player.name} hole ${parsed.hole} = ${score}`);
-        onScoreChange(player.id, parsed.hole, score);
-      } else {
-        console.log(`Could not match player: "${name}"`);
+        onScoreChange(player.id, pendingScores.hole, score);
       }
     }
-    onHoleSelect?.(parsed.hole);
+    onHoleSelect?.(pendingScores.hole);
+    setPendingScores(null);
+  };
+
+  const cancelPendingScores = () => {
+    setPendingScores(null);
   };
 
   const toggleVoice = () => {
@@ -609,17 +603,45 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
             )}
           </div>
         </div>
-        {!isVoiceActive && !isProcessingVoice && (
+        {!isVoiceActive && !isProcessingVoice && !pendingScores && (
           <div className="mt-2 pt-2 border-t border-zinc-700/50">
             <p className="text-zinc-500 text-xs">
-              {selectedCell 
-                ? 'Tap mic and say: "4", "par", "birdie", "bogey"'
-                : 'Tap a score cell first, then use voice to enter the score'
-              }
+              Say: "Justin 4 Mike 5" or "everyone par" or "par except Mike bogey"
             </p>
           </div>
         )}
       </div>
+
+      {/* Pending scores confirmation */}
+      {pendingScores && (
+        <div className="mb-4 p-4 rounded-2xl bg-emerald-900/30 border border-emerald-500/30">
+          <p className="text-emerald-300 text-sm font-medium mb-3">
+            Hole {pendingScores.hole} — Confirm scores:
+          </p>
+          <div className="space-y-2 mb-4">
+            {Object.entries(pendingScores.scores).map(([name, score]) => (
+              <div key={name} className="flex justify-between items-center px-3 py-2 rounded-xl bg-white/5">
+                <span className="text-white font-medium">{name}</span>
+                <span className="text-emerald-300 font-bold text-lg">{score}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={cancelPendingScores}
+              className="flex-1 px-4 py-2 rounded-xl bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmPendingScores}
+              className="flex-1 px-4 py-2 rounded-xl bg-emerald-500 text-white font-medium hover:bg-emerald-600"
+            >
+              Apply Scores
+            </button>
+          </div>
+        </div>
+      )}
 
       {renderNine(1, 9, 'Front 9')}
       {renderNine(10, 18, 'Back 9')}
