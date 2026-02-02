@@ -6,8 +6,9 @@ import Link from 'next/link';
 import { Course, Player, Round, SavedPlayer, createDefaultCourse } from '@/lib/types';
 import { getCourses, saveCourse, saveRound, getSavedPlayers } from '@/lib/storage';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Flag, X, Mic, Users, ChevronDown } from 'lucide-react';
+import { Flag, Mic, Users } from 'lucide-react';
 import VoiceRoundSetup from '@/components/VoiceRoundSetup';
+import PlayerAutocomplete from '@/components/PlayerAutocomplete';
 
 export default function NewRound() {
   const router = useRouter();
@@ -20,8 +21,6 @@ export default function NewRound() {
   const [showVoice, setShowVoice] = useState(false);
   const [step, setStep] = useState<'course' | 'players'>('course');
   const [savedPlayers, setSavedPlayers] = useState<SavedPlayer[]>([]);
-  const [showPlayerPicker, setShowPlayerPicker] = useState(false);
-  const [focusedInputId, setFocusedInputId] = useState<string | null>(null);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -75,37 +74,30 @@ export default function NewRound() {
     if (players.length > 1) setPlayers(players.filter((p) => p.id !== id));
   };
 
-  const handlePlayerNameChange = (id: string, name: string) => {
-    setPlayers(players.map((p) => (p.id === id ? { ...p, name } : p)));
+  const handlePlayerChange = (index: number, player: Player) => {
+    const updated = [...players];
+    updated[index] = player;
+    setPlayers(updated);
   };
 
-  const handleSelectSavedPlayer = (savedPlayer: SavedPlayer, targetId?: string) => {
+  const handleSelectSavedPlayer = (savedPlayer: SavedPlayer) => {
     const newPlayer: Player = {
-      id: savedPlayer.id, // Use saved player's ID for linking
+      id: savedPlayer.id,
       name: savedPlayer.name,
       handicap: savedPlayer.handicap,
     };
 
-    if (targetId) {
-      // Replace the focused input
-      setPlayers(players.map((p) => (p.id === targetId ? newPlayer : p)));
-    } else {
-      // Add as new player if not already added
-      if (!players.some((p) => p.id === savedPlayer.id)) {
-        const emptyIndex = players.findIndex((p) => !p.name.trim());
-        if (emptyIndex >= 0) {
-          // Replace first empty slot
-          const updated = [...players];
-          updated[emptyIndex] = newPlayer;
-          setPlayers(updated);
-        } else if (players.length < 6) {
-          // Add new
-          setPlayers([...players, newPlayer]);
-        }
+    // Add as new player if not already added
+    if (!players.some((p) => p.id === savedPlayer.id)) {
+      const emptyIndex = players.findIndex((p) => !p.name.trim());
+      if (emptyIndex >= 0) {
+        const updated = [...players];
+        updated[emptyIndex] = newPlayer;
+        setPlayers(updated);
+      } else if (players.length < 6) {
+        setPlayers([...players, newPlayer]);
       }
     }
-    setShowPlayerPicker(false);
-    setFocusedInputId(null);
   };
 
   // Filter saved players not already in the round
@@ -113,16 +105,8 @@ export default function NewRound() {
     (sp) => !players.some((p) => p.id === sp.id)
   );
 
-  // Get suggestions based on current input
-  const getSuggestions = (input: string) => {
-    if (!input.trim()) return availableSavedPlayers.slice(0, 5);
-    const lower = input.toLowerCase();
-    return availableSavedPlayers.filter(
-      (sp) =>
-        sp.name.toLowerCase().includes(lower) ||
-        sp.nickname?.toLowerCase().includes(lower)
-    ).slice(0, 5);
-  };
+  // Get all selected player IDs
+  const selectedPlayerIds = players.map((p) => p.id);
 
   const handleSelectCourse = (course: Course) => {
     setSelectedCourse(course);
@@ -339,72 +323,18 @@ export default function NewRound() {
               )}
 
               <div className="space-y-3 mb-4">
-                {players.map((player, index) => {
-                  const suggestions = focusedInputId === player.id ? getSuggestions(player.name) : [];
-                  const isSavedPlayer = savedPlayers.some((sp) => sp.id === player.id);
-                  
-                  return (
-                    <div key={player.id} className="relative">
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <input
-                            type="text"
-                            placeholder={`Player ${index + 1}`}
-                            value={player.name}
-                            onChange={(e) => handlePlayerNameChange(player.id, e.target.value)}
-                            onFocus={() => setFocusedInputId(player.id)}
-                            onBlur={() => setTimeout(() => setFocusedInputId(null), 200)}
-                            className={`w-full px-4 py-3 rounded-2xl bg-white/5 border focus:bg-white/7 ${
-                              isSavedPlayer ? 'border-emerald-400/30 pl-10' : 'border-white/10'
-                            }`}
-                          />
-                          {isSavedPlayer && (
-                            <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                              <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                                <span className="text-xs text-emerald-300">✓</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        {players.length > 1 && (
-                          <button
-                            onClick={() => handleRemovePlayer(player.id)}
-                            className="btn rounded-2xl px-4 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200"
-                            aria-label="Remove player"
-                          >
-                            <X className="h-5 w-5" aria-hidden="true" />
-                          </button>
-                        )}
-                      </div>
-                      
-                      {/* Suggestions dropdown */}
-                      {suggestions.length > 0 && focusedInputId === player.id && (
-                        <div className="absolute z-10 mt-1 w-full rounded-xl bg-zinc-900 border border-white/10 shadow-xl overflow-hidden">
-                          {suggestions.map((sp) => (
-                            <button
-                              key={sp.id}
-                              onMouseDown={() => handleSelectSavedPlayer(sp, player.id)}
-                              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors text-left"
-                            >
-                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center text-sm font-medium text-emerald-300">
-                                {sp.name.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="font-medium">{sp.name}</div>
-                                {sp.nickname && (
-                                  <div className="text-xs text-zinc-500">&quot;{sp.nickname}&quot;</div>
-                                )}
-                              </div>
-                              {sp.handicap !== undefined && (
-                                <div className="ml-auto text-xs text-zinc-500">HCP {sp.handicap}</div>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {players.map((player, index) => (
+                  <PlayerAutocomplete
+                    key={player.id}
+                    value={player}
+                    savedPlayers={savedPlayers}
+                    selectedIds={selectedPlayerIds}
+                    placeholder={`Player ${index + 1}`}
+                    onChange={(updated) => handlePlayerChange(index, updated)}
+                    onRemove={() => handleRemovePlayer(player.id)}
+                    canRemove={players.length > 1}
+                  />
+                ))}
               </div>
 
               {players.length < 6 && (

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Users } from 'lucide-react';
+import { seedDefaultPlayers } from '@/lib/storage';
 
 export default function Settings() {
   const [apiKey, setApiKey] = useState('');
@@ -103,6 +104,23 @@ export default function Settings() {
             <p>Version 1.0.0</p>
             <p className="mt-1">Data is stored locally in your browser.</p>
           </div>
+        </section>
+
+        <section className="card p-5">
+          <h2 className="text-lg font-semibold tracking-tight">Sample Players</h2>
+          <p className="text-sm text-zinc-400 mt-1">Load 10 sample player profiles to test with.</p>
+          <button
+            onClick={() => {
+              seedDefaultPlayers();
+              alert('Sample players loaded! Go to Profile → My Players to see them.');
+            }}
+            className="btn w-full rounded-full py-3 mt-4 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-400/20 text-emerald-200"
+          >
+            <span className="inline-flex items-center justify-center gap-2">
+              <Users className="h-5 w-5" aria-hidden="true" />
+              <span>Load Sample Players</span>
+            </span>
+          </button>
         </section>
 
         <section className="card p-5">

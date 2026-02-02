@@ -259,6 +259,15 @@ function getDefaultPlayers(): SavedPlayer[] {
   const now = new Date().toISOString();
   return [
     {
+      id: 'player-justin-lee',
+      name: 'Justin Lee',
+      nickname: 'JL',
+      handicap: 3.2,
+      email: 'justin@email.com',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
       id: 'player-mike-chen',
       name: 'Mike Chen',
       nickname: 'Bomber',
@@ -348,6 +357,12 @@ function getDefaultPlayers(): SavedPlayer[] {
       updatedAt: now,
     },
   ];
+}
+
+// Force refresh players with defaults (for migration)
+export function seedDefaultPlayers(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(PLAYERS_KEY, JSON.stringify(getDefaultPlayers()));
 }
 
 // -----------------
