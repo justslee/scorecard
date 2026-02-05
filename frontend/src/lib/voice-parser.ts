@@ -34,10 +34,17 @@ export interface VoiceParseResult {
   tournament?: ParsedTournamentConfig;
   rawTranscript: string;
   confidence: number;
+  // Optional UI helpers
+  explanations?: string[];
+  warnings?: string[];
+  normalization?: {
+    players?: Array<{ from: string; to: string; score: number }>;
+    courses?: Array<{ from: string; to: string; score: number }>;
+  };
 }
 
 // System prompt for Claude to parse voice commands
-const GAME_PARSER_PROMPT = `You are a golf game configuration parser. Convert natural language descriptions of golf games and tournaments into structured JSON.
+export const GAME_PARSER_PROMPT = `You are a golf game configuration parser. Convert natural language descriptions of golf games and tournaments into structured JSON.
 
 GAME FORMATS YOU KNOW:
 - skins: Individual competition, win the hole outright to win the skin
@@ -96,7 +103,8 @@ Parse the following voice command and return ONLY valid JSON:`;
 
 export async function parseVoiceCommand(
   transcript: string,
-  existingPlayers?: Player[]
+  existingPlayers?: Player[],
+  options?: { apiKey?: string; knownCourses?: string[] }
 ): Promise<VoiceParseResult> {
   // Build context about existing players if available
   let playerContext = "";
@@ -110,6 +118,9 @@ export async function parseVoiceCommand(
     body: JSON.stringify({
       transcript,
       systemPrompt: GAME_PARSER_PROMPT + playerContext,
+      knownPlayers: existingPlayers?.map((p) => p.name) ?? undefined,
+      knownCourses: options?.knownCourses,
+      apiKey: options?.apiKey,
     }),
   });
 
