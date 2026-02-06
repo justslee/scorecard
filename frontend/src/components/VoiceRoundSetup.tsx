@@ -185,10 +185,27 @@ User said: "${fullTranscript}"`,
 
     // Extract player names - look for patterns like "with Justin, Dan, and Matt"
     const withPattern = /(?:with|players?:?)\s+([A-Z][a-z]+(?:\s*,?\s*(?:and\s+)?[A-Z][a-z]+)*)/gi;
+    const splitNameList = (raw: string): string[] => {
+      const chunks = raw
+        .split(/,|\s+and\s+/i)
+        .map((n) => n.trim())
+        .filter(Boolean);
+
+      const out: string[] = [];
+      for (const c of chunks) {
+        const words = c.split(/\s+/).filter(Boolean);
+        if (words.length > 1 && words.every((w) => /^[A-Z][a-z]+$/.test(w))) {
+          out.push(...words);
+        } else {
+          out.push(c);
+        }
+      }
+      return out;
+    };
+
     const withMatches = text.matchAll(withPattern);
     for (const match of withMatches) {
-      const names = match[1].split(/,|\s+and\s+/).map((n) => n.trim()).filter(Boolean);
-      playerNames.push(...names);
+      playerNames.push(...splitNameList(match[1]));
     }
 
     // Also try to find capitalized names

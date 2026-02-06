@@ -406,14 +406,29 @@ function parseVoiceLocalBasic(
     /([A-Z][a-z]+)\s+(?:receives?|gets?|giving)/gi,
   ];
 
+  const splitNameList = (raw: string): string[] => {
+    const chunks = raw
+      .split(/,|\s+and\s+/i)
+      .map((n) => n.trim())
+      .filter(Boolean);
+
+    const out: string[] = [];
+    for (const c of chunks) {
+      // If a chunk looks like multiple capitalized first names with no commas ("Dan Justin Matt"), split on spaces.
+      const words = c.split(/\s+/).filter(Boolean);
+      if (words.length > 1 && words.every((w) => /^[A-Z][a-z]+$/.test(w))) {
+        out.push(...words);
+      } else {
+        out.push(c);
+      }
+    }
+    return out;
+  };
+
   for (const pattern of namePatterns) {
     const matches = transcript.matchAll(pattern);
     for (const match of matches) {
-      const names = match[1]
-        .split(/,|\s+and\s+/)
-        .map((n) => n.trim())
-        .filter(Boolean);
-      playerNames.push(...names);
+      playerNames.push(...splitNameList(match[1]));
     }
   }
 
