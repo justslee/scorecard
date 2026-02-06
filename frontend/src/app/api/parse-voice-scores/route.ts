@@ -1,20 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseVoiceScores } from "@/lib/voice/parseVoiceScores";
+import { parseVoiceScores } from "@/lib/voice/node";
 
 export async function POST(request: NextRequest) {
   try {
     const { transcript, playerNames, hole, par, apiKey } = await request.json();
 
     if (!transcript || !playerNames || !Array.isArray(playerNames)) {
-      return NextResponse.json(
-        { error: "Missing transcript or playerNames" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing transcript or playerNames" }, { status: 400 });
     }
 
     // Use provided API key or fall back to env variable
     const ANTHROPIC_API_KEY = apiKey || process.env.ANTHROPIC_API_KEY;
-
     if (!ANTHROPIC_API_KEY) {
       return NextResponse.json(
         { error: "No API key. Add your Claude API key in Settings." },
@@ -22,20 +18,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const parsed = await parseVoiceScores(transcript, {
+    const parsed = await parseVoiceScores({
+      transcript,
       playerNames,
       hole,
       par,
-      anthropicApiKey: ANTHROPIC_API_KEY,
-      requireApiKey: true,
+      llm: {
+        anthropicApiKey: ANTHROPIC_API_KEY,
+        model: process.env.ANTHROPIC_MODEL || "claude-opus-4-20250514",
+        maxTokens: 256,
+        temperature: 0,
+        systemPrompt: "You are parsing golf scores from voice and must return ONLY valid JSON.",
+      },
+      maxRepairs: 2,
     });
 
     return NextResponse.json(parsed);
   } catch (error) {
     console.error("Parse voice scores error:", error);
-    return NextResponse.json(
-      { error: "Failed to parse voice command" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to parse voice command" }, { status: 500 });
   }
 }

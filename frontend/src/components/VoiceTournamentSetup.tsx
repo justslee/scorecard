@@ -135,7 +135,8 @@ export default function VoiceTournamentSetup({
     setError(null);
 
     try {
-      const result = await parseVoiceCommand(fullTranscript);
+      const apiKey = typeof window !== "undefined" ? (localStorage.getItem("anthropic_api_key") || undefined) : undefined;
+      const result = await parseVoiceCommand(fullTranscript, undefined, { apiKey });
       setParseResult(result);
     } catch (err) {
       setError("Failed to understand. Please try again.");

@@ -139,41 +139,41 @@ export default function VoiceRoundSetup({
     setError(null);
 
     try {
+      const apiKey = typeof window !== "undefined" ? (localStorage.getItem("anthropic_api_key") || null) : null;
+
       const response = await fetch("/api/parse-voice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           transcript: fullTranscript,
-          systemPrompt: `Parse this golf round setup request. Extract:
-- courseName: the golf course name mentioned
-- playerNames: array of player names
-- teeName: tee box color if mentioned (blue, white, red, etc.)
+          apiKey,
+          systemPrompt: `Parse this golf round setup request. Return ONLY valid JSON.
 
-Return JSON only:
+Schema:
 {
-  "courseName": "Course Name",
-  "playerNames": ["Player1", "Player2"],
-  "teeName": "Blue" // optional
+  "courseName": string,
+  "playerNames": string[],
+  "teeName": string | null
 }
+
+Rules:
+- playerNames should be individual players (split "Dan Justin Matt" into 3 names)
+- courseName should be the course name if present
+- teeName should be tee color/name if present
 
 User said: "${fullTranscript}"`,
         }),
       });
 
+      const result = await response.json();
       if (!response.ok) {
-        throw new Error("Parse failed");
+        throw new Error(result?.error || "Parse failed");
       }
 
-      const result = await response.json();
       setParseResult(result);
     } catch (err) {
-      // Fallback: try local parsing
-      const parsed = parseLocally(fullTranscript);
-      if (parsed.courseName || parsed.playerNames.length > 0) {
-        setParseResult(parsed);
-      } else {
-        setError("Couldn't understand. Please try again.");
-      }
+      console.error("Voice round parse failed:", err);
+      setError("Couldn't understand (or missing API key). Please try again.");
     } finally {
       setIsParsing(false);
     }
