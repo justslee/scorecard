@@ -76,11 +76,55 @@ export async function POST(request: NextRequest) {
     }
 
     const ANTHROPIC_API_KEY = apiKey || process.env.ANTHROPIC_API_KEY;
+
+    // If no API key is available, fall back to a lightweight local parse so the feature still works.
     if (!ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: "No API key. Add your Claude API key in Settings." },
-        { status: 500 }
-      );
+      const text = String(transcript);
+
+      const splitNameList = (raw: string): string[] => {
+        const chunks = raw
+          .split(/,|\s+and\s+/i)
+          .map((n) => n.trim())
+          .filter(Boolean);
+
+        const out: string[] = [];
+        for (const c of chunks) {
+          const words = c.split(/\s+/).filter(Boolean);
+          if (words.length > 1 && words.every((w) => /^[A-Z][a-z]+$/.test(w))) {
+            out.push(...words);
+          } else {
+            out.push(c);
+          }
+        }
+        return out;
+      };
+
+      // Players: try to capture after "with" or "players"
+      const playerNames: string[] = [];
+      const withPattern = /(?:with|players?:?)\s+([A-Z][a-z]+(?:\s*,?\s*(?:and\s+)?[A-Z][a-z]+)*)/gi;
+      for (const match of text.matchAll(withPattern)) {
+        playerNames.push(...splitNameList(match[1]));
+      }
+
+      // Course: "at Augusta" / "playing at Pebble Beach"
+      let courseName = "";
+      const atPattern = /(?:at|playing)\s+([A-Z][A-Za-z\s]+?)(?:\s+(?:golf|course|with|today|everyone)|\s*$|,)/i;
+      const atMatch = text.match(atPattern);
+      if (atMatch) courseName = atMatch[1].trim();
+
+      // Tee: "blue tees"
+      let teeName: string | null = null;
+      const teePattern = /(?:from\s+(?:the\s+)?)?(\w+)\s+tees?/i;
+      const teeMatch = text.match(teePattern);
+      if (teeMatch) teeName = teeMatch[1];
+
+      return NextResponse.json({
+        courseName,
+        playerNames: Array.from(new Set(playerNames)),
+        teeName,
+        confidence: 0.55,
+        warnings: ["No API key available; used local parsing."],
+      });
     }
 
     const system = `You extract a golf round setup from voice transcription and must return ONLY valid JSON.
