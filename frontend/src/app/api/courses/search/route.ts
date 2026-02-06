@@ -46,53 +46,42 @@ async function searchOSM(params: { name?: string; lat?: number; lng?: number; ra
   
   if (!nameFilter && !aroundClause) return [];
   
+  // Simpler query - just get centers first for speed
   const query = `
-[out:json][timeout:15];
+[out:json][timeout:8];
 (
   way["leisure"="golf_course"]${nameFilter}${aroundClause};
   relation["leisure"="golf_course"]${nameFilter}${aroundClause};
 );
 out center;
->;
-out geom;
 `;
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    
     const res = await fetch(OVERPASS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: `data=${encodeURIComponent(query)}`,
+      signal: controller.signal,
     });
     
+    clearTimeout(timeoutId);
     if (!res.ok) return [];
     const data = await res.json();
     
     return (data.elements || [])
-      .filter((el: any) => el.tags?.leisure === 'golf_course')
-      .map((el: any) => {
-        const center = el.center || (el.geometry?.[0] ? { lat: el.geometry[0].lat, lon: el.geometry[0].lon } : null);
-        if (!center) return null;
-        
-        let boundary: GeoJSON.Polygon | undefined;
-        if (el.geometry?.length >= 4) {
-          const ring = el.geometry.map((p: any) => [p.lon, p.lat]);
-          if (ring[0][0] !== ring[ring.length-1][0] || ring[0][1] !== ring[ring.length-1][1]) {
-            ring.push(ring[0]);
-          }
-          boundary = { type: 'Polygon', coordinates: [ring] };
-        }
-        
-        return {
-          id: `osm-${el.type}-${el.id}`,
-          name: el.tags?.name || 'Golf Course',
-          address: [el.tags?.['addr:city'], el.tags?.['addr:state']].filter(Boolean).join(', ') || undefined,
-          center: { lat: center.lat, lng: center.lon },
-          source: 'osm' as const,
-          boundary,
-        };
-      })
-      .filter(Boolean)
-      .slice(0, 20);
+      .filter((el: any) => el.tags?.leisure === 'golf_course' && el.center)
+      .map((el: any) => ({
+        id: `osm-${el.type}-${el.id}`,
+        name: el.tags?.name || 'Golf Course',
+        address: [el.tags?.['addr:city'], el.tags?.['addr:state']].filter(Boolean).join(', ') || undefined,
+        center: { lat: el.center.lat, lng: el.center.lon },
+        source: 'osm' as const,
+        osmId: `${el.type}/${el.id}`, // for fetching boundary later
+      }))
+      .slice(0, 15);
   } catch {
     return [];
   }
