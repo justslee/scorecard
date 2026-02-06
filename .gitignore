@@ -56,3 +56,4 @@ dist/
 # Backend data (local storage)
 backend/data/
 .env.vercel
+frontend/.env.local
