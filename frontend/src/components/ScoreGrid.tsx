@@ -144,9 +144,13 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
 
     // MULTI-PLAYER MODE: Use Claude to parse via Python backend
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      // Prefer same-origin Next API route on Vercel; fall back to configured backend only if provided.
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL;
+      const endpoint = backendUrl ? `${backendUrl}/api/parse-voice-scores` : `/api/parse-voice-scores`;
+
+      const apiKey = typeof window !== 'undefined' ? localStorage.getItem('anthropic_api_key') : null;
       
-      const response = await fetch(`${backendUrl}/api/parse-voice-scores`, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -154,6 +158,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
           playerNames,
           hole: targetHole,
           par,
+          apiKey,
         }),
       });
 

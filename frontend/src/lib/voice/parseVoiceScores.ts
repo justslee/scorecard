@@ -57,7 +57,7 @@ Use the exact player names from the list above in your response.`;
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: process.env.ANTHROPIC_MODEL || "claude-opus-4-20250514",
       max_tokens: 256,
       messages: [{ role: "user", content: prompt }],
     }),
@@ -72,7 +72,52 @@ Use the exact player names from the list above in your response.`;
   const content = data.content?.[0]?.text ?? "";
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error(`Could not parse response: ${content}`);
-  return JSON.parse(jsonMatch[0]);
+  const raw = JSON.parse(jsonMatch[0]);
+
+  // Normalize returned player keys to the exact allowed player names.
+  const allowed = opts.playerNames;
+  const normalizeKey = (s: string) =>
+    (s || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const resolvePlayer = (rawName: string): string | null => {
+    const r = normalizeKey(rawName);
+    if (!r) return null;
+
+    // exact / case-insensitive
+    for (const a of allowed) {
+      if (normalizeKey(a) === r) return a;
+    }
+
+    // initial match: if allowed is single-letter like "J" and raw is "Justin"
+    for (const a of allowed) {
+      const an = normalizeKey(a);
+      if (an.length === 1 && r.startsWith(an)) return a;
+    }
+
+    // substring match
+    for (const a of allowed) {
+      const an = normalizeKey(a);
+      if (an && (r.includes(an) || an.includes(r))) return a;
+    }
+
+    return null;
+  };
+
+  if (raw && typeof raw === "object" && raw.scores && typeof raw.scores === "object") {
+    const mapped: Record<string, number> = {};
+    for (const [k, v] of Object.entries(raw.scores as Record<string, any>)) {
+      const resolved = resolvePlayer(String(k));
+      const num = typeof v === "number" ? v : parseInt(String(v), 10);
+      if (resolved && Number.isFinite(num)) mapped[resolved] = num;
+    }
+    return { ...raw, scores: mapped };
+  }
+
+  return raw as any;
 }
 
 // --------------------
