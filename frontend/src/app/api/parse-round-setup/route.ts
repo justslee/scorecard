@@ -158,7 +158,11 @@ Rules:
       });
 
       if (!res.ok) {
-        return NextResponse.json({ error: "LLM request failed" }, { status: 500 });
+        console.error("Anthropic API error:", res.raw);
+        return NextResponse.json({ 
+          error: "LLM request failed", 
+          details: res.raw?.error?.message || res.text || "Unknown error"
+        }, { status: 500 });
       }
 
       const jsonText = safeJsonExtract(res.text);
