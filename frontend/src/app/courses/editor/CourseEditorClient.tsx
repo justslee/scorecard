@@ -394,7 +394,7 @@ export default function CourseEditorPage() {
     if (!searchQuery) return;
     try {
       setAutoStatus('Searching OSM…');
-      const res = await fetch(`/api/courses/search-osm?q=${encodeURIComponent(searchQuery)}`);
+      const res = await fetch(`/api/courses/search?q=${encodeURIComponent(searchQuery)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || `OSM search failed (${res.status})`);
       setOsmCourses(Array.isArray(data.courses) ? data.courses : []);
