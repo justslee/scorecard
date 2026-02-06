@@ -27,6 +27,8 @@ export interface CourseData {
   name: string;
   location: { lat: number; lng: number };
   address?: string;
+  /** Optional course boundary for auto-detect flows (not currently persisted to Supabase). */
+  boundary?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
   teeSets: TeeSet[];
   holes: HoleData[];
   createdAt?: string;

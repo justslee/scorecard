@@ -23,6 +23,9 @@ import {
   MapPin,
 } from 'lucide-react';
 import type { CourseData, FeatureType } from '@/lib/courses/types';
+import { detectGreens, type GreenCandidate } from '@/lib/courses/greenDetection';
+import { sequenceHolesFromGreens } from '@/lib/courses/holeSequencing';
+import { estimateTees } from '@/lib/courses/teeEstimation';
 
 const DEFAULT_TEE_SETS = [
   { name: 'Black', color: '#1a1a1a' },
@@ -56,7 +59,7 @@ function newBlankCourse(): CourseData {
       par: 4,
       handicap: i + 1,
       yardages: { Black: 0, Blue: 0, White: 0, Red: 0 },
-      features: { type: 'FeatureCollection', features: [] },
+      features: { type: 'FeatureCollection' as const, features: [] },
     })),
   };
 }
@@ -77,6 +80,17 @@ export default function CourseEditorPage() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const [courseData, setCourseData] = useState<CourseData>(newBlankCourse());
+  const [osmCourses, setOsmCourses] = useState<
+    Array<{
+      osmId: string;
+      name: string;
+      center?: { lat: number; lng: number };
+      boundary: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+    }>
+  >([]);
+  const [selectedOsmId, setSelectedOsmId] = useState<string>('');
+  const [autoStatus, setAutoStatus] = useState<string | null>(null);
+  const [lastGreenCandidates, setLastGreenCandidates] = useState<GreenCandidate[] | null>(null);
   const [cloudStatus, setCloudStatus] = useState<string | null>(null);
   const [gpsPos, setGpsPos] = useState<{ lat: number; lng: number; acc?: number } | null>(null);
   const [gpsWatchId, setGpsWatchId] = useState<number | null>(null);
@@ -178,6 +192,28 @@ export default function CourseEditorPage() {
 
     map.current.on('load', () => {
       setIsLoaded(true);
+      const m = map.current;
+      if (!m) return;
+
+      // Boundary overlay (if/when present)
+      if (!m.getSource('course-boundary')) {
+        m.addSource('course-boundary', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        m.addLayer({
+          id: 'course-boundary-fill',
+          type: 'fill',
+          source: 'course-boundary',
+          paint: { 'fill-color': '#22c55e', 'fill-opacity': 0.08 },
+        });
+        m.addLayer({
+          id: 'course-boundary-line',
+          type: 'line',
+          source: 'course-boundary',
+          paint: { 'line-color': '#22c55e', 'line-width': 2, 'line-opacity': 0.7 },
+        });
+      }
     });
 
     // Handle draw events
@@ -197,6 +233,28 @@ export default function CourseEditorPage() {
     if (!map.current) return;
     map.current.flyTo({ center: [courseData.location.lng, courseData.location.lat], zoom: 17 });
   }, [courseData.location.lat, courseData.location.lng]);
+
+  // Update boundary overlay
+  useEffect(() => {
+    if (!map.current) return;
+    const src = map.current.getSource('course-boundary') as mapboxgl.GeoJSONSource | undefined;
+    if (!src) return;
+
+    if (courseData.boundary) {
+      src.setData({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: { kind: 'course-boundary' },
+            geometry: courseData.boundary as any,
+          },
+        ],
+      });
+    } else {
+      src.setData({ type: 'FeatureCollection', features: [] });
+    }
+  }, [courseData.boundary]);
 
   // Load hole features when hole changes
   useEffect(() => {
@@ -330,6 +388,155 @@ export default function CourseEditorPage() {
     } catch (error) {
       console.error('Search failed:', error);
     }
+  };
+
+  const handleOsmSearch = async () => {
+    if (!searchQuery) return;
+    try {
+      setAutoStatus('Searching OSM…');
+      const res = await fetch(`/api/courses/search-osm?q=${encodeURIComponent(searchQuery)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || `OSM search failed (${res.status})`);
+      setOsmCourses(Array.isArray(data.courses) ? data.courses : []);
+      setSelectedOsmId('');
+      setAutoStatus(null);
+    } catch (e) {
+      setAutoStatus(e instanceof Error ? e.message : 'OSM search failed');
+    }
+  };
+
+  const applyOsmCourse = () => {
+    const picked = osmCourses.find((c) => c.osmId === selectedOsmId);
+    if (!picked) return;
+    const center = picked.center;
+    setCourseData((prev) => ({
+      ...prev,
+      name: picked.name || prev.name,
+      location: center ? center : prev.location,
+      boundary: picked.boundary,
+    }));
+    if (center && map.current) {
+      map.current.flyTo({ center: [center.lng, center.lat], zoom: 16 });
+    }
+  };
+
+  const runGreenDetection = async () => {
+    if (!courseData.boundary) {
+      alert('Load a course boundary first (OSM search → select course)');
+      return;
+    }
+    try {
+      setAutoStatus('Detecting greens…');
+      const token = (process.env.NEXT_PUBLIC_MAPBOX_TOKEN || mapboxgl.accessToken || '') as string;
+      if (!token) throw new Error('Missing NEXT_PUBLIC_MAPBOX_TOKEN');
+      const { candidates } = await detectGreens({
+        boundary: courseData.boundary,
+        mapboxToken: token,
+        center: courseData.location,
+        targetCount: 18,
+      });
+
+      setLastGreenCandidates(candidates);
+
+      const sequenced = sequenceHolesFromGreens(candidates, 18);
+
+      setCourseData((prev) => {
+        const newHoles = prev.holes.map((h) => {
+          // drop existing auto greens
+          const kept = h.features.features.filter(
+            (f) => !(f.properties?.featureType === 'green' && f.properties?.source === 'auto')
+          );
+          return { ...h, features: { type: 'FeatureCollection' as const, features: kept } };
+        });
+
+        for (const s of sequenced) {
+          const holeIdx = s.holeNumber - 1;
+          if (!newHoles[holeIdx]) continue;
+          const feature: GeoJSON.Feature = {
+            type: 'Feature',
+            id: crypto.randomUUID(),
+            geometry: { type: 'Point', coordinates: [s.green.lng, s.green.lat] },
+            properties: {
+              featureType: 'green',
+              hole: s.holeNumber,
+              color: FEATURE_STYLES.green.color,
+              user_color: FEATURE_STYLES.green.color,
+              source: 'auto',
+            },
+          };
+          newHoles[holeIdx].features = {
+            type: 'FeatureCollection' as const,
+            features: [...newHoles[holeIdx].features.features, feature],
+          };
+        }
+
+        return { ...prev, holes: newHoles };
+      });
+
+      setAutoStatus(`Detected ${candidates.length} greens (auto-added).`);
+      setTimeout(() => setAutoStatus(null), 2500);
+    } catch (e) {
+      setAutoStatus(e instanceof Error ? e.message : 'Green detection failed');
+    }
+  };
+
+  const calculateTeesFromYardage = () => {
+    // Pull 1 green per hole (auto or manual) and estimate tees for each tee set
+    const sequencedGreens = courseData.holes
+      .map((h) => {
+        const gf = h.features.features.find((f) => f.properties?.featureType === 'green');
+        if (!gf || gf.geometry.type !== 'Point') return null;
+        const [lng, lat] = gf.geometry.coordinates as any as [number, number];
+        return { holeNumber: h.number, green: { lng, lat } };
+      })
+      .filter(Boolean) as Array<{ holeNumber: number; green: { lng: number; lat: number } }>;
+
+    if (sequencedGreens.length < 2) {
+      alert('Need greens placed for at least a couple holes first.');
+      return;
+    }
+
+    const yardagesByHole = courseData.holes.map((h) => ({ holeNumber: h.number, yardages: h.yardages }));
+    const teeSetNames = courseData.teeSets.map((t) => t.name);
+
+    const tees = estimateTees({ sequencedGreens, yardagesByHole, teeSetNames });
+
+    setCourseData((prev) => {
+      const newHoles = prev.holes.map((h) => {
+        const kept = h.features.features.filter(
+          (f) => !(f.properties?.featureType === 'tee' && f.properties?.source === 'auto')
+        );
+        return { ...h, features: { type: 'FeatureCollection' as const, features: kept } };
+      });
+
+      for (const t of tees) {
+        const holeIdx = t.holeNumber - 1;
+        if (!newHoles[holeIdx]) continue;
+        const feature: GeoJSON.Feature = {
+          type: 'Feature',
+          id: crypto.randomUUID(),
+          geometry: { type: 'Point', coordinates: [t.tee.lng, t.tee.lat] },
+          properties: {
+            featureType: 'tee',
+            hole: t.holeNumber,
+            teeSet: t.teeSet,
+            color: FEATURE_STYLES.tee.color,
+            user_color: FEATURE_STYLES.tee.color,
+            source: 'auto',
+            yards: t.yards,
+          },
+        };
+        newHoles[holeIdx].features = {
+          type: 'FeatureCollection' as const,
+          features: [...newHoles[holeIdx].features.features, feature],
+        };
+      }
+
+      return { ...prev, holes: newHoles };
+    });
+
+    setAutoStatus(`Estimated tees for ${tees.length} tee markers.`);
+    setTimeout(() => setAutoStatus(null), 2500);
   };
 
   const exportCourse = () => {
@@ -503,6 +710,81 @@ export default function CourseEditorPage() {
             className="w-full mt-2 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
             placeholder="Course name"
           />
+
+          {/* Auto-detect tools */}
+          <div className="mt-3 p-3 rounded-xl bg-zinc-950/40 border border-zinc-800">
+            <div className="text-sm font-semibold text-zinc-300">Auto-Detect</div>
+            <div className="text-xs text-zinc-500 mt-1">
+              1) Search OSM for boundary → 2) Detect greens → 3) Estimate tees.
+            </div>
+
+            {autoStatus ? <div className="text-xs text-zinc-400 mt-2">{autoStatus}</div> : null}
+
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={handleOsmSearch}
+                className="flex-1 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-white"
+              >
+                Search OSM
+              </button>
+              <button
+                onClick={() => {
+                  setOsmCourses([]);
+                  setSelectedOsmId('');
+                }}
+                className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300"
+                title="Clear"
+              >
+                Clear
+              </button>
+            </div>
+
+            {osmCourses.length ? (
+              <div className="mt-2 space-y-2">
+                <select
+                  value={selectedOsmId}
+                  onChange={(e) => setSelectedOsmId(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-xs"
+                >
+                  <option value="">Select OSM result…</option>
+                  {osmCourses.map((c) => (
+                    <option key={c.osmId} value={c.osmId}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={applyOsmCourse}
+                  disabled={!selectedOsmId}
+                  className="w-full px-3 py-2 rounded-lg bg-emerald-700 disabled:opacity-40 hover:bg-emerald-600 text-xs text-white"
+                >
+                  Load Boundary
+                </button>
+              </div>
+            ) : null}
+
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                onClick={runGreenDetection}
+                disabled={!courseData.boundary}
+                className="px-3 py-2 rounded-lg bg-emerald-600 disabled:opacity-40 hover:bg-emerald-500 text-xs text-white"
+              >
+                Detect Greens
+              </button>
+              <button
+                onClick={calculateTeesFromYardage}
+                className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-white"
+              >
+                Calculate Tees
+              </button>
+            </div>
+
+            {lastGreenCandidates ? (
+              <div className="text-[11px] text-zinc-500 mt-2">
+                Last detection: {lastGreenCandidates.length} greens.
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* Hole Navigation */}
