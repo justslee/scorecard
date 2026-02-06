@@ -155,3 +155,18 @@ export function stripFillerWords(s: string) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+// Normalize transcript for downstream parsing (heuristics + LLM prompts).
+// This is where we fix common speech-to-text mistakes.
+export function normalizeTranscript(raw: string) {
+  let s = stripFillerWords(raw || "");
+
+  // Common iOS/ASR mishearings in golf game commands
+  // "best ball" often becomes "basketball".
+  s = s.replace(/\bbasketball\b/gi, "best ball");
+  s = s.replace(/\bbestball\b/gi, "best ball");
+
+  // Misc spacing cleanup
+  s = s.replace(/\s+/g, " ").trim();
+  return s;
+}

@@ -11,6 +11,7 @@ import {
   clamp01,
   parseSpokenNumber,
   stripFillerWords,
+  normalizeTranscript,
 } from "./utils";
 
 export type VoiceKnownContext = {
@@ -244,7 +245,7 @@ function ensureTypeFields(result: unknown): unknown {
 }
 
 export async function parseVoiceTranscript(options: ParseVoiceOptions): Promise<VoiceParseResultValidated> {
-  const transcript = stripFillerWords(options.transcript || "");
+  const transcript = normalizeTranscript(options.transcript || "");
   const known = options.known;
   const maxRepairs = options.maxRepairs ?? 2;
 
@@ -552,7 +553,7 @@ function parseVoiceHeuristics(
 }
 
 export async function parseVoiceScores(options: ParseScoresOptions): Promise<VoiceScoreParseResultValidated> {
-  const transcript = stripFillerWords(options.transcript || "");
+  const transcript = normalizeTranscript(options.transcript || "");
   const maxRepairs = options.maxRepairs ?? 2;
 
   // 1) Deterministic parse first.
