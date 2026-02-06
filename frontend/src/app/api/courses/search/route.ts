@@ -96,47 +96,43 @@ export async function GET(request: NextRequest) {
   }
   
   // Strategy: 
-  // 1. Search Mapbox for the location (reliable for addresses/places)
-  // 2. Search OSM for golf courses by name
-  // 3. If we found a Mapbox location, also search OSM for golf courses nearby
+  // 1. Search OSM for golf courses by name (primary - most relevant)
+  // 2. Search Mapbox for location as fallback
+  // 3. If no OSM results but Mapbox found something, search OSM nearby
   
-  const [mapboxResults, osmNameResults] = await Promise.all([
-    searchMapbox(q + ' golf'),
-    searchOSM({ name: q }),
-  ]);
+  // Run OSM name search first (most relevant for golf courses)
+  const osmNameResults = await searchOSM({ name: q });
   
-  // If we found Mapbox results, search for golf courses near the top result
-  let osmNearbyResults: SearchResult[] = [];
-  if (mapboxResults.length > 0) {
-    const topResult = mapboxResults[0];
-    osmNearbyResults = await searchOSM({ 
-      lat: topResult.center.lat, 
-      lng: topResult.center.lng, 
-      radius: 15000 // 15km radius
+  // If OSM found results, return those
+  if (osmNameResults.length > 0) {
+    return NextResponse.json({ 
+      courses: osmNameResults,
+      query: q,
     });
   }
   
-  // Dedupe and merge results
-  const seen = new Set<string>();
-  const results: SearchResult[] = [];
+  // Fallback: use Mapbox to find location, then search OSM nearby
+  const mapboxResults = await searchMapbox(q);
   
-  // Prioritize OSM results with boundaries
-  for (const r of [...osmNameResults, ...osmNearbyResults]) {
-    const key = `${r.center.lat.toFixed(4)},${r.center.lng.toFixed(4)}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      results.push(r);
+  if (mapboxResults.length > 0) {
+    const topResult = mapboxResults[0];
+    const osmNearbyResults = await searchOSM({ 
+      lat: topResult.center.lat, 
+      lng: topResult.center.lng, 
+      radius: 20000 // 20km radius
+    });
+    
+    if (osmNearbyResults.length > 0) {
+      return NextResponse.json({ 
+        courses: osmNearbyResults,
+        query: q,
+        searchedNear: topResult.name,
+      });
     }
   }
   
-  // Add Mapbox results as fallback (for zooming to location)
-  for (const r of mapboxResults) {
-    const key = `${r.center.lat.toFixed(4)},${r.center.lng.toFixed(4)}`;
-    if (!seen.has(key) && results.length < 15) {
-      seen.add(key);
-      results.push(r);
-    }
-  }
+  // Last resort: return Mapbox results so user can at least zoom to area
+  const results = mapboxResults.slice(0, 10);
   
   return NextResponse.json({ 
     courses: results.slice(0, 15),
