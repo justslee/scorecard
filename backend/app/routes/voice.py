@@ -55,8 +55,10 @@ Return ONLY valid JSON in this exact format, no other text:
 Use the exact player names from the list above in your response."""
 
     try:
+        model = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-20250514")
+
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=model,
             max_tokens=256,
             messages=[{"role": "user", "content": prompt}]
         )
