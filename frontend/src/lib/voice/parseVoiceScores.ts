@@ -29,6 +29,12 @@ export async function parseVoiceScores(
 
   const prompt = `You are parsing golf scores from a voice transcript.
 
+Common speech-to-text mistakes to handle:
+- "for" / "fore" = 4
+- "to" / "too" = 2
+- "won" = 1
+- "ate" = 8
+
 Players in this round: ${opts.playerNames.join(", ")}
 Current hole: ${opts.hole}
 Par for this hole: ${opts.par}
@@ -134,6 +140,7 @@ const WORD_TO_NUM: Record<string, number> = {
   three: 3,
   tree: 3,
   four: 4,
+  for: 4,
   fore: 4,
   ford: 4,
   five: 5,
