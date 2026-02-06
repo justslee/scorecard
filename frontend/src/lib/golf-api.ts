@@ -54,6 +54,8 @@ export interface CourseCoordinates {
   tee?: { lat: number; lng: number };
   front?: { lat: number; lng: number };
   back?: { lat: number; lng: number };
+  /** Optional pin location (if mapped) */
+  pin?: { lat: number; lng: number };
   hazards?: Array<{
     type: string;
     lat: number;

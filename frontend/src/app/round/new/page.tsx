@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Course, Player, Round, SavedPlayer, createDefaultCourse } from '@/lib/types';
 import { getCourses, saveCourse, saveRound, getSavedPlayers } from '@/lib/storage';
+import type { CourseListItem, CourseData } from '@/lib/courses/types';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Flag, Mic, Users } from 'lucide-react';
 import VoiceRoundSetup from '@/components/VoiceRoundSetup';
@@ -13,6 +14,7 @@ import PlayerAutocomplete from '@/components/PlayerAutocomplete';
 export default function NewRound() {
   const router = useRouter();
   const [courses, setCourses] = useState<Course[]>([]);
+  const [mappedCourses, setMappedCourses] = useState<CourseListItem[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [selectedTeeId, setSelectedTeeId] = useState<string>('');
   const [customCourseName, setCustomCourseName] = useState('');
@@ -26,6 +28,17 @@ export default function NewRound() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCourses(getCourses());
     setSavedPlayers(getSavedPlayers());
+
+    // Load mapped courses (Phase 3)
+    (async () => {
+      try {
+        const res = await fetch('/api/courses');
+        const data = await res.json();
+        setMappedCourses(Array.isArray(data.courses) ? data.courses : []);
+      } catch {
+        setMappedCourses([]);
+      }
+    })();
   }, []);
 
   const handleVoiceSetup = (config: { courseName: string; playerNames: string[]; teeName?: string }) => {
@@ -225,6 +238,66 @@ export default function NewRound() {
                     </div>
                   </button>
                 ))}
+
+                {mappedCourses.length > 0 ? (
+                  <div className="pt-3">
+                    <div className="text-xs text-zinc-500 uppercase tracking-wide mb-2">Mapped courses</div>
+                    <div className="space-y-2">
+                      {mappedCourses.map((mc) => (
+                        <button
+                          key={mc.id}
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/courses/${encodeURIComponent(mc.id)}`);
+                              const data = await res.json();
+                              const course = data.course as CourseData | undefined;
+                              if (!course) return;
+
+                              // Convert mapped course -> internal Course model
+                              const baseHoles = course.holes.map((h) => ({
+                                number: h.number,
+                                par: h.par,
+                                handicap: h.handicap,
+                              }));
+
+                              const tees = course.teeSets.map((t) => ({
+                                id: t.name,
+                                name: t.name,
+                                holes: course.holes.map((h) => ({
+                                  number: h.number,
+                                  par: h.par,
+                                  handicap: h.handicap,
+                                  yards: h.yardages?.[t.name] || undefined,
+                                })),
+                              }));
+
+                              handleSelectCourse({
+                                id: course.id,
+                                name: course.name,
+                                holes: baseHoles,
+                                tees,
+                                location: course.address,
+                              });
+                            } catch {
+                              // ignore
+                            }
+                          }}
+                          className="w-full text-left card card-hover p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-semibold tracking-tight truncate">{mc.name}</div>
+                              {mc.address ? (
+                                <div className="text-sm text-zinc-400 truncate">{mc.address}</div>
+                              ) : null}
+                            </div>
+                            <div className="text-zinc-500">→</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {showCustom ? (

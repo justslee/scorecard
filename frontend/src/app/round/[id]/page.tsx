@@ -18,6 +18,8 @@ import EditGroupsModal from '@/components/EditGroupsModal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Check, Map, Trophy, ChevronRight, Users, Settings2 } from 'lucide-react';
 import { getCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
+import { courseToCoordinates } from '@/lib/courses/coordinates';
+import type { CourseData } from '@/lib/courses/types';
 import { hapticCelebration, hapticSuccess } from '@/lib/haptics';
 
 export default function RoundPage() {
@@ -69,6 +71,41 @@ export default function RoundPage() {
     }
     setLoading(false);
   }, [params.id]);
+
+  // Phase 4: load mapped course coordinates (GolfAPI or our custom mapper)
+  useEffect(() => {
+    if (!round) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const courseId = (round.courseId || '').trim();
+        if (!courseId) return;
+
+        // GolfAPI numeric id
+        if (/^\d+$/.test(courseId)) {
+          const coords = await getCourseCoordinates(parseInt(courseId, 10));
+          if (!cancelled) setMapCoordinates(coords);
+          return;
+        }
+
+        // Otherwise treat as our mapped UUID
+        const res = await fetch(`/api/courses/${encodeURIComponent(courseId)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const course = data.course as CourseData | undefined;
+        if (!course) return;
+        const coords = courseToCoordinates(course, round.teeName);
+        if (!cancelled) setMapCoordinates(coords);
+      } catch (e) {
+        console.warn('Failed to load course coordinates', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [round]);
 
   const handleScoreChange = (playerId: string, holeNumber: number, strokes: number | null) => {
     // IMPORTANT: use functional state update so multiple rapid calls (e.g. voice filling many players)
@@ -174,22 +211,37 @@ export default function RoundPage() {
 
   const handleOpenMap = async () => {
     if (!round) return;
-    
-    // Check if we have a GolfAPI course ID
-    // For now, use demo coordinates or fetch from API
-    // TODO: Load actual coordinates from GolfAPI based on golfApiCourseId
-    
-    // Demo: Generate sample coordinates for testing
-    // In production, this would come from GolfAPI.io
-    const demoCoordinates: CourseCoordinates[] = [];
-    
-    // If round has stored coordinates, use those
-    // Otherwise show error that GPS isn't available for this course
-    if (mapCoordinates.length === 0 && demoCoordinates.length === 0) {
-      alert('GPS map data not available for this course yet. Course data will be available after connecting to GolfAPI.io.');
+
+    let coords = mapCoordinates;
+
+    // If coordinates haven't loaded yet, try once on-demand.
+    if (coords.length === 0) {
+      try {
+        const courseId = (round.courseId || '').trim();
+        if (/^\d+$/.test(courseId)) {
+          coords = await getCourseCoordinates(parseInt(courseId, 10));
+        } else if (courseId) {
+          const res = await fetch(`/api/courses/${encodeURIComponent(courseId)}`);
+          if (res.ok) {
+            const data = await res.json();
+            const course = data.course as CourseData | undefined;
+            if (course) coords = courseToCoordinates(course, round.teeName);
+          }
+        }
+
+        if (coords.length > 0) setMapCoordinates(coords);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (coords.length === 0) {
+      alert(
+        'GPS map data not available for this course yet. Map a course in Courses → Editor, then select it when creating a round.'
+      );
       return;
     }
-    
+
     setShowMap(true);
   };
 
