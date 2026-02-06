@@ -71,24 +71,28 @@ export default function RoundPage() {
   }, [params.id]);
 
   const handleScoreChange = (playerId: string, holeNumber: number, strokes: number | null) => {
-    if (!round) return;
+    // IMPORTANT: use functional state update so multiple rapid calls (e.g. voice filling many players)
+    // don't clobber each other due to stale `round` closures.
+    setRound((prev) => {
+      if (!prev) return prev;
 
-    const updatedScores = [...round.scores];
-    const existingIndex = updatedScores.findIndex((s) => s.playerId === playerId && s.holeNumber === holeNumber);
+      const updatedScores = [...prev.scores];
+      const existingIndex = updatedScores.findIndex((s) => s.playerId === playerId && s.holeNumber === holeNumber);
 
-    if (existingIndex >= 0) {
-      if (strokes === null) {
-        updatedScores.splice(existingIndex, 1);
-      } else {
-        updatedScores[existingIndex].strokes = strokes;
+      if (existingIndex >= 0) {
+        if (strokes === null) {
+          updatedScores.splice(existingIndex, 1);
+        } else {
+          updatedScores[existingIndex].strokes = strokes;
+        }
+      } else if (strokes !== null) {
+        updatedScores.push({ playerId, holeNumber, strokes });
       }
-    } else if (strokes !== null) {
-      updatedScores.push({ playerId, holeNumber, strokes });
-    }
 
-    const updatedRound = { ...round, scores: updatedScores };
-    setRound(updatedRound);
-    saveRound(updatedRound);
+      const updatedRound = { ...prev, scores: updatedScores };
+      saveRound(updatedRound);
+      return updatedRound;
+    });
   };
 
   const handleUpdateRound = (next: Round) => {
