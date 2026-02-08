@@ -1,0 +1,203 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Scorecard API - FastAPI backend on EC2 t4g.micro
+
+Parameters:
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing EC2 key pair for SSH access
+
+  SSHAllowedIP:
+    Type: String
+    Description: Your IP address for SSH access (e.g., 73.162.45.0/32). Find it at checkip.amazonaws.com
+    AllowedPattern: '(\d{1,3}\.){3}\d{1,3}/\d{1,2}'
+    ConstraintDescription: Must be a valid CIDR (e.g., 73.162.45.0/32)
+
+  GitRepoUrl:
+    Type: String
+    Description: Git repository URL to clone
+    Default: ''
+
+  AnthropicApiKey:
+    Type: String
+    NoEcho: true
+    Description: Anthropic API key for Claude (voice caddie)
+    Default: ''
+
+  GolfApiKey:
+    Type: String
+    NoEcho: true
+    Description: GolfAPI.io API key
+    Default: ''
+
+  MapboxToken:
+    Type: String
+    NoEcho: true
+    Description: Mapbox token (for course search fallback)
+    Default: ''
+
+Resources:
+  # ── Security Group ──
+  ApiSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Scorecard API security group
+      GroupName: scorecard-api-sg
+      SecurityGroupIngress:
+        # SSH - restricted to your IP only
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHAllowedIP
+          Description: SSH from admin IP
+
+        # HTTP - open (nginx handles routing)
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP from anywhere
+
+        # HTTPS - open
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS from anywhere
+
+      SecurityGroupEgress:
+        # All outbound (needed for API calls to Anthropic, Open-Meteo, USGS, OSM, GolfAPI)
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: All outbound traffic
+
+      Tags:
+        - Key: Name
+          Value: scorecard-api-sg
+
+  # ── EC2 Instance ──
+  ApiInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t4g.micro
+      ImageId: !FindInMap [RegionAMI, !Ref 'AWS::Region', AMI]
+      KeyName: !Ref KeyPairName
+      SecurityGroupIds:
+        - !GetAtt ApiSecurityGroup.GroupId
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 8
+            VolumeType: gp3
+            Encrypted: true
+      Tags:
+        - Key: Name
+          Value: scorecard-api
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          exec > /var/log/scorecard-setup.log 2>&1
+
+          echo "=== Scorecard API Setup ==="
+
+          # System updates
+          apt-get update -y
+          apt-get upgrade -y
+
+          # Install dependencies
+          apt-get install -y python3 python3-pip python3-venv nginx certbot python3-certbot-nginx git curl
+
+          # Clone repo
+          if [ -n "${GitRepoUrl}" ]; then
+            sudo -u ubuntu git clone "${GitRepoUrl}" /home/ubuntu/scorecard
+          fi
+
+          # Install Python packages
+          if [ -d /home/ubuntu/scorecard/backend ]; then
+            sudo -u ubuntu pip3 install --user \
+              "anthropic>=0.77.0" \
+              "fastapi>=0.128.0" \
+              "httpx>=0.28.0" \
+              "python-dotenv>=1.2.1" \
+              "uvicorn>=0.40.0"
+
+            # Create data dir
+            sudo -u ubuntu mkdir -p /home/ubuntu/scorecard/backend/data
+
+            # Write .env file
+            cat > /home/ubuntu/scorecard/backend/.env << 'ENVEOF'
+          ANTHROPIC_API_KEY=${AnthropicApiKey}
+          GOLF_API_KEY=${GolfApiKey}
+          MAPBOX_TOKEN=${MapboxToken}
+          ENVEOF
+            chown ubuntu:ubuntu /home/ubuntu/scorecard/backend/.env
+            chmod 600 /home/ubuntu/scorecard/backend/.env
+
+            # Set up systemd service
+            cp /home/ubuntu/scorecard/deploy/scorecard-api.service /etc/systemd/system/
+            systemctl daemon-reload
+            systemctl enable scorecard-api
+            systemctl start scorecard-api
+
+            # Set up nginx
+            cp /home/ubuntu/scorecard/deploy/nginx.conf /etc/nginx/sites-available/scorecard-api
+            ln -sf /etc/nginx/sites-available/scorecard-api /etc/nginx/sites-enabled/
+            rm -f /etc/nginx/sites-enabled/default
+            nginx -t && systemctl restart nginx
+          fi
+
+          echo "=== Setup Complete ==="
+
+  # ── Elastic IP ──
+  ApiElasticIP:
+    Type: AWS::EIP
+    Properties:
+      InstanceId: !Ref ApiInstance
+      Tags:
+        - Key: Name
+          Value: scorecard-api-eip
+
+# Ubuntu 24.04 LTS ARM64 AMIs by region
+Mappings:
+  RegionAMI:
+    us-east-1:
+      AMI: ami-0a7a4e87939439934
+    us-east-2:
+      AMI: ami-0e4fc5210ef498bdd
+    us-west-1:
+      AMI: ami-038b3cde65e43bdf7
+    us-west-2:
+      AMI: ami-07eb1068370dfeb2d
+    eu-west-1:
+      AMI: ami-0a422d25f085401d0
+    eu-central-1:
+      AMI: ami-0e872aee57663ae2d
+    ap-southeast-1:
+      AMI: ami-01811d4912b4ccb26
+    ap-northeast-1:
+      AMI: ami-0a0b7b240264a48d7
+
+Outputs:
+  PublicIP:
+    Description: Elastic IP of the API server
+    Value: !Ref ApiElasticIP
+
+  SSHCommand:
+    Description: SSH command to connect
+    Value: !Sub 'ssh -i ${KeyPairName}.pem ubuntu@${ApiElasticIP}'
+
+  HealthCheckURL:
+    Description: Health check endpoint
+    Value: !Sub 'http://${ApiElasticIP}/health'
+
+  APIDocsURL:
+    Description: FastAPI auto-generated docs
+    Value: !Sub 'http://${ApiElasticIP}/docs'
+
+  SecurityGroupId:
+    Description: Security group ID
+    Value: !GetAtt ApiSecurityGroup.GroupId
+
+  SetupLog:
+    Description: To check setup progress, SSH in and run
+    Value: 'tail -f /var/log/scorecard-setup.log'
