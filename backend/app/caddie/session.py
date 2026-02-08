@@ -16,7 +16,6 @@ from app.caddie.types import (
     HoleIntelligence,
     PlayerStatistics,
     CaddieRecommendation,
-    VoiceCaddieMessage,
 )
 
 
