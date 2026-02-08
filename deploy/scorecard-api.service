@@ -18,10 +18,6 @@ SyslogIdentifier=scorecard-api
 
 # Security hardening
 NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/scorecard/backend/data
-PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
