@@ -7,7 +7,7 @@ import os
 
 router = APIRouter(prefix="/api/golf", tags=["golf"])
 
-GOLF_API_BASE = "https://golfapi.io/api/v1"
+GOLF_API_BASE = "https://www.golfapi.io/api/v2.3"
 
 
 def _api_headers() -> dict:
@@ -32,7 +32,7 @@ async def golf_proxy(
                     raise HTTPException(400, "Missing q parameter")
                 resp = await client.get(
                     f"{GOLF_API_BASE}/clubs",
-                    params={"search": q},
+                    params={"q": q},
                     headers=_api_headers(),
                 )
             elif action == "club":
@@ -47,6 +47,13 @@ async def golf_proxy(
                     raise HTTPException(400, "Missing id parameter")
                 resp = await client.get(
                     f"{GOLF_API_BASE}/courses/{id}",
+                    headers=_api_headers(),
+                )
+            elif action == "coordinates":
+                if not id:
+                    raise HTTPException(400, "Missing id parameter")
+                resp = await client.get(
+                    f"{GOLF_API_BASE}/coordinates/{id}",
                     headers=_api_headers(),
                 )
             else:
