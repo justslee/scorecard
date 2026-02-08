@@ -17,7 +17,7 @@ import TournamentLeaderboard from '@/components/TournamentLeaderboard';
 import EditGroupsModal from '@/components/EditGroupsModal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Check, Map, Trophy, ChevronRight, Users, Settings2 } from 'lucide-react';
-import { getCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
+import { fetchCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
 import { courseToCoordinates } from '@/lib/courses/coordinates';
 import type { CourseData } from '@/lib/courses/types';
 import { hapticCelebration, hapticSuccess } from '@/lib/haptics';
@@ -82,9 +82,15 @@ export default function RoundPage() {
         const courseId = (round.courseId || '').trim();
         if (!courseId) return;
 
-        // GolfAPI numeric id
+        // GolfAPI course: "golfapi-{id}" or pure numeric
+        const golfApiMatch = courseId.match(/^golfapi-(.+)$/);
+        if (golfApiMatch) {
+          const coords = await fetchCourseCoordinates(golfApiMatch[1]);
+          if (!cancelled) setMapCoordinates(coords);
+          return;
+        }
         if (/^\d+$/.test(courseId)) {
-          const coords = await getCourseCoordinates(parseInt(courseId, 10));
+          const coords = await fetchCourseCoordinates(courseId);
           if (!cancelled) setMapCoordinates(coords);
           return;
         }
@@ -218,8 +224,11 @@ export default function RoundPage() {
     if (coords.length === 0) {
       try {
         const courseId = (round.courseId || '').trim();
-        if (/^\d+$/.test(courseId)) {
-          coords = await getCourseCoordinates(parseInt(courseId, 10));
+        const golfApiMatch = courseId.match(/^golfapi-(.+)$/);
+        if (golfApiMatch) {
+          coords = await fetchCourseCoordinates(golfApiMatch[1]);
+        } else if (/^\d+$/.test(courseId)) {
+          coords = await fetchCourseCoordinates(courseId);
         } else if (courseId) {
           const res = await fetch(`/api/courses/${encodeURIComponent(courseId)}`);
           if (res.ok) {
