@@ -125,7 +125,7 @@ Resources:
             sudo -u ubuntu mkdir -p /home/ubuntu/scorecard/backend/data
 
             # Write .env file
-            cat > /home/ubuntu/scorecard/backend/.env << 'ENVEOF'
+            cat > /home/ubuntu/scorecard/backend/.env << ENVEOF
           ANTHROPIC_API_KEY=${AnthropicApiKey}
           GOLF_API_KEY=${GolfApiKey}
           MAPBOX_TOKEN=${MapboxToken}
@@ -150,7 +150,7 @@ Resources:
 
   # ── Elastic IP ──
   ApiElasticIP:
-    Type: AWS::EIP
+    Type: AWS::EC2::EIP
     Properties:
       InstanceId: !Ref ApiInstance
       Tags:
