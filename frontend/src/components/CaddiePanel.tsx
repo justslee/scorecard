@@ -1,14 +1,17 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, PanInfo } from 'framer-motion';
 import {
   Wind,
   Locate,
   Flag,
   ChevronUp,
+  Signal,
 } from 'lucide-react';
 import { Round } from '@/lib/types';
+import type { CourseCoordinates } from '@/lib/golf-api';
+import { GPSWatcher, calculateDistance, getAccuracyDescription, Position } from '@/lib/gps';
 
 const defaultClubDistances: Record<string, number> = {
   driver: 250,
@@ -32,6 +35,8 @@ interface CaddiePanelProps {
   currentHole: number;
   onHoleChange: (hole: number) => void;
   onClose: () => void;
+  /** Course coordinates for live GPS distances */
+  holeCoordinates?: CourseCoordinates[];
 }
 
 function getHoleInfo(round: Round, holeNumber: number) {
@@ -50,16 +55,53 @@ function getHoleInfo(round: Round, holeNumber: number) {
 // Sheet states: collapsed (just handle) or expanded (all content)
 type SheetState = 'collapsed' | 'expanded';
 
-export default function CaddiePanel({ round, currentHole, onHoleChange, onClose }: CaddiePanelProps) {
+export default function CaddiePanel({ round, currentHole, onHoleChange, onClose, holeCoordinates }: CaddiePanelProps) {
   const [distanceToPin, setDistanceToPin] = useState<number | null>(null);
   const [windDirection, setWindDirection] = useState<'headwind' | 'tailwind' | 'crosswind' | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
+  const [gpsPosition, setGpsPosition] = useState<Position | null>(null);
+  const [gpsActive, setGpsActive] = useState(false);
   const [sheetState, setSheetState] = useState<SheetState>('collapsed');
   const [slideDirection, setSlideDirection] = useState<'left' | 'right'>('left');
   const containerRef = useRef<HTMLDivElement>(null);
   const prevHoleRef = useRef(currentHole);
+  const gpsWatcherRef = useRef<GPSWatcher | null>(null);
 
   const hole = getHoleInfo(round, currentHole);
+
+  // GPS distance data for current hole
+  const currentHoleCoords = holeCoordinates?.find(h => h.holeNumber === currentHole);
+  const gpsDistances = gpsPosition && currentHoleCoords ? {
+    center: calculateDistance(gpsPosition, currentHoleCoords.green).yards,
+    front: currentHoleCoords.front ? calculateDistance(gpsPosition, currentHoleCoords.front).yards : null,
+    back: currentHoleCoords.back ? calculateDistance(gpsPosition, currentHoleCoords.back).yards : null,
+    pin: currentHoleCoords.pin ? calculateDistance(gpsPosition, currentHoleCoords.pin).yards : null,
+  } : null;
+
+  // Auto-update distanceToPin from GPS when active
+  useEffect(() => {
+    if (gpsDistances && gpsActive) {
+      setDistanceToPin(gpsDistances.center);
+    }
+  }, [gpsDistances, gpsActive]);
+
+  // Start GPS tracking when coordinates are available
+  const handleGpsPositionUpdate = useCallback((pos: Position) => {
+    setGpsPosition(pos);
+    setGpsLoading(false);
+    setGpsActive(true);
+  }, []);
+
+  const handleGpsError = useCallback(() => {
+    setGpsLoading(false);
+  }, []);
+
+  // Clean up GPS watcher on unmount
+  useEffect(() => {
+    return () => {
+      gpsWatcherRef.current?.stop();
+    };
+  }, []);
 
   // Track slide direction when hole changes
   if (prevHoleRef.current !== currentHole) {
@@ -98,22 +140,41 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
   };
 
   const handleGetLocation = () => {
-    if (!navigator.geolocation) {
-      alert('GPS not supported');
+    if (!navigator.geolocation) return;
+
+    if (gpsActive && gpsWatcherRef.current) {
+      // Toggle off
+      gpsWatcherRef.current.stop();
+      gpsWatcherRef.current = null;
+      setGpsActive(false);
+      setGpsPosition(null);
       return;
     }
+
     setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGpsLoading(false);
-        alert(`Location: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}\n\nGPS distance coming soon.`);
-      },
-      () => {
-        setGpsLoading(false);
-        alert('Could not get location');
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+
+    // If we have coordinates, start continuous tracking
+    if (holeCoordinates && holeCoordinates.length > 0) {
+      gpsWatcherRef.current = new GPSWatcher(handleGpsPositionUpdate, handleGpsError);
+      gpsWatcherRef.current.start();
+    } else {
+      // Fallback: one-time reading
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setGpsLoading(false);
+          setGpsPosition({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          });
+          setGpsActive(true);
+        },
+        () => {
+          setGpsLoading(false);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
   };
 
   // Comprehensive caddie advice based on hole knowledge
@@ -278,10 +339,55 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose 
         <button
           onClick={handleGetLocation}
           disabled={gpsLoading}
-          className="absolute top-20 right-4 z-10 bg-emerald-500/20 backdrop-blur-sm border border-emerald-500/30 rounded-xl px-3 py-2 flex items-center gap-2 text-emerald-400 disabled:opacity-50"
+          className={`absolute top-20 right-4 z-10 backdrop-blur-sm border rounded-xl px-3 py-2 flex items-center gap-2 disabled:opacity-50 ${
+            gpsActive
+              ? 'bg-emerald-500/30 border-emerald-500/50 text-emerald-300'
+              : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+          }`}
         >
           <Locate className={`w-5 h-5 ${gpsLoading ? 'animate-pulse' : ''}`} />
+          {gpsActive && <span className="text-xs font-medium">Live</span>}
         </button>
+
+        {/* GPS status */}
+        {gpsActive && gpsPosition && (
+          <div className="absolute top-32 right-4 z-10 flex items-center gap-1.5 bg-black/50 backdrop-blur-sm rounded-lg px-2 py-1">
+            <Signal className="w-3 h-3 text-emerald-400" />
+            <span className="text-xs text-emerald-400/80">
+              {getAccuracyDescription(gpsPosition.accuracy || 0)}
+            </span>
+          </div>
+        )}
+
+        {/* GPS front/center/back distances */}
+        {gpsActive && gpsDistances && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 mt-14">
+            <div className="bg-black/60 backdrop-blur-sm rounded-xl px-3 py-2 flex items-center gap-4">
+              {gpsDistances.front !== null && (
+                <div className="text-center">
+                  <div className="text-xs text-zinc-500">F</div>
+                  <div className="text-sm font-bold text-white">{gpsDistances.front}</div>
+                </div>
+              )}
+              <div className="text-center">
+                <div className="text-xs text-emerald-400">C</div>
+                <div className="text-lg font-bold text-emerald-400">{gpsDistances.center}</div>
+              </div>
+              {gpsDistances.back !== null && (
+                <div className="text-center">
+                  <div className="text-xs text-zinc-500">B</div>
+                  <div className="text-sm font-bold text-white">{gpsDistances.back}</div>
+                </div>
+              )}
+              {gpsDistances.pin !== null && (
+                <div className="text-center border-l border-zinc-700 pl-3">
+                  <Flag className="w-3 h-3 text-red-400 mx-auto" />
+                  <div className="text-sm font-bold text-white">{gpsDistances.pin}</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Navigation arrows */}
         {currentHole > 1 && (

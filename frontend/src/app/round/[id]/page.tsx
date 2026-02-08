@@ -588,6 +588,7 @@ export default function RoundPage() {
             currentHole={currentHole}
             onHoleChange={setCurrentHole}
             onClose={() => setShowCaddie(false)}
+            holeCoordinates={mapCoordinates}
           />
         )}
       </AnimatePresence>

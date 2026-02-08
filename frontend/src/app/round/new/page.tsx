@@ -7,9 +7,10 @@ import { Course, Player, Round, SavedPlayer, createDefaultCourse } from '@/lib/t
 import { getCourses, saveCourse, saveRound, getSavedPlayers } from '@/lib/storage';
 import type { CourseListItem, CourseData } from '@/lib/courses/types';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Flag, Mic, Users } from 'lucide-react';
+import { Flag, Mic, Users, Search } from 'lucide-react';
 import VoiceRoundSetup from '@/components/VoiceRoundSetup';
 import PlayerAutocomplete from '@/components/PlayerAutocomplete';
+import CourseSearchImport from '@/components/CourseSearchImport';
 
 export default function NewRound() {
   const router = useRouter();
@@ -21,6 +22,7 @@ export default function NewRound() {
   const [players, setPlayers] = useState<Player[]>([{ id: crypto.randomUUID(), name: '' }]);
   const [showCustom, setShowCustom] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [step, setStep] = useState<'course' | 'players'>('course');
   const [savedPlayers, setSavedPlayers] = useState<SavedPlayer[]>([]);
 
@@ -300,6 +302,18 @@ export default function NewRound() {
                 ) : null}
               </div>
 
+              {/* Search Golf Courses */}
+              <button
+                onClick={() => setShowSearch(true)}
+                className="w-full rounded-2xl bg-emerald-500/10 border border-emerald-500/20 px-5 py-5 text-emerald-400 hover:bg-emerald-500/15 hover:border-emerald-500/30 transition-colors flex items-center gap-3 mb-3"
+              >
+                <Search className="h-5 w-5" />
+                <div className="text-left">
+                  <div className="font-medium">Search Golf Courses</div>
+                  <div className="text-sm text-emerald-400/60">Find courses with GPS data, tees, and hole info</div>
+                </div>
+              </button>
+
               {showCustom ? (
                 <div className="card p-5">
                   <label className="block text-xs font-medium text-zinc-400 tracking-wide uppercase mb-2">Custom course</label>
@@ -448,6 +462,32 @@ export default function NewRound() {
             <VoiceRoundSetup
               onSetupRound={handleVoiceSetup}
               onClose={() => setShowVoice(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSearch && (
+          <motion.div
+            key="course-search"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+          >
+            <CourseSearchImport
+              onSelectCourse={(course) => {
+                // Save imported course to localStorage
+                saveCourse(course);
+                setCourses((prev) => {
+                  const filtered = prev.filter((c) => c.id !== course.id);
+                  return [course, ...filtered];
+                });
+                handleSelectCourse(course);
+                setShowSearch(false);
+              }}
+              onClose={() => setShowSearch(false)}
             />
           </motion.div>
         )}

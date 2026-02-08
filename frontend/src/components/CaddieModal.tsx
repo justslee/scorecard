@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Round } from '@/lib/types';
+import type { CourseCoordinates } from '@/lib/golf-api';
 import CaddiePanel from './CaddiePanel';
 
 interface CaddieModalProps {
@@ -10,9 +11,10 @@ interface CaddieModalProps {
   currentHole: number;
   onHoleChange: (hole: number) => void;
   onClose: () => void;
+  holeCoordinates?: CourseCoordinates[];
 }
 
-export default function CaddieModal({ round, currentHole, onHoleChange, onClose }: CaddieModalProps) {
+export default function CaddieModal({ round, currentHole, onHoleChange, onClose, holeCoordinates }: CaddieModalProps) {
   // Lock body scroll when modal is open
   useEffect(() => {
     // Save current scroll position and styles
@@ -68,11 +70,12 @@ export default function CaddieModal({ round, currentHole, onHoleChange, onClose 
         transition={{ type: 'spring', damping: 28, stiffness: 300 }}
         className="absolute inset-0"
       >
-        <CaddiePanel 
-          round={round} 
-          currentHole={currentHole} 
+        <CaddiePanel
+          round={round}
+          currentHole={currentHole}
           onHoleChange={onHoleChange}
           onClose={onClose}
+          holeCoordinates={holeCoordinates}
         />
       </motion.div>
     </motion.div>

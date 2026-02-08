@@ -1,7 +1,13 @@
 // GolfAPI.io Service
 // API Documentation: https://golfapi.io
+//
+// When running in the browser, routes through /api/golf proxy to keep API key server-side.
+// Falls back to direct API calls when proxy is unavailable.
+
+import type { Course, HoleInfo, TeeOption } from './types';
 
 const API_BASE = "https://golfapi.io/api/v1";
+const PROXY_BASE = "/api/golf";
 
 export interface GolfClub {
   id: number;
@@ -66,12 +72,15 @@ export interface CourseCoordinates {
 // Search for golf clubs by name or location
 export async function searchCourses(query: string): Promise<GolfClub[]> {
   try {
-    const response = await fetch(
-      `${API_BASE}/clubs?search=${encodeURIComponent(query)}`,
-      {
-        headers: getHeaders(),
-      }
-    );
+    // Try proxy first (keeps API key server-side)
+    const useProxy = typeof window !== "undefined";
+    const url = useProxy
+      ? `${PROXY_BASE}?action=search&q=${encodeURIComponent(query)}`
+      : `${API_BASE}/clubs?search=${encodeURIComponent(query)}`;
+
+    const response = await fetch(url, {
+      headers: useProxy ? {} : getHeaders(),
+    });
 
     if (!response.ok) {
       throw new Error(`API error: ${response.status}`);
@@ -81,7 +90,6 @@ export async function searchCourses(query: string): Promise<GolfClub[]> {
     return data.clubs || data || [];
   } catch (error) {
     console.error("Error searching courses:", error);
-    // Return cached results if available
     return getCachedSearchResults(query);
   }
 }
@@ -89,8 +97,13 @@ export async function searchCourses(query: string): Promise<GolfClub[]> {
 // Get club details including courses
 export async function getClubDetails(clubId: number): Promise<GolfClub | null> {
   try {
-    const response = await fetch(`${API_BASE}/clubs/${clubId}`, {
-      headers: getHeaders(),
+    const useProxy = typeof window !== "undefined";
+    const url = useProxy
+      ? `${PROXY_BASE}?action=club&id=${clubId}`
+      : `${API_BASE}/clubs/${clubId}`;
+
+    const response = await fetch(url, {
+      headers: useProxy ? {} : getHeaders(),
     });
 
     if (!response.ok) {
@@ -98,7 +111,6 @@ export async function getClubDetails(clubId: number): Promise<GolfClub | null> {
     }
 
     const data = await response.json();
-    // Cache for offline use
     cacheClubData(clubId, data);
     return data;
   } catch (error) {
@@ -110,8 +122,13 @@ export async function getClubDetails(clubId: number): Promise<GolfClub | null> {
 // Get full course details with hole data and coordinates
 export async function getCourseDetails(courseId: number): Promise<GolfCourse | null> {
   try {
-    const response = await fetch(`${API_BASE}/courses/${courseId}`, {
-      headers: getHeaders(),
+    const useProxy = typeof window !== "undefined";
+    const url = useProxy
+      ? `${PROXY_BASE}?action=course&id=${courseId}`
+      : `${API_BASE}/courses/${courseId}`;
+
+    const response = await fetch(url, {
+      headers: useProxy ? {} : getHeaders(),
     });
 
     if (!response.ok) {
@@ -119,7 +136,6 @@ export async function getCourseDetails(courseId: number): Promise<GolfCourse | n
     }
 
     const data = await response.json();
-    // Cache for offline use
     cacheCourseData(courseId, data);
     return data;
   } catch (error) {
@@ -222,11 +238,11 @@ function getCachedSearchResults(query: string): GolfClub[] {
 // Save recent courses for quick access
 export function saveRecentCourse(course: { id: number; name: string; clubName: string }) {
   if (typeof window === "undefined") return;
-  
+
   const recent = getRecentCourses();
   const filtered = recent.filter((c) => c.id !== course.id);
   const updated = [course, ...filtered].slice(0, 10); // Keep last 10
-  
+
   localStorage.setItem(`${CACHE_PREFIX}recent_courses`, JSON.stringify(updated));
 }
 
@@ -234,4 +250,263 @@ export function getRecentCourses(): Array<{ id: number; name: string; clubName: 
   if (typeof window === "undefined") return [];
   const cached = localStorage.getItem(`${CACHE_PREFIX}recent_courses`);
   return cached ? JSON.parse(cached) : [];
+}
+
+// ===== Course Import: Convert GolfAPI data to app models =====
+
+/** Search result combining GolfAPI and OSM data */
+export interface CourseSearchResult {
+  id: string;
+  name: string;
+  clubName?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  center?: { lat: number; lng: number };
+  source: 'golfapi' | 'osm' | 'mapped' | 'local';
+  golfApiClubId?: number;
+  golfApiCourseId?: number;
+  courseCount?: number;
+  hasCoordinates?: boolean;
+}
+
+/** Unified search across GolfAPI, OSM, and local courses */
+export async function searchAllCourses(
+  query: string,
+  options?: { lat?: number; lng?: number }
+): Promise<CourseSearchResult[]> {
+  const results: CourseSearchResult[] = [];
+
+  // 1. Search GolfAPI
+  const golfApiPromise = searchCourses(query).then((clubs) => {
+    for (const club of clubs) {
+      if (club.courses && club.courses.length > 0) {
+        for (const course of club.courses) {
+          results.push({
+            id: `golfapi-${course.id}`,
+            name: course.name || club.name,
+            clubName: club.name,
+            address: club.address,
+            city: club.city,
+            state: club.state,
+            center: club.latitude && club.longitude
+              ? { lat: club.latitude, lng: club.longitude }
+              : undefined,
+            source: 'golfapi',
+            golfApiClubId: club.id,
+            golfApiCourseId: course.id,
+            hasCoordinates: course.holeData?.some((h) => h.coordinates?.green) ?? false,
+          });
+        }
+      } else {
+        results.push({
+          id: `golfapi-club-${club.id}`,
+          name: club.name,
+          clubName: club.name,
+          address: club.address,
+          city: club.city,
+          state: club.state,
+          center: club.latitude && club.longitude
+            ? { lat: club.latitude, lng: club.longitude }
+            : undefined,
+          source: 'golfapi',
+          golfApiClubId: club.id,
+          courseCount: club.courses?.length,
+        });
+      }
+    }
+  }).catch(() => {});
+
+  // 2. Search OSM / Mapbox via our API
+  const osmPromise = fetch(`/api/courses/search?q=${encodeURIComponent(query)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      for (const c of data.courses || []) {
+        // Deduplicate against GolfAPI results by name proximity
+        const isDupe = results.some(
+          (r) => r.name.toLowerCase() === c.name?.toLowerCase()
+        );
+        if (!isDupe) {
+          results.push({
+            id: c.id,
+            name: c.name,
+            address: c.address,
+            center: c.center,
+            source: 'osm',
+          });
+        }
+      }
+    })
+    .catch(() => {});
+
+  // 3. Search mapped courses in Supabase
+  const mappedPromise = fetch(`/api/courses?search=${encodeURIComponent(query)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      for (const c of data.courses || []) {
+        results.push({
+          id: c.id,
+          name: c.name,
+          address: c.address,
+          center: c.location,
+          source: 'mapped',
+          hasCoordinates: true,
+        });
+      }
+    })
+    .catch(() => {});
+
+  await Promise.all([golfApiPromise, osmPromise, mappedPromise]);
+
+  // Sort: mapped first (they have full data), then GolfAPI with coords, then rest
+  results.sort((a, b) => {
+    if (a.source === 'mapped' && b.source !== 'mapped') return -1;
+    if (b.source === 'mapped' && a.source !== 'mapped') return 1;
+    if (a.hasCoordinates && !b.hasCoordinates) return -1;
+    if (b.hasCoordinates && !a.hasCoordinates) return 1;
+    return 0;
+  });
+
+  return results;
+}
+
+/** Convert a GolfAPI course into the app's Course model */
+export function golfApiCourseToAppCourse(
+  club: GolfClub,
+  apiCourse: GolfCourse
+): Course {
+  const holes: HoleInfo[] = (apiCourse.holeData || []).map((h) => ({
+    number: h.hole,
+    par: h.par,
+    yards: h.yards,
+    handicap: h.strokeIndex,
+  }));
+
+  // Ensure we have 18 holes
+  while (holes.length < 18) {
+    holes.push({ number: holes.length + 1, par: 4 });
+  }
+
+  const tees: TeeOption[] = (apiCourse.tees || []).map((t) => ({
+    id: `golfapi-tee-${t.id}`,
+    name: t.name,
+    holes: holes.map((h) => ({ ...h })),
+  }));
+
+  // Default tees if none provided
+  if (tees.length === 0) {
+    tees.push(
+      { id: crypto.randomUUID(), name: 'Blue', holes: holes.map((h) => ({ ...h })) },
+      { id: crypto.randomUUID(), name: 'White', holes: holes.map((h) => ({ ...h })) },
+      { id: crypto.randomUUID(), name: 'Red', holes: holes.map((h) => ({ ...h })) },
+    );
+  }
+
+  // Extract hole coordinates
+  const holeCoordinates = (apiCourse.holeData || [])
+    .filter((h) => h.coordinates?.green)
+    .map((h) => ({
+      holeNumber: h.hole,
+      green: h.coordinates!.green!,
+      tee: h.coordinates?.tee,
+      front: h.coordinates?.front,
+      back: h.coordinates?.back,
+    }));
+
+  return {
+    id: `golfapi-${apiCourse.id}`,
+    name: apiCourse.name || club.name,
+    holes,
+    tees,
+    location: [club.city, club.state].filter(Boolean).join(', ') || club.address,
+    golfApiCourseId: apiCourse.id,
+    golfApiClubId: club.id,
+    holeCoordinates: holeCoordinates.length > 0 ? holeCoordinates : undefined,
+  };
+}
+
+/** Fetch and convert a GolfAPI course into the app model, ready for use */
+export async function importGolfApiCourse(
+  clubId: number,
+  courseId?: number
+): Promise<Course | null> {
+  const club = await getClubDetails(clubId);
+  if (!club) return null;
+
+  let apiCourse: GolfCourse | null = null;
+
+  if (courseId) {
+    apiCourse = await getCourseDetails(courseId);
+  } else if (club.courses && club.courses.length > 0) {
+    // Get first course details
+    apiCourse = await getCourseDetails(club.courses[0].id);
+  }
+
+  if (!apiCourse) return null;
+
+  const course = golfApiCourseToAppCourse(club, apiCourse);
+
+  // Save to recent
+  saveRecentCourse({
+    id: apiCourse.id,
+    name: apiCourse.name || club.name,
+    clubName: club.name,
+  });
+
+  return course;
+}
+
+/** Search courses by GPS proximity via multiple sources */
+export async function searchNearby(
+  lat: number,
+  lng: number,
+  radiusMeters = 25000
+): Promise<CourseSearchResult[]> {
+  const results: CourseSearchResult[] = [];
+
+  // 1. Search our mapped courses (PostGIS)
+  const mappedPromise = fetch(
+    `/api/courses/nearby?lat=${lat}&lng=${lng}&radiusMeters=${radiusMeters}`
+  )
+    .then((r) => r.json())
+    .then((data) => {
+      for (const c of data.courses || []) {
+        results.push({
+          id: c.id,
+          name: c.name,
+          address: c.address,
+          center: c.location,
+          source: 'mapped',
+          hasCoordinates: true,
+        });
+      }
+    })
+    .catch(() => {});
+
+  // 2. Search OSM nearby
+  const osmPromise = fetch(
+    `/api/courses/search?q=golf+course&lat=${lat}&lng=${lng}&radius=${radiusMeters}`
+  )
+    .then((r) => r.json())
+    .then((data) => {
+      for (const c of data.courses || []) {
+        const isDupe = results.some(
+          (r) => r.name.toLowerCase() === c.name?.toLowerCase()
+        );
+        if (!isDupe) {
+          results.push({
+            id: c.id,
+            name: c.name,
+            address: c.address,
+            center: c.center,
+            source: 'osm',
+          });
+        }
+      }
+    })
+    .catch(() => {});
+
+  await Promise.all([mappedPromise, osmPromise]);
+
+  return results;
 }
