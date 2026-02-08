@@ -35,16 +35,12 @@ sudo apt-get install -y \
     git \
     curl
 
-# Install Python dependencies in virtualenv
-echo "[3/6] Installing Python packages..."
+# Install uv and Python dependencies
+echo "[3/6] Installing Python packages via uv..."
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
 cd ~/scorecard/backend
-python3 -m venv venv
-~/scorecard/backend/venv/bin/pip install \
-    "anthropic>=0.77.0" \
-    "fastapi>=0.115.0" \
-    "httpx>=0.27.0" \
-    "python-dotenv>=1.0.0" \
-    "uvicorn>=0.30.0"
+uv sync
 
 # Ensure data directory exists
 mkdir -p ~/scorecard/backend/data
