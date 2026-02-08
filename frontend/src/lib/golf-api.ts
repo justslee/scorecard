@@ -546,8 +546,35 @@ export function golfApiCourseToAppCourse(
 
 // ===== Postgres Persistence =====
 
+/**
+ * Generate a deterministic UUID v5 from a string using SHA-1.
+ * Uses a fixed namespace so the same golfapi ID always produces the same UUID.
+ */
+async function deterministicUUID(input: string): Promise<string> {
+  // Use SHA-1 to hash the input (same as UUID v5 concept)
+  const encoder = new TextEncoder();
+  const data = encoder.encode(`golfapi:${input}`);
+  const hashBuffer = await crypto.subtle.digest('SHA-1', data);
+  const hashArray = new Uint8Array(hashBuffer);
+
+  // Format as UUID v5: set version (5) and variant bits
+  hashArray[6] = (hashArray[6] & 0x0f) | 0x50; // version 5
+  hashArray[8] = (hashArray[8] & 0x3f) | 0x80; // variant 10xx
+
+  const hex = Array.from(hashArray.slice(0, 16))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
 /** Convert app Course model to Postgres CourseData for upsertCourse() */
-function courseToPostgresData(course: Course): CourseData {
+async function courseToPostgresData(course: Course): Promise<CourseData> {
+  // Generate a valid UUID for the database from the golfapi course ID
+  const dbId = course.id.startsWith('golfapi-')
+    ? await deterministicUUID(course.id)
+    : course.id;
+
   // Extract unique tee sets
   const teeSets: TeeSet[] = (course.tees || []).map((t) => ({
     name: t.name,
@@ -614,7 +641,7 @@ function courseToPostgresData(course: Course): CourseData {
     : { lat: 0, lng: 0 };
 
   return {
-    id: course.id,
+    id: dbId,
     name: course.name,
     address: course.location,
     location,
@@ -627,7 +654,7 @@ function courseToPostgresData(course: Course): CourseData {
 async function persistCourseToPostgres(course: Course): Promise<void> {
   try {
     const { upsertCourse } = await import('./courses/storage');
-    const courseData = courseToPostgresData(course);
+    const courseData = await courseToPostgresData(course);
     await upsertCourse(courseData);
   } catch (e) {
     // Silently fail — Supabase may not be configured
