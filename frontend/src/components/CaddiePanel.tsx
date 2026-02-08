@@ -446,34 +446,51 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
   useEffect(() => {
     if (!hasMapbox || !mapContainerRef.current || !holeCoordinates?.length) return;
 
-    mapboxgl.accessToken = mapboxToken;
+    const container = mapContainerRef.current;
+    let map: mapboxgl.Map | null = null;
+    let cancelled = false;
 
-    const firstHole = holeCoordinates.find(h => h.holeNumber === currentHole) || holeCoordinates[0];
-    if (!firstHole?.green) return;
+    // Use rAF to ensure container has layout dimensions before creating map
+    requestAnimationFrame(() => {
+      if (cancelled || !container.offsetWidth || !container.offsetHeight) return;
 
-    const bearing = firstHole.tee
-      ? calculateBearing(firstHole.tee, firstHole.green)
-      : 0;
+      mapboxgl.accessToken = mapboxToken;
 
-    const map = new mapboxgl.Map({
-      container: mapContainerRef.current,
-      style: 'mapbox://styles/mapbox/satellite-v9',
-      center: [firstHole.green.lng, firstHole.green.lat],
-      zoom: 17,
-      pitch: 45,
-      bearing,
-      attributionControl: false,
-      interactive: true,
+      const firstHole = holeCoordinates.find(h => h.holeNumber === currentHole) || holeCoordinates[0];
+      if (!firstHole?.green) return;
+
+      const bearing = firstHole.tee
+        ? calculateBearing(firstHole.tee, firstHole.green)
+        : 0;
+
+      map = new mapboxgl.Map({
+        container,
+        style: 'mapbox://styles/mapbox/satellite-streets-v12',
+        center: [firstHole.green.lng, firstHole.green.lat],
+        zoom: 17,
+        pitch: 45,
+        bearing,
+        attributionControl: false,
+      });
+
+      map.on('load', () => {
+        map?.resize();
+      });
+
+      map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+
+      mapRef.current = map;
     });
 
-    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
-
-    mapRef.current = map;
-
     return () => {
+      cancelled = true;
       mapMarkersRef.current.forEach(m => m.remove());
       mapMarkersRef.current = [];
-      map.remove();
+      if (map) {
+        map.remove();
+      } else if (mapRef.current) {
+        mapRef.current.remove();
+      }
       mapRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -713,10 +730,17 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
           </button>
         )}
 
-        {/* Mapbox satellite map (or fallback placeholder) */}
-        {hasMapbox && currentHoleCoords ? (
-          <div ref={mapContainerRef} className="absolute inset-0" />
-        ) : (
+        {/* Mapbox satellite map */}
+        {hasMapbox && (
+          <div
+            ref={mapContainerRef}
+            className="absolute inset-0 w-full h-full"
+            style={{ visibility: currentHoleCoords ? 'visible' : 'hidden' }}
+          />
+        )}
+
+        {/* Fallback placeholder (no Mapbox token or no coordinates) */}
+        {(!hasMapbox || !currentHoleCoords) && (
           <AnimatePresence mode="wait" custom={slideDirection}>
             <motion.div
               key={currentHole}
