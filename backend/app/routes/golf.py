@@ -93,7 +93,8 @@ async def golf_proxy(
 ):
     """Proxy GolfAPI.io requests, keeping API key server-side."""
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+        async with httpx.AsyncClient(timeout=15, transport=transport) as client:
             if action == "search":
                 if not q:
                     raise HTTPException(400, "Missing q parameter")
