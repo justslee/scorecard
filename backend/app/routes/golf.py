@@ -32,7 +32,7 @@ async def golf_proxy(
                     raise HTTPException(400, "Missing q parameter")
                 resp = await client.get(
                     f"{GOLF_API_BASE}/clubs",
-                    params={"search": q},
+                    params={"q": q},
                     headers=_api_headers(),
                 )
             elif action == "club":
