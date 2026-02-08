@@ -21,7 +21,6 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
   }
   try {
     const { upsertCourse } = await import('@/lib/courses/storage');
-    const { CourseData } = await import('@/lib/courses/types');
     const { id } = await context.params;
     const body = (await request.json()) as any;
     const saved = await upsertCourse({ ...body, id });

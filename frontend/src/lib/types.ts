@@ -10,6 +10,10 @@ export interface HoleInfo {
 export interface TeeOption {
   id: string;
   name: string; // e.g., Blue, White, Red
+  color?: string;
+  slope?: number;
+  rating?: number;
+  totalYards?: number;
   holes: HoleInfo[];
 }
 
@@ -22,9 +26,9 @@ export interface Course {
   tees?: TeeOption[];
   location?: string;
   /** GolfAPI.io course ID for GPS features */
-  golfApiCourseId?: number;
+  golfApiCourseId?: number | string;
   /** GolfAPI.io club ID */
-  golfApiClubId?: number;
+  golfApiClubId?: number | string;
   /** Hole coordinates for GPS map view */
   holeCoordinates?: Array<{
     holeNumber: number;

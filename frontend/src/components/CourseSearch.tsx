@@ -7,10 +7,10 @@ import { searchCourses, getClubDetails, GolfClub, GolfCourse } from "@/lib/golf-
 
 interface CourseSearchProps {
   onSelectCourse: (course: {
-    id: number;
+    id: number | string;
     name: string;
     clubName: string;
-    clubId: number;
+    clubId: number | string;
     location?: string;
     holes?: number;
     par?: number;
