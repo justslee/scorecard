@@ -27,12 +27,18 @@ app.add_middleware(
 
 # Import and include routers
 from app.routes import players, rounds, tournaments, courses, voice
+from app.routes import golf, course_search, voice_advanced, caddie
 
 app.include_router(players.router)
 app.include_router(rounds.router)
 app.include_router(tournaments.router)
 app.include_router(courses.router)
 app.include_router(voice.router)
+# Migrated from Next.js + new caddie system
+app.include_router(golf.router)
+app.include_router(course_search.router)
+app.include_router(voice_advanced.router)
+app.include_router(caddie.router)
 
 
 @app.on_event("startup")
