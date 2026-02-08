@@ -43,9 +43,20 @@ app.include_router(caddie.router)
 
 @app.on_event("startup")
 async def startup():
-    """Seed default data on startup."""
+    """Seed default data and start background tasks on startup."""
+    import asyncio
     from app.storage import seed_default_data
+    from app.caddie.session import sessions
+
     seed_default_data()
+
+    # Periodic cleanup of expired round sessions (every 30 min)
+    async def cleanup_loop():
+        while True:
+            await asyncio.sleep(30 * 60)
+            sessions.cleanup_expired()
+
+    asyncio.create_task(cleanup_loop())
 
 
 @app.get("/health")

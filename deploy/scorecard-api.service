@@ -1,0 +1,27 @@
+[Unit]
+Description=Scorecard API (FastAPI)
+After=network.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/scorecard/backend
+EnvironmentFile=/home/ubuntu/scorecard/backend/.env
+ExecStart=/home/ubuntu/.local/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=scorecard-api
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/scorecard/backend/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
