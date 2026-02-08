@@ -40,10 +40,10 @@ echo "[3/6] Installing Python packages..."
 cd ~/scorecard/backend
 pip3 install --user \
     "anthropic>=0.77.0" \
-    "fastapi>=0.128.0" \
-    "httpx>=0.28.0" \
-    "python-dotenv>=1.2.1" \
-    "uvicorn>=0.40.0"
+    "fastapi>=0.115.0" \
+    "httpx>=0.27.0" \
+    "python-dotenv>=1.0.0" \
+    "uvicorn>=0.30.0"
 
 # Ensure data directory exists
 mkdir -p ~/scorecard/backend/data

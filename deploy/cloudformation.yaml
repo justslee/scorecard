@@ -112,9 +112,9 @@ Resources:
             sudo -u ubuntu pip3 install --user \
               "anthropic>=0.77.0" \
               "fastapi>=0.128.0" \
-              "httpx>=0.28.0" \
-              "python-dotenv>=1.2.1" \
-              "uvicorn>=0.40.0"
+              "httpx>=0.27.0" \
+              "python-dotenv>=1.0.0" \
+              "uvicorn>=0.30.0"
 
             # Create data dir
             sudo -u ubuntu mkdir -p /home/ubuntu/scorecard/backend/data
