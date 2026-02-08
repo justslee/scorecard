@@ -10,7 +10,7 @@ const API_BASE = "https://golfapi.io/api/v1";
 const PROXY_BASE = "/api/golf";
 
 export interface GolfClub {
-  id: number;
+  id: number | string;
   name: string;
   address?: string;
   city?: string;
@@ -22,7 +22,7 @@ export interface GolfClub {
 }
 
 export interface GolfCourse {
-  id: number;
+  id: number | string;
   name: string;
   holes: number;
   par?: number;
@@ -30,6 +30,7 @@ export interface GolfCourse {
   rating?: number;
   tees?: Tee[];
   holeData?: HoleData[];
+  hasGPS?: number;
 }
 
 export interface Tee {
