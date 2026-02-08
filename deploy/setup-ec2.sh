@@ -35,10 +35,11 @@ sudo apt-get install -y \
     git \
     curl
 
-# Install Python dependencies
+# Install Python dependencies in virtualenv
 echo "[3/6] Installing Python packages..."
 cd ~/scorecard/backend
-pip3 install --user \
+python3 -m venv venv
+~/scorecard/backend/venv/bin/pip install \
     "anthropic>=0.77.0" \
     "fastapi>=0.115.0" \
     "httpx>=0.27.0" \
