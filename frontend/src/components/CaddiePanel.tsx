@@ -19,6 +19,8 @@ import {
   Loader2,
   MessageCircle,
 } from 'lucide-react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { Round } from '@/lib/types';
 import type { CourseCoordinates } from '@/lib/golf-api';
 import { GPSWatcher, calculateDistance, calculateBearing, getAccuracyDescription, Position } from '@/lib/gps';
@@ -111,6 +113,9 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
   const containerRef = useRef<HTMLDivElement>(null);
   const prevHoleRef = useRef(currentHole);
   const gpsWatcherRef = useRef<GPSWatcher | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const mapMarkersRef = useRef<mapboxgl.Marker[]>([]);
 
   // Caddie state
   const [activeTab, setActiveTab] = useState<CaddieTab>('recommend');
@@ -433,6 +438,131 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
   const confidenceColor = (c: number) => c >= 0.7 ? 'text-emerald-400' : c >= 0.4 ? 'text-yellow-400' : 'text-red-400';
   const trafficColor = (t: string) => t === 'green' ? 'bg-emerald-500' : t === 'yellow' ? 'bg-yellow-500' : 'bg-red-500';
 
+  // Mapbox token
+  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+  const hasMapbox = !!mapboxToken;
+
+  // Initialize Mapbox map
+  useEffect(() => {
+    if (!hasMapbox || !mapContainerRef.current || !holeCoordinates?.length) return;
+
+    mapboxgl.accessToken = mapboxToken;
+
+    const firstHole = holeCoordinates.find(h => h.holeNumber === currentHole) || holeCoordinates[0];
+    if (!firstHole?.green) return;
+
+    const bearing = firstHole.tee
+      ? calculateBearing(firstHole.tee, firstHole.green)
+      : 0;
+
+    const map = new mapboxgl.Map({
+      container: mapContainerRef.current,
+      style: 'mapbox://styles/mapbox/satellite-v9',
+      center: [firstHole.green.lng, firstHole.green.lat],
+      zoom: 17,
+      pitch: 45,
+      bearing,
+      attributionControl: false,
+      interactive: true,
+    });
+
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+
+    mapRef.current = map;
+
+    return () => {
+      mapMarkersRef.current.forEach(m => m.remove());
+      mapMarkersRef.current = [];
+      map.remove();
+      mapRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMapbox, holeCoordinates?.length]);
+
+  // Update map when hole changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !holeCoordinates?.length) return;
+
+    const holeData = holeCoordinates.find(h => h.holeNumber === currentHole);
+    if (!holeData?.green) return;
+
+    // Clear old markers
+    mapMarkersRef.current.forEach(m => m.remove());
+    mapMarkersRef.current = [];
+
+    // Calculate bearing from tee to green
+    const bearing = holeData.tee
+      ? calculateBearing(holeData.tee, holeData.green)
+      : map.getBearing();
+
+    // Determine center (midpoint between tee and green, or green)
+    const center = holeData.tee
+      ? {
+          lng: (holeData.tee.lng + holeData.green.lng) / 2,
+          lat: (holeData.tee.lat + holeData.green.lat) / 2,
+        }
+      : holeData.green;
+
+    map.flyTo({
+      center: [center.lng, center.lat],
+      bearing,
+      zoom: 17,
+      pitch: 45,
+      duration: 600,
+    });
+
+    // Add green marker
+    const greenEl = document.createElement('div');
+    greenEl.className = 'caddie-map-marker-green';
+    greenEl.style.cssText = 'width:20px;height:20px;border-radius:50%;background:rgba(16,185,129,0.7);border:2px solid #10b981;box-shadow:0 0 8px rgba(16,185,129,0.5);';
+    mapMarkersRef.current.push(
+      new mapboxgl.Marker(greenEl).setLngLat([holeData.green.lng, holeData.green.lat]).addTo(map)
+    );
+
+    // Add flag at green center
+    const flagEl = document.createElement('div');
+    flagEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>';
+    flagEl.style.cssText = 'transform:translate(-2px,-14px);';
+    mapMarkersRef.current.push(
+      new mapboxgl.Marker(flagEl).setLngLat([holeData.green.lng, holeData.green.lat]).addTo(map)
+    );
+
+    // Add tee marker
+    if (holeData.tee) {
+      const teeEl = document.createElement('div');
+      teeEl.style.cssText = 'width:14px;height:14px;border-radius:50%;background:rgba(168,85,247,0.7);border:2px solid #a855f7;box-shadow:0 0 6px rgba(168,85,247,0.4);';
+      mapMarkersRef.current.push(
+        new mapboxgl.Marker(teeEl).setLngLat([holeData.tee.lng, holeData.tee.lat]).addTo(map)
+      );
+    }
+
+    // Add front/back markers
+    if (holeData.front) {
+      const frontEl = document.createElement('div');
+      frontEl.style.cssText = 'width:8px;height:8px;border-radius:50%;background:rgba(251,191,36,0.7);border:1px solid #fbbf24;';
+      mapMarkersRef.current.push(
+        new mapboxgl.Marker(frontEl).setLngLat([holeData.front.lng, holeData.front.lat]).addTo(map)
+      );
+    }
+    if (holeData.back) {
+      const backEl = document.createElement('div');
+      backEl.style.cssText = 'width:8px;height:8px;border-radius:50%;background:rgba(251,191,36,0.7);border:1px solid #fbbf24;';
+      mapMarkersRef.current.push(
+        new mapboxgl.Marker(backEl).setLngLat([holeData.back.lng, holeData.back.lat]).addTo(map)
+      );
+    }
+
+    // Add GPS user position marker
+    if (gpsPosition) {
+      const userEl = document.createElement('div');
+      userEl.style.cssText = 'width:16px;height:16px;border-radius:50%;background:rgba(59,130,246,0.8);border:3px solid white;box-shadow:0 0 10px rgba(59,130,246,0.6);';
+      mapMarkersRef.current.push(
+        new mapboxgl.Marker(userEl).setLngLat([gpsPosition.lng, gpsPosition.lat]).addTo(map)
+      );
+    }
+  }, [currentHole, holeCoordinates, gpsPosition]);
+
   return (
     <div ref={containerRef} className="relative h-full flex flex-col bg-black overscroll-none">
       {/* MAP AREA */}
@@ -583,28 +713,32 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
           </button>
         )}
 
-        {/* Map placeholder */}
-        <AnimatePresence mode="wait" custom={slideDirection}>
-          <motion.div
-            key={currentHole}
-            custom={slideDirection}
-            variants={slideVariants}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none"
-          >
-            <div className="relative w-40 h-48 mx-auto mb-2">
-              <div className="absolute inset-x-6 top-16 bottom-0 bg-emerald-800/30 rounded-t-full" />
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-20 h-20 bg-emerald-600/40 rounded-full" />
-              <div className="absolute top-6 left-1/2 -translate-x-1/2">
-                <Flag className="w-6 h-6 text-red-400" />
+        {/* Mapbox satellite map (or fallback placeholder) */}
+        {hasMapbox && currentHoleCoords ? (
+          <div ref={mapContainerRef} className="absolute inset-0" />
+        ) : (
+          <AnimatePresence mode="wait" custom={slideDirection}>
+            <motion.div
+              key={currentHole}
+              custom={slideDirection}
+              variants={slideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.15, ease: 'easeOut' }}
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none"
+            >
+              <div className="relative w-40 h-48 mx-auto mb-2">
+                <div className="absolute inset-x-6 top-16 bottom-0 bg-emerald-800/30 rounded-t-full" />
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-20 h-20 bg-emerald-600/40 rounded-full" />
+                <div className="absolute top-6 left-1/2 -translate-x-1/2">
+                  <Flag className="w-6 h-6 text-red-400" />
+                </div>
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-4 h-4 bg-white/50 rounded-full" />
               </div>
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-4 h-4 bg-white/50 rounded-full" />
-            </div>
-          </motion.div>
-        </AnimatePresence>
+            </motion.div>
+          </AnimatePresence>
+        )}
 
         {/* Hole dots */}
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
