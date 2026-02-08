@@ -41,7 +41,6 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Scorecard API security group
-      GroupName: scorecard-api-sg
       SecurityGroupIngress:
         # SSH - restricted to your IP only
         - IpProtocol: tcp
@@ -64,12 +63,8 @@ Resources:
           CidrIp: 0.0.0.0/0
           Description: HTTPS from anywhere
 
-      SecurityGroupEgress:
-        # All outbound (needed for API calls to Anthropic, Open-Meteo, USGS, OSM, GolfAPI)
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-          Description: All outbound traffic
-
+      # Note: all outbound traffic is allowed by default (needed for
+      # API calls to Anthropic, Open-Meteo, USGS, OSM, GolfAPI)
       Tags:
         - Key: Name
           Value: scorecard-api-sg
