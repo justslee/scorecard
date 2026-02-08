@@ -106,6 +106,65 @@ export async function fetchPlayerStats(params: {
   return post('/caddie/player-stats', params);
 }
 
+// ── Session Management ──
+
+export interface SessionStatus {
+  status: string;
+  round_id: string;
+  current_hole?: number;
+  holes_with_intel?: number[];
+  has_weather?: boolean;
+  shot_count?: number;
+  conversation_length?: number;
+  last_recommendation?: CaddieRecommendation | null;
+}
+
+export async function startSession(params: {
+  round_id: string;
+  course_id?: string;
+  club_distances?: Record<string, number>;
+  handicap?: number;
+}): Promise<SessionStatus> {
+  return post('/caddie/session/start', params);
+}
+
+export async function endSession(roundId: string): Promise<{ status: string }> {
+  return post('/caddie/session/end', { round_id: roundId });
+}
+
+export async function getSessionStatus(roundId: string): Promise<SessionStatus> {
+  return get<SessionStatus>(`/caddie/session/${roundId}`);
+}
+
+export async function recordShot(params: {
+  round_id: string;
+  hole_number: number;
+  club: string;
+  distance_yards: number;
+  result?: string;
+}): Promise<{ status: string; total_shots: number }> {
+  return post('/caddie/session/shot', params);
+}
+
+export async function sessionRecommend(params: {
+  round_id: string;
+  hole_number: number;
+  distance_yards?: number;
+  par?: number;
+  yards?: number;
+}): Promise<CaddieRecommendation> {
+  return post('/caddie/session/recommend', params);
+}
+
+export async function sessionVoice(params: {
+  round_id: string;
+  transcript: string;
+  personality_id: string;
+  hole_number: number;
+}): Promise<{ response: string }> {
+  return post('/caddie/session/voice', params);
+}
+
 // ── Voice Caddie ──
 
 export async function talkToCaddie(params: {
