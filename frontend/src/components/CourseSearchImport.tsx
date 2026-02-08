@@ -39,7 +39,7 @@ export default function CourseSearchImport({
   const [importing, setImporting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recentCourses, setRecentCourses] = useState<
-    Array<{ id: number; name: string; clubName: string }>
+    Array<{ id: number | string; name: string; clubName: string }>
   >([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -209,7 +209,7 @@ export default function CourseSearchImport({
   };
 
   const handleSelectRecent = async (recent: {
-    id: number;
+    id: number | string;
     name: string;
     clubName: string;
   }) => {

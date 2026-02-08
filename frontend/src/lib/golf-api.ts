@@ -5,6 +5,7 @@
 // Falls back to direct API calls when proxy is unavailable.
 
 import type { Course, HoleInfo, TeeOption } from './types';
+import type { CourseData, TeeSet, HoleData as PgHoleData } from './courses/types';
 
 const API_BASE = "https://golfapi.io/api/v1";
 const PROXY_BASE = "/api/golf";
@@ -34,12 +35,14 @@ export interface GolfCourse {
 }
 
 export interface Tee {
-  id: number;
+  id: number | string;
   name: string;
   color?: string;
   slope?: number;
   rating?: number;
   totalYards?: number;
+  /** Per-hole yardages for this tee (from backend normalization of length1..length18) */
+  holeData?: Array<{ hole: number; yards: number }>;
 }
 
 export interface HoleData {
@@ -70,6 +73,58 @@ export interface CourseCoordinates {
   }>;
 }
 
+// ===== Course Name Composition =====
+
+const CLUB_NAME_SUFFIXES = [
+  'golf course',
+  'golf club',
+  'country club',
+  'golf links',
+  'golf & country club',
+  'golf and country club',
+  'state park',
+  'ny state park',
+  'resort',
+  'resort & spa',
+  'golf resort',
+  'municipal golf',
+  'public golf',
+];
+
+/**
+ * Compose a display name from club + course names.
+ * "Bethpage NY State Park" + "Black" → "Bethpage Black"
+ * "Pebble Beach Golf Links" + "Pebble Beach" → "Pebble Beach"
+ */
+export function composeCourseName(clubName: string, courseName: string): string {
+  if (!clubName || !courseName) return courseName || clubName || 'Unknown Course';
+
+  // If course name already looks like a full name (contains the first
+  // significant word of the club), use it as-is.
+  let cleanedClub = clubName.trim();
+  for (const suffix of CLUB_NAME_SUFFIXES) {
+    const re = new RegExp(`\\s*${suffix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+    cleanedClub = cleanedClub.replace(re, '');
+  }
+  cleanedClub = cleanedClub.trim();
+
+  // Get first significant word of cleaned club name (skip short words)
+  const clubWords = cleanedClub.split(/\s+/);
+  const significantWord = clubWords.find(w => w.length > 2) || clubWords[0];
+
+  if (!significantWord) return courseName;
+
+  // If courseName already contains the significant club word, use courseName as-is
+  if (courseName.toLowerCase().includes(significantWord.toLowerCase())) {
+    return courseName;
+  }
+
+  // Otherwise compose: "Bethpage" + "Black" → "Bethpage Black"
+  return `${cleanedClub} ${courseName}`;
+}
+
+// ===== API Functions =====
+
 // Search for golf clubs by name or location
 export async function searchCourses(query: string): Promise<GolfClub[]> {
   try {
@@ -88,7 +143,12 @@ export async function searchCourses(query: string): Promise<GolfClub[]> {
     }
 
     const data = await response.json();
-    return data.clubs || data || [];
+    const clubs = data.clubs || data || [];
+
+    // Cache on success
+    cacheSearchResults(query, clubs);
+
+    return clubs;
   } catch (error) {
     console.error("Error searching courses:", error);
     return getCachedSearchResults(query);
@@ -96,7 +156,11 @@ export async function searchCourses(query: string): Promise<GolfClub[]> {
 }
 
 // Get club details including courses
-export async function getClubDetails(clubId: number): Promise<GolfClub | null> {
+export async function getClubDetails(clubId: number | string): Promise<GolfClub | null> {
+  // Cache-first: check localStorage before making API call
+  const cached = getCachedClubData(clubId);
+  if (cached) return cached;
+
   try {
     const useProxy = typeof window !== "undefined";
     const url = useProxy
@@ -116,12 +180,16 @@ export async function getClubDetails(clubId: number): Promise<GolfClub | null> {
     return data;
   } catch (error) {
     console.error("Error fetching club details:", error);
-    return getCachedClubData(clubId);
+    return null;
   }
 }
 
 // Get full course details with hole data and coordinates
-export async function getCourseDetails(courseId: number): Promise<GolfCourse | null> {
+export async function getCourseDetails(courseId: number | string): Promise<GolfCourse | null> {
+  // Cache-first: check localStorage before making API call
+  const cached = getCachedCourseData(courseId);
+  if (cached) return cached;
+
   try {
     const useProxy = typeof window !== "undefined";
     const url = useProxy
@@ -141,12 +209,46 @@ export async function getCourseDetails(courseId: number): Promise<GolfCourse | n
     return data;
   } catch (error) {
     console.error("Error fetching course details:", error);
-    return getCachedCourseData(courseId);
+    return null;
   }
 }
 
-// Get coordinates for all holes on a course
-export async function getCourseCoordinates(courseId: number): Promise<CourseCoordinates[]> {
+// Fetch coordinates for a course (separate endpoint)
+export async function fetchCourseCoordinates(courseId: number | string): Promise<CourseCoordinates[]> {
+  try {
+    const useProxy = typeof window !== "undefined";
+    const url = useProxy
+      ? `${PROXY_BASE}?action=coordinates&id=${courseId}`
+      : `${API_BASE}/coordinates/${courseId}`;
+
+    const response = await fetch(url, {
+      headers: useProxy ? {} : getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const holeData = data.holeData || [];
+
+    return holeData
+      .filter((h: { green?: { lat: number; lng: number } }) => h.green)
+      .map((h: { hole: number; green: { lat: number; lng: number }; tee?: { lat: number; lng: number }; front?: { lat: number; lng: number }; back?: { lat: number; lng: number } }) => ({
+        holeNumber: h.hole,
+        green: h.green,
+        tee: h.tee,
+        front: h.front,
+        back: h.back,
+      }));
+  } catch (error) {
+    console.error("Error fetching course coordinates:", error);
+    return [];
+  }
+}
+
+// Get coordinates for all holes on a course (legacy — uses course detail)
+export async function getCourseCoordinates(courseId: number | string): Promise<CourseCoordinates[]> {
   const course = await getCourseDetails(courseId);
   if (!course?.holeData) return [];
 
@@ -181,7 +283,7 @@ function getHeaders(): HeadersInit {
 const CACHE_PREFIX = "golfapi_";
 const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-function cacheClubData(clubId: number, data: GolfClub) {
+function cacheClubData(clubId: number | string, data: GolfClub) {
   if (typeof window === "undefined") return;
   localStorage.setItem(
     `${CACHE_PREFIX}club_${clubId}`,
@@ -189,7 +291,7 @@ function cacheClubData(clubId: number, data: GolfClub) {
   );
 }
 
-function getCachedClubData(clubId: number): GolfClub | null {
+function getCachedClubData(clubId: number | string): GolfClub | null {
   if (typeof window === "undefined") return null;
   const cached = localStorage.getItem(`${CACHE_PREFIX}club_${clubId}`);
   if (!cached) return null;
@@ -202,7 +304,7 @@ function getCachedClubData(clubId: number): GolfClub | null {
   return data;
 }
 
-function cacheCourseData(courseId: number, data: GolfCourse) {
+function cacheCourseData(courseId: number | string, data: GolfCourse) {
   if (typeof window === "undefined") return;
   localStorage.setItem(
     `${CACHE_PREFIX}course_${courseId}`,
@@ -210,7 +312,7 @@ function cacheCourseData(courseId: number, data: GolfCourse) {
   );
 }
 
-function getCachedCourseData(courseId: number): GolfCourse | null {
+function getCachedCourseData(courseId: number | string): GolfCourse | null {
   if (typeof window === "undefined") return null;
   const cached = localStorage.getItem(`${CACHE_PREFIX}course_${courseId}`);
   if (!cached) return null;
@@ -221,6 +323,14 @@ function getCachedCourseData(courseId: number): GolfCourse | null {
     return null;
   }
   return data;
+}
+
+function cacheSearchResults(query: string, data: GolfClub[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(
+    `${CACHE_PREFIX}search_${query.toLowerCase()}`,
+    JSON.stringify({ data, timestamp: Date.now() })
+  );
 }
 
 function getCachedSearchResults(query: string): GolfClub[] {
@@ -237,17 +347,17 @@ function getCachedSearchResults(query: string): GolfClub[] {
 }
 
 // Save recent courses for quick access
-export function saveRecentCourse(course: { id: number; name: string; clubName: string }) {
+export function saveRecentCourse(course: { id: number | string; name: string; clubName: string }) {
   if (typeof window === "undefined") return;
 
   const recent = getRecentCourses();
-  const filtered = recent.filter((c) => c.id !== course.id);
+  const filtered = recent.filter((c) => String(c.id) !== String(course.id));
   const updated = [course, ...filtered].slice(0, 10); // Keep last 10
 
   localStorage.setItem(`${CACHE_PREFIX}recent_courses`, JSON.stringify(updated));
 }
 
-export function getRecentCourses(): Array<{ id: number; name: string; clubName: string }> {
+export function getRecentCourses(): Array<{ id: number | string; name: string; clubName: string }> {
   if (typeof window === "undefined") return [];
   const cached = localStorage.getItem(`${CACHE_PREFIX}recent_courses`);
   return cached ? JSON.parse(cached) : [];
@@ -265,8 +375,8 @@ export interface CourseSearchResult {
   state?: string;
   center?: { lat: number; lng: number };
   source: 'golfapi' | 'osm' | 'mapped' | 'local';
-  golfApiClubId?: number;
-  golfApiCourseId?: number;
+  golfApiClubId?: number | string;
+  golfApiCourseId?: number | string;
   courseCount?: number;
   hasCoordinates?: boolean;
 }
@@ -285,7 +395,7 @@ export async function searchAllCourses(
         for (const course of club.courses) {
           results.push({
             id: `golfapi-${course.id}`,
-            name: course.name || club.name,
+            name: composeCourseName(club.name, course.name || club.name),
             clubName: club.name,
             address: club.address,
             city: club.city,
@@ -296,7 +406,7 @@ export async function searchAllCourses(
             source: 'golfapi',
             golfApiClubId: club.id,
             golfApiCourseId: course.id,
-            hasCoordinates: course.holeData?.some((h) => h.coordinates?.green) ?? false,
+            hasCoordinates: (course.hasGPS ?? 0) > 0,
           });
         }
       } else {
@@ -376,6 +486,7 @@ export function golfApiCourseToAppCourse(
   club: GolfClub,
   apiCourse: GolfCourse
 ): Course {
+  // Build base holes from holeData (par + handicap)
   const holes: HoleInfo[] = (apiCourse.holeData || []).map((h) => ({
     number: h.hole,
     par: h.par,
@@ -383,16 +494,33 @@ export function golfApiCourseToAppCourse(
     handicap: h.strokeIndex,
   }));
 
-  // Ensure we have 18 holes
-  while (holes.length < 18) {
+  // Fill to expected hole count
+  const numHoles = typeof apiCourse.holes === 'number' ? apiCourse.holes : 18;
+  while (holes.length < numHoles) {
     holes.push({ number: holes.length + 1, par: 4 });
   }
 
-  const tees: TeeOption[] = (apiCourse.tees || []).map((t) => ({
-    id: `golfapi-tee-${t.id}`,
-    name: t.name,
-    holes: holes.map((h) => ({ ...h })),
-  }));
+  // Build tees from normalized tee data (each tee has holeData with per-hole yards)
+  const tees: TeeOption[] = (apiCourse.tees || []).map((t) => {
+    // Merge base hole info with tee-specific yardages
+    const teeHoles: HoleInfo[] = holes.map((baseHole) => {
+      const teeHoleData = t.holeData?.find((th) => th.hole === baseHole.number);
+      return {
+        ...baseHole,
+        yards: teeHoleData?.yards ?? baseHole.yards,
+      };
+    });
+
+    return {
+      id: `golfapi-tee-${t.id}`,
+      name: t.name || 'Unknown',
+      color: t.color,
+      slope: t.slope,
+      rating: t.rating,
+      totalYards: t.totalYards,
+      holes: teeHoles,
+    };
+  });
 
   // Default tees if none provided
   if (tees.length === 0) {
@@ -403,33 +531,114 @@ export function golfApiCourseToAppCourse(
     );
   }
 
-  // Extract hole coordinates
-  const holeCoordinates = (apiCourse.holeData || [])
-    .filter((h) => h.coordinates?.green)
-    .map((h) => ({
-      holeNumber: h.hole,
-      green: h.coordinates!.green!,
-      tee: h.coordinates?.tee,
-      front: h.coordinates?.front,
-      back: h.coordinates?.back,
-    }));
+  const courseName = composeCourseName(club.name, apiCourse.name || club.name);
 
   return {
     id: `golfapi-${apiCourse.id}`,
-    name: apiCourse.name || club.name,
+    name: courseName,
     holes,
     tees,
     location: [club.city, club.state].filter(Boolean).join(', ') || club.address,
     golfApiCourseId: apiCourse.id,
     golfApiClubId: club.id,
-    holeCoordinates: holeCoordinates.length > 0 ? holeCoordinates : undefined,
   };
+}
+
+// ===== Postgres Persistence =====
+
+/** Convert app Course model to Postgres CourseData for upsertCourse() */
+function courseToPostgresData(course: Course): CourseData {
+  // Extract unique tee sets
+  const teeSets: TeeSet[] = (course.tees || []).map((t) => ({
+    name: t.name,
+    color: t.color || '#888888',
+  }));
+
+  // Build holes with yardages from each tee
+  const pgHoles: PgHoleData[] = course.holes.map((hole) => {
+    const yardages: Record<string, number> = {};
+    for (const tee of course.tees || []) {
+      const teeHole = tee.holes.find((h) => h.number === hole.number);
+      if (teeHole?.yards) {
+        yardages[tee.name] = teeHole.yards;
+      }
+    }
+
+    // Build GeoJSON features from holeCoordinates
+    const features: GeoJSON.Feature[] = [];
+    const coords = course.holeCoordinates?.find((c) => c.holeNumber === hole.number);
+    if (coords) {
+      if (coords.green) {
+        features.push({
+          type: 'Feature',
+          properties: { featureType: 'green', hole: hole.number },
+          geometry: { type: 'Point', coordinates: [coords.green.lng, coords.green.lat] },
+        });
+      }
+      if (coords.tee) {
+        features.push({
+          type: 'Feature',
+          properties: { featureType: 'tee', hole: hole.number },
+          geometry: { type: 'Point', coordinates: [coords.tee.lng, coords.tee.lat] },
+        });
+      }
+      if (coords.front) {
+        features.push({
+          type: 'Feature',
+          properties: { featureType: 'green', subtype: 'front', hole: hole.number },
+          geometry: { type: 'Point', coordinates: [coords.front.lng, coords.front.lat] },
+        });
+      }
+      if (coords.back) {
+        features.push({
+          type: 'Feature',
+          properties: { featureType: 'green', subtype: 'back', hole: hole.number },
+          geometry: { type: 'Point', coordinates: [coords.back.lng, coords.back.lat] },
+        });
+      }
+    }
+
+    return {
+      number: hole.number,
+      par: hole.par,
+      handicap: hole.handicap || hole.number,
+      yardages,
+      features: { type: 'FeatureCollection' as const, features },
+    };
+  });
+
+  // Determine center location from first hole coordinates or default
+  const firstCoord = course.holeCoordinates?.[0];
+  const location = firstCoord?.green
+    ? { lat: firstCoord.green.lat, lng: firstCoord.green.lng }
+    : { lat: 0, lng: 0 };
+
+  return {
+    id: course.id,
+    name: course.name,
+    address: course.location,
+    location,
+    teeSets,
+    holes: pgHoles,
+  };
+}
+
+/** Persist a course to Postgres (Supabase) — non-blocking, best-effort */
+async function persistCourseToPostgres(course: Course): Promise<void> {
+  try {
+    const { upsertCourse } = await import('./courses/storage');
+    const courseData = courseToPostgresData(course);
+    await upsertCourse(courseData);
+  } catch (e) {
+    // Silently fail — Supabase may not be configured
+    console.warn('Failed to persist course to Postgres:', e);
+  }
 }
 
 /** Fetch and convert a GolfAPI course into the app model, ready for use */
 export async function importGolfApiCourse(
-  clubId: number,
-  courseId?: number
+  clubId: number | string,
+  courseId?: number | string
 ): Promise<Course | null> {
   const club = await getClubDetails(clubId);
   if (!club) return null;
@@ -447,12 +656,25 @@ export async function importGolfApiCourse(
 
   const course = golfApiCourseToAppCourse(club, apiCourse);
 
+  // Fetch GPS coordinates if available
+  const effectiveCourseId = courseId || club.courses?.[0]?.id;
+  if (apiCourse.hasGPS && effectiveCourseId && !course.holeCoordinates?.length) {
+    const coords = await fetchCourseCoordinates(effectiveCourseId);
+    if (coords.length > 0) {
+      course.holeCoordinates = coords;
+    }
+  }
+
   // Save to recent
+  const displayName = composeCourseName(club.name, apiCourse.name || club.name);
   saveRecentCourse({
     id: apiCourse.id,
-    name: apiCourse.name || club.name,
+    name: displayName,
     clubName: club.name,
   });
+
+  // Persist to Postgres (async, non-blocking)
+  persistCourseToPostgres(course).catch(() => {});
 
   return course;
 }
