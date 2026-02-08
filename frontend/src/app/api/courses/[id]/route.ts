@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteCourse, getCourse, upsertCourse } from '@/lib/courses/storage';
-import { CourseData } from '@/lib/courses/types';
+
+const hasSupabase = !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  if (!hasSupabase) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+  const { getCourse } = await import('@/lib/courses/storage');
   const { id } = await context.params;
   const course = await getCourse(id);
   if (!course) {
@@ -12,9 +16,14 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
 }
 
 export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  if (!hasSupabase) {
+    return NextResponse.json({ error: 'Supabase not configured' }, { status: 501 });
+  }
   try {
+    const { upsertCourse } = await import('@/lib/courses/storage');
+    const { CourseData } = await import('@/lib/courses/types');
     const { id } = await context.params;
-    const body = (await request.json()) as CourseData;
+    const body = (await request.json()) as any;
     const saved = await upsertCourse({ ...body, id });
     return NextResponse.json({ course: saved });
   } catch (e) {
@@ -26,6 +35,10 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ id:
 }
 
 export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  if (!hasSupabase) {
+    return NextResponse.json({ error: 'Supabase not configured' }, { status: 501 });
+  }
+  const { deleteCourse } = await import('@/lib/courses/storage');
   const { id } = await context.params;
   const res = await deleteCourse(id);
   if (!res.ok) {
