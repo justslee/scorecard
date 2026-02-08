@@ -13,7 +13,8 @@ import { NextRequest, NextResponse } from 'next/server';
 const GOLF_API_BASE = 'https://golfapi.io/api/v1';
 
 function getApiKey(): string | null {
-  return process.env.GOLF_API_KEY || process.env.NEXT_PUBLIC_GOLF_API_KEY || null;
+  // Keep key strictly server-side (never expose NEXT_PUBLIC_*).
+  return process.env.GOLF_API_KEY || null;
 }
 
 function apiHeaders(): HeadersInit {
