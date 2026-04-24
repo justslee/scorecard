@@ -288,17 +288,47 @@ export default function HomePage() {
         </div>
 
         {/* ── STATS AT A GLANCE ───────────────────── */}
-        <div
+        <button
+          onClick={() => router.push("/profile")}
           style={{
+            display: "block",
+            width: "100%",
+            textAlign: "left",
             padding: "12px 22px 16px",
             borderTop: `1px solid ${T.hairline}`,
             borderBottom: `1px solid ${T.hairline}`,
+            borderLeft: "none",
+            borderRight: "none",
             background: T.paperDeep,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            color: "inherit",
           }}
         >
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8 }}>
             <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase" }}>Your card</div>
-            <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft }}>last 12 rounds</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft }}>last 12 rounds</span>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "3px 9px",
+                  borderRadius: 99,
+                  border: `1px solid ${T.ink}`,
+                  background: T.paper,
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.3,
+                  color: T.ink,
+                  textTransform: "uppercase",
+                  fontWeight: 500,
+                }}
+              >
+                Open my book {"\u2192"}
+              </span>
+            </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "flex-end" }}>
             <div>
@@ -330,7 +360,7 @@ export default function HomePage() {
             <StatBit label="Greens" value={`${STATS.gir}%`} />
             <StatBit label="Putts / rd" value={String(STATS.putts)} />
           </div>
-        </div>
+        </button>
 
         {/* ── RECENT ROUNDS ──────────────────────── */}
         <div style={{ padding: "20px 22px 10px" }}>
