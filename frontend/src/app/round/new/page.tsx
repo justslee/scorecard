@@ -157,7 +157,7 @@ export default function RoundSetupPage() {
       <div style={{ maxWidth: 420, margin: "0 auto", position: "relative", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
         <div style={{ flex: 1, overflowY: "auto" }}>
           {/* Header */}
-          <div style={{ padding: "46px 22px 10px" }}>
+          <div style={{ padding: "max(14px, env(safe-area-inset-top)) 22px 10px" }}>
             <button
               onClick={() => router.push("/")}
               style={{

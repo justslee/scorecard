@@ -63,7 +63,7 @@ export default function ProfilePage() {
     >
       <div style={{ maxWidth: 420, margin: "0 auto" }}>
         {/* Masthead */}
-        <div style={{ padding: "46px 22px 18px", position: "relative" }}>
+        <div style={{ padding: "max(14px, env(safe-area-inset-top)) 22px 18px", position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <Link
               href="/"

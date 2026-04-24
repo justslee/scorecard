@@ -55,14 +55,14 @@ export default function HomePage() {
     >
       <div style={{ maxWidth: 420, margin: "0 auto", position: "relative" }}>
         {/* ── MASTHEAD ─────────────────────────────── */}
-        <div style={{ padding: "46px 22px 14px", position: "relative" }}>
+        <div style={{ padding: "max(14px, env(safe-area-inset-top)) 22px 14px", position: "relative" }}>
           {/* Profile № card */}
           <Link
             href="/profile"
             aria-label="Open your profile"
             style={{
               position: "absolute",
-              top: 90,
+              top: 14,
               right: 22,
               width: 44,
               height: 56,
@@ -204,12 +204,18 @@ export default function HomePage() {
           {/* Secondary row */}
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <QuickAction icon="round" label="New round" sub="Solo or with friends" onClick={() => router.push("/round/new")} />
-            <QuickAction icon="tournament" label="Tournament" sub="Multi-round" accent={accent} onClick={() => router.push("/tournament/new")} />
+            <QuickAction
+              icon="tournament"
+              label="Tournament"
+              sub="Multi-round"
+              accent={accent}
+              onClick={() => router.push("/tournament/sunday-cup-2024")}
+            />
           </div>
 
           {/* Dispatch looper */}
           <button
-            onClick={() => router.push("/round/new")}
+            onClick={() => router.push("/tee-time")}
             style={{
               marginTop: 8,
               width: "100%",
@@ -430,6 +436,7 @@ export default function HomePage() {
 
         {/* ── TROPHY CASE TEASE ───────────────────── */}
         <div
+          onClick={() => router.push("/tournament/sunday-cup-2024")}
           style={{
             margin: "14px 22px",
             padding: "14px 16px",
