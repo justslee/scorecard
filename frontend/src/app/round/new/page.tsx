@@ -1,588 +1,714 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ChevronRight, Mic, Plus, X } from 'lucide-react';
-import {
-  Course,
-  Player,
-  Round,
-  SavedPlayer,
-  TeeOption,
-  createDefaultCourse,
-} from '@/lib/types';
-import { getCourses, saveCourse, saveRound, getSavedPlayers } from '@/lib/storage';
-import PaperShell from '@/components/yardage/PaperShell';
-import VoiceOrb, { Waveform } from '@/components/yardage/VoiceOrb';
+import { useEffect, useState, ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { T, PAPER_NOISE, DEFAULT_ACCENT, CADDIES } from "@/components/yardage/tokens";
+import { saveRound, getCourses, saveCourse } from "@/lib/storage";
+import { createDefaultCourse, Round } from "@/lib/types";
 
-type GameOption = {
-  id: 'stroke' | 'match' | 'skins' | 'nassau' | 'stableford' | 'wolf' | 'bestBall' | 'none';
-  label: string;
-  subtitle: string;
-  tag?: string;
-};
+type GameId = "stroke" | "match" | "skins" | "nassau" | "stable" | "wolf" | "vegas" | "bbb" | "bb" | "scr" | "quota" | "none";
+type TeeId = "black" | "blue" | "white" | "gold" | "red";
+type SideId = "snake" | "presses" | "greenies" | "sandies";
+type Picker = null | "game" | "tee" | "sides" | "holes";
 
-const GAMES: GameOption[] = [
-  { id: 'stroke', label: 'Stroke play', subtitle: 'Lowest total wins.', tag: 'Solo OK' },
-  { id: 'match', label: 'Match play', subtitle: 'Hole-by-hole, head to head.', tag: '1v1' },
-  { id: 'skins', label: 'Skins', subtitle: 'Win a hole outright, take the pot.', tag: '$ per hole' },
-  { id: 'nassau', label: 'Nassau', subtitle: 'Three bets — front, back, 18.', tag: 'Classic' },
-  { id: 'stableford', label: 'Stableford', subtitle: 'Points per hole. Birdies worth more.', tag: 'Solo OK' },
-  { id: 'wolf', label: 'Wolf', subtitle: 'Tee-order rotation. Lone wolf bonus.', tag: '4P only' },
-  { id: 'bestBall', label: 'Best ball', subtitle: 'Lowest per team on each hole.', tag: 'Teams' },
-  { id: 'none', label: 'No stakes', subtitle: 'Just a quiet round. Bragging rights only.' },
+const GAME_OPTIONS: { id: GameId; l: string; sub: string; tag: string | null }[] = [
+  { id: "stroke", l: "Stroke play", sub: "Classic. Lowest total wins.", tag: "Solo OK" },
+  { id: "match", l: "Match play", sub: "Hole by hole. First to close it out wins.", tag: "1v1" },
+  { id: "skins", l: "Skins", sub: "Low score on a hole takes the pot.", tag: "$ per hole" },
+  { id: "nassau", l: "Nassau", sub: "Three bets: front 9, back 9, overall.", tag: "$20·20·20" },
+  { id: "stable", l: "Stableford", sub: "Points per hole. Aggressive rewarded.", tag: "Net" },
+  { id: "wolf", l: "Wolf", sub: "Rotating lone wolf. Partners or go alone.", tag: "3\u20134 ply" },
+  { id: "vegas", l: "Vegas", sub: "Team scores combined into two-digit numbers.", tag: "Pairs" },
+  { id: "bbb", l: "Bingo Bango Bongo", sub: "First on green, closest, first to hole.", tag: "Any size" },
+  { id: "bb", l: "Best ball", sub: "Two-player team, best net score wins.", tag: "Teams" },
+  { id: "scr", l: "Scramble", sub: "Everyone tees off, team plays best ball.", tag: "Teams" },
+  { id: "quota", l: "Quota", sub: "Beat your handicap points total.", tag: "Solo OK" },
+  { id: "none", l: "No stakes", sub: "Just a round.", tag: null },
 ];
 
-type StakeOption = { value: number; label: string };
-const STAKES: StakeOption[] = [
-  { value: 2, label: '$2' },
-  { value: 5, label: '$5' },
-  { value: 10, label: '$10' },
-  { value: 20, label: '$20' },
+const TEE_OPTIONS: { id: TeeId; l: string; c: string; yds: number }[] = [
+  { id: "black", l: "Black · Championship", c: "#1a1a1a", yds: 7244 },
+  { id: "blue", l: "Blue · Back", c: "#3a4a8a", yds: 6845 },
+  { id: "white", l: "White · Middle", c: "#eae5d6", yds: 6473 },
+  { id: "gold", l: "Gold · Forward", c: "#b8763a", yds: 5984 },
+  { id: "red", l: "Red", c: "#b84a3a", yds: 5412 },
 ];
 
-const SCRIPT_STEPS: Array<{ kind: 'you' | 'caddy'; text: string; wait: number }> = [
-  { kind: 'you', text: 'Start a round at Harding — whites, me and Jack.', wait: 1400 },
-  { kind: 'caddy', text: 'Whites at Harding, you and Jack. Any stakes today?', wait: 1200 },
-  { kind: 'you', text: 'Skins, five dollars.', wait: 1200 },
-  { kind: 'caddy', text: 'Got it. Skins at five. Anything else, or ready to tee off?', wait: 800 },
+const SIDES: { id: SideId; l: string; sub: string }[] = [
+  { id: "snake", l: "Snake", sub: "$ for each 3-putt held" },
+  { id: "presses", l: "Presses", sub: "Nassau rules — double down" },
+  { id: "greenies", l: "Greenies", sub: "Closest-to-pin on par 3s" },
+  { id: "sandies", l: "Sandies", sub: "Par after bunker shot" },
 ];
 
-export default function NewRound() {
+export default function RoundSetupPage() {
   const router = useRouter();
+  const accent = DEFAULT_ACCENT;
+  const caddy = CADDIES.find((c) => c.id === "steve") ?? CADDIES[0];
 
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [savedPlayers, setSavedPlayers] = useState<SavedPlayer[]>([]);
+  const [phase, setPhase] = useState<"listening" | "parsed" | "ready">("listening");
+  const [transcript, setTranscript] = useState("");
+  const [reply, setReply] = useState<string | null>(null);
+  const [tee, setTee] = useState<TeeId>("white");
+  const [holes, setHoles] = useState(18);
+  const [walking, setWalking] = useState(true);
+  const [game, setGame] = useState<GameId>("stroke");
+  const [stake, setStake] = useState("$5");
+  const [sides, setSides] = useState<SideId[]>(["snake"]);
+  const [picker, setPicker] = useState<Picker>(null);
+  const [voiceActive, setVoiceActive] = useState(false);
 
-  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
-  const [selectedTeeId, setSelectedTeeId] = useState<string>('');
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [holes, setHoles] = useState<9 | 18>(18);
-  const [transport, setTransport] = useState<'walk' | 'cart'>('cart');
-  const [game, setGame] = useState<GameOption>(GAMES[0]);
-  const [stake, setStake] = useState<number>(5);
-
-  const [sheet, setSheet] = useState<null | 'course' | 'tee' | 'players' | 'game' | 'holes' | 'transport'>(null);
-
-  // Conversation state — scripted auto-play
-  const [turns, setTurns] = useState<Array<{ kind: 'you' | 'caddy'; text: string }>>([]);
-  const [activeSpeaker, setActiveSpeaker] = useState<'you' | 'caddy' | null>(null);
-  const [currentTyping, setCurrentTyping] = useState<string>('');
+  const utter = "Harding Park, Jack and Sam, whites, walking, five bucks a skin";
 
   useEffect(() => {
-    setCourses(getCourses());
-    setSavedPlayers(getSavedPlayers());
-    // seed demo defaults if local state is empty
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPlayers([
-      { id: crypto.randomUUID(), name: 'You' },
-      { id: crypto.randomUUID(), name: 'Jack' },
-    ]);
+    let i = 0;
+    const iv = setInterval(() => {
+      i += 1.4;
+      setTranscript(utter.slice(0, Math.floor(i)));
+      if (i >= utter.length) {
+        clearInterval(iv);
+        setPhase("parsed");
+        setGame("skins");
+        setStake("$5");
+        setTimeout(() => {
+          setReply("Got it \u2014 Harding whites, Jack and Sam, skins at $5. Anything else, or ready to tee off?");
+          setPhase("ready");
+        }, 650);
+      }
+    }, 30);
+    return () => clearInterval(iv);
   }, []);
 
-  // Scripted voice demo
-  useEffect(() => {
-    let cancelled = false;
-    let i = 0;
-    const run = async () => {
-      while (!cancelled && i < SCRIPT_STEPS.length) {
-        const step = SCRIPT_STEPS[i];
-        setActiveSpeaker(step.kind);
-        setCurrentTyping('');
-        // type out
-        for (let c = 1; c <= step.text.length; c++) {
-          if (cancelled) return;
-          setCurrentTyping(step.text.slice(0, c));
-          await new Promise((r) => setTimeout(r, 22));
-        }
-        if (cancelled) return;
-        setTurns((prev) => [...prev, { kind: step.kind, text: step.text }]);
-        setCurrentTyping('');
+  const course = { name: "Harding Park", short: "TPC Harding", par: 72, rating: 73.5, slope: 131 };
+  const players = [
+    { name: "You", initial: "M", hcp: 8, color: "#1a2a1a" },
+    { name: "Jack", initial: "J", hcp: 4, color: "#3a5a3a" },
+    { name: "Sam", initial: "S", hcp: 6, color: "#8a5a2a" },
+  ];
+  const heardCourse = transcript.toLowerCase().includes("harding");
+  const heardJack = transcript.toLowerCase().includes("jack");
+  const heardSam = transcript.toLowerCase().includes("sam");
 
-        // apply the voice effect to state mid-script
-        if (step.text.toLowerCase().includes('skins')) {
-          setGame(GAMES.find((g) => g.id === 'skins')!);
-          setStake(5);
-        }
-        if (step.text.toLowerCase().includes('harding')) {
-          const match = courses.find((c) => c.name.toLowerCase().includes('harding'));
-          if (match) {
-            setSelectedCourse(match);
-            if (match.tees?.length) setSelectedTeeId(match.tees[0].id);
-          }
-        }
+  const gameLabel = GAME_OPTIONS.find((g) => g.id === game)?.l ?? "Stroke play";
+  const teeLabel = TEE_OPTIONS.find((t) => t.id === tee)?.l.split(" · ")[0] ?? "White";
+  const teeColor = TEE_OPTIONS.find((t) => t.id === tee)?.c ?? "#eae5d6";
 
-        await new Promise((r) => setTimeout(r, step.wait));
-        i++;
-      }
-      if (!cancelled) setActiveSpeaker(null);
-    };
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [courses]);
+  const quickReplies =
+    phase === "ready"
+      ? ["Make it $10 a skin", "Add a Nassau", "Change to match play", "Actually, no stakes"]
+      : phase === "parsed"
+      ? ["Change game", "Different tees", "Add a player"]
+      : [];
 
-  const teeOptions: TeeOption[] = selectedCourse?.tees ?? [];
-  const selectedTee = teeOptions.find((t) => t.id === selectedTeeId);
-
-  const canTeeOff = Boolean(selectedCourse && players.filter((p) => p.name.trim()).length > 0);
+  const handleQuickReply = (phrase: string) => {
+    setVoiceActive(true);
+    setTimeout(() => {
+      setTranscript((t) => t + ". " + phrase.toLowerCase());
+      if (/\$10/.test(phrase)) setStake("$10");
+      if (/nassau/i.test(phrase)) setGame("nassau");
+      if (/match/i.test(phrase)) setGame("match");
+      if (/no stakes/i.test(phrase)) setGame("none");
+      setReply("Done. Anything else, or ready to tee off?");
+      setVoiceActive(false);
+    }, 400);
+  };
 
   const handleTeeOff = () => {
-    if (!selectedCourse) return;
-    const validPlayers = players.filter((p) => p.name.trim());
-    if (validPlayers.length === 0) return;
-
-    const tee = selectedCourse.tees?.find((t) => t.id === selectedTeeId);
-    const holesToUse = holes === 9 ? (tee?.holes ?? selectedCourse.holes).slice(0, 9) : tee?.holes ?? selectedCourse.holes;
-
+    if (phase !== "ready") return;
+    // create a round and push — reuse existing storage
+    const all = getCourses();
+    let c = all.find((x) => x.name.toLowerCase().includes("harding")) ?? null;
+    if (!c) {
+      c = createDefaultCourse(course.name);
+      saveCourse(c);
+    }
+    const holeList = holes === 9 ? c.holes.slice(0, 9) : c.holes;
     const round: Round = {
       id: crypto.randomUUID(),
-      courseId: selectedCourse.id,
-      courseName: selectedCourse.name,
-      teeId: tee?.id,
-      teeName: tee?.name,
+      courseId: c.id,
+      courseName: c.name,
+      teeId: c.tees?.[0]?.id,
+      teeName: teeLabel,
       date: new Date().toISOString(),
-      players: validPlayers.map((p) => ({ ...p, name: p.name.trim() })),
+      players: players.map((p) => ({ id: crypto.randomUUID(), name: p.name, handicap: p.hcp })),
       scores: [],
-      holes: holesToUse,
+      holes: holeList,
       games: [],
-      status: 'active',
+      status: "active",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-
     saveRound(round);
     router.push(`/round/${round.id}`);
   };
 
   return (
-    <PaperShell>
-      {/* Top chrome */}
-      <div className="px-6 pt-5 pb-4 flex items-center justify-between">
-        <Link href="/" className="btn-icon" aria-label="Back">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <span className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
-          ROUND · SETUP
-        </span>
-        <button
-          className="btn-icon"
-          aria-label="Restart voice"
-          onClick={() => {
-            setTurns([]);
-            setActiveSpeaker(null);
-          }}
-        >
-          <Mic className="h-4 w-4" />
-        </button>
-      </div>
-
-      <main className="max-w-xl mx-auto px-6 pt-2 pb-32">
-        {/* Editorial title */}
-        <div className="hair-bot pb-5">
-          <div className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
-            THE BRIEFING
+    <div
+      style={{
+        position: "relative",
+        minHeight: "100vh",
+        background: `${PAPER_NOISE}, ${T.paper}`,
+        backgroundBlendMode: "multiply",
+        fontFamily: T.sans,
+        color: T.ink,
+      }}
+    >
+      <div style={{ maxWidth: 420, margin: "0 auto", position: "relative", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {/* Header */}
+          <div style={{ padding: "46px 22px 10px" }}>
+            <button
+              onClick={() => router.push("/")}
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                fontFamily: T.mono,
+                fontSize: 9,
+                letterSpacing: 1.4,
+                color: T.pencil,
+                textTransform: "uppercase",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                marginBottom: 8,
+              }}
+            >
+              <span style={{ fontSize: 11 }}>{"\u2190"}</span> Back
+            </button>
+            <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase" }}>New · Round</div>
+            <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 30, letterSpacing: -0.6, color: T.ink, lineHeight: 1.05, marginTop: 4 }}>
+              Tell me what you&rsquo;re playing.
+            </div>
+            <div style={{ fontFamily: T.serif, fontSize: 14, color: T.pencil, letterSpacing: -0.1, marginTop: 3, lineHeight: 1.3 }}>
+              Course, group, stakes &mdash; any order, one sentence, or pick below.
+            </div>
           </div>
-          <h1 className="display mt-2 leading-[0.95]" style={{ fontSize: 'clamp(40px, 9vw, 56px)' }}>
-            Tell the caddy<br />
-            <span className="serif-italic" style={{ color: 'var(--accent)' }}>how it&rsquo;ll go.</span>
-          </h1>
-        </div>
 
-        {/* Conversation surface */}
-        <section className="pt-5 pb-6 hair-bot">
-          <div className="mono text-[10px] tracking-[0.24em] mb-4" style={{ color: 'var(--pencil)' }}>
-            HEY CADDY
-          </div>
+          {/* Conversation surface */}
+          <div style={{ padding: "8px 22px 12px" }}>
+            {/* YOU turn */}
+            <div
+              style={{
+                padding: "12px 14px",
+                borderRadius: 14,
+                background: T.paperDeep,
+                border: `1px solid ${T.hairline}`,
+                position: "relative",
+                overflow: "hidden",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.4, color: T.pencil, textTransform: "uppercase" }}>
+                  You · {phase === "listening" ? "speaking" : "said"}
+                </div>
+                {phase === "listening" && (
+                  <div style={{ display: "flex", gap: 2.5, alignItems: "center", height: 10 }}>
+                    {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                      <motion.span
+                        key={i}
+                        animate={{ height: [3, 8 + (i % 3) * 3, 5, 9, 3] }}
+                        transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.05 }}
+                        style={{ display: "block", width: 2, borderRadius: 2, background: accent }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 19,
+                  lineHeight: 1.3,
+                  letterSpacing: -0.2,
+                  color: T.ink,
+                  minHeight: 28,
+                }}
+              >
+                <span style={{ color: T.pencil, fontSize: 17 }}>&ldquo;</span>
+                {transcript}
+                {phase === "listening" && (
+                  <motion.span
+                    animate={{ opacity: [0, 1, 0] }}
+                    transition={{ duration: 0.9, repeat: Infinity }}
+                    style={{ display: "inline-block", width: 2, height: 16, background: accent, marginLeft: 2, verticalAlign: "-2px" }}
+                  />
+                )}
+              </div>
+            </div>
 
-          <div className="space-y-4">
-            {turns.map((t, i) => (
-              <TurnBubble key={i} kind={t.kind} text={t.text} />
-            ))}
-            {activeSpeaker && currentTyping && (
-              <TurnBubble kind={activeSpeaker} text={currentTyping} typing />
+            {/* CADDY turn */}
+            <AnimatePresence>
+              {reply && (
+                <motion.div
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25 }}
+                  style={{
+                    marginTop: 8,
+                    padding: "12px 14px",
+                    borderRadius: 14,
+                    background: T.ink,
+                    color: T.paper,
+                    display: "flex",
+                    gap: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 99,
+                      background: "rgba(244,241,234,0.12)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontFamily: T.serif,
+                      fontStyle: "italic",
+                      fontSize: 12,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {caddy.initial}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 8.5,
+                        letterSpacing: 1.4,
+                        color: "rgba(244,241,234,0.5)",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {caddy.name}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 15,
+                        lineHeight: 1.35,
+                        letterSpacing: -0.1,
+                        marginTop: 1,
+                      }}
+                    >
+                      {reply}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Quick reply chips */}
+            {quickReplies.length > 0 && (
+              <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {quickReplies.map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => handleQuickReply(q)}
+                    style={{
+                      padding: "7px 11px",
+                      borderRadius: 99,
+                      border: `1px solid ${accent}`,
+                      background: "transparent",
+                      color: accent,
+                      fontFamily: T.sans,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      letterSpacing: -0.1,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                      <circle cx="4" cy="4" r="1.8" fill={accent} />
+                    </svg>
+                    {q}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setVoiceActive(true)}
+                  style={{
+                    padding: "7px 11px",
+                    borderRadius: 99,
+                    border: `1px dashed ${T.hairline}`,
+                    background: "transparent",
+                    color: T.pencil,
+                    fontFamily: T.sans,
+                    fontSize: 12,
+                    letterSpacing: -0.1,
+                    cursor: "pointer",
+                  }}
+                >
+                  Say something else&hellip;
+                </button>
+              </div>
             )}
           </div>
 
-          {/* Quick replies */}
-          {!activeSpeaker && turns.length > 0 && (
-            <div className="mt-5 flex flex-wrap gap-2">
-              <button
-                className="pill"
-                onClick={() => {
-                  setTurns((t) => [...t, { kind: 'you', text: 'Make it ten a skin.' }, { kind: 'caddy', text: '$10 a skin. Done.' }]);
-                  setStake(10);
-                }}
-              >
-                Make it $10
-              </button>
-              <button
-                className="pill"
-                onClick={() => setTurns((t) => [...t, { kind: 'you', text: 'Add a Nassau.' }, { kind: 'caddy', text: 'Nassau on top of the skins.' }])}
-              >
-                Add a Nassau
-              </button>
-              <button
-                className="pill"
-                onClick={() => setTurns((t) => [...t, { kind: 'you', text: 'No stakes today.' }, { kind: 'caddy', text: 'Quiet round it is.' }])}
-              >
-                No stakes
-              </button>
-              <button className="pill pill-accent">
-                <Mic className="h-3 w-3" /> Say something else
-              </button>
+          {/* Course card */}
+          <div style={{ padding: "10px 22px 6px" }}>
+            <div
+              style={{
+                border: `1px solid ${T.hairline}`,
+                borderRadius: 14,
+                padding: 14,
+                background: heardCourse ? T.paperDeep : T.paper,
+                transition: "background 0.3s",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencil, textTransform: "uppercase" }}>Course</div>
+                <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>Tap to change</div>
+              </div>
+              {heardCourse ? (
+                <>
+                  <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 26, letterSpacing: -0.5, color: T.ink, lineHeight: 1.05, marginTop: 4 }}>
+                    {course.name}
+                  </div>
+                  <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
+                    <MiniStat k="Par" v={course.par} />
+                    <MiniStat k="Rating" v={course.rating} />
+                    <MiniStat k="Slope" v={course.slope} />
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 19, color: T.pencilSoft, marginTop: 3 }}>listening&hellip;</div>
+              )}
             </div>
-          )}
-        </section>
-
-        {/* Picker rows — hairline dividers, no card wrapper */}
-        <section className="pt-6">
-          <div className="mono text-[10px] tracking-[0.24em] mb-2" style={{ color: 'var(--pencil)' }}>
-            THE PLAN
           </div>
 
-          <div>
-            <PickerRow
-              label="Course"
-              value={selectedCourse?.name ?? 'Pick a course'}
-              hint='"Harding Park" · "the muni"'
-              onClick={() => setSheet('course')}
-            />
+          {/* Players */}
+          <div style={{ padding: "6px 22px 10px" }}>
+            <div style={{ border: `1px solid ${T.hairline}`, borderRadius: 14, padding: 12, background: T.paper }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 6 }}>
+                <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencil, textTransform: "uppercase" }}>
+                  Group · {[true, heardJack, heardSam].filter(Boolean).length}
+                </div>
+                <button
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 9,
+                    letterSpacing: 1.2,
+                    color: T.pencil,
+                    textTransform: "uppercase",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  + Add
+                </button>
+              </div>
+              {players.map((p, i) => {
+                const show = i === 0 || (p.name === "Jack" && heardJack) || (p.name === "Sam" && heardSam);
+                if (!show) return null;
+                return (
+                  <motion.div
+                    key={p.name}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.2 }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "6px 0",
+                      borderTop: i === 0 ? "none" : `1px dashed ${T.hairline}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 99,
+                        background: p.color,
+                        color: T.paper,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 13,
+                      }}
+                    >
+                      {p.initial}
+                    </div>
+                    <div style={{ flex: 1, fontFamily: T.sans, fontSize: 14, color: T.ink, fontWeight: 500 }}>{p.name}</div>
+                    <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>
+                      Hcp <span style={{ fontFamily: T.serif, fontSize: 14, color: T.ink, marginLeft: 2 }}>{p.hcp}</span>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Options — pickable rows */}
+          <div style={{ padding: "10px 22px 10px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencil, textTransform: "uppercase" }}>Or set it manually</div>
+              <div style={{ flex: 1, height: 1, background: T.hairline }} />
+              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 11, color: T.pencilSoft, letterSpacing: -0.1 }}>
+                anything here is askable by voice
+              </div>
+            </div>
+
+            <PickerRow label="Holes" value={`${holes}`} hint={`\u201cnine\u201d / \u201ceighteen\u201d`} onClick={() => setPicker("holes")} />
             <PickerRow
               label="Tees"
-              value={selectedTee?.name ? `${selectedTee.name} · ${teeTotalYards(selectedTee)}y` : '—'}
-              hint='"off the whites"'
-              onClick={() => setSheet('tee')}
-              disabled={!selectedCourse || !teeOptions.length}
-            />
-            <PickerRow
-              label="Players"
               value={
-                players.filter((p) => p.name.trim()).map((p) => p.name).join(' · ') ||
-                'Just you'
+                <span>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 8,
+                      height: 8,
+                      borderRadius: 99,
+                      background: teeColor,
+                      marginRight: 6,
+                      border: `1px solid ${T.hairline}`,
+                      verticalAlign: "middle",
+                    }}
+                  />
+                  {teeLabel}
+                </span>
               }
-              hint='"add Jack" · "me and Sam"'
-              onClick={() => setSheet('players')}
-            />
-            <PickerRow
-              label="Game"
-              value={game.id === 'none' ? 'No stakes' : game.label + (game.id !== 'stroke' && stake ? ` · $${stake}` : '')}
-              hint='"skins at five" · "match play"'
-              onClick={() => setSheet('game')}
-            />
-            <PickerRow
-              label="Holes"
-              value={`${holes} holes`}
-              hint='"play nine" · "front only"'
-              onClick={() => setSheet('holes')}
+              hint={`\u201cwhites\u201d / \u201cplay the blues\u201d`}
+              onClick={() => setPicker("tee")}
             />
             <PickerRow
               label="Transport"
-              value={transport === 'walk' ? 'Walking' : 'Cart'}
-              hint='"we are walking"'
-              onClick={() => setTransport(transport === 'walk' ? 'cart' : 'walk')}
-              last
+              value={walking ? "Walking" : "Cart"}
+              hint={`\u201cwalking\u201d / \u201ctaking a cart\u201d`}
+              onClick={() => setWalking((w) => !w)}
+            />
+            <PickerRow
+              label="Game"
+              value={game === "skins" ? `${gameLabel} · ${stake}` : gameLabel}
+              hint={`\u201cskins at ten bucks\u201d, \u201cadd a nassau\u201d, \u201cmatch play\u201d`}
+              accent={accent}
+              onClick={() => setPicker("game")}
+              emphasized
+            />
+            <PickerRow
+              label="Side bets"
+              value={sides.length ? sides.map((s) => SIDES.find((x) => x.id === s)?.l).filter(Boolean).join(" · ") : "None"}
+              hint={`\u201cadd a snake\u201d, \u201cgreenies on par 3s\u201d`}
+              onClick={() => setPicker("sides")}
             />
           </div>
-        </section>
 
-        {/* Caddy pep talk */}
-        {canTeeOff && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
-            className="mt-6 pt-6 hair-top"
+          <div style={{ height: 90 }} />
+        </div>
+
+        {/* Sticky footer */}
+        <div
+          style={{
+            padding: "10px 22px 26px",
+            background: `linear-gradient(to top, ${T.paper} 65%, rgba(0,0,0,0))`,
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            flexShrink: 0,
+            position: "sticky",
+            bottom: 0,
+          }}
+        >
+          <button
+            onClick={() => setVoiceActive((v) => !v)}
+            style={{
+              flexShrink: 0,
+              position: "relative",
+              width: 52,
+              height: 52,
+              borderRadius: 99,
+              border: "none",
+              background: voiceActive ? accent : T.paper,
+              color: voiceActive ? T.paper : T.ink,
+              boxShadow: voiceActive ? `0 0 0 4px ${accent}22` : `inset 0 0 0 1px ${T.hairline}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
           >
-            <div className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
-              CADDY · ON THE BAG
-            </div>
-            <div className="serif-italic mt-2 leading-[1.08]" style={{ fontSize: 'clamp(22px, 4.8vw, 28px)' }}>
-              &ldquo;Trust the swing we warmed up with.<br />
-              First one&rsquo;s a handshake &mdash; don&rsquo;t overcook it.&rdquo;
-            </div>
-          </motion.div>
-        )}
-      </main>
-
-      {/* Sticky tee off CTA */}
-      <div
-        className="fixed bottom-0 left-0 right-0 px-5 pt-3 pb-5 hair-top"
-        style={{ background: 'color-mix(in oklab, var(--paper) 92%, transparent)', backdropFilter: 'blur(10px)' }}
-      >
-        <div className="max-w-xl mx-auto flex items-center gap-3">
-          <div className="flex-1 mono text-[11px]" style={{ color: 'var(--pencil)' }}>
-            {selectedCourse
-              ? `${selectedCourse.name} · ${players.filter((p) => p.name.trim()).length} PLAYER${players.filter((p) => p.name.trim()).length === 1 ? '' : 'S'}`
-              : 'Pick a course to tee off'}
-          </div>
+            {voiceActive && (
+              <motion.span
+                animate={{ scale: [1, 1.35, 1], opacity: [0.45, 0, 0.45] }}
+                transition={{ duration: 1.6, repeat: Infinity }}
+                style={{ position: "absolute", inset: -4, borderRadius: 99, background: accent }}
+              />
+            )}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ position: "relative" }}>
+              <rect x="9" y="3" width="6" height="12" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0" />
+              <path d="M12 18v3" />
+            </svg>
+          </button>
           <button
             onClick={handleTeeOff}
-            disabled={!canTeeOff}
-            className="btn-ink text-[15px] px-6 py-3"
-            style={{ opacity: canTeeOff ? 1 : 0.5 }}
+            style={{
+              flex: 1,
+              padding: "14px",
+              borderRadius: 99,
+              border: "none",
+              background: phase === "ready" ? T.ink : T.pencilSoft,
+              color: T.paper,
+              cursor: "pointer",
+              fontFamily: T.sans,
+              fontSize: 14,
+              fontWeight: 500,
+              letterSpacing: -0.1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              transition: "background 0.25s",
+            }}
           >
-            Tee off →
+            <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Tee off</span>
+            <span style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, opacity: 0.7 }}>{"\u2192"}</span>
           </button>
         </div>
       </div>
 
-      {/* Sheets */}
+      {/* Picker sheet */}
       <AnimatePresence>
-        {sheet === 'course' && (
-          <BottomSheet title="Pick a course" onClose={() => setSheet(null)}>
-            <div className="space-y-0.5">
-              {courses.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => {
-                    setSelectedCourse(c);
-                    if (c.tees?.length) setSelectedTeeId(c.tees[0].id);
-                    setSheet(null);
+        {picker && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPicker(null)}
+              style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 40 }}
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={T.springSoft}
+              style={{
+                position: "fixed",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 41,
+                background: T.paper,
+                borderRadius: "20px 20px 0 0",
+                padding: "12px 0 28px",
+                maxHeight: "80vh",
+                overflow: "hidden",
+                boxShadow: "0 -20px 50px rgba(0,0,0,0.2)",
+                display: "flex",
+                flexDirection: "column",
+                maxWidth: 420,
+                margin: "0 auto",
+              }}
+            >
+              <div style={{ width: 40, height: 4, borderRadius: 99, background: T.hairline, margin: "0 auto 10px" }} />
+
+              {picker === "game" && (
+                <GamePicker
+                  accent={accent}
+                  current={game}
+                  stake={stake}
+                  onPick={(id: GameId) => {
+                    setGame(id);
+                    setPicker(null);
                   }}
-                  className="w-full text-left flex items-center py-3 hair-bot"
-                >
-                  <div className="flex-1">
-                    <div className="serif text-[17px]">{c.name}</div>
-                    <div className="mono text-[11px]" style={{ color: 'var(--pencil)' }}>
-                      {c.holes.length} HOLES · PAR {c.holes.reduce((s, h) => s + h.par, 0)}
-                      {c.location ? ` · ${c.location.toUpperCase()}` : ''}
-                    </div>
-                  </div>
-                  <ChevronRight className="h-5 w-5" style={{ color: 'var(--pencil)' }} />
-                </button>
-              ))}
-              <button
-                onClick={() => {
-                  const name = prompt('New course name?')?.trim();
-                  if (!name) return;
-                  const c = createDefaultCourse(name);
-                  saveCourse(c);
-                  setCourses((prev) => [...prev, c]);
-                  setSelectedCourse(c);
-                  if (c.tees?.length) setSelectedTeeId(c.tees[0].id);
-                  setSheet(null);
-                }}
-                className="w-full text-left flex items-center py-3"
-              >
-                <Plus className="h-4 w-4 mr-2" style={{ color: 'var(--accent)' }} />
-                <span className="serif text-[17px]" style={{ color: 'var(--accent)' }}>
-                  New custom course
-                </span>
-              </button>
-            </div>
-          </BottomSheet>
-        )}
-
-        {sheet === 'tee' && teeOptions.length > 0 && (
-          <BottomSheet title="Pick tees" onClose={() => setSheet(null)}>
-            <div className="space-y-0.5">
-              {teeOptions.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    setSelectedTeeId(t.id);
-                    setSheet(null);
-                  }}
-                  className="w-full text-left flex items-center py-3 hair-bot"
-                >
-                  <span
-                    className="flag-dot mr-3"
-                    style={{ background: teeColor(t.name) }}
-                  />
-                  <div className="flex-1">
-                    <div className="serif text-[17px]">{t.name}</div>
-                    <div className="mono text-[11px]" style={{ color: 'var(--pencil)' }}>
-                      {teeTotalYards(t)}Y{t.rating ? ` · RTG ${t.rating}` : ''}
-                      {t.slope ? ` · SLP ${t.slope}` : ''}
-                    </div>
-                  </div>
-                  {selectedTeeId === t.id && <span className="pill pill-accent">selected</span>}
-                </button>
-              ))}
-            </div>
-          </BottomSheet>
-        )}
-
-        {sheet === 'players' && (
-          <BottomSheet title="Players" onClose={() => setSheet(null)}>
-            <div className="space-y-2">
-              {players.map((p, idx) => (
-                <div key={p.id} className="flex items-center gap-2">
-                  <input
-                    value={p.name}
-                    onChange={(e) => {
-                      const next = [...players];
-                      next[idx] = { ...p, name: e.target.value };
-                      setPlayers(next);
-                    }}
-                    placeholder={`Player ${idx + 1}`}
-                    className="input-paper"
-                  />
-                  {players.length > 1 && (
-                    <button
-                      onClick={() => setPlayers(players.filter((x) => x.id !== p.id))}
-                      className="btn-icon"
-                      aria-label="Remove"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-              <button
-                onClick={() => setPlayers([...players, { id: crypto.randomUUID(), name: '' }])}
-                className="btn-ghost w-full"
-                disabled={players.length >= 6}
-              >
-                <Plus className="h-4 w-4" /> Add player
-              </button>
-
-              {savedPlayers.length > 0 && (
-                <div className="mt-4">
-                  <div className="eyebrow mb-2">Your network</div>
-                  <div className="flex flex-wrap gap-2">
-                    {savedPlayers.slice(0, 8).map((sp) => (
-                      <button
-                        key={sp.id}
-                        onClick={() => {
-                          if (players.some((p) => p.id === sp.id)) return;
-                          const emptyIdx = players.findIndex((p) => !p.name.trim());
-                          const filled = { id: sp.id, name: sp.name, handicap: sp.handicap };
-                          if (emptyIdx >= 0) {
-                            const next = [...players];
-                            next[emptyIdx] = filled;
-                            setPlayers(next);
-                          } else if (players.length < 6) {
-                            setPlayers([...players, filled]);
-                          }
-                        }}
-                        className="pill"
-                      >
-                        {sp.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                  onStake={setStake}
+                />
               )}
-            </div>
-          </BottomSheet>
-        )}
-
-        {sheet === 'game' && (
-          <BottomSheet title="Game" onClose={() => setSheet(null)}>
-            <div className="space-y-0.5">
-              {GAMES.map((g) => (
-                <button
-                  key={g.id}
-                  onClick={() => {
-                    setGame(g);
-                    if (g.id === 'stroke' || g.id === 'none') setSheet(null);
-                  }}
-                  className="w-full text-left flex items-center gap-3 py-3 hair-bot"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <div className="serif text-[17px]">{g.label}</div>
-                      {g.tag && (
-                        <span className="mono text-[9px] px-1.5 py-0.5 rounded" style={{ background: 'var(--paper-deep)', color: 'var(--pencil)' }}>
-                          {g.tag.toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[13px]" style={{ color: 'var(--pencil)' }}>
-                      {g.subtitle}
-                    </div>
-                  </div>
-                  {game.id === g.id && <span className="pill pill-accent">selected</span>}
-                </button>
-              ))}
-
-              {game.id !== 'stroke' && game.id !== 'none' && (
-                <div className="pt-3">
-                  <div className="eyebrow mb-2">Stake</div>
-                  <div className="flex gap-2 flex-wrap">
-                    {STAKES.map((s) => (
-                      <button
-                        key={s.value}
-                        onClick={() => setStake(s.value)}
-                        className={`pill ${stake === s.value ? 'pill-accent' : ''}`}
-                      >
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-4">
-                    <button onClick={() => setSheet(null)} className="btn-ink w-full">
-                      Lock it in
-                    </button>
-                  </div>
-                </div>
+              {picker === "tee" && <TeePicker current={tee} onPick={(id: TeeId) => { setTee(id); setPicker(null); }} />}
+              {picker === "sides" && (
+                <SidesPicker
+                  accent={accent}
+                  current={sides}
+                  onToggle={(id: SideId) => setSides((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))}
+                  onDone={() => setPicker(null)}
+                />
               )}
-            </div>
-          </BottomSheet>
-        )}
-
-        {sheet === 'holes' && (
-          <BottomSheet title="How many holes?" onClose={() => setSheet(null)}>
-            <div className="flex gap-2">
-              {[9, 18].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => {
-                    setHoles(n as 9 | 18);
-                    setSheet(null);
+              {picker === "holes" && (
+                <HolesPicker
+                  current={holes}
+                  onPick={(n: number) => {
+                    setHoles(n);
+                    setPicker(null);
                   }}
-                  className={`flex-1 py-6 rounded-xl ${holes === n ? 'btn-ink' : 'btn-paper'}`}
-                >
-                  <div className="display text-[32px]">{n}</div>
-                  <div className="mono text-[10px] mt-1">HOLES</div>
-                </button>
-              ))}
-            </div>
-          </BottomSheet>
+                />
+              )}
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
-    </PaperShell>
-  );
-}
 
-function TurnBubble({ kind, text, typing }: { kind: 'you' | 'caddy'; text: string; typing?: boolean }) {
-  const you = kind === 'you';
-  return (
-    <div className="flex gap-3 items-start">
-      <div
-        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
-        style={{
-          background: you ? 'var(--ink)' : 'var(--paper)',
-          color: you ? 'var(--paper)' : 'var(--ink)',
-          border: you ? 'none' : '1px solid var(--hairline)',
-        }}
-      >
-        <span className="serif text-[12px]">{you ? 'Y' : 'F'}</span>
-      </div>
-      <div className="flex-1 min-w-0 pt-0.5">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="mono text-[9px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
-            {you ? 'YOU' : 'FLUFF · CADDY'}
-          </span>
-          {typing && <Waveform />}
-        </div>
-        <div
-          className="serif-italic leading-[1.18]"
-          style={{ color: 'var(--ink)', fontSize: 'clamp(20px, 4.2vw, 24px)' }}
-        >
-          {text}
-          {typing && (
-            <span className="ml-0.5" style={{ color: 'var(--accent)' }}>
-              │
-            </span>
-          )}
-        </div>
-      </div>
+      {/* Voice overlay */}
+      <AnimatePresence>
+        {voiceActive && !picker && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setVoiceActive(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(26,42,26,0.55)",
+              zIndex: 30,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              padding: "0 28px 120px",
+              cursor: "pointer",
+            }}
+          >
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 9,
+                letterSpacing: 1.5,
+                color: "rgba(244,241,234,0.6)",
+                textTransform: "uppercase",
+                marginBottom: 10,
+              }}
+            >
+              Listening &mdash; tap anywhere to stop
+            </div>
+            <div
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 22,
+                color: T.paper,
+                textAlign: "center",
+                lineHeight: 1.3,
+                letterSpacing: -0.3,
+              }}
+            >
+              Try: &ldquo;Change it to match play for ten bucks a hole&rdquo;
+            </div>
+            <div style={{ display: "flex", gap: 3.5, alignItems: "center", marginTop: 20, height: 28 }}>
+              {Array.from({ length: 14 }).map((_, i) => (
+                <motion.span
+                  key={i}
+                  animate={{ height: [6, 18 + (i % 4) * 4, 8, 22, 6] }}
+                  transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.04 }}
+                  style={{ display: "block", width: 3, borderRadius: 3, background: accent }}
+                />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -592,94 +718,350 @@ function PickerRow({
   value,
   hint,
   onClick,
-  disabled,
-  last,
+  accent,
+  emphasized,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   hint?: string;
   onClick?: () => void;
-  disabled?: boolean;
-  last?: boolean;
+  accent?: string;
+  emphasized?: boolean;
 }) {
   return (
     <button
-      type="button"
       onClick={onClick}
-      disabled={disabled}
-      className={`w-full text-left flex items-center gap-4 py-4 ${last ? '' : 'hair-bot'} disabled:opacity-50`}
+      style={{
+        width: "100%",
+        padding: "12px 0",
+        background: "transparent",
+        border: "none",
+        borderTop: `1px dashed ${T.hairline}`,
+        cursor: "pointer",
+        textAlign: "left",
+        display: "grid",
+        gridTemplateColumns: "82px 1fr auto",
+        gap: 10,
+        alignItems: "center",
+      }}
     >
-      <div
-        className="mono text-[10px] uppercase tracking-[0.22em] w-[82px] shrink-0"
-        style={{ color: 'var(--pencil)' }}
-      >
-        {label}
+      <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" }}>{label}</div>
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: T.sans,
+            fontSize: 14,
+            fontWeight: 500,
+            color: emphasized && accent ? accent : T.ink,
+            letterSpacing: -0.1,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {value}
+        </div>
+        <div
+          style={{
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 11.5,
+            color: T.pencilSoft,
+            letterSpacing: -0.1,
+            marginTop: 1,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {hint}
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="serif text-[18px] truncate leading-tight">{value}</div>
-        {hint && (
-          <div className="serif-italic text-[12px] truncate mt-0.5" style={{ color: 'var(--pencil)' }}>
-            {hint}
-          </div>
-        )}
-      </div>
-      <ChevronRight className="h-4 w-4" style={{ color: 'var(--pencil)' }} />
+      <div style={{ fontFamily: T.mono, fontSize: 10, color: T.pencil }}>{"\u203a"}</div>
     </button>
   );
 }
 
-function BottomSheet({
-  title,
-  children,
-  onClose,
-}: {
-  title: string;
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
+function MiniStat({ k, v }: { k: string; v: number | string }) {
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-40 flex items-end md:items-center justify-center"
-      style={{ background: 'rgba(26,42,26,0.3)' }}
-      onClick={onClose}
-    >
-      <motion.div
-        onClick={(e) => e.stopPropagation()}
-        initial={{ y: 40, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 40, opacity: 0 }}
-        transition={{ type: 'spring', stiffness: 280, damping: 30 }}
-        className="w-full md:max-w-xl md:rounded-[22px] rounded-t-[22px]"
-        style={{ background: 'var(--paper)', border: '1px solid var(--hairline)', maxHeight: '82vh' }}
-      >
-        <div className="flex items-center justify-between px-5 py-4 hair-bot">
-          <div className="serif text-[20px]">{title}</div>
-          <button onClick={onClose} className="btn-icon" aria-label="Close">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="p-5 overflow-y-auto" style={{ maxHeight: '70vh' }}>
-          {children}
-        </div>
-      </motion.div>
-    </motion.div>
+    <div>
+      <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>{k}</div>
+      <div style={{ fontFamily: T.serif, fontSize: 18, color: T.ink, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{v}</div>
+    </div>
   );
 }
 
-function teeTotalYards(t: TeeOption) {
-  if (t.totalYards) return t.totalYards;
-  return t.holes.reduce((s, h) => s + (h.yards ?? 0), 0) || '—';
+function GamePicker({
+  accent,
+  current,
+  stake,
+  onPick,
+  onStake,
+}: {
+  accent: string;
+  current: GameId;
+  stake: string;
+  onPick: (g: GameId) => void;
+  onStake: (s: string) => void;
+}) {
+  const stakes = ["$2", "$5", "$10", "$20"];
+  return (
+    <div style={{ overflow: "auto", padding: "0 0 10px" }}>
+      <div style={{ padding: "0 22px 4px" }}>
+        <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.5, color: T.pencil, textTransform: "uppercase" }}>Pick a game</div>
+        <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.3 }}>The format</div>
+        <div style={{ fontFamily: T.serif, fontSize: 12.5, color: T.pencil, letterSpacing: -0.1, marginTop: 2 }}>
+          Or say: <span style={{ color: accent }}>&ldquo;skins at ten&rdquo;</span>, <span style={{ color: accent }}>&ldquo;wolf, no money&rdquo;</span>
+        </div>
+      </div>
+      <div style={{ padding: "8px 14px 0" }}>
+        {GAME_OPTIONS.map((g) => {
+          const active = current === g.id;
+          return (
+            <button
+              key={g.id}
+              onClick={() => onPick(g.id)}
+              style={{
+                width: "100%",
+                padding: "12px",
+                marginBottom: 4,
+                borderRadius: 12,
+                border: `1px solid ${active ? T.ink : "transparent"}`,
+                background: active ? T.paperDeep : "transparent",
+                cursor: "pointer",
+                textAlign: "left",
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                gap: 10,
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontFamily: T.serif, fontSize: 17, color: T.ink, letterSpacing: -0.2 }}>{g.l}</span>
+                  {g.tag && (
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 8,
+                        letterSpacing: 1,
+                        color: T.pencil,
+                        border: `1px solid ${T.hairline}`,
+                        padding: "1px 5px",
+                        borderRadius: 3,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {g.tag}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, letterSpacing: -0.1, marginTop: 1 }}>{g.sub}</div>
+              </div>
+              {active && (
+                <div
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 99,
+                    background: accent,
+                    color: T.paper,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 11,
+                    fontFamily: T.mono,
+                  }}
+                >
+                  {"\u2713"}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {(current === "skins" || current === "nassau" || current === "match") && (
+        <div style={{ padding: "8px 22px 0", borderTop: `1px solid ${T.hairline}`, marginTop: 6, paddingTop: 10 }}>
+          <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencil, textTransform: "uppercase", marginBottom: 6 }}>Stake</div>
+          <div style={{ display: "flex", gap: 5 }}>
+            {stakes.map((s) => (
+              <button
+                key={s}
+                onClick={() => onStake(s)}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  borderRadius: 10,
+                  border: `1px solid ${stake === s ? T.ink : T.hairline}`,
+                  background: stake === s ? T.ink : "transparent",
+                  color: stake === s ? T.paper : T.ink,
+                  fontFamily: T.serif,
+                  fontSize: 15,
+                  cursor: "pointer",
+                }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
-function teeColor(name: string) {
-  const n = name.toLowerCase();
-  if (n.includes('black') || n.includes('champ')) return '#1a2a1a';
-  if (n.includes('blue') || n.includes('back')) return '#5d7285';
-  if (n.includes('white') || n.includes('middle')) return '#ddd6c5';
-  if (n.includes('gold') || n.includes('senior')) return '#8a6f2f';
-  if (n.includes('red') || n.includes('forward')) return '#a8553f';
-  return '#6b6558';
+function TeePicker({ current, onPick }: { current: TeeId; onPick: (t: TeeId) => void }) {
+  return (
+    <div style={{ overflow: "auto", padding: "0 0 10px" }}>
+      <div style={{ padding: "0 22px 4px" }}>
+        <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.5, color: T.pencil, textTransform: "uppercase" }}>Tees</div>
+        <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.3 }}>Which set today?</div>
+      </div>
+      <div style={{ padding: "8px 14px 0" }}>
+        {TEE_OPTIONS.map((t) => {
+          const active = current === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => onPick(t.id)}
+              style={{
+                width: "100%",
+                padding: "12px",
+                marginBottom: 4,
+                borderRadius: 12,
+                border: `1px solid ${active ? T.ink : "transparent"}`,
+                background: active ? T.paperDeep : "transparent",
+                cursor: "pointer",
+                textAlign: "left",
+                display: "grid",
+                gridTemplateColumns: "20px 1fr auto",
+                gap: 10,
+                alignItems: "center",
+              }}
+            >
+              <div style={{ width: 14, height: 14, borderRadius: 99, background: t.c, border: `1px solid ${T.hairline}` }} />
+              <div style={{ fontFamily: T.serif, fontSize: 16, color: T.ink, letterSpacing: -0.2 }}>{t.l}</div>
+              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.1, color: T.pencilSoft }}>{t.yds} y</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SidesPicker({
+  accent,
+  current,
+  onToggle,
+  onDone,
+}: {
+  accent: string;
+  current: SideId[];
+  onToggle: (id: SideId) => void;
+  onDone: () => void;
+}) {
+  return (
+    <div style={{ overflow: "auto", padding: "0 0 10px" }}>
+      <div style={{ padding: "0 22px 4px" }}>
+        <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.5, color: T.pencil, textTransform: "uppercase" }}>Side bets</div>
+        <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.3 }}>On top of the main game</div>
+      </div>
+      <div style={{ padding: "8px 14px 0" }}>
+        {SIDES.map((s) => {
+          const active = current.includes(s.id);
+          return (
+            <button
+              key={s.id}
+              onClick={() => onToggle(s.id)}
+              style={{
+                width: "100%",
+                padding: "12px",
+                marginBottom: 4,
+                borderRadius: 12,
+                border: `1px solid ${active ? T.ink : "transparent"}`,
+                background: active ? T.paperDeep : "transparent",
+                cursor: "pointer",
+                textAlign: "left",
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                gap: 10,
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <div style={{ fontFamily: T.serif, fontSize: 16, color: T.ink, letterSpacing: -0.2 }}>{s.l}</div>
+                <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12, color: T.pencil, letterSpacing: -0.1, marginTop: 1 }}>{s.sub}</div>
+              </div>
+              <div
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 4,
+                  border: `1.5px solid ${active ? accent : T.hairline}`,
+                  background: active ? accent : "transparent",
+                  color: T.paper,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 11,
+                }}
+              >
+                {active ? "\u2713" : ""}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ padding: "10px 22px 0" }}>
+        <button
+          onClick={onDone}
+          style={{
+            width: "100%",
+            padding: "12px",
+            borderRadius: 99,
+            border: "none",
+            background: T.ink,
+            color: T.paper,
+            cursor: "pointer",
+            fontFamily: T.sans,
+            fontSize: 14,
+            fontWeight: 500,
+          }}
+        >
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function HolesPicker({ current, onPick }: { current: number; onPick: (n: number) => void }) {
+  return (
+    <div style={{ padding: "0 22px 10px" }}>
+      <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.5, color: T.pencil, textTransform: "uppercase" }}>Holes</div>
+      <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.3, marginBottom: 12 }}>How many today?</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {[9, 18].map((n) => (
+          <button
+            key={n}
+            onClick={() => onPick(n)}
+            style={{
+              padding: "22px",
+              borderRadius: 14,
+              border: `1px solid ${current === n ? T.ink : T.hairline}`,
+              background: current === n ? T.paperDeep : "transparent",
+              cursor: "pointer",
+              fontFamily: T.serif,
+              fontSize: 40,
+              color: T.ink,
+              letterSpacing: -0.8,
+            }}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }

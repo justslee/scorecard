@@ -1,246 +1,392 @@
-'use client';
+"use client";
 
-import { useRef } from 'react';
-import { motion, PanInfo } from 'framer-motion';
-import { HoleInfo } from '@/lib/types';
-import { Waveform } from './VoiceOrb';
-
-function clubSuggestion(yards: number) {
-  if (yards < 80) return { club: 'SW', note: 'short-side miss is okay' };
-  if (yards < 110) return { club: 'PW', note: 'smooth tempo' };
-  if (yards < 135) return { club: '9i', note: 'take one extra' };
-  if (yards < 155) return { club: '8i', note: 'trust the breeze' };
-  if (yards < 175) return { club: '7i', note: 'smooth, not hard' };
-  if (yards < 195) return { club: '6i', note: 'stay committed' };
-  if (yards < 215) return { club: '5i', note: 'let it chase' };
-  if (yards < 235) return { club: '4i', note: 'tee it higher' };
-  if (yards < 265) return { club: 'hybrid', note: 'rip the fairway' };
-  return { club: 'driver', note: 'big, easy one' };
-}
+import { motion, AnimatePresence } from "framer-motion";
+import { T, Caddy } from "./tokens";
+import HoleIllustration from "./HoleIllustration";
+import type { HoleSpec } from "./HoleIllustration";
 
 export default function HoleCard({
+  holeNumber,
   hole,
-  total,
-  onPrev,
-  onNext,
-  onTap,
+  distance,
+  windMph,
+  windDir,
+  shotPoint,
+  expanded,
+  onExpand,
+  onCollapse,
+  onZoom,
+  onAskCaddy,
+  accent,
+  club,
+  density,
+  caddy,
 }: {
-  hole: HoleInfo;
-  total: number;
-  onPrev?: () => void;
-  onNext?: () => void;
-  onTap?: () => void;
+  holeNumber: number;
+  hole: HoleSpec;
+  distance: number;
+  windMph: number;
+  windDir: string;
+  shotPoint?: [number, number] | null;
+  expanded: boolean;
+  onExpand: () => void;
+  onCollapse: () => void;
+  onZoom: () => void;
+  onAskCaddy: () => void;
+  accent: string;
+  club: string;
+  density: "spacious" | "dense";
+  caddy: Caddy;
 }) {
-  const yards = hole.yards ?? 0;
-  const center = yards;
-  const front = Math.max(0, Math.round(yards * 0.94));
-  const back = Math.round(yards * 1.08);
-  const { club, note } = clubSuggestion(center);
-  const draggedRef = useRef(false);
-
-  const handleDragEnd = (_: unknown, info: PanInfo) => {
-    draggedRef.current = true;
-    setTimeout(() => {
-      draggedRef.current = false;
-    }, 320);
-    const threshold = 60;
-    if (info.offset.x < -threshold && onNext) onNext();
-    else if (info.offset.x > threshold && onPrev) onPrev();
-  };
-
+  const pad = density === "dense" ? 14 : 18;
   return (
-    <motion.section
-      key={hole.number}
-      initial={{ opacity: 0, x: 12 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.22, ease: 'easeOut' }}
-      drag="x"
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.18}
-      onDragEnd={handleDragEnd}
-      onClick={() => {
-        if (draggedRef.current) return;
-        onTap?.();
+    <motion.div
+      layout
+      transition={T.springSoft}
+      style={{
+        position: "relative",
+        borderRadius: 20,
+        overflow: "hidden",
+        background: T.paper,
+        border: `1px solid ${T.hairline}`,
+        boxShadow: expanded ? "0 30px 60px rgba(26,42,26,0.15)" : "0 8px 24px rgba(26,42,26,0.06)",
       }}
-      className="sheet p-5"
-      style={{ touchAction: 'pan-y', cursor: 'grab' }}
     >
-      {/* Masthead strip */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="mono text-[9px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
-            HOLE · {hole.number} OF {total}
-          </div>
-          <div className="display mt-0.5 leading-none" style={{ fontSize: 64 }}>
-            <span style={{ color: 'var(--accent)' }}>{hole.number}</span>
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="mono text-[9px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
-            PAR
-          </div>
-          <div className="display mt-0.5 leading-none" style={{ fontSize: 48 }}>
-            {hole.par}
-          </div>
-        </div>
-      </div>
-
-      {/* Abstract yardage-book fairway illustration */}
-      <div
-        className="mt-4 rounded-2xl overflow-hidden relative"
-        style={{ background: 'var(--paper-deep)', border: '1px solid var(--hairline)' }}
-      >
-        <svg viewBox="0 0 320 170" className="w-full block" aria-hidden>
-          <defs>
-            <pattern id="grain" width="4" height="4" patternUnits="userSpaceOnUse">
-              <circle cx="1" cy="1" r="0.3" fill="#8a8470" opacity="0.45" />
-            </pattern>
-          </defs>
-          {/* tee */}
-          <g transform="translate(30,140)">
-            <rect x="-8" y="-3" width="16" height="6" fill="var(--ink)" opacity="0.65" rx="1" />
-            <text x="0" y="18" textAnchor="middle" className="mono" fontSize="8" fill="var(--pencil)">
-              TEE
-            </text>
-          </g>
-          {/* fairway curve — hand-drawn feel */}
-          <path
-            d="M30 140 C80 125 80 90 120 75 C170 58 200 65 230 55 C260 46 280 38 295 32"
-            stroke="var(--ink)"
-            strokeOpacity="0.1"
-            strokeWidth="22"
-            fill="none"
-            strokeLinecap="round"
-          />
-          <path
-            d="M30 140 C80 125 80 90 120 75 C170 58 200 65 230 55 C260 46 280 38 295 32"
-            stroke="url(#grain)"
-            strokeWidth="22"
-            fill="none"
-            strokeLinecap="round"
-          />
-          {/* fairway outline - pencil stroke */}
-          <path
-            d="M30 140 C80 125 80 90 120 75 C170 58 200 65 230 55 C260 46 280 38 295 32"
-            stroke="var(--ink)"
-            strokeOpacity="0.22"
-            strokeWidth="0.8"
-            strokeDasharray="0.5 3"
-            fill="none"
-            strokeLinecap="round"
-          />
-          {/* green */}
-          <ellipse cx="295" cy="32" rx="20" ry="11" fill="var(--ink)" opacity="0.09" />
-          <ellipse cx="295" cy="32" rx="20" ry="11" fill="none" stroke="var(--ink)" strokeOpacity="0.35" strokeWidth="0.8" strokeDasharray="0.5 2" />
-          {/* flag */}
-          <g transform="translate(295,32)">
-            <line x1="0" y1="0" x2="0" y2="-26" stroke="var(--ink)" strokeWidth="1.2" strokeLinecap="round" />
-            <path d="M0 -26 L14 -22 L0 -18 Z" fill="var(--accent)" />
-            <circle r="2.2" fill="var(--ink)" />
-          </g>
-          {/* player dot — pulsing */}
-          <g transform="translate(120,75)">
-            <circle r="7" fill="var(--accent)" opacity="0.15">
-              <animate attributeName="r" values="5;8;5" dur="2.2s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.15;0.05;0.15" dur="2.2s" repeatCount="indefinite" />
-            </circle>
-            <circle r="3" fill="var(--accent)" />
-          </g>
-          {/* yardage callouts — printed markers */}
-          <text x="30" y="160" className="mono" fontSize="7" fill="var(--pencil)">
-            0
-          </text>
-          <text x="120" y="95" className="mono" fontSize="7" fill="var(--pencil)" textAnchor="middle">
-            YOU
-          </text>
-        </svg>
-      </div>
-
-      {/* Yardages to pin */}
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <YardCell label="Front" yards={front} dot="var(--flag-front)" />
-        <YardCell label="Center" yards={center} dot="var(--flag-center)" ringed />
-        <YardCell label="Back" yards={back} dot="var(--flag-back)" />
-      </div>
-
-      {/* Caddy panel */}
-      <div
-        className="mt-4 p-4 rounded-2xl"
-        style={{ background: 'var(--paper-deep)', border: '1px solid var(--hairline)' }}
-      >
-        <div className="flex items-start gap-3">
-          <div
-            className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center serif text-[13px]"
-            style={{ background: 'var(--ink)', color: 'var(--paper)' }}
+      {/* top meta strip */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: `${pad - 4}px ${pad + 2}px 2px` }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+          <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencil, textTransform: "uppercase" }}>Hole</div>
+          <motion.div
+            key={holeNumber}
+            initial={{ y: 4, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.25, ease: T.ease }}
+            style={{ fontFamily: T.serif, fontSize: 26, fontWeight: 400, color: T.ink, letterSpacing: -0.8, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}
           >
-            F
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="mono text-[9px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
-                CADDY · FLUFF
-              </span>
-              <Waveform />
-              <span className="mono text-[9px]" style={{ color: 'var(--pencil)' }}>
-                0:06
-              </span>
-            </div>
-            <div className="serif-italic text-[18px] leading-snug mt-1">
-              &ldquo;Smooth {club} — {note}.&rdquo;
-            </div>
-          </div>
-          <div className="shrink-0 flex flex-col items-end">
-            <div
-              className="rounded-full px-3 py-1"
-              style={{ background: 'var(--ink)', color: 'var(--paper)' }}
-            >
-              <span className="serif-italic text-[16px]">{club}</span>
-            </div>
-            <div className="mono text-[9px] mt-1" style={{ color: 'var(--pencil)' }}>
-              CLUB
-            </div>
-          </div>
+            {String(holeNumber).padStart(2, "0")}
+          </motion.div>
+        </div>
+        <div style={{ display: "flex", gap: 12 }}>
+          <Meta k="Par" v={hole.par} />
+          <Meta k="Yards" v={hole.yards} />
+          <Meta k="HCP" v={hole.hcp} />
         </div>
       </div>
 
-      {/* swipe hint */}
-      <div className="mt-3 flex items-center justify-center gap-2">
-        <span className="mono text-[9px] tracking-[0.24em]" style={{ color: 'var(--pencil-soft)' }}>
-          SWIPE FOR NEXT HOLE
-        </span>
+      {/* Illustration */}
+      <div style={{ position: "relative", padding: `6px ${pad}px 0`, display: "flex", justifyContent: "center" }}>
+        <motion.div
+          layout
+          style={{ width: expanded ? 340 : 190, height: expanded ? 340 : 190, position: "relative" }}
+          onClick={expanded ? onZoom : onExpand}
+        >
+          <HoleIllustration holeNumber={holeNumber} size={expanded ? 340 : 190} shotPoint={shotPoint} showDetail={expanded} accent={accent} />
+          {expanded && (
+            <motion.button
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onZoom();
+              }}
+              style={{
+                position: "absolute",
+                bottom: 8,
+                right: 8,
+                padding: "6px 10px",
+                borderRadius: 99,
+                background: "rgba(26,42,26,0.85)",
+                color: T.paper,
+                fontFamily: T.mono,
+                fontSize: 9,
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                backdropFilter: "blur(4px)",
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+                <path d="M1 4V1h3M9 4V1H6M1 6v3h3M9 6v3H6" />
+              </svg>
+              Zoom
+            </motion.button>
+          )}
+          {distance != null && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              style={{
+                position: "absolute",
+                top: 8,
+                right: 8,
+                padding: "4px 8px",
+                borderRadius: 99,
+                background: T.ink,
+                color: T.paper,
+                fontFamily: T.mono,
+                fontSize: 10,
+                letterSpacing: 1.2,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <span style={{ width: 5, height: 5, borderRadius: 99, background: accent }} />
+              {distance}Y
+            </motion.div>
+          )}
+        </motion.div>
       </div>
-    </motion.section>
+
+      {/* Expanded: caddy strip */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.28, ease: T.ease }}
+            style={{ overflow: "hidden" }}
+          >
+            <div style={{ padding: `14px ${pad}px 16px` }}>
+              {/* Wind + elevation */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1fr",
+                  gap: 0,
+                  padding: "10px 0",
+                  borderTop: `1px solid ${T.hairline}`,
+                  borderBottom: `1px solid ${T.hairline}`,
+                  marginBottom: 14,
+                }}
+              >
+                <Stat k="Wind" v={`${windMph}mph`} sub={windDir} />
+                <Stat k="Elev" v="+3ft" sub="uphill" />
+                <Stat k="Plays" v={`${Math.round(distance * 1.04)}Y`} sub="adjusted" />
+              </div>
+
+              {/* Caddy voice panel */}
+              <div
+                style={{
+                  position: "relative",
+                  border: `1px solid ${T.hairline}`,
+                  borderRadius: 16,
+                  background: `linear-gradient(180deg, ${T.paperDeep} 0%, ${T.paper} 100%)`,
+                  padding: 14,
+                }}
+              >
+                {/* Club badge */}
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 12,
+                    right: 12,
+                    width: 56,
+                    height: 56,
+                    borderRadius: 14,
+                    border: `1.5px solid ${T.ink}`,
+                    background: T.paper,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    lineHeight: 1,
+                  }}
+                >
+                  <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencil, textTransform: "uppercase", marginBottom: 2 }}>CLUB</div>
+                  <div style={{ fontFamily: T.serif, fontSize: 20, color: T.ink, fontWeight: 500 }}>{club}</div>
+                </div>
+
+                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", paddingRight: 60 }}>
+                  <div style={{ position: "relative", flexShrink: 0 }}>
+                    <motion.div
+                      animate={{ scale: [1, 1.12, 1], opacity: [0.35, 0.1, 0.35] }}
+                      transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+                      style={{ position: "absolute", inset: -4, borderRadius: 99, background: accent }}
+                    />
+                    <div
+                      style={{
+                        position: "relative",
+                        width: 44,
+                        height: 44,
+                        borderRadius: 99,
+                        background: T.ink,
+                        color: T.paper,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 20,
+                      }}
+                    >
+                      {caddy.initial}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.4, color: T.pencil, textTransform: "uppercase" }}>{caddy.name}</span>
+                      <div style={{ display: "flex", gap: 2, alignItems: "center", height: 10 }}>
+                        {[5, 9, 6, 11, 7, 4, 8, 5].map((h, i) => (
+                          <span key={i} style={{ display: "block", width: 1.5, height: h, borderRadius: 1, background: accent, opacity: 0.55 + (i % 3) * 0.15 }} />
+                        ))}
+                      </div>
+                      <span style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.2, color: T.pencilSoft, marginLeft: "auto" }}>0:06</span>
+                    </div>
+                    <div style={{ fontFamily: T.serif, fontSize: 17, fontStyle: "italic", color: T.ink, lineHeight: 1.28, letterSpacing: -0.2 }}>
+                      Smooth {club.toLowerCase()} &mdash; the breeze is off your right. Favor the left side of the green.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ask-back row */}
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${T.hairline}`, display: "flex", alignItems: "center", gap: 10 }}>
+                  <motion.button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAskCaddy();
+                    }}
+                    whileTap={{ scale: 0.96 }}
+                    style={{
+                      flexShrink: 0,
+                      width: 40,
+                      height: 40,
+                      borderRadius: 99,
+                      border: "none",
+                      background: accent,
+                      color: T.paper,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: `0 0 0 4px ${accent}22, 0 6px 14px rgba(26,42,26,0.2)`,
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <rect x="9" y="3" width="6" height="12" rx="3" />
+                      <path d="M5 11a7 7 0 0 0 14 0" />
+                      <path d="M12 18v3" />
+                    </svg>
+                  </motion.button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" }}>Hold to talk</div>
+                    <div style={{ fontFamily: T.serif, fontSize: 14, fontStyle: "italic", color: T.pencil, letterSpacing: -0.1 }}>
+                      &ldquo;Should I lay up?&rdquo; · &ldquo;Give me the 9 instead&rdquo; · &ldquo;Log my score&rdquo;
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Flag distance markers */}
+              <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+                {[
+                  { k: "Front", v: distance - 12, color: "#a8553f" },
+                  { k: "Center", v: distance, color: T.ink },
+                  { k: "Back", v: distance + 14, color: "#5d7285" },
+                ].map((d) => (
+                  <div
+                    key={d.k}
+                    style={{
+                      flex: 1,
+                      padding: "10px 10px 8px",
+                      borderRadius: 10,
+                      border: `1px solid ${T.hairline}`,
+                      textAlign: "center",
+                      position: "relative",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: d.color }} />
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: 1.2,
+                        color: T.pencil,
+                        textTransform: "uppercase",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: 99,
+                          background: d.color,
+                          border: d.k === "Center" ? `1px solid ${T.pencilSoft}` : "none",
+                        }}
+                      />
+                      {d.k}
+                    </div>
+                    <div style={{ fontFamily: T.serif, fontSize: 22, color: T.ink, fontVariantNumeric: "tabular-nums" }}>{d.v}</div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={onCollapse}
+                style={{
+                  marginTop: 14,
+                  width: "100%",
+                  padding: "10px",
+                  background: "transparent",
+                  border: `1px solid ${T.hairline}`,
+                  borderRadius: 99,
+                  fontFamily: T.mono,
+                  fontSize: 10,
+                  letterSpacing: 1.4,
+                  color: T.pencil,
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                }}
+              >
+                Collapse hole
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {!expanded && (
+        <div
+          style={{
+            textAlign: "center",
+            padding: `6px 0 ${pad - 2}px`,
+            fontFamily: T.mono,
+            fontSize: 9.5,
+            letterSpacing: 1.4,
+            color: T.pencilSoft,
+          }}
+        >
+          TAP FOR CADDY
+        </div>
+      )}
+    </motion.div>
   );
 }
 
-function YardCell({
-  label,
-  yards,
-  dot,
-  ringed,
-}: {
-  label: string;
-  yards: number;
-  dot: string;
-  ringed?: boolean;
-}) {
+function Meta({ k, v }: { k: string; v: number | string }) {
   return (
-    <div
-      className="rounded-xl p-3 text-center"
-      style={{ background: 'var(--paper)', border: '1px solid var(--hairline)' }}
-    >
-      <div className="h-[2px] rounded-full mb-2" style={{ background: dot }} />
-      <div className="mono text-[9px] tracking-[0.22em] flex items-center justify-center gap-1.5" style={{ color: 'var(--pencil)' }}>
-        <span
-          className="flag-dot"
-          style={{ background: dot, border: ringed ? '1.5px solid var(--ink)' : undefined }}
-        />
-        {label.toUpperCase()}
-      </div>
-      <div className="display text-[30px] mt-1 leading-none">{yards || '—'}</div>
-      <div className="mono text-[9px]" style={{ color: 'var(--pencil)' }}>
-        YDS
-      </div>
+    <div style={{ textAlign: "right", lineHeight: 1 }}>
+      <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.1, color: T.pencilSoft, textTransform: "uppercase" }}>{k}</div>
+      <div style={{ fontFamily: T.serif, fontSize: 14, color: T.ink, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{v}</div>
+    </div>
+  );
+}
+
+function Stat({ k, v, sub }: { k: string; v: string; sub: string }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>{k}</div>
+      <div style={{ fontFamily: T.serif, fontSize: 20, color: T.ink, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{v}</div>
+      <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 0.8, color: T.pencil }}>{sub}</div>
     </div>
   );
 }

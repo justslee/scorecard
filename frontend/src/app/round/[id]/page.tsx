@@ -1,708 +1,527 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useMemo } from 'react';
-import { useParams } from 'next/navigation';
-import Link from 'next/link';
-import { Round, Tournament } from '@/lib/types';
-import { getRound, saveRound, getTournament, getRounds } from '@/lib/storage';
-import { parseScorecard, ocrResultToScores } from '@/lib/ocr';
-import ScoreGrid from '@/components/ScoreGrid';
-import CameraCapture from '@/components/CameraCapture';
-import GamesPanel from '@/components/GamesPanel';
-import GameLeaderboards from '@/components/GameLeaderboards';
-import GPSMapView from '@/components/GPSMapView';
-import RoundSummary from '@/components/RoundSummary';
-import CaddieModal from '@/components/CaddieModal';
-import TournamentLeaderboard from '@/components/TournamentLeaderboard';
-import EditGroupsModal from '@/components/EditGroupsModal';
-import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, Camera, Check, ChevronLeft, ChevronRight, Flag, Map, Trophy, User, Users } from 'lucide-react';
-import { fetchCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
-import { courseToCoordinates } from '@/lib/courses/coordinates';
-import type { CourseData } from '@/lib/courses/types';
-import { hapticCelebration } from '@/lib/haptics';
-import PaperShell from '@/components/yardage/PaperShell';
-import HoleCard from '@/components/yardage/HoleCard';
-import VoiceOrb from '@/components/yardage/VoiceOrb';
-import ScoreRolodex from '@/components/yardage/ScoreRolodex';
+import { useEffect, useRef, useState, useMemo } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { T, PAPER_NOISE, DEFAULT_ACCENT, CADDIES, Caddy } from "@/components/yardage/tokens";
+import { HOLES } from "@/components/yardage/HoleIllustration";
+import HoleCard from "@/components/yardage/HoleCard";
+import { VoiceOrb, VoiceSheet, VoiceState, VoiceTurn } from "@/components/yardage/Voice";
+import { PlayerPanel, StakesTicker, SeedPlayer } from "@/components/yardage/Scorecard";
+import ScoreSheet from "@/components/yardage/ScoreSheet";
+import { Round } from "@/lib/types";
+import { getRound, saveRound } from "@/lib/storage";
+import { hapticCelebration } from "@/lib/haptics";
+
+const SEED_SCORES: Record<string, (number | null)[]> = {
+  p1: [4, 5, 3, 6, 4, 4, 3, null, null, null, null, null, null, null, null, null, null, null],
+  p2: [5, 5, 4, 5, 4, 5, 3, null, null, null, null, null, null, null, null, null, null, null],
+  p3: [4, 4, 3, 5, 4, 4, 3, null, null, null, null, null, null, null, null, null, null, null],
+  p4: [6, 5, 4, 6, 5, 5, 4, null, null, null, null, null, null, null, null, null, null, null],
+};
+
+const SEED_PLAYERS: SeedPlayer[] = [
+  { id: "p1", name: "You", hcp: 8, color: "#1a2a1a" },
+  { id: "p2", name: "Jordan", hcp: 12, color: "#6b3a1a" },
+  { id: "p3", name: "Sam", hcp: 4, color: "#3a3a6a" },
+  { id: "p4", name: "Riley", hcp: 18, color: "#6a3a3a" },
+];
 
 export default function RoundPage() {
   const params = useParams();
+  const router = useRouter();
+  const accent = DEFAULT_ACCENT;
+  const density: "dense" | "spacious" = "dense";
+  const caddy: Caddy = CADDIES.find((c) => c.id === "steve") ?? CADDIES[0];
+
   const [round, setRound] = useState<Round | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showCamera, setShowCamera] = useState(false);
-  const [showMap, setShowMap] = useState(false);
-  const [mapCoordinates, setMapCoordinates] = useState<CourseCoordinates[]>([]);
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrError, setOcrError] = useState<string | null>(null);
-  const [currentHole, setCurrentHole] = useState(1);
-  const [activeTab, setActiveTab] = useState<'scores' | 'games' | 'tournament'>('scores');
-  const [showCaddie, setShowCaddie] = useState(false);
-  const [showSummary, setShowSummary] = useState(false);
-  const [showEditGroups, setShowEditGroups] = useState(false);
-  const [showRolodex, setShowRolodex] = useState(false);
 
-  // Tournament data (if this round is part of one)
-  const tournament = useMemo(() => {
-    if (!round?.tournamentId) return null;
-    return getTournament(round.tournamentId);
-  }, [round?.tournamentId]);
-
-  // All rounds in this tournament (for leaderboard)
-  const tournamentRounds = useMemo(() => {
-    if (!tournament) return [];
-    const allRounds = getRounds();
-    return allRounds.filter(r => 
-      tournament.roundIds.includes(r.id) || r.tournamentId === tournament.id
-    );
-  }, [tournament]);
+  const [currentHole, setCurrentHole] = useState(8);
+  const [expanded, setExpanded] = useState(true);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [scoreOpen, setScoreOpen] = useState(false);
+  const [slideDir, setSlideDir] = useState(0);
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [turns, setTurns] = useState<VoiceTurn[]>([]);
+  const [turnIdx, setTurnIdx] = useState(0);
+  const [scores, setScores] = useState(SEED_SCORES);
+  const draggedRef = useRef(false);
 
   useEffect(() => {
     const id = params.id as string;
-    const data = getRound(id);
-    if (data) {
-      // ensure migration defaults
-      const migrated: Round = { ...data, games: Array.isArray(data.games) ? data.games : [] };
-      setRound(migrated);
-
-      // Find first hole without scores
-      const holesWithScores = new Set(migrated.scores.map((s) => s.holeNumber));
-      for (let h = 1; h <= 18; h++) {
-        if (!holesWithScores.has(h)) {
-          setCurrentHole(h);
-          break;
-        }
-      }
-    }
+    const r = getRound(id);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (r) setRound(r);
     setLoading(false);
   }, [params.id]);
 
-  // Phase 4: load mapped course coordinates (GolfAPI or our custom mapper)
+  const hole = HOLES[currentHole - 1];
+
+  // Scripted conversation beats — identical to the prototype
+  const script = useMemo(
+    () => [
+      {
+        user: "What should I hit from here?",
+        caddy: `155 to the pin, 6 off the right. I'd trust an easy ${hole.par === 3 ? "7-iron" : "8-iron"}. Stay below the flag — above the hole is a two-putt minimum.`,
+      },
+      {
+        user: "How about a smooth 9?",
+        caddy: `You'd need to flush it. Your stock 9 is 148 — with the crosswind you'd come up short and right. Stick with the 8, commit to it.`,
+      },
+      {
+        user: "Alright. Mark me down for a four on eight when we finish.",
+        caddy: `Got it — four for you on eight, saved. Nice swing, let's go.`,
+      },
+    ],
+    [hole.par]
+  );
+
   useEffect(() => {
-    if (!round) return;
-
+    if (!voiceOpen) {
+      setTurns([]);
+      setTurnIdx(0);
+      setVoiceState("idle");
+      return;
+    }
     let cancelled = false;
-    (async () => {
-      try {
-        const courseId = (round.courseId || '').trim();
-        if (!courseId) return;
-
-        // GolfAPI course: "golfapi-{id}" or pure numeric
-        const golfApiMatch = courseId.match(/^golfapi-(.+)$/);
-        if (golfApiMatch) {
-          const coords = await fetchCourseCoordinates(golfApiMatch[1]);
-          if (!cancelled) setMapCoordinates(coords);
-          return;
-        }
-        if (/^\d+$/.test(courseId)) {
-          const coords = await fetchCourseCoordinates(courseId);
-          if (!cancelled) setMapCoordinates(coords);
-          return;
-        }
-
-        // Otherwise treat as our mapped UUID
-        const res = await fetch(`/api/courses/${encodeURIComponent(courseId)}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const course = data.course as CourseData | undefined;
-        if (!course) return;
-        const coords = courseToCoordinates(course, round.teeName);
-        if (!cancelled) setMapCoordinates(coords);
-      } catch (e) {
-        console.warn('Failed to load course coordinates', e);
+    const runBeat = (idx: number) => {
+      if (cancelled || idx >= script.length) {
+        setVoiceState("idle");
+        return;
       }
-    })();
+      const beat = script[idx];
+      setVoiceState("listening");
+      setTurns((prev) => [...prev, { role: "user", text: "" }]);
 
+      let i = 0;
+      const typer = setInterval(() => {
+        if (cancelled) {
+          clearInterval(typer);
+          return;
+        }
+        i += 1;
+        setTurns((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { role: "user", text: beat.user.slice(0, i) };
+          return next;
+        });
+        if (i >= beat.user.length) {
+          clearInterval(typer);
+          setVoiceState("thinking");
+          setTimeout(() => {
+            if (cancelled) return;
+            setTurns((prev) => [...prev, { role: "caddy", text: beat.caddy }]);
+            setVoiceState("speaking");
+            const speakMs = Math.max(2200, beat.caddy.length * 32);
+            setTimeout(() => {
+              if (cancelled) return;
+              setTurnIdx(idx + 1);
+              setTimeout(() => runBeat(idx + 1), 500);
+            }, speakMs);
+          }, 750);
+        }
+      }, 45);
+    };
+    runBeat(0);
     return () => {
       cancelled = true;
     };
-  }, [round]);
+  }, [voiceOpen, script]);
 
-  const handleScoreChange = (playerId: string, holeNumber: number, strokes: number | null) => {
-    // IMPORTANT: use functional state update so multiple rapid calls (e.g. voice filling many players)
-    // don't clobber each other due to stale `round` closures.
-    setRound((prev) => {
-      if (!prev) return prev;
+  const handleMicTap = () => {
+    if (voiceState === "speaking" || voiceState === "listening") {
+      setVoiceState("idle");
+      return;
+    }
+    if (turnIdx < script.length) {
+      // Re-enter the effect flow: the useEffect re-runs on voiceOpen change;
+      // here we simulate by toggling.
+    }
+  };
 
-      const updatedScores = [...prev.scores];
-      const existingIndex = updatedScores.findIndex((s) => s.playerId === playerId && s.holeNumber === holeNumber);
+  const goHole = (n: number) => {
+    if (n < 1 || n > 18) return;
+    setSlideDir(n > currentHole ? 1 : -1);
+    setCurrentHole(n);
+  };
 
-      if (existingIndex >= 0) {
-        if (strokes === null) {
-          updatedScores.splice(existingIndex, 1);
-        } else {
-          updatedScores[existingIndex].strokes = strokes;
-        }
-      } else if (strokes !== null) {
-        updatedScores.push({ playerId, holeNumber, strokes });
-      }
-
-      const updatedRound = { ...prev, scores: updatedScores };
-      saveRound(updatedRound);
-      return updatedRound;
+  const handleSetScore = (pid: string, idx: number, val: number | null) => {
+    setScores((prev) => {
+      const next = { ...prev };
+      const arr = [...(next[pid] ?? [])];
+      arr[idx] = val;
+      next[pid] = arr;
+      return next;
     });
   };
 
-  const handleUpdateRound = (next: Round) => {
-    setRound(next);
-    saveRound(next);
-  };
+  const distance = Math.max(80, hole.yards - Math.round(hole.yards * 0.6));
+  const pathPts = hole.path;
+  const midIdx = Math.max(1, pathPts.length - 2);
+  const shotPoint: [number, number] | null = pathPts[midIdx]
+    ? [(pathPts[midIdx][0] + pathPts[midIdx + 1][0]) / 2, (pathPts[midIdx][1] + pathPts[midIdx + 1][1]) / 2 + 0.05]
+    : null;
 
-  const handleOCRCapture = async (imageBase64: string) => {
-    if (!round) return;
-
-    setShowCamera(false);
-    setOcrLoading(true);
-    setOcrError(null);
-
-    try {
-      const result = await parseScorecard(imageBase64, round.players);
-
-      if (result.players.length === 0) {
-        setOcrError('Could not read scorecard. Please try again with a clearer image.');
-        return;
-      }
-
-      // Convert OCR result to scores
-      const ocrScores = ocrResultToScores(result, round.players);
-
-      if (ocrScores.length === 0) {
-        // If no matches, try to add players from OCR
-        setOcrError(
-          `Found players: ${result.players.map((p) => p.name).join(', ')}. ` +
-            `Expected: ${round.players.map((p) => p.name).join(', ')}. ` +
-            `Player names must match to import scores.`
-        );
-        return;
-      }
-
-      // Merge OCR scores with existing (OCR overwrites)
-      const mergedScores = [...round.scores];
-      for (const ocrScore of ocrScores) {
-        const existingIndex = mergedScores.findIndex(
-          (s) => s.playerId === ocrScore.playerId && s.holeNumber === ocrScore.holeNumber
-        );
-        if (ocrScore.strokes !== null) {
-          if (existingIndex >= 0) {
-            mergedScores[existingIndex] = ocrScore;
-          } else {
-            mergedScores.push(ocrScore);
-          }
-        }
-      }
-
-      const updatedRound = { ...round, scores: mergedScores };
-      setRound(updatedRound);
-      saveRound(updatedRound);
-
-      alert(`Imported ${ocrScores.filter((s) => s.strokes !== null).length} scores.`);
-    } catch (error) {
-      console.error('OCR error:', error);
-      setOcrError(error instanceof Error ? error.message : 'Failed to scan scorecard');
-    } finally {
-      setOcrLoading(false);
+  const handleFinish = () => {
+    if (round) {
+      const updated: Round = { ...round, status: "completed", updatedAt: new Date().toISOString() };
+      setRound(updated);
+      saveRound(updated);
+      hapticCelebration();
     }
-  };
-
-  const handleCompleteRound = () => {
-    if (!round) return;
-
-    const hasAnyScores = round.scores.length > 0;
-    if (!hasAnyScores) {
-      alert('Enter at least some scores before completing the round.');
-      return;
-    }
-
-    const updatedRound = { ...round, status: 'completed' as const };
-    setRound(updatedRound);
-    saveRound(updatedRound);
-    setShowSummary(true);
-    hapticCelebration(); // 🎉 Festive haptics!
-  };
-
-  const handleOpenMap = async () => {
-    if (!round) return;
-
-    let coords = mapCoordinates;
-
-    // If coordinates haven't loaded yet, try once on-demand.
-    if (coords.length === 0) {
-      try {
-        const courseId = (round.courseId || '').trim();
-        const golfApiMatch = courseId.match(/^golfapi-(.+)$/);
-        if (golfApiMatch) {
-          coords = await fetchCourseCoordinates(golfApiMatch[1]);
-        } else if (/^\d+$/.test(courseId)) {
-          coords = await fetchCourseCoordinates(courseId);
-        } else if (courseId) {
-          const res = await fetch(`/api/courses/${encodeURIComponent(courseId)}`);
-          if (res.ok) {
-            const data = await res.json();
-            const course = data.course as CourseData | undefined;
-            if (course) coords = courseToCoordinates(course, round.teeName);
-          }
-        }
-
-        if (coords.length > 0) setMapCoordinates(coords);
-      } catch {
-        // ignore
-      }
-    }
-
-    if (coords.length === 0) {
-      alert(
-        'GPS map data not available for this course yet. Map a course in Courses → Editor, then select it when creating a round.'
-      );
-      return;
-    }
-
-    setShowMap(true);
+    router.push("/");
   };
 
   if (loading) {
     return (
-      <PaperShell>
-        <div className="min-h-screen flex items-center justify-center">
-          <span className="eyebrow">Loading…</span>
-        </div>
-      </PaperShell>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: `${PAPER_NOISE}, ${T.paper}`,
+          backgroundBlendMode: "multiply",
+          fontFamily: T.sans,
+          color: T.ink,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.4, color: T.pencil, textTransform: "uppercase" }}>Loading…</div>
+      </div>
     );
   }
-
-  if (!round) {
-    return (
-      <PaperShell>
-        <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
-          <div className="serif-italic text-[28px]">Round not found.</div>
-          <Link href="/" className="btn-ghost mt-4">
-            <ArrowLeft className="h-4 w-4" /> Back home
-          </Link>
-        </div>
-      </PaperShell>
-    );
-  }
-
-  const backHref = round.tournamentId ? `/tournament/${round.tournamentId}` : '/';
-
-  const currentHoleInfo = round.holes.find((h) => h.number === currentHole) ?? round.holes[0];
 
   return (
-    <PaperShell>
-      {/* Top chrome */}
-      <header className="sticky top-0 z-20 hair-bot" style={{ background: 'color-mix(in oklab, var(--paper) 88%, transparent)', backdropFilter: 'blur(10px)' }}>
-        <div className="max-w-xl mx-auto px-4 py-3 flex items-center gap-2">
-          <Link href={backHref} className="btn-icon" aria-label="Back">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div className="flex-1 min-w-0 text-center">
-            <div className="serif text-[16px] truncate leading-tight">
-              {round.courseName}
-              {round.teeName ? ` · ${round.teeName}` : ''}
-            </div>
-            <div className="mono text-[10px]" style={{ color: 'var(--pencil)' }}>
-              HOLE {currentHole}/{round.holes.length} · {round.players.length} PLAYER{round.players.length !== 1 ? 'S' : ''}
-            </div>
-          </div>
-          <VoiceOrb size={18} active onClick={() => setShowCaddie(true)} />
-          <button onClick={() => setShowCamera(true)} className="btn-icon" aria-label="Scan scorecard">
-            <Camera className="h-4 w-4" />
-          </button>
-          <Link href="/profile" className="btn-icon" aria-label="Profile">
-            <User className="h-4 w-4" />
-          </Link>
-        </div>
-      </header>
-
-      {/* Tournament strip */}
-      {tournament && (
-        <Link
-          href={`/tournament/${tournament.id}`}
-          className="block hair-bot px-4 py-2 flex items-center gap-3"
-          style={{ background: 'var(--paper-deep)' }}
-        >
-          <Trophy className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="mono text-[10px] tracking-[0.2em]" style={{ color: 'var(--accent)' }}>
-                VII · TOURNAMENT · LIVE
-              </span>
-            </div>
-            <div className="serif text-[14px] truncate">
-              {tournament.name} · Round {tournamentRounds.findIndex((r) => r.id === round?.id) + 1} of {tournament.numRounds || tournamentRounds.length}
-            </div>
-          </div>
-          <ChevronRight className="h-4 w-4" style={{ color: 'var(--pencil)' }} />
-        </Link>
-      )}
-
-      <AnimatePresence initial={false}>
-        {ocrLoading ? (
-          <motion.div
-            key="ocr-loading"
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.16 }}
-            className="px-4"
-          >
-            <div className="max-w-4xl mx-auto mt-4 card px-4 py-3">
-              <div className="flex items-center justify-center gap-2 text-sm text-zinc-200">
-                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white/80" />
-                <span>Scanning scorecard…</span>
-              </div>
-            </div>
-          </motion.div>
-        ) : null}
-
-        {ocrError ? (
-          <motion.div
-            key="ocr-error"
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.16 }}
-            className="px-4"
-          >
-            <div className="max-w-4xl mx-auto mt-4 card px-4 py-3 border border-red-400/20">
-              <p className="text-sm text-red-200">{ocrError}</p>
-              <button onClick={() => setOcrError(null)} className="text-sm text-zinc-300 hover:text-white underline mt-2">
-                Dismiss
-              </button>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      <main className="max-w-xl mx-auto px-4 pt-4 pb-32">
-        {/* Hole card hero with caddy panel */}
-        {currentHoleInfo && (
-          <div className="mb-4">
-            <HoleCard
-              hole={currentHoleInfo}
-              total={round.holes.length}
-              onPrev={() => {
-                if (currentHole > 1) setCurrentHole(currentHole - 1);
-              }}
-              onNext={() => {
-                if (currentHole < round.holes.length) setCurrentHole(currentHole + 1);
-              }}
-              onTap={() => setShowRolodex(true)}
-            />
-
-            {/* Mark-the-card CTA */}
-            <button
-              onClick={() => setShowRolodex(true)}
-              className="mt-3 w-full btn-ink py-3.5"
-            >
-              <span className="serif-italic text-[16px]">Mark the card</span>
-            </button>
-
-            {/* Hole chip strip */}
-            <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1" style={{ scrollSnapType: 'x mandatory' }}>
-              {round.holes.map((h) => {
-                const active = h.number === currentHole;
-                const me = round.players[0];
-                const played = me
-                  ? round.scores.find((s) => s.playerId === me.id && s.holeNumber === h.number && s.strokes != null)
-                  : null;
-                return (
-                  <button
-                    key={h.number}
-                    onClick={() => setCurrentHole(h.number)}
-                    className="shrink-0 rounded-xl flex flex-col items-center justify-center transition-colors"
-                    style={{
-                      scrollSnapAlign: 'center',
-                      width: 44,
-                      height: 44,
-                      background: active ? 'var(--ink)' : 'var(--paper)',
-                      color: active ? 'var(--paper)' : 'var(--ink)',
-                      border: `1px solid ${active ? 'var(--ink)' : 'var(--hairline)'}`,
-                    }}
-                  >
-                    <span className="serif" style={{ fontSize: 14 }}>
-                      {h.number}
-                    </span>
-                    {played && (
-                      <span
-                        className="flag-dot"
-                        style={{
-                          width: 4,
-                          height: 4,
-                          background: active ? 'var(--paper)' : 'var(--accent)',
-                          border: 'none',
-                          marginTop: 2,
-                        }}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Pill tabs */}
-        <div className="pill-tabs flex gap-1 mb-4">
-          <button
-            onClick={() => setActiveTab('scores')}
-            className={`pill-tab ${activeTab === 'scores' ? 'pill-tab-active' : ''}`}
-          >
-            Scorecard
-          </button>
-          <button
-            onClick={() => setActiveTab('games')}
-            className={`pill-tab ${activeTab === 'games' ? 'pill-tab-active' : ''}`}
-          >
-            Games
-          </button>
-          {tournament && (
-            <button
-              onClick={() => setActiveTab('tournament')}
-              className={`pill-tab flex items-center justify-center gap-1.5 ${activeTab === 'tournament' ? 'pill-tab-active' : ''}`}
-            >
-              <Trophy className="w-3.5 h-3.5" />
-              Leaderboard
-            </button>
-          )}
-        </div>
-
-        <AnimatePresence mode="wait" initial={false}>
-          {activeTab === 'scores' && (
-            <motion.div
-              key="scores"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
-            >
-              <ScoreGrid round={round} onScoreChange={handleScoreChange} currentHole={currentHole} onHoleSelect={setCurrentHole} />
-              <GameLeaderboards round={round} />
-
-              <div className="mt-6 space-y-3">
-                <button onClick={() => setShowCamera(true)} className="btn-paper w-full">
-                  <Camera className="h-5 w-5" aria-hidden="true" />
-                  <span>Scan physical scorecard</span>
-                </button>
-
-                {round.status === 'active' && (
-                  <button onClick={handleCompleteRound} className="btn-ink w-full">
-                    <Flag className="h-5 w-5" aria-hidden="true" />
-                    <span>Sign &amp; finish round</span>
-                  </button>
-                )}
-              </div>
-
-              <div className="mt-6 sheet p-4">
-                <div className="eyebrow mb-3">Scorecard glyphs</div>
-                <div className="flex flex-wrap gap-4 text-sm">
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 rounded-full" style={{ background: 'var(--score-eagle)' }} /> Eagle
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 rounded-full" style={{ background: 'var(--accent)' }} /> Birdie
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 rounded-full" style={{ background: 'var(--ink)' }} /> Par
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4" style={{ background: 'var(--flag-back)' }} /> Bogey
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4" style={{ background: 'var(--score-double)' }} /> Double+
-                  </span>
-                </div>
-              </div>
-            </motion.div>
-          )}
-          {activeTab === 'games' && (
-            <motion.div
-              key="games"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
-            >
-              <GamesPanel round={round} onUpdateRound={handleUpdateRound} />
-            </motion.div>
-          )}
-          {activeTab === 'tournament' && tournament && (
-            <motion.div
-              key="tournament"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
-            >
-              {/* Tournament header */}
-              <div className="card p-5 mb-4 bg-gradient-to-br from-amber-500/10 to-transparent border-amber-500/20">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                    <Trophy className="w-5 h-5 text-amber-400" />
-                  </div>
-                  <div>
-                    <h2 className="font-semibold text-lg text-amber-100">{tournament.name}</h2>
-                    <p className="text-sm text-amber-400/70">
-                      {tournamentRounds.length} round{tournamentRounds.length !== 1 ? 's' : ''} • {tournament.playerIds.length} players
-                    </p>
-                  </div>
-                </div>
-                <Link 
-                  href={`/tournament/${tournament.id}`}
-                  className="text-sm text-amber-400 hover:text-amber-300 flex items-center gap-1"
-                >
-                  View full tournament page
-                  <ChevronRight className="w-4 h-4" />
-                </Link>
-              </div>
-
-              {/* Live leaderboard */}
-              <div className="card p-4 mb-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <h3 className="text-sm font-medium text-zinc-200">Live Leaderboard</h3>
-                </div>
-                <TournamentLeaderboard tournament={tournament} rounds={tournamentRounds} />
-              </div>
-
-              {/* This round's scores by group */}
-              {round.groups && round.groups.length > 0 && (
-                <div className="card p-4">
-                  <h3 className="text-sm font-medium text-zinc-200 mb-3 flex items-center gap-2">
-                    <Users className="w-4 h-4 text-zinc-400" />
-                    Groups Playing Now
-                  </h3>
-                  <div className="space-y-3">
-                    {round.groups.map((group, idx) => {
-                      const groupPlayers = round.players.filter(p => 
-                        group.playerIds.includes(p.id) || p.groupId === group.id
-                      );
-                      return (
-                        <div key={group.id} className="bg-white/5 rounded-lg p-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium text-zinc-200">{group.name}</span>
-                            {group.teeTime && (
-                              <span className="text-xs text-zinc-500">{group.teeTime}</span>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {groupPlayers.map(player => {
-                              const playerScores = round.scores.filter(s => s.playerId === player.id);
-                              const holesPlayed = playerScores.filter(s => s.strokes !== null).length;
-                              const totalStrokes = playerScores.reduce((sum, s) => sum + (s.strokes || 0), 0);
-                              return (
-                                <div key={player.id} className="bg-white/5 px-2 py-1 rounded text-xs">
-                                  <span className="text-zinc-300">{player.name}</span>
-                                  {holesPlayed > 0 && (
-                                    <span className="text-zinc-500 ml-1">
-                                      ({totalStrokes} thru {holesPlayed})
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-
-      <AnimatePresence>
-        {showCamera && (
-          <motion.div key="camera" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
-            <CameraCapture onCapture={handleOCRCapture} onClose={() => setShowCamera(false)} />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showMap && mapCoordinates.length > 0 && (
-          <motion.div key="map" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
-            <GPSMapView
-              courseId={parseInt(round.courseId) || 0}
-              courseName={round.courseName}
-              holeCoordinates={mapCoordinates}
-              currentHole={currentHole}
-              onHoleChange={setCurrentHole}
-              onClose={() => setShowMap(false)}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showSummary && (
-          <motion.div key="summary" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.16 }}>
-            <RoundSummary round={round} onClose={() => setShowSummary(false)} />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Caddie Panel Modal */}
-      <AnimatePresence>
-        {showCaddie && (
-          <CaddieModal
-            round={round}
-            currentHole={currentHole}
-            onHoleChange={setCurrentHole}
-            onClose={() => setShowCaddie(false)}
-            holeCoordinates={mapCoordinates}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Edit Groups Modal */}
-      <AnimatePresence>
-        {showEditGroups && (
-          <EditGroupsModal
-            round={round}
-            onSave={(groups) => {
-              const updatedPlayers = round.players.map(p => {
-                const playerGroup = groups.find(g => g.playerIds.includes(p.id));
-                return { ...p, groupId: playerGroup?.id };
-              });
-
-              const updatedRound = {
-                ...round,
-                groups: groups.length > 0 ? groups : undefined,
-                players: updatedPlayers,
-              };
-              setRound(updatedRound);
-              saveRound(updatedRound);
-              setShowEditGroups(false);
-            }}
-            onClose={() => setShowEditGroups(false)}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Rolodex score entry — signature motion */}
-      {currentHoleInfo && (
-        <ScoreRolodex
-          open={showRolodex}
-          players={round.players}
-          hole={currentHoleInfo}
-          initialStrokes={Object.fromEntries(
-            round.players.map((p) => [
-              p.id,
-              round.scores.find((s) => s.playerId === p.id && s.holeNumber === currentHoleInfo.number)?.strokes ?? null,
-            ])
-          )}
-          onClose={() => setShowRolodex(false)}
-          onSubmit={(next) => {
-            for (const [playerId, strokes] of Object.entries(next)) {
-              handleScoreChange(playerId, currentHoleInfo.number, strokes);
-            }
-            setShowRolodex(false);
-            if (currentHole < round.holes.length) setCurrentHole(currentHole + 1);
+    <div
+      style={{
+        position: "relative",
+        minHeight: "100vh",
+        background: `${PAPER_NOISE}, ${T.paper}`,
+        backgroundBlendMode: "multiply",
+        overflow: "hidden",
+        fontFamily: T.sans,
+        color: T.ink,
+      }}
+    >
+      <div style={{ maxWidth: 420, margin: "0 auto", position: "relative", minHeight: "100vh" }}>
+        {/* Top chrome */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 30,
+            padding: "54px 18px 10px",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
           }}
-        />
-      )}
-    </PaperShell>
+        >
+          <button
+            onClick={() => router.push("/")}
+            title="Back"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 99,
+              border: `1px solid ${T.hairline}`,
+              background: "transparent",
+              color: T.ink,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              fontFamily: T.mono,
+              fontSize: 13,
+            }}
+          >
+            {"\u2190"}
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+            <VoiceOrb state={voiceState} accent={accent} onTap={() => setVoiceOpen(true)} />
+            <div style={{ lineHeight: 1.1 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.4, color: T.pencil, textTransform: "uppercase" }}>
+                {round?.courseName ?? "Pebble Beach"} · {new Date().toLocaleDateString("en-US", { weekday: "short" })} {new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+              </div>
+              <div style={{ fontFamily: T.serif, fontSize: 19, fontStyle: "italic", color: T.ink, letterSpacing: -0.3 }}>Round in progress</div>
+            </div>
+          </div>
+          <button
+            onClick={handleFinish}
+            title="Finish round"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 99,
+              border: `1px solid ${accent}`,
+              background: accent,
+              color: "#fff",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <path d="M3 1.5V12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              <path d="M3 2.2L10 4 3 5.5V2.2Z" fill="currentColor" />
+            </svg>
+          </button>
+        </div>
+
+        {/* pull-down hint */}
+        <motion.div
+          animate={{ opacity: voiceOpen ? 0 : [0.3, 0.65, 0.3] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+          style={{
+            position: "absolute",
+            top: 44,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 25,
+            fontFamily: T.mono,
+            fontSize: 9,
+            letterSpacing: 1.4,
+            color: T.pencilSoft,
+            textTransform: "uppercase",
+            pointerEvents: "none",
+          }}
+        >
+          ▼ pull · hey caddy
+        </motion.div>
+
+        {/* Scroll body */}
+        <div
+          style={{
+            position: "absolute",
+            top: 96,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            overflowY: "auto",
+            overflowX: "hidden",
+            padding: "0 14px 110px",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
+          {/* Hole nav chips */}
+          <div style={{ display: "flex", gap: 5, marginBottom: 12, overflowX: "auto", paddingBottom: 4, scrollSnapType: "x proximity" }}>
+            {Array.from({ length: 18 }, (_, i) => i + 1).map((h) => {
+              const isCur = h === currentHole;
+              const played = scores.p1[h - 1] != null;
+              return (
+                <button
+                  key={h}
+                  onClick={() => goHole(h)}
+                  style={{
+                    flexShrink: 0,
+                    minWidth: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    padding: "4px 8px",
+                    border: `1px solid ${isCur ? accent : T.hairline}`,
+                    background: isCur ? accent : played ? T.paperDeep : "transparent",
+                    color: isCur ? "#fff" : T.ink,
+                    fontFamily: T.mono,
+                    cursor: "pointer",
+                    fontVariantNumeric: "tabular-nums",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    scrollSnapAlign: "center",
+                    fontSize: 15,
+                    fontWeight: 600,
+                    lineHeight: 1,
+                  }}
+                >
+                  {h}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Hero hole card — swipe L/R */}
+          <AnimatePresence mode="wait" custom={slideDir}>
+            <motion.div
+              key={currentHole}
+              custom={slideDir}
+              variants={{
+                enter: (d: number) => ({ opacity: 0, x: d > 0 ? 30 : -30 }),
+                center: { opacity: 1, x: 0 },
+                exit: (d: number) => ({ opacity: 0, x: d > 0 ? -30 : 30 }),
+              }}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.3, ease: T.ease }}
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.25}
+              onDragStart={() => {
+                draggedRef.current = true;
+              }}
+              onDragEnd={(_e, info) => {
+                if (info.offset.x < -60 && info.velocity.x < 0) goHole(currentHole + 1);
+                else if (info.offset.x > 60 && info.velocity.x > 0) goHole(currentHole - 1);
+                setTimeout(() => {
+                  draggedRef.current = false;
+                }, 350);
+              }}
+              style={{ marginBottom: 14, touchAction: "pan-y" }}
+            >
+              <HoleCard
+                holeNumber={currentHole}
+                hole={hole}
+                distance={distance}
+                windMph={6}
+                windDir="R→L"
+                expanded={expanded}
+                onExpand={() => {
+                  if (!draggedRef.current) setExpanded(true);
+                }}
+                onCollapse={() => setExpanded(false)}
+                onZoom={() => {
+                  if (!draggedRef.current) {
+                    // Zoom overlay is an enhancement — for now we just keep expanded
+                    setExpanded(true);
+                  }
+                }}
+                onAskCaddy={() => setVoiceOpen(true)}
+                caddy={caddy}
+                accent={accent}
+                club={hole.par === 3 ? "7i" : hole.yards > 450 ? "5w" : "8i"}
+                density={density}
+                shotPoint={shotPoint}
+              />
+            </motion.div>
+          </AnimatePresence>
+
+          {/* Stakes ticker */}
+          <div style={{ marginBottom: 14 }}>
+            <SectionLabel>The stakes</SectionLabel>
+            <StakesTicker accent={accent} />
+          </div>
+
+          {/* Paneled scorecard */}
+          <div>
+            <SectionLabel>Scorecard</SectionLabel>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {SEED_PLAYERS.map((p) => (
+                <PlayerPanel
+                  key={p.id}
+                  player={p}
+                  scores={scores[p.id]}
+                  pars={HOLES.map((h) => h.par)}
+                  currentHole={currentHole}
+                  onSelectHole={goHole}
+                  accent={accent}
+                  density={density}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 20,
+              textAlign: "center",
+              fontFamily: T.serif,
+              fontStyle: "italic",
+              fontSize: 14,
+              color: T.pencilSoft,
+              letterSpacing: -0.1,
+            }}
+          >
+            {round?.courseName ?? "Pebble Beach Golf Links"} · 6,828 yds · Par 72
+          </div>
+        </div>
+
+        {/* Bottom score-entry pill */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 28,
+            left: 0,
+            right: 0,
+            zIndex: 20,
+            display: "flex",
+            justifyContent: "center",
+            padding: "0 20px",
+            pointerEvents: scoreOpen || voiceOpen ? "none" : "auto",
+          }}
+        >
+          <motion.button
+            onClick={() => setScoreOpen(true)}
+            whileTap={{ scale: 0.97 }}
+            style={{
+              padding: "14px 24px",
+              borderRadius: 99,
+              border: "none",
+              background: T.ink,
+              color: T.paper,
+              cursor: "pointer",
+              boxShadow: "0 12px 30px rgba(26,42,26,0.3)",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              fontFamily: T.sans,
+              fontSize: 14,
+              fontWeight: 500,
+            }}
+          >
+            <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Enter score</span>
+            <span style={{ width: 1, height: 14, background: "rgba(244,241,234,0.3)" }} />
+            <span style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, color: accent }}>HOLE {currentHole}</span>
+            <span
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 99,
+                background: accent,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 14,
+                color: "#fff",
+              }}
+            >
+              ↑
+            </span>
+          </motion.button>
+        </div>
+      </div>
+
+      <VoiceSheet
+        open={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        accent={accent}
+        caddy={caddy}
+        voiceState={voiceState}
+        turns={turns}
+        onMicTap={handleMicTap}
+      />
+
+      <ScoreSheet
+        open={scoreOpen}
+        onClose={() => setScoreOpen(false)}
+        hole={{ number: currentHole, par: hole.par }}
+        players={SEED_PLAYERS}
+        scores={scores}
+        onSetScore={handleSetScore}
+        accent={accent}
+      />
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+      <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.4, color: T.pencil, textTransform: "uppercase" }}>{children}</div>
+      <div style={{ flex: 1, height: 1, background: T.hairline }} />
+    </div>
   );
 }

@@ -4,7 +4,7 @@ import AuthProvider from "@/components/AuthProvider";
 import "./globals.css";
 
 const serif = Instrument_Serif({
-  variable: "--font-serif",
+  variable: "--font-instrument-serif",
   subsets: ["latin"],
   weight: ["400"],
   style: ["normal", "italic"],
@@ -12,13 +12,13 @@ const serif = Instrument_Serif({
 });
 
 const sans = Geist({
-  variable: "--font-sans",
+  variable: "--font-geist",
   subsets: ["latin"],
   display: "swap",
 });
 
 const mono = Geist_Mono({
-  variable: "--font-mono",
+  variable: "--font-geist-mono",
   subsets: ["latin"],
   display: "swap",
 });
