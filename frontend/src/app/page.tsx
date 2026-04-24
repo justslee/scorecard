@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, Mic, Search, Trophy, User, X } from 'lucide-react';
+import { ArrowRight, Mic, Search, X } from 'lucide-react';
 import { Round, Tournament, GolferProfile } from '@/lib/types';
 import { getRounds, getTournaments, getGolferProfile, initializeStorage } from '@/lib/storage';
 import PaperShell from '@/components/yardage/PaperShell';
@@ -29,7 +29,7 @@ function greetingFor(d: Date) {
   return 'Good evening';
 }
 
-function formatDate(iso: string) {
+function formatRoundDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
@@ -41,7 +41,9 @@ function scoringAverage(rounds: Round[]) {
   for (const r of completed) {
     const me = r.players[0];
     if (!me) continue;
-    const strokes = r.scores.filter((s) => s.playerId === me.id && s.strokes != null).reduce((a, s) => a + (s.strokes ?? 0), 0);
+    const strokes = r.scores
+      .filter((s) => s.playerId === me.id && s.strokes != null)
+      .reduce((a, s) => a + (s.strokes ?? 0), 0);
     if (strokes > 0) {
       total += strokes;
       count += 1;
@@ -68,7 +70,9 @@ export default function Home() {
 
   const greeting = useMemo(() => greetingFor(new Date()), []);
   const avg = useMemo(() => scoringAverage(rounds), [rounds]);
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
+  const activeRound = rounds.find((r) => r.status === 'active');
+  const latestTournament = tournaments[0];
 
   if (!loaded) {
     return (
@@ -80,199 +84,213 @@ export default function Home() {
     );
   }
 
+  const firstName = profile?.name?.split(' ')[0] ?? 'Golfer';
+
   return (
     <PaperShell>
-      {/* Masthead */}
-      <header className="px-5 pt-6 pb-4">
-        <div className="max-w-xl mx-auto">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <VoiceOrb size={18} active={false} />
-              <span className="mono text-[11px] tracking-[0.2em] uppercase" style={{ color: 'var(--pencil)' }}>
-                LOOPER
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <AuthButtons />
-              <Link href="/profile" className="btn-ghost rounded-full px-3 py-1.5" aria-label="Profile">
-                <User className="h-4 w-4" />
-                <span className="text-xs">Profile</span>
-              </Link>
-            </div>
-          </div>
+      {/* Top band — volume masthead */}
+      <div className="px-6 pt-5 pb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <VoiceOrb size={14} active={false} />
+          <span className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
+            LOOPER · VOL I
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <AuthButtons />
+          <Link href="/profile" className="mono text-[10px] tracking-[0.22em] px-2 py-1" style={{ color: 'var(--ink)' }}>
+            PROFILE
+          </Link>
+        </div>
+      </div>
 
-          <div className="eyebrow mb-3">{today}</div>
-          <h1 className="display text-[56px] leading-[0.95]">
-            {greeting},
-            <br />
+      {/* Editorial masthead */}
+      <header className="px-6 pt-2 pb-6 hair-bot">
+        <div className="max-w-xl mx-auto">
+          <div className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
+            {today}
+          </div>
+          <h1 className="mt-3 display leading-[0.92]" style={{ fontSize: 'clamp(48px, 11vw, 72px)' }}>
+            {greeting},<br />
             <span className="serif-italic" style={{ color: 'var(--accent)' }}>
-              {profile?.name?.split(' ')[0] ?? 'Golfer'}.
+              {firstName}.
             </span>
           </h1>
-          <p className="mt-3 text-sm" style={{ color: 'var(--pencil)' }}>
-            Gentle breeze, 62°. Fairways are soft — ball won&apos;t run out.
+          <p className="mt-3 text-[14px] serif-italic" style={{ color: 'var(--pencil)' }}>
+            Gentle breeze, 62°. Fairways are soft — ball won&rsquo;t run out.
           </p>
         </div>
       </header>
 
-      <main className="max-w-xl mx-auto px-5 pb-24">
-        {/* Primary CTA — Hey Caddy */}
+      <main className="max-w-xl mx-auto px-6 pb-24">
+        {/* Primary CTA — fully on-paper, big serif quote */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2 }}
-          className="sheet p-5 mt-4"
-          style={{ background: 'var(--ink)', color: 'var(--paper)', borderColor: 'var(--ink)' }}
+          transition={{ duration: 0.24 }}
+          className="pt-6 pb-6 hair-bot"
         >
           <div className="flex items-start gap-3">
-            <div className="shrink-0 mt-1">
-              <VoiceOrb size={22} active />
+            <div className="shrink-0 mt-2">
+              <VoiceOrb size={20} active />
             </div>
-            <div className="flex-1">
-              <div className="eyebrow" style={{ color: 'var(--paper-edge)' }}>
-                Hey caddy · Tap to talk
+            <div className="flex-1 min-w-0">
+              <div className="eyebrow">Hey caddy</div>
+              <div
+                className="serif-italic mt-1 leading-[1.05]"
+                style={{ fontSize: 'clamp(26px, 5.4vw, 34px)' }}
+              >
+                &ldquo;Start a round at Harding, whites,<br className="hidden sm:block" />
+                me and Jack.&rdquo;
               </div>
-              <div className="serif-italic text-[26px] leading-tight mt-1">
-                &ldquo;Start a round at Harding, whites, me and Jack.&rdquo;
-              </div>
-              <div className="flex gap-2 mt-4">
-                <Link href="/round/new" className="btn-accent text-[13px] px-4 py-2">
-                  <Mic className="h-4 w-4" /> Start a round
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link href="/round/new" className="btn-ink text-[13px] px-4 py-2">
+                  <Mic className="h-3.5 w-3.5" /> Start a round
                 </Link>
-                <Link href="/tournament/new" className="btn-paper text-[13px] px-4 py-2" style={{ background: 'transparent', color: 'var(--paper)', borderColor: 'rgba(244,241,234,0.25)' }}>
-                  <Trophy className="h-4 w-4" /> Plan a tournament
+                <Link href="/tournament/new" className="btn-paper text-[13px] px-4 py-2">
+                  Plan a tournament
                 </Link>
+                <button
+                  onClick={() => setTeeTimesOpen(true)}
+                  className="btn-paper text-[13px] px-4 py-2"
+                >
+                  <Search className="h-3.5 w-3.5" /> Tee times
+                </button>
               </div>
             </div>
           </div>
         </motion.div>
 
-        {/* Hero stats — handicap + scoring */}
-        <section className="mt-6 grid grid-cols-2 gap-3">
-          <div className="sheet p-4">
-            <div className="eyebrow">Handicap</div>
-            <div className="flex items-baseline gap-2 mt-1">
-              <div className="display text-[40px]">
-                {profile?.handicap ?? '—'}
+        {/* Resume active round */}
+        {activeRound && (
+          <Link
+            href={`/round/${activeRound.id}`}
+            className="pt-5 pb-5 hair-bot flex items-center gap-4 group"
+          >
+            <div className="shrink-0 text-center" style={{ width: 56 }}>
+              <div className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--accent)' }}>
+                LIVE
               </div>
-              <span className="mono text-xs" style={{ color: 'var(--pencil)' }}>
-                idx
-              </span>
+              <div className="display text-[24px] leading-none mt-1">
+                {activeRound.scores.filter((s) => s.strokes != null).length || 0}
+              </div>
+              <div className="mono text-[9px] mt-1" style={{ color: 'var(--pencil)' }}>
+                SCORES
+              </div>
             </div>
-            <div className="text-xs mt-1" style={{ color: 'var(--pencil)' }}>
-              {profile?.handicap != null ? 'trending down · 0.4' : 'Set in your profile'}
+            <div className="flex-1 min-w-0">
+              <div className="eyebrow">Resume</div>
+              <div className="serif text-[22px] leading-tight truncate">{activeRound.courseName}</div>
+              <div className="mono text-[10px]" style={{ color: 'var(--pencil)' }}>
+                {activeRound.players.map((p) => p.name).join(' · ').toUpperCase()}
+              </div>
             </div>
-          </div>
-          <div className="sheet p-4">
-            <div className="eyebrow">Scoring avg</div>
-            <div className="flex items-baseline gap-2 mt-1">
-              <div className="display text-[40px]">{avg ?? '—'}</div>
-              <span className="mono text-xs" style={{ color: 'var(--pencil)' }}>
-                {rounds.filter((r) => r.status === 'completed').length} rds
-              </span>
-            </div>
-            <div className="text-xs mt-1" style={{ color: 'var(--pencil)' }}>
-              {avg ? 'last 10 rounds' : 'No completed rounds yet'}
-            </div>
-          </div>
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </Link>
+        )}
+
+        {/* Hero stats — editorial two-up */}
+        <section className="pt-6 pb-6 hair-bot grid grid-cols-2 gap-6">
+          <Stat label="Handicap" value={profile?.handicap ?? '—'} sub="idx · last 20" />
+          <Stat label="Scoring avg" value={avg ?? '—'} sub={`${rounds.filter((r) => r.status === 'completed').length} rounds`} />
         </section>
 
-        {/* Tee time finder */}
+        {/* Tee time finder — minimal row, not a card */}
         <button
           type="button"
           onClick={() => setTeeTimesOpen(true)}
-          className="mt-4 sheet w-full text-left p-4 flex items-center gap-4"
+          className="w-full pt-5 pb-5 hair-bot text-left flex items-center gap-4 group"
         >
-          <div className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center" style={{ background: 'var(--paper-deep)' }}>
-            <Search className="h-5 w-5" style={{ color: 'var(--ink)' }} />
+          <div className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'var(--paper-deep)' }}>
+            <Search className="h-4 w-4" />
           </div>
           <div className="flex-1">
             <div className="eyebrow">Tee times near you</div>
-            <div className="serif text-[18px] leading-tight mt-0.5">Find a slot — this weekend</div>
-            <div className="text-xs mt-1" style={{ color: 'var(--pencil)' }}>
-              8 courses · 42 times · 6:10a to 1:50p
-            </div>
+            <div className="serif text-[20px] leading-tight mt-0.5">Find a slot — this weekend</div>
           </div>
-          <ChevronRight className="h-5 w-5" style={{ color: 'var(--pencil)' }} />
+          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </button>
 
-        {/* Trophy case tease — tournaments */}
-        {tournaments.length > 0 && (
-          <section className="mt-8">
-            <div className="flex items-center justify-between mb-3">
+        {/* Trophy case — only if a tournament exists */}
+        {latestTournament && (
+          <Link
+            href={`/tournament/${latestTournament.id}`}
+            className="pt-5 pb-5 hair-bot flex items-center gap-4 group"
+          >
+            <div className="shrink-0 display text-[42px] leading-none" style={{ color: 'var(--accent)', width: 56 }}>
+              {toRoman(tournaments.length) || 'I'}
+            </div>
+            <div className="flex-1 min-w-0">
               <div className="eyebrow">Trophy case</div>
-              <Link href="/tournament/new" className="mono text-[11px]" style={{ color: 'var(--accent)' }}>
-                + NEW
-              </Link>
+              <div className="serif text-[20px] leading-tight truncate">{latestTournament.name}</div>
+              <div className="mono text-[10px]" style={{ color: 'var(--pencil)' }}>
+                {latestTournament.playerIds.length} PLAYERS · {latestTournament.roundIds.length}
+                {latestTournament.numRounds ? `/${latestTournament.numRounds}` : ''} ROUNDS
+              </div>
             </div>
-            <div className="space-y-3">
-              {tournaments.map((t) => (
-                <Link key={t.id} href={`/tournament/${t.id}`} className="sheet block p-4 hover:bg-white/10">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Trophy className="h-4 w-4" style={{ color: 'var(--accent)' }} />
-                        <span className="serif text-[20px] leading-tight truncate">{t.name}</span>
-                      </div>
-                      <div className="mono text-[11px]" style={{ color: 'var(--pencil)' }}>
-                        {t.playerIds.length} PLAYERS · {t.roundIds.length}
-                        {t.numRounds ? `/${t.numRounds}` : ''} ROUNDS
-                      </div>
-                    </div>
-                    <ChevronRight className="h-5 w-5" style={{ color: 'var(--pencil)' }} />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </Link>
         )}
 
         {/* Recent rounds */}
-        <section className="mt-8">
-          <div className="flex items-center justify-between mb-3">
+        <section className="pt-6">
+          <div className="flex items-end justify-between mb-1">
             <div className="eyebrow">Recent rounds</div>
-            <Link href="/round/new" className="mono text-[11px]" style={{ color: 'var(--accent)' }}>
-              + NEW ROUND
+            <Link href="/round/new" className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--accent)' }}>
+              + NEW
             </Link>
           </div>
 
           {rounds.length === 0 ? (
-            <div className="sheet p-6 text-center">
+            <div className="py-10 text-center">
               <div className="serif-italic text-[22px]" style={{ color: 'var(--pencil)' }}>
                 Your first round is waiting.
               </div>
-              <div className="mt-3">
-                <Link href="/round/new" className="btn-ink">
-                  Start a round
-                </Link>
-              </div>
+              <Link href="/round/new" className="btn-ink mt-4 inline-flex">
+                Start a round
+              </Link>
             </div>
           ) : (
-            <div className="space-y-2">
-              {rounds.slice(0, 6).map((r) => {
+            <div>
+              {rounds.slice(0, 8).map((r) => {
                 const me = r.players[0];
                 const total = me
-                  ? r.scores.filter((s) => s.playerId === me.id && s.strokes != null).reduce((a, s) => a + (s.strokes ?? 0), 0)
+                  ? r.scores
+                      .filter((s) => s.playerId === me.id && s.strokes != null)
+                      .reduce((a, s) => a + (s.strokes ?? 0), 0)
                   : 0;
-                const holesPlayed = me ? r.scores.filter((s) => s.playerId === me.id && s.strokes != null).length : 0;
+                const holesPlayed = me
+                  ? r.scores.filter((s) => s.playerId === me.id && s.strokes != null).length
+                  : 0;
+                const par = r.holes.slice(0, holesPlayed).reduce((s, h) => s + h.par, 0);
+                const toPar = total && par ? total - par : 0;
                 return (
-                  <Link key={r.id} href={`/round/${r.id}`} className="flex items-center gap-4 py-3 hair-bot">
-                    <div className="shrink-0 text-center" style={{ width: 54 }}>
-                      <div className="display text-[26px] leading-none">{total || '—'}</div>
-                      <div className="mono text-[10px] mt-1" style={{ color: 'var(--pencil)' }}>
-                        {holesPlayed || 0} HOLES
+                  <Link key={r.id} href={`/round/${r.id}`} className="flex items-center gap-4 py-4 hair-bot group">
+                    <div className="shrink-0 text-right" style={{ width: 60 }}>
+                      <div className="display text-[28px] leading-none">{total || '—'}</div>
+                      <div
+                        className="mono text-[10px] mt-1"
+                        style={{ color: toPar < 0 ? 'var(--accent)' : 'var(--pencil)' }}
+                      >
+                        {total ? (toPar === 0 ? 'E' : toPar > 0 ? `+${toPar}` : toPar) : ''}
                       </div>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="serif text-[18px] truncate">{r.courseName}</div>
-                      <div className="mono text-[11px]" style={{ color: 'var(--pencil)' }}>
-                        {formatDate(r.date)} · {r.players.map((p) => p.name).join(' · ')}
+                      <div className="serif text-[17px] truncate">{r.courseName}</div>
+                      <div className="mono text-[10px]" style={{ color: 'var(--pencil)' }}>
+                        {formatRoundDate(r.date).toUpperCase()} · {r.players.map((p) => p.name).join(' · ').toUpperCase()}
                       </div>
                     </div>
-                    <div>
-                      <span className={`pill ${r.status === 'active' ? 'pill-accent' : ''}`} style={{ fontSize: 10 }}>
-                        {r.status === 'active' ? 'LIVE' : 'DONE'}
-                      </span>
+                    <div className="shrink-0">
+                      {r.status === 'active' ? (
+                        <span className="mono text-[9px] tracking-[0.22em]" style={{ color: 'var(--accent)' }}>
+                          LIVE
+                        </span>
+                      ) : (
+                        <span className="mono text-[9px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
+                          SIGNED
+                        </span>
+                      )}
                     </div>
                   </Link>
                 );
@@ -281,18 +299,50 @@ export default function Home() {
           )}
         </section>
 
-        {/* Footer mark */}
-        <div className="mt-10 flex items-center justify-center gap-2">
-          <span className="eyebrow">Looper</span>
-          <span className="flag-dot" style={{ background: 'var(--accent)' }} />
-          <span className="eyebrow">Yardage Book edition</span>
+        {/* Colophon */}
+        <div className="mt-10 mb-2 text-center">
+          <div className="mono text-[9px] tracking-[0.28em]" style={{ color: 'var(--pencil)' }}>
+            LOOPER · THE YARDAGE BOOK
+          </div>
+          <div className="serif-italic text-[13px] mt-1" style={{ color: 'var(--pencil)' }}>
+            made for quiet rounds
+          </div>
         </div>
       </main>
 
-      {/* Tee time sheet */}
       <AnimatePresence>{teeTimesOpen && <TeeTimeSheet onClose={() => setTeeTimesOpen(false)} />}</AnimatePresence>
     </PaperShell>
   );
+}
+
+function Stat({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
+  return (
+    <div>
+      <div className="eyebrow">{label}</div>
+      <div className="display text-[56px] leading-none mt-2">{value}</div>
+      {sub && (
+        <div className="mono text-[10px] mt-2" style={{ color: 'var(--pencil)' }}>
+          {sub.toUpperCase()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function toRoman(n: number): string {
+  if (!n || n < 1) return '';
+  const map: Array<[number, string]> = [
+    [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+  ];
+  let out = '';
+  let x = n;
+  for (const [v, s] of map) {
+    while (x >= v) {
+      out += s;
+      x -= v;
+    }
+  }
+  return out;
 }
 
 function TeeTimeSheet({ onClose }: { onClose: () => void }) {
@@ -327,7 +377,7 @@ function TeeTimeSheet({ onClose }: { onClose: () => void }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-40 flex items-end md:items-center justify-center"
-      style={{ background: 'rgba(26,42,26,0.35)' }}
+      style={{ background: 'rgba(26,42,26,0.32)' }}
       onClick={onClose}
     >
       <motion.div
@@ -336,17 +386,22 @@ function TeeTimeSheet({ onClose }: { onClose: () => void }) {
         animate={{ y: 0, opacity: 1 }}
         exit={{ y: 40, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 280, damping: 30 }}
-        className="w-full md:max-w-xl md:rounded-[22px] rounded-t-[22px] overflow-hidden"
+        className="w-full md:max-w-xl md:rounded-[24px] rounded-t-[24px] overflow-hidden"
         style={{ background: 'var(--paper)', border: '1px solid var(--hairline)', maxHeight: '88vh' }}
       >
-        <div className="px-5 pt-5 pb-4 hair-bot">
+        {/* Grabber */}
+        <div className="flex items-center justify-center pt-3 pb-1">
+          <span style={{ width: 44, height: 4, borderRadius: 999, background: 'var(--hairline-strong)' }} />
+        </div>
+
+        <div className="px-6 pt-2 pb-4 hair-bot">
           <div className="flex items-center justify-between">
             <div>
               <div className="eyebrow">Tee times</div>
-              <div className="serif text-[22px] leading-tight">Find a slot near you</div>
+              <div className="serif-italic text-[28px] leading-tight">Find a slot.</div>
             </div>
             <button onClick={onClose} className="btn-icon" aria-label="Close">
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
 
@@ -372,7 +427,7 @@ function TeeTimeSheet({ onClose }: { onClose: () => void }) {
                 <button
                   key={n}
                   onClick={() => setPlayers(n)}
-                  className="mono text-[12px] px-3 py-2"
+                  className="mono text-[11px] px-3 py-2"
                   style={{
                     background: players === n ? 'var(--ink)' : 'transparent',
                     color: players === n ? 'var(--paper)' : 'var(--ink)',
@@ -385,42 +440,45 @@ function TeeTimeSheet({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <div className="overflow-y-auto px-5 py-3" style={{ maxHeight: '62vh' }}>
-          {loading && <div className="eyebrow py-4 text-center">Searching…</div>}
+        <div className="overflow-y-auto px-6 py-2" style={{ maxHeight: '62vh' }}>
+          {loading && <div className="eyebrow py-6 text-center">Searching…</div>}
           {!loading && results.length === 0 && (
-            <div className="py-8 text-center">
+            <div className="py-10 text-center">
               <div className="serif-italic text-[20px]" style={{ color: 'var(--pencil)' }}>
                 No slots for these filters.
               </div>
             </div>
           )}
-          <div className="space-y-0.5">
-            {results.map((t) => (
-              <div key={t.id} className="flex items-center gap-4 py-3 hair-bot">
-                <div className="shrink-0 text-center" style={{ width: 62 }}>
-                  <div className="serif text-[20px] leading-none">{t.time}</div>
-                  <div className="mono text-[10px] mt-1" style={{ color: 'var(--pencil)' }}>
-                    {t.distanceMiles} MI
-                  </div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="serif text-[16px] truncate">{t.courseName}</div>
-                  <div className="mono text-[11px] truncate" style={{ color: 'var(--pencil)' }}>
-                    {t.city.toUpperCase()} · ★ {t.rating.toFixed(1)}
-                    {t.cartIncluded ? ' · CART' : ''}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="serif text-[18px]">${t.priceUsd}</div>
-                  <button className="mono text-[10px] px-2 py-1 rounded-full mt-1" style={{ background: 'var(--accent)', color: 'var(--paper)' }}>
-                    BOOK
-                  </button>
+          {results.map((t) => (
+            <div key={t.id} className="flex items-center gap-4 py-4 hair-bot">
+              <div className="shrink-0 text-center" style={{ width: 64 }}>
+                <div className="serif text-[22px] leading-none">{t.time}</div>
+                <div className="mono text-[10px] mt-1" style={{ color: 'var(--pencil)' }}>
+                  {t.distanceMiles} MI
                 </div>
               </div>
-            ))}
-          </div>
-          <div className="py-4 text-center">
-            <span className="eyebrow">Mock data · demo booking</span>
+              <div className="flex-1 min-w-0">
+                <div className="serif text-[16px] truncate">{t.courseName}</div>
+                <div className="mono text-[10px] truncate" style={{ color: 'var(--pencil)' }}>
+                  {t.city.toUpperCase()} · ★ {t.rating.toFixed(1)}
+                  {t.cartIncluded ? ' · CART' : ''}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="serif text-[18px]">${t.priceUsd}</div>
+                <button
+                  className="mono text-[10px] tracking-[0.22em] px-2 py-1 rounded-full mt-1"
+                  style={{ background: 'var(--accent)', color: 'var(--paper)' }}
+                >
+                  BOOK
+                </button>
+              </div>
+            </div>
+          ))}
+          <div className="py-5 text-center">
+            <span className="mono text-[9px] tracking-[0.28em]" style={{ color: 'var(--pencil)' }}>
+              MOCK DATA · DEMO BOOKING
+            </span>
           </div>
         </div>
       </motion.div>
