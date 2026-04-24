@@ -213,7 +213,8 @@ export default function RoundPage() {
             left: 0,
             right: 0,
             zIndex: 30,
-            padding: "54px 18px 10px",
+            padding: "14px 18px 10px",
+            paddingTop: "max(14px, env(safe-area-inset-top))",
             display: "flex",
             alignItems: "center",
             gap: 10,
@@ -272,32 +273,11 @@ export default function RoundPage() {
           </button>
         </div>
 
-        {/* pull-down hint */}
-        <motion.div
-          animate={{ opacity: voiceOpen ? 0 : [0.3, 0.65, 0.3] }}
-          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-          style={{
-            position: "absolute",
-            top: 44,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 25,
-            fontFamily: T.mono,
-            fontSize: 9,
-            letterSpacing: 1.4,
-            color: T.pencilSoft,
-            textTransform: "uppercase",
-            pointerEvents: "none",
-          }}
-        >
-          ▼ pull · hey caddy
-        </motion.div>
-
         {/* Scroll body */}
         <div
           style={{
             position: "absolute",
-            top: 96,
+            top: 72,
             left: 0,
             right: 0,
             bottom: 0,
