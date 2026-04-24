@@ -1,6 +1,6 @@
-# ⛳ Scorecard
+# ⛳ Looper — The Yardage Book
 
-A simple, mobile-first golf scoring app with OCR scorecard scanning.
+A quiet, voice-first golf companion. Scorecard, caddy, tee times — styled like a printed yardage book rather than a SaaS app.
 
 ![Golf Scorecard App](https://img.shields.io/badge/Golf-Scorecard-green?style=for-the-badge)
 
