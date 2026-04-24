@@ -1,366 +1,519 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, ChevronRight, Users } from 'lucide-react';
-import { GolferProfile, Round } from '@/lib/types';
-import { getGolferProfile, getRounds, saveGolferProfile } from '@/lib/storage';
-import PaperShell from '@/components/yardage/PaperShell';
+import Link from "next/link";
+import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 
-type ClubKey = keyof GolferProfile['clubDistances'];
+const PP_PLAYER = {
+  name: "Justin Lee",
+  home: "Presidio GC · San Francisco",
+  memberSince: 2019,
+  caddyNo: 77,
+  ghin: "8834-7729",
+};
 
-const CLUBS: { key: ClubKey; label: string }[] = [
-  { key: 'driver', label: 'Driver' },
-  { key: 'threeWood', label: '3-wood' },
-  { key: 'fiveWood', label: '5-wood' },
-  { key: 'hybrid', label: 'Hybrid' },
-  { key: 'fourIron', label: '4-iron' },
-  { key: 'fiveIron', label: '5-iron' },
-  { key: 'sixIron', label: '6-iron' },
-  { key: 'sevenIron', label: '7-iron' },
-  { key: 'eightIron', label: '8-iron' },
-  { key: 'nineIron', label: '9-iron' },
-  { key: 'pitchingWedge', label: 'PW' },
-  { key: 'gapWedge', label: 'GW' },
-  { key: 'sandWedge', label: 'SW' },
-  { key: 'lobWedge', label: 'LW' },
-  { key: 'putter', label: 'Putter' },
+const HANDICAP = {
+  index: 8.2,
+  trend90: -0.6,
+  history: [10.1, 10.0, 9.8, 9.6, 9.8, 9.4, 9.2, 9.0, 8.8, 9.0, 8.6, 8.2],
+};
+
+const SG = [
+  { cat: "Off the tee", you: +0.4, label: "Driver length helps; fairway % hurts" },
+  { cat: "Approach", you: -0.8, label: "Losing shots inside 150" },
+  { cat: "Around green", you: +0.2, label: "Up-and-down rate: 42%" },
+  { cat: "Putting", you: -0.3, label: "3-putt rate: 11% · one per round" },
 ];
 
-function parseOptionalNumber(v: string): number | null {
-  const trimmed = v.trim();
-  if (!trimmed) return null;
-  const n = Number(trimmed);
-  if (Number.isNaN(n)) return null;
-  return n;
-}
+const BAG = [
+  { club: "Driver", carry: 252, total: 271 },
+  { club: "3-wood", carry: 228, total: 245 },
+  { club: "3-hybrid", carry: 210, total: 224 },
+  { club: "4-iron", carry: 196, total: 206 },
+  { club: "5-iron", carry: 184, total: 192 },
+  { club: "6-iron", carry: 172, total: 179 },
+  { club: "7-iron", carry: 161, total: 167 },
+  { club: "8-iron", carry: 148, total: 153 },
+  { club: "9-iron", carry: 135, total: 139 },
+  { club: "PW", carry: 121, total: 124 },
+  { club: "GW (52°)", carry: 102, total: 104 },
+  { club: "SW (56°)", carry: 84, total: 86 },
+  { club: "LW (60°)", carry: 64, total: 66 },
+];
+
+const RECENT = [
+  { id: "r1", date: "Oct 13", course: "Spanish Bay", score: 82, diff: "+5.2", tag: "T1" },
+  { id: "r2", date: "Oct 12", course: "Spyglass Hill", score: 84, diff: "+6.4", tag: null },
+  { id: "r3", date: "Oct 11", course: "Pebble Beach", score: 77, diff: "+1.8", tag: "PR" },
+  { id: "r4", date: "Sep 28", course: "Presidio", score: 82, diff: "+4.6", tag: null },
+  { id: "r5", date: "Sep 14", course: "Harding Park", score: 86, diff: "+8.1", tag: null },
+];
 
 export default function ProfilePage() {
-  const existing = useMemo(() => getGolferProfile(), []);
-  const [profile, setProfile] = useState<GolferProfile>(
-    () =>
-      existing ?? {
-        id: crypto.randomUUID(),
-        name: '',
-        handicap: null,
-        homeCourse: null,
-        clubDistances: {},
-      }
-  );
-  const [saved, setSaved] = useState(false);
-  const [rounds, setRounds] = useState<Round[]>([]);
-
-  useEffect(() => {
-    const fromStorage = getGolferProfile();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (fromStorage) setProfile(fromStorage);
-    setRounds(getRounds());
-  }, []);
-
-  const stats = useMemo(() => {
-    const completed = rounds.filter((r) => r.status === 'completed');
-    if (!completed.length) return { avg: null as number | null, rounds: 0, best: null as number | null, birdies: 0, pars: 0, bogeys: 0 };
-    let total = 0;
-    let count = 0;
-    let best: number | null = null;
-    let birdies = 0;
-    let pars = 0;
-    let bogeys = 0;
-    for (const r of completed) {
-      const me = r.players[0];
-      if (!me) continue;
-      const myScores = r.scores.filter((s) => s.playerId === me.id && s.strokes != null);
-      const strokes = myScores.reduce((a, s) => a + (s.strokes ?? 0), 0);
-      if (strokes > 0) {
-        total += strokes;
-        count += 1;
-        if (best === null || strokes < best) best = strokes;
-      }
-      for (const sc of myScores) {
-        const hole = r.holes.find((h) => h.number === sc.holeNumber);
-        if (!hole) continue;
-        const diff = (sc.strokes ?? 0) - hole.par;
-        if (diff <= -1) birdies += 1;
-        else if (diff === 0) pars += 1;
-        else if (diff === 1) bogeys += 1;
-      }
-    }
-    return {
-      avg: count ? Math.round((total / count) * 10) / 10 : null,
-      rounds: count,
-      best,
-      birdies,
-      pars,
-      bogeys,
-    };
-  }, [rounds]);
-
-  const handleSave = () => {
-    const next: GolferProfile = {
-      ...profile,
-      name: profile.name.trim(),
-      homeCourse: profile.homeCourse?.trim() || null,
-      handicap: profile.handicap === null ? null : Number(profile.handicap),
-    };
-    saveGolferProfile(next);
-    setProfile(next);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
-  };
-
-  const initials = profile.name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((s) => s[0]?.toUpperCase() ?? '')
-    .join('') || 'G';
+  const accent = DEFAULT_ACCENT;
 
   return (
-    <PaperShell>
-      {/* Top chrome */}
-      <header
-        className="sticky top-0 z-20 hair-bot"
-        style={{ background: 'color-mix(in oklab, var(--paper) 88%, transparent)', backdropFilter: 'blur(10px)' }}
-      >
-        <div className="max-w-xl mx-auto px-6 py-3 flex items-center gap-2">
-          <Link href="/" className="btn-icon" aria-label="Back">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div className="flex-1 min-w-0 text-center mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
-            PLAYER PROFILE
-          </div>
-          <button onClick={handleSave} className="btn-ink px-4 py-1.5 text-[12px]">
-            {saved ? 'Saved' : 'Save'}
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-xl mx-auto px-6 pt-6 pb-24">
-        {/* Identity masthead — editorial */}
-        <section className="hair-bot pb-6">
-          <div className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
-            MEMBER · EST. {new Date().getFullYear()}
-          </div>
-          <div className="flex items-start gap-4 mt-3">
-            <div
-              className="shrink-0 w-[72px] h-[72px] rounded-full flex items-center justify-center"
-              style={{ background: 'var(--ink)', color: 'var(--paper)' }}
+    <div
+      style={{
+        minHeight: "100vh",
+        background: `${PAPER_NOISE}, ${T.paper}`,
+        backgroundBlendMode: "multiply",
+        fontFamily: T.sans,
+        color: T.ink,
+      }}
+    >
+      <div style={{ maxWidth: 420, margin: "0 auto" }}>
+        {/* Masthead */}
+        <div style={{ padding: "46px 22px 18px", position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Link
+              href="/"
+              style={{
+                textDecoration: "none",
+                fontFamily: T.mono,
+                fontSize: 10,
+                letterSpacing: 1.6,
+                color: T.pencil,
+                textTransform: "uppercase",
+                fontWeight: 500,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
             >
-              <span className="serif text-[30px]">{initials}</span>
+              <svg width="10" height="10" viewBox="0 0 12 12">
+                <path
+                  d="M8 2 L3 6 L8 10"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              Home
+            </Link>
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 9,
+                letterSpacing: 1.6,
+                color: T.pencil,
+                textTransform: "uppercase",
+                fontWeight: 500,
+              }}
+            >
+              The Player&rsquo;s Book
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="display leading-[0.95]" style={{ fontSize: 'clamp(40px, 9vw, 52px)' }}>
-                {profile.name || (
-                  <span className="serif-italic" style={{ color: 'var(--pencil)' }}>
-                    Unnamed golfer
-                  </span>
-                )}
-              </div>
-              {profile.homeCourse && (
-                <div className="mono text-[10px] tracking-[0.22em] mt-2" style={{ color: 'var(--pencil)' }}>
-                  HOME · {profile.homeCourse.toUpperCase()}
-                </div>
-              )}
-            </div>
           </div>
-        </section>
 
-        {/* Stats strip — editorial three-up */}
-        <section className="pt-6 pb-6 hair-bot grid grid-cols-3 gap-6">
-          <StatCell label="Handicap" value={profile.handicap ?? '—'} sub="idx" />
-          <StatCell label="Scoring avg" value={stats.avg ?? '—'} sub={stats.rounds ? `${stats.rounds} rounds` : ''} />
-          <StatCell label="Best round" value={stats.best ?? '—'} sub="strokes" />
-        </section>
-
-        {/* Career tally */}
-        <section className="pt-6 pb-6 hair-bot">
-          <div className="mono text-[10px] tracking-[0.24em] mb-3" style={{ color: 'var(--pencil)' }}>
-            CAREER TALLY
-          </div>
-          <div className="flex items-end justify-between gap-4">
-            <TallyBar label="Birdies" count={stats.birdies} color="var(--accent)" />
-            <TallyBar label="Pars" count={stats.pars} color="var(--ink)" />
-            <TallyBar label="Bogeys" count={stats.bogeys} color="var(--flag-back)" />
-          </div>
-        </section>
-
-        {/* Info inputs */}
-        <section className="pt-6 pb-6 hair-bot">
-          <div className="mono text-[10px] tracking-[0.24em] mb-3" style={{ color: 'var(--pencil)' }}>
-            GOLFER INFO
-          </div>
-          <div className="space-y-3">
-            <LabeledInput
-              label="Name"
-              value={profile.name}
-              onChange={(v) => setProfile((p) => ({ ...p, name: v }))}
-              placeholder="Your name"
-            />
-            <LabeledInput
-              label="Handicap index"
-              value={profile.handicap == null ? '' : String(profile.handicap)}
-              onChange={(v) => setProfile((p) => ({ ...p, handicap: parseOptionalNumber(v) }))}
-              placeholder="e.g. 12.4"
-              inputMode="decimal"
-            />
-            <LabeledInput
-              label="Home course"
-              value={profile.homeCourse ?? ''}
-              onChange={(v) => setProfile((p) => ({ ...p, homeCourse: v }))}
-              placeholder="e.g. Harding Park"
-            />
-          </div>
-        </section>
-
-        {/* Club distances — The bag */}
-        <section className="pt-6 pb-6 hair-bot">
-          <div className="flex items-end justify-between mb-3">
+          <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "1fr auto", gap: 14, alignItems: "flex-end" }}>
             <div>
-              <div className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
-                CLUB DISTANCES
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.6,
+                  color: accent,
+                  textTransform: "uppercase",
+                  fontWeight: 600,
+                }}
+              >
+                №&nbsp;{PP_PLAYER.caddyNo} · Member since {PP_PLAYER.memberSince}
               </div>
-              <div className="display text-[32px] leading-tight mt-1">The bag</div>
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 38,
+                  color: T.ink,
+                  letterSpacing: -1,
+                  lineHeight: 1,
+                  marginTop: 4,
+                }}
+              >
+                {PP_PLAYER.name}
+              </div>
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontSize: 14,
+                  color: T.pencil,
+                  letterSpacing: -0.1,
+                  marginTop: 6,
+                  fontStyle: "italic",
+                }}
+              >
+                {PP_PLAYER.home}
+              </div>
             </div>
-            <div className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
-              YARDS · OPTIONAL
+
+            {/* Stamp card */}
+            <div
+              style={{
+                width: 62,
+                height: 78,
+                position: "relative",
+                background: T.paperDeep,
+                border: `1.5px solid ${T.ink}`,
+                borderRadius: 2,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 1px 0 rgba(0,0,0,0.05)",
+              }}
+            >
+              <div style={{ position: "absolute", top: 3, left: 3, right: 3, height: 1, background: accent }} />
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 36,
+                  color: T.ink,
+                  letterSpacing: -1.5,
+                  lineHeight: 1,
+                }}
+              >
+                {PP_PLAYER.caddyNo}
+              </div>
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 4,
+                  left: 0,
+                  right: 0,
+                  textAlign: "center",
+                  fontFamily: T.mono,
+                  fontSize: 5.5,
+                  letterSpacing: 1.8,
+                  color: T.pencil,
+                  textTransform: "uppercase",
+                  fontWeight: 600,
+                }}
+              >
+                GHIN {PP_PLAYER.ghin}
+              </div>
             </div>
           </div>
+        </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            {CLUBS.map((c) => {
-              const v = profile.clubDistances[c.key];
+        {/* Handicap hero */}
+        <PPSection kicker="Handicap index" title="Trending down, quietly.">
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 16 }}>
+            <div
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 72,
+                letterSpacing: -2.4,
+                color: T.ink,
+                lineHeight: 0.9,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {HANDICAP.index}
+            </div>
+            <div style={{ flex: 1, paddingBottom: 8 }}>
+              <BigSpark data={HANDICAP.history} accent={accent} />
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.3,
+                  color: accent,
+                  textTransform: "uppercase",
+                  fontWeight: 500,
+                  marginTop: 4,
+                }}
+              >
+                ↓ {Math.abs(HANDICAP.trend90).toFixed(1)} · last 90 days
+              </div>
+            </div>
+          </div>
+        </PPSection>
+
+        {/* Strokes gained */}
+        <PPSection kicker="Strokes gained" title="Where the shots live.">
+          <div>
+            {SG.map((s, i) => {
+              const pos = s.you >= 0;
               return (
                 <div
-                  key={c.key}
-                  className="rounded-xl p-3 text-center"
-                  style={{ background: 'var(--paper-deep)', border: '1px solid var(--hairline)' }}
+                  key={s.cat}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto",
+                    gap: 12,
+                    padding: "10px 0",
+                    borderTop: i === 0 ? `1px solid ${T.hairline}` : `1px dashed ${T.hairline}`,
+                  }}
                 >
-                  <div className="mono text-[9px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
-                    {c.label.toUpperCase()}
+                  <div>
+                    <div style={{ fontFamily: T.serif, fontSize: 16, color: T.ink, letterSpacing: -0.2 }}>{s.cat}</div>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 12.5,
+                        color: T.pencil,
+                        letterSpacing: -0.1,
+                        marginTop: 1,
+                      }}
+                    >
+                      {s.label}
+                    </div>
                   </div>
-                  <input
-                    inputMode="numeric"
-                    value={v ?? ''}
-                    onChange={(e) => {
-                      const n = parseOptionalNumber(e.target.value);
-                      setProfile((p) => ({
-                        ...p,
-                        clubDistances: { ...p.clubDistances, [c.key]: n === null ? undefined : n },
-                      }));
-                    }}
-                    placeholder="—"
-                    className="w-full text-center display text-[26px] bg-transparent outline-none mt-0.5"
-                  />
-                  <div className="mono text-[9px]" style={{ color: 'var(--pencil)' }}>
-                    YDS
+                  <div style={{ textAlign: "right" }}>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontSize: 22,
+                        color: pos ? accent : T.pencil,
+                        fontVariantNumeric: "tabular-nums",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {pos ? "+" : ""}
+                      {s.you.toFixed(1)}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 8,
+                        letterSpacing: 1.1,
+                        color: T.pencilSoft,
+                        textTransform: "uppercase",
+                        marginTop: 2,
+                      }}
+                    >
+                      vs 10 hcp
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
-        </section>
+        </PPSection>
 
-        {/* Shortcuts */}
-        <section className="pt-4">
-          <Link href="/players" className="flex items-center gap-4 py-4 hair-bot group">
-            <div
-              className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
-              style={{ background: 'var(--paper-deep)' }}
-            >
-              <Users className="h-4 w-4" />
-            </div>
-            <div className="flex-1">
-              <div className="serif text-[17px] leading-tight">My players</div>
-              <div className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
-                GOLF BUDDIES · GROUP HISTORY
+        {/* The bag */}
+        <PPSection kicker="The bag" title="Club distances, honest.">
+          <div>
+            {BAG.map((c, i) => {
+              const pct = (c.carry / 280) * 100;
+              return (
+                <div
+                  key={c.club}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "72px 1fr 60px",
+                    gap: 10,
+                    padding: "8px 0",
+                    alignItems: "center",
+                    borderTop: i === 0 ? `1px solid ${T.hairline}` : `1px dashed ${T.hairline}`,
+                  }}
+                >
+                  <div style={{ fontFamily: T.serif, fontSize: 15, color: T.ink, letterSpacing: -0.2 }}>{c.club}</div>
+                  <div style={{ position: "relative", height: 6, background: T.paperDeep, borderRadius: 99, overflow: "hidden" }}>
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${pct}%`,
+                        background: accent,
+                        borderRadius: 99,
+                      }}
+                    />
+                  </div>
+                  <div
+                    style={{
+                      textAlign: "right",
+                      fontFamily: T.serif,
+                      fontSize: 15,
+                      color: T.ink,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {c.carry}
+                    <span style={{ fontFamily: T.mono, fontSize: 9, color: T.pencilSoft, letterSpacing: 1, marginLeft: 3 }}>Y</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </PPSection>
+
+        {/* Recent rounds */}
+        <PPSection kicker="Recent rounds" title="The pages behind you.">
+          <div>
+            {RECENT.map((r, i) => (
+              <div
+                key={r.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "48px 1fr auto",
+                  gap: 12,
+                  padding: "10px 0",
+                  alignItems: "center",
+                  borderTop: i === 0 ? `1px solid ${T.hairline}` : `1px dashed ${T.hairline}`,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 8,
+                      letterSpacing: 1.2,
+                      color: T.pencilSoft,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {r.date.split(" ")[0]}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontSize: 22,
+                      color: T.ink,
+                      lineHeight: 1,
+                      letterSpacing: -0.4,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {r.date.split(" ")[1]}
+                  </div>
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ fontFamily: T.serif, fontSize: 16, color: T.ink, letterSpacing: -0.2 }}>{r.course}</div>
+                    {r.tag && (
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 8,
+                          letterSpacing: 1,
+                          color: accent,
+                          textTransform: "uppercase",
+                          border: `1px solid ${accent}`,
+                          padding: "1px 4px",
+                          borderRadius: 3,
+                        }}
+                      >
+                        {r.tag}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 9,
+                      letterSpacing: 1.2,
+                      color: T.pencilSoft,
+                      textTransform: "uppercase",
+                      marginTop: 2,
+                    }}
+                  >
+                    {r.diff} to par
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontSize: 26,
+                      color: T.ink,
+                      lineHeight: 1,
+                      letterSpacing: -0.6,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {r.score}
+                  </div>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" style={{ color: 'var(--pencil)' }} />
-          </Link>
+            ))}
+          </div>
+        </PPSection>
 
-          <Link href="/settings" className="flex items-center gap-4 py-4 hair-bot group">
-            <div className="flex-1">
-              <div className="serif text-[17px] leading-tight">Settings</div>
-              <div className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
-                API KEYS · INTEGRATIONS
-              </div>
-            </div>
-            <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" style={{ color: 'var(--pencil)' }} />
-          </Link>
-        </section>
-
-        <div className="mt-10 mb-4">
-          <button onClick={handleSave} className="btn-ink w-full py-3.5">
-            <span className="serif-italic text-[16px]">{saved ? 'Saved' : 'Save profile'}</span>
-          </button>
+        <div style={{ padding: "24px 22px 36px", textAlign: "center" }}>
+          <div
+            style={{
+              fontFamily: T.mono,
+              fontSize: 8.5,
+              letterSpacing: 1.8,
+              color: T.pencilSoft,
+              textTransform: "uppercase",
+              fontWeight: 500,
+            }}
+          >
+            Stored locally · on this device
+          </div>
         </div>
-
-        <div className="mono text-[9px] tracking-[0.28em] text-center" style={{ color: 'var(--pencil)' }}>
-          STORED LOCALLY · ON THIS DEVICE
-        </div>
-      </main>
-    </PaperShell>
-  );
-}
-
-function StatCell({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
-  return (
-    <div>
-      <div className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
-        {label.toUpperCase()}
       </div>
-      <div className="display mt-2 leading-none" style={{ fontSize: 'clamp(36px, 8vw, 48px)' }}>
-        {value}
-      </div>
-      {sub && (
-        <div className="mono text-[9px] tracking-[0.22em] mt-2" style={{ color: 'var(--pencil)' }}>
-          {sub.toUpperCase()}
-        </div>
-      )}
     </div>
   );
 }
 
-function TallyBar({ label, count, color }: { label: string; count: number; color: string }) {
-  const height = Math.min(72, Math.max(6, count * 2));
+function PPSection({ kicker, title, children }: { kicker: string; title: string; children: React.ReactNode }) {
   return (
-    <div className="flex-1 flex flex-col items-center gap-2">
-      <div className="display text-[26px] leading-none" style={{ color }}>
-        {count}
+    <section style={{ padding: "22px 22px 18px", borderTop: `1px solid ${T.hairline}`, position: "relative" }}>
+      <div style={{ marginBottom: 12 }}>
+        <div
+          style={{
+            fontFamily: T.mono,
+            fontSize: 9,
+            letterSpacing: 1.6,
+            color: T.pencil,
+            textTransform: "uppercase",
+            fontWeight: 500,
+          }}
+        >
+          {kicker}
+        </div>
+        <div
+          style={{
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 22,
+            color: T.ink,
+            letterSpacing: -0.4,
+            lineHeight: 1,
+            marginTop: 3,
+          }}
+        >
+          {title}
+        </div>
       </div>
-      <div style={{ width: '100%', height, background: color, borderRadius: 3, opacity: 0.85 }} />
-      <div className="mono text-[9px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
-        {label.toUpperCase()}
-      </div>
-    </div>
+      {children}
+    </section>
   );
 }
 
-function LabeledInput({
-  label,
-  value,
-  onChange,
-  placeholder,
-  inputMode,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  inputMode?: 'text' | 'decimal' | 'numeric';
-}) {
+function BigSpark({ data, accent }: { data: number[]; accent: string }) {
+  const w = 220;
+  const h = 48;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const pts = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * w;
+      const y = h - ((v - min) / (max - min || 1)) * h;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  const lastY = h - ((data[data.length - 1] - min) / (max - min || 1)) * h;
   return (
-    <div>
-      <label className="mono text-[10px] tracking-[0.22em] block mb-1.5" style={{ color: 'var(--pencil)' }}>
-        {label.toUpperCase()}
-      </label>
-      <input
-        inputMode={inputMode}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="input-paper"
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block" }}>
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={accent}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
-    </div>
+      <circle cx={w} cy={lastY} r="3" fill={accent} />
+      <circle cx={w} cy={lastY} r="6" fill="none" stroke={accent} strokeWidth="0.6" opacity="0.5" />
+    </svg>
   );
 }
