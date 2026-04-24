@@ -16,11 +16,14 @@ import CaddieModal from '@/components/CaddieModal';
 import TournamentLeaderboard from '@/components/TournamentLeaderboard';
 import EditGroupsModal from '@/components/EditGroupsModal';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Camera, Check, Map, Trophy, ChevronRight, Users, Settings2 } from 'lucide-react';
+import { ArrowLeft, Camera, Check, ChevronLeft, ChevronRight, Flag, Map, Trophy, User, Users } from 'lucide-react';
 import { fetchCourseCoordinates, CourseCoordinates } from '@/lib/golf-api';
 import { courseToCoordinates } from '@/lib/courses/coordinates';
 import type { CourseData } from '@/lib/courses/types';
-import { hapticCelebration, hapticSuccess } from '@/lib/haptics';
+import { hapticCelebration } from '@/lib/haptics';
+import PaperShell from '@/components/yardage/PaperShell';
+import HoleCard from '@/components/yardage/HoleCard';
+import VoiceOrb from '@/components/yardage/VoiceOrb';
 
 export default function RoundPage() {
   const params = useParams();
@@ -256,93 +259,78 @@ export default function RoundPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500/80" />
-      </div>
+      <PaperShell>
+        <div className="min-h-screen flex items-center justify-center">
+          <span className="eyebrow">Loading…</span>
+        </div>
+      </PaperShell>
     );
   }
 
   if (!round) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4 text-zinc-100">
-        <p className="text-xl font-semibold mb-2">Round not found</p>
-        <Link href="/" className="text-emerald-400 hover:text-emerald-300 transition-colors">
-          ← Back to Home
-        </Link>
-      </div>
+      <PaperShell>
+        <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
+          <div className="serif-italic text-[28px]">Round not found.</div>
+          <Link href="/" className="btn-ghost mt-4">
+            <ArrowLeft className="h-4 w-4" /> Back home
+          </Link>
+        </div>
+      </PaperShell>
     );
   }
 
   const backHref = round.tournamentId ? `/tournament/${round.tournamentId}` : '/';
 
+  const currentHoleInfo = round.holes.find((h) => h.number === currentHole) ?? round.holes[0];
+
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-3">
-            <Link href={backHref} className="btn btn-icon" aria-label="Back">
-              ←
-            </Link>
-
-            <div className="flex-1 min-w-0">
-              <h1 className="text-base sm:text-lg font-semibold tracking-tight truncate">
-                {round.courseName}
-                {round.teeName ? ` (${round.teeName})` : ''}
-              </h1>
-              <p className="text-sm text-zinc-400">
-                Hole <span className="text-zinc-200 font-medium">{currentHole}</span> • {round.players.length} player
-                {round.players.length !== 1 ? 's' : ''}
-              </p>
+    <PaperShell>
+      {/* Top chrome */}
+      <header className="sticky top-0 z-20 hair-bot" style={{ background: 'color-mix(in oklab, var(--paper) 88%, transparent)', backdropFilter: 'blur(10px)' }}>
+        <div className="max-w-xl mx-auto px-4 py-3 flex items-center gap-2">
+          <Link href={backHref} className="btn-icon" aria-label="Back">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <div className="flex-1 min-w-0 text-center">
+            <div className="serif text-[16px] truncate leading-tight">
+              {round.courseName}
+              {round.teeName ? ` · ${round.teeName}` : ''}
             </div>
-
-            {/* Edit Groups button - only show if round has groups or is a tournament round */}
-            {(round.groups || round.tournamentId) && (
-              <button 
-                onClick={() => setShowEditGroups(true)} 
-                className="btn btn-icon" 
-                title="Edit Groups" 
-                aria-label="Edit Groups"
-              >
-                <Users className="h-5 w-5" aria-hidden="true" />
-              </button>
-            )}
-            <button onClick={() => setShowCaddie(true)} className="btn btn-icon" title="Caddie" aria-label="Caddie">
-              <Map className="h-5 w-5" aria-hidden="true" />
-            </button>
-            <button onClick={() => setShowCamera(true)} className="btn btn-icon" title="Scan scorecard" aria-label="Scan scorecard">
-              <Camera className="h-5 w-5" aria-hidden="true" />
-            </button>
+            <div className="mono text-[10px]" style={{ color: 'var(--pencil)' }}>
+              HOLE {currentHole}/{round.holes.length} · {round.players.length} PLAYER{round.players.length !== 1 ? 'S' : ''}
+            </div>
           </div>
+          <VoiceOrb size={18} active onClick={() => setShowCaddie(true)} />
+          <button onClick={() => setShowCamera(true)} className="btn-icon" aria-label="Scan scorecard">
+            <Camera className="h-4 w-4" />
+          </button>
+          <Link href="/profile" className="btn-icon" aria-label="Profile">
+            <User className="h-4 w-4" />
+          </Link>
         </div>
-        <div className="header-divider" />
       </header>
 
-      {/* Tournament Banner - shows when round is part of a tournament */}
+      {/* Tournament strip */}
       {tournament && (
-        <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-500/20">
-          <div className="max-w-4xl mx-auto px-4 py-2">
-            <Link 
-              href={`/tournament/${tournament.id}`}
-              className="flex items-center justify-between group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                  <Trophy className="w-4 h-4 text-amber-400" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-amber-200 group-hover:text-amber-100 transition-colors">
-                    {tournament.name}
-                  </div>
-                  <div className="text-xs text-amber-400/70">
-                    Round {tournamentRounds.findIndex(r => r.id === round?.id) + 1} of {tournament.numRounds || tournamentRounds.length}
-                    {' • '}{tournament.playerIds.length} players
-                  </div>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-amber-400/50 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
-            </Link>
+        <Link
+          href={`/tournament/${tournament.id}`}
+          className="block hair-bot px-4 py-2 flex items-center gap-3"
+          style={{ background: 'var(--paper-deep)' }}
+        >
+          <Trophy className="h-4 w-4" style={{ color: 'var(--accent)' }} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="mono text-[10px] tracking-[0.2em]" style={{ color: 'var(--accent)' }}>
+                VII · TOURNAMENT · LIVE
+              </span>
+            </div>
+            <div className="serif text-[14px] truncate">
+              {tournament.name} · Round {tournamentRounds.findIndex((r) => r.id === round?.id) + 1} of {tournament.numRounds || tournamentRounds.length}
+            </div>
           </div>
-        </div>
+          <ChevronRight className="h-4 w-4" style={{ color: 'var(--pencil)' }} />
+        </Link>
       )}
 
       <AnimatePresence initial={false}>
@@ -383,24 +371,58 @@ export default function RoundPage() {
         ) : null}
       </AnimatePresence>
 
-      <main className="max-w-4xl mx-auto px-4 pt-5 pb-32">
+      <main className="max-w-xl mx-auto px-4 pt-4 pb-32">
+        {/* Hole card hero with caddy panel */}
+        {currentHoleInfo && (
+          <div className="mb-4">
+            <HoleCard hole={currentHoleInfo} total={round.holes.length} />
+            {/* Hole chip strip */}
+            <div className="mt-3 flex gap-1 overflow-x-auto pb-1" style={{ scrollSnapType: 'x mandatory' }}>
+              {round.holes.map((h) => {
+                const active = h.number === currentHole;
+                const me = round.players[0];
+                const played = me ? round.scores.find((s) => s.playerId === me.id && s.holeNumber === h.number && s.strokes != null) : null;
+                return (
+                  <button
+                    key={h.number}
+                    onClick={() => setCurrentHole(h.number)}
+                    className="shrink-0 mono text-[12px] rounded-xl flex flex-col items-center justify-center"
+                    style={{
+                      scrollSnapAlign: 'center',
+                      width: 44,
+                      height: 44,
+                      background: active ? 'var(--ink)' : 'var(--paper)',
+                      color: active ? 'var(--paper)' : 'var(--ink)',
+                      border: `1px solid ${active ? 'var(--ink)' : 'var(--hairline)'}`,
+                    }}
+                  >
+                    <span style={{ fontSize: 13 }}>{h.number}</span>
+                    {played && <span className="flag-dot" style={{ width: 4, height: 4, background: active ? 'var(--paper)' : 'var(--accent)' }} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Pill tabs */}
         <div className="pill-tabs flex gap-1 mb-4">
           <button
             onClick={() => setActiveTab('scores')}
-            className={`pill-tab ${activeTab === 'scores' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+            className={`pill-tab ${activeTab === 'scores' ? 'pill-tab-active' : ''}`}
           >
-            Scores
+            Scorecard
           </button>
           <button
             onClick={() => setActiveTab('games')}
-            className={`pill-tab ${activeTab === 'games' ? 'pill-tab-active text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+            className={`pill-tab ${activeTab === 'games' ? 'pill-tab-active' : ''}`}
           >
             Games
           </button>
           {tournament && (
             <button
               onClick={() => setActiveTab('tournament')}
-              className={`pill-tab flex items-center gap-1.5 ${activeTab === 'tournament' ? 'pill-tab-active text-amber-200' : 'text-zinc-400 hover:text-zinc-200'}`}
+              className={`pill-tab flex items-center justify-center gap-1.5 ${activeTab === 'tournament' ? 'pill-tab-active' : ''}`}
             >
               <Trophy className="w-3.5 h-3.5" />
               Leaderboard
@@ -421,40 +443,36 @@ export default function RoundPage() {
               <GameLeaderboards round={round} />
 
               <div className="mt-6 space-y-3">
-                <button onClick={() => setShowCamera(true)} className="btn btn-secondary w-full">
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <Camera className="h-5 w-5" aria-hidden="true" />
-                    <span>Scan Physical Scorecard</span>
-                  </span>
+                <button onClick={() => setShowCamera(true)} className="btn-paper w-full">
+                  <Camera className="h-5 w-5" aria-hidden="true" />
+                  <span>Scan physical scorecard</span>
                 </button>
 
                 {round.status === 'active' && (
-                  <button onClick={handleCompleteRound} className="btn btn-primary w-full">
-                    <span className="inline-flex items-center justify-center gap-2">
-                      <Check className="h-5 w-5" aria-hidden="true" />
-                      <span>Complete Round</span>
-                    </span>
+                  <button onClick={handleCompleteRound} className="btn-ink w-full">
+                    <Flag className="h-5 w-5" aria-hidden="true" />
+                    <span>Sign &amp; finish round</span>
                   </button>
                 )}
               </div>
 
-              <div className="mt-6 card p-4">
-                <h3 className="text-xs font-medium text-zinc-400 tracking-wide uppercase mb-3">Score Colors</h3>
-                <div className="flex flex-wrap gap-3 text-sm">
-                  <span className="flex items-center gap-2 text-zinc-300">
-                    <span className="w-4 h-4 rounded-md bg-yellow-400/90" /> Eagle
+              <div className="mt-6 sheet p-4">
+                <div className="eyebrow mb-3">Scorecard glyphs</div>
+                <div className="flex flex-wrap gap-4 text-sm">
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full" style={{ background: 'var(--score-eagle)' }} /> Eagle
                   </span>
-                  <span className="flex items-center gap-2 text-zinc-300">
-                    <span className="w-4 h-4 rounded-md bg-red-500/90" /> Birdie
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full" style={{ background: 'var(--accent)' }} /> Birdie
                   </span>
-                  <span className="flex items-center gap-2 text-zinc-300">
-                    <span className="w-4 h-4 rounded-md bg-emerald-500/90" /> Par
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 rounded-full" style={{ background: 'var(--ink)' }} /> Par
                   </span>
-                  <span className="flex items-center gap-2 text-zinc-300">
-                    <span className="w-4 h-4 rounded-md bg-sky-400/90" /> Bogey
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4" style={{ background: 'var(--flag-back)' }} /> Bogey
                   </span>
-                  <span className="flex items-center gap-2 text-zinc-300">
-                    <span className="w-4 h-4 rounded-md bg-blue-600/90" /> Double+
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4" style={{ background: 'var(--score-double)' }} /> Double+
                   </span>
                 </div>
               </div>
@@ -613,7 +631,7 @@ export default function RoundPage() {
                 const playerGroup = groups.find(g => g.playerIds.includes(p.id));
                 return { ...p, groupId: playerGroup?.id };
               });
-              
+
               const updatedRound = {
                 ...round,
                 groups: groups.length > 0 ? groups : undefined,
@@ -627,6 +645,6 @@ export default function RoundPage() {
           />
         )}
       </AnimatePresence>
-    </div>
+    </PaperShell>
   );
 }

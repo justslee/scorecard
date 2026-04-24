@@ -1,154 +1,279 @@
 @import "tailwindcss";
 
 :root {
-  /* Dark mode first */
-  --background: #09090b; /* zinc-950 */
-  --foreground: #fafafa;
+  /* The Yardage Book palette — warm paper + ink */
+  --paper: #f4f1ea;          /* warm cream paper */
+  --paper-deep: #ebe6db;     /* slightly darker paper */
+  --paper-edge: #ddd6c5;     /* edge/divider tone */
+  --ink: #1a2a1a;            /* deep fairway ink */
+  --ink-soft: #2a2a28;       /* graphite */
+  --pencil: #6b6558;         /* pencil gray */
+  --pencil-soft: #968f7e;    /* lighter pencil */
+  --hairline: rgba(26, 42, 26, 0.12);
 
-  /* Glass / cards */
-  --card: rgba(24, 24, 27, 0.72);
-  --card-strong: rgba(24, 24, 27, 0.9);
-  --border: rgba(255, 255, 255, 0.10);
+  /* Flag red — accent; only for the flagstick & current hole */
+  --accent: #b4553f;         /* muted brick red */
+  --accent-strong: #a8553f;
+  --accent-soft: #d6a18f;
 
-  /* Accent */
-  --accent: #10b981; /* emerald-500 */
-  --accent-600: #059669; /* emerald-600 */
+  /* Pin position flag colors (USGA convention, earthy) */
+  --flag-front: #a8553f;     /* muted brick red */
+  --flag-center: var(--ink); /* ink-on-paper suggests white pin */
+  --flag-back: #5d7285;      /* dusty slate blue */
+
+  /* Scoring */
+  --score-eagle: #8a6f2f;    /* tarnished gold */
+  --score-birdie: var(--accent);
+  --score-par: var(--ink);
+  --score-bogey: #5d7285;
+  --score-double: #4a5668;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
-  --font-mono: var(--font-jetbrains-mono);
+  --font-serif: var(--font-serif);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
 @layer base {
   html {
     font-size: 16px;
     line-height: 1.5;
+    background: var(--paper);
   }
 
   body {
-    background: radial-gradient(1200px 700px at 20% -10%, rgba(16, 185, 129, 0.12), transparent 55%),
-      radial-gradient(900px 600px at 110% 10%, rgba(59, 130, 246, 0.10), transparent 45%),
-      var(--background);
-    color: var(--foreground);
-    font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji",
-      "Segoe UI Emoji";
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Subtle paper grain — very low opacity noise overlay on the whole app */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.35;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 0 0.08  0 0 0 0.08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    mix-blend-mode: multiply;
   }
 }
 
 @layer components {
-  .app-shell {
-    @apply min-h-screen text-zinc-50;
+  /* Page shells */
+  .paper {
+    @apply min-h-screen relative;
+    background: var(--paper);
+    color: var(--ink);
   }
 
+  .paper-content {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Yardage book typographic helpers */
+  .serif {
+    font-family: var(--font-serif), Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+  .serif-italic {
+    font-family: var(--font-serif), Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+  }
+  .mono {
+    font-family: var(--font-mono), ui-monospace, "SF Mono", monospace;
+    letter-spacing: 0.02em;
+  }
+  .eyebrow {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 10px;
+    color: var(--pencil);
+  }
+  .display {
+    font-family: var(--font-serif), Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 0.95;
+    color: var(--ink);
+  }
+
+  /* Cards and surfaces */
+  .sheet {
+    background: var(--paper);
+    border: 1px solid var(--hairline);
+    border-radius: 20px;
+    box-shadow: 0 1px 0 rgba(26, 42, 26, 0.04);
+  }
+  .sheet-deep {
+    background: var(--paper-deep);
+    border: 1px solid var(--hairline);
+    border-radius: 20px;
+  }
+  .hairline {
+    border-color: var(--hairline);
+  }
+  .hair-top { border-top: 1px solid var(--hairline); }
+  .hair-bot { border-bottom: 1px solid var(--hairline); }
+
+  /* Buttons */
+  .btn-ink {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium transition-all active:scale-[0.98];
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .btn-accent {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium transition-all active:scale-[0.98];
+    background: var(--accent);
+    color: var(--paper);
+  }
+  .btn-paper {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium transition-all active:scale-[0.98];
+    background: var(--paper);
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm transition-all active:scale-[0.98];
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+    background: transparent;
+  }
+  .btn-ghost:hover { background: rgba(26, 42, 26, 0.04); }
+
+  /* Pills & chips */
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs;
+    background: var(--paper);
+    border: 1px solid var(--hairline);
+    color: var(--ink);
+  }
+  .pill-accent {
+    background: color-mix(in oklab, var(--accent) 14%, var(--paper));
+    color: var(--accent);
+    border-color: color-mix(in oklab, var(--accent) 30%, transparent);
+  }
+  .pill-ink {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  /* Inputs */
+  .input-paper {
+    @apply w-full rounded-xl px-4 py-3 text-base transition-all;
+    background: var(--paper-deep);
+    color: var(--ink);
+    border: 1px solid var(--hairline);
+  }
+  .input-paper:focus { outline: none; border-color: var(--ink); background: var(--paper); }
+
+  /* Dot indicators for flag positions */
+  .flag-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    display: inline-block;
+    border: 1px solid var(--hairline);
+  }
+
+  /* Big caddy voice quote */
+  .quote {
+    font-family: var(--font-serif), Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+
+  /* Divider rule — a double hairline for editorial feel */
+  .rule-editorial {
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    height: 4px;
+  }
+
+  /* Legacy helpers kept for files not yet migrated */
+  .app-shell { @apply min-h-screen; color: var(--ink); }
   .app-header {
-    @apply sticky top-0 z-30 backdrop-blur-xl bg-zinc-950/55 border-b border-white/10;
+    @apply sticky top-0 z-30;
+    background: color-mix(in oklab, var(--paper) 85%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--hairline);
   }
-
   .header-divider {
-    background: linear-gradient(90deg, rgba(16,185,129,0.35), rgba(255,255,255,0));
+    background: linear-gradient(90deg, var(--accent), transparent);
     height: 1px;
     width: 100%;
+    opacity: 0.3;
   }
-
   .card {
-    background: var(--card);
-    backdrop-filter: blur(14px);
-    border: 1px solid var(--border);
-    border-radius: 1.25rem; /* ~rounded-2xl */
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+    background: var(--paper);
+    border: 1px solid var(--hairline);
+    border-radius: 20px;
   }
-
-  .card-hover {
-    @apply transition-transform duration-150 ease-out hover:-translate-y-0.5 hover:shadow-xl;
-  }
-
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
-  }
-
+  .card-hover { @apply transition-transform hover:-translate-y-0.5; }
+  .btn { @apply inline-flex items-center justify-center gap-2 font-medium transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed; }
   .btn-primary {
-    background: linear-gradient(135deg, var(--accent), var(--accent-600));
-    @apply rounded-full px-5 py-3 text-base shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/25 hover:scale-[1.02];
+    @apply rounded-full px-5 py-3 text-base;
+    background: var(--ink);
+    color: var(--paper);
   }
-
   .btn-secondary {
-    @apply rounded-full px-5 py-3 text-base bg-white/7 hover:bg-white/10 border border-white/10;
+    @apply rounded-full px-5 py-3 text-base;
+    background: var(--paper);
+    color: var(--ink);
+    border: 1px solid var(--hairline);
   }
-
   .btn-icon {
-    @apply rounded-full p-2 bg-white/7 hover:bg-white/10 border border-white/10;
+    @apply rounded-full p-2;
+    background: var(--paper);
+    border: 1px solid var(--hairline);
+    color: var(--ink);
   }
-
   .pill-tabs {
-    @apply rounded-full bg-white/5 border border-white/10 p-1 backdrop-blur;
+    @apply rounded-full p-1;
+    background: var(--paper-deep);
+    border: 1px solid var(--hairline);
   }
-
-  .pill-tab {
-    @apply flex-1 rounded-full px-4 py-2 text-sm font-semibold transition-all duration-150;
-  }
-
-  .pill-tab-active {
-    @apply bg-white/10 shadow-inner;
-  }
-
-  .muted {
-    @apply text-zinc-400;
-  }
+  .pill-tab { @apply flex-1 rounded-full px-4 py-2 text-sm font-medium transition-all; color: var(--pencil); }
+  .pill-tab-active { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(26,42,26,0.06); }
+  .muted { color: var(--pencil); }
 }
 
-/* Prevent pull-to-refresh on mobile */
-html, body {
-  overscroll-behavior: none;
-}
+html, body { overscroll-behavior: none; }
+.overflow-x-auto { -webkit-overflow-scrolling: touch; }
 
-/* Score grid scrolling */
-.overflow-x-auto {
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Number input - hide spinners */
 input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }
 
-input[type="number"] {
-  -moz-appearance: textfield;
-}
+::selection { background: color-mix(in oklab, var(--accent) 30%, transparent); color: var(--ink); }
 
-/* Selection color */
-::selection {
-  background: rgba(16, 185, 129, 0.35);
-  color: white;
-}
-
-/* Focus styles - buttons and interactive elements */
 button:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible {
-  outline: 2px solid rgba(16, 185, 129, 0.9);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
+html { scroll-behavior: smooth; }
 
-/* Inputs use their own focus styles */
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  outline: none;
-}
-
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
-}
-
-/* Safe area padding for mobile */
 @supports (padding: max(0px)) {
   body {
     padding-left: max(0px, env(safe-area-inset-left));
@@ -156,3 +281,26 @@ html {
     padding-bottom: max(0px, env(safe-area-inset-bottom));
   }
 }
+
+/* Custom utility for noise-free sections where grain looks muddy */
+.no-grain { position: relative; z-index: 1; }
+
+/* Waveform bars animation */
+@keyframes wave {
+  0%, 100% { height: 6px; }
+  50% { height: 18px; }
+}
+.wave-bar {
+  display: inline-block;
+  width: 2px;
+  background: currentColor;
+  border-radius: 2px;
+  animation: wave 1.1s ease-in-out infinite;
+}
+
+/* Breathing voice orb */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+.breathe { animation: breathe 2.4s ease-in-out infinite; }

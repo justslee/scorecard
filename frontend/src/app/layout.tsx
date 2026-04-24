@@ -1,28 +1,36 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Instrument_Serif, Geist, Geist_Mono } from "next/font/google";
 import AuthProvider from "@/components/AuthProvider";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const serif = Instrument_Serif({
+  variable: "--font-serif",
+  subsets: ["latin"],
+  weight: ["400"],
+  style: ["normal", "italic"],
+  display: "swap",
+});
+
+const sans = Geist({
+  variable: "--font-sans",
   subsets: ["latin"],
   display: "swap",
 });
 
-const mono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
+const mono = Geist_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Scorecard - Golf Scoring App",
-  description: "Track your golf rounds with OCR scorecard scanning",
+  title: "Looper — The Yardage Book",
+  description: "A quiet, voice-first golf companion. Scorecard, caddy, and tee times.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Scorecard",
+    title: "Looper",
   },
 };
 
@@ -31,7 +39,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#10b981",
+  themeColor: "#f4f1ea",
 };
 
 export default function RootLayout({
@@ -44,7 +52,7 @@ export default function RootLayout({
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
-      <body className={`${inter.variable} ${mono.variable} antialiased`}>
+      <body className={`${serif.variable} ${sans.variable} ${mono.variable} antialiased`}>
         <AuthProvider>
           {children}
         </AuthProvider>
