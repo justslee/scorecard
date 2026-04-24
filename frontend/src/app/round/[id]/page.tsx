@@ -9,6 +9,7 @@ import HoleCard from "@/components/yardage/HoleCard";
 import { VoiceOrb, VoiceSheet, VoiceState, VoiceTurn } from "@/components/yardage/Voice";
 import { PlayerPanel, StakesTicker, SeedPlayer } from "@/components/yardage/Scorecard";
 import ScoreSheet from "@/components/yardage/ScoreSheet";
+import LeaderboardSheet from "@/components/yardage/LeaderboardSheet";
 import { Round } from "@/lib/types";
 import { getRound, saveRound } from "@/lib/storage";
 import { hapticCelebration } from "@/lib/haptics";
@@ -41,6 +42,7 @@ export default function RoundPage() {
   const [expanded, setExpanded] = useState(true);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [scoreOpen, setScoreOpen] = useState(false);
+  const [lbOpen, setLbOpen] = useState(false);
   const [slideDir, setSlideDir] = useState(0);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [turns, setTurns] = useState<VoiceTurn[]>([]);
@@ -250,6 +252,28 @@ export default function RoundPage() {
               <div style={{ fontFamily: T.serif, fontSize: 19, fontStyle: "italic", color: T.ink, letterSpacing: -0.3 }}>Round in progress</div>
             </div>
           </div>
+          <button
+            onClick={() => setLbOpen(true)}
+            title="Leaderboard"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 99,
+              border: `1px solid ${T.hairline}`,
+              background: "transparent",
+              color: T.ink,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3 2h8v3.5a4 4 0 0 1-8 0V2Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+              <path d="M3 3H1.5a1.5 1.5 0 0 0 1.5 3M11 3h1.5a1.5 1.5 0 0 1-1.5 3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+              <path d="M5 10.5h4M6 9v1.5M8 9v1.5M4.5 12.5h5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+            </svg>
+          </button>
           <button
             onClick={handleFinish}
             title="Finish round"
@@ -491,6 +515,15 @@ export default function RoundPage() {
         players={SEED_PLAYERS}
         scores={scores}
         onSetScore={handleSetScore}
+        accent={accent}
+      />
+
+      <LeaderboardSheet
+        open={lbOpen}
+        onClose={() => setLbOpen(false)}
+        players={SEED_PLAYERS}
+        scores={scores}
+        pars={HOLES.map((h) => h.par)}
         accent={accent}
       />
     </div>
