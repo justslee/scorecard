@@ -1,27 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  /* The Yardage Book palette — warm paper + ink */
+  /* The Yardage Book palette — printed on warm paper */
   --paper: #f4f1ea;          /* warm cream paper */
-  --paper-deep: #ebe6db;     /* slightly darker paper */
-  --paper-edge: #ddd6c5;     /* edge/divider tone */
+  --paper-deep: #ede8dc;     /* a touch deeper for cards */
+  --paper-edge: #e2dcc9;     /* edge/divider tone */
   --ink: #1a2a1a;            /* deep fairway ink */
   --ink-soft: #2a2a28;       /* graphite */
-  --pencil: #6b6558;         /* pencil gray */
-  --pencil-soft: #968f7e;    /* lighter pencil */
-  --hairline: rgba(26, 42, 26, 0.12);
+  --pencil: #6b6558;         /* pencil gray (pencil-hard) */
+  --pencil-soft: #968f7e;    /* lighter pencil (pencil-soft) */
+  --hairline: rgba(26, 42, 26, 0.10);
+  --hairline-strong: rgba(26, 42, 26, 0.18);
 
-  /* Flag red — accent; only for the flagstick & current hole */
-  --accent: #b4553f;         /* muted brick red */
-  --accent-strong: #a8553f;
-  --accent-soft: #d6a18f;
+  /* Flag red — the one accent, only for flagstick & current hole */
+  --accent: oklch(0.54 0.18 28);
+  --accent-soft: oklch(0.78 0.09 28);
+  --accent-wash: oklch(0.94 0.04 28);
 
   /* Pin position flag colors (USGA convention, earthy) */
-  --flag-front: #a8553f;     /* muted brick red */
-  --flag-center: var(--ink); /* ink-on-paper suggests white pin */
-  --flag-back: #5d7285;      /* dusty slate blue */
+  --flag-front: oklch(0.58 0.12 30);   /* muted brick red */
+  --flag-center: var(--ink);           /* ink-on-paper stands in for white pin */
+  --flag-back: #5d7285;                /* dusty slate blue */
 
-  /* Scoring */
+  /* Scoring glyph colors */
   --score-eagle: #8a6f2f;    /* tarnished gold */
   --score-birdie: var(--accent);
   --score-par: var(--ink);
@@ -55,15 +56,15 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Subtle paper grain — very low opacity noise overlay on the whole app */
+  /* Subtle paper grain — barely-there noise */
   body::before {
     content: "";
     position: fixed;
     inset: 0;
     pointer-events: none;
     z-index: 0;
-    opacity: 0.35;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 0 0.08  0 0 0 0.08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    opacity: 0.18;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='1' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.1  0 0 0 0 0.1  0 0 0 0 0.08  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
     mix-blend-mode: multiply;
   }
 }
@@ -113,23 +114,27 @@
     color: var(--ink);
   }
 
-  /* Cards and surfaces */
+  /* Cards and surfaces — quieter borders, no shadow */
   .sheet {
     background: var(--paper);
     border: 1px solid var(--hairline);
-    border-radius: 20px;
-    box-shadow: 0 1px 0 rgba(26, 42, 26, 0.04);
+    border-radius: 16px;
   }
   .sheet-deep {
     background: var(--paper-deep);
     border: 1px solid var(--hairline);
-    border-radius: 20px;
+    border-radius: 16px;
   }
-  .hairline {
-    border-color: var(--hairline);
-  }
+  .hairline { border-color: var(--hairline); }
   .hair-top { border-top: 1px solid var(--hairline); }
   .hair-bot { border-bottom: 1px solid var(--hairline); }
+  .hair-bot-strong { border-bottom: 1px solid var(--hairline-strong); }
+
+  /* Rolodex wheel — the signature score-entry */
+  .rolodex-wheel {
+    mask-image: linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%);
+  }
 
   /* Buttons */
   .btn-ink {

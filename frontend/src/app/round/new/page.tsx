@@ -161,14 +161,16 @@ export default function NewRound() {
   return (
     <PaperShell>
       {/* Top chrome */}
-      <div className="px-5 pt-5 pb-2 hair-bot flex items-center justify-between">
+      <div className="px-6 pt-5 pb-4 flex items-center justify-between">
         <Link href="/" className="btn-icon" aria-label="Back">
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <div className="eyebrow">Round setup</div>
+        <span className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
+          ROUND · SETUP
+        </span>
         <button
           className="btn-icon"
-          aria-label="Mic"
+          aria-label="Restart voice"
           onClick={() => {
             setTurns([]);
             setActiveSpeaker(null);
@@ -178,12 +180,25 @@ export default function NewRound() {
         </button>
       </div>
 
-      <main className="max-w-xl mx-auto px-5 pt-4 pb-32">
-        {/* Conversation surface */}
-        <section className="mb-5">
-          <div className="eyebrow mb-2">Hey caddy</div>
+      <main className="max-w-xl mx-auto px-6 pt-2 pb-32">
+        {/* Editorial title */}
+        <div className="hair-bot pb-5">
+          <div className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
+            THE BRIEFING
+          </div>
+          <h1 className="display mt-2 leading-[0.95]" style={{ fontSize: 'clamp(40px, 9vw, 56px)' }}>
+            Tell the caddy<br />
+            <span className="serif-italic" style={{ color: 'var(--accent)' }}>how it&rsquo;ll go.</span>
+          </h1>
+        </div>
 
-          <div className="space-y-3">
+        {/* Conversation surface */}
+        <section className="pt-5 pb-6 hair-bot">
+          <div className="mono text-[10px] tracking-[0.24em] mb-4" style={{ color: 'var(--pencil)' }}>
+            HEY CADDY
+          </div>
+
+          <div className="space-y-4">
             {turns.map((t, i) => (
               <TurnBubble key={i} kind={t.kind} text={t.text} />
             ))}
@@ -193,28 +208,28 @@ export default function NewRound() {
           </div>
 
           {/* Quick replies */}
-          {!activeSpeaker && (
-            <div className="mt-4 flex flex-wrap gap-2">
+          {!activeSpeaker && turns.length > 0 && (
+            <div className="mt-5 flex flex-wrap gap-2">
               <button
                 className="pill"
                 onClick={() => {
-                  setTurns((t) => [...t, { kind: 'you', text: 'Make it ten dollars a skin.' }, { kind: 'caddy', text: 'Done — $10 a skin.' }]);
+                  setTurns((t) => [...t, { kind: 'you', text: 'Make it ten a skin.' }, { kind: 'caddy', text: '$10 a skin. Done.' }]);
                   setStake(10);
                 }}
               >
-                Make it $10 a skin
+                Make it $10
               </button>
               <button
                 className="pill"
-                onClick={() => setTurns((t) => [...t, { kind: 'you', text: 'Add a Nassau.' }, { kind: 'caddy', text: 'Nassau on top of skins.' }])}
+                onClick={() => setTurns((t) => [...t, { kind: 'you', text: 'Add a Nassau.' }, { kind: 'caddy', text: 'Nassau on top of the skins.' }])}
               >
                 Add a Nassau
               </button>
               <button
                 className="pill"
-                onClick={() => setTurns((t) => [...t, { kind: 'you', text: 'Actually, no stakes today.' }, { kind: 'caddy', text: 'No stakes. Friendly round.' }])}
+                onClick={() => setTurns((t) => [...t, { kind: 'you', text: 'No stakes today.' }, { kind: 'caddy', text: 'Quiet round it is.' }])}
               >
-                Actually, no stakes
+                No stakes
               </button>
               <button className="pill pill-accent">
                 <Mic className="h-3 w-3" /> Say something else
@@ -223,13 +238,13 @@ export default function NewRound() {
           )}
         </section>
 
-        <div className="rule-editorial my-6" />
+        {/* Picker rows — hairline dividers, no card wrapper */}
+        <section className="pt-6">
+          <div className="mono text-[10px] tracking-[0.24em] mb-2" style={{ color: 'var(--pencil)' }}>
+            THE PLAN
+          </div>
 
-        {/* Picker rows */}
-        <section>
-          <div className="eyebrow mb-3">The plan</div>
-
-          <div className="sheet">
+          <div>
             <PickerRow
               label="Course"
               value={selectedCourse?.name ?? 'Pick a course'}
@@ -280,12 +295,14 @@ export default function NewRound() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            className="mt-6 sheet p-4"
-            style={{ background: 'var(--paper-deep)' }}
+            className="mt-6 pt-6 hair-top"
           >
-            <div className="eyebrow mb-1">Caddy · on the bag</div>
-            <div className="serif-italic text-[22px] leading-tight">
-              &ldquo;Trust the swing we warmed up with. First one&apos;s a handshake — don&apos;t overcook it.&rdquo;
+            <div className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
+              CADDY · ON THE BAG
+            </div>
+            <div className="serif-italic mt-2 leading-[1.08]" style={{ fontSize: 'clamp(22px, 4.8vw, 28px)' }}>
+              &ldquo;Trust the swing we warmed up with.<br />
+              First one&rsquo;s a handshake &mdash; don&rsquo;t overcook it.&rdquo;
             </div>
           </motion.div>
         )}
@@ -536,22 +553,34 @@ export default function NewRound() {
 function TurnBubble({ kind, text, typing }: { kind: 'you' | 'caddy'; text: string; typing?: boolean }) {
   const you = kind === 'you';
   return (
-    <div className={`flex gap-3 ${you ? '' : 'items-start'}`}>
-      <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center serif text-[14px]" style={{
-        background: you ? 'var(--ink)' : 'var(--paper-deep)',
-        color: you ? 'var(--paper)' : 'var(--ink)',
-        border: you ? 'none' : '1px solid var(--hairline)',
-      }}>
-        {you ? 'Y' : 'C'}
+    <div className="flex gap-3 items-start">
+      <div
+        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
+        style={{
+          background: you ? 'var(--ink)' : 'var(--paper)',
+          color: you ? 'var(--paper)' : 'var(--ink)',
+          border: you ? 'none' : '1px solid var(--hairline)',
+        }}
+      >
+        <span className="serif text-[12px]">{you ? 'Y' : 'F'}</span>
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="eyebrow">{you ? 'You' : 'Caddy · Fluff'}</span>
+      <div className="flex-1 min-w-0 pt-0.5">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="mono text-[9px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
+            {you ? 'YOU' : 'FLUFF · CADDY'}
+          </span>
           {typing && <Waveform />}
         </div>
-        <div className="serif-italic text-[20px] leading-snug" style={{ color: 'var(--ink)' }}>
+        <div
+          className="serif-italic leading-[1.18]"
+          style={{ color: 'var(--ink)', fontSize: 'clamp(20px, 4.2vw, 24px)' }}
+        >
           {text}
-          {typing && <span style={{ color: 'var(--accent)' }}>│</span>}
+          {typing && (
+            <span className="ml-0.5" style={{ color: 'var(--accent)' }}>
+              │
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -578,15 +607,18 @@ function PickerRow({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`w-full text-left flex items-center gap-4 px-4 py-3.5 ${last ? '' : 'hair-bot'} disabled:opacity-50`}
+      className={`w-full text-left flex items-center gap-4 py-4 ${last ? '' : 'hair-bot'} disabled:opacity-50`}
     >
-      <div className="mono text-[10px] uppercase tracking-[0.2em] w-[76px] shrink-0" style={{ color: 'var(--pencil)' }}>
+      <div
+        className="mono text-[10px] uppercase tracking-[0.22em] w-[82px] shrink-0"
+        style={{ color: 'var(--pencil)' }}
+      >
         {label}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="serif text-[17px] truncate">{value}</div>
+        <div className="serif text-[18px] truncate leading-tight">{value}</div>
         {hint && (
-          <div className="serif-italic text-[12px] truncate" style={{ color: 'var(--pencil)' }}>
+          <div className="serif-italic text-[12px] truncate mt-0.5" style={{ color: 'var(--pencil)' }}>
             {hint}
           </div>
         )}

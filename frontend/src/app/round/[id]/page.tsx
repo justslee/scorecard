@@ -24,6 +24,7 @@ import { hapticCelebration } from '@/lib/haptics';
 import PaperShell from '@/components/yardage/PaperShell';
 import HoleCard from '@/components/yardage/HoleCard';
 import VoiceOrb from '@/components/yardage/VoiceOrb';
+import ScoreRolodex from '@/components/yardage/ScoreRolodex';
 
 export default function RoundPage() {
   const params = useParams();
@@ -39,6 +40,7 @@ export default function RoundPage() {
   const [showCaddie, setShowCaddie] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [showEditGroups, setShowEditGroups] = useState(false);
+  const [showRolodex, setShowRolodex] = useState(false);
 
   // Tournament data (if this round is part of one)
   const tournament = useMemo(() => {
@@ -375,18 +377,39 @@ export default function RoundPage() {
         {/* Hole card hero with caddy panel */}
         {currentHoleInfo && (
           <div className="mb-4">
-            <HoleCard hole={currentHoleInfo} total={round.holes.length} />
+            <HoleCard
+              hole={currentHoleInfo}
+              total={round.holes.length}
+              onPrev={() => {
+                if (currentHole > 1) setCurrentHole(currentHole - 1);
+              }}
+              onNext={() => {
+                if (currentHole < round.holes.length) setCurrentHole(currentHole + 1);
+              }}
+              onTap={() => setShowRolodex(true)}
+            />
+
+            {/* Mark-the-card CTA */}
+            <button
+              onClick={() => setShowRolodex(true)}
+              className="mt-3 w-full btn-ink py-3.5"
+            >
+              <span className="serif-italic text-[16px]">Mark the card</span>
+            </button>
+
             {/* Hole chip strip */}
-            <div className="mt-3 flex gap-1 overflow-x-auto pb-1" style={{ scrollSnapType: 'x mandatory' }}>
+            <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1" style={{ scrollSnapType: 'x mandatory' }}>
               {round.holes.map((h) => {
                 const active = h.number === currentHole;
                 const me = round.players[0];
-                const played = me ? round.scores.find((s) => s.playerId === me.id && s.holeNumber === h.number && s.strokes != null) : null;
+                const played = me
+                  ? round.scores.find((s) => s.playerId === me.id && s.holeNumber === h.number && s.strokes != null)
+                  : null;
                 return (
                   <button
                     key={h.number}
                     onClick={() => setCurrentHole(h.number)}
-                    className="shrink-0 mono text-[12px] rounded-xl flex flex-col items-center justify-center"
+                    className="shrink-0 rounded-xl flex flex-col items-center justify-center transition-colors"
                     style={{
                       scrollSnapAlign: 'center',
                       width: 44,
@@ -396,8 +419,21 @@ export default function RoundPage() {
                       border: `1px solid ${active ? 'var(--ink)' : 'var(--hairline)'}`,
                     }}
                   >
-                    <span style={{ fontSize: 13 }}>{h.number}</span>
-                    {played && <span className="flag-dot" style={{ width: 4, height: 4, background: active ? 'var(--paper)' : 'var(--accent)' }} />}
+                    <span className="serif" style={{ fontSize: 14 }}>
+                      {h.number}
+                    </span>
+                    {played && (
+                      <span
+                        className="flag-dot"
+                        style={{
+                          width: 4,
+                          height: 4,
+                          background: active ? 'var(--paper)' : 'var(--accent)',
+                          border: 'none',
+                          marginTop: 2,
+                        }}
+                      />
+                    )}
                   </button>
                 );
               })}
@@ -626,7 +662,6 @@ export default function RoundPage() {
           <EditGroupsModal
             round={round}
             onSave={(groups) => {
-              // Update players with new group assignments
               const updatedPlayers = round.players.map(p => {
                 const playerGroup = groups.find(g => g.playerIds.includes(p.id));
                 return { ...p, groupId: playerGroup?.id };
@@ -645,6 +680,29 @@ export default function RoundPage() {
           />
         )}
       </AnimatePresence>
+
+      {/* Rolodex score entry — signature motion */}
+      {currentHoleInfo && (
+        <ScoreRolodex
+          open={showRolodex}
+          players={round.players}
+          hole={currentHoleInfo}
+          initialStrokes={Object.fromEntries(
+            round.players.map((p) => [
+              p.id,
+              round.scores.find((s) => s.playerId === p.id && s.holeNumber === currentHoleInfo.number)?.strokes ?? null,
+            ])
+          )}
+          onClose={() => setShowRolodex(false)}
+          onSubmit={(next) => {
+            for (const [playerId, strokes] of Object.entries(next)) {
+              handleScoreChange(playerId, currentHoleInfo.number, strokes);
+            }
+            setShowRolodex(false);
+            if (currentHole < round.holes.length) setCurrentHole(currentHole + 1);
+          }}
+        />
+      )}
     </PaperShell>
   );
 }

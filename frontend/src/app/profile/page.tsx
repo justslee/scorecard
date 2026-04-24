@@ -118,54 +118,66 @@ export default function ProfilePage() {
   return (
     <PaperShell>
       {/* Top chrome */}
-      <header className="sticky top-0 z-20 hair-bot" style={{ background: 'color-mix(in oklab, var(--paper) 88%, transparent)', backdropFilter: 'blur(10px)' }}>
-        <div className="max-w-xl mx-auto px-4 py-3 flex items-center gap-2">
+      <header
+        className="sticky top-0 z-20 hair-bot"
+        style={{ background: 'color-mix(in oklab, var(--paper) 88%, transparent)', backdropFilter: 'blur(10px)' }}
+      >
+        <div className="max-w-xl mx-auto px-6 py-3 flex items-center gap-2">
           <Link href="/" className="btn-icon" aria-label="Back">
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <div className="flex-1 min-w-0 text-center eyebrow">Player profile</div>
-          <button onClick={handleSave} className="btn-ink px-4 py-1.5 text-xs">
+          <div className="flex-1 min-w-0 text-center mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
+            PLAYER PROFILE
+          </div>
+          <button onClick={handleSave} className="btn-ink px-4 py-1.5 text-[12px]">
             {saved ? 'Saved' : 'Save'}
           </button>
         </div>
       </header>
 
-      <main className="max-w-xl mx-auto px-5 pt-6 pb-24">
-        {/* Identity masthead */}
-        <section className="flex items-start gap-4">
-          <div className="shrink-0 w-16 h-16 rounded-full flex items-center justify-center serif text-[28px]" style={{ background: 'var(--ink)', color: 'var(--paper)' }}>
-            {initials}
+      <main className="max-w-xl mx-auto px-6 pt-6 pb-24">
+        {/* Identity masthead — editorial */}
+        <section className="hair-bot pb-6">
+          <div className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
+            MEMBER · EST. {new Date().getFullYear()}
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="eyebrow">Member</div>
-            <div className="display text-[36px] leading-[1]">
-              {profile.name ? (
-                <span>{profile.name}</span>
-              ) : (
-                <span className="serif-italic" style={{ color: 'var(--pencil)' }}>
-                  Unnamed golfer
-                </span>
+          <div className="flex items-start gap-4 mt-3">
+            <div
+              className="shrink-0 w-[72px] h-[72px] rounded-full flex items-center justify-center"
+              style={{ background: 'var(--ink)', color: 'var(--paper)' }}
+            >
+              <span className="serif text-[30px]">{initials}</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="display leading-[0.95]" style={{ fontSize: 'clamp(40px, 9vw, 52px)' }}>
+                {profile.name || (
+                  <span className="serif-italic" style={{ color: 'var(--pencil)' }}>
+                    Unnamed golfer
+                  </span>
+                )}
+              </div>
+              {profile.homeCourse && (
+                <div className="mono text-[10px] tracking-[0.22em] mt-2" style={{ color: 'var(--pencil)' }}>
+                  HOME · {profile.homeCourse.toUpperCase()}
+                </div>
               )}
             </div>
-            {profile.homeCourse && (
-              <div className="mono text-[11px] mt-1" style={{ color: 'var(--pencil)' }}>
-                HOME · {profile.homeCourse.toUpperCase()}
-              </div>
-            )}
           </div>
         </section>
 
-        {/* Stats strip */}
-        <section className="mt-6 grid grid-cols-3 gap-2">
-          <StatCell eyebrow="Handicap" value={profile.handicap ?? '—'} sub="idx" />
-          <StatCell eyebrow="Scoring avg" value={stats.avg ?? '—'} sub={stats.rounds ? `${stats.rounds} rounds` : ''} />
-          <StatCell eyebrow="Best round" value={stats.best ?? '—'} sub="strokes" />
+        {/* Stats strip — editorial three-up */}
+        <section className="pt-6 pb-6 hair-bot grid grid-cols-3 gap-6">
+          <StatCell label="Handicap" value={profile.handicap ?? '—'} sub="idx" />
+          <StatCell label="Scoring avg" value={stats.avg ?? '—'} sub={stats.rounds ? `${stats.rounds} rounds` : ''} />
+          <StatCell label="Best round" value={stats.best ?? '—'} sub="strokes" />
         </section>
 
-        {/* Hole by hole tally */}
-        <section className="mt-4 sheet p-4">
-          <div className="eyebrow mb-3">Career tally</div>
-          <div className="flex items-end justify-between gap-3">
+        {/* Career tally */}
+        <section className="pt-6 pb-6 hair-bot">
+          <div className="mono text-[10px] tracking-[0.24em] mb-3" style={{ color: 'var(--pencil)' }}>
+            CAREER TALLY
+          </div>
+          <div className="flex items-end justify-between gap-4">
             <TallyBar label="Birdies" count={stats.birdies} color="var(--accent)" />
             <TallyBar label="Pars" count={stats.pars} color="var(--ink)" />
             <TallyBar label="Bogeys" count={stats.bogeys} color="var(--flag-back)" />
@@ -173,9 +185,10 @@ export default function ProfilePage() {
         </section>
 
         {/* Info inputs */}
-        <section className="mt-6 sheet p-5">
-          <div className="eyebrow mb-4">Golfer info</div>
-
+        <section className="pt-6 pb-6 hair-bot">
+          <div className="mono text-[10px] tracking-[0.24em] mb-3" style={{ color: 'var(--pencil)' }}>
+            GOLFER INFO
+          </div>
           <div className="space-y-3">
             <LabeledInput
               label="Name"
@@ -199,14 +212,16 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* Club distances — the yardage book itself */}
-        <section className="mt-4 sheet p-5">
+        {/* Club distances — The bag */}
+        <section className="pt-6 pb-6 hair-bot">
           <div className="flex items-end justify-between mb-3">
             <div>
-              <div className="eyebrow">Club distances</div>
-              <div className="serif text-[20px] leading-tight mt-0.5">The bag</div>
+              <div className="mono text-[10px] tracking-[0.24em]" style={{ color: 'var(--pencil)' }}>
+                CLUB DISTANCES
+              </div>
+              <div className="display text-[32px] leading-tight mt-1">The bag</div>
             </div>
-            <div className="mono text-[10px]" style={{ color: 'var(--pencil)' }}>
+            <div className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
               YARDS · OPTIONAL
             </div>
           </div>
@@ -215,8 +230,14 @@ export default function ProfilePage() {
             {CLUBS.map((c) => {
               const v = profile.clubDistances[c.key];
               return (
-                <div key={c.key} className="rounded-xl p-3 text-center" style={{ background: 'var(--paper-deep)', border: '1px solid var(--hairline)' }}>
-                  <div className="eyebrow">{c.label}</div>
+                <div
+                  key={c.key}
+                  className="rounded-xl p-3 text-center"
+                  style={{ background: 'var(--paper-deep)', border: '1px solid var(--hairline)' }}
+                >
+                  <div className="mono text-[9px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
+                    {c.label.toUpperCase()}
+                  </div>
                   <input
                     inputMode="numeric"
                     value={v ?? ''}
@@ -228,9 +249,9 @@ export default function ProfilePage() {
                       }));
                     }}
                     placeholder="—"
-                    className="w-full text-center display text-[22px] bg-transparent outline-none"
+                    className="w-full text-center display text-[26px] bg-transparent outline-none mt-0.5"
                   />
-                  <div className="mono text-[10px]" style={{ color: 'var(--pencil)' }}>
+                  <div className="mono text-[9px]" style={{ color: 'var(--pencil)' }}>
                     YDS
                   </div>
                 </div>
@@ -239,53 +260,60 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* Players + shortcuts */}
-        <section className="mt-4 space-y-0.5">
-          <Link href="/players" className="sheet block p-4 flex items-center gap-3">
-            <div className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'var(--paper-deep)' }}>
-              <Users className="h-5 w-5" />
+        {/* Shortcuts */}
+        <section className="pt-4">
+          <Link href="/players" className="flex items-center gap-4 py-4 hair-bot group">
+            <div
+              className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
+              style={{ background: 'var(--paper-deep)' }}
+            >
+              <Users className="h-4 w-4" />
             </div>
             <div className="flex-1">
-              <div className="serif text-[17px]">My players</div>
-              <div className="mono text-[11px]" style={{ color: 'var(--pencil)' }}>
+              <div className="serif text-[17px] leading-tight">My players</div>
+              <div className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
                 GOLF BUDDIES · GROUP HISTORY
               </div>
             </div>
-            <ChevronRight className="h-4 w-4" style={{ color: 'var(--pencil)' }} />
+            <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" style={{ color: 'var(--pencil)' }} />
           </Link>
 
-          <Link href="/settings" className="sheet block p-4 flex items-center gap-3">
+          <Link href="/settings" className="flex items-center gap-4 py-4 hair-bot group">
             <div className="flex-1">
-              <div className="serif text-[17px]">Settings</div>
-              <div className="mono text-[11px]" style={{ color: 'var(--pencil)' }}>
+              <div className="serif text-[17px] leading-tight">Settings</div>
+              <div className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
                 API KEYS · INTEGRATIONS
               </div>
             </div>
-            <ChevronRight className="h-4 w-4" style={{ color: 'var(--pencil)' }} />
+            <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" style={{ color: 'var(--pencil)' }} />
           </Link>
         </section>
 
-        <div className="mt-8 mb-4">
-          <button onClick={handleSave} className="btn-ink w-full">
-            {saved ? 'Saved ✓' : 'Save profile'}
+        <div className="mt-10 mb-4">
+          <button onClick={handleSave} className="btn-ink w-full py-3.5">
+            <span className="serif-italic text-[16px]">{saved ? 'Saved' : 'Save profile'}</span>
           </button>
         </div>
 
-        <div className="mono text-[10px] text-center" style={{ color: 'var(--pencil)' }}>
-          STORED LOCALLY IN YOUR BROWSER
+        <div className="mono text-[9px] tracking-[0.28em] text-center" style={{ color: 'var(--pencil)' }}>
+          STORED LOCALLY · ON THIS DEVICE
         </div>
       </main>
     </PaperShell>
   );
 }
 
-function StatCell({ eyebrow, value, sub }: { eyebrow: string; value: number | string; sub?: string }) {
+function StatCell({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
   return (
-    <div className="sheet p-3 text-center">
-      <div className="eyebrow">{eyebrow}</div>
-      <div className="display text-[30px] mt-1 leading-none">{value}</div>
+    <div>
+      <div className="mono text-[10px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
+        {label.toUpperCase()}
+      </div>
+      <div className="display mt-2 leading-none" style={{ fontSize: 'clamp(36px, 8vw, 48px)' }}>
+        {value}
+      </div>
       {sub && (
-        <div className="mono text-[10px] mt-1" style={{ color: 'var(--pencil)' }}>
+        <div className="mono text-[9px] tracking-[0.22em] mt-2" style={{ color: 'var(--pencil)' }}>
           {sub.toUpperCase()}
         </div>
       )}
@@ -294,14 +322,16 @@ function StatCell({ eyebrow, value, sub }: { eyebrow: string; value: number | st
 }
 
 function TallyBar({ label, count, color }: { label: string; count: number; color: string }) {
-  const height = Math.min(60, Math.max(8, count * 2));
+  const height = Math.min(72, Math.max(6, count * 2));
   return (
-    <div className="flex-1 flex flex-col items-center gap-1.5">
-      <div className="display text-[22px]" style={{ color }}>
+    <div className="flex-1 flex flex-col items-center gap-2">
+      <div className="display text-[26px] leading-none" style={{ color }}>
         {count}
       </div>
-      <div style={{ width: '100%', height, background: color, borderRadius: 4, opacity: 0.8 }} />
-      <div className="eyebrow">{label}</div>
+      <div style={{ width: '100%', height, background: color, borderRadius: 3, opacity: 0.85 }} />
+      <div className="mono text-[9px] tracking-[0.22em]" style={{ color: 'var(--pencil)' }}>
+        {label.toUpperCase()}
+      </div>
     </div>
   );
 }
@@ -321,7 +351,9 @@ function LabeledInput({
 }) {
   return (
     <div>
-      <label className="eyebrow block mb-1.5">{label}</label>
+      <label className="mono text-[10px] tracking-[0.22em] block mb-1.5" style={{ color: 'var(--pencil)' }}>
+        {label.toUpperCase()}
+      </label>
       <input
         inputMode={inputMode}
         value={value}
