@@ -1,13 +1,46 @@
 """Voice parsing API routes."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 import anthropic
 import os
 import json
 import re
 
+from app.services.deepgram import transcribe_audio
+from app.services.clerk_auth import current_user_id
+
 router = APIRouter(prefix="/api/voice", tags=["voice"])
+
+
+# ── One-shot speech-to-text via Deepgram ──
+
+
+_MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10MB cap — plenty for a 2 minute voice clip
+
+
+@router.post("/transcribe")
+async def transcribe(
+    audio: UploadFile = File(...),
+    user_id: str = Depends(current_user_id),
+):
+    """Transcribe a one-shot recording (e.g. round setup, score entry) via Deepgram Nova-3.
+
+    Auth required — Deepgram is metered against our project key.
+
+    Frontend posts a multipart form with the recorded audio blob (webm/opus, mp4/aac, wav, etc.).
+    Returns: {transcript, confidence, duration, model}
+    """
+    if not audio.filename and not audio.content_type:
+        raise HTTPException(400, "No audio file provided")
+
+    body = await audio.read()
+    if len(body) == 0:
+        raise HTTPException(400, "Empty audio body")
+    if len(body) > _MAX_AUDIO_BYTES:
+        raise HTTPException(413, f"Audio too large ({len(body)} bytes)")
+
+    return await transcribe_audio(body, content_type=audio.content_type or "audio/webm")
 
 
 class VoiceScoreRequest(BaseModel):

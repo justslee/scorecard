@@ -47,6 +47,9 @@ class PlayerStatistics(BaseModel):
     scoring_distribution: ScoringDistribution = ScoringDistribution()
     par_averages: ParAverages = ParAverages()
     tendencies: PlayerTendencies = PlayerTendencies()
+    # Personal expected-strokes table from logged shots; replaces PGA fallback when populated.
+    # Shape: {"fairway": {"100": {"mean_strokes": 2.65, "samples": 12}, ...}, ...}
+    personal_sg: dict = {}
 
 
 # ── Hazard ──
@@ -176,6 +179,9 @@ class CaddiePersonality(BaseModel):
     voice_style: VoiceStyle = VoiceStyle()
     response_style: str = "conversational"  # brief | detailed | conversational
     traits: list[str] = []
+    # OpenAI Realtime tuning
+    voice_id: Optional[str] = None  # alloy | ash | ballad | coral | echo | fable | onyx | nova | sage | shimmer | verse
+    realtime_instructions: Optional[str] = None  # Spoken-style instructions; falls back to system_prompt
 
 
 # ── API Request/Response ──
@@ -192,6 +198,7 @@ class RecommendationRequest(BaseModel):
     distance_yards: Optional[int] = None
     player_lat: Optional[float] = None
     player_lng: Optional[float] = None
+    shot_bearing: Optional[float] = None  # degrees from north toward target — feeds wind math
     hole_coordinates: Optional[dict] = None  # {green, tee, front, back}
     weather: Optional[WeatherConditions] = None
     hole_intelligence: Optional[HoleIntelligence] = None

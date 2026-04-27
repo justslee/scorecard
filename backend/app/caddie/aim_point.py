@@ -19,7 +19,7 @@ from app.caddie.club_selection import (
     normalize_club_distances,
     CLUB_DISPLAY_NAMES,
 )
-from app.caddie.strokes_gained import expected_strokes
+from app.caddie.strokes_gained import expected_strokes, personal_lookup
 
 
 def classify_pin_position(
@@ -273,8 +273,26 @@ def generate_recommendation(
             f"Your history: avg {h.avg_score:.1f} (best {h.best_score}) in {h.times_played} rounds"
         )
 
-    # Expected score
-    exp_score = expected_strokes(distance_yards, "fairway", handicap)
+    # Expected score — pulls from personal_sg first, falls back to PGA baseline.
+    # Gate the reasoning text on the actual lookup outcome rather than the
+    # dict shape, so we don't claim "personal stats" when the personal table
+    # has empty buckets or no `mean_strokes` and the value silently came from
+    # the PGA fallback.
+    personal_sg = player_stats.personal_sg if player_stats else None
+    personal_value = personal_lookup(distance_yards, "fairway", personal_sg)
+    if personal_value is not None:
+        exp_score = personal_value
+        sample_count = sum(
+            b.get("samples", 0)
+            for b in (personal_sg.get("fairway") or {}).values()
+            if isinstance(b, dict) and b.get("mean_strokes") is not None
+        )
+        if sample_count > 0:
+            reasoning.append(
+                f"Expected score uses your personal stats ({sample_count} fairway shots logged)"
+            )
+    else:
+        exp_score = expected_strokes(distance_yards, "fairway", handicap)
 
     # Aggressiveness
     if pin_light == "red" or len([h for h in hole.hazards if h.penalty_severity == "death"]) >= 2:

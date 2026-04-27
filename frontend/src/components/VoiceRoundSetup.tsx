@@ -14,6 +14,7 @@ import {
   Users,
   MapPin,
 } from "lucide-react";
+import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 
 interface VoiceRoundSetupProps {
   onSetupRound: (config: {
@@ -37,99 +38,60 @@ export default function VoiceRoundSetup({
 }: VoiceRoundSetupProps) {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [interimTranscript, setInterimTranscript] = useState("");
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [parseResult, setParseResult] = useState<ParsedRoundConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(true);
 
-  const recognitionRef = useRef<any>(null);
+  const recorderRef = useRef<VoiceRecorder | null>(null);
 
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
+    if (!VoiceRecorder.isSupported()) {
       setIsSupported(false);
-      setError("Speech recognition not supported. Try Chrome or Safari.");
-      return;
+      setError("Voice recording not supported in this browser.");
     }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onresult = (event: any) => {
-      let interim = "";
-      let final = "";
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          final += result[0].transcript;
-        } else {
-          interim += result[0].transcript;
-        }
-      }
-
-      if (final) {
-        setTranscript((prev) => prev + " " + final);
-      }
-      setInterimTranscript(interim);
-    };
-
-    recognition.onerror = (event: any) => {
-      if (event.error === "not-allowed") {
-        setError("Microphone access denied.");
-      } else if (event.error !== "aborted") {
-        setError(`Error: ${event.error}`);
-      }
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-
-    return () => {
-      recognition.stop();
-    };
+    return () => recorderRef.current?.cancel();
   }, []);
 
-  const startListening = useCallback(() => {
-    if (!recognitionRef.current) return;
-
+  const startListening = useCallback(async () => {
     setError(null);
     setTranscript("");
-    setInterimTranscript("");
     setParseResult(null);
-
     try {
-      recognitionRef.current.start();
+      const recorder = new VoiceRecorder();
+      await recorder.start();
+      recorderRef.current = recorder;
       setIsListening(true);
     } catch (err) {
-      setError("Failed to start microphone.");
+      setError(err instanceof Error && err.name === "NotAllowedError"
+        ? "Microphone access denied."
+        : "Failed to start microphone.");
     }
   }, []);
 
-  const stopListening = useCallback(() => {
-    if (!recognitionRef.current) return;
-    try {
-      recognitionRef.current.stop();
-      recognitionRef.current.abort?.();
-    } catch {
-      // Ignore errors on stop
-    }
+  const stopListening = useCallback(async () => {
+    const recorder = recorderRef.current;
+    if (!recorder) return;
     setIsListening(false);
-    setInterimTranscript("");
+    setIsTranscribing(true);
+    try {
+      const blob = await recorder.stop();
+      const result = await transcribeBlob(blob);
+      setTranscript(result.transcript);
+      if (!result.transcript.trim()) {
+        setError("No speech detected. Try again.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Transcription failed.");
+    } finally {
+      recorderRef.current = null;
+      setIsTranscribing(false);
+    }
   }, []);
 
   const handleParse = async () => {
-    const fullTranscript = (transcript + " " + interimTranscript).trim();
+    const fullTranscript = transcript.trim();
     if (!fullTranscript) {
       setError("No speech detected.");
       return;
@@ -253,7 +215,6 @@ User said: "${fullTranscript}"`,
   const handleRetry = () => {
     setParseResult(null);
     setTranscript("");
-    setInterimTranscript("");
     setError(null);
   };
 
@@ -364,14 +325,14 @@ User said: "${fullTranscript}"`,
                 <motion.button
                   whileTap={{ scale: 0.95 }}
                   onClick={isListening ? stopListening : startListening}
-                  disabled={isParsing}
+                  disabled={isParsing || isTranscribing}
                   className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto transition-colors ${
                     isListening
                       ? "bg-red-500 hover:bg-red-600"
                       : "bg-emerald-500 hover:bg-emerald-600"
                   } disabled:opacity-50`}
                 >
-                  {isParsing ? (
+                  {(isParsing || isTranscribing) ? (
                     <Loader2 className="w-10 h-10 text-white animate-spin" />
                   ) : isListening ? (
                     <MicOff className="w-10 h-10 text-white" />
@@ -383,18 +344,17 @@ User said: "${fullTranscript}"`,
                 <p className="mt-4 text-zinc-400">
                   {isParsing
                     ? "Understanding..."
+                    : isTranscribing
+                    ? "Transcribing..."
                     : isListening
                     ? "Listening... tap to stop"
                     : "Tap to start speaking"}
                 </p>
               </div>
 
-              {(transcript || interimTranscript) && (
+              {transcript && (
                 <div className="mb-6 p-4 rounded-xl bg-zinc-800/50 border border-zinc-700 text-left">
-                  <p className="text-white">
-                    {transcript}
-                    <span className="text-zinc-500">{interimTranscript}</span>
-                  </p>
+                  <p className="text-white">{transcript}</p>
                 </div>
               )}
 
@@ -404,7 +364,7 @@ User said: "${fullTranscript}"`,
                 </div>
               )}
 
-              {(transcript || interimTranscript) && !isListening && (
+              {transcript && !isListening && !isTranscribing && (
                 <button
                   onClick={handleParse}
                   disabled={isParsing}

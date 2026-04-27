@@ -10,4 +10,9 @@ dependencies = [
     "httpx>=0.27.0",
     "python-dotenv>=1.0.0",
     "uvicorn>=0.30.0",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29.0",
+    "geoalchemy2>=0.15.0",
+    "pyjwt[crypto]>=2.9.0",
+    "python-multipart>=0.0.20",
 ]

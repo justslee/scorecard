@@ -88,6 +88,9 @@ export interface CaddiePersonalityInfo {
   avatar: string;
   response_style: string;
   traits: string[];
+  voice_id?: string | null;
+  is_builtin?: boolean;
+  author_user_id?: string | null;
 }
 
 export interface VoiceCaddieMessage {

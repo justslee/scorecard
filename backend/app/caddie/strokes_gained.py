@@ -105,21 +105,79 @@ def _handicap_multiplier(handicap: Optional[float]) -> float:
     return 1.2
 
 
+# Distance bucket edges used by personal_sg keys (matches caddie/learning.py).
+_PERSONAL_SG_BUCKETS = [0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300]
+
+
+def personal_lookup(
+    distance_yards: float,
+    lie: str,
+    personal_sg: Optional[dict],
+) -> Optional[float]:
+    """Linear interpolation between adjacent personal_sg buckets.
+
+    Returns None when the player doesn't have enough data on either side of
+    the target distance (caller falls back to PGA tables).
+    """
+    if not personal_sg or lie not in personal_sg:
+        return None
+    by_bucket = personal_sg[lie]
+    if not by_bucket:
+        return None
+
+    # Find the bucket the distance lands in, plus its neighbors.
+    target = distance_yards
+    populated = sorted(
+        ((int(k), v) for k, v in by_bucket.items() if v.get("mean_strokes") is not None),
+        key=lambda kv: kv[0],
+    )
+    if not populated:
+        return None
+
+    # Bound — clamp to nearest if outside range
+    if target <= populated[0][0]:
+        return float(populated[0][1]["mean_strokes"])
+    if target >= populated[-1][0]:
+        return float(populated[-1][1]["mean_strokes"])
+
+    # Find adjacent populated buckets and interpolate
+    for i in range(len(populated) - 1):
+        b1, v1 = populated[i]
+        b2, v2 = populated[i + 1]
+        if b1 <= target <= b2:
+            t = (target - b1) / (b2 - b1) if b2 != b1 else 0.0
+            m1 = float(v1["mean_strokes"])
+            m2 = float(v2["mean_strokes"])
+            return m1 + t * (m2 - m1)
+    return None
+
+
 def expected_strokes(
     distance_yards: float,
     lie: str = "fairway",
     handicap: Optional[float] = None,
+    personal_sg: Optional[dict] = None,
 ) -> float:
     """Get expected strokes to hole out from a given position.
+
+    Looks up `personal_sg` (the caller's logged-shot aggregates from
+    `caddie.learning.recompute_player_aggregates`) first; falls back to the
+    PGA Tour baseline tables with a handicap multiplier.
 
     Args:
         distance_yards: Distance to hole in yards (or feet for putting)
         lie: 'tee', 'fairway', 'rough', 'sand', 'green'
         handicap: Player handicap (None = 15)
+        personal_sg: Player's personal expected-strokes table, if available.
+            Shape: {"fairway": {"100": {"mean_strokes": 2.65, "samples": 12}, ...}, ...}
 
     Returns:
         Expected strokes to hole out
     """
+    personal = personal_lookup(distance_yards, lie, personal_sg)
+    if personal is not None:
+        return personal
+
     tables = {
         "tee": _TEE_TABLE,
         "fairway": _FAIRWAY_TABLE,
@@ -129,13 +187,7 @@ def expected_strokes(
     }
 
     table = tables.get(lie, _FAIRWAY_TABLE)
-
-    # For green, input should be in feet
-    if lie == "green":
-        base = _interpolate(table, distance_yards)  # already in feet
-    else:
-        base = _interpolate(table, distance_yards)
-
+    base = _interpolate(table, distance_yards)
     return base * _handicap_multiplier(handicap)
 
 

@@ -1,18 +1,38 @@
-"""Elevation data service using USGS EPQS (free, no API key)."""
+"""Elevation data service.
 
+`fetch_elevation_cached` checks the `elevation_cache` Postgres table before
+calling USGS EPQS. Coordinates are quantized to ~1m (5 decimal places) so a
+green-slope sample that's already been fetched once never round-trips again.
+
+The raw `fetch_elevation` is still exported for code paths that don't have
+DB access (tests, scripts).
+"""
+
+import asyncio
 import httpx
 import math
 from typing import Optional
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
+from app.db.engine import async_session
+from app.db.models import ElevationCache
 
 # USGS Elevation Point Query Service
 USGS_EPQS_URL = "https://epqs.nationalmap.gov/v1/json"
 
+# 5 decimal places ≈ 1.1m at the equator. Plenty for green-slope sampling and
+# stays well under int32. Multiple callers within the same green/tee/fairway
+# share cache rows.
+_CACHE_PRECISION = 100_000
+
+
+def _quantize(lat: float, lng: float) -> tuple[int, int]:
+    return int(round(lat * _CACHE_PRECISION)), int(round(lng * _CACHE_PRECISION))
+
 
 async def fetch_elevation(lat: float, lng: float) -> Optional[float]:
-    """Fetch elevation in feet for a single point using USGS EPQS.
-
-    Returns elevation in feet, or None if unavailable.
-    """
+    """Fetch elevation in feet for a single point from USGS EPQS (no cache)."""
     params = {
         "x": lng,
         "y": lat,
@@ -38,24 +58,42 @@ async def fetch_elevation(lat: float, lng: float) -> Optional[float]:
         return None
 
 
+async def fetch_elevation_cached(lat: float, lng: float) -> Optional[float]:
+    """Cached elevation lookup. Checks Postgres first, falls back to USGS.
+
+    Misses are persisted on success so the next caller hits the cache. Failures
+    are not cached — we want to retry transient USGS errors.
+    """
+    lat_q, lng_q = _quantize(lat, lng)
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(ElevationCache.elevation_ft)
+            .where(ElevationCache.lat_q == lat_q, ElevationCache.lng_q == lng_q)
+        )
+        row = result.first()
+        if row is not None:
+            return float(row[0])
+
+    elev = await fetch_elevation(lat, lng)
+    if elev is None:
+        return None
+
+    async with async_session() as db:
+        try:
+            db.add(ElevationCache(lat_q=lat_q, lng_q=lng_q, elevation_ft=elev))
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()  # concurrent insert won the race; that's fine
+
+    return elev
+
+
 async def fetch_elevation_batch(
     points: list[tuple[float, float]],
 ) -> list[Optional[float]]:
-    """Fetch elevation for multiple points in parallel.
-
-    Args:
-        points: List of (lat, lng) tuples
-
-    Returns:
-        List of elevation values in feet (None for failures)
-    """
-    import asyncio
-
-    async def _fetch_one(lat: float, lng: float) -> Optional[float]:
-        return await fetch_elevation(lat, lng)
-
-    tasks = [_fetch_one(lat, lng) for lat, lng in points]
-    return await asyncio.gather(*tasks)
+    """Fetch elevation for multiple points in parallel, cache-aware."""
+    return await asyncio.gather(*[fetch_elevation_cached(lat, lng) for lat, lng in points])
 
 
 async def compute_green_slope(

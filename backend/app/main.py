@@ -27,7 +27,7 @@ app.add_middleware(
 
 # Import and include routers
 from app.routes import players, rounds, tournaments, courses, voice
-from app.routes import golf, course_search, voice_advanced, caddie
+from app.routes import golf, course_search, voice_advanced, caddie, memory, realtime, shots, pins
 
 app.include_router(players.router)
 app.include_router(rounds.router)
@@ -39,6 +39,10 @@ app.include_router(golf.router)
 app.include_router(course_search.router)
 app.include_router(voice_advanced.router)
 app.include_router(caddie.router)
+app.include_router(memory.router)
+app.include_router(realtime.router)
+app.include_router(shots.router)
+app.include_router(pins.router)
 
 
 @app.on_event("startup")
@@ -54,7 +58,10 @@ async def startup():
     async def cleanup_loop():
         while True:
             await asyncio.sleep(30 * 60)
-            sessions.cleanup_expired()
+            try:
+                await sessions.cleanup_expired()
+            except Exception:
+                pass
 
     asyncio.create_task(cleanup_loop())
 

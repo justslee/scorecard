@@ -8,7 +8,7 @@ from app.caddie.types import (
     GreenSlope,
     WeatherConditions,
 )
-from app.services.elevation import fetch_elevation, compute_green_slope
+from app.services.elevation import fetch_elevation_cached, compute_green_slope
 from app.services.weather import (
     fetch_weather,
     compute_air_density_factor,
@@ -42,8 +42,8 @@ async def build_hole_intelligence(
     # Fetch elevations for tee and green
     elevation_change = 0.0
     if tee and green:
-        tee_elev = await fetch_elevation(tee["lat"], tee["lng"])
-        green_elev = await fetch_elevation(green["lat"], green["lng"])
+        tee_elev = await fetch_elevation_cached(tee["lat"], tee["lng"])
+        green_elev = await fetch_elevation_cached(green["lat"], green["lng"])
         if tee_elev is not None and green_elev is not None:
             elevation_change = green_elev - tee_elev  # positive = uphill
 
@@ -123,7 +123,7 @@ async def build_weather_conditions(
         return WeatherConditions()
 
     # Get course elevation
-    altitude = await fetch_elevation(lat, lng)
+    altitude = await fetch_elevation_cached(lat, lng)
     altitude_ft = altitude if altitude is not None else 0.0
 
     # Air density
