@@ -29,20 +29,30 @@ import {
   PERSONALITIES,
   getSelectedPersonality,
   setSelectedPersonality,
+  adaptApiPersona,
   CaddiePersonality,
 } from '@/lib/caddie/personalities';
 import {
   fetchRecommendation,
   fetchCourseIntel,
   fetchWeather,
-  talkToCaddie,
+  fetchPersonalities,
+  fetchPinsForCourse,
+  startSession,
+  type PinRecord,
+  type CaddieMemoryEntry,
+  type CaddieProfile,
 } from '@/lib/caddie/api';
 import type {
   CaddieRecommendation,
   WeatherConditions,
   HoleIntelligence,
-  VoiceCaddieMessage,
 } from '@/lib/caddie/types';
+import { useRealtimeCaddie } from '@/hooks/useRealtimeCaddie';
+import CustomPersonaModal from '@/components/CustomPersonaModal';
+import ShotTrackingControl from '@/components/ShotTrackingControl';
+import PinMarkControl from '@/components/PinMarkControl';
+import CaddieNotesCard from '@/components/CaddieNotesCard';
 
 // Normalize GolferProfile camelCase keys → short keys for the backend
 function normalizeClubDistances(raw: Record<string, number | undefined>): Record<string, number> {
@@ -119,29 +129,73 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
 
   // Caddie state
   const [activeTab, setActiveTab] = useState<CaddieTab>('recommend');
-  const [personality, setPersonality] = useState<CaddiePersonality>(getSelectedPersonality());
+  const [personas, setPersonas] = useState<CaddiePersonality[]>(PERSONALITIES);
+  const [personality, setPersonality] = useState<CaddiePersonality>(getSelectedPersonality(PERSONALITIES));
   const [showPersonalityPicker, setShowPersonalityPicker] = useState(false);
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [pins, setPins] = useState<Map<number, PinRecord>>(new Map());
+  const [caddieMemories, setCaddieMemories] = useState<CaddieMemoryEntry[]>([]);
+  const [caddieProfile, setCaddieProfile] = useState<CaddieProfile | null>(null);
   const [recommendation, setRecommendation] = useState<CaddieRecommendation | null>(null);
   const [weather, setWeather] = useState<WeatherConditions | null>(null);
   const [holeIntel, setHoleIntel] = useState<HoleIntelligence | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Voice state
-  const [isListening, setIsListening] = useState(false);
-  const [voiceMessages, setVoiceMessages] = useState<VoiceCaddieMessage[]>([]);
+  // Voice state — OpenAI Realtime over WebRTC.
   const [voiceInput, setVoiceInput] = useState('');
-  const [voiceLoading, setVoiceLoading] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recognitionRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Stores the in-flight startSession() promise — concurrent callers share it
+  // instead of racing past a synchronously-set boolean (would otherwise let a
+  // second mic tap fire realtime.start() before the backend caddie row exists).
+  const sessionPromiseRef = useRef<Promise<void> | null>(null);
+  const realtime = useRealtimeCaddie({
+    roundId: round.id,
+    personalityId: personality.id,
+  });
+  const isListening = realtime.status === 'listening';
+  const isSpeaking = realtime.status === 'speaking';
+  const voiceLoading = realtime.status === 'connecting';
+  const voiceMessages = realtime.messages;
 
   // Club distances — from profile or defaults
   const [clubDistances, setClubDistances] = useState<Record<string, number>>(defaultClubDistances);
   const [handicap, setHandicap] = useState<number | undefined>(undefined);
 
   const hole = getHoleInfo(round, currentHole);
+
+  // Load DB-backed persona catalog on mount; replaces local seed list once it
+  // arrives. Selected persona snaps to the API row if its id matches.
+  useEffect(() => {
+    let cancelled = false;
+    fetchPersonalities().then(api => {
+      if (cancelled) return;
+      const list = api.map(adaptApiPersona);
+      if (list.length === 0) return;
+      setPersonas(list);
+      setPersonality(prev => list.find(p => p.id === prev.id) || prev);
+    }).catch(() => {
+      // API unavailable — keep local PERSONALITIES seeds.
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load today's pin sheet for this course (if any).
+  useEffect(() => {
+    if (!round.courseId) return;
+    let cancelled = false;
+    fetchPinsForCourse(round.courseId)
+      .then(list => {
+        if (cancelled) return;
+        const map = new Map<number, PinRecord>();
+        for (const p of list) map.set(p.hole_number, p);
+        setPins(map);
+      })
+      .catch(() => {
+        // Course has no pins yet — fine.
+      });
+    return () => { cancelled = true; };
+  }, [round.courseId]);
 
   // Load golfer profile on mount
   useEffect(() => {
@@ -155,24 +209,31 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
     }
   }, []);
 
-  // GPS distance data for current hole
+  // GPS distance data for current hole. A user-marked daily pin (PR #6) takes
+  // precedence over the GolfAPI per-hole `pin` and over green-center.
   const currentHoleCoords = holeCoordinates?.find(h => h.holeNumber === currentHole);
+  const todaysPin = pins.get(currentHole);
+  const effectivePin = todaysPin
+    ? { lat: todaysPin.pin_lat, lng: todaysPin.pin_lng }
+    : currentHoleCoords?.pin || null;
+  const aimTarget = effectivePin || currentHoleCoords?.green || null;
+
   const gpsDistances = gpsPosition && currentHoleCoords ? {
     center: calculateDistance(gpsPosition, currentHoleCoords.green).yards,
     front: currentHoleCoords.front ? calculateDistance(gpsPosition, currentHoleCoords.front).yards : null,
     back: currentHoleCoords.back ? calculateDistance(gpsPosition, currentHoleCoords.back).yards : null,
-    pin: currentHoleCoords.pin ? calculateDistance(gpsPosition, currentHoleCoords.pin).yards : null,
+    pin: effectivePin ? calculateDistance(gpsPosition, effectivePin).yards : null,
   } : null;
 
-  // Bearing from player to green (for wind adjustment)
-  const bearingToGreen = gpsPosition && currentHoleCoords
-    ? calculateBearing(gpsPosition, currentHoleCoords.green)
+  // Bearing from player to whatever we're aiming at (marked pin > GolfAPI pin > green).
+  const bearingToGreen = gpsPosition && aimTarget
+    ? calculateBearing(gpsPosition, aimTarget)
     : undefined;
 
-  // Auto-update distanceToPin from GPS
+  // Auto-update distanceToPin from GPS — prefer the actual pin when known.
   useEffect(() => {
     if (gpsDistances && gpsActive) {
-      setDistanceToPin(gpsDistances.center);
+      setDistanceToPin(gpsDistances.pin ?? gpsDistances.center);
     }
   }, [gpsDistances, gpsActive]);
 
@@ -225,6 +286,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
         handicap,
         weather: weather ?? undefined,
         hole_intelligence: holeIntel ?? undefined,
+        shot_bearing: bearingToGreen,
       });
       setRecommendation(rec);
     } catch (e) {
@@ -279,77 +341,52 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpsActive]);
 
-  // ---------- Voice ----------
+  // ---------- Voice (OpenAI Realtime) ----------
 
-  const startListening = () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
+  // Ensure a backend caddie session exists before opening the Realtime channel.
+  // Concurrent callers (rapid mic taps, simultaneous send-text + start-voice)
+  // all await the same in-flight promise so realtime.start() can never race
+  // ahead of the backend row creation.
+  const ensureCaddieSession = (): Promise<void> => {
+    if (sessionPromiseRef.current) return sessionPromiseRef.current;
+    sessionPromiseRef.current = (async () => {
+      try {
+        const status = await startSession({
+          round_id: round.id,
+          course_id: round.courseId,
+          club_distances: clubDistances,
+          handicap,
+        });
+        if (status.memories) setCaddieMemories(status.memories);
+        if (status.profile) setCaddieProfile(status.profile);
+      } catch {
+        // Don't propagate — clear the cache so the next caller retries from scratch.
+        sessionPromiseRef.current = null;
+      }
+    })();
+    return sessionPromiseRef.current;
+  };
 
-    const recognition = new SR();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0][0].transcript;
-      setVoiceInput(transcript);
-      sendVoiceMessage(transcript);
-    };
-
-    recognition.onerror = () => setIsListening(false);
-    recognition.onend = () => setIsListening(false);
-
-    recognition.start();
-    recognitionRef.current = recognition;
-    setIsListening(true);
+  const startListening = async () => {
+    await ensureCaddieSession();
+    if (realtime.status === 'idle' || realtime.status === 'closed' || realtime.status === 'error') {
+      await realtime.start();
+    } else {
+      realtime.toggleMute();
+    }
   };
 
   const stopListening = () => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-  };
-
-  const speakResponse = (text: string) => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.pitch = personality.voiceStyle.pitch;
-    utterance.rate = personality.voiceStyle.rate;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(utterance);
+    realtime.stop();
   };
 
   const sendVoiceMessage = async (transcript: string) => {
-    const userMsg: VoiceCaddieMessage = { role: 'user', content: transcript };
-    setVoiceMessages(prev => [...prev, userMsg]);
-    setVoiceInput('');
-    setVoiceLoading(true);
-
-    try {
-      const resp = await talkToCaddie({
-        transcript,
-        personality_id: personality.id,
-        hole_number: currentHole,
-        par: hole.par,
-        yards: hole.yards,
-        distance_yards: distanceToPin ?? undefined,
-        wind_speed_mph: weather?.wind_speed_mph,
-        wind_direction: weather?.wind_direction,
-        club_distances: clubDistances,
-        handicap,
-        current_recommendation: recommendation ?? undefined,
-        conversation_history: voiceMessages,
-      });
-      const assistantMsg: VoiceCaddieMessage = { role: 'assistant', content: resp.response };
-      setVoiceMessages(prev => [...prev, assistantMsg]);
-      speakResponse(resp.response);
-    } catch {
-      const errMsg: VoiceCaddieMessage = { role: 'assistant', content: "Sorry, I couldn't process that. Try again." };
-      setVoiceMessages(prev => [...prev, errMsg]);
-    } finally {
-      setVoiceLoading(false);
+    if (realtime.status === 'idle' || realtime.status === 'closed') {
+      await ensureCaddieSession();
+      await realtime.start();
     }
+    realtime.sendText(transcript);
+    setVoiceInput('');
   };
 
   // Auto-scroll voice messages
@@ -613,9 +650,9 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="absolute top-14 left-1/2 -translate-x-1/2 z-30 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-2xl w-64"
+              className="absolute top-14 left-1/2 -translate-x-1/2 z-30 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-2xl w-72 max-h-[60vh] overflow-y-auto"
             >
-              {PERSONALITIES.map(p => (
+              {personas.map(p => (
                 <button
                   key={p.id}
                   onClick={() => changePersonality(p)}
@@ -630,6 +667,16 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
                   </div>
                 </button>
               ))}
+              <button
+                onClick={() => { setShowPersonalityPicker(false); setShowCustomModal(true); }}
+                className="w-full px-4 py-3 flex items-center gap-3 text-left border-t border-zinc-800 hover:bg-zinc-800 text-emerald-400"
+              >
+                <span className="text-xl">＋</span>
+                <div>
+                  <div className="text-sm font-medium">Create custom caddie</div>
+                  <div className="text-xs text-zinc-500">Author your own persona</div>
+                </div>
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1029,6 +1076,31 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
                           ))}
                         </div>
                       </div>
+
+                      {round.courseId && (
+                        <PinMarkControl
+                          courseId={round.courseId}
+                          holeNumber={currentHole}
+                          currentPin={todaysPin || null}
+                          getPosition={() => gpsPosition}
+                          onPinMarked={(p) => {
+                            setPins(prev => {
+                              const next = new Map(prev);
+                              next.set(p.hole_number, p);
+                              return next;
+                            });
+                          }}
+                        />
+                      )}
+
+                      <CaddieNotesCard memories={caddieMemories} profile={caddieProfile} />
+
+                      <ShotTrackingControl
+                        roundId={round.id}
+                        holeNumber={currentHole}
+                        getPosition={() => gpsPosition}
+                        clubChoices={Object.keys(clubDistances).slice(0, 8)}
+                      />
                     </div>
                   )}
                 </div>
@@ -1059,9 +1131,9 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
                         Ask {personality.name} anything about your game
                       </div>
                     )}
-                    {voiceMessages.map((msg, i) => (
+                    {voiceMessages.map((msg) => (
                       <div
-                        key={i}
+                        key={msg.id}
                         className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                       >
                         <div className={`max-w-[85%] px-3 py-2 rounded-xl text-sm ${
@@ -1072,7 +1144,8 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
                           {msg.role === 'assistant' && (
                             <span className="text-xs text-zinc-500 block mb-1">{personality.avatar} {personality.name}</span>
                           )}
-                          {msg.content}
+                          {msg.text}
+                          {msg.partial && <span className="opacity-50">…</span>}
                         </div>
                       </div>
                     ))}
@@ -1112,7 +1185,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
                     </button>
                     {isSpeaking && (
                       <button
-                        onClick={() => window.speechSynthesis.cancel()}
+                        onClick={() => realtime.toggleMute()}
                         className="w-12 h-12 rounded-full bg-sky-600 flex items-center justify-center shrink-0 animate-pulse"
                       >
                         <Volume2 className="w-5 h-5 text-white" />
@@ -1125,6 +1198,18 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
           )}
         </AnimatePresence>
       </motion.div>
+
+      {showCustomModal && (
+        <CustomPersonaModal
+          onClose={() => setShowCustomModal(false)}
+          onCreated={(p) => {
+            const adapted = adaptApiPersona(p);
+            setPersonas(prev => [...prev, adapted]);
+            changePersonality(adapted);
+            setShowCustomModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

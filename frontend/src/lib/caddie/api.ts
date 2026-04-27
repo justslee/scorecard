@@ -37,6 +37,21 @@ export async function fetchPersonalities(): Promise<CaddiePersonalityInfo[]> {
   return data.personalities;
 }
 
+export interface CreatePersonaInput {
+  name: string;
+  description: string;
+  avatar: string;
+  system_prompt: string;
+  realtime_instructions?: string;
+  voice_id?: string;
+  response_style?: 'brief' | 'detailed' | 'conversational';
+  traits?: string[];
+}
+
+export async function createPersona(input: CreatePersonaInput): Promise<CaddiePersonalityInfo> {
+  return post<CaddiePersonalityInfo>('/caddie/personalities', input);
+}
+
 // ── Weather ──
 
 export async function fetchWeather(lat: number, lng: number): Promise<WeatherConditions> {
@@ -83,6 +98,7 @@ export async function fetchRecommendation(params: {
   handicap?: number;
   weather?: WeatherConditions;
   hole_intelligence?: HoleIntelligence;
+  shot_bearing?: number;
 }): Promise<CaddieRecommendation> {
   return post<CaddieRecommendation>('/caddie/recommend', {
     hole_number: params.hole_number,
@@ -93,6 +109,7 @@ export async function fetchRecommendation(params: {
     handicap: params.handicap,
     weather: params.weather,
     hole_intelligence: params.hole_intelligence,
+    shot_bearing: params.shot_bearing,
   });
 }
 
@@ -108,15 +125,30 @@ export async function fetchPlayerStats(params: {
 
 // ── Session Management ──
 
+export interface CaddieMemoryEntry {
+  kind: 'tendency' | 'preference' | 'course_history' | 'incident';
+  summary: string;
+  weight: number;
+}
+
+export interface CaddieProfile {
+  handicap: number | null;
+  preferred_personality_id: string | null;
+  rounds_analyzed: number;
+}
+
 export interface SessionStatus {
   status: string;
   round_id: string;
+  user_id?: string;
   current_hole?: number;
   holes_with_intel?: number[];
   has_weather?: boolean;
   shot_count?: number;
   conversation_length?: number;
   last_recommendation?: CaddieRecommendation | null;
+  memories?: CaddieMemoryEntry[];
+  profile?: CaddieProfile | null;
 }
 
 export async function startSession(params: {
@@ -163,6 +195,115 @@ export async function sessionVoice(params: {
   hole_number: number;
 }): Promise<{ response: string }> {
   return post('/caddie/session/voice', params);
+}
+
+// ── Daily pin sheets (PR #6) ──
+
+export interface PinRecord {
+  id: string;
+  course_id: string;
+  hole_number: number;
+  pin_date: string;
+  pin_lat: number;
+  pin_lng: number;
+  source: 'manual' | 'admin' | 'estimated';
+  marked_by_user_id: string | null;
+}
+
+export async function fetchPinsForCourse(courseId: string, date?: string): Promise<PinRecord[]> {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+  return get<PinRecord[]>(`/courses/${encodeURIComponent(courseId)}/pins${qs}`);
+}
+
+export async function markPin(params: {
+  course_id: string;
+  hole_number: number;
+  pin_lat: number;
+  pin_lng: number;
+  source?: 'manual' | 'admin';
+  pin_date?: string;
+}): Promise<PinRecord> {
+  return post<PinRecord>(`/courses/${encodeURIComponent(params.course_id)}/pins`, {
+    hole_number: params.hole_number,
+    pin_lat: params.pin_lat,
+    pin_lng: params.pin_lng,
+    source: params.source || 'manual',
+    pin_date: params.pin_date,
+  });
+}
+
+// ── Shot tracking (PR #4) ──
+
+export type Lie = 'tee' | 'fairway' | 'rough' | 'bunker' | 'green' | 'water' | 'ob';
+
+export interface TrackedShot {
+  id: number;
+  round_id: string;
+  user_id: string | null;
+  hole_id: string | null;
+  hole_number: number;
+  shot_number: number;
+  start_lat: number | null;
+  start_lng: number | null;
+  start_lie: Lie | null;
+  end_lat: number | null;
+  end_lng: number | null;
+  end_lie: Lie | null;
+  distance_yards: number | null;
+  club: string | null;
+  result: string | null;
+  created_at: string;
+}
+
+export interface RecordShotInput {
+  round_id: string;
+  hole_number: number;
+  hole_id?: string;
+  start_lat?: number;
+  start_lng?: number;
+  start_lie?: Lie;
+  end_lat?: number;
+  end_lng?: number;
+  end_lie?: Lie;
+  club?: string;
+  result?: string;
+  intended_target_lat?: number;
+  intended_target_lng?: number;
+  wind_speed_mph?: number;
+  wind_direction?: number;
+  notes?: string;
+}
+
+export async function recordTrackedShot(input: RecordShotInput): Promise<TrackedShot> {
+  return post<TrackedShot>('/shots', input);
+}
+
+export async function fetchShotsForRound(roundId: string): Promise<TrackedShot[]> {
+  return get<TrackedShot[]>(`/shots/round/${encodeURIComponent(roundId)}`);
+}
+
+export async function deleteTrackedShot(shotId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/shots/${shotId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Delete shot failed: ${res.status}`);
+}
+
+// ── Realtime (OpenAI WebRTC) ──
+
+export interface RealtimeSessionToken {
+  client_secret: string;
+  expires_at: number;
+  model: string;
+  voice_id: string;
+  instructions: string;
+  tools: Array<{ type: string; name: string; description?: string; parameters?: unknown }>;
+  realtime_session_id: string;
+}
+
+export async function startRealtimeSession(params: {
+  round_id: string;
+  personality_id: string;
+}): Promise<RealtimeSessionToken> {
+  return post<RealtimeSessionToken>('/realtime/session', params);
 }
 
 // ── Voice Caddie ──

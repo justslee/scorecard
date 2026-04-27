@@ -36,6 +36,35 @@ const nextConfig: NextConfig = {
         source: "/api/voice/parse-transcript",
         destination: `${backendUrl}/api/voice/parse-transcript`,
       },
+      {
+        source: "/api/voice/transcribe",
+        destination: `${backendUrl}/api/voice/transcribe`,
+      },
+      // Persistent caddie memory (PR #1) + Realtime ephemeral session mint (PR #2)
+      {
+        source: "/api/memory/:path*",
+        destination: `${backendUrl}/api/memory/:path*`,
+      },
+      {
+        source: "/api/realtime/:path*",
+        destination: `${backendUrl}/api/realtime/:path*`,
+      },
+      // Shot tracking (PR #4)
+      {
+        source: "/api/shots/:path*",
+        destination: `${backendUrl}/api/shots/:path*`,
+      },
+      {
+        source: "/api/shots",
+        destination: `${backendUrl}/api/shots`,
+      },
+      // Pin marking (PR #6) — proxies /api/courses/:id/pins. Note: more specific
+      // than the existing /api/courses/search rewrite, must come before any
+      // catch-all course rule.
+      {
+        source: "/api/courses/:courseId/pins",
+        destination: `${backendUrl}/api/courses/:courseId/pins`,
+      },
     ];
   },
 };
