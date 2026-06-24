@@ -64,7 +64,6 @@ def _safe_json_extract(text: str) -> Optional[str]:
 
 class RoundSetupRequest(BaseModel):
     transcript: str
-    apiKey: Optional[str] = None
 
 
 class RoundSetupResponse(BaseModel):
@@ -121,7 +120,7 @@ async def parse_round_setup(request: RoundSetupRequest):
     if not request.transcript:
         raise HTTPException(400, "No transcript provided")
 
-    api_key = request.apiKey or os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return _local_parse_round_setup(request.transcript)
 
@@ -277,7 +276,6 @@ class VoiceTranscriptRequest(BaseModel):
     systemPrompt: Optional[str] = None
     knownPlayers: Optional[list[str]] = None
     knownCourses: Optional[list[str]] = None
-    apiKey: Optional[str] = None
 
 
 @router.post("/parse-transcript")
@@ -286,7 +284,7 @@ async def parse_voice_transcript(request: VoiceTranscriptRequest):
     if not request.transcript:
         raise HTTPException(400, "No transcript provided")
 
-    api_key = request.apiKey or os.getenv("ANTHROPIC_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(500, "No API key configured")
 

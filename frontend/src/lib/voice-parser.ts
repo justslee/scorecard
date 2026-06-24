@@ -104,7 +104,7 @@ Parse the following voice command and return ONLY valid JSON:`;
 export async function parseVoiceCommand(
   transcript: string,
   existingPlayers?: Player[],
-  options?: { apiKey?: string; knownCourses?: string[] }
+  options?: { knownCourses?: string[] }
 ): Promise<VoiceParseResult> {
   // Build context about existing players if available
   let playerContext = "";
@@ -120,7 +120,6 @@ export async function parseVoiceCommand(
       systemPrompt: GAME_PARSER_PROMPT + playerContext,
       knownPlayers: existingPlayers?.map((p) => p.name) ?? undefined,
       knownCourses: options?.knownCourses,
-      apiKey: options?.apiKey,
     }),
   });
 
