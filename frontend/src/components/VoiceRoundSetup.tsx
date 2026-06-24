@@ -101,14 +101,11 @@ export default function VoiceRoundSetup({
     setError(null);
 
     try {
-      const apiKey = typeof window !== "undefined" ? (localStorage.getItem("anthropic_api_key") || null) : null;
-
       const response = await fetch("/api/parse-round-setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           transcript: fullTranscript,
-          apiKey,
           systemPrompt: `Parse this golf round setup request. Return ONLY valid JSON.
 
 Schema:

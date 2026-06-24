@@ -148,8 +148,6 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
       const backendUrl = process.env.NEXT_PUBLIC_API_URL;
       const endpoint = backendUrl ? `${backendUrl}/api/parse-voice-scores` : `/api/parse-voice-scores`;
 
-      const apiKey = typeof window !== 'undefined' ? localStorage.getItem('anthropic_api_key') : null;
-      
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -158,7 +156,6 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
           playerNames,
           hole: targetHole,
           par,
-          apiKey,
         }),
       });
 

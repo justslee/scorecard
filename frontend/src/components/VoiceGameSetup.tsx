@@ -154,8 +154,7 @@ export default function VoiceGameSetup({
     setError(null);
 
     try {
-      const apiKey = typeof window !== "undefined" ? (localStorage.getItem("anthropic_api_key") || undefined) : undefined;
-      const result = await parseVoiceCommand(fullTranscript, players, { apiKey });
+      const result = await parseVoiceCommand(fullTranscript, players);
       setParseResult(result);
     } catch (err) {
       console.error("Parse error:", err);
