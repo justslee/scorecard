@@ -180,6 +180,95 @@ Rules:
     raise HTTPException(500, "Could not parse transcript")
 
 
+# ── Parse Scorecard Image (OCR) ──
+
+
+class ScorecardRequest(BaseModel):
+    imageBase64: str
+    existingPlayerNames: Optional[list[str]] = None
+
+
+class ScorecardPlayer(BaseModel):
+    name: str
+    scores: list[Optional[int]] = []
+
+
+class ScorecardResponse(BaseModel):
+    players: list[ScorecardPlayer] = []
+    confidence: float = 0.0
+    rawText: Optional[str] = None
+
+
+@router.post("/parse-scorecard", response_model=ScorecardResponse)
+async def parse_scorecard(request: ScorecardRequest):
+    """OCR a golf scorecard photo into per-player hole scores.
+
+    Server-side only: the Anthropic key never leaves the backend. Replaces the old
+    browser-side Anthropic call that lived in frontend/src/lib/ocr.ts.
+    """
+    if not request.imageBase64:
+        raise HTTPException(400, "No image provided")
+
+    # Accept either a raw base64 string or a data: URL.
+    media_type = "image/jpeg"
+    data = request.imageBase64
+    m = re.match(r"^data:([^;]+);base64,(.+)$", data)
+    if m:
+        media_type = m.group(1)
+        data = m.group(2)
+
+    client = _get_client()
+    model = _get_model()
+
+    hint = ""
+    if request.existingPlayerNames:
+        hint = "\nExpected player names might include: " + ", ".join(request.existingPlayerNames)
+
+    prompt = (
+        "Analyze this golf scorecard image and extract the scores.\n"
+        'Return ONLY JSON: {"players":[{"name":string,"scores":[18 ints or null]}],"confidence":0-1}.\n'
+        "- scores must have exactly 18 elements (holes 1-18), null for blank/unreadable.\n"
+        "- If the card is unreadable, return an empty players array with low confidence." + hint
+    )
+
+    try:
+        message = client.messages.create(
+            model=model,
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {"type": "base64", "media_type": media_type, "data": data},
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+        )
+        text = message.content[0].text
+        json_text = _safe_json_extract(text)
+        if not json_text:
+            raise HTTPException(422, "Could not read the scorecard")
+        obj = json.loads(json_text)
+        return ScorecardResponse(
+            players=[
+                ScorecardPlayer(name=p.get("name", ""), scores=p.get("scores", []))
+                for p in obj.get("players", [])
+            ],
+            confidence=float(obj.get("confidence", 0.0)),
+            rawText=text,
+        )
+    except json.JSONDecodeError:
+        raise HTTPException(422, "Could not read the scorecard")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Scorecard OCR failed: {e}")
+
+
 # ── Parse Voice Transcript (full setup) ──
 
 

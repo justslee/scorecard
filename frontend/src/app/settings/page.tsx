@@ -1,33 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Trash2, Users } from 'lucide-react';
 import { seedDefaultPlayers } from '@/lib/storage';
 
 export default function Settings() {
-  const [apiKey, setApiKey] = useState('');
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    const key = localStorage.getItem('anthropic_api_key') || '';
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setApiKey(key);
-  }, []);
-
-  const handleSave = () => {
-    localStorage.setItem('anthropic_api_key', apiKey);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  const handleClear = () => {
-    if (confirm('Clear API key?')) {
-      localStorage.removeItem('anthropic_api_key');
-      setApiKey('');
-    }
-  };
-
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -37,7 +14,7 @@ export default function Settings() {
           </Link>
           <div>
             <h1 className="text-base font-semibold tracking-tight">Settings</h1>
-            <p className="text-sm text-zinc-400">Scanning + data options.</p>
+            <p className="text-sm text-zinc-400">Data options.</p>
           </div>
         </div>
         <div className="header-divider" />
@@ -45,64 +22,14 @@ export default function Settings() {
 
       <main className="max-w-2xl mx-auto px-4 pt-5 pb-24 space-y-4">
         <section className="card p-5">
-          <h2 className="text-lg font-semibold tracking-tight">Scorecard Scanning</h2>
-          <p className="text-sm text-zinc-400 mt-1 leading-relaxed">
-            To use OCR scanning, add your Claude API key from Anthropic. Your key is stored locally in your browser.
-          </p>
-
-          <div className="mt-4 space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 tracking-wide uppercase mb-2">Claude API key</label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-ant-..."
-                className="w-full px-4 py-3 rounded-2xl bg-white/5 border border-white/10 focus:bg-white/7"
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <button onClick={handleSave} className="btn btn-primary flex-1">
-                {saved ? 'Saved' : 'Save'}
-              </button>
-              {apiKey && (
-                <button onClick={handleClear} className="btn rounded-full px-5 py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200">
-                  Clear
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-2xl bg-white/4 border border-white/10 p-4 text-sm">
-            <p className="font-medium text-zinc-200 mb-2">Get an API key</p>
-            <ol className="list-decimal list-inside space-y-1 text-zinc-400">
-              <li>
-                Go to{' '}
-                <a
-                  href="https://console.anthropic.com/settings/keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-emerald-400 hover:text-emerald-300 underline"
-                >
-                  console.anthropic.com
-                </a>
-              </li>
-              <li>Create a new API key</li>
-              <li>Copy and paste it above</li>
-            </ol>
-          </div>
-        </section>
-
-        <section className="card p-5">
           <h2 className="text-lg font-semibold tracking-tight">About</h2>
           <p className="text-sm text-zinc-400 mt-2 leading-relaxed">
-            A simple golf scoring app with optional OCR scorecard scanning. Track your rounds, enter scores hole-by-hole,
-            or snap a photo of your paper scorecard to auto-fill.
+            A voice-first golf companion with OCR scorecard scanning. Track your rounds, enter scores
+            hole-by-hole, or snap a photo of your paper scorecard to auto-fill. Scanning runs securely
+            on the backend — no API key needed here.
           </p>
           <div className="mt-4 pt-4 border-t border-white/10 text-sm text-zinc-500">
             <p>Version 1.0.0</p>
-            <p className="mt-1">Data is stored locally in your browser.</p>
           </div>
         </section>
 
