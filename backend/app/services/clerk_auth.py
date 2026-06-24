@@ -13,11 +13,15 @@ import os
 from typing import Optional
 import jwt
 from jwt import PyJWKClient
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 
 CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL")
 CLERK_ISSUER = os.getenv("CLERK_ISSUER")
+OWNER_CLERK_USER_ID = os.getenv("OWNER_CLERK_USER_ID")
+# Fail closed by default: only serve anonymous/unverified requests when this is
+# explicitly set for local development.
+ALLOW_ANONYMOUS = os.getenv("ALLOW_ANONYMOUS") == "1"
 
 _jwks_client: Optional[PyJWKClient] = PyJWKClient(CLERK_JWKS_URL) if CLERK_JWKS_URL else None
 _anonymous_user_id = "anonymous"
@@ -64,6 +68,14 @@ async def current_user_id(authorization: Optional[str] = Header(default=None)) -
     token = _extract_bearer(authorization)
 
     if _jwks_client is None:
+        # No JWKS configured. Permit anonymous access only when explicitly enabled
+        # for local dev; otherwise fail closed so a misconfigured production box can
+        # never silently serve unauthenticated requests.
+        if not ALLOW_ANONYMOUS:
+            raise HTTPException(
+                503,
+                "Auth not configured: set CLERK_JWKS_URL (or ALLOW_ANONYMOUS=1 for local dev).",
+            )
         return _unverified_user_id(token) if token else _anonymous_user_id
 
     if not token:
@@ -75,6 +87,19 @@ async def current_user_id(authorization: Optional[str] = Header(default=None)) -
         raise HTTPException(401, "Token expired")
     except jwt.PyJWTError as e:
         raise HTTPException(401, f"Token verification failed: {e}")
+
+
+async def require_owner(user_id: str = Depends(current_user_id)) -> str:
+    """FastAPI dependency: allow only the configured owner through.
+
+    Layered on top of ``current_user_id`` (which verifies the Clerk JWT). When
+    OWNER_CLERK_USER_ID is set, any other identity is rejected with 403 — the
+    owner-only gate for the private beta. When it is unset (local dev), the
+    underlying ``current_user_id`` behavior applies unchanged.
+    """
+    if OWNER_CLERK_USER_ID and user_id != OWNER_CLERK_USER_ID:
+        raise HTTPException(403, "Forbidden: this deployment is owner-only.")
+    return user_id
 
 
 async def optional_user_id(authorization: Optional[str] = Header(default=None)) -> Optional[str]:
