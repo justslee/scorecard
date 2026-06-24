@@ -1,4 +1,6 @@
-// Caddie API client — talks to FastAPI backend
+// Caddie API client — talks to the FastAPI backend through the authenticated,
+// absolute-base client (Clerk Bearer + NEXT_PUBLIC_API_URL). No relative "/api"
+// proxy, so it works in the static native build and passes the owner gate.
 
 import type {
   CaddieRecommendation,
@@ -7,27 +9,17 @@ import type {
   CaddiePersonalityInfo,
   VoiceCaddieMessage,
 } from './types';
-
-// Backend URL — uses Next.js rewrite proxy in production, direct in dev
-const API_BASE = '/api';
+import { fetchAPI } from '../api';
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  return fetchAPI<T>(`/api${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API error ${res.status}: ${text}`);
-  }
-  return res.json();
 }
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  return fetchAPI<T>(`/api${path}`);
 }
 
 // ── Personalities ──
@@ -283,8 +275,7 @@ export async function fetchShotsForRound(roundId: string): Promise<TrackedShot[]
 }
 
 export async function deleteTrackedShot(shotId: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/shots/${shotId}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`Delete shot failed: ${res.status}`);
+  await fetchAPI(`/api/shots/${shotId}`, { method: 'DELETE' });
 }
 
 // ── Realtime (OpenAI WebRTC) ──
