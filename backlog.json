@@ -30,7 +30,7 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": ["db-core-schema"],
       "spec": "specs/real-data-wiring-plan.md"
     },
