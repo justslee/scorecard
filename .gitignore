@@ -30,11 +30,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files — ignore all variants, keep examples
 .env
-.env.local
+.env.*
 !.env.example
-!.env.local.example
+!.env.*.example
 
 # vercel
 .vercel
