@@ -8,7 +8,7 @@
       "type": "minor",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "done",
       "depends_on": [],
       "why": "No relational tables exist for the core scoring domain (players/rounds/scores/tournaments live in JSON). Unblocks the whole initiative. RDS is already up (DATABASE_URL on EC2 + Secrets Manager); set up Alembic, baseline caddie schema 001-004, then author 005 as the first revision; apply on the EC2 deploy box.",
       "spec": "specs/real-data-wiring-plan.md"
@@ -19,7 +19,7 @@
       "type": "minor",
       "priority": 2,
       "risk": "medium",
-      "status": "ready",
+      "status": "done",
       "depends_on": [],
       "why": "api.ts uses snake_case + PATCH + nonexistent endpoints, so storage-api.ts always silently falls back to localStorage. Until this lands, backend fixes are invisible in the app.",
       "spec": "specs/real-data-wiring-plan.md"
@@ -30,7 +30,7 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "blocked",
+      "status": "ready",
       "depends_on": ["db-core-schema"],
       "spec": "specs/real-data-wiring-plan.md"
     },
@@ -40,7 +40,7 @@
       "type": "minor",
       "priority": 4,
       "risk": "medium",
-      "status": "blocked",
+      "status": "ready",
       "depends_on": ["db-core-schema"],
       "spec": "specs/real-data-wiring-plan.md"
     },
@@ -60,7 +60,7 @@
       "type": "minor",
       "priority": 6,
       "risk": "medium",
-      "status": "blocked",
+      "status": "ready",
       "depends_on": ["db-core-schema"],
       "spec": "specs/real-data-wiring-plan.md"
     },
@@ -70,7 +70,7 @@
       "type": "minor",
       "priority": 7,
       "risk": "low",
-      "status": "blocked",
+      "status": "ready",
       "depends_on": ["db-core-schema"],
       "why": "Decision: new golfer_profiles table, distinct from caddie player_profiles.",
       "spec": "specs/real-data-wiring-plan.md"
