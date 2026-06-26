@@ -37,15 +37,18 @@ ships silently. He is only pinged for major features or a genuine decision.
   (tests/refactors/infra/docs/deps). The owner is asked to approve only when the bundle
   contains ≥1 noticeable change; silent work rides along and merges with it. The owner's
   single "ship it" approves the whole bundle, then a fresh `integration/next` is cut.
-- **Approval alert = Claude Code push; record/reply = Notion board.** Notion CANNOT push the
-  owner — the Notion MCP is authed AS the owner's own account, so an @-mention is a
-  self-mention and Notion suppresses it (verified 2026-06-26: test mention sent no
-  notification). So the *buzz* goes via `PushNotification` (reaches the phone once **Remote
-  Control** is paired — `claude remote-control`, scan QR in the Claude mobile app, enable push
-  in `/config`). The "Looper — Product Board" (`28cd03a5-3b70-4191-a07d-5017b133051d`) card is
-  the durable record + reply thread; owner replies "ship it" in the session or on the card
-  (polled via get-comments). Gmail is a fallback (needs one-time OAuth; email-to-self DOES
-  deliver, unlike a Notion self-mention).
+- **Approval alert = dedicated approvals email; record = Notion board.** (Decided 2026-06-26
+  after two dead ends: Notion can't push — the MCP is authed AS the owner, so an @-mention is
+  a self-mention Notion suppresses [verified: test sent no alert]; and Remote Control returned
+  "can't reach your desktop".) The owner was wary of exposing his personal inbox to an
+  always-on agent, so: a DEDICATED Gmail (`<APPROVALS_EMAIL>`, e.g. looper.approvals@gmail.com)
+  is the only account the agent is authorized for. Alert = email FROM the dedicated account TO
+  `justinlee627@gmail.com` (his normal Gmail app pushes it); reply "ship it" is watched in the
+  DEDICATED mailbox only — his personal inbox is never accessed. The "Looper — Product Board"
+  (`28cd03a5-3b70-4191-a07d-5017b133051d`) card stays the durable record (owner may also reply
+  there). **TODO (owner):** create the dedicated Gmail + tell the agent the address → agent
+  runs the Gmail MCP OAuth signed in AS that account. Then fill `<APPROVALS_EMAIL>` in the
+  agent files.
 
 ## Delivery model (how "go play with it" works)
 - **Per-feature preview** — every PR gets its own Vercel preview URL; this is the

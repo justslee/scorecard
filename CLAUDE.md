@@ -38,10 +38,11 @@ See @tasks/todo.md for the build plan and @ops/mac/RUN.md for how the team runs.
   notice on a new TestFlight build** — NOT one item. All work accumulates on one rolling
   branch `integration/next` (one open PR → `main`). The owner is asked to approve only when
   that bundle contains ≥1 noticeable change; silent work (tests/refactors/infra/docs/deps)
-  rides along and merges with it. Approval **alert** = Claude Code `PushNotification` (to the
-  owner's phone via Remote Control); the **Notion board** ("Looper — Product Board") is the
-  record + reply thread (a Notion @-mention can't notify — the MCP is authed as the owner, so
-  it's a self-mention). Owner replies "ship it". See `.claude/agents/eng-lead.md`.
+  rides along and merges with it. Approval **alert** = email from a **dedicated approvals
+  account** (`<APPROVALS_EMAIL>`) to the owner's personal address — never his personal inbox;
+  the **Notion board** ("Looper — Product Board") is the record. Owner replies "ship it" by
+  email (watched in the dedicated mailbox) or on the card. (A Notion @-mention can't notify —
+  the MCP is authed as the owner.) See `.claude/agents/eng-lead.md`.
 - NEVER push to `main`. A human approves every merge (now in noticeable-sized bundles).
 - Update `tasks/progress.md` (done / in-progress / blocked) before ending a session,
   so work survives context resets and usage-limit pauses.

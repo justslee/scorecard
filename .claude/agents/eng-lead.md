@@ -68,10 +68,10 @@ the owner would NOTICE on a new TestFlight build** — not one backlog item. So:
 9. **Decide on notifying the owner:**
    - If the bundle now contains ≥1 **noticeable** change and all gates are green →
      dispatch `release-manager` to build TestFlight from `integration/next` and alert the
-     owner for approval. **Alert = Claude Code `PushNotification`** (reaches his phone when
-     Remote Control is paired); the **Notion board card is the record + reply thread** (a
-     Notion @-mention can't notify — the MCP is authed as the owner, so it's a self-mention).
-     The owner replies "ship it" in the session (Remote Control) or on the card.
+     owner for approval. **Alert = email from the dedicated approvals account** (`<APPROVALS_EMAIL>`)
+     to his personal address — never his personal inbox; the **Notion board card is the
+     record**. The owner replies "ship it" by email (watched in the dedicated mailbox) or on
+     the card. (A Notion @-mention can't notify — the MCP is authed as the owner.)
    - If the bundle is **silent-only** → do NOT notify. Just leave it accumulating and move
      to the next item next cycle.
 
