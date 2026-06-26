@@ -10,10 +10,15 @@
 # destructive recursive deletes, force-pushes, and pushes to main — no matter the mode.
 # Branch protection is the final backstop.
 #
+# `--remote-control` enables Remote Control on the loop session so its approval push
+# notifications reach your PHONE (and you can reply "ship it" from the Claude mobile app).
+# Pair once: open the Claude app → Code → tap this session (or scan the QR shown on start).
+# Without this flag, PushNotification only reaches the desktop ("Remote Control inactive").
+#
 # Stays on your Max subscription (interactive). Do NOT use `claude -p` — it meters at API rates.
 #
 # FIRST PROOF RUN should be SUPERVISED instead: from the repo root run plain `claude`
 # (it prompts so you can watch/approve each step) before trusting this unattended runner.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-exec caffeinate -dimsu claude --permission-mode auto
+exec caffeinate -dimsu claude --remote-control "Looper loop" --permission-mode auto

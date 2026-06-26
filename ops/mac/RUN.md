@@ -37,8 +37,15 @@ Tip: pick **"Yes, and don't ask again"** for repeated safe commands to taper the
 
 **After you trust it — UNATTENDED (always-on):**
 ```
-./ops/mac/start.sh         # launches `claude --permission-mode auto` (no prompts; the loop won't hang)
+./ops/mac/start.sh         # launches `claude --remote-control "Looper loop" --permission-mode auto`
 ```
+This starts the loop with **Remote Control** enabled so approval push notifications reach your
+**phone** and you can reply "ship it" from the Claude mobile app. **Pair once:** open the Claude
+app → **Code** → tap the "Looper loop" session (or scan the QR the command prints on start). Keep
+the Mac awake + online (the keepawake plist below) — if it sleeps/loses network >~10 min the
+Remote Control session times out. To enable Remote Control on an *already-running* loop without
+restarting, run **`/remote-control`** inside that session.
+
 Then self-pace:
 > /loop 4h Act as eng-lead — sync main, build the next backlog item, run the gates, open a PR.
 
