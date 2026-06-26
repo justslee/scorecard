@@ -51,8 +51,10 @@ async def _build_full_tournament(
     """Reassemble the full Tournament Pydantic shape from normalised DB tables.
 
     Derives playerNamesById via a join to the players table (owner-scoped, same
-    pattern as rounds.py). Falls back to "Unknown" for deleted-roster players
-    (cross-domain plain-text ref, no DB-level FK — per spec §C loose coupling).
+    pattern as rounds.py). Player ids with no owned match (deleted-roster /
+    cross-tenant) are simply omitted from the map — the frontend still has the
+    full playerIds list (cross-domain plain-text ref, no DB-level FK — per spec
+    §C loose coupling).
 
     Loads tournament-scoped games from the games table (tournament_id FK).
     """

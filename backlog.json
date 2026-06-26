@@ -50,7 +50,7 @@
       "type": "minor",
       "priority": 5,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": ["backend-rounds-scores-db"],
       "spec": "specs/real-data-wiring-plan.md"
     },
