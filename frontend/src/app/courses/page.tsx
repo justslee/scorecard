@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { CourseListItem } from '@/lib/courses/types';
+import { fetchAPI } from '@/lib/api';
 
 export default function CoursesPage() {
   const [courses, setCourses] = useState<CourseListItem[]>([]);
@@ -14,8 +15,9 @@ export default function CoursesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/courses?search=${encodeURIComponent(search)}`);
-      const data = await res.json();
+      const data = await fetchAPI<{ courses?: CourseListItem[] }>(
+        `/api/courses/mapped?search=${encodeURIComponent(search)}`
+      );
       setCourses(Array.isArray(data.courses) ? data.courses : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load courses');

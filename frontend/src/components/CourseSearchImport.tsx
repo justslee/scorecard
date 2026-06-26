@@ -22,6 +22,8 @@ import {
   CourseSearchResult,
 } from '@/lib/golf-api';
 import type { Course } from '@/lib/types';
+import type { CourseData } from '@/lib/courses/types';
+import { fetchAPI } from '@/lib/api';
 
 interface CourseSearchImportProps {
   onSelectCourse: (course: Course) => void;
@@ -130,10 +132,9 @@ export default function CourseSearchImport({
     if (result.source === 'mapped') {
       setImporting(result.id);
       try {
-        const res = await fetch(
-          `/api/courses/${encodeURIComponent(result.id)}`
+        const data = await fetchAPI<{ course?: CourseData }>(
+          `/api/courses/mapped/${encodeURIComponent(result.id)}`
         );
-        const data = await res.json();
         const courseData = data.course;
         if (courseData) {
           const baseHoles = courseData.holes.map(

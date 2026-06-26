@@ -106,9 +106,9 @@ export default function CourseEditorPage() {
     (async () => {
       try {
         setCloudStatus('Loading…');
-        const res = await fetch(`/api/courses/${encodeURIComponent(courseIdFromQuery)}`);
-        if (!res.ok) throw new Error(`Load failed (${res.status})`);
-        const data = await res.json();
+        const data = await fetchAPI<{ course?: CourseData }>(
+          `/api/courses/mapped/${encodeURIComponent(courseIdFromQuery)}`
+        );
         if (!cancelled && data.course) {
           setCourseData(data.course as CourseData);
           setCloudStatus(null);
@@ -577,14 +577,14 @@ export default function CourseEditorPage() {
   const saveToCloud = async () => {
     try {
       setCloudStatus('Saving…');
-      const res = await fetch(`/api/courses/${encodeURIComponent(courseData.id)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(courseData),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || `Save failed (${res.status})`);
-      setCourseData(data.course as CourseData);
+      const data = await fetchAPI<{ course?: CourseData }>(
+        `/api/courses/mapped/${encodeURIComponent(courseData.id)}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify(courseData),
+        }
+      );
+      if (data.course) setCourseData(data.course as CourseData);
       setCloudStatus('Saved');
       setTimeout(() => setCloudStatus(null), 1500);
       router.replace(`/courses/editor?id=${encodeURIComponent(courseData.id)}`);
