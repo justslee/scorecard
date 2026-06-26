@@ -37,3 +37,13 @@ Format: date — done / in-progress / blocked.
   backend, so do it after RDS is up): course CRUD → new `/api/courses/mapped` routes over RDS,
   then repoint `golf-api.ts` + `voice-parser.ts` (the backend parse-transcript returns a
   different shape — verify before swapping), then B3 static export. Then Capacitor (C).
+
+## 2026-06-26
+- **Done:** backlog `voice-nickname-jt` (priority 1) → **PR #47** (`fix/voice-nickname-jt`).
+  Made the local score parser's explicit-pattern pass nickname-aware (`aliasesForPlayer`),
+  with a collision guard so a real `JT` player isn't conflated with `Justin`. Fixes the last
+  failing smoke case. Gates: **voice-tests 260/260**, tsc clean, build OK, no new lint.
+  Minor change (no auth/data/endpoints/deps) — eng-lead ran an adversarial reviewer pass; not
+  pinging owner. **Follow-up:** promote voice-tests to a *required* CI gate (separate PR).
+- **Next ready backlog items:** `test-games-engine` (P2), `test-voice-pipeline` (P3),
+  `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8). Several majors need specs.

@@ -162,19 +162,37 @@ function wordOrDigitToNum(tok: string): number | null {
   return WORD_TO_NUM[tok.toLowerCase()] ?? null;
 }
 
+// nickname map (expand as needed): nickname -> canonical first name(s)
+const NICK_TO_CANONICAL: Record<string, string[]> = {
+  jt: ["justin"],
+  mike: ["michael"],
+  bob: ["robert"],
+  bobby: ["robert"],
+  rob: ["robert"],
+  pat: ["patrick"],
+};
+
+// All the ways a player's name can appear in an utterance: their (normalized)
+// name plus any nicknames that resolve to it. Used so the explicit-pattern pass
+// can match e.g. "jt with a 3" -> Justin. A nickname is suppressed when another
+// player in the round literally bears that name (e.g. a "JT" alongside a
+// "Justin"), so the literal player wins and the two aren't conflated.
+function aliasesForPlayer(player: string, playerNames: string[]): string[] {
+  const pn = normalize(player);
+  if (!pn) return [];
+  const literalNames = new Set(
+    playerNames.map(normalize).filter((n) => n && n !== pn)
+  );
+  const aliases = new Set<string>([pn]);
+  for (const [nick, canonicals] of Object.entries(NICK_TO_CANONICAL)) {
+    if (canonicals.includes(pn) && !literalNames.has(nick)) aliases.add(nick);
+  }
+  return Array.from(aliases);
+}
+
 function findPlayerMatch(playerNames: string[], chunk: string): string | null {
   const c = normalize(chunk);
   const words = new Set(c.split(" ").filter(Boolean));
-
-  // nickname map (expand as needed)
-  const nickToCanonical: Record<string, string[]> = {
-    jt: ["justin"],
-    mike: ["michael"],
-    bob: ["robert"],
-    bobby: ["robert"],
-    rob: ["robert"],
-    pat: ["patrick"],
-  };
 
   // exact word match first
   for (const p of playerNames) {
@@ -183,7 +201,7 @@ function findPlayerMatch(playerNames: string[], chunk: string): string | null {
   }
 
   // nicknames: if utterance has a nickname and player is the canonical
-  for (const [nick, canonicals] of Object.entries(nickToCanonical)) {
+  for (const [nick, canonicals] of Object.entries(NICK_TO_CANONICAL)) {
     if (!words.has(nick)) continue;
     for (const p of playerNames) {
       const pn = normalize(p);
@@ -226,10 +244,11 @@ export function parseVoiceScoresLocally(
   // First pass: explicit "<player> <result/number>" patterns across the whole string.
   // This handles punctuation-less strings like "justin 4 bob 3".
   for (const p of opts.playerNames) {
-    const pn = normalize(p);
-    if (!pn) continue;
+    const aliases = aliasesForPlayer(p, opts.playerNames);
+    if (aliases.length === 0) continue;
+    const nameAlt = aliases.join("|");
     const re = new RegExp(
-      `\\b${pn}\\b\\s+(?:made\\s+a\\s+|got\\s+a\\s+|shot\\s+a\\s+|shot\\s+|with\\s+a\\s+|)\\s*(par|birdie|eagle|bogey|double\\s+bogey|dbl\\s+bogey|double|\\d+|zero|one|won|two|to|too|three|tree|four|fore|ford|five|six|seven|eight|ate|nine|ten)`,
+      `\\b(?:${nameAlt})\\b\\s+(?:made\\s+a\\s+|got\\s+a\\s+|shot\\s+a\\s+|shot\\s+|with\\s+a\\s+|)\\s*(par|birdie|eagle|bogey|double\\s+bogey|dbl\\s+bogey|double|\\d+|zero|one|won|two|to|too|three|tree|four|fore|ford|five|six|seven|eight|ate|nine|ten)`,
       "gi"
     );
     for (const m of t.matchAll(re)) {
