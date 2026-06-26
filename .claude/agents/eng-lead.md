@@ -65,15 +65,19 @@ the owner would NOTICE on a new TestFlight build** — not one backlog item. So:
 8. **Update the bundle PR** (open it the first time with `gh pr create` from
    `integration/next` → `main` if it doesn't exist): add this item to the checklist, note
    noticeable vs silent. Update `tasks/progress.md`.
-9. **Decide on notifying the owner:**
-   - If the bundle now contains ≥1 **noticeable** change and all gates are green →
-     dispatch `release-manager` to build TestFlight from `integration/next` and alert the
-     owner for approval. **Alert = email from the dedicated approvals account**
-     (`looper.approvals@gmail.com`) to his personal address — never his personal inbox; the **Notion board card is the
-     record**. The owner replies "ship it" by email (watched in the dedicated mailbox) or on
-     the card. (A Notion @-mention can't notify — the MCP is authed as the owner.)
-   - If the bundle is **silent-only** → do NOT notify. Just leave it accumulating and move
-     to the next item next cycle.
+9. **Decide on notifying the owner.** **Alert = Claude Code `PushNotification`** (reaches his
+   phone because the loop runs under Remote Control — see `ops/mac/start.sh`). The **Notion
+   board card is the record**. (Email is NOT usable — the Gmail connector is read/draft-only,
+   no send; a Notion @-mention can't notify either, the MCP is authed as the owner.) Ping when:
+   - the bundle contains ≥1 **noticeable** change and all gates are green → dispatch
+     `release-manager` to build TestFlight from `integration/next`, then `PushNotification`
+     the owner for approval; OR
+   - the bundle is a **massive batch** or a **major backend change the owner can test** (e.g.
+     a deployed API/data-layer change he can hit on staging) → `PushNotification` him with how
+     to test it, even if it's not TestFlight-visible.
+   The owner replies "ship it" in the session (Remote Control) or on the card (poll
+   `notion-get-comments`).
+   - Otherwise (routine silent work) → do NOT notify. Leave it accumulating; move to the next item.
 
 Cost discipline: run `Plan` (opus) + `builder` + `reviewer` + `qa` every cycle; pull in
 `product-manager` / `designer` / `/security-review` only when the conditions above apply —

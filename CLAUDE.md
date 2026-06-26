@@ -43,10 +43,12 @@ See @tasks/todo.md for the build plan and @ops/mac/RUN.md for how the team runs.
   the **Notion board** ("Looper — Product Board") is the record. Owner replies "ship it" by
   email (watched in the dedicated mailbox) or on the card. (A Notion @-mention can't notify —
   the MCP is authed as the owner.) See `.claude/agents/eng-lead.md`.
-- **Notifications: rare by design.** Only push the owner (phone, via Remote Control) for
-  (a) a noticeable-bundle **approval request**, or (b) a genuine **blocker / product decision**.
-  NEVER push for routine progress: silent merges, per-item completion, gate runs, or status.
-  Silent work just appears on the board — no ping.
+- **Notifications: rare by design.** Push the owner (phone, via Remote Control) only for
+  (a) a noticeable-bundle **approval request**, (b) a **massive bundle or a major backend
+  change the owner can test** (e.g. a deployed API/data-layer change he can hit on staging —
+  ping with how to test it), or (c) a genuine **blocker / product decision**.
+  NEVER push for routine progress: small silent merges, per-item completion, gate runs, or
+  status. Routine silent work just appears on the board — no ping.
 - NEVER push to `main`. A human approves every merge (now in noticeable-sized bundles).
 - Update `tasks/progress.md` (done / in-progress / blocked) before ending a session,
   so work survives context resets and usage-limit pauses.
