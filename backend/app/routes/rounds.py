@@ -56,10 +56,12 @@ router = APIRouter(prefix="/api/rounds", tags=["rounds"])
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
 
-async def _build_full_round(db, row: RoundORM) -> Round:
+async def _build_full_round(db, row: RoundORM, owner_id: str) -> Round:
     """Reassemble the full Round Pydantic shape from normalised DB tables.
 
     Queries: round_players, players (name join), scores, player_groups, games.
+    owner_id is used to scope the player-name join to the caller's own roster,
+    preventing cross-tenant name resolution.
     """
     round_id = row.id
 
@@ -69,7 +71,7 @@ async def _build_full_round(db, row: RoundORM) -> Round:
     )
     rp_rows = rp_result.scalars().all()
 
-    # Resolve player names via join to the players table.
+    # Resolve player names via join to the players table, scoped to this owner.
     # round_players.player_id is a plain text FK (no DB-level constraint).
     # Falls back to "Unknown" when a player has been deleted from the roster.
     player_ids = [rp.player_id for rp in rp_rows]
@@ -77,7 +79,8 @@ async def _build_full_round(db, row: RoundORM) -> Round:
     if player_ids:
         p_result = await db.execute(
             select(PlayerORM.id, PlayerORM.name).where(
-                PlayerORM.id.in_(player_ids)
+                PlayerORM.id.in_(player_ids),
+                PlayerORM.owner_id == owner_id,
             )
         )
         for p_id, p_name in p_result.all():
@@ -195,7 +198,7 @@ async def get_rounds(owner_id: str = Depends(current_user_id)):
             .order_by(RoundORM.date.desc())
         )
         rows = result.scalars().all()
-        return [await _build_full_round(db, row) for row in rows]
+        return [await _build_full_round(db, row, owner_id) for row in rows]
 
 
 @router.get("/{round_id}", response_model=Round)
@@ -203,7 +206,7 @@ async def get_round(round_id: str, owner_id: str = Depends(current_user_id)):
     """Get a single round by id. Returns 404 if not owned by the caller."""
     async with async_session() as db:
         row = await _get_owned_round_row(db, round_id, owner_id)
-        return await _build_full_round(db, row)
+        return await _build_full_round(db, row, owner_id)
 
 
 @router.post("", response_model=Round)
@@ -219,7 +222,36 @@ async def create_round(
     new_id = str(uuid.uuid4())
 
     async with async_session() as db:
-        # 1. Create the rounds row
+        # 1. Resolve tournament linkage BEFORE creating the round row.
+        #
+        # Guard: tournaments are still JSON-backed (ids like "tournament-xxxxxxxx",
+        # not UUIDs) and the Postgres tournaments table is empty until
+        # backend-tournaments-db lands. Writing a non-UUID or unresolved FK
+        # crashes with a DBAPIError. Strategy:
+        #   - Validate the supplied id parses as a UUID (otherwise it's legacy JSON).
+        #   - Attempt to find an owned Postgres tournaments row.
+        #   - Only set tournament_id (and append to round_ids) if resolved.
+        #   - Otherwise leave tournament_id null and skip linkage silently.
+        # Linkage activates automatically once backend-tournaments-db migrates
+        # tournaments to Postgres and the Postgres row exists.
+        resolved_tournament_id: str | None = None
+        if data.tournamentId:
+            try:
+                uuid.UUID(data.tournamentId)  # validates UUID format; raises ValueError if not
+                t_result = await db.execute(
+                    select(TournamentORM).where(
+                        TournamentORM.id == data.tournamentId,
+                        TournamentORM.owner_id == owner_id,
+                    )
+                )
+                pg_tournament = t_result.scalar_one_or_none()
+                if pg_tournament:
+                    resolved_tournament_id = data.tournamentId
+            except ValueError:
+                # Non-UUID legacy tournament id (e.g. "tournament-abc123") — skip linkage.
+                pass
+
+        # 2. Create the rounds row
         round_row = RoundORM(
             id=new_id,
             owner_id=owner_id,
@@ -229,7 +261,7 @@ async def create_round(
             tee_name=data.teeName,
             date=now.isoformat(),
             status="active",
-            tournament_id=data.tournamentId,
+            tournament_id=resolved_tournament_id,
             holes=[h.model_dump() for h in data.holes],
             created_at=now,
             updated_at=now,
@@ -237,8 +269,7 @@ async def create_round(
         db.add(round_row)
         await db.flush()  # makes round.id available for FK children
 
-        # 2. Create player_groups first (round_players.group_id references them)
-        group_id_map: dict[str, str] = {}  # client group_id → stored group_id
+        # 3. Create player_groups first (round_players.group_id references them)
         for group in (data.groups or []):
             db.add(
                 PlayerGroupORM(
@@ -251,11 +282,10 @@ async def create_round(
                     created_at=now,
                 )
             )
-            group_id_map[group.id] = group.id
         if data.groups:
             await db.flush()  # ensures player_groups.id exists before round_players FK
 
-        # 3. Create round_players
+        # 4. Create round_players
         for player in data.players:
             db.add(
                 RoundPlayerORM(
@@ -268,7 +298,7 @@ async def create_round(
                 )
             )
 
-        # 4. Create games
+        # 5. Create games
         for game in data.games:
             db.add(
                 GameORM(
@@ -284,23 +314,15 @@ async def create_round(
                 )
             )
 
-        # 5. Link to tournament — append new_id to tournament.round_ids JSONB
-        if data.tournamentId:
-            t_result = await db.execute(
-                select(TournamentORM).where(
-                    TournamentORM.id == data.tournamentId,
-                    TournamentORM.owner_id == owner_id,
-                )
-            )
-            tournament = t_result.scalar_one_or_none()
-            if tournament:
-                tournament.round_ids = list(tournament.round_ids or []) + [new_id]
-                tournament.updated_at = now
-                flag_modified(tournament, "round_ids")
+        # 6. Update tournament.round_ids JSONB if linkage was resolved
+        if resolved_tournament_id and pg_tournament:
+            pg_tournament.round_ids = list(pg_tournament.round_ids or []) + [new_id]
+            pg_tournament.updated_at = now
+            flag_modified(pg_tournament, "round_ids")
 
         await db.commit()
         # Reload full shape (holes JSONB + children) for the response
-        return await _build_full_round(db, round_row)
+        return await _build_full_round(db, round_row, owner_id)
 
 
 @router.put("/{round_id}", response_model=Round)
@@ -394,7 +416,7 @@ async def update_round(
 
         row.updated_at = now
         await db.commit()
-        return await _build_full_round(db, row)
+        return await _build_full_round(db, row, owner_id)
 
 
 @router.post("/{round_id}/scores", response_model=Round)
@@ -445,7 +467,7 @@ async def update_score(
 
         row.updated_at = now
         await db.commit()
-        return await _build_full_round(db, row)
+        return await _build_full_round(db, row, owner_id)
 
 
 @router.post("/{round_id}/complete", response_model=Round)
@@ -459,7 +481,7 @@ async def complete_round(
         row.status = "completed"
         row.updated_at = now
         await db.commit()
-        return await _build_full_round(db, row)
+        return await _build_full_round(db, row, owner_id)
 
 
 @router.delete("/{round_id}")
@@ -474,10 +496,13 @@ async def delete_round(
     async with async_session() as db:
         row = await _get_owned_round_row(db, round_id, owner_id)
 
-        # Remove from tournament.round_ids if linked
+        # Remove from tournament.round_ids if linked, scoped to owner
         if row.tournament_id:
             t_result = await db.execute(
-                select(TournamentORM).where(TournamentORM.id == row.tournament_id)
+                select(TournamentORM).where(
+                    TournamentORM.id == row.tournament_id,
+                    TournamentORM.owner_id == owner_id,
+                )
             )
             tournament = t_result.scalar_one_or_none()
             if tournament and round_id in (tournament.round_ids or []):
