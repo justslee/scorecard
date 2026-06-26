@@ -392,6 +392,16 @@ interface CourseSearchApiResponse {
   }>;
 }
 
+/** Shape returned by the backend mapped-course endpoints (/api/courses/mapped). */
+interface MappedCourseApiResponse {
+  courses?: Array<{
+    id: string;
+    name?: string;
+    address?: string;
+    location?: { lat: number; lng: number };
+  }>;
+}
+
 /** Unified search across GolfAPI, OSM, and local courses */
 export async function searchAllCourses(
   query: string,
@@ -460,14 +470,13 @@ export async function searchAllCourses(
     })
     .catch(() => {});
 
-  // 3. Search mapped courses in Supabase
-  const mappedPromise = fetch(`/api/courses?search=${encodeURIComponent(query)}`)
-    .then((r) => r.json())
+  // 3. Search our mapped courses (RDS/PostGIS via the backend)
+  const mappedPromise = fetchAPI<MappedCourseApiResponse>(`/api/courses/mapped?search=${encodeURIComponent(query)}`)
     .then((data) => {
       for (const c of data.courses || []) {
         results.push({
           id: c.id,
-          name: c.name,
+          name: c.name ?? '',
           address: c.address,
           center: c.location,
           source: 'mapped',
@@ -660,15 +669,17 @@ async function courseToPostgresData(course: Course): Promise<CourseData> {
   };
 }
 
-/** Persist a course to Postgres (Supabase) — non-blocking, best-effort */
+/** Persist a mapped course to the backend (RDS/PostGIS) — non-blocking, best-effort */
 async function persistCourseToPostgres(course: Course): Promise<void> {
   try {
-    const { upsertCourse } = await import('./courses/storage');
     const courseData = await courseToPostgresData(course);
-    await upsertCourse(courseData);
+    await fetchAPI('/api/courses/mapped', {
+      method: 'POST',
+      body: JSON.stringify(courseData),
+    });
   } catch (e) {
-    // Silently fail — Supabase may not be configured
-    console.warn('Failed to persist course to Postgres:', e);
+    // Best-effort — don't block the import on a persistence failure.
+    console.warn('Failed to persist mapped course:', e);
   }
 }
 
@@ -724,11 +735,9 @@ export async function searchNearby(
 ): Promise<CourseSearchResult[]> {
   const results: CourseSearchResult[] = [];
 
-  // Search OSM nearby via the backend (honors lat/lng, returns geometry centers).
-  // NOTE: mapped-course (PostGIS) nearby search is restored in PR2 once mapped
-  // courses move from Supabase to the RDS-backed /api/courses/mapped endpoint.
-  await fetchAPI<CourseSearchApiResponse>(
-    `/api/courses/nearby?lat=${lat}&lng=${lng}&radiusMeters=${radiusMeters}`
+  // 1. Search our mapped courses (RDS/PostGIS) via the backend.
+  const mappedPromise = fetchAPI<MappedCourseApiResponse>(
+    `/api/courses/mapped/nearby?lat=${lat}&lng=${lng}&radiusMeters=${radiusMeters}`
   )
     .then((data) => {
       for (const c of data.courses || []) {
@@ -736,12 +745,37 @@ export async function searchNearby(
           id: c.id,
           name: c.name ?? '',
           address: c.address,
-          center: c.center,
-          source: 'osm',
+          center: c.location,
+          source: 'mapped',
+          hasCoordinates: true,
         });
       }
     })
     .catch(() => {});
+
+  // 2. Search OSM nearby via the backend (honors lat/lng, returns geometry centers).
+  const osmPromise = fetchAPI<CourseSearchApiResponse>(
+    `/api/courses/nearby?lat=${lat}&lng=${lng}&radiusMeters=${radiusMeters}`
+  )
+    .then((data) => {
+      for (const c of data.courses || []) {
+        const isDupe = results.some(
+          (r) => r.name.toLowerCase() === c.name?.toLowerCase()
+        );
+        if (!isDupe) {
+          results.push({
+            id: c.id,
+            name: c.name ?? '',
+            address: c.address,
+            center: c.center,
+            source: 'osm',
+          });
+        }
+      }
+    })
+    .catch(() => {});
+
+  await Promise.all([mappedPromise, osmPromise]);
 
   return results;
 }
