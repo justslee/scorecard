@@ -45,5 +45,19 @@ Format: date — done / in-progress / blocked.
   failing smoke case. Gates: **voice-tests 260/260**, tsc clean, build OK, no new lint.
   Minor change (no auth/data/endpoints/deps) — eng-lead ran an adversarial reviewer pass; not
   pinging owner. **Follow-up:** promote voice-tests to a *required* CI gate (separate PR).
-- **Next ready backlog items:** `test-games-engine` (P2), `test-voice-pipeline` (P3),
-  `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8). Several majors need specs.
+- **Done:** backlog `db-core-schema` (P1, SILENT) — Alembic + core scoring schema.
+  - Added `alembic>=1.13.0` to `backend/pyproject.toml`; installed (1.18.5).
+  - Created `backend/alembic.ini` + `backend/migrations/` (env.py async, script.py.mako).
+  - Revision `001_baseline` (empty no-op): marks caddie tables 001–004 as already applied.
+  - Revision `002_core_scoring` (005_core_scoring): creates 8 new tables: players,
+    golfer_profiles, tournaments, rounds, player_groups, round_players, scores, games.
+  - Added ORM models (Player, GolferProfile, Tournament, Round, PlayerGroup, RoundPlayer,
+    Score, Game) to `backend/app/db/models.py`.
+  - Gates: ruff clean, ORM import clean, alembic offline SQL clean, voice-tests 260/260.
+  - DB application deferred to EC2 deploy box. Deploy protocol:
+      DATABASE_URL=<real> uv run alembic stamp 001_baseline
+      DATABASE_URL=<real> uv run alembic upgrade head
+  - SILENT — no TestFlight-visible change.
+- **Next ready backlog items:** `api-contract-align` (Phase 0, silent), `backend-players-db`
+  (Phase 1, silent), `test-games-engine` (P2), `test-voice-pipeline` (P3),
+  `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).
