@@ -58,6 +58,27 @@ Format: date — done / in-progress / blocked.
       DATABASE_URL=<real> uv run alembic stamp 001_baseline
       DATABASE_URL=<real> uv run alembic upgrade head
   - SILENT — no TestFlight-visible change.
-- **Next ready backlog items:** `api-contract-align` (Phase 0, silent), `backend-players-db`
-  (Phase 1, silent), `test-games-engine` (P2), `test-voice-pipeline` (P3),
-  `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).
+- **Done:** backlog `api-contract-align` (Phase 0, SILENT) — rewrite `frontend/src/lib/api.ts`
+  and `frontend/src/lib/storage-api.ts` to match the real FastAPI/Pydantic contract.
+  Key fixes:
+  - All interfaces now camelCase (matching `backend/app/models.py` + `frontend/src/lib/types.ts`).
+  - Domain types imported from `types.ts` instead of redefined in api.ts.
+  - `updateRound` changed from `PATCH` → `PUT`; body now `RoundUpdate {scores,games,groups,status}`.
+  - `addScore` body now camelCase `{playerId,holeNumber,strokes}`; return type `Round` not `Score`.
+  - `createRound` body camelCase; `players` now includes `id` (required by backend Pydantic model).
+  - Removed `RoundListItem` (backend returns full `Round[]`); removed N+1 getRound-per-item calls.
+  - `updateTournament` changed from `PATCH` → `PUT`; body camelCase.
+  - `addPlayerToTournament` fixed to path-param style `/api/tournaments/{id}/players/{playerId}`.
+  - `searchCourses` removed (backend has no `?q=` param); replaced with `getCourses()`.
+  - Added Players API (`getPlayers`, `createPlayer`, `updatePlayer`, `deletePlayer`).
+  - Removed `addPlayerToRound` (endpoint doesn't exist).
+  - Removed Games CRUD (`getGame/createGame/updateGame/deleteGame` — no `/api/games` route).
+  - Profile functions stubbed with `// TODO(backend-profile-endpoint)` — return null, no HTTP calls.
+  - `storage-api.ts`: replaced silent `catch → localStorage` swallowing with `console.error` +
+    explicit offline fallback; removed snake_case converters (no longer needed); profile functions
+    simplified to localStorage-only; `saveRoundAsync` sends full scores in one PUT instead of
+    N individual addScore calls; player `id` field now included in `createRound`.
+  - Gates: tsc clean, lint clean (src/), voice-tests 260/260, build ✓.
+  - SILENT — no TestFlight-visible behavior change for un-migrated screens.
+- **Next ready backlog items:** `backend-players-db` (Phase 1, silent), `test-games-engine` (P2),
+  `test-voice-pipeline` (P3), `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).

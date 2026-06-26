@@ -1,7 +1,38 @@
 /**
  * API client for the Scorecard backend.
- * Replaces localStorage with backend API calls.
+ *
+ * All request/response shapes use camelCase to match the FastAPI/Pydantic backend
+ * exactly. The shared domain types (Round, Tournament, etc.) are imported from
+ * ./types — they are the single source of truth for both layers.
+ *
+ * Endpoints that do not yet exist are marked // TODO(<item-id>) so they are easy
+ * to find when that backlog item lands.
  */
+
+import type {
+  Round,
+  Tournament,
+  Player,
+  Score,
+  HoleInfo,
+  Game,
+  PlayerGroup,
+  SavedPlayer,
+  Course,
+} from './types';
+
+// Re-export so callers that import domain types from here keep working.
+export type {
+  Round,
+  Tournament,
+  Player,
+  Score,
+  HoleInfo,
+  Game,
+  PlayerGroup,
+  SavedPlayer,
+  Course,
+};
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -10,11 +41,11 @@ export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:800
  */
 async function getAuthToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
-  
+
   // @ts-expect-error - Clerk exposes this on window
   const clerk = window.Clerk;
   if (!clerk?.session) return null;
-  
+
   try {
     return await clerk.session.getToken();
   } catch {
@@ -40,176 +71,137 @@ export async function fetchAPI<T = unknown>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = await getAuthToken();
-  
+
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
-  
+
   if (token) {
     (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
   }
-  
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers,
   });
-  
+
   if (!res.ok) {
     const error = await res.text();
     throw new Error(error || `API error: ${res.status}`);
   }
-  
+
   // Handle 204 No Content
   if (res.status === 204) {
     return undefined as T;
   }
-  
+
   return res.json();
 }
 
 // ================
-// Profile API
+// Players API
+// GET    /api/players         → SavedPlayer[]
+// GET    /api/players/{id}    → SavedPlayer
+// POST   /api/players         → SavedPlayer
+// PUT    /api/players/{id}    → SavedPlayer
+// DELETE /api/players/{id}    → {status}
 // ================
 
-export interface GolferProfile {
-  id: string;
-  user_id: string;
+export interface PlayerCreate {
   name: string;
-  handicap: number | null;
-  home_course: string | null;
-  club_distances: Record<string, number> | null;
-  created_at: string;
-  updated_at: string;
+  nickname?: string;
+  email?: string;
+  phone?: string;
+  handicap?: number;
 }
 
-export async function getGolferProfile(): Promise<GolferProfile | null> {
-  try {
-    return await fetchAPI<GolferProfile>('/api/profile/golfer');
-  } catch {
-    return null;
-  }
+export interface PlayerUpdate {
+  name?: string;
+  nickname?: string;
+  email?: string;
+  phone?: string;
+  handicap?: number;
 }
 
-export async function createGolferProfile(data: {
-  name: string;
-  handicap?: number | null;
-  home_course?: string | null;
-  club_distances?: Record<string, number> | null;
-}): Promise<GolferProfile> {
-  return fetchAPI<GolferProfile>('/api/profile/golfer', {
+export async function getPlayers(): Promise<SavedPlayer[]> {
+  return fetchAPI<SavedPlayer[]>('/api/players');
+}
+
+export async function getPlayer(id: string): Promise<SavedPlayer> {
+  return fetchAPI<SavedPlayer>(`/api/players/${id}`);
+}
+
+export async function createPlayer(data: PlayerCreate): Promise<SavedPlayer> {
+  return fetchAPI<SavedPlayer>('/api/players', {
     method: 'POST',
     body: JSON.stringify(data),
   });
 }
 
-export async function updateGolferProfile(data: {
-  name?: string;
-  handicap?: number | null;
-  home_course?: string | null;
-  club_distances?: Record<string, number> | null;
-}): Promise<GolferProfile> {
-  return fetchAPI<GolferProfile>('/api/profile/golfer', {
+export async function updatePlayer(id: string, data: PlayerUpdate): Promise<SavedPlayer> {
+  return fetchAPI<SavedPlayer>(`/api/players/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
 }
 
+export async function deletePlayer(id: string): Promise<void> {
+  await fetchAPI(`/api/players/${id}`, { method: 'DELETE' });
+}
+
 // ================
 // Rounds API
+// GET    /api/rounds               → Round[]
+// GET    /api/rounds/{id}          → Round
+// POST   /api/rounds               → Round
+// PUT    /api/rounds/{id}          → Round
+// DELETE /api/rounds/{id}          → {status}
+// POST   /api/rounds/{id}/scores   → Round  (upserts one score)
+// POST   /api/rounds/{id}/complete → Round
 // ================
 
-export interface HoleInfo {
-  number: number;
-  par: number;
-  yards?: number;
-  handicap?: number;
-}
-
-export interface Player {
-  id: string;
-  name: string;
-  handicap?: number | null;
-  user_id?: string | null;
-}
-
-export interface Score {
-  id: string;
-  player_id: string;
-  hole_number: number;
-  strokes: number | null;
-  putts?: number | null;
-  fairway_hit?: boolean | null;
-  green_in_regulation?: boolean | null;
-}
-
-export interface Round {
-  id: string;
-  owner_id: string;
-  course_id: string;
-  course_name: string;
-  tee_id?: string | null;
-  tee_name?: string | null;
-  date: string;
-  status: 'active' | 'completed';
-  holes: HoleInfo[];
-  tournament_id?: string | null;
+/** Body for POST /api/rounds. */
+export interface RoundCreate {
+  courseId: string;
+  courseName: string;
+  teeId?: string;
+  teeName?: string;
+  /** Each player must include an id (generate with crypto.randomUUID() client-side). */
   players: Player[];
-  scores: Score[];
-  created_at: string;
-  updated_at: string;
+  holes: HoleInfo[];
+  games?: Game[];
+  groups?: PlayerGroup[];
+  tournamentId?: string;
 }
 
-export interface RoundListItem {
-  id: string;
-  course_name: string;
-  date: string;
-  status: 'active' | 'completed';
-  player_count: number;
-  tournament_id?: string | null;
-  created_at: string;
+/** Body for PUT /api/rounds/{id}. */
+export interface RoundUpdate {
+  scores?: Score[];
+  games?: Game[];
+  groups?: PlayerGroup[];
+  status?: 'active' | 'completed';
 }
 
-export async function getRounds(params?: {
-  limit?: number;
-  offset?: number;
-  status?: string;
-}): Promise<RoundListItem[]> {
-  const query = new URLSearchParams();
-  if (params?.limit) query.set('limit', String(params.limit));
-  if (params?.offset) query.set('offset', String(params.offset));
-  if (params?.status) query.set('status', params.status);
-  
-  const queryStr = query.toString();
-  return fetchAPI<RoundListItem[]>(`/api/rounds${queryStr ? `?${queryStr}` : ''}`);
+export async function getRounds(): Promise<Round[]> {
+  return fetchAPI<Round[]>('/api/rounds');
 }
 
 export async function getRound(id: string): Promise<Round> {
   return fetchAPI<Round>(`/api/rounds/${id}`);
 }
 
-export async function createRound(data: {
-  course_id: string;
-  course_name: string;
-  tee_id?: string;
-  tee_name?: string;
-  date: string;
-  holes: HoleInfo[];
-  players: Array<{ name: string; handicap?: number; user_id?: string }>;
-  tournament_id?: string;
-}): Promise<Round> {
+export async function createRound(data: RoundCreate): Promise<Round> {
   return fetchAPI<Round>('/api/rounds', {
     method: 'POST',
     body: JSON.stringify(data),
   });
 }
 
-export async function updateRound(
-  id: string,
-  data: { status?: 'active' | 'completed'; tee_id?: string; tee_name?: string }
-): Promise<Round> {
+/** Full replace of mutable round fields (scores, games, groups, status). */
+export async function updateRound(id: string, data: RoundUpdate): Promise<Round> {
   return fetchAPI<Round>(`/api/rounds/${id}`, {
-    method: 'PATCH',
+    method: 'PUT',
     body: JSON.stringify(data),
   });
 }
@@ -218,76 +210,60 @@ export async function deleteRound(id: string): Promise<void> {
   await fetchAPI(`/api/rounds/${id}`, { method: 'DELETE' });
 }
 
-export async function addScore(
-  roundId: string,
-  data: { player_id: string; hole_number: number; strokes: number | null }
-): Promise<Score> {
-  return fetchAPI<Score>(`/api/rounds/${roundId}/scores`, {
+/** Upsert a single score. Returns the full updated round. */
+export async function addScore(roundId: string, score: Score): Promise<Round> {
+  return fetchAPI<Round>(`/api/rounds/${roundId}/scores`, {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify(score),
   });
 }
 
-export async function addPlayerToRound(
-  roundId: string,
-  data: { name: string; handicap?: number; user_id?: string }
-): Promise<Player> {
-  return fetchAPI<Player>(`/api/rounds/${roundId}/players`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+export async function completeRound(id: string): Promise<Round> {
+  return fetchAPI<Round>(`/api/rounds/${id}/complete`, { method: 'POST' });
 }
 
 // ================
 // Tournaments API
+// GET    /api/tournaments                          → Tournament[]
+// GET    /api/tournaments/{id}                    → Tournament
+// POST   /api/tournaments                         → Tournament
+// PUT    /api/tournaments/{id}                    → Tournament
+// DELETE /api/tournaments/{id}                    → {status}
+// POST   /api/tournaments/{id}/players/{playerId} → {status}  (?player_name=)
 // ================
 
-export interface Tournament {
-  id: string;
-  owner_id: string;
+export interface TournamentCreate {
   name: string;
-  num_rounds?: number | null;
-  player_ids: string[];
-  player_names_by_id: Record<string, string>;
-  round_ids: string[];
-  created_at: string;
-  updated_at: string;
+  numRounds?: number;
+  playerIds?: string[];
 }
 
-export async function getTournaments(params?: {
-  limit?: number;
-  offset?: number;
-}): Promise<Tournament[]> {
-  const query = new URLSearchParams();
-  if (params?.limit) query.set('limit', String(params.limit));
-  if (params?.offset) query.set('offset', String(params.offset));
-  
-  const queryStr = query.toString();
-  return fetchAPI<Tournament[]>(`/api/tournaments${queryStr ? `?${queryStr}` : ''}`);
+export interface TournamentUpdate {
+  name?: string;
+  numRounds?: number;
+  roundIds?: string[];
+  playerIds?: string[];
+  games?: Game[];
+}
+
+export async function getTournaments(): Promise<Tournament[]> {
+  return fetchAPI<Tournament[]>('/api/tournaments');
 }
 
 export async function getTournament(id: string): Promise<Tournament> {
   return fetchAPI<Tournament>(`/api/tournaments/${id}`);
 }
 
-export async function createTournament(data: {
-  name: string;
-  num_rounds?: number;
-  player_ids?: string[];
-  player_names_by_id?: Record<string, string>;
-}): Promise<Tournament> {
+export async function createTournament(data: TournamentCreate): Promise<Tournament> {
   return fetchAPI<Tournament>('/api/tournaments', {
     method: 'POST',
     body: JSON.stringify(data),
   });
 }
 
-export async function updateTournament(
-  id: string,
-  data: { name?: string; num_rounds?: number }
-): Promise<Tournament> {
+export async function updateTournament(id: string, data: TournamentUpdate): Promise<Tournament> {
   return fetchAPI<Tournament>(`/api/tournaments/${id}`, {
-    method: 'PATCH',
+    method: 'PUT',
     body: JSON.stringify(data),
   });
 }
@@ -296,147 +272,79 @@ export async function deleteTournament(id: string): Promise<void> {
   await fetchAPI(`/api/tournaments/${id}`, { method: 'DELETE' });
 }
 
+/** Add a player to a tournament (path + query-param style matching the backend route). */
 export async function addPlayerToTournament(
   tournamentId: string,
-  data: { player_id: string; player_name: string }
-): Promise<Tournament> {
-  return fetchAPI<Tournament>(`/api/tournaments/${tournamentId}/players`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  playerId: string,
+  playerName: string
+): Promise<void> {
+  await fetchAPI(
+    `/api/tournaments/${encodeURIComponent(tournamentId)}/players/${encodeURIComponent(playerId)}?player_name=${encodeURIComponent(playerName)}`,
+    { method: 'POST' }
+  );
 }
 
 // ================
 // Courses API
+// GET    /api/courses       → Course[]
+// GET    /api/courses/{id}  → Course
+// POST   /api/courses       → Course
+// DELETE /api/courses/{id}  → {status}
+//
+// There is no server-side text search on /api/courses. For course discovery
+// use /api/golf (GolfAPI.io proxy) or /api/courses/search (PostGIS mapped-courses).
 // ================
 
-export interface CourseSearchResult {
-  id: string;
-  name: string;
-  location?: string | null;
-}
-
-export interface Tee {
-  id: string;
+export interface CourseCreate {
   name: string;
   holes: HoleInfo[];
+  tees?: Array<{ id: string; name: string; holes: HoleInfo[] }>;
+  location?: string;
 }
 
-export interface Course {
-  id: string;
-  name: string;
-  location?: string | null;
-  golf_api_course_id?: number | null;
-  golf_api_club_id?: number | null;
-  hole_coordinates?: Array<{
-    hole_number: number;
-    green: { lat: number; lng: number };
-    tee?: { lat: number; lng: number };
-    front?: { lat: number; lng: number };
-    back?: { lat: number; lng: number };
-  }> | null;
-  tees: Tee[];
-  created_at: string;
-  updated_at: string;
-}
-
-export async function searchCourses(query?: string): Promise<CourseSearchResult[]> {
-  const params = new URLSearchParams();
-  if (query) params.set('q', query);
-  
-  const queryStr = params.toString();
-  return fetchAPI<CourseSearchResult[]>(`/api/courses${queryStr ? `?${queryStr}` : ''}`);
+export async function getCourses(): Promise<Course[]> {
+  return fetchAPI<Course[]>('/api/courses');
 }
 
 export async function getCourse(id: string): Promise<Course> {
   return fetchAPI<Course>(`/api/courses/${id}`);
 }
 
-export async function createCourse(data: {
-  name: string;
-  location?: string;
-  tees?: Array<{
-    name: string;
-    holes: HoleInfo[];
-  }>;
-}): Promise<Course> {
+export async function createCourse(data: CourseCreate): Promise<Course> {
   return fetchAPI<Course>('/api/courses', {
     method: 'POST',
     body: JSON.stringify(data),
   });
 }
 
+export async function deleteCourse(id: string): Promise<void> {
+  await fetchAPI(`/api/courses/${id}`, { method: 'DELETE' });
+}
+
 // ================
-// Games API
+// Profile API — TODO(backend-profile-endpoint)
+// /api/profile/golfer does not exist yet; it ships in a dedicated backlog item.
+// These stubs return null/throw immediately so callers fall back to localStorage.
 // ================
 
-export type GameFormat =
-  | 'skins'
-  | 'nassau'
-  | 'bestBall'
-  | 'scramble'
-  | 'wolf'
-  | 'threePoint'
-  | 'stableford'
-  | 'modifiedStableford'
-  | 'matchPlay'
-  | 'bingoBangoBongo'
-  | 'vegas'
-  | 'hammer'
-  | 'rabbit'
-  | 'trash'
-  | 'chicago'
-  | 'defender';
-
-export interface GameTeam {
-  id: string;
-  name: string;
-  player_ids: string[];
+export async function getGolferProfile(): Promise<null> {
+  // TODO(backend-profile-endpoint): GET /api/profile/golfer once route exists.
+  return null;
 }
 
-export interface Game {
-  id: string;
-  round_id: string;
-  format: GameFormat;
-  name: string;
-  player_ids: string[];
-  settings: Record<string, unknown>;
-  teams: GameTeam[];
-  created_at: string;
+export async function createGolferProfile(): Promise<never> {
+  // TODO(backend-profile-endpoint): POST /api/profile/golfer once route exists.
+  throw new Error('Profile endpoint not yet implemented (backend-profile-endpoint)');
 }
 
-export async function getGame(id: string): Promise<Game> {
-  return fetchAPI<Game>(`/api/games/${id}`);
+export async function updateGolferProfile(): Promise<never> {
+  // TODO(backend-profile-endpoint): PUT /api/profile/golfer once route exists.
+  throw new Error('Profile endpoint not yet implemented (backend-profile-endpoint)');
 }
 
-export async function createGame(data: {
-  round_id: string;
-  format: GameFormat;
-  name: string;
-  player_ids: string[];
-  settings?: Record<string, unknown>;
-  teams?: Array<{ name: string; player_ids: string[] }>;
-}): Promise<Game> {
-  return fetchAPI<Game>('/api/games', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-export async function updateGame(
-  id: string,
-  data: {
-    name?: string;
-    player_ids?: string[];
-    settings?: Record<string, unknown>;
-  }
-): Promise<Game> {
-  return fetchAPI<Game>(`/api/games/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-}
-
-export async function deleteGame(id: string): Promise<void> {
-  await fetchAPI(`/api/games/${id}`, { method: 'DELETE' });
-}
+// ================
+// Games API — TODO(backend-games-surface)
+// Games are embedded in Round (no standalone /api/games CRUD).
+// Create/update games via RoundCreate.games or updateRound({ games }).
+// ================
+// (getGame / createGame / updateGame / deleteGame removed — no route exists)
