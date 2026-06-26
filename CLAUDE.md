@@ -1,8 +1,13 @@
-# Scorecard — Project Guide for Claude
+# Looper — Project Guide for Claude
 
-Mobile-first, voice-driven golf app. Next.js 16 frontend (Vercel) + FastAPI
-backend. See @tasks/todo.md for the autonomous AI-team build plan and
-@scorecard-ai-team.md for how the team operates.
+Looper is a mobile-first, voice-driven golf app. Next.js 16 frontend + FastAPI backend.
+
+## Northstar & design (READ FIRST)
+Every change MUST follow @NORTHSTAR.md — the product Northstar and the yardage-book design
+foundation. Match the existing voice-first, calm, on-paper feel; never drift into generic
+SaaS/dashboard UI. The `designer` agent reviews every user-facing change against it.
+
+See @tasks/todo.md for the build plan and @ops/mac/RUN.md for how the team runs.
 
 ## Commands (agents can't guess these)
 - Frontend dev: `cd frontend && npm run dev` (http://localhost:3000)
