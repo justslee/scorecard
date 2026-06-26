@@ -33,6 +33,9 @@ backend. See @tasks/todo.md for the autonomous AI-team build plan and
 - Update `tasks/progress.md` (done / in-progress / blocked) before ending a session,
   so work survives context resets and usage-limit pauses.
 - Verify before done: show evidence (test output, screenshot) — don't assert success.
+- Major changes (auth, data handling, new endpoints or dependencies, or any new
+  user-facing capability) MUST pass the `/security-review` skill (and `/code-review`)
+  before the PR is marked ready — fold in the findings or fix them.
 
 ## Do NOT touch (also enforced by .claude/hooks/guard.sh)
 - `**/.env*` (secrets), `deploy/**` (prod infra), `backend/supabase/migrations/**`
