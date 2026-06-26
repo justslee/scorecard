@@ -118,5 +118,25 @@ Format: date — done / in-progress / blocked.
     assets not excluded from ESLint) and `src/app/players/page.tsx` (pre-existing setState-in-effect
     warning) — both unrelated to this item.
   - SILENT — no TestFlight-visible change.
-- **Next ready backlog items:** `backend-tournaments-db` (Phase 1, low), `test-games-engine` (P2),
-  `test-voice-pipeline` (P3), `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).
+- **Done:** backlog `backend-tournaments-db` (P5, Phase 1, SILENT) — `routes/tournaments.py` CRUD
+  migrated from JSON-file storage to Postgres `tournaments` table (ORM revision 002_core_scoring).
+  - All 6 endpoints rewritten (GET list, GET id, POST create, PUT update, DELETE, POST players/{id})
+    using async SQLAlchemy session, owner_id scoping via `current_user_id`.
+  - `id` is now a real UUID (`str(uuid.uuid4())`), so rounds can FK to tournaments via
+    `rounds.tournament_id` — the guarded linkage in `create_round` activates automatically.
+  - `playerNamesById` derived on read via a join to the `players` table (owner-scoped, same
+    pattern as `_build_full_round` in rounds.py). No separate JSONB column needed; falls back to
+    "Unknown" for deleted-roster players. `player_name` query param on add-player is still accepted
+    for API compat but no longer stored (players table is source of truth for names).
+  - Tournament-scoped games loaded from the `games` table (tournament_id FK, round_id NULL);
+    wholesale-replaced (delete-then-insert) on PUT when data.games is supplied.
+  - DELETE cascades to tournament-scoped games (FK ondelete='CASCADE'); linked rounds have
+    tournament_id SET NULL (FK ondelete='SET NULL') — round rows preserved.
+  - Removed `tournaments_storage = JSONStorage("tournaments.json", Tournament)` from `storage.py`
+    and removed `Tournament` from that file's late import.
+  - Gates: ruff clean, `import app.main` clean (no live DB), tsc clean, voice-tests 260/260,
+    build OK.
+  - Functional DB verification deferred to EC2 deploy (DATABASE_URL not set locally).
+  - SILENT — no TestFlight-visible change.
+- **Next ready backlog items:** `test-games-engine` (P2), `test-voice-pipeline` (P3),
+  `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).

@@ -85,9 +85,9 @@ class JSONStorage(Generic[T]):
 # Storage instances
 # NOTE: players_storage removed — players migrated to Postgres (routes/players.py).
 # NOTE: rounds_storage removed — rounds migrated to Postgres (routes/rounds.py).
-from app.models import Tournament, Course  # noqa: E402  (late import avoids a circular dependency)
+# NOTE: tournaments_storage removed — tournaments migrated to Postgres (routes/tournaments.py).
+from app.models import Course  # noqa: E402  (late import avoids a circular dependency)
 
-tournaments_storage = JSONStorage("tournaments.json", Tournament)
 courses_storage = JSONStorage("courses.json", Course)
 
 
