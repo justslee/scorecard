@@ -6,6 +6,7 @@
 
 import type { Course, HoleInfo, TeeOption } from './types';
 import type { CourseData, TeeSet, HoleData as PgHoleData } from './courses/types';
+import { fetchAPI } from './api';
 
 const API_BASE = "https://golfapi.io/api/v1";
 const PROXY_BASE = "/api/golf";
@@ -381,6 +382,16 @@ export interface CourseSearchResult {
   hasCoordinates?: boolean;
 }
 
+/** Shape returned by the backend OSM/Mapbox course-search endpoints. */
+interface CourseSearchApiResponse {
+  courses?: Array<{
+    id: string;
+    name?: string;
+    address?: string;
+    center?: { lat: number; lng: number };
+  }>;
+}
+
 /** Unified search across GolfAPI, OSM, and local courses */
 export async function searchAllCourses(
   query: string,
@@ -429,8 +440,7 @@ export async function searchAllCourses(
   }).catch(() => {});
 
   // 2. Search OSM / Mapbox via our API
-  const osmPromise = fetch(`/api/courses/search?q=${encodeURIComponent(query)}`)
-    .then((r) => r.json())
+  const osmPromise = fetchAPI<CourseSearchApiResponse>(`/api/courses/search?q=${encodeURIComponent(query)}`)
     .then((data) => {
       for (const c of data.courses || []) {
         // Deduplicate against GolfAPI results by name proximity
@@ -440,7 +450,7 @@ export async function searchAllCourses(
         if (!isDupe) {
           results.push({
             id: c.id,
-            name: c.name,
+            name: c.name ?? '',
             address: c.address,
             center: c.center,
             source: 'osm',
@@ -714,49 +724,24 @@ export async function searchNearby(
 ): Promise<CourseSearchResult[]> {
   const results: CourseSearchResult[] = [];
 
-  // 1. Search our mapped courses (PostGIS)
-  const mappedPromise = fetch(
+  // Search OSM nearby via the backend (honors lat/lng, returns geometry centers).
+  // NOTE: mapped-course (PostGIS) nearby search is restored in PR2 once mapped
+  // courses move from Supabase to the RDS-backed /api/courses/mapped endpoint.
+  await fetchAPI<CourseSearchApiResponse>(
     `/api/courses/nearby?lat=${lat}&lng=${lng}&radiusMeters=${radiusMeters}`
   )
-    .then((r) => r.json())
     .then((data) => {
       for (const c of data.courses || []) {
         results.push({
           id: c.id,
-          name: c.name,
+          name: c.name ?? '',
           address: c.address,
-          center: c.location,
-          source: 'mapped',
-          hasCoordinates: true,
+          center: c.center,
+          source: 'osm',
         });
       }
     })
     .catch(() => {});
-
-  // 2. Search OSM nearby
-  const osmPromise = fetch(
-    `/api/courses/search?q=golf+course&lat=${lat}&lng=${lng}&radius=${radiusMeters}`
-  )
-    .then((r) => r.json())
-    .then((data) => {
-      for (const c of data.courses || []) {
-        const isDupe = results.some(
-          (r) => r.name.toLowerCase() === c.name?.toLowerCase()
-        );
-        if (!isDupe) {
-          results.push({
-            id: c.id,
-            name: c.name,
-            address: c.address,
-            center: c.center,
-            source: 'osm',
-          });
-        }
-      }
-    })
-    .catch(() => {});
-
-  await Promise.all([mappedPromise, osmPromise]);
 
   return results;
 }

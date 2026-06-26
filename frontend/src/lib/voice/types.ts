@@ -1,4 +1,4 @@
-export type VoiceEndpoint = "/api/parse-voice" | "/api/parse-voice-scores";
+export type VoiceEndpoint = "/api/voice/parse-transcript" | "/api/voice/parse-scores";
 
 export type VoiceParseSetupResult =
   | {

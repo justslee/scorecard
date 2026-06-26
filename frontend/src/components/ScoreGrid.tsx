@@ -5,6 +5,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Mic, MicOff, Loader2, Users } from 'lucide-react';
 import HoleScoreModal from './HoleScoreModal';
+import { fetchAPI } from '@/lib/api';
 
 interface ScoreGridProps {
   round: Round;
@@ -142,52 +143,26 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
       return;
     }
 
-    // MULTI-PLAYER MODE: Use Claude to parse via Python backend
+    // MULTI-PLAYER MODE: Use Claude to parse via the backend
     try {
-      // Prefer same-origin Next API route on Vercel; fall back to configured backend only if provided.
-      const backendUrl = process.env.NEXT_PUBLIC_API_URL;
-      const endpoint = backendUrl ? `${backendUrl}/api/parse-voice-scores` : `/api/parse-voice-scores`;
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript,
-          playerNames,
-          hole: targetHole,
-          par,
-        }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log('Claude parse result:', result);
-        
-        if (result.scores && Object.keys(result.scores).length > 0) {
-          setPendingScores({ hole: result.hole || targetHole, scores: result.scores });
-        } else if (result.error) {
-          console.log('API error:', result.error);
-          // Fallback to local
-          const localResult = parseVoiceLocally(transcript, targetHole);
-          if (Object.keys(localResult.scores).length > 0) {
-            setPendingScores(localResult);
-          } else {
-            alert(`API error: ${result.error}`);
-          }
-        } else {
-          alert(`Couldn't parse scores from: "${transcript}"\n\nTry: "Justin 4 Mike 5" or "everyone par"`);
+      const result = await fetchAPI<{ hole?: number; scores?: Record<string, number> }>(
+        "/api/voice/parse-scores",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            transcript,
+            playerNames,
+            hole: targetHole,
+            par,
+          }),
         }
+      );
+      console.log('Claude parse result:', result);
+
+      if (result.scores && Object.keys(result.scores).length > 0) {
+        setPendingScores({ hole: result.hole || targetHole, scores: result.scores });
       } else {
-        const errorData = await response.json().catch(() => ({}));
-        console.log('API failed:', response.status, errorData);
-        // Fallback to local parsing
-        const localResult = parseVoiceLocally(transcript, targetHole);
-        console.log('Local fallback result:', localResult);
-        if (Object.keys(localResult.scores).length > 0) {
-          setPendingScores(localResult);
-        } else {
-          alert(`Couldn't parse scores from: "${transcript}"\n\nAPI: ${errorData.error || 'Failed'}`);
-        }
+        alert(`Couldn't parse scores from: "${transcript}"\n\nTry: "Justin 4 Mike 5" or "everyone par"`);
       }
     } catch (err) {
       console.error('Voice parse error:', err);
