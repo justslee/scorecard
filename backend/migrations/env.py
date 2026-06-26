@@ -28,6 +28,9 @@ _db_url = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://user:pass@localhost/scorecard",
 )
+# app.db.engine raises at import time if DATABASE_URL is unset; seed it (with the
+# placeholder when absent) so offline SQL generation / CI works without a live DB.
+os.environ.setdefault("DATABASE_URL", _db_url)
 config.set_main_option("sqlalchemy.url", _db_url)
 
 if config.config_file_name is not None:

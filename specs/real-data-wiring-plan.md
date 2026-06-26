@@ -115,3 +115,9 @@ Secrets to confirm present on the deploy box: `CLERK_JWKS_URL`, `CLERK_ISSUER`, 
 - **Course identity duality:** scoring-courses (JSON) vs mapped-courses (PostGIS) vs GolfAPI-imported — unify deliberately in `backend-courses-db`.
 - **Native auth:** `lib/api.ts` reads `window.Clerk`; ensure Clerk inits in the Capacitor WebView (`capacitor://localhost`).
 - **Gates:** new endpoints + data handling must pass `/security-review` + `/code-review`.
+
+## Review follow-ups (carry into the routes-wiring items, from db-core-schema review 2026-06-26)
+- **`backend-games-surface`:** Pydantic `Game` (`models.py:71`) has no `teams` field but the ORM/`games` table does — add `teams` to the API model when wiring.
+- **`backend-tournaments-db`:** `Tournament.playerNamesById` (`models.py:124`) has no column in the normalized `tournaments` table — derive it via a `players` join; don't silently drop it.
+- **Loose coupling (intentional):** cross-domain refs (`round_players.player_id`, `scores.player_id`, `rounds.course_id/tee_id`, `golfer_profiles.home_course_id/user_id`) are plain Text, not FKs — no DB-level referential integrity to players/courses. Validate in the service layer when wiring routes.
+- **`owner_id` nullable on all 8 tables** (single-owner beta by design): when multi-user lands, owner-scoped queries must handle NULL `owner_id` rows to avoid cross-tenant reads.
