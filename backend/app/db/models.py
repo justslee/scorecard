@@ -5,10 +5,9 @@ they'll be added when those routes migrate off JSON storage in a later PR.
 """
 
 from datetime import datetime, date
-from typing import Optional, Any
+from typing import Optional
 from sqlalchemy import (
-    BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String,
-    Text, func,
+    BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, Text, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column

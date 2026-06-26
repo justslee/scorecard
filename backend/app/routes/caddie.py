@@ -13,8 +13,6 @@ from app.caddie.types import (
     VoiceCaddieRequest,
     VoiceCaddieResponse,
     PlayerStatsRequest,
-    CaddieRecommendation,
-    WeatherConditions,
     HoleIntelligence,
 )
 from app.caddie.aim_point import generate_recommendation

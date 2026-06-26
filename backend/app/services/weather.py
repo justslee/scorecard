@@ -2,7 +2,6 @@
 
 import httpx
 import math
-from typing import Optional
 
 # Open-Meteo API (free, no key required)
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
@@ -70,8 +69,8 @@ def compute_air_density_factor(
     temp_c = (temperature_f - 32) * 5 / 9
     std_temp_c = (STANDARD_TEMP_F - 32) * 5 / 9
 
-    # Pressure decreases ~12 hPa per 100m altitude
-    altitude_m = altitude_ft * 0.3048
+    # TODO: apply altitude-based pressure adjustment (~12 hPa per 100m); for now
+    # we use the reported pressure directly.
     effective_pressure = pressure_hpa
 
     # Saturation vapor pressure (Magnus formula)

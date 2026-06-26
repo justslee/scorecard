@@ -3,7 +3,6 @@
 Adapted for amateur golfers with handicap multipliers.
 """
 
-import math
 from typing import Optional
 
 

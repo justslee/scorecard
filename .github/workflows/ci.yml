@@ -1,0 +1,82 @@
+name: CI
+
+# Quality gates for every PR (and main). Runs on GitHub's runners (GitHub-billed),
+# NOT the Claude Max subscription — only the *agent loop* must stay off the metered
+# API path; CI test runs here are fine.
+#
+# RATCHET: `required-*` jobs are green on main today — branch protection should require
+# them. The `advisory` job runs checks that have pre-existing debt (frontend ESLint:
+# ~108 errors; voice-tests: 1 fuzz case `scores:123:63`, an unresolved "jt"->Justin
+# nickname). They run for visibility but do NOT block merges yet. As the team burns each
+# down (see backlog: frontend-lint-cleanup, voice-nickname-jt), move it up into a
+# required job so it becomes blocking.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  required-frontend:
+    name: Frontend gates (typecheck · build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.looperapp.org
+
+  required-backend:
+    name: Backend gate (ruff)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync deps
+        run: uv sync
+      - name: Lint (ruff)
+        run: uv run ruff check .   # ruff is pinned in pyproject dev group
+
+  advisory:
+    name: Advisory (known debt — not blocking yet)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: ESLint (advisory — ~108 pre-existing errors; see backlog frontend-lint-cleanup)
+        run: npm run lint
+        continue-on-error: true
+      - name: Voice regression tests (advisory — 1 fuzz fail; see backlog voice-nickname-jt)
+        run: npx tsx voice-tests/runner.ts --smoke
+        continue-on-error: true

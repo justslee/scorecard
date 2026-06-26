@@ -37,8 +37,8 @@ app.add_middleware(
 )
 
 # Import and include routers
-from app.routes import players, rounds, tournaments, courses, voice
-from app.routes import golf, course_search, voice_advanced, caddie, memory, realtime, shots, pins
+from app.routes import players, rounds, tournaments, courses, voice  # noqa: E402  (after load_dotenv: routes read env at import)
+from app.routes import golf, course_search, voice_advanced, caddie, memory, realtime, shots, pins  # noqa: E402
 
 # Every data router is owner-only: require the configured owner's verified Clerk
 # identity. /health and / (defined below) stay open for load-balancer checks.
