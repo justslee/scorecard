@@ -70,9 +70,15 @@ class PlayerGroup(BaseModel):
 # ============ Game ============
 class Game(BaseModel):
     id: str
+    # Which round this game belongs to (None for tournament-scoped games).
+    # Mirrors types.ts Game.roundId so team-game data is not silently dropped.
+    roundId: Optional[str] = None
     format: str
     name: str
     playerIds: list[str]
+    # Teams for team formats (Best Ball, Team Nassau, Scramble, etc.)
+    # Stored as a list of {id, name, playerIds} dicts, matching types.ts GameTeam[].
+    teams: Optional[list] = None
     settings: Optional[dict] = None
 
 

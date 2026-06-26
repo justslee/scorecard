@@ -94,5 +94,29 @@ Format: date — done / in-progress / blocked.
   - Functional DB verification deferred to EC2 deploy (DATABASE_URL not set locally; import
     of app.main already required DATABASE_URL pre-change due to caddie/shots/pins routes).
   - SILENT — no TestFlight-visible change.
-- **Next ready backlog items:** `backend-rounds-scores-db` (Phase 1, med), `test-games-engine` (P2),
+- **Done:** backlog `backend-rounds-scores-db` (P4, Phase 1, SILENT) — `routes/rounds.py` round +
+  normalised scores/players/groups/games migrated to Postgres (ORM revision 002_core_scoring).
+  - All 6 endpoints rewritten (GET list, GET id, POST create, PUT update, POST scores upsert,
+    POST complete, DELETE) using async SQLAlchemy session, owner_id scoping via `current_user_id`.
+  - Normalisation: rounds row (JSONB holes), round_players (player_id + handicap + group_id),
+    player_groups, scores (upsert on constraint `scores_round_player_hole_uq` via pg_insert
+    ON CONFLICT), games (round_id FK).
+  - Reassembly: `_build_full_round` joins players table for names; falls back to "Unknown" for
+    deleted-roster players (cross-domain plain-text FK, per spec §C loosely coupled).
+  - Tournament linkage: POST adds round_id to tournament.round_ids JSONB; DELETE removes it;
+    `flag_modified` used to mark JSONB list changes to SQLAlchemy session.
+  - Pydantic `Game` model updated: added `roundId: Optional[str] = None` and
+    `teams: Optional[list] = None` (closes review follow-up; aligns with types.ts Game.roundId
+    + Game.teams, avoids silent data loss for team-format games).
+  - Removed `rounds_storage = JSONStorage("rounds.json", Round)` from `storage.py`.
+  - Fixed `routes/tournaments.py`: removed broken `rounds_storage` import; tournament-delete
+    round cleanup deferred to `backend-tournaments-db` (Postgres rounds' FK is SET NULL).
+  - Gates: ruff clean, `import app.main` clean (no live DB), tsc clean, voice-tests 260/260,
+    build OK.
+  - Functional DB verification deferred to EC2 deploy (DATABASE_URL not set locally).
+  - Pre-existing frontend lint issue in `ios/App/App/public/_next/static/` (compiled Capacitor
+    assets not excluded from ESLint) and `src/app/players/page.tsx` (pre-existing setState-in-effect
+    warning) — both unrelated to this item.
+  - SILENT — no TestFlight-visible change.
+- **Next ready backlog items:** `backend-tournaments-db` (Phase 1, low), `test-games-engine` (P2),
   `test-voice-pipeline` (P3), `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).

@@ -5,7 +5,9 @@ from datetime import datetime
 import uuid
 
 from app.models import Tournament, TournamentCreate, TournamentUpdate
-from app.storage import tournaments_storage, rounds_storage
+from app.storage import tournaments_storage
+# rounds_storage removed — rounds are now Postgres-backed (routes/rounds.py).
+# Full tournament→rounds DB wiring is handled in backend-tournaments-db.
 
 router = APIRouter(prefix="/api/tournaments", tags=["tournaments"])
 
@@ -64,10 +66,10 @@ async def delete_tournament(tournament_id: str):
     if not existing:
         raise HTTPException(status_code=404, detail="Tournament not found")
     
-    # Also delete associated rounds
-    for round_id in existing.roundIds:
-        rounds_storage.delete(round_id)
-    
+    # NOTE: round deletion deferred to backend-tournaments-db.
+    # Rounds are now Postgres-backed; deleting the tournament JSON row leaves
+    # the Postgres round rows with tournament_id SET NULL (per FK ondelete).
+    # The full cascade will be wired when tournaments migrate to Postgres.
     tournaments_storage.delete(tournament_id)
     return {"status": "deleted"}
 
