@@ -80,5 +80,19 @@ Format: date — done / in-progress / blocked.
     N individual addScore calls; player `id` field now included in `createRound`.
   - Gates: tsc clean, lint clean (src/), voice-tests 260/260, build ✓.
   - SILENT — no TestFlight-visible behavior change for un-migrated screens.
-- **Next ready backlog items:** `backend-players-db` (Phase 1, silent), `test-games-engine` (P2),
+- **Done:** backlog `backend-players-db` (P3, Phase 1, SILENT) — `routes/players.py` CRUD
+  migrated from JSON-file storage to Postgres `players` table (ORM revision 002_core_scoring).
+  - Rewrote all five endpoints (GET list, GET id, POST, PUT, DELETE) to use the async SQLAlchemy
+    session (`async with async_session() as db`), filtering every query by `owner_id == current_user_id`.
+  - camelCase Pydantic contract (SavedPlayer / PlayerCreate / PlayerUpdate) preserved unchanged;
+    ORM → Pydantic mapping in `_orm_to_pydantic`.
+  - Removed `players_storage = JSONStorage("players.json", SavedPlayer)` from `storage.py` and
+    removed `SavedPlayer` from that file's late import.
+  - Removed the 11-player seeding block from `seed_default_data`; course seeding remains
+    (rounds/tournaments/courses migrate in later items).
+  - Gates: ruff clean, AST parse OK, tsc clean, voice-tests 260/260, build OK.
+  - Functional DB verification deferred to EC2 deploy (DATABASE_URL not set locally; import
+    of app.main already required DATABASE_URL pre-change due to caddie/shots/pins routes).
+  - SILENT — no TestFlight-visible change.
+- **Next ready backlog items:** `backend-rounds-scores-db` (Phase 1, med), `test-games-engine` (P2),
   `test-voice-pipeline` (P3), `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).

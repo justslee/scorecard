@@ -83,78 +83,20 @@ class JSONStorage(Generic[T]):
 
 
 # Storage instances
-from app.models import SavedPlayer, Round, Tournament, Course  # noqa: E402  (late import avoids a circular dependency)
+# NOTE: players_storage removed — players migrated to Postgres (routes/players.py).
+from app.models import Round, Tournament, Course  # noqa: E402  (late import avoids a circular dependency)
 
-players_storage = JSONStorage("players.json", SavedPlayer)
 rounds_storage = JSONStorage("rounds.json", Round)
 tournaments_storage = JSONStorage("tournaments.json", Tournament)
 courses_storage = JSONStorage("courses.json", Course)
 
 
 def seed_default_data():
-    """Seed default data if storage is empty."""
-    from datetime import datetime
-    
-    # Seed default players
-    if len(players_storage.get_all()) == 0:
-        now = datetime.now().isoformat()
-        default_players = [
-            SavedPlayer(
-                id="player-justin-lee", name="Justin Lee", nickname="JL",
-                handicap=3.2, email="justin@email.com", roundsPlayed=0,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-mike-chen", name="Mike Chen", nickname="Bomber",
-                handicap=8.2, email="mike.chen@email.com", roundsPlayed=24,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-david-kim", name="David Kim", nickname="DK",
-                handicap=5.1, email="dkim@email.com", roundsPlayed=18,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-sarah-park", name="Sarah Park", nickname="Steady",
-                handicap=12.5, email="sarah.p@email.com", phone="+1 555-234-5678",
-                roundsPlayed=15, createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-kevin-zhang", name="Kevin Zhang", nickname="KZ",
-                handicap=7.4, email="kevin.z@email.com", roundsPlayed=12,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-james-wilson", name="James Wilson", nickname="JW",
-                handicap=18.4, roundsPlayed=8, createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-alex-rodriguez", name="Alex Rodriguez", nickname="A-Rod",
-                handicap=14.8, phone="+1 555-876-5432", roundsPlayed=6,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-emily-watson", name="Emily Watson", nickname="Em",
-                handicap=10.3, email="emily.w@email.com", phone="+1 555-345-6789",
-                roundsPlayed=5, createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-tom-bradley", name="Tom Bradley", nickname="TB",
-                handicap=22.1, email="tom.bradley@email.com", roundsPlayed=3,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-chris-nguyen", name="Chris Nguyen", nickname="Slice King",
-                handicap=16.7, roundsPlayed=2, createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-ryan-murphy", name="Ryan Murphy", nickname="Murph",
-                handicap=25.6, roundsPlayed=1, createdAt=now, updatedAt=now
-            ),
-        ]
-        for player in default_players:
-            players_storage.create(player)
-    
+    """Seed default data if storage is empty.
+
+    Players are now Postgres-backed (routes/players.py); only course seeding
+    remains here until backend-courses-db migrates courses to Postgres.
+    """
     # Seed default courses
     if len(courses_storage.get_all()) == 0:
         default_holes = [
