@@ -3,7 +3,6 @@
 from typing import Optional
 from app.caddie.types import (
     PlayerStatistics,
-    StrokesGained,
     ScoringDistribution,
     ParAverages,
     PlayerTendencies,

@@ -1,18 +1,14 @@
 """Aim point and miss-side analysis engine (DECADE-inspired)."""
 
-import math
 from typing import Optional
 from app.caddie.types import (
     AimPoint,
     MissSide,
-    Hazard,
     HoleIntelligence,
     PlayerStatistics,
     CaddieRecommendation,
-    ShotAdjustment,
     WeatherConditions,
 )
-from app.caddie.dispersion import get_dispersion
 from app.caddie.club_selection import (
     select_club,
     compute_adjustments,

@@ -110,7 +110,7 @@ Use the exact player names from the list above in your response."""
             hole=parsed.get("hole", request.hole),
             scores=parsed.get("scores", {})
         )
-    except anthropic.AuthenticationError as e:
+    except anthropic.AuthenticationError:
         raise HTTPException(status_code=401, detail="Invalid API key")
     except Exception as e:
         print(f"Voice parse error: {e}")

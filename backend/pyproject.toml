@@ -16,3 +16,10 @@ dependencies = [
     "pyjwt[crypto]>=2.9.0",
     "python-multipart>=0.0.20",
 ]
+
+[dependency-groups]
+# Dev/CI tooling. `uv sync` installs these by default, so `uv run ruff check .`
+# works in CI without ruff being installed globally.
+dev = [
+    "ruff>=0.15.0",
+]

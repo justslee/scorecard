@@ -1,7 +1,6 @@
 """JSON file-based storage for the Scorecard API."""
 
 import json
-import os
 from pathlib import Path
 from typing import TypeVar, Generic
 from pydantic import BaseModel
@@ -84,7 +83,7 @@ class JSONStorage(Generic[T]):
 
 
 # Storage instances
-from app.models import SavedPlayer, Round, Tournament, Course
+from app.models import SavedPlayer, Round, Tournament, Course  # noqa: E402  (late import avoids a circular dependency)
 
 players_storage = JSONStorage("players.json", SavedPlayer)
 rounds_storage = JSONStorage("rounds.json", Round)

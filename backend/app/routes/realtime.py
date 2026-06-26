@@ -9,10 +9,8 @@ channel; the frontend dispatches them to existing FastAPI endpoints. This keeps
 EC2 stateless — no WebSocket bridge.
 """
 
-from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import update as sql_update
 
 from app.caddie.session import sessions, get_owned_session
 from app.caddie.personalities import load_personality

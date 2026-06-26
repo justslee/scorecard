@@ -2,7 +2,6 @@
 
 import httpx
 import re
-import math
 from typing import Optional
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"

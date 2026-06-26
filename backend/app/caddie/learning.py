@@ -12,7 +12,6 @@ player was from the cup at the start of each shot.
 Triggered post-round from /session/end. Idempotent — safe to re-run.
 """
 
-import math
 from collections import defaultdict
 from typing import Optional
 from sqlalchemy import select
@@ -82,7 +81,6 @@ async def recompute_player_aggregates(user_id: str) -> dict:
 
     # Bin: (normalized_lie, bucket) → list of strokes-to-hole values
     bins: dict[tuple[str, int], list[int]] = defaultdict(list)
-    miss_directions: list[str] = []  # collected from shot.notes / result if available later
     short_misses = 0
     long_misses = 0
 

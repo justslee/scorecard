@@ -1,7 +1,6 @@
 """Courses API routes."""
 
 from fastapi import APIRouter, HTTPException
-from datetime import datetime
 import uuid
 
 from app.models import Course, CourseCreate, HoleInfo

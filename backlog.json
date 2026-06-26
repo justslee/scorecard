@@ -1,31 +1,42 @@
 {
-  "updated": "2026-06-23",
+  "updated": "2026-06-25",
   "note": "The eng-lead reads this to pick the next task. priority 1 = do first. Start low-risk to prove the loop.",
   "items": [
     {
-      "id": "test-games-engine",
-      "title": "Unit tests for the games engine (lib/games.ts)",
+      "id": "voice-nickname-jt",
+      "title": "Fix voice score parse: nickname 'jt' -> Justin and 'with a N' score",
       "type": "minor",
       "priority": 1,
       "risk": "low",
       "status": "ready",
-      "why": "15 betting formats with zero tests — the safest high-value first loop.",
+      "why": "voice-tests --smoke fails 1 fuzz case (scores:123:63). Utterance 'KIM bogey Jordan birdie jt with a 3 PAT made a six' drops the 'jt' player: parser does not resolve the 'jt' nickname to Justin nor read 'with a 3' as score 3. Core voice correctness + unblocks promoting voice-tests to a REQUIRED CI gate.",
+      "repro": "cd frontend && npx tsx voice-tests/runner.ts --smoke  (expect Justin:3, got undefined)",
+      "acceptance": "voice-tests --smoke passes; then move the voice-tests step into a required CI job in .github/workflows/ci.yml."
+    },
+    {
+      "id": "test-games-engine",
+      "title": "Unit tests for the games engine (lib/games.ts)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "why": "15 betting formats with zero tests \u2014 the safest high-value first loop.",
       "spec": "specs/test-games-engine.md"
     },
     {
       "id": "test-voice-pipeline",
       "title": "Unit tests for voice schemas + normalization (lib/voice/*)",
       "type": "minor",
-      "priority": 2,
+      "priority": 3,
       "risk": "low",
       "status": "ready",
-      "why": "Core differentiator; a deterministic harness exists — add focused unit coverage."
+      "why": "Core differentiator; a deterministic harness exists \u2014 add focused unit coverage."
     },
     {
       "id": "voice-low-confidence-ux",
       "title": "Surface confidence + a confirm prompt on low-confidence voice parses",
       "type": "major",
-      "priority": 3,
+      "priority": 4,
       "risk": "medium",
       "status": "needs-spec",
       "why": "The parser returns a confidence score but the UI never shows it or asks to confirm."
@@ -34,7 +45,7 @@
       "id": "ocr-scorecard-scan",
       "title": "OCR scorecard scanning flow (CameraCapture -> auto-fill scores)",
       "type": "major",
-      "priority": 4,
+      "priority": 5,
       "risk": "medium",
       "status": "needs-spec",
       "why": "Promised in the README; CameraCapture component exists but there's no end-to-end flow."
@@ -43,7 +54,7 @@
       "id": "stats-trends",
       "title": "Stats & trends view (expand RoundSummary)",
       "type": "major",
-      "priority": 5,
+      "priority": 6,
       "risk": "low",
       "status": "needs-spec",
       "why": "Listed as a future enhancement; the underlying round data already exists."
@@ -52,21 +63,31 @@
       "id": "postgres-persistence",
       "title": "Migrate backend JSON-file storage to Postgres/Supabase",
       "type": "major",
-      "priority": 6,
+      "priority": 7,
       "risk": "high",
       "status": "needs-spec",
       "why": "JSON files don't scale and risk concurrent corruption. A Supabase schema exists but is unused."
     },
     {
       "id": "tee-time-finder",
-      "title": "Tee-time finder — ground the mocked 'Dispatch Looper' to real data",
+      "title": "Tee-time finder \u2014 ground the mocked 'Dispatch Looper' to real data",
       "type": "major",
-      "priority": 7,
+      "priority": 8,
       "risk": "medium",
       "status": "ready",
       "why": "Polished 3-phase mock UI exists but the data is fabricated. There is no free tee-time API. Phased via a backend provider pattern that keeps the TeeTime contract + UI untouched: Phase 1 MVP needs NO gated API (real course search + GolfNow/course booking deep-links); Phase 2 = live slots via the GolfNow Affiliate & Partner API; Phase 3 = real auto-booking via Lightspeed/foreUP.",
       "spec": "specs/tee-time-finder.md",
       "blocked_on_owner": "GolfNow Affiliate & Partner API application (Phase 2+); Lightspeed Partner creds (Phase 3 booking)"
+    },
+    {
+      "id": "frontend-lint-cleanup",
+      "title": "Clear the ~108 frontend ESLint errors, then make lint a required CI gate",
+      "type": "minor",
+      "priority": 9,
+      "risk": "low",
+      "status": "ready",
+      "why": "npm run lint reports ~108 pre-existing errors (no-explicit-any, react/no-unescaped-entities, prefer-const, setState-in-effect). Currently advisory in CI. Burn down in small batches by rule/area (designer reviews any user-facing JSX touched), keeping changes behavior-preserving.",
+      "acceptance": "npm run lint exits 0; then move the ESLint step into a required CI job."
     }
   ]
 }
