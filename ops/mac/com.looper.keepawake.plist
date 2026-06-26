@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Keeps this Mac awake so the agent loop isn't interrupted by sleep.
+  Install:  cp ops/mac/com.looper.keepawake.plist ~/Library/LaunchAgents/
+            launchctl load ~/Library/LaunchAgents/com.looper.keepawake.plist
+  Remove:   launchctl unload ~/Library/LaunchAgents/com.looper.keepawake.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.looper.keepawake</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-dimsu</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>

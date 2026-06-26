@@ -1,0 +1,72 @@
+{
+  "updated": "2026-06-23",
+  "note": "The eng-lead reads this to pick the next task. priority 1 = do first. Start low-risk to prove the loop.",
+  "items": [
+    {
+      "id": "test-games-engine",
+      "title": "Unit tests for the games engine (lib/games.ts)",
+      "type": "minor",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "why": "15 betting formats with zero tests — the safest high-value first loop.",
+      "spec": "specs/test-games-engine.md"
+    },
+    {
+      "id": "test-voice-pipeline",
+      "title": "Unit tests for voice schemas + normalization (lib/voice/*)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "why": "Core differentiator; a deterministic harness exists — add focused unit coverage."
+    },
+    {
+      "id": "voice-low-confidence-ux",
+      "title": "Surface confidence + a confirm prompt on low-confidence voice parses",
+      "type": "major",
+      "priority": 3,
+      "risk": "medium",
+      "status": "needs-spec",
+      "why": "The parser returns a confidence score but the UI never shows it or asks to confirm."
+    },
+    {
+      "id": "ocr-scorecard-scan",
+      "title": "OCR scorecard scanning flow (CameraCapture -> auto-fill scores)",
+      "type": "major",
+      "priority": 4,
+      "risk": "medium",
+      "status": "needs-spec",
+      "why": "Promised in the README; CameraCapture component exists but there's no end-to-end flow."
+    },
+    {
+      "id": "stats-trends",
+      "title": "Stats & trends view (expand RoundSummary)",
+      "type": "major",
+      "priority": 5,
+      "risk": "low",
+      "status": "needs-spec",
+      "why": "Listed as a future enhancement; the underlying round data already exists."
+    },
+    {
+      "id": "postgres-persistence",
+      "title": "Migrate backend JSON-file storage to Postgres/Supabase",
+      "type": "major",
+      "priority": 6,
+      "risk": "high",
+      "status": "needs-spec",
+      "why": "JSON files don't scale and risk concurrent corruption. A Supabase schema exists but is unused."
+    },
+    {
+      "id": "tee-time-finder",
+      "title": "Tee-time finder — ground the mocked 'Dispatch Looper' to real data",
+      "type": "major",
+      "priority": 7,
+      "risk": "medium",
+      "status": "ready",
+      "why": "Polished 3-phase mock UI exists but the data is fabricated. There is no free tee-time API. Phased via a backend provider pattern that keeps the TeeTime contract + UI untouched: Phase 1 MVP needs NO gated API (real course search + GolfNow/course booking deep-links); Phase 2 = live slots via the GolfNow Affiliate & Partner API; Phase 3 = real auto-booking via Lightspeed/foreUP.",
+      "spec": "specs/tee-time-finder.md",
+      "blocked_on_owner": "GolfNow Affiliate & Partner API application (Phase 2+); Lightspeed Partner creds (Phase 3 booking)"
+    }
+  ]
+}

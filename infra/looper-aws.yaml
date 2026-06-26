@@ -1,0 +1,379 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Looper — secure, owner-only beta infrastructure (AWS-native).
+  EC2 (FastAPI + agent loop) behind an ALB with ACM TLS, a private RDS PostgreSQL,
+  secrets in Secrets Manager read via an IAM instance role, and CloudWatch alarms.
+  DRAFT for owner review — validate with `aws cloudformation validate-template` /
+  `cfn-lint` and fill the parameter values before deploying. Nothing here is applied
+  automatically; you review and `create-stack` it yourself. (Lives in infra/ rather
+  than deploy/ because the agent guardrail blocks writes to deploy/.)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# What you provide (and a couple of one-time manual prerequisites):
+#   • An ACM certificate for your api domain, already DNS-validated → CertificateArn.
+#   • A Route 53 hosted zone for the domain (if you want the DNS record created here).
+#   • Your current public IP (for SSH), or rely on SSM Session Manager and skip SSH.
+# After the stack is up, populate the real values in the "looper/prod" secret
+# (API keys + Clerk vars + DATABASE_URL — see Outputs for how to build DATABASE_URL).
+# ─────────────────────────────────────────────────────────────────────────────
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: API hostname, e.g. api.looper.app
+  CertificateArn:
+    Type: String
+    Description: ARN of a validated ACM cert for DomainName (create + validate once, then paste here).
+  HostedZoneId:
+    Type: String
+    Default: ""
+    Description: (Optional) Route 53 hosted zone ID; if set, an alias record DomainName -> ALB is created.
+  SSHLocation:
+    Type: String
+    Default: "127.0.0.1/32"
+    Description: CIDR allowed to SSH (your IP/32). Leave as loopback to disable SSH and use SSM only.
+  KeyName:
+    Type: String
+    Default: ""
+    Description: (Optional) EC2 key pair for SSH. Empty = SSM Session Manager only (recommended).
+  InstanceType:
+    Type: String
+    Default: t4g.small
+  DBInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+  AlarmEmail:
+    Type: String
+    Description: Email for CloudWatch/SNS alerts (you'll confirm the subscription).
+  LatestUbuntuAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id
+  GitRepoUrl:
+    Type: String
+    Default: "https://github.com/justslee/scorecard.git"
+
+Conditions:
+  HasKeyName: !Not [!Equals [!Ref KeyName, ""]]
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, ""]]
+
+Resources:
+  # ── Network ────────────────────────────────────────────────────────────────
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: looper-vpc }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: looper-public-a }]
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: looper-public-b }]
+  # Private subnets hold RDS only (no inbound from the internet, no public IP).
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags: [{ Key: Name, Value: looper-private-a }]
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags: [{ Key: Name, Value: looper-private-b }]
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnetARouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { RouteTableId: !Ref PublicRouteTable, SubnetId: !Ref PublicSubnetA }
+  PublicSubnetBRouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { RouteTableId: !Ref PublicRouteTable, SubnetId: !Ref PublicSubnetB }
+
+  # ── Security groups ──────────────────────────────────────────────────────────
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB - public HTTPS (and HTTP for redirect)
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0 }
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0 }
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: App EC2 - 8000 from ALB only, optional SSH from owner IP
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 8000, ToPort: 8000, SourceSecurityGroupId: !Ref AlbSecurityGroup }
+        - { IpProtocol: tcp, FromPort: 22, ToPort: 22, CidrIp: !Ref SSHLocation }
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS - 5432 from the app SG only
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref AppSecurityGroup }
+
+  # ── Database (private, encrypted, AWS-managed master password) ───────────────
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: looper private db subnets
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBName: looper
+      Engine: postgres
+      EngineVersion: "16.4"   # adjust to a version available in your region
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      MasterUsername: looper
+      ManageMasterUserPassword: true   # RDS creates + rotates the password in Secrets Manager
+      PubliclyAccessible: false
+      MultiAZ: false
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!Ref DbSecurityGroup]
+      BackupRetentionPeriod: 7
+      # NOTE: enable the postgis extension once after deploy: `CREATE EXTENSION postgis;`
+
+  # ── Secrets (the app's runtime config; fill real values after deploy) ────────
+  AppSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: looper/prod
+      Description: Looper backend runtime secrets (fill REPLACE_ME values in the console).
+      SecretString: !Sub |
+        {
+          "DATABASE_URL": "REPLACE_ME_postgresql+asyncpg://looper:<password>@${Database.Endpoint.Address}:5432/looper",
+          "ANTHROPIC_API_KEY": "REPLACE_ME",
+          "OPENAI_API_KEY": "REPLACE_ME",
+          "DEEPGRAM_API_KEY": "REPLACE_ME",
+          "GOLF_API_KEY": "REPLACE_ME",
+          "CLERK_JWKS_URL": "REPLACE_ME",
+          "CLERK_ISSUER": "REPLACE_ME",
+          "OWNER_CLERK_USER_ID": "REPLACE_ME",
+          "ALLOWED_ORIGIN": "${DomainName}"
+        }
+
+  # ── IAM: least-privilege instance role (read the two secrets + logs + SSM) ────
+  AppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - { Effect: Allow, Principal: { Service: ec2.amazonaws.com }, Action: sts:AssumeRole }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore   # SSM Session Manager (no open SSH needed)
+      Policies:
+        - PolicyName: looper-secrets-and-logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref AppSecret
+                  - !GetAtt Database.MasterUserSecret.SecretArn
+              - Effect: Allow
+                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt LogGroup.Arn
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: { Roles: [!Ref AppRole] }
+
+  # ── Compute ──────────────────────────────────────────────────────────────────
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: !Ref LatestUbuntuAmi
+      IamInstanceProfile: !Ref AppInstanceProfile
+      KeyName: !If [HasKeyName, !Ref KeyName, !Ref "AWS::NoValue"]
+      SubnetId: !Ref PublicSubnetA
+      SecurityGroupIds: [!Ref AppSecurityGroup]
+      Tags: [{ Key: Name, Value: looper-app }]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          # Bootstrap: deps, app, then a systemd unit that loads secrets via the
+          # instance role at start (no static keys on disk). Mirrors deploy/setup-ec2.sh.
+          apt-get update -y && apt-get install -y python3 python3-venv git jq awscli postgresql-client nginx
+          su - ubuntu -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+          su - ubuntu -c 'git clone ${GitRepoUrl} /home/ubuntu/scorecard || true'
+          su - ubuntu -c 'cd /home/ubuntu/scorecard/backend && ~/.local/bin/uv sync'
+          cat >/usr/local/bin/looper-env.sh <<'EOS'
+          #!/bin/bash
+          # Pull looper/prod into a 0600 env file the API reads. Runs as ExecStartPre.
+          set -euo pipefail
+          aws secretsmanager get-secret-value --secret-id looper/prod --query SecretString --output text \
+            | jq -r 'to_entries[] | "\(.key)=\(.value)"' > /home/ubuntu/scorecard/backend/.env
+          chmod 600 /home/ubuntu/scorecard/backend/.env && chown ubuntu:ubuntu /home/ubuntu/scorecard/backend/.env
+          EOS
+          chmod 755 /usr/local/bin/looper-env.sh
+          cat >/etc/systemd/system/looper-api.service <<'EOS'
+          [Unit]
+          Description=Looper API
+          After=network.target
+          [Service]
+          User=ubuntu
+          WorkingDirectory=/home/ubuntu/scorecard/backend
+          Environment=AWS_DEFAULT_REGION=${AWS::Region}
+          ExecStartPre=/usr/local/bin/looper-env.sh
+          ExecStart=/home/ubuntu/.local/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+          Restart=always
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ReadWritePaths=/home/ubuntu/scorecard
+          PrivateTmp=true
+          [Install]
+          WantedBy=multi-user.target
+          EOS
+          systemctl daemon-reload && systemctl enable --now looper-api
+          # NOTE: a sibling looper-agents.service (the always-on agent loop under your Max
+          # login) is added separately — it must run interactively, not via this unit.
+
+  # Self-heal: recover the instance if the underlying hardware fails.
+  InstanceRecoveryAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: looper-ec2-autorecover
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Dimensions: [{ Name: InstanceId, Value: !Ref AppInstance }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions: [!Sub "arn:aws:automate:${AWS::Region}:ec2:recover", !Ref AlarmTopic]
+
+  # ── Load balancer + TLS ──────────────────────────────────────────────────────
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: application
+      Subnets: [!Ref PublicSubnetA, !Ref PublicSubnetB]
+      SecurityGroups: [!Ref AlbSecurityGroup]
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref Vpc
+      Port: 8000
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckPath: /health
+      Targets: [{ Id: !Ref AppInstance, Port: 8000 }]
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 443
+      Protocol: HTTPS
+      Certificates: [{ CertificateArn: !Ref CertificateArn }]
+      DefaultActions: [{ Type: forward, TargetGroupArn: !Ref TargetGroup }]
+  HttpRedirectListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig: { Protocol: HTTPS, Port: "443", StatusCode: HTTP_301 }
+
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZone
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt Alb.DNSName
+        HostedZoneId: !GetAtt Alb.CanonicalHostedZoneID
+
+  # ── Observability / alerts ───────────────────────────────────────────────────
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /looper/app
+      RetentionInDays: 30
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription: [{ Protocol: email, Endpoint: !Ref AlarmEmail }]
+  UnhealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: looper-api-unhealthy
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Dimensions:
+        - { Name: LoadBalancer, Value: !GetAtt Alb.LoadBalancerFullName }
+        - { Name: TargetGroup, Value: !GetAtt TargetGroup.TargetGroupFullName }
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions: [!Ref AlarmTopic]
+
+Outputs:
+  ApiUrl:
+    Description: Point your app's NEXT_PUBLIC_API_URL here (after DNS resolves).
+    Value: !Sub "https://${DomainName}"
+  AlbDnsName:
+    Value: !GetAtt Alb.DNSName
+  RdsEndpoint:
+    Value: !GetAtt Database.Endpoint.Address
+  RdsManagedSecretArn:
+    Description: RDS-managed master password secret (use it to build DATABASE_URL).
+    Value: !GetAtt Database.MasterUserSecret.SecretArn
+  SetDatabaseUrlHint:
+    Description: After deploy, set DATABASE_URL in the looper/prod secret.
+    Value: !Sub "postgresql+asyncpg://looper:<password-from-RdsManagedSecret>@${Database.Endpoint.Address}:5432/looper"
