@@ -12,6 +12,8 @@
 	<string>Looper can import a photo of your scorecard from your library to read in your scores.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Looper can save scorecard photos to your library.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
     <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
