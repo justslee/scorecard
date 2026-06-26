@@ -8,6 +8,10 @@
 	<string>Looper uses the microphone so you can set up rounds and enter scores by voice.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Looper uses your location for caddie yardages and to find courses near you.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Looper can import a photo of your scorecard from your library to read in your scores.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Looper can save scorecard photos to your library.</string>
     <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
