@@ -37,11 +37,15 @@ ships silently. He is only pinged for major features or a genuine decision.
   (tests/refactors/infra/docs/deps). The owner is asked to approve only when the bundle
   contains ≥1 noticeable change; silent work rides along and merges with it. The owner's
   single "ship it" approves the whole bundle, then a fresh `integration/next` is cut.
-- **Approval channel = Notion (primary), not email.** The release-manager posts a comment
-  @-mentioning the owner (`Justin Lee`, user `bed32e15-72c4-4ab9-9f07-e35f2fff2240`) on the
-  "Looper — Product Board" (`28cd03a5-3b70-4191-a07d-5017b133051d`) with the TestFlight link
-  + bundle checklist; the owner replies "ship it" in the thread (polled via get-comments).
-  Gmail is a fallback (needs one-time OAuth). Notion MCP is already authenticated.
+- **Approval alert = Claude Code push; record/reply = Notion board.** Notion CANNOT push the
+  owner — the Notion MCP is authed AS the owner's own account, so an @-mention is a
+  self-mention and Notion suppresses it (verified 2026-06-26: test mention sent no
+  notification). So the *buzz* goes via `PushNotification` (reaches the phone once **Remote
+  Control** is paired — `claude remote-control`, scan QR in the Claude mobile app, enable push
+  in `/config`). The "Looper — Product Board" (`28cd03a5-3b70-4191-a07d-5017b133051d`) card is
+  the durable record + reply thread; owner replies "ship it" in the session or on the card
+  (polled via get-comments). Gmail is a fallback (needs one-time OAuth; email-to-self DOES
+  deliver, unlike a Notion self-mention).
 
 ## Delivery model (how "go play with it" works)
 - **Per-feature preview** — every PR gets its own Vercel preview URL; this is the

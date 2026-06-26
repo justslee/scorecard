@@ -67,11 +67,11 @@ the owner would NOTICE on a new TestFlight build** — not one backlog item. So:
    noticeable vs silent. Update `tasks/progress.md`.
 9. **Decide on notifying the owner:**
    - If the bundle now contains ≥1 **noticeable** change and all gates are green →
-     dispatch `release-manager` to build TestFlight from `integration/next` and notify the
-     owner for approval. **Primary channel = Notion** (already authenticated): a comment
-     @-mentioning the owner on the "Looper — Product Board" card, with the TestFlight link
-     and the bundle checklist; the owner replies "ship it" in the thread. Gmail is an
-     optional fallback (needs OAuth — surface it rather than silently skipping).
+     dispatch `release-manager` to build TestFlight from `integration/next` and alert the
+     owner for approval. **Alert = Claude Code `PushNotification`** (reaches his phone when
+     Remote Control is paired); the **Notion board card is the record + reply thread** (a
+     Notion @-mention can't notify — the MCP is authed as the owner, so it's a self-mention).
+     The owner replies "ship it" in the session (Remote Control) or on the card.
    - If the bundle is **silent-only** → do NOT notify. Just leave it accumulating and move
      to the next item next cycle.
 
