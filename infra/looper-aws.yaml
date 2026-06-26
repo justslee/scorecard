@@ -161,10 +161,12 @@ Resources:
   Database:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
     Properties:
       DBName: looper
       Engine: postgres
-      EngineVersion: "16.4"   # adjust to a version available in your region
+      # EngineVersion omitted: RDS uses the current default Postgres major version
+      # (PostGIS is available on all current versions). Pin a specific version later if needed.
       DBInstanceClass: !Ref DBInstanceClass
       AllocatedStorage: !Ref DBAllocatedStorage
       StorageType: gp3
