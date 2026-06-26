@@ -7,6 +7,8 @@
  * (lib/voice/realtime.ts) — different surface, different vendor.
  */
 
+import { API_BASE, authHeaders } from '../api';
+
 export interface TranscribeResult {
   transcript: string;
   confidence: number;
@@ -100,8 +102,11 @@ export async function transcribeBlob(blob: Blob): Promise<TranscribeResult> {
     : blob.type.includes('ogg') ? 'ogg'
     : 'webm';
   form.append('audio', blob, `clip.${ext}`);
-  const res = await fetch('/api/voice/transcribe', {
+  // Absolute backend URL + Clerk Bearer (the static client has no same-origin
+  // proxy). No Content-Type header — the browser sets the multipart boundary.
+  const res = await fetch(`${API_BASE}/api/voice/transcribe`, {
     method: 'POST',
+    headers: await authHeaders(),
     body: form,
   });
   if (!res.ok) {

@@ -1,1 +1,4 @@
 .vercel
+
+# Static export output (Capacitor webDir)
+/out/

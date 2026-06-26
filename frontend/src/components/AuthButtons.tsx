@@ -1,6 +1,6 @@
 "use client";
 
-import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
 import Link from "next/link";
 import { LogIn } from "lucide-react";
 

@@ -6,10 +6,12 @@
 
 import type { Course, HoleInfo, TeeOption } from './types';
 import type { CourseData, TeeSet, HoleData as PgHoleData } from './courses/types';
-import { fetchAPI } from './api';
+import { fetchAPI, API_BASE as BACKEND_BASE, authHeaders } from './api';
 
 const API_BASE = "https://golfapi.io/api/v1";
-const PROXY_BASE = "/api/golf";
+// Absolute backend base so the static/native client (no same-origin proxy) can
+// reach the server-side golf proxy, which keeps the GolfAPI key off the client.
+const PROXY_BASE = `${BACKEND_BASE}/api/golf`;
 
 export interface GolfClub {
   id: number | string;
@@ -136,7 +138,7 @@ export async function searchCourses(query: string): Promise<GolfClub[]> {
       : `${API_BASE}/clubs?search=${encodeURIComponent(query)}`;
 
     const response = await fetch(url, {
-      headers: useProxy ? {} : getHeaders(),
+      headers: useProxy ? await authHeaders() : getHeaders(),
     });
 
     if (!response.ok) {
@@ -169,7 +171,7 @@ export async function getClubDetails(clubId: number | string): Promise<GolfClub 
       : `${API_BASE}/clubs/${clubId}`;
 
     const response = await fetch(url, {
-      headers: useProxy ? {} : getHeaders(),
+      headers: useProxy ? await authHeaders() : getHeaders(),
     });
 
     if (!response.ok) {
@@ -198,7 +200,7 @@ export async function getCourseDetails(courseId: number | string): Promise<GolfC
       : `${API_BASE}/courses/${courseId}`;
 
     const response = await fetch(url, {
-      headers: useProxy ? {} : getHeaders(),
+      headers: useProxy ? await authHeaders() : getHeaders(),
     });
 
     if (!response.ok) {
@@ -223,7 +225,7 @@ export async function fetchCourseCoordinates(courseId: number | string): Promise
       : `${API_BASE}/coordinates/${courseId}`;
 
     const response = await fetch(url, {
-      headers: useProxy ? {} : getHeaders(),
+      headers: useProxy ? await authHeaders() : getHeaders(),
     });
 
     if (!response.ok) {
