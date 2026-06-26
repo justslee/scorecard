@@ -1,0 +1,59 @@
+name: Deploy backend (SSM)
+
+# Auto-deploy the FastAPI backend to the EC2 box on merge to main. Uses AWS SSM
+# Run-Command — no SSH, no open port 22, no Console. The box pulls the new code
+# and restarts the service; uvicorn stays loopback-only behind nginx + the ALB.
+#
+# One-time setup: add repo secrets AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
+# (an IAM user with ssm:SendCommand + ssm:GetCommandInvocation on the instance).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  INSTANCE_ID: i-0826ae70df62d9fe8
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy via SSM Run-Command
+        run: |
+          set -euo pipefail
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy-on-merge ${GITHUB_SHA::7}" \
+            --parameters 'commands=[
+              "su - ubuntu -c \"cd ~/scorecard && git pull --ff-only && ~/.local/bin/uv sync\"",
+              "systemctl restart scorecard-api",
+              "sleep 3",
+              "curl -fsS http://localhost:8000/health"
+            ]' \
+            --query 'Command.CommandId' --output text)
+          echo "SSM command: $CMD_ID"
+          aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" || true
+          STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" --query 'Status' --output text)
+          echo "--- stdout ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" --query 'StandardOutputContent' --output text
+          echo "--- stderr ---"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" --query 'StandardErrorContent' --output text
+          echo "SSM status: $STATUS"
+          [ "$STATUS" = "Success" ]
