@@ -26,6 +26,13 @@ the owner would NOTICE on a new TestFlight build** — not one backlog item. So:
   approvals are rare. NEVER merge or push to `main` yourself.
 
 ## Each cycle
+0. **Check for owner approvals first.** On the "Looper — Product Board"
+   (`28cd03a5-3b70-4191-a07d-5017b133051d`), look at any card in **Needs Review** and poll
+   its comment thread (`notion-get-comments`). If the owner replied **"ship it"**, dispatch
+   `release-manager` to merge that bundle PR (`integration/next` → `main`), set the card to
+   **Shipped**, and cut a fresh `integration/next`. If the owner left **feedback**, turn it
+   into work for this cycle (re-dispatch `builder`, rebuild, re-notify). Only after handling
+   pending approvals do you start new work.
 1. **Sync.** Clean tree (commit/stash WIP). Ensure `integration/next` exists and is current:
    `git checkout main && git pull --ff-only origin main`, then
    `git checkout integration/next 2>/dev/null || git checkout -b integration/next`, and
