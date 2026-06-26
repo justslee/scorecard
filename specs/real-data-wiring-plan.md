@@ -74,15 +74,15 @@ missing endpoints: `/api/profile/golfer` and a games surface.
 
 ## D. Feature breakdown (ordered) — N = noticeable on TestFlight, S = silent
 ### Phase 0 — Foundation (silent)
-- **db-core-schema** (S, med) — mig `005_core_scoring.sql` + ORM for players/golfer_profiles/rounds/round_players/scores/games/player_groups/tournaments. Deps: none.
+- **db-core-schema** (S, med) — **wire Alembic** to the asyncpg `DATABASE_URL` + baseline caddie schema 001–004, then author `005_core_scoring` (first Alembic revision) + ORM for players/golfer_profiles/rounds/round_players/scores/games/player_groups/tournaments. Apply on the EC2 deploy box (DATABASE_URL is there + Secrets Manager). Deps: none.
 - **api-contract-align** (S, med) — rewrite `lib/api.ts` + `storage-api.ts`: camelCase, `PUT`, real paths, stop silent fallback. Deps: none.
 ### Phase 1 — Backend domain on DB (silent)
 - **backend-players-db** (S, low) — `routes/players.py` CRUD on Postgres; drop seed. Deps: db-core-schema.
 - **backend-rounds-scores-db** (S, med) — `routes/rounds.py` round+normalized scores/players/groups; keep `POST /{id}/scores` upsert. Deps: db-core-schema.
 - **backend-tournaments-db** (S, low) — `routes/tournaments.py` on DB. Deps: backend-rounds-scores-db.
 - **backend-courses-db** (S, med) — scoring-courses on Postgres; consider unifying with mapped `courses` (mig 001). Deps: db-core-schema.
-- **backend-profile-endpoint** (S, low) — new `routes/profile.py` (`GET/POST/PUT /api/profile/golfer`); register in `main.py`. Decide reuse caddie `player_profiles` vs new `golfer_profiles`. Deps: db-core-schema.
-- **backend-games-surface** (S, med) — decide embedded-in-round vs standalone `/api/games`; align `api.ts` accordingly. Deps: backend-rounds-scores-db.
+- **backend-profile-endpoint** (S, low) — new `routes/profile.py` (`GET/POST/PUT /api/profile/golfer`) backed by the new **`golfer_profiles`** table (distinct from caddie `player_profiles`); register in `main.py`. Deps: db-core-schema.
+- **backend-games-surface** (S, med) — persist games in the normalized **`games`** table (FK round/tournament), managed via the round/tournament endpoints; **no standalone `/api/games`** — delete `getGame/createGame/...` from `api.ts`. Deps: backend-rounds-scores-db.
 - **json-to-db-backfill** (S, low) — one-off import of real `data/*.json`, then retire files. Deps: all Phase 1.
 ### Phase 2 — Wire the surfaces (noticeable)
 - **wire-round-new** (N, high) — real round setup → `POST /api/rounds`. Deps: api-contract-align, backend-rounds-scores-db, backend-courses-db.
@@ -97,16 +97,17 @@ missing endpoints: `/api/profile/golfer` and a games surface.
 - **wire-tournament-new** (N, low) — persist via API (currently localStorage). Deps: backend-tournaments-db.
 - **settings-cleanup** (N, low) — remove "Load Sample Players". Deps: backend-players-db.
 - **games-matchplay-nassau** (N, med) — real match-play Nassau in `lib/games.ts` (+ modal/results/leaderboards) + tests. Deps: none.
-### Phase 3 — Product decision
-- **tee-time-decision** (N, blocked, high) — real booking backend vs labeled demo. **Owner decision required.**
+### Phase 3 — Tee-time real integration (owner chose: build it for real)
+- **tee-time-real** (N, high) — build the REAL tee-time integration, phased. **Phase 1** (ready): real course search + GolfNow/course booking deep-links, no gated API — replaces the `setInterval` mock with a real flow. **Phase 2** (owner creds): live slots via provider (GolfNow Affiliate & Partner API). **Phase 3** (owner creds): real auto-booking (Lightspeed/foreUP). Touches `app/tee-time/page.tsx` (+ home entry). Deps: api-contract-align; Phases 2–3 blocked on owner-supplied provider creds.
 
-## E. Owner decisions / provisioning required
-- **RDS:** deploy `infra/looper-aws.yaml`; `CREATE EXTENSION postgis;`; apply migrations 001–004 + new 005; set `DATABASE_URL` in `looper/prod` secret (backend won't boot without it).
-- **Secrets:** `CLERK_JWKS_URL`, `CLERK_ISSUER`, `OWNER_CLERK_USER_ID` (auth fails closed otherwise); `ANTHROPIC_API_KEY`, `GOLF_API_KEY`, `MAPBOX_TOKEN`, `DEEPGRAM_API_KEY`.
-- **Migration runner:** none wired for the asyncpg DB — decide Alembic vs raw-SQL apply for `005`.
-- **Profile table:** new `golfer_profiles` vs reuse caddie `player_profiles` (overlap on handicap + club_distances).
-- **Games storage:** embedded-in-round vs standalone table/endpoint.
-- **Tee-time:** real feature vs labeled demo (no backend exists).
+## E. Decisions — RESOLVED (owner, 2026-06-26)
+1. **RDS: already up.** `DATABASE_URL` lives on the EC2 box + AWS Secrets Manager — no provisioning needed. Apply migrations on the deploy box (EC2) where `DATABASE_URL` resolves (deploy step or one-shot SSM run); the Mac loop authors the migration, the deploy applies it. PostGIS already enabled.
+2. **Migration runner: Alembic.** Wire Alembic to the existing asyncpg `DATABASE_URL` (`db/engine.py`); baseline the already-applied caddie schema (001–004) so Alembic won't recreate it, then author `005_core_scoring` as the first Alembic revision. `backend/supabase/migrations/**` stays do-not-touch reference.
+3. **Profile table: new `golfer_profiles`.** Keep distinct from the caddie `player_profiles` (that one serves the AI; this is the user-facing identity/handicap/bag). May cross-reference later.
+4. **Games storage: normalized `games` table, round/tournament-scoped.** FK `roundId`/`tournamentId` (nullable) + `format`, `name`, `playerIds` jsonb, `teams` jsonb, `settings` jsonb. Managed through the round/tournament endpoints (round GET returns its games; round create/update upserts them). NO standalone `/api/games` CRUD; delete `getGame/createGame/...` from `api.ts`.
+5. **Tee-time: build the REAL integration** (not a demo). Phased: (1) real course search + booking deep-links (no gated API), (2) live slots via a provider (e.g. GolfNow Affiliate & Partner API), (3) real auto-booking (Lightspeed/foreUP). Phase 1 needs no creds; Phases 2–3 need owner-supplied provider API credentials — the one remaining owner dependency.
+
+Secrets to confirm present on the deploy box: `CLERK_JWKS_URL`, `CLERK_ISSUER`, `OWNER_CLERK_USER_ID` (auth fails closed otherwise); `ANTHROPIC_API_KEY`, `GOLF_API_KEY`, `MAPBOX_TOKEN`, `DEEPGRAM_API_KEY`; + tee-time provider creds for Phases 2–3.
 
 ## Risks
 - **Silent-fallback masking:** until `api-contract-align` lands, backend fixes won't change app behavior (failures swallowed into localStorage). Do it early.

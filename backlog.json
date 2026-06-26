@@ -4,13 +4,13 @@
   "items": [
     {
       "id": "db-core-schema",
-      "title": "Core scoring domain schema on Postgres/RDS (migration 005 + ORM)",
+      "title": "Wire Alembic + migration 005 core scoring schema + ORM (Postgres/RDS)",
       "type": "minor",
       "priority": 1,
       "risk": "medium",
       "status": "ready",
       "depends_on": [],
-      "why": "No relational tables exist for the core scoring domain (players/rounds/scores/tournaments live in JSON). Unblocks the whole initiative.",
+      "why": "No relational tables exist for the core scoring domain (players/rounds/scores/tournaments live in JSON). Unblocks the whole initiative. RDS is already up (DATABASE_URL on EC2 + Secrets Manager); set up Alembic, baseline caddie schema 001-004, then author 005 as the first revision; apply on the EC2 deploy box.",
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -66,22 +66,24 @@
     },
     {
       "id": "backend-profile-endpoint",
-      "title": "GET/POST/PUT /api/profile/golfer (handicap, home, club distances)",
+      "title": "GET/POST/PUT /api/profile/golfer backed by new golfer_profiles table",
       "type": "minor",
       "priority": 7,
       "risk": "low",
       "status": "blocked",
       "depends_on": ["db-core-schema"],
+      "why": "Decision: new golfer_profiles table, distinct from caddie player_profiles.",
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
       "id": "backend-games-surface",
-      "title": "Decide + implement games persistence (embedded vs /api/games)",
+      "title": "Games in normalized games table, round/tournament-scoped (no standalone /api/games)",
       "type": "minor",
       "priority": 8,
       "risk": "medium",
       "status": "blocked",
       "depends_on": ["backend-rounds-scores-db"],
+      "why": "Decision: normalized games table (FK round/tournament), managed via round/tournament endpoints; delete imagined getGame/createGame from api.ts.",
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -216,14 +218,15 @@
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
-      "id": "tee-time-decision",
-      "title": "Tee-time: real booking backend vs labeled demo",
+      "id": "tee-time-real",
+      "title": "Tee-time REAL integration (phased: deep-links -> provider slots -> auto-booking)",
       "type": "major",
       "priority": 22,
       "risk": "high",
-      "status": "blocked-on-owner",
-      "depends_on": [],
-      "blocked_on_owner": "Decide: build a real tee-time discovery/booking backend (no provider exists; large) OR ship app/tee-time as an explicit 'coming soon' demo so a TestFlight reviewer isn't misled.",
+      "status": "blocked",
+      "depends_on": ["api-contract-align"],
+      "why": "Owner chose real integration (not a demo). Phase 1 (ready once api-contract-align lands): real course search + GolfNow/course booking deep-links, no gated API. Phase 2 (live slots via GolfNow Affiliate API) and Phase 3 (auto-booking via Lightspeed/foreUP) are blocked on owner-supplied provider credentials.",
+      "blocked_on_owner": "Phases 2-3 only: GolfNow Affiliate & Partner API creds; Lightspeed/foreUP partner creds. Phase 1 needs no creds.",
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
