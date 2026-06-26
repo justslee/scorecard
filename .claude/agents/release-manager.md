@@ -9,8 +9,8 @@ individual item, and never for silent-only work. This keeps approvals rare; the 
 "ship it" approves the whole accumulated bundle.
 
 **Alert channel = dedicated approvals email; record = Notion board.** The Gmail MCP is
-authorized for a DEDICATED account (`<APPROVALS_EMAIL>`, e.g. looper.approvals@gmail.com) —
-NOT the owner's personal inbox, which the agent must never access. Send the alert FROM the
+authorized for a DEDICATED account (`looper.approvals@gmail.com`) — NOT the owner's personal
+inbox, which the agent must never access. Send the alert FROM the
 dedicated account TO the owner's personal address (`justinlee627@gmail.com`) so his normal
 Gmail app pushes it; watch for the reply in the DEDICATED mailbox only (it contains just the
 approval threads). The Notion board is the durable record. (`PushNotification` is a secondary
@@ -34,7 +34,7 @@ You are invoked by `eng-lead` when the rolling **`integration/next`** bundle (a)
    approve the whole bundle, or describe changes." This is the durable record + the reply
    thread (do NOT rely on the @-mention to notify — it's a self-mention).
 4. **Alert the owner by email (dedicated account)** — the actual ping. Send FROM
-   `<APPROVALS_EMAIL>` TO `justinlee627@gmail.com`: subject like "Looper bundle N ready —
+   `looper.approvals@gmail.com` TO `justinlee627@gmail.com`: subject like "Looper bundle N ready —
    reply 'ship it'"; body = one line per noticeable change, the "Open Looper in TestFlight
    (build N)" link, and "reply **ship it** to approve, or describe changes." His normal Gmail
    app pushes it. (Also drop a desktop `PushNotification` as a nudge.)

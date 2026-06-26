@@ -41,14 +41,14 @@ ships silently. He is only pinged for major features or a genuine decision.
   after two dead ends: Notion can't push — the MCP is authed AS the owner, so an @-mention is
   a self-mention Notion suppresses [verified: test sent no alert]; and Remote Control returned
   "can't reach your desktop".) The owner was wary of exposing his personal inbox to an
-  always-on agent, so: a DEDICATED Gmail (`<APPROVALS_EMAIL>`, e.g. looper.approvals@gmail.com)
+  always-on agent, so: a DEDICATED Gmail (`looper.approvals@gmail.com`, e.g. looper.approvals@gmail.com)
   is the only account the agent is authorized for. Alert = email FROM the dedicated account TO
   `justinlee627@gmail.com` (his normal Gmail app pushes it); reply "ship it" is watched in the
   DEDICATED mailbox only — his personal inbox is never accessed. The "Looper — Product Board"
   (`28cd03a5-3b70-4191-a07d-5017b133051d`) card stays the durable record (owner may also reply
-  there). **TODO (owner):** create the dedicated Gmail + tell the agent the address → agent
-  runs the Gmail MCP OAuth signed in AS that account. Then fill `<APPROVALS_EMAIL>` in the
-  agent files.
+  there). **Status:** address set to `looper.approvals@gmail.com` and filled into all agent
+  files. Remaining: owner runs `/mcp` → "claude.ai Gmail" → authorize signed in AS
+  looper.approvals@gmail.com; then the agent sends a real test approval email to confirm push.
 
 ## Delivery model (how "go play with it" works)
 - **Per-feature preview** — every PR gets its own Vercel preview URL; this is the
