@@ -1,6 +1,6 @@
 "use client";
 
-import { ClerkProvider } from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/clerk-react";
 import { ReactNode } from "react";
 
 const clerkAppearance = {
@@ -28,15 +28,15 @@ const clerkAppearance = {
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   // Check if Clerk is configured
-  const isClerkConfigured = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-  if (!isClerkConfigured) {
+  if (!publishableKey) {
     // Return children without Clerk wrapper when not configured
     return <>{children}</>;
   }
 
   return (
-    <ClerkProvider appearance={clerkAppearance}>
+    <ClerkProvider publishableKey={publishableKey} appearance={clerkAppearance}>
       {children}
     </ClerkProvider>
   );

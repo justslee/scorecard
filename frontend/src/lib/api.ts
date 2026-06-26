@@ -3,7 +3,7 @@
  * Replaces localStorage with backend API calls.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /**
  * Get auth token from Clerk (client-side only).
@@ -20,6 +20,16 @@ async function getAuthToken(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Authorization header for a backend request, if a Clerk session exists.
+ * Use for requests that can't go through fetchAPI (e.g. multipart uploads or
+ * the golf proxy) but still need the owner Bearer against the gated backend.
+ */
+export async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /**
