@@ -116,7 +116,15 @@ Secrets to confirm present on the deploy box: `CLERK_JWKS_URL`, `CLERK_ISSUER`, 
 - **Native auth:** `lib/api.ts` reads `window.Clerk`; ensure Clerk inits in the Capacitor WebView (`capacitor://localhost`).
 - **Gates:** new endpoints + data handling must pass `/security-review` + `/code-review`.
 
-## Review follow-ups (carry into the routes-wiring items, from db-core-schema review 2026-06-26)
+## Review follow-ups (carry into the routes-wiring items)
+- **`wire-round-new` / `wire-round-scoring` (from api-contract-align review):** `RoundCreate`
+  has no `scores` field and `rounds.py` assigns a fresh `round-{uuid}` ignoring the client id —
+  so `getRound(clientId)` always 404s and every `saveRoundAsync` re-creates a NEW round, dropping
+  pre-existing scores on create. Before wiring the real scoring flow: persist the server id back
+  to the client (use the server-returned round) and/or accept scores on create, so reads reconcile.
+  (The async `storage-api.ts`/`useApi.ts` layer is currently dead code — not imported by any
+  screen — so this is latent until Phase 2.)
+
 - **`backend-games-surface`:** Pydantic `Game` (`models.py:71`) has no `teams` field but the ORM/`games` table does — add `teams` to the API model when wiring.
 - **`backend-tournaments-db`:** `Tournament.playerNamesById` (`models.py:124`) has no column in the normalized `tournaments` table — derive it via a `players` join; don't silently drop it.
 - **Loose coupling (intentional):** cross-domain refs (`round_players.player_id`, `scores.player_id`, `rounds.course_id/tee_id`, `golfer_profiles.home_course_id/user_id`) are plain Text, not FKs — no DB-level referential integrity to players/courses. Validate in the service layer when wiring routes.
