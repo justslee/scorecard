@@ -30,6 +30,19 @@ ships silently. He is only pinged for major features or a genuine decision.
     to staging, no email; visible in the staging app + Notion board.
   - Urgent push (blocked / needs a product decision) → phone push, reserved.
 
+## Locked decisions (2026-06-26)
+- **PR unit = a TestFlight-noticeable change, not one item.** To stop frequent approvals,
+  all work accumulates on ONE rolling branch `integration/next` (one open PR → `main`).
+  Each item is classified **noticeable** (user-visible on TestFlight) or **silent**
+  (tests/refactors/infra/docs/deps). The owner is asked to approve only when the bundle
+  contains ≥1 noticeable change; silent work rides along and merges with it. The owner's
+  single "ship it" approves the whole bundle, then a fresh `integration/next` is cut.
+- **Approval channel = Notion (primary), not email.** The release-manager posts a comment
+  @-mentioning the owner (`Justin Lee`, user `bed32e15-72c4-4ab9-9f07-e35f2fff2240`) on the
+  "Looper — Product Board" (`28cd03a5-3b70-4191-a07d-5017b133051d`) with the TestFlight link
+  + bundle checklist; the owner replies "ship it" in the thread (polled via get-comments).
+  Gmail is a fallback (needs one-time OAuth). Notion MCP is already authenticated.
+
 ## Delivery model (how "go play with it" works)
 - **Per-feature preview** — every PR gets its own Vercel preview URL; this is the
   link in the email, so each feature is judged cleanly in isolation.

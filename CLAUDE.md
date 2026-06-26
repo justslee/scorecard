@@ -34,7 +34,13 @@ See @tasks/todo.md for the build plan and @ops/mac/RUN.md for how the team runs.
 ## Workflow rules (IMPORTANT)
 - Work on ONE feature at a time. Commit after each with a descriptive message.
 - After changes, run lint + typecheck + voice-tests smoke. Don't declare done until they pass.
-- NEVER push to `main`. Branch + open a PR. A human approves every merge.
+- **Bundle to ship (2026-06-26).** The unit of a PR is a **material change the owner would
+  notice on a new TestFlight build** — NOT one item. All work accumulates on one rolling
+  branch `integration/next` (one open PR → `main`). The owner is asked to approve only when
+  that bundle contains ≥1 noticeable change; silent work (tests/refactors/infra/docs/deps)
+  rides along and merges with it. Approval channel = **Notion** (comment @-mentioning the
+  owner on "Looper — Product Board"); owner replies "ship it". See `.claude/agents/eng-lead.md`.
+- NEVER push to `main`. A human approves every merge (now in noticeable-sized bundles).
 - Update `tasks/progress.md` (done / in-progress / blocked) before ending a session,
   so work survives context resets and usage-limit pauses.
 - Verify before done: show evidence (test output, screenshot) — don't assert success.
