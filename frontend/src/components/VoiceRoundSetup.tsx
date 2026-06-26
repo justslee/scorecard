@@ -15,6 +15,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
+import { fetchAPI } from "@/lib/api";
 
 interface VoiceRoundSetupProps {
   onSetupRound: (config: {
@@ -101,33 +102,10 @@ export default function VoiceRoundSetup({
     setError(null);
 
     try {
-      const response = await fetch("/api/parse-round-setup", {
+      const result = await fetchAPI<ParsedRoundConfig>("/api/voice/parse-round-setup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transcript: fullTranscript,
-          systemPrompt: `Parse this golf round setup request. Return ONLY valid JSON.
-
-Schema:
-{
-  "courseName": string,
-  "playerNames": string[],
-  "teeName": string | null
-}
-
-Rules:
-- playerNames should be individual players (split "Dan Justin Matt" into 3 names)
-- courseName should be the course name if present
-- teeName should be tee color/name if present
-
-User said: "${fullTranscript}"`,
-        }),
+        body: JSON.stringify({ transcript: fullTranscript }),
       });
-
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result?.error || "Parse failed");
-      }
 
       setParseResult(result);
     } catch (err) {

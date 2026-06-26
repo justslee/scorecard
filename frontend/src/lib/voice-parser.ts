@@ -2,6 +2,7 @@
 // Converts natural language game/tournament descriptions into structured config
 
 import { GameFormat, GameSettings, Player } from "./types";
+import { fetchAPI } from "./api";
 
 export interface ParsedGameConfig {
   format: GameFormat;
@@ -112,9 +113,8 @@ export async function parseVoiceCommand(
     playerContext = `\n\nKNOWN PLAYERS IN THIS ROUND: ${existingPlayers.map(p => p.name).join(", ")}`;
   }
 
-  const response = await fetch("/api/parse-voice", {
+  const result = await fetchAPI<VoiceParseResult>("/api/voice/parse-transcript", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       transcript,
       systemPrompt: GAME_PARSER_PROMPT + playerContext,
@@ -123,11 +123,6 @@ export async function parseVoiceCommand(
     }),
   });
 
-  if (!response.ok) {
-    throw new Error("Failed to parse voice command");
-  }
-
-  const result = await response.json();
   return {
     ...result,
     rawTranscript: transcript,

@@ -26,6 +26,7 @@ import type { CourseData, FeatureType } from '@/lib/courses/types';
 import { detectGreens, type GreenCandidate } from '@/lib/courses/greenDetection';
 import { sequenceHolesFromGreens } from '@/lib/courses/holeSequencing';
 import { estimateTees } from '@/lib/courses/teeEstimation';
+import { fetchAPI } from '@/lib/api';
 
 const DEFAULT_TEE_SETS = [
   { name: 'Black', color: '#1a1a1a' },
@@ -394,9 +395,14 @@ export default function CourseEditorPage() {
     if (!searchQuery) return;
     try {
       setAutoStatus('Searching OSM…');
-      const res = await fetch(`/api/courses/search?q=${encodeURIComponent(searchQuery)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || `OSM search failed (${res.status})`);
+      const data = await fetchAPI<{
+        courses?: Array<{
+          osmId: string;
+          name: string;
+          center?: { lat: number; lng: number };
+          boundary: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+        }>;
+      }>(`/api/courses/search?q=${encodeURIComponent(searchQuery)}`);
       setOsmCourses(Array.isArray(data.courses) ? data.courses : []);
       setSelectedOsmId('');
       setAutoStatus(null);
