@@ -1,33 +1,92 @@
 'use client';
 
-import { Round, Player, PlayerGroup, calculateTotals, getScoreClass } from '@/lib/types';
+import { Round, Player, PlayerGroup, calculateTotals } from '@/lib/types';
+import { T } from '@/components/yardage/tokens';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Mic, MicOff, Loader2, Users } from 'lucide-react';
 import HoleScoreModal from './HoleScoreModal';
 import { fetchAPI } from '@/lib/api';
 
-interface ScoreGridProps {
-  round: Round;
-  onScoreChange: (playerId: string, holeNumber: number, strokes: number | null) => void;
-  currentHole?: number;
-  onHoleSelect?: (hole: number) => void;
+// ---------------------------------------------------------------------------
+// Inline SVG icons — yardage-book; no third-party icon library needed.
+// ---------------------------------------------------------------------------
+function MicIcon({ size = 24 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" />
+      <path d="M5 12a7 7 0 0 0 14 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <line x1="12" y1="19" x2="12" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <line x1="8.5" y1="22" x2="15.5" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
 }
 
-// Group colors for visual distinction - more prominent colors
-const GROUP_COLORS = [
-  { bg: 'bg-emerald-500/20', border: 'border-emerald-500/40', text: 'text-emerald-300', badge: 'bg-emerald-500', row: 'bg-emerald-500/10' },
-  { bg: 'bg-blue-500/20', border: 'border-blue-500/40', text: 'text-blue-300', badge: 'bg-blue-500', row: 'bg-blue-500/10' },
-  { bg: 'bg-purple-500/20', border: 'border-purple-500/40', text: 'text-purple-300', badge: 'bg-purple-500', row: 'bg-purple-500/10' },
-  { bg: 'bg-amber-500/20', border: 'border-amber-500/40', text: 'text-amber-300', badge: 'bg-amber-500', row: 'bg-amber-500/10' },
-  { bg: 'bg-rose-500/20', border: 'border-rose-500/40', text: 'text-rose-300', badge: 'bg-rose-500', row: 'bg-rose-500/10' },
-  { bg: 'bg-cyan-500/20', border: 'border-cyan-500/40', text: 'text-cyan-300', badge: 'bg-cyan-500', row: 'bg-cyan-500/10' },
+function MicOffIcon({ size = 24 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" />
+      <path d="M5 12a7 7 0 0 0 14 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <line x1="12" y1="19" x2="12" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <line x1="8.5" y1="22" x2="15.5" y2="22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SpinnerIcon({ size = 24 }: { size?: number }) {
+  return (
+    <svg className="animate-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25" />
+      <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Group colors — yardage-book warm ink palette (no neon/saturated Tailwind classes).
+// ---------------------------------------------------------------------------
+interface GroupColor {
+  bg: string;
+  border: string;
+  text: string;
+  badge: string;
+  row: string;
+}
+
+const GROUP_COLORS: GroupColor[] = [
+  { bg: 'rgba(26,42,26,0.05)',  border: T.hairline,              text: T.ink,     badge: T.ink,     row: 'rgba(26,42,26,0.02)'  },
+  { bg: 'rgba(58,74,138,0.07)', border: 'rgba(58,74,138,0.20)', text: T.accent,  badge: T.accent,  row: 'rgba(58,74,138,0.03)' },
+  { bg: 'rgba(107,58,26,0.07)', border: 'rgba(107,58,26,0.20)', text: '#6b3a1a', badge: '#6b3a1a', row: 'rgba(107,58,26,0.03)' },
+  { bg: 'rgba(106,42,42,0.07)', border: 'rgba(106,42,42,0.20)', text: '#6a2a2a', badge: '#6a2a2a', row: 'rgba(106,42,42,0.03)' },
+  { bg: 'rgba(42,90,58,0.07)',  border: 'rgba(42,90,58,0.20)',  text: '#2a5a3a', badge: '#2a5a3a', row: 'rgba(42,90,58,0.03)'  },
+  { bg: 'rgba(90,42,90,0.07)',  border: 'rgba(90,42,90,0.20)',  text: '#5a2a5a', badge: '#5a2a5a', row: 'rgba(90,42,90,0.03)'  },
 ];
 
 interface GroupedPlayers {
   group: PlayerGroup | null;
   players: Player[];
   colorIndex: number;
+}
+
+// ---------------------------------------------------------------------------
+// Yardage-book score colors (inline, not Tailwind dark-mode classes)
+// ---------------------------------------------------------------------------
+function scoreColor(score: number | null, par: number): string {
+  if (score === null) return T.pencilSoft;
+  const diff = score - par;
+  if (diff <= -2) return T.eagle;
+  if (diff === -1) return T.flag;
+  if (diff === 0) return T.par;
+  if (diff === 1) return T.bogey;
+  if (diff === 2) return T.double;
+  return T.pencilSoft; // triple+
+}
+
+interface ScoreGridProps {
+  round: Round;
+  onScoreChange: (playerId: string, holeNumber: number, strokes: number | null) => void;
+  currentHole?: number;
+  onHoleSelect?: (hole: number) => void;
 }
 
 export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSelect }: ScoreGridProps) {
@@ -58,7 +117,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     });
 
     sortedGroups.forEach((group, index) => {
-      const groupPlayers = round.players.filter(p => 
+      const groupPlayers = round.players.filter(p =>
         group.playerIds.includes(p.id) || p.groupId === group.id
       );
       groupPlayers.forEach(p => assignedPlayerIds.add(p.id));
@@ -174,7 +233,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
         alert(`Couldn't parse scores from: "${transcript}"`);
       }
     }
-    
+
     setIsProcessingVoice(false);
     setVoiceTranscript("");
   };
@@ -182,14 +241,14 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
   // Parse a single score from voice (just a number or golf term)
   const parseSimpleScore = (text: string, par: number): number | null => {
     const lower = text.toLowerCase().trim();
-    
+
     // Direct numbers
     const numMatch = lower.match(/\b(\d+)\b/);
     if (numMatch) {
       const num = parseInt(numMatch[1], 10);
       if (num >= 1 && num <= 15) return num;
     }
-    
+
     // Word numbers
     const wordNumbers: Record<string, number> = {
       'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
@@ -199,7 +258,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     for (const [word, num] of Object.entries(wordNumbers)) {
       if (lower.includes(word)) return num;
     }
-    
+
     // Golf terms
     if (lower.includes('ace') || lower.includes('hole in one')) return 1;
     if (lower.includes('albatross') || lower.includes('double eagle')) return par - 3;
@@ -211,7 +270,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     if (lower.includes('bogey')) return par + 1;
     if (lower.includes('double')) return par + 2;
     if (lower.includes('triple')) return par + 3;
-    
+
     return null;
   };
 
@@ -249,7 +308,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
       const exceptPattern = /except\s+(\w+)\s+(?:got\s+)?(?:a\s+)?(\d+|par|birdie|bogey|double|eagle)/gi;
       for (const match of text.matchAll(exceptPattern)) {
         const name = match[1];
-        const player = round.players.find((p) => 
+        const player = round.players.find((p) =>
           p.name.toLowerCase().includes(name.toLowerCase())
         );
         if (player) {
@@ -270,16 +329,16 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     for (const player of round.players) {
       const fullName = player.name;
       const firstName = fullName.split(' ')[0].toLowerCase();
-      
+
       const lowerText = text.toLowerCase();
-      
+
       // Check if player's first name appears
       const nameIndex = lowerText.indexOf(firstName);
       if (nameIndex === -1) continue;
-      
+
       // Look for a number/word after the name
       const afterName = lowerText.substring(nameIndex + firstName.length);
-      
+
       // Try digit first
       const numberMatch = afterName.match(/(\d+)/);
       if (numberMatch) {
@@ -290,7 +349,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
           continue;
         }
       }
-      
+
       // Try word numbers (four, five, six, etc.)
       for (const [word, num] of Object.entries(wordToNum)) {
         const wordMatch = afterName.match(new RegExp(`\\b${word}\\b`));
@@ -301,7 +360,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
         }
       }
       if (result.scores[player.name]) continue;
-      
+
       // Also check for words like par, birdie, bogey
       const scoreWords = ['par', 'birdie', 'eagle', 'bogey', 'double'];
       for (const word of scoreWords) {
@@ -312,14 +371,14 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
         }
       }
     }
-    
+
     console.log('Final local parse result:', result);
     return result;
   };
 
   const confirmPendingScores = () => {
     if (!pendingScores) return;
-    
+
     console.log('Confirming scores:', pendingScores);
     for (const [playerName, score] of Object.entries(pendingScores.scores)) {
       const player = round.players.find(p => p.name === playerName);
@@ -406,12 +465,13 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
         key={holeNumber}
         type="button"
         onClick={() => handleHoleClick(holeNumber)}
-        className={
-          `min-w-[40px] w-full px-2 py-2 text-center text-xs font-medium transition-colors ` +
-          (isCurrent
-            ? 'text-emerald-200 bg-emerald-500/10'
-            : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5')
-        }
+        className="min-w-[40px] w-full px-2 py-2 text-center text-xs font-medium transition-colors"
+        style={{
+          color: isCurrent ? T.accent : T.pencil,
+          background: isCurrent ? `rgba(58,74,138,0.08)` : 'transparent',
+          fontFamily: T.mono,
+          letterSpacing: '0.05em',
+        }}
       >
         {holeNumber}
       </button>
@@ -426,76 +486,162 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
       <div className="card p-3 sm:p-4 mb-4 overflow-hidden">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-baseline gap-2">
-            <h3 className="text-sm font-semibold tracking-tight">{label}</h3>
-            <span className="text-xs text-zinc-500">Par {totalPar}</span>
+            <h3
+              className="text-sm font-semibold tracking-tight"
+              style={{ fontFamily: T.serif, fontStyle: 'italic', color: T.ink }}
+            >
+              {label}
+            </h3>
+            <span
+              className="text-xs"
+              style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: '0.08em', color: T.pencilSoft }}
+            >
+              Par {totalPar}
+            </span>
           </div>
-          <span className="text-xs text-zinc-500">Tap hole # for all players</span>
+          <span
+            className="text-xs"
+            style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '0.06em', color: T.pencilSoft }}
+          >
+            Tap hole # for all players
+          </span>
         </div>
 
         <div className="overflow-x-auto">
           <div className="min-w-[640px]">
             {/* Header row */}
-            <div className="grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch rounded-xl overflow-hidden border border-white/10 bg-white/3">
-              <div className="px-3 py-2 text-xs font-medium text-zinc-400">{label}</div>
+            <div
+              className="grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch rounded-xl overflow-hidden"
+              style={{ border: `1px solid ${T.hairline}`, background: T.paperDeep }}
+            >
+              <div
+                className="px-3 py-2 text-xs font-medium"
+                style={{ fontFamily: T.mono, letterSpacing: '0.06em', color: T.pencil }}
+              >
+                {label}
+              </div>
               {holes.map((h) => holeHeaderCell(h.number))}
-              <div className="px-2 py-2 text-center text-xs font-semibold text-zinc-300">TOT</div>
+              <div
+                className="px-2 py-2 text-center text-xs font-semibold"
+                style={{ fontFamily: T.mono, letterSpacing: '0.06em', color: T.ink }}
+              >
+                TOT
+              </div>
             </div>
 
             {/* Par row */}
-            <div className="grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch border-x border-b border-white/10 bg-white/2">
-              <div className="px-3 py-2 text-xs text-zinc-500">Par</div>
+            <div
+              className="grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch"
+              style={{ borderLeft: `1px solid ${T.hairlineSoft}`, borderRight: `1px solid ${T.hairlineSoft}`, borderBottom: `1px solid ${T.hairlineSoft}`, background: T.paper }}
+            >
+              <div
+                className="px-3 py-2 text-xs"
+                style={{ fontFamily: T.mono, letterSpacing: '0.06em', color: T.pencilSoft }}
+              >
+                Par
+              </div>
               {holes.map((h) => (
-                <div key={h.number} className="px-2 py-2 text-center text-xs text-zinc-400">
+                <div
+                  key={h.number}
+                  className="px-2 py-2 text-center text-xs"
+                  style={{ color: T.pencil, fontFamily: T.mono }}
+                >
                   {h.par}
                 </div>
               ))}
-              <div className="px-2 py-2 text-center text-xs font-semibold text-zinc-300">{totalPar}</div>
+              <div
+                className="px-2 py-2 text-center text-xs font-semibold"
+                style={{ fontFamily: T.mono, color: T.ink }}
+              >
+                {totalPar}
+              </div>
             </div>
 
             {/* Players - grouped by tee time */}
-            <div className="border-x border-b border-white/10 rounded-b-xl overflow-hidden">
+            <div
+              className="rounded-b-xl overflow-hidden"
+              style={{ borderLeft: `1px solid ${T.hairlineSoft}`, borderRight: `1px solid ${T.hairlineSoft}`, borderBottom: `1px solid ${T.hairlineSoft}` }}
+            >
               {groupedPlayers.map(({ group, players, colorIndex }) => {
                 const colors = GROUP_COLORS[colorIndex];
                 const hasGroups = round.groups && round.groups.length > 0;
-                
+
                 return (
                   <div key={group?.id || 'ungrouped'}>
                     {/* Group header - only show if groups are defined */}
                     {hasGroups && (
-                      <div className={`grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch ${colors.bg} border-t ${colors.border}`}>
+                      <div
+                        className="grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch"
+                        style={{ background: colors.bg, borderTop: `1px solid ${colors.border}` }}
+                      >
                         <div className="col-span-11 px-3 py-1.5 flex items-center gap-2">
-                          <Users className={`w-3.5 h-3.5 ${colors.text}`} />
-                          <span className={`text-xs font-medium ${colors.text}`}>
+                          {/* Group dot indicator */}
+                          <span
+                            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                            style={{ background: colors.badge }}
+                          />
+                          <span
+                            className="text-xs font-medium"
+                            style={{ color: colors.text, fontFamily: T.sans }}
+                          >
                             {group?.name || 'Unassigned'}
                           </span>
                           {group?.teeTime && (
-                            <span className={`text-xs px-1.5 py-0.5 rounded ${colors.badge} ${colors.text}`}>
+                            <span
+                              className="text-xs px-1.5 py-0.5 rounded"
+                              style={{
+                                background: colors.badge,
+                                color: T.paper,
+                                fontFamily: T.mono,
+                                fontSize: 9,
+                                letterSpacing: '0.06em',
+                              }}
+                            >
                               {group.teeTime}
                             </span>
                           )}
                           {group?.startingHole && (
-                            <span className={`text-xs px-1.5 py-0.5 rounded ${colors.badge} ${colors.text}`}>
+                            <span
+                              className="text-xs px-1.5 py-0.5 rounded"
+                              style={{
+                                background: colors.badge,
+                                color: T.paper,
+                                fontFamily: T.mono,
+                                fontSize: 9,
+                                letterSpacing: '0.06em',
+                              }}
+                            >
                               Hole {group.startingHole}
                             </span>
                           )}
                         </div>
                       </div>
                     )}
-                    
+
                     {/* Players in this group */}
-                    <div className="divide-y divide-white/6">
-                      {players.map((player) => {
+                    <div>
+                      {players.map((player, pIdx) => {
                         const totals = calculateTotals(round.scores, round.holes, player.id);
                         const nineTotal = start === 1 ? totals.front9 : totals.back9;
 
                         return (
                           <div
                             key={`${player.id}-${start}`}
-                            className={`grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch ${hasGroups ? colors.row : 'bg-white/0'}`}
+                            className="grid grid-cols-[120px_repeat(9,1fr)_70px] items-stretch"
+                            style={{
+                              background: hasGroups ? colors.row : 'transparent',
+                              borderTop: pIdx > 0 ? `1px solid ${T.hairlineSoft}` : undefined,
+                            }}
                           >
-                            <div className="px-3 py-2 text-sm font-medium text-zinc-200 truncate flex items-center gap-2">
+                            <div
+                              className="px-3 py-2 text-sm font-medium truncate flex items-center gap-2"
+                              style={{ color: T.ink, fontFamily: T.sans }}
+                            >
                               {hasGroups && (
-                                <span className={`w-2.5 h-2.5 rounded-full ${colors.badge}`} />
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                  style={{ background: colors.badge }}
+                                />
                               )}
                               {player.name}
                             </div>
@@ -504,11 +650,8 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
                               const score = getScore(player.id, hole.number);
                               const isSelected = selectedCell?.playerId === player.id && selectedCell?.hole === hole.number;
 
-                              const scoreStateClass =
-                                score !== null
-                                  ? getScoreClass(score, hole.par)
-                                  : 'text-zinc-300';
-                              
+                              const textColor = scoreColor(score, hole.par);
+
                               // Golf score indicator: circle for birdie, square for bogey, etc.
                               const diff = score !== null ? score - hole.par : 0;
                               const getScoreIndicator = () => {
@@ -517,24 +660,24 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
                                   // Eagle or better: double circle
                                   return (
                                     <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                      <span className="w-7 h-7 rounded-full border-2 border-yellow-400" />
-                                      <span className="absolute w-5 h-5 rounded-full border-2 border-yellow-400" />
+                                      <span className="w-7 h-7 rounded-full border-2" style={{ borderColor: T.eagle }} />
+                                      <span className="absolute w-5 h-5 rounded-full border-2" style={{ borderColor: T.eagle }} />
                                     </span>
                                   );
                                 }
                                 if (diff === -1) {
-                                  // Birdie: circle
+                                  // Birdie: single circle — flag/terracotta
                                   return (
                                     <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                      <span className="w-7 h-7 rounded-full border-2 border-red-400" />
+                                      <span className="w-7 h-7 rounded-full border-2" style={{ borderColor: T.flag }} />
                                     </span>
                                   );
                                 }
                                 if (diff === 1) {
-                                  // Bogey: square
+                                  // Bogey: single square
                                   return (
                                     <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                      <span className="w-6 h-6 rounded-sm border-2 border-sky-400" />
+                                      <span className="w-6 h-6 rounded-sm border-2" style={{ borderColor: T.bogey }} />
                                     </span>
                                   );
                                 }
@@ -542,8 +685,8 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
                                   // Double bogey: double square
                                   return (
                                     <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                      <span className="w-7 h-7 rounded-sm border-2 border-blue-400" />
-                                      <span className="absolute w-5 h-5 rounded-sm border-2 border-blue-400" />
+                                      <span className="w-7 h-7 rounded-sm border-2" style={{ borderColor: T.double }} />
+                                      <span className="absolute w-5 h-5 rounded-sm border-2" style={{ borderColor: T.double }} />
                                     </span>
                                   );
                                 }
@@ -551,7 +694,10 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
                                   // Triple+ bogey: filled square
                                   return (
                                     <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                      <span className="w-7 h-7 rounded-sm border-2 border-indigo-400 bg-indigo-400/20" />
+                                      <span
+                                        className="w-7 h-7 rounded-sm border-2"
+                                        style={{ borderColor: T.pencilSoft, background: `${T.pencilSoft}30` }}
+                                      />
                                     </span>
                                   );
                                 }
@@ -563,22 +709,42 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
                                   key={`${player.id}-${hole.number}`}
                                   type="button"
                                   onClick={() => handleCellClick(player.id, hole.number)}
-                                  className={
-                                    `relative px-2 py-2 text-center transition-all duration-150 ` +
-                                    `hover:bg-white/5 active:scale-[0.99] ` +
-                                    (isSelected
-                                      ? 'bg-emerald-500/10 shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_0_24px_rgba(16,185,129,0.18)]'
-                                      : '')
-                                  }
+                                  className="relative px-2 py-2 text-center transition-all duration-150 active:scale-[0.99]"
+                                  style={{
+                                    background: isSelected
+                                      ? 'rgba(58,74,138,0.08)'
+                                      : 'transparent',
+                                    boxShadow: isSelected
+                                      ? `0 0 0 1px rgba(58,74,138,0.25), 0 0 18px rgba(58,74,138,0.12)`
+                                      : undefined,
+                                    minHeight: 44,
+                                  }}
                                 >
                                   {getScoreIndicator()}
-                                  <span className={`relative z-10 text-[15px] font-semibold ${scoreStateClass}`}>{score ?? '–'}</span>
-                                  {isSelected ? <span className="absolute inset-x-2 bottom-1 h-[2px] rounded-full bg-emerald-400/70" /> : null}
+                                  <span
+                                    className="relative z-10 text-[15px] font-semibold"
+                                    style={{
+                                      color: textColor,
+                                      fontFamily: T.serif,
+                                      fontVariantNumeric: 'tabular-nums',
+                                    }}
+                                  >
+                                    {score ?? '–'}
+                                  </span>
+                                  {isSelected && (
+                                    <span
+                                      className="absolute inset-x-2 bottom-1 h-[2px] rounded-full"
+                                      style={{ background: `${T.accent}B0` }}
+                                    />
+                                  )}
                                 </button>
                               );
                             })}
 
-                            <div className="px-2 py-2 text-center text-sm font-semibold text-zinc-100 bg-white/3">
+                            <div
+                              className="px-2 py-2 text-center text-sm font-semibold"
+                              style={{ color: T.ink, background: T.paperDeep, fontFamily: T.serif, fontVariantNumeric: 'tabular-nums' }}
+                            >
                               {nineTotal || '–'}
                             </div>
                           </div>
@@ -598,51 +764,85 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
   return (
     <div>
       {/* Voice input bar */}
-      <div className="mb-4 p-3 rounded-2xl bg-zinc-800/50 border border-zinc-700">
+      <div
+        className="mb-4 p-3 rounded-2xl"
+        style={{ background: T.paperDeep, border: `1px solid ${T.hairline}` }}
+      >
         <div className="flex items-center gap-3">
           <button
             onClick={toggleVoice}
             disabled={isProcessingVoice}
-            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
-              isVoiceActive
-                ? "bg-red-500 text-white scale-110 animate-pulse"
-                : "bg-emerald-500 text-white hover:bg-emerald-600"
-            } disabled:opacity-50`}
+            className="w-12 h-12 rounded-full flex items-center justify-center transition-all flex-shrink-0 disabled:opacity-50"
+            style={{
+              background: isVoiceActive ? T.errorInk : T.accent,
+              color: T.paper,
+              minWidth: 48,
+              minHeight: 48,
+            }}
           >
             {isProcessingVoice ? (
-              <Loader2 className="w-6 h-6 animate-spin" />
+              <SpinnerIcon size={24} />
             ) : isVoiceActive ? (
-              <MicOff className="w-6 h-6" />
+              <MicOffIcon size={24} />
             ) : (
-              <Mic className="w-6 h-6" />
+              <MicIcon size={24} />
             )}
           </button>
           <div className="flex-1 min-w-0">
             {isVoiceActive && !voiceTranscript && (
-              <p className="text-emerald-400 text-sm font-medium">Listening...</p>
+              <p
+                className="text-sm font-medium"
+                style={{ color: T.accent, fontFamily: T.sans }}
+              >
+                Listening…
+              </p>
             )}
             {voiceTranscript && (
-              <p className="text-white text-sm truncate">"{voiceTranscript}"</p>
+              <p
+                className="text-sm truncate"
+                style={{ color: T.ink, fontFamily: T.serif, fontStyle: 'italic' }}
+              >
+                "{voiceTranscript}"
+              </p>
             )}
             {!isVoiceActive && !voiceTranscript && !isProcessingVoice && (
               <div>
-                <p className="text-zinc-300 text-sm font-medium">Voice Score Entry</p>
-                <p className="text-zinc-500 text-xs">
-                  {selectedCell 
-                    ? `${round.players.find(p => p.id === selectedCell.playerId)?.name} • Hole ${selectedCell.hole}`
+                <p
+                  className="text-sm font-medium"
+                  style={{ color: T.ink, fontFamily: T.sans }}
+                >
+                  Voice Score Entry
+                </p>
+                <p
+                  className="text-xs"
+                  style={{ color: T.pencilSoft, fontFamily: T.mono }}
+                >
+                  {selectedCell
+                    ? `${round.players.find(p => p.id === selectedCell.playerId)?.name} · Hole ${selectedCell.hole}`
                     : `Hole ${currentHole || 1}`
                   }
                 </p>
               </div>
             )}
             {isProcessingVoice && (
-              <p className="text-emerald-400 text-sm">Updating scores...</p>
+              <p
+                className="text-sm"
+                style={{ color: T.pencil, fontFamily: T.sans }}
+              >
+                Updating scores…
+              </p>
             )}
           </div>
         </div>
         {!isVoiceActive && !isProcessingVoice && !pendingScores && (
-          <div className="mt-2 pt-2 border-t border-zinc-700/50">
-            <p className="text-zinc-500 text-xs">
+          <div
+            className="mt-2 pt-2"
+            style={{ borderTop: `1px solid ${T.hairlineSoft}` }}
+          >
+            <p
+              className="text-xs"
+              style={{ color: T.pencilSoft, fontFamily: T.mono, fontSize: 10, letterSpacing: '0.04em' }}
+            >
               Say: "Justin 4 Mike 5" or "everyone par" or "par except Mike bogey"
             </p>
           </div>
@@ -651,28 +851,62 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
 
       {/* Pending scores confirmation */}
       {pendingScores && (
-        <div className="mb-4 p-4 rounded-2xl bg-emerald-900/30 border border-emerald-500/30">
-          <p className="text-emerald-300 text-sm font-medium mb-3">
+        <div
+          className="mb-4 p-4 rounded-2xl"
+          style={{ background: 'rgba(58,74,138,0.07)', border: `1px solid rgba(58,74,138,0.20)` }}
+        >
+          <p
+            className="text-sm font-medium mb-3"
+            style={{ color: T.accent, fontFamily: T.mono, letterSpacing: '0.04em' }}
+          >
             Hole {pendingScores.hole} — Confirm scores:
           </p>
           <div className="space-y-2 mb-4">
             {Object.entries(pendingScores.scores).map(([name, score]) => (
-              <div key={name} className="flex justify-between items-center px-3 py-2 rounded-xl bg-white/5">
-                <span className="text-white font-medium">{name}</span>
-                <span className="text-emerald-300 font-bold text-lg">{score}</span>
+              <div
+                key={name}
+                className="flex justify-between items-center px-3 py-2 rounded-xl"
+                style={{ background: T.paper, border: `1px solid ${T.hairlineSoft}` }}
+              >
+                <span
+                  className="font-medium"
+                  style={{ color: T.ink, fontFamily: T.sans }}
+                >
+                  {name}
+                </span>
+                <span
+                  className="font-bold text-lg"
+                  style={{ color: T.accent, fontFamily: T.serif, fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {score}
+                </span>
               </div>
             ))}
           </div>
           <div className="flex gap-2">
             <button
               onClick={cancelPendingScores}
-              className="flex-1 px-4 py-2 rounded-xl bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
+              className="flex-1 px-4 py-3 rounded-xl"
+              style={{
+                background: T.paper,
+                border: `1px solid ${T.hairline}`,
+                color: T.pencil,
+                fontFamily: T.sans,
+                minHeight: 44,
+              }}
             >
               Cancel
             </button>
             <button
               onClick={confirmPendingScores}
-              className="flex-1 px-4 py-2 rounded-xl bg-emerald-500 text-white font-medium hover:bg-emerald-600"
+              className="flex-1 px-4 py-3 rounded-xl font-medium"
+              style={{
+                background: T.accent,
+                color: T.paper,
+                fontFamily: T.sans,
+                minHeight: 44,
+                border: 'none',
+              }}
             >
               Apply Scores
             </button>
@@ -684,23 +918,43 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
       {renderNine(10, 18, 'Back 9')}
 
       <div className="card p-4">
-        <h3 className="text-sm font-semibold tracking-tight mb-3">Totals</h3>
+        <h3
+          className="text-sm font-semibold tracking-tight mb-3"
+          style={{ fontFamily: T.serif, fontStyle: 'italic', color: T.ink }}
+        >
+          Totals
+        </h3>
         <div className="grid gap-2">
           {round.players.map((player) => {
             const totals = calculateTotals(round.scores, round.holes, player.id);
+            const toParColor =
+              totals.toPar < 0 ? T.flag : totals.toPar > 0 ? T.bogey : T.par;
             return (
               <div
                 key={player.id}
-                className="flex justify-between items-center rounded-2xl px-4 py-3 bg-white/4 border border-white/10"
+                className="flex justify-between items-center rounded-2xl px-4 py-3"
+                style={{ background: T.paperDeep, border: `1px solid ${T.hairlineSoft}` }}
               >
-                <span className="font-medium text-zinc-200">{player.name}</span>
-                <div className="flex items-center gap-4 text-sm text-zinc-300">
-                  <span className="text-zinc-400">F9: {totals.front9 || '–'}</span>
-                  <span className="text-zinc-400">B9: {totals.back9 || '–'}</span>
+                <span
+                  className="font-medium"
+                  style={{ color: T.ink, fontFamily: T.sans }}
+                >
+                  {player.name}
+                </span>
+                <div className="flex items-center gap-4 text-sm">
                   <span
-                    className={`font-semibold text-base ${
-                      totals.toPar < 0 ? 'text-red-300' : totals.toPar > 0 ? 'text-sky-300' : 'text-emerald-300'
-                    }`}
+                    style={{ color: T.pencil, fontFamily: T.mono, fontSize: 11, letterSpacing: '0.04em' }}
+                  >
+                    F9: {totals.front9 || '–'}
+                  </span>
+                  <span
+                    style={{ color: T.pencil, fontFamily: T.mono, fontSize: 11, letterSpacing: '0.04em' }}
+                  >
+                    B9: {totals.back9 || '–'}
+                  </span>
+                  <span
+                    className="font-semibold text-base"
+                    style={{ color: toParColor, fontFamily: T.serif, fontVariantNumeric: 'tabular-nums' }}
                   >
                     {totals.playedHoles > 0 ? totals.total : '–'} (
                     {totals.playedHoles === 0 ? '–' : totals.toPar === 0 ? 'E' : `${totals.toPar > 0 ? '+' : ''}${totals.toPar}`})
@@ -723,14 +977,26 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
             transition={{ duration: 0.18, ease: 'easeOut' }}
             className="fixed bottom-0 left-0 right-0 z-50"
           >
-            <div className="backdrop-blur-xl bg-zinc-950/70 border-t border-white/10">
-              <div className="max-w-md mx-auto px-4 py-4">
-                <p className="text-center text-sm text-zinc-400 mb-3">
-                  <span className="font-semibold text-zinc-100">
+            <div
+              style={{
+                background: T.paper,
+                borderTop: `1px solid ${T.hairline}`,
+                boxShadow: '0 -8px 32px rgba(26,42,26,0.12)',
+              }}
+            >
+              <div className="max-w-md mx-auto px-4 py-4" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+                <p
+                  className="text-center text-sm mb-3"
+                  style={{ color: T.pencil, fontFamily: T.mono, letterSpacing: '0.04em' }}
+                >
+                  <span
+                    className="font-semibold"
+                    style={{ color: T.ink, fontFamily: T.sans }}
+                  >
                     {round.players.find((p) => p.id === selectedCell.playerId)?.name}
                   </span>
-                  {' • '}Hole {selectedCell.hole}
-                  {' • '}Par {round.holes[selectedCell.hole - 1]?.par}
+                  {' · '}Hole {selectedCell.hole}
+                  {' · '}Par {round.holes[selectedCell.hole - 1]?.par}
                 </p>
 
                 <div className="grid grid-cols-4 gap-2">
@@ -738,7 +1004,18 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
                     <button
                       key={num}
                       onClick={() => handleNumberPadClick(num)}
-                      className="btn rounded-2xl py-3 bg-white/6 hover:bg-white/10 border border-white/10 text-lg font-semibold active:scale-[0.97]"
+                      className="btn rounded-2xl active:scale-[0.97] transition-transform"
+                      style={{
+                        padding: '12px 8px',
+                        background: T.paperDeep,
+                        border: `1px solid ${T.hairline}`,
+                        color: T.ink,
+                        fontSize: 18,
+                        fontFamily: T.serif,
+                        fontWeight: 600,
+                        minHeight: 44,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
                     >
                       {num}
                     </button>
@@ -748,13 +1025,29 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
                 <div className="flex gap-2 mt-3">
                   <button
                     onClick={handleClearScore}
-                    className="btn flex-1 rounded-full py-3 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200"
+                    className="btn flex-1 rounded-full"
+                    style={{
+                      padding: '12px 16px',
+                      background: T.errorWash,
+                      border: `1px solid rgba(184,74,58,0.2)`,
+                      color: T.errorInk,
+                      fontFamily: T.sans,
+                      minHeight: 44,
+                    }}
                   >
                     Clear
                   </button>
                   <button
                     onClick={() => setSelectedCell(null)}
-                    className="btn flex-1 btn-secondary"
+                    className="btn flex-1 rounded-full"
+                    style={{
+                      padding: '12px 16px',
+                      background: T.paperDeep,
+                      border: `1px solid ${T.hairline}`,
+                      color: T.ink,
+                      fontFamily: T.sans,
+                      minHeight: 44,
+                    }}
                   >
                     Done
                   </button>

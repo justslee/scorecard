@@ -1176,3 +1176,56 @@ Format: date — done / in-progress / blocked.
     should verify this reads clearly against T.paper in sunlight.
   - `<details>/<summary>` expanders use the browser's default disclosure triangle — a future polish
     pass could replace with a custom chevron or typographic indicator.
+
+## 2026-06-27 (restyle-dark-components-sweep P24.5 — scoring-entry batch)
+- **Done:** `ScoreGrid.tsx` + `HoleScoreModal.tsx` restyled from dark-mode Tailwind to the
+  yardage-book T.* token system. VISUAL-ONLY — zero logic/prop/callback changes.
+  Key changes (ScoreGrid.tsx):
+  - Removed `lucide-react` import (Mic/MicOff/Loader2/Users); replaced with inline SVG helpers
+    (MicIcon, MicOffIcon, SpinnerIcon) — no third-party icon dep.
+  - `GROUP_COLORS` retyped from Tailwind class strings to raw color values using T.* tokens +
+    warm ink palette matching `PLAYER_COLORS` in RoundPageClient. All group header / row /
+    badge styles converted to `style={}` inline.
+  - Local `scoreColor()` helper returns T.eagle/T.flag/T.par/T.bogey/T.double inline instead
+    of dark-mode Tailwind `getScoreClass()`.
+  - Score indicators (birdie circle, bogey square, etc.) border colors now use T.eagle, T.flag,
+    T.bogey, T.double, T.pencilSoft — no more yellow/red/sky/blue/indigo.
+  - Selected cell: cobalt `rgba(58,74,138,0.08)` + cobalt shadow; underline `${T.accent}B0`
+    (replaces emerald).
+  - Voice bar: T.paperDeep bg, T.hairline border, T.accent mic button (cobalt) / T.errorInk
+    stop (replaces zinc/emerald dark chrome).
+  - Pending scores: cobalt-tinted bg (replaces emerald-900/30).
+  - Number pad (fixed bottom): T.paper bg, T.hairline border, T.serif number buttons,
+    T.errorWash clear button; iOS safe-area bottom padding.
+  - 44pt (`minHeight: 44`) on all score cells and number-pad buttons.
+  - Totals section: T.flag/T.bogey/T.par for toPar color (replaces red-300/sky-300/emerald-300).
+  Key changes (HoleScoreModal.tsx):
+  - Removed `lucide-react` import; replaced X/ChevronLeft/ChevronRight with `×`/`‹`/`›` text.
+  - Overlay: `rgba(26,42,26,0.45)` ink-tinted (replaces bg-black/70 backdrop-blur-sm).
+  - Sheet layout: converted from centered dialog to proper bottom sheet (fixed bottom-0,
+    slide-from-bottom animation via T.springSoft, rounded top corners 28px, drag handle,
+    safe-area bottom padding).
+  - Nav buttons: T.hairline border, T.ink/T.pencilSoft text, `minWidth/minHeight: 44`.
+  - Hole title: T.serif italic + T.mono kicker (replaces text-white/text-zinc-400).
+  - ScoreCell: T.paperDeep background + T.hairline 2px border (replaces zinc-800/80);
+    drag active → `rgba(58,74,138,0.08)` cobalt wash (replaces emerald-500/20).
+  - Score number: T.serif 42px with inline `getScoreInkColor()` → T.eagle/T.flag/T.par/
+    T.bogey/T.double (replaces Tailwind dark-mode color classes).
+  - +/- buttons: `minWidth/minHeight: 44` (was 32px w-8 h-8); T.paper bg, T.hairline
+    border, T.pencil text, T.serif font.
+  - Quick actions: "All Par" → cobalt `rgba(58,74,138,0.08)` / T.accent text; "Done" →
+    T.paperDeep / T.ink.
+  - Hole dots: T.accent for active (cobalt), T.hairline for inactive (replaces emerald-400/
+    zinc-600); hint text → T.mono / T.pencilSoft.
+  Score color tokens reused: T.eagle (≤-2), T.flag/T.birdie (-1, birdie terracotta),
+  T.par (0, ink), T.bogey (+1), T.double (+2), T.pencilSoft (+3).
+  Touch targets: 44pt minimum on all interactive scoring controls (critical on-course UX).
+  Grep clean: zero `zinc|emerald|text-white|bg-white/|lucide|amber|from-zinc` in both files.
+  Gates: tsc 0 errors, voice-tests 260/260, vitest 238/238, npm run build OK.
+  NOTICEABLE — both surfaces are visible every time a score is entered during a live round.
+  Designer flags:
+  - HoleScoreModal is now a bottom sheet (was centered dialog); swipe-to-dismiss is not
+    wired — only backdrop-tap dismisses. Designer should confirm this feels correct.
+  - ScoreGrid sits inside the old `/round/[id]` page (pre-yardage-book route). If the owner
+    is primarily on the new RoundPageClient (yardage route), ScoreGrid may not be visible on
+    TestFlight — confirm with eng-lead which route is the live scoring surface.
