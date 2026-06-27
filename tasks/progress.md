@@ -956,3 +956,45 @@ Format: date — done / in-progress / blocked.
     (`.card`, `.btn`, emerald classes) — consistent with its current state; a full redesign
     to T.* tokens is a separate polish item. The new tournament/new form uses T.* tokens
     throughout and matches the wire-round-new / profile page aesthetic.
+
+## 2026-06-27 (wire-tournament-new reviewer + designer follow-up fixes)
+- **Done:** reviewer + designer follow-up fixes for `wire-tournament-new` (one commit on integration/next).
+  BLOCKER 1 fixed (custom player names):
+  - Original implementation used `crypto.randomUUID()` ids for custom players directly in
+    `playerIds`. Backend `_build_full_tournament` derives `playerNamesById` via a JOIN to the
+    `players` table — client-side UUIDs not in that table → names resolve to "Unknown".
+  - Fix: `handleCreate` now loops through `customPlayers`, calls `createPlayer({name})` for each
+    (POST /api/players), then `saveSavedPlayer(saved)` (write-through to localStorage cache).
+    Uses server-returned ids in `allPlayerIds`. Builds `playerNamesById` from server-returned
+    `SavedPlayer` objects for the local cache. Custom players are now real rows in the DB —
+    backend JOIN resolves their names, and they appear on the Players page.
+  BLOCKER 2 fixed (NewTournamentRoundClient full yardage-book restyle):
+  - Removed all 33 dark Tailwind class refs (text-zinc-100, bg-white/5, ring-emerald-500/50,
+    emerald, zinc-*). Full rewrite to T.* inline styles throughout.
+  - Outer shell: `PAPER_NOISE` over `T.paper`, T.* tokens throughout.
+  - Header: "Add · Round" mono kicker + "Set up a round." T.serif italic headline (matches
+    tournament/new / round/new patterns). Back button links to tournament detail.
+  - Loading / not-found: paper shell, T.pencilSoft text, back button.
+  - Course/tee selects: `background:T.paperDeep, border:1px solid T.hairline, color:T.ink`.
+  - Tournament info card: T.paperDeep bg, T.ink/T.pencilSoft labels, T.serif italic name.
+  - Auto-Group button: `border:1px solid T.hairline, color:T.pencil` (secondary style).
+  - DnD `SortablePlayer`: T.paper bg, T.paperDeep on hover/drag, T.ink text, DEFAULT_ACCENT
+    ring (not emerald). `DraggedPlayer` overlay: ink bg, T.paper text.
+  - Drop zones: `border:1px dashed T.hairline, background:T.paper, minHeight:44`.
+  - Unassigned section: `border:T.warningInk40, background:T.warningWash, color:T.warningInk`.
+  - Error banner: `background:T.errorWash, border:T.errorInk30, color:T.errorInk`.
+  - CTA: text "Start Round →" (mono arrow, no Flag icon); T.ink pill, T.paper text; safe-area
+    bottom `max(26px, env(safe-area-inset-bottom, 26px))`. minHeight 52.
+  - All touch targets ≥44pt throughout.
+  - Safe-area top: `max(14px, env(safe-area-inset-top))` on header.
+  BLOCKER 3 fixed (Add button touch target):
+  - "Add" button in tournament/new: `minHeight: 32` → `minHeight: 44`.
+  POLISH (both files):
+  - Placeholder: "Club Championship" (was "Sunday Cup").
+  - Handicap display: `+{p.handicap}` → `{p.handicap > 0 ? `+${p.handicap}` : p.handicap}`.
+  DEFERRED (noted, not fixed):
+  - Legacy non-UUID localStorage tournament rounds linkage gap (rounds from before server-UUIDs).
+  - Gates: `npx eslint src/app/tournament/ --ext .tsx,.ts` 0 errors, `tsc --noEmit` 0 errors,
+    voice-tests 260/260 pass.
+  - NOTICEABLE — custom players now persist to the DB and resolve their names; round-setup screen
+    is fully paper/ink aesthetic (no dark Tailwind).
