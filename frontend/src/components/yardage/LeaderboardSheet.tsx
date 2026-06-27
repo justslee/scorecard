@@ -120,7 +120,7 @@ function Tab({
       onClick={onClick}
       style={{
         position: "relative",
-        padding: "8px 14px",
+        padding: "12px 14px",
         border: "none",
         background: "transparent",
         fontFamily: T.sans,
@@ -177,7 +177,7 @@ function DotStrip({
         }
         const diff = s - p;
         let bg = T.pencilSoft;
-        if (diff <= -2) bg = "oklch(0.48 0.14 280)";
+        if (diff <= -2) bg = T.eagle;
         else if (diff === -1) bg = accent;
         else if (diff === 0) bg = T.ink;
         else if (diff === 1) bg = T.pencil;
@@ -742,7 +742,7 @@ function Skins({
             padding: "14px 16px",
             border: `1px dashed ${accent}`,
             borderRadius: 14,
-            background: "rgba(26,42,26,0.02)",
+            background: T.paperDeep,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
@@ -1510,7 +1510,7 @@ export default function LeaderboardSheet({
           transition={T.springSoft}
           style={{
             position: "fixed",
-            top: 36,
+            top: "max(36px, env(safe-area-inset-top))",
             left: 0,
             right: 0,
             bottom: 0,
@@ -1568,14 +1568,14 @@ export default function LeaderboardSheet({
                   marginTop: 2,
                 }}
               >
-                Through hole {thru}
+                {thru > 0 ? `Through hole ${thru}` : "—"}
               </div>
             </div>
             <button
               onClick={onClose}
               style={{
-                width: 32,
-                height: 32,
+                minWidth: 44,
+                minHeight: 44,
                 borderRadius: 99,
                 border: `1px solid ${T.hairline}`,
                 background: "transparent",
@@ -1618,7 +1618,8 @@ export default function LeaderboardSheet({
             style={{
               flex: 1,
               overflowY: "auto",
-              padding: "18px 18px 40px",
+              padding: "18px 18px 0",
+              paddingBottom: "max(40px, env(safe-area-inset-bottom))",
               WebkitOverflowScrolling: "touch",
             }}
           >

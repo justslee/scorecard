@@ -267,6 +267,18 @@ Format: date — done / in-progress / blocked.
   - Gates: lint clean (src/), tsc clean (0 errors), voice-tests 260/260, build OK.
   - NOTICEABLE — leaderboard tabs now show real standings from entered scores; game tabs
     appear/disappear based on which games are actually on the round.
+- **Done:** designer follow-up fixes for `wire-leaderboard-real` (5 must-fix + 2 polish).
+  1. Safe-area top: `top: 36` → `top: "max(36px, env(safe-area-inset-top))"` (Dynamic Island).
+  2. Safe-area bottom: scroll padding bottom → `paddingBottom: "max(40px, env(safe-area-inset-bottom))"` (home indicator).
+  3. Close button hit area: `width:32,height:32` → `minWidth:44,minHeight:44,display:flex` (iOS 44pt min).
+  4. Tab touch target: `padding:"8px 14px"` → `"12px 14px"` (~44pt height on-course).
+  5. "Through hole 0" guard: `{thru > 0 ? \`Through hole ${thru}\` : "—"}`.
+  6. DotStrip eagle color: inline `"oklch(0.48 0.14 280)"` → `T.eagle` (tokenized).
+  7. Skins pot callout background: `rgba(26,42,26,0.02)` (invisible) → `T.paperDeep`.
+  Deferred (logged, not blocking): Nassau redundant empty-state text alongside winner grid;
+  3-Point scoring guide always visible even when no scores; tab-bar overflow scrollbar not
+  hidden; drag handle implies swipe-to-dismiss but only backdrop-tap dismisses — flag for owner.
+  - Gates: lint clean, tsc 0 errors, voice-tests 260/260, build OK.
 
 ### 2026-06-27 — Backend DB layer COMPLETE + DEPLOYED (real-data wiring Phase 0/1)
 - Shipped & merged **bundle #48** to main: db-core-schema, api-contract-align, and the
