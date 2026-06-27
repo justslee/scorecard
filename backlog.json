@@ -353,13 +353,14 @@
       "type": "minor",
       "priority": 29,
       "risk": "low",
-      "status": "ready-but-hold",
+      "status": "done",
       "depends_on": [
         "mount-caddie",
         "mount-ocr-scan"
       ],
       "why": "After re-mounting caddie/OCR/GPS, delete what remains truly dead (e.g. ScoreGrid/HoleScoreModal \u2014 superseded by yardage ScoreSheet; RoundSummary, TournamentGamesPanel/TournamentLeaderboard, GamesPanel if its function is covered inline). Do LAST so we don't delete something a re-mount item revives. Verify zero importers + build before each deletion.",
-      "grooming_note_2026_06_27": "UNBLOCKABLE with caveats (2026-06-27): mount-caddie (P26) and mount-ocr-scan (P27) are DONE. Removed mount-gps-shot-tracking from depends_on \u2014 GPS-related files (GPSMapView, ShotTrackingControl, PinMarkControl, CameraCapture) are EXCLUDED from this deletion because CameraCapture is now actively used by ScanSheet (mounted), and the others belong to the P28 GPS mounting work. CONFIRMED DEAD files (zero reachable importers, safe to delete): ScoreGrid.tsx, HoleScoreModal.tsx (superseded by ScoreSheet), RoundSummary.tsx, TournamentGamesPanel.tsx, TournamentLeaderboard.tsx, GamesPanel.tsx, AddGameModal.tsx, VoiceGameSetup.tsx, VoiceTournamentSetup.tsx, EditGroupsModal.tsx, CourseSearchImport.tsx. HOLD CONDITION: owner standing constraint \u2014 do NOT delete until caddie+OCR is validated on a real TestFlight build. Status = ready-but-hold; flip to ready once the next approval bundle containing caddie+OCR ships and owner replies 'ship it'."
+      "grooming_note_2026_06_27": "UNBLOCKABLE with caveats (2026-06-27): mount-caddie (P26) and mount-ocr-scan (P27) are DONE. Removed mount-gps-shot-tracking from depends_on \u2014 GPS-related files (GPSMapView, ShotTrackingControl, PinMarkControl, CameraCapture) are EXCLUDED from this deletion because CameraCapture is now actively used by ScanSheet (mounted), and the others belong to the P28 GPS mounting work. CONFIRMED DEAD files (zero reachable importers, safe to delete): ScoreGrid.tsx, HoleScoreModal.tsx (superseded by ScoreSheet), RoundSummary.tsx, TournamentGamesPanel.tsx, TournamentLeaderboard.tsx, GamesPanel.tsx, AddGameModal.tsx, VoiceGameSetup.tsx, VoiceTournamentSetup.tsx, EditGroupsModal.tsx, CourseSearchImport.tsx. HOLD CONDITION: owner standing constraint \u2014 do NOT delete until caddie+OCR is validated on a real TestFlight build. Status = ready-but-hold; flip to ready once the next approval bundle containing caddie+OCR ships and owner replies 'ship it'.",
+      "done_note": "Deleted 11 confirmed-superseded files (5269 LOC): ScoreGrid, HoleScoreModal, TournamentLeaderboard, GamesPanel, AddGameModal, RoundSummary, EditGroupsModal, CourseSearchImport, VoiceGameSetup, VoiceTournamentSetup, TournamentGamesPanel. tsc/build confirm no dangling refs. KEPT (intentionally): P28 GPS/caddie cluster (CaddiePanel/GPSMapView/ShotTrackingControl/PinMarkControl/CaddieNotesCard/CustomPersonaModal \u2014 reuse when P28 ships) + AuthButtons (auth, unimported). Those + their lucide imports get resolved with P28."
     },
     {
       "id": "test-voice-pipeline",
