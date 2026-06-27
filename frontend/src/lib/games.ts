@@ -364,14 +364,19 @@ export function computeNassau(round: Round, game: Game): NassauResults {
       } else if (closed) {
         const lead = Math.abs(diffAtClose!);
         const remaining = endHole - closedAt!;
-        // "X & Y" when holes remain; "X up" when segment ends exactly on the last hole
-        statusLabel = remaining === 0 ? `${lead} up` : `${lead} & ${remaining}`;
+        // "X & Y" when holes remain; "X UP" when segment ends exactly on the last hole.
+        // Always uppercase so raw label is consistent — LeaderboardSheet may also apply
+        // textTransform:uppercase but GameResults/GameLeaderboards render it raw.
+        statusLabel = remaining === 0 ? `${lead} UP` : `${lead} & ${remaining}`;
       } else if (diff === 0) {
         statusLabel = 'AS';
       } else {
         statusLabel = `${Math.abs(diff)} UP`;
       }
 
+      // NOTE: `matchDiff` is the RAW running diff after all iterated holes
+      // (continues past the close point). Use `leaderId` / `statusLabel` / `diffAtClose`
+      // (frozen) for results display; `matchDiff` is only useful for hole-by-hole replay.
       return { holesPlayed, matchDiff: diff, statusLabel, leaderId, closedAt, closed };
     };
 

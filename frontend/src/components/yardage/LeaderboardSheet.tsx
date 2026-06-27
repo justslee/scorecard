@@ -493,6 +493,9 @@ function Nassau({
                 fontSize: 16,
                 color: s.winner ? T.ink : T.pencilSoft,
                 letterSpacing: -0.3,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
               {nameFor(s.winner)}
@@ -502,7 +505,8 @@ function Nassau({
                 fontFamily: T.mono,
                 fontSize: 9,
                 letterSpacing: 1,
-                color: s.inProgress ? accent : T.pencilSoft,
+                // In-progress → accent; finalized result → T.pencil (readable); empty/not-started → T.pencilSoft
+                color: s.inProgress ? accent : s.winner ? T.pencil : T.pencilSoft,
                 marginTop: 3,
                 textTransform: "uppercase",
               }}

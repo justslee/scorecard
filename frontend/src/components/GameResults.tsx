@@ -157,18 +157,18 @@ export default function GameResults({ round, game, onUpdateGame }: GameResultsPr
           </div>
         </div>
 
-        {/* Match-play segment status */}
+        {/* Match-play segment status — 3 fixed columns so status doesn't jump when leader is absent */}
         {isMatchMode && (
           <div className={`${box} p-4`}>
             <div className="text-sm font-semibold text-zinc-200 mb-2">Match status</div>
             <div className="space-y-2">
               {matchSegs.map(({ label, seg }) => (
-                <div key={label} className="flex items-center justify-between rounded-2xl bg-white/3 border border-white/10 p-3">
+                <div key={label} className="grid grid-cols-3 items-center gap-2 rounded-2xl bg-white/3 border border-white/10 p-3">
                   <div className="text-sm text-zinc-400">{label}</div>
-                  <div className="text-sm font-semibold text-zinc-200">{seg.statusLabel}</div>
-                  {seg.leaderId && (
-                    <div className="text-xs text-emerald-300">{competitorName(seg.leaderId)}</div>
-                  )}
+                  <div className="text-sm font-semibold text-zinc-200 text-center">{seg.statusLabel}</div>
+                  <div className="text-xs text-emerald-300 text-right">
+                    {seg.leaderId ? competitorName(seg.leaderId) : ''}
+                  </div>
                 </div>
               ))}
             </div>
