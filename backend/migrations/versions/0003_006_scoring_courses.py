@@ -55,7 +55,7 @@ def upgrade() -> None:
             "holes",
             JSONB,
             nullable=False,
-            server_default="'[]'::jsonb",
+            server_default=sa.text("'[]'::jsonb"),
         ),
         # JSONB list of TeeOption: [{id, name, holes:[HoleInfo]}]
         sa.Column("tees", JSONB, nullable=True),
