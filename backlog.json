@@ -252,13 +252,13 @@
     },
     {
       "id": "restyle-dark-components-sweep",
-      "title": "Design-system sweep: restyle ~21 remaining dark-Tailwind components to yardage-book",
-      "type": "major",
+      "title": "Restyle reachable dark components (auth) — most flagged dark files are DEAD/unmounted",
+      "type": "minor",
       "priority": 24.5,
       "risk": "low",
-      "status": "ready",
+      "status": "needs-decision",
       "depends_on": [],
-      "why": "Audit found ~21 .tsx components still on dark-mode Tailwind (zinc/emerald/text-white) — a NORTHSTAR violation, several in CORE flows the owner tests. Restyle in priority batches, visual-only (no logic). CORE-FLOW FIRST: AddGameModal, ScoreGrid, HoleScoreModal, GamesPanel, RoundSummary, EditGroupsModal, VoiceGameSetup, VoiceTournamentSetup, TournamentGamesPanel, TournamentLeaderboard. CADDIE/SCAN next: CaddiePanel, CaddieNotesCard, CameraCapture, CourseSearchImport, CustomPersonaModal, GPSMapView, PinMarkControl, ShotTrackingControl. AUTH/INFRA last: SignInClient, SignUpClient, AuthProvider. Do one batch per cycle (group related components); designer reviews each batch."
+      "why": "REACHABILITY AUDIT (2026-06-27): of the ~21 dark-Tailwind components, almost all are DEAD CODE / UNMOUNTED legacy from the pre-yardage-book prototype, superseded by the wired screens. Dead subtrees (0 reachable importers): GamesPanel→AddGameModal/VoiceGameSetup; ScoreGrid→HoleScoreModal; CaddieModal→CaddiePanel→CaddieNotesCard/CustomPersonaModal/PinMarkControl/ShotTrackingControl; plus RoundSummary, TournamentGamesPanel, TournamentLeaderboard, VoiceTournamentSetup, GPSMapView, CameraCapture, CourseSearchImport. ONLY genuinely-reachable dark UI = the auth screens (SignInClient, SignUpClient, AuthProvider — real /sign-in /sign-up routes). So restyling the dead ones is moot; restyle ONLY auth here. SEPARATE, BIGGER ISSUE: several FLAGSHIP features are unmounted (no entry point) — AI caddie, OCR scorecard scan, GPS/shot-tracking, rich mid-round games panel. Those need a product decision (re-mount+wire+restyle vs delete) — see unmounted-features-decision. (Note: ScoreGrid/HoleScoreModal were already restyled before this was discovered — harmless, just unused.)"
     },
     {
       "id": "test-voice-pipeline",
