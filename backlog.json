@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-26",
+  "updated": "2026-06-27",
   "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle).",
   "items": [
     {
@@ -306,9 +306,10 @@
       "type": "minor",
       "priority": 24.5,
       "risk": "low",
-      "status": "needs-decision",
+      "status": "ready",
       "depends_on": [],
-      "why": "REACHABILITY AUDIT (2026-06-27): of the ~21 dark-Tailwind components, almost all are DEAD CODE / UNMOUNTED legacy from the pre-yardage-book prototype, superseded by the wired screens. Dead subtrees (0 reachable importers): GamesPanel\u2192AddGameModal/VoiceGameSetup; ScoreGrid\u2192HoleScoreModal; CaddieModal\u2192CaddiePanel\u2192CaddieNotesCard/CustomPersonaModal/PinMarkControl/ShotTrackingControl; plus RoundSummary, TournamentGamesPanel, TournamentLeaderboard, VoiceTournamentSetup, GPSMapView, CameraCapture, CourseSearchImport. ONLY genuinely-reachable dark UI = the auth screens (SignInClient, SignUpClient, AuthProvider \u2014 real /sign-in /sign-up routes). So restyling the dead ones is moot; restyle ONLY auth here. SEPARATE, BIGGER ISSUE: several FLAGSHIP features are unmounted (no entry point) \u2014 AI caddie, OCR scorecard scan, GPS/shot-tracking, rich mid-round games panel. Those need a product decision (re-mount+wire+restyle vs delete) \u2014 see unmounted-features-decision. (Note: ScoreGrid/HoleScoreModal were already restyled before this was discovered \u2014 harmless, just unused.)"
+      "why": "REACHABILITY AUDIT (2026-06-27): of the ~21 dark-Tailwind components, almost all are DEAD CODE / UNMOUNTED legacy from the pre-yardage-book prototype, superseded by the wired screens. Dead subtrees (0 reachable importers): GamesPanel\u2192AddGameModal/VoiceGameSetup; ScoreGrid\u2192HoleScoreModal; CaddieModal\u2192CaddiePanel\u2192CaddieNotesCard/CustomPersonaModal/PinMarkControl/ShotTrackingControl; plus RoundSummary, TournamentGamesPanel, TournamentLeaderboard, VoiceTournamentSetup, GPSMapView, CameraCapture, CourseSearchImport. ONLY genuinely-reachable dark UI = the auth screens (SignInClient, SignUpClient, AuthProvider \u2014 real /sign-in /sign-up routes). So restyling the dead ones is moot; restyle ONLY auth here. SEPARATE, BIGGER ISSUE: several FLAGSHIP features are unmounted (no entry point) \u2014 AI caddie, OCR scorecard scan, GPS/shot-tracking, rich mid-round games panel. Those need a product decision (re-mount+wire+restyle vs delete) \u2014 see unmounted-features-decision. (Note: ScoreGrid/HoleScoreModal were already restyled before this was discovered \u2014 harmless, just unused.)",
+      "grooming_note_2026_06_27": "NOT moot. Follow-up reachability grep (2026-06-27): CourseSearch.tsx and PlayerAutocomplete.tsx both have file-header comments confirming they have no dark classes or lucide-react (already clean). Auth screens grep returned no matches \u2014 already restyled as noted. TWO reachable files still violate NORTHSTAR (lucide-react icons): SwipeableRow.tsx (used in /players/page.tsx \u2014 imports Trash2, AlertTriangle from lucide-react) and settings/page.tsx (imports Trash2 from lucide-react). Fix = replace those icons with inline SVGs matching the existing style. EditGroupsModal has zero importers (confirmed dead). Recommend: keep status READY with narrowed scope: replace lucide icons in SwipeableRow.tsx and settings/page.tsx only."
     },
     {
       "id": "mount-caddie",
@@ -351,13 +352,13 @@
       "type": "minor",
       "priority": 29,
       "risk": "low",
-      "status": "blocked",
+      "status": "ready-but-hold",
       "depends_on": [
         "mount-caddie",
-        "mount-ocr-scan",
-        "mount-gps-shot-tracking"
+        "mount-ocr-scan"
       ],
-      "why": "After re-mounting caddie/OCR/GPS, delete what remains truly dead (e.g. ScoreGrid/HoleScoreModal \u2014 superseded by yardage ScoreSheet; RoundSummary, TournamentGamesPanel/TournamentLeaderboard, GamesPanel if its function is covered inline). Do LAST so we don't delete something a re-mount item revives. Verify zero importers + build before each deletion."
+      "why": "After re-mounting caddie/OCR/GPS, delete what remains truly dead (e.g. ScoreGrid/HoleScoreModal \u2014 superseded by yardage ScoreSheet; RoundSummary, TournamentGamesPanel/TournamentLeaderboard, GamesPanel if its function is covered inline). Do LAST so we don't delete something a re-mount item revives. Verify zero importers + build before each deletion.",
+      "grooming_note_2026_06_27": "UNBLOCKABLE with caveats (2026-06-27): mount-caddie (P26) and mount-ocr-scan (P27) are DONE. Removed mount-gps-shot-tracking from depends_on \u2014 GPS-related files (GPSMapView, ShotTrackingControl, PinMarkControl, CameraCapture) are EXCLUDED from this deletion because CameraCapture is now actively used by ScanSheet (mounted), and the others belong to the P28 GPS mounting work. CONFIRMED DEAD files (zero reachable importers, safe to delete): ScoreGrid.tsx, HoleScoreModal.tsx (superseded by ScoreSheet), RoundSummary.tsx, TournamentGamesPanel.tsx, TournamentLeaderboard.tsx, GamesPanel.tsx, AddGameModal.tsx, VoiceGameSetup.tsx, VoiceTournamentSetup.tsx, EditGroupsModal.tsx, CourseSearchImport.tsx. HOLD CONDITION: owner standing constraint \u2014 do NOT delete until caddie+OCR is validated on a real TestFlight build. Status = ready-but-hold; flip to ready once the next approval bundle containing caddie+OCR ships and owner replies 'ship it'."
     },
     {
       "id": "test-voice-pipeline",
@@ -398,9 +399,10 @@
       "type": "major",
       "priority": 33,
       "risk": "medium",
-      "status": "needs-spec",
+      "status": "ready",
       "depends_on": [],
-      "why": "The parser returns a confidence score but the UI never shows it or asks to confirm."
+      "spec": "specs/voice-low-confidence-ux.md",
+      "why": "The parser returns a confidence score but the UI never shows it or asks to confirm. VoiceParseResultSchema (schemas.ts:68) has required confidence; backend parse-round-setup (voice_advanced.py:72) already returns confidence in the response but VoiceRoundSetup.tsx ignores it. In-round scoring (ScoreSheet.tsx) has no voice input at all — only a static 'Or say…' hint text with no mic button. V1 scope: (1) amber kicker on round-setup result card when confidence<0.7 or courseName empty; (2) new voice-to-score flow in ScoreSheet with confidence-aware confirm step. Backend parse-scores needs confidence added to VoiceScoreResponse. Reuse T.warningWash/T.warningInk pattern from ScanSheet."
     },
     {
       "id": "owner-player-identity",
