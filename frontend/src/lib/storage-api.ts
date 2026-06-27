@@ -14,7 +14,7 @@
 
 import * as api from './api';
 import * as localCache from './storage';
-import { Round, Tournament, GolferProfile } from './types';
+import { Round, Tournament, GolferProfile, SavedPlayer } from './types';
 
 // ---------------------------------------------------------------------------
 // Auth check
@@ -235,6 +235,77 @@ export async function saveGolferProfileAsync(profile: GolferProfile): Promise<vo
       throw e;
     }
   }
+}
+
+// ================
+// Players — API authoritative; localStorage is an explicit offline cache.
+// ================
+
+/**
+ * Fetch the owner's saved players.
+ * When authenticated, uses the API (source of truth) and falls back to the
+ * local cache only when the API is unreachable. When not authenticated,
+ * returns the local cache.
+ */
+export async function getPlayersAsync(): Promise<SavedPlayer[]> {
+  if (!(await isAuthenticated())) {
+    return localCache.getSavedPlayers();
+  }
+  try {
+    return await api.getPlayers();
+  } catch (e) {
+    console.error('[storage-api] getPlayers: API unavailable, falling back to local cache:', e);
+    return localCache.getSavedPlayers();
+  }
+}
+
+/**
+ * Create a new saved player via the API.
+ * Write-through: on success the local cache is updated so the app works offline.
+ * Throws when not authenticated or when the API rejects (4xx/5xx).
+ */
+export async function createPlayerAsync(data: api.PlayerCreate): Promise<SavedPlayer> {
+  if (!(await isAuthenticated())) {
+    throw new Error('Sign in to add players.');
+  }
+  // API-authoritative: throws on any API error; let the caller surface it.
+  const saved = await api.createPlayer(data);
+  localCache.saveSavedPlayer(saved);
+  return saved;
+}
+
+/**
+ * Update an existing saved player via the API.
+ * Write-through: on success the local cache is updated.
+ * Throws when not authenticated or when the API rejects (4xx/5xx).
+ */
+export async function updatePlayerAsync(
+  id: string,
+  data: api.PlayerUpdate
+): Promise<SavedPlayer> {
+  if (!(await isAuthenticated())) {
+    throw new Error('Sign in to edit players.');
+  }
+  const saved = await api.updatePlayer(id, data);
+  localCache.saveSavedPlayer(saved);
+  return saved;
+}
+
+/**
+ * Delete a saved player via the API, then remove from the local cache.
+ * If not authenticated, removes from local cache only.
+ * Throws on API rejection so the caller can roll back optimistic UI updates.
+ * Network errors (offline) are re-thrown as well — the caller decides whether
+ * to rollback or accept the local-only delete.
+ */
+export async function deletePlayerAsync(id: string): Promise<void> {
+  if (!(await isAuthenticated())) {
+    localCache.deleteSavedPlayer(id);
+    return;
+  }
+  // API-authoritative: remove from backend first, then sync local cache.
+  await api.deletePlayer(id);
+  localCache.deleteSavedPlayer(id);
 }
 
 /**

@@ -741,3 +741,56 @@ Format: date — done / in-progress / blocked.
   `accent` removed from Masthead + HandicapModule (genuinely unused after cleanup).
   - Gates: tsc 0 errors, lint 0 errors, ruff clean, voice-tests 260/260, build OK.
   - NOTICEABLE — honest shell: real identity + edit, "(Preview)" on mock sections.
+
+## 2026-06-27 (wire-players-page)
+- **Done:** backlog `wire-players-page` (P17, NOTICEABLE) — `app/players/page.tsx` wired to
+  `/api/players` (GET/POST/PUT/DELETE); seed path removed; calm empty state; yardage-book
+  redesign to match home/profile pattern.
+  Key changes:
+  - **`storage-api.ts`:** Added 4 player wrapper functions following the established pattern:
+    - `getPlayersAsync()` — tries `api.getPlayers()` when authenticated; `console.error` +
+      localStorage fallback on API failure; localStorage-only when not authenticated.
+    - `createPlayerAsync(data)` — API-authoritative; throws when not authenticated or on API
+      error; write-through to localStorage on success via `localCache.saveSavedPlayer()`.
+    - `updatePlayerAsync(id, data)` — same pattern as create; write-through on success.
+    - `deletePlayerAsync(id)` — API-authoritative; calls `api.deletePlayer(id)` first then
+      updates local cache; throws on any API error (lets page roll back optimistic update).
+  - **`app/players/page.tsx` — full rewrite:**
+    - Removed imports: `getSavedPlayers`, `saveSavedPlayer`, `deleteSavedPlayer`,
+      `initializeStorage` from `@/lib/storage`. Page no longer seeds the 11 fake players.
+    - Added imports: `getPlayersAsync`, `createPlayerAsync`, `updatePlayerAsync`,
+      `deletePlayerAsync` from `@/lib/storage-api`; `T`, `PAPER_NOISE` from tokens.
+    - Async `useEffect` load: calls `getPlayersAsync()`, surfaces `loadError` banner on failure.
+    - `handleDelete`: optimistic remove from state → `deletePlayerAsync(id)` → rollback on
+      error + surface `deleteError` banner. Player re-inserted at top on rollback.
+    - `handleSave`: async — calls `updatePlayerAsync` (edit) or `createPlayerAsync` (add);
+      reconciles state with server-returned `SavedPlayer` (uses backend-assigned id/timestamps
+      for creates). Errors bubble to the modal (modal stays open, shows inline error).
+    - `PlayerModal`: `onSave` prop changed to `Promise<void>`; modal manages its own `saving`
+      + `error` state; inputs disabled while saving; submit button shows spinner; stays open
+      on API error so user can retry or cancel.
+    - **Empty state:** "No players yet" / "Add the people you golf with." (exact spec text).
+    - **SwipeableRow `confirmMessage`:** passes player name — "Remove {name} from your
+      players?" — so the confirm dialog is specific (SwipeableRow already has confirm-on-delete).
+    - **Yardage-book redesign:** full conversion from dark-mode Tailwind classes to T.* inline
+      styles matching the home/profile pattern: paper background + PAPER_NOISE, ink text,
+      hairline borders, T.serif heading, T.mono labels, T.paperDeep inputs. No new deps.
+    - **iOS safe-area:** `padding: "max(14px, env(safe-area-inset-top)) 20px 14px"` on header;
+      `paddingBottom: "max(80px, calc(80px + env(safe-area-inset-bottom)))"` on shell.
+    - **Touch targets:** add button 44×44px; player row `minHeight: 68`; modal Cancel/Save
+      buttons `minHeight: 44`. All exceed 44pt iOS minimum.
+    - **Error surfacing:** `loadError` banner (paper bg, `T.errorWash` bg, `T.errorInk` text)
+      below header; `deleteError` banner below it; modal inline error above form.
+  - **Now-unused `storage.ts` exports:** `initializeStorage`, `seedDefaultPlayers`,
+    `getDefaultPlayers` are no longer called by the players page. `initializeStorage` is also
+    no longer needed since the players page stops seeding. `seedDefaultPlayers` is still
+    imported by `settings/page.tsx` (tracked as `settings-cleanup` item P18 — not this PR).
+    `getSavedPlayers` / `saveSavedPlayer` / `deleteSavedPlayer` still used by `round/new/page.tsx`
+    for the local saved-players fallback (not removed).
+  - Gates: lint 0 errors (src/app/players/page.tsx, src/lib/storage-api.ts), tsc 0 errors,
+    voice-tests 260/260, npm run build OK (players page renders as ○ static prerender).
+  - NOTICEABLE — user-visible on TestFlight: players page shows real owner-scoped players
+    from the backend; add/edit/delete persist to the DB; the 11 fake seeded players are gone.
+  - Designer flags: SwipeableRow confirm dialog uses dark zinc Tailwind styles (pre-existing,
+    not changed in this PR — dark modal appears over light-paper list); designer may want to
+    restyle it to use T.* tokens in a separate pass.
