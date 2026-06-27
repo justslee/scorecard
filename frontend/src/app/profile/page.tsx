@@ -31,54 +31,80 @@ const CLUB_CONFIG: { key: ClubKey; label: string }[] = [
 ];
 
 // ── ScoringByTee derived type ────────────────────────────────────────────────
+// Bucketed by (teeName × holeCount) so 9-hole and 18-hole rounds at the same
+// tee don't blend into a meaningless average.
 type TeeRow = {
   tee: string;
-  yards: number | null;
-  par: number;
+  holeCount: number;     // round hole setup (9 or 18)
+  yards: number | null;  // total yards when HoleInfo.yards is available
+  par: number;           // par for this bucket's hole setup
   rounds: number;
-  avg: number; // average total strokes (owner only)
+  avgTotal: number;      // avg total strokes, integer (Math.round)
+  avgOverPar: number;    // avg strokes over par, integer (Math.round)
 };
 
 /**
  * Compute per-tee scoring averages from the owner's completed rounds.
  * Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
- * Rounds with fewer than 9 holes played are excluded (partial/abandoned).
+ * Buckets: (teeName × holeCount) so 9H and 18H rounds at the same tee stay
+ * separate and each bucket's average is meaningful.
+ * Rounds with fewer than 9 holes played are excluded (very partial/abandoned).
  */
 function deriveScoringByTee(rounds: Round[]): TeeRow[] {
   const completed = rounds.filter(
     (r) => r.status === "completed" && r.players.length > 0
   );
 
-  const byTee = new Map<string, { totals: number[]; yards: number | null; par: number }>();
+  type BucketData = {
+    totals: number[];
+    toPars: number[];
+    yards: number | null;
+    par: number;
+    holeCount: number;
+  };
+
+  // Key = "{teeName}|{holeCount}" — separates 9H and 18H rounds cleanly.
+  const byBucket = new Map<string, BucketData>();
 
   for (const r of completed) {
     const teeName = r.teeName ?? "—";
+    // players[0] is the owner in the single-owner beta; revisit when user-identity lands.
     const t = calculateTotals(r.scores, r.holes, r.players[0].id);
     if (t.playedHoles < 9) continue; // skip very partial rounds
 
-    const existing = byTee.get(teeName);
-    // Derive yards from hole yardages if present; null when no yardage data.
+    const holeCount = r.holes.length;
+    const bucketKey = `${teeName}|${holeCount}`;
     const totalYards = r.holes.reduce((s, h) => s + (h.yards ?? 0), 0);
-    const yards = totalYards > 0 ? totalYards : null;
     const par = r.holes.reduce((s, h) => s + h.par, 0);
 
+    const existing = byBucket.get(bucketKey);
     if (existing) {
       existing.totals.push(t.total);
+      existing.toPars.push(t.toPar);
     } else {
-      byTee.set(teeName, { totals: [t.total], yards, par });
+      byBucket.set(bucketKey, {
+        totals: [t.total],
+        toPars: [t.toPar],
+        yards: totalYards > 0 ? totalYards : null,
+        par,
+        holeCount,
+      });
     }
   }
 
-  return Array.from(byTee.entries())
-    .map(([tee, { totals, yards, par }]) => ({
-      tee,
-      yards,
-      par,
-      rounds: totals.length,
-      avg: totals.reduce((s, v) => s + v, 0) / totals.length,
-    }))
-    // Sort longest tee first (descending yards), then alphabetical.
-    .sort((a, b) => (b.yards ?? 0) - (a.yards ?? 0) || a.tee.localeCompare(b.tee));
+  return Array.from(byBucket.entries())
+    .map(([bucketKey, { totals, toPars, yards, par, holeCount }]) => {
+      const tee = bucketKey.split("|")[0];
+      const avgTotal = Math.round(totals.reduce((s, v) => s + v, 0) / totals.length);
+      const avgOverPar = Math.round(toPars.reduce((s, v) => s + v, 0) / toPars.length);
+      return { tee, holeCount, yards, par, rounds: totals.length, avgTotal, avgOverPar };
+    })
+    // 18H before 9H; within same holeCount: longest tee first, then alpha.
+    .sort((a, b) =>
+      b.holeCount - a.holeCount ||
+      (b.yards ?? 0) - (a.yards ?? 0) ||
+      a.tee.localeCompare(b.tee)
+    );
 }
 
 // ── RoundLog derived type ────────────────────────────────────────────────────
@@ -87,26 +113,33 @@ type RoundLogEntry = {
   date: Date;
   course: string;
   teeName: string | null;
+  holesPlayed: number;
   score: number | null;
   toPar: number | null;
 };
 
 /**
  * Derive a chronological log of the owner's completed rounds with totals.
- * Sorted most-recent first. Rounds with < 9 holes played are still included
- * (date + course) but score is shown as null.
+ * Sorted most-recent first. Includes holes-played count so a 9-hole total
+ * isn't mistaken for an 18-hole score. Guards against invalid date strings.
+ * Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
  */
 function deriveRoundLog(rounds: Round[]): RoundLogEntry[] {
   return rounds
     .filter((r) => r.status === "completed" && r.players.length > 0)
     .map((r) => {
+      // Guard: invalid date → epoch (sinks to bottom after sort, renders gracefully).
+      const date = new Date(r.date);
+      const safeDate = isNaN(date.getTime()) ? new Date(0) : date;
+      // players[0] is the owner in the single-owner beta; revisit when user-identity lands.
       const t = calculateTotals(r.scores, r.holes, r.players[0].id);
       const hasScore = t.playedHoles >= 9;
       return {
         id: r.id,
-        date: new Date(r.date),
+        date: safeDate,
         course: r.courseName,
         teeName: r.teeName ?? null,
+        holesPlayed: t.playedHoles,
         score: hasScore ? t.total : null,
         toPar: hasScore ? t.toPar : null,
       };
@@ -233,17 +266,17 @@ export default function ProfilePage() {
           draft={draft}
           setDraft={setDraft}
         />
-        <StrokesGained accent={accent} />
-        <FairwayFan accent={accent} />
+        {/* Real-data sections lead; placeholder at bottom (item 2 re-order) */}
         <Bag
           accent={accent}
           profile={profile}
           loading={loading}
           onBagSaved={(updated) => setProfile(updated)}
         />
-        <ScoringByTee accent={accent} rounds={rounds} />
-        <YearLog accent={accent} rounds={rounds} />
-        <Recent />
+        <ScoringByTee accent={accent} rounds={rounds} loading={loading} />
+        <YearLog accent={accent} rounds={rounds} loading={loading} />
+        {/* Shot analytics — single calm placeholder replacing two stacked ones */}
+        <ShotAnalytics />
         <Footer />
       </div>
     </div>
@@ -536,7 +569,7 @@ function Masthead({
 // ──────────────────────────────────────────────────────────────────────
 // HandicapModule — wired: big index from real profile.handicap (editable).
 // Trend badge / sparkline / low-high / differential removed (fabricated).
-// A calm "Coming soon" note replaces the fake history chart until P16.
+// A calm "Available after posting scores." note replaces the fake history chart.
 // ──────────────────────────────────────────────────────────────────────
 
 interface HandicapModuleProps {
@@ -647,13 +680,12 @@ function HandicapModule({ profile, loading, editing, draft, setDraft }: Handicap
         )}
       </div>
 
-      {/* Handicap history — coming soon (was fake sparkline + fake low/high/diff) */}
+      {/* Handicap history — calm placeholder (was fake sparkline + fake low/high/diff) */}
       <div
         style={{
           marginTop: 14,
           padding: "12px 14px",
           borderTop: `1px dashed ${T.hairline}`,
-          borderRadius: 4,
         }}
       >
         <div
@@ -680,64 +712,6 @@ function HandicapModule({ profile, loading, editing, draft, setDraft }: Handicap
         >
           Available after posting scores.
         </div>
-      </div>
-    </Section>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Strokes gained — honest empty state (P16)
-// Shot-level data needed for strokes gained doesn't exist until shot-
-// tracking ships (P28). Show a calm placeholder; no fabricated numbers.
-// ──────────────────────────────────────────────────────────────────────
-
-function StrokesGained({ accent: _accent }: { accent: string }) {
-  return (
-    <Section
-      kicker="Shot quality"
-      title="Strokes gained"
-    >
-      <div
-        style={{
-          padding: "14px 0 6px",
-          fontFamily: T.serif,
-          fontStyle: "italic",
-          fontSize: 14,
-          color: T.pencilSoft,
-          letterSpacing: -0.1,
-          lineHeight: 1.5,
-        }}
-      >
-        Strokes gained needs shot tracking — coming soon.
-      </div>
-    </Section>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Fairway fan — honest empty state (P16)
-// Per-shot direction data doesn't exist until shot-tracking ships (P28).
-// Show a calm placeholder; no fabricated percentages or diagrams.
-// ──────────────────────────────────────────────────────────────────────
-
-function FairwayFan({ accent: _accent }: { accent: string }) {
-  return (
-    <Section
-      kicker="Tendencies"
-      title="Off the tee"
-    >
-      <div
-        style={{
-          padding: "14px 0 6px",
-          fontFamily: T.serif,
-          fontStyle: "italic",
-          fontSize: 14,
-          color: T.pencilSoft,
-          letterSpacing: -0.1,
-          lineHeight: 1.5,
-        }}
-      >
-        Fairway tracking needs shot data — coming soon.
       </div>
     </Section>
   );
@@ -1194,24 +1168,31 @@ function Bag({
 
 // ──────────────────────────────────────────────────────────────────────
 // Scoring by tee — wired (P16)
-// Computed from the owner's real completed rounds via deriveScoringByTee.
+// Bucketed by (teeName × holeCount) so 9H and 18H rounds at the same tee
+// form separate rows with meaningful per-bucket averages.
+// Suppresses body while loading to avoid empty-state flash on mount.
 // Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
 // ──────────────────────────────────────────────────────────────────────
 
-function ScoringByTee({ accent, rounds }: { accent: string; rounds: Round[] }) {
+function ScoringByTee({ accent, rounds, loading }: { accent: string; rounds: Round[]; loading: boolean }) {
   const teeRows = useMemo(() => deriveScoringByTee(rounds), [rounds]);
+  const hasData = teeRows.length > 0;
 
-  if (teeRows.length === 0) {
-    return (
-      <Section
-        kicker="Course"
-        title="Scoring by tee"
-        aside={
-          <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
-            Lifetime
-          </div>
-        }
-      >
+  // Lifetime aside only when there is data — suppress during load and empty state.
+  const aside = !loading && hasData ? (
+    <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
+      Lifetime
+    </div>
+  ) : undefined;
+
+  const maxAvg = hasData ? Math.max(...teeRows.map((s) => s.avgTotal)) : 1;
+
+  return (
+    <Section kicker="Course" title="Scoring by tee" aside={aside}>
+      {loading ? (
+        // Suppress body during load — avoids empty-state flash (matches HandicapModule pattern).
+        <div style={{ minHeight: 40 }} />
+      ) : !hasData ? (
         <div
           style={{
             padding: "14px 0 6px",
@@ -1225,102 +1206,113 @@ function ScoringByTee({ accent, rounds }: { accent: string; rounds: Round[] }) {
         >
           Play a round to see your scoring by tee.
         </div>
-      </Section>
-    );
-  }
-
-  const maxAvg = Math.max(...teeRows.map((s) => s.avg));
-
-  return (
-    <Section
-      kicker="Course"
-      title="Scoring by tee"
-      aside={
-        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
-          Lifetime
-        </div>
-      }
-    >
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {teeRows.map((s) => {
-          const over = s.avg - s.par;
-          const width = (s.avg / (maxAvg * 1.05)) * 100;
-          const parWidth = s.avg > 0 ? width * (s.par / s.avg) : 0;
-          return (
-            <div key={s.tee}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 3 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                  <span style={{ fontFamily: T.serif, fontSize: 14, color: T.ink, letterSpacing: -0.1, fontStyle: "italic" }}>{s.tee}</span>
-                  <span style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
-                    {s.yards ? `${s.yards.toLocaleString()} yd · ` : ""}
-                    {s.rounds} {s.rounds === 1 ? "round" : "rounds"}
-                  </span>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {teeRows.map((s) => {
+              // Unique key: tee name + hole count (two rows can share a tee name).
+              const rowKey = `${s.tee}|${s.holeCount}`;
+              const width = (s.avgTotal / (maxAvg * 1.05)) * 100;
+              const parWidth = s.avgTotal > 0 ? width * (s.par / s.avgTotal) : 0;
+              return (
+                <div key={rowKey}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 3 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                      <span style={{ fontFamily: T.serif, fontSize: 14, color: T.ink, letterSpacing: -0.1, fontStyle: "italic" }}>{s.tee}</span>
+                      <span style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
+                        {s.yards ? `${s.yards.toLocaleString()} yd · ` : ""}
+                        {s.rounds} {s.rounds === 1 ? "round" : "rounds"} · {s.holeCount}H
+                      </span>
+                    </div>
+                    {/* avgTotal is integer; avgOverPar is integer with "avg" label */}
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: T.mono, fontSize: 11, letterSpacing: 0.5, color: T.ink, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>
+                        {s.avgTotal}
+                        <span style={{ color: accent, marginLeft: 4 }}>
+                          {s.avgOverPar >= 0 ? `+${s.avgOverPar}` : `${s.avgOverPar}`}
+                        </span>
+                      </div>
+                      <div style={{ fontFamily: T.mono, fontSize: 7.5, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase", marginTop: 1 }}>
+                        avg
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ position: "relative", height: 10, background: T.paperDeep, borderRadius: 1 }}>
+                    <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${parWidth}%`, background: T.ink, borderRadius: 1 }} />
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: `${parWidth}%`,
+                        top: 0,
+                        bottom: 0,
+                        width: `${width - parWidth}%`,
+                        background: accent,
+                        opacity: 0.8,
+                        borderRadius: 1,
+                      }}
+                    />
+                  </div>
                 </div>
-                <div style={{ fontFamily: T.mono, fontSize: 11, letterSpacing: 0.5, color: T.ink, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>
-                  {s.avg.toFixed(1)}
-                  <span style={{ color: accent, marginLeft: 4 }}>
-                    {over >= 0 ? `+${over.toFixed(1)}` : over.toFixed(1)}
-                  </span>
-                </div>
-              </div>
-              <div style={{ position: "relative", height: 10, background: T.paperDeep, borderRadius: 1 }}>
-                <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${parWidth}%`, background: T.ink, borderRadius: 1 }} />
-                <div
-                  style={{
-                    position: "absolute",
-                    left: `${parWidth}%`,
-                    top: 0,
-                    bottom: 0,
-                    width: `${width - parWidth}%`,
-                    background: accent,
-                    opacity: 0.8,
-                    borderRadius: 1,
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div
-        style={{
-          marginTop: 10,
-          padding: "8px 0 0",
-          borderTop: `1px dashed ${T.hairline}`,
-          display: "flex",
-          gap: 16,
-          fontFamily: T.mono,
-          fontSize: 8,
-          letterSpacing: 1.1,
-          color: T.pencilSoft,
-          textTransform: "uppercase",
-          fontWeight: 500,
-        }}
-      >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 10, height: 6, background: T.ink }} /> At par
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 10, height: 6, background: accent, opacity: 0.8 }} /> Over
-        </span>
-      </div>
+              );
+            })}
+          </div>
+          <div
+            style={{
+              marginTop: 10,
+              padding: "8px 0 0",
+              borderTop: `1px dashed ${T.hairline}`,
+              display: "flex",
+              gap: 16,
+              fontFamily: T.mono,
+              fontSize: 8,
+              letterSpacing: 1.1,
+              color: T.pencilSoft,
+              textTransform: "uppercase",
+              fontWeight: 500,
+            }}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 10, height: 6, background: T.ink }} /> At par
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 10, height: 6, background: accent, opacity: 0.8 }} /> Over
+            </span>
+          </div>
+        </>
+      )}
     </Section>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
 // Season log — wired (P16)
-// Shows the owner's real completed rounds: date, course, score vs par.
-// Sorted most-recent first. Empty state when no completed rounds exist.
+// Shows the owner's real completed rounds: date, course, score vs par,
+// holes played. Sorted most-recent first; capped at 8 with a disclosure.
+// Suppresses body while loading to avoid empty-state flash on mount.
 // Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
 // ──────────────────────────────────────────────────────────────────────
 
-function YearLog({ accent: _accent, rounds }: { accent: string; rounds: Round[] }) {
-  const log = useMemo(() => deriveRoundLog(rounds), [rounds]);
+const SEASON_LOG_CAP = 8;
 
-  if (log.length === 0) {
-    return (
-      <Section kicker="Log" title="Season log">
+function YearLog({ accent: _accent, rounds, loading }: { accent: string; rounds: Round[]; loading: boolean }) {
+  const [showAll, setShowAll] = useState(false);
+  const log = useMemo(() => deriveRoundLog(rounds), [rounds]);
+  const displayed = showAll ? log : log.slice(0, SEASON_LOG_CAP);
+  const hasMore = log.length > SEASON_LOG_CAP;
+
+  // Round count aside only when there is data — suppress during load and empty state.
+  const aside = !loading && log.length > 0 ? (
+    <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
+      {log.length} {log.length === 1 ? "round" : "rounds"}
+    </div>
+  ) : undefined;
+
+  return (
+    <Section kicker="Log" title="Season log" aside={aside}>
+      {loading ? (
+        // Suppress body during load — avoids empty-state flash (matches HandicapModule pattern).
+        <div style={{ minHeight: 40 }} />
+      ) : log.length === 0 ? (
         <div
           style={{
             padding: "14px 0 6px",
@@ -1334,151 +1326,175 @@ function YearLog({ accent: _accent, rounds }: { accent: string; rounds: Round[] 
         >
           Post a round to track your season.
         </div>
-      </Section>
-    );
-  }
-
-  return (
-    <Section
-      kicker="Log"
-      title="Season log"
-      aside={
-        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
-          {log.length} {log.length === 1 ? "round" : "rounds"}
-        </div>
-      }
-    >
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {log.map((entry, i) => {
-          const month = entry.date.toLocaleString("en-US", { month: "short" });
-          const day = entry.date.getDate();
-          const toParStr =
-            entry.toPar === null
-              ? null
-              : entry.toPar === 0
-              ? "E"
-              : entry.toPar > 0
-              ? `+${entry.toPar}`
-              : `${entry.toPar}`;
-          return (
-            <div
-              key={entry.id}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "44px 1fr auto",
-                gap: 10,
-                alignItems: "center",
-                padding: "9px 0",
-                borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
-              }}
-            >
-              {/* Date column */}
-              <div>
-                <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>
-                  {month}
-                </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {displayed.map((entry, i) => {
+              const month = entry.date.toLocaleString("en-US", { month: "short" });
+              const day = entry.date.getDate();
+              const toParStr =
+                entry.toPar === null
+                  ? null
+                  : entry.toPar === 0
+                  ? "E"
+                  : entry.toPar > 0
+                  ? `+${entry.toPar}`
+                  : `${entry.toPar}`;
+              // Sub-kicker combines tee name (if set) + holes played, mirrors home list.
+              const subLine = [
+                entry.teeName,
+                entry.holesPlayed > 0 ? `${entry.holesPlayed}H` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
                 <div
+                  key={entry.id}
                   style={{
-                    fontFamily: T.serif,
-                    fontSize: 20,
-                    color: T.ink,
-                    lineHeight: 1,
-                    letterSpacing: -0.4,
-                    fontVariantNumeric: "tabular-nums",
+                    display: "grid",
+                    gridTemplateColumns: "44px 1fr auto",
+                    gap: 10,
+                    alignItems: "center",
+                    padding: "9px 0",
+                    borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
                   }}
                 >
-                  {day}
-                </div>
-              </div>
-
-              {/* Course column */}
-              <div style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    fontFamily: T.serif,
-                    fontSize: 14,
-                    color: T.ink,
-                    letterSpacing: -0.1,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {entry.course}
-                </div>
-                {entry.teeName && (
-                  <div
-                    style={{
-                      fontFamily: T.mono,
-                      fontSize: 7.5,
-                      color: T.pencilSoft,
-                      letterSpacing: 1,
-                      textTransform: "uppercase",
-                      marginTop: 1,
-                    }}
-                  >
-                    {entry.teeName}
-                  </div>
-                )}
-              </div>
-
-              {/* Score column */}
-              <div style={{ textAlign: "right" }}>
-                {entry.score !== null ? (
-                  <>
+                  {/* Date column */}
+                  <div>
+                    <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>
+                      {month}
+                    </div>
                     <div
                       style={{
                         fontFamily: T.serif,
-                        fontSize: 22,
+                        fontSize: 20,
                         color: T.ink,
                         lineHeight: 1,
-                        letterSpacing: -0.5,
+                        letterSpacing: -0.4,
                         fontVariantNumeric: "tabular-nums",
                       }}
                     >
-                      {entry.score}
+                      {day}
                     </div>
-                    {toParStr && (
+                  </div>
+
+                  {/* Course column */}
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontSize: 14,
+                        color: T.ink,
+                        letterSpacing: -0.1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {entry.course}
+                    </div>
+                    {subLine && (
                       <div
                         style={{
                           fontFamily: T.mono,
-                          fontSize: 8.5,
-                          letterSpacing: 1.1,
+                          fontSize: 7.5,
                           color: T.pencilSoft,
+                          letterSpacing: 1,
+                          textTransform: "uppercase",
                           marginTop: 1,
                         }}
                       >
-                        {toParStr}
+                        {subLine}
                       </div>
                     )}
-                  </>
-                ) : (
-                  <div style={{ fontFamily: T.mono, fontSize: 9, color: T.pencilSoft, letterSpacing: 1 }}>
-                    —
                   </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+
+                  {/* Score column */}
+                  <div style={{ textAlign: "right" }}>
+                    {entry.score !== null ? (
+                      <>
+                        <div
+                          style={{
+                            fontFamily: T.serif,
+                            fontSize: 22,
+                            color: T.ink,
+                            lineHeight: 1,
+                            letterSpacing: -0.5,
+                            fontVariantNumeric: "tabular-nums",
+                          }}
+                        >
+                          {entry.score}
+                        </div>
+                        {toParStr && (
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 8.5,
+                              letterSpacing: 1.1,
+                              color: T.pencilSoft,
+                              marginTop: 1,
+                            }}
+                          >
+                            {toParStr}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ fontFamily: T.mono, fontSize: 9, color: T.pencilSoft, letterSpacing: 1 }}>
+                        —
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* "Show all" disclosure — appears when log exceeds cap */}
+          {hasMore && !showAll && (
+            <button
+              onClick={() => setShowAll(true)}
+              style={{
+                marginTop: 10,
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "none",
+                borderTop: `1px dashed ${T.hairline}`,
+                cursor: "pointer",
+                fontFamily: T.mono,
+                fontSize: 8.5,
+                letterSpacing: 1.3,
+                color: T.pencil,
+                textTransform: "uppercase",
+                fontWeight: 500,
+                minHeight: 44,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              Show all {log.length} rounds
+            </button>
+          )}
+        </>
+      )}
     </Section>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Recent rounds — empty state (PP_RECENT was fabricated; real wiring is P16)
+// Shot analytics — single calm placeholder (P16, replaces two stacked ones)
+// Covers strokes gained + fairway tendency + any future per-shot analytics.
+// Per-shot data doesn't exist until shot tracking ships (P28). Placed at the
+// bottom so real data sections lead.
 // ──────────────────────────────────────────────────────────────────────
 
-function Recent() {
+function ShotAnalytics() {
   return (
-    <Section
-      kicker="Ledger"
-      title="Recent rounds"
-    >
+    <Section kicker="Shot analytics" title="Strokes gained · Fairway">
       <div
         style={{
-          padding: "18px 0 6px",
+          padding: "14px 0 6px",
           fontFamily: T.serif,
           fontStyle: "italic",
           fontSize: 14,
@@ -1487,7 +1503,7 @@ function Recent() {
           lineHeight: 1.5,
         }}
       >
-        No rounds yet — start a round to see your history.
+        Available when shot tracking ships.
       </div>
     </Section>
   );
