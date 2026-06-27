@@ -3,6 +3,54 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (client-auth-gate)
+- **Done:** backlog `client-auth-gate` (URGENT, NOTICEABLE) — added a client-side
+  Clerk auth gate so unauthenticated users are sent to sign-in before any app
+  content or backend calls are attempted. Root cause: no server middleware runs in
+  the Capacitor webview (capacitor:// origin), so every route was loading for
+  unauthenticated users → no token → backend 401s for voice and silent localStorage
+  fallback for data.
+  Key changes:
+  - **New `AuthGate.tsx`** (`frontend/src/components/`): `"use client"` component
+    rendered inside `<ClerkProvider>`. Uses `useAuth()` (isLoaded, isSignedIn) and
+    `usePathname()`. Three states:
+    - `!isLoaded` → `PaperLoading` (calm paper masthead, no flash of app or sign-in)
+    - `isAuthRoute(pathname)` (/sign-in, /sign-up) → `children` rendered (no gate,
+      no redirect loop)
+    - `!isSignedIn` (other routes) → `<SignInClient />` rendered inline; when Clerk
+      confirms the session, `isSignedIn` becomes true and children render automatically
+    - `isSignedIn` → `children` (full app)
+  - **`AuthProvider.tsx` updated**: imports `AuthGate` and wraps children inside it
+    (inside `<ClerkProvider>`). `ClerkTokenBridge` renders first so getToken is
+    registered. When `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is absent, gate is skipped
+    (local dev without credentials still works).
+  - **Clerk appearance updated**: dark zinc/emerald palette replaced with yardage-book
+    paper/ink palette via Clerk's CSS-variable layer — `colorBackground: "#f4f1ea"`,
+    `colorPrimary: "#1a2a1a"`, `colorText: "#1a2a1a"`, `colorTextSecondary: "#6b6558"`,
+    `colorInputBackground: "#ece7db"`, `colorDanger: "#b84a3a"`, `borderRadius: "2px"`.
+  - **`SignInClient.tsx` restyled**: dark `bg-zinc-950` + white headings replaced with
+    paper background (`PAPER_NOISE + T.paper`), serif italic "Looper." masthead at 44px,
+    mono kicker "Your yardage book", safe-area-aware padding. Clerk widget inherits
+    provider appearance.
+  - **`SignUpClient.tsx` restyled**: same paper/ink treatment; kicker reads "Create
+    your account".
+  - **Token flow confirmed**: after sign-in, `useAuth().isSignedIn` becomes true →
+    `AuthGate` renders children → `ClerkTokenBridge.useEffect` fires again with
+    `isSignedIn=true` → `setTokenGetter(getToken, {isLoaded:true, isSignedIn:true})`
+    → `getTokenViaClerk()` resolves → all API calls get a Bearer token → voice and
+    backend work.
+  - **Static export compatible**: all hooks called unconditionally; `!isLoaded` guard
+    fires during prerender (Clerk doesn't run at build time) → `PaperLoading` is the
+    prerendered shell; no `redirect()` or `useRouter().push()` used (no server-routing
+    dependency). Build: 15 pages, all ○/● — no errors.
+  - Gates: eslint src/ (no new errors in changed files), tsc 0 errors, voice-tests
+    260/260, npm test 238/238, npm run build 15 pages OK.
+  - NOTICEABLE — owner must now SIGN IN (with the owner Clerk account) when opening
+    the app. After sign-in, voice calls will carry a token and backend 401s will stop.
+    Designer flag: paper-on-white Clerk widget may need further polish depending on
+    Clerk's internal rendering; the provider appearance variables set the palette but
+    Clerk's shadow DOM may partially override. Verify on-device.
+
 ## 2026-06-21
 - **Done:** Phase 0 foundation — project `CLAUDE.md`, `.claude/settings.json` +
   `guard.sh` guardrail hook (tested), the 8-agent team in `.claude/agents/`,
