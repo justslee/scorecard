@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
-import { createTournament, getPlayers } from "@/lib/api";
-import { saveTournament, getSavedPlayers } from "@/lib/storage";
+import { createTournament, createPlayer, getPlayers } from "@/lib/api";
+import { saveTournament, saveSavedPlayer, getSavedPlayers } from "@/lib/storage";
 import type { SavedPlayer } from "@/lib/types";
 
 const NUM_ROUNDS = [1, 2, 3, 4] as const;
@@ -82,12 +82,23 @@ export default function TournamentSetupPage() {
     setCreating(true);
     setError(null);
 
-    const allPlayerIds = [
-      ...Array.from(selectedIds),
-      ...customPlayers.map((p) => p.id),
-    ];
-
     try {
+      // Persist any custom (unsaved) players to POST /api/players first so the
+      // backend can resolve their names via playerNamesById (players table join).
+      // If any player create fails, we surface the error and abort — no silent drops.
+      const persistedCustom: SavedPlayer[] = [];
+      for (const cp of customPlayers) {
+        const saved = await createPlayer({ name: cp.name });
+        // Write-through: warm local cache so the players page sees them immediately.
+        saveSavedPlayer(saved);
+        persistedCustom.push(saved);
+      }
+
+      const allPlayerIds = [
+        ...Array.from(selectedIds),
+        ...persistedCustom.map((p) => p.id),
+      ];
+
       const created = await createTournament({
         name: name.trim(),
         numRounds,
@@ -100,7 +111,7 @@ export default function TournamentSetupPage() {
       for (const sp of apiPlayers) {
         if (selectedIds.has(sp.id)) playerNamesById[sp.id] = sp.name;
       }
-      for (const cp of customPlayers) {
+      for (const cp of persistedCustom) {
         playerNamesById[cp.id] = cp.name;
       }
 
@@ -235,7 +246,7 @@ export default function TournamentSetupPage() {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Sunday Cup"
+                placeholder="Club Championship"
                 maxLength={80}
                 style={{
                   width: "100%",
@@ -465,7 +476,7 @@ export default function TournamentSetupPage() {
                               flexShrink: 0,
                             }}
                           >
-                            +{p.handicap}
+                            {p.handicap != null && p.handicap > 0 ? `+${p.handicap}` : p.handicap}
                           </div>
                         )}
                       </button>
@@ -600,7 +611,7 @@ export default function TournamentSetupPage() {
                       letterSpacing: 1.2,
                       color: T.paper,
                       textTransform: "uppercase",
-                      minHeight: 32,
+                      minHeight: 44,
                     }}
                   >
                     Add
