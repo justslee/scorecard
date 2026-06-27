@@ -203,7 +203,7 @@
       "type": "major",
       "priority": 20,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": ["backend-players-db"],
       "spec": "specs/real-data-wiring-plan.md"
     },
