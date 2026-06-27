@@ -998,3 +998,45 @@ Format: date — done / in-progress / blocked.
     voice-tests 260/260 pass.
   - NOTICEABLE — custom players now persist to the DB and resolve their names; round-setup screen
     is fully paper/ink aesthetic (no dark Tailwind).
+
+## 2026-06-27 (settings-cleanup)
+- **Done:** backlog `settings-cleanup` (P20, NOTICEABLE) — removed "Load Sample Players" demo
+  action from `app/settings/page.tsx`; updated "Clear Data" to be honest about scope; restyled
+  page from dark Tailwind to yardage-book paper/ink palette.
+  Key changes:
+  - **`app/settings/page.tsx`:**
+    - Removed the entire "Sample Players" section (card, button, `seedDefaultPlayers()` call,
+      `Users` lucide import, `import { seedDefaultPlayers } from '@/lib/storage'`). Players are
+      now real and backend-backed — seeding 11 fabricated names is incorrect.
+    - "Data" section renamed to "Local Cache"; description updated to be honest: "Clear locally
+      cached data (offline rounds, app state). Your backend data — players and profile — is not
+      affected." Confirm dialog also updated with clear scope language.
+    - Button label changed from "Clear All Data" → "Clear Local Cache"; behavior unchanged
+      (`localStorage.clear()` is correct — the backend is authoritative).
+    - Restyled from dark Tailwind to yardage-book palette:
+      - `text-zinc-400` → `style={{ color: 'var(--pencil)' }}`
+      - `border-t border-white/10` → `style={{ borderTop: '1px solid var(--hairline)' }}`
+      - `bg-emerald-500/10 text-emerald-200` (removed with Sample Players section)
+      - `bg-red-500/10 text-red-200` → `background: rgba(184,74,58,0.08), color: #b84a3a,
+        border: rgba(184,74,58,0.22)` (T.errorInk/T.errorWash tints)
+      - `minHeight: 44` on the destructive button (iOS 44pt touch target)
+      - `paddingBottom: max(96px, ...)` on main (iOS safe-area inset)
+    - The `.app-shell`, `.app-header`, `.card`, `.btn` shim classes kept (already paper-palette
+      in globals.css; no dark overrides remain).
+  - **`lib/storage.ts`:**
+    - Removed `initializeStorage()` (exported, but had zero callers in `frontend/src/` — was
+      previously used by the old home page and players page before those were wired to the API).
+    - Removed `seedDefaultPlayers()` (was only called by settings page — now removed).
+    - Removed `getDefaultPlayers()` (private, only used by the two functions above).
+    - Kept `getDefaultCourses()` — still used by `getCourses()` as an offline fallback when
+      no courses are in localStorage (not a seeding action; a safe fallback).
+    - Kept all other player CRUD functions (`getSavedPlayers`, `saveSavedPlayer`, etc.) —
+      still used by round/new as a localStorage cache layer.
+  - Gates: `npx eslint src/app/settings/page.tsx src/lib/storage.ts` 0 errors, `tsc --noEmit` 0
+    errors, voice-tests 260/260 pass, npm run build OK.
+  - NOTICEABLE — user-visible on TestFlight: Settings page shows correct Local Cache label and
+    honest description; "Load Sample Players" button is gone.
+  - Designer: page is now fully on the paper/ink palette. The `.btn` shim class still uses
+    dark Tailwind's `rounded-full` utility but `.btn` itself is paper-palette in globals.css —
+    consistent with the rest of the legacy shim pages. If the designer wants full T.* inline
+    conversion (matching players/profile pages), that can be a follow-up polish pass.
