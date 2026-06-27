@@ -894,3 +894,65 @@ Format: date — done / in-progress / blocked.
   - Gates: lint 0 (modified files), tsc 0 errors, voice-tests 260/260, build OK.
   - NOTICEABLE — grid no longer breaks at 3 rounds; sticky columns keep names visible on
     scroll; loading skeleton, readable format names, correct tie ranks.
+
+## 2026-06-27 (wire-tournament-new)
+- **Done:** backlog `wire-tournament-new` (P19, NOTICEABLE) — tournament creation flow wired
+  to the backend; Sunday Cup voice-demo removed; round creation uses server-returned ids.
+  Key changes:
+  - **`app/tournament/new/page.tsx` — full rewrite (Sunday Cup demo removed):**
+    - Removed: entire `PARSED` fabricated-data constant (hardcoded "The Sunday Cup · Vol VII",
+      players, courses, dates, stakes), `FULL_UTTERANCE` scripted voice replay, `CARTS`/`CADDIES`
+      voice-theater setup, fake transcript `useEffect`, `handleStart → /tournament/sunday-cup-2024`
+      hardcoded nav, drag-n-drop cart grouping (groupings UI for an unreachable demo tournament).
+    - Replaced with a clean manual form (yardage-book aesthetic, T.* tokens throughout):
+      - **Name field:** serif italic `<input>` (required, 80 char max, underline-border,
+        `T.errorInk` if touched+empty).
+      - **Rounds picker:** 1/2/3/4 chip buttons (44pt height, T.ink background when active).
+      - **Field (players) section:** loads real players from `GET /api/players` on mount (falls
+        back to localStorage cache on API failure). Each player row shows avatar initial +
+        name + handicap; tap to toggle selection (`T.paperDeep` bg when selected, ink avatar
+        with "✓" when selected). Shows "Loading players…" placeholder while fetching.
+      - **Custom player input:** `<input>` with inline "Add" button (T.ink pill, 32pt);
+        Enter key submits. Custom players get `crypto.randomUUID()` ids; stored as
+        `{id, name}` pairs; removable with × button. Deduplication against API players +
+        existing custom players (case-insensitive).
+      - **Validation:** both name and ≥1 player are required. Validation fires on submit
+        (`touched` flag). Inline `T.errorInk` hint below each missing field. CTA disabled
+        while creating or when invalid.
+      - **Submit (`handleCreate`):** calls `createTournament({name, numRounds, playerIds})`
+        from `@/lib/api`. Offline (TypeError) → surfaces "No connection" message (no
+        offline-create since server-assigned id is needed for round linkage). API 4xx/5xx
+        → surfaces error message in `T.errorWash` banner above CTA. On success:
+        builds `playerNamesById` map (selected real players + custom names); calls
+        `saveTournament({...created, playerNamesById})` to warm the localStorage cache for
+        offline reads; navigates to `/tournament/${created.id}` (SERVER-RETURNED id).
+    - iOS safe-area: `max(14px, env(safe-area-inset-top))` header,
+      `max(26px, env(safe-area-inset-bottom, 26px))` CTA footer. All touch targets ≥44pt.
+  - **`tournament/[id]/round/new/NewTournamentRoundClient.tsx` — API-backed wiring:**
+    - **Tournament loading:** replaced sync `useMemo(() => getTournament(tournamentId))`
+      (localStorage only) with `useEffect → getTournamentAsync(tournamentId)` from
+      `storage-api.ts` (API-authoritative, localStorage fallback). Added `tournamentLoading`
+      + `tournamentNotFound` states; renders "Loading tournament…" while pending.
+    - **Course loading:** replaced `getCourses()` from storage.ts with `apiGetCourses()`
+      from `@/lib/api` (falls back to `localGetCourses()` on API error via try/catch).
+    - **Round creation:** replaced `saveRound(round) + addRoundToTournament(...)` (both
+      localStorage-only) with `createRound({...roundData, tournamentId})` from `@/lib/api`
+      (POST /api/rounds). Backend automatically appends the new round id to
+      `tournament.round_ids` (detail page picks it up on next load). Write-through to
+      localStorage via `localSaveRound(created)`. Navigates to `/round/${created.id}`
+      (SERVER-RETURNED id, not a client-side UUID).
+    - Added `creating` + `createError` states; error rendered as red banner above CTA button;
+      button shows "Creating…" while in flight; disabled while creating.
+    - `handleStartRound` early-returns on `!creating` guard (race-safe).
+    - `autoGenerateGroups` tee-time math fixed: removed mutating `baseTime = new Date(...)` inside
+      loop; now computes offset via `new Date(base.getTime() + i/playersPerGroup * 10 * 60000)`.
+  - Gates: `npx eslint src/app/tournament/ --ext .tsx,.ts` 0 errors, `tsc --noEmit` 0 errors,
+    voice-tests 260/260 pass, `npm run build` OK (tournament/new → ○ static, tournament/[id]/round/new → ● SSG).
+  - NOTICEABLE — user-visible on TestFlight: creating a tournament now persists to the backend
+    and navigates to the real server-assigned id; adding a round to a tournament creates via
+    POST /api/rounds with tournamentId linkage (detail page standings update after play).
+  - No fabricated data remains in either file.
+  - Designer flags: NewTournamentRoundClient retains the existing dark Tailwind styling
+    (`.card`, `.btn`, emerald classes) — consistent with its current state; a full redesign
+    to T.* tokens is a separate polish item. The new tournament/new form uses T.* tokens
+    throughout and matches the wire-round-new / profile page aesthetic.

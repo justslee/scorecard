@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Course, Round, Player, PlayerGroup } from '@/lib/types';
-import { addRoundToTournament, getCourses, getTournament, saveRound } from '@/lib/storage';
+import { Course, Round, Player, PlayerGroup, Tournament } from '@/lib/types';
+import { getCourses as localGetCourses, saveRound as localSaveRound } from '@/lib/storage';
+import { getTournamentAsync } from '@/lib/storage-api';
+import { createRound, getCourses as apiGetCourses } from '@/lib/api';
 import { Flag, Users, Plus, X, Clock, GripVertical } from 'lucide-react';
 import {
   DndContext,
@@ -34,13 +36,13 @@ interface GroupDraft {
 }
 
 // Sortable player item component
-function SortablePlayer({ 
-  id, 
-  name, 
-  onRemove 
-}: { 
-  id: string; 
-  name: string; 
+function SortablePlayer({
+  id,
+  name,
+  onRemove
+}: {
+  id: string;
+  name: string;
   onRemove?: () => void;
 }) {
   const {
@@ -101,18 +103,50 @@ export default function NewTournamentRoundPage() {
   const params = useParams<{ id: string }>();
   const tournamentId = params?.id;
 
+  const [tournament, setTournament] = useState<Tournament | null>(null);
+  const [tournamentLoading, setTournamentLoading] = useState(true);
+  const [tournamentNotFound, setTournamentNotFound] = useState(false);
+
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [selectedTeeId, setSelectedTeeId] = useState<string>('');
-  
+
   // Group management
   const [groups, setGroups] = useState<GroupDraft[]>([]);
   const [showGroupSetup, setShowGroupSetup] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  const tournament = useMemo(() => (tournamentId ? getTournament(tournamentId) : null), [tournamentId]);
+  // Create state
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-  // Get all player info
+  // ── Load tournament (API-backed via storage-api) ────────────────────────
+  useEffect(() => {
+    if (!tournamentId) {
+      setTournamentLoading(false);
+      setTournamentNotFound(true);
+      return;
+    }
+    getTournamentAsync(tournamentId)
+      .then((t) => {
+        if (!t) {
+          setTournamentNotFound(true);
+        } else {
+          setTournament(t);
+        }
+      })
+      .catch(() => setTournamentNotFound(true))
+      .finally(() => setTournamentLoading(false));
+  }, [tournamentId]);
+
+  // ── Load courses: try API first, fall back to local cache ───────────────
+  useEffect(() => {
+    apiGetCourses()
+      .then(setCourses)
+      .catch(() => setCourses(localGetCourses()));
+  }, []);
+
+  // Get all player info from tournament
   const allPlayers = useMemo(() => {
     if (!tournament) return [];
     return tournament.playerIds.map((pid) => ({
@@ -139,11 +173,10 @@ export default function NewTournamentRoundPage() {
     })
   );
 
-  useEffect(() => {
-    setCourses(getCourses());
-  }, []);
-
-  const selectedCourse = useMemo(() => courses.find((c) => c.id === selectedCourseId) || null, [courses, selectedCourseId]);
+  const selectedCourse = useMemo(
+    () => courses.find((c) => c.id === selectedCourseId) || null,
+    [courses, selectedCourseId]
+  );
 
   const teeOptions = selectedCourse?.tees ?? [];
 
@@ -159,22 +192,22 @@ export default function NewTournamentRoundPage() {
     const newGroups: GroupDraft[] = [];
     const playersPerGroup = 4;
     let groupNum = 1;
-    let baseTime = new Date();
+    const baseTime = new Date();
     baseTime.setHours(8, 0, 0, 0); // Start at 8:00 AM
 
     for (let i = 0; i < allPlayers.length; i += playersPerGroup) {
       const groupPlayers = allPlayers.slice(i, i + playersPerGroup);
-      const teeTime = baseTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      
+      const teeTime = new Date(baseTime.getTime() + Math.floor(i / playersPerGroup) * 10 * 60000)
+        .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
       newGroups.push({
         id: crypto.randomUUID(),
         name: `Group ${groupNum}`,
         teeTime,
         playerIds: groupPlayers.map(p => p.id),
       });
-      
+
       groupNum++;
-      baseTime = new Date(baseTime.getTime() + 10 * 60000); // Add 10 minutes
     }
 
     setGroups(newGroups);
@@ -224,27 +257,20 @@ export default function NewTournamentRoundPage() {
     const activePlayerId = active.id as string;
     const overId = over.id as string;
 
-    // Find source and destination groups
     const sourceGroupId = findGroupContainingPlayer(activePlayerId);
-    
-    // Determine target group - could be over a player or a group droppable
     let targetGroupId: string | null = null;
-    
-    // Check if over a group directly
+
     const overGroup = groups.find(g => g.id === overId);
     if (overGroup) {
       targetGroupId = overGroup.id;
     } else {
-      // Check if over a player in a group
       targetGroupId = findGroupContainingPlayer(overId);
     }
 
-    // Check if dropping on unassigned area
     if (overId === 'unassigned' || unassignedPlayers.some(p => p.id === overId)) {
-      // Remove from current group
       if (sourceGroupId) {
-        setGroups(groups.map(g => 
-          g.id === sourceGroupId 
+        setGroups(groups.map(g =>
+          g.id === sourceGroupId
             ? { ...g, playerIds: g.playerIds.filter(id => id !== activePlayerId) }
             : g
         ));
@@ -254,7 +280,6 @@ export default function NewTournamentRoundPage() {
 
     if (sourceGroupId === targetGroupId) return;
 
-    // Move player to new group
     if (targetGroupId) {
       setGroups(groups.map(g => {
         if (g.id === sourceGroupId) {
@@ -272,43 +297,42 @@ export default function NewTournamentRoundPage() {
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveId(null);
-    
+
     const { active, over } = event;
     if (!over) return;
 
     const activePlayerId = active.id as string;
     const overId = over.id as string;
 
-    // If dropping on a group, add to that group
     const overGroup = groups.find(g => g.id === overId);
     if (overGroup && !overGroup.playerIds.includes(activePlayerId)) {
-      // Remove from any existing group first
       const updatedGroups = groups.map(g => ({
         ...g,
         playerIds: g.playerIds.filter(id => id !== activePlayerId)
       }));
-      
-      // Add to target group
-      setGroups(updatedGroups.map(g => 
-        g.id === overId 
+
+      setGroups(updatedGroups.map(g =>
+        g.id === overId
           ? { ...g, playerIds: [...g.playerIds, activePlayerId] }
           : g
       ));
     }
   };
 
-  // Get active player name for drag overlay
   const activePlayer = activeId ? allPlayers.find(p => p.id === activeId) : null;
 
-  const handleStartRound = () => {
-    if (!tournamentId || !tournament) return;
+  // ── Start round — POST /api/rounds with tournamentId ────────────────────
+  const handleStartRound = async () => {
+    if (!tournamentId || !tournament || creating) return;
     if (!selectedCourse) {
       alert('Select a course');
       return;
     }
 
+    setCreating(true);
+    setCreateError(null);
+
     const players: Player[] = tournament.playerIds.map((pid) => {
-      // Find which group this player is in
       const playerGroup = groups.find(g => g.playerIds.includes(pid));
       return {
         id: pid,
@@ -319,7 +343,6 @@ export default function NewTournamentRoundPage() {
 
     const selectedTee = teeOptions.find((t) => t.id === selectedTeeId);
 
-    // Convert draft groups to PlayerGroup
     const playerGroups: PlayerGroup[] = groups.map(g => ({
       id: g.id,
       name: g.name,
@@ -327,29 +350,49 @@ export default function NewTournamentRoundPage() {
       playerIds: g.playerIds,
     }));
 
-    const round: Round = {
-      id: crypto.randomUUID(),
-      courseId: selectedCourse.id,
-      courseName: selectedCourse.name,
-      teeId: selectedTee?.id,
-      teeName: selectedTee?.name,
-      date: new Date().toISOString(),
-      players,
-      scores: [],
-      holes: selectedTee?.holes ?? selectedCourse.holes,
-      groups: playerGroups.length > 0 ? playerGroups : undefined,
-      status: 'active',
-      tournamentId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    try {
+      // POST /api/rounds — backend assigns its own UUID and appends to tournament.round_ids
+      const created: Round = await createRound({
+        courseId: selectedCourse.id,
+        courseName: selectedCourse.name,
+        teeId: selectedTee?.id,
+        teeName: selectedTee?.name,
+        players,
+        holes: selectedTee?.holes ?? selectedCourse.holes,
+        groups: playerGroups.length > 0 ? playerGroups : undefined,
+        tournamentId,
+      });
 
-    saveRound(round);
-    addRoundToTournament(tournamentId, round.id);
-    router.push(`/round/${round.id}`);
+      // Write-through to localStorage so the scoring screen can read it offline.
+      localSaveRound(created);
+
+      // Navigate using the SERVER-RETURNED id (not a client-side UUID).
+      router.push(`/round/${created.id}`);
+    } catch (e) {
+      if (!(e instanceof TypeError)) {
+        const msg = e instanceof Error ? e.message : 'Failed to create round.';
+        setCreateError(
+          msg.length > 120
+            ? 'Server error — check your connection and try again.'
+            : msg
+        );
+      } else {
+        setCreateError('No connection — connect to the internet to add a round.');
+      }
+      setCreating(false);
+    }
   };
 
-  if (!tournament) {
+  // ── Loading / not-found ──────────────────────────────────────────────────
+  if (tournamentLoading) {
+    return (
+      <div className="min-h-screen px-6 py-8">
+        <p className="text-zinc-400">Loading tournament…</p>
+      </div>
+    );
+  }
+
+  if (tournamentNotFound || !tournament) {
     return (
       <div className="min-h-screen px-6 py-8">
         <Link href="/" className="text-emerald-400 hover:text-emerald-300 transition-colors">
@@ -424,7 +467,7 @@ export default function NewTournamentRoundPage() {
         <section className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="text-xs font-medium text-zinc-400 tracking-wide uppercase">Groups & Tee Times</div>
+              <div className="text-xs font-medium text-zinc-400 tracking-wide uppercase">Groups &amp; Tee Times</div>
               <p className="text-xs text-zinc-500 mt-1">Drag players between groups</p>
             </div>
             {!showGroupSetup && (
@@ -448,10 +491,9 @@ export default function NewTournamentRoundPage() {
               onDragEnd={handleDragEnd}
             >
               <div className="space-y-4">
-                {/* Groups */}
                 {groups.map((group) => (
-                  <div 
-                    key={group.id} 
+                  <div
+                    key={group.id}
                     className="border border-white/10 rounded-xl p-3 bg-white/2"
                   >
                     <div className="flex items-center gap-2 mb-3">
@@ -481,12 +523,11 @@ export default function NewTournamentRoundPage() {
                       </button>
                     </div>
 
-                    {/* Droppable area for players */}
                     <SortableContext
                       items={group.playerIds}
                       strategy={verticalListSortingStrategy}
                     >
-                      <div 
+                      <div
                         className="space-y-1.5 min-h-[40px] p-2 rounded-lg bg-white/2 border border-dashed border-white/10"
                         data-group-id={group.id}
                       >
@@ -504,8 +545,8 @@ export default function NewTournamentRoundPage() {
                                 id={playerId}
                                 name={player.name}
                                 onRemove={() => {
-                                  setGroups(groups.map(g => 
-                                    g.id === group.id 
+                                  setGroups(groups.map(g =>
+                                    g.id === group.id
                                       ? { ...g, playerIds: g.playerIds.filter(id => id !== playerId) }
                                       : g
                                   ));
@@ -519,7 +560,6 @@ export default function NewTournamentRoundPage() {
                   </div>
                 ))}
 
-                {/* Add group button */}
                 <button
                   type="button"
                   onClick={addGroup}
@@ -529,7 +569,6 @@ export default function NewTournamentRoundPage() {
                   Add Group
                 </button>
 
-                {/* Unassigned players */}
                 {unassignedPlayers.length > 0 && (
                   <div className="border border-amber-500/30 rounded-xl p-3 bg-amber-500/5">
                     <div className="text-xs font-medium text-amber-400 mb-2 flex items-center gap-2">
@@ -553,7 +592,6 @@ export default function NewTournamentRoundPage() {
                   </div>
                 )}
 
-                {/* Clear groups */}
                 <button
                   type="button"
                   onClick={() => { setGroups([]); setShowGroupSetup(false); }}
@@ -563,7 +601,6 @@ export default function NewTournamentRoundPage() {
                 </button>
               </div>
 
-              {/* Drag overlay */}
               <DragOverlay>
                 {activePlayer ? <DraggedPlayer name={activePlayer.name} /> : null}
               </DragOverlay>
@@ -572,15 +609,26 @@ export default function NewTournamentRoundPage() {
             <div className="text-center py-4 text-zinc-500 text-sm">
               All {allPlayers.length} players will be shown together on the scorecard.
               <br />
-              <span className="text-xs">Click "Auto-Group" to create tee time groups.</span>
+              <span className="text-xs">Click &quot;Auto-Group&quot; to create tee time groups.</span>
             </div>
           )}
         </section>
 
-        <button onClick={handleStartRound} className="btn btn-primary w-full">
+        {createError && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {createError}
+          </div>
+        )}
+
+        <button
+          onClick={handleStartRound}
+          disabled={creating}
+          className="btn btn-primary w-full"
+          style={{ opacity: creating ? 0.7 : 1 }}
+        >
           <span className="inline-flex items-center justify-center gap-2">
             <Flag className="h-5 w-5" aria-hidden="true" />
-            <span>Start Round</span>
+            <span>{creating ? 'Creating…' : 'Start Round'}</span>
           </span>
         </button>
       </main>
