@@ -93,7 +93,7 @@
       "type": "minor",
       "priority": 9,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": ["backend-players-db", "backend-rounds-scores-db", "backend-tournaments-db", "backend-courses-db"],
       "spec": "specs/real-data-wiring-plan.md"
     },
