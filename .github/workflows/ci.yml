@@ -51,7 +51,7 @@ jobs:
           NEXT_PUBLIC_API_URL: https://api.looperapp.org
 
   required-backend:
-    name: Backend gate (ruff)
+    name: Backend gate (ruff + pytest)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -65,3 +65,5 @@ jobs:
         run: uv sync
       - name: Lint (ruff)
         run: uv run ruff check .   # ruff is pinned in pyproject dev group
+      - name: Unit tests (pytest)
+        run: uv run pytest         # pytest is pinned in pyproject dev group; testpaths = ["tests"]

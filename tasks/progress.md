@@ -3,6 +3,58 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (backend-test-suite — SILENT)
+- **Done:** first backend test suite (`backend/tests/`) — 138 pytest unit tests covering the
+  caddie pure-logic modules, wired into the required-backend CI job.
+
+  Files added / changed:
+  - `backend/pyproject.toml`: added `pytest>=8.0.0` to dev dependency group; added
+    `[tool.pytest.ini_options] testpaths = ["tests"]`.
+  - `backend/tests/__init__.py`: empty marker.
+  - `backend/tests/test_strokes_gained.py` (40 tests): `_interpolate` (empty table,
+    clamp above/below, midpoint, quarter-point, monotone), `_handicap_multiplier`
+    (scratch=1.0, hcp36=1.7, None→15, clamp ±, monotone), `personal_lookup` (None/empty
+    sg, missing lie, interpolation, bucket with null mean_strokes skipped),
+    `expected_strokes` (table dispatch, personal_sg override, unknown lie fallback),
+    `strokes_gained` (holed shot, avg-shot, positive/negative SG, handicap effect).
+  - `backend/tests/test_club_selection.py` (25 tests): `normalize_club_distances`
+    (full camelCase→short mapping, zero/negative dropped, passthrough, empty),
+    `compute_adjustments` (no-op, uphill +5y, downhill −4y, small-elev ignored, cold/warm
+    temp, high altitude, soft/firm conditions, floor=1, stacking), `select_club` (exact
+    match, between clubs, conservative/aggressive bias, short/long out-of-range, empty bag
+    fallback, return type).
+  - `backend/tests/test_dispersion.py` (18 tests): `_interpolate_handicap` (exact breakpoint,
+    clamp low/high, midpoint, monotone width), `get_dispersion` (shape, scratch/hcp15 driver,
+    unknown club fallback, None→15, wedge tighter than driver, camelCase club key,
+    center_bias=none, 1dp rounding), `dispersion_covers_hazard` (inside/outside, strict
+    less-than boundary, aim offset shifts window left/right, real driver/wedge dispersion).
+  - `backend/tests/test_aim_point.py` (35 tests): `classify_pin_position` (7 cases: no hazards
+    →green, 1 severe close→yellow, 2 severe→red, death→yellow, 2 death close→red,
+    mild/far→green), `compute_aim_point` (6 cases: green/red/yellow light descriptions,
+    death-right favors left, death-left+miss-left favors right, return type),
+    `compute_miss_side` (6 cases: no hazards→short, water R→left, water L→right,
+    avoid text, return type, front water→long), `generate_recommendation` (16 cases:
+    type, club string, raw==target with no adjustments, elevation adjusts target, reasoning
+    list, confidence in [0,1], aggressiveness valid, red→conservative, no-haz→aggressive,
+    expected_score float, empty bag fallback, adjustments list, weather/hazards boost
+    confidence, player history in reasoning).
+  - `backend/tests/test_safe_json_extract.py` (18 tests): clean JSON, ```json fenced,
+    ``` fenced, JSON wrapped in prose, after newlines, nested object, escaped quotes,
+    fenced with whitespace, markdown+fenced, no-JSON→None, empty→None, unclosed→None,
+    open-brace→None, non-JSON fenced falls back to bare, `[` array in fence, first of
+    multiple objects, malformed-fenced+valid-bare, real LLM round-setup output.
+  - `.github/workflows/ci.yml`: `required-backend` job renamed to "Backend gate (ruff +
+    pytest)"; added "Unit tests (pytest)" step after ruff (runs `uv run pytest`).
+
+  Bugs found (NOT fixed — behavior-change blocked):
+  - None found in the caddie modules. All behavior matched expected outputs from
+    the documented formulas and tables. `_safe_json_extract` handles all test cases
+    correctly including the strict less-than boundary for dispersion.
+
+  Gates (backend): `uv run pytest` 138/138 pass · `uv run ruff check .` clean.
+  Gates (frontend, unaffected): lint 0 · tsc 0 · voice-tests 261/261 · npm test 238/238.
+  SILENT — no TestFlight-visible change; backend + CI only.
+
 ## 2026-06-27 (voice-low-confidence-ux P33 — SETUP-PATH slice)
 - **Done:** SETUP-PATH slice of `voice-low-confidence-ux` (P33, NOTICEABLE) — wired the
   backend's `confidence` field through `ParsedRoundConfig` and surfaced a calm
