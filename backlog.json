@@ -70,7 +70,7 @@
       "type": "minor",
       "priority": 7,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": ["db-core-schema"],
       "why": "Decision: new golfer_profiles table, distinct from caddie player_profiles.",
       "spec": "specs/real-data-wiring-plan.md"

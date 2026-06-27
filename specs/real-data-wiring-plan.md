@@ -117,6 +117,13 @@ Secrets to confirm present on the deploy box: `CLERK_JWKS_URL`, `CLERK_ISSUER`, 
 - **Gates:** new endpoints + data handling must pass `/security-review` + `/code-review`.
 
 ## Review follow-ups (carry into the routes-wiring items)
+- **`wire-profile-identity`/`wire-profile-bag` (from backend-profile-endpoint review):** the PUT
+  is a partial update that skips None, and `storage-api.ts saveGolferProfileAsync` sends
+  `?? undefined` — so a user CANNOT clear `handicap`/`homeCourse` back to null (old value
+  sticks). When wiring the profile UI, send `null` explicitly and have PUT distinguish
+  "omitted" from "set null" (e.g. `model_fields_set`). Also tighten the `name` nullability
+  mismatch (backend `Optional[str]` vs `types.ts` non-null `string`). (Inert today — no screen
+  imports `useGolferProfile`.)
 - **`wire-round-new` / `wire-round-scoring` (from api-contract-align review):** `RoundCreate`
   has no `scores` field and `rounds.py` assigns a fresh `round-{uuid}` ignoring the client id —
   so `getRound(clientId)` always 404s and every `saveRoundAsync` re-creates a NEW round, dropping
