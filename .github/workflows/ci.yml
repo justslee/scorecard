@@ -53,9 +53,26 @@ jobs:
   required-backend:
     name: Backend gate (ruff + pytest)
     runs-on: ubuntu-latest
+    # Postgres service for route integration tests (tests/integration/).
+    # Pure-logic tests (tests/*.py) need no DB and run regardless.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: scorecard_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/scorecard_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -65,5 +82,5 @@ jobs:
         run: uv sync
       - name: Lint (ruff)
         run: uv run ruff check .   # ruff is pinned in pyproject dev group
-      - name: Unit tests (pytest)
-        run: uv run pytest         # pytest is pinned in pyproject dev group; testpaths = ["tests"]
+      - name: Unit + integration tests (pytest)
+        run: uv run pytest         # runs both tests/*.py and tests/integration/
