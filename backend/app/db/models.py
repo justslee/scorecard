@@ -1,7 +1,12 @@
-"""ORM models matching migration 002_caddie_and_shots.sql.
+"""ORM models matching the applied migrations.
 
-Models for the existing 001 schema (courses/holes/etc.) are not declared here yet —
-they'll be added when those routes migrate off JSON storage in a later PR.
+Caddie schema (supabase/migrations 001–004, baseline revision 001_baseline):
+  CaddieSession, CaddieMessage, PlayerProfile, CaddieMemory, HolePin,
+  ElevationCache, Shot, CaddiePersona.
+
+Core scoring schema (Alembic revision 002_core_scoring / 005_core_scoring):
+  Player, GolferProfile, Tournament, Round, PlayerGroup, RoundPlayer,
+  Score, Game.
 """
 
 from datetime import datetime, date
@@ -174,6 +179,269 @@ class CaddiePersona(Base):
     is_builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     author_user_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Core scoring domain — Alembic revision 002_core_scoring (005_core_scoring)
+# These tables replace backend/data/*.json. Routes migrated in later PRs.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class Player(Base):
+    """Saved golfer roster. Distinct from caddie PlayerProfile (AI stats)."""
+
+    __tablename__ = "players"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    owner_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    nickname: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    handicap: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    clerk_user_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rounds_played: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class GolferProfile(Base):
+    """User-facing identity: handicap history, bag, strokes-gained summary.
+
+    Distinct from caddie PlayerProfile. May cross-reference later (decision E3).
+    One row per Clerk user_id.
+
+    Columns added in migration 007_golfer_profile_fields:
+      name        — display name (maps to GolferProfile.name in types.ts)
+      home_course — free-text home course name (maps to GolferProfile.homeCourse)
+    """
+
+    __tablename__ = "golfer_profiles"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    user_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
+    owner_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    # Added by migration 007 — maps to types.ts GolferProfile.name
+    name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    handicap_index: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
+    scoring_average: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
+    bag_clubs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # Added by migration 007 — maps to types.ts GolferProfile.homeCourse (free text)
+    home_course: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Kept for future caddie cross-reference; not served in the API shape.
+    home_course_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    play_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    handicap_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    strokes_gained: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Tournament(Base):
+    """A scoring tournament grouping multiple rounds."""
+
+    __tablename__ = "tournaments"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    owner_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    num_rounds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # round_ids kept as JSONB list for ordering flexibility; round rows also
+    # carry tournament_id FK for the canonical join.
+    round_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    player_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Round(Base):
+    """A scoring round. `holes` is a JSONB snapshot of par/handicap/yards
+    for this round; structural course data lives in the course-mapping tables."""
+
+    __tablename__ = "rounds"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    owner_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    course_id: Mapped[str] = mapped_column(Text, nullable=False)
+    course_name: Mapped[str] = mapped_column(Text, nullable=False)
+    tee_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    tee_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    date: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="active")
+    tournament_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("tournaments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    holes: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PlayerGroup(Base):
+    """A tee-time group within a round (e.g. "Group A, 8:00am, hole 1")."""
+
+    __tablename__ = "player_groups"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    round_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("rounds.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    tee_time: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    starting_hole: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    player_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class RoundPlayer(Base):
+    """Normalized: one row per (round, player). group_id is optional."""
+
+    __tablename__ = "round_players"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    round_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("rounds.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    player_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    group_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("player_groups.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    handicap: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Score(Base):
+    """Normalized: one row per (round, player, hole). Unique constraint supports
+    upsert semantics — one score per player per hole per round."""
+
+    __tablename__ = "scores"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    round_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("rounds.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    player_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    hole_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    strokes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ScoringCourse(Base):
+    """Scoring-course picker entries — replaces backend/data/courses.json.
+
+    Distinct from the PostGIS-backed ``courses``/``tee_sets``/``holes`` tables
+    used by the caddie/mapped-course system (migration 001 baseline).
+    Unifying the two is a deliberate FUTURE refactor; see follow-up note in
+    specs/real-data-wiring-plan.md.
+    """
+
+    __tablename__ = "scoring_courses"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    owner_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    location: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # JSONB list of HoleInfo: [{number, par, yards?, handicap?}]
+    holes: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # JSONB list of TeeOption: [{id, name, holes:[HoleInfo]}] — nullable
+    tees: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Game(Base):
+    """A scoring game (Nassau, skins, stroke-play, etc.) scoped to a round or
+    tournament. Managed via round/tournament endpoints — no standalone /api/games.
+    player_ids, teams, settings stored as JSONB for per-format flexibility.
+    """
+
+    __tablename__ = "games"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    round_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("rounds.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    tournament_id: Mapped[Optional[str]] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("tournaments.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    format: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    player_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    teams: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    settings: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

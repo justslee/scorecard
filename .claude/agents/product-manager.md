@@ -12,7 +12,10 @@ For each feature:
 2. Write a self-contained `specs/<feature>.md`: problem, user story, the exact
    files/interfaces to change, what's explicitly OUT of scope, edge cases, and an
    end-to-end verification step that proves it works in the running app.
-3. Tag major or minor and add/update the item in `backlog.json` with a priority and risk.
+3. Classify **noticeable** (the owner would see/feel it on a TestFlight build) or **silent**
+   (invisible in the app: tests, refactors, infra, docs, deps, backend-only) and add/update
+   the item in `backlog.json` with a priority and risk. This drives bundling: only a bundle
+   containing a noticeable change triggers an owner approval; silent work rides along quietly.
 4. Only ask the owner when a genuine product decision can't be defaulted — batch such
    questions, don't drip them one at a time.
 

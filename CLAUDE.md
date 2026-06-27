@@ -34,7 +34,22 @@ See @tasks/todo.md for the build plan and @ops/mac/RUN.md for how the team runs.
 ## Workflow rules (IMPORTANT)
 - Work on ONE feature at a time. Commit after each with a descriptive message.
 - After changes, run lint + typecheck + voice-tests smoke. Don't declare done until they pass.
-- NEVER push to `main`. Branch + open a PR. A human approves every merge.
+- **Bundle to ship (2026-06-26).** The unit of a PR is a **material change the owner would
+  notice on a new TestFlight build** — NOT one item. All work accumulates on one rolling
+  branch `integration/next` (one open PR → `main`). The owner is asked to approve only when
+  that bundle contains ≥1 noticeable change; silent work (tests/refactors/infra/docs/deps)
+  rides along and merges with it. Approval **alert** = email from a **dedicated approvals
+  account** (`looper.approvals@gmail.com`) to the owner's personal address — never his personal inbox;
+  the **Notion board** ("Looper — Product Board") is the record. Owner replies "ship it" by
+  email (watched in the dedicated mailbox) or on the card. (A Notion @-mention can't notify —
+  the MCP is authed as the owner.) See `.claude/agents/eng-lead.md`.
+- **Notifications: rare by design.** Push the owner (phone, via Remote Control) only for
+  (a) a noticeable-bundle **approval request**, (b) a **massive bundle or a major backend
+  change the owner can test** (e.g. a deployed API/data-layer change he can hit on staging —
+  ping with how to test it), or (c) a genuine **blocker / product decision**.
+  NEVER push for routine progress: small silent merges, per-item completion, gate runs, or
+  status. Routine silent work just appears on the board — no ping.
+- NEVER push to `main`. A human approves every merge (now in noticeable-sized bundles).
 - Update `tasks/progress.md` (done / in-progress / blocked) before ending a session,
   so work survives context resets and usage-limit pauses.
 - Verify before done: show evidence (test output, screenshot) — don't assert success.

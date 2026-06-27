@@ -1,93 +1,276 @@
 {
-  "updated": "2026-06-25",
-  "note": "The eng-lead reads this to pick the next task. priority 1 = do first. Start low-risk to prove the loop.",
+  "updated": "2026-06-26",
+  "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle).",
   "items": [
     {
-      "id": "voice-nickname-jt",
-      "title": "Fix voice score parse: nickname 'jt' -> Justin and 'with a N' score",
+      "id": "db-core-schema",
+      "title": "Wire Alembic + migration 005 core scoring schema + ORM (Postgres/RDS)",
       "type": "minor",
       "priority": 1,
-      "risk": "low",
-      "status": "ready",
-      "why": "voice-tests --smoke fails 1 fuzz case (scores:123:63). Utterance 'KIM bogey Jordan birdie jt with a 3 PAT made a six' drops the 'jt' player: parser does not resolve the 'jt' nickname to Justin nor read 'with a 3' as score 3. Core voice correctness + unblocks promoting voice-tests to a REQUIRED CI gate.",
-      "repro": "cd frontend && npx tsx voice-tests/runner.ts --smoke  (expect Justin:3, got undefined)",
-      "acceptance": "voice-tests --smoke passes; then move the voice-tests step into a required CI job in .github/workflows/ci.yml."
+      "risk": "medium",
+      "status": "done",
+      "depends_on": [],
+      "why": "No relational tables exist for the core scoring domain (players/rounds/scores/tournaments live in JSON). Unblocks the whole initiative. RDS is already up (DATABASE_URL on EC2 + Secrets Manager); set up Alembic, baseline caddie schema 001-004, then author 005 as the first revision; apply on the EC2 deploy box.",
+      "spec": "specs/real-data-wiring-plan.md"
     },
     {
-      "id": "test-games-engine",
-      "title": "Unit tests for the games engine (lib/games.ts)",
+      "id": "api-contract-align",
+      "title": "Align frontend lib/api.ts to the real backend contract (kill silent localStorage fallback)",
       "type": "minor",
       "priority": 2,
+      "risk": "medium",
+      "status": "done",
+      "depends_on": [],
+      "why": "api.ts uses snake_case + PATCH + nonexistent endpoints, so storage-api.ts always silently falls back to localStorage. Until this lands, backend fixes are invisible in the app.",
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "backend-players-db",
+      "title": "Players CRUD on Postgres (drop seed_default_data)",
+      "type": "minor",
+      "priority": 3,
       "risk": "low",
+      "status": "done",
+      "depends_on": ["db-core-schema"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "backend-rounds-scores-db",
+      "title": "Rounds + normalized scores/players/groups on Postgres",
+      "type": "minor",
+      "priority": 4,
+      "risk": "medium",
+      "status": "done",
+      "depends_on": ["db-core-schema"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "backend-tournaments-db",
+      "title": "Tournaments on Postgres (round links survive restart)",
+      "type": "minor",
+      "priority": 5,
+      "risk": "low",
+      "status": "done",
+      "depends_on": ["backend-rounds-scores-db"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "backend-courses-db",
+      "title": "Scoring-courses on Postgres (resolve course-identity duality)",
+      "type": "minor",
+      "priority": 6,
+      "risk": "medium",
+      "status": "done",
+      "depends_on": ["db-core-schema"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "backend-profile-endpoint",
+      "title": "GET/POST/PUT /api/profile/golfer backed by new golfer_profiles table",
+      "type": "minor",
+      "priority": 7,
+      "risk": "low",
+      "status": "done",
+      "depends_on": ["db-core-schema"],
+      "why": "Decision: new golfer_profiles table, distinct from caddie player_profiles.",
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "backend-games-surface",
+      "title": "Games in normalized games table, round/tournament-scoped (no standalone /api/games)",
+      "type": "minor",
+      "priority": 8,
+      "risk": "medium",
+      "status": "done",
+      "resolution": "Satisfied by backend-rounds-scores-db + backend-tournaments-db + api-contract-align: normalized games table (mig 005), round/tournament-scoped CRUD via those endpoints, Game.teams/roundId parity added, and standalone /api/games client funcs removed. No separate endpoint needed (decision E4). No build required.",
+      "depends_on": ["backend-rounds-scores-db"],
+      "why": "Decision: normalized games table (FK round/tournament), managed via round/tournament endpoints; delete imagined getGame/createGame from api.ts.",
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "json-to-db-backfill",
+      "title": "Backfill data/*.json into Postgres, then retire JSON storage",
+      "type": "minor",
+      "priority": 9,
+      "risk": "low",
+      "status": "done",
+      "depends_on": ["backend-players-db", "backend-rounds-scores-db", "backend-tournaments-db", "backend-courses-db"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "wire-round-new",
+      "title": "Round setup: real VoiceRoundSetup/CourseSearch/PlayerAutocomplete -> POST /api/rounds",
+      "type": "major",
+      "priority": 10,
+      "risk": "high",
+      "status": "blocked",
+      "depends_on": ["api-contract-align", "backend-rounds-scores-db", "backend-courses-db"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "wire-round-scoring",
+      "title": "In-round scoring loads + persists per stroke to backend",
+      "type": "major",
+      "priority": 11,
+      "risk": "medium",
+      "status": "blocked",
+      "depends_on": ["api-contract-align", "backend-rounds-scores-db"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "wire-leaderboard-real",
+      "title": "Leaderboard computed from real scores via lib/games.ts (drop LB_MOCK)",
+      "type": "major",
+      "priority": 12,
+      "risk": "medium",
+      "status": "blocked",
+      "depends_on": ["wire-round-scoring"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "wire-home",
+      "title": "Home shows real recent rounds + handicap/stats; fix tournament link",
+      "type": "major",
+      "priority": 13,
+      "risk": "medium",
+      "status": "blocked",
+      "depends_on": ["api-contract-align", "backend-rounds-scores-db", "backend-profile-endpoint"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "wire-profile-identity",
+      "title": "Profile masthead + handicap from /api/profile/golfer",
+      "type": "major",
+      "priority": 14,
+      "risk": "medium",
+      "status": "blocked",
+      "depends_on": ["backend-profile-endpoint"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "wire-profile-bag",
+      "title": "Profile 'the bag' from real club distances",
+      "type": "major",
+      "priority": 15,
+      "risk": "medium",
+      "status": "blocked",
+      "depends_on": ["backend-profile-endpoint"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "wire-profile-stats",
+      "title": "Profile strokes-gained / scoring-by-tee / year-log from real rounds",
+      "type": "major",
+      "priority": 16,
+      "risk": "high",
+      "status": "blocked",
+      "depends_on": ["wire-round-scoring"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "wire-players-page",
+      "title": "Players page -> /api/players (drop storage seeds)",
+      "type": "major",
+      "priority": 17,
+      "risk": "low",
+      "status": "blocked",
+      "depends_on": ["backend-players-db", "api-contract-align"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "wire-tournament-detail",
+      "title": "Tournament detail fetched by id + computed standings (delete tournamentData.ts)",
+      "type": "major",
+      "priority": 18,
+      "risk": "high",
+      "status": "blocked",
+      "depends_on": ["backend-tournaments-db", "wire-round-scoring"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "wire-tournament-new",
+      "title": "Tournament creation persists via API (not localStorage)",
+      "type": "major",
+      "priority": 19,
+      "risk": "low",
+      "status": "blocked",
+      "depends_on": ["backend-tournaments-db"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "settings-cleanup",
+      "title": "Remove 'Load Sample Players' demo seeding from settings",
+      "type": "major",
+      "priority": 20,
+      "risk": "low",
+      "status": "blocked",
+      "depends_on": ["backend-players-db"],
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "games-matchplay-nassau",
+      "title": "Implement real match-play Nassau scoring (currently stubbed)",
+      "type": "major",
+      "priority": 21,
+      "risk": "medium",
       "status": "ready",
-      "why": "15 betting formats with zero tests \u2014 the safest high-value first loop.",
-      "spec": "specs/test-games-engine.md"
+      "depends_on": [],
+      "why": "Games engine is isolated and test-covered; match-play Nassau just shows stroke totals today. Buildable independently of the DB work.",
+      "spec": "specs/real-data-wiring-plan.md"
+    },
+    {
+      "id": "tee-time-real",
+      "title": "Tee-time REAL integration (phased: deep-links -> provider slots -> auto-booking)",
+      "type": "major",
+      "priority": 22,
+      "risk": "high",
+      "status": "blocked",
+      "depends_on": ["api-contract-align"],
+      "why": "Owner chose real integration (not a demo). Phase 1 (ready once api-contract-align lands): real course search + GolfNow/course booking deep-links, no gated API. Phase 2 (live slots via GolfNow Affiliate API) and Phase 3 (auto-booking via Lightspeed/foreUP) are blocked on owner-supplied provider credentials.",
+      "blocked_on_owner": "Phases 2-3 only: GolfNow Affiliate & Partner API creds; Lightspeed/foreUP partner creds. Phase 1 needs no creds.",
+      "spec": "specs/real-data-wiring-plan.md"
     },
     {
       "id": "test-voice-pipeline",
       "title": "Unit tests for voice schemas + normalization (lib/voice/*)",
       "type": "minor",
-      "priority": 3,
+      "priority": 30,
       "risk": "low",
       "status": "ready",
-      "why": "Core differentiator; a deterministic harness exists \u2014 add focused unit coverage."
+      "depends_on": [],
+      "why": "Core differentiator; a deterministic harness exists - add focused unit coverage. Silent filler when DB work is blocked."
     },
     {
-      "id": "voice-low-confidence-ux",
-      "title": "Surface confidence + a confirm prompt on low-confidence voice parses",
-      "type": "major",
-      "priority": 4,
-      "risk": "medium",
-      "status": "needs-spec",
-      "why": "The parser returns a confidence score but the UI never shows it or asks to confirm."
-    },
-    {
-      "id": "ocr-scorecard-scan",
-      "title": "OCR scorecard scanning flow (CameraCapture -> auto-fill scores)",
-      "type": "major",
-      "priority": 5,
-      "risk": "medium",
-      "status": "needs-spec",
-      "why": "Promised in the README; CameraCapture component exists but there's no end-to-end flow."
-    },
-    {
-      "id": "stats-trends",
-      "title": "Stats & trends view (expand RoundSummary)",
-      "type": "major",
-      "priority": 6,
+      "id": "test-games-engine",
+      "title": "Unit tests for the games engine (lib/games.ts)",
+      "type": "minor",
+      "priority": 31,
       "risk": "low",
-      "status": "needs-spec",
-      "why": "Listed as a future enhancement; the underlying round data already exists."
-    },
-    {
-      "id": "postgres-persistence",
-      "title": "Migrate backend JSON-file storage to Postgres/Supabase",
-      "type": "major",
-      "priority": 7,
-      "risk": "high",
-      "status": "needs-spec",
-      "why": "JSON files don't scale and risk concurrent corruption. A Supabase schema exists but is unused."
-    },
-    {
-      "id": "tee-time-finder",
-      "title": "Tee-time finder \u2014 ground the mocked 'Dispatch Looper' to real data",
-      "type": "major",
-      "priority": 8,
-      "risk": "medium",
       "status": "ready",
-      "why": "Polished 3-phase mock UI exists but the data is fabricated. There is no free tee-time API. Phased via a backend provider pattern that keeps the TeeTime contract + UI untouched: Phase 1 MVP needs NO gated API (real course search + GolfNow/course booking deep-links); Phase 2 = live slots via the GolfNow Affiliate & Partner API; Phase 3 = real auto-booking via Lightspeed/foreUP.",
-      "spec": "specs/tee-time-finder.md",
-      "blocked_on_owner": "GolfNow Affiliate & Partner API application (Phase 2+); Lightspeed Partner creds (Phase 3 booking)"
+      "depends_on": [],
+      "why": "15 betting formats with thin tests. Silent filler. (A prior build attempt was stopped mid-run; re-do cleanly on integration/next.)",
+      "spec": "specs/test-games-engine.md"
     },
     {
       "id": "frontend-lint-cleanup",
-      "title": "Clear the ~108 frontend ESLint errors, then make lint a required CI gate",
+      "title": "Clear ~108 frontend ESLint errors, then make lint a required CI gate",
       "type": "minor",
-      "priority": 9,
+      "priority": 32,
       "risk": "low",
       "status": "ready",
-      "why": "npm run lint reports ~108 pre-existing errors (no-explicit-any, react/no-unescaped-entities, prefer-const, setState-in-effect). Currently advisory in CI. Burn down in small batches by rule/area (designer reviews any user-facing JSX touched), keeping changes behavior-preserving.",
-      "acceptance": "npm run lint exits 0; then move the ESLint step into a required CI job."
+      "depends_on": [],
+      "why": "npm run lint reports ~108 pre-existing errors. Burn down in small behavior-preserving batches; then promote ESLint to a required CI job.",
+      "acceptance": "npm run lint exits 0; ESLint becomes a required CI job."
+    },
+    {
+      "id": "voice-low-confidence-ux",
+      "title": "Surface confidence + confirm prompt on low-confidence voice parses",
+      "type": "major",
+      "priority": 33,
+      "risk": "medium",
+      "status": "needs-spec",
+      "depends_on": [],
+      "why": "The parser returns a confidence score but the UI never shows it or asks to confirm."
     }
   ]
 }

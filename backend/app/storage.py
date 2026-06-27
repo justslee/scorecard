@@ -82,92 +82,15 @@ class JSONStorage(Generic[T]):
         return [self.model_class(**item) for item in data if predicate(item)]
 
 
-# Storage instances
-from app.models import SavedPlayer, Round, Tournament, Course  # noqa: E402  (late import avoids a circular dependency)
+# NOTE: players_storage removed — players migrated to Postgres (routes/players.py).
+# NOTE: rounds_storage removed — rounds migrated to Postgres (routes/rounds.py).
+# NOTE: tournaments_storage removed — tournaments migrated to Postgres (routes/tournaments.py).
+# NOTE: courses_storage removed — scoring courses migrated to Postgres (routes/courses.py,
+#       migration 006_scoring_courses).  The data/*.json files are now stale; a one-off
+#       backfill script will import them (json-to-db-backfill item, Phase 1).
 
-players_storage = JSONStorage("players.json", SavedPlayer)
-rounds_storage = JSONStorage("rounds.json", Round)
-tournaments_storage = JSONStorage("tournaments.json", Tournament)
-courses_storage = JSONStorage("courses.json", Course)
-
-
-def seed_default_data():
-    """Seed default data if storage is empty."""
-    from datetime import datetime
-    
-    # Seed default players
-    if len(players_storage.get_all()) == 0:
-        now = datetime.now().isoformat()
-        default_players = [
-            SavedPlayer(
-                id="player-justin-lee", name="Justin Lee", nickname="JL",
-                handicap=3.2, email="justin@email.com", roundsPlayed=0,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-mike-chen", name="Mike Chen", nickname="Bomber",
-                handicap=8.2, email="mike.chen@email.com", roundsPlayed=24,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-david-kim", name="David Kim", nickname="DK",
-                handicap=5.1, email="dkim@email.com", roundsPlayed=18,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-sarah-park", name="Sarah Park", nickname="Steady",
-                handicap=12.5, email="sarah.p@email.com", phone="+1 555-234-5678",
-                roundsPlayed=15, createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-kevin-zhang", name="Kevin Zhang", nickname="KZ",
-                handicap=7.4, email="kevin.z@email.com", roundsPlayed=12,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-james-wilson", name="James Wilson", nickname="JW",
-                handicap=18.4, roundsPlayed=8, createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-alex-rodriguez", name="Alex Rodriguez", nickname="A-Rod",
-                handicap=14.8, phone="+1 555-876-5432", roundsPlayed=6,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-emily-watson", name="Emily Watson", nickname="Em",
-                handicap=10.3, email="emily.w@email.com", phone="+1 555-345-6789",
-                roundsPlayed=5, createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-tom-bradley", name="Tom Bradley", nickname="TB",
-                handicap=22.1, email="tom.bradley@email.com", roundsPlayed=3,
-                createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-chris-nguyen", name="Chris Nguyen", nickname="Slice King",
-                handicap=16.7, roundsPlayed=2, createdAt=now, updatedAt=now
-            ),
-            SavedPlayer(
-                id="player-ryan-murphy", name="Ryan Murphy", nickname="Murph",
-                handicap=25.6, roundsPlayed=1, createdAt=now, updatedAt=now
-            ),
-        ]
-        for player in default_players:
-            players_storage.create(player)
-    
-    # Seed default courses
-    if len(courses_storage.get_all()) == 0:
-        default_holes = [
-            {"number": i, "par": [4, 4, 3, 5, 4, 4, 3, 4, 5, 4, 4, 3, 5, 4, 4, 3, 4, 5][i-1]}
-            for i in range(1, 19)
-        ]
-        from app.models import HoleInfo
-        holes = [HoleInfo(**h) for h in default_holes]
-        
-        default_courses = [
-            Course(id="course-pebble", name="Pebble Beach Golf Links", holes=holes, location="Pebble Beach, CA"),
-            Course(id="course-tpc", name="TPC Sawgrass", holes=holes, location="Ponte Vedra Beach, FL"),
-            Course(id="course-augusta", name="Augusta National", holes=holes, location="Augusta, GA"),
-        ]
-        for course in default_courses:
-            courses_storage.create(course)
+# seed_default_data previously seeded players (removed) and courses (removed above).
+# All domain data is now Postgres-backed; this function is a no-op and kept only to
+# avoid a startup import error in main.py until that call is removed.
+def seed_default_data() -> None:
+    """No-op — all data is now Postgres-backed (players/rounds/tournaments/courses)."""
