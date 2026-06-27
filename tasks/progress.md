@@ -226,6 +226,48 @@ Format: date — done / in-progress / blocked.
 - **Next ready backlog items:** `test-games-engine` (P2), `test-voice-pipeline` (P3),
   `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).
 
+## 2026-06-26 (wire-leaderboard-real)
+- **Done:** backlog `wire-leaderboard-real` (P12, NOTICEABLE) — replaced `LB_MOCK` with
+  real computation from `lib/games.ts` via the round's real scores.
+  Key changes:
+  - **Removed:** `LB_MOCK` constant (nassau/skins/threePoint hardcoded mid-round state).
+  - **Tabs now dynamic:** `TABS` replaced with computed list — always "Overall" first, then
+    one tab per game in `round.games` (uses game id as tab key). Tab label includes
+    `game.settings.pointValue` if set (e.g. "Nassau · $20").
+  - **New `round` prop on `LeaderboardSheet`:** `RoundPageClient` passes `round={round}`
+    so the sheet can read `round.games` and build the engine call.
+  - **Engine wiring:** `computeGameResults(engineRound, game)` called for each game;
+    `engineRound` has `round.scores` replaced with the display-scores map converted to
+    `Score[]` via `displayScoresToArr()` — so pending (not-yet-confirmed) scores are
+    included in game computations.
+  - **Nassau:** real `NassauResults` — F9/B9/overall winner grid, running totals table.
+    `scope=team` uses team names from `game.teams`; `scope=individual` uses player names.
+    When `nassauResults.mode === 'match'`, a calm note explains that match-play scoring
+    is pending P21 and stroke totals are shown instead.
+  - **Skins:** real `SkinsResults` — per-player skin count, holes won; pot-carrying
+    callout computed from `holeWinners` + display scores (played-hole detection). Shows
+    "up for grabs" value if `game.settings.pointValue` is set.
+  - **3-Point:** real `ThreePointResults` — team A vs B scoreboard using real points;
+    team names from `game.teams`.
+  - **Generic fallback:** `GenericGame` handles bestBall, stableford, matchPlay, wolf, and
+    unknown formats — shows a minimal score/status display in the yardage-book aesthetic.
+  - **Empty states:** no games → "No games yet" prompt shown below Overall tab. No scores
+    yet for a format → calm italic "Scores will appear here as you play." (or format-
+    specific equivalent). Match-play Nassau shows stroke-total note (P21 pending).
+  - **No new design language:** all inline styles use T.* tokens; no new deps; existing
+    Tab, DotStrip, Overall sub-components preserved unchanged.
+  - **Games.ts functions used:** `computeGameResults` (dispatch), `computeSkins`,
+    `computeNassau`, `computeThreePoint`, `computeMatchPlay`, `computeStableford`,
+    `computeBestBall`, `computeWolf` (via the dispatch switch — all formats).
+  - **Data flow:** `RoundPageClient.round.games` (from backend) + display `scores`
+    (pending overlay included) → `computeGameResults` → `NassauResults | SkinsResults |
+    ThreePointResults | ...` → tab-specific render component.
+  - **Match-play Nassau (P21):** engine comment preserved ("falls back to stroke totals");
+    UI shows a note on the Nassau tab when `nassauResults.mode === 'match'`.
+  - Gates: lint clean (src/), tsc clean (0 errors), voice-tests 260/260, build OK.
+  - NOTICEABLE — leaderboard tabs now show real standings from entered scores; game tabs
+    appear/disappear based on which games are actually on the round.
+
 ### 2026-06-27 — Backend DB layer COMPLETE + DEPLOYED (real-data wiring Phase 0/1)
 - Shipped & merged **bundle #48** to main: db-core-schema, api-contract-align, and the
   full backend domain on Postgres (players, rounds/scores, tournaments, courses, profile,

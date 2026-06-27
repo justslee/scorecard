@@ -1200,6 +1200,7 @@ export default function RoundPage() {
             : HOLES.map((h) => h.par)
         }
         accent={accent}
+        round={round}
       />
     </div>
   );
