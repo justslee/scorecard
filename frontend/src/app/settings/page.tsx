@@ -104,23 +104,96 @@ function Section({
 }
 
 // ---------------------------------------------------------------------------
-// SignOutButton — uses useClerk(); only rendered inside ClerkProvider
-// (Settings conditionally renders this based on isClerkConfigured)
+// Shared confirm-row — Cancel + a red action button side-by-side.
+// Used by both SignOutButton and ClearCacheButton.
+// ---------------------------------------------------------------------------
+
+function ConfirmRow({
+  onCancel,
+  onConfirm,
+  confirmLabel,
+  confirmIcon,
+  disabled,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+  confirmLabel: string;
+  confirmIcon?: React.ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
+      <button
+        onClick={onCancel}
+        style={{
+          flex: 1,
+          minHeight: 44,
+          border: `1px solid ${T.hairline}`,
+          borderRadius: 99,
+          background: 'transparent',
+          cursor: 'pointer',
+          fontFamily: T.mono,
+          fontSize: 9,
+          letterSpacing: 1.3,
+          color: T.pencil,
+          textTransform: 'uppercase',
+          fontWeight: 500,
+        }}
+      >
+        Cancel
+      </button>
+      <button
+        onClick={onConfirm}
+        disabled={disabled}
+        style={{
+          flex: 2,
+          minHeight: 44,
+          border: `1px solid rgba(184,74,58,0.26)`,
+          borderRadius: 99,
+          background: T.errorWash,
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          fontFamily: T.mono,
+          fontSize: 9,
+          letterSpacing: 1.3,
+          color: T.errorInk,
+          textTransform: 'uppercase',
+          fontWeight: 500,
+          opacity: disabled ? 0.6 : 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+        }}
+      >
+        {confirmIcon}
+        {confirmLabel}
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SignOutButton — uses useClerk(); only rendered inside ClerkProvider.
+// Initial button is NEUTRAL (not red) — sign-out is routine and reversible.
+// Only the confirm-step action button is red (moment of action).
 // ---------------------------------------------------------------------------
 
 function SignOutButton() {
   const [confirming, setConfirming] = useState(false);
   const [signing, setSigning] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const { signOut } = useClerk();
 
   const handleSignOut = async () => {
     setSigning(true);
+    setSignOutError(null);
     try {
       await signOut({ redirectUrl: '/' });
       // After signOut resolves, Clerk's session clears → AuthGate sees
       // isSignedIn=false → automatically shows the sign-in screen.
     } catch (e) {
       console.error('[settings] sign out error:', e);
+      setSignOutError("Couldn't sign out — try again.");
       setSigning(false);
       setConfirming(false);
     }
@@ -128,55 +201,100 @@ function SignOutButton() {
 
   if (confirming) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
-        {/* Cancel */}
-        <button
-          onClick={() => setConfirming(false)}
-          style={{
-            flex: 1,
-            minHeight: 44,
-            border: `1px solid ${T.hairline}`,
-            borderRadius: 99,
-            background: 'transparent',
-            cursor: 'pointer',
-            fontFamily: T.mono,
-            fontSize: 9,
-            letterSpacing: 1.3,
-            color: T.pencil,
-            textTransform: 'uppercase',
-            fontWeight: 500,
-          }}
-        >
-          Cancel
-        </button>
-        {/* Confirm sign out */}
-        <button
-          onClick={handleSignOut}
+      <>
+        <ConfirmRow
+          onCancel={() => setConfirming(false)}
+          onConfirm={handleSignOut}
+          confirmLabel={signing ? 'Signing out…' : 'Yes, sign out'}
+          confirmIcon={<SignOutIcon size={14} />}
           disabled={signing}
+        />
+        {signOutError && (
+          <div
+            style={{
+              marginTop: 8,
+              fontFamily: T.mono,
+              fontSize: 8.5,
+              letterSpacing: 1,
+              color: T.errorInk,
+              textTransform: 'uppercase',
+            }}
+          >
+            {signOutError}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {/* Neutral button — sign-out is routine and fully reversible */}
+      <button
+        onClick={() => { setSignOutError(null); setConfirming(true); }}
+        style={{
+          width: '100%',
+          minHeight: 44,
+          border: `1px solid ${T.hairline}`,
+          borderRadius: 99,
+          background: 'transparent',
+          cursor: 'pointer',
+          fontFamily: T.mono,
+          fontSize: 9,
+          letterSpacing: 1.3,
+          color: T.pencil,
+          textTransform: 'uppercase',
+          fontWeight: 500,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          padding: '0 1rem',
+        }}
+      >
+        <SignOutIcon size={16} />
+        Sign out
+      </button>
+      {/* Show a prior sign-out error even after reverting to idle state */}
+      {signOutError && (
+        <div
           style={{
-            flex: 2,
-            minHeight: 44,
-            border: `1px solid rgba(184,74,58,0.26)`,
-            borderRadius: 99,
-            background: T.errorWash,
-            cursor: signing ? 'not-allowed' : 'pointer',
+            marginTop: 8,
             fontFamily: T.mono,
-            fontSize: 9,
-            letterSpacing: 1.3,
+            fontSize: 8.5,
+            letterSpacing: 1,
             color: T.errorInk,
             textTransform: 'uppercase',
-            fontWeight: 500,
-            opacity: signing ? 0.6 : 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
           }}
         >
-          <SignOutIcon size={14} />
-          {signing ? 'Signing out…' : 'Yes, sign out'}
-        </button>
-      </div>
+          {signOutError}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ClearCacheButton — in-page two-step confirm (same pattern as SignOutButton,
+// consistent UX; no raw window.confirm()). Action button stays red (destructive).
+// ---------------------------------------------------------------------------
+
+function ClearCacheButton() {
+  const [confirming, setConfirming] = useState(false);
+
+  const handleClear = () => {
+    localStorage.clear();
+    window.location.href = '/';
+  };
+
+  if (confirming) {
+    return (
+      <ConfirmRow
+        onCancel={() => setConfirming(false)}
+        onConfirm={handleClear}
+        confirmLabel="Yes, clear cache"
+        confirmIcon={<TrashIcon size={14} />}
+      />
     );
   }
 
@@ -186,6 +304,7 @@ function SignOutButton() {
       style={{
         width: '100%',
         minHeight: 44,
+        marginTop: 14,
         border: `1px solid rgba(184,74,58,0.22)`,
         borderRadius: 99,
         background: T.errorWash,
@@ -203,8 +322,8 @@ function SignOutButton() {
         padding: '0 1rem',
       }}
     >
-      <SignOutIcon size={16} />
-      Sign out
+      <TrashIcon size={16} />
+      Clear local cache
     </button>
   );
 }
@@ -212,6 +331,10 @@ function SignOutButton() {
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
+
+// Version: prefer NEXT_PUBLIC_APP_VERSION env var (set at build time per build);
+// fall back to "Beta" rather than hardcoding a stale number.
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? 'Beta';
 
 export default function Settings() {
   // Guard: only render SignOutButton when Clerk is wired up (key is a build-time
@@ -227,7 +350,8 @@ export default function Settings() {
         backgroundBlendMode: 'multiply',
         fontFamily: T.sans,
         color: T.ink,
-        paddingBottom: 'max(96px, calc(96px + env(safe-area-inset-bottom)))',
+        // env(safe-area-inset-bottom) is ≥0 so max() is a no-op — use calc() directly.
+        paddingBottom: 'calc(96px + env(safe-area-inset-bottom))',
       }}
     >
       <div style={{ maxWidth: 420, margin: '0 auto' }}>
@@ -324,7 +448,9 @@ export default function Settings() {
 
         {/* ── Account section (sign out) ───────────────────────────── */}
         {isClerkConfigured && (
-          <Section kicker="Account" title="Sign out">
+          // Title is a noun label ("Your account"), not a verb/command.
+          // Matches profile's section-title pattern: Handicap / Club distances / etc.
+          <Section kicker="Account" title="Your account">
             <p
               style={{
                 fontFamily: T.serif,
@@ -374,7 +500,7 @@ export default function Settings() {
               fontWeight: 500,
             }}
           >
-            Version 1.0.0
+            {APP_VERSION}
           </div>
         </Section>
 
@@ -395,41 +521,7 @@ export default function Settings() {
             players and profile on the server are not affected — only this
             device&apos;s offline cache will be cleared.
           </p>
-          <button
-            onClick={() => {
-              if (
-                confirm(
-                  "Clear local offline cache?\n\nYour players and profile on the server are not affected — only this device's offline cache will be cleared."
-                )
-              ) {
-                localStorage.clear();
-                window.location.href = '/';
-              }
-            }}
-            style={{
-              width: '100%',
-              minHeight: 44,
-              marginTop: 14,
-              border: `1px solid rgba(184,74,58,0.22)`,
-              borderRadius: 99,
-              background: T.errorWash,
-              cursor: 'pointer',
-              fontFamily: T.mono,
-              fontSize: 9,
-              letterSpacing: 1.3,
-              color: T.errorInk,
-              textTransform: 'uppercase',
-              fontWeight: 500,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              padding: '0 1rem',
-            }}
-          >
-            <TrashIcon size={16} />
-            Clear local cache
-          </button>
+          <ClearCacheButton />
         </Section>
       </div>
     </div>
