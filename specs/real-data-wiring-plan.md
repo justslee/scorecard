@@ -117,6 +117,13 @@ Secrets to confirm present on the deploy box: `CLERK_JWKS_URL`, `CLERK_ISSUER`, 
 - **Gates:** new endpoints + data handling must pass `/security-review` + `/code-review`.
 
 ## Review follow-ups (carry into the routes-wiring items)
+- **`wire-profile-bag` (P15) / `wire-profile-stats` (P16):** the profile page currently shows
+  `(Preview)` placeholder sections (StrokesGained / FairwayFan / ScoringByTee / YearLog / Bag)
+  + calm "Available after posting scores." for handicap history. Wire these to real data when
+  built. Polish to fold in then: the `(Preview)` badge is low-contrast in sunlight (bump to 9px
+  / `T.pencil`); FairwayFan has a first-person "You miss slightly right…" line that should be
+  neutral/real; the disabled "+ Post score" button contrast. Bag "Coming soon" becomes the real
+  editable club-distances UI (persists via PUT /api/profile/golfer clubDistances).
 - **round-scoring sync hardening (deferred from wire-round-scoring, non-blocking):** (a) a
   failed score *deletion* (strokes:null) can reappear after reload — pending deletions aren't
   replayed (recoverable by re-clearing); needs pending-deletion tracking. (b) `localSaveRound`
