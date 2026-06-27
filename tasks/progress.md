@@ -3,6 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (mount-ocr-scan P27 — polish pass)
+- **Done:** 13-item reviewer/designer polish pass for `mount-ocr-scan` (commit `cba0e25`
+  on `integration/next`).
+
+  DESIGN MUST-FIX:
+  1. Removed "Claude Vision" brand mention — scanning overlay subtitle → "This may take a moment".
+  2. "Scan card" entry button: minHeight 28→40px, added inline camera SVG icon.
+  3. Score cell height: 34→40px.
+  4. Amber cell flag: added T.warningWash background + full T.warningInk border (dropped `99` alpha).
+  5. Camera guide frame: T.hairline → T.pencil+"cc" (~80% opacity) — visible over live video feed.
+
+  CORRECTNESS SHOULD-FIX:
+  6. CameraCapture: useEffect cleanup — stop MediaStream tracks on unmount (camera indicator clears).
+
+  CORRECTNESS NITS:
+  7. handleCellChange: clamp to 1–15; values outside → null so they can't silently survive to Apply.
+  8. handleApply: partial failure detection — if any Promise.allSettled rejects, stay open + show
+     "N of M saved — M didn't reach the server. Tap Apply to retry." banner in review phase.
+  9. Duplicate mapping guard: hasDuplicate disables Apply; OcrPlayerCard shows "Already assigned"
+     amber badge + amber border when two OCR rows map to the same round player.
+
+  DESIGN NICE-TO-HAVE:
+  10. Confidence kicker: semantic label at 10px ("Looks good…" vs "Hard to read…") not raw %.
+  11. Hole-number header: 8→9px.
+  12. Scrollable body bottom padding: 4→16px.
+  13. Backdrop: now dismisses during error phase too (was review-only).
+
+  Gates: eslint on 3 modified files — 0 errors · tsc --noEmit — 0 errors · voice-tests — 260/260.
+
 ## 2026-06-27 (mount-ocr-scan P27)
 - **Done:** backlog `mount-ocr-scan` (P27, NOTICEABLE) — re-mounted the OCR scorecard-scan
   flow with a real entry point and yardage-book aesthetic.
