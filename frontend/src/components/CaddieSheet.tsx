@@ -11,6 +11,14 @@
  * Design: yardage-book aesthetic only — T.* tokens, PAPER_NOISE, Instrument Serif,
  * inline SVGs. Mirrors VoiceRoundSetup recording UX (VoiceRecorder + transcribeBlob
  * + Web Speech API interim display).
+ *
+ * Architecture notes:
+ *   • convHistory is lifted to the parent (RoundPageClient) so closing to enter a score
+ *     then reopening continues the same thread. #9
+ *   • convHistoryRef keeps a ref in sync with the prop so askCaddie reads the latest
+ *     history without closing over stale state — fixes multi-turn voice memory. #1
+ *   • Mic button lives outside the scroll area (non-scrolling bottom block) so it stays
+ *     on screen as conversation history grows. #2
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -35,6 +43,9 @@ export interface CaddieSheetProps {
   holeNumber: number;
   holePar: number;
   holeYards: number;
+  /** Conversation history — owned by parent so it persists across close/reopen. */
+  convHistory: VoiceCaddieMessage[];
+  onUpdateConvHistory: (history: VoiceCaddieMessage[]) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +80,7 @@ function FlagIcon() {
 }
 
 // ---------------------------------------------------------------------------
-// Component
+// Types
 // ---------------------------------------------------------------------------
 
 type Phase =
@@ -84,6 +95,42 @@ type Phase =
 
 type Mode = "voice" | "tap";
 
+// ---------------------------------------------------------------------------
+// Club distance mapping helper
+// ---------------------------------------------------------------------------
+
+function buildClubMap(): Record<string, number> {
+  const profile = getGolferProfile();
+  const clubMap: Record<string, number> = {};
+  if (!profile?.clubDistances) return clubMap;
+  const cd = profile.clubDistances;
+  const mapping: Array<[keyof typeof cd, string]> = [
+    ["driver", "driver"],
+    ["threeWood", "3w"],
+    ["fiveWood", "5w"],
+    ["hybrid", "hy"],
+    ["fourIron", "4i"],
+    ["fiveIron", "5i"],
+    ["sixIron", "6i"],
+    ["sevenIron", "7i"],
+    ["eightIron", "8i"],
+    ["nineIron", "9i"],
+    ["pitchingWedge", "pw"],
+    ["gapWedge", "gw"],
+    ["sandWedge", "sw"],
+    ["lobWedge", "lw"],
+  ];
+  for (const [ts, api] of mapping) {
+    const v = cd[ts];
+    if (v !== undefined) clubMap[api] = v;
+  }
+  return clubMap;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export default function CaddieSheet({
   open,
   onClose,
@@ -92,6 +139,8 @@ export default function CaddieSheet({
   holeNumber,
   holePar,
   holeYards,
+  convHistory,
+  onUpdateConvHistory,
 }: CaddieSheetProps) {
   const [mode, setMode] = useState<Mode>("voice");
 
@@ -102,7 +151,6 @@ export default function CaddieSheet({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [voiceAnswer, setVoiceAnswer] = useState<string | null>(null);
-  const [convHistory, setConvHistory] = useState<VoiceCaddieMessage[]>([]);
 
   // Tap mode state
   const [distanceInput, setDistanceInput] = useState("");
@@ -116,7 +164,19 @@ export default function CaddieSheet({
   const recorderRef = useRef<VoiceRecorder | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  // Reset state when sheet opens/closes
+  /**
+   * Ref mirror of convHistory prop. askCaddie reads from this ref so it
+   * always sees the latest history without capturing stale state in its
+   * closure — the root cause of multi-turn memory loss (#1).
+   */
+  const convHistoryRef = useRef<VoiceCaddieMessage[]>(convHistory);
+  useEffect(() => {
+    convHistoryRef.current = convHistory;
+  }, [convHistory]);
+
+  // Cleanup on close. History intentionally NOT cleared here — it is owned
+  // by the parent so closing to enter a score then reopening continues the
+  // thread (#9).
   useEffect(() => {
     if (!open) {
       recorderRef.current?.cancel();
@@ -127,7 +187,6 @@ export default function CaddieSheet({
       setIsTranscribing(false);
       setIsThinking(false);
       setVoiceAnswer(null);
-      setConvHistory([]);
       setDistanceInput("");
       setIsRecThinking(false);
       setRecommendation(null);
@@ -166,13 +225,63 @@ export default function CaddieSheet({
 
   // ── Voice path ───────────────────────────────────────────────────────────
 
+  /**
+   * Ask the caddie with a question. Reads convHistory from the ref (#1) so
+   * it is always current regardless of when this closure was captured.
+   * onUpdateConvHistory is stable (parent useState setter), so deps are safe.
+   */
+  const askCaddie = useCallback(
+    async (question: string) => {
+      setIsThinking(true);
+      setError(null);
+      const currentHistory = convHistoryRef.current;
+      const profile = getGolferProfile();
+      const clubMap = buildClubMap();
+      try {
+        const res = await talkToCaddie({
+          transcript: question,
+          personality_id: caddy.id,
+          hole_number: holeNumber,
+          par: holePar,
+          yards: holeYards,
+          club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
+          handicap: profile?.handicap ?? undefined,
+          conversation_history: currentHistory,
+        });
+        const newHistory: VoiceCaddieMessage[] = [
+          ...currentHistory,
+          { role: "user", content: question },
+          { role: "assistant", content: res.response },
+        ];
+        // Update the ref immediately so the next turn sees the latest history
+        // even before React re-renders.
+        convHistoryRef.current = newHistory;
+        onUpdateConvHistory(newHistory);
+        setVoiceAnswer(res.response);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message.length > 80
+              ? "Caddie unavailable — check connection."
+              : err.message
+            : "Caddie unavailable."
+        );
+      } finally {
+        setIsThinking(false);
+      }
+    },
+    [caddy.id, holeNumber, holePar, holeYards, onUpdateConvHistory]
+    // convHistory intentionally absent — read from convHistoryRef.current (#1)
+  );
+
   const startListening = useCallback(async () => {
     setError(null);
     setTranscript("");
     setInterimTranscript("");
     setVoiceAnswer(null);
+    let recorder: VoiceRecorder | null = null;
     try {
-      const recorder = new VoiceRecorder();
+      recorder = new VoiceRecorder();
       await recorder.start();
       recorderRef.current = recorder;
       setIsListening(true);
@@ -184,35 +293,52 @@ export default function CaddieSheet({
           (window.SpeechRecognition ?? window.webkitSpeechRecognition)) ||
         null;
       if (SpeechRecognitionCtor) {
-        const recognition = new SpeechRecognitionCtor();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = "en-US";
-        recognition.onresult = (event: SpeechRecognitionEvent) => {
-          let interim = "";
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            interim += event.results[i][0].transcript;
-          }
-          setInterimTranscript(interim);
-        };
-        recognition.onerror = () => {
-          /* Deepgram is authoritative — interim errors are non-fatal */
-        };
-        recognition.onend = () => {
-          /* no-op; abort() is called explicitly on stop */
-        };
-        recognition.start();
-        recognitionRef.current = recognition;
+        // If recognition.start() throws after the recorder started, cancel
+        // the recorder so the mic doesn't stay hot (#12).
+        try {
+          const recognition = new SpeechRecognitionCtor();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = "en-US";
+          recognition.onresult = (event: SpeechRecognitionEvent) => {
+            let interim = "";
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              interim += event.results[i][0].transcript;
+            }
+            setInterimTranscript(interim);
+          };
+          recognition.onerror = () => {
+            /* Deepgram is authoritative — interim errors are non-fatal */
+          };
+          recognition.onend = () => {
+            /* no-op; abort() is called explicitly on stop */
+          };
+          recognition.start();
+          recognitionRef.current = recognition;
+        } catch {
+          // Recognition failed to start — cancel the recorder so the mic stream
+          // is released and we don't leave the mic open (#12).
+          recorder.cancel();
+          recorderRef.current = null;
+          setIsListening(false);
+          throw new Error("Failed to start voice recognition.");
+        }
       }
     } catch (err) {
       setError(
         err instanceof Error && err.name === "NotAllowedError"
           ? "Microphone access denied."
+          : err instanceof Error
+          ? err.message
           : "Failed to start microphone."
       );
     }
   }, []);
 
+  /**
+   * stopListening depends on askCaddie. askCaddie is stable (ref-based history,
+   * no convHistory state in deps), so no eslint-disable needed.
+   */
   const stopListening = useCallback(async () => {
     const recorder = recorderRef.current;
     if (!recorder) return;
@@ -237,70 +363,7 @@ export default function CaddieSheet({
       recorderRef.current = null;
       setIsTranscribing(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const askCaddie = useCallback(
-    async (question: string) => {
-      setIsThinking(true);
-      setError(null);
-      const profile = getGolferProfile();
-      // Build club_distances map for backend (camelCase → snake_case key names)
-      const clubMap: Record<string, number> = {};
-      if (profile?.clubDistances) {
-        const cd = profile.clubDistances;
-        const mapping: Array<[keyof typeof cd, string]> = [
-          ["driver", "driver"],
-          ["threeWood", "3w"],
-          ["fiveWood", "5w"],
-          ["hybrid", "hy"],
-          ["fourIron", "4i"],
-          ["fiveIron", "5i"],
-          ["sixIron", "6i"],
-          ["sevenIron", "7i"],
-          ["eightIron", "8i"],
-          ["nineIron", "9i"],
-          ["pitchingWedge", "pw"],
-          ["gapWedge", "gw"],
-          ["sandWedge", "sw"],
-          ["lobWedge", "lw"],
-        ];
-        for (const [ts, api] of mapping) {
-          const v = cd[ts];
-          if (v !== undefined) clubMap[api] = v;
-        }
-      }
-      try {
-        const res = await talkToCaddie({
-          transcript: question,
-          personality_id: caddy.id,
-          hole_number: holeNumber,
-          par: holePar,
-          yards: holeYards,
-          club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
-          handicap: profile?.handicap ?? undefined,
-          conversation_history: convHistory,
-        });
-        const newHistory: VoiceCaddieMessage[] = [
-          ...convHistory,
-          { role: "user", content: question },
-          { role: "assistant", content: res.response },
-        ];
-        setConvHistory(newHistory);
-        setVoiceAnswer(res.response);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message.length > 80
-              ? "Caddie unavailable — check connection."
-              : err.message
-            : "Caddie unavailable."
-        );
-      } finally {
-        setIsThinking(false);
-      }
-    },
-    [caddy.id, holeNumber, holePar, holeYards, convHistory]
-  );
+  }, [askCaddie]);
 
   const handleMicTap = () => {
     if (isListening) {
@@ -311,7 +374,7 @@ export default function CaddieSheet({
   };
 
   const handleFollowUp = () => {
-    // Reset answer but keep convHistory for context
+    // Reset answer display but keep convHistory (in parent) for context
     setTranscript("");
     setVoiceAnswer(null);
     setError(null);
@@ -319,7 +382,7 @@ export default function CaddieSheet({
 
   // ── Tap / distance path ──────────────────────────────────────────────────
 
-  const handleGetRecommendation = async () => {
+  const handleGetRecommendation = useCallback(async () => {
     const dist = parseInt(distanceInput, 10);
     if (!dist || dist < 1 || dist > 800) {
       setError("Enter a valid distance (1–800 yards).");
@@ -329,30 +392,7 @@ export default function CaddieSheet({
     setRecommendation(null);
     setIsRecThinking(true);
     const profile = getGolferProfile();
-    const clubMap: Record<string, number> = {};
-    if (profile?.clubDistances) {
-      const cd = profile.clubDistances;
-      const mapping: Array<[keyof typeof cd, string]> = [
-        ["driver", "driver"],
-        ["threeWood", "3w"],
-        ["fiveWood", "5w"],
-        ["hybrid", "hy"],
-        ["fourIron", "4i"],
-        ["fiveIron", "5i"],
-        ["sixIron", "6i"],
-        ["sevenIron", "7i"],
-        ["eightIron", "8i"],
-        ["nineIron", "9i"],
-        ["pitchingWedge", "pw"],
-        ["gapWedge", "gw"],
-        ["sandWedge", "sw"],
-        ["lobWedge", "lw"],
-      ];
-      for (const [ts, api] of mapping) {
-        const v = cd[ts];
-        if (v !== undefined) clubMap[api] = v;
-      }
-    }
+    const clubMap = buildClubMap();
     try {
       const rec = await fetchRecommendation({
         hole_number: holeNumber,
@@ -374,9 +414,11 @@ export default function CaddieSheet({
     } finally {
       setIsRecThinking(false);
     }
-  };
+  }, [holeNumber, holePar, holeYards, distanceInput]);
 
   // ── Render ───────────────────────────────────────────────────────────────
+
+  const showMic = mode === "voice" && phase !== "transcribing" && phase !== "thinking";
 
   return (
     <AnimatePresence>
@@ -470,7 +512,7 @@ export default function CaddieSheet({
                     fontFamily: T.serif,
                     fontStyle: "italic",
                     fontSize: 11,
-                    color: "#fff",
+                    color: T.paper, // #5 — cream not white
                     flexShrink: 0,
                   }}
                 >
@@ -527,12 +569,13 @@ export default function CaddieSheet({
               </div>
             </div>
 
+            {/* Close button — 44×44 (#4) */}
             <button
               onClick={onClose}
               aria-label="Close caddie sheet"
               style={{
-                width: 32,
-                height: 32,
+                minWidth: 44,
+                minHeight: 44,
                 borderRadius: 99,
                 border: `1px solid ${T.hairline}`,
                 background: "transparent",
@@ -549,12 +592,12 @@ export default function CaddieSheet({
             </button>
           </div>
 
-          {/* Mode toggle */}
+          {/* Mode toggle — 44pt tap target (#3) */}
           <div
             style={{
               display: "flex",
               gap: 0,
-              padding: "10px 20px 0",
+              padding: "0 20px",
               flexShrink: 0,
             }}
           >
@@ -567,7 +610,7 @@ export default function CaddieSheet({
                 }}
                 style={{
                   flex: 1,
-                  padding: "7px 0",
+                  padding: "16px 0", // #3 — was 7px, raised to 44pt
                   border: "none",
                   borderBottom: `2px solid ${mode === m ? accent : T.hairline}`,
                   background: "transparent",
@@ -585,7 +628,7 @@ export default function CaddieSheet({
             ))}
           </div>
 
-          {/* Scrollable body */}
+          {/* Scrollable body — mic is NOT in here for voice mode (#2) */}
           <div
             style={{
               flex: 1,
@@ -598,7 +641,6 @@ export default function CaddieSheet({
               <VoiceBody
                 phase={phase}
                 isSupported={isSupported}
-                isListening={isListening}
                 interimTranscript={interimTranscript}
                 transcript={transcript}
                 voiceAnswer={voiceAnswer}
@@ -606,10 +648,9 @@ export default function CaddieSheet({
                 error={error}
                 accent={accent}
                 caddy={caddy}
-                onMicTap={handleMicTap}
                 onFollowUp={handleFollowUp}
                 onClear={() => {
-                  setConvHistory([]);
+                  onUpdateConvHistory([]);
                   setVoiceAnswer(null);
                   setTranscript("");
                   setError(null);
@@ -633,6 +674,67 @@ export default function CaddieSheet({
               />
             )}
           </div>
+
+          {/*
+           * Mic button — non-scrolling bottom block (#2).
+           * Rendered OUTSIDE the scroll area so it stays fixed as
+           * conversation history grows. Mirrors Voice.tsx:239-298 vmic pattern.
+           */}
+          {showMic && (
+            <div
+              style={{
+                flexShrink: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                padding: "14px 20px 18px",
+                borderTop: `1px solid ${T.hairline}`,
+              }}
+            >
+              <motion.button
+                onClick={handleMicTap}
+                whileTap={{ scale: 0.93 }}
+                aria-label={isListening ? "Stop recording" : "Start recording"}
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: "50%",
+                  border: isListening
+                    ? `2px solid ${accent}`
+                    : `1px solid ${T.hairline}`,
+                  background: isListening ? accent : T.paperDeep,
+                  color: isListening ? T.paper : T.ink, // #5 — cream not white
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: isListening
+                    ? `0 0 0 6px ${accent}22`
+                    : "none",
+                  transition: "background 0.18s, border-color 0.18s, box-shadow 0.18s",
+                }}
+              >
+                <MicIcon size={26} />
+              </motion.button>
+
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.3,
+                  color: T.pencil,
+                  textTransform: "uppercase",
+                }}
+              >
+                {isListening
+                  ? "Tap to stop"
+                  : phase === "idle" || phase === "error"
+                  ? "Tap to speak"
+                  : "Tap to ask again"}
+              </div>
+            </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>
@@ -640,13 +742,12 @@ export default function CaddieSheet({
 }
 
 // ---------------------------------------------------------------------------
-// Sub-component: VoiceBody
+// Sub-component: VoiceBody (scroll area content only — mic is in parent)
 // ---------------------------------------------------------------------------
 
 interface VoiceBodyProps {
   phase: Phase;
   isSupported: boolean;
-  isListening: boolean;
   interimTranscript: string;
   transcript: string;
   voiceAnswer: string | null;
@@ -654,7 +755,6 @@ interface VoiceBodyProps {
   error: string | null;
   accent: string;
   caddy: Caddy;
-  onMicTap: () => void;
   onFollowUp: () => void;
   onClear: () => void;
 }
@@ -662,7 +762,6 @@ interface VoiceBodyProps {
 function VoiceBody({
   phase,
   isSupported,
-  isListening,
   interimTranscript,
   transcript,
   voiceAnswer,
@@ -670,7 +769,6 @@ function VoiceBody({
   error,
   accent,
   caddy,
-  onMicTap,
   onFollowUp,
   onClear,
 }: VoiceBodyProps) {
@@ -851,33 +949,22 @@ function VoiceBody({
             }}
           >
             <Waveform accent={accent} playing bars={22} height={20} />
-            {interimTranscript ? (
-              <div
-                style={{
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 15,
-                  color: T.inkSoft,
-                  textAlign: "center",
-                  lineHeight: 1.4,
-                  letterSpacing: -0.1,
-                }}
-              >
-                &ldquo;{interimTranscript}&rdquo;
-              </div>
-            ) : (
-              <div
-                style={{
-                  fontFamily: T.mono,
-                  fontSize: 9,
-                  letterSpacing: 1.5,
-                  color: T.pencil,
-                  textTransform: "uppercase",
-                }}
-              >
-                Hearing…
-              </div>
-            )}
+            {/* Both "Hearing…" and interim text use same serif-italic 15px style (#8) */}
+            <div
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 15,
+                color: T.inkSoft,
+                textAlign: "center",
+                lineHeight: 1.4,
+                letterSpacing: -0.1,
+              }}
+            >
+              {interimTranscript
+                ? `“${interimTranscript}”`
+                : "Hearing…"}
+            </div>
           </motion.div>
         ) : phase === "transcribing" ? (
           <motion.div
@@ -941,61 +1028,6 @@ function VoiceBody({
           </motion.div>
         ) : null}
       </AnimatePresence>
-
-      {/* Mic button — always visible unless in a processing state */}
-      {phase !== "transcribing" && phase !== "thinking" && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 8,
-            paddingTop: phase === "idle" ? 8 : 4,
-          }}
-        >
-          <motion.button
-            onClick={onMicTap}
-            whileTap={{ scale: 0.93 }}
-            aria-label={isListening ? "Stop recording" : "Start recording"}
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: "50%",
-              border: isListening
-                ? `2px solid ${accent}`
-                : `1px solid ${T.hairline}`,
-              background: isListening ? accent : T.paperDeep,
-              color: isListening ? "#fff" : T.ink,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: isListening
-                ? `0 0 0 6px ${accent}22`
-                : "none",
-              transition: "background 0.18s, border-color 0.18s, box-shadow 0.18s",
-            }}
-          >
-            <MicIcon size={26} />
-          </motion.button>
-
-          <div
-            style={{
-              fontFamily: T.mono,
-              fontSize: 9,
-              letterSpacing: 1.3,
-              color: T.pencil,
-              textTransform: "uppercase",
-            }}
-          >
-            {isListening
-              ? "Tap to stop"
-              : phase === "idle" || phase === "error"
-              ? "Tap to speak"
-              : "Tap to ask again"}
-          </div>
-        </div>
-      )}
 
       {/* Idle prompt */}
       {phase === "idle" && (
@@ -1082,8 +1114,9 @@ function TapBody({
               color: T.ink,
               outline: "none",
               fontVariantNumeric: "tabular-nums",
-              // Remove default number spinners
+              // Remove default number spinners (#10)
               MozAppearance: "textfield",
+              WebkitAppearance: "none",
             } as React.CSSProperties}
           />
           <motion.button
@@ -1217,8 +1250,10 @@ function TapBody({
               <InfoChip label="Miss">
                 {recommendation.miss_side.preferred} — {recommendation.miss_side.description}
               </InfoChip>
+              {/* Capitalize aggressiveness (#13) */}
               <InfoChip label="Approach">
-                {recommendation.aggressiveness}
+                {recommendation.aggressiveness.charAt(0).toUpperCase() +
+                  recommendation.aggressiveness.slice(1)}
               </InfoChip>
             </div>
 
@@ -1244,6 +1279,11 @@ function TapBody({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Loading feedback (#7) */}
+      {phase === "rec-thinking" && (
+        <StatusNote>Checking yardages…</StatusNote>
+      )}
 
       {/* Idle hint */}
       {!recommendation && phase !== "rec-thinking" && !error && (
