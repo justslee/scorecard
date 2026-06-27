@@ -3,6 +3,44 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (settings-signout-and-restyle — NOTICEABLE)
+- **Done:** `settings-signout-and-restyle` — added Sign Out action (Part A) and restyled
+  Settings from Tailwind/CSS classes to T.* inline-style system (Part B).
+  Commit on `integration/next`.
+
+  Part A — Sign Out:
+  - `useClerk()` from `@clerk/clerk-react` provides `signOut`. Rendered only inside
+    `<SignOutButton>` sub-component, which Settings conditionally mounts based on
+    `!!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — so no ClerkProvider crash
+    in dev builds with no key.
+  - Inline two-step confirm: tap "Sign out" → button pair appears ("Cancel" + "Yes,
+    sign out"). Keeps the action calm and reversible; avoids an alert modal.
+  - After `signOut({ redirectUrl: '/' })` resolves, Clerk's session clears →
+    `AuthGate` (which watches `useAuth().isSignedIn`) automatically shows the
+    sign-in screen with no manual redirect hacks needed.
+  - Account section visible only when Clerk is configured (invisible in local dev,
+    correct on TestFlight where the key is set).
+
+  Part B — Restyle to T.*:
+  - Removed all Tailwind/CSS classes: `app-shell`, `app-header`, `card p-5`,
+    `text-base font-semibold`, `btn btn-icon`, `space-y-4`, `header-divider`, `btn w-full`.
+  - Replaced with T.* inline styles: PAPER_NOISE + T.paper background with multiply
+    blend, Instrument Serif (T.serif) for headings, T.mono for kickers/buttons
+    (uppercase, letterSpacing), T.pencil/T.pencilSoft/T.ink for text hierarchy,
+    T.hairline hairline rules for section dividers.
+  - Header pattern matches `profile/page.tsx` Masthead: `max(14px, env(safe-area-inset-top))`
+    top padding, mono back button (left arrow + "Home"), mono kicker on right ("The Book"),
+    large italic serif heading "Settings." at 38px.
+  - Section shell: mirrors profile's `<Section>` — 9px mono kicker (uppercase, 1.6
+    letter-spacing), 22px serif italic title, hairline top border, 22px side padding.
+  - All functionality preserved: About section (version + description), Clear Local
+    Cache button with existing `confirm()` dialog + honest copy, TrashIcon SVG inline.
+  - max-width 420, safe-area bottom padding `max(96px, calc(96px + env(safe-area-inset-bottom)))`.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 238/238 · build 15 pages clean.
+  NOTICEABLE — new Sign Out action (functional gap closed) + visible Settings restyle
+  on TestFlight (Tailwind class-based UI replaced with yardage-book T.* aesthetic).
+
 ## 2026-06-27 (post-round recap — NOTICEABLE)
 - **Done:** new `RoundRecap` component — yardage-book recap screen shown after a round
   is finished, before returning home. Fills the gap where `handleFinish` previously
