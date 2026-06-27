@@ -400,10 +400,11 @@
       "type": "major",
       "priority": 33,
       "risk": "medium",
-      "status": "ready",
+      "status": "done",
       "depends_on": [],
       "spec": "specs/voice-low-confidence-ux.md",
-      "why": "The parser returns a confidence score but the UI never shows it or asks to confirm. VoiceParseResultSchema (schemas.ts:68) has required confidence; backend parse-round-setup (voice_advanced.py:72) already returns confidence in the response but VoiceRoundSetup.tsx ignores it. In-round scoring (ScoreSheet.tsx) has no voice input at all \u2014 only a static 'Or say\u2026' hint text with no mic button. V1 scope: (1) amber kicker on round-setup result card when confidence<0.7 or courseName empty; (2) new voice-to-score flow in ScoreSheet with confidence-aware confirm step. Backend parse-scores needs confidence added to VoiceScoreResponse. Reuse T.warningWash/T.warningInk pattern from ScanSheet."
+      "why": "The parser returns a confidence score but the UI never shows it or asks to confirm. VoiceParseResultSchema (schemas.ts:68) has required confidence; backend parse-round-setup (voice_advanced.py:72) already returns confidence in the response but VoiceRoundSetup.tsx ignores it. In-round scoring (ScoreSheet.tsx) has no voice input at all \u2014 only a static 'Or say\u2026' hint text with no mic button. V1 scope: (1) amber kicker on round-setup result card when confidence<0.7 or courseName empty; (2) new voice-to-score flow in ScoreSheet with confidence-aware confirm step. Backend parse-scores needs confidence added to VoiceScoreResponse. Reuse T.warningWash/T.warningInk pattern from ScanSheet.",
+      "done_note": "SETUP slice shipped: backend confidence wired into VoiceRoundSetup; calm amber cue (kicker + dashed warningWash course card) when confidence<0.7 or course missing; high-confidence path unchanged; voice-tests 261/261. Reviewer ship + designer polish-then-ship (false-affordance copy fixed, ScanSheet-consistency nits folded). SCORING half split to voice-to-score-confidence (P35)."
     },
     {
       "id": "owner-player-identity",
@@ -413,6 +414,15 @@
       "rationale": "Reviewer flagged: home (recent scores + scoring avg) and profile (ScoringByTee + Season log) all assume r.players[0] is the owner. Player has no owner flag; array order is just entry order, so a round where the owner is not first-listed attributes another players scores to the owner \u2014 a fabricated-fact-by-bug. Pre-existing (3 call sites: page.tsx:40-41,75-77; profile/page.tsx:71,113). Fix all sites together once user-identity lands: map Clerk user -> player (add owner/userId to Player or round-membership), then derive owner totals from that.",
       "blocked_by": "needs a Clerk-user -> round-player mapping (user-identity)",
       "classification": "noticeable-correctness"
+    },
+    {
+      "id": "voice-to-score-confidence",
+      "priority": 35,
+      "status": "needs-spec",
+      "title": "In-round voice-to-score with confidence/confirm (scoring half of P33)",
+      "rationale": "PM found the in-round scoring path has NO voice mic at all and no confidence field. This is net-new: add a real mic in ScoreSheet, a VoiceScoreResponse.confidence field (backend voice.py), and a confirm step (mirror ScanSheet) when low-confidence. Own bundle \u2014 deferred from P33 setup slice. See specs/voice-low-confidence-ux.md scoring section.",
+      "classification": "noticeable + backend change",
+      "note": "Best done AFTER the current massive bundle ships + is validated, since it touches backend."
     }
   ]
 }
