@@ -123,7 +123,7 @@
       "type": "major",
       "priority": 12,
       "risk": "medium",
-      "status": "blocked",
+      "status": "done",
       "depends_on": ["wire-round-scoring"],
       "spec": "specs/real-data-wiring-plan.md"
     },
