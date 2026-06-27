@@ -3,6 +3,43 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (post-round recap — NOTICEABLE)
+- **Done:** new `RoundRecap` component — yardage-book recap screen shown after a round
+  is finished, before returning home. Fills the gap where `handleFinish` previously
+  called `router.push('/')` with no summary of the round just played.
+  Commit `43d2b6a` on `integration/next`.
+
+  Files changed:
+  - **New `frontend/src/components/RoundRecap.tsx`** (383 LOC):
+    - Full-screen `position:fixed` overlay, `zIndex:80`, PAPER_NOISE + T.paper background.
+    - AnimatePresence slide-up (y:28 -> y:0, 0.32s, T.ease).
+    - Header: course name (Instrument Serif italic 28px), date (mono caps, en-US long
+      format), tee name + hole count kicker, "Thru N" when round is partial.
+    - Per-player rows: first player (owner) emphasised with T.paperDeep background and
+      larger type (strokes 38px serif, to-par 13px mono). Other players at 28px / 11px.
+      To-par rendered as "E" / "+N" / "-N"; birdie colour (T.birdie) for under-par,
+      T.ink for even, T.pencil for over. Quiet birdie/eagle count as a mono kicker when
+      any exist. "--" for players with no scores entered.
+    - Games section: delegates to existing `<GameResults>` component — no logic
+      duplicated. Game name kicker above each result. `onUpdateGame` omitted (read-only).
+    - Quiet italic caption at the bottom (course + holes or "Thru N").
+    - "Done" button: 54px min-height, full-width, T.ink on T.paper, border-radius:14.
+    - Safe-area-inset-* padding top and bottom throughout.
+
+  - **`frontend/src/app/round/[id]/RoundPageClient.tsx`** (+15 LOC):
+    - Added import for RoundRecap.
+    - Added `const [recapOpen, setRecapOpen] = useState(false)`.
+    - `handleFinish`: replaced `router.push('/')` with `setRecapOpen(true)` in all three
+      branches (local round, API success, API fallback). Completion persistence
+      (`apiCompleteRound` + `localSaveRound` fallback) is unchanged. Celebration haptic
+      fires unchanged.
+    - `<RoundRecap>` added after `<LeaderboardSheet>`.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 238/238 · build 15 pages clean.
+  NOTICEABLE — new end-of-round screen visible on TestFlight whenever the owner finishes
+  a round. Shows course, date, per-player strokes + to-par, quiet birdies/eagles, and any
+  game results — before routing home.
+
 ## 2026-06-27 (delete-dead-legacy P29 — SILENT)
 - **Done:** deleted 11 superseded, zero-importer legacy components — 5,269 LOC removed.
   Commit `0152829` on `integration/next`.
