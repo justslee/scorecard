@@ -244,6 +244,47 @@ Format: date — done / in-progress / blocked.
   (P11) to ready; these are user-facing → TestFlight approval bundles. Lesson: add a real-DB
   migration smoke test (throwaway Postgres) to catch execution-time DDL bugs the offline gate can't.
 
+## 2026-06-26 (wire-round-scoring)
+- **Done:** backlog `wire-round-scoring` (P11, NOTICEABLE) — `RoundPageClient.tsx` now loads
+  and persists scores via the backend instead of SEED_SCORES/SEED_PLAYERS mocks.
+  Key changes:
+  - **Removed:** `SEED_SCORES` and `SEED_PLAYERS` constants (the mock data); `getRound`/`saveRound`
+    localStorage-only imports replaced with separate API + local imports.
+  - **Round loading:** async on mount — tries `api.getRound(id)` (GET /api/rounds/{id}).
+    On success: populates `players` (SeedPlayer[]) and `scores` map from the server response.
+    On 404 or network error: falls back to `localGetRound(id)` (localStorage), sets
+    `isLocalRound = true`. If no local copy either, renders a "Round not found" screen.
+  - **Orphan/offline handling (§Review follow-up carry-over):** rounds created by the
+    wire-round-new offline fallback have a client UUID not known to the backend; they 404 on
+    load. `isLocalRound = true` activates: scores saved to localStorage only, no API calls.
+    The round is marked "LOCAL" in the header chrome and a calm amber notice is shown inline.
+    Deferred: re-creating the orphan round on the backend and reconciling IDs (a full sync
+    engine is out of scope for this item — noted for a follow-up).
+  - **Per-stroke persist:** `handleSetScore` calls `api.addScore(roundId, {playerId, holeNumber, strokes})`
+    (POST /api/rounds/{id}/scores) after an optimistic local update. On success: syncs all scores
+    from the server response + write-through to localStorage. On error: surfaces via `apiError`
+    banner (dismissible, #b84a3a color, no silent swallow), saves optimistic state locally.
+  - **Finish round:** `handleFinish` now async — calls `api.completeRound(id)` for API-backed
+    rounds; falls back to local status='completed' save on error. Local rounds save locally only.
+  - **Player/score conversion:** `buildSeedPlayers()` maps `Round.players` → `SeedPlayer[]`
+    (PLAYER_COLORS palette); `buildScoreMap()` maps `Round.scores Score[]` → `Record<string,
+    (number|null)[]>` (indexed by hole 0–17). Hole nav chips use first player's score to show
+    "played" indicator (was hardcoded to 'p1').
+  - **par for scoring:** prefers `round.holes[currentHole-1].par` (authoritative); falls back
+    to `HOLES[currentHole-1].par` (illustration constant). `PlayerPanel` and `LeaderboardSheet`
+    receive round's holes pars array (fallback to HOLES pars if round.holes is empty).
+  - **UX preserved:** all inline styles use `T.*` tokens; no new design language; yardage-book
+    feel intact. Footer changed from hardcoded "Pebble Beach Golf Links · 6,828 yds · Par 72"
+    to real `round.courseName · N holes · teeName tees`.
+  - **No-round state:** renders a calm not-found screen (T.serif italic message + back button)
+    instead of a broken/empty scorecard.
+  - **Designer flag:** "LOCAL" badge and amber notice use `#b8763a` (warm ink, not generic red)
+    — consistent with the yardage-book palette; designer should verify against NORTHSTAR.
+  - Deferred sync follow-up added as note in code (orphan round re-creation on backend).
+  - Gates: lint clean (src/), tsc --noEmit clean, voice-tests 260/260, npm run build OK.
+  - NOTICEABLE — user-visible on TestFlight: scoring screen now loads real round data and
+    persists each stroke to the backend.
+
 ## 2026-06-26 (wire-round-new — follow-up fixes)
 - **Done:** coordinator review fixes for `wire-round-new` (same branch, amend-style commit).
   BLOCKERS:
