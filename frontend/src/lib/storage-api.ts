@@ -214,16 +214,25 @@ export async function saveGolferProfileAsync(profile: GolferProfile): Promise<vo
   if (!(await isAuthenticated())) return;
 
   try {
-    // Upsert via PUT — creates if absent, partial-updates if present.
-    // Send null explicitly (not undefined) so the backend's model_fields_set
-    // recognises an intentional clear (null) vs an omitted field (no change).
+    // Identity fields only — clubDistances is intentionally OMITTED.
+    // Omitting means the backend (model_fields_set) won't touch the bag,
+    // protecting an existing bag from being wiped by a stale/empty cache value
+    // when the identity editor saves. The bag is written via wire-profile-bag (P15).
+    //
+    // null flows through explicitly (intentional field clear) — the backend
+    // model_fields_set sees "handicap":null and writes NULL to the column.
     await api.updateGolferProfile({
       name: profile.name,
-      handicap: profile.handicap,      // null → explicit clear; not coerced to undefined
-      homeCourse: profile.homeCourse,  // null → explicit clear; not coerced to undefined
-      clubDistances: profile.clubDistances,
+      handicap: profile.handicap,      // null → explicit clear
+      homeCourse: profile.homeCourse,  // null → explicit clear
     });
   } catch (e) {
     console.error('[storage-api] saveGolferProfile: API sync failed (local cache saved):', e);
+    // Re-throw API rejections (4xx / 5xx) so callers can surface the error in UI.
+    // Keep network-down (TypeError: failed to fetch) as a silent offline operation —
+    // local cache already has the value; a reload will retry.
+    if (!(e instanceof TypeError)) {
+      throw e;
+    }
   }
 }

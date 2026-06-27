@@ -655,3 +655,32 @@ Format: date — done / in-progress / blocked.
     pending a GolferProfile extension. Mock stats sections (sparkline, trend, SG, bag)
     are still visible alongside real identity data — designer to confirm this is OK
     or flag to hide until wire-profile-stats lands.
+
+## 2026-06-27 (wire-profile-identity reviewer/designer follow-up)
+- **Done:** reviewer + designer follow-up fixes (one commit on integration/next).
+  CORRECTNESS (reviewer):
+  A. **Save-failure swallow (FIXED):** `saveGolferProfileAsync` now re-throws on non-network
+     errors (4xx/5xx). `TypeError` (offline) stays silent + cache-only; any other error is
+     re-thrown so `handleSave`'s catch shows `saveError` and does NOT close edit mode.
+  B. **clubDistances clobber (FIXED):** removed `clubDistances` from the PUT body in
+     `saveGolferProfileAsync`. Omit = no-change contract (model_fields_set) means the bag
+     is never touched by the identity save. Bag wired in P15.
+  SHIP-BLOCKERS — honest shell:
+  1. Removed fake kicker "№ 77 · Member since 2019".
+  2. Removed fake GHIN/caddy card. Identity block is now single-column.
+  3. Removed fake trend badge "↓ 0.6 · 90d".
+  4. Replaced "Lowest since 2019." with "Post a score to track your trend."
+  5. Footer "GHIN · verified" → "Looper · {date}".
+  6. PP_RECENT (5 fake rounds) → calm empty state: "No rounds yet — start a round..."
+  7. Fake sparkline + Low/High/Differential → "Available after posting scores."
+  8. StrokesGained / FairwayFan / Bag / ScoringByTee / YearLog all get `preview` prop
+     → Section shows "(Preview)" mono badge. Bag "✎ Edit" → non-interactive "Coming soon".
+  POLISH:
+  9. Name + home course use `opacity: loading ? 0 : 1` (no layout jump).
+  10. Home course edit underline: `T.hairline` → `1.5px solid T.ink` (consistent with name).
+  11. "+ Post score" button disabled (opacity 0.4, cursor default, T.hairline border).
+  12. "Edit" pill adds `minWidth: 44`.
+  CLEANUP: PP_PLAYER / PP_HANDICAP / PP_RECENT constants removed. HandicapSpark removed.
+  `accent` removed from Masthead + HandicapModule (genuinely unused after cleanup).
+  - Gates: tsc 0 errors, lint 0 errors, ruff clean, voice-tests 260/260, build OK.
+  - NOTICEABLE — honest shell: real identity + edit, "(Preview)" on mock sections.

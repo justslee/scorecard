@@ -8,24 +8,13 @@ import { getGolferProfileAsync, saveGolferProfileAsync } from "@/lib/storage-api
 import type { GolferProfile } from "@/lib/types";
 
 // ──────────────────────────────────────────────────────────────────────
-// Mock data — ported from the prototype's PlayerProfile
+// Preview-only mock data — NOT the owner's data.
+// Sections that use these are labelled "(Preview)" and will be replaced
+// when the corresponding wiring item ships:
+//   wire-profile-bag  (P15) → Bag / club distances
+//   wire-profile-stats (P16) → StrokesGained / FairwayFan / ScoringByTee / YearLog
+// PP_PLAYER / PP_HANDICAP / PP_RECENT removed — those had fabricated owner facts.
 // ──────────────────────────────────────────────────────────────────────
-
-const PP_PLAYER = {
-  name: "Justin Lee",
-  ghin: "8834-7729",
-  home: "Presidio GC · San Francisco",
-  memberSince: 2019,
-  caddyNo: 77,
-};
-
-const PP_HANDICAP = {
-  index: 8.2,
-  trend90: -0.6,
-  history: [10.1, 10.0, 9.8, 9.6, 9.8, 9.4, 9.2, 9.0, 8.8, 9.0, 8.6, 8.2],
-  low: { value: 8.2, date: "Today" },
-  high: { value: 12.4, date: "Mar 2024" },
-};
 
 const PP_SCORING = [
   { tee: "Championship", yards: 7040, avg: 88.4, par: 72, rounds: 4 },
@@ -61,16 +50,6 @@ const PP_BAG: BagClub[] = [
   { club: "LW (60°)", carry: 64, total: 66, last: 63, disp: 6, hits: 88 },
 ];
 
-type Recent = { id: string; date: string; course: string; tee: string; score: number; par: number; diff: number; tag: string | null };
-
-const PP_RECENT: Recent[] = [
-  { id: "r1", date: "Oct 13", course: "Spanish Bay", tee: "Back", score: 82, par: 72, diff: 5.2, tag: "T1" },
-  { id: "r2", date: "Oct 12", course: "Spyglass Hill", tee: "Back", score: 84, par: 72, diff: 6.4, tag: null },
-  { id: "r3", date: "Oct 11", course: "Pebble Beach", tee: "Back", score: 77, par: 72, diff: 1.8, tag: "PR" },
-  { id: "r4", date: "Sep 28", course: "Presidio", tee: "Regular", score: 82, par: 72, diff: 4.6, tag: null },
-  { id: "r5", date: "Sep 14", course: "Harding Park", tee: "Back", score: 86, par: 72, diff: 8.1, tag: null },
-];
-
 function buildYear(seed = 7) {
   const weeks = 52;
   const cells: Array<{ w: number; d: number; v: 0 | 1 | 2 | 3 }> = [];
@@ -92,8 +71,6 @@ function buildYear(seed = 7) {
   }
   return cells;
 }
-
-// ──────────────────────────────────────────────────────────────────────
 
 // ──────────────────────────────────────────────────────────────────────
 // Edit-mode draft state (name / homeCourse / handicap only)
@@ -150,9 +127,13 @@ export default function ProfilePage() {
         name: draft.name.trim() || null,
         handicap,
         homeCourse: draft.homeCourse.trim() || null,
+        // clubDistances is intentionally omitted from the identity save
+        // (saveGolferProfileAsync does not send it to the PUT body)
+        // so we carry through the existing bag without risk of clobber.
         clubDistances: profile?.clubDistances ?? {},
       };
-      // saveGolferProfileAsync: write-through (local cache + PUT /api/profile/golfer).
+      // saveGolferProfileAsync: write-through (local cache + PUT).
+      // Will re-throw on API rejections (4xx/5xx); TypeError (offline) is silent.
       await saveGolferProfileAsync(updated);
       setProfile(updated);
       setEditing(false);
@@ -180,7 +161,6 @@ export default function ProfilePage() {
     >
       <div style={{ maxWidth: 420, margin: "0 auto" }}>
         <Masthead
-          accent={accent}
           onBack={() => router.push("/")}
           profile={profile}
           loading={loading}
@@ -194,7 +174,6 @@ export default function ProfilePage() {
           saveError={saveError}
         />
         <HandicapModule
-          accent={accent}
           profile={profile}
           loading={loading}
           editing={editing}
@@ -206,7 +185,7 @@ export default function ProfilePage() {
         <Bag accent={accent} />
         <ScoringByTee accent={accent} />
         <YearLog accent={accent} />
-        <Recent accent={accent} />
+        <Recent />
         <Footer />
       </div>
     </div>
@@ -223,18 +202,26 @@ function Section({
   aside,
   children,
   tight,
+  preview,
 }: {
   kicker: string;
   title: string;
   aside?: ReactNode;
   children: ReactNode;
   tight?: boolean;
+  /** When true, appends a small "(Preview)" badge to mark unreal data. */
+  preview?: boolean;
 }) {
   return (
     <section style={{ padding: tight ? "18px 22px 14px" : "22px 22px 18px", borderTop: `1px solid ${T.hairline}`, position: "relative" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
         <div>
-          <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase", fontWeight: 500 }}>{kicker}</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase", fontWeight: 500 }}>{kicker}</div>
+            {preview && (
+              <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 400 }}>(Preview)</div>
+            )}
+          </div>
           <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.4, lineHeight: 1, marginTop: 3 }}>{title}</div>
         </div>
         {aside}
@@ -246,11 +233,10 @@ function Section({
 
 // ──────────────────────────────────────────────────────────────────────
 // Masthead — wired to real profile (name, homeCourse); editable via PUT.
-// caddyNo / ghin / memberSince stay as placeholders (not in GolferProfile).
+// Fake kicker (№ 77 / member since) and GHIN card removed — not real data.
 // ──────────────────────────────────────────────────────────────────────
 
 interface MastheadProps {
-  accent: string;
   onBack: () => void;
   profile: GolferProfile | null;
   loading: boolean;
@@ -265,7 +251,6 @@ interface MastheadProps {
 }
 
 function Masthead({
-  accent,
   onBack,
   profile,
   loading,
@@ -278,8 +263,9 @@ function Masthead({
   saving,
   saveError,
 }: MastheadProps) {
-  const displayName = loading ? "" : (profile?.name ?? "—");
-  const displayHome = loading ? "" : (profile?.homeCourse ?? "—");
+  // Real values; "—" when unset. opacity:0 while loading (avoids layout jump).
+  const displayName = profile?.name ?? "—";
+  const displayHome = profile?.homeCourse ?? "—";
 
   return (
     <div style={{ padding: "max(14px, env(safe-area-inset-top)) 22px 18px", position: "relative" }}>
@@ -391,8 +377,10 @@ function Masthead({
                   textTransform: "uppercase",
                   fontWeight: 500,
                   minHeight: 44,
+                  minWidth: 44,
                   display: "flex",
                   alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
                 Edit
@@ -402,196 +390,98 @@ function Masthead({
         )}
       </div>
 
-      {/* ── Identity block: name + home course ── */}
-      <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "1fr auto", gap: 14, alignItems: "flex-end" }}>
-        <div>
+      {/* ── Identity block: name + home course (no caddy card — fake data removed) ── */}
+      <div style={{ marginTop: 22 }}>
+        {/* Name — real value, editable */}
+        {editing ? (
+          <input
+            value={draft.name}
+            onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+            placeholder="Your name"
+            style={{
+              fontFamily: T.serif,
+              fontStyle: "italic",
+              fontSize: 38,
+              color: T.ink,
+              letterSpacing: -1,
+              lineHeight: 1,
+              background: "transparent",
+              border: "none",
+              borderBottom: `1.5px solid ${T.ink}`,
+              outline: "none",
+              padding: "2px 0",
+              width: "100%",
+              display: "block",
+            }}
+          />
+        ) : (
           <div
             style={{
-              fontFamily: T.mono,
-              fontSize: 9,
-              letterSpacing: 1.6,
-              color: accent,
-              textTransform: "uppercase",
-              fontWeight: 600,
+              fontFamily: T.serif,
+              fontStyle: "italic",
+              fontSize: 38,
+              color: T.ink,
+              letterSpacing: -1,
+              lineHeight: 1,
+              // opacity:0 while loading to avoid layout jump when text appears
+              opacity: loading ? 0 : 1,
+              transition: "opacity 0.15s",
             }}
           >
-            №&nbsp;{PP_PLAYER.caddyNo} · Member since {PP_PLAYER.memberSince}
+            {displayName}
           </div>
+        )}
 
-          {/* Name — editable */}
-          {editing ? (
-            <input
-              value={draft.name}
-              onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-              placeholder="Your name"
-              style={{
-                fontFamily: T.serif,
-                fontStyle: "italic",
-                fontSize: 38,
-                color: T.ink,
-                letterSpacing: -1,
-                lineHeight: 1,
-                marginTop: 4,
-                background: "transparent",
-                border: "none",
-                borderBottom: `1.5px solid ${T.ink}`,
-                outline: "none",
-                padding: "2px 0",
-                width: "100%",
-                display: "block",
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                fontFamily: T.serif,
-                fontStyle: "italic",
-                fontSize: 38,
-                color: T.ink,
-                letterSpacing: -1,
-                lineHeight: 1,
-                marginTop: 4,
-              }}
-            >
-              {displayName}
-            </div>
-          )}
-
-          {/* Home course — editable */}
-          {editing ? (
-            <input
-              value={draft.homeCourse}
-              onChange={(e) => setDraft((d) => ({ ...d, homeCourse: e.target.value }))}
-              placeholder="Home course"
-              style={{
-                fontFamily: T.serif,
-                fontSize: 14,
-                color: T.pencil,
-                letterSpacing: -0.1,
-                fontStyle: "italic",
-                background: "transparent",
-                border: "none",
-                borderBottom: `1px solid ${T.hairline}`,
-                outline: "none",
-                padding: "2px 0",
-                marginTop: 6,
-                width: "100%",
-                display: "block",
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                fontFamily: T.serif,
-                fontSize: 14,
-                color: T.pencil,
-                letterSpacing: -0.1,
-                marginTop: 6,
-                fontStyle: "italic",
-              }}
-            >
-              {displayHome}
-            </div>
-          )}
-        </div>
-
-        {/* Caddy number card — placeholder (caddyNo/ghin not in GolferProfile yet) */}
-        <div
-          style={{
-            width: 62,
-            height: 78,
-            position: "relative",
-            background: T.paperDeep,
-            border: `1.5px solid ${T.ink}`,
-            borderRadius: 2,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 1px 0 rgba(0,0,0,0.05)",
-          }}
-        >
-          <div style={{ position: "absolute", top: 3, left: 3, right: 3, height: 1, background: accent }} />
-          <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 36, color: T.ink, letterSpacing: -1.5, lineHeight: 1 }}>
-            {PP_PLAYER.caddyNo}
-          </div>
-          <div
+        {/* Home course — real value, editable */}
+        {editing ? (
+          <input
+            value={draft.homeCourse}
+            onChange={(e) => setDraft((d) => ({ ...d, homeCourse: e.target.value }))}
+            placeholder="Home course"
             style={{
-              position: "absolute",
-              bottom: 4,
-              left: 0,
-              right: 0,
-              textAlign: "center",
-              fontFamily: T.mono,
-              fontSize: 5.5,
-              letterSpacing: 1.8,
+              fontFamily: T.serif,
+              fontSize: 14,
               color: T.pencil,
-              textTransform: "uppercase",
-              fontWeight: 600,
+              letterSpacing: -0.1,
+              fontStyle: "italic",
+              background: "transparent",
+              border: "none",
+              borderBottom: `1.5px solid ${T.ink}`,
+              outline: "none",
+              padding: "2px 0",
+              marginTop: 6,
+              width: "100%",
+              display: "block",
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              fontFamily: T.serif,
+              fontSize: 14,
+              color: T.pencil,
+              letterSpacing: -0.1,
+              marginTop: 6,
+              fontStyle: "italic",
+              opacity: loading ? 0 : 1,
+              transition: "opacity 0.15s",
             }}
           >
-            GHIN {PP_PLAYER.ghin}
+            {displayHome}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Handicap — big italic index + sparkline with dots + high/low bar
-// ──────────────────────────────────────────────────────────────────────
-
-function HandicapSpark({ data, accent, width = 316, height = 84 }: { data: number[]; accent: string; width?: number; height?: number }) {
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const padX = 6;
-  const padY = 10;
-  const w = width - padX * 2;
-  const h = height - padY * 2;
-  const pts = data.map((v, i) => [padX + (i / (data.length - 1)) * w, padY + h - ((v - min) / (max - min || 1)) * h] as [number, number]);
-  const path = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
-  const area = `${path} L${pts[pts.length - 1][0].toFixed(1)},${height - padY} L${pts[0][0].toFixed(1)},${height - padY} Z`;
-  const last = pts[pts.length - 1];
-  const first = pts[0];
-
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
-      {[0, 0.5, 1].map((p) => (
-        <line key={p} x1={padX} x2={width - padX} y1={padY + h * p} y2={padY + h * p} stroke={T.hairline} strokeWidth="0.5" strokeDasharray="2 3" />
-      ))}
-      <path d={area} fill={accent} opacity="0.08" />
-      <path d={path} fill="none" stroke={accent} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-
-      {pts.map((p, i) => (
-        <circle
-          key={i}
-          cx={p[0]}
-          cy={p[1]}
-          r={i === pts.length - 1 ? 3.2 : 1.4}
-          fill={i === pts.length - 1 ? accent : T.paper}
-          stroke={i === pts.length - 1 ? accent : T.pencil}
-          strokeWidth="0.8"
-        />
-      ))}
-
-      <text x={first[0] - 2} y={first[1] - 6} fontFamily={T.mono} fontSize="7.5" fill={T.pencil} letterSpacing="0.5" textAnchor="start">
-        {data[0].toFixed(1)}
-      </text>
-      <text x={last[0] + 5} y={last[1] + 3} fontFamily={T.mono} fontSize="8.5" fill={accent} letterSpacing="0.5" fontWeight="600">
-        {data[data.length - 1].toFixed(1)}
-      </text>
-    </svg>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────
 // HandicapModule — wired: big index from real profile.handicap (editable).
-// Sparkline / trend / low-high / differential stay as mock stats until
-// wire-profile-stats (P16).
+// Trend badge / sparkline / low-high / differential removed (fabricated).
+// A calm "Coming soon" note replaces the fake history chart until P16.
 // ──────────────────────────────────────────────────────────────────────
 
 interface HandicapModuleProps {
-  accent: string;
   profile: GolferProfile | null;
   loading: boolean;
   editing: boolean;
@@ -599,8 +489,8 @@ interface HandicapModuleProps {
   setDraft: React.Dispatch<React.SetStateAction<IdentityDraft>>;
 }
 
-function HandicapModule({ accent, profile, loading, editing, draft, setDraft }: HandicapModuleProps) {
-  // Real index value; fallback "—" while loading or when not set.
+function HandicapModule({ profile, loading, editing, draft, setDraft }: HandicapModuleProps) {
+  // Real index value; "—" while loading or when not set.
   const indexDisplay = loading
     ? "—"
     : profile?.handicap != null
@@ -612,127 +502,133 @@ function HandicapModule({ accent, profile, loading, editing, draft, setDraft }: 
       kicker="Index"
       title="Handicap"
       aside={
+        // "+ Post score" button has no implementation yet — shown disabled.
         <button
+          disabled
           style={{
-            border: `1px solid ${T.ink}`,
+            border: `1px solid ${T.hairline}`,
             borderRadius: 99,
             padding: "5px 10px",
             background: "transparent",
-            cursor: "pointer",
+            cursor: "default",
             fontFamily: T.mono,
             fontSize: 9,
             letterSpacing: 1.3,
-            color: T.ink,
+            color: T.pencilSoft,
             textTransform: "uppercase",
             fontWeight: 500,
             minHeight: 44,
             display: "flex",
             alignItems: "center",
+            opacity: 0.4,
           }}
         >
           + Post score
         </button>
       }
     >
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 18, padding: "6px 0 4px" }}>
-        <div>
-          <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
-            Current · GHIN
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            {/* Handicap index — real value, editable in edit mode */}
-            {editing ? (
-              <input
-                type="text"
-                inputMode="decimal"
-                value={draft.handicap}
-                onChange={(e) => setDraft((d) => ({ ...d, handicap: e.target.value }))}
-                placeholder="—"
-                style={{
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 76,
-                  letterSpacing: -2.6,
-                  color: T.ink,
-                  lineHeight: 0.9,
-                  fontVariantNumeric: "tabular-nums",
-                  background: "transparent",
-                  border: "none",
-                  borderBottom: `1.5px solid ${T.ink}`,
-                  outline: "none",
-                  padding: "2px 0",
-                  width: 140,
-                  display: "block",
-                }}
-              />
-            ) : (
-              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 76, letterSpacing: -2.6, color: T.ink, lineHeight: 0.9, fontVariantNumeric: "tabular-nums" }}>
-                {indexDisplay}
-              </div>
-            )}
-            {/* Trend badge — mock stat until wire-profile-stats */}
-            {!editing && profile?.handicap != null && (
-              <div
-                style={{
-                  fontFamily: T.mono,
-                  fontSize: 9,
-                  letterSpacing: 1.2,
-                  color: accent,
-                  textTransform: "uppercase",
-                  fontWeight: 600,
-                  border: `1px solid ${accent}`,
-                  borderRadius: 99,
-                  padding: "2px 7px",
-                }}
-              >
-                ↓ {Math.abs(PP_HANDICAP.trend90).toFixed(1)} · 90d
-              </div>
-            )}
-          </div>
-          {/* "Lowest since" — mock caption until wire-profile-stats */}
-          {!editing && profile?.handicap != null && (
-            <div style={{ fontFamily: T.serif, fontSize: 13, color: T.pencil, fontStyle: "italic", marginTop: 4 }}>Lowest since 2019.</div>
-          )}
-          {!editing && profile?.handicap == null && !loading && (
-            <div style={{ fontFamily: T.serif, fontSize: 13, color: T.pencilSoft, fontStyle: "italic", marginTop: 4 }}>
-              No handicap set — tap Edit to add one.
+      <div style={{ padding: "6px 0 4px" }}>
+        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
+          Current index
+        </div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 2 }}>
+          {/* Handicap index — real value, editable in edit mode */}
+          {editing ? (
+            <input
+              type="text"
+              inputMode="decimal"
+              value={draft.handicap}
+              onChange={(e) => setDraft((d) => ({ ...d, handicap: e.target.value }))}
+              placeholder="—"
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 76,
+                letterSpacing: -2.6,
+                color: T.ink,
+                lineHeight: 0.9,
+                fontVariantNumeric: "tabular-nums",
+                background: "transparent",
+                border: "none",
+                borderBottom: `1.5px solid ${T.ink}`,
+                outline: "none",
+                padding: "2px 0",
+                width: 140,
+                display: "block",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 76,
+                letterSpacing: -2.6,
+                color: T.ink,
+                lineHeight: 0.9,
+                fontVariantNumeric: "tabular-nums",
+                opacity: loading ? 0 : 1,
+                transition: "opacity 0.15s",
+              }}
+            >
+              {indexDisplay}
             </div>
           )}
         </div>
+
+        {/* Status line: honest empty-state or neutral note */}
+        {!editing && profile?.handicap == null && !loading && (
+          <div style={{ fontFamily: T.serif, fontSize: 13, color: T.pencilSoft, fontStyle: "italic", marginTop: 6 }}>
+            No handicap set — tap Edit to add one.
+          </div>
+        )}
+        {!editing && profile?.handicap != null && (
+          <div style={{ fontFamily: T.serif, fontSize: 13, color: T.pencil, fontStyle: "italic", marginTop: 6 }}>
+            Post a score to track your trend.
+          </div>
+        )}
       </div>
 
-      {/* Sparkline + low/high/differential — mock stats until wire-profile-stats */}
-      <div style={{ marginTop: 14, padding: "10px 0 4px", borderTop: `1px dashed ${T.hairline}` }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
-            Last 12 scoring rounds
-          </div>
-          <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase" }}>Jul → Today</div>
+      {/* Handicap history — coming soon (was fake sparkline + fake low/high/diff) */}
+      <div
+        style={{
+          marginTop: 14,
+          padding: "12px 14px",
+          borderTop: `1px dashed ${T.hairline}`,
+          borderRadius: 4,
+        }}
+      >
+        <div
+          style={{
+            fontFamily: T.mono,
+            fontSize: 8.5,
+            letterSpacing: 1.3,
+            color: T.pencilSoft,
+            textTransform: "uppercase",
+            fontWeight: 500,
+          }}
+        >
+          Trend · Low · High · Differential
         </div>
-        <HandicapSpark data={PP_HANDICAP.history} accent={accent} />
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", borderTop: `1px dashed ${T.hairline}`, paddingTop: 10, marginTop: 4 }}>
-        {[
-          { l: "Low", v: String(PP_HANDICAP.low.value), sub: PP_HANDICAP.low.date },
-          { l: "High", v: String(PP_HANDICAP.high.value), sub: PP_HANDICAP.high.date },
-          { l: "Differential", v: "+10.2", sub: "Last round" },
-        ].map((b, i) => (
-          <div key={b.l} style={{ padding: "0 8px", borderLeft: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}` }}>
-            <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>{b.l}</div>
-            <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 20, color: T.ink, letterSpacing: -0.4, lineHeight: 1.1, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
-              {b.v}
-            </div>
-            <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase", marginTop: 2 }}>{b.sub}</div>
-          </div>
-        ))}
+        <div
+          style={{
+            fontFamily: T.serif,
+            fontSize: 13,
+            color: T.pencilSoft,
+            fontStyle: "italic",
+            marginTop: 6,
+            letterSpacing: -0.1,
+          }}
+        >
+          Available after posting scores.
+        </div>
       </div>
     </Section>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Strokes gained
+// Strokes gained — preview (P16)
 // ──────────────────────────────────────────────────────────────────────
 
 function StrokesGained({ accent }: { accent: string }) {
@@ -741,6 +637,7 @@ function StrokesGained({ accent }: { accent: string }) {
     <Section
       kicker="Shot quality"
       title="Strokes gained"
+      preview
       aside={
         <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
           vs 10-hdcp
@@ -797,7 +694,7 @@ function StrokesGained({ accent }: { accent: string }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Fairway fan
+// Fairway fan — preview (P16)
 // ──────────────────────────────────────────────────────────────────────
 
 function FairwayFan({ accent }: { accent: string }) {
@@ -806,6 +703,7 @@ function FairwayFan({ accent }: { accent: string }) {
     <Section
       kicker="Tendencies"
       title="Off the tee"
+      preview
       aside={
         <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
           Last 30 rounds
@@ -888,12 +786,11 @@ function FairwayFan({ accent }: { accent: string }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// The bag
+// The bag — preview (P15); Edit toggle removed (no persistence yet)
 // ──────────────────────────────────────────────────────────────────────
 
 function Bag({ accent }: { accent: string }) {
   const [sel, setSel] = useState("7-iron");
-  const [editMode, setEditMode] = useState(false);
   const selected = PP_BAG.find((c) => c.club === sel);
   const maxTotal = Math.max(...PP_BAG.map((c) => c.total));
 
@@ -901,28 +798,23 @@ function Bag({ accent }: { accent: string }) {
     <Section
       kicker="The bag"
       title="Club distances"
+      preview
       aside={
-        <button
-          onClick={() => setEditMode((e) => !e)}
+        // Edit toggle removed — bag has no persistence until wire-profile-bag (P15).
+        <div
           style={{
-            border: `1px solid ${editMode ? accent : T.ink}`,
-            borderRadius: 99,
-            padding: "5px 10px",
-            background: editMode ? accent : "transparent",
-            cursor: "pointer",
             fontFamily: T.mono,
             fontSize: 9,
             letterSpacing: 1.3,
-            color: editMode ? T.paper : T.ink,
+            color: T.pencilSoft,
             textTransform: "uppercase",
             fontWeight: 500,
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
+            opacity: 0.5,
+            padding: "5px 10px",
           }}
         >
-          {editMode ? "Done" : "✎ Edit"}
-        </button>
+          Coming soon
+        </div>
       }
     >
       {selected && (
@@ -1108,7 +1000,7 @@ function Bag({ accent }: { accent: string }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Scoring by tee
+// Scoring by tee — preview (P16)
 // ──────────────────────────────────────────────────────────────────────
 
 function ScoringByTee({ accent }: { accent: string }) {
@@ -1117,6 +1009,7 @@ function ScoringByTee({ accent }: { accent: string }) {
     <Section
       kicker="Course"
       title="Scoring by tee"
+      preview
       aside={
         <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
           Lifetime
@@ -1188,7 +1081,7 @@ function ScoringByTee({ accent }: { accent: string }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Year heatmap
+// Year heatmap — preview (P16)
 // ──────────────────────────────────────────────────────────────────────
 
 function YearLog({ accent }: { accent: string }) {
@@ -1215,6 +1108,7 @@ function YearLog({ accent }: { accent: string }) {
     <Section
       kicker="Log"
       title="This season"
+      preview
       aside={
         <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
           52 weeks
@@ -1293,97 +1187,27 @@ function YearLog({ accent }: { accent: string }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Recent
+// Recent rounds — empty state (PP_RECENT was fabricated; real wiring is P16)
 // ──────────────────────────────────────────────────────────────────────
 
-function Recent({ accent }: { accent: string }) {
+function Recent() {
   return (
     <Section
       kicker="Ledger"
       title="Recent rounds"
-      aside={
-        <button
-          style={{
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-            padding: 0,
-            fontFamily: T.mono,
-            fontSize: 9,
-            letterSpacing: 1.3,
-            color: T.ink,
-            textTransform: "uppercase",
-            fontWeight: 500,
-          }}
-        >
-          All {"\u2192"}
-        </button>
-      }
     >
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {PP_RECENT.map((r, i) => (
-          <button
-            key={r.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "44px 1fr auto auto",
-              gap: 10,
-              alignItems: "center",
-              padding: "10px 0",
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              textAlign: "left",
-              borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
-            }}
-          >
-            <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>{r.date}</div>
-            <div>
-              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 14, color: T.ink, letterSpacing: -0.2, lineHeight: 1.1 }}>{r.course}</div>
-              <div style={{ fontFamily: T.mono, fontSize: 7.5, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase", marginTop: 2, fontWeight: 500 }}>
-                {r.tee} · {r.par} par
-              </div>
-            </div>
-            {r.tag ? (
-              <span
-                style={{
-                  fontFamily: T.mono,
-                  fontSize: 8,
-                  letterSpacing: 1,
-                  color: accent,
-                  fontWeight: 600,
-                  border: `1px solid ${accent}`,
-                  padding: "1px 4px",
-                  borderRadius: 2,
-                  textTransform: "uppercase",
-                }}
-              >
-                {r.tag}
-              </span>
-            ) : (
-              <span />
-            )}
-            <div style={{ textAlign: "right" }}>
-              <div
-                style={{
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 18,
-                  color: T.ink,
-                  letterSpacing: -0.3,
-                  lineHeight: 1,
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {r.score}
-              </div>
-              <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 0.5, color: T.pencilSoft, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>
-                {r.diff > 0 ? "+" : ""}
-                {r.diff}
-              </div>
-            </div>
-          </button>
-        ))}
+      <div
+        style={{
+          padding: "18px 0 6px",
+          fontFamily: T.serif,
+          fontStyle: "italic",
+          fontSize: 14,
+          color: T.pencilSoft,
+          letterSpacing: -0.1,
+          lineHeight: 1.5,
+        }}
+      >
+        No rounds yet — start a round to see your history.
       </div>
     </Section>
   );
@@ -1415,7 +1239,7 @@ function Footer() {
           <line x1="1.5" y1="1" x2="1.5" y2="9" stroke={T.ink} strokeWidth="0.8" />
           <path d="M1.5,2 L7,3.5 L1.5,5 Z" fill={T.flag} />
         </svg>
-        <span>GHIN · verified · {dateStr}</span>
+        <span>Looper · {dateStr}</span>
         <div style={{ width: 18, height: 1, background: T.hairline }} />
       </div>
     </div>
