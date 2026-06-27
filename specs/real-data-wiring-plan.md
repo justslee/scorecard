@@ -117,6 +117,13 @@ Secrets to confirm present on the deploy box: `CLERK_JWKS_URL`, `CLERK_ISSUER`, 
 - **Gates:** new endpoints + data handling must pass `/security-review` + `/code-review`.
 
 ## Review follow-ups (carry into the routes-wiring items)
+- **`wire-round-scoring` (from wire-round-new review):** offline-fallback rounds get a CLIENT
+  uuid saved only to localStorage; once the scoring screen reads via the backend
+  (`getRound(id)`), a local-fallback id 404s and scores never sync — silent data loss. Carry a
+  pending-sync / local-only flag into the scoring screen; don't assume the server has the round.
+- **wire-round-new design polish (post-TestFlight, non-blocking):** unify modal backdrops to
+  ink-tinted `rgba(26,42,26,0.35)` (CourseSearch ~162, page ~1085); player row touch target
+  42→44px (page ~763); white-tee dot color `#eae5d6`→`T.paperEdge` for contrast.
 - **`wire-profile-identity`/`wire-profile-bag` (from backend-profile-endpoint review):** the PUT
   is a partial update that skips None, and `storage-api.ts saveGolferProfileAsync` sends
   `?? undefined` — so a user CANNOT clear `handicap`/`homeCourse` back to null (old value
