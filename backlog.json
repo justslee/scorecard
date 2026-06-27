@@ -113,7 +113,7 @@
       "type": "major",
       "priority": 11,
       "risk": "medium",
-      "status": "ready",
+      "status": "done",
       "depends_on": ["api-contract-align", "backend-rounds-scores-db"],
       "spec": "specs/real-data-wiring-plan.md"
     },

@@ -117,6 +117,12 @@ Secrets to confirm present on the deploy box: `CLERK_JWKS_URL`, `CLERK_ISSUER`, 
 - **Gates:** new endpoints + data handling must pass `/security-review` + `/code-review`.
 
 ## Review follow-ups (carry into the routes-wiring items)
+- **round-scoring sync hardening (deferred from wire-round-scoring, non-blocking):** (a) a
+  failed score *deletion* (strokes:null) can reappear after reload — pending deletions aren't
+  replayed (recoverable by re-clearing); needs pending-deletion tracking. (b) `localSaveRound`
+  is called inside a `setRound` updater (idempotent; StrictMode double-write harmless) — move
+  the write outside the updater when convenient. Both are low-severity; revisit if a real sync
+  engine is built.
 - **`wire-round-scoring` (from wire-round-new review):** offline-fallback rounds get a CLIENT
   uuid saved only to localStorage; once the scoring screen reads via the backend
   (`getRound(id)`), a local-fallback id 404s and scores never sync — silent data loss. Carry a
