@@ -66,12 +66,13 @@ app.include_router(pins.router, dependencies=_owner_only)
 
 @app.on_event("startup")
 async def startup():
-    """Seed default data and start background tasks on startup."""
-    import asyncio
-    from app.storage import seed_default_data
-    from app.caddie.session import sessions
+    """Start background tasks on startup.
 
-    seed_default_data()
+    seed_default_data() has been removed — all domain data (players, rounds,
+    tournaments, scoring courses) is now Postgres-backed via Alembic migrations.
+    """
+    import asyncio
+    from app.caddie.session import sessions
 
     # Periodic cleanup of expired round sessions (every 30 min)
     async def cleanup_loop():

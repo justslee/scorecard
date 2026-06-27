@@ -376,6 +376,35 @@ class Score(Base):
     )
 
 
+class ScoringCourse(Base):
+    """Scoring-course picker entries — replaces backend/data/courses.json.
+
+    Distinct from the PostGIS-backed ``courses``/``tee_sets``/``holes`` tables
+    used by the caddie/mapped-course system (migration 001 baseline).
+    Unifying the two is a deliberate FUTURE refactor; see follow-up note in
+    specs/real-data-wiring-plan.md.
+    """
+
+    __tablename__ = "scoring_courses"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    owner_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    location: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # JSONB list of HoleInfo: [{number, par, yards?, handicap?}]
+    holes: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # JSONB list of TeeOption: [{id, name, holes:[HoleInfo]}] — nullable
+    tees: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class Game(Base):
     """A scoring game (Nassau, skins, stroke-play, etc.) scoped to a round or
     tournament. Managed via round/tournament endpoints — no standalone /api/games.

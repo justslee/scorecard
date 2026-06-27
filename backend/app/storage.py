@@ -82,34 +82,15 @@ class JSONStorage(Generic[T]):
         return [self.model_class(**item) for item in data if predicate(item)]
 
 
-# Storage instances
 # NOTE: players_storage removed — players migrated to Postgres (routes/players.py).
 # NOTE: rounds_storage removed — rounds migrated to Postgres (routes/rounds.py).
 # NOTE: tournaments_storage removed — tournaments migrated to Postgres (routes/tournaments.py).
-from app.models import Course  # noqa: E402  (late import avoids a circular dependency)
+# NOTE: courses_storage removed — scoring courses migrated to Postgres (routes/courses.py,
+#       migration 006_scoring_courses).  The data/*.json files are now stale; a one-off
+#       backfill script will import them (json-to-db-backfill item, Phase 1).
 
-courses_storage = JSONStorage("courses.json", Course)
-
-
-def seed_default_data():
-    """Seed default data if storage is empty.
-
-    Players are now Postgres-backed (routes/players.py); only course seeding
-    remains here until backend-courses-db migrates courses to Postgres.
-    """
-    # Seed default courses
-    if len(courses_storage.get_all()) == 0:
-        default_holes = [
-            {"number": i, "par": [4, 4, 3, 5, 4, 4, 3, 4, 5, 4, 4, 3, 5, 4, 4, 3, 4, 5][i-1]}
-            for i in range(1, 19)
-        ]
-        from app.models import HoleInfo
-        holes = [HoleInfo(**h) for h in default_holes]
-        
-        default_courses = [
-            Course(id="course-pebble", name="Pebble Beach Golf Links", holes=holes, location="Pebble Beach, CA"),
-            Course(id="course-tpc", name="TPC Sawgrass", holes=holes, location="Ponte Vedra Beach, FL"),
-            Course(id="course-augusta", name="Augusta National", holes=holes, location="Augusta, GA"),
-        ]
-        for course in default_courses:
-            courses_storage.create(course)
+# seed_default_data previously seeded players (removed) and courses (removed above).
+# All domain data is now Postgres-backed; this function is a no-op and kept only to
+# avoid a startup import error in main.py until that call is removed.
+def seed_default_data() -> None:
+    """No-op — all data is now Postgres-backed (players/rounds/tournaments/courses)."""

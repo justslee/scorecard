@@ -138,5 +138,29 @@ Format: date — done / in-progress / blocked.
     build OK.
   - Functional DB verification deferred to EC2 deploy (DATABASE_URL not set locally).
   - SILENT — no TestFlight-visible change.
+- **Done:** backlog `backend-courses-db` (P6, Phase 1, SILENT) — `routes/courses.py` scoring
+  courses migrated from JSON-file storage to Postgres `scoring_courses` table (new Alembic
+  migration `006_scoring_courses`).
+  - New Alembic revision `006_scoring_courses` (file `0003_006_scoring_courses.py`): creates
+    `scoring_courses` table — id (UUID), owner_id (Text nullable), name (Text), location
+    (Text nullable), holes (JSONB — list of HoleInfo), tees (JSONB nullable — list of TeeOption),
+    created_at, updated_at. Owner index: `scoring_courses_owner_id_idx`.
+  - New ORM class `ScoringCourse` added to `backend/app/db/models.py` with matching columns.
+    Intentionally separate from the PostGIS `courses`/`tee_sets`/`holes` tables (caddie/import,
+    migration 001 baseline) — unification is a deliberate future refactor.
+  - Rewrote all 5 endpoints in `routes/courses.py` (GET list, GET {id}, POST, POST /default,
+    DELETE) using `async with async_session() as db`, filtering every query by
+    `owner_id == current_user_id`. camelCase Pydantic contract (Course / CourseCreate /
+    HoleInfo / TeeOption) preserved unchanged; ORM → Pydantic mapping in `_orm_to_pydantic`.
+  - Removed `courses_storage = JSONStorage("courses.json", Course)` from `storage.py`.
+  - `seed_default_data` is now a no-op (all 4 domains Postgres-backed): kept as empty function
+    body with comment, the startup call in `main.py` removed to avoid dead code.
+  - Follow-up note added to `specs/real-data-wiring-plan.md`: course-identity unification
+    (scoring_courses vs mapped-courses PostGIS tables) deferred as a future refactor.
+  - Mapped-courses path (`routes/courses_mapped.py`, `services/courses_mapped`) untouched.
+  - Gates: ruff clean, `DATABASE_URL=... alembic upgrade head --sql` renders `scoring_courses`
+    table cleanly, `import app.main` clean, tsc clean, voice-tests 260/260, build OK.
+  - Functional DB verification deferred to EC2 deploy (DATABASE_URL not set locally).
+  - SILENT — no TestFlight-visible change.
 - **Next ready backlog items:** `test-games-engine` (P2), `test-voice-pipeline` (P3),
   `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).
