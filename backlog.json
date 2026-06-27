@@ -261,6 +261,46 @@
       "why": "REACHABILITY AUDIT (2026-06-27): of the ~21 dark-Tailwind components, almost all are DEAD CODE / UNMOUNTED legacy from the pre-yardage-book prototype, superseded by the wired screens. Dead subtrees (0 reachable importers): GamesPanel→AddGameModal/VoiceGameSetup; ScoreGrid→HoleScoreModal; CaddieModal→CaddiePanel→CaddieNotesCard/CustomPersonaModal/PinMarkControl/ShotTrackingControl; plus RoundSummary, TournamentGamesPanel, TournamentLeaderboard, VoiceTournamentSetup, GPSMapView, CameraCapture, CourseSearchImport. ONLY genuinely-reachable dark UI = the auth screens (SignInClient, SignUpClient, AuthProvider — real /sign-in /sign-up routes). So restyling the dead ones is moot; restyle ONLY auth here. SEPARATE, BIGGER ISSUE: several FLAGSHIP features are unmounted (no entry point) — AI caddie, OCR scorecard scan, GPS/shot-tracking, rich mid-round games panel. Those need a product decision (re-mount+wire+restyle vs delete) — see unmounted-features-decision. (Note: ScoreGrid/HoleScoreModal were already restyled before this was discovered — harmless, just unused.)"
     },
     {
+      "id": "mount-caddie",
+      "title": "Re-mount the AI caddie: entry point in the round screen + restyle CaddiePanel to yardage-book",
+      "type": "major",
+      "priority": 26,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Flagship README feature, backend live (/api/caddie/*) but UNMOUNTED — CaddieModal/CaddiePanel have no entry point. Add a calm caddie entry (e.g. a button on RoundPageClient that opens the caddie in a yardage-book sheet), restyle CaddiePanel + CaddieNotesCard + CustomPersonaModal off dark Tailwind to T.*. Keep the backend wiring + clubDistances (from the now-real bag) feeding recommendations. Pin/shot-tracking/GPS controls are the separate mount-gps-shot-tracking item."
+    },
+    {
+      "id": "mount-ocr-scan",
+      "title": "Re-mount OCR scorecard scan: entry point + CameraCapture flow + restyle",
+      "type": "major",
+      "priority": 27,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Promised README feature; backend OCR is wired (lib/ocr.ts -> /api/voice/parse-scorecard) but the CameraCapture UI is unmounted. Add an entry point (e.g. on the scoring screen or round setup) to scan a paper scorecard -> auto-fill scores via the existing OCR endpoint; restyle CameraCapture (+ CourseSearchImport if part of the flow) to yardage-book."
+    },
+    {
+      "id": "mount-gps-shot-tracking",
+      "title": "Re-mount GPS map + shot-tracking + pin controls (caddie companion) — follow-up",
+      "type": "major",
+      "priority": 28,
+      "risk": "medium",
+      "status": "blocked",
+      "depends_on": ["mount-caddie"],
+      "why": "GPSMapView/ShotTrackingControl/PinMarkControl exist (some backend-wired: shots/pins on Postgres) but unmounted. Re-mount + restyle after the caddie lands. Owner chose caddie+OCR first; this is the deferred follow-up."
+    },
+    {
+      "id": "delete-dead-legacy",
+      "title": "Delete confirmed-dead legacy components superseded by yardage-book screens",
+      "type": "minor",
+      "priority": 29,
+      "risk": "low",
+      "status": "blocked",
+      "depends_on": ["mount-caddie", "mount-ocr-scan", "mount-gps-shot-tracking"],
+      "why": "After re-mounting caddie/OCR/GPS, delete what remains truly dead (e.g. ScoreGrid/HoleScoreModal — superseded by yardage ScoreSheet; RoundSummary, TournamentGamesPanel/TournamentLeaderboard, GamesPanel if its function is covered inline). Do LAST so we don't delete something a re-mount item revives. Verify zero importers + build before each deletion."
+    },
+    {
       "id": "test-voice-pipeline",
       "title": "Unit tests for voice schemas + normalization (lib/voice/*)",
       "type": "minor",
