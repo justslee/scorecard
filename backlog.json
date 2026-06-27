@@ -246,9 +246,19 @@
       "type": "major",
       "priority": 24,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": [],
       "why": "Designer flagged (games-matchplay-nassau review): these two user-facing game-result components are entirely dark-mode Tailwind (zinc gradients, emerald/amber rank circles, Lucide Trophy, text-white) — a NORTHSTAR violation predating the wiring work. The in-round LeaderboardSheet (what golfers see during play) is already on-paper; these post-round/standings views are not. Restyle to T.* tokens matching the rest of the app. No logic changes."
+    },
+    {
+      "id": "restyle-dark-components-sweep",
+      "title": "Design-system sweep: restyle ~21 remaining dark-Tailwind components to yardage-book",
+      "type": "major",
+      "priority": 24.5,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Audit found ~21 .tsx components still on dark-mode Tailwind (zinc/emerald/text-white) — a NORTHSTAR violation, several in CORE flows the owner tests. Restyle in priority batches, visual-only (no logic). CORE-FLOW FIRST: AddGameModal, ScoreGrid, HoleScoreModal, GamesPanel, RoundSummary, EditGroupsModal, VoiceGameSetup, VoiceTournamentSetup, TournamentGamesPanel, TournamentLeaderboard. CADDIE/SCAN next: CaddiePanel, CaddieNotesCard, CameraCapture, CourseSearchImport, CustomPersonaModal, GPSMapView, PinMarkControl, ShotTrackingControl. AUTH/INFRA last: SignInClient, SignUpClient, AuthProvider. Do one batch per cycle (group related components); designer reviews each batch."
     },
     {
       "id": "test-voice-pipeline",
