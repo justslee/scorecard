@@ -244,6 +244,32 @@ Format: date — done / in-progress / blocked.
   (P11) to ready; these are user-facing → TestFlight approval bundles. Lesson: add a real-DB
   migration smoke test (throwaway Postgres) to catch execution-time DDL bugs the offline gate can't.
 
+## 2026-06-26 (wire-round-scoring — reviewer pass 3 fixes)
+- **Done:** reviewer pass 3 fixes for `wire-round-scoring` (commit e7d91b5 on integration/next).
+  BLOCKER #1 (FIXED):
+  - Non-404 load error and 404/LOCAL paths both rendered from localStorage WITHOUT seeding
+    `pendingRef`. The next successful foreground save called
+    `buildLocalRound(serverSnapshot, pending={})`, permanently erasing prior-session unsynced scores.
+  - Fix: new `seedPendingFromLocal(local, pending)` helper seeds ALL non-null local scores into
+    `pendingRef` before the `setScores` call. Both catch branches now call it and use
+    `mergeWithPending` (not bare `buildScoreMap`) so the pending overlay is active from the start.
+  Fix #3 (`retrySyncPending` seq-guard race):
+  - Background retry called `setRound(updated)` + `setScores(...)` without the `addScoreSeqRef`
+    guard, racing concurrent foreground saves.
+  - Fix: retry now only confirms pending removal (`pendingRef.current.delete(key)`) — no UI state
+    application, no localStorage write. UI remains correct via pending overlay already set at load;
+    next foreground save writes localStorage.
+  Fix #4 (`isNotFoundOrNetworkError` too broad):
+  - The JSON-parse `catch` fell back to `m.toLowerCase().includes("not found")` on arbitrary body
+    text, misclassifying 5xx errors containing "not found" prose as LOCAL mode.
+  - Fix: catch now returns `false`; only trust `TypeError`, the exact `"API error: 404"` string
+    (changed from substring to equality), and parsed FastAPI `{"detail":"...not found..."}`.
+  Fix #6 (banner backgrounds inline RGB):
+  - Added `T.errorWash: "rgba(184,74,58,0.13)"` and `T.warningWash: "rgba(184,118,58,0.13)"` to
+    `frontend/src/components/yardage/tokens.ts`. Both banner `background` props now reference the tokens.
+  - Gates: lint clean (src/), tsc clean, voice-tests 260/260, pushed to integration/next.
+  - NOTICEABLE — prior-session score preservation now correct in all three load-error paths.
+
 ## 2026-06-26 (wire-round-scoring — reviewer fixes)
 - **Done:** reviewer + designer follow-up fixes for `wire-round-scoring` (same branch).
   BLOCKER fixed:
