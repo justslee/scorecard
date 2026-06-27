@@ -231,12 +231,22 @@
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
+      "id": "voice-parser-edge-bugs",
+      "title": "Voice parser: fix 'for'->4 in regex + 'dbl bogey' everyone-pattern (found by unit tests)",
+      "type": "major",
+      "priority": 23,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "test-voice-pipeline found two real bugs in parseVoiceScoresLocally: (1) 'for' (STT for four) is in WORD_TO_NUM but missing from the first/second-pass regex alternations, so 'with a for' yields no score; (2) 'everybody dbl bogey' matches the everyone-regex but the value selector checks t.includes('double') not 'dbl', returning par+1 instead of par+2. Fix both + flip the documenting unit tests to assert correct behavior. Noticeable (voice score behavior) -> goes in the next bundle AFTER #51 ships, not folded into the pending approval."
+    },
+    {
       "id": "test-voice-pipeline",
       "title": "Unit tests for voice schemas + normalization (lib/voice/*)",
       "type": "minor",
       "priority": 30,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": [],
       "why": "Core differentiator; a deterministic harness exists - add focused unit coverage. Silent filler when DB work is blocked."
     },
