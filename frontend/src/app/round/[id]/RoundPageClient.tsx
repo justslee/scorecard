@@ -14,6 +14,7 @@ import { Round, Score } from "@/lib/types";
 import { getRound as localGetRound, saveRound as localSaveRound } from "@/lib/storage";
 import CaddieSheet from "@/components/CaddieSheet";
 import ScanSheet from "@/components/ScanSheet";
+import RoundRecap from "@/components/RoundRecap";
 import type { VoiceCaddieMessage } from "@/lib/caddie/types";
 import {
   getRound as apiGetRound,
@@ -197,6 +198,7 @@ export default function RoundPage() {
   const [lbOpen, setLbOpen] = useState(false);
   const [caddieOpen, setCaddieOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [recapOpen, setRecapOpen] = useState(false);
   /** Conversation history — lifted here so close→score-entry→reopen retains the thread. */
   const [caddieHistory, setCaddieHistory] = useState<VoiceCaddieMessage[]>([]);
   const [slideDir, setSlideDir] = useState(0);
@@ -574,7 +576,8 @@ export default function RoundPage() {
       };
       setRound(updated);
       localSaveRound(updated);
-      router.push("/");
+      // Show recap before returning home — local round path.
+      setRecapOpen(true);
       return;
     }
 
@@ -592,7 +595,8 @@ export default function RoundPage() {
       setRound(updated);
       localSaveRound(updated);
     } finally {
-      router.push("/");
+      // Show recap; the recap's Done button routes home.
+      setRecapOpen(true);
     }
   };
 
@@ -1307,6 +1311,13 @@ export default function RoundPage() {
         }
         accent={accent}
         round={round}
+      />
+
+      {/* Round recap — shown after handleFinish persists completion, before home. */}
+      <RoundRecap
+        open={recapOpen}
+        round={round}
+        onDone={() => router.push("/")}
       />
     </div>
   );
