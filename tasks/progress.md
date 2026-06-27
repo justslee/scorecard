@@ -243,3 +243,41 @@ Format: date — done / in-progress / blocked.
 - **Next: Phase 2 (NOTICEABLE) UI wiring** — flipped `wire-round-new` (P10) + `wire-round-scoring`
   (P11) to ready; these are user-facing → TestFlight approval bundles. Lesson: add a real-DB
   migration smoke test (throwaway Postgres) to catch execution-time DDL bugs the offline gate can't.
+
+## 2026-06-26 (wire-round-new)
+- **Done:** backlog `wire-round-new` (P10, NOTICEABLE) — replaced the scripted demo in
+  `app/round/new/page.tsx` with a real round-setup flow that persists to the backend.
+  Key changes:
+  - Removed: scripted `useEffect` auto-typing demo, hardcoded `utter`/`course`/`players`
+    constants, `heardCourse`/`heardJack`/`heardSam` detection, `saveRound` to localStorage.
+  - Added `selectedCourse: SelectedCourse | null` state; course card now shows empty state
+    ("Tap to search") or selected course info (name, location, par/holes); tapping opens
+    `CourseSearch` overlay (full-screen dark modal — existing component, unchanged).
+  - Added `players: Player[]` (min 1 slot) + `savedPlayers: SavedPlayer[]` state; loaded
+    on mount by calling `getPlayers()` (API) with `getSavedPlayers()` (localStorage) fallback.
+    Each player row is tappable and opens a dark picker sheet hosting `PlayerAutocomplete`
+    (the dark Tailwind theme works correctly against the ink-colored sheet background).
+    Auto-closes when a saved player is selected by click/enter; "Done" button for typed names.
+    "+ Add" button appends a new slot and opens the picker for it.
+  - Voice path: mic button opens `VoiceRoundSetup` overlay (existing component, unchanged);
+    `onSetupRound({courseName, playerNames, teeName})` callback populates selectedCourse,
+    players (linked to savedPlayers where name matches), and tee; then displays a conversation
+    summary in the caddy-bubble surface with quick-reply chips for "Change game", "Different
+    tees", "Add a player".
+  - `handleTeeOff`: calls `api.createRound(...)` directly (POST /api/rounds); backend assigns
+    its own UUID as the round id. Server-returned round is write-through cached to localStorage
+    (`localSaveRound(created)`), then navigates to `/round/${created.id}` (server id, not
+    client). Offline fallback: if API throws, generates a client UUID, saves locally, navigates.
+    This is the §"Review follow-ups" reconciliation for wire-round-new.
+  - Game objects built in `handleTeeOff` from the selected GameId (mapped via
+    `GAME_ID_TO_FORMAT` to `GameFormat`); `roundId: ''` placeholder used on create (backend
+    assigns real FK). Stroke/None produce no game object.
+  - Yardage-book aesthetic preserved: all inline styles use `T.*` tokens; no new Tailwind
+    in the main page; sub-components (PickerRow, GamePicker, TeePicker, SidesPicker,
+    HolesPicker, MiniStat) kept with identical styling.
+  - Designer note: `VoiceRoundSetup` and `CourseSearch` overlays use dark Tailwind styling
+    (zinc/emerald), not yardage tokens — acceptable as modal interactions but flagged for a
+    future design-pass to restyle them with T.* tokens.
+  - Gates: lint clean (src/), tsc --noEmit clean, voice-tests 260/260, npm run build OK.
+  - NOTICEABLE — user-visible on TestFlight: the scripted demo is gone; real round setup
+    with backend persistence replaces it.
