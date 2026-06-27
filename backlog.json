@@ -454,10 +454,11 @@
     {
       "id": "settings-signout-restyle",
       "priority": 39,
-      "status": "in-progress",
+      "status": "done",
       "title": "Add Sign Out (missing entirely) + restyle Settings to yardage-book T.*",
       "rationale": "GAPS found: (1) no signOut anywhere \u2014 app gates on sign-in but cannot sign out (AuthButtons dead/unmounted); (2) settings/page.tsx is the only screen still on Tailwind/CSS classes (T.* count 0), a NORTHSTAR inconsistency. Sign-out via Clerk useClerk().signOut() -> AuthGate shows sign-in. Restyle whole page to T.*; keep About + Clear Local Cache.",
-      "classification": "noticeable"
+      "classification": "noticeable",
+      "done_note": "Sign Out added (was entirely missing \u2014 Clerk useClerk().signOut -> AuthGate shows sign-in; mount guarded by same env var as AuthProvider). Settings fully restyled Tailwind->T.* yardage-book. Reviewer ship + designer polish (neutral non-alarming sign-out, in-page confirms for both actions, friendly error, honest Beta version) folded. Gates verified."
     }
   ]
 }
