@@ -246,7 +246,7 @@
       "type": "minor",
       "priority": 31,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": [],
       "why": "15 betting formats with thin tests. Silent filler. (A prior build attempt was stopped mid-run; re-do cleanly on integration/next.)",
       "spec": "specs/test-games-engine.md"
