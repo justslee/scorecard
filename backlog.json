@@ -197,11 +197,12 @@
       "type": "major",
       "priority": 16,
       "risk": "high",
-      "status": "blocked",
+      "status": "in-progress",
       "depends_on": [
         "wire-round-scoring"
       ],
-      "spec": "specs/real-data-wiring-plan.md"
+      "spec": "specs/real-data-wiring-plan.md",
+      "rescope_note": "RE-SCOPED 2026-06-27: ScoringByTee + YearLog ARE computable from real getRounds() now -> wire them. StrokesGained + FairwayFan need per-shot data (blocked P28) -> replace fabricated mock with HONEST empty states (no fake numbers, owner rule). Removes the last Preview-only mock on profile."
     },
     {
       "id": "wire-players-page",
@@ -384,10 +385,11 @@
       "type": "minor",
       "priority": 32,
       "risk": "low",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [],
       "why": "npm run lint reports ~108 pre-existing errors. Burn down in small behavior-preserving batches; then promote ESLint to a required CI job.",
-      "acceptance": "npm run lint exits 0; ESLint becomes a required CI job."
+      "acceptance": "npm run lint exits 0; ESLint becomes a required CI job.",
+      "done_note": "Root cause was ESLint linting the Capacitor ios/ minified bundle (~2874 false positives) \u2014 added ios/** to globalIgnores. Real ~84 problems in src/ fixed (hook refactors, any->types, unescaped entities). lint exit 0/0 problems; tsc/build/238 tests verified by eng-lead."
     },
     {
       "id": "voice-low-confidence-ux",
