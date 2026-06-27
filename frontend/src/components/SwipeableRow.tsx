@@ -1,9 +1,55 @@
 'use client';
 
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, CSSProperties } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo, animate } from 'framer-motion';
-import { Trash2, AlertTriangle } from 'lucide-react';
 import { T } from '@/components/yardage/tokens';
+
+// ---------------------------------------------------------------------------
+// Inline icons — no lucide-react
+// ---------------------------------------------------------------------------
+
+function TrashIcon({ className, style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg
+      className={className}
+      style={style}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  );
+}
+
+function AlertTriangleIcon({ size = 18, style }: { size?: number; style?: CSSProperties }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={style}
+      aria-hidden="true"
+    >
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
 
 interface SwipeableRowProps {
   children: ReactNode;
@@ -76,10 +122,9 @@ export default function SwipeableRow({
           className="absolute inset-0 flex items-center pl-6 rounded-2xl"
         >
           <motion.div style={{ opacity: iconOpacity, scale: iconScale }}>
-            <Trash2
+            <TrashIcon
               className="h-6 w-6"
               style={{ color: T.errorInk }}
-              aria-hidden="true"
             />
           </motion.div>
         </motion.div>
@@ -146,10 +191,9 @@ export default function SwipeableRow({
                   flexShrink: 0,
                 }}
               >
-                <AlertTriangle
+                <AlertTriangleIcon
                   size={18}
                   style={{ color: T.errorInk }}
-                  aria-hidden="true"
                 />
               </div>
               <h3

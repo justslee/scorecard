@@ -3,6 +3,24 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (restyle-dark-components-sweep P24.5 — lucide cleanup)
+- **Done:** backlog `restyle-dark-components-sweep` (P24.5, SILENT) — removed the two
+  remaining reachable `lucide-react` imports from `settings/page.tsx` and
+  `SwipeableRow.tsx`. Replaced with local inline SVG components matching the
+  yardage-book style (strokeWidth 1.5, strokeLinecap/Linejoin round, fill none,
+  stroke currentColor — identical pattern to CameraCapture.tsx / VoiceRoundSetup.tsx).
+  - `settings/page.tsx`: `TrashIcon` (20px, `className="h-5 w-5"`, `aria-hidden` baked in).
+  - `SwipeableRow.tsx`: `TrashIcon` (accepts className + style CSSProperties) and
+    `AlertTriangleIcon` (accepts size + style) — color flows via `currentColor` from
+    `style={{ color: T.errorInk }}`. `CSSProperties` imported from 'react'.
+  - No shared icon file created (no pre-existing one; both usages differ in size/props).
+  - Swipe-to-delete + confirm dialog behavior is unchanged; visually pixel-equivalent.
+  - `grep -rn "lucide-react" frontend/src` shows remaining imports are in other files
+    not in scope for this item (EditGroupsModal confirmed dead/unimported, others are
+    separate backlog items).
+  - Gates: lint 0 · tsc 0 · voice-tests 260/260 · npm test 238/238 · build OK (15 pages).
+  - SILENT — no user-visible change on TestFlight (icon shapes are the same).
+
 ## 2026-06-27 (wire-profile-stats P16)
 - **Done:** backlog `wire-profile-stats` (P16, NOTICEABLE) — replaced last fabricated mock
   data on the profile screen with real computed stats (where possible) and honest empty
