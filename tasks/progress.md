@@ -3,6 +3,29 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (delete-dead-legacy P29 — SILENT)
+- **Done:** deleted 11 superseded, zero-importer legacy components — 5,269 LOC removed.
+  Commit `0152829` on `integration/next`.
+
+  Files deleted (all git rm'd, zero external references confirmed):
+  - `ScoreGrid.tsx` (1,103 LOC), `HoleScoreModal.tsx` (658), `RoundSummary.tsx` (608),
+    `AddGameModal.tsx` (577), `VoiceTournamentSetup.tsx` (420), `CourseSearchImport.tsx` (442),
+    `VoiceGameSetup.tsx` (417), `EditGroupsModal.tsx` (389), `TournamentGamesPanel.tsx` (341),
+    `GamesPanel.tsx` (184), `TournamentLeaderboard.tsx` (130).
+
+  Cross-references were internal to the deleted set only (GamesPanel→AddGameModal/VoiceGameSetup,
+  ScoreGrid→HoleScoreModal). Post-deletion grep: zero remaining references to any of the 11 names
+  across `frontend/src` + `frontend/voice-tests`.
+
+  Remaining lucide-react importers (7 files, all non-reachable):
+  - P28 GPS/caddie cluster (blocked): `CaddiePanel.tsx`, `GPSMapView.tsx`,
+    `ShotTrackingControl.tsx`, `PinMarkControl.tsx`, `CaddieNotesCard.tsx`, `CustomPersonaModal.tsx`
+  - `AuthButtons.tsx` (unimported, kept for caution)
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 238/238 ·
+         build 15 pages clean · pytest 138/13skip unchanged.
+  SILENT — dead code only; no TestFlight-visible change.
+
 ## 2026-06-27 (voice-low-confidence-ux P35 — SCORING-PATH slice — NOTICEABLE)
 - **Done:** scoring-path slice of `voice-low-confidence-ux` (P35, NOTICEABLE) — real voice
   score entry in ScoreSheet with a confidence-aware confirm step.
