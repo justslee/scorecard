@@ -13,6 +13,7 @@ import LeaderboardSheet from "@/components/yardage/LeaderboardSheet";
 import { Round, Score } from "@/lib/types";
 import { getRound as localGetRound, saveRound as localSaveRound } from "@/lib/storage";
 import CaddieSheet from "@/components/CaddieSheet";
+import ScanSheet from "@/components/ScanSheet";
 import type { VoiceCaddieMessage } from "@/lib/caddie/types";
 import {
   getRound as apiGetRound,
@@ -195,6 +196,7 @@ export default function RoundPage() {
   const [scoreOpen, setScoreOpen] = useState(false);
   const [lbOpen, setLbOpen] = useState(false);
   const [caddieOpen, setCaddieOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   /** Conversation history — lifted here so close→score-entry→reopen retains the thread. */
   const [caddieHistory, setCaddieHistory] = useState<VoiceCaddieMessage[]>([]);
   const [slideDir, setSlideDir] = useState(0);
@@ -1078,7 +1080,42 @@ export default function RoundPage() {
 
           {/* Paneled scorecard */}
           <div>
-            <SectionLabel>Scorecard</SectionLabel>
+            {/* Scorecard section header — includes a quiet "scan card" affordance */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 9.5,
+                  letterSpacing: 1.4,
+                  color: T.pencil,
+                  textTransform: "uppercase",
+                }}
+              >
+                Scorecard
+              </div>
+              <div style={{ flex: 1, height: 1, background: T.hairline }} />
+              <button
+                onClick={() => setScanOpen(true)}
+                title="Scan scorecard photo"
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.2,
+                  color: T.pencil,
+                  textTransform: "uppercase",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  minHeight: 28,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                Scan card
+              </button>
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {players.map((p) => (
                 <PlayerPanel
@@ -1130,7 +1167,7 @@ export default function RoundPage() {
             // #6 — safe-area aware; was bottom:28 with no safe-area
             padding: "0 20px max(28px, calc(env(safe-area-inset-bottom) + 12px))",
             paddingTop: 0,
-            pointerEvents: scoreOpen || voiceOpen || caddieOpen ? "none" : "auto",
+            pointerEvents: scoreOpen || voiceOpen || caddieOpen || scanOpen ? "none" : "auto",
           }}
         >
           {/* Ask Caddie — ghost pill (#11: flexShrink:1 so it compresses on 320px) */}
@@ -1239,6 +1276,16 @@ export default function RoundPage() {
         holeYards={round.holes[currentHole - 1]?.yards ?? hole.yards}
         convHistory={caddieHistory}
         onUpdateConvHistory={setCaddieHistory}
+      />
+
+      {/* key forces a fresh unmount+remount on each open, resetting all state */}
+      <ScanSheet
+        key={scanOpen ? "scan-open" : "scan-closed"}
+        open={scanOpen}
+        onClose={() => setScanOpen(false)}
+        round={round}
+        onSetScore={handleSetScore}
+        accent={accent}
       />
 
       <LeaderboardSheet

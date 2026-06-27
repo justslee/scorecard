@@ -3,6 +3,93 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (mount-ocr-scan P27)
+- **Done:** backlog `mount-ocr-scan` (P27, NOTICEABLE) — re-mounted the OCR scorecard-scan
+  flow with a real entry point and yardage-book aesthetic.
+
+  Key changes:
+  - **New `frontend/src/components/ScanSheet.tsx`** (~340 LOC):
+    - Full scan-to-score flow: capture → OCR → editable review → apply.
+    - Phase `capture`: renders restyled `CameraCapture` full-screen overlay (camera or
+      photo-library).
+    - Phase `scanning`: full-screen "Reading the card…" overlay while `parseScorecard()`
+      calls `POST /api/voice/parse-scorecard` (Claude Vision, server-side).
+    - Phase `review`: bottom sheet (mirrors CaddieSheet pattern). Shows per-OCR-player
+      editable score grid: two rows of 9 (front 9 + back 9), compact 28px mono inputs,
+      hole-number column headers. Confidence kicker in header; amber low-confidence warning
+      + amber cell borders when confidence < 60%. Player-name mapping via a `<select>`
+      dropdown per OCR player (pre-populated with case-insensitive match, or "Skip" for
+      unmatched names — unmatched players flagged with "No match" badge and amber border).
+      At least one player must be assigned before "Apply scores" enables.
+    - Phase `applying`: fires `onSetScore(pid, holeIdx, val)` in parallel via
+      `Promise.allSettled` for all valid (1–15) non-null scores on mapped players;
+      `N of M scores` progress counter shown. Uses the same `handleSetScore` code path as
+      manual hole entry (optimistic UI + pending overlay + per-hole API upsert).
+    - Phase `error`: error card + "Try again" button that returns to capture.
+    - State reset: parent passes a fresh React `key` on each open (idiomatic unmount+remount)
+      — no `useEffect` setState pattern (avoids `react-hooks/set-state-in-effect` lint rule).
+    - Design: T.* tokens only, PAPER_NOISE, Instrument Serif, inline SVGs (CloseIcon),
+      44pt close button, safe-area-aware bottom padding, 28pt score cells with numeric
+      keyboard. No lucide-react, no new npm deps.
+  - **Restyled `frontend/src/components/CameraCapture.tsx`** (full rewrite):
+    - Removed: `lucide-react` import (`Camera`, `Upload`, `X`), all Tailwind class names
+      (`bg-zinc-950`, `text-zinc-400`, `text-zinc-300`, `text-red-200`, `border-red-400/20`,
+      `backdrop-blur-xl`, `bg-zinc-950/70`, `border-white/10`, `btn`, `btn-primary`,
+      `btn-secondary`, `btn-icon`, `card`, `app-header`, `header-divider`).
+    - Added: inline SVGs (CameraIcon, UploadIcon, CloseIcon), inline styles with T.*
+      tokens throughout. PAPER_NOISE + T.paper full-screen background,
+      `max(14px, env(safe-area-inset-top))` header, `max(14px, calc(env(safe-area-inset-bottom)+8px))`
+      bottom bar. T.serif italic "Capture the card" title, T.paperDeep card well,
+      dashed `T.hairline` guide border in camera mode. T.errorWash/T.errorInk error banner.
+      All buttons minHeight 44px. Paper background on bottom bar (replaces dark backdrop).
+  - **`RoundPageClient.tsx` changes:**
+    - Imports `ScanSheet`.
+    - `const [scanOpen, setScanOpen] = useState(false)` added.
+    - `pointerEvents` guard extended: `|| scanOpen`.
+    - Scorecard section label refactored from `<SectionLabel>Scorecard</SectionLabel>` to
+      inline row with "Scorecard" kicker + hairline rule + quiet "Scan card" text button on
+      the right (T.mono 9px, T.pencil colour, minHeight 28px). Entry point does NOT add a
+      third pill to the bottom action row.
+    - `<ScanSheet key={scanOpen?"scan-open":"scan-closed"} ...>` mounted after the caddie
+      sheet with `round`, `onSetScore={handleSetScore}`, `accent`.
+
+  Auth note: `voice_advanced.router` is registered with `dependencies=_owner_only` in
+  `backend/app/main.py` (line 61). `fetchAPI` (called by `parseScorecard`) attaches the
+  Clerk Bearer token automatically — no additional auth wiring needed in the frontend.
+
+  Name matching: OCR names matched to round players by exact case-insensitive comparison.
+  Unmatched names shown with "No match" badge + amber card border; user assigns via
+  dropdown or selects "Skip". Unmatched players are NEVER auto-created.
+
+  Persistence path: `handleSetScore` (the same callback as in-round manual entry) —
+  `POST /api/rounds/{id}/scores` per-hole upsert via `addScore`. No new endpoint.
+
+  Gates: eslint src/components/{CameraCapture,ScanSheet}.tsx + RoundPageClient: 0 errors ·
+  tsc --noEmit 0 errors · voice-tests 260/260 · npm test 238/238 · npm run build 15 pages OK.
+
+  NOTICEABLE — new user-visible capability on TestFlight: "Scan card" link appears in the
+  Scorecard section header on the in-round screen; tapping opens the camera/library picker
+  and OCR-parses the card into an editable review sheet before applying to the round.
+
+  Designer flags for on-device review:
+  1. Score input cells (28px × 34px): verify the numeric keyboard focuses correctly on iOS
+     and that tapping a cell selects it cleanly. Consider increasing to 32px wide if cells
+     feel too small on-device.
+  2. "Scan card" text button in the Scorecard section header: currently T.pencil mono 9px;
+     verify readability and consider a small camera SVG icon for discoverability.
+  3. Player name dropdown (`<select>`): iOS renders a native picker wheel. Verify the T.mono
+     10px style reads clearly and that "Skip" is the correct default label for unmatched names.
+  4. Low-confidence amber border on score cells: subtle amber underline (T.warningInk 60%
+     opacity bottom border). Verify it reads in sunlight without feeling alarming.
+  5. Bottom sheet max-height 88dvh: on small phones (SE), verify the score grid + Apply
+     button are accessible without excessive scrolling when 4 players are shown.
+  6. Scanning overlay text: "Reading the card… / Claude Vision is processing your image" —
+     verify it feels calm and on-brand (consider replacing "Claude Vision" with just "Scanning").
+
+  Follow-up for eng-lead (NOT blocking this PR):
+  - `voice_advanced` router is owner-gated: frontend sends token automatically via fetchAPI.
+    No follow-up needed; confirmed auth flow is correct.
+
 ## 2026-06-27 (mount-caddie P26)
 - **Done:** backlog `mount-caddie` (P26, NOTICEABLE) — new `CaddieSheet` component mounted
   on the in-round screen. A lean, GPS-free, yardage-book caddie overlay reachable via a
