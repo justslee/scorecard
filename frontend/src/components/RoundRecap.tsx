@@ -8,10 +8,11 @@
  * mono kickers for labels, PAPER_NOISE grain, generous whitespace.
  *
  * Design rules: T.* tokens only, no zinc/emerald/slate/lucide-react.
- * Mobile-first, 44pt Done target, safe-area-aware.
+ * Mobile-first, 44pt+ Done target, safe-area-aware.
+ * Done button is non-scrolling (sticky bottom bar) so it is always reachable.
  *
  * Data: reads existing Round/scores/players — no new data model or endpoints.
- * Games: delegates to <GameResults> which already owns all game-format logic.
+ * Games: delegates to <GameResults readOnly> which already owns all format logic.
  */
 
 import { useMemo } from 'react';
@@ -108,18 +109,33 @@ export default function RoundRecap({ open, round, onDone }: RoundRecapProps) {
   // Inline style constants — mirrors CaddieSheet / ScanSheet patterns
   // ─────────────────────────────────────────────────────────────────────────
 
-  const monoLabel: React.CSSProperties = {
+  const monoKickerSoft: React.CSSProperties = {
+    fontFamily: T.mono,
+    fontSize: 9,
+    letterSpacing: '1.4px',
+    color: T.pencilSoft,
+    textTransform: 'uppercase',
+  };
+
+  const sectionLabel: React.CSSProperties = {
     fontFamily: T.mono,
     fontSize: 9,
     letterSpacing: '1.4px',
     color: T.pencil,
     textTransform: 'uppercase',
+    marginBottom: 12,
   };
 
   const hairlineRule: React.CSSProperties = {
     height: 1,
     background: T.hairline,
     margin: '0 0 24px',
+  };
+
+  // Shared paper background (scroll area + Done bar need it)
+  const paperBg: React.CSSProperties = {
+    background: `${PAPER_NOISE}, ${T.paper}`,
+    backgroundBlendMode: 'multiply',
   };
 
   return (
@@ -135,114 +151,220 @@ export default function RoundRecap({ open, round, onDone }: RoundRecapProps) {
             position: 'fixed',
             inset: 0,
             zIndex: 80,
-            background: `${PAPER_NOISE}, ${T.paper}`,
-            backgroundBlendMode: 'multiply',
-            overflowY: 'auto',
-            WebkitOverflowScrolling: 'touch',
+            ...paperBg,
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
+
+          {/* ── Scrollable content area ────────────────────────────────────
+               flex:1 + overflowY:auto keeps the Done bar always visible.   */}
           <div
             style={{
-              maxWidth: 420,
-              margin: '0 auto',
-              padding: '0 20px',
-              paddingTop: 'max(52px, calc(env(safe-area-inset-top) + 32px))',
-              paddingBottom: 'max(40px, calc(env(safe-area-inset-bottom) + 32px))',
-              display: 'flex',
-              flexDirection: 'column',
+              flex: 1,
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
             }}
           >
-
-            {/* ── Header: course + date ──────────────────────────────────── */}
-            <div style={{ marginBottom: 28 }}>
-              <div
-                style={{
-                  ...monoLabel,
-                  color: T.pencilSoft,
-                  marginBottom: 6,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span>{dateStr}</span>
-                {isPartial && (
-                  <span style={{ color: T.warningInk }}>
-                    · Thru {maxPlayedHoles}
-                  </span>
-                )}
-              </div>
-              <div
-                style={{
-                  fontFamily: T.serif,
-                  fontStyle: 'italic',
-                  fontSize: 28,
-                  color: T.ink,
-                  letterSpacing: -0.5,
-                  lineHeight: 1.15,
-                  marginBottom: round.teeName ? 4 : 0,
-                }}
-              >
-                {round.courseName}
-              </div>
-              {round.teeName && (
-                <div style={{ ...monoLabel, color: T.pencilSoft }}>
-                  {round.teeName} tees · {holeCount} holes
-                </div>
-              )}
-            </div>
-
-            {/* ── Rule ──────────────────────────────────────────────────── */}
-            <div style={hairlineRule} />
-
-            {/* ── Scorecard section ────────────────────────────────────── */}
-            <div style={{ ...monoLabel, marginBottom: 12 }}>Scorecard</div>
-
             <div
               style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-                marginBottom: 28,
+                maxWidth: 420,
+                margin: '0 auto',
+                padding: '0 20px',
+                paddingTop: 'max(52px, calc(env(safe-area-inset-top) + 32px))',
+                paddingBottom: 28,
               }}
             >
-              {playerStats.map((ps, idx) => {
-                const isPrimary = idx === 0; // first player is the owner — emphasized
-                const hasScore = ps.totals.playedHoles > 0;
-                const tpLabel = hasScore ? formatToPar(ps.totals.toPar) : '–';
-                const tpColor = hasScore ? toParColor(ps.totals.toPar) : T.pencilSoft;
 
-                return (
-                  <div
-                    key={ps.player.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: isPrimary ? '14px 16px' : '10px 14px',
-                      border: `1px solid ${isPrimary ? T.hairline : T.hairlineSoft}`,
-                      borderRadius: 14,
-                      background: isPrimary ? T.paperDeep : 'transparent',
-                    }}
-                  >
-                    {/* Left: name + quiet highlights */}
-                    <div style={{ minWidth: 0, flex: 1, marginRight: 12 }}>
+              {/* ── Header: round-complete anchor + course + date ───────── */}
+              <div style={{ marginBottom: 28 }}>
+                {/* "ROUND COMPLETE" — quiet finishing marker */}
+                <div style={{ ...monoKickerSoft, marginBottom: 4 }}>
+                  Round complete
+                </div>
+                {/* Date (+ partial notice) */}
+                <div
+                  style={{
+                    ...monoKickerSoft,
+                    marginBottom: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span>{dateStr}</span>
+                  {isPartial && (
+                    <span style={{ color: T.warningInk }}>
+                      · Thru {maxPlayedHoles}
+                    </span>
+                  )}
+                </div>
+                {/* Course name — primary serif display */}
+                <div
+                  style={{
+                    fontFamily: T.serif,
+                    fontStyle: 'italic',
+                    fontSize: 28,
+                    color: T.ink,
+                    letterSpacing: -0.5,
+                    lineHeight: 1.15,
+                    marginBottom: round.teeName ? 4 : 0,
+                  }}
+                >
+                  {round.courseName}
+                </div>
+                {round.teeName && (
+                  <div style={{ ...monoKickerSoft }}>
+                    {round.teeName} tees · {holeCount} holes
+                  </div>
+                )}
+              </div>
+
+              {/* ── Rule ────────────────────────────────────────────────── */}
+              <div style={hairlineRule} />
+
+              {/* ── Player score rows — no section label (hairline carries the division) */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  marginBottom: 28,
+                }}
+              >
+                {playerStats.map((ps, idx) => {
+                  const isPrimary = idx === 0; // first player is the owner — emphasised
+                  const hasScore = ps.totals.playedHoles > 0;
+                  const tpLabel = hasScore ? formatToPar(ps.totals.toPar) : '–';
+                  const tpColor = hasScore ? toParColor(ps.totals.toPar) : T.pencilSoft;
+
+                  // Best-hole kicker — only shown on the owner's (primary) row.
+                  // bestHoleDelta < 0 means at least a birdie; bestHoleNumber is the hole.
+                  const showBestHole =
+                    isPrimary &&
+                    ps.bestHoleNumber !== null &&
+                    ps.bestHoleDelta < 0;
+
+                  return (
+                    <div
+                      key={ps.player.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: isPrimary ? '14px 16px' : '10px 14px',
+                        border: `1px solid ${isPrimary ? T.hairline : T.hairlineSoft}`,
+                        borderRadius: 14,
+                        background: isPrimary ? T.paperDeep : 'transparent',
+                      }}
+                    >
+                      {/* Left: name + quiet highlights */}
+                      <div style={{ minWidth: 0, flex: 1, marginRight: 12 }}>
+                        <div
+                          style={{
+                            fontFamily: T.sans,
+                            fontSize: isPrimary ? 16 : 14,
+                            fontWeight: isPrimary ? 600 : 500,
+                            color: T.ink,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {ps.player.name}
+                        </div>
+                        {/* Birdies / eagles — one quiet line, only if any */}
+                        {(ps.birdies > 0 || ps.eagles > 0) && (
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: '1px',
+                              color: T.pencilSoft,
+                              textTransform: 'uppercase',
+                              marginTop: 3,
+                            }}
+                          >
+                            {ps.eagles > 0 && `${ps.eagles} eagle${ps.eagles !== 1 ? 's' : ''}`}
+                            {ps.eagles > 0 && ps.birdies > 0 && ' · '}
+                            {ps.birdies > 0 && `${ps.birdies} birdie${ps.birdies !== 1 ? 's' : ''}`}
+                          </div>
+                        )}
+                        {/* Best hole — owner only, birdie-or-better only */}
+                        {showBestHole && (
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: '1px',
+                              color: T.pencilSoft,
+                              textTransform: 'uppercase',
+                              marginTop: 3,
+                            }}
+                          >
+                            Best · Hole {ps.bestHoleNumber}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right: strokes (serif, large) + to-par (mono, smaller) */}
                       <div
                         style={{
-                          fontFamily: T.sans,
-                          fontSize: isPrimary ? 16 : 14,
-                          fontWeight: isPrimary ? 600 : 500,
-                          color: T.ink,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          gap: isPrimary ? 10 : 7,
+                          flexShrink: 0,
                         }}
                       >
-                        {ps.player.name}
+                        <div
+                          style={{
+                            fontFamily: T.serif,
+                            // Owner's hero score is italic — matches hand-scored entry feel
+                            fontStyle: isPrimary ? 'italic' : 'normal',
+                            fontSize: isPrimary ? 38 : 28,
+                            color: T.ink,
+                            fontVariantNumeric: 'tabular-nums',
+                            lineHeight: 1,
+                          }}
+                        >
+                          {hasScore ? ps.totals.total : '–'}
+                        </div>
+                        <div
+                          style={{
+                            fontFamily: T.mono,
+                            fontSize: isPrimary ? 13 : 11,
+                            letterSpacing: '0.4px',
+                            color: tpColor,
+                            fontVariantNumeric: 'tabular-nums',
+                            minWidth: 20,
+                            textAlign: 'right',
+                          }}
+                        >
+                          {tpLabel}
+                        </div>
                       </div>
-                      {/* Birdies / eagles — one quiet line, only if any */}
-                      {(ps.birdies > 0 || ps.eagles > 0) && (
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* ── Games section (reuses GameResults in read-only mode) ── */}
+              {hasGames && (
+                <>
+                  <div style={hairlineRule} />
+                  <div style={sectionLabel}>Game results</div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 20,
+                      marginBottom: 28,
+                    }}
+                  >
+                    {games.map((game) => (
+                      <div key={game.id}>
+                        {/* Game name kicker */}
                         <div
                           style={{
                             fontFamily: T.mono,
@@ -250,132 +372,70 @@ export default function RoundRecap({ open, round, onDone }: RoundRecapProps) {
                             letterSpacing: '1px',
                             color: T.pencilSoft,
                             textTransform: 'uppercase',
-                            marginTop: 3,
+                            marginBottom: 8,
                           }}
                         >
-                          {ps.eagles > 0 && `${ps.eagles} eagle${ps.eagles !== 1 ? 's' : ''}`}
-                          {ps.eagles > 0 && ps.birdies > 0 && ' · '}
-                          {ps.birdies > 0 && `${ps.birdies} birdie${ps.birdies !== 1 ? 's' : ''}`}
+                          {game.name}
                         </div>
-                      )}
-                    </div>
-
-                    {/* Right: strokes (serif, large) + to-par (mono, smaller) */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'baseline',
-                        gap: isPrimary ? 10 : 7,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontFamily: T.serif,
-                          fontSize: isPrimary ? 38 : 28,
-                          color: T.ink,
-                          fontVariantNumeric: 'tabular-nums',
-                          lineHeight: 1,
-                        }}
-                      >
-                        {hasScore ? ps.totals.total : '–'}
+                        {/* readOnly suppresses "Editing disabled" + collapses tables */}
+                        <GameResults round={round} game={game} readOnly />
                       </div>
-                      <div
-                        style={{
-                          fontFamily: T.mono,
-                          fontSize: isPrimary ? 13 : 11,
-                          letterSpacing: '0.4px',
-                          color: tpColor,
-                          fontVariantNumeric: 'tabular-nums',
-                          minWidth: 20,
-                          textAlign: 'right',
-                        }}
-                      >
-                        {tpLabel}
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                );
-              })}
+                </>
+              )}
+
+              {/* ── Closing caption — just the holes info, course already in header ── */}
+              <div
+                style={{
+                  textAlign: 'center',
+                  fontFamily: T.serif,
+                  fontStyle: 'italic',
+                  fontSize: 13,
+                  color: T.pencilSoft,
+                  letterSpacing: -0.1,
+                }}
+              >
+                {isPartial ? `Thru ${maxPlayedHoles}` : `${holeCount} holes`}
+              </div>
+
             </div>
-
-            {/* ── Games section (reuses GameResults — no logic duplication) ── */}
-            {hasGames && (
-              <>
-                <div style={hairlineRule} />
-                <div style={{ ...monoLabel, marginBottom: 12 }}>Game results</div>
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 20,
-                    marginBottom: 28,
-                  }}
-                >
-                  {games.map((game) => (
-                    <div key={game.id}>
-                      {/* Game name kicker */}
-                      <div
-                        style={{
-                          fontFamily: T.mono,
-                          fontSize: 9,
-                          letterSpacing: '1px',
-                          color: T.pencilSoft,
-                          textTransform: 'uppercase',
-                          marginBottom: 8,
-                        }}
-                      >
-                        {game.name}
-                      </div>
-                      {/* onUpdateGame omitted — recap is read-only */}
-                      <GameResults round={round} game={game} />
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* ── Quiet caption ─────────────────────────────────────────── */}
-            <div
-              style={{
-                textAlign: 'center',
-                fontFamily: T.serif,
-                fontStyle: 'italic',
-                fontSize: 13,
-                color: T.pencilSoft,
-                letterSpacing: -0.1,
-                marginBottom: 24,
-                marginTop: 4,
-              }}
-            >
-              {round.courseName}
-              {isPartial
-                ? ` · Thru ${maxPlayedHoles}`
-                : ` · ${holeCount} holes`}
-            </div>
-
-            {/* ── Done — 54px min height, safe-area-aware bottom padding ── */}
-            <button
-              onClick={onDone}
-              style={{
-                width: '100%',
-                padding: '16px 24px',
-                minHeight: 54,
-                borderRadius: 14,
-                border: 'none',
-                background: T.ink,
-                color: T.paper,
-                fontFamily: T.sans,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: 'pointer',
-                letterSpacing: '0.1px',
-              }}
-            >
-              Done
-            </button>
-
           </div>
+
+          {/* ── Non-scrolling Done bar — always reachable regardless of content length.
+               Mirrors the CaddieSheet non-scrolling mic-block pattern.               */}
+          <div
+            style={{
+              flexShrink: 0,
+              ...paperBg,
+              borderTop: `1px solid ${T.hairline}`,
+              padding: '12px 20px',
+              paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+            }}
+          >
+            <div style={{ maxWidth: 420, margin: '0 auto' }}>
+              <button
+                onClick={onDone}
+                style={{
+                  width: '100%',
+                  padding: '16px 24px',
+                  minHeight: 54,
+                  borderRadius: 14,
+                  border: 'none',
+                  background: T.ink,
+                  color: T.paper,
+                  fontFamily: T.sans,
+                  fontSize: 15,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  letterSpacing: '0.1px',
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+
         </motion.div>
       )}
     </AnimatePresence>

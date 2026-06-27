@@ -8,6 +8,15 @@ interface GameResultsProps {
   round: Round;
   game: Game;
   onUpdateGame?: (next: Game) => void;
+  /**
+   * When true the component renders in a read-only recap context:
+   *   - "Editing disabled in this view." warning is suppressed (not needed when the
+   *     caller never provides onUpdateGame in the first place).
+   *   - Verbose hole-by-hole <details> tables (wolf, threePoint) are collapsed by
+   *     default so they don't dominate the recap layout.
+   * Defaults to false — active-round callers are unaffected.
+   */
+  readOnly?: boolean;
 }
 
 // Shared inline style helpers — yardage-book aesthetic
@@ -41,7 +50,7 @@ const sectionLabel: React.CSSProperties = {
   marginBottom: 8,
 };
 
-export default function GameResults({ round, game, onUpdateGame }: GameResultsProps) {
+export default function GameResults({ round, game, onUpdateGame, readOnly = false }: GameResultsProps) {
   const results = computeGameResults(round, game);
   const playerName = (id: string) => round.players.find((p) => p.id === id)?.name ?? 'Unknown';
 
@@ -302,7 +311,7 @@ export default function GameResults({ round, game, onUpdateGame }: GameResultsPr
           </div>
         </div>
 
-        <details style={{ ...card }} open>
+        <details style={{ ...card }} open={!readOnly}>
           <summary
             style={{ cursor: 'pointer', fontFamily: T.mono, fontSize: 10, letterSpacing: '1px', color: T.pencil, textTransform: 'uppercase', padding: '12px 16px', listStyle: 'none' }}
           >
@@ -486,7 +495,7 @@ export default function GameResults({ round, game, onUpdateGame }: GameResultsPr
         </div>
 
         {/* Hole-by-hole setup */}
-        <details style={{ ...card }} open>
+        <details style={{ ...card }} open={!readOnly}>
           <summary
             style={{ cursor: 'pointer', fontFamily: T.mono, fontSize: 10, letterSpacing: '1px', color: T.pencil, textTransform: 'uppercase', padding: '12px 16px', listStyle: 'none' }}
           >
@@ -519,7 +528,7 @@ export default function GameResults({ round, game, onUpdateGame }: GameResultsPr
                     </div>
                   </div>
 
-                  {!onUpdateGame && (
+                  {!onUpdateGame && !readOnly && (
                     <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '1px', color: T.warningInk, textTransform: 'uppercase', marginTop: 8 }}>
                       Editing disabled in this view.
                     </div>
