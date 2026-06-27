@@ -30,6 +30,10 @@ export const T = {
   bogey: "#6b6558",
   double: "#958d7d",
 
+  // Status
+  errorInk: "#b84a3a",
+  warningInk: "#b8763a",
+
   // Motion
   spring: { type: "spring" as const, stiffness: 380, damping: 32 },
   springSoft: { type: "spring" as const, stiffness: 260, damping: 30 },

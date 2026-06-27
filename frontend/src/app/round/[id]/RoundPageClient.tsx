@@ -12,32 +12,80 @@ import ScoreSheet from "@/components/yardage/ScoreSheet";
 import LeaderboardSheet from "@/components/yardage/LeaderboardSheet";
 import { Round, Score } from "@/lib/types";
 import { getRound as localGetRound, saveRound as localSaveRound } from "@/lib/storage";
-import { getRound as apiGetRound, addScore as apiAddScore, completeRound as apiCompleteRound } from "@/lib/api";
+import {
+  getRound as apiGetRound,
+  addScore as apiAddScore,
+  completeRound as apiCompleteRound,
+} from "@/lib/api";
 import { hapticCelebration } from "@/lib/haptics";
 
 // Player accent colors (yardage-book palette — warm ink tones)
-const PLAYER_COLORS = ['#1a2a1a', '#6b3a1a', '#3a3a6a', '#6a3a3a', '#2a5a3a', '#5a2a5a'];
+const PLAYER_COLORS = ["#1a2a1a", "#6b3a1a", "#3a3a6a", "#6a3a3a", "#2a5a3a", "#5a2a5a"];
 
-/** Convert Round.scores → local scores map { [playerId]: (number|null)[] } */
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+
+/** Build a per-player score array: { [playerId]: (number|null)[] } indexed hole 0…holeCount-1. */
 function buildScoreMap(
   playerIds: string[],
-  roundScores: Score[]
+  roundScores: Score[],
+  holeCount: number = 18
 ): Record<string, (number | null)[]> {
   const map: Record<string, (number | null)[]> = {};
   for (const pid of playerIds) {
-    map[pid] = Array(18).fill(null);
+    map[pid] = Array(holeCount).fill(null);
   }
   for (const s of roundScores) {
     const arr = map[s.playerId];
     const idx = s.holeNumber - 1;
-    if (arr && idx >= 0 && idx < 18) {
-      arr[idx] = s.strokes;
-    }
+    if (arr && idx >= 0 && idx < holeCount) arr[idx] = s.strokes;
   }
   return map;
 }
 
-/** Convert Round.players → SeedPlayer[] for yardage components */
+/**
+ * Build display scores: server snapshot with pending (entered-but-not-confirmed) scores
+ * overlaid on top.  This ensures a transient API failure never wipes a just-entered score
+ * from the UI, and an out-of-order server response can't clobber a newer local edit.
+ */
+function mergeWithPending(
+  playerIds: string[],
+  serverScores: Score[],
+  pending: Map<string, Score>,
+  holeCount: number = 18
+): Record<string, (number | null)[]> {
+  const map = buildScoreMap(playerIds, serverScores, holeCount);
+  for (const s of pending.values()) {
+    const arr = map[s.playerId];
+    const idx = s.holeNumber - 1;
+    if (arr && idx >= 0 && idx < holeCount) arr[idx] = s.strokes;
+  }
+  return map;
+}
+
+/**
+ * Build the round for localStorage: server round with pending scores merged in so a page
+ * reload re-discovers them even when they haven't reached the server yet.
+ */
+function buildLocalRound(serverRound: Round, pending: Map<string, Score>): Round {
+  if (pending.size === 0) return serverRound;
+  const serverKeySet = new Set(serverRound.scores.map((s) => `${s.playerId}:${s.holeNumber}`));
+  const mergedScores: Score[] = [
+    // Server scores, replaced where pending has a newer value.
+    ...serverRound.scores.map((s) => {
+      const p = pending.get(`${s.playerId}:${s.holeNumber}`);
+      return p !== undefined ? p : s;
+    }),
+    // Pending scores not yet present in the server snapshot.
+    ...[...pending.values()].filter(
+      (s) => !serverKeySet.has(`${s.playerId}:${s.holeNumber}`) && s.strokes !== null
+    ),
+  ].filter((s) => s.strokes !== null); // drop explicit-null deletions
+  return { ...serverRound, scores: mergedScores };
+}
+
+/** Convert Round.players → SeedPlayer[] for yardage components. */
 function buildSeedPlayers(round: Round): SeedPlayer[] {
   return round.players.map((p, i) => ({
     id: p.id,
@@ -46,6 +94,31 @@ function buildSeedPlayers(round: Round): SeedPlayer[] {
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
   }));
 }
+
+/**
+ * Return true when the thrown error indicates the round doesn't exist on the server (404)
+ * or the network itself is unavailable (TypeError).  Both → LOCAL mode.
+ * Other HTTP errors (500, 401, …) return false — saves should still target the server.
+ */
+function isNotFoundOrNetworkError(e: unknown): boolean {
+  if (e instanceof TypeError) return true; // fetch itself failed (DNS/offline/CORS)
+  if (e instanceof Error) {
+    const m = e.message;
+    if (m.includes("API error: 404")) return true;
+    // FastAPI 404 with JSON body: '{"detail":"Round not found"}'
+    try {
+      const parsed = JSON.parse(m) as { detail?: string };
+      return (parsed?.detail ?? "").toLowerCase().includes("not found");
+    } catch {
+      return m.toLowerCase().includes("not found");
+    }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function RoundPage() {
   const params = useParams();
@@ -56,14 +129,37 @@ export default function RoundPage() {
 
   const [round, setRound] = useState<Round | null>(null);
   const [loading, setLoading] = useState(true);
-  // isLocalRound: true when the round came from localStorage only (offline/orphan — API 404 or network error)
+  /**
+   * isLocalRound: true when the round came from localStorage only — a 404 (orphan created
+   * by wire-round-new offline fallback) or a network TypeError.  In this mode writes go to
+   * localStorage only; the server never sees them.
+   *
+   * Note: non-404 HTTP errors (500, auth) leave isLocalRound=false so later writes still
+   * target the server (the round IS on the server; we just temporarily can't reach it).
+   */
   const [isLocalRound, setIsLocalRound] = useState(false);
-  // apiError: surfaces per-stroke or finish errors without silent swallow
+  /** Surfaces per-stroke or load errors without silent swallow; null = no active error. */
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // players and scores are derived from the loaded round; updated on every API response
   const [players, setPlayers] = useState<SeedPlayer[]>([]);
   const [scores, setScores] = useState<Record<string, (number | null)[]>>({});
+
+  /**
+   * Scores entered locally but not yet confirmed by the server.
+   * Key = "{playerId}:{holeNumber}".  Overlaid on every server snapshot so a transient
+   * API failure never causes a score to vanish from the UI.
+   * A score is removed from pending ONLY once the server confirms that exact
+   * (playerId, holeNumber, strokes) triple.
+   */
+  const pendingRef = useRef<Map<string, Score>>(new Map());
+
+  /**
+   * Monotonically increasing sequence number per addScore call.
+   * Used to ignore stale out-of-order responses: a response with mySeq ≤ lastApplied is
+   * skipped so a stale server snapshot can't overwrite state already set by a newer one.
+   */
+  const addScoreSeqRef = useRef(0);
+  const lastAppliedSeqRef = useRef(0);
 
   const [currentHole, setCurrentHole] = useState(1);
   const [expanded, setExpanded] = useState(true);
@@ -76,29 +172,106 @@ export default function RoundPage() {
   const [turnIdx, setTurnIdx] = useState(0);
   const draggedRef = useRef(false);
 
-  // Load round: try API first; fall back to localStorage on 404 or network error.
+  // ---------------------------------------------------------------------------
+  // Load round: try API → fall back to localStorage on 404 / network error.
+  // ---------------------------------------------------------------------------
+
   useEffect(() => {
     const id = params.id as string;
+
+    /**
+     * After loading from the server, check localStorage for scores that are present locally
+     * but missing from the server response — these are scores whose addScore call failed in a
+     * previous session.  Re-add them to pendingRef and retry them in the background.
+     */
+    async function retrySyncPending(roundId: string, holeCount: number) {
+      const snapshot = [...pendingRef.current.entries()];
+      for (const [key, score] of snapshot) {
+        if (!pendingRef.current.has(key)) continue; // handled by user re-entry meanwhile
+        try {
+          const updated = await apiAddScore(roundId, score);
+          const cur = pendingRef.current.get(key);
+          if (cur && cur.strokes === score.strokes) {
+            pendingRef.current.delete(key);
+          }
+          setRound(updated);
+          setScores(
+            mergeWithPending(
+              updated.players.map((p) => p.id),
+              updated.scores,
+              pendingRef.current,
+              holeCount
+            )
+          );
+          localSaveRound(buildLocalRound(updated, pendingRef.current));
+        } catch (retryErr) {
+          // Silently log — score stays in pending, will retry on next load or user edit.
+          console.warn("[round] background sync pending failed:", retryErr);
+        }
+      }
+    }
 
     async function load() {
       try {
         const r = await apiGetRound(id);
+        const holeCount = r.holes.length || 18;
+
+        // Re-discover scores from previous session that never reached the server.
+        // They live in localStorage but are absent from the server snapshot.
+        const localCopy = localGetRound(id);
+        if (localCopy) {
+          const serverKeys = new Set(r.scores.map((s) => `${s.playerId}:${s.holeNumber}`));
+          for (const ls of localCopy.scores) {
+            if (ls.strokes !== null && !serverKeys.has(`${ls.playerId}:${ls.holeNumber}`)) {
+              pendingRef.current.set(`${ls.playerId}:${ls.holeNumber}`, ls);
+            }
+          }
+        }
+
         setRound(r);
         setPlayers(buildSeedPlayers(r));
-        setScores(buildScoreMap(r.players.map((p) => p.id), r.scores));
+        setScores(
+          mergeWithPending(r.players.map((p) => p.id), r.scores, pendingRef.current, holeCount)
+        );
         setIsLocalRound(false);
-      } catch (e) {
-        // 404 (orphan/offline round created by wire-round-new fallback) or network error.
-        // Fall back to localStorage — do NOT show a broken/empty round.
-        console.warn(`[round/${id}] API fetch failed, falling back to local cache:`, e);
-        const local = localGetRound(id);
-        if (local) {
-          setRound(local);
-          setPlayers(buildSeedPlayers(local));
-          setScores(buildScoreMap(local.players.map((p) => p.id), local.scores));
-          setIsLocalRound(true);
+
+        // Kick off background retry for any re-discovered pending scores.
+        if (pendingRef.current.size > 0) {
+          retrySyncPending(id, holeCount);
         }
-        // If no local copy either, round remains null — handled by the not-found render below.
+      } catch (e) {
+        if (isNotFoundOrNetworkError(e)) {
+          // 404 (orphan/offline round) or network down → LOCAL mode.
+          console.warn(`[round/${id}] falling back to local cache (404 or offline):`, e);
+          const local = localGetRound(id);
+          if (local) {
+            const holeCount = local.holes.length || 18;
+            setRound(local);
+            setPlayers(buildSeedPlayers(local));
+            setScores(buildScoreMap(local.players.map((p) => p.id), local.scores, holeCount));
+            setIsLocalRound(true);
+          }
+          // If no local copy either, round stays null → not-found render.
+        } else {
+          // Non-404 HTTP error (500, auth, timeout): the round IS on the server but we
+          // temporarily can't reach it.  Stay ONLINE (isLocalRound stays false) so later
+          // writes still target the server; show error banner; render from localStorage.
+          const msg = e instanceof Error ? e.message : "Failed to load round.";
+          setApiError(
+            msg.startsWith("{") || msg.length > 100
+              ? "Failed to load round — check connection."
+              : msg
+          );
+          console.error(`[round/${id}] load failed (non-404, staying ONLINE):`, e);
+          const local = localGetRound(id);
+          if (local) {
+            const holeCount = local.holes.length || 18;
+            setRound(local);
+            setPlayers(buildSeedPlayers(local));
+            setScores(buildScoreMap(local.players.map((p) => p.id), local.scores, holeCount));
+            // isLocalRound stays false — round is on the server, saves should target it.
+          }
+        }
       } finally {
         setLoading(false);
       }
@@ -107,8 +280,11 @@ export default function RoundPage() {
     load();
   }, [params.id]);
 
-  const hole = HOLES[currentHole - 1];
-  // Use round hole data for par when available (authoritative); fall back to illustration default.
+  // Derived: actual hole count for this round (fall back to 18 if round not yet loaded).
+  const holeCount = round?.holes.length || 18;
+
+  const hole = HOLES[currentHole - 1] ?? HOLES[0];
+  // Prefer round's par data (authoritative); fall back to illustration constant.
   const holePar = round?.holes[currentHole - 1]?.par ?? hole.par;
 
   // Scripted conversation beats — identical to the prototype
@@ -188,87 +364,146 @@ export default function RoundPage() {
       return;
     }
     if (turnIdx < script.length) {
-      // Re-enter the effect flow: the useEffect re-runs on voiceOpen change;
-      // here we simulate by toggling.
+      // Re-enter the effect flow: the useEffect re-runs on voiceOpen change
     }
   };
 
   const goHole = (n: number) => {
-    if (n < 1 || n > 18) return;
+    if (n < 1 || n > holeCount) return;
     setSlideDir(n > currentHole ? 1 : -1);
     setCurrentHole(n);
   };
 
+  // ---------------------------------------------------------------------------
+  // Per-stroke persist
+  // ---------------------------------------------------------------------------
+
   /**
-   * Persist a score edit:
-   * - Optimistically updates local state.
-   * - For API-backed rounds: calls POST /api/rounds/{id}/scores (per-stroke upsert);
-   *   on success syncs server response; on error surfaces the error and saves locally.
-   * - For local/orphan rounds: saves to localStorage only (deferred sync — see note below).
+   * Persist a score edit.
    *
-   * Deferred sync note: a round created offline (wire-round-new fallback) has a client UUID
-   * not known to the backend. Re-creating it via POST /api/rounds and reconciling the id is
-   * non-trivial and is left as a follow-up (wire-round-scoring review carry-over). For now
-   * the round stays local and scores are not lost.
+   * ONLINE rounds (isLocalRound=false):
+   *   1. Add to pendingRef so it overlays all subsequent server snapshots.
+   *   2. Optimistic UI update via setScores functional updater.
+   *   3. POST /api/rounds/{id}/scores (per-stroke upsert).
+   *   4. Success: remove from pending only if confirmed strokes === sent strokes (rapid
+   *      re-entry guard); apply server snapshot + pending overlay; write through to
+   *      localStorage with pending merged in (so a reload re-discovers unsynced scores).
+   *   5. Failure: keep in pending, surface error banner, persist to localStorage via
+   *      functional setRound(prev→…) — avoids stale-closure data loss on rapid edits.
+   *   Out-of-order guard: each call gets a seq number; a response with mySeq ≤ lastApplied
+   *   is skipped so a stale server snapshot can't clobber newer UI state.
+   *
+   * LOCAL/orphan rounds (isLocalRound=true):
+   *   - Persist via functional setRound(prev→…) and localSaveRound only; no API calls.
+   *
+   * Deferred: re-creating an orphan round on the backend (full sync engine — out of scope).
    */
   const handleSetScore = async (pid: string, idx: number, val: number | null) => {
     const holeNumber = idx + 1;
+    const pendingKey = `${pid}:${holeNumber}`;
+    const scorePayload: Score = { playerId: pid, holeNumber, strokes: val };
+    const id = params.id as string;
 
-    // 1. Optimistic local UI update
+    // 1. Optimistic UI update (functional updater → safe even on rapid concurrent taps)
     setScores((prev) => {
       const next = { ...prev };
-      const arr = [...(next[pid] ?? Array(18).fill(null))];
+      const arr = [...(next[pid] ?? Array(holeCount).fill(null))];
       arr[idx] = val;
       next[pid] = arr;
       return next;
     });
 
-    if (!round) return;
-    const id = params.id as string;
-    const scorePayload: Score = { playerId: pid, holeNumber, strokes: val };
-
     if (isLocalRound) {
-      // Orphan/offline round — persist to localStorage only.
-      const updatedScores = [
-        ...round.scores.filter((s) => !(s.playerId === pid && s.holeNumber === holeNumber)),
-        ...(val !== null ? [scorePayload] : []),
-      ];
-      const updated: Round = { ...round, scores: updatedScores, updatedAt: new Date().toISOString() };
-      setRound(updated);
-      localSaveRound(updated);
+      // LOCAL path: functional update avoids stale-closure data loss when two edits
+      // land in the same tick (both reads use `prev`, not the closed-over `round`).
+      setRound((prev) => {
+        if (!prev) return prev;
+        const updatedScores = [
+          ...prev.scores.filter(
+            (s) => !(s.playerId === pid && s.holeNumber === holeNumber)
+          ),
+          ...(val !== null ? [scorePayload] : []),
+        ];
+        const next: Round = {
+          ...prev,
+          scores: updatedScores,
+          updatedAt: new Date().toISOString(),
+        };
+        localSaveRound(next);
+        return next;
+      });
       return;
     }
 
-    // API-backed round: per-stroke upsert
+    // ONLINE path: add to pending, call API, handle response.
+    pendingRef.current.set(pendingKey, scorePayload);
+    const mySeq = ++addScoreSeqRef.current;
+
     try {
       const updated = await apiAddScore(id, scorePayload);
-      // Sync all scores from server response (single source of truth after upsert)
+
+      // Out-of-order guard: skip if a newer response already applied a later state.
+      if (mySeq <= lastAppliedSeqRef.current) {
+        // The pending entry stays until a newer confirmed response clears it.
+        return;
+      }
+      lastAppliedSeqRef.current = mySeq;
+
+      // Remove from pending ONLY if we're confirming exactly what's still pending.
+      // (If user re-entered the same hole while we were waiting, pending holds the newer
+      // strokes → don't remove so the overlay keeps showing the latest edit.)
+      const cur = pendingRef.current.get(pendingKey);
+      if (cur && cur.strokes === val) {
+        pendingRef.current.delete(pendingKey);
+      }
+
+      const serverHoleCount = updated.holes.length || holeCount;
+      const merged = mergeWithPending(
+        updated.players.map((p) => p.id),
+        updated.scores,
+        pendingRef.current,
+        serverHoleCount
+      );
       setRound(updated);
-      setScores(buildScoreMap(updated.players.map((p) => p.id), updated.scores));
-      // Write-through to localStorage so the app works offline
-      localSaveRound(updated);
+      setScores(merged);
+      // Write through: include remaining pending so a reload doesn't lose them.
+      localSaveRound(buildLocalRound(updated, pendingRef.current));
       setApiError(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to save score.";
-      setApiError(msg.length > 100 ? "Score save failed — check connection." : msg);
-      console.error(`[round/${id}] addScore failed:`, e);
-      // Persist optimistic state to localStorage so scores survive a reload
-      const updatedScores = [
-        ...round.scores.filter((s) => !(s.playerId === pid && s.holeNumber === holeNumber)),
-        ...(val !== null ? [scorePayload] : []),
-      ];
-      const fallback: Round = { ...round, scores: updatedScores, updatedAt: new Date().toISOString() };
-      setRound(fallback);
-      localSaveRound(fallback);
+      setApiError(
+        msg.startsWith("{") || msg.length > 100
+          ? "Score save failed — check connection."
+          : msg
+      );
+      console.error(`[round/${id}] addScore failed (score stays in pending):`, e);
+
+      // Persist to localStorage via functional update to avoid stale-closure data loss
+      // when two edits land in the same tick.
+      setRound((prev) => {
+        if (!prev) return prev;
+        const updatedScores = [
+          ...prev.scores.filter(
+            (s) => !(s.playerId === pid && s.holeNumber === holeNumber)
+          ),
+          ...(val !== null ? [scorePayload] : []),
+        ];
+        const next: Round = {
+          ...prev,
+          scores: updatedScores,
+          updatedAt: new Date().toISOString(),
+        };
+        // Merge remaining pending into localStorage so a reload sees everything.
+        localSaveRound(buildLocalRound(next, pendingRef.current));
+        return next;
+      });
+      // Score stays in pendingRef — will overlay on the next successful server response.
     }
   };
 
-  const distance = Math.max(80, hole.yards - Math.round(hole.yards * 0.6));
-  const pathPts = hole.path;
-  const midIdx = Math.max(1, pathPts.length - 2);
-  const shotPoint: [number, number] | null = pathPts[midIdx]
-    ? [(pathPts[midIdx][0] + pathPts[midIdx + 1][0]) / 2, (pathPts[midIdx][1] + pathPts[midIdx + 1][1]) / 2 + 0.05]
-    : null;
+  // ---------------------------------------------------------------------------
+  // Finish round
+  // ---------------------------------------------------------------------------
 
   const handleFinish = async () => {
     if (!round) {
@@ -280,8 +515,11 @@ export default function RoundPage() {
     const id = params.id as string;
 
     if (isLocalRound) {
-      // Orphan/offline: save locally only
-      const updated: Round = { ...round, status: "completed", updatedAt: new Date().toISOString() };
+      const updated: Round = {
+        ...round,
+        status: "completed",
+        updatedAt: new Date().toISOString(),
+      };
       setRound(updated);
       localSaveRound(updated);
       router.push("/");
@@ -294,13 +532,35 @@ export default function RoundPage() {
       localSaveRound(updated);
     } catch (e) {
       console.error(`[round/${id}] completeRound failed — saving locally:`, e);
-      const updated: Round = { ...round, status: "completed", updatedAt: new Date().toISOString() };
+      const updated: Round = {
+        ...round,
+        status: "completed",
+        updatedAt: new Date().toISOString(),
+      };
       setRound(updated);
       localSaveRound(updated);
     } finally {
       router.push("/");
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // Derived render values
+  // ---------------------------------------------------------------------------
+
+  const distance = Math.max(80, hole.yards - Math.round(hole.yards * 0.6));
+  const pathPts = hole.path;
+  const midIdx = Math.max(1, pathPts.length - 2);
+  const shotPoint: [number, number] | null = pathPts[midIdx]
+    ? [
+        (pathPts[midIdx][0] + pathPts[midIdx + 1][0]) / 2,
+        (pathPts[midIdx][1] + pathPts[midIdx + 1][1]) / 2 + 0.05,
+      ]
+    : null;
+
+  // ---------------------------------------------------------------------------
+  // Loading / not-found states
+  // ---------------------------------------------------------------------------
 
   if (loading) {
     return (
@@ -316,7 +576,17 @@ export default function RoundPage() {
           justifyContent: "center",
         }}
       >
-        <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.4, color: T.pencil, textTransform: "uppercase" }}>Loading…</div>
+        <div
+          style={{
+            fontFamily: T.mono,
+            fontSize: 10,
+            letterSpacing: 1.4,
+            color: T.pencil,
+            textTransform: "uppercase",
+          }}
+        >
+          Loading…
+        </div>
       </div>
     );
   }
@@ -338,8 +608,19 @@ export default function RoundPage() {
           padding: 24,
         }}
       >
-        <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 20, color: T.ink }}>Round not found</div>
-        <div style={{ fontFamily: T.sans, fontSize: 13, color: T.pencil, textAlign: "center" }}>
+        <div
+          style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 20, color: T.ink }}
+        >
+          Round not found
+        </div>
+        <div
+          style={{
+            fontFamily: T.sans,
+            fontSize: 13,
+            color: T.pencil,
+            textAlign: "center",
+          }}
+        >
           This round may have been deleted or is not available.
         </div>
         <button
@@ -362,8 +643,12 @@ export default function RoundPage() {
     );
   }
 
-  // First player ID used for "has this hole been played" indicator in hole chips
+  // First player ID — used for "has this hole been played" chip indicator.
   const firstPlayerId = players[0]?.id ?? "";
+
+  // ---------------------------------------------------------------------------
+  // Main render
+  // ---------------------------------------------------------------------------
 
   return (
     <div
@@ -377,8 +662,10 @@ export default function RoundPage() {
         color: T.ink,
       }}
     >
-      <div style={{ maxWidth: 420, margin: "0 auto", position: "relative", minHeight: "100vh" }}>
-        {/* Top chrome */}
+      <div
+        style={{ maxWidth: 420, margin: "0 auto", position: "relative", minHeight: "100vh" }}
+      >
+        {/* ── Top chrome ── */}
         <div
           style={{
             position: "absolute",
@@ -414,29 +701,81 @@ export default function RoundPage() {
           >
             {"←"}
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+
+          {/* Header info: flex:1 + minWidth:0 so course name truncates instead of overflowing */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
             <VoiceOrb state={voiceState} accent={accent} onTap={() => setVoiceOpen(true)} />
-            <div style={{ lineHeight: 1.1 }}>
-              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.4, color: T.pencil, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
-                <span>{round.courseName} · {new Date().toLocaleDateString("en-US", { weekday: "short" })} {new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>
+            <div style={{ lineHeight: 1.1, minWidth: 0, flex: 1 }}>
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.4,
+                  color: T.pencil,
+                  textTransform: "uppercase",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  overflow: "hidden",
+                }}
+              >
+                {/* Course + datetime — truncate on long real course names */}
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {round.courseName} ·{" "}
+                  {new Date().toLocaleDateString("en-US", { weekday: "short" })}{" "}
+                  {new Date().toLocaleTimeString("en-US", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                </span>
+                {/* LOCAL badge — fontSize 9 for sunlight readability */}
                 {isLocalRound && (
                   <span
                     style={{
-                      fontSize: 7.5,
+                      fontSize: 9,
                       letterSpacing: 1,
-                      color: "#b8763a",
-                      border: "1px solid #b8763a55",
+                      color: T.warningInk,
+                      border: `1px solid ${T.warningInk}55`,
                       borderRadius: 3,
                       padding: "1px 4px",
+                      flexShrink: 0,
+                      whiteSpace: "nowrap",
                     }}
                   >
                     LOCAL
                   </span>
                 )}
               </div>
-              <div style={{ fontFamily: T.serif, fontSize: 19, fontStyle: "italic", color: T.ink, letterSpacing: -0.3 }}>Round in progress</div>
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontSize: 19,
+                  fontStyle: "italic",
+                  color: T.ink,
+                  letterSpacing: -0.3,
+                }}
+              >
+                Round in progress
+              </div>
             </div>
           </div>
+
           <button
             onClick={() => setLbOpen(true)}
             title="Leaderboard"
@@ -454,11 +793,27 @@ export default function RoundPage() {
             }}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M3 2h8v3.5a4 4 0 0 1-8 0V2Z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
-              <path d="M3 3H1.5a1.5 1.5 0 0 0 1.5 3M11 3h1.5a1.5 1.5 0 0 1-1.5 3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-              <path d="M5 10.5h4M6 9v1.5M8 9v1.5M4.5 12.5h5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+              <path
+                d="M3 2h8v3.5a4 4 0 0 1-8 0V2Z"
+                stroke="currentColor"
+                strokeWidth="1.1"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M3 3H1.5a1.5 1.5 0 0 0 1.5 3M11 3h1.5a1.5 1.5 0 0 1-1.5 3"
+                stroke="currentColor"
+                strokeWidth="1.1"
+                strokeLinecap="round"
+              />
+              <path
+                d="M5 10.5h4M6 9v1.5M8 9v1.5M4.5 12.5h5"
+                stroke="currentColor"
+                strokeWidth="1.1"
+                strokeLinecap="round"
+              />
             </svg>
           </button>
+
           <button
             onClick={handleFinish}
             title="Finish round"
@@ -476,13 +831,18 @@ export default function RoundPage() {
             }}
           >
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-              <path d="M3 1.5V12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              <path
+                d="M3 1.5V12"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
               <path d="M3 2.2L10 4 3 5.5V2.2Z" fill="currentColor" />
             </svg>
           </button>
         </div>
 
-        {/* Scroll body */}
+        {/* ── Scroll body ── */}
         <div
           style={{
             position: "absolute",
@@ -496,18 +856,18 @@ export default function RoundPage() {
             WebkitOverflowScrolling: "touch",
           }}
         >
-          {/* API error banner (score save failures) */}
+          {/* API error banner — surfaced, never silently swallowed */}
           {apiError && (
             <div
               style={{
                 margin: "0 0 10px",
                 padding: "9px 12px",
                 borderRadius: 10,
-                background: "rgba(184,74,58,0.08)",
-                border: "1px solid rgba(184,74,58,0.2)",
+                background: `rgba(184,74,58,0.13)`,
+                border: `1px solid ${T.errorInk}33`,
                 fontFamily: T.serif,
                 fontSize: 12.5,
-                color: "#b84a3a",
+                color: T.errorInk,
                 lineHeight: 1.4,
                 display: "flex",
                 alignItems: "center",
@@ -516,28 +876,43 @@ export default function RoundPage() {
               }}
             >
               <span>{apiError}</span>
+              {/* 28×28 tap target — usable on-course in sunlight */}
               <button
                 onClick={() => setApiError(null)}
-                style={{ background: "none", border: "none", color: "#b84a3a", cursor: "pointer", fontSize: 15, padding: 0, lineHeight: 1 }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: T.errorInk,
+                  cursor: "pointer",
+                  fontSize: 15,
+                  padding: 0,
+                  lineHeight: 1,
+                  width: 28,
+                  height: 28,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
               >
                 ×
               </button>
             </div>
           )}
 
-          {/* Local/pending notice (orphan rounds) */}
+          {/* LOCAL/pending notice */}
           {isLocalRound && (
             <div
               style={{
                 margin: "0 0 10px",
                 padding: "9px 12px",
                 borderRadius: 10,
-                background: "rgba(184,118,58,0.07)",
-                border: "1px solid rgba(184,118,58,0.2)",
+                background: `rgba(184,118,58,0.13)`,
+                border: `1px solid ${T.warningInk}33`,
                 fontFamily: T.serif,
                 fontStyle: "italic",
                 fontSize: 12.5,
-                color: "#b8763a",
+                color: T.warningInk,
                 lineHeight: 1.4,
               }}
             >
@@ -545,11 +920,22 @@ export default function RoundPage() {
             </div>
           )}
 
-          {/* Hole nav chips */}
-          <div style={{ display: "flex", gap: 5, marginBottom: 12, overflowX: "auto", paddingBottom: 4, scrollSnapType: "x proximity" }}>
-            {Array.from({ length: 18 }, (_, i) => i + 1).map((h) => {
+          {/* Hole nav chips — rendered for the round's actual hole count, not hardcoded 18 */}
+          <div
+            style={{
+              display: "flex",
+              gap: 5,
+              marginBottom: 12,
+              overflowX: "auto",
+              paddingBottom: 4,
+              scrollSnapType: "x proximity",
+            }}
+          >
+            {Array.from({ length: holeCount }, (_, i) => i + 1).map((h) => {
               const isCur = h === currentHole;
-              const played = firstPlayerId ? scores[firstPlayerId]?.[h - 1] != null : false;
+              const played = firstPlayerId
+                ? scores[firstPlayerId]?.[h - 1] != null
+                : false;
               return (
                 <button
                   key={h}
@@ -622,9 +1008,7 @@ export default function RoundPage() {
                 }}
                 onCollapse={() => setExpanded(false)}
                 onZoom={() => {
-                  if (!draggedRef.current) {
-                    setExpanded(true);
-                  }
+                  if (!draggedRef.current) setExpanded(true);
                 }}
                 onAskCaddy={() => setVoiceOpen(true)}
                 caddy={caddy}
@@ -650,8 +1034,12 @@ export default function RoundPage() {
                 <PlayerPanel
                   key={p.id}
                   player={p}
-                  scores={scores[p.id] ?? Array(18).fill(null)}
-                  pars={round.holes.length > 0 ? round.holes.map((h) => h.par) : HOLES.map((h) => h.par)}
+                  scores={scores[p.id] ?? Array(holeCount).fill(null)}
+                  pars={
+                    round.holes.length > 0
+                      ? round.holes.map((h) => h.par)
+                      : HOLES.map((h) => h.par)
+                  }
                   currentHole={currentHole}
                   onSelectHole={goHole}
                   accent={accent}
@@ -672,7 +1060,8 @@ export default function RoundPage() {
               letterSpacing: -0.1,
             }}
           >
-            {round.courseName} · {round.holes.length || 18} holes{round.teeName ? ` · ${round.teeName} tees` : ""}
+            {round.courseName} · {holeCount} holes
+            {round.teeName ? ` · ${round.teeName} tees` : ""}
           </div>
         </div>
 
@@ -711,7 +1100,11 @@ export default function RoundPage() {
           >
             <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Enter score</span>
             <span style={{ width: 1, height: 14, background: "rgba(244,241,234,0.3)" }} />
-            <span style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, color: accent }}>HOLE {currentHole}</span>
+            <span
+              style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, color: accent }}
+            >
+              HOLE {currentHole}
+            </span>
             <span
               style={{
                 width: 22,
@@ -756,7 +1149,11 @@ export default function RoundPage() {
         onClose={() => setLbOpen(false)}
         players={players}
         scores={scores}
-        pars={round.holes.length > 0 ? round.holes.map((h) => h.par) : HOLES.map((h) => h.par)}
+        pars={
+          round.holes.length > 0
+            ? round.holes.map((h) => h.par)
+            : HOLES.map((h) => h.par)
+        }
         accent={accent}
       />
     </div>
@@ -766,7 +1163,17 @@ export default function RoundPage() {
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-      <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.4, color: T.pencil, textTransform: "uppercase" }}>{children}</div>
+      <div
+        style={{
+          fontFamily: T.mono,
+          fontSize: 9.5,
+          letterSpacing: 1.4,
+          color: T.pencil,
+          textTransform: "uppercase",
+        }}
+      >
+        {children}
+      </div>
       <div style={{ flex: 1, height: 1, background: T.hairline }} />
     </div>
   );

@@ -244,6 +244,45 @@ Format: date — done / in-progress / blocked.
   (P11) to ready; these are user-facing → TestFlight approval bundles. Lesson: add a real-DB
   migration smoke test (throwaway Postgres) to catch execution-time DDL bugs the offline gate can't.
 
+## 2026-06-26 (wire-round-scoring — reviewer fixes)
+- **Done:** reviewer + designer follow-up fixes for `wire-round-scoring` (same branch).
+  BLOCKER fixed:
+  A. **Silent permanent score loss (FIXED):** introduced `pendingRef` (Map<string,Score>,
+     key="{playerId}:{holeNumber}") to track scores entered but not yet server-confirmed.
+     - `mergeWithPending()`: overlays pending on every server snapshot so a failed-save
+       score is never wiped by the next success.
+     - `buildLocalRound()`: merges pending into the round saved to localStorage so a page
+       reload re-discovers unsynced scores.
+     - Pending removal: only when server confirms exact (playerId, holeNumber, strokes)
+       — rapid re-entry of the same hole leaves the newer pending value intact.
+     - On load: compares API response vs localStorage; re-adds any local-only scores to
+       pending; fires `retrySyncPending()` (background, silently logged on failure).
+  CORRECTNESS fixed:
+  1. Load catch now calls `isNotFoundOrNetworkError(e)`: `TypeError` (network) or
+     message contains "not found"/"API error: 404" → LOCAL mode; all other errors
+     (500, auth) → stay ONLINE, show banner, render from localStorage cache.
+  2. Out-of-order responses: `addScoreSeqRef` + `lastAppliedSeqRef` — each addScore
+     call gets a seq; response is skipped if `mySeq ≤ lastApplied` (a newer one already
+     updated state). Combined with pending overlay prevents stale snapshots from
+     clobbering latest UI state.
+  3. Stale closures eliminated: all LOCAL-branch and error-branch `round` mutations now
+     use `setRound(prev → …)` functional updaters (reads latest state, not closed-over
+     stale value). `localSaveRound` called inside the updater with latest `prev`.
+  DESIGN fixed:
+  4. "LOCAL" badge fontSize 7.5 → 9 (readable in sunlight).
+  5. Error-banner × button: `width:28,height:28,display:'flex',alignItems:'center',
+     justifyContent:'center',flexShrink:0` (adequate touch target on-course).
+  6. Header course-name span: `flex:1,minWidth:0,overflow:hidden,textOverflow:ellipsis,
+     whiteSpace:nowrap` — real course names no longer overflow on small viewports.
+  7. Status-zone backgrounds: error `rgba(184,74,58,0.08)→0.13`, LOCAL
+     `rgba(184,118,58,0.07)→0.13` — contrast for sunlight use.
+  8. Hole nav chips: `Array.from({length:holeCount},…)` not hardcoded 18 — 9-hole
+     rounds render 9 chips.
+  9. `T.errorInk:"#b84a3a"` + `T.warningInk:"#b8763a"` registered in `tokens.ts`;
+     all hardcoded hex refs in RoundPageClient replaced with token references.
+  - Gates: lint clean (src/), tsc --noEmit clean, voice-tests 260/260, build OK.
+  - NOTICEABLE — all fixes are behavioural + visual improvements to the scoring screen.
+
 ## 2026-06-26 (wire-round-scoring)
 - **Done:** backlog `wire-round-scoring` (P11, NOTICEABLE) — `RoundPageClient.tsx` now loads
   and persists scores via the backend instead of SEED_SCORES/SEED_PLAYERS mocks.
