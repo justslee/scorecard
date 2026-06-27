@@ -12,6 +12,7 @@ import ScoreSheet from "@/components/yardage/ScoreSheet";
 import LeaderboardSheet from "@/components/yardage/LeaderboardSheet";
 import { Round, Score } from "@/lib/types";
 import { getRound as localGetRound, saveRound as localSaveRound } from "@/lib/storage";
+import CaddieSheet from "@/components/CaddieSheet";
 import {
   getRound as apiGetRound,
   addScore as apiAddScore,
@@ -192,6 +193,7 @@ export default function RoundPage() {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [scoreOpen, setScoreOpen] = useState(false);
   const [lbOpen, setLbOpen] = useState(false);
+  const [caddieOpen, setCaddieOpen] = useState(false);
   const [slideDir, setSlideDir] = useState(0);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [turns, setTurns] = useState<VoiceTurn[]>([]);
@@ -1110,7 +1112,7 @@ export default function RoundPage() {
           </div>
         </div>
 
-        {/* Bottom score-entry pill */}
+        {/* Bottom action row — caddie + score entry */}
         <div
           style={{
             position: "absolute",
@@ -1119,16 +1121,62 @@ export default function RoundPage() {
             right: 0,
             zIndex: 20,
             display: "flex",
+            alignItems: "center",
             justifyContent: "center",
+            gap: 8,
             padding: "0 20px",
-            pointerEvents: scoreOpen || voiceOpen ? "none" : "auto",
+            pointerEvents: scoreOpen || voiceOpen || caddieOpen ? "none" : "auto",
           }}
         >
+          {/* Ask Caddie — ghost pill */}
+          <motion.button
+            onClick={() => setCaddieOpen(true)}
+            whileTap={{ scale: 0.97 }}
+            style={{
+              padding: "14px 18px",
+              borderRadius: 99,
+              border: `1px solid ${T.hairline}`,
+              background: T.paper,
+              color: T.ink,
+              cursor: "pointer",
+              boxShadow: "0 8px 24px rgba(26,42,26,0.12)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontFamily: T.sans,
+              fontSize: 14,
+              fontWeight: 500,
+              flexShrink: 0,
+            }}
+          >
+            {/* Caddie initial medallion */}
+            <span
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                background: accent,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 10,
+                color: "#fff",
+                flexShrink: 0,
+              }}
+            >
+              {caddy.initial}
+            </span>
+            <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Ask caddie</span>
+          </motion.button>
+
+          {/* Enter Score — solid pill */}
           <motion.button
             onClick={() => setScoreOpen(true)}
             whileTap={{ scale: 0.97 }}
             style={{
-              padding: "14px 24px",
+              padding: "14px 22px",
               borderRadius: 99,
               border: "none",
               background: T.ink,
@@ -1137,10 +1185,11 @@ export default function RoundPage() {
               boxShadow: "0 12px 30px rgba(26,42,26,0.3)",
               display: "flex",
               alignItems: "center",
-              gap: 12,
+              gap: 10,
               fontFamily: T.sans,
               fontSize: 14,
               fontWeight: 500,
+              flexShrink: 0,
             }}
           >
             <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Enter score</span>
@@ -1148,22 +1197,7 @@ export default function RoundPage() {
             <span
               style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, color: accent }}
             >
-              HOLE {currentHole}
-            </span>
-            <span
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 99,
-                background: accent,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 14,
-                color: "#fff",
-              }}
-            >
-              ↑
+              {currentHole}
             </span>
           </motion.button>
         </div>
@@ -1187,6 +1221,16 @@ export default function RoundPage() {
         scores={scores}
         onSetScore={handleSetScore}
         accent={accent}
+      />
+
+      <CaddieSheet
+        open={caddieOpen}
+        onClose={() => setCaddieOpen(false)}
+        caddy={caddy}
+        accent={accent}
+        holeNumber={currentHole}
+        holePar={holePar}
+        holeYards={round.holes[currentHole - 1]?.yards ?? hole.yards}
       />
 
       <LeaderboardSheet
