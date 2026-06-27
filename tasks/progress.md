@@ -3,6 +3,39 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (frontend-lint-cleanup P32)
+- **Done:** backlog `frontend-lint-cleanup` (P32, SILENT) — `npm run lint` now passes with
+  0 errors and 0 warnings. Commit `c867c06` on `integration/next`.
+
+  Root cause: ~2,874 of the errors were false positives from the Capacitor iOS web bundle
+  (`ios/App/App/public/_next/static/`). Eliminated by adding `"ios/**"` to ESLint
+  `globalIgnores` in `eslint.config.mjs`.
+
+  Real fixes in `src/` and `voice-tests/`:
+  - **react-hooks/set-state-in-effect + react-hooks/refs:** Replaced two `useEffect`-based
+    prop-sync patterns in `PlayerAutocomplete.tsx` and `ScoreSheet.tsx` with the React
+    "store previous prop" pattern (`useState`-based conditional during render).
+  - **react-hooks/immutability (used-before-declared):** `parseSimpleScore` extracted to
+    module level in `ScoreGrid.tsx` (it's pure); `submitScore` (useCallback) and
+    `parseVoiceLocally` reordered to appear before `processVoiceScores` in the component.
+  - **react-hooks/exhaustive-deps:** Wrapped `effectivePin` in `useMemo` in `CaddiePanel.tsx`
+    so its object reference is stable across renders (was creating a new object on every render).
+  - **Unused imports/vars:** Removed `AnimatePresence`, `Users`, `ChevronRight`, `Player`,
+    `stripFillerWords`, `extractCapitalizedNames` across 6 files. Used `_`-prefix pattern for
+    intentionally unused params; added `argsIgnorePattern: "^_"` to ESLint config.
+  - **`no-explicit-any`:** Replaced all `any` types in voice-tests and voice lib files with
+    `unknown`, explicit casts, or typed interfaces.
+  - **SpeechRecognition typing:** Added `SpeechRecognitionErrorEvent` to `src/types/speech.d.ts`
+    (updated `onerror` type there); used typed window cast pattern across ScoreGrid, VoiceGameSetup,
+    VoiceTournamentSetup. Restored `useEffect` to PlayerAutocomplete import (was incorrectly removed).
+  - **react/no-unescaped-entities:** Changed raw quotes to `&ldquo;/&rdquo;` in JSX text.
+  - **catch (e) {} → catch {}:** In haptics.ts, VoiceGameSetup, VoiceTournamentSetup.
+  - **eslint-disable comment:** Added `// eslint-disable-next-line @next/next/no-img-element`
+    on the avatar `<img>` in `players/page.tsx` (user-provided URL, next/image requires known domains).
+
+  Gates: lint 0 problems · tsc 0 errors · voice-tests 260/260 · npm test 238/238.
+  SILENT — no user-visible change on TestFlight.
+
 ## 2026-06-27 (mount-ocr-scan P27 — polish pass)
 - **Done:** 13-item reviewer/designer polish pass for `mount-ocr-scan` (commit `cba0e25`
   on `integration/next`).
