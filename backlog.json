@@ -450,6 +450,14 @@
       "rationale": "GAP found in code: handleFinish flips status + dumps straight to home, no recap. New RoundRecap shown on finish (final scores vs par, highlights, game results via existing GameResults); reads existing data, no backend change. Northstar-aligned end-of-round moment.",
       "classification": "noticeable",
       "done_note": "New RoundRecap on finish (was: dumped straight to home). Final scores vs par, best-hole + birdie/eagle kickers, GameResults reused read-only (added backward-compat readOnly prop). Reviewer SHIP (persistence byte-for-byte intact) + designer polish-then-ship (sticky Done, readOnly games suppress 18 warnings/collapse tables, ROUND COMPLETE anchor) all folded. Gates verified."
+    },
+    {
+      "id": "settings-signout-restyle",
+      "priority": 39,
+      "status": "in-progress",
+      "title": "Add Sign Out (missing entirely) + restyle Settings to yardage-book T.*",
+      "rationale": "GAPS found: (1) no signOut anywhere \u2014 app gates on sign-in but cannot sign out (AuthButtons dead/unmounted); (2) settings/page.tsx is the only screen still on Tailwind/CSS classes (T.* count 0), a NORTHSTAR inconsistency. Sign-out via Clerk useClerk().signOut() -> AuthGate shows sign-in. Restyle whole page to T.*; keep About + Clear Local Cache.",
+      "classification": "noticeable"
     }
   ]
 }
