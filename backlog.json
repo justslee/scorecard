@@ -418,11 +418,11 @@
     {
       "id": "voice-to-score-confidence",
       "priority": 35,
-      "status": "needs-spec",
+      "status": "in-progress",
       "title": "In-round voice-to-score with confidence/confirm (scoring half of P33)",
       "rationale": "PM found the in-round scoring path has NO voice mic at all and no confidence field. This is net-new: add a real mic in ScoreSheet, a VoiceScoreResponse.confidence field (backend voice.py), and a confirm step (mirror ScanSheet) when low-confidence. Own bundle \u2014 deferred from P33 setup slice. See specs/voice-low-confidence-ux.md scoring section.",
       "classification": "noticeable + backend change",
-      "note": "Best done AFTER the current massive bundle ships + is validated, since it touches backend."
+      "note": "Best done AFTER the current massive bundle ships + is validated, since it touches backend. | Owner approved building now (chose voice-to-score over validating-first) 2026-06-27."
     },
     {
       "id": "backend-test-suite",
