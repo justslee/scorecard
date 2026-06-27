@@ -7,7 +7,22 @@ import { getCourses as localGetCourses, saveRound as localSaveRound } from '@/li
 import { getTournamentAsync } from '@/lib/storage-api';
 import { createRound, getCourses as apiGetCourses } from '@/lib/api';
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from '@/components/yardage/tokens';
-import { GripVertical } from 'lucide-react';
+
+// ── Inline icon — no lucide-react ────────────────────────────────────────────
+
+function GripVerticalIcon({ width = 24, height = 24, color }: { width?: number; height?: number; color?: string }) {
+  return (
+    <svg width={width} height={height} viewBox="0 0 24 24" fill="currentColor" stroke="none"
+      aria-hidden="true" style={color ? { color } : undefined}>
+      <circle cx="9" cy="5" r="1.5" />
+      <circle cx="9" cy="12" r="1.5" />
+      <circle cx="9" cy="19" r="1.5" />
+      <circle cx="15" cy="5" r="1.5" />
+      <circle cx="15" cy="12" r="1.5" />
+      <circle cx="15" cy="19" r="1.5" />
+    </svg>
+  );
+}
 import {
   DndContext,
   DragOverlay,
@@ -87,7 +102,7 @@ function SortablePlayer({
         }}
         aria-label="Drag to reorder"
       >
-        <GripVertical width={14} height={14} color={T.pencilSoft} />
+        <GripVerticalIcon width={14} height={14} color={T.pencilSoft} />
       </button>
       <span
         style={{
@@ -139,7 +154,7 @@ function DraggedPlayer({ name }: { name: string }) {
         boxShadow: '0 8px 24px rgba(26,42,26,0.25)',
       }}
     >
-      <GripVertical width={14} height={14} color={T.paper} />
+      <GripVerticalIcon width={14} height={14} color={T.paper} />
       <span
         style={{
           fontFamily: T.sans,

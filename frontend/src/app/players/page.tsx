@@ -3,8 +3,69 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Plus, User, Search, X, Check } from 'lucide-react';
 import { SavedPlayer } from '@/lib/types';
+
+// ── Inline icons — no lucide-react ───────────────────────────────────────────
+
+function ArrowLeftIcon({ size = 24, style }: { size?: number; style?: React.CSSProperties }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
+      <path d="M19 12H5" />
+      <path d="M12 19l-7-7 7-7" />
+    </svg>
+  );
+}
+
+function PlusIcon({ size = 24, style }: { size?: number; style?: React.CSSProperties }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function UserIcon({ size = 24, color, style }: { size?: number; color?: string; style?: React.CSSProperties }) {
+  const mergedStyle: React.CSSProperties = color ? { color, ...style } : { ...style };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={mergedStyle}>
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
+function SearchIcon({ size = 24, style }: { size?: number; style?: React.CSSProperties }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
+function XIcon({ size = 24, style }: { size?: number; style?: React.CSSProperties }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function CheckIcon({ size = 24, style }: { size?: number; style?: React.CSSProperties }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
 import {
   getPlayersAsync,
   createPlayerAsync,
@@ -183,7 +244,7 @@ export default function PlayersPage() {
               flexShrink: 0,
             }}
           >
-            <ArrowLeft size={18} aria-hidden="true" />
+            <ArrowLeftIcon size={18} />
           </Link>
           <h1
             style={{
@@ -245,7 +306,7 @@ export default function PlayersPage() {
         {/* Search & Add */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
           <div style={{ position: 'relative', flex: 1 }}>
-            <Search
+            <SearchIcon
               size={16}
               style={{
                 position: 'absolute',
@@ -255,7 +316,6 @@ export default function PlayersPage() {
                 color: T.pencil,
                 pointerEvents: 'none',
               }}
-              aria-hidden="true"
             />
             <input
               type="text"
@@ -293,7 +353,7 @@ export default function PlayersPage() {
               cursor: 'pointer',
             }}
           >
-            <Plus size={20} aria-hidden="true" />
+            <PlusIcon size={20} />
           </button>
         </div>
 
@@ -308,7 +368,7 @@ export default function PlayersPage() {
               background: T.paper,
             }}
           >
-            <User size={36} color={T.pencilSoft} aria-hidden="true" style={{ margin: '0 auto 16px' }} />
+            <UserIcon size={36} color={T.pencilSoft} style={{ margin: '0 auto 16px' }} />
             <p style={{ fontSize: 17, fontWeight: 500, color: T.inkSoft, margin: '0 0 6px' }}>
               {search ? 'No players found' : 'No players yet'}
             </p>
@@ -336,7 +396,7 @@ export default function PlayersPage() {
                   cursor: 'pointer',
                 }}
               >
-                <Plus size={16} aria-hidden="true" />
+                <PlusIcon size={16} />
                 Add First Player
               </button>
             )}
@@ -612,7 +672,7 @@ function PlayerModal({ player, onSave, onClose }: PlayerModalProps) {
               opacity: saving ? 0.5 : 1,
             }}
           >
-            <X size={18} aria-hidden="true" />
+            <XIcon size={18} />
           </button>
         </div>
 
@@ -760,7 +820,7 @@ function PlayerModal({ player, onSave, onClose }: PlayerModalProps) {
                 />
               ) : (
                 <>
-                  <Check size={16} aria-hidden="true" />
+                  <CheckIcon size={16} />
                   {player ? 'Save' : 'Add Player'}
                 </>
               )}

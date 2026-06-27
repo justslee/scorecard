@@ -3,6 +3,28 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (restyle-dark-components-sweep P24.5 — lucide cleanup, final pass)
+- **Done:** two remaining reachable lucide-react importers replaced with inline SVGs.
+  - `frontend/src/app/players/page.tsx`: removed `import { ArrowLeft, Plus, User, Search, X, Check }`.
+    Six local icon components added (ArrowLeftIcon, PlusIcon, UserIcon, SearchIcon, XIcon,
+    CheckIcon) — pattern matching SwipeableRow.tsx (viewBox 0 0 24 24, fill none, stroke
+    currentColor, strokeWidth 1.5, strokeLinecap/Linejoin round, aria-hidden baked in).
+    UserIcon accepts `color` prop (merges into style.color so currentColor resolves); all
+    others inherit color from the parent element. All size/style/color props preserved.
+  - `frontend/src/app/tournament/[id]/round/new/NewTournamentRoundClient.tsx`: removed
+    `import { GripVertical }`. Added `GripVerticalIcon` (fill currentColor, two columns of
+    6 circles matching Lucide's GripVertical glyph). Both usages replaced — pencilSoft in
+    the sortable row, T.paper in the drag overlay ghost.
+  - `grep -rln "from.*lucide-react" frontend/src` now returns zero results for reachable
+    files; remaining 15 importers are all confirmed non-reachable (P29 legacy dead-code:
+    GamesPanel, AddGameModal, RoundSummary, EditGroupsModal, CourseSearchImport,
+    VoiceGameSetup, VoiceTournamentSetup, TournamentGamesPanel; blocked-P28 GPS/caddie
+    cluster: CaddiePanel, GPSMapView, ShotTrackingControl, PinMarkControl, CaddieNotesCard,
+    CustomPersonaModal; unimported AuthButtons).
+  - Gates: lint 0 · tsc 0 · voice-tests 260/260 · npm test 238/238 · build 15 pages OK.
+  - SILENT — visually identical (same icon glyphs, same layout); NORTHSTAR correctness
+    (no icon-library dependency in reachable render paths).
+
 ## 2026-06-27 (restyle-dark-components-sweep P24.5 — lucide cleanup)
 - **Done:** backlog `restyle-dark-components-sweep` (P24.5, SILENT) — removed the two
   remaining reachable `lucide-react` imports from `settings/page.tsx` and
