@@ -31,7 +31,9 @@
       "priority": 3,
       "risk": "low",
       "status": "done",
-      "depends_on": ["db-core-schema"],
+      "depends_on": [
+        "db-core-schema"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -41,7 +43,9 @@
       "priority": 4,
       "risk": "medium",
       "status": "done",
-      "depends_on": ["db-core-schema"],
+      "depends_on": [
+        "db-core-schema"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -51,7 +55,9 @@
       "priority": 5,
       "risk": "low",
       "status": "done",
-      "depends_on": ["backend-rounds-scores-db"],
+      "depends_on": [
+        "backend-rounds-scores-db"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -61,7 +67,9 @@
       "priority": 6,
       "risk": "medium",
       "status": "done",
-      "depends_on": ["db-core-schema"],
+      "depends_on": [
+        "db-core-schema"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -71,7 +79,9 @@
       "priority": 7,
       "risk": "low",
       "status": "done",
-      "depends_on": ["db-core-schema"],
+      "depends_on": [
+        "db-core-schema"
+      ],
       "why": "Decision: new golfer_profiles table, distinct from caddie player_profiles.",
       "spec": "specs/real-data-wiring-plan.md"
     },
@@ -83,7 +93,9 @@
       "risk": "medium",
       "status": "done",
       "resolution": "Satisfied by backend-rounds-scores-db + backend-tournaments-db + api-contract-align: normalized games table (mig 005), round/tournament-scoped CRUD via those endpoints, Game.teams/roundId parity added, and standalone /api/games client funcs removed. No separate endpoint needed (decision E4). No build required.",
-      "depends_on": ["backend-rounds-scores-db"],
+      "depends_on": [
+        "backend-rounds-scores-db"
+      ],
       "why": "Decision: normalized games table (FK round/tournament), managed via round/tournament endpoints; delete imagined getGame/createGame from api.ts.",
       "spec": "specs/real-data-wiring-plan.md"
     },
@@ -94,7 +106,12 @@
       "priority": 9,
       "risk": "low",
       "status": "done",
-      "depends_on": ["backend-players-db", "backend-rounds-scores-db", "backend-tournaments-db", "backend-courses-db"],
+      "depends_on": [
+        "backend-players-db",
+        "backend-rounds-scores-db",
+        "backend-tournaments-db",
+        "backend-courses-db"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -104,7 +121,11 @@
       "priority": 10,
       "risk": "high",
       "status": "done",
-      "depends_on": ["api-contract-align", "backend-rounds-scores-db", "backend-courses-db"],
+      "depends_on": [
+        "api-contract-align",
+        "backend-rounds-scores-db",
+        "backend-courses-db"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -114,7 +135,10 @@
       "priority": 11,
       "risk": "medium",
       "status": "done",
-      "depends_on": ["api-contract-align", "backend-rounds-scores-db"],
+      "depends_on": [
+        "api-contract-align",
+        "backend-rounds-scores-db"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -124,7 +148,9 @@
       "priority": 12,
       "risk": "medium",
       "status": "done",
-      "depends_on": ["wire-round-scoring"],
+      "depends_on": [
+        "wire-round-scoring"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -134,7 +160,11 @@
       "priority": 13,
       "risk": "medium",
       "status": "done",
-      "depends_on": ["api-contract-align", "backend-rounds-scores-db", "backend-profile-endpoint"],
+      "depends_on": [
+        "api-contract-align",
+        "backend-rounds-scores-db",
+        "backend-profile-endpoint"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -144,7 +174,9 @@
       "priority": 14,
       "risk": "medium",
       "status": "done",
-      "depends_on": ["backend-profile-endpoint"],
+      "depends_on": [
+        "backend-profile-endpoint"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -154,7 +186,9 @@
       "priority": 15,
       "risk": "medium",
       "status": "done",
-      "depends_on": ["backend-profile-endpoint"],
+      "depends_on": [
+        "backend-profile-endpoint"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -164,7 +198,9 @@
       "priority": 16,
       "risk": "high",
       "status": "blocked",
-      "depends_on": ["wire-round-scoring"],
+      "depends_on": [
+        "wire-round-scoring"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -174,7 +210,10 @@
       "priority": 17,
       "risk": "low",
       "status": "done",
-      "depends_on": ["backend-players-db", "api-contract-align"],
+      "depends_on": [
+        "backend-players-db",
+        "api-contract-align"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -184,7 +223,10 @@
       "priority": 18,
       "risk": "high",
       "status": "done",
-      "depends_on": ["backend-tournaments-db", "wire-round-scoring"],
+      "depends_on": [
+        "backend-tournaments-db",
+        "wire-round-scoring"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -194,7 +236,9 @@
       "priority": 19,
       "risk": "low",
       "status": "done",
-      "depends_on": ["backend-tournaments-db"],
+      "depends_on": [
+        "backend-tournaments-db"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -204,7 +248,9 @@
       "priority": 20,
       "risk": "low",
       "status": "done",
-      "depends_on": ["backend-players-db"],
+      "depends_on": [
+        "backend-players-db"
+      ],
       "spec": "specs/real-data-wiring-plan.md"
     },
     {
@@ -225,7 +271,9 @@
       "priority": 25,
       "risk": "high",
       "status": "blocked",
-      "depends_on": ["api-contract-align"],
+      "depends_on": [
+        "api-contract-align"
+      ],
       "why": "Owner chose real integration (not a demo). Phase 1 (ready once api-contract-align lands): real course search + GolfNow/course booking deep-links, no gated API. Phase 2 (live slots via GolfNow Affiliate API) and Phase 3 (auto-booking via Lightspeed/foreUP) are blocked on owner-supplied provider credentials.",
       "blocked_on_owner": "Phases 2-3 only: GolfNow Affiliate & Partner API creds; Lightspeed/foreUP partner creds. Phase 1 needs no creds.",
       "spec": "specs/real-data-wiring-plan.md"
@@ -248,17 +296,17 @@
       "risk": "low",
       "status": "done",
       "depends_on": [],
-      "why": "Designer flagged (games-matchplay-nassau review): these two user-facing game-result components are entirely dark-mode Tailwind (zinc gradients, emerald/amber rank circles, Lucide Trophy, text-white) — a NORTHSTAR violation predating the wiring work. The in-round LeaderboardSheet (what golfers see during play) is already on-paper; these post-round/standings views are not. Restyle to T.* tokens matching the rest of the app. No logic changes."
+      "why": "Designer flagged (games-matchplay-nassau review): these two user-facing game-result components are entirely dark-mode Tailwind (zinc gradients, emerald/amber rank circles, Lucide Trophy, text-white) \u2014 a NORTHSTAR violation predating the wiring work. The in-round LeaderboardSheet (what golfers see during play) is already on-paper; these post-round/standings views are not. Restyle to T.* tokens matching the rest of the app. No logic changes."
     },
     {
       "id": "restyle-dark-components-sweep",
-      "title": "Restyle reachable dark components (auth) — most flagged dark files are DEAD/unmounted",
+      "title": "Restyle reachable dark components (auth) \u2014 most flagged dark files are DEAD/unmounted",
       "type": "minor",
       "priority": 24.5,
       "risk": "low",
       "status": "needs-decision",
       "depends_on": [],
-      "why": "REACHABILITY AUDIT (2026-06-27): of the ~21 dark-Tailwind components, almost all are DEAD CODE / UNMOUNTED legacy from the pre-yardage-book prototype, superseded by the wired screens. Dead subtrees (0 reachable importers): GamesPanel→AddGameModal/VoiceGameSetup; ScoreGrid→HoleScoreModal; CaddieModal→CaddiePanel→CaddieNotesCard/CustomPersonaModal/PinMarkControl/ShotTrackingControl; plus RoundSummary, TournamentGamesPanel, TournamentLeaderboard, VoiceTournamentSetup, GPSMapView, CameraCapture, CourseSearchImport. ONLY genuinely-reachable dark UI = the auth screens (SignInClient, SignUpClient, AuthProvider — real /sign-in /sign-up routes). So restyling the dead ones is moot; restyle ONLY auth here. SEPARATE, BIGGER ISSUE: several FLAGSHIP features are unmounted (no entry point) — AI caddie, OCR scorecard scan, GPS/shot-tracking, rich mid-round games panel. Those need a product decision (re-mount+wire+restyle vs delete) — see unmounted-features-decision. (Note: ScoreGrid/HoleScoreModal were already restyled before this was discovered — harmless, just unused.)"
+      "why": "REACHABILITY AUDIT (2026-06-27): of the ~21 dark-Tailwind components, almost all are DEAD CODE / UNMOUNTED legacy from the pre-yardage-book prototype, superseded by the wired screens. Dead subtrees (0 reachable importers): GamesPanel\u2192AddGameModal/VoiceGameSetup; ScoreGrid\u2192HoleScoreModal; CaddieModal\u2192CaddiePanel\u2192CaddieNotesCard/CustomPersonaModal/PinMarkControl/ShotTrackingControl; plus RoundSummary, TournamentGamesPanel, TournamentLeaderboard, VoiceTournamentSetup, GPSMapView, CameraCapture, CourseSearchImport. ONLY genuinely-reachable dark UI = the auth screens (SignInClient, SignUpClient, AuthProvider \u2014 real /sign-in /sign-up routes). So restyling the dead ones is moot; restyle ONLY auth here. SEPARATE, BIGGER ISSUE: several FLAGSHIP features are unmounted (no entry point) \u2014 AI caddie, OCR scorecard scan, GPS/shot-tracking, rich mid-round games panel. Those need a product decision (re-mount+wire+restyle vs delete) \u2014 see unmounted-features-decision. (Note: ScoreGrid/HoleScoreModal were already restyled before this was discovered \u2014 harmless, just unused.)"
     },
     {
       "id": "mount-caddie",
@@ -266,9 +314,10 @@
       "type": "major",
       "priority": 26,
       "risk": "medium",
-      "status": "ready",
+      "status": "in-progress",
       "depends_on": [],
-      "why": "Flagship README feature, backend live (/api/caddie/*) but UNMOUNTED — CaddieModal/CaddiePanel have no entry point. Add a calm caddie entry (e.g. a button on RoundPageClient that opens the caddie in a yardage-book sheet), restyle CaddiePanel + CaddieNotesCard + CustomPersonaModal off dark Tailwind to T.*. Keep the backend wiring + clubDistances (from the now-real bag) feeding recommendations. Pin/shot-tracking/GPS controls are the separate mount-gps-shot-tracking item."
+      "why": "Flagship README feature, backend live (/api/caddie/*) but UNMOUNTED \u2014 CaddieModal/CaddiePanel have no entry point. Add a calm caddie entry (e.g. a button on RoundPageClient that opens the caddie in a yardage-book sheet), restyle CaddiePanel + CaddieNotesCard + CustomPersonaModal off dark Tailwind to T.*. Keep the backend wiring + clubDistances (from the now-real bag) feeding recommendations. Pin/shot-tracking/GPS controls are the separate mount-gps-shot-tracking item.",
+      "scoping_note": "Scoped LEAN/voice-first: new CaddieSheet using GPS-free /caddie/voice + /caddie/recommend. Full 1215-line CaddiePanel (mapbox/GPS/shot-tracking/pins) stays orphaned under blocked P28; not re-mounted (honors NORTHSTAR calm/voice-first, avoids dragging in blocked work)."
     },
     {
       "id": "mount-ocr-scan",
@@ -282,12 +331,14 @@
     },
     {
       "id": "mount-gps-shot-tracking",
-      "title": "Re-mount GPS map + shot-tracking + pin controls (caddie companion) — follow-up",
+      "title": "Re-mount GPS map + shot-tracking + pin controls (caddie companion) \u2014 follow-up",
       "type": "major",
       "priority": 28,
       "risk": "medium",
       "status": "blocked",
-      "depends_on": ["mount-caddie"],
+      "depends_on": [
+        "mount-caddie"
+      ],
       "why": "GPSMapView/ShotTrackingControl/PinMarkControl exist (some backend-wired: shots/pins on Postgres) but unmounted. Re-mount + restyle after the caddie lands. Owner chose caddie+OCR first; this is the deferred follow-up."
     },
     {
@@ -297,8 +348,12 @@
       "priority": 29,
       "risk": "low",
       "status": "blocked",
-      "depends_on": ["mount-caddie", "mount-ocr-scan", "mount-gps-shot-tracking"],
-      "why": "After re-mounting caddie/OCR/GPS, delete what remains truly dead (e.g. ScoreGrid/HoleScoreModal — superseded by yardage ScoreSheet; RoundSummary, TournamentGamesPanel/TournamentLeaderboard, GamesPanel if its function is covered inline). Do LAST so we don't delete something a re-mount item revives. Verify zero importers + build before each deletion."
+      "depends_on": [
+        "mount-caddie",
+        "mount-ocr-scan",
+        "mount-gps-shot-tracking"
+      ],
+      "why": "After re-mounting caddie/OCR/GPS, delete what remains truly dead (e.g. ScoreGrid/HoleScoreModal \u2014 superseded by yardage ScoreSheet; RoundSummary, TournamentGamesPanel/TournamentLeaderboard, GamesPanel if its function is covered inline). Do LAST so we don't delete something a re-mount item revives. Verify zero importers + build before each deletion."
     },
     {
       "id": "test-voice-pipeline",
