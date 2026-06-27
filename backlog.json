@@ -213,7 +213,7 @@
       "type": "major",
       "priority": 21,
       "risk": "medium",
-      "status": "ready",
+      "status": "done",
       "depends_on": [],
       "why": "Games engine is isolated and test-covered; match-play Nassau just shows stroke totals today. Buildable independently of the DB work.",
       "spec": "specs/real-data-wiring-plan.md"
@@ -222,7 +222,7 @@
       "id": "tee-time-real",
       "title": "Tee-time REAL integration (phased: deep-links -> provider slots -> auto-booking)",
       "type": "major",
-      "priority": 22,
+      "priority": 25,
       "risk": "high",
       "status": "blocked",
       "depends_on": ["api-contract-align"],
@@ -239,6 +239,16 @@
       "status": "ready",
       "depends_on": [],
       "why": "test-voice-pipeline found two real bugs in parseVoiceScoresLocally: (1) 'for' (STT for four) is in WORD_TO_NUM but missing from the first/second-pass regex alternations, so 'with a for' yields no score; (2) 'everybody dbl bogey' matches the everyone-regex but the value selector checks t.includes('double') not 'dbl', returning par+1 instead of par+2. Fix both + flip the documenting unit tests to assert correct behavior. Noticeable (voice score behavior) -> goes in the next bundle AFTER #51 ships, not folded into the pending approval."
+    },
+    {
+      "id": "restyle-game-result-screens",
+      "title": "Restyle GameResults.tsx + GameLeaderboards.tsx to yardage-book (still dark-mode SaaS)",
+      "type": "major",
+      "priority": 24,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Designer flagged (games-matchplay-nassau review): these two user-facing game-result components are entirely dark-mode Tailwind (zinc gradients, emerald/amber rank circles, Lucide Trophy, text-white) — a NORTHSTAR violation predating the wiring work. The in-round LeaderboardSheet (what golfers see during play) is already on-paper; these post-round/standings views are not. Restyle to T.* tokens matching the rest of the app. No logic changes."
     },
     {
       "id": "test-voice-pipeline",
