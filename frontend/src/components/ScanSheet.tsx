@@ -5,7 +5,7 @@
  *
  * Flow:
  *   capture   → CameraCapture full-screen overlay (camera or photo-library)
- *   scanning  → full-screen "Reading the card…" while Claude Vision processes
+ *   scanning  → full-screen "Reading the card…" while the image is processed
  *   review    → bottom sheet: per-player editable score grid + name mapping
  *   applying  → "Saving scores…" while onSetScore calls complete
  *   error     → error display with retry
@@ -80,6 +80,8 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
   const [error, setError] = useState<string | null>(null);
   const [applyCount, setApplyCount] = useState(0);
   const [applyTotal, setApplyTotal] = useState(0);
+  /** Partial-failure message surfaced after handleApply when some writes reject */
+  const [applyError, setApplyError] = useState<string | null>(null);
   // No reset useEffect needed — parent passes a fresh key on each open,
   // causing React to unmount+remount ScanSheet with default state.
 
@@ -126,9 +128,20 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
 
   // ── Score cell edit ─────────────────────────────────────────────────────────
 
+  /**
+   * Update a score cell. Clamps to 1–15: values outside that range are stored
+   * as null so out-of-range typos don't silently survive to Apply.
+   */
   const handleCellChange = (playerIdx: number, holeIdx: number, raw: string) => {
     const parsed = parseInt(raw, 10);
-    const val: number | null = raw === "" ? null : isNaN(parsed) ? null : parsed;
+    let val: number | null;
+    if (raw === "" || isNaN(parsed)) {
+      val = null;
+    } else if (parsed < 1 || parsed > 15) {
+      val = null; // reject out-of-range; cell goes blank to signal the rejection
+    } else {
+      val = parsed;
+    }
     setOcrPlayers((prev) => {
       const next = [...prev];
       const p = { ...next[playerIdx], scores: [...next[playerIdx].scores] };
@@ -150,6 +163,7 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
 
   const handleApply = async () => {
     setPhase("applying");
+    setApplyError(null);
     // Collect all valid (playerId, holeIdx, strokes) to persist
     const entries: [string, number, number][] = [];
     for (const op of ocrPlayers) {
@@ -173,8 +187,20 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
       return p.then(() => setApplyCount((c) => c + 1));
     });
 
-    await Promise.allSettled(tasks);
-    onClose();
+    const results = await Promise.allSettled(tasks);
+    const failCount = results.filter((r) => r.status === "rejected").length;
+
+    if (failCount > 0) {
+      // Stay open so user can retry. pendingRef in RoundPageClient will already
+      // retry on next foreground save; surface the count so the user knows.
+      const successCount = entries.length - failCount;
+      setApplyError(
+        `${successCount} of ${entries.length} saved — ${failCount} didn't reach the server. Tap Apply to retry.`
+      );
+      setPhase("review");
+    } else {
+      onClose();
+    }
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -182,7 +208,12 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
   if (!open) return null;
 
   const isLowConfidence = confidence > 0 && confidence < 0.6;
-  const hasAnyMapping = ocrPlayers.some((op) => op.mappedPlayerId !== null);
+
+  // Detect duplicate player assignments across OCR rows
+  const mappedIds = ocrPlayers.map((op) => op.mappedPlayerId).filter(Boolean) as string[];
+  const hasDuplicate = mappedIds.length !== new Set(mappedIds).size;
+  const hasAnyMapping = mappedIds.length > 0;
+  const canApply = hasAnyMapping && !hasDuplicate;
 
   return (
     <AnimatePresence mode="wait">
@@ -241,7 +272,7 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
               textTransform: "uppercase",
             }}
           >
-            Claude Vision is processing your image
+            This may take a moment
           </div>
         </motion.div>
       )}
@@ -256,9 +287,9 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
           transition={{ duration: 0.18 }}
           style={{ position: "fixed", inset: 0, zIndex: 50 }}
         >
-          {/* Backdrop */}
+          {/* Backdrop — dismissable in review and error phases */}
           <div
-            onClick={phase === "review" ? onClose : undefined}
+            onClick={phase === "review" || phase === "error" ? onClose : undefined}
             style={{
               position: "absolute",
               inset: 0,
@@ -343,20 +374,21 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
                     ? "Try again"
                     : "Confirm scores"}
                 </div>
-                {/* Confidence kicker — review phase only */}
+                {/* Confidence kicker — review phase only; semantic plain language */}
                 {phase === "review" && confidence > 0 && (
                   <div
                     style={{
                       marginTop: 5,
                       fontFamily: T.mono,
-                      fontSize: 9,
-                      letterSpacing: 1.3,
+                      fontSize: 10,
+                      letterSpacing: 1.2,
                       textTransform: "uppercase",
                       color: isLowConfidence ? T.warningInk : T.pencil,
                     }}
                   >
-                    Confidence: {Math.round(confidence * 100)}%
-                    {isLowConfidence ? " — review carefully" : ""}
+                    {isLowConfidence
+                      ? "Hard to read — check each score carefully"
+                      : "Looks good — confirm scores below"}
                   </div>
                 )}
               </div>
@@ -389,7 +421,7 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
               style={{
                 flex: 1,
                 overflowY: "auto",
-                padding: "16px 20px 4px",
+                padding: "16px 20px 16px",
                 WebkitOverflowScrolling:
                   "touch" as React.CSSProperties["WebkitOverflowScrolling"],
               }}
@@ -475,6 +507,25 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
               {/* Review state */}
               {phase === "review" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {/* Partial-failure banner (after a failed apply attempt) */}
+                  {applyError && (
+                    <div
+                      style={{
+                        padding: "9px 12px",
+                        borderRadius: 12,
+                        background: T.warningWash,
+                        border: `1px solid ${T.warningInk}33`,
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 13,
+                        color: T.warningInk,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {applyError}
+                    </div>
+                  )}
+
                   {/* Low-confidence notice */}
                   {isLowConfidence && (
                     <div
@@ -502,13 +553,14 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
                       op={op}
                       roundPlayers={round.players}
                       isLowConfidence={isLowConfidence}
+                      allMappedPlayerIds={mappedIds}
                       accent={accent}
                       onMappingChange={handleMappingChange}
                       onCellChange={handleCellChange}
                     />
                   ))}
 
-                  {/* Note if no player is mapped */}
+                  {/* Hints when blocked */}
                   {!hasAnyMapping && (
                     <div
                       style={{
@@ -521,6 +573,20 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
                       }}
                     >
                       Assign at least one player to apply scores.
+                    </div>
+                  )}
+                  {hasDuplicate && (
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 13,
+                        color: T.warningInk,
+                        textAlign: "center",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      Two rows are assigned to the same player — fix the duplicate to apply.
                     </div>
                   )}
                 </div>
@@ -558,20 +624,20 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
                 </button>
                 <button
                   onClick={handleApply}
-                  disabled={!hasAnyMapping}
+                  disabled={!canApply}
                   style={{
                     flex: 2,
                     padding: "13px 0",
                     borderRadius: 99,
                     border: "none",
-                    background: hasAnyMapping ? T.ink : T.pencilSoft,
+                    background: canApply ? T.ink : T.pencilSoft,
                     color: T.paper,
                     fontFamily: T.serif,
                     fontStyle: "italic",
                     fontSize: 15,
-                    cursor: hasAnyMapping ? "pointer" : "default",
+                    cursor: canApply ? "pointer" : "default",
                     minHeight: 44,
-                    opacity: hasAnyMapping ? 1 : 0.6,
+                    opacity: canApply ? 1 : 0.6,
                   }}
                 >
                   Apply scores
@@ -594,6 +660,8 @@ interface OcrPlayerCardProps {
   op: OcrPlayerLocal;
   roundPlayers: Player[];
   isLowConfidence: boolean;
+  /** All mapped player IDs across all rows (including this row's own mapping). */
+  allMappedPlayerIds: string[];
   accent: string;
   onMappingChange: (playerIdx: number, pid: string | null) => void;
   onCellChange: (playerIdx: number, holeIdx: number, raw: string) => void;
@@ -604,11 +672,22 @@ function OcrPlayerCard({
   op,
   roundPlayers,
   isLowConfidence,
+  allMappedPlayerIds,
   accent,
   onMappingChange,
   onCellChange,
 }: OcrPlayerCardProps) {
   const unmatched = op.mappedPlayerId === null;
+  // Duplicate = this row's assignment appears more than once across all rows
+  const isDuplicate =
+    op.mappedPlayerId !== null &&
+    allMappedPlayerIds.filter((id) => id === op.mappedPlayerId).length > 1;
+
+  const borderColor = isDuplicate
+    ? T.warningInk + "88"
+    : unmatched
+    ? T.warningInk + "44"
+    : T.hairline;
 
   return (
     <div
@@ -616,7 +695,7 @@ function OcrPlayerCard({
         padding: "12px 14px",
         borderRadius: 16,
         background: T.paperDeep,
-        border: `1px solid ${unmatched ? T.warningInk + "44" : T.hairline}`,
+        border: `1px solid ${borderColor}`,
       }}
     >
       {/* Player name + round-player assignment */}
@@ -645,8 +724,21 @@ function OcrPlayerCard({
 
         <div style={{ flex: 1, height: 1, background: T.hairline, minWidth: 10 }} />
 
-        {/* No-match badge */}
-        {unmatched && (
+        {/* Duplicate badge — takes priority over No-match */}
+        {isDuplicate ? (
+          <div
+            style={{
+              fontFamily: T.mono,
+              fontSize: 8,
+              letterSpacing: 1,
+              color: T.warningInk,
+              textTransform: "uppercase",
+              flexShrink: 0,
+            }}
+          >
+            Already assigned
+          </div>
+        ) : unmatched ? (
           <div
             style={{
               fontFamily: T.mono,
@@ -659,7 +751,7 @@ function OcrPlayerCard({
           >
             No match
           </div>
-        )}
+        ) : null}
 
         {/* Player selector */}
         <select
@@ -669,7 +761,7 @@ function OcrPlayerCard({
           style={{
             padding: "5px 8px",
             borderRadius: 8,
-            border: `1px solid ${T.hairline}`,
+            border: `1px solid ${isDuplicate ? T.warningInk : T.hairline}`,
             background: T.paper,
             color: T.ink,
             fontFamily: T.mono,
@@ -742,7 +834,7 @@ function ScoreRow({ holeStart, scores, playerIdx, isLowConfidence, onCellChange 
               width: 28,
               textAlign: "center",
               fontFamily: T.mono,
-              fontSize: 8,
+              fontSize: 9,
               color: T.pencilSoft,
               letterSpacing: 0.3,
               lineHeight: 1,
@@ -758,7 +850,7 @@ function ScoreRow({ holeStart, scores, playerIdx, isLowConfidence, onCellChange 
         {holes.map((h) => {
           const holeIdx = h - 1; // 0-based
           const val = scores[holeIdx];
-          // Flag filled cells amber when overall confidence is low
+          // Amber highlight: low confidence AND cell has a value
           const flagged = isLowConfidence && val !== null;
           return (
             <input
@@ -773,18 +865,16 @@ function ScoreRow({ holeStart, scores, playerIdx, isLowConfidence, onCellChange 
               aria-label={`Hole ${h} score`}
               style={{
                 width: 28,
-                height: 34,
+                height: 40,
                 padding: 0,
                 textAlign: "center",
                 fontFamily: T.mono,
                 fontSize: 14,
                 fontVariantNumeric: "tabular-nums",
                 color: T.ink,
-                background: T.paper,
-                border: `1px solid ${T.hairline}`,
-                borderBottom: flagged
-                  ? `2px solid ${T.warningInk}99`
-                  : `1px solid ${T.hairline}`,
+                // Amber cell background (highlighter-annotation feel) when confidence is low
+                background: flagged ? T.warningWash : T.paper,
+                border: `1px solid ${flagged ? T.warningInk : T.hairline}`,
                 borderRadius: 6,
                 outline: "none",
                 // Remove browser number spinners

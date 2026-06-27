@@ -1097,6 +1097,7 @@ export default function RoundPage() {
               <button
                 onClick={() => setScanOpen(true)}
                 title="Scan scorecard photo"
+                aria-label="Scan scorecard"
                 style={{
                   fontFamily: T.mono,
                   fontSize: 9,
@@ -1108,11 +1109,17 @@ export default function RoundPage() {
                   cursor: "pointer",
                   padding: "4px 8px",
                   borderRadius: 6,
-                  minHeight: 28,
+                  minHeight: 40,
                   display: "flex",
                   alignItems: "center",
+                  gap: 5,
                 }}
               >
+                {/* Camera icon — 44pt-friendly, matches CameraCapture's icon shape */}
+                <svg width="13" height="13" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M1 6a2 2 0 0 1 2-2h1.2l1.3-2h6l1.3 2H16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V6Z" />
+                  <circle cx="9" cy="10" r="2.8" />
+                </svg>
                 Scan card
               </button>
             </div>

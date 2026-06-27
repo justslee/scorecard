@@ -8,7 +8,7 @@
  * Used by ScanSheet to acquire a scorecard image before OCR.
  */
 
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
@@ -65,6 +65,13 @@ export default function CameraCapture({ onCapture, onClose }: CameraCaptureProps
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'select' | 'camera' | 'preview'>('select');
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Stop camera tracks on unmount so the browser camera indicator clears.
+  useEffect(() => {
+    return () => {
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, [stream]);
 
   const startCamera = useCallback(async () => {
     try {
@@ -353,13 +360,13 @@ export default function CameraCapture({ onCapture, onClose }: CameraCaptureProps
                 muted
                 style={{ width: '100%', display: 'block' }}
               />
-              {/* Dashed guide frame */}
+              {/* Dashed guide frame — T.pencil at 80% so it's visible over the live feed */}
               <div
                 style={{
                   position: 'absolute',
                   inset: 16,
                   borderRadius: 10,
-                  border: `1.5px dashed ${T.hairline}`,
+                  border: `1.5px dashed ${T.pencil}cc`,
                   pointerEvents: 'none',
                 }}
               />
