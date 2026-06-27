@@ -3,6 +3,39 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (wire-profile-stats P16)
+- **Done:** backlog `wire-profile-stats` (P16, NOTICEABLE) — replaced last fabricated mock
+  data on the profile screen with real computed stats (where possible) and honest empty
+  states (where data genuinely doesn't exist yet). Commit `1e1bf7f` on `integration/next`.
+
+  What changed in `frontend/src/app/profile/page.tsx`:
+  - **ScoringByTee (now real):** Removed `PP_SCORING` constant. New `deriveScoringByTee()`
+    computes per-tee averages from the owner's completed rounds using `calculateTotals()` +
+    `players[0].id` (same owner-identification pattern as home/page.tsx). Grouped by
+    `round.teeName`, shows: tee name, yards (summed from HoleInfo.yards when available),
+    par, round count, average strokes, and average over-par bar chart. Sorted longest
+    tee first. Empty state: "Play a round to see your scoring by tee." No (Preview) label.
+  - **YearLog / Season log (now real):** Replaced fake heatmap (`buildYear` seed function +
+    PP_* data) with `deriveRoundLog()` — real completed rounds sorted most-recent first.
+    Each row: date (month + day) | course name + optional tee name | total strokes + to-par
+    string ("E"/"+N"/"-N"). Section renamed "Season log". Empty state: "Post a round to
+    track your season."
+  - **StrokesGained (honest empty):** Removed `PP_SG` + framer-motion animated bars. Calm
+    placeholder: "Strokes gained needs shot tracking — coming soon." No (Preview) label.
+    Removed `motion` import (only used in that section).
+  - **FairwayFan (honest empty):** Removed `PP_FWY` + fake SVG fan diagram + fake Drive
+    dist/Dispersion numbers. Calm placeholder: "Fairway tracking needs shot data — coming
+    soon." No (Preview) label.
+  - Owner-identification: `players[0].id` (single-owner beta), same as home/page.tsx.
+    `calculateTotals()` from `lib/types.ts` reused — no new shared helper needed.
+  - Data fetch: `getRoundsAsync()` added to profile page's `Promise.all` alongside
+    `getGolferProfileAsync()` — one concurrent request, same pattern as home.
+
+  Gates: lint 0 · tsc 0 errors · voice-tests 260/260 · build 15 pages OK.
+  NOTICEABLE — user-visible change on TestFlight: fabricated tee-averages, SG bars,
+  and fairway fan replaced with either real data (ScoringByTee, YearLog) or honest
+  "coming soon" placeholders (SG, Fairway).
+
 ## 2026-06-27 (frontend-lint-cleanup P32)
 - **Done:** backlog `frontend-lint-cleanup` (P32, SILENT) — `npm run lint` now passes with
   0 errors and 0 warnings. Commit `c867c06` on `integration/next`.
