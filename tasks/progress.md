@@ -1689,3 +1689,42 @@ Format: date — done / in-progress / blocked.
   NOTICEABLE — this is a functional regression fix; voice and all authed data calls should
   now authenticate correctly on the native iOS build. The diagnostic also helps diagnose
   if the code fix alone is insufficient.
+
+---
+
+## Eng-lead session checkpoint — 2026-06-27 (rolling bundle on integration/next)
+
+This session drove a large bundle onto `integration/next` (one open PR → main). NONE shipped —
+the whole bundle is gated on the owner validating sign-in + voice on TestFlight build **v0.1.266**
+(the auth-gate build). Each item went builder → reviewer + designer → folded → gates verified.
+
+DONE this session (all on integration/next, ahead of main):
+- **mount-caddie (P26)** — lean voice-first `CaddieSheet` on the in-round screen (`/caddie/voice`
+  + `/caddie/recommend`, GPS-free). NOT the 1215-line GPS `CaddiePanel` (that's blocked P28).
+- **mount-ocr-scan (P27)** — scan a paper card → `/api/voice/parse-scorecard` → editable review
+  (name-match, low-confidence flags, dup guard, retry) → persists via existing `handleSetScore`.
+- **live transcription** — Web Speech interim "Hearing…" in the voice flow (owner-requested).
+- **wire-profile-stats (P16, re-scoped)** — ScoringByTee + Season log now real from getRounds;
+  StrokesGained/FairwayFan → one honest "ShotAnalytics" placeholder (no fabricated numbers);
+  removed a contradicting "Recent rounds" stub.
+- **frontend-lint-cleanup (P32)** — root cause was ESLint scanning the Capacitor `ios/` minified
+  bundle (~2874 false positives); added `ios/**` to globalIgnores + fixed ~84 real issues. lint 0/0.
+- **CI ratchet** — lint · typecheck · voice-tests · vitest(238) · build · ruff now ALL required on
+  every PR (advisory job retired).
+- **restyle-dark-components-sweep (P24.5)** — app is now lucide-free on all reachable paths.
+- Versioning: `ops/ios/ship.sh` stamps `MARKETING_VERSION=0.1.N` (no more all-"1.0" builds).
+
+QUEUED / NOT done:
+- **voice-low-confidence-ux (P33)** — spec written (`specs/voice-low-confidence-ux.md`). Setup path
+  has a confidence signal already (easy slice); scoring path is net-new voice-to-score + a backend
+  `confidence` field (own bundle, deferred).
+- **delete-dead-legacy (P29)** — 11 confirmed-dead files; HELD until owner validates caddie+OCR on
+  a real build (keep the fallback until then).
+- **owner-player-identity (P34)** — `players[0]=owner` mis-attribution risk (home + profile);
+  needs a Clerk-user→player mapping (user-identity). needs-spec.
+- **mount-gps-shot-tracking (P28)**, **tee-time-real (P25)** — blocked.
+
+NEXT REAL PING = the bundle approval: when owner confirms sign-in works on v0.1.266, cut ONE
+TestFlight build with the whole bundle and email looper.approvals → owner for "ship it". If
+sign-in fails, it's likely the Clerk DEV-instance origin on `capacitor://localhost` (see the
+auth checkpoint above) — owner-side dashboard fix.
