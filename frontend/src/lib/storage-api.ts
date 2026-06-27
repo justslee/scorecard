@@ -217,7 +217,7 @@ export async function saveGolferProfileAsync(profile: GolferProfile): Promise<vo
     // Identity fields only — clubDistances is intentionally OMITTED.
     // Omitting means the backend (model_fields_set) won't touch the bag,
     // protecting an existing bag from being wiped by a stale/empty cache value
-    // when the identity editor saves. The bag is written via wire-profile-bag (P15).
+    // when the identity editor saves. The bag is written via saveGolferBagAsync.
     //
     // null flows through explicitly (intentional field clear) — the backend
     // model_fields_set sees "handicap":null and writes NULL to the column.
@@ -231,6 +231,40 @@ export async function saveGolferProfileAsync(profile: GolferProfile): Promise<vo
     // Re-throw API rejections (4xx / 5xx) so callers can surface the error in UI.
     // Keep network-down (TypeError: failed to fetch) as a silent offline operation —
     // local cache already has the value; a reload will retry.
+    if (!(e instanceof TypeError)) {
+      throw e;
+    }
+  }
+}
+
+/**
+ * Save only the bag (clubDistances) via PUT /api/profile/golfer.
+ *
+ * Kept separate from saveGolferProfileAsync (identity: name/handicap/homeCourse)
+ * so the two editors never clobber each other's fields. The backend only updates
+ * the fields present in the JSON body (model_fields_set), so sending only
+ * clubDistances here leaves the identity fields untouched, and saving identity
+ * leaves the bag untouched.
+ */
+export async function saveGolferBagAsync(
+  clubDistances: GolferProfile['clubDistances']
+): Promise<void> {
+  // Write-through: merge into local cache so the app works offline.
+  const cached = localCache.getGolferProfile();
+  if (cached) {
+    localCache.saveGolferProfile({ ...cached, clubDistances });
+  }
+
+  if (!(await isAuthenticated())) return;
+
+  try {
+    // Send ONLY clubDistances — name/handicap/homeCourse intentionally omitted
+    // so identity values set by the identity editor are never overwritten here.
+    await api.updateGolferProfile({ clubDistances });
+  } catch (e) {
+    console.error('[storage-api] saveGolferBag: API sync failed (local cache saved):', e);
+    // Re-throw API rejections (4xx / 5xx) so the UI can surface the error.
+    // Keep network-down (TypeError: failed to fetch) silent — local cache updated.
     if (!(e instanceof TypeError)) {
       throw e;
     }

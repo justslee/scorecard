@@ -4,7 +4,7 @@ import React, { ReactNode, useMemo, useState, useCallback, useEffect } from "rea
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
-import { getGolferProfileAsync, saveGolferProfileAsync } from "@/lib/storage-api";
+import { getGolferProfileAsync, saveGolferProfileAsync, saveGolferBagAsync } from "@/lib/storage-api";
 import type { GolferProfile } from "@/lib/types";
 
 // ──────────────────────────────────────────────────────────────────────
@@ -32,22 +32,27 @@ const PP_SG = [
 
 const PP_FWY = { left: 18, middle: 62, right: 20 };
 
-type BagClub = { club: string; carry: number; total: number; last: number; disp: number; hits: number };
+// ── Bag club config — ordered for display (matches GolferProfile.clubDistances keys)
+// The caddie (CaddiePanel) normalises these same camelCase keys to short keys
+// (driver→driver, threeWood→3wood, …) when calling the recommendation API.
+type ClubKey = keyof GolferProfile["clubDistances"];
 
-const PP_BAG: BagClub[] = [
-  { club: "Driver", carry: 252, total: 271, last: 274, disp: 24, hits: 312 },
-  { club: "3-wood", carry: 228, total: 245, last: 239, disp: 22, hits: 84 },
-  { club: "3-hybrid", carry: 210, total: 224, last: 218, disp: 20, hits: 141 },
-  { club: "4-iron", carry: 196, total: 206, last: 202, disp: 18, hits: 92 },
-  { club: "5-iron", carry: 184, total: 192, last: 188, disp: 17, hits: 168 },
-  { club: "6-iron", carry: 172, total: 179, last: 176, disp: 15, hits: 204 },
-  { club: "7-iron", carry: 161, total: 167, last: 164, disp: 14, hits: 256 },
-  { club: "8-iron", carry: 148, total: 153, last: 149, disp: 12, hits: 221 },
-  { club: "9-iron", carry: 135, total: 139, last: 136, disp: 11, hits: 198 },
-  { club: "PW", carry: 121, total: 124, last: 119, disp: 10, hits: 176 },
-  { club: "GW (52°)", carry: 102, total: 104, last: 101, disp: 9, hits: 124 },
-  { club: "SW (56°)", carry: 84, total: 86, last: 82, disp: 8, hits: 112 },
-  { club: "LW (60°)", carry: 64, total: 66, last: 63, disp: 6, hits: 88 },
+const CLUB_CONFIG: { key: ClubKey; label: string }[] = [
+  { key: "driver",        label: "Driver"    },
+  { key: "threeWood",     label: "3-wood"    },
+  { key: "fiveWood",      label: "5-wood"    },
+  { key: "hybrid",        label: "Hybrid"    },
+  { key: "fourIron",      label: "4-iron"    },
+  { key: "fiveIron",      label: "5-iron"    },
+  { key: "sixIron",       label: "6-iron"    },
+  { key: "sevenIron",     label: "7-iron"    },
+  { key: "eightIron",     label: "8-iron"    },
+  { key: "nineIron",      label: "9-iron"    },
+  { key: "pitchingWedge", label: "PW"        },
+  { key: "gapWedge",      label: "GW (52°)"  },
+  { key: "sandWedge",     label: "SW (56°)"  },
+  { key: "lobWedge",      label: "LW (60°)"  },
+  { key: "putter",        label: "Putter"    },
 ];
 
 function buildYear(seed = 7) {
@@ -182,7 +187,12 @@ export default function ProfilePage() {
         />
         <StrokesGained accent={accent} />
         <FairwayFan accent={accent} />
-        <Bag accent={accent} />
+        <Bag
+          accent={accent}
+          profile={profile}
+          loading={loading}
+          onBagSaved={(updated) => setProfile(updated)}
+        />
         <ScoringByTee accent={accent} />
         <YearLog accent={accent} />
         <Recent />
@@ -786,215 +796,365 @@ function FairwayFan({ accent }: { accent: string }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// The bag — preview (P15); Edit toggle removed (no persistence yet)
+// The bag — wired (P15): editable club distances from GolferProfile.clubDistances.
+// Saves via PUT /api/profile/golfer with only the clubDistances field, so the
+// identity editor (name/handicap/homeCourse) is never clobbered, and vice versa.
+// The caddie (CaddiePanel) reads these same values to give yardage suggestions.
 // ──────────────────────────────────────────────────────────────────────
 
-function Bag({ accent }: { accent: string }) {
-  const [sel, setSel] = useState("7-iron");
-  const selected = PP_BAG.find((c) => c.club === sel);
-  const maxTotal = Math.max(...PP_BAG.map((c) => c.total));
+function Bag({
+  accent,
+  profile,
+  loading,
+  onBagSaved,
+}: {
+  accent: string;
+  profile: GolferProfile | null;
+  loading: boolean;
+  onBagSaved: (updated: GolferProfile) => void;
+}) {
+  const [bagEditing, setBagEditing] = useState(false);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Stable reference: only changes when profile.clubDistances changes identity.
+  const distances = useMemo(
+    () => profile?.clubDistances ?? {},
+    [profile?.clubDistances]
+  );
+  // Clubs that have a value set (for view mode display)
+  const setClubs = useMemo(
+    () => CLUB_CONFIG.filter((c) => distances[c.key] != null),
+    [distances]
+  );
+  const hasAny = setClubs.length > 0;
+  const maxDist = hasAny ? Math.max(...setClubs.map((c) => distances[c.key]!)) : 1;
+
+  const startEditing = useCallback(() => {
+    // Initialise draft from current distances (empty string = not set)
+    const init: Record<string, string> = {};
+    for (const { key } of CLUB_CONFIG) {
+      const v = distances[key];
+      init[key] = v != null ? String(v) : "";
+    }
+    setDraft(init);
+    setSaveError(null);
+    setBagEditing(true);
+  }, [distances]);
+
+  const handleCancel = useCallback(() => {
+    setBagEditing(false);
+    setSaveError(null);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      // Parse draft → clubDistances; blank = omit (remove the club)
+      const clubDistances: GolferProfile["clubDistances"] = {};
+      for (const { key, label } of CLUB_CONFIG) {
+        const raw = (draft[key] ?? "").trim();
+        if (raw === "") continue; // leave key absent → backend won't store it
+        const n = Math.round(parseFloat(raw));
+        if (isNaN(n) || n <= 0 || n > 500) {
+          setSaveError(`Invalid distance for ${label}`);
+          setSaving(false);
+          return;
+        }
+        clubDistances[key] = n;
+      }
+      // Bag-only save: sends ONLY clubDistances; identity fields untouched.
+      await saveGolferBagAsync(clubDistances);
+      // Update parent profile state so view refreshes immediately.
+      onBagSaved({
+        ...(profile ?? { id: "", name: null, handicap: null, homeCourse: null }),
+        clubDistances,
+      });
+      setBagEditing(false);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, profile, onBagSaved]);
 
   return (
     <Section
       kicker="The bag"
       title="Club distances"
-      preview
       aside={
-        // Edit toggle removed — bag has no persistence until wire-profile-bag (P15).
-        <div
-          style={{
-            fontFamily: T.mono,
-            fontSize: 9,
-            letterSpacing: 1.3,
-            color: T.pencilSoft,
-            textTransform: "uppercase",
-            fontWeight: 500,
-            opacity: 0.5,
-            padding: "5px 10px",
-          }}
-        >
-          Coming soon
-        </div>
-      }
-    >
-      {selected && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 12,
-            padding: "12px 14px",
-            borderRadius: 10,
-            border: `1px solid ${T.hairline}`,
-            background: T.paperDeep,
-            marginBottom: 10,
-          }}
-        >
-          <div>
-            <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>Selected</div>
-            <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 24, color: T.ink, letterSpacing: -0.5, lineHeight: 1, marginTop: 2 }}>
-              {selected.club}
-            </div>
-            <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase", marginTop: 4 }}>
-              {selected.hits} shots tracked
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", justifyContent: "flex-end" }}>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>Carry</div>
-              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.3, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-                {selected.carry}
-              </div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: accent, textTransform: "uppercase", fontWeight: 600 }}>Total</div>
-              <div
+        bagEditing ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {saveError && (
+              <span
                 style={{
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 22,
-                  color: accent,
-                  letterSpacing: -0.3,
-                  lineHeight: 1,
-                  fontVariantNumeric: "tabular-nums",
+                  fontFamily: T.mono,
+                  fontSize: 8.5,
+                  letterSpacing: 1,
+                  color: T.errorInk,
+                  textTransform: "uppercase",
                 }}
               >
-                {selected.total}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {PP_BAG.map((c, i) => {
-          const active = c.club === sel;
-          const widthCarry = (c.carry / maxTotal) * 100;
-          const widthTotal = (c.total / maxTotal) * 100;
-          const lastPct = (c.last / maxTotal) * 100;
-          const dispWidth = (c.disp / maxTotal) * 100;
-          const dispLeft = widthCarry - dispWidth / 2;
-          return (
+                {saveError}
+              </span>
+            )}
             <button
-              key={c.club}
-              onClick={() => setSel(c.club)}
+              onClick={handleCancel}
               style={{
-                display: "grid",
-                gridTemplateColumns: "64px 1fr 54px",
-                gap: 10,
-                alignItems: "center",
-                padding: "8px 0",
                 border: "none",
                 background: "transparent",
                 cursor: "pointer",
+                fontFamily: T.mono,
+                fontSize: 10,
+                letterSpacing: 1.6,
+                color: T.pencil,
+                textTransform: "uppercase",
+                fontWeight: 500,
+                minHeight: 44,
+                minWidth: 44,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                border: `1px solid ${T.ink}`,
+                borderRadius: 99,
+                padding: "6px 14px",
+                background: T.ink,
+                cursor: saving ? "not-allowed" : "pointer",
+                fontFamily: T.mono,
+                fontSize: 9,
+                letterSpacing: 1.3,
+                color: T.paper,
+                textTransform: "uppercase",
+                fontWeight: 500,
+                minHeight: 44,
+                display: "flex",
+                alignItems: "center",
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={startEditing}
+            disabled={loading}
+            style={{
+              border: `1px solid ${T.hairline}`,
+              borderRadius: 99,
+              padding: "5px 10px",
+              background: "transparent",
+              cursor: loading ? "default" : "pointer",
+              fontFamily: T.mono,
+              fontSize: 9,
+              letterSpacing: 1.3,
+              color: T.pencil,
+              textTransform: "uppercase",
+              fontWeight: 500,
+              minHeight: 44,
+              minWidth: 44,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: loading ? 0.4 : 1,
+            }}
+          >
+            Edit
+          </button>
+        )
+      }
+    >
+      {bagEditing ? (
+        /* Edit mode: all 15 clubs with distance inputs */
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {CLUB_CONFIG.map(({ key, label }, i) => (
+            <div
+              key={key}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                alignItems: "center",
+                gap: 12,
+                minHeight: 44,
                 borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
-                textAlign: "left",
               }}
             >
               <div
                 style={{
                   fontFamily: T.serif,
-                  fontStyle: active ? "italic" : "normal",
+                  fontStyle: "italic",
                   fontSize: 14,
-                  color: active ? accent : T.ink,
+                  color: T.ink,
                   letterSpacing: -0.1,
-                  fontWeight: active ? 500 : 400,
                 }}
               >
-                {c.club}
+                {label}
               </div>
-              <div style={{ position: "relative", height: 10, background: T.paperDeep, borderRadius: 1 }}>
-                <div
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={draft[key] ?? ""}
+                  onChange={(e) =>
+                    setDraft((d) => ({ ...d, [key]: e.target.value }))
+                  }
+                  placeholder="—"
                   style={{
-                    position: "absolute",
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: `${widthTotal}%`,
-                    background: active ? `${accent}30` : `${T.pencil}30`,
-                    borderRadius: 1,
+                    fontFamily: T.mono,
+                    fontSize: 13,
+                    letterSpacing: 0.5,
+                    color: T.ink,
+                    fontVariantNumeric: "tabular-nums",
+                    background: "transparent",
+                    border: "none",
+                    borderBottom: `1.5px solid ${T.ink}`,
+                    outline: "none",
+                    padding: "2px 0",
+                    width: 52,
+                    textAlign: "right",
                   }}
                 />
-                <div
+                <span
                   style={{
-                    position: "absolute",
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: `${widthCarry}%`,
-                    background: active ? accent : T.ink,
-                    borderRadius: 1,
+                    fontFamily: T.mono,
+                    fontSize: 8,
+                    color: T.pencilSoft,
+                    letterSpacing: 1,
+                    textTransform: "uppercase",
                   }}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    left: `calc(${lastPct}% - 1px)`,
-                    top: -2,
-                    bottom: -2,
-                    width: 2,
-                    background: T.paper,
-                    border: `0.5px solid ${T.ink}`,
-                  }}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    left: `${dispLeft}%`,
-                    width: `${dispWidth}%`,
-                    top: -3,
-                    height: 2,
-                    border: `1px solid ${T.ink}`,
-                    borderBottom: "none",
-                    borderRadius: "1px 1px 0 0",
-                    opacity: 0.35,
-                  }}
-                />
+                >
+                  yd
+                </span>
               </div>
+            </div>
+          ))}
+          <div
+            style={{
+              marginTop: 10,
+              padding: "8px 0 0",
+              borderTop: `1px dashed ${T.hairline}`,
+              fontFamily: T.serif,
+              fontSize: 12,
+              color: T.pencilSoft,
+              fontStyle: "italic",
+              letterSpacing: -0.1,
+            }}
+          >
+            Leave a club blank to remove it from your bag.
+          </div>
+        </div>
+      ) : hasAny ? (
+        /* View mode: clubs that have a value, with a proportional distance bar */
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {CLUB_CONFIG.map(({ key, label }, i) => {
+            const val = distances[key];
+            if (val == null) return null; // only show set clubs in view mode
+            const widthPct = (val / maxDist) * 100;
+            // Check if the next visible club is separated (skip divider logic per index)
+            const isFirst = i === 0 || CLUB_CONFIG.slice(0, i).every((c) => distances[c.key] == null);
+            return (
               <div
+                key={key}
                 style={{
-                  textAlign: "right",
-                  fontFamily: T.mono,
-                  fontSize: 12,
-                  color: active ? accent : T.ink,
-                  fontVariantNumeric: "tabular-nums",
-                  letterSpacing: 0.5,
-                  fontWeight: active ? 600 : 500,
+                  display: "grid",
+                  gridTemplateColumns: "72px 1fr 52px",
+                  gap: 10,
+                  alignItems: "center",
+                  padding: "7px 0",
+                  borderTop: isFirst ? "none" : `1px dashed ${T.hairlineSoft}`,
                 }}
               >
-                {c.total}
-                <span style={{ fontSize: 8, color: T.pencilSoft, marginLeft: 2, letterSpacing: 1 }}>yd</span>
+                <div
+                  style={{
+                    fontFamily: T.serif,
+                    fontStyle: "italic",
+                    fontSize: 13,
+                    color: T.ink,
+                    letterSpacing: -0.1,
+                  }}
+                >
+                  {label}
+                </div>
+                <div style={{ position: "relative", height: 8, background: T.paperDeep, borderRadius: 1 }}>
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: `${widthPct}%`,
+                      // Use accent for the longest club's bar; ink for the rest —
+                      // gives a visual anchor point without cluttering the list.
+                      background: widthPct === 100 ? accent : T.ink,
+                      borderRadius: 1,
+                      opacity: widthPct === 100 ? 1 : 0.7,
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    textAlign: "right",
+                    fontFamily: T.mono,
+                    fontSize: 12,
+                    color: widthPct === 100 ? accent : T.ink,
+                    fontVariantNumeric: "tabular-nums",
+                    letterSpacing: 0.5,
+                    fontWeight: 500,
+                  }}
+                >
+                  {val}
+                  <span style={{ fontSize: 8, color: T.pencilSoft, marginLeft: 2, letterSpacing: 1 }}>yd</span>
+                </div>
               </div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div
-        style={{
-          marginTop: 10,
-          padding: "8px 0 0",
-          borderTop: `1px dashed ${T.hairline}`,
-          display: "flex",
-          gap: 16,
-          fontFamily: T.mono,
-          fontSize: 8,
-          letterSpacing: 1.1,
-          color: T.pencilSoft,
-          textTransform: "uppercase",
-          fontWeight: 500,
-        }}
-      >
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 10, height: 6, background: T.ink, borderRadius: 1 }} /> Carry
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 10, height: 6, background: `${T.pencil}30`, borderRadius: 1 }} /> Roll
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-          <span style={{ width: 2, height: 8, background: T.ink }} /> Last hit
-        </span>
-      </div>
+            );
+          })}
+          <div
+            style={{
+              marginTop: 8,
+              padding: "8px 0 0",
+              borderTop: `1px dashed ${T.hairline}`,
+              display: "flex",
+              gap: 16,
+              fontFamily: T.mono,
+              fontSize: 8,
+              letterSpacing: 1.1,
+              color: T.pencilSoft,
+              textTransform: "uppercase",
+              fontWeight: 500,
+            }}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 10, height: 6, background: T.ink, borderRadius: 1, display: "inline-block" }} />
+              {" "}Distance
+            </span>
+          </div>
+        </div>
+      ) : (
+        /* Empty state */
+        <div
+          style={{
+            padding: "14px 0 6px",
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 14,
+            color: T.pencilSoft,
+            letterSpacing: -0.1,
+            lineHeight: 1.5,
+          }}
+        >
+          No distances set — tap Edit to add your clubs.
+        </div>
+      )}
     </Section>
   );
 }

@@ -656,6 +656,42 @@ Format: date — done / in-progress / blocked.
     are still visible alongside real identity data — designer to confirm this is OK
     or flag to hide until wire-profile-stats lands.
 
+## 2026-06-27 (wire-profile-bag)
+- **Done:** backlog `wire-profile-bag` (P15, NOTICEABLE) — Bag section in `app/profile/page.tsx`
+  replaced from "(Preview) / Coming soon" placeholder to a real, editable club-distances list
+  backed by `GolferProfile.clubDistances` (PUT /api/profile/golfer).
+  Key changes:
+  - **`storage-api.ts`:** new `saveGolferBagAsync(clubDistances)` function — sends ONLY
+    `clubDistances` to `api.updateGolferProfile()`; identity fields (name/handicap/homeCourse)
+    intentionally omitted. Complementary to `saveGolferProfileAsync` which omits clubDistances.
+    Both exploit the backend's `model_fields_set` omit=no-change contract so the two editors
+    never clobber each other. Write-through to localStorage (merges into cached profile if
+    present). Re-throws API 4xx/5xx; keeps TypeError (network-down) silent.
+  - **`app/profile/page.tsx`:**
+    - Removed `PP_BAG` mock constant + `BagClub` type.
+    - Added `CLUB_CONFIG` (15 entries, camelCase keys matching `GolferProfile.clubDistances`,
+      display labels: Driver, 3-wood, 5-wood, Hybrid, 4-iron … LW (60°), Putter). Same keys
+      CaddiePanel's `normalizeClubDistances` reads, so real bag feeds caddie yardage suggestions.
+    - Replaced old `Bag({ accent })` with `Bag({ accent, profile, loading, onBagSaved })`.
+    - View mode: shows only clubs that have a value set (proportional distance bar + yardage,
+      accent color for longest club, T.ink opacity 0.7 for others). Empty state when none set:
+      "No distances set — tap Edit to add your clubs." (calm T.pencilSoft italic).
+    - Edit mode: all 15 clubs shown with `inputMode="numeric"` inputs (minHeight 44px per row
+      for iOS 44pt touch target); "yd" label; blank = remove club. Cancel/Save buttons in
+      section aside (matching identity editor button style). Save validates range (1–500).
+    - Errors surfaced inline in T.errorInk (same pattern as identity editor save-error).
+    - `(Preview)` badge removed from the Bag section — it's real now. Other sections
+      (StrokesGained, FairwayFan, ScoringByTee, YearLog) remain `preview` as before (P16).
+    - Edit button disabled (opacity 0.4) while profile is loading.
+    - `ProfilePage` passes `profile` + `onBagSaved={(updated) => setProfile(updated)}` to Bag.
+    - `distances` memoised via `useMemo([profile?.clubDistances])` so `startEditing`
+      useCallback has a stable dep ref.
+  - **Caddie connection:** CaddiePanel's `normalizeClubDistances` maps these same camelCase
+    keys to short keys (driver→driver, threeWood→3wood, …) before calling the recommendation
+    API. Real bag in the profile → real club suggestions in the caddie.
+  - Gates: lint 0 errors (src/), tsc 0 errors, voice-tests 260/260 pass, build OK.
+  - NOTICEABLE — user-visible on TestFlight: bag section shows real distances + is editable.
+
 ## 2026-06-27 (wire-profile-identity reviewer/designer follow-up)
 - **Done:** reviewer + designer follow-up fixes (one commit on integration/next).
   CORRECTNESS (reviewer):
