@@ -33,6 +33,8 @@ export const T = {
   // Status
   errorInk: "#b84a3a",
   warningInk: "#b8763a",
+  errorWash: "rgba(184,74,58,0.13)",
+  warningWash: "rgba(184,118,58,0.13)",
 
   // Motion
   spring: { type: "spring" as const, stiffness: 380, damping: 32 },

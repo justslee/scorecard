@@ -96,6 +96,26 @@ function buildSeedPlayers(round: Round): SeedPlayer[] {
 }
 
 /**
+ * Seed pendingRef from a local-cache round.
+ *
+ * Called whenever we render from localStorage because the server snapshot is unavailable
+ * (either 404/offline → LOCAL mode, or non-404 transient error → staying ONLINE).  This
+ * ensures that when a subsequent successful save arrives, buildLocalRound/mergeWithPending
+ * include prior-session unsynced scores — they won't be erased by the server snapshot.
+ *
+ * In LOCAL mode (isLocalRound=true) the pending overlay isn't consulted for writes (the
+ * LOCAL write path goes straight to localStorage), but seeding is still harmless and
+ * guards against any future mode-switch.
+ */
+function seedPendingFromLocal(local: Round, pending: Map<string, Score>): void {
+  for (const s of local.scores) {
+    if (s.strokes !== null) {
+      pending.set(`${s.playerId}:${s.holeNumber}`, s);
+    }
+  }
+}
+
+/**
  * Return true when the thrown error indicates the round doesn't exist on the server (404)
  * or the network itself is unavailable (TypeError).  Both → LOCAL mode.
  * Other HTTP errors (500, 401, …) return false — saves should still target the server.
@@ -104,13 +124,19 @@ function isNotFoundOrNetworkError(e: unknown): boolean {
   if (e instanceof TypeError) return true; // fetch itself failed (DNS/offline/CORS)
   if (e instanceof Error) {
     const m = e.message;
-    if (m.includes("API error: 404")) return true;
-    // FastAPI 404 with JSON body: '{"detail":"Round not found"}'
+    // Exact pattern emitted by fetchAPI for empty-body 404s (not substring — avoids
+    // matching "API error: 404 Something else returned by a gateway").
+    if (m === "API error: 404") return true;
+    // FastAPI JSON body: '{"detail":"Round not found"}' — match only the parsed .detail
+    // field, never arbitrary body text.  A 5xx body containing "not found" in prose must
+    // not be misclassified as LOCAL mode.
     try {
-      const parsed = JSON.parse(m) as { detail?: string };
-      return (parsed?.detail ?? "").toLowerCase().includes("not found");
+      const parsed = JSON.parse(m) as { detail?: unknown };
+      const detail = typeof parsed?.detail === "string" ? parsed.detail.toLowerCase() : "";
+      return detail.includes("not found");
     } catch {
-      return m.toLowerCase().includes("not found");
+      // Not a JSON message — don't fall back to substring match (too broad).
+      return false;
     }
   }
   return false;
@@ -180,30 +206,26 @@ export default function RoundPage() {
     const id = params.id as string;
 
     /**
-     * After loading from the server, check localStorage for scores that are present locally
-     * but missing from the server response — these are scores whose addScore call failed in a
-     * previous session.  Re-add them to pendingRef and retry them in the background.
+     * Background retry for scores that failed to reach the server in a previous session.
+     *
+     * Intentionally does NOT call setRound/setScores after each confirm.  Applying the
+     * server snapshot here would race the foreground save seq guard (addScoreSeqRef /
+     * lastAppliedSeqRef) — a retry response and a concurrent foreground save can arrive in
+     * any order.  Instead: confirm pending removal only; the UI remains correct via the
+     * pending overlay already set at load time; localStorage will be updated by the next
+     * successful foreground save.
      */
-    async function retrySyncPending(roundId: string, holeCount: number) {
+    async function retrySyncPending(roundId: string) {
       const snapshot = [...pendingRef.current.entries()];
       for (const [key, score] of snapshot) {
         if (!pendingRef.current.has(key)) continue; // handled by user re-entry meanwhile
         try {
-          const updated = await apiAddScore(roundId, score);
+          await apiAddScore(roundId, score);
+          // Only confirm removal — no UI state apply, no localStorage write here.
           const cur = pendingRef.current.get(key);
           if (cur && cur.strokes === score.strokes) {
             pendingRef.current.delete(key);
           }
-          setRound(updated);
-          setScores(
-            mergeWithPending(
-              updated.players.map((p) => p.id),
-              updated.scores,
-              pendingRef.current,
-              holeCount
-            )
-          );
-          localSaveRound(buildLocalRound(updated, pendingRef.current));
         } catch (retryErr) {
           // Silently log — score stays in pending, will retry on next load or user edit.
           console.warn("[round] background sync pending failed:", retryErr);
@@ -237,7 +259,7 @@ export default function RoundPage() {
 
         // Kick off background retry for any re-discovered pending scores.
         if (pendingRef.current.size > 0) {
-          retrySyncPending(id, holeCount);
+          retrySyncPending(id);
         }
       } catch (e) {
         if (isNotFoundOrNetworkError(e)) {
@@ -246,9 +268,20 @@ export default function RoundPage() {
           const local = localGetRound(id);
           if (local) {
             const holeCount = local.holes.length || 18;
+            // Seed pendingRef from the local cache so that if the mode ever transitions
+            // back to ONLINE, a successful save won't erase prior-session scores that
+            // never reached the server.  Use mergeWithPending for display consistency.
+            seedPendingFromLocal(local, pendingRef.current);
             setRound(local);
             setPlayers(buildSeedPlayers(local));
-            setScores(buildScoreMap(local.players.map((p) => p.id), local.scores, holeCount));
+            setScores(
+              mergeWithPending(
+                local.players.map((p) => p.id),
+                local.scores,
+                pendingRef.current,
+                holeCount
+              )
+            );
             setIsLocalRound(true);
           }
           // If no local copy either, round stays null → not-found render.
@@ -266,9 +299,21 @@ export default function RoundPage() {
           const local = localGetRound(id);
           if (local) {
             const holeCount = local.holes.length || 18;
+            // BLOCKER FIX: seed pendingRef from the local cache.  Without this, prior-
+            // session unsynced scores are invisible to buildLocalRound/mergeWithPending —
+            // the next successful foreground save overwrites localStorage with the server
+            // snapshot (which lacks those scores) and they are permanently lost.
+            seedPendingFromLocal(local, pendingRef.current);
             setRound(local);
             setPlayers(buildSeedPlayers(local));
-            setScores(buildScoreMap(local.players.map((p) => p.id), local.scores, holeCount));
+            setScores(
+              mergeWithPending(
+                local.players.map((p) => p.id),
+                local.scores,
+                pendingRef.current,
+                holeCount
+              )
+            );
             // isLocalRound stays false — round is on the server, saves should target it.
           }
         }
@@ -863,7 +908,7 @@ export default function RoundPage() {
                 margin: "0 0 10px",
                 padding: "9px 12px",
                 borderRadius: 10,
-                background: `rgba(184,74,58,0.13)`,
+                background: T.errorWash,
                 border: `1px solid ${T.errorInk}33`,
                 fontFamily: T.serif,
                 fontSize: 12.5,
@@ -907,7 +952,7 @@ export default function RoundPage() {
                 margin: "0 0 10px",
                 padding: "9px 12px",
                 borderRadius: 10,
-                background: `rgba(184,118,58,0.13)`,
+                background: T.warningWash,
                 border: `1px solid ${T.warningInk}33`,
                 fontFamily: T.serif,
                 fontStyle: "italic",
