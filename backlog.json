@@ -183,7 +183,7 @@
       "type": "major",
       "priority": 18,
       "risk": "high",
-      "status": "blocked",
+      "status": "done",
       "depends_on": ["backend-tournaments-db", "wire-round-scoring"],
       "spec": "specs/real-data-wiring-plan.md"
     },
@@ -193,7 +193,7 @@
       "type": "major",
       "priority": 19,
       "risk": "low",
-      "status": "blocked",
+      "status": "ready",
       "depends_on": ["backend-tournaments-db"],
       "spec": "specs/real-data-wiring-plan.md"
     },
