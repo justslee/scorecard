@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence, PanInfo } from 'framer-motion';
 import {
   Wind,
@@ -213,17 +213,25 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
   // precedence over the GolfAPI per-hole `pin` and over green-center.
   const currentHoleCoords = holeCoordinates?.find(h => h.holeNumber === currentHole);
   const todaysPin = pins.get(currentHole);
-  const effectivePin = todaysPin
-    ? { lat: todaysPin.pin_lat, lng: todaysPin.pin_lng }
-    : currentHoleCoords?.pin || null;
+  // Wrap in useMemo so the object reference is stable across renders — prevents gpsDistances
+  // from recomputing every render when todaysPin/currentHoleCoords have not actually changed.
+  const effectivePin = useMemo(
+    () => todaysPin
+      ? { lat: todaysPin.pin_lat, lng: todaysPin.pin_lng }
+      : currentHoleCoords?.pin ?? null,
+    [todaysPin, currentHoleCoords]
+  );
   const aimTarget = effectivePin || currentHoleCoords?.green || null;
 
-  const gpsDistances = gpsPosition && currentHoleCoords ? {
-    center: calculateDistance(gpsPosition, currentHoleCoords.green).yards,
-    front: currentHoleCoords.front ? calculateDistance(gpsPosition, currentHoleCoords.front).yards : null,
-    back: currentHoleCoords.back ? calculateDistance(gpsPosition, currentHoleCoords.back).yards : null,
-    pin: effectivePin ? calculateDistance(gpsPosition, effectivePin).yards : null,
-  } : null;
+  const gpsDistances = useMemo(() => {
+    if (!gpsPosition || !currentHoleCoords) return null;
+    return {
+      center: calculateDistance(gpsPosition, currentHoleCoords.green).yards,
+      front: currentHoleCoords.front ? calculateDistance(gpsPosition, currentHoleCoords.front).yards : null,
+      back: currentHoleCoords.back ? calculateDistance(gpsPosition, currentHoleCoords.back).yards : null,
+      pin: effectivePin ? calculateDistance(gpsPosition, effectivePin).yards : null,
+    };
+  }, [gpsPosition, currentHoleCoords, effectivePin]);
 
   // Bearing from player to whatever we're aiming at (marked pin > GolfAPI pin > green).
   const bearingToGreen = gpsPosition && aimTarget

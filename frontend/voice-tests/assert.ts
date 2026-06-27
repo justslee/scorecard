@@ -1,9 +1,9 @@
-export function isObject(x: any): x is Record<string, any> {
+export function isObject(x: unknown): x is Record<string, unknown> {
   return x !== null && typeof x === "object" && !Array.isArray(x);
 }
 
 /** Deep subset match: expected must be contained in actual. */
-export function deepSubset(actual: any, expected: any, path = "$"): string[] {
+export function deepSubset(actual: unknown, expected: unknown, path = "$"): string[] {
   const errs: string[] = [];
 
   if (expected === undefined) return errs;

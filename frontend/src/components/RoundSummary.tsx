@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Round, Player, calculateTotals, getScoreClass } from '@/lib/types';
 import { computeGameResults } from '@/lib/games';
 import { Trophy, DollarSign, ArrowRight, X, ChevronLeft, ChevronRight } from 'lucide-react';

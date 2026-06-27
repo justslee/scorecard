@@ -99,8 +99,8 @@ export function generateParseVoiceScenario(seed: number, index: number): VoiceSc
   }
 
   let baseUtterance = "";
-  let expectedEffect: any;
-  let tags: string[] = ["setup", isTournament ? "tournament" : "game", format.key];
+  let expectedEffect: Record<string, unknown>;
+  const tags: string[] = ["setup", isTournament ? "tournament" : "game", format.key];
 
   if (isTournament) {
     const rounds = randInt(rng, 1, 4);

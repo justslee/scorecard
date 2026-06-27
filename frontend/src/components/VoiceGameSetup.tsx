@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Mic,
   MicOff,
@@ -10,8 +10,6 @@ import {
   X,
   AlertCircle,
   Wand2,
-  Users,
-  Trophy,
   RefreshCw,
 } from "lucide-react";
 import { parseVoiceCommand, VoiceParseResult, matchPlayerNames } from "@/lib/voice-parser";
@@ -60,13 +58,13 @@ export default function VoiceGameSetup({
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(true);
 
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Check for Web Speech API support
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+    type SpeechRecognitionCtor = new () => SpeechRecognition;
+    const w = window as Window & { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+    const SpeechRecognition = w.SpeechRecognition ?? w.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       setIsSupported(false);
@@ -98,7 +96,7 @@ export default function VoiceGameSetup({
       setInterimTranscript(interim);
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       console.error("Speech recognition error:", event.error);
       if (event.error === "not-allowed") {
         setError("Microphone access denied. Please allow microphone access.");
@@ -308,7 +306,7 @@ export default function VoiceGameSetup({
 
               <div className="p-3 rounded-xl bg-zinc-800/30 border border-zinc-800">
                 <p className="text-xs text-zinc-500 mb-1">You said:</p>
-                <p className="text-sm text-zinc-300 italic">"{parseResult.rawTranscript}"</p>
+                <p className="text-sm text-zinc-300 italic">&ldquo;{parseResult.rawTranscript}&rdquo;</p>
               </div>
 
               <div className="flex gap-3">
@@ -405,9 +403,9 @@ export default function VoiceGameSetup({
                   Example commands
                 </p>
                 <div className="space-y-2 text-sm text-zinc-400">
-                  <p>"Play 2v2 best ball with Justin and Dan versus Matt and JBell"</p>
-                  <p>"Skins game where Justin receives 10 strokes on Dan"</p>
-                  <p>"Match play between Justin and Dan, $5 per hole"</p>
+                  <p>&ldquo;Play 2v2 best ball with Justin and Dan versus Matt and JBell&rdquo;</p>
+                  <p>&ldquo;Skins game where Justin receives 10 strokes on Dan&rdquo;</p>
+                  <p>&ldquo;Match play between Justin and Dan, $5 per hole&rdquo;</p>
                 </div>
               </div>
             </div>

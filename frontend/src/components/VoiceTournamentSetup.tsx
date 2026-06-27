@@ -14,7 +14,6 @@ import {
   RefreshCw,
   Calendar,
   MapPin,
-  Users,
 } from "lucide-react";
 import { parseVoiceCommand, VoiceParseResult } from "@/lib/voice-parser";
 
@@ -43,13 +42,13 @@ export default function VoiceTournamentSetup({
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(true);
 
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Check for Web Speech API support
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+    type SpeechRecognitionCtor = new () => SpeechRecognition;
+    const w = window as Window & { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+    const SpeechRecognition = w.SpeechRecognition ?? w.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       setIsSupported(false);
@@ -62,7 +61,7 @@ export default function VoiceTournamentSetup({
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interim = "";
       let final = "";
 
@@ -81,7 +80,7 @@ export default function VoiceTournamentSetup({
       setInterimTranscript(interim);
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       console.error("Speech recognition error:", event.error);
       if (event.error === "not-allowed") {
         setError("Microphone access denied.");
@@ -113,7 +112,7 @@ export default function VoiceTournamentSetup({
     try {
       recognitionRef.current.start();
       setIsListening(true);
-    } catch (err) {
+    } catch {
       setError("Failed to start microphone.");
     }
   }, []);
@@ -137,7 +136,7 @@ export default function VoiceTournamentSetup({
     try {
       const result = await parseVoiceCommand(fullTranscript, undefined);
       setParseResult(result);
-    } catch (err) {
+    } catch {
       setError("Failed to understand. Please try again.");
     } finally {
       setIsParsing(false);
@@ -303,7 +302,7 @@ export default function VoiceTournamentSetup({
 
               <div className="p-3 rounded-xl bg-zinc-800/30 border border-zinc-800">
                 <p className="text-xs text-zinc-500 mb-1">You said:</p>
-                <p className="text-sm text-zinc-300 italic">"{parseResult.rawTranscript}"</p>
+                <p className="text-sm text-zinc-300 italic">&ldquo;{parseResult.rawTranscript}&rdquo;</p>
               </div>
 
               <div className="flex gap-3">
@@ -399,16 +398,16 @@ export default function VoiceTournamentSetup({
                 </p>
                 <div className="space-y-2 text-sm text-zinc-400">
                   <p>
-                    "3 day tournament at Pebble Beach, Spyglass, and Spanish Bay with
-                    Justin, Dan, Matt, and JBell"
+                    &ldquo;3 day tournament at Pebble Beach, Spyglass, and Spanish Bay with
+                    Justin, Dan, Matt, and JBell&rdquo;
                   </p>
                   <p>
-                    "Tournament with 4 rounds, handicaps adjust by half the divergence
-                    each day"
+                    &ldquo;Tournament with 4 rounds, handicaps adjust by half the divergence
+                    each day&rdquo;
                   </p>
                   <p>
-                    "Weekend tournament, Justin and Dan in group 1, Matt and JBell in
-                    group 2"
+                    &ldquo;Weekend tournament, Justin and Dan in group 1, Matt and JBell in
+                    group 2&rdquo;
                   </p>
                 </div>
               </div>

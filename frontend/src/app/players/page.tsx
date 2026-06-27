@@ -391,6 +391,7 @@ export default function PlayersPage() {
                       }}
                     >
                       {player.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- avatar from user-provided URL; next/image requires known domains
                         <img
                           src={player.avatarUrl}
                           alt={player.name}

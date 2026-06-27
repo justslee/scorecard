@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { T } from "./tokens";
 import type { SeedPlayer } from "./Scorecard";
@@ -98,9 +98,14 @@ export default function ScoreSheet({
 }) {
   const [activePid, setActivePid] = useState(players[0]?.id ?? "");
 
-  useEffect(() => {
+  // When the sheet opens, reset to the first player.
+  // Uses the React "store previous prop" pattern (useState, not useRef) so we can
+  // call setState during render without triggering the refs-during-render lint rule.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (prevOpen !== open) {
+    setPrevOpen(open);
     if (open) setActivePid(players[0]?.id ?? "");
-  }, [open, players]);
+  }
 
   const labelFor = (v: number, par: number) => {
     const diff = v - par;

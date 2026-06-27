@@ -82,6 +82,42 @@ function scoreColor(score: number | null, par: number): string {
   return T.pencilSoft; // triple+
 }
 
+// Parse a single score from a voice transcript (number or golf term). Pure — no component state.
+function parseSimpleScore(text: string, par: number): number | null {
+  const lower = text.toLowerCase().trim();
+
+  // Direct numbers
+  const numMatch = lower.match(/\b(\d+)\b/);
+  if (numMatch) {
+    const num = parseInt(numMatch[1], 10);
+    if (num >= 1 && num <= 15) return num;
+  }
+
+  // Word numbers
+  const wordNumbers: Record<string, number> = {
+    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+    'won': 1, 'to': 2, 'too': 2, 'for': 4, 'fore': 4,
+  };
+  for (const [word, num] of Object.entries(wordNumbers)) {
+    if (lower.includes(word)) return num;
+  }
+
+  // Golf terms
+  if (lower.includes('ace') || lower.includes('hole in one')) return 1;
+  if (lower.includes('albatross') || lower.includes('double eagle')) return par - 3;
+  if (lower.includes('eagle')) return par - 2;
+  if (lower.includes('birdie')) return par - 1;
+  if (lower.includes('par')) return par;
+  if (lower.includes('bogey') && lower.includes('double')) return par + 2;
+  if (lower.includes('bogey') && lower.includes('triple')) return par + 3;
+  if (lower.includes('bogey')) return par + 1;
+  if (lower.includes('double')) return par + 2;
+  if (lower.includes('triple')) return par + 3;
+
+  return null;
+}
+
 interface ScoreGridProps {
   round: Round;
   onScoreChange: (playerId: string, holeNumber: number, strokes: number | null) => void;
@@ -96,7 +132,9 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
   const [pendingScores, setPendingScores] = useState<{ hole: number; scores: Record<string, number> } | null>(null);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // Ref keeps the latest processVoiceScores without causing the recognition setup to re-run.
+  const processVoiceScoresRef = useRef<(transcript: string) => Promise<void>>(async () => {});
 
   // Organize players by group
   const groupedPlayers = useMemo((): GroupedPlayers[] => {
@@ -141,26 +179,27 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     return result;
   }, [round.groups, round.players]);
 
-  // Initialize voice recognition
+  // Initialize voice recognition — runs once; processVoiceScores is accessed via ref
+  // to avoid a stale closure without needing to re-create the recognition on each render.
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+    type SpeechRecognitionCtor = new () => SpeechRecognition;
+    const w = window as Window & { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+    const SpeechRecognitionAPI = w.SpeechRecognition ?? w.webkitSpeechRecognition;
 
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
+    if (SpeechRecognitionAPI) {
+      const recognition = new SpeechRecognitionAPI();
       recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = "en-US";
 
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
         const transcript = Array.from(event.results)
-          .map((result: any) => result[0].transcript)
+          .map((result: SpeechRecognitionResult) => result[0].transcript)
           .join("");
         setVoiceTranscript(transcript);
 
         if (event.results[0].isFinal) {
-          processVoiceScores(transcript);
+          void processVoiceScoresRef.current(transcript);
         }
       };
 
@@ -169,7 +208,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
         setVoiceTranscript("");
       };
 
-      recognition.onerror = (event: any) => {
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.log('Speech recognition error:', event.error);
         setIsVoiceActive(false);
         setVoiceTranscript("");
@@ -183,97 +222,31 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     };
   }, []);
 
-  const processVoiceScores = async (transcript: string) => {
-    console.log('Processing voice transcript:', transcript);
-    setIsProcessingVoice(true);
-    const targetHole = currentHole || 1;
-    const par = round.holes[targetHole - 1]?.par || 4;
-    const playerNames = round.players.map(p => p.name);
+  // submitScore must be declared before processVoiceScores (react-hooks/immutability).
+  const submitScore = useCallback(
+    (strokes: number | null) => {
+      if (!selectedCell) return;
 
-    // SIMPLE MODE: If a cell is selected, just parse a single score
-    if (selectedCell) {
-      const score = parseSimpleScore(transcript, par);
-      console.log('Simple score parse:', transcript, '->', score);
-      if (score !== null) {
-        submitScore(score);
-      }
-      setIsProcessingVoice(false);
-      setVoiceTranscript("");
-      return;
-    }
+      const { playerId, hole } = selectedCell;
+      onScoreChange(playerId, hole, strokes);
 
-    // MULTI-PLAYER MODE: Use Claude to parse via the backend
-    try {
-      const result = await fetchAPI<{ hole?: number; scores?: Record<string, number> }>(
-        "/api/voice/parse-scores",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            transcript,
-            playerNames,
-            hole: targetHole,
-            par,
-          }),
-        }
-      );
-      console.log('Claude parse result:', result);
+      const currentPlayerIndex = round.players.findIndex((p) => p.id === playerId);
 
-      if (result.scores && Object.keys(result.scores).length > 0) {
-        setPendingScores({ hole: result.hole || targetHole, scores: result.scores });
+      if (currentPlayerIndex < round.players.length - 1) {
+        const nextPlayer = round.players[currentPlayerIndex + 1];
+        setSelectedCell({ playerId: nextPlayer.id, hole });
+      } else if (hole < 18) {
+        const nextHole = hole + 1;
+        setSelectedCell({ playerId: round.players[0].id, hole: nextHole });
+        onHoleSelect?.(nextHole);
       } else {
-        alert(`Couldn't parse scores from: "${transcript}"\n\nTry: "Justin 4 Mike 5" or "everyone par"`);
+        setSelectedCell(null);
       }
-    } catch (err) {
-      console.error('Voice parse error:', err);
-      // Fallback to local parsing
-      const localResult = parseVoiceLocally(transcript, targetHole);
-      if (Object.keys(localResult.scores).length > 0) {
-        setPendingScores(localResult);
-      } else {
-        alert(`Couldn't parse scores from: "${transcript}"`);
-      }
-    }
+    },
+    [selectedCell, round.players, onScoreChange, onHoleSelect]
+  );
 
-    setIsProcessingVoice(false);
-    setVoiceTranscript("");
-  };
-
-  // Parse a single score from voice (just a number or golf term)
-  const parseSimpleScore = (text: string, par: number): number | null => {
-    const lower = text.toLowerCase().trim();
-
-    // Direct numbers
-    const numMatch = lower.match(/\b(\d+)\b/);
-    if (numMatch) {
-      const num = parseInt(numMatch[1], 10);
-      if (num >= 1 && num <= 15) return num;
-    }
-
-    // Word numbers
-    const wordNumbers: Record<string, number> = {
-      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-      'won': 1, 'to': 2, 'too': 2, 'for': 4, 'fore': 4,
-    };
-    for (const [word, num] of Object.entries(wordNumbers)) {
-      if (lower.includes(word)) return num;
-    }
-
-    // Golf terms
-    if (lower.includes('ace') || lower.includes('hole in one')) return 1;
-    if (lower.includes('albatross') || lower.includes('double eagle')) return par - 3;
-    if (lower.includes('eagle')) return par - 2;
-    if (lower.includes('birdie')) return par - 1;
-    if (lower.includes('par')) return par;
-    if (lower.includes('bogey') && lower.includes('double')) return par + 2;
-    if (lower.includes('bogey') && lower.includes('triple')) return par + 3;
-    if (lower.includes('bogey')) return par + 1;
-    if (lower.includes('double')) return par + 2;
-    if (lower.includes('triple')) return par + 3;
-
-    return null;
-  };
-
+  // parseVoiceLocally must be declared before processVoiceScores (react-hooks/immutability).
   const parseVoiceLocally = (text: string, defaultHole: number) => {
     const result: { hole: number; scores: Record<string, number> } = {
       hole: defaultHole,
@@ -376,6 +349,67 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     return result;
   };
 
+  // parseSimpleScore is a module-level pure function (declared above the component).
+  const processVoiceScores = async (transcript: string) => {
+    console.log('Processing voice transcript:', transcript);
+    setIsProcessingVoice(true);
+    const targetHole = currentHole || 1;
+    const par = round.holes[targetHole - 1]?.par || 4;
+    const playerNames = round.players.map(p => p.name);
+
+    // SIMPLE MODE: If a cell is selected, just parse a single score
+    if (selectedCell) {
+      const score = parseSimpleScore(transcript, par);
+      console.log('Simple score parse:', transcript, '->', score);
+      if (score !== null) {
+        submitScore(score);
+      }
+      setIsProcessingVoice(false);
+      setVoiceTranscript("");
+      return;
+    }
+
+    // MULTI-PLAYER MODE: Use Claude to parse via the backend
+    try {
+      const result = await fetchAPI<{ hole?: number; scores?: Record<string, number> }>(
+        "/api/voice/parse-scores",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            transcript,
+            playerNames,
+            hole: targetHole,
+            par,
+          }),
+        }
+      );
+      console.log('Claude parse result:', result);
+
+      if (result.scores && Object.keys(result.scores).length > 0) {
+        setPendingScores({ hole: result.hole || targetHole, scores: result.scores });
+      } else {
+        alert(`Couldn't parse scores from: "${transcript}"\n\nTry: "Justin 4 Mike 5" or "everyone par"`);
+      }
+    } catch (err) {
+      console.error('Voice parse error:', err);
+      // Fallback to local parsing
+      const localResult = parseVoiceLocally(transcript, targetHole);
+      if (Object.keys(localResult.scores).length > 0) {
+        setPendingScores(localResult);
+      } else {
+        alert(`Couldn't parse scores from: "${transcript}"`);
+      }
+    }
+
+    setIsProcessingVoice(false);
+    setVoiceTranscript("");
+  };
+
+  // Keep the ref current so the recognition handler always calls the latest version.
+  useEffect(() => {
+    processVoiceScoresRef.current = processVoiceScores;
+  });
+
   const confirmPendingScores = () => {
     if (!pendingScores) return;
 
@@ -431,29 +465,6 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
     setHoleModalHole(holeNumber);
     onHoleSelect?.(holeNumber);
   };
-
-  const submitScore = useCallback(
-    (strokes: number | null) => {
-      if (!selectedCell) return;
-
-      const { playerId, hole } = selectedCell;
-      onScoreChange(playerId, hole, strokes);
-
-      const currentPlayerIndex = round.players.findIndex((p) => p.id === playerId);
-
-      if (currentPlayerIndex < round.players.length - 1) {
-        const nextPlayer = round.players[currentPlayerIndex + 1];
-        setSelectedCell({ playerId: nextPlayer.id, hole });
-      } else if (hole < 18) {
-        const nextHole = hole + 1;
-        setSelectedCell({ playerId: round.players[0].id, hole: nextHole });
-        onHoleSelect?.(nextHole);
-      } else {
-        setSelectedCell(null);
-      }
-    },
-    [selectedCell, round.players, onScoreChange, onHoleSelect]
-  );
 
   const handleNumberPadClick = (num: number) => submitScore(num);
   const handleClearScore = () => submitScore(null);
@@ -802,7 +813,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
                 className="text-sm truncate"
                 style={{ color: T.ink, fontFamily: T.serif, fontStyle: 'italic' }}
               >
-                "{voiceTranscript}"
+                &ldquo;{voiceTranscript}&rdquo;
               </p>
             )}
             {!isVoiceActive && !voiceTranscript && !isProcessingVoice && (
@@ -843,7 +854,7 @@ export default function ScoreGrid({ round, onScoreChange, currentHole, onHoleSel
               className="text-xs"
               style={{ color: T.pencilSoft, fontFamily: T.mono, fontSize: 10, letterSpacing: '0.04em' }}
             >
-              Say: "Justin 4 Mike 5" or "everyone par" or "par except Mike bogey"
+              Say: &ldquo;Justin 4 Mike 5&rdquo; or &ldquo;everyone par&rdquo; or &ldquo;par except Mike bogey&rdquo;
             </p>
           </div>
         )}

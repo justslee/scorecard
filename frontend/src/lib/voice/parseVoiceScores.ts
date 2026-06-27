@@ -74,7 +74,7 @@ Use the exact player names from the list above in your response.`;
     throw new Error(`Anthropic parse failed: ${error}`);
   }
 
-  const data: any = await response.json();
+  const data = (await response.json()) as { content?: Array<{ text?: string }> };
   const content = data.content?.[0]?.text ?? "";
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error(`Could not parse response: ${content}`);
@@ -115,7 +115,7 @@ Use the exact player names from the list above in your response.`;
 
   if (raw && typeof raw === "object" && raw.scores && typeof raw.scores === "object") {
     const mapped: Record<string, number> = {};
-    for (const [k, v] of Object.entries(raw.scores as Record<string, any>)) {
+    for (const [k, v] of Object.entries(raw.scores as Record<string, unknown>)) {
       const resolved = resolvePlayer(String(k));
       const num = typeof v === "number" ? v : parseInt(String(v), 10);
       if (resolved && Number.isFinite(num)) mapped[resolved] = num;
@@ -123,7 +123,7 @@ Use the exact player names from the list above in your response.`;
     return { ...raw, scores: mapped };
   }
 
-  return raw as any;
+  return raw as VoiceParseScoresResult;
 }
 
 // --------------------

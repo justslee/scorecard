@@ -105,7 +105,7 @@ export function generateSetupScenario(seed: number, index: number): CommandLaneS
   }
 
   let utterance = "";
-  let expectedEffect: any;
+  let expectedEffect: Record<string, unknown>;
 
   if (isTournament) {
     const rounds = randInt(rng, 1, 4);

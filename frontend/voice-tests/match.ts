@@ -1,6 +1,6 @@
 export type MatchResult = { ok: true } | { ok: false; reason: string };
 
-function isObject(x: unknown): x is Record<string, any> {
+function isObject(x: unknown): x is Record<string, unknown> {
   return !!x && typeof x === "object" && !Array.isArray(x);
 }
 
@@ -68,7 +68,7 @@ export function subsetMatch(actual: unknown, expected: unknown, path = "$"): Mat
   }
 
   for (const [k, v] of Object.entries(expected)) {
-    const r = subsetMatch((actual as any)[k], v, `${path}.${k}`);
+    const r = subsetMatch(actual[k], v, `${path}.${k}`);
     if (!r.ok) return r;
   }
   return { ok: true };

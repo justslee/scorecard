@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Round, Player, PlayerGroup } from '@/lib/types';
+import { Round, PlayerGroup } from '@/lib/types';
 import { X, Users, Clock, Plus, GripVertical } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {

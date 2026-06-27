@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Tournament, Round, Game, GameFormat } from '@/lib/types';
 import { saveTournament } from '@/lib/storage';
-import { Plus, Trophy, X, ChevronRight, Users, DollarSign } from 'lucide-react';
+import { Plus, Trophy, X, DollarSign } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 interface TournamentGamesPanelProps {

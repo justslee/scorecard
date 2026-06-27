@@ -9,7 +9,7 @@ export type VoiceParseSetupResult =
         teams?: { name: string; playerNames: string[] }[];
         playerNames: string[];
         handicaps?: Record<string, number>;
-        settings?: Record<string, any>;
+        settings?: Record<string, unknown>;
       };
       confidence: number;
     }

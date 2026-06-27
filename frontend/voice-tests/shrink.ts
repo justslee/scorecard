@@ -62,7 +62,6 @@ export async function shrinkFailingScenario(
   );
 
   for (const c of candidates) {
-    // eslint-disable-next-line no-await-in-loop
     const isFail = await fails(c);
     if (isFail && c.utterance.length < best.utterance.length) {
       best = c;

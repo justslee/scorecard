@@ -98,15 +98,15 @@ export default function PlayerAutocomplete({
 
   const suggestions = isOpen ? getSuggestions() : [];
 
-  // Sync input with value prop
-  useEffect(() => {
+  // Sync inputValue with the value prop using the React "store previous prop" pattern.
+  // Using a second useState instead of useRef avoids both the set-state-in-effect and
+  // the refs-during-render lint rules while keeping React's expected re-render semantics.
+  const [prevValueName, setPrevValueName] = useState(value.name);
+  if (prevValueName !== value.name) {
+    setPrevValueName(value.name);
     setInputValue(value.name);
-  }, [value.name]);
-
-  // Reset highlight when suggestions change
-  useEffect(() => {
     setHighlightedIndex(0);
-  }, [inputValue]);
+  }
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -120,6 +120,7 @@ export default function PlayerAutocomplete({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setInputValue(newValue);
+    setHighlightedIndex(0);
     setIsOpen(true);
     onChange({ id: customPlayerId, name: newValue });
   };
@@ -237,6 +238,7 @@ export default function PlayerAutocomplete({
             aria-expanded={isOpen}
             aria-haspopup="listbox"
             aria-autocomplete="list"
+            aria-controls={`player-suggestions-${index}`}
             style={{
               width: '100%',
               padding: isLinkedPlayer ? '11px 14px 11px 38px' : '11px 14px',
@@ -289,6 +291,7 @@ export default function PlayerAutocomplete({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.14, ease: 'easeOut' }}
+            id={`player-suggestions-${index}`}
             role="listbox"
             style={{
               position: 'absolute',
