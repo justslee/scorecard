@@ -225,3 +225,21 @@ Format: date — done / in-progress / blocked.
   - SILENT — no TestFlight-visible change; script runs once on EC2 deploy box.
 - **Next ready backlog items:** `test-games-engine` (P2), `test-voice-pipeline` (P3),
   `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).
+
+### 2026-06-27 — Backend DB layer COMPLETE + DEPLOYED (real-data wiring Phase 0/1)
+- Shipped & merged **bundle #48** to main: db-core-schema, api-contract-align, and the
+  full backend domain on Postgres (players, rounds/scores, tournaments, courses, profile,
+  games) via Alembic 005/006/007 + a backfill script. Every item adversarially reviewed.
+- **Deploy incident (resolved):** first deploy false-greened — migration 002 actually failed
+  (`asyncpg InvalidTextRepresentationError: Token "'" is invalid`) because JSONB
+  `server_default`s were plain strings; deploy only checked /health. Offline `--sql` missed
+  it (renders without executing). **Fixes:** (1) wrap JSONB defaults in `sa.text(...)` (#49);
+  (2) harden `deploy.yml` to `set -eu` fail-fast + run alembic before restart + `uv sync` in
+  backend/ (#49, #50 — `set -o pipefail` failed under dash/SSM, switched to `set -eu`).
+- **Redeploy SUCCESS:** alembic applied 001→002→006→007 cleanly on the live EC2 Postgres;
+  /health ok; SSM Success. Backend DB layer is LIVE.
+- **Open decision:** one-time backfill of `data/*.json` — likely seed-only, recommend SKIP
+  for a clean DB start unless EC2 has real owner data.
+- **Next: Phase 2 (NOTICEABLE) UI wiring** — flipped `wire-round-new` (P10) + `wire-round-scoring`
+  (P11) to ready; these are user-facing → TestFlight approval bundles. Lesson: add a real-DB
+  migration smoke test (throwaway Postgres) to catch execution-time DDL bugs the offline gate can't.
