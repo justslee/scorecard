@@ -40,6 +40,10 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   themeColor: "#f4f1ea",
+  // Required for iOS env(safe-area-inset-*) to resolve to real values instead
+  // of 0. Without this the Dynamic Island / status-bar insets are invisible to
+  // CSS and every screen's max(14px, env(safe-area-inset-top)) collapses to 14px.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

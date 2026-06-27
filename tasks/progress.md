@@ -1177,6 +1177,50 @@ Format: date — done / in-progress / blocked.
   - `<details>/<summary>` expanders use the browser's default disclosure triangle — a future polish
     pass could replace with a custom chevron or typographic indicator.
 
+## 2026-06-27 (hotfix — voice 401 + global safe-area)
+- **Done:** Two owner-reported TestFlight bugs fixed in one commit.
+
+  **BUG 1 — Voice 401 "Missing Authorization: Bearer" (Clerk hydration race):**
+  - Root confirmed: `getAuthToken()` in `frontend/src/lib/api.ts` accessed
+    `window.Clerk.session` directly. In a Capacitor webview, native-view
+    transitions can fire authed API calls (e.g. voice transcribe) before
+    `window.Clerk.loaded` is true — so `.session` is null even though the user
+    IS signed in, producing a no-auth header and a backend 401.
+  - Fix: Hardened `getAuthToken()` to await `clerk.load()` (idempotent — no-op
+    when already loaded) before reading `.session`, with a 4 s `Promise.race`
+    timeout. If Clerk fails to load within 4 s, `console.error` fires and the
+    request proceeds unauthenticated (observable in DevTools). Normal
+    unauthenticated state (`!clerk.session` after loading) is silent, no log spam.
+    This affects ALL authed calls via `fetchAPI` and `authHeaders`, not just voice.
+  - Honest caveat: the root cause is a timing race specific to the Capacitor
+    webview boot sequence; this fix closes the window significantly. Confirmation
+    that the 401 is gone requires a device build (TestFlight). If the bug persists
+    after this fix, the next step is device logs to see whether `clerk.loaded`
+    ever becomes true in the affected window.
+
+  **BUG 2 — Content jammed under Dynamic Island / status bar (missing viewportFit):**
+  - Root confirmed: `frontend/src/app/layout.tsx` viewport export was missing
+    `viewportFit: "cover"`. Without it, iOS resolves `env(safe-area-inset-*)` to 0
+    for all CSS, so every screen's `max(14px, env(safe-area-inset-top))` collapsed
+    to 14px — not enough to clear a Dynamic Island (~59px) or standard notch (~44px).
+  - Fix 1: Added `viewportFit: "cover"` to the viewport export in `layout.tsx`.
+    All screens that already use `env(safe-area-inset-top)` in their headers
+    (home, tee-time, round, players, profile, VoiceRoundSetup, tournament, etc.)
+    will NOW receive the real inset and clear the status bar correctly — no
+    additional per-screen changes needed for those paths.
+  - Fix 2: Added `padding-top: env(safe-area-inset-top)` to the `.app-header`
+    legacy shim class in `globals.css`. This class is used by `settings/page.tsx`
+    and `CameraCapture.tsx` — both now clear the status bar.
+  - Deliberately NOT added top padding to `body` in the `@supports` block — that
+    would double-count against every screen that already handles inset in its own
+    header container.
+  - NOTICEABLE — user-visible on every screen on iPhone with a notch/Dynamic Island.
+  - Designer flag: with `viewportFit:cover` active, screens that already used
+    `env(safe-area-inset-top)` will now get the real inset (44-59px) instead of
+    14px. Visual audit across all main screens recommended before next TestFlight.
+
+  Gates: tsc 0 errors, voice-tests 260/260, vitest 238/238, build OK.
+
 ## 2026-06-27 (restyle-dark-components-sweep P24.5 — scoring-entry batch)
 - **Done:** `ScoreGrid.tsx` + `HoleScoreModal.tsx` restyled from dark-mode Tailwind to the
   yardage-book T.* token system. VISUAL-ONLY — zero logic/prop/callback changes.

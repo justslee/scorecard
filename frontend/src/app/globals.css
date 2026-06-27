@@ -143,6 +143,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: non
   background: color-mix(in oklab, var(--paper) 88%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--hairline);
+  /* Clear the Dynamic Island / status bar now that viewportFit:cover is set. */
+  padding-top: env(safe-area-inset-top);
 }
 .header-divider { height: 1px; background: var(--hairline); }
 .card { background: var(--paper); border: 1px solid var(--hairline); border-radius: 18px; }

@@ -39,18 +39,56 @@ export type {
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /**
+ * How long (ms) to wait for Clerk JS to finish hydrating before giving up.
+ * In a Capacitor webview, authed API calls can fire before window.Clerk.loaded
+ * is true, causing a null session even when the user is signed in.
+ */
+const CLERK_LOAD_TIMEOUT_MS = 4000;
+
+/**
  * Get auth token from Clerk (client-side only).
+ *
+ * Hardened for Capacitor/iOS: if window.Clerk exists but hasn't finished
+ * hydrating yet (clerk.loaded === false), we await clerk.load() — which is
+ * idempotent and resolves immediately when already ready — with a 4 s timeout.
+ * This prevents the race condition where native-view transitions fire API calls
+ * before Clerk has set up its session, resulting in a 401 for an authenticated user.
  */
 async function getAuthToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
 
   // @ts-expect-error - Clerk exposes this on window
   const clerk = window.Clerk;
-  if (!clerk?.session) return null;
+  if (!clerk) return null;
+
+  // Await Clerk hydration if not yet complete (Capacitor timing race).
+  // clerk.load() is idempotent — safe to call even if already loaded.
+  if (!clerk.loaded) {
+    try {
+      await Promise.race([
+        clerk.load?.() ?? Promise.resolve(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Clerk load timeout')),
+            CLERK_LOAD_TIMEOUT_MS
+          )
+        ),
+      ]);
+    } catch {
+      console.error(
+        '[auth] Clerk did not finish loading within 4 s; request will proceed unauthenticated.'
+      );
+      return null;
+    }
+  }
+
+  // No session = user is not signed in (expected, not an error).
+  if (!clerk.session) return null;
 
   try {
     return await clerk.session.getToken();
-  } catch {
+  } catch (err) {
+    console.error('[auth] clerk.session.getToken() threw:', err);
     return null;
   }
 }
