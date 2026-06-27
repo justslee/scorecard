@@ -50,7 +50,7 @@ jobs:
             --document-name AWS-RunShellScript \
             --comment "deploy-on-merge ${GITHUB_SHA::7}" \
             --parameters 'commands=[
-              "set -euo pipefail",
+              "set -eu",
               "su - ubuntu -c \"cd ~/scorecard && git pull --ff-only && cd backend && ~/.local/bin/uv sync\"",
               "su - ubuntu -c \"cd ~/scorecard/backend && set -a && . .env && set +a && ~/.local/bin/uv run alembic upgrade head\"",
               "systemctl restart scorecard-api",
