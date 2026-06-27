@@ -3,6 +3,71 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (mount-caddie P26)
+- **Done:** backlog `mount-caddie` (P26, NOTICEABLE) — new `CaddieSheet` component mounted
+  on the in-round screen. A lean, GPS-free, yardage-book caddie overlay reachable via a
+  new "Ask caddie" ghost pill in the bottom action row of `RoundPageClient`.
+
+  Key changes:
+  - **New `frontend/src/components/CaddieSheet.tsx`** (~480 LOC):
+    - Two interaction modes, selectable via a mono kicker tab bar:
+      1. **Voice (primary):** tap-to-record → `VoiceRecorder` + Web Speech API interim
+         display (identical pattern to `VoiceRoundSetup`) → `transcribeBlob` → auto-calls
+         `talkToCaddie()` (POST `/caddie/voice`) → answer shown in T.serif italic 18px.
+         Conversation history maintained for follow-up questions within a session.
+         "Ask follow-up" button re-arms the mic with prior context included.
+      2. **Distance tap (secondary):** numeric yards-to-pin input + "Advise" button →
+         `fetchRecommendation()` (POST `/caddie/recommend`) → club call shown in T.serif
+         italic 36px, aim point + target yards in T.mono, strategy line in T.serif italic
+         16px, miss-side + aggressiveness chips below.
+    - Both paths read golfer's club bag from `getGolferProfile()` (localStorage) and pass
+      `club_distances` + `handicap` to the backend when available. camelCase → API key
+      mapping inline (driver, 3w, 5w, hy, 4i–9i, pw, gw, sw, lw).
+    - Caddy identity (`caddy.name`, `caddy.initial`, `accent`) passed through as props —
+      uses "Steve" selected in `RoundPageClient`, medallion in accent colour.
+    - Hole context chip in header: "Hole N · Par X · Y yds".
+    - Bottom-sheet pattern (matches `ScoreSheet`): `position:fixed; bottom:0` + spring
+      animation, `borderTopLeftRadius:24`, `max-height:88dvh`,
+      `paddingBottom:env(safe-area-inset-bottom)`. Backdrop: ink @ 32% + blur(3px).
+    - Design: T.* tokens only, PAPER_NOISE, Instrument Serif, inline SVGs (MicIcon,
+      CloseIcon, FlagIcon), 64pt mic button, 44pt+ all other touch targets, no lucide,
+      no zinc/emerald/slate, no new npm deps.
+    - Sheet resets all state (conversation, recording, answers) on close.
+  - **`RoundPageClient.tsx` changes:**
+    - Imports `CaddieSheet`.
+    - `const [caddieOpen, setCaddieOpen] = useState(false)` added.
+    - Bottom action row: split into two pills side by side:
+      - Ghost "Ask caddie" pill (T.paper bg, T.hairline border, caddie initial medallion
+        in accent + serif italic label "Ask caddie").
+      - Solid "Enter score" pill (T.ink bg, simplified — removed the ↑ icon, shows hole
+        number in accent mono kicker).
+    - `pointerEvents` guard updated to `scoreOpen || voiceOpen || caddieOpen ? "none" : "auto"`.
+    - `<CaddieSheet>` mounted after `<ScoreSheet>` with hole context from round state:
+      `holeYards={round.holes[currentHole-1]?.yards ?? hole.yards}`.
+  - **Endpoints wired:**
+    - POST `/caddie/voice` via `talkToCaddie()` (lib/caddie/api.ts:316)
+    - POST `/caddie/recommend` via `fetchRecommendation()` (lib/caddie/api.ts:95)
+    - Auth via `fetchAPI`/`authHeaders()` — no new auth code.
+  - **Not touched:** `CaddiePanel.tsx`, mapbox, GPS, shot-tracking, PinMarkControl,
+    useRealtimeCaddie. All P28 territory, blocked and out of scope.
+  - **Gates:** `eslint src/components/CaddieSheet.tsx src/app/round/[id]/RoundPageClient.tsx`
+    0 errors · `tsc --noEmit` 0 errors · voice-tests 260/260 · npm test 238/238 ·
+    `npm run build` 15 pages, no errors.
+  - **NOTICEABLE** — new user-visible capability on TestFlight: "Ask caddie" button on
+    in-round screen opens AI caddie sheet with voice and distance paths.
+  - **Designer flags for on-device review:**
+    1. Two-pill bottom row: verify "Ask caddie" + "Enter score" fit side-by-side on 375px
+       without cramping; may need to shrink "Ask caddie" label to initials-only on narrow
+       viewports.
+    2. Voice tab: "Hearing…" + interim transcript card — verify T.paperDeep bg + T.inkSoft
+       text reads in sunlight at 15px serif italic.
+    3. Distance tab: club call at 36px T.serif italic — verify legibility and that 36px
+       doesn't feel oversized relative to the sheet height on small phones.
+    4. Conversation history display (when >1 Q&A in history): verify alternating
+       T.paperDeep / T.paperEdge card pairs feel calm, not busy.
+    5. Bottom sheet max-height 88dvh — on phones with very short screens (SE), verify
+       the mic button + mode tabs are always visible without scrolling.
+
 ## 2026-06-27 (voice-live-transcript)
 - **Done:** `voice-live-transcript` (NOTICEABLE) — live transcription shown on screen
   in the voice round-setup flow, plus transcript retained through the AI-parse wait.
