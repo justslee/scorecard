@@ -347,12 +347,13 @@ describe('computeNassau', () => {
     expect(result.overallWinnerId).toBeNull();
   });
 
-  /**
-   * STUB BEHAVIOR: match-play Nassau is not yet implemented.
-   * The engine always uses stroke totals regardless of nassauMode='match'.
-   * This test documents the current stub; a future item (P21) will implement it.
-   */
-  it('falls back to stroke totals when mode=match (documented stub)', () => {
+  // ---------------------------------------------------------------------------
+  // Match-play Nassau (P21) — real hole-by-hole match play
+  // ---------------------------------------------------------------------------
+
+  it('match mode: p1 wins every hole → front9 closes early (5 & 4)', () => {
+    // p1 always scores 3, p2 always scores 4 → p1 wins every hole.
+    // Front-9 close: after hole 5, diff=5 > 4 remaining → "5 & 4"
     const round = makeRound({
       scores: [...uniformScores('p1', 3), ...uniformScores('p2', 4)],
     });
@@ -363,10 +364,162 @@ describe('computeNassau', () => {
     });
     const result = computeNassau(round, game);
 
-    // mode is echoed in the result
     expect(result.mode).toBe('match');
-    // winner is still determined by stroke totals, not match-play hole wins
+    // Match-play data is present
+    expect(result.front9Match).toBeDefined();
+    expect(result.back9Match).toBeDefined();
+    expect(result.overallMatch).toBeDefined();
+
+    // Front 9: closes at hole 5 (5 up with 4 remaining → "5 & 4")
+    expect(result.front9Match!.closedAt).toBe(5);
+    expect(result.front9Match!.closed).toBe(true);
+    expect(result.front9Match!.statusLabel).toBe('5 & 4');
+    expect(result.front9Match!.leaderId).toBe('p1');
+
+    // Winner IDs come from match leaders, not stroke totals
     expect(result.front9WinnerId).toBe('p1');
+    expect(result.back9WinnerId).toBe('p1');
+    expect(result.overallWinnerId).toBe('p1');
+  });
+
+  it('match mode: AS segment — alternating hole wins, ends all square', () => {
+    // p1 wins holes 1–4, p2 wins holes 5–8, hole 9 halved → Front 9 ends AS.
+    // Check close never fires: max diff=4, at that point remaining=5 → 4>5? No.
+    const scores: Score[] = [];
+    // Holes 1–4: p1 wins (3 vs 4)
+    for (let h = 1; h <= 4; h++) {
+      scores.push({ playerId: 'p1', holeNumber: h, strokes: 3 });
+      scores.push({ playerId: 'p2', holeNumber: h, strokes: 4 });
+    }
+    // Holes 5–8: p2 wins (4 vs 3)
+    for (let h = 5; h <= 8; h++) {
+      scores.push({ playerId: 'p1', holeNumber: h, strokes: 4 });
+      scores.push({ playerId: 'p2', holeNumber: h, strokes: 3 });
+    }
+    // Hole 9: halved (4 vs 4)
+    scores.push({ playerId: 'p1', holeNumber: 9, strokes: 4 });
+    scores.push({ playerId: 'p2', holeNumber: 9, strokes: 4 });
+
+    const round = makeRound({ scores });
+    const game = makeGame({
+      format: 'nassau',
+      playerIds: ['p1', 'p2'],
+      settings: { nassauMode: 'match', nassauScope: 'individual' },
+    });
+    const result = computeNassau(round, game);
+
+    expect(result.front9Match!.closed).toBe(false);
+    expect(result.front9Match!.matchDiff).toBe(0);
+    expect(result.front9Match!.statusLabel).toBe('AS');
+    expect(result.front9Match!.leaderId).toBeNull();
+    expect(result.front9WinnerId).toBeNull(); // tied
+  });
+
+  it('match mode: partial round — in-progress status, no early close', () => {
+    // Only holes 1–3 scored; p1 wins all three → "3 UP" (remaining=6, no close)
+    const scores: Score[] = [];
+    for (let h = 1; h <= 3; h++) {
+      scores.push({ playerId: 'p1', holeNumber: h, strokes: 3 });
+      scores.push({ playerId: 'p2', holeNumber: h, strokes: 4 });
+    }
+    const round = makeRound({ scores });
+    const game = makeGame({
+      format: 'nassau',
+      playerIds: ['p1', 'p2'],
+      settings: { nassauMode: 'match', nassauScope: 'individual' },
+    });
+    const result = computeNassau(round, game);
+
+    expect(result.front9Match!.holesPlayed).toBe(3);
+    expect(result.front9Match!.matchDiff).toBe(3);
+    expect(result.front9Match!.closed).toBe(false);
+    expect(result.front9Match!.statusLabel).toBe('3 UP');
+    expect(result.front9Match!.leaderId).toBe('p1');
+
+    // Back 9 and Overall: not started
+    expect(result.back9Match!.holesPlayed).toBe(0);
+    expect(result.back9Match!.statusLabel).toBe('—');
+    expect(result.overallMatch!.holesPlayed).toBe(3);
+    expect(result.overallMatch!.statusLabel).toBe('3 UP');
+  });
+
+  it('match mode: overall closes at hole 10 (10 & 8) when p1 wins every hole', () => {
+    // p1 scores 3, p2 scores 4 on all 18 → overall closes when diff > remaining.
+    // Diff=10 after hole 10, remaining=8 → 10>8 → closes at hole 10 ("10 & 8")
+    const round = makeRound({
+      scores: [...uniformScores('p1', 3), ...uniformScores('p2', 4)],
+    });
+    const game = makeGame({
+      format: 'nassau',
+      playerIds: ['p1', 'p2'],
+      settings: { nassauMode: 'match', nassauScope: 'individual' },
+    });
+    const result = computeNassau(round, game);
+
+    expect(result.overallMatch!.closedAt).toBe(10);
+    expect(result.overallMatch!.statusLabel).toBe('10 & 8');
+  });
+
+  it('match mode: no scores → all segments show "—" with no leader', () => {
+    const round = makeRound({ scores: [] });
+    const game = makeGame({
+      format: 'nassau',
+      playerIds: ['p1', 'p2'],
+      settings: { nassauMode: 'match', nassauScope: 'individual' },
+    });
+    const result = computeNassau(round, game);
+
+    expect(result.front9Match!.holesPlayed).toBe(0);
+    expect(result.front9Match!.statusLabel).toBe('—');
+    expect(result.front9WinnerId).toBeNull();
+    expect(result.overallWinnerId).toBeNull();
+  });
+
+  it('match mode: team scope — best-ball per hole determines match result', () => {
+    // tA: p1=3, p2=5 → best ball 3 per hole; tB: p3=4, p4=5 → best ball 4 per hole
+    // tA wins every hole → front9 closes early (same as individual scenario above)
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3', 'p4']),
+      scores: [
+        ...uniformScores('p1', 3),
+        ...uniformScores('p2', 5),
+        ...uniformScores('p3', 4),
+        ...uniformScores('p4', 5),
+      ],
+    });
+    const game = makeGame({
+      format: 'nassau',
+      playerIds: ['p1', 'p2', 'p3', 'p4'],
+      teams: [
+        { id: 'tA', name: 'Team A', playerIds: ['p1', 'p2'] },
+        { id: 'tB', name: 'Team B', playerIds: ['p3', 'p4'] },
+      ],
+      settings: { nassauMode: 'match', nassauScope: 'team' },
+    });
+    const result = computeNassau(round, game);
+
+    expect(result.scope).toBe('team');
+    expect(result.front9Match!.closed).toBe(true);
+    expect(result.front9Match!.leaderId).toBe('tA');
+    expect(result.front9WinnerId).toBe('tA');
+  });
+
+  it('stroke mode unchanged when nassauMode=stroke', () => {
+    // Ensure existing stroke-mode behavior is completely unaffected.
+    const round = makeRound({
+      scores: [...uniformScores('p1', 3), ...uniformScores('p2', 4)],
+    });
+    const game = makeGame({
+      format: 'nassau',
+      playerIds: ['p1', 'p2'],
+      settings: { nassauMode: 'stroke', nassauScope: 'individual' },
+    });
+    const result = computeNassau(round, game);
+
+    expect(result.mode).toBe('stroke');
+    expect(result.front9Match).toBeUndefined();  // no match data in stroke mode
+    expect(result.front9WinnerId).toBe('p1');    // determined by stroke totals
+    expect(result.front9Totals['p1']).toBe(27);
   });
 
   it('uses best-ball (lowest ball) logic for team scope', () => {

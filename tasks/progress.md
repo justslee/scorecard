@@ -1040,3 +1040,58 @@ Format: date — done / in-progress / blocked.
     dark Tailwind's `rounded-full` utility but `.btn` itself is paper-palette in globals.css —
     consistent with the rest of the legacy shim pages. If the designer wants full T.* inline
     conversion (matching players/profile pages), that can be a follow-up polish pass.
+
+## 2026-06-27 (games-matchplay-nassau)
+- **Done:** backlog `games-matchplay-nassau` (P21, NOTICEABLE) — real hole-by-hole match-play
+  Nassau implemented in `lib/games.ts`; stub notes removed from UI; tests updated.
+  Key changes:
+  - **Algorithm (gross scores, no handicap — consistent with existing stroke-mode Nassau):**
+    - New `NassauMatchSegment` interface: `holesPlayed`, `matchDiff`, `statusLabel`, `leaderId`,
+      `closedAt`, `closed`.
+    - `NassauResults` extended with optional `front9Match?/back9Match?/overallMatch?` fields —
+      backward-compatible (undefined in stroke mode; populated in match mode).
+    - `computeMatchSeg(startHole, endHole)` inner function: iterates holes in the segment;
+      updates diff only when BOTH competitors have a score (skips unscored holes — prevents
+      mid-round false-close); tracks `holesPlayed`, `diffAtClose` (frozen at moment of close);
+      close fires when `|diff| > segmentLength − holesPlayed` (remaining playable holes).
+    - statusLabel: "—" (no scores), "AS" (tied), "N UP" (in progress), "N & M" (closed with
+      M holes remaining), "N up" (closed on the last hole exactly).
+    - Team scope: best-ball per hole (same as stroke-mode team scope).
+    - `front9WinnerId/back9WinnerId/overallWinnerId`: in match mode, set to `leaderId` from
+      each segment (null = AS = no leader yet). Stroke mode unchanged.
+  - **UI changes (3 files):**
+    - `LeaderboardSheet.tsx` Nassau component: removed "coming soon — showing stroke totals"
+      note. In match mode, each segment's `note` in the winner grid shows the `statusLabel`
+      (e.g. "5 & 4", "AS", "3 UP") instead of "Thru N". "Running totals" stroke table hidden
+      in match mode (not meaningful for match play).
+    - `GameResults.tsx` Nassau section: removed "Match-play Nassau is stubbed; using stroke
+      totals" note. Header changed from "Winners (stroke totals)" to "Winners" (always).
+      Added "Match status" block for match mode (segment label + statusLabel + leader name).
+      "Stroke totals" block shown only in stroke mode (label updated to reflect this).
+    - `GameLeaderboards.tsx` Nassau section: added match-play status grid (F9/B9/18 +
+      statusLabel) below the winner grid in match mode. Stroke totals row hidden in match mode.
+  - **Tests (`games.test.ts`):**
+    - Old "STUB BEHAVIOR" test (`falls back to stroke totals when mode=match`) REPLACED with
+      7 focused match-play tests (stub → real behavior):
+      1. p1 wins every hole → front9 closes early "5 & 4" (closedAt=5, diffAtClose=5).
+      2. Alternating hole wins → F9 ends AS (closed=false, diff=0, statusLabel='AS').
+      3. Partial round (3 holes) → in-progress "3 UP", back9 "—", closed=false.
+      4. Overall closes at hole 10 ("10 & 8").
+      5. No scores → all "—", all winnerIds null.
+      6. Team scope: best-ball per hole → tA wins → front9Match.closed=true.
+      7. Stroke mode unchanged → front9Match undefined (no match data).
+  - **Bug found + fixed (algorithm correctness):** initial algorithm used `endHole − h` for
+    "remaining holes" — this fired the close-check on UNSCORED holes (e.g. 3 up thru 3,
+    holes 4-7 unscored → falsely closed at h=7 when endHole-h=2 < 3). Fixed by:
+    (a) close-check only on scored holes; (b) remaining = segmentLength − holesPlayed; (c)
+    diffAtClose frozen at closure so statusLabel is "5 & 4" not "9 & 4".
+  - **Gross/net decision:** gross scores only (consistent with existing stroke-mode Nassau;
+    `GameSettings.handicapped` is never used in any format — deferred for a future item).
+  - Gates: tsc 0 errors (strict), lint 0 errors (src/), voice-tests 260/260, npm test 236/236
+    pass (7 new match-play Nassau tests; old stub test replaced), npm run build OK.
+  - NOTICEABLE — Nassau tab in LeaderboardSheet now shows real match-play status (e.g. "5 & 4",
+    "AS", "3 UP") when mode=match; no more "coming soon" note; GameResults + GameLeaderboards
+    also updated.
+  - Designer flag: match-play status in the winner grid replaces "Thru N" in match mode —
+    confirm the `statusLabel` text ("5 & 4", "AS", "3 UP") fits the yardage-book voice; the
+    existing 3-column winner grid layout is reused unchanged.

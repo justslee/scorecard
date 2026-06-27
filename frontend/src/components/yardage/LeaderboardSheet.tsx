@@ -3,8 +3,6 @@
 // LeaderboardSheet — mid-round leaderboard across all active games.
 // Tabs: Overall (always) + one tab per game in round.games.
 // Game results are computed live from round.scores via lib/games.ts.
-// Match-play Nassau (P21) is not yet implemented — the engine falls back to
-// stroke totals and a note is shown on that tab.
 
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -406,30 +404,42 @@ function Nassau({
   };
 
   const { thruFront, thruBack } = computeThru(scores);
+  const isMatchMode = nassau.mode === "match" && nassau.front9Match != null;
 
   const segs = [
     {
       k: "Front 9",
       winner: nassau.front9WinnerId,
-      note: thruFront > 0 ? `Thru ${thruFront}` : "Not started",
-      inProgress: thruFront > 0 && thruFront < 9,
+      note: isMatchMode
+        ? (nassau.front9Match!.holesPlayed === 0 ? "Not started" : nassau.front9Match!.statusLabel)
+        : thruFront > 0 ? `Thru ${thruFront}` : "Not started",
+      inProgress: isMatchMode
+        ? (nassau.front9Match!.holesPlayed > 0 && !nassau.front9Match!.closed)
+        : (thruFront > 0 && thruFront < 9),
     },
     {
       k: "Back 9",
       winner: nassau.back9WinnerId,
-      note: thruBack > 0 ? `Thru ${thruBack}` : "Not started",
-      inProgress: thruBack > 0 && thruBack < 9,
+      note: isMatchMode
+        ? (nassau.back9Match!.holesPlayed === 0 ? "Not started" : nassau.back9Match!.statusLabel)
+        : thruBack > 0 ? `Thru ${thruBack}` : "Not started",
+      inProgress: isMatchMode
+        ? (nassau.back9Match!.holesPlayed > 0 && !nassau.back9Match!.closed)
+        : (thruBack > 0 && thruBack < 9),
     },
     {
       k: "Overall",
       winner: nassau.overallWinnerId,
-      note:
-        thruFront === 9 && thruBack === 9
+      note: isMatchMode
+        ? (nassau.overallMatch!.holesPlayed === 0 ? "—" : nassau.overallMatch!.statusLabel)
+        : thruFront === 9 && thruBack === 9
           ? "Final"
           : thruFront > 0
           ? "Running"
           : "—",
-      inProgress: thruFront > 0,
+      inProgress: isMatchMode
+        ? (nassau.overallMatch!.holesPlayed > 0 && !nassau.overallMatch!.closed)
+        : thruFront > 0,
     },
   ];
 
@@ -443,23 +453,6 @@ function Nassau({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Match-play mode note — engine falls back to stroke totals (P21) */}
-      {nassau.mode === "match" && (
-        <div
-          style={{
-            padding: "8px 12px",
-            borderRadius: 10,
-            border: `1px solid ${T.hairlineSoft}`,
-            fontFamily: T.serif,
-            fontStyle: "italic",
-            fontSize: 12,
-            color: T.pencilSoft,
-          }}
-        >
-          Match-play Nassau scoring is coming soon — showing stroke totals for now.
-        </div>
-      )}
-
       {/* F9 / B9 / Overall winner grid */}
       <div
         style={{
@@ -556,8 +549,8 @@ function Nassau({
         </div>
       )}
 
-      {/* Running totals table */}
-      {rows.length > 0 && (
+      {/* Running totals table — stroke mode only; match mode shows status in the winner grid */}
+      {!isMatchMode && rows.length > 0 && (
         <div>
           <div
             style={{
@@ -680,8 +673,8 @@ function Nassau({
         </div>
       )}
 
-      {/* Empty state: no scores yet */}
-      {rows.length === 0 && (
+      {/* Empty state: no competitors configured */}
+      {rows.length === 0 && !isMatchMode && (
         <div
           style={{
             padding: "24px 16px",

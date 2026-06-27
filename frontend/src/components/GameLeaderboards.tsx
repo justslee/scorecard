@@ -108,12 +108,18 @@ function GameLeaderboardCard({ round, game }: { round: Round; game: Game }) {
   // Nassau
   if (game.format === 'nassau' && results.nassau) {
     const na = results.nassau;
+    const isMatchMode = na.mode === 'match' && na.front9Match != null;
     const getName = (id: string | null) => {
       if (!id) return 'Tied';
       return na.scope === 'team' ? teamName(id) : playerName(id);
     };
 
     const totalsEntries = Object.entries(na.overallTotals).sort((a, b) => a[1] - b[1]);
+    const matchSegs = isMatchMode ? [
+      { label: 'F9', seg: na.front9Match! },
+      { label: 'B9', seg: na.back9Match! },
+      { label: '18', seg: na.overallMatch! },
+    ] : [];
 
     return (
       <div className="rounded-2xl bg-gradient-to-b from-zinc-800/80 to-zinc-900/80 border border-zinc-700/50 overflow-hidden">
@@ -147,27 +153,43 @@ function GameLeaderboardCard({ round, game }: { round: Round; game: Game }) {
           ))}
         </div>
 
-        {/* Totals */}
-        <div className="divide-y divide-zinc-800/50 border-t border-zinc-700/50">
-          {totalsEntries.map(([id, total], i) => (
-            <div 
-              key={id} 
-              className={`px-4 py-2 flex items-center gap-3 ${i === 0 ? 'bg-emerald-500/5' : ''}`}
-            >
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                i === 0 ? 'bg-amber-500 text-black' : 'bg-zinc-700 text-zinc-400'
-              }`}>
-                {i + 1}
+        {/* Match-play segment status */}
+        {isMatchMode && (
+          <div className="px-4 pb-3 grid grid-cols-3 gap-2 border-t border-zinc-800/50 pt-3">
+            {matchSegs.map(({ label, seg }) => (
+              <div key={label} className="text-center p-2 rounded-xl bg-zinc-800/30">
+                <div className="text-xs text-zinc-500 mb-1">{label}</div>
+                <div className={`text-sm font-bold ${seg.holesPlayed > 0 ? 'text-white' : 'text-zinc-600'}`}>
+                  {seg.statusLabel}
+                </div>
               </div>
-              <div className="flex-1 font-medium text-zinc-300">
-                {na.scope === 'team' ? teamName(id) : playerName(id)}
+            ))}
+          </div>
+        )}
+
+        {/* Stroke totals — stroke mode only */}
+        {!isMatchMode && (
+          <div className="divide-y divide-zinc-800/50 border-t border-zinc-700/50">
+            {totalsEntries.map(([id, total], i) => (
+              <div
+                key={id}
+                className={`px-4 py-2 flex items-center gap-3 ${i === 0 ? 'bg-emerald-500/5' : ''}`}
+              >
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                  i === 0 ? 'bg-amber-500 text-black' : 'bg-zinc-700 text-zinc-400'
+                }`}>
+                  {i + 1}
+                </div>
+                <div className="flex-1 font-medium text-zinc-300">
+                  {na.scope === 'team' ? teamName(id) : playerName(id)}
+                </div>
+                <div className="text-sm text-zinc-400">
+                  {na.front9Totals[id]}/{na.back9Totals[id]}/{total}
+                </div>
               </div>
-              <div className="text-sm text-zinc-400">
-                {na.front9Totals[id]}/{na.back9Totals[id]}/{total}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

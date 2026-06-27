@@ -119,6 +119,8 @@ export default function GameResults({ round, game, onUpdateGame }: GameResultsPr
   if (game.format === 'nassau' && results.nassau) {
     const na = results.nassau;
     const scope = na.scope;
+    const isMatchMode = na.mode === 'match' && na.front9Match != null;
+
     const competitorName = (id: string) => {
       if (scope === 'team') return game.teams?.find((t) => t.id === id)?.name ?? id;
       return playerName(id);
@@ -129,10 +131,16 @@ export default function GameResults({ round, game, onUpdateGame }: GameResultsPr
     const totalsEntries = Object.entries(na.overallTotals);
     totalsEntries.sort((a, b) => a[1] - b[1]);
 
+    const matchSegs = isMatchMode ? [
+      { label: 'Front 9', seg: na.front9Match! },
+      { label: 'Back 9', seg: na.back9Match! },
+      { label: 'Overall', seg: na.overallMatch! },
+    ] : [];
+
     return (
       <div className="space-y-3">
         <div className={`${box} p-4`}>
-          <div className="text-sm text-zinc-400 mb-2">Winners (stroke totals)</div>
+          <div className="text-sm text-zinc-400 mb-2">Winners</div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="rounded-2xl bg-white/3 border border-white/10 p-3">
               <div className="text-xs text-zinc-500">Front 9</div>
@@ -147,20 +155,40 @@ export default function GameResults({ round, game, onUpdateGame }: GameResultsPr
               <div className="font-semibold text-zinc-200">{renderWinner(na.overallWinnerId)}</div>
             </div>
           </div>
-          {na.mode === 'match' && <div className="text-xs text-amber-200 mt-2">Match-play Nassau is stubbed; using stroke totals.</div>}
         </div>
 
-        <div className={`${box} p-4`}>
-          <div className="text-sm font-semibold text-zinc-200 mb-2">Totals</div>
-          <div className="space-y-2">
-            {totalsEntries.map(([id, total]) => (
-              <div key={id} className="flex items-center justify-between rounded-2xl bg-white/3 border border-white/10 p-3">
-                <div className="font-medium text-zinc-200">{competitorName(id)}</div>
-                <div className="text-sm text-zinc-400">F9 {na.front9Totals[id] ?? 0} • B9 {na.back9Totals[id] ?? 0} • 18 {total}</div>
-              </div>
-            ))}
+        {/* Match-play segment status */}
+        {isMatchMode && (
+          <div className={`${box} p-4`}>
+            <div className="text-sm font-semibold text-zinc-200 mb-2">Match status</div>
+            <div className="space-y-2">
+              {matchSegs.map(({ label, seg }) => (
+                <div key={label} className="flex items-center justify-between rounded-2xl bg-white/3 border border-white/10 p-3">
+                  <div className="text-sm text-zinc-400">{label}</div>
+                  <div className="text-sm font-semibold text-zinc-200">{seg.statusLabel}</div>
+                  {seg.leaderId && (
+                    <div className="text-xs text-emerald-300">{competitorName(seg.leaderId)}</div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Stroke totals — stroke mode only */}
+        {!isMatchMode && (
+          <div className={`${box} p-4`}>
+            <div className="text-sm font-semibold text-zinc-200 mb-2">Stroke totals</div>
+            <div className="space-y-2">
+              {totalsEntries.map(([id, total]) => (
+                <div key={id} className="flex items-center justify-between rounded-2xl bg-white/3 border border-white/10 p-3">
+                  <div className="font-medium text-zinc-200">{competitorName(id)}</div>
+                  <div className="text-sm text-zinc-400">F9 {na.front9Totals[id] ?? 0} • B9 {na.back9Totals[id] ?? 0} • 18 {total}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
