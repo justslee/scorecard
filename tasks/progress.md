@@ -520,3 +520,60 @@ Format: date — done / in-progress / blocked.
   - Gates: lint clean (src/), tsc --noEmit clean, voice-tests 260/260, npm run build OK.
   - NOTICEABLE — user-visible on TestFlight: the scripted demo is gone; real round setup
     with backend persistence replaces it.
+
+## 2026-06-27 (wire-home)
+- **Done:** backlog `wire-home` (P13, NOTICEABLE) — `app/page.tsx` home screen now loads
+  real data from the backend via the storage-api.ts API-authoritative pattern.
+  Key changes:
+  - **Removed:** `SAMPLE_RECENT`, `STATS`, `HDCP`, `FEED` mock constants (5 hardcoded entries,
+    fake handicap/scoring stats, fake social feed). `initializeStorage` + sync `getRounds`
+    localStorage imports replaced with async `getRoundsAsync`/`getTournamentsAsync`/
+    `getGolferProfileAsync` from `storage-api.ts`.
+  - **Recent rounds:** async-loaded from `GET /api/rounds` (owner-scoped). Rounds sorted
+    most-recent-first; top 5 shown. Each row derived via `deriveRecentRows()`: date formatted
+    (month + day), course name, total strokes + toPar net via `calculateTotals()` from
+    `types.ts`, holesPlayed count, "T" tag for tournament rounds, "Live" badge for active
+    rounds. Rows are now tappable and navigate to `/round/{id}`.
+  - **Handicap:** from `GET /api/profile/golfer` → `profile.handicap`. Shows "—" when null
+    (no profile or no handicap set). Also displayed on the profile card (was hardcoded "77").
+    Sparkline removed (no historical handicap series available yet — flagged for
+    wire-profile-stats item).
+  - **Scoring average:** derived client-side from the loaded rounds list via `deriveScoringAvg()`
+    — averages total strokes over completed rounds with ≥9 holes played. Shows "—" when
+    insufficient data. Trend arrow removed (requires historical handicap series).
+  - **Fairways / GIR / Putts:** all show "—". Per-hole shot data is not tracked yet; these
+    three stats require a per-shot data source. Flagged for a future wire-profile-stats item.
+  - **Tournament link:** `QuickAction "Tournament"` and the Trophy Case block both route to
+    `GET /api/tournaments` most-recent tournament (`/tournament/{id}`) rather than the
+    hardcoded `/tournament/sunday-cup-2024`. If no tournament exists, the quick-action routes
+    to `/tournament/new` and the Trophy Case shows a calm "No tournaments yet — Start one →"
+    empty state.
+  - **Social feed ("From the group") — REMOVED:** no real data source exists for a social
+    feed. The `FEED` constant was fabricated (Jack/Sam/Justin). Removed entirely rather than
+    show fake data. Decision logged in code comment for the designer/owner; re-introduce when
+    a real activity stream is backed by the API.
+  - **Empty states:** new user with no rounds sees a calm serif italic "No rounds yet. Tap
+    'Start a round' above to begin." empty state inside the rounds section. Stats section
+    shows "—" for all missing values. Trophy case shows calm empty state with "Start one →"
+    CTA.
+  - **Live round:** detection moved from sync `getRounds()` (localStorage only) to the async
+    loaded rounds list — active round is found from the same API-authoritative fetch.
+  - **Loading state:** `loading` boolean guards the stats/rounds sections so "—" is shown
+    (not stale/wrong) while the API call is in flight.
+  - **Error surfacing:** uses `storage-api.ts` explicit-offline-cache pattern — API is
+    authoritative; on failure `console.error` is logged + localStorage fallback returned.
+    No silent swallowing.
+  - **Yardage-book feel preserved:** all inline styles use T.* tokens; no new dependencies
+    or design language; serif/mono typography and paper/ink palette unchanged; motion pulsing
+    mic CTA retained.
+  - **Decisions for designer/owner review:**
+    1. Sparkline removed — bring back when handicap history is available (wire-profile-stats).
+    2. Trend arrow removed — same reason.
+    3. Social feed removed — no backend; re-add when a real activity stream exists.
+    4. Fairways/GIR/Putts show "—" — requires per-shot tracking (future item).
+    5. "San Francisco" and "66°F, wind WNW 8. Presidio tee times open from 10:40." in masthead
+       are still hardcoded — location/weather wiring is out of scope for this item.
+  - **Gates:** lint clean (`src/app/page.tsx` 0 errors), tsc --noEmit 0 errors,
+    voice-tests 260/260 pass, npm run build OK.
+  - NOTICEABLE — user-visible on TestFlight: home screen shows real rounds, real handicap,
+    real tournament link; no fabricated data.
