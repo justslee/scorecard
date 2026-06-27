@@ -153,7 +153,7 @@
       "type": "major",
       "priority": 15,
       "risk": "medium",
-      "status": "blocked",
+      "status": "done",
       "depends_on": ["backend-profile-endpoint"],
       "spec": "specs/real-data-wiring-plan.md"
     },
@@ -173,7 +173,7 @@
       "type": "major",
       "priority": 17,
       "risk": "low",
-      "status": "blocked",
+      "status": "ready",
       "depends_on": ["backend-players-db", "api-contract-align"],
       "spec": "specs/real-data-wiring-plan.md"
     },
