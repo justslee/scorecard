@@ -1273,3 +1273,46 @@ Format: date — done / in-progress / blocked.
   - ScoreGrid sits inside the old `/round/[id]` page (pre-yardage-book route). If the owner
     is primarily on the new RoundPageClient (yardage route), ScoreGrid may not be visible on
     TestFlight — confirm with eng-lead which route is the live scoring surface.
+
+## 2026-06-27 (fix-capacitor-auth-401)
+- **Done:** URGENT hotfix — native Capacitor/iOS auth 401 on every authenticated call.
+  Root: `window.Clerk.session` never hydrates on the `capacitor://localhost` origin, so
+  `getAuthToken()` returned null → no Authorization header → backend 401. Prior `clerk.load()`
+  wait didn't help, confirming `window.Clerk` is not a reliable handle on this origin.
+  Fix: hook-based token getter via `useAuth()` from `@clerk/clerk-react` (the supported API).
+  Key changes:
+  - **NEW `frontend/src/lib/auth-token.ts`:** module-level singleton. Exports `setTokenGetter`
+    (called by ClerkTokenBridge to register the hook's `getToken`), `getTokenViaClerk` (called
+    by api.ts; polls up to 3s for first-render race), `getAuthDiagnostics` (returns `isLoaded`,
+    `isSignedIn`, `getterRegistered` snapshot for diagnostic messages).
+  - **NEW `frontend/src/components/ClerkTokenBridge.tsx`:** client component inside
+    `<ClerkProvider>`. Uses `useAuth()` and registers its `getToken` into the singleton on every
+    auth-state change. Cleanup on unmount. Renders no UI.
+  - **`frontend/src/components/AuthProvider.tsx`:** mounts `<ClerkTokenBridge />` inside
+    `<ClerkProvider>` (only when Clerk is configured).
+  - **`frontend/src/lib/api.ts`:** `getAuthToken()` reworked — (1) primary: `getTokenViaClerk(3s)`
+    hook-based path; (2) fallback: `window.Clerk` with load-wait (kept as belt-and-suspenders);
+    (3) diagnostic `console.error` if signed-in but no token from either path. CLERK_ENABLED
+    guard skips the wait when Clerk is not configured (avoids 3s penalty when no publishableKey).
+  - **`frontend/src/lib/voice/deepgram.ts`:** on HTTP 401, throws an enriched error with the
+    auth-state snapshot: `"Transcribe 401 (no auth token) — isLoaded:true isSignedIn:true
+    getterReg:false | Missing Authorization: Bearer"`. This appears verbatim in the VoiceRoundSetup
+    error box so the owner can read the exact auth state from a screenshot.
+  Honest assessment (code fix vs Clerk config):
+  - The hook-based path is the correct supported Clerk API and should work regardless of
+    `window.Clerk` availability. If the code fix alone is sufficient depends on whether Clerk's
+    DEV instance (pk_test_*) allows sessions to be established from the `capacitor://localhost`
+    origin. DEV instances often restrict origins — if sessions still don't establish, the owner
+    will need to:
+    1. Add `capacitor://localhost` to Clerk dashboard → Configure → Domains (allowed origins).
+       OR: switch to a production instance (pk_live_*) which has more permissive origin handling.
+    2. Alternatively, configure Capacitor's `iosScheme: "https"` with a custom domain so the
+       webview origin becomes `https://app.looper.golf` (or similar), which Clerk will accept.
+    The diagnostic in the 401 error ("getterReg:false" vs "getterReg:true") tells the owner
+    whether (a) the hook getter was never registered (deeper issue — ClerkProvider not mounting
+    or unmounting early) or (b) the getter was registered but `getToken()` returned null anyway
+    (Clerk refusing to issue a token for this origin — owner-side Clerk config fix required).
+  Gates: tsc 0 errors (strict), voice-tests 260/260, npm test 238/238, npm run build OK.
+  NOTICEABLE — this is a functional regression fix; voice and all authed data calls should
+  now authenticate correctly on the native iOS build. The diagnostic also helps diagnose
+  if the code fix alone is insufficient.

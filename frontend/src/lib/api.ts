@@ -21,6 +21,7 @@ import type {
   Course,
   GolferProfile,
 } from './types';
+import { getTokenViaClerk, getAuthDiagnostics } from './auth-token';
 
 // Re-export so callers that import domain types from here keep working.
 export type {
@@ -39,58 +40,84 @@ export type {
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /**
- * How long (ms) to wait for Clerk JS to finish hydrating before giving up.
- * In a Capacitor webview, authed API calls can fire before window.Clerk.loaded
- * is true, causing a null session even when the user is signed in.
+ * How long (ms) to wait for window.Clerk JS to finish hydrating (fallback path).
+ * Only used when the hook-based getter hasn't been registered yet.
  */
 const CLERK_LOAD_TIMEOUT_MS = 4000;
+
+/** True when Clerk is configured (publishable key present). */
+const CLERK_ENABLED =
+  typeof process !== 'undefined' &&
+  !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 /**
  * Get auth token from Clerk (client-side only).
  *
- * Hardened for Capacitor/iOS: if window.Clerk exists but hasn't finished
- * hydrating yet (clerk.loaded === false), we await clerk.load() — which is
- * idempotent and resolves immediately when already ready — with a 4 s timeout.
- * This prevents the race condition where native-view transitions fire API calls
- * before Clerk has set up its session, resulting in a 401 for an authenticated user.
+ * Primary path: useAuth().getToken registered by ClerkTokenBridge — the
+ * supported Clerk React API, which works on capacitor://localhost where
+ * window.Clerk.session often never hydrates.
+ *
+ * Fallback path: window.Clerk (legacy; kept as belt-and-suspenders for
+ * environments where the bridge hasn't mounted yet). Waits up to 4 s for
+ * Clerk JS to finish loading before giving up.
+ *
+ * When both paths return null while the user appears signed in, a diagnostic
+ * is logged to the console (see deepgram.ts for the UI-visible diagnostic on 401).
  */
 async function getAuthToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
+  if (!CLERK_ENABLED) return null;
 
+  // ── 1. Primary: hook-based getter (registered by ClerkTokenBridge) ──────
+  // Poll up to 3 s if the getter isn't registered yet (first-render race where
+  // an API call fires before ClerkTokenBridge's useEffect has run).
+  const hookToken = await getTokenViaClerk(3000);
+  if (hookToken !== null) return hookToken;
+
+  // ── 2. Fallback: window.Clerk ────────────────────────────────────────────
   // @ts-expect-error - Clerk exposes this on window
   const clerk = window.Clerk;
-  if (!clerk) return null;
-
-  // Await Clerk hydration if not yet complete (Capacitor timing race).
-  // clerk.load() is idempotent — safe to call even if already loaded.
-  if (!clerk.loaded) {
-    try {
-      await Promise.race([
-        clerk.load?.() ?? Promise.resolve(),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error('Clerk load timeout')),
-            CLERK_LOAD_TIMEOUT_MS
-          )
-        ),
-      ]);
-    } catch {
-      console.error(
-        '[auth] Clerk did not finish loading within 4 s; request will proceed unauthenticated.'
-      );
-      return null;
+  if (clerk) {
+    // Await hydration if not yet complete.
+    if (!clerk.loaded) {
+      try {
+        await Promise.race([
+          clerk.load?.() ?? Promise.resolve(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error('Clerk load timeout')),
+              CLERK_LOAD_TIMEOUT_MS
+            )
+          ),
+        ]);
+      } catch {
+        // Fall through — will try clerk.session below anyway
+      }
+    }
+    if (clerk.session) {
+      try {
+        const token = await clerk.session.getToken();
+        if (token) return token;
+      } catch (err) {
+        console.error('[auth] window.Clerk.session.getToken() threw:', err);
+      }
     }
   }
 
-  // No session = user is not signed in (expected, not an error).
-  if (!clerk.session) return null;
-
-  try {
-    return await clerk.session.getToken();
-  } catch (err) {
-    console.error('[auth] clerk.session.getToken() threw:', err);
-    return null;
+  // ── 3. No token — emit diagnostic if user appears signed in ─────────────
+  const diag = getAuthDiagnostics();
+  if (diag.isSignedIn) {
+    // Signed-in user but no token obtained from either path — this is the bug.
+    // The UI-visible version of this diagnostic appears in deepgram.ts on 401.
+    console.error(
+      `[auth] DIAGNOSTIC signed-in but no token — ` +
+      `isLoaded=${diag.isLoaded} isSignedIn=${diag.isSignedIn} ` +
+      `getterRegistered=${diag.getterRegistered} ` +
+      `window.Clerk=${typeof window !== 'undefined' && !!(window as unknown as Record<string, unknown>).Clerk}`
+    );
   }
+
+  return null;
 }
 
 /**

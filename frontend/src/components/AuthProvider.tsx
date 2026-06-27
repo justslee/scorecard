@@ -2,6 +2,7 @@
 
 import { ClerkProvider } from "@clerk/clerk-react";
 import { ReactNode } from "react";
+import ClerkTokenBridge from "@/components/ClerkTokenBridge";
 
 const clerkAppearance = {
   variables: {
@@ -37,6 +38,10 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <ClerkProvider publishableKey={publishableKey} appearance={clerkAppearance}>
+      {/* Bridge registers useAuth().getToken into the module singleton so
+          non-component code (api.ts / deepgram.ts) can fetch JWTs without
+          relying on window.Clerk (which doesn't hydrate on capacitor://). */}
+      <ClerkTokenBridge />
       {children}
     </ClerkProvider>
   );
