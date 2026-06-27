@@ -791,6 +791,30 @@ Format: date — done / in-progress / blocked.
     voice-tests 260/260, npm run build OK (players page renders as ○ static prerender).
   - NOTICEABLE — user-visible on TestFlight: players page shows real owner-scoped players
     from the backend; add/edit/delete persist to the DB; the 11 fake seeded players are gone.
-  - Designer flags: SwipeableRow confirm dialog uses dark zinc Tailwind styles (pre-existing,
-    not changed in this PR — dark modal appears over light-paper list); designer may want to
-    restyle it to use T.* tokens in a separate pass.
+  - Designer flags (resolved in follow-up commit below): SwipeableRow confirm dialog restyled
+    to T.* tokens; "Add First Player" empty-state button minHeight:44 added.
+
+## 2026-06-27 (wire-players-page designer follow-up)
+- **Done:** designer follow-up fixes for `wire-players-page` (one commit on integration/next).
+  MUST-FIX:
+  1. **SwipeableRow confirm dialog restyled (FIXED):** replaced all dark Tailwind classes with
+     T.* inline styles:
+     - Overlay: `bg-black/60 backdrop-blur-sm` → `rgba(26,42,26,0.45)` + `blur(4px)` WebKit.
+     - Card: `bg-zinc-900 border-zinc-800` → `background:T.paper, border:1px solid T.hairline`.
+     - Heading: `text-white` + no font family → T.serif, `color:T.ink`.
+     - Body: `text-zinc-400` → `color:T.pencil`.
+     - Cancel: `bg-zinc-800 text-white` → `background:T.paperDeep, color:T.inkSoft`.
+     - Delete: `bg-red-600 text-white` → `background:T.errorInk, color:T.paper`.
+     - Icon circle: `bg-red-500/20` → `T.errorWash` background.
+     - Swipe reveal background: `rgba(239,68,68,*)` (raw red) → `rgba(184,74,58,*)` (T.errorInk tint).
+     - Trash icon: `className="text-red-400"` → `style={{ color: T.errorInk }}`.
+     - Both dialog buttons: `minHeight:44` (44pt iOS touch target).
+     - Dialog enter animation: uses `T.spring` transition.
+  SHOULD-FIX:
+  2. **"Add First Player" button `minHeight:44` (FIXED):** added to the empty-state primary CTA.
+  DEFERRED (noted, not fixed):
+  - Swipe direction right-to-delete (iOS convention is left) — separate follow-up.
+  - Optional player fields can't be cleared once set (undefined vs null partial-update contract)
+    — cross-endpoint fix later (send null + model_fields_set).
+  - Gates: lint 0 errors (src/), tsc 0 errors, voice-tests 260/260, build OK.
+  - NOTICEABLE — confirm dialog now matches the paper/ink aesthetic of the rest of the app.

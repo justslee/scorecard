@@ -325,6 +325,7 @@ export default function PlayersPage() {
                   alignItems: 'center',
                   gap: 6,
                   padding: '10px 20px',
+                  minHeight: 44,
                   borderRadius: 999,
                   border: 'none',
                   background: T.ink,
