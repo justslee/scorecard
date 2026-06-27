@@ -577,3 +577,30 @@ Format: date — done / in-progress / blocked.
     voice-tests 260/260 pass, npm run build OK.
   - NOTICEABLE — user-visible on TestFlight: home screen shows real rounds, real handicap,
     real tournament link; no fabricated data.
+
+## 2026-06-27 (wire-home reviewer + designer follow-up fixes)
+- **Done:** reviewer + designer follow-up fixes for `wire-home` (one commit on integration/next).
+  BLOCKERS fixed:
+  1. **Hardcoded city + weather removed:** "San Francisco" header div and "66°F, wind WNW 8.
+     Presidio tee times open from 10:40." subtitle both deleted. Masthead now shows only the
+     time-of-day greeting. No location/weather data source exists — showing nothing is honest.
+  2. **"to par avg" math fixed:** replaced `scoringAvg - handicap` (nonsense) with real
+     `toParAvg` derived from `calculateTotals().toPar` over the same eligible rounds. Renamed
+     `deriveScoringAvg` → `deriveScoringStats` (returns `{avg, toParAvg}`); both stats use the
+     same eligible set so they are consistent. Display hidden when no eligible rounds.
+  3. **Profile card Dynamic Island fix:** `top: 14` → `top: "max(14px, env(safe-area-inset-top))"`.
+     Card now clears the notch/Dynamic Island on iPhone 14/15/16 Pro.
+  4. **Dead "All" button removed:** no /rounds index page; button had cursor:pointer but no
+     onClick — confusing on-device. Removed. Section heading still present.
+  5. **Fairways/Greens/Putts row hidden:** removed the 3-stat grid showing three permanent "—"
+     values. Per-shot tracking not available yet. `StatBit` helper also removed (now unused).
+     Handicap + Scoring avg remain as they fill from real data.
+  SHOULD-FIX done:
+  6. **Round row touch target:** `minHeight: 44` on each round row button (44pt iOS minimum).
+  7. **Bottom safe-area:** `paddingBottom: "env(safe-area-inset-bottom, 16px)"` on the inner
+     container so the last block clears the home indicator.
+  8. **Owner-is-players[0] comments:** added at both `players[0]` usages in `deriveRecentRows`
+     and `deriveScoringStats`, noting single-owner beta assumption and revisit note.
+  - Gates: lint 0 errors (src/app/page.tsx), tsc 0 errors, voice-tests 260/260, build OK.
+  - NOTICEABLE — fixes are user-visible: Dynamic Island clearance, correct to-par number,
+    no fake weather, cleaner stats block.

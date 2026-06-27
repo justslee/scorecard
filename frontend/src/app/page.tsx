@@ -37,6 +37,7 @@ function deriveRecentRows(rounds: Round[]): RecentRow[] {
     let holesPlayed = r.holes.length || 18;
 
     if (r.players.length > 0 && r.scores.length > 0) {
+      // players[0] is the owner in the single-owner beta; revisit when user-identity lands.
       const totals = calculateTotals(r.scores, r.holes, r.players[0].id);
       if (totals.playedHoles > 0) {
         score = totals.total;
@@ -61,20 +62,27 @@ function deriveRecentRows(rounds: Round[]): RecentRow[] {
 }
 
 /**
- * Scoring average over the most recent completed rounds (≥ 9 holes played).
+ * Scoring stats over the most recent completed rounds (≥ 9 holes played).
+ * Returns both the stroke average and the average score relative to par,
+ * derived from the SAME eligible rounds so the two numbers are consistent.
  * Returns null when there is not enough data.
  */
-function deriveScoringAvg(rounds: Round[]): number | null {
+function deriveScoringStats(rounds: Round[]): { avg: number; toParAvg: number } | null {
   const eligible = rounds
     .filter((r) => r.status === "completed" && r.players.length > 0)
     .slice(0, 20);
   if (eligible.length === 0) return null;
+  // players[0] is the owner in the single-owner beta; revisit when user-identity lands.
   const totals = eligible
     .map((r) => calculateTotals(r.scores, r.holes, r.players[0].id))
     .filter((t) => t.playedHoles >= 9);
   if (totals.length === 0) return null;
   const avg = totals.reduce((s, t) => s + t.total, 0) / totals.length;
-  return Math.round(avg * 10) / 10;
+  const toParAvg = totals.reduce((s, t) => s + t.toPar, 0) / totals.length;
+  return {
+    avg: Math.round(avg * 10) / 10,
+    toParAvg: Math.round(toParAvg * 10) / 10,
+  };
 }
 
 // ── Page component ────────────────────────────────────────────────────────────
@@ -131,7 +139,9 @@ export default function HomePage() {
   const timeOfDay = hr < 11 ? "Morning" : hr < 17 ? "Afternoon" : "Evening";
 
   const recentRows = deriveRecentRows(rounds);
-  const scoringAvg = deriveScoringAvg(rounds);
+  const scoringStats = deriveScoringStats(rounds);
+  const scoringAvg = scoringStats?.avg ?? null;
+  const toParAvg = scoringStats?.toParAvg ?? null;
   const handicap = profile?.handicap ?? null;
 
   // Tournament quick-action destination: most recent tournament, or the create page.
@@ -153,7 +163,7 @@ export default function HomePage() {
         color: T.ink,
       }}
     >
-      <div style={{ maxWidth: 420, margin: "0 auto", position: "relative" }}>
+      <div style={{ maxWidth: 420, margin: "0 auto", position: "relative", paddingBottom: "env(safe-area-inset-bottom, 16px)" }}>
         {/* ── MASTHEAD ─────────────────────────────── */}
         <div style={{ padding: "max(14px, env(safe-area-inset-top)) 22px 14px", position: "relative" }}>
           {/* Profile № card */}
@@ -162,7 +172,7 @@ export default function HomePage() {
             aria-label="Open your profile"
             style={{
               position: "absolute",
-              top: 14,
+              top: "max(14px, env(safe-area-inset-top))",
               right: 22,
               width: 44,
               height: 56,
@@ -204,21 +214,6 @@ export default function HomePage() {
 
           <div
             style={{
-              fontFamily: T.mono,
-              fontSize: 9.5,
-              letterSpacing: 1.6,
-              color: T.pencil,
-              textTransform: "uppercase",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <span style={{ width: 6, height: 6, borderRadius: 99, background: accent }} />
-            <span>San Francisco</span>
-          </div>
-          <div
-            style={{
               fontFamily: T.serif,
               fontStyle: "italic",
               fontSize: 36,
@@ -229,18 +224,6 @@ export default function HomePage() {
             }}
           >
             {timeOfDay}.
-          </div>
-          <div
-            style={{
-              fontFamily: T.serif,
-              fontSize: 17,
-              letterSpacing: -0.2,
-              color: T.pencil,
-              marginTop: 4,
-              lineHeight: 1.3,
-            }}
-          >
-            66°F, wind WNW 8. Presidio tee times open from 10:40.
           </div>
         </div>
 
@@ -451,9 +434,9 @@ export default function HomePage() {
               <div style={{ fontFamily: T.serif, fontSize: 44, letterSpacing: -1.2, color: T.ink, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
                 {loading ? "—" : scoringAvg !== null ? scoringAvg : "—"}
               </div>
-              {scoringAvg !== null && handicap !== null && (
+              {toParAvg !== null && (
                 <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, marginTop: 2 }}>
-                  {scoringAvg - handicap >= 0 ? `+${(scoringAvg - handicap).toFixed(1)}` : (scoringAvg - handicap).toFixed(1)} to par avg
+                  {toParAvg >= 0 ? `+${toParAvg.toFixed(1)}` : toParAvg.toFixed(1)} to par avg
                 </div>
               )}
               {!loading && scoringAvg === null && (
@@ -464,48 +447,16 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div
-            style={{
-              marginTop: 12,
-              padding: "10px 0 2px",
-              borderTop: `1px dashed ${T.hairline}`,
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
-              gap: 8,
-            }}
-          >
-            {/* Fairways / GIR / Putts require per-hole shot tracking — not yet available. */}
-            <StatBit label="Fairways" value="—" />
-            <StatBit label="Greens" value="—" />
-            <StatBit label="Putts / rd" value="—" />
-          </div>
+          {/* Fairways / GIR / Putts omitted until per-shot tracking is available. */}
         </button>
 
         {/* ── RECENT ROUNDS ──────────────────────── */}
         <div style={{ padding: "20px 22px 10px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
-            <div>
-              <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase" }}>Recent rounds</div>
-              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.4, lineHeight: 1, marginTop: 2 }}>
-                The pages behind you
-              </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase" }}>Recent rounds</div>
+            <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.4, lineHeight: 1, marginTop: 2 }}>
+              The pages behind you
             </div>
-            <button
-              style={{
-                padding: "5px 10px",
-                borderRadius: 99,
-                border: `1px solid ${T.hairline}`,
-                background: "transparent",
-                cursor: "pointer",
-                fontFamily: T.mono,
-                fontSize: 9,
-                letterSpacing: 1.2,
-                color: T.ink,
-                textTransform: "uppercase",
-              }}
-            >
-              All
-            </button>
           </div>
 
           {/* Empty state — no rounds yet */}
@@ -538,6 +489,7 @@ export default function HomePage() {
                   gridTemplateColumns: "48px 1fr auto",
                   gap: 12,
                   padding: "12px 0",
+                  minHeight: 44,
                   alignItems: "center",
                   textAlign: "left",
                   border: "none",
@@ -771,11 +723,3 @@ function QuickAction({ icon, label, sub, accent, onClick }: { icon: "round" | "t
   );
 }
 
-function StatBit({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: T.serif, fontSize: 18, color: T.ink, fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: -0.2, marginTop: 2 }}>{value}</div>
-    </div>
-  );
-}
