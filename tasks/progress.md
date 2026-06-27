@@ -604,3 +604,54 @@ Format: date — done / in-progress / blocked.
   - Gates: lint 0 errors (src/app/page.tsx), tsc 0 errors, voice-tests 260/260, build OK.
   - NOTICEABLE — fixes are user-visible: Dynamic Island clearance, correct to-par number,
     no fake weather, cleaner stats block.
+
+## 2026-06-27 (wire-profile-identity)
+- **Done:** backlog `wire-profile-identity` (P14, NOTICEABLE) — profile masthead (name,
+  home course) + handicap index wired to `GET /api/profile/golfer`; editable via
+  `PUT /api/profile/golfer` with write-through localStorage cache.
+  Key changes:
+  - **`types.ts`:** `GolferProfile.name` changed `string` → `string | null` to match the
+    backend's `Optional[str]`. Callers that assumed non-null now safely use `?? '—'`.
+  - **`api.ts`:** `GolferProfileUpdate.name/handicap/homeCourse` typed as `T | null` to
+    allow explicit null (intentional field clear). Comment explains omitted = no-change,
+    null = clear.
+  - **`storage-api.ts` (null-clear fix — review follow-up):** removed `?? undefined`
+    coercion from `saveGolferProfileAsync`. `handicap: profile.handicap ?? undefined` →
+    `handicap: profile.handicap` (same for homeCourse). Null now flows as `"handicap":null`
+    in the JSON body so the backend can see it in `model_fields_set`.
+  - **`backend/app/routes/profile.py` (null-clear fix):** PUT partial-update logic changed
+    from `if data.field is not None:` → `if "field" in data.model_fields_set:`. This
+    distinguishes "omitted" (no change) from "sent as null" (clear the value). Affects
+    name, handicap, homeCourse, clubDistances.
+  - **`app/profile/page.tsx` — real data wiring:**
+    - Uses `getGolferProfileAsync` / `saveGolferProfileAsync` from `storage-api.ts` in
+      a `useEffect` (NOT the `useGolferProfile` hook which calls `useAuth()` and breaks
+      Next.js static prerender).
+    - `Masthead`: name + home course now show real values from profile (or "—" when
+      null/loading). Editable in-place via `<input>` styled with T.serif/T.mono to
+      match the yardage-book feel. "Edit" button in masthead header; Save/Cancel replace
+      it in edit mode. iOS safe-area top (`max(14px, env(safe-area-inset-top))`) unchanged.
+      All buttons minHeight 44px (iOS 44pt touch target). caddyNo/ghin/memberSince
+      remain as placeholder mocks (not in GolferProfile type yet).
+    - `HandicapModule`: big handicap index number wired to real `profile.handicap`
+      (shows "—" when null). Editable in edit mode via decimal `<input>`. Empty state:
+      "No handicap set — tap Edit to add one." when null. Trend badge / sparkline /
+      low-high / differential still mock stats (wired in wire-profile-stats P16).
+    - `IdentityDraft` type: `{ name: string; homeCourse: string; handicap: string }` —
+      a string-form draft for all three editable fields, parsed to typed values on save.
+    - Validation: handicap parsed as float; empty = null (clear); non-numeric = error
+      shown inline above Save button (T.errorInk color, no silent swallow).
+    - **Null-clear end-to-end:** clearing handicap/homeCourse to empty and saving now
+      sends `{"handicap":null}` (not omitted), backend model_fields_set fires, column
+      written to NULL — field is cleared. Round-trip confirmed by code review.
+    - Bag / StrokesGained / FairwayFan / ScoringByTee / YearLog / Recent: untouched.
+      All still use PP_* mock constants (wire-profile-bag P15 / wire-profile-stats P16).
+  - Gates: tsc 0 errors, lint clean (modified files), ruff clean (backend), voice-tests
+    260/260 pass, npm run build OK (profile page prerenders as static shell ○).
+  - NOTICEABLE — user-visible on TestFlight: profile masthead + handicap show real data;
+    owner can tap Edit, set name/home course/handicap, tap Save — persists to the backend.
+  - Designer flags: edit inputs are underline-only (yardage-book minimal); edit mode
+    spans masthead+handicap simultaneously (single Save); caddyNo card is placeholder
+    pending a GolferProfile extension. Mock stats sections (sparkline, trend, SG, bag)
+    are still visible alongside real identity data — designer to confirm this is OK
+    or flag to hide until wire-profile-stats lands.

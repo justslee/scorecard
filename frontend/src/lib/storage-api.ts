@@ -215,10 +215,12 @@ export async function saveGolferProfileAsync(profile: GolferProfile): Promise<vo
 
   try {
     // Upsert via PUT — creates if absent, partial-updates if present.
+    // Send null explicitly (not undefined) so the backend's model_fields_set
+    // recognises an intentional clear (null) vs an omitted field (no change).
     await api.updateGolferProfile({
       name: profile.name,
-      handicap: profile.handicap ?? undefined,
-      homeCourse: profile.homeCourse ?? undefined,
+      handicap: profile.handicap,      // null → explicit clear; not coerced to undefined
+      homeCourse: profile.homeCourse,  // null → explicit clear; not coerced to undefined
       clubDistances: profile.clubDistances,
     });
   } catch (e) {

@@ -338,11 +338,17 @@ export interface GolferProfileCreate {
   clubDistances?: GolferProfile['clubDistances'];
 }
 
-/** Fields that can be updated via PUT /api/profile/golfer. */
+/**
+ * Fields that can be updated via PUT /api/profile/golfer.
+ *
+ * Setting a field to null is an EXPLICIT CLEAR — the backend distinguishes
+ * "omitted" (no change) from "set to null" (clear the value) via Pydantic
+ * model_fields_set. Omit a key entirely when no change is intended.
+ */
 export interface GolferProfileUpdate {
-  name?: string;
-  handicap?: number;
-  homeCourse?: string;
+  name?: string | null;
+  handicap?: number | null;
+  homeCourse?: string | null;
   clubDistances?: GolferProfile['clubDistances'];
 }
 

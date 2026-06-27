@@ -1,9 +1,11 @@
 "use client";
 
-import { ReactNode, useMemo, useState } from "react";
+import React, { ReactNode, useMemo, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
+import { getGolferProfileAsync, saveGolferProfileAsync } from "@/lib/storage-api";
+import type { GolferProfile } from "@/lib/types";
 
 // ──────────────────────────────────────────────────────────────────────
 // Mock data — ported from the prototype's PlayerProfile
@@ -93,9 +95,78 @@ function buildYear(seed = 7) {
 
 // ──────────────────────────────────────────────────────────────────────
 
+// ──────────────────────────────────────────────────────────────────────
+// Edit-mode draft state (name / homeCourse / handicap only)
+// ──────────────────────────────────────────────────────────────────────
+
+type IdentityDraft = { name: string; homeCourse: string; handicap: string };
+
 export default function ProfilePage() {
   const router = useRouter();
   const accent = DEFAULT_ACCENT;
+
+  // ── Real profile data ──────────────────────────────────────────────
+  // Use storage-api directly (same pattern as home/page.tsx) to avoid
+  // Clerk's useAuth() hook — which can't run during Next.js prerender.
+  const [profile, setProfile] = useState<GolferProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getGolferProfileAsync()
+      .then(setProfile)
+      .catch((e) => console.error("[profile] load error:", e))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // ── Edit state (identity/masthead + handicap only) ─────────────────
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<IdentityDraft>({ name: "", homeCourse: "", handicap: "" });
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const startEditing = useCallback(() => {
+    setDraft({
+      name: profile?.name ?? "",
+      homeCourse: profile?.homeCourse ?? "",
+      handicap: profile?.handicap != null ? String(profile.handicap) : "",
+    });
+    setSaveError(null);
+    setEditing(true);
+  }, [profile]);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const hRaw = draft.handicap.trim();
+      const handicap: number | null = hRaw === "" ? null : parseFloat(hRaw);
+      if (hRaw !== "" && isNaN(handicap as number)) {
+        setSaveError("Handicap must be a number");
+        setSaving(false);
+        return;
+      }
+      const updated: GolferProfile = {
+        id: profile?.id ?? "",
+        name: draft.name.trim() || null,
+        handicap,
+        homeCourse: draft.homeCourse.trim() || null,
+        clubDistances: profile?.clubDistances ?? {},
+      };
+      // saveGolferProfileAsync: write-through (local cache + PUT /api/profile/golfer).
+      await saveGolferProfileAsync(updated);
+      setProfile(updated);
+      setEditing(false);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, profile]);
+
+  const handleCancel = useCallback(() => {
+    setEditing(false);
+    setSaveError(null);
+  }, []);
 
   return (
     <div
@@ -108,8 +179,28 @@ export default function ProfilePage() {
       }}
     >
       <div style={{ maxWidth: 420, margin: "0 auto" }}>
-        <Masthead accent={accent} onBack={() => router.push("/")} />
-        <HandicapModule accent={accent} />
+        <Masthead
+          accent={accent}
+          onBack={() => router.push("/")}
+          profile={profile}
+          loading={loading}
+          editing={editing}
+          draft={draft}
+          setDraft={setDraft}
+          onEdit={startEditing}
+          onSave={handleSave}
+          onCancel={handleCancel}
+          saving={saving}
+          saveError={saveError}
+        />
+        <HandicapModule
+          accent={accent}
+          profile={profile}
+          loading={loading}
+          editing={editing}
+          draft={draft}
+          setDraft={setDraft}
+        />
         <StrokesGained accent={accent} />
         <FairwayFan accent={accent} />
         <Bag accent={accent} />
@@ -154,41 +245,164 @@ function Section({
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Masthead
+// Masthead — wired to real profile (name, homeCourse); editable via PUT.
+// caddyNo / ghin / memberSince stay as placeholders (not in GolferProfile).
 // ──────────────────────────────────────────────────────────────────────
 
-function Masthead({ accent, onBack }: { accent: string; onBack: () => void }) {
+interface MastheadProps {
+  accent: string;
+  onBack: () => void;
+  profile: GolferProfile | null;
+  loading: boolean;
+  editing: boolean;
+  draft: IdentityDraft;
+  setDraft: React.Dispatch<React.SetStateAction<IdentityDraft>>;
+  onEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  saving: boolean;
+  saveError: string | null;
+}
+
+function Masthead({
+  accent,
+  onBack,
+  profile,
+  loading,
+  editing,
+  draft,
+  setDraft,
+  onEdit,
+  onSave,
+  onCancel,
+  saving,
+  saveError,
+}: MastheadProps) {
+  const displayName = loading ? "" : (profile?.name ?? "—");
+  const displayHome = loading ? "" : (profile?.homeCourse ?? "—");
+
   return (
     <div style={{ padding: "max(14px, env(safe-area-inset-top)) 22px 18px", position: "relative" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <button
-          onClick={onBack}
-          style={{
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-            padding: 0,
-            fontFamily: T.mono,
-            fontSize: 10,
-            letterSpacing: 1.6,
-            color: T.pencil,
-            textTransform: "uppercase",
-            fontWeight: 500,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          <svg width="10" height="10" viewBox="0 0 12 12">
-            <path d="M8 2 L3 6 L8 10" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Home
-        </button>
-        <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase", fontWeight: 500 }}>
-          The Player&rsquo;s Book
-        </div>
+      {/* ── Header bar: back/book or cancel/save ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minHeight: 44 }}>
+        {editing ? (
+          <>
+            <button
+              onClick={onCancel}
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                padding: "10px 0",
+                fontFamily: T.mono,
+                fontSize: 10,
+                letterSpacing: 1.6,
+                color: T.pencil,
+                textTransform: "uppercase",
+                fontWeight: 500,
+                minHeight: 44,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              Cancel
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {saveError && (
+                <span
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 8.5,
+                    letterSpacing: 1,
+                    color: T.errorInk,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {saveError}
+                </span>
+              )}
+              <button
+                onClick={onSave}
+                disabled={saving}
+                style={{
+                  border: `1px solid ${T.ink}`,
+                  borderRadius: 99,
+                  padding: "6px 14px",
+                  background: T.ink,
+                  cursor: saving ? "not-allowed" : "pointer",
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.3,
+                  color: T.paper,
+                  textTransform: "uppercase",
+                  fontWeight: 500,
+                  minHeight: 44,
+                  display: "flex",
+                  alignItems: "center",
+                  opacity: saving ? 0.6 : 1,
+                }}
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={onBack}
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                padding: "10px 0",
+                fontFamily: T.mono,
+                fontSize: 10,
+                letterSpacing: 1.6,
+                color: T.pencil,
+                textTransform: "uppercase",
+                fontWeight: 500,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                minHeight: 44,
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12">
+                <path d="M8 2 L3 6 L8 10" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Home
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase", fontWeight: 500 }}>
+                The Player&rsquo;s Book
+              </div>
+              <button
+                onClick={onEdit}
+                style={{
+                  border: `1px solid ${T.hairline}`,
+                  borderRadius: 99,
+                  padding: "5px 10px",
+                  background: "transparent",
+                  cursor: "pointer",
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.3,
+                  color: T.pencil,
+                  textTransform: "uppercase",
+                  fontWeight: 500,
+                  minHeight: 44,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                Edit
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
+      {/* ── Identity block: name + home course ── */}
       <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "1fr auto", gap: 14, alignItems: "flex-end" }}>
         <div>
           <div
@@ -203,32 +417,85 @@ function Masthead({ accent, onBack }: { accent: string; onBack: () => void }) {
           >
             №&nbsp;{PP_PLAYER.caddyNo} · Member since {PP_PLAYER.memberSince}
           </div>
-          <div
-            style={{
-              fontFamily: T.serif,
-              fontStyle: "italic",
-              fontSize: 38,
-              color: T.ink,
-              letterSpacing: -1,
-              lineHeight: 1,
-              marginTop: 4,
-            }}
-          >
-            {PP_PLAYER.name}
-          </div>
-          <div
-            style={{
-              fontFamily: T.serif,
-              fontSize: 14,
-              color: T.pencil,
-              letterSpacing: -0.1,
-              marginTop: 6,
-              fontStyle: "italic",
-            }}
-          >
-            {PP_PLAYER.home}
-          </div>
+
+          {/* Name — editable */}
+          {editing ? (
+            <input
+              value={draft.name}
+              onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+              placeholder="Your name"
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 38,
+                color: T.ink,
+                letterSpacing: -1,
+                lineHeight: 1,
+                marginTop: 4,
+                background: "transparent",
+                border: "none",
+                borderBottom: `1.5px solid ${T.ink}`,
+                outline: "none",
+                padding: "2px 0",
+                width: "100%",
+                display: "block",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 38,
+                color: T.ink,
+                letterSpacing: -1,
+                lineHeight: 1,
+                marginTop: 4,
+              }}
+            >
+              {displayName}
+            </div>
+          )}
+
+          {/* Home course — editable */}
+          {editing ? (
+            <input
+              value={draft.homeCourse}
+              onChange={(e) => setDraft((d) => ({ ...d, homeCourse: e.target.value }))}
+              placeholder="Home course"
+              style={{
+                fontFamily: T.serif,
+                fontSize: 14,
+                color: T.pencil,
+                letterSpacing: -0.1,
+                fontStyle: "italic",
+                background: "transparent",
+                border: "none",
+                borderBottom: `1px solid ${T.hairline}`,
+                outline: "none",
+                padding: "2px 0",
+                marginTop: 6,
+                width: "100%",
+                display: "block",
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                fontFamily: T.serif,
+                fontSize: 14,
+                color: T.pencil,
+                letterSpacing: -0.1,
+                marginTop: 6,
+                fontStyle: "italic",
+              }}
+            >
+              {displayHome}
+            </div>
+          )}
         </div>
+
+        {/* Caddy number card — placeholder (caddyNo/ghin not in GolferProfile yet) */}
         <div
           style={{
             width: 62,
@@ -317,7 +584,29 @@ function HandicapSpark({ data, accent, width = 316, height = 84 }: { data: numbe
   );
 }
 
-function HandicapModule({ accent }: { accent: string }) {
+// ──────────────────────────────────────────────────────────────────────
+// HandicapModule — wired: big index from real profile.handicap (editable).
+// Sparkline / trend / low-high / differential stay as mock stats until
+// wire-profile-stats (P16).
+// ──────────────────────────────────────────────────────────────────────
+
+interface HandicapModuleProps {
+  accent: string;
+  profile: GolferProfile | null;
+  loading: boolean;
+  editing: boolean;
+  draft: IdentityDraft;
+  setDraft: React.Dispatch<React.SetStateAction<IdentityDraft>>;
+}
+
+function HandicapModule({ accent, profile, loading, editing, draft, setDraft }: HandicapModuleProps) {
+  // Real index value; fallback "—" while loading or when not set.
+  const indexDisplay = loading
+    ? "—"
+    : profile?.handicap != null
+    ? String(profile.handicap)
+    : "—";
+
   return (
     <Section
       kicker="Index"
@@ -336,6 +625,9 @@ function HandicapModule({ accent }: { accent: string }) {
             color: T.ink,
             textTransform: "uppercase",
             fontWeight: 500,
+            minHeight: 44,
+            display: "flex",
+            alignItems: "center",
           }}
         >
           + Post score
@@ -348,29 +640,68 @@ function HandicapModule({ accent }: { accent: string }) {
             Current · GHIN
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-            <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 76, letterSpacing: -2.6, color: T.ink, lineHeight: 0.9, fontVariantNumeric: "tabular-nums" }}>
-              {PP_HANDICAP.index}
-            </div>
-            <div
-              style={{
-                fontFamily: T.mono,
-                fontSize: 9,
-                letterSpacing: 1.2,
-                color: accent,
-                textTransform: "uppercase",
-                fontWeight: 600,
-                border: `1px solid ${accent}`,
-                borderRadius: 99,
-                padding: "2px 7px",
-              }}
-            >
-              ↓ {Math.abs(PP_HANDICAP.trend90).toFixed(1)} · 90d
-            </div>
+            {/* Handicap index — real value, editable in edit mode */}
+            {editing ? (
+              <input
+                type="text"
+                inputMode="decimal"
+                value={draft.handicap}
+                onChange={(e) => setDraft((d) => ({ ...d, handicap: e.target.value }))}
+                placeholder="—"
+                style={{
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 76,
+                  letterSpacing: -2.6,
+                  color: T.ink,
+                  lineHeight: 0.9,
+                  fontVariantNumeric: "tabular-nums",
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: `1.5px solid ${T.ink}`,
+                  outline: "none",
+                  padding: "2px 0",
+                  width: 140,
+                  display: "block",
+                }}
+              />
+            ) : (
+              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 76, letterSpacing: -2.6, color: T.ink, lineHeight: 0.9, fontVariantNumeric: "tabular-nums" }}>
+                {indexDisplay}
+              </div>
+            )}
+            {/* Trend badge — mock stat until wire-profile-stats */}
+            {!editing && profile?.handicap != null && (
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.2,
+                  color: accent,
+                  textTransform: "uppercase",
+                  fontWeight: 600,
+                  border: `1px solid ${accent}`,
+                  borderRadius: 99,
+                  padding: "2px 7px",
+                }}
+              >
+                ↓ {Math.abs(PP_HANDICAP.trend90).toFixed(1)} · 90d
+              </div>
+            )}
           </div>
-          <div style={{ fontFamily: T.serif, fontSize: 13, color: T.pencil, fontStyle: "italic", marginTop: 4 }}>Lowest since 2019.</div>
+          {/* "Lowest since" — mock caption until wire-profile-stats */}
+          {!editing && profile?.handicap != null && (
+            <div style={{ fontFamily: T.serif, fontSize: 13, color: T.pencil, fontStyle: "italic", marginTop: 4 }}>Lowest since 2019.</div>
+          )}
+          {!editing && profile?.handicap == null && !loading && (
+            <div style={{ fontFamily: T.serif, fontSize: 13, color: T.pencilSoft, fontStyle: "italic", marginTop: 4 }}>
+              No handicap set — tap Edit to add one.
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Sparkline + low/high/differential — mock stats until wire-profile-stats */}
       <div style={{ marginTop: 14, padding: "10px 0 4px", borderTop: `1px dashed ${T.hairline}` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
           <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
