@@ -42,6 +42,12 @@ describe('STT number-word normalization (through parseVoiceScoresLocally)', () =
     expect(r.scores['Justin']).toBe(4);
   });
 
+  // "for" → 4: STT mishearing / grammatical preposition spoken as score
+  it('for → 4 via "with a for"', () => {
+    const r = parse('Justin with a for', ['Justin'], 1, 5);
+    expect(r.scores['Justin']).toBe(4);
+  });
+
   // "four" → 4: standard word
   it('four → 4 via "shot a four"', () => {
     const r = parse('Sam shot a four', ['Sam'], 2, 4);
@@ -220,6 +226,11 @@ describe('everyone-par patterns', () => {
 
   it('"everyone double bogey" → all get par + 2', () => {
     const r = parse('everyone double bogey', group, 5, 4);
+    expect(r.scores).toEqual({ Justin: 6, Bob: 6, Mike: 6, Sam: 6 });
+  });
+
+  it('"everybody dbl bogey" → all get par + 2 (dbl abbreviation)', () => {
+    const r = parse('everybody dbl bogey', group, 5, 4);
     expect(r.scores).toEqual({ Justin: 6, Bob: 6, Mike: 6, Sam: 6 });
   });
 

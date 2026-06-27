@@ -234,7 +234,7 @@ export function parseVoiceScoresLocally(
     let val = opts.par;
     if (t.includes("birdie")) val = opts.par - 1;
     else if (t.includes("eagle")) val = opts.par - 2;
-    else if (t.includes("double")) val = opts.par + 2;
+    else if (t.includes("double") || t.includes("dbl")) val = opts.par + 2;
     else if (t.includes("bogey")) val = opts.par + 1;
 
     for (const p of opts.playerNames) scores[p] = val;
@@ -248,7 +248,7 @@ export function parseVoiceScoresLocally(
     if (aliases.length === 0) continue;
     const nameAlt = aliases.join("|");
     const re = new RegExp(
-      `\\b(?:${nameAlt})\\b\\s+(?:made\\s+a\\s+|got\\s+a\\s+|shot\\s+a\\s+|shot\\s+|with\\s+a\\s+|)\\s*(par|birdie|eagle|bogey|double\\s+bogey|dbl\\s+bogey|double|\\d+|zero|one|won|two|to|too|three|tree|four|fore|ford|five|six|seven|eight|ate|nine|ten)`,
+      `\\b(?:${nameAlt})\\b\\s+(?:made\\s+a\\s+|got\\s+a\\s+|shot\\s+a\\s+|shot\\s+|with\\s+a\\s+|)\\s*(par|birdie|eagle|bogey|double\\s+bogey|dbl\\s+bogey|double|\\d+|zero|one|won|two|to|too|three|tree|four|fore|ford|for|five|six|seven|eight|ate|nine|ten)`,
       "gi"
     );
     for (const m of t.matchAll(re)) {
@@ -279,7 +279,7 @@ export function parseVoiceScoresLocally(
     else if (part.includes("bogey")) val = opts.par + 1;
 
     if (val === null) {
-      const m = part.match(/\b(\d+|zero|one|won|two|to|too|three|tree|four|fore|ford|five|six|seven|eight|ate|nine|ten)\b/);
+      const m = part.match(/\b(\d+|zero|one|won|two|to|too|three|tree|four|fore|ford|for|five|six|seven|eight|ate|nine|ten)\b/);
       if (m?.[1]) val = wordOrDigitToNum(m[1]);
     }
 

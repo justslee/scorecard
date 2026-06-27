@@ -1095,3 +1095,31 @@ Format: date — done / in-progress / blocked.
   - Designer flag: match-play status in the winner grid replaces "Thru N" in match mode —
     confirm the `statusLabel` text ("5 & 4", "AS", "3 UP") fits the yardage-book voice; the
     existing 3-column winner grid layout is reused unchanged.
+
+## 2026-06-27 (voice-parser-edge-bugs)
+- **Done:** backlog `voice-parser-edge-bugs` (P23, NOTICEABLE) — two correctness bugs fixed
+  in `frontend/src/lib/voice/parseVoiceScores.ts`; two new test cases added to the unit suite.
+  Bugs (found by `test-voice-pipeline`):
+  1. **"for" → 4 missing from regex alternations:** `WORD_TO_NUM` maps `for: 4` but both the
+     first-pass regex (line 251) and second-pass regex (line 282) listed `four|fore|ford` with
+     no `for`. "Justin with a for" produced no score.
+     Fix: added `for` after `ford` in both regex alternations → `four|fore|ford|for`.
+     `fore`/`ford`/`four` remain first in both lists; `\b` word-boundary in the second-pass
+     and end-of-token context in the first-pass prevent any cross-matching.
+  2. **"everybody dbl bogey" → par+1 instead of par+2:** the everyone-pattern regex (line 233)
+     correctly matches `dbl bogey` in its alternation, but the value-selector (line 237) checked
+     only `t.includes("double")` — false for "dbl" — and fell through to `t.includes("bogey")` →
+     par+1. The individual-player second-pass (line 278) already handled `dbl` correctly.
+     Fix: changed `t.includes("double")` → `t.includes("double") || t.includes("dbl")` in the
+     everyone-pattern block only (line 237).
+  Test additions in `parseVoiceScores.test.ts` (2 new tests; 0 existing tests changed):
+  - Section 1: `'for → 4 via "with a for"'` — asserts `Justin with a for` → score 4.
+  - Section 4: `'"everybody dbl bogey" → all get par + 2 (dbl abbreviation)'` — asserts all
+    players get par+2.
+  Sanity confirmed: `fore → 4 via "with a fore"`, `ford → 4 via "made a ford"`,
+  `four → 4 via "shot a four"` all still pass; "everybody double bogey" and "everybody double"
+  still pass; no collision-guard tests affected.
+  Gates: tsc 0 errors, voice-tests **260/260** pass, npm test **238/238** pass (236 prior + 2 new),
+  npm run build OK. Lint warnings are all pre-existing Capacitor build-artifact files (not in src/).
+  NOTICEABLE — any golfer who says "with a for" or "everybody dbl bogey" now gets the correct
+  score parsed (was: no score / wrong score).
