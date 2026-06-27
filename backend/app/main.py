@@ -39,6 +39,7 @@ app.add_middleware(
 # Import and include routers
 from app.routes import players, rounds, tournaments, courses, voice  # noqa: E402  (after load_dotenv: routes read env at import)
 from app.routes import golf, course_search, courses_mapped, voice_advanced, caddie, memory, realtime, shots, pins  # noqa: E402
+from app.routes import profile  # noqa: E402
 
 # Every data router is owner-only: require the configured owner's verified Clerk
 # identity. /health and / (defined below) stay open for load-balancer checks.
@@ -47,6 +48,7 @@ _owner_only = [Depends(require_owner)]
 app.include_router(players.router, dependencies=_owner_only)
 app.include_router(rounds.router, dependencies=_owner_only)
 app.include_router(tournaments.router, dependencies=_owner_only)
+app.include_router(profile.router, dependencies=_owner_only)
 # Specific /api/courses/* routers MUST be registered before the catch-all
 # courses.router (GET /api/courses/{course_id}); Starlette is first-match-wins,
 # so otherwise /{course_id} shadows /search, /nearby, /mapped/*.

@@ -8,8 +8,8 @@
  *     swallowed), and the call falls back to the local cache.
  *   - When not authenticated: localStorage only.
  *
- * Profile (GolferProfile): /api/profile/golfer does not exist yet. These functions
- * are localStorage-only until the backend-profile-endpoint item lands.
+ * Profile (GolferProfile): backed by GET/PUT /api/profile/golfer.
+ * localStorage is used as an explicit offline cache (write-through on save).
  */
 
 import * as api from './api';
@@ -187,15 +187,41 @@ export async function deleteTournamentAsync(id: string): Promise<void> {
 }
 
 // ================
-// Profile — localStorage only until backend-profile-endpoint lands
+// Profile — API authoritative; localStorage is an explicit offline cache.
 // ================
 
 export async function getGolferProfileAsync(): Promise<GolferProfile | null> {
-  // TODO(backend-profile-endpoint): fetch from /api/profile/golfer once route exists.
-  return localCache.getGolferProfile();
+  if (!(await isAuthenticated())) {
+    return localCache.getGolferProfile();
+  }
+  try {
+    const remote = await api.getGolferProfileAsync();
+    if (remote) {
+      // Keep local cache warm so the app can render offline.
+      localCache.saveGolferProfile(remote);
+    }
+    return remote;
+  } catch (e) {
+    console.error('[storage-api] getGolferProfile: API unavailable, falling back to local cache:', e);
+    return localCache.getGolferProfile();
+  }
 }
 
 export async function saveGolferProfileAsync(profile: GolferProfile): Promise<void> {
-  // TODO(backend-profile-endpoint): sync to /api/profile/golfer once route exists.
+  // Write-through: persist locally first so the app works offline.
   localCache.saveGolferProfile(profile);
+
+  if (!(await isAuthenticated())) return;
+
+  try {
+    // Upsert via PUT — creates if absent, partial-updates if present.
+    await api.updateGolferProfile({
+      name: profile.name,
+      handicap: profile.handicap ?? undefined,
+      homeCourse: profile.homeCourse ?? undefined,
+      clubDistances: profile.clubDistances,
+    });
+  } catch (e) {
+    console.error('[storage-api] saveGolferProfile: API sync failed (local cache saved):', e);
+  }
 }

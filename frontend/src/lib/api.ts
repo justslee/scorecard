@@ -19,6 +19,7 @@ import type {
   PlayerGroup,
   SavedPlayer,
   Course,
+  GolferProfile,
 } from './types';
 
 // Re-export so callers that import domain types from here keep working.
@@ -32,6 +33,7 @@ export type {
   PlayerGroup,
   SavedPlayer,
   Course,
+  GolferProfile,
 };
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -322,24 +324,67 @@ export async function deleteCourse(id: string): Promise<void> {
 }
 
 // ================
-// Profile API — TODO(backend-profile-endpoint)
-// /api/profile/golfer does not exist yet; it ships in a dedicated backlog item.
-// These stubs return null/throw immediately so callers fall back to localStorage.
+// Profile API
+// GET  /api/profile/golfer → GolferProfile | null (204 = no profile yet)
+// POST /api/profile/golfer → GolferProfile  (create; 409 if already exists)
+// PUT  /api/profile/golfer → GolferProfile  (upsert — preferred for saves)
 // ================
 
-export async function getGolferProfile(): Promise<null> {
-  // TODO(backend-profile-endpoint): GET /api/profile/golfer once route exists.
-  return null;
+/** Subset of GolferProfile that can be supplied on create. */
+export interface GolferProfileCreate {
+  name?: string;
+  handicap?: number;
+  homeCourse?: string;
+  clubDistances?: GolferProfile['clubDistances'];
 }
 
-export async function createGolferProfile(): Promise<never> {
-  // TODO(backend-profile-endpoint): POST /api/profile/golfer once route exists.
-  throw new Error('Profile endpoint not yet implemented (backend-profile-endpoint)');
+/** Fields that can be updated via PUT /api/profile/golfer. */
+export interface GolferProfileUpdate {
+  name?: string;
+  handicap?: number;
+  homeCourse?: string;
+  clubDistances?: GolferProfile['clubDistances'];
 }
 
-export async function updateGolferProfile(): Promise<never> {
-  // TODO(backend-profile-endpoint): PUT /api/profile/golfer once route exists.
-  throw new Error('Profile endpoint not yet implemented (backend-profile-endpoint)');
+/**
+ * Fetch the authenticated user's golfer profile.
+ * Returns null when the backend returns 204 (no profile created yet).
+ */
+export async function getGolferProfileAsync(): Promise<GolferProfile | null> {
+  const token = await getAuthToken();
+  if (!token) return null;
+
+  const res = await fetch(`${API_BASE}/api/profile/golfer`, {
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (res.status === 204) return null;
+
+  if (!res.ok) {
+    const error = await res.text();
+    throw new Error(error || `API error: ${res.status}`);
+  }
+
+  return res.json() as Promise<GolferProfile>;
+}
+
+/** Create a new golfer profile. Throws 409 if one already exists — use upsertGolferProfile instead. */
+export async function createGolferProfile(data: GolferProfileCreate): Promise<GolferProfile> {
+  return fetchAPI<GolferProfile>('/api/profile/golfer', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/** Upsert the golfer profile (creates if absent, partial-updates if present). Preferred over POST. */
+export async function updateGolferProfile(data: GolferProfileUpdate): Promise<GolferProfile> {
+  return fetchAPI<GolferProfile>('/api/profile/golfer', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
 }
 
 // ================

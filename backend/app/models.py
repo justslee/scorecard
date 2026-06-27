@@ -1,7 +1,45 @@
 """Pydantic models for the Scorecard API."""
 
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Optional
+
+
+# ============ GolferProfile ============
+# Matches types.ts GolferProfile exactly (camelCase).
+# The backend table uses snake_case columns; the ORM↔Pydantic mapping lives in
+# routes/profile.py (_orm_to_pydantic).
+
+
+class GolferProfile(BaseModel):
+    """Full golfer profile — served by GET /api/profile/golfer."""
+
+    id: str
+    # Display name (maps to golfer_profiles.name).
+    name: Optional[str] = None
+    # Handicap index (maps to golfer_profiles.handicap_index).
+    handicap: Optional[float] = None
+    # Free-text home course name (maps to golfer_profiles.home_course).
+    homeCourse: Optional[str] = None
+    # Bag distances keyed by club name (maps to golfer_profiles.bag_clubs JSONB).
+    clubDistances: dict[str, Any] = {}
+
+
+class GolferProfileCreate(BaseModel):
+    """Body for POST /api/profile/golfer (create)."""
+
+    name: Optional[str] = None
+    handicap: Optional[float] = None
+    homeCourse: Optional[str] = None
+    clubDistances: dict[str, Any] = {}
+
+
+class GolferProfileUpdate(BaseModel):
+    """Body for PUT /api/profile/golfer (upsert)."""
+
+    name: Optional[str] = None
+    handicap: Optional[float] = None
+    homeCourse: Optional[str] = None
+    clubDistances: Optional[dict[str, Any]] = None
 
 
 # ============ Players ============

@@ -162,5 +162,40 @@ Format: date — done / in-progress / blocked.
     table cleanly, `import app.main` clean, tsc clean, voice-tests 260/260, build OK.
   - Functional DB verification deferred to EC2 deploy (DATABASE_URL not set locally).
   - SILENT — no TestFlight-visible change.
+- **Done:** backlog `backend-profile-endpoint` (P7, Phase 1, SILENT) — new `routes/profile.py`
+  (`GET/POST/PUT /api/profile/golfer`) backed by the `golfer_profiles` Postgres table; frontend
+  client un-stubbed.
+  - Shape reconciliation: ORM `golfer_profiles` (migration 002_core_scoring) lacked `name` (display
+    name) and a free-text `home_course` field (had only `home_course_id`, a course-ID reference).
+    Frontend `GolferProfile` (types.ts) requires `name` (str), `handicap` (float|null),
+    `homeCourse` (str|null), `clubDistances` (JSONB dict).
+  - New Alembic revision `007_golfer_profile_fields` (`0004_007_golfer_profile_fields.py`): adds
+    `name TEXT NULL` and `home_course TEXT NULL` to `golfer_profiles`. `home_course_id` kept for
+    future caddie cross-reference. Revision chain: 007 revises 006_scoring_courses.
+  - ORM `GolferProfile` updated (`db/models.py`): added `name: Optional[str]` and
+    `home_course: Optional[str]` mapped columns.
+  - Pydantic models added to `models.py`: `GolferProfile` (response), `GolferProfileCreate`
+    (POST body), `GolferProfileUpdate` (PUT body). All camelCase: `handicap` ← `handicap_index`,
+    `homeCourse` ← `home_course`, `clubDistances` ← `bag_clubs`.
+  - New `backend/app/routes/profile.py`:
+    - `GET /api/profile/golfer` — returns 200+body when profile exists, 204 No Content when none.
+    - `POST /api/profile/golfer` — create; 409 if already exists.
+    - `PUT /api/profile/golfer` — upsert (create or partial-update). Preferred for saves.
+    - Owner scoping: `user_id == current_user_id`; `require_owner` gate applied in `main.py`.
+  - `main.py`: registered `profile.router` under `_owner_only` dependencies.
+  - Frontend `api.ts`: replaced null-return/throw stubs with real HTTP calls.
+    - `getGolferProfileAsync()` — GET; handles 204 → null; auth-checks before calling.
+    - `createGolferProfile(data)` — POST with typed `GolferProfileCreate` body.
+    - `updateGolferProfile(data)` — PUT with typed `GolferProfileUpdate` body (upsert).
+    - `GolferProfile` re-exported from api.ts.
+  - Frontend `storage-api.ts`: `getGolferProfileAsync` / `saveGolferProfileAsync` now API-
+    authoritative (API call + write-through to localStorage on success; localStorage fallback
+    on API failure with `console.error`). `saveGolferProfileAsync` calls `updateGolferProfile`
+    (PUT upsert). Removes the `// TODO(backend-profile-endpoint)` stubs.
+  - Profile UI page (`app/profile/page.tsx`) intentionally untouched — that is a later `wire-profile-*` item.
+  - Gates: ruff clean, `alembic upgrade head --sql` renders 007 columns cleanly,
+    `import app.main` clean (DATABASE_URL=fake), tsc clean, voice-tests 260/260.
+  - Functional DB verification deferred to EC2 deploy.
+  - SILENT — no TestFlight-visible change; `useGolferProfile` hook not imported by any screen yet.
 - **Next ready backlog items:** `test-games-engine` (P2), `test-voice-pipeline` (P3),
   `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).

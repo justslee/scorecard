@@ -223,6 +223,10 @@ class GolferProfile(Base):
 
     Distinct from caddie PlayerProfile. May cross-reference later (decision E3).
     One row per Clerk user_id.
+
+    Columns added in migration 007_golfer_profile_fields:
+      name        — display name (maps to GolferProfile.name in types.ts)
+      home_course — free-text home course name (maps to GolferProfile.homeCourse)
     """
 
     __tablename__ = "golfer_profiles"
@@ -232,9 +236,14 @@ class GolferProfile(Base):
     )
     user_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
     owner_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    # Added by migration 007 — maps to types.ts GolferProfile.name
+    name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     handicap_index: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
     scoring_average: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
     bag_clubs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # Added by migration 007 — maps to types.ts GolferProfile.homeCourse (free text)
+    home_course: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Kept for future caddie cross-reference; not served in the API shape.
     home_course_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     play_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     handicap_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
