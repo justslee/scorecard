@@ -87,7 +87,7 @@ def upgrade() -> None:
         sa.Column("handicap_index", sa.Numeric, nullable=True),
         sa.Column("scoring_average", sa.Numeric, nullable=True),
         sa.Column(
-            "bag_clubs", JSONB, nullable=False, server_default="'{}'::jsonb"
+            "bag_clubs", JSONB, nullable=False, server_default=sa.text("'{}'::jsonb")
         ),
         sa.Column("home_course_id", sa.Text, nullable=True),
         sa.Column(
@@ -97,13 +97,13 @@ def upgrade() -> None:
             "handicap_history",
             JSONB,
             nullable=False,
-            server_default="'[]'::jsonb",
+            server_default=sa.text("'[]'::jsonb"),
         ),
         sa.Column(
             "strokes_gained",
             JSONB,
             nullable=False,
-            server_default="'{}'::jsonb",
+            server_default=sa.text("'{}'::jsonb"),
         ),
         sa.Column(
             "created_at",
@@ -138,10 +138,10 @@ def upgrade() -> None:
         sa.Column("name", sa.Text, nullable=False),
         sa.Column("num_rounds", sa.Integer, nullable=True),
         sa.Column(
-            "round_ids", JSONB, nullable=False, server_default="'[]'::jsonb"
+            "round_ids", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")
         ),
         sa.Column(
-            "player_ids", JSONB, nullable=False, server_default="'[]'::jsonb"
+            "player_ids", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")
         ),
         sa.Column(
             "created_at",
@@ -189,7 +189,7 @@ def upgrade() -> None:
         # Hole snapshot (par, handicap, yards) stored as JSONB for the round;
         # structural course data is in the course-mapping tables.
         sa.Column(
-            "holes", JSONB, nullable=False, server_default="'[]'::jsonb"
+            "holes", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")
         ),
         sa.Column(
             "created_at",
@@ -229,7 +229,7 @@ def upgrade() -> None:
         sa.Column("tee_time", sa.Text, nullable=True),
         sa.Column("starting_hole", sa.Integer, nullable=True),
         sa.Column(
-            "player_ids", JSONB, nullable=False, server_default="'[]'::jsonb"
+            "player_ids", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")
         ),
         sa.Column(
             "created_at",
@@ -351,7 +351,7 @@ def upgrade() -> None:
         sa.Column("format", sa.Text, nullable=False),
         sa.Column("name", sa.Text, nullable=False),
         sa.Column(
-            "player_ids", JSONB, nullable=False, server_default="'[]'::jsonb"
+            "player_ids", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")
         ),
         sa.Column("teams", JSONB, nullable=True),
         sa.Column("settings", JSONB, nullable=True),
