@@ -60,7 +60,7 @@
       "type": "minor",
       "priority": 6,
       "risk": "medium",
-      "status": "ready",
+      "status": "done",
       "depends_on": ["db-core-schema"],
       "spec": "specs/real-data-wiring-plan.md"
     },
@@ -92,7 +92,7 @@
       "type": "minor",
       "priority": 9,
       "risk": "low",
-      "status": "blocked",
+      "status": "ready",
       "depends_on": ["backend-players-db", "backend-rounds-scores-db", "backend-tournaments-db", "backend-courses-db"],
       "spec": "specs/real-data-wiring-plan.md"
     },
