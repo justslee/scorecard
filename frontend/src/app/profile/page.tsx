@@ -52,7 +52,7 @@ const CLUB_CONFIG: { key: ClubKey; label: string }[] = [
   { key: "gapWedge",      label: "GW (52°)"  },
   { key: "sandWedge",     label: "SW (56°)"  },
   { key: "lobWedge",      label: "LW (60°)"  },
-  { key: "putter",        label: "Putter"    },
+  { key: "putter",        label: "Putter (optional)" },
 ];
 
 function buildYear(seed = 7) {
@@ -895,6 +895,10 @@ function Bag({
                   letterSpacing: 1,
                   color: T.errorInk,
                   textTransform: "uppercase",
+                  maxWidth: 120,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {saveError}
@@ -1051,6 +1055,83 @@ function Bag({
             }}
           >
             Leave a club blank to remove it from your bag.
+            {" "}Putter distance isn&rsquo;t used for club recommendations.
+          </div>
+          {/* Bottom Save/Cancel — mirrors the header aside so golfers editing
+              the lower clubs (SW/LW/Putter) don't need to scroll up to save. */}
+          <div
+            style={{
+              marginTop: 14,
+              paddingTop: 12,
+              borderTop: `1px solid ${T.hairline}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: 10,
+            }}
+          >
+            {saveError && (
+              <span
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 8.5,
+                  letterSpacing: 1,
+                  color: T.errorInk,
+                  textTransform: "uppercase",
+                  maxWidth: 140,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  flex: 1,
+                }}
+              >
+                {saveError}
+              </span>
+            )}
+            <button
+              onClick={handleCancel}
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                fontFamily: T.mono,
+                fontSize: 10,
+                letterSpacing: 1.6,
+                color: T.pencil,
+                textTransform: "uppercase",
+                fontWeight: 500,
+                minHeight: 44,
+                minWidth: 44,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              style={{
+                border: `1px solid ${T.ink}`,
+                borderRadius: 99,
+                padding: "6px 14px",
+                background: T.ink,
+                cursor: saving ? "not-allowed" : "pointer",
+                fontFamily: T.mono,
+                fontSize: 9,
+                letterSpacing: 1.3,
+                color: T.paper,
+                textTransform: "uppercase",
+                fontWeight: 500,
+                minHeight: 44,
+                display: "flex",
+                alignItems: "center",
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
           </div>
         </div>
       ) : hasAny ? (
@@ -1085,7 +1166,7 @@ function Bag({
                 >
                   {label}
                 </div>
-                <div style={{ position: "relative", height: 8, background: T.paperDeep, borderRadius: 1 }}>
+                <div style={{ position: "relative", height: 10, background: T.paperDeep, borderRadius: 1 }}>
                   <div
                     style={{
                       position: "absolute",
@@ -1134,8 +1215,12 @@ function Bag({
             }}
           >
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 10, height: 6, background: T.ink, borderRadius: 1, display: "inline-block" }} />
+              <span style={{ width: 10, height: 6, background: T.ink, borderRadius: 1, display: "inline-block", opacity: 0.7 }} />
               {" "}Distance
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 10, height: 6, background: accent, borderRadius: 1, display: "inline-block" }} />
+              {" "}Longest
             </span>
           </div>
         </div>

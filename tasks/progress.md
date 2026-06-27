@@ -692,6 +692,27 @@ Format: date — done / in-progress / blocked.
   - Gates: lint 0 errors (src/), tsc 0 errors, voice-tests 260/260 pass, build OK.
   - NOTICEABLE — user-visible on TestFlight: bag section shows real distances + is editable.
 
+## 2026-06-27 (wire-profile-bag designer follow-up)
+- **Done:** designer follow-up fixes for `wire-profile-bag` (one commit on integration/next).
+  MUST-FIX:
+  1. **Bottom Save/Cancel row (FIXED):** editing 15 club rows (~660px) pushed the header-aside
+     Save/Cancel off-screen on iPhone SE/mini. Added a second Cancel + Save row at the BOTTOM
+     of the edit-mode div, separated by `1px solid T.hairline`, `justifyContent: flex-end`.
+     Also includes the error span (with `flex: 1` so it doesn't crowd the buttons), identical
+     button styling to the header pair. Golfers editing SW/LW/Putter can now save without
+     scrolling up blind.
+  POLISH:
+  2. **Bar height 8 → 10** — matches ScoringByTee; more readable in sunlight.
+  3. **Legend "Longest" entry** — added accent-color swatch + "Longest" label alongside
+     "Distance" in the view-mode legend footer. Existing "Distance" swatch now `opacity: 0.7`
+     to match how non-longest bars render.
+  4. **Putter caveat** — CLUB_CONFIG label: "Putter" → "Putter (optional)". Hint text
+     extended: "Putter distance isn't used for club recommendations."
+  5. **Error span maxWidth clamp** — header-aside error span gets `maxWidth:120, overflow:hidden,
+     textOverflow:ellipsis, whiteSpace:nowrap`.
+  - Gates: lint 0 errors, tsc 0 errors, voice-tests 260/260, build OK.
+  - NOTICEABLE — all fixes are user-visible on device.
+
 ## 2026-06-27 (wire-profile-identity reviewer/designer follow-up)
 - **Done:** reviewer + designer follow-up fixes (one commit on integration/next).
   CORRECTNESS (reviewer):
