@@ -1123,3 +1123,56 @@ Format: date — done / in-progress / blocked.
   npm run build OK. Lint warnings are all pre-existing Capacitor build-artifact files (not in src/).
   NOTICEABLE — any golfer who says "with a for" or "everybody dbl bogey" now gets the correct
   score parsed (was: no score / wrong score).
+
+## 2026-06-27 (restyle-game-result-screens)
+- **Done:** backlog `restyle-game-result-screens` (P24, NOTICEABLE) — full yardage-book restyle
+  of `frontend/src/components/GameResults.tsx` and `frontend/src/components/GameLeaderboards.tsx`.
+  Both files were entirely dark-mode SaaS (zinc gradients, emerald/amber rank circles, `text-white`,
+  `bg-gradient-to-b from-zinc-800/80`, lucide Trophy) — a NORTHSTAR violation.
+  Key changes per file:
+  **GameResults.tsx:**
+  - Removed `const box` / `const boxSubtle` Tailwind shorthand constants (dark backgrounds).
+  - All format sections (skins, bestBall, nassau, threePoint, stableford, matchPlay, wolf, fallback)
+    converted from Tailwind classes to inline T.* styles: `T.paper` card backgrounds, `T.hairline`/
+    `T.hairlineSoft` borders, `T.ink`/`T.pencil`/`T.pencilSoft` text, `T.serif`/`T.sans`/`T.mono`
+    font families, `T.accent` for leader callouts (was `text-emerald-300`), `T.warningInk` for
+    wolf "editing disabled" note (was `text-amber-200`).
+  - `<details>/<summary>` expanders restyled: T.mono uppercase summary labels, T.paper card wrapper.
+  - Tables (bestBall/threePoint hole-by-hole): `border-white/10`/`divide-white/6` → T.hairline/
+    T.hairlineSoft inline borders on `<tr>`.
+  - Wolf interactive buttons: lone wolf selected state → accent-tinted (`rgba(58,74,138,0.07)`)
+    border/text/bg; unselected → transparent/T.hairline; select dropdown → T.paperDeep;
+    clear button → T.paperDeep/T.hairline. All ≥44pt minHeight.
+  - Zero logic/props/computed-value changes.
+  **GameLeaderboards.tsx:**
+  - Removed `import { Trophy } from 'lucide-react'` — replaced with typographic header (mono
+    "Game standings" kicker + serif italic "Leaderboards" display text; no icon).
+  - Three module-level items extracted: `cardStyle` (T.paper card, T.hairline border),
+    `RankCircle` component (T.serif italic position number in hairline-bordered circle; leader
+    gets T.accent border+color vs T.hairline+T.pencil), `CardHeader` component (serif game name
+    + mono bet kicker).
+  - All format sections (skins, nassau, bestBall, threePoint, stableford, matchPlay, wolf, stub)
+    converted from `rounded-2xl bg-gradient-to-b from-zinc-800/80 to-zinc-900/80 border border-zinc-700/50`
+    → T.paper card; row leader highlights `rgba(26,42,26,0.03)` (was `bg-emerald-500/5`);
+    scores T.serif ink (was `text-emerald-400`/`text-zinc-400`); row dividers T.hairlineSoft
+    (was `divide-zinc-800/50`).
+  - Skins carrying pot: removed 🔥 emoji; replaced with T.warningInk mono uppercase text.
+  - Nassau winners grid, match-status cells: T.paperDeep/T.hairlineSoft cells (was `bg-zinc-800/50`).
+  - ThreePoint: T.serif 44px score (was `text-emerald-400`/`text-zinc-400` at `text-4xl`);
+    T.serif italic "vs" + T.hairline divider line (was `text-2xl text-zinc-600`).
+  - Match Play: T.ink for leading player, T.pencilSoft for trailing (was `text-emerald-400`
+    vs `text-zinc-300`). No logic change.
+  - Wolf winnings negative: T.errorInk (was `text-red-400`).
+  - Zero logic/props/computed-value changes.
+  **Grep confirmation:** `zinc|emerald|text-white|bg-white/|lucide|amber|from-zinc` → 0 matches in both files.
+  Gates: lint 0 errors (src/ files), tsc 0 errors, voice-tests 260/260, npm test 238/238, build OK.
+  NOTICEABLE — user-visible on TestFlight: GamesPanel detail view + any screen rendering
+  GameLeaderboards now shows the paper/ink yardage-book aesthetic instead of the dark SaaS chrome.
+  Designer flags:
+  - `GamesPanel.tsx` and `RoundSummary.tsx` (the parents that embed these components) still use
+    dark Tailwind styling — they are not in scope for this item but will look inconsistent on-device
+    until restyled (separate follow-up items).
+  - Wolf interactive buttons use `rgba(58,74,138,0.07)` accent fill for selected state — designer
+    should verify this reads clearly against T.paper in sunlight.
+  - `<details>/<summary>` expanders use the browser's default disclosure triangle — a future polish
+    pass could replace with a custom chevron or typographic indicator.
