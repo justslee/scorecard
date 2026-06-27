@@ -314,10 +314,11 @@
       "type": "major",
       "priority": 26,
       "risk": "medium",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [],
       "why": "Flagship README feature, backend live (/api/caddie/*) but UNMOUNTED \u2014 CaddieModal/CaddiePanel have no entry point. Add a calm caddie entry (e.g. a button on RoundPageClient that opens the caddie in a yardage-book sheet), restyle CaddiePanel + CaddieNotesCard + CustomPersonaModal off dark Tailwind to T.*. Keep the backend wiring + clubDistances (from the now-real bag) feeding recommendations. Pin/shot-tracking/GPS controls are the separate mount-gps-shot-tracking item.",
-      "scoping_note": "Scoped LEAN/voice-first: new CaddieSheet using GPS-free /caddie/voice + /caddie/recommend. Full 1215-line CaddiePanel (mapbox/GPS/shot-tracking/pins) stays orphaned under blocked P28; not re-mounted (honors NORTHSTAR calm/voice-first, avoids dragging in blocked work)."
+      "scoping_note": "Scoped LEAN/voice-first: new CaddieSheet using GPS-free /caddie/voice + /caddie/recommend. Full 1215-line CaddiePanel (mapbox/GPS/shot-tracking/pins) stays orphaned under blocked P28; not re-mounted (honors NORTHSTAR calm/voice-first, avoids dragging in blocked work).",
+      "done_note": "Lean voice-first CaddieSheet on in-round screen (/caddie/voice + /caddie/recommend). Reviewer (1 bug + 2 nits) + designer (2 blockers + polish) all folded; gates green. GPS panel remains under P28."
     },
     {
       "id": "mount-ocr-scan",
@@ -325,7 +326,7 @@
       "type": "major",
       "priority": 27,
       "risk": "medium",
-      "status": "ready",
+      "status": "in-progress",
       "depends_on": [],
       "why": "Promised README feature; backend OCR is wired (lib/ocr.ts -> /api/voice/parse-scorecard) but the CameraCapture UI is unmounted. Add an entry point (e.g. on the scoring screen or round setup) to scan a paper scorecard -> auto-fill scores via the existing OCR endpoint; restyle CameraCapture (+ CourseSearchImport if part of the flow) to yardage-book."
     },
