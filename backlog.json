@@ -197,12 +197,13 @@
       "type": "major",
       "priority": 16,
       "risk": "high",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [
         "wire-round-scoring"
       ],
       "spec": "specs/real-data-wiring-plan.md",
-      "rescope_note": "RE-SCOPED 2026-06-27: ScoringByTee + YearLog ARE computable from real getRounds() now -> wire them. StrokesGained + FairwayFan need per-shot data (blocked P28) -> replace fabricated mock with HONEST empty states (no fake numbers, owner rule). Removes the last Preview-only mock on profile."
+      "rescope_note": "RE-SCOPED 2026-06-27: ScoringByTee + YearLog ARE computable from real getRounds() now -> wire them. StrokesGained + FairwayFan need per-shot data (blocked P28) -> replace fabricated mock with HONEST empty states (no fake numbers, owner rule). Removes the last Preview-only mock on profile.",
+      "done_note": "Re-scoped: ScoringByTee (bucketed by tee x holeCount, per-round toPar avg) + Season log now real from getRounds. StrokesGained+FairwayFan merged into one honest ShotAnalytics placeholder at page bottom (no fabricated numbers). Removed contradicting Recent stub. Reviewer SHIP + designer polish-then-ship; 11 findings folded; gates verified incl. vitest 238. players[0]=owner risk tracked as P34."
     },
     {
       "id": "wire-players-page",
