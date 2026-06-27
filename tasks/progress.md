@@ -241,8 +241,40 @@ Format: date — done / in-progress / blocked.
     voice-tests 260/260 pass, npm run build OK.
   - SILENT — runtime-neutral (test file only, no app code modified, no lib/games.ts
     changes).
-- **Next ready backlog items:** `test-voice-pipeline` (P3),
-  `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).
+- **Done:** backlog `test-voice-pipeline` (P30, SILENT) — unit tests for the voice
+  pipeline's schemas + normalization, complementing the integration harness.
+  - New files (no app code touched):
+    - `frontend/src/lib/voice/parseVoiceScores.test.ts` — 46 tests for `parseVoiceScoresLocally`:
+      STT number-word normalization (ford/fore/four/ate/won/too/to/tree → integers), all six
+      score-phrasing patterns (made a / got a / with a / shot a / shot / bare), golf-term
+      scoring (birdie/eagle/bogey/double/par at any par value), everyone-par (8 variants
+      incl. "all bogey" / "everybody double"), conjunction splitting (and / comma / then /
+      no-punctuation chains), nickname resolution (jt→Justin, mike→Michael, bob→Robert),
+      collision guard (PR #47): when "JT" is a literal player "jt" matches JT not Justin,
+      edge cases (empty/filler/uppercase/key-casing/prefix match).
+    - `frontend/src/lib/voice/schemas.test.ts` — 46 tests for Zod schemas: GameFormatSchema
+      (all 8 valid formats + 3 invalid), VoiceScoreParseResultSchema (6 valid + 11 invalid
+      incl. hole=0, float hole, negative/fractional score, confidence out-of-range, extra
+      fields, missing required fields), ParsedGameConfigSchema, ParsedTournamentConfigSchema,
+      VoiceParseResultSchema (game + tournament paths, normalization field, matchPlay settings).
+    - `frontend/src/lib/voice/utils.test.ts` — 47 tests: parseSpokenNumber (27 words incl.
+      all STT variants; confirms "ford" is NOT in utils WORD_NUMBERS — only in parseVoiceScores
+      WORD_TO_NUM), normalizeName, clamp01, levenshtein, similarity (incl. 0.92 prefix-match
+      constant), fuzzyBestMatch (custom minScore threshold), safeJsonExtract (fenced + bare JSON),
+      stripFillerWords, normalizeTranscript (basketball→best ball ASR fix).
+  - BUGS FOUND (not fixed — behavior-change blocked while PR #51 is in review):
+    1. `parseVoiceScoresLocally` regex: `"for"` (listed in WORD_TO_NUM as 4) is absent from
+       both the first-pass and second-pass capture-group alternations. "Justin with a for"
+       produces no score. `parseSpokenNumber` in utils.ts DOES handle "for" → 4, so the gap
+       is only in parseVoiceScores.ts's own regex alternations.
+    2. `parseVoiceScoresLocally` everyone-pattern: "everybody dbl bogey" matches the regex
+       (alternation has "dbl bogey") but the value-selector checks `t.includes("double")`
+       (false for "dbl") and falls through to `t.includes("bogey")` → returns par+1 instead
+       of par+2. Inconsistent with "dbl bogey" being in the regex.
+  - Gates: npm test 230/230 pass (was 46/46 + 184 new), tsc 0 errors, voice-tests 260/260,
+    build OK, new test files lint-clean.
+  - SILENT — runtime-neutral (test files only, zero app/lib/voice code changes).
+- **Next ready backlog items:** `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).
 
 ## 2026-06-26 (wire-leaderboard-real)
 - **Done:** backlog `wire-leaderboard-real` (P12, NOTICEABLE) — replaced `LB_MOCK` with
