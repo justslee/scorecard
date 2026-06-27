@@ -326,9 +326,10 @@
       "type": "major",
       "priority": 27,
       "risk": "medium",
-      "status": "in-progress",
+      "status": "done",
       "depends_on": [],
-      "why": "Promised README feature; backend OCR is wired (lib/ocr.ts -> /api/voice/parse-scorecard) but the CameraCapture UI is unmounted. Add an entry point (e.g. on the scoring screen or round setup) to scan a paper scorecard -> auto-fill scores via the existing OCR endpoint; restyle CameraCapture (+ CourseSearchImport if part of the flow) to yardage-book."
+      "why": "Promised README feature; backend OCR is wired (lib/ocr.ts -> /api/voice/parse-scorecard) but the CameraCapture UI is unmounted. Add an entry point (e.g. on the scoring screen or round setup) to scan a paper scorecard -> auto-fill scores via the existing OCR endpoint; restyle CameraCapture (+ CourseSearchImport if part of the flow) to yardage-book.",
+      "done_note": "Scan-card flow on in-round screen: CameraCapture -> /api/voice/parse-scorecard -> editable review (name-matching, low-confidence flags, dup guard, retry-on-failure) -> persists via existing handleSetScore. Reviewer SHIP + designer polish-then-ship; all 13 findings folded; gates verified (tsc/238 tests/build)."
     },
     {
       "id": "mount-gps-shot-tracking",
@@ -383,7 +384,7 @@
       "type": "minor",
       "priority": 32,
       "risk": "low",
-      "status": "ready",
+      "status": "in-progress",
       "depends_on": [],
       "why": "npm run lint reports ~108 pre-existing errors. Burn down in small behavior-preserving batches; then promote ESLint to a required CI job.",
       "acceptance": "npm run lint exits 0; ESLint becomes a required CI job."
