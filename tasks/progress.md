@@ -3,6 +3,37 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (voice-low-confidence-ux P35 — SCORING-PATH slice — NOTICEABLE)
+- **Done:** scoring-path slice of `voice-low-confidence-ux` (P35, NOTICEABLE) — real voice
+  score entry in ScoreSheet with a confidence-aware confirm step.
+  Commit `32b7353` on `integration/next`.
+
+  Files changed:
+  - **`backend/app/routes/voice.py`**: `VoiceScoreResponse` gains `confidence: float = 0.5`
+    and `warnings: list[str] = []`. New `_derive_confidence()` helper: empty scores → 0.2;
+    otherwise `min(1.0, (scored/total) * 0.9)`. Derived after Claude extraction.
+  - **`frontend/src/lib/voice/types.ts`**: `VoiceParseScoresResult` gains
+    `confidence?: number` and `warnings?: string[]` (additive — backward compatible).
+  - **`frontend/src/lib/voice/parseVoiceScores.ts`**: `_deriveConfidence()` helper added.
+    `parseVoiceScoresLocally` returns confidence. `parseVoiceScores` forwards backend
+    `confidence` or computes from mapped score count.
+  - **`frontend/src/components/yardage/ScoreSheet.tsx`**: replaced static "Or say…" hint
+    with functional voice entry. `ScoreVoicePhase` state machine (`idle | listening |
+    thinking | confirm | error`). MediaRecorder + Web Speech interim "Hearing…".
+    VoiceConfirmPanel inline sub-component: per-player score tiles; confidence < 0.65 →
+    T.warningWash + T.warningInk kicker "Double-check these — I wasn't sure". Apply calls
+    `onSetScore(pid, idx, val)` (same path as manual entry). Manual digit-wheel + quick-pick
+    untouched.
+  - **`frontend/voice-tests/corpus/seed-utterances.jsonl`**: 4 new scoring confidence tests
+    (lowconf:scores:001–003, highconf:scores:001 with expectedConfidenceMin:0.65).
+  - **`frontend/voice-tests/runner.ts`**: comment updated; confidence check now applies to
+    both setup and scoring results.
+
+  Gates: ruff clean · lint 0/0 · tsc 0 · voice-tests 265/265 (+4) · npm test 238/238 ·
+         npm run build clean · pytest 138/0 skip unchanged.
+  NOTICEABLE — mic button in ScoreSheet; confirm step with low-confidence amber cue.
+
+
 ## 2026-06-27 (backend-route-integration-tests — SILENT)
 - **Done:** backend route integration tests proving security properties on the real FastAPI + Postgres stack.
   Commit `189dbc1` on `integration/next`.
