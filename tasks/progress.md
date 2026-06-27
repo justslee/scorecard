@@ -223,7 +223,25 @@ Format: date — done / in-progress / blocked.
   - Gates: ruff clean, import clean (DATABASE_URL fake), dry-run demo clean (no DB),
     tsc clean, voice-tests 260/260.
   - SILENT — no TestFlight-visible change; script runs once on EC2 deploy box.
-- **Next ready backlog items:** `test-games-engine` (P2), `test-voice-pipeline` (P3),
+- **Done:** backlog `test-games-engine` (P2, SILENT) — 46 unit tests for `lib/games.ts`
+  via Vitest (already a devDep + `test` script; no new dependencies added).
+  - New file: `frontend/src/lib/games.test.ts` (picked up by `vitest.config.ts` pattern
+    `src/**/*.test.ts`).
+  - Covers all 7 exported compute* functions + the `computeGameResults` dispatcher:
+    skins (7 tests), bestBall (4), nassau (5), threePoint (5), stableford (5),
+    matchPlay (5), wolf (7), dispatcher (8). Total: 46 tests, 46 pass.
+  - Edge cases: carryover multi-tie chains, partial rounds, ties (null winner),
+    lone-wolf win/loss (+3/-3), partner mode win/loss (+1 each), match-play early end
+    ("10 & 8"), NO_SCORE holes, empty playerIds falling back to round.players,
+    modifiedStableford routing to computeStableford, unimplemented format → {}.
+  - Documented stub: nassauMode='match' always uses stroke totals (P21 pending) —
+    asserted as current behavior, marked with a STUB comment, NOT fixed.
+  - No bugs found that warrant stopping; all format outputs match expected behavior.
+  - Gates: npm test 46/46 pass, lint clean (src/), tsc --noEmit clean,
+    voice-tests 260/260 pass, npm run build OK.
+  - SILENT — runtime-neutral (test file only, no app code modified, no lib/games.ts
+    changes).
+- **Next ready backlog items:** `test-voice-pipeline` (P3),
   `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).
 
 ## 2026-06-26 (wire-leaderboard-real)
