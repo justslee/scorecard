@@ -57,7 +57,6 @@ class VoiceScoreResponse(BaseModel):
     # Formula: min(1.0, (players_scored / total_players) * 0.9)
     # Empty parse → 0.2 (show amber warning and "try again" cue).
     confidence: float = 0.5
-    warnings: list[str] = []
 
 
 def _derive_confidence(scores: dict[str, int], player_names: list[str]) -> float:

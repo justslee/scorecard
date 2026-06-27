@@ -30,5 +30,4 @@ export type VoiceParseScoresResult = {
   scores: Record<string, number>;
   /** Derived confidence 0–1.  Undefined = treat as high (no amber cue shown). */
   confidence?: number;
-  warnings?: string[];
 };

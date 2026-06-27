@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { T } from "./tokens";
 import { Waveform } from "./Voice";
@@ -16,7 +16,7 @@ import { fetchAPI } from "@/lib/api";
 type ScoreVoicePhase =
   | "idle"      // "Or say…" mic cue visible
   | "listening" // recording — waveform animates, interim transcript shown
-  | "thinking"  // transcribing or parsing
+  | "thinking"  // transcribing or parsing — mic pulses
   | "confirm"   // parsed result shown, awaiting confirm or retry
   | "error";    // transcription or parse failure
 
@@ -144,25 +144,30 @@ function VoiceConfirmPanel({
 
   return (
     <div style={{ marginTop: 16 }}>
-      {/* Confidence kicker */}
+      {/* Confidence kicker — 10px matches VoiceRoundSetup/ScanSheet */}
       <div
         style={{
           fontFamily: T.mono,
-          fontSize: 9.5,
+          fontSize: 10,
           letterSpacing: 1.4,
           color: isLow ? T.warningInk : T.pencil,
           textTransform: "uppercase",
           marginBottom: 10,
         }}
       >
-        {isLow ? "Double-check these — I wasn’t sure" : "Confirm scores"}
+        {isLow ? "Double-check these — I wasn't sure" : "Confirm scores"}
       </div>
 
-      {/* Per-player score tiles */}
+      {/* Per-player score tiles.
+          Surgical amber: only absent/unparsed tiles get the wash — matched
+          tiles are calm so the visual weight is on what's MISSING, not alarming
+          the whole panel (mirrors ScanSheet's per-field approach). */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
         {players.map((p) => {
           const score = parsedScores[p.name];
           const hasParsed = score !== undefined;
+          // Amber only on absent tiles when the parse is low-confidence.
+          const tileAmber = isLow && !hasParsed;
           return (
             <div
               key={p.id}
@@ -172,11 +177,12 @@ function VoiceConfirmPanel({
                 justifyContent: "space-between",
                 padding: "10px 14px",
                 borderRadius: 12,
-                background: isLow ? T.warningWash : T.paperDeep,
-                border: `1px solid ${isLow ? `${T.warningInk}55` : T.hairline}`,
+                background: tileAmber ? T.warningWash : T.paperDeep,
+                // 88 opacity matches ScanSheet's sunlight-legible amber border.
+                border: `1px solid ${tileAmber ? `${T.warningInk}88` : T.hairline}`,
               }}
             >
-              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, color: isLow ? T.warningInk : T.pencil, textTransform: "uppercase" }}>
+              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, color: tileAmber ? T.warningInk : T.pencil, textTransform: "uppercase" }}>
                 {p.name}
               </div>
               <div style={{ fontFamily: T.serif, fontSize: 26, color: hasParsed ? T.ink : T.pencilSoft, letterSpacing: -0.5 }}>
@@ -187,7 +193,7 @@ function VoiceConfirmPanel({
         })}
       </div>
 
-      {/* Footer: "Try again" ghost + "Apply scores" solid */}
+      {/* Footer: "Try again" ghost (44pt) + "Apply scores" solid */}
       <div style={{ display: "flex", gap: 8 }}>
         <button
           onClick={onRetry}
@@ -216,8 +222,9 @@ function VoiceConfirmPanel({
             padding: "12px",
             borderRadius: 99,
             border: "none",
-            background: hasAnyScore ? T.ink : T.hairline,
-            color: T.paper,
+            // Disabled: paperDeep bg + pencilSoft text so it's legible (not paper-on-paper).
+            background: hasAnyScore ? T.ink : T.paperDeep,
+            color: hasAnyScore ? T.paper : T.pencilSoft,
             fontFamily: T.sans,
             fontSize: 13,
             fontWeight: 500,
@@ -270,6 +277,19 @@ export default function ScoreSheet({
   const recorderRef = useRef<VoiceRecorder | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
+  // Open-generation counter — incremented every time the sheet opens.
+  // Async operations (startVoice, stopAndParse) snapshot the gen before each
+  // await and bail if the gen has changed when they resume. This prevents:
+  //   1. Hot-mic race: getUserMedia resolves after close → recorder leaks.
+  //   2. Stale confirm: stopAndParse resolves after close → wrong-hole apply.
+  // Increment happens in useLayoutEffect (fires synchronously during commit,
+  // before any pending Promise callbacks resume), which is the earliest safe
+  // place that doesn't trigger the react-hooks/refs render-body rule.
+  const openGenRef = useRef(0);
+  useLayoutEffect(() => {
+    if (open) openGenRef.current++;
+  }, [open]);
+
   const resetVoice = useCallback(() => {
     setVoicePhase("idle");
     setInterimTranscript("");
@@ -279,13 +299,16 @@ export default function ScoreSheet({
   }, []);
 
   // When the sheet opens/closes, reset state.
-  // Uses the React "store previous prop" pattern (setState during render) so we
-  // avoid the set-state-in-effect lint rule.  Ref access is NOT allowed during
-  // render, so ref cleanup lives in its own effect below.
+  // Uses the React "store previous prop" pattern (setState during render) to
+  // avoid the set-state-in-effect lint rule. Ref access is NOT done here
+  // (lint: no refs during render) — ref cleanup lives in a separate effect.
   const [prevOpen, setPrevOpen] = useState(open);
   if (prevOpen !== open) {
     setPrevOpen(open);
-    if (open) setActivePid(players[0]?.id ?? "");
+    if (open) {
+      setActivePid(players[0]?.id ?? "");
+      resetVoice(); // also clear stale confirm state on every reopen
+    }
     if (!open) resetVoice(); // clear voice state; refs cleaned up in effect
   }
 
@@ -313,10 +336,25 @@ export default function ScoreSheet({
     setInterimTranscript("");
     setParsedScores({});
     setParseConfidence(undefined);
+    // Snapshot gen BEFORE any await so it's accessible in both the try body and
+    // the catch block (a const inside try is not in scope for catch).
+    const gen = openGenRef.current;
     try {
       const recorder = new VoiceRecorder();
-      await recorder.start();
+      // Assign to ref BEFORE await so the close-cleanup effect can reach it if
+      // the sheet closes during the getUserMedia permission prompt.
       recorderRef.current = recorder;
+
+      await recorder.start(); // getUserMedia — may show a browser permission dialog
+
+      // Guard: bail if the sheet closed (ref was nulled by cleanup effect)
+      // OR was reopened (gen changed). Both cases mean this recorder is stale.
+      if (openGenRef.current !== gen || recorderRef.current !== recorder) {
+        recorder.cancel();
+        recorderRef.current = null;
+        return;
+      }
+
       setVoicePhase("listening");
 
       // Best-effort interim display via Web Speech API; Deepgram is authoritative.
@@ -342,6 +380,8 @@ export default function ScoreSheet({
         recognitionRef.current = recognition;
       }
     } catch (err) {
+      // If the error fired after the sheet was closed/reopened, drop it silently.
+      if (openGenRef.current !== gen) return;
       setVoiceError(
         err instanceof Error && err.name === "NotAllowedError"
           ? "Microphone access denied. Allow mic access and try again."
@@ -355,6 +395,9 @@ export default function ScoreSheet({
     const recorder = recorderRef.current;
     if (!recorder) return;
 
+    // Snapshot gen before any await — used to detect close/reopen mid-flight.
+    const gen = openGenRef.current;
+
     recognitionRef.current?.abort();
     recognitionRef.current = null;
     setInterimTranscript("");
@@ -363,10 +406,12 @@ export default function ScoreSheet({
     try {
       const blob = await recorder.stop();
       recorderRef.current = null;
+      if (openGenRef.current !== gen) return; // sheet closed during stop
 
       const transcribeResult = await transcribeBlob(blob);
-      const transcript = transcribeResult.transcript.trim();
+      if (openGenRef.current !== gen) return; // sheet closed during transcription
 
+      const transcript = transcribeResult.transcript.trim();
       if (!transcript) {
         setVoiceError("No speech detected. Try again.");
         setVoicePhase("error");
@@ -386,9 +431,11 @@ export default function ScoreSheet({
             par: hole.par,
           }),
         });
+        if (openGenRef.current !== gen) return; // sheet closed during backend call
         setParsedScores(parsed.scores ?? {});
         setParseConfidence(parsed.confidence);
       } catch {
+        if (openGenRef.current !== gen) return;
         // Backend unavailable — fall back to local parse.
         const local = parseVoiceScoresLocally(transcript, {
           playerNames,
@@ -399,9 +446,11 @@ export default function ScoreSheet({
         setParseConfidence(local.confidence);
       }
 
+      if (openGenRef.current !== gen) return; // final guard before phase change
       setVoicePhase("confirm");
     } catch (err) {
       recorderRef.current = null;
+      if (openGenRef.current !== gen) return;
       setVoiceError(
         err instanceof Error ? err.message : "Transcription failed."
       );
@@ -412,7 +461,10 @@ export default function ScoreSheet({
   const applyVoiceScores = useCallback(() => {
     for (const player of players) {
       const val = parsedScores[player.name];
-      if (val !== undefined) {
+      // Range-validate: parsers can yield 0 ("zero") or large numbers ("100").
+      // Manual entry is constrained to 1–9; we allow up to 15 for voice
+      // (a very bad hole on a par 5 is realistic). Out-of-range → skip silently.
+      if (Number.isInteger(val) && val >= 1 && val <= 15) {
         onSetScore(player.id, hole.number - 1, val);
       }
     }
@@ -436,6 +488,8 @@ export default function ScoreSheet({
     if (diff === 2) return "Double";
     return `+${diff}`;
   };
+
+  const inConfirm = voicePhase === "confirm";
 
   return (
     <AnimatePresence>
@@ -531,8 +585,17 @@ export default function ScoreSheet({
             })}
           </div>
 
-          {/* Digit wheel + Quick pick — unchanged primary path */}
-          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+          {/* Digit wheel + Quick pick — unchanged primary path.
+              De-emphasised in confirm phase so the confirm panel has clear
+              visual priority; pointer-events blocked to prevent accidental taps. */}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 20,
+            opacity: inConfirm ? 0.35 : 1,
+            pointerEvents: inConfirm ? "none" : "auto",
+            transition: "opacity 0.2s",
+          }}>
             <DigitWheel
               value={scores[activePid]?.[hole.number - 1] ?? null}
               onChange={(v) => onSetScore(activePid, hole.number - 1, v)}
@@ -557,7 +620,8 @@ export default function ScoreSheet({
                           borderRadius: 10,
                           border: `1px solid ${isSel ? accent : T.hairline}`,
                           background: isSel ? accent : "transparent",
-                          color: isSel ? "#fff" : T.ink,
+                          // T.paper (warm parchment) instead of literal #fff — token-pure.
+                          color: isSel ? T.paper : T.ink,
                           fontFamily: T.sans,
                           fontSize: 11,
                           fontWeight: 500,
@@ -579,17 +643,29 @@ export default function ScoreSheet({
 
           {/* ── Voice entry path (additive — below manual entry) ── */}
 
-          {voicePhase === "confirm" ? (
-            /* Confirm panel — show after parse */
-            <VoiceConfirmPanel
-              players={players}
-              parsedScores={parsedScores}
-              confidence={parseConfidence}
-              onApply={applyVoiceScores}
-              onRetry={resetVoice}
-            />
+          {/* Confirm panel — animated entry via AnimatePresence + motion.div,
+              matching the slide-in feel of other voice surfaces. */}
+          <AnimatePresence mode="wait">
+            {inConfirm && (
+              <motion.div
+                key="voice-confirm"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 6 }}
+                transition={{ duration: 0.18 }}
+              >
+                <VoiceConfirmPanel
+                  players={players}
+                  parsedScores={parsedScores}
+                  confidence={parseConfidence}
+                  onApply={applyVoiceScores}
+                  onRetry={resetVoice}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          ) : voicePhase === "error" ? (
+          {voicePhase === "error" ? (
             /* Error state */
             <div
               style={{
@@ -603,13 +679,14 @@ export default function ScoreSheet({
               }}
             >
               <div style={{ flex: 1, fontFamily: T.serif, fontStyle: "italic", fontSize: 13, color: T.errorInk }}>
-                {voiceError ?? "Couldn’t hear that."}
+                {voiceError ?? "Couldn't hear that."}
               </div>
+              {/* 44pt minimum touch target */}
               <button
                 onClick={resetVoice}
                 style={{
-                  width: 36,
-                  height: 36,
+                  width: 44,
+                  height: 44,
                   borderRadius: 99,
                   border: `1px solid ${T.hairline}`,
                   background: "transparent",
@@ -626,7 +703,7 @@ export default function ScoreSheet({
               </button>
             </div>
 
-          ) : (
+          ) : !inConfirm ? (
             /* Idle / listening / thinking — mic row */
             <div
               style={{
@@ -639,20 +716,32 @@ export default function ScoreSheet({
                 gap: 10,
               }}
             >
-              {/* Mic button */}
+              {/* Mic button — 44pt minimum touch target.
+                  listening: scales + accent ring.
+                  thinking: breathing opacity pulse so there's no dead air. */}
               <motion.button
                 onClick={handleMicTap}
                 disabled={voicePhase === "thinking"}
                 whileTap={{ scale: 0.9 }}
-                animate={voicePhase === "listening" ? { scale: [1, 1.08, 1] } : { scale: 1 }}
-                transition={{
-                  duration: 1.4,
-                  repeat: voicePhase === "listening" ? Infinity : 0,
-                  ease: "easeInOut",
-                }}
+                animate={
+                  voicePhase === "listening"
+                    ? { scale: [1, 1.08, 1] }
+                    : voicePhase === "thinking"
+                    ? { opacity: [0.5, 0.9, 0.5] }
+                    : { scale: 1, opacity: 1 }
+                }
+                transition={
+                  voicePhase === "thinking"
+                    ? { duration: 1.6, repeat: Infinity, ease: "easeInOut" }
+                    : {
+                        duration: 1.4,
+                        repeat: voicePhase === "listening" ? Infinity : 0,
+                        ease: "easeInOut",
+                      }
+                }
                 style={{
-                  width: 36,
-                  height: 36,
+                  width: 44,
+                  height: 44,
                   borderRadius: 99,
                   border: "none",
                   background: voicePhase === "listening" ? accent : T.ink,
@@ -665,7 +754,6 @@ export default function ScoreSheet({
                   boxShadow: voicePhase === "listening"
                     ? `0 0 0 6px ${accent}22, 0 6px 16px rgba(26,42,26,0.2)`
                     : "0 4px 12px rgba(26,42,26,0.18)",
-                  opacity: voicePhase === "thinking" ? 0.5 : 1,
                 }}
                 aria-label={voicePhase === "listening" ? "Stop recording" : "Start voice score entry"}
               >
@@ -703,7 +791,7 @@ export default function ScoreSheet({
                 )}
               </div>
             </div>
-          )}
+          ) : null}
         </motion.div>
       )}
     </AnimatePresence>
