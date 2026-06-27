@@ -197,5 +197,31 @@ Format: date — done / in-progress / blocked.
     `import app.main` clean (DATABASE_URL=fake), tsc clean, voice-tests 260/260.
   - Functional DB verification deferred to EC2 deploy.
   - SILENT — no TestFlight-visible change; `useGolferProfile` hook not imported by any screen yet.
+- **Done:** backlog `json-to-db-backfill` (P9, Phase 1, SILENT) — one-off idempotent
+  migration script `backend/scripts/backfill_core_data.py` that imports all four
+  `backend/data/*.json` files into Postgres and retires the stale JSON files.
+  - Reads players.json → `players`, courses.json → `scoring_courses`,
+    tournaments.json → `tournaments` + tournament-scoped `games`,
+    rounds.json → `rounds` + `round_players` + `player_groups` + `scores` + round-scoped `games`.
+  - Legacy non-UUID ids (e.g. `player-ryan-murphy`, `course-augusta`) are mapped to
+    deterministic UUID v5 values (namespace=NAMESPACE_URL) so every re-run produces
+    the same DB primary key for the same source record.
+  - Cross-table remapping: player_id_map, course_id_map, tournament_id_map built in
+    order; round.courseId / round.tournamentId / player references all remapped.
+    Second pass patches tournament.round_ids with new round UUIDs after rounds import.
+  - Upserts: players/courses/tournaments/rounds/games use ON CONFLICT (id) DO UPDATE;
+    round_players uses ON CONFLICT ON CONSTRAINT round_players_round_player_uq;
+    scores uses ON CONFLICT ON CONSTRAINT scores_round_player_hole_uq. Fully
+    idempotent — re-runs skip/update without duplicating.
+  - Owner assignment: --owner-id CLI arg (falls back to $OWNER_CLERK_USER_ID); fails
+    with a clear error if neither is supplied.
+  - Dry-run: --dry-run prints the full import plan (UUIDs per record) with NO DB
+    connection. Demonstrated: 11 players + 3 courses → deterministic UUIDs shown.
+  - File retirement: after successful commit renames data/<name>.json →
+    data/<name>.json.imported (never hard-deletes); idempotent re-runs no-op cleanly.
+  - Deploy runbook line: `cd backend && DATABASE_URL=<RDS_URL> uv run python -m scripts.backfill_core_data --owner-id $OWNER_CLERK_USER_ID`
+  - Gates: ruff clean, import clean (DATABASE_URL fake), dry-run demo clean (no DB),
+    tsc clean, voice-tests 260/260.
+  - SILENT — no TestFlight-visible change; script runs once on EC2 deploy box.
 - **Next ready backlog items:** `test-games-engine` (P2), `test-voice-pipeline` (P3),
   `frontend-lint-cleanup` (P9), `tee-time-finder` Phase 1 (P8).
