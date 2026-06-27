@@ -3,6 +3,27 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (voice-low-confidence-ux P33 — SETUP-PATH slice)
+- **Done:** SETUP-PATH slice of `voice-low-confidence-ux` (P33, NOTICEABLE) — wired the
+  backend's `confidence` field through `ParsedRoundConfig` and surfaced a calm
+  yardage-book amber cue on the round-setup result card when the parse is uncertain.
+
+  Files changed:
+  - **`frontend/src/components/VoiceRoundSetup.tsx`**:
+    - Added `confidence?: number` to `ParsedRoundConfig`. The backend's
+      `RoundSetupResponse.confidence` is already in the JSON response from
+      `POST /api/voice/parse-round-setup`; `fetchAPI<ParsedRoundConfig>` now carries it.
+    - Added `isLowConfidence` derived from `!parseResult.courseName || confidence < 0.7`.
+    - Result card kicker: "Hard to hear — check the details below" in `T.warningInk` when
+      low; "Got it — confirm below" in `T.pencil` when high. Course card: always rendered;
+      amber (`T.warningWash` + dashed `T.warningInk`) when empty, normal when present.
+  - **`frontend/voice-tests/corpus/seed-utterances.jsonl`**:
+    - Added `lowconf:setup:001`: "going out with Justin and Robert" → confidence:0.6 < 0.7
+      threshold; regression guard for the amber cue path.
+
+  Gates: lint 0 · tsc 0 · voice-tests 261/261 · npm test 238/238 · build OK.
+  NOTICEABLE — amber warning visible in round-setup voice flow when parse is uncertain.
+
 ## 2026-06-27 (restyle-dark-components-sweep P24.5 — lucide cleanup, final pass)
 - **Done:** two remaining reachable lucide-react importers replaced with inline SVGs.
   - `frontend/src/app/players/page.tsx`: removed `import { ArrowLeft, Plus, User, Search, X, Check }`.

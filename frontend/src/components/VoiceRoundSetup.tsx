@@ -33,6 +33,9 @@ interface ParsedRoundConfig {
   playerNames: string[];
   teeName?: string;
   gameFormat?: string;
+  /** Confidence score from the backend (0–1). Present when the backend returns it.
+   *  Undefined = treat as high confidence (no cue). */
+  confidence?: number;
 }
 
 // Visual phase derived from state
@@ -113,6 +116,17 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
     : isListening
     ? "listening"
     : "idle";
+
+  // Low-confidence flag: true when the parse result needs extra scrutiny.
+  // Triggers when:
+  //   - course name is missing (always flag, even if confidence is undefined)
+  //   - numeric confidence is below 0.7 (backend threshold: 0.55 = local fallback)
+  // If confidence is undefined (e.g. cached result without the field), only the
+  // missing-course check applies — we never show a false warning.
+  const isLowConfidence =
+    parseResult !== null &&
+    (!parseResult.courseName ||
+      (typeof parseResult.confidence === "number" && parseResult.confidence < 0.7));
 
   const startListening = useCallback(async () => {
     setError(null);
@@ -344,41 +358,47 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
           ) : phase === "result" && parseResult ? (
             /* Parsed result */
             <div>
+              {/* Kicker — amber when low-confidence, neutral otherwise */}
               <div
                 style={{
                   fontFamily: T.mono,
                   fontSize: 9,
                   letterSpacing: 1.5,
-                  color: T.pencil,
+                  color: isLowConfidence ? T.warningInk : T.pencil,
                   textTransform: "uppercase",
                   marginBottom: 14,
                 }}
               >
-                Got it &mdash; confirm below
+                {isLowConfidence
+                  ? "Hard to hear — check the details below"
+                  : "Got it — confirm below"}
               </div>
 
-              {parseResult.courseName && (
+              {/* Course card — always shown; amber dashed border when missing */}
+              <div
+                style={{
+                  marginBottom: 10,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  background: parseResult.courseName ? T.paperDeep : T.warningWash,
+                  border: parseResult.courseName
+                    ? `1px solid ${T.hairline}`
+                    : `1px dashed ${T.warningInk}`,
+                }}
+              >
                 <div
                   style={{
-                    marginBottom: 10,
-                    padding: "12px 14px",
-                    borderRadius: 12,
-                    background: T.paperDeep,
-                    border: `1px solid ${T.hairline}`,
+                    fontFamily: T.mono,
+                    fontSize: 8.5,
+                    letterSpacing: 1.3,
+                    color: parseResult.courseName ? T.pencilSoft : T.warningInk,
+                    textTransform: "uppercase",
+                    marginBottom: 3,
                   }}
                 >
-                  <div
-                    style={{
-                      fontFamily: T.mono,
-                      fontSize: 8.5,
-                      letterSpacing: 1.3,
-                      color: T.pencilSoft,
-                      textTransform: "uppercase",
-                      marginBottom: 3,
-                    }}
-                  >
-                    Course
-                  </div>
+                  Course
+                </div>
+                {parseResult.courseName ? (
                   <div
                     style={{
                       fontFamily: T.serif,
@@ -390,8 +410,21 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
                   >
                     {parseResult.courseName}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontStyle: "italic",
+                      fontSize: 17,
+                      color: T.warningInk,
+                      letterSpacing: -0.2,
+                      opacity: 0.85,
+                    }}
+                  >
+                    No course detected &mdash; tap to add
+                  </div>
+                )}
+              </div>
 
               {parseResult.playerNames.length > 0 && (
                 <div
