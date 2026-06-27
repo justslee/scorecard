@@ -400,6 +400,15 @@
       "status": "needs-spec",
       "depends_on": [],
       "why": "The parser returns a confidence score but the UI never shows it or asks to confirm."
+    },
+    {
+      "id": "owner-player-identity",
+      "priority": 34,
+      "status": "needs-spec",
+      "title": "Identify the owner by Clerk user id, not players[0] (fix mis-attribution across home + profile)",
+      "rationale": "Reviewer flagged: home (recent scores + scoring avg) and profile (ScoringByTee + Season log) all assume r.players[0] is the owner. Player has no owner flag; array order is just entry order, so a round where the owner is not first-listed attributes another players scores to the owner \u2014 a fabricated-fact-by-bug. Pre-existing (3 call sites: page.tsx:40-41,75-77; profile/page.tsx:71,113). Fix all sites together once user-identity lands: map Clerk user -> player (add owner/userId to Player or round-membership), then derive owner totals from that.",
+      "blocked_by": "needs a Clerk-user -> round-player mapping (user-identity)",
+      "classification": "noticeable-correctness"
     }
   ]
 }
