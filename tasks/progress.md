@@ -3,6 +3,34 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (backend-route-integration-tests — SILENT)
+- **Done:** backend route integration tests proving security properties on the real FastAPI + Postgres stack.
+  Commit `189dbc1` on `integration/next`.
+
+  Files added / changed:
+  - `backend/pyproject.toml`: added `pytest-asyncio>=0.23.0` to dev group; added `asyncio_mode = "auto"` to `[tool.pytest.ini_options]`.
+  - `backend/tests/integration/__init__.py`: empty marker.
+  - `backend/tests/integration/conftest.py`: test harness.
+    - Sets `DATABASE_URL` in `os.environ` at module-top BEFORE any app import (critical: `app/db/engine.py` reads it at import time and raises `RuntimeError` if unset).
+    - `_db` autouse fixture: probes Postgres reachability (TCP), creates schema via `Base.metadata.create_all`, adds `scores_round_player_hole_uq` constraint via raw SQL (it lives in migration not ORM model), truncates all data tables before each test.
+    - `client` fixture: `httpx.AsyncClient(transport=ASGITransport(app=app))` — no real HTTP.
+    - `set_auth(user_id|None)`: sets or clears `app.dependency_overrides[current_user_id|require_owner]` to inject test identity without real JWTs. `_clear_auth_overrides` autouse fixture clears after every test.
+    - Skips gracefully when Postgres is not reachable (local dev without DB); runs fully in CI.
+  - `backend/tests/integration/test_routes.py`: 13 integration tests in 5 classes.
+    - `TestAuthRequired` (3): GET /api/rounds, GET /api/profile/golfer, GET /api/players all return 503 with no auth override and no CLERK config — fails closed.
+    - `TestIDOR` (3): Owner B cannot read/write owner A's round by id (404); round list is scoped to owner (empty list).
+    - `TestScorePersistence` (2): Score round-trips through POST + GET; re-posting same (player, hole) updates not duplicates (upsert via `scores_round_player_hole_uq`); scores on different holes coexist.
+    - `TestProfileCRUD` (2): GET returns 204 when no profile; PUT creates; GET returns persisted data; second PUT does partial update.
+    - `TestPlayersCRUD` (3): Create player, list includes it; owner B sees empty list; owner B gets 404 on owner A's player by id.
+  - `.github/workflows/ci.yml`: added `postgres:16` service to `required-backend` job with `pg_isready` health-check (5s interval, 10 retries); `DATABASE_URL` set as job env var; step renamed "Unit + integration tests (pytest)".
+
+  Harness design: routes import `async_session` from `app.db.engine` directly (not via `Depends(get_session)`), so DB cannot be swapped via `dependency_overrides` — the whole engine is pointed at the test DB via `DATABASE_URL`. Auth IS overridable via `dependency_overrides` since `current_user_id`/`require_owner` are Depends-based.
+
+  Bugs found: none; auth, IDOR, and persistence all behave correctly by code inspection. Tests verify the live behavior end-to-end.
+
+  Gates: `uv run ruff check .` clean · `uv run pytest` 138 passed, 13 skipped (no local Postgres — skip is correct; CI provides Postgres). Frontend untouched: lint 0 · tsc 0 · voice-tests 261/261.
+  SILENT — backend + CI only; no TestFlight-visible change.
+
 ## 2026-06-27 (backend-test-suite — SILENT)
 - **Done:** first backend test suite (`backend/tests/`) — 138 pytest unit tests covering the
   caddie pure-logic modules, wired into the required-backend CI job.
