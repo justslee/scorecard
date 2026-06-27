@@ -6,6 +6,14 @@ name: Deploy backend (SSM)
 #
 # One-time setup: add repo secrets AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
 # (an IAM user with ssm:SendCommand + ssm:GetCommandInvocation on the instance).
+#
+# The deploy runs `alembic upgrade head` (sourcing backend/.env for DATABASE_URL)
+# before restarting the API, so the schema is always current. This is idempotent:
+# revision 001_baseline is a no-op, then 005/006/007 create the core-scoring tables.
+# ONE-TIME data import of any pre-existing data/*.json (run manually once on the box):
+#   su - ubuntu -c "cd ~/scorecard/backend && set -a && . .env && set +a && \
+#     ~/.local/bin/uv run python -m scripts.backfill_core_data --owner-id $OWNER_CLERK_USER_ID"
+# (idempotent: it upserts then renames the json files to *.imported, so re-runs no-op).
 
 on:
   push:
@@ -43,6 +51,7 @@ jobs:
             --comment "deploy-on-merge ${GITHUB_SHA::7}" \
             --parameters 'commands=[
               "su - ubuntu -c \"cd ~/scorecard && git pull --ff-only && ~/.local/bin/uv sync\"",
+              "su - ubuntu -c \"cd ~/scorecard/backend && set -a && . .env && set +a && ~/.local/bin/uv run alembic upgrade head\"",
               "systemctl restart scorecard-api",
               "sleep 3",
               "curl -fsS http://localhost:8000/health"
