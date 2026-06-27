@@ -13,6 +13,9 @@ export const T = {
   pencilSoft: "#958d7d",
   hairline: "rgba(26,42,26,0.12)",
   hairlineSoft: "rgba(26,42,26,0.06)",
+  // Paper-on-dark overlays (e.g. leader callout with T.ink background)
+  paperFaint: "rgba(244,241,234,0.20)",  // paper @ 20% — subtle border/separator
+  paperMid: "rgba(244,241,234,0.50)",    // paper @ 50% — label / secondary text
 
   // Accent is tunable — cobalt is the prototype default.
   flag: "oklch(0.54 0.18 28)",

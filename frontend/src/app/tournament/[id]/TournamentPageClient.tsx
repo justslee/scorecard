@@ -16,8 +16,39 @@ const PLAYER_COLORS = [
   "#6a3a3a", "#6a6a3a", "#3a6a6a", "#5a3a6a",
 ];
 
-// ── Player standing shape ─────────────────────────────────────────────────────
+// ── Leaderboard column layout (px) ─────────────────────────────────────────
+// Chosen so that 3 rounds fit without horizontal scrolling on a 390px iPhone
+// (390px viewport - 44px container padding = 346px content →
+//  28+146+40×3+52 = 346). For 4+ rounds the table scrolls; rank and player
+// columns stay sticky via position:sticky so names remain readable at any N.
+const LB_RANK_W = 28;   // accommodates "T10" at serif 13px
+const LB_PLAYER_W = 146; // 28px avatar + 6px gap + ~112px name text (ellipsis)
+const LB_ROUND_W = 40;  // per-round column
+const LB_TOTAL_W = 52;  // total column (sticky-right)
+const LB_HEADER_H = 34; // fixed header row height
+const LB_ROW_H = 52;    // fixed data row height — keeps both panels in sync
 
+// ── Game format display labels ──────────────────────────────────────────────
+const FORMAT_LABELS: Record<string, string> = {
+  skins: "Skins",
+  nassau: "Nassau",
+  bestBall: "Best Ball",
+  scramble: "Scramble",
+  wolf: "Wolf",
+  threePoint: "Three Point",
+  stableford: "Stableford",
+  modifiedStableford: "Modified Stableford",
+  matchPlay: "Match Play",
+  bingoBangoBongo: "Bingo Bango Bongo",
+  vegas: "Vegas",
+  hammer: "Hammer",
+  rabbit: "Rabbit",
+  trash: "Trash",
+  chicago: "Chicago",
+  defender: "Defender",
+};
+
+// ── Player standing shape ───────────────────────────────────────────────────
 type PlayerStanding = {
   playerId: string;
   name: string;
@@ -33,7 +64,7 @@ type PlayerStanding = {
   totalToPar: number | null;
 };
 
-// ── Pure helpers ──────────────────────────────────────────────────────────────
+// ── Pure helpers ────────────────────────────────────────────────────────────
 
 function playerInitial(name: string): string {
   return (name.trim().charAt(0) || "?").toUpperCase();
@@ -57,10 +88,9 @@ function formatDate(isoString: string): string {
  * Player name resolution priority:
  *  1. playerNamesById (from backend — reflects the players table)
  *  2. round.players (authoritative per-round copy; covers guests not in the players table)
- *  3. playerId as fallback
+ *  3. playerId as last resort
  *
- * playerIds may be empty for tournaments created before player-ids were tracked;
- * in that case we union the players from member rounds.
+ * If tournament.playerIds is empty (pre-player-tracking data), union from round players.
  */
 function computeStandings(
   playerIds: string[],
@@ -109,6 +139,37 @@ function formatToPar(v: number | null): string {
   return `${v}`;
 }
 
+/**
+ * Tie-aware rank label for position idx in a sorted standings list.
+ *
+ * Returns "T1"/"T2" when multiple players share the same total;
+ * plain "1"/"2" when the position is unique; "—" when the player has no scores.
+ */
+function tieRankLabel(
+  sorted: PlayerStanding[],
+  idx: number,
+  mode: LbMode
+): string {
+  const s = sorted[idx];
+  const myTotal = mode === "gross" ? s.totalStrokes : s.totalToPar;
+  if (myTotal === null) return "—";
+
+  // Count players with a strictly better (lower) total
+  const betterCount = sorted.filter((other) => {
+    const ot = mode === "gross" ? other.totalStrokes : other.totalToPar;
+    return ot !== null && ot < myTotal;
+  }).length;
+
+  // Count players tied at the same total (including self)
+  const sameCount = sorted.filter((other) => {
+    const ot = mode === "gross" ? other.totalStrokes : other.totalToPar;
+    return ot === myTotal;
+  }).length;
+
+  const rank = betterCount + 1;
+  return sameCount > 1 ? `T${rank}` : `${rank}`;
+}
+
 function suffix(n: number): string {
   if (n === 1) return "st";
   if (n === 2) return "nd";
@@ -116,7 +177,7 @@ function suffix(n: number): string {
   return "th";
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Page ────────────────────────────────────────────────────────────────────
 
 export default function TournamentPageClient() {
   const router = useRouter();
@@ -133,7 +194,7 @@ export default function TournamentPageClient() {
   const [lbMode, setLbMode] = useState<LbMode>("gross");
 
   useEffect(() => {
-    // Skip for the static prerender placeholder
+    // Skip the static prerender placeholder — real id arrives on the client
     if (!id || id === "placeholder") return;
 
     async function load() {
@@ -148,14 +209,12 @@ export default function TournamentPageClient() {
         setTournament(t);
 
         if (t.roundIds.length > 0) {
-          // Fetch all owner rounds then filter to this tournament's members.
-          // One GET /api/rounds is more efficient than N individual fetches.
+          // One GET /api/rounds then filter — avoids N round fetches.
           const allRounds = await getRoundsAsync();
           const roundIdSet = new Set(t.roundIds);
-          // Also accept rounds where tournamentId matches (belt-and-suspenders)
+          // Belt-and-suspenders: also accept rounds whose tournamentId matches.
           const members = allRounds
             .filter((r) => roundIdSet.has(r.id) || r.tournamentId === id)
-            // Sort ascending by creation date so Day 1 = earliest round
             .sort(
               (a, b) =>
                 new Date(a.createdAt).getTime() -
@@ -163,7 +222,7 @@ export default function TournamentPageClient() {
             );
           setMemberRounds(members);
 
-          // Resolve player names: backend playerNamesById first, then round players
+          // Resolve names: backend playerNamesById first, round players as fallback.
           const namesFromRounds: Record<string, string> = {};
           for (const r of members) {
             for (const p of r.players) {
@@ -175,7 +234,7 @@ export default function TournamentPageClient() {
             ...(t.playerNamesById ?? {}),
           };
 
-          // If the tournament has no explicit playerIds, union from rounds
+          // If tournament has no explicit playerIds, union from member rounds.
           const effectivePlayerIds =
             t.playerIds.length > 0
               ? t.playerIds
@@ -183,12 +242,9 @@ export default function TournamentPageClient() {
                   new Set(members.flatMap((r) => r.players.map((p) => p.id)))
                 );
 
-          const computed = computeStandings(
-            effectivePlayerIds,
-            resolvedNames,
-            members
+          setStandings(
+            computeStandings(effectivePlayerIds, resolvedNames, members)
           );
-          setStandings(computed);
         }
       } catch (e) {
         console.error("[TournamentPageClient] load failed:", e);
@@ -201,7 +257,7 @@ export default function TournamentPageClient() {
     load();
   }, [id]);
 
-  // ── Not found ──────────────────────────────────────────────────────────────
+  // ── Not found ─────────────────────────────────────────────────────────────
   if (!loading && notFound) {
     return (
       <div
@@ -254,7 +310,8 @@ export default function TournamentPageClient() {
     );
   }
 
-  // ── Loading shell ──────────────────────────────────────────────────────────
+  // ── Loading skeleton ───────────────────────────────────────────────────────
+  // Fix #3: calm pulsing masthead skeleton so an LTE fetch doesn't look like a crash.
   if (loading) {
     return (
       <div
@@ -262,8 +319,71 @@ export default function TournamentPageClient() {
           minHeight: "100vh",
           background: `${PAPER_NOISE}, ${T.paper}`,
           backgroundBlendMode: "multiply",
+          fontFamily: T.sans,
+          color: T.ink,
         }}
-      />
+      >
+        {/* Pulse keyframe — scoped to this component render, no external dep */}
+        <style>{`
+          @keyframes lb-skel-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
+          }
+          .lb-skel { animation: lb-skel-pulse 1.5s ease-in-out infinite; }
+        `}</style>
+        <div style={{ maxWidth: 420, margin: "0 auto" }}>
+          <div
+            style={{
+              padding: "max(14px, env(safe-area-inset-top)) 22px 20px",
+            }}
+          >
+            <div
+              className="lb-skel"
+              style={{
+                width: 56,
+                height: 10,
+                background: T.paperDeep,
+                borderRadius: 4,
+                marginBottom: 22,
+              }}
+            />
+            <div
+              className="lb-skel"
+              style={{
+                width: 110,
+                height: 9,
+                background: T.paperDeep,
+                borderRadius: 3,
+                marginBottom: 10,
+              }}
+            />
+            <div
+              className="lb-skel"
+              style={{
+                width: 220,
+                height: 34,
+                background: T.paperDeep,
+                borderRadius: 6,
+                marginBottom: 20,
+              }}
+            />
+            <div style={{ display: "flex", gap: 18 }}>
+              {[70, 56, 56].map((w, i) => (
+                <div
+                  key={i}
+                  className="lb-skel"
+                  style={{
+                    width: w,
+                    height: 38,
+                    background: T.paperDeep,
+                    borderRadius: 4,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -274,7 +394,7 @@ export default function TournamentPageClient() {
   const tournamentGames: Game[] = tournament.games ?? [];
   const hasGames = tournamentGames.length > 0;
 
-  // Sort standings for leaderboard
+  // Sort standings: nulls last, then ascending by selected mode
   const sortedStandings = [...standings].sort((a, b) => {
     if (lbMode === "gross") {
       if (a.totalStrokes === null && b.totalStrokes === null) return 0;
@@ -282,7 +402,6 @@ export default function TournamentPageClient() {
       if (b.totalStrokes === null) return -1;
       return a.totalStrokes - b.totalStrokes;
     }
-    // toPar
     if (a.totalToPar === null && b.totalToPar === null) return 0;
     if (a.totalToPar === null) return 1;
     if (b.totalToPar === null) return -1;
@@ -290,10 +409,6 @@ export default function TournamentPageClient() {
   });
 
   const leader = sortedStandings[0] ?? null;
-
-  // Grid template for leaderboard rows: position | name | R1 … Rn | total
-  const roundColW = memberRounds.length > 3 ? "34px" : "44px";
-  const gridCols = `22px 1fr ${memberRounds.map(() => roundColW).join(" ")} 52px`;
 
   return (
     <div
@@ -306,7 +421,7 @@ export default function TournamentPageClient() {
       }}
     >
       <div style={{ maxWidth: 420, margin: "0 auto", position: "relative" }}>
-        {/* ── Masthead ─────────────────────────────────────────────────────── */}
+        {/* ── Masthead ──────────────────────────────────────────────────── */}
         <div
           style={{
             position: "relative",
@@ -382,7 +497,7 @@ export default function TournamentPageClient() {
           </div>
         </div>
 
-        {/* ── Round progress strip ─────────────────────────────────────────── */}
+        {/* ── Round progress strip ───────────────────────────────────────── */}
         {hasRounds && (
           <div style={{ padding: "0 22px 14px" }}>
             <div style={{ display: "flex", gap: 6 }}>
@@ -460,7 +575,8 @@ export default function TournamentPageClient() {
                         textOverflow: "ellipsis",
                       }}
                     >
-                      {r.courseName}
+                      {/* Fix #6: course name fallback for upcoming/unset rounds */}
+                      {r.courseName || "Course TBD"}
                     </div>
                   </button>
                 );
@@ -469,7 +585,8 @@ export default function TournamentPageClient() {
           </div>
         )}
 
-        {/* ── Leader callout (when scores exist) ──────────────────────────── */}
+        {/* ── Leader callout (when scores exist) ────────────────────────── */}
+        {/* Fix #7: T.paperFaint / T.paperMid replace raw rgba strings */}
         {hasScores && leader && leader.totalStrokes !== null && (
           <div
             style={{
@@ -489,7 +606,7 @@ export default function TournamentPageClient() {
                 height: 44,
                 borderRadius: 99,
                 background: leader.color,
-                border: "1.5px solid rgba(244,241,234,0.2)",
+                border: `1.5px solid ${T.paperFaint}`,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -508,7 +625,7 @@ export default function TournamentPageClient() {
                   fontFamily: T.mono,
                   fontSize: 9,
                   letterSpacing: 1.4,
-                  color: "rgba(244,241,234,0.5)",
+                  color: T.paperMid,
                   textTransform: "uppercase",
                 }}
               >
@@ -537,7 +654,7 @@ export default function TournamentPageClient() {
                   fontFamily: T.mono,
                   fontSize: 9,
                   letterSpacing: 1.3,
-                  color: "rgba(244,241,234,0.5)",
+                  color: T.paperMid,
                 }}
               >
                 {lbMode === "gross" ? "STROKES" : "TO PAR"}
@@ -558,7 +675,7 @@ export default function TournamentPageClient() {
           </div>
         )}
 
-        {/* ── Tab bar ──────────────────────────────────────────────────────── */}
+        {/* ── Tab bar ───────────────────────────────────────────────────── */}
         <div
           style={{
             padding: "0 22px",
@@ -591,11 +708,11 @@ export default function TournamentPageClient() {
           ))}
         </div>
 
-        {/* ── Leaderboard tab ──────────────────────────────────────────────── */}
+        {/* ── Leaderboard tab ───────────────────────────────────────────── */}
         {tab === "leaderboard" && (
           <div style={{ padding: "0 22px 40px" }}>
-            {/* Mode toggle */}
-            <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+            {/* Fix #2: mode toggle minHeight 44 (was 32) */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
               {(
                 [
                   { k: "gross" as LbMode, l: "Gross" },
@@ -606,7 +723,7 @@ export default function TournamentPageClient() {
                   key={m.k}
                   onClick={() => setLbMode(m.k)}
                   style={{
-                    padding: "4px 10px",
+                    padding: "4px 12px",
                     borderRadius: 99,
                     border: `1px solid ${lbMode === m.k ? accent : T.hairline}`,
                     background:
@@ -617,7 +734,9 @@ export default function TournamentPageClient() {
                     letterSpacing: 1.2,
                     textTransform: "uppercase",
                     cursor: "pointer",
-                    minHeight: 32,
+                    minHeight: 44,
+                    display: "flex",
+                    alignItems: "center",
                   }}
                 >
                   {m.l}
@@ -626,99 +745,172 @@ export default function TournamentPageClient() {
             </div>
 
             {standings.length === 0 ? (
-              <div
-                style={{
-                  padding: "40px 0",
-                  textAlign: "center",
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 16,
-                  color: T.pencil,
-                }}
-              >
-                No players in this tournament yet.
-              </div>
+              <EmptyState text="No players in this tournament yet." />
             ) : !hasRounds || !hasScores ? (
+              <EmptyState
+                text={
+                  hasRounds
+                    ? "Scores will appear here as you play."
+                    : "No rounds played yet."
+                }
+              />
+            ) : (
+              // Fix #1: scrollable leaderboard.
+              //
+              // The outer div is overflow-x:auto — the scroll container.
+              // Each row (header + body) is a flex container.
+              // Rank (left:0) and Player (left:LB_RANK_W) cells use
+              // position:sticky so they stay pinned as round columns scroll.
+              // Total uses sticky right:0 for the same reason.
+              // Fixed LB_HEADER_H / LB_ROW_H guarantee pixel-perfect alignment.
+              // At 3 rounds on a 390px device: 28+146+40×3+52 = 346px = no scroll.
+              // At 4+ rounds: table overflows and scrolls; names stay visible.
               <div
                 style={{
-                  padding: "40px 0",
-                  textAlign: "center",
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 16,
-                  color: T.pencil,
+                  overflowX: "auto",
+                  WebkitOverflowScrolling: "touch",
                 }}
               >
-                {hasRounds
-                  ? "Scores will appear here as you play."
-                  : "No rounds played yet."}
-              </div>
-            ) : (
-              <>
                 {/* Column header */}
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: gridCols,
-                    gap: 8,
-                    padding: "6px 0",
+                    display: "flex",
+                    alignItems: "center",
+                    height: LB_HEADER_H,
                     borderBottom: `1px solid ${T.hairline}`,
                     fontFamily: T.mono,
                     fontSize: 8.5,
                     letterSpacing: 1.3,
                     color: T.pencilSoft,
                     textTransform: "uppercase",
+                    minWidth:
+                      LB_RANK_W +
+                      LB_PLAYER_W +
+                      memberRounds.length * LB_ROUND_W +
+                      LB_TOTAL_W,
                   }}
                 >
-                  <div>#</div>
-                  <div>Player</div>
+                  <div
+                    style={{
+                      width: LB_RANK_W,
+                      flexShrink: 0,
+                      position: "sticky",
+                      left: 0,
+                      zIndex: 2,
+                      background: T.paper,
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                    }}
+                  >
+                    #
+                  </div>
+                  <div
+                    style={{
+                      width: LB_PLAYER_W,
+                      flexShrink: 0,
+                      position: "sticky",
+                      left: LB_RANK_W,
+                      zIndex: 2,
+                      background: T.paper,
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                    }}
+                  >
+                    Player
+                  </div>
                   {memberRounds.map((_, i) => (
-                    <div key={i} style={{ textAlign: "right" }}>
+                    <div
+                      key={i}
+                      style={{
+                        width: LB_ROUND_W,
+                        flexShrink: 0,
+                        textAlign: "right",
+                      }}
+                    >
                       R{i + 1}
                     </div>
                   ))}
-                  <div style={{ textAlign: "right" }}>Total</div>
+                  <div
+                    style={{
+                      width: LB_TOTAL_W,
+                      flexShrink: 0,
+                      textAlign: "right",
+                      position: "sticky",
+                      right: 0,
+                      zIndex: 2,
+                      background: T.paper,
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    Total
+                  </div>
                 </div>
 
-                {/* Standing rows */}
+                {/* Body rows */}
                 {sortedStandings.map((s, idx) => {
                   const perRound =
                     lbMode === "gross" ? s.roundTotals : s.roundToPar;
                   const total =
                     lbMode === "gross" ? s.totalStrokes : s.totalToPar;
                   const ranked = s.totalStrokes !== null;
+                  // Fix #5: tie-aware rank label ("T1"/"T2" for ties)
+                  const rankLabel = tieRankLabel(sortedStandings, idx, lbMode);
+
                   return (
                     <div
                       key={s.playerId}
                       style={{
-                        display: "grid",
-                        gridTemplateColumns: gridCols,
-                        gap: 8,
+                        display: "flex",
                         alignItems: "center",
-                        padding: "10px 0",
+                        height: LB_ROW_H,
                         borderBottom: `1px dashed ${T.hairline}`,
+                        minWidth:
+                          LB_RANK_W +
+                          LB_PLAYER_W +
+                          memberRounds.length * LB_ROUND_W +
+                          LB_TOTAL_W,
                       }}
                     >
-                      {/* Rank */}
+                      {/* Rank — sticky left-0 */}
                       <div
                         style={{
-                          fontFamily: T.serif,
-                          fontSize: 16,
-                          color: idx < 3 && ranked ? T.ink : T.pencil,
-                          fontVariantNumeric: "tabular-nums",
-                          lineHeight: 1,
-                        }}
-                      >
-                        {ranked ? idx + 1 : "—"}
-                      </div>
-
-                      {/* Player */}
-                      <div
-                        style={{
+                          width: LB_RANK_W,
+                          flexShrink: 0,
+                          position: "sticky",
+                          left: 0,
+                          zIndex: 1,
+                          background: T.paper,
+                          height: "100%",
                           display: "flex",
                           alignItems: "center",
-                          gap: 8,
-                          minWidth: 0,
+                          fontFamily: T.serif,
+                          fontSize: 13,
+                          color: idx < 3 && ranked ? T.ink : T.pencil,
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {rankLabel}
+                      </div>
+
+                      {/* Player — sticky left-LB_RANK_W */}
+                      <div
+                        style={{
+                          width: LB_PLAYER_W,
+                          flexShrink: 0,
+                          position: "sticky",
+                          left: LB_RANK_W,
+                          zIndex: 1,
+                          background: T.paper,
+                          height: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          paddingRight: 4,
                         }}
                       >
                         <div
@@ -733,7 +925,7 @@ export default function TournamentPageClient() {
                             justifyContent: "center",
                             fontFamily: T.serif,
                             fontStyle: "italic",
-                            fontSize: 13,
+                            fontSize: 12,
                             flexShrink: 0,
                           }}
                         >
@@ -742,10 +934,9 @@ export default function TournamentPageClient() {
                         <div
                           style={{
                             fontFamily: T.sans,
-                            fontSize: 13.5,
+                            fontSize: 13,
                             fontWeight: 500,
                             color: T.ink,
-                            lineHeight: 1.1,
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
@@ -760,6 +951,8 @@ export default function TournamentPageClient() {
                         <div
                           key={ri}
                           style={{
+                            width: LB_ROUND_W,
+                            flexShrink: 0,
                             textAlign: "right",
                             fontFamily: T.serif,
                             fontSize: 15,
@@ -775,10 +968,20 @@ export default function TournamentPageClient() {
                         </div>
                       ))}
 
-                      {/* Total */}
+                      {/* Total — sticky right-0 */}
                       <div
                         style={{
+                          width: LB_TOTAL_W,
+                          flexShrink: 0,
                           textAlign: "right",
+                          position: "sticky",
+                          right: 0,
+                          zIndex: 1,
+                          background: T.paper,
+                          height: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "flex-end",
                           fontFamily: T.serif,
                           fontSize: 22,
                           letterSpacing: -0.3,
@@ -796,27 +999,16 @@ export default function TournamentPageClient() {
                     </div>
                   );
                 })}
-              </>
+              </div>
             )}
           </div>
         )}
 
-        {/* ── Rounds tab ───────────────────────────────────────────────────── */}
+        {/* ── Rounds tab ───────────────────────────────────────────────── */}
         {tab === "rounds" && (
           <div style={{ padding: "0 22px 40px" }}>
             {!hasRounds ? (
-              <div
-                style={{
-                  padding: "40px 0",
-                  textAlign: "center",
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 16,
-                  color: T.pencil,
-                }}
-              >
-                No rounds played yet.
-              </div>
+              <EmptyState text="No rounds played yet." />
             ) : (
               memberRounds.map((r, i) => {
                 const done = r.status === "completed";
@@ -876,7 +1068,8 @@ export default function TournamentPageClient() {
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {r.courseName}
+                          {/* Fix #6: course name fallback */}
+                          {r.courseName || "Course TBD"}
                         </div>
                       </div>
                       {live && (
@@ -895,7 +1088,7 @@ export default function TournamentPageClient() {
                       )}
                     </div>
 
-                    {/* Groups if available (shown for upcoming / live rounds) */}
+                    {/* Groups — shown for upcoming / live rounds */}
                     {r.groups && r.groups.length > 0 && !done && (
                       <div
                         style={{
@@ -910,18 +1103,17 @@ export default function TournamentPageClient() {
                             const st = standings.find(
                               (st) => st.playerId === pid
                             );
-                            if (st) {
+                            if (st)
                               return {
                                 name: st.name,
                                 initial: st.initial,
                                 color: st.color,
                               };
-                            }
-                            const fallbackName =
+                            const fallback =
                               tournament.playerNamesById?.[pid] ?? pid;
                             return {
-                              name: fallbackName,
-                              initial: playerInitial(fallbackName),
+                              name: fallback,
+                              initial: playerInitial(fallback),
                               color: T.pencil,
                             };
                           });
@@ -1054,13 +1246,12 @@ export default function TournamentPageClient() {
                       </div>
                     )}
 
-                    {/* Link to the round scorecard */}
                     <button
                       onClick={() => router.push(`/round/${r.id}`)}
                       style={{
                         marginTop: 10,
                         width: "100%",
-                        padding: "8px 12px",
+                        padding: "0 12px",
                         borderRadius: 10,
                         border: `1px solid ${T.hairline}`,
                         background: "transparent",
@@ -1085,22 +1276,11 @@ export default function TournamentPageClient() {
           </div>
         )}
 
-        {/* ── Games tab ────────────────────────────────────────────────────── */}
+        {/* ── Games tab ─────────────────────────────────────────────────── */}
         {tab === "games" && (
           <div style={{ padding: "0 22px 40px" }}>
             {!hasGames ? (
-              <div
-                style={{
-                  padding: "40px 0",
-                  textAlign: "center",
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 16,
-                  color: T.pencil,
-                }}
-              >
-                No games set up yet.
-              </div>
+              <EmptyState text="No games set up yet." />
             ) : (
               tournamentGames.map((g: Game) => (
                 <div
@@ -1129,6 +1309,7 @@ export default function TournamentPageClient() {
                     >
                       {g.name}
                     </div>
+                    {/* Fix #4: human-readable format label instead of raw camelCase */}
                     <div
                       style={{
                         fontFamily: T.mono,
@@ -1138,7 +1319,7 @@ export default function TournamentPageClient() {
                         textTransform: "uppercase",
                       }}
                     >
-                      {g.format}
+                      {FORMAT_LABELS[g.format] ?? g.format}
                     </div>
                   </div>
                   {g.settings?.pointValue != null && (
@@ -1189,6 +1370,8 @@ export default function TournamentPageClient() {
   );
 }
 
+// ── Sub-components ───────────────────────────────────────────────────────────
+
 function Meta({
   k,
   v,
@@ -1235,6 +1418,23 @@ function Meta({
           {sub}
         </div>
       )}
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        padding: "40px 0",
+        textAlign: "center",
+        fontFamily: T.serif,
+        fontStyle: "italic",
+        fontSize: 16,
+        color: T.pencil,
+      }}
+    >
+      {text}
     </div>
   );
 }

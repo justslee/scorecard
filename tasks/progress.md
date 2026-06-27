@@ -864,3 +864,33 @@ Format: date — done / in-progress / blocked.
   - Designer flags: leader callout is neutral ("Leading {name}") — not "Your position" since
     there is no identity→player mapping yet. TFEED removed; re-introduce when a real activity
     stream exists. To-par mode uses "E" for even (consistent with home + scoring).
+
+## 2026-06-27 (wire-tournament-detail reviewer + designer follow-up)
+- **Done:** reviewer + designer fixes for `wire-tournament-detail` (one commit on integration/next).
+  SHIP-BLOCKERS fixed:
+  1. **Leaderboard grid with 3+ rounds (FIXED):** replaced CSS grid with overflow-x:auto scroll
+     container. Each row is `display:flex` with `position:sticky` on rank (left:0, 28px) and
+     player (left:28px, 146px) columns — stay pinned as round columns scroll horizontally.
+     Total (52px) is sticky right:0. Fixed row heights LB_HEADER_H=34/LB_ROW_H=52 align both
+     panels. Widths: 28+146+40×3+52=346px on 390px device = 3 rounds fit with no scroll;
+     4+ rounds scroll. Works cleanly for n=1..6+.
+  2. **Mode toggle touch target (FIXED):** `minHeight: 32` → `minHeight: 44` + `display:flex;
+     alignItems:center` on toggle buttons.
+  SHOULD-FIX fixed:
+  3. **Loading skeleton (FIXED):** pulsing masthead skeleton replaces blank paper screen.
+     CSS keyframe `lb-skel-pulse` in a `<style>` JSX tag; T.paperDeep placeholder blocks for
+     back-button / date / title / three meta columns. No external dep.
+  4. **Game format display names (FIXED):** `FORMAT_LABELS` map (16 formats).
+     bestBall → "Best Ball", bingoBangoBongo → "Bingo Bango Bongo", etc. Falls back to raw
+     `g.format` for any unknown key.
+  5. **Tie ranks (FIXED):** `tieRankLabel(sorted, idx, mode)` — counts players with strictly
+     better total (betterCount), counts players at same total (sameCount). Returns "T1"/"T2"
+     for ties, plain "1"/"2" unique, "—" no scores.
+  6. **Upcoming course fallback (FIXED):** `r.courseName || "Course TBD"` in round strip +
+     Rounds tab card.
+  7. **Leader callout raw rgba (FIXED):** `T.paperFaint` (rgba 244,241,234 @ 0.20) and
+     `T.paperMid` (rgba 244,241,234 @ 0.50) added to tokens.ts; both callout usages updated.
+  - `EmptyState` extracted as a shared sub-component (de-duped 4 identical inline blocks).
+  - Gates: lint 0 (modified files), tsc 0 errors, voice-tests 260/260, build OK.
+  - NOTICEABLE — grid no longer breaks at 3 rounds; sticky columns keep names visible on
+    scroll; loading skeleton, readable format names, correct tie ranks.
