@@ -431,6 +431,14 @@
       "title": "Backend pytest suite for caddie pure-logic + CI gate",
       "done_note": "138 tests (strokes_gained/club_selection/dispersion/aim_point/_safe_json_extract); pytest added to dev deps + required CI step. No bugs found. Verified 138 pass from clean sync.",
       "classification": "silent"
+    },
+    {
+      "id": "promote-integration-tests",
+      "priority": 37,
+      "status": "ready",
+      "title": "Promote backend route/integration tests from advisory to required once first CI run is green",
+      "rationale": "13 route/integration tests (auth-fails-closed, IDOR, persistence, CRUD) were written without a local Postgres so never executed; currently an advisory continue-on-error CI job. After the first real GitHub Actions run shows the advisory-backend-integration job green, fold it into required-backend (add postgres service there, drop continue-on-error) and delete the advisory job.",
+      "classification": "silent"
     }
   ]
 }
