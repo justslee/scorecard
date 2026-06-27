@@ -1801,3 +1801,32 @@ NEXT REAL PING = the bundle approval: when owner confirms sign-in works on v0.1.
 TestFlight build with the whole bundle and email looper.approvals → owner for "ship it". If
 sign-in fails, it's likely the Clerk DEV-instance origin on `capacitor://localhost` (see the
 auth checkpoint above) — owner-side dashboard fix.
+
+---
+
+## Bundle pre-ship sign-off — 2026-06-27 (security + code review)
+
+Holistic `/security-review` + code review of the whole bundle (`origin/main..integration/next`,
+79 commits, 84 files): **VERDICT = SHIP.** No must-fix security/correctness blockers in the
+cross-cutting/integration view (each item was also reviewed per-diff).
+
+Verified clean: (1) auth gate ↔ all authed calls fails closed — tokenless/expired → 401, no
+silent wrong-user data, token never logged or put in a URL; (2) every consumed endpoint
+(caddie voice/recommend, OCR parse-scorecard, parse-round-setup, rounds/{id}/scores,
+profile/golfer, getRounds) is owner-gated under `_owner_only` + owner-scoped (no IDOR);
+(3) OCR image path keeps the Anthropic key server-side; OCR text is auto-escaped (no XSS);
+(4) `players[0]=owner` cannot leak another user's data in single-owner beta (getRounds is
+owner-scoped) — tracked as P34; (5) no committed secrets; ship.sh carries only public config;
+(6) no overlay/scoring cross-cutting regression.
+
+DEPLOY-TIME CHECKLIST (config, outside the diff — verify on the EC2 box before/at ship):
+- Production backend must have `CLERK_JWKS_URL` set and `ALLOW_ANONYMOUS` unset (else
+  `current_user_id` won't fail-closed as intended).
+- Before any WIDER release (beyond owner beta): switch Clerk from the DEV instance
+  (`pk_test_…` baked in ship.sh) to a PRODUCTION instance (`pk_live_…`) and update backend
+  `CLERK_JWKS_URL`/`CLERK_ISSUER`/`OWNER_CLERK_USER_ID` to match.
+
+THE ONLY REMAINING GATE = owner confirms sign-in + voice on TestFlight **v0.1.266**. On
+confirmation: cut one build of this bundle (`ops/ios/ship.sh`) and email looper.approvals →
+owner for "ship it". If sign-in stalls, capture the `[auth] DIAGNOSTIC signed-in but no token`
+log — it's the capacitor://localhost + Clerk-dev-instance origin caveat (owner-side Clerk fix).
