@@ -235,6 +235,12 @@ export default function RoundSetupPage() {
       handicap: p.handicap,
     }));
 
+    // De-dup by id: if voice returns the same name twice both mapping to the same saved
+    // player id, keep only the first occurrence to avoid duplicate round_players on backend.
+    const deduped = roundPlayers.filter(
+      (p, idx, arr) => arr.findIndex((q) => q.id === p.id) === idx
+    );
+
     // Build default course hole layout (scoring-course data; GolfAPI holes added later).
     const courseName = selectedCourse?.name ?? "New Round";
     const defaultCourse = createDefaultCourse(courseName);
@@ -255,7 +261,7 @@ export default function RoundSetupPage() {
         roundId: "", // placeholder — backend assigns its own roundId FK
         format: gameFormat,
         name: GAME_OPTIONS.find((g) => g.id === game)?.l ?? game,
-        playerIds: roundPlayers.map((p) => p.id),
+        playerIds: deduped.map((p) => p.id),
         settings: { pointValue: stakeValue > 0 ? stakeValue : undefined },
       });
     }
@@ -266,7 +272,7 @@ export default function RoundSetupPage() {
         courseId,
         courseName,
         teeName: teeLabel,
-        players: roundPlayers,
+        players: deduped,
         holes: holeList,
         games: gameObjects,
       });
@@ -277,7 +283,19 @@ export default function RoundSetupPage() {
       // Navigate using the SERVER-RETURNED id (not the client placeholder).
       router.push(`/round/${created.id}`);
     } catch (e) {
-      console.error("[round/new] createRound API failed — using local fallback:", e);
+      // fetchAPI throws a generic Error (not TypeError) for 4xx / 5xx responses.
+      // Only a TypeError signals a genuine network / offline failure — safe to fabricate
+      // a local round and navigate. HTTP errors must surface so the user can act.
+      if (!(e instanceof TypeError)) {
+        const msg = e instanceof Error ? e.message : "Failed to create round.";
+        setCreateError(
+          msg.length > 120 ? "Server error — check your connection and try again." : msg
+        );
+        setIsCreating(false);
+        return;
+      }
+
+      console.error("[round/new] createRound API failed (offline) — using local fallback:", e);
 
       // Offline fallback: generate a client-side UUID and save locally only.
       const fallbackId = crypto.randomUUID();
@@ -287,7 +305,7 @@ export default function RoundSetupPage() {
         courseName,
         teeName: teeLabel,
         date: new Date().toISOString(),
-        players: roundPlayers,
+        players: deduped,
         scores: [],
         holes: holeList,
         games: gameObjects,
@@ -508,7 +526,7 @@ export default function RoundSetupPage() {
                         key={q}
                         onClick={() => handleQuickReply(q)}
                         style={{
-                          padding: "7px 11px",
+                          padding: "9px 13px",
                           borderRadius: 99,
                           border: `1px solid ${accent}`,
                           background: "transparent",
@@ -521,6 +539,7 @@ export default function RoundSetupPage() {
                           display: "inline-flex",
                           alignItems: "center",
                           gap: 5,
+                          minHeight: 38,
                         }}
                       >
                         <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
@@ -532,7 +551,7 @@ export default function RoundSetupPage() {
                     <button
                       onClick={() => setShowVoiceSetup(true)}
                       style={{
-                        padding: "7px 11px",
+                        padding: "9px 13px",
                         borderRadius: 99,
                         border: `1px dashed ${T.hairline}`,
                         background: "transparent",
@@ -541,6 +560,9 @@ export default function RoundSetupPage() {
                         fontSize: 12,
                         letterSpacing: -0.1,
                         cursor: "pointer",
+                        minHeight: 38,
+                        display: "inline-flex",
+                        alignItems: "center",
                       }}
                     >
                       Say something else&hellip;
@@ -715,6 +737,13 @@ export default function RoundSetupPage() {
                     background: "transparent",
                     border: "none",
                     cursor: "pointer",
+                    // ≥44pt touch target
+                    minHeight: 44,
+                    minWidth: 44,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    padding: "0 4px",
                   }}
                 >
                   + Add
@@ -927,82 +956,117 @@ export default function RoundSetupPage() {
           }}
         >
           {/* Mic button — opens VoiceRoundSetup */}
-          <button
-            onClick={() => setShowVoiceSetup(true)}
+          <div
             style={{
               flexShrink: 0,
-              position: "relative",
-              width: 52,
-              height: 52,
-              borderRadius: 99,
-              border: "none",
-              background: T.paper,
-              color: T.ink,
-              boxShadow: `inset 0 0 0 1px ${T.hairline}`,
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
+              gap: 3,
             }}
-            aria-label="Set up round by voice"
           >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
+            <button
+              onClick={() => setShowVoiceSetup(true)}
+              style={{
+                position: "relative",
+                width: 56,
+                height: 56,
+                borderRadius: 99,
+                border: "none",
+                background: T.ink,
+                color: T.paper,
+                // Accent ring for visual weight
+                boxShadow: `0 0 0 3px ${accent}33, 0 8px 20px rgba(26,42,26,0.22)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+              }}
+              aria-label="Set up round by voice"
             >
-              <rect x="9" y="3" width="6" height="12" rx="3" />
-              <path d="M5 11a7 7 0 0 0 14 0" />
-              <path d="M12 18v3" />
-            </svg>
-          </button>
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <rect x="9" y="3" width="6" height="12" rx="3" />
+                <path d="M5 11a7 7 0 0 0 14 0" />
+                <path d="M12 18v3" />
+              </svg>
+            </button>
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 7.5,
+                letterSpacing: 1.3,
+                color: T.pencilSoft,
+                textTransform: "uppercase",
+              }}
+            >
+              Speak
+            </div>
+          </div>
 
-          {/* Tee off button */}
-          <button
-            onClick={handleTeeOff}
-            disabled={!isReady || isCreating}
-            style={{
-              flex: 1,
-              padding: "14px",
-              borderRadius: 99,
-              border: "none",
-              background: isReady && !isCreating ? T.ink : T.pencilSoft,
-              color: T.paper,
-              cursor: isReady && !isCreating ? "pointer" : "not-allowed",
-              fontFamily: T.sans,
-              fontSize: 14,
-              fontWeight: 500,
-              letterSpacing: -0.1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              transition: "background 0.25s",
-            }}
-          >
-            {isCreating ? (
-              <>
+          {/* Tee off button + disabled hint */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
+            <button
+              onClick={handleTeeOff}
+              disabled={!isReady || isCreating}
+              style={{
+                width: "100%",
+                padding: "14px",
+                borderRadius: 99,
+                border: "none",
+                background: isReady && !isCreating ? T.ink : T.pencilSoft,
+                color: T.paper,
+                cursor: isReady && !isCreating ? "pointer" : "not-allowed",
+                fontFamily: T.sans,
+                fontSize: 14,
+                fontWeight: 500,
+                letterSpacing: -0.1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                transition: "background 0.25s",
+              }}
+            >
+              {isCreating ? (
                 <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Creating&hellip;</span>
-              </>
-            ) : (
-              <>
-                <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Tee off</span>
-                <span
-                  style={{
-                    fontFamily: T.mono,
-                    fontSize: 10,
-                    letterSpacing: 1.2,
-                    opacity: 0.7,
-                  }}
-                >
-                  {"→"}
-                </span>
-              </>
+              ) : (
+                <>
+                  <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Tee off</span>
+                  <span
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 10,
+                      letterSpacing: 1.2,
+                      opacity: 0.7,
+                    }}
+                  >
+                    {"→"}
+                  </span>
+                </>
+              )}
+            </button>
+            {!isReady && !isCreating && (
+              <div
+                style={{
+                  textAlign: "center",
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 12,
+                  color: T.pencilSoft,
+                  letterSpacing: -0.1,
+                }}
+              >
+                Add a player above to start
+              </div>
             )}
-          </button>
+          </div>
         </div>
       </div>
 
@@ -1033,9 +1097,7 @@ export default function RoundSetupPage() {
                 right: 0,
                 bottom: 0,
                 zIndex: 41,
-                // Player picker uses ink bg (dark) to host the dark-themed PlayerAutocomplete;
-                // all other pickers use the standard paper bg.
-                background: picker === "player" ? T.ink : T.paper,
+                background: T.paper,
                 borderRadius: "20px 20px 0 0",
                 padding: "12px 0 28px",
                 maxHeight: "80vh",
@@ -1053,10 +1115,7 @@ export default function RoundSetupPage() {
                   width: 40,
                   height: 4,
                   borderRadius: 99,
-                  background:
-                    picker === "player"
-                      ? "rgba(244,241,234,0.2)"
-                      : T.hairline,
+                  background: T.hairline,
                   margin: "0 auto 10px",
                 }}
               />
@@ -1107,7 +1166,7 @@ export default function RoundSetupPage() {
                 />
               )}
 
-              {/* Player picker — dark sheet hosting PlayerAutocomplete */}
+              {/* Player picker — light paper sheet hosting light-themed PlayerAutocomplete */}
               {picker === "player" && (
                 <div style={{ padding: "4px 22px 0", flex: 1, overflow: "auto" }}>
                   {/* Header */}
@@ -1117,7 +1176,7 @@ export default function RoundSetupPage() {
                         fontFamily: T.mono,
                         fontSize: 9,
                         letterSpacing: 1.5,
-                        color: "rgba(244,241,234,0.45)",
+                        color: T.pencil,
                         textTransform: "uppercase",
                         marginBottom: 2,
                       }}
@@ -1129,7 +1188,7 @@ export default function RoundSetupPage() {
                         fontFamily: T.serif,
                         fontStyle: "italic",
                         fontSize: 22,
-                        color: T.paper,
+                        color: T.ink,
                         letterSpacing: -0.3,
                       }}
                     >

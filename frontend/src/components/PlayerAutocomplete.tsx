@@ -1,8 +1,14 @@
 'use client';
 
+/**
+ * PlayerAutocomplete — yardage-book styled player name input with suggestion dropdown.
+ *
+ * Rebuilt with T.* tokens and inline SVGs. No Tailwind, no lucide-react, no dark theme.
+ */
+
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, User } from 'lucide-react';
+import { T, DEFAULT_ACCENT } from '@/components/yardage/tokens';
 import { SavedPlayer, Player } from '@/lib/types';
 
 interface PlayerAutocompleteProps {
@@ -15,6 +21,31 @@ interface PlayerAutocompleteProps {
   onRemove?: () => void;
   canRemove?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Inline icons
+// ---------------------------------------------------------------------------
+
+function XIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M2 2l10 10M12 2L2 12" />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function PlayerAutocomplete({
   value,
@@ -31,7 +62,7 @@ export default function PlayerAutocomplete({
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  
+
   // Stable ID for custom (non-saved) players based on position
   const customPlayerId = `custom-player-${index}`;
 
@@ -39,29 +70,25 @@ export default function PlayerAutocomplete({
   const isLinkedPlayer = savedPlayers.some((sp) => sp.id === value.id);
 
   // Filter available players (not already selected by other inputs)
-  // We use savedPlayer IDs only for filtering, not custom IDs
-  const selectedSavedIds = selectedIds.filter(id => !id.startsWith('custom-player-'));
+  const selectedSavedIds = selectedIds.filter((id) => !id.startsWith('custom-player-'));
   const availablePlayers = savedPlayers.filter(
     (sp) => !selectedSavedIds.includes(sp.id) || sp.id === value.id
   );
 
-  // Get suggestions based on input
   const getSuggestions = (): SavedPlayer[] => {
     if (!inputValue.trim()) {
-      // Show all available when empty
       return availablePlayers.slice(0, 10);
     }
-    
     const lower = inputValue.toLowerCase();
     return availablePlayers
       .filter((sp) => {
-        const nameMatch = sp.name.toLowerCase().includes(lower);
-        const nicknameMatch = sp.nickname?.toLowerCase().includes(lower);
-        const emailMatch = sp.email?.toLowerCase().includes(lower);
-        return nameMatch || nicknameMatch || emailMatch;
+        return (
+          sp.name.toLowerCase().includes(lower) ||
+          sp.nickname?.toLowerCase().includes(lower) ||
+          sp.email?.toLowerCase().includes(lower)
+        );
       })
       .sort((a, b) => {
-        // Prioritize matches at start of name
         const aStartsWith = a.name.toLowerCase().startsWith(lower) ? 0 : 1;
         const bStartsWith = b.name.toLowerCase().startsWith(lower) ? 0 : 1;
         return aStartsWith - bStartsWith;
@@ -86,9 +113,7 @@ export default function PlayerAutocomplete({
     if (listRef.current && highlightedIndex >= 0) {
       const items = listRef.current.querySelectorAll('[data-suggestion]');
       const item = items[highlightedIndex] as HTMLElement;
-      if (item) {
-        item.scrollIntoView({ block: 'nearest' });
-      }
+      if (item) item.scrollIntoView({ block: 'nearest' });
     }
   }, [highlightedIndex]);
 
@@ -96,12 +121,7 @@ export default function PlayerAutocomplete({
     const newValue = e.target.value;
     setInputValue(newValue);
     setIsOpen(true);
-    
-    // Update the player with typed name (use stable custom ID)
-    onChange({
-      id: customPlayerId,
-      name: newValue,
-    });
+    onChange({ id: customPlayerId, name: newValue });
   };
 
   const handleSelectPlayer = (savedPlayer: SavedPlayer) => {
@@ -124,32 +144,24 @@ export default function PlayerAutocomplete({
       }
       return;
     }
-
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setHighlightedIndex((prev) =>
-          prev < suggestions.length - 1 ? prev + 1 : 0
-        );
+        setHighlightedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : 0));
         break;
       case 'ArrowUp':
         e.preventDefault();
-        setHighlightedIndex((prev) =>
-          prev > 0 ? prev - 1 : suggestions.length - 1
-        );
+        setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : suggestions.length - 1));
         break;
       case 'Enter':
         e.preventDefault();
-        if (suggestions[highlightedIndex]) {
-          handleSelectPlayer(suggestions[highlightedIndex]);
-        }
+        if (suggestions[highlightedIndex]) handleSelectPlayer(suggestions[highlightedIndex]);
         break;
       case 'Escape':
         e.preventDefault();
         setIsOpen(false);
         break;
       case 'Tab':
-        // Allow tab to close and move focus
         setIsOpen(false);
         break;
     }
@@ -161,35 +173,57 @@ export default function PlayerAutocomplete({
   };
 
   const handleBlur = () => {
-    // Delay to allow click on suggestion
     setTimeout(() => setIsOpen(false), 150);
   };
 
-  // Highlight matching text in name
+  // Highlight matching text — uses inline style, not Tailwind class
   const highlightMatch = (text: string, query: string) => {
-    if (!query.trim()) return text;
-    
+    if (!query.trim()) return <>{text}</>;
     const lower = text.toLowerCase();
     const queryLower = query.toLowerCase();
-    const index = lower.indexOf(queryLower);
-    
-    if (index === -1) return text;
-    
+    const idx = lower.indexOf(queryLower);
+    if (idx === -1) return <>{text}</>;
     return (
       <>
-        {text.slice(0, index)}
-        <span className="text-emerald-300 font-semibold">
-          {text.slice(index, index + query.length)}
+        {text.slice(0, idx)}
+        <span style={{ color: DEFAULT_ACCENT, fontWeight: 600 }}>
+          {text.slice(idx, idx + query.length)}
         </span>
-        {text.slice(index + query.length)}
+        {text.slice(idx + query.length)}
       </>
     );
   };
 
   return (
-    <div className="relative">
-      <div className="flex gap-2">
-        <div className="relative flex-1">
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {/* Input wrapper */}
+        <div style={{ position: 'relative', flex: 1 }}>
+          {/* Linked-player check badge */}
+          {isLinkedPlayer && (
+            <div
+              style={{
+                position: 'absolute',
+                left: 12,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                pointerEvents: 'none',
+                width: 20,
+                height: 20,
+                borderRadius: 99,
+                border: `1px solid ${T.hairline}`,
+                background: T.paperDeep,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: T.mono,
+                fontSize: 9,
+                color: DEFAULT_ACCENT,
+              }}
+            >
+              ✓
+            </div>
+          )}
           <input
             ref={inputRef}
             type="text"
@@ -199,108 +233,180 @@ export default function PlayerAutocomplete({
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
-            className={`w-full px-4 py-3 rounded-2xl bg-white/5 border focus:bg-white/7 focus:border-emerald-400/50 focus:outline-none transition-colors ${
-              isLinkedPlayer
-                ? 'border-emerald-400/30 pl-11'
-                : 'border-white/10'
-            }`}
             role="combobox"
             aria-expanded={isOpen}
             aria-haspopup="listbox"
             aria-autocomplete="list"
+            style={{
+              width: '100%',
+              padding: isLinkedPlayer ? '11px 14px 11px 38px' : '11px 14px',
+              borderRadius: 12,
+              border: `1px solid ${isLinkedPlayer ? DEFAULT_ACCENT + '55' : T.hairline}`,
+              background: T.paperDeep,
+              color: T.ink,
+              fontFamily: T.sans,
+              fontSize: 14,
+              letterSpacing: -0.1,
+              outline: 'none',
+              boxSizing: 'border-box',
+              WebkitAppearance: 'none',
+            }}
           />
-          {isLinkedPlayer && (
-            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
-              <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                <span className="text-xs text-emerald-300">✓</span>
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Remove button */}
         {canRemove && onRemove && (
           <button
             type="button"
             onClick={onRemove}
-            className="btn rounded-2xl px-4 bg-red-500/10 hover:bg-red-500/20 border border-red-400/20 text-red-200"
             aria-label="Remove player"
+            style={{
+              minWidth: 44,
+              height: 44,
+              borderRadius: 12,
+              border: `1px solid ${T.hairline}`,
+              background: 'transparent',
+              color: T.pencilSoft,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
           >
-            <X className="h-5 w-5" aria-hidden="true" />
+            <XIcon />
           </button>
         )}
       </div>
 
-      {/* Suggestions Dropdown */}
+      {/* Suggestions dropdown */}
       <AnimatePresence>
         {isOpen && suggestions.length > 0 && (
           <motion.div
             ref={listRef}
-            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            key="suggestions"
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.98 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute z-50 mt-2 w-full rounded-2xl bg-zinc-900/95 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden"
+            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: 0.14, ease: 'easeOut' }}
             role="listbox"
+            style={{
+              position: 'absolute',
+              zIndex: 60,
+              top: 'calc(100% + 6px)',
+              left: 0,
+              right: 0,
+              borderRadius: 14,
+              background: T.paper,
+              border: `1px solid ${T.hairline}`,
+              boxShadow: '0 12px 32px rgba(26,42,26,0.14)',
+              overflow: 'hidden',
+            }}
           >
-            <div className="max-h-64 overflow-y-auto py-1">
-              {suggestions.map((sp, index) => (
+            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+              {suggestions.map((sp, i) => (
                 <button
                   key={sp.id}
                   data-suggestion
                   type="button"
                   onClick={() => handleSelectPlayer(sp)}
-                  onMouseEnter={() => setHighlightedIndex(index)}
-                  className={`w-full px-4 py-3 flex items-center gap-3 transition-colors text-left ${
-                    index === highlightedIndex
-                      ? 'bg-emerald-500/15'
-                      : 'hover:bg-white/5'
-                  }`}
+                  onMouseEnter={() => setHighlightedIndex(i)}
                   role="option"
-                  aria-selected={index === highlightedIndex}
+                  aria-selected={i === highlightedIndex}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    background: i === highlightedIndex ? T.paperDeep : 'transparent',
+                    border: 'none',
+                    borderTop: i === 0 ? 'none' : `1px solid ${T.hairline}`,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    minHeight: 48,
+                  }}
                 >
                   {/* Avatar */}
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-white/10 flex items-center justify-center flex-shrink-0">
+                  <div
+                    style={{
+                      flexShrink: 0,
+                      width: 32,
+                      height: 32,
+                      borderRadius: 99,
+                      background: T.ink,
+                      color: T.paper,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontFamily: T.serif,
+                      fontStyle: 'italic',
+                      fontSize: 14,
+                      overflow: 'hidden',
+                    }}
+                  >
                     {sp.avatarUrl ? (
-                      <img
-                        src={sp.avatarUrl}
-                        alt=""
-                        className="w-full h-full rounded-full object-cover"
-                      />
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={sp.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
-                      <span className="text-sm font-semibold text-emerald-300">
-                        {sp.name.charAt(0).toUpperCase()}
-                      </span>
+                      sp.name.charAt(0).toUpperCase()
                     )}
                   </div>
 
-                  {/* Name & Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">
+                  {/* Name & nickname */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontSize: 16,
+                        color: T.ink,
+                        letterSpacing: -0.2,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
                       {highlightMatch(sp.name, inputValue)}
                     </div>
                     {sp.nickname && (
-                      <div className="text-sm text-zinc-500 truncate">
-                        &quot;{highlightMatch(sp.nickname, inputValue)}&quot;
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 9,
+                          letterSpacing: 1.1,
+                          color: T.pencilSoft,
+                          textTransform: 'uppercase',
+                          marginTop: 1,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        &ldquo;{sp.nickname}&rdquo;
                       </div>
                     )}
                   </div>
 
-                  {/* Handicap Badge */}
+                  {/* Handicap badge */}
                   {sp.handicap !== undefined && (
-                    <div className="flex-shrink-0 px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
-                      <span className="text-xs text-zinc-400">
-                        {sp.handicap}
-                      </span>
+                    <div
+                      style={{
+                        flexShrink: 0,
+                        padding: '3px 8px',
+                        borderRadius: 99,
+                        border: `1px solid ${T.hairline}`,
+                        background: T.paperDeep,
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        letterSpacing: 0.5,
+                        color: T.pencil,
+                      }}
+                    >
+                      {sp.handicap}
                     </div>
                   )}
                 </button>
               ))}
-            </div>
-
-            {/* Footer hint */}
-            <div className="px-4 py-2 border-t border-white/5 bg-white/2">
-              <p className="text-xs text-zinc-500">
-                ↑↓ to navigate • Enter to select • Esc to close
-              </p>
             </div>
           </motion.div>
         )}
@@ -310,17 +416,42 @@ export default function PlayerAutocomplete({
       <AnimatePresence>
         {isOpen && inputValue.trim() && suggestions.length === 0 && (
           <motion.div
-            initial={{ opacity: 0, y: -8 }}
+            key="no-matches"
+            initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="absolute z-50 mt-2 w-full rounded-2xl bg-zinc-900/95 backdrop-blur-xl border border-white/10 shadow-2xl p-4"
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.14, ease: 'easeOut' }}
+            style={{
+              position: 'absolute',
+              zIndex: 60,
+              top: 'calc(100% + 6px)',
+              left: 0,
+              right: 0,
+              borderRadius: 14,
+              background: T.paper,
+              border: `1px solid ${T.hairline}`,
+              boxShadow: '0 12px 32px rgba(26,42,26,0.14)',
+              padding: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
           >
-            <div className="flex items-center gap-3 text-zinc-400">
-              <User className="h-5 w-5" />
-              <span className="text-sm">
-                No friends found — &quot;{inputValue}&quot; will be added as a new player
-              </span>
+            <div style={{ color: T.pencilSoft }}>
+              <UserIcon />
             </div>
+            <span
+              style={{
+                fontFamily: T.serif,
+                fontStyle: 'italic',
+                fontSize: 14,
+                color: T.pencilSoft,
+                letterSpacing: -0.2,
+                lineHeight: 1.35,
+              }}
+            >
+              &ldquo;{inputValue}&rdquo; will be added as a new player.
+            </span>
           </motion.div>
         )}
       </AnimatePresence>

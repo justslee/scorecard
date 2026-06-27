@@ -244,6 +244,35 @@ Format: date — done / in-progress / blocked.
   (P11) to ready; these are user-facing → TestFlight approval bundles. Lesson: add a real-DB
   migration smoke test (throwaway Postgres) to catch execution-time DDL bugs the offline gate can't.
 
+## 2026-06-26 (wire-round-new — follow-up fixes)
+- **Done:** coordinator review fixes for `wire-round-new` (same branch, amend-style commit).
+  BLOCKERS:
+  1. **Error handling (BLOCKER 1):** `handleTeeOff` catch now distinguishes `TypeError`
+     (network-down = offline fallback OK) from `Error` (HTTP 4xx/5xx = show `createError`
+     banner, no local round fabricated).
+  2. **Player de-dup (BLOCKER 2):** `deduped` filter added after `roundPlayers` assignment
+     — prevents duplicate `round_players` rows when voice maps the same name twice to one
+     saved player id.
+  3. **VoiceRoundSetup restyled (BLOCKER 3):** full rewrite — `T.*` tokens, `PAPER_NOISE`
+     background, inline SVG mic/close/refresh, `Waveform` from `Voice.tsx`. No more
+     `bg-zinc-950`, `bg-emerald-500`, or lucide-react.
+  4. **CourseSearch restyled (BLOCKER 4):** bottom sheet on `T.paper` (was `fixed inset-0
+     bg-zinc-950/95`); drag handle; T.serif/T.mono headers; dashed-border result rows;
+     inline SVG search/mapPin/close; loading pulse animation.
+  5. **PlayerAutocomplete restyled (BLOCKER 5):** `T.paperDeep` input, `T.paper` dropdown,
+     `T.ink` avatar circle, `DEFAULT_ACCENT` match highlight via inline style (no
+     `text-emerald-300`); no lucide-react; keyboard hint footer removed. Player picker sheet
+     reverted from `T.ink` to `T.paper` background (header colors updated to T.ink/T.pencil).
+  SHOULD-FIX:
+  6. Disabled hint "Add a player above to start" shown below Tee off button when not ready.
+  7. "+ Add" button touch target raised to minHeight 44px.
+  8. Mic button: 56px T.ink circle with accent ring + "Speak" T.mono label below.
+  9. Quick-reply chip padding raised to 9px/13px (minHeight 38px).
+  DEFER (noted, not done): footer gradient, auto-trigger after record, desktop nav hint,
+  TEE_OPTIONS yardage not tied to course.
+  - Gates: tsc --noEmit clean (0 errors), voice-tests 260/260 pass, npm run build OK.
+  - NOTICEABLE — design overhaul is user-visible.
+
 ## 2026-06-26 (wire-round-new)
 - **Done:** backlog `wire-round-new` (P10, NOTICEABLE) — replaced the scripted demo in
   `app/round/new/page.tsx` with a real round-setup flow that persists to the backend.
