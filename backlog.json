@@ -423,6 +423,14 @@
       "rationale": "PM found the in-round scoring path has NO voice mic at all and no confidence field. This is net-new: add a real mic in ScoreSheet, a VoiceScoreResponse.confidence field (backend voice.py), and a confirm step (mirror ScanSheet) when low-confidence. Own bundle \u2014 deferred from P33 setup slice. See specs/voice-low-confidence-ux.md scoring section.",
       "classification": "noticeable + backend change",
       "note": "Best done AFTER the current massive bundle ships + is validated, since it touches backend."
+    },
+    {
+      "id": "backend-test-suite",
+      "priority": 36,
+      "status": "done",
+      "title": "Backend pytest suite for caddie pure-logic + CI gate",
+      "done_note": "138 tests (strokes_gained/club_selection/dispersion/aim_point/_safe_json_extract); pytest added to dev deps + required CI step. No bugs found. Verified 138 pass from clean sync.",
+      "classification": "silent"
     }
   ]
 }
