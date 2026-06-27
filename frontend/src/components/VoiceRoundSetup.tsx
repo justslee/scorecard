@@ -78,6 +78,8 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
 
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
+  // Live interim text from Web Speech API while the mic is open (before Deepgram final)
+  const [interimTranscript, setInterimTranscript] = useState("");
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [parseResult, setParseResult] = useState<ParsedRoundConfig | null>(null);
@@ -85,13 +87,18 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
   const [isSupported, setIsSupported] = useState(true);
 
   const recorderRef = useRef<VoiceRecorder | null>(null);
+  // Web Speech API instance for on-device interim display (best-effort; Deepgram is authoritative)
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
     if (!VoiceRecorder.isSupported()) {
       setIsSupported(false);
       setError("Voice recording not supported in this browser.");
     }
-    return () => recorderRef.current?.cancel();
+    return () => {
+      recorderRef.current?.cancel();
+      recognitionRef.current?.abort();
+    };
   }, []);
 
   // Derive visual phase from state
@@ -110,12 +117,35 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
   const startListening = useCallback(async () => {
     setError(null);
     setTranscript("");
+    setInterimTranscript("");
     setParseResult(null);
     try {
       const recorder = new VoiceRecorder();
       await recorder.start();
       recorderRef.current = recorder;
       setIsListening(true);
+
+      // Best-effort: run Web Speech API in parallel to show live interim text while recording.
+      // Deepgram (via transcribeBlob) remains the authoritative final source.
+      const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+      if (SpeechRecognitionCtor) {
+        const recognition = new SpeechRecognitionCtor();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          let interim = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            interim += event.results[i][0].transcript;
+          }
+          setInterimTranscript(interim);
+        };
+        // Errors from the interim system are non-fatal; Deepgram handles the real result.
+        recognition.onerror = () => { /* silent — Deepgram is authoritative */ };
+        recognition.onend = () => { /* no-op; we abort() explicitly on stop */ };
+        recognition.start();
+        recognitionRef.current = recognition;
+      }
     } catch (err) {
       setError(
         err instanceof Error && err.name === "NotAllowedError"
@@ -128,6 +158,10 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
   const stopListening = useCallback(async () => {
     const recorder = recorderRef.current;
     if (!recorder) return;
+    // Abort the interim system — Deepgram will provide the authoritative transcript.
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    setInterimTranscript("");
     setIsListening(false);
     setIsTranscribing(true);
     try {
@@ -176,6 +210,7 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
   const handleRetry = () => {
     setParseResult(null);
     setTranscript("");
+    setInterimTranscript("");
     setError(null);
   };
 
@@ -537,6 +572,44 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
                   background: accent,
                 }}
               />
+              {/* Keep the transcript visible while the AI parses it so the user
+                  can read what was heard without waiting for the result screen. */}
+              {isParsing && transcript.trim() && (
+                <div
+                  style={{
+                    marginTop: 24,
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    background: T.paperDeep,
+                    border: `1px solid ${T.hairline}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 8.5,
+                      letterSpacing: 1.3,
+                      color: T.pencilSoft,
+                      textTransform: "uppercase",
+                      marginBottom: 4,
+                    }}
+                  >
+                    You said
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontStyle: "italic",
+                      fontSize: 18,
+                      lineHeight: 1.35,
+                      letterSpacing: -0.2,
+                      color: T.ink,
+                    }}
+                  >
+                    &ldquo;{transcript}&rdquo;
+                  </div>
+                </div>
+              )}
             </div>
 
           ) : phase === "error" ? (
@@ -606,6 +679,48 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
                 Listening &mdash; tap mic to stop
               </div>
               <Waveform accent={accent} bars={24} playing height={28} />
+              {/* Live interim transcript from Web Speech API — visible as the user speaks.
+                  Deepgram replaces this with the final authoritative transcript on stop. */}
+              {interimTranscript.trim() && (
+                <motion.div
+                  key="interim"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.18 }}
+                  style={{
+                    marginTop: 20,
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    background: T.paperDeep,
+                    border: `1px solid ${T.hairline}`,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 8.5,
+                      letterSpacing: 1.3,
+                      color: T.pencilSoft,
+                      textTransform: "uppercase",
+                      marginBottom: 4,
+                    }}
+                  >
+                    Hearing&hellip;
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontStyle: "italic",
+                      fontSize: 19,
+                      lineHeight: 1.3,
+                      letterSpacing: -0.2,
+                      color: T.inkSoft,
+                    }}
+                  >
+                    {interimTranscript}
+                  </div>
+                </motion.div>
+              )}
             </div>
 
           ) : (

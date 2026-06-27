@@ -3,6 +3,44 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (voice-live-transcript)
+- **Done:** `voice-live-transcript` (NOTICEABLE) — live transcription shown on screen
+  in the voice round-setup flow, plus transcript retained through the AI-parse wait.
+  Key changes (all in `frontend/src/components/VoiceRoundSetup.tsx`):
+  - **Live interim transcription during `listening` phase** (new): Web Speech API
+    (`window.SpeechRecognition ?? window.webkitSpeechRecognition`) runs in parallel
+    with `MediaRecorder` while the mic is open. As the user speaks, words appear
+    on-screen in a yardage-book card labelled "Hearing…" with T.serif italic 19px
+    T.inkSoft text — fades in gently via a short framer-motion transition. Deepgram
+    is still the authoritative final transcript (Web Speech is best-effort display
+    only). On stop, recognition is `abort()`-ed and the interim text clears before
+    Deepgram's result lands. No new npm dependency — uses the built-in browser API
+    already declared in `frontend/src/types/speech.d.ts`.
+  - **Transcript retained during `thinking (isParsing)` phase** (new): previously the
+    transcript text was hidden the moment the user tapped "Understand this" — the
+    screen showed only "Understanding…" + a pulsing dot. Now the recognised words are
+    shown below the pulsing dot in a `T.paperDeep` card (T.serif italic 18px, T.ink)
+    so the user can read what was heard while the AI processes it.
+  - **Existing `transcribed` and `result` phase displays unchanged** — the "You said"
+    box in `transcribed` was already at 19px T.serif italic (good); the echo at the
+    bottom of `result` was already present.
+  - **Retry / unmount cleanup**: `interimTranscript` state cleared on retry and in
+    the `useEffect` cleanup; `recognitionRef.current?.abort()` called on unmount
+    alongside the existing `recorderRef.current?.cancel()`.
+  - **Other voice entry points**: `transcribeBlob` is only used in `VoiceRoundSetup.tsx`
+    (confirmed by grep) — no other component to update.
+  - **True real-time streaming note**: the Web Speech API approach delivers good
+    on-device interim results without a new backend endpoint. Full Deepgram streaming
+    (WebSocket, server-side `listen.open()`, interim `is_final:false` events) would
+    require a new `/api/voice/stream` WS endpoint and a streaming client replacement
+    — deferred as a follow-up if the Web Speech fallback proves insufficient on-device.
+  - Gates: `eslint src/components/VoiceRoundSetup.tsx` 0 errors, `tsc --noEmit` 0
+    errors, voice-tests 260/260 pass, npm test 238/238 pass, npm run build OK (15 pages).
+  - NOTICEABLE — user-visible on TestFlight: words appear on screen AS the user speaks;
+    transcript stays visible while the app is "Understanding…". Designer flag: verify
+    the "Hearing…" card's T.paperDeep background and T.inkSoft text against the sunlit
+    paper aesthetic; adjust font size if the card feels too large on a 375px viewport.
+
 ## 2026-06-27 (client-auth-gate)
 - **Done:** backlog `client-auth-gate` (URGENT, NOTICEABLE) — added a client-side
   Clerk auth gate so unauthenticated users are sent to sign-in before any app
