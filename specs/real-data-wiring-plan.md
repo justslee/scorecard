@@ -117,6 +117,13 @@ Secrets to confirm present on the deploy box: `CLERK_JWKS_URL`, `CLERK_ISSUER`, 
 - **Gates:** new endpoints + data handling must pass `/security-review` + `/code-review`.
 
 ## Review follow-ups (carry into the routes-wiring items)
+- **Cross-endpoint: clear-optional-field (profile + players, deferred):** clearing an optional
+  field (email/phone/nickname/handicap/homeCourse) doesn't persist — frontend sends
+  undefined/`?? undefined` and backends use `model_dump(exclude_none=True)` (players) so the old
+  value sticks. Profile identity already fixed via explicit null + `model_fields_set`; do the
+  same sweep for `routes/players.py` + the players edit form. One-shot cleanup item.
+- **SwipeableRow swipe direction (deferred):** swipe is right-to-delete; iOS convention is
+  swipe-left. Inherited; flip when convenient.
 - **`wire-profile-bag` (P15) / `wire-profile-stats` (P16):** the profile page currently shows
   `(Preview)` placeholder sections (StrokesGained / FairwayFan / ScoringByTee / YearLog / Bag)
   + calm "Available after posting scores." for handicap history. Wire these to real data when

@@ -173,7 +173,7 @@
       "type": "major",
       "priority": 17,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": ["backend-players-db", "api-contract-align"],
       "spec": "specs/real-data-wiring-plan.md"
     },
