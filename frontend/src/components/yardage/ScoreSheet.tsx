@@ -1,9 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { T } from "./tokens";
+import { Waveform } from "./Voice";
 import type { SeedPlayer } from "./Scorecard";
+import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
+import { parseVoiceScoresLocally } from "@/lib/voice/parseVoiceScores";
+import { fetchAPI } from "@/lib/api";
+
+// ---------------------------------------------------------------------------
+// Voice state machine for the score-entry voice path
+// ---------------------------------------------------------------------------
+
+type ScoreVoicePhase =
+  | "idle"      // "Or say…" mic cue visible
+  | "listening" // recording — waveform animates, interim transcript shown
+  | "thinking"  // transcribing or parsing
+  | "confirm"   // parsed result shown, awaiting confirm or retry
+  | "error";    // transcription or parse failure
+
+// ---------------------------------------------------------------------------
+// Inline icons (no lucide-react)
+// ---------------------------------------------------------------------------
+
+function MicIcon({ size = 20, stroke = "currentColor" }: { size?: number; stroke?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8">
+      <rect x="9" y="3" width="6" height="12" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0" />
+      <path d="M12 18v3" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ size = 14, stroke = "currentColor" }: { size?: number; stroke?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DigitWheel
+// ---------------------------------------------------------------------------
 
 function DigitWheel({ value, onChange, par, accent }: { value: number | null; onChange: (v: number | null) => void; par: number; accent: string }) {
   const opts: (number | null)[] = [null, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -79,6 +121,127 @@ function DigitWheel({ value, onChange, par, accent }: { value: number | null; on
   );
 }
 
+// ---------------------------------------------------------------------------
+// VoiceConfirmPanel — inline sub-component for the confirm step
+// ---------------------------------------------------------------------------
+
+function VoiceConfirmPanel({
+  players,
+  parsedScores,
+  confidence,
+  onApply,
+  onRetry,
+}: {
+  players: SeedPlayer[];
+  parsedScores: Record<string, number>;
+  confidence: number | undefined;
+  onApply: () => void;
+  onRetry: () => void;
+}) {
+  // Low-confidence: undefined → treat as high (no cue).
+  const isLow = typeof confidence === "number" && confidence < 0.65;
+  const hasAnyScore = Object.keys(parsedScores).length > 0;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      {/* Confidence kicker */}
+      <div
+        style={{
+          fontFamily: T.mono,
+          fontSize: 9.5,
+          letterSpacing: 1.4,
+          color: isLow ? T.warningInk : T.pencil,
+          textTransform: "uppercase",
+          marginBottom: 10,
+        }}
+      >
+        {isLow ? "Double-check these — I wasn’t sure" : "Confirm scores"}
+      </div>
+
+      {/* Per-player score tiles */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+        {players.map((p) => {
+          const score = parsedScores[p.name];
+          const hasParsed = score !== undefined;
+          return (
+            <div
+              key={p.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "10px 14px",
+                borderRadius: 12,
+                background: isLow ? T.warningWash : T.paperDeep,
+                border: `1px solid ${isLow ? `${T.warningInk}55` : T.hairline}`,
+              }}
+            >
+              <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, color: isLow ? T.warningInk : T.pencil, textTransform: "uppercase" }}>
+                {p.name}
+              </div>
+              <div style={{ fontFamily: T.serif, fontSize: 26, color: hasParsed ? T.ink : T.pencilSoft, letterSpacing: -0.5 }}>
+                {hasParsed ? score : "—"}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer: "Try again" ghost + "Apply scores" solid */}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={onRetry}
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 99,
+            border: `1px solid ${T.hairline}`,
+            background: "transparent",
+            color: T.pencil,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+          aria-label="Try again"
+        >
+          <RefreshIcon />
+        </button>
+        <button
+          onClick={onApply}
+          disabled={!hasAnyScore}
+          style={{
+            flex: 1,
+            padding: "12px",
+            borderRadius: 99,
+            border: "none",
+            background: hasAnyScore ? T.ink : T.hairline,
+            color: T.paper,
+            fontFamily: T.sans,
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: hasAnyScore ? "pointer" : "not-allowed",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            opacity: hasAnyScore ? 1 : 0.5,
+          }}
+          aria-label="Apply scores"
+        >
+          <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Apply scores</span>
+          <span style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, opacity: 0.7 }}>{"→"}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ScoreSheet
+// ---------------------------------------------------------------------------
+
 export default function ScoreSheet({
   open,
   onClose,
@@ -98,14 +261,171 @@ export default function ScoreSheet({
 }) {
   const [activePid, setActivePid] = useState(players[0]?.id ?? "");
 
-  // When the sheet opens, reset to the first player.
-  // Uses the React "store previous prop" pattern (useState, not useRef) so we can
-  // call setState during render without triggering the refs-during-render lint rule.
+  // --- Voice state ---
+  const [voicePhase, setVoicePhase] = useState<ScoreVoicePhase>("idle");
+  const [interimTranscript, setInterimTranscript] = useState("");
+  const [parsedScores, setParsedScores] = useState<Record<string, number>>({});
+  const [parseConfidence, setParseConfidence] = useState<number | undefined>(undefined);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recorderRef = useRef<VoiceRecorder | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  const resetVoice = useCallback(() => {
+    setVoicePhase("idle");
+    setInterimTranscript("");
+    setParsedScores({});
+    setParseConfidence(undefined);
+    setVoiceError(null);
+  }, []);
+
+  // When the sheet opens/closes, reset state.
+  // Uses the React "store previous prop" pattern (setState during render) so we
+  // avoid the set-state-in-effect lint rule.  Ref access is NOT allowed during
+  // render, so ref cleanup lives in its own effect below.
   const [prevOpen, setPrevOpen] = useState(open);
   if (prevOpen !== open) {
     setPrevOpen(open);
     if (open) setActivePid(players[0]?.id ?? "");
+    if (!open) resetVoice(); // clear voice state; refs cleaned up in effect
   }
+
+  // Ref cleanup when the sheet closes (effect — refs only, no setState).
+  useEffect(() => {
+    if (!open) {
+      recorderRef.current?.cancel();
+      recorderRef.current = null;
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+    }
+  }, [open]);
+
+  // Cancel mic on unmount.
+  useEffect(() => {
+    return () => {
+      recorderRef.current?.cancel();
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+    };
+  }, []);
+
+  const startVoice = useCallback(async () => {
+    setVoiceError(null);
+    setInterimTranscript("");
+    setParsedScores({});
+    setParseConfidence(undefined);
+    try {
+      const recorder = new VoiceRecorder();
+      await recorder.start();
+      recorderRef.current = recorder;
+      setVoicePhase("listening");
+
+      // Best-effort interim display via Web Speech API; Deepgram is authoritative.
+      const SpeechRecognitionCtor =
+        (typeof window !== "undefined" &&
+          (window.SpeechRecognition ?? window.webkitSpeechRecognition)) ||
+        null;
+      if (SpeechRecognitionCtor) {
+        const recognition = new SpeechRecognitionCtor();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          let interim = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            interim += event.results[i][0].transcript;
+          }
+          setInterimTranscript(interim);
+        };
+        recognition.onerror = () => { /* silent — Deepgram is authoritative */ };
+        recognition.onend = () => { /* no-op */ };
+        recognition.start();
+        recognitionRef.current = recognition;
+      }
+    } catch (err) {
+      setVoiceError(
+        err instanceof Error && err.name === "NotAllowedError"
+          ? "Microphone access denied. Allow mic access and try again."
+          : "Failed to start microphone."
+      );
+      setVoicePhase("error");
+    }
+  }, []);
+
+  const stopAndParse = useCallback(async () => {
+    const recorder = recorderRef.current;
+    if (!recorder) return;
+
+    recognitionRef.current?.abort();
+    recognitionRef.current = null;
+    setInterimTranscript("");
+    setVoicePhase("thinking");
+
+    try {
+      const blob = await recorder.stop();
+      recorderRef.current = null;
+
+      const transcribeResult = await transcribeBlob(blob);
+      const transcript = transcribeResult.transcript.trim();
+
+      if (!transcript) {
+        setVoiceError("No speech detected. Try again.");
+        setVoicePhase("error");
+        return;
+      }
+
+      // Post to the backend; fall back to local heuristics on failure.
+      const playerNames = players.map((p) => p.name);
+      try {
+        type ParseResponse = { hole: number; scores: Record<string, number>; confidence?: number };
+        const parsed = await fetchAPI<ParseResponse>("/api/voice/parse-scores", {
+          method: "POST",
+          body: JSON.stringify({
+            transcript,
+            playerNames,
+            hole: hole.number,
+            par: hole.par,
+          }),
+        });
+        setParsedScores(parsed.scores ?? {});
+        setParseConfidence(parsed.confidence);
+      } catch {
+        // Backend unavailable — fall back to local parse.
+        const local = parseVoiceScoresLocally(transcript, {
+          playerNames,
+          hole: hole.number,
+          par: hole.par,
+        });
+        setParsedScores(local.scores ?? {});
+        setParseConfidence(local.confidence);
+      }
+
+      setVoicePhase("confirm");
+    } catch (err) {
+      recorderRef.current = null;
+      setVoiceError(
+        err instanceof Error ? err.message : "Transcription failed."
+      );
+      setVoicePhase("error");
+    }
+  }, [players, hole]);
+
+  const applyVoiceScores = useCallback(() => {
+    for (const player of players) {
+      const val = parsedScores[player.name];
+      if (val !== undefined) {
+        onSetScore(player.id, hole.number - 1, val);
+      }
+    }
+    onClose();
+  }, [players, parsedScores, onSetScore, hole, onClose]);
+
+  const handleMicTap = useCallback(() => {
+    if (voicePhase === "listening") {
+      stopAndParse();
+    } else {
+      startVoice();
+    }
+  }, [voicePhase, stopAndParse, startVoice]);
 
   const labelFor = (v: number, par: number) => {
     const diff = v - par;
@@ -180,6 +500,7 @@ export default function ScoreSheet({
             </button>
           </div>
 
+          {/* Player tabs — unchanged */}
           <div style={{ display: "flex", gap: 6, marginBottom: 18, overflowX: "auto" }}>
             {players.map((p) => {
               const v = scores[p.id]?.[hole.number - 1] ?? null;
@@ -210,6 +531,7 @@ export default function ScoreSheet({
             })}
           </div>
 
+          {/* Digit wheel + Quick pick — unchanged primary path */}
           <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
             <DigitWheel
               value={scores[activePid]?.[hole.number - 1] ?? null}
@@ -255,34 +577,133 @@ export default function ScoreSheet({
             </div>
           </div>
 
-          <div
-            style={{
-              marginTop: 16,
-              padding: "10px 14px",
-              borderRadius: 14,
-              border: `1px dashed ${T.hairline}`,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
+          {/* ── Voice entry path (additive — below manual entry) ── */}
+
+          {voicePhase === "confirm" ? (
+            /* Confirm panel — show after parse */
+            <VoiceConfirmPanel
+              players={players}
+              parsedScores={parsedScores}
+              confidence={parseConfidence}
+              onApply={applyVoiceScores}
+              onRetry={resetVoice}
+            />
+
+          ) : voicePhase === "error" ? (
+            /* Error state */
             <div
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 99,
-                background: T.ink,
+                marginTop: 16,
+                padding: "10px 14px",
+                borderRadius: 14,
+                border: `1px dashed ${T.hairline}`,
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
+                gap: 10,
               }}
             >
-              <div style={{ width: 6, height: 6, borderRadius: 99, background: accent }} />
+              <div style={{ flex: 1, fontFamily: T.serif, fontStyle: "italic", fontSize: 13, color: T.errorInk }}>
+                {voiceError ?? "Couldn’t hear that."}
+              </div>
+              <button
+                onClick={resetVoice}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 99,
+                  border: `1px solid ${T.hairline}`,
+                  background: "transparent",
+                  color: T.pencil,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+                aria-label="Try again"
+              >
+                <RefreshIcon />
+              </button>
             </div>
-            <div style={{ flex: 1, fontFamily: T.serif, fontStyle: "italic", fontSize: 14, color: T.pencil }}>
-              Or say <span style={{ color: T.ink }}>&ldquo;I had a four, Jordan had a five&rdquo;</span>
+
+          ) : (
+            /* Idle / listening / thinking — mic row */
+            <div
+              style={{
+                marginTop: 16,
+                padding: "10px 14px",
+                borderRadius: 14,
+                border: `1px dashed ${T.hairline}`,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              {/* Mic button */}
+              <motion.button
+                onClick={handleMicTap}
+                disabled={voicePhase === "thinking"}
+                whileTap={{ scale: 0.9 }}
+                animate={voicePhase === "listening" ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+                transition={{
+                  duration: 1.4,
+                  repeat: voicePhase === "listening" ? Infinity : 0,
+                  ease: "easeInOut",
+                }}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 99,
+                  border: "none",
+                  background: voicePhase === "listening" ? accent : T.ink,
+                  color: T.paper,
+                  cursor: voicePhase === "thinking" ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  boxShadow: voicePhase === "listening"
+                    ? `0 0 0 6px ${accent}22, 0 6px 16px rgba(26,42,26,0.2)`
+                    : "0 4px 12px rgba(26,42,26,0.18)",
+                  opacity: voicePhase === "thinking" ? 0.5 : 1,
+                }}
+                aria-label={voicePhase === "listening" ? "Stop recording" : "Start voice score entry"}
+              >
+                {voicePhase === "listening" ? (
+                  <Waveform accent={T.paper} bars={5} playing height={16} />
+                ) : (
+                  <MicIcon size={18} stroke={T.paper} />
+                )}
+              </motion.button>
+
+              {/* Status text / interim transcript */}
+              <div style={{ flex: 1 }}>
+                {voicePhase === "listening" && interimTranscript.trim() ? (
+                  <motion.div
+                    key="interim"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase", marginBottom: 2 }}>
+                      Hearing&hellip;
+                    </div>
+                    <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 14, color: T.inkSoft, lineHeight: 1.3 }}>
+                      {interimTranscript}
+                    </div>
+                  </motion.div>
+                ) : (
+                  <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 14, color: T.pencil }}>
+                    {voicePhase === "listening"
+                      ? <span style={{ color: T.ink }}>Tap mic to stop</span>
+                      : voicePhase === "thinking"
+                      ? <span style={{ color: T.pencilSoft }}>One sec&hellip;</span>
+                      : <>Or say <span style={{ color: T.ink }}>&ldquo;Justin four, Bob five&rdquo;</span></>}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

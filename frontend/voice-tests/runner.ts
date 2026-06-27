@@ -73,7 +73,8 @@ async function runOne(s: CommandLaneScenario, opts: { verbose: boolean; useRealA
     }
   }
 
-  // confidence check (setup only — VoiceParseScoresResult has no confidence field)
+  // confidence check — applies to both setup and scoring results now that
+  // VoiceParseScoresResult carries an optional confidence field.
   if (s.expectedConfidenceMin > 0 && "confidence" in actual && typeof actual.confidence === "number") {
     if (actual.confidence < s.expectedConfidenceMin) {
       return {

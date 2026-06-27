@@ -53,18 +53,37 @@ class VoiceScoreRequest(BaseModel):
 class VoiceScoreResponse(BaseModel):
     hole: int
     scores: dict[str, int]
+    # Honest derived confidence (0–1).
+    # Formula: min(1.0, (players_scored / total_players) * 0.9)
+    # Empty parse → 0.2 (show amber warning and "try again" cue).
+    confidence: float = 0.5
+    warnings: list[str] = []
+
+
+def _derive_confidence(scores: dict[str, int], player_names: list[str]) -> float:
+    """Derive a honest confidence signal from the extraction result.
+
+    Empty scores (nothing parsed) → 0.2.
+    Otherwise: (players_scored / total_players) * 0.9, capped at 1.0.
+    A full table gets 0.9; a partial parse lands below that proportionally.
+    """
+    if not scores:
+        return 0.2
+    total = max(1, len(player_names))
+    scored = len(scores)
+    return min(1.0, (scored / total) * 0.9)
 
 
 @router.post("/parse-scores", response_model=VoiceScoreResponse)
 async def parse_voice_scores(request: VoiceScoreRequest):
     """Parse voice transcript to extract golf scores using Claude."""
-    
+
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
-    
+
     client = anthropic.Anthropic(api_key=api_key)
-    
+
     prompt = f"""You are parsing golf scores from a voice transcript.
 
 Players in this round: {', '.join(request.playerNames)}
@@ -95,20 +114,22 @@ Use the exact player names from the list above in your response."""
             max_tokens=256,
             messages=[{"role": "user", "content": prompt}]
         )
-        
+
         response_text = message.content[0].text
         print(f"Claude response: {response_text}")
-        
+
         # Extract JSON from response
         json_match = re.search(r'\{[\s\S]*\}', response_text)
         if not json_match:
             raise HTTPException(status_code=500, detail=f"Could not parse response: {response_text}")
-        
+
         parsed = json.loads(json_match.group())
-        
+        extracted_scores: dict[str, int] = parsed.get("scores", {})
+
         return VoiceScoreResponse(
             hole=parsed.get("hole", request.hole),
-            scores=parsed.get("scores", {})
+            scores=extracted_scores,
+            confidence=_derive_confidence(extracted_scores, request.playerNames),
         )
     except anthropic.AuthenticationError:
         raise HTTPException(status_code=401, detail="Invalid API key")

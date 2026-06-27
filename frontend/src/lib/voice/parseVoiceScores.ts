@@ -120,10 +120,30 @@ Use the exact player names from the list above in your response.`;
       const num = typeof v === "number" ? v : parseInt(String(v), 10);
       if (resolved && Number.isFinite(num)) mapped[resolved] = num;
     }
-    return { ...raw, scores: mapped };
+    // Forward confidence from the backend response when present; otherwise compute
+    // from the mapped scores using the same formula as the backend.
+    const backendConfidence = typeof (raw as Record<string, unknown>).confidence === "number"
+      ? ((raw as Record<string, unknown>).confidence as number)
+      : _deriveConfidence(mapped, opts.playerNames);
+    return { ...raw, scores: mapped, confidence: backendConfidence };
   }
 
   return raw as VoiceParseScoresResult;
+}
+
+// --------------------
+// Shared helpers
+// --------------------
+
+/**
+ * Honest confidence derived from how many players were scored vs total in the round.
+ * Empty parse → 0.2. Otherwise: (scored / total) * 0.8, capped at 1.0.
+ * The 0.8 ceiling (vs 0.9 in the backend) reflects local heuristic reliability.
+ */
+function _deriveConfidence(scores: Record<string, number>, playerNames: string[]): number {
+  const scored = Object.keys(scores).length;
+  if (scored === 0) return 0.2;
+  return Math.min(1.0, (scored / Math.max(1, playerNames.length)) * 0.8);
 }
 
 // --------------------
@@ -238,7 +258,7 @@ export function parseVoiceScoresLocally(
     else if (t.includes("bogey")) val = opts.par + 1;
 
     for (const p of opts.playerNames) scores[p] = val;
-    return { hole: opts.hole, scores };
+    return { hole: opts.hole, scores, confidence: _deriveConfidence(scores, opts.playerNames) };
   }
 
   // First pass: explicit "<player> <result/number>" patterns across the whole string.
@@ -286,5 +306,5 @@ export function parseVoiceScoresLocally(
     if (val !== null) scores[player] = val;
   }
 
-  return { hole: opts.hole, scores };
+  return { hole: opts.hole, scores, confidence: _deriveConfidence(scores, opts.playerNames) };
 }
