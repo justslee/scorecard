@@ -2,35 +2,10 @@
 
 import React, { ReactNode, useMemo, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
-import { getGolferProfileAsync, saveGolferProfileAsync, saveGolferBagAsync } from "@/lib/storage-api";
-import type { GolferProfile } from "@/lib/types";
-
-// ──────────────────────────────────────────────────────────────────────
-// Preview-only mock data — NOT the owner's data.
-// Sections that use these are labelled "(Preview)" and will be replaced
-// when the corresponding wiring item ships:
-//   wire-profile-bag  (P15) → Bag / club distances
-//   wire-profile-stats (P16) → StrokesGained / FairwayFan / ScoringByTee / YearLog
-// PP_PLAYER / PP_HANDICAP / PP_RECENT removed — those had fabricated owner facts.
-// ──────────────────────────────────────────────────────────────────────
-
-const PP_SCORING = [
-  { tee: "Championship", yards: 7040, avg: 88.4, par: 72, rounds: 4 },
-  { tee: "Back", yards: 6620, avg: 84.1, par: 72, rounds: 18 },
-  { tee: "Regular", yards: 6180, avg: 81.0, par: 72, rounds: 31 },
-  { tee: "Forward", yards: 5640, avg: 77.2, par: 72, rounds: 3 },
-];
-
-const PP_SG = [
-  { cat: "Off the tee", you: +0.4, label: "Driver length helps; fairway % hurts" },
-  { cat: "Approach", you: -0.8, label: "Losing shots inside 150" },
-  { cat: "Around green", you: +0.2, label: "Up-and-down rate: 42%" },
-  { cat: "Putting", you: -0.3, label: "3-putt rate: 11% · one per round" },
-];
-
-const PP_FWY = { left: 18, middle: 62, right: 20 };
+import { getGolferProfileAsync, saveGolferProfileAsync, saveGolferBagAsync, getRoundsAsync } from "@/lib/storage-api";
+import { calculateTotals } from "@/lib/types";
+import type { GolferProfile, Round } from "@/lib/types";
 
 // ── Bag club config — ordered for display (matches GolferProfile.clubDistances keys)
 // The caddie (CaddiePanel) normalises these same camelCase keys to short keys
@@ -55,26 +30,88 @@ const CLUB_CONFIG: { key: ClubKey; label: string }[] = [
   { key: "putter",        label: "Putter (optional)" },
 ];
 
-function buildYear(seed = 7) {
-  const weeks = 52;
-  const cells: Array<{ w: number; d: number; v: 0 | 1 | 2 | 3 }> = [];
-  let r = seed;
-  for (let w = 0; w < weeks; w++) {
-    for (let d = 0; d < 7; d++) {
-      r = (r * 9301 + 49297) % 233280;
-      const rand = r / 233280;
-      const weekendBoost = d === 0 || d === 6 ? 2.2 : 1;
-      const monthIdx = Math.floor(w / 4.33);
-      const summerBoost = monthIdx >= 4 && monthIdx <= 9 ? 1.3 : 0.7;
-      const p = rand * weekendBoost * summerBoost;
-      let v: 0 | 1 | 2 | 3 = 0;
-      if (p > 1.8) v = 3;
-      else if (p > 1.2) v = 2;
-      else if (p > 0.9) v = 1;
-      cells.push({ w, d, v });
+// ── ScoringByTee derived type ────────────────────────────────────────────────
+type TeeRow = {
+  tee: string;
+  yards: number | null;
+  par: number;
+  rounds: number;
+  avg: number; // average total strokes (owner only)
+};
+
+/**
+ * Compute per-tee scoring averages from the owner's completed rounds.
+ * Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
+ * Rounds with fewer than 9 holes played are excluded (partial/abandoned).
+ */
+function deriveScoringByTee(rounds: Round[]): TeeRow[] {
+  const completed = rounds.filter(
+    (r) => r.status === "completed" && r.players.length > 0
+  );
+
+  const byTee = new Map<string, { totals: number[]; yards: number | null; par: number }>();
+
+  for (const r of completed) {
+    const teeName = r.teeName ?? "—";
+    const t = calculateTotals(r.scores, r.holes, r.players[0].id);
+    if (t.playedHoles < 9) continue; // skip very partial rounds
+
+    const existing = byTee.get(teeName);
+    // Derive yards from hole yardages if present; null when no yardage data.
+    const totalYards = r.holes.reduce((s, h) => s + (h.yards ?? 0), 0);
+    const yards = totalYards > 0 ? totalYards : null;
+    const par = r.holes.reduce((s, h) => s + h.par, 0);
+
+    if (existing) {
+      existing.totals.push(t.total);
+    } else {
+      byTee.set(teeName, { totals: [t.total], yards, par });
     }
   }
-  return cells;
+
+  return Array.from(byTee.entries())
+    .map(([tee, { totals, yards, par }]) => ({
+      tee,
+      yards,
+      par,
+      rounds: totals.length,
+      avg: totals.reduce((s, v) => s + v, 0) / totals.length,
+    }))
+    // Sort longest tee first (descending yards), then alphabetical.
+    .sort((a, b) => (b.yards ?? 0) - (a.yards ?? 0) || a.tee.localeCompare(b.tee));
+}
+
+// ── RoundLog derived type ────────────────────────────────────────────────────
+type RoundLogEntry = {
+  id: string;
+  date: Date;
+  course: string;
+  teeName: string | null;
+  score: number | null;
+  toPar: number | null;
+};
+
+/**
+ * Derive a chronological log of the owner's completed rounds with totals.
+ * Sorted most-recent first. Rounds with < 9 holes played are still included
+ * (date + course) but score is shown as null.
+ */
+function deriveRoundLog(rounds: Round[]): RoundLogEntry[] {
+  return rounds
+    .filter((r) => r.status === "completed" && r.players.length > 0)
+    .map((r) => {
+      const t = calculateTotals(r.scores, r.holes, r.players[0].id);
+      const hasScore = t.playedHoles >= 9;
+      return {
+        id: r.id,
+        date: new Date(r.date),
+        course: r.courseName,
+        teeName: r.teeName ?? null,
+        score: hasScore ? t.total : null,
+        toPar: hasScore ? t.toPar : null,
+      };
+    })
+    .sort((a, b) => b.date.getTime() - a.date.getTime());
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -91,11 +128,22 @@ export default function ProfilePage() {
   // Use storage-api directly (same pattern as home/page.tsx) to avoid
   // Clerk's useAuth() hook — which can't run during Next.js prerender.
   const [profile, setProfile] = useState<GolferProfile | null>(null);
+  const [rounds, setRounds] = useState<Round[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getGolferProfileAsync()
-      .then(setProfile)
+    Promise.all([
+      getGolferProfileAsync(),
+      getRoundsAsync(),
+    ])
+      .then(([p, rs]) => {
+        setProfile(p);
+        // Most-recent first (same ordering as home/page.tsx).
+        const sorted = [...rs].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+        setRounds(sorted);
+      })
       .catch((e) => console.error("[profile] load error:", e))
       .finally(() => setLoading(false));
   }, []);
@@ -193,8 +241,8 @@ export default function ProfilePage() {
           loading={loading}
           onBagSaved={(updated) => setProfile(updated)}
         />
-        <ScoringByTee accent={accent} />
-        <YearLog accent={accent} />
+        <ScoringByTee accent={accent} rounds={rounds} />
+        <YearLog accent={accent} rounds={rounds} />
         <Recent />
         <Footer />
       </div>
@@ -638,158 +686,58 @@ function HandicapModule({ profile, loading, editing, draft, setDraft }: Handicap
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Strokes gained — preview (P16)
+// Strokes gained — honest empty state (P16)
+// Shot-level data needed for strokes gained doesn't exist until shot-
+// tracking ships (P28). Show a calm placeholder; no fabricated numbers.
 // ──────────────────────────────────────────────────────────────────────
 
-function StrokesGained({ accent }: { accent: string }) {
-  const max = Math.max(...PP_SG.map((s) => Math.abs(s.you))) + 0.2;
+function StrokesGained({ accent: _accent }: { accent: string }) {
   return (
     <Section
       kicker="Shot quality"
       title="Strokes gained"
-      preview
-      aside={
-        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
-          vs 10-hdcp
-        </div>
-      }
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {PP_SG.map((s, i) => {
-          const pct = s.you / max;
-          const pos = pct >= 0;
-          const width = Math.abs(pct) * 50;
-          return (
-            <div key={s.cat}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 3 }}>
-                <div style={{ fontFamily: T.serif, fontSize: 14, color: T.ink, letterSpacing: -0.1, fontStyle: "italic" }}>{s.cat}</div>
-                <div
-                  style={{
-                    fontFamily: T.mono,
-                    fontSize: 11,
-                    letterSpacing: 0.5,
-                    color: pos ? accent : T.pencil,
-                    fontVariantNumeric: "tabular-nums",
-                    fontWeight: 600,
-                  }}
-                >
-                  {pos ? "+" : ""}
-                  {s.you.toFixed(1)}
-                </div>
-              </div>
-              <div style={{ position: "relative", height: 14, background: T.paperDeep, borderRadius: 2 }}>
-                <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: T.ink, opacity: 0.3 }} />
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${width}%` }}
-                  transition={{ delay: 0.1 + i * 0.08, duration: 0.6, ease: T.ease }}
-                  style={{
-                    position: "absolute",
-                    top: 2,
-                    bottom: 2,
-                    left: pos ? "50%" : undefined,
-                    right: pos ? undefined : "50%",
-                    background: pos ? accent : T.pencil,
-                    borderRadius: 1,
-                  }}
-                />
-              </div>
-              <div style={{ fontFamily: T.serif, fontSize: 11.5, color: T.pencilSoft, marginTop: 3, fontStyle: "italic", letterSpacing: -0.05 }}>{s.label}</div>
-            </div>
-          );
-        })}
+      <div
+        style={{
+          padding: "14px 0 6px",
+          fontFamily: T.serif,
+          fontStyle: "italic",
+          fontSize: 14,
+          color: T.pencilSoft,
+          letterSpacing: -0.1,
+          lineHeight: 1.5,
+        }}
+      >
+        Strokes gained needs shot tracking — coming soon.
       </div>
     </Section>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Fairway fan — preview (P16)
+// Fairway fan — honest empty state (P16)
+// Per-shot direction data doesn't exist until shot-tracking ships (P28).
+// Show a calm placeholder; no fabricated percentages or diagrams.
 // ──────────────────────────────────────────────────────────────────────
 
-function FairwayFan({ accent }: { accent: string }) {
-  const { left, middle, right } = PP_FWY;
+function FairwayFan({ accent: _accent }: { accent: string }) {
   return (
     <Section
       kicker="Tendencies"
       title="Off the tee"
-      preview
-      aside={
-        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
-          Last 30 rounds
-        </div>
-      }
     >
-      <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 14, alignItems: "center" }}>
-        <div style={{ position: "relative" }}>
-          <svg width="160" height="120" viewBox="0 0 160 120">
-            <circle cx="80" cy="110" r="2.5" fill={T.ink} />
-            <text x="80" y="118" textAnchor="middle" fontFamily={T.mono} fontSize="7" fill={T.pencilSoft} letterSpacing="1">TEE</text>
-
-            <path d="M80,110 L10,40 A85,85 0 0,1 55,18 Z" fill={`${T.pencil}25`} stroke={T.hairline} strokeWidth="0.6" />
-            <path d="M80,110 L55,18 A85,85 0 0,1 105,18 Z" fill={`${accent}20`} stroke={accent} strokeWidth="0.6" />
-            <path d="M80,110 L105,18 A85,85 0 0,1 150,40 Z" fill={`${T.pencil}25`} stroke={T.hairline} strokeWidth="0.6" />
-
-            <text x="30" y="58" textAnchor="middle" fontFamily={T.serif} fontStyle="italic" fontSize="14" fill={T.ink} letterSpacing="-0.2">{left}%</text>
-            <text x="30" y="68" textAnchor="middle" fontFamily={T.mono} fontSize="6.5" fill={T.pencil} letterSpacing="1">LEFT</text>
-            <text x="80" y="50" textAnchor="middle" fontFamily={T.serif} fontStyle="italic" fontSize="20" fill={T.ink} letterSpacing="-0.4">{middle}%</text>
-            <text x="80" y="62" textAnchor="middle" fontFamily={T.mono} fontSize="6.5" fill={accent} letterSpacing="1" fontWeight="600">FAIRWAY</text>
-            <text x="130" y="58" textAnchor="middle" fontFamily={T.serif} fontStyle="italic" fontSize="14" fill={T.ink} letterSpacing="-0.2">{right}%</text>
-            <text x="130" y="68" textAnchor="middle" fontFamily={T.mono} fontSize="6.5" fill={T.pencil} letterSpacing="1">RIGHT</text>
-
-            {Array.from({ length: 18 }).map((_, i) => {
-              const seed = (i * 7919) % 100;
-              const angle = -Math.PI / 2 + ((seed - 50) / 50) * 0.55;
-              const dist = 50 + (seed % 40);
-              const x = 80 + Math.cos(angle) * dist;
-              const y = 110 + Math.sin(angle) * dist;
-              return <circle key={i} cx={x} cy={y} r="1.6" fill={T.ink} opacity="0.45" />;
-            })}
-          </svg>
-        </div>
-
-        <div>
-          <div style={{ fontFamily: T.serif, fontSize: 13, color: T.ink, fontStyle: "italic", letterSpacing: -0.1, lineHeight: 1.35 }}>
-            You miss{" "}
-            <span style={{ color: accent, fontWeight: 500, fontStyle: "normal", fontFamily: T.sans }}>slightly right</span>, and rarely left of center.
-          </div>
-          <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>Drive dist</div>
-              <div
-                style={{
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 20,
-                  color: T.ink,
-                  letterSpacing: -0.4,
-                  lineHeight: 1,
-                  marginTop: 2,
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                268<span style={{ fontSize: 11, color: T.pencil, marginLeft: 2 }}>yd</span>
-              </div>
-            </div>
-            <div>
-              <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>Dispersion</div>
-              <div
-                style={{
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 20,
-                  color: T.ink,
-                  letterSpacing: -0.4,
-                  lineHeight: 1,
-                  marginTop: 2,
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                ±28<span style={{ fontSize: 11, color: T.pencil, marginLeft: 2 }}>yd</span>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div
+        style={{
+          padding: "14px 0 6px",
+          fontFamily: T.serif,
+          fontStyle: "italic",
+          fontSize: 14,
+          color: T.pencilSoft,
+          letterSpacing: -0.1,
+          lineHeight: 1.5,
+        }}
+      >
+        Fairway tracking needs shot data — coming soon.
       </div>
     </Section>
   );
@@ -1245,16 +1193,48 @@ function Bag({
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Scoring by tee — preview (P16)
+// Scoring by tee — wired (P16)
+// Computed from the owner's real completed rounds via deriveScoringByTee.
+// Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
 // ──────────────────────────────────────────────────────────────────────
 
-function ScoringByTee({ accent }: { accent: string }) {
-  const maxAvg = Math.max(...PP_SCORING.map((s) => s.avg));
+function ScoringByTee({ accent, rounds }: { accent: string; rounds: Round[] }) {
+  const teeRows = useMemo(() => deriveScoringByTee(rounds), [rounds]);
+
+  if (teeRows.length === 0) {
+    return (
+      <Section
+        kicker="Course"
+        title="Scoring by tee"
+        aside={
+          <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
+            Lifetime
+          </div>
+        }
+      >
+        <div
+          style={{
+            padding: "14px 0 6px",
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 14,
+            color: T.pencilSoft,
+            letterSpacing: -0.1,
+            lineHeight: 1.5,
+          }}
+        >
+          Play a round to see your scoring by tee.
+        </div>
+      </Section>
+    );
+  }
+
+  const maxAvg = Math.max(...teeRows.map((s) => s.avg));
+
   return (
     <Section
       kicker="Course"
       title="Scoring by tee"
-      preview
       aside={
         <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
           Lifetime
@@ -1262,22 +1242,25 @@ function ScoringByTee({ accent }: { accent: string }) {
       }
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {PP_SCORING.map((s) => {
+        {teeRows.map((s) => {
           const over = s.avg - s.par;
           const width = (s.avg / (maxAvg * 1.05)) * 100;
-          const parWidth = width * (s.par / s.avg);
+          const parWidth = s.avg > 0 ? width * (s.par / s.avg) : 0;
           return (
             <div key={s.tee}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 3 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                   <span style={{ fontFamily: T.serif, fontSize: 14, color: T.ink, letterSpacing: -0.1, fontStyle: "italic" }}>{s.tee}</span>
                   <span style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
-                    {s.yards.toLocaleString()} yd · {s.rounds} rounds
+                    {s.yards ? `${s.yards.toLocaleString()} yd · ` : ""}
+                    {s.rounds} {s.rounds === 1 ? "round" : "rounds"}
                   </span>
                 </div>
                 <div style={{ fontFamily: T.mono, fontSize: 11, letterSpacing: 0.5, color: T.ink, fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>
                   {s.avg.toFixed(1)}
-                  <span style={{ color: accent, marginLeft: 4 }}>+{over.toFixed(1)}</span>
+                  <span style={{ color: accent, marginLeft: 4 }}>
+                    {over >= 0 ? `+${over.toFixed(1)}` : over.toFixed(1)}
+                  </span>
                 </div>
               </div>
               <div style={{ position: "relative", height: 10, background: T.paperDeep, borderRadius: 1 }}>
@@ -1326,106 +1309,158 @@ function ScoringByTee({ accent }: { accent: string }) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Year heatmap — preview (P16)
+// Season log — wired (P16)
+// Shows the owner's real completed rounds: date, course, score vs par.
+// Sorted most-recent first. Empty state when no completed rounds exist.
+// Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
 // ──────────────────────────────────────────────────────────────────────
 
-function YearLog({ accent }: { accent: string }) {
-  const cells = useMemo(() => buildYear(7), []);
-  const rounds = cells.filter((c) => c.v > 0).length;
-  const nines = cells.filter((c) => c.v === 1).length;
-  const r18 = cells.filter((c) => c.v === 2).length;
-  const tourn = cells.filter((c) => c.v === 3).length;
+function YearLog({ accent: _accent, rounds }: { accent: string; rounds: Round[] }) {
+  const log = useMemo(() => deriveRoundLog(rounds), [rounds]);
 
-  const cellSize = 7;
-  const gap = 2;
-  const w = 52 * (cellSize + gap);
-  const h = 7 * (cellSize + gap);
-
-  const color = (v: 0 | 1 | 2 | 3) => {
-    if (v === 0) return T.paperDeep;
-    if (v === 1) return `${T.pencil}80`;
-    if (v === 2) return T.ink;
-    if (v === 3) return accent;
-    return T.paperDeep;
-  };
+  if (log.length === 0) {
+    return (
+      <Section kicker="Log" title="Season log">
+        <div
+          style={{
+            padding: "14px 0 6px",
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 14,
+            color: T.pencilSoft,
+            letterSpacing: -0.1,
+            lineHeight: 1.5,
+          }}
+        >
+          Post a round to track your season.
+        </div>
+      </Section>
+    );
+  }
 
   return (
     <Section
       kicker="Log"
-      title="This season"
-      preview
+      title="Season log"
       aside={
         <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
-          52 weeks
+          {log.length} {log.length === 1 ? "round" : "rounds"}
         </div>
       }
     >
-      <div
-        style={{
-          padding: "12px 12px",
-          borderRadius: 8,
-          background: T.paperDeep,
-          border: `1px solid ${T.hairlineSoft}`,
-          overflowX: "auto",
-        }}
-      >
-        <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-          {cells.map((c, i) => (
-            <rect
-              key={i}
-              x={c.w * (cellSize + gap)}
-              y={c.d * (cellSize + gap)}
-              width={cellSize}
-              height={cellSize}
-              rx="1"
-              fill={color(c.v)}
-              opacity={c.v === 0 ? 0.5 : 1}
-            />
-          ))}
-        </svg>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginTop: 6,
-            fontFamily: T.mono,
-            fontSize: 7.5,
-            letterSpacing: 1,
-            color: T.pencilSoft,
-            textTransform: "uppercase",
-          }}
-        >
-          {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((m) => (
-            <span key={m}>{m}</span>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", paddingTop: 8, borderTop: `1px dashed ${T.hairline}` }}>
-        {[
-          { l: "Rounds", v: rounds, accent: false },
-          { l: "9 holes", v: nines, accent: false },
-          { l: "18 holes", v: r18, accent: false },
-          { l: "Tourneys", v: tourn, accent: true },
-        ].map((b, i) => (
-          <div key={b.l} style={{ borderLeft: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`, paddingLeft: i === 0 ? 0 : 10 }}>
-            <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>{b.l}</div>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {log.map((entry, i) => {
+          const month = entry.date.toLocaleString("en-US", { month: "short" });
+          const day = entry.date.getDate();
+          const toParStr =
+            entry.toPar === null
+              ? null
+              : entry.toPar === 0
+              ? "E"
+              : entry.toPar > 0
+              ? `+${entry.toPar}`
+              : `${entry.toPar}`;
+          return (
             <div
+              key={entry.id}
               style={{
-                fontFamily: T.serif,
-                fontStyle: "italic",
-                fontSize: 20,
-                color: b.accent ? accent : T.ink,
-                letterSpacing: -0.4,
-                lineHeight: 1.1,
-                marginTop: 2,
-                fontVariantNumeric: "tabular-nums",
+                display: "grid",
+                gridTemplateColumns: "44px 1fr auto",
+                gap: 10,
+                alignItems: "center",
+                padding: "9px 0",
+                borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
               }}
             >
-              {b.v}
+              {/* Date column */}
+              <div>
+                <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>
+                  {month}
+                </div>
+                <div
+                  style={{
+                    fontFamily: T.serif,
+                    fontSize: 20,
+                    color: T.ink,
+                    lineHeight: 1,
+                    letterSpacing: -0.4,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {day}
+                </div>
+              </div>
+
+              {/* Course column */}
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontFamily: T.serif,
+                    fontSize: 14,
+                    color: T.ink,
+                    letterSpacing: -0.1,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {entry.course}
+                </div>
+                {entry.teeName && (
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 7.5,
+                      color: T.pencilSoft,
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      marginTop: 1,
+                    }}
+                  >
+                    {entry.teeName}
+                  </div>
+                )}
+              </div>
+
+              {/* Score column */}
+              <div style={{ textAlign: "right" }}>
+                {entry.score !== null ? (
+                  <>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontSize: 22,
+                        color: T.ink,
+                        lineHeight: 1,
+                        letterSpacing: -0.5,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {entry.score}
+                    </div>
+                    {toParStr && (
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 8.5,
+                          letterSpacing: 1.1,
+                          color: T.pencilSoft,
+                          marginTop: 1,
+                        }}
+                      >
+                        {toParStr}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ fontFamily: T.mono, fontSize: 9, color: T.pencilSoft, letterSpacing: 1 }}>
+                    —
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </Section>
   );
