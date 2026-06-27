@@ -818,3 +818,49 @@ Format: date — done / in-progress / blocked.
     — cross-endpoint fix later (send null + model_fields_set).
   - Gates: lint 0 errors (src/), tsc 0 errors, voice-tests 260/260, build OK.
   - NOTICEABLE — confirm dialog now matches the paper/ink aesthetic of the rest of the app.
+
+## 2026-06-27 (wire-tournament-detail)
+- **Done:** backlog `wire-tournament-detail` (P18, NOTICEABLE) — `TournamentPageClient.tsx`
+  now fetches real data from `/api/tournaments/{id}` + `/api/rounds` (member rounds) instead
+  of the fabricated "Sunday Cup" `tournamentData.ts` constants. `tournamentData.ts` DELETED.
+  Key changes:
+  - **Deleted:** `frontend/src/components/yardage/tournamentData.ts` — all fabricated
+    constants (TOURNAMENT, TPLAYERS, TSTANDINGS, TFEED, TGAMES, TGROUPS, TPlayer, TCourse,
+    TStanding, TFeedItem, suffix) removed. No other file imported it.
+  - **Data flow:**
+    1. `getTournamentAsync(id)` → `GET /api/tournaments/{id}` (owner-scoped, API-authoritative
+       with localStorage offline cache fallback per storage-api.ts pattern). Returns Tournament
+       with `playerIds`, `roundIds`, `playerNamesById`, `games`, `createdAt`.
+    2. `getRoundsAsync()` → `GET /api/rounds` (all owner rounds); filter by `roundIdSet`
+       (union with `round.tournamentId === id` as belt-and-suspenders). Sort ascending by
+       `createdAt` so Day 1 = earliest round.
+    3. Player name resolution: `playerNamesById` (from players table join in backend) takes
+       priority; `round.players` provides fallback for guests not in the players table;
+       `playerId` as last resort.
+    4. `effectivePlayerIds`: if `tournament.playerIds` is empty (pre-player-tracking data),
+       union from member round players.
+    5. Standings via `computeStandings()`: calls `calculateTotals(r.scores, r.holes, pid)`
+       (from `types.ts`) for each player × round. Produces `totalStrokes` and `totalToPar`.
+  - **Standings:** two sort modes — "Gross" (totalStrokes asc) and "To Par" (totalToPar asc).
+    Dynamic grid columns scale with round count (`34px` per column when >3 rounds, `44px` for
+    ≤3). Leader callout (ink-bg card) shows leading player name + score when any scores exist.
+  - **TFEED removed:** no real activity-feed data source exists. Removed entirely (same
+    decision as wire-home's FEED removal). Noted in code.
+  - **Empty/partial states (all calm, on-paper):**
+    - No players in tournament → "No players in this tournament yet."
+    - Has players but no rounds → "No rounds played yet." (leaderboard + rounds tabs)
+    - Has rounds but no scores → "Scores will appear here as you play."
+    - No tournament-level games → "No games set up yet."
+    - Tournament 404 or not owned → calm serif "Tournament not found." + ← Home button.
+  - **UX preserved:** T.* tokens throughout, serif/mono typography, paper/ink palette,
+    yardage-book feel. `max(14px, env(safe-area-inset-top))` on masthead. All interactive
+    elements ≥ 44pt (`minHeight: 44`). Round strip tappable → `/round/{id}`.
+  - **No fabricated data:** `useParams()` reads the real id from the URL; `id === "placeholder"`
+    guard skips the API call during static prerender.
+  - Gates: lint 0 errors (TournamentPageClient.tsx), tsc 0 errors, voice-tests 260/260,
+    npm run build OK (`/tournament/[id]` renders as ● SSG with placeholder).
+  - NOTICEABLE — user-visible on TestFlight: tournament detail page shows real data (players,
+    standings, games, rounds); no fabricated Sunday Cup data anywhere in the app.
+  - Designer flags: leader callout is neutral ("Leading {name}") — not "Your position" since
+    there is no identity→player mapping yet. TFEED removed; re-introduce when a real activity
+    stream exists. To-par mode uses "E" for even (consistent with home + scoring).
