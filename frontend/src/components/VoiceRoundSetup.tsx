@@ -358,11 +358,12 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
           ) : phase === "result" && parseResult ? (
             /* Parsed result */
             <div>
-              {/* Kicker — amber when low-confidence, neutral otherwise */}
+              {/* Kicker — amber when low-confidence, neutral otherwise.
+                  10px matches ScanSheet's confidence kicker for sunlight legibility. */}
               <div
                 style={{
                   fontFamily: T.mono,
-                  fontSize: 9,
+                  fontSize: 10,
                   letterSpacing: 1.5,
                   color: isLowConfidence ? T.warningInk : T.pencil,
                   textTransform: "uppercase",
@@ -370,11 +371,13 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
                 }}
               >
                 {isLowConfidence
-                  ? "Hard to hear — check the details below"
+                  ? "Hard to hear — check each field below"
                   : "Got it — confirm below"}
               </div>
 
-              {/* Course card — always shown; amber dashed border when missing */}
+              {/* Course card — always shown; amber dashed border when missing.
+                  Border softened to ~53% opacity (warningInk88) to match ScanSheet's
+                  system weight while keeping the "to be filled in" dashed idiom. */}
               <div
                 style={{
                   marginBottom: 10,
@@ -383,7 +386,7 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
                   background: parseResult.courseName ? T.paperDeep : T.warningWash,
                   border: parseResult.courseName
                     ? `1px solid ${T.hairline}`
-                    : `1px dashed ${T.warningInk}`,
+                    : `1px dashed ${T.warningInk}88`,
                 }}
               >
                 <div
@@ -421,7 +424,7 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
                       opacity: 0.85,
                     }}
                   >
-                    No course detected &mdash; tap to add
+                    No course detected &mdash; try again to fix
                   </div>
                 )}
               </div>
