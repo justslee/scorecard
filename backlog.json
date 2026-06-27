@@ -445,10 +445,11 @@
     {
       "id": "post-round-recap",
       "priority": 38,
-      "status": "in-progress",
+      "status": "done",
       "title": "Post-round recap screen (calm yardage-book finished-scorecard on round complete)",
       "rationale": "GAP found in code: handleFinish flips status + dumps straight to home, no recap. New RoundRecap shown on finish (final scores vs par, highlights, game results via existing GameResults); reads existing data, no backend change. Northstar-aligned end-of-round moment.",
-      "classification": "noticeable"
+      "classification": "noticeable",
+      "done_note": "New RoundRecap on finish (was: dumped straight to home). Final scores vs par, best-hole + birdie/eagle kickers, GameResults reused read-only (added backward-compat readOnly prop). Reviewer SHIP (persistence byte-for-byte intact) + designer polish-then-ship (sticky Done, readOnly games suppress 18 warnings/collapse tables, ROUND COMPLETE anchor) all folded. Gates verified."
     }
   ]
 }
