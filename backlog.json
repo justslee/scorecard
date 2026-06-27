@@ -193,7 +193,7 @@
       "type": "major",
       "priority": 19,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": ["backend-tournaments-db"],
       "spec": "specs/real-data-wiring-plan.md"
     },
@@ -203,7 +203,7 @@
       "type": "major",
       "priority": 20,
       "risk": "low",
-      "status": "blocked",
+      "status": "ready",
       "depends_on": ["backend-players-db"],
       "spec": "specs/real-data-wiring-plan.md"
     },
