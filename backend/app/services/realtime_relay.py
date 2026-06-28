@@ -101,7 +101,9 @@ async def mint_ephemeral_session(
             "type": "realtime",
             "model": OPENAI_REALTIME_MODEL,
             "instructions": instructions,
-            "output_modalities": ["audio", "text"],
+            # GA allows only ["audio"] OR ["text"], not both. "audio" still emits
+            # the live transcript (output_audio_transcript events) for the UI.
+            "output_modalities": ["audio"],
             "audio": {
                 "input": {
                     "transcription": {"model": "whisper-1"},
