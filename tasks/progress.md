@@ -2780,3 +2780,18 @@ gpt-4o-transcribe (env-configurable) + semantic_vad. NOTE: any mint-config chang
 break voice if a field/value is unsupported (cf. the earlier "Invalid modalities" 400) and
 can't be live-tested headlessly — so it must NOT auto-deploy; it accumulates on
 integration/next and ships only with owner approval + a voice-connect test on that build.
+
+---
+
+## SHIPPED — bundle #63 → v1.0.436 — 2026-06-28
+Owner "ship it". Merged PR #63 → main 233e28a; backend deployed + healthy (new Realtime
+mint code imports/runs; mint runtime still device-only). TestFlight v1.0.436 (202606281924).
+Bundle: realtime-noise-hardening (near_field + gpt-4o-transcribe + VAD switch — TEST voice
+CONNECTS), gps-capacitor-migrate, ux-wind-direction-viz, voice-setup-realtime-polish.
+NOTE: mint config can't be verified headlessly — if voice won't connect on device, revert
+the transcription model (env OPENAI_REALTIME_TRANSCRIBE_MODEL=whisper-1 / revert e90a7ef).
+
+Owner reported 2 new bugs (queued, NOT in this build): voice-chat-ordering (HIGH, priority 3
+— reply renders above the user's line; fix = order by conversation-item sequence) +
+grabber-handle-drag-fix (swiping handle scrolls background). Both on backlog + Notion board.
+Loop continues 30-min cadence; next tick takes voice-chat-ordering.
