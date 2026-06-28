@@ -73,6 +73,14 @@ const _listeners = new Set<() => void>();
 /** Merge a partial update into the diagnostic state and notify subscribers. */
 export function setAuthDiag(patch: Partial<AuthDiagState>): void {
   _state = { ..._state, ...patch };
+  // Mirror every update to the console so the FAPI-hook auth state is readable
+  // from the native log stream (xcrun simctl spawn booted log stream …) — this
+  // is how builds are validated in the simulator without the owner on-device.
+  try {
+    console.log(`[authdiag] ${JSON.stringify(_state)}`);
+  } catch {
+    /* console unavailable — ignore */
+  }
   _listeners.forEach((fn) => fn());
 }
 

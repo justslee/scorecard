@@ -73,6 +73,19 @@ export default function NativeAuthDiag() {
   // Re-render whenever the async FAPI hooks update the diagnostic state.
   useEffect(() => subscribeAuthDiag(() => setDiag({ ...getAuthDiag() })), []);
 
+  // Mirror the Clerk-derived fields (loaded / signed) to the console so the
+  // full auth readout — including isLoaded/isSignedIn, which come from useAuth()
+  // rather than the FAPI-hook store — is readable from the native log stream.
+  // This is how new builds are validated in the simulator without the owner.
+  useEffect(() => {
+    console.log(
+      `[authdiag] loaded=${isLoaded} signed=${isSignedIn ?? false} ` +
+        `native-sent=${diag.isNativeSent} ` +
+        `auth-hdr=${diag.authHeaderReceived === null ? "—" : diag.authHeaderReceived} ` +
+        `tok=${diag.tokenRestored} napi=${!diag.nativeApiDisabled}`,
+    );
+  }, [isLoaded, isSignedIn, diag]);
+
   const isNative = Capacitor.isNativePlatform();
   const authDiagEnabled = process.env.NEXT_PUBLIC_AUTH_DIAG === "1";
 

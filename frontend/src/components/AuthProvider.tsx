@@ -1,10 +1,9 @@
 "use client";
 
 import { ClerkProvider } from "@clerk/clerk-react";
-import type { HeadlessBrowserClerk } from "@clerk/clerk-react";
 import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
-import { Clerk as ClerkBrowser } from "@clerk/clerk-js";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import ClerkTokenBridge from "@/components/ClerkTokenBridge";
 import AuthGate from "@/components/AuthGate";
@@ -34,176 +33,168 @@ const clerkAppearance = {
 
 // ─── Native session persistence (Capacitor iOS / Android only) ───────────────
 //
-// Problem: in a Capacitor WKWebView (origin capacitor://localhost), cookies from
-// Clerk's FAPI (clerk.looperapp.org) are blocked by WebKit's Intelligent
-// Tracking Prevention as "third-party". The session cookie is never stored,
-// so clerk-js never sees an active session even though sign-in succeeded.
+// Problem: in a Capacitor WKWebView, cookies from Clerk's FAPI
+// (clerk.looperapp.org) are blocked by WebKit's Intelligent Tracking Prevention
+// as "third-party". The session cookie is never stored, so clerk-js never sees
+// an active session even though sign-in succeeded.
 //
-// Root cause of the previous approach (window globals): the window-global hooks
-// (window.__internal_onBeforeRequest / window.__internal_onAfterResponse) are
-// read by the clerk-js FAPI client at request time from the window object, but
-// on-device diagnostics showed native-sent:false, meaning those globals were
-// NEVER invoked. The CDN-loaded clerk-js bundle doesn't reliably honour the
-// window globals in this Capacitor/WKWebView setup.
+// ── Regression that this file fixes (v1.0.365 white-screen) ──────────────────
+// A previous version bundled @clerk/clerk-js locally, constructed a Clerk
+// instance at MODULE-EVALUATION time (`new ClerkBrowser(pk)` inside an IIFE),
+// wired FAPI callbacks on the instance, and passed it to <ClerkProvider> via the
+// `Clerk={instance}` prop. That bundled instance has NO prebuilt UI components
+// (those are only attached when clerk-react loads clerk-js from Clerk's CDN). On
+// the sign-in screen, <SignIn/> calls `clerk.mountSignIn()` → `assertComponents
+// Ready()` throws **"Clerk was not loaded with Ui components"** from inside
+// React's componentDidMount, which trips Next.js's production error boundary →
+// "Application error: a client-side exception has occurred while loading
+// localhost". The whole app white-screened on load, before any sign-in.
+// (Captured in the iOS Simulator + a headless repro of the prod bundle with the
+// native code path forced on, 2026-06-28.)
 //
-// Fix — bundle @clerk/clerk-js locally and register callbacks on the INSTANCE:
+// ── Fix: standard ClerkProvider everywhere + window-global FAPI hooks ─────────
+// We let <ClerkProvider> load clerk-js the normal way (with UI components), on
+// EVERY platform, so <SignIn/> always mounts and the app never white-screens.
+// For native, the FAPI request/response interception is registered the supported
+// way clerk-js reads at request time — via the `window.__internal_onBeforeRequest`
+// / `window.__internal_onAfterResponse` globals — inside a guarded effect that is
+// gated to native and torn down on unmount. This never throws on the render path:
+// the worst case is that interception is inert and the diagnostic shows
+// native-sent:false (full native-token auth then needs the @clerk/clerk-react v6
+// upgrade so clerk-js v6's instance/global hooks are honoured — tracked as a
+// follow-up). The web/dev path is completely unaffected: the globals are only set
+// when Capacitor.isNativePlatform() is true.
 //
-//   1. Import the Clerk class from @clerk/clerk-js (bundled locally in the
-//      Next.js static export, not loaded from Clerk's CDN at runtime).
-//
-//   2. Construct a Clerk instance BEFORE ClerkProvider mounts:
-//        const instance = new ClerkBrowser(publishableKey)
-//
-//   3. Register the FAPI before/after callbacks DIRECTLY on the instance using
-//      the supported internal API:
-//        instance.__internal_onBeforeRequest(cb)
-//        instance.__internal_onAfterResponse(cb)
-//      These delegate to the instance's FAPI client singleton
-//      (this.#eq.onBeforeRequest / onAfterResponse in the minified source),
-//      which is created in the constructor and guaranteed to fire on every
-//      FAPI request.  Verified in @clerk/clerk-js@6 dist/clerk.mjs:
-//        __internal_onBeforeRequest = e => this.#eq.onBeforeRequest(e)
-//        __internal_onAfterResponse = e => this.#eq.onAfterResponse(e)
-//      Also typed in dist/types/core/clerk.d.ts lines 241-242.
-//
-//   4. The before-request callback:
-//      a. Sets credentials:"omit" — no browser-managed cookies on cross-origin.
-//      b. Appends _is_native=1 to the URL — signals FAPI to echo the client
-//         JWT in the "authorization" response header instead of a cookie.
-//         Requires Native Applications enabled in the Clerk Dashboard:
-//         https://dashboard.clerk.com/last-active?path=native-applications
-//      c. Injects the persisted JWT (from @capacitor/preferences / Keychain)
-//         into the "authorization" request header.
-//      d. Sets x-mobile:1 (mirrors @clerk/expo) to identify native client.
-//
-//   5. The after-response callback:
-//      a. Reads "authorization" from the response headers (the JWT Clerk echoes
-//         when _is_native=1 is set and Native API is enabled).
-//      b. Persists it to @capacitor/preferences (Keychain on iOS).
-//      c. Detects native_api_disabled error and surfaces it in the diagnostic.
-//
-//   6. Pass the pre-constructed, callback-wired instance to ClerkProvider:
-//        <ClerkProvider Clerk={instance} standardBrowser={false} ...>
-//      ClerkProvider detects it is not a constructor (typeof instance !== "function")
-//      and uses the existing instance, calling instance.load(options) where
-//      options.standardBrowser=false switches Clerk to the non-cookie auth path.
-//
-// This approach is the @clerk/expo reference implementation adapted for
-// Capacitor/Next.js.  See:
-//   packages/expo/src/provider/singleton/createClerkInstance.ts in the
-//   clerk/javascript GitHub repo (verified 2026-06-28).
-//
-// Gating: Capacitor.isNativePlatform() returns true only when
-// window.webkit.messageHandlers.bridge (iOS) or window.androidBridge is present.
-// During Next.js static export build (Node.js) and in regular browsers, it
-// returns false — the web/dev build is completely unaffected.
+// The before-request hook: omit cookies, append _is_native=1 (so FAPI echoes the
+// JWT in the "authorization" response header instead of a cookie — requires
+// Native Applications enabled in the Clerk Dashboard), and inject the persisted
+// JWT from @capacitor/preferences (Keychain on iOS). The after-response hook
+// reads that "authorization" header back and persists it. CapacitorHttp routes
+// fetch() through iOS NSURLSession so all response headers are readable.
 
 const CLERK_CLIENT_JWT_KEY = "__clerk_client_jwt";
 
-/**
- * Creates the native Clerk instance with FAPI callbacks wired on the instance.
- * Called at most once (from the module-level IIFE below).
- */
-function createNativeClerkInstance(
-  publishableKey: string,
-): InstanceType<typeof ClerkBrowser> {
-  const instance = new ClerkBrowser(publishableKey);
+// FapiRequestInit = RequestInit & { url?: URL; ... }. At call time
+// requestInit.headers is a Headers instance and requestInit.url is the built URL.
+type FapiRequestInit = RequestInit & { url?: URL };
+type FapiResponse = {
+  headers?: Headers;
+  payload?: { errors?: Array<{ code?: string }> };
+};
 
-  // ── Before-request: inject native-mode signals ──────────────────────────
-  // FapiRequestInit = RequestInit & { url?: URL; ... }
-  // At call time, requestInit.headers is a Headers instance (set by the FAPI
-  // client before invoking callbacks) and requestInit.url is the built URL.
-  instance.__internal_onBeforeRequest(async (requestInit) => {
-    // (a) No browser-managed cookies — WKWebView ITP blocks cross-origin cookies.
-    requestInit.credentials = "omit";
+// ── Before-request: inject native-mode signals ────────────────────────────────
+async function nativeOnBeforeRequest(requestInit: FapiRequestInit): Promise<void> {
+  // (a) No browser-managed cookies — WKWebView ITP blocks cross-origin cookies.
+  requestInit.credentials = "omit";
 
-    // (b) Signal Clerk FAPI to echo the JWT in the "authorization" response
-    //     header (instead of a cookie). Requires Native API enabled in Dashboard.
-    requestInit.url?.searchParams.append("_is_native", "1");
+  // (b) Signal Clerk FAPI to echo the JWT in the "authorization" response header
+  //     (instead of a cookie). Requires Native API enabled in the Dashboard.
+  requestInit.url?.searchParams.append("_is_native", "1");
 
-    // Track the intercepted path for the diagnostic overlay.
-    const path = requestInit.url?.pathname ?? null;
-    setAuthDiag({ isNativeSent: true, lastFapiPath: path });
+  // Track the intercepted path for the diagnostic overlay.
+  const path = requestInit.url?.pathname ?? null;
+  setAuthDiag({ isNativeSent: true, lastFapiPath: path });
 
-    // (c) Inject the persisted JWT from Keychain (empty string = first launch).
-    let jwt = "";
-    try {
-      const { value } = await Preferences.get({ key: CLERK_CLIENT_JWT_KEY });
-      if (value) {
-        jwt = value;
-        setAuthDiag({ tokenRestored: true });
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setAuthDiag({ lastError: `prefs-read: ${msg}` });
+  // (c) Inject the persisted JWT from Keychain (empty string = first launch).
+  let jwt = "";
+  try {
+    const { value } = await Preferences.get({ key: CLERK_CLIENT_JWT_KEY });
+    if (value) {
+      jwt = value;
+      setAuthDiag({ tokenRestored: true });
     }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    setAuthDiag({ lastError: `prefs-read: ${msg}` });
+  }
 
-    // Always set the header — FAPI uses its mere presence to confirm native mode.
-    (requestInit.headers as Headers).set("authorization", jwt);
+  // Always set the header — FAPI uses its mere presence to confirm native mode.
+  (requestInit.headers as Headers).set("authorization", jwt);
 
-    // (d) Identify as native mobile (mirrors @clerk/expo).
-    (requestInit.headers as Headers).set("x-mobile", "1");
-  });
-
-  // ── After-response: capture the echoed JWT ──────────────────────────────
-  instance.__internal_onAfterResponse(async (_requestInit, response) => {
-    // Detect the "Native API not enabled" configuration error.
-    const errors = response?.payload?.errors;
-    if (errors?.[0]?.code === "native_api_disabled") {
-      setAuthDiag({
-        nativeApiDisabled: true,
-        lastError:
-          "native_api_disabled — enable at Dashboard → Configure → Native applications",
-      });
-      console.error(
-        "[Clerk native] Native API disabled.\n" +
-          "Go to: https://dashboard.clerk.com/last-active?path=native-applications\n" +
-          "Enable Native Applications, then rebuild.",
-      );
-    }
-
-    // Read the JWT Clerk echoes in the "authorization" response header.
-    // With CapacitorHttp enabled (capacitor.config.ts), fetch() routes through
-    // iOS NSURLSession which bypasses CORS — all response headers are readable.
-    const authHeader = response?.headers?.get("authorization");
-    setAuthDiag({ authHeaderReceived: Boolean(authHeader) });
-
-    if (authHeader) {
-      try {
-        await Preferences.set({
-          key: CLERK_CLIENT_JWT_KEY,
-          value: authHeader,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setAuthDiag({ lastError: `prefs-write: ${msg}` });
-      }
-    }
-  });
-
-  return instance;
+  // (d) Identify as native mobile (mirrors @clerk/expo).
+  (requestInit.headers as Headers).set("x-mobile", "1");
 }
 
-// ── Module-level singleton ────────────────────────────────────────────────────
-// Constructed once when the module is first evaluated in the browser (client JS).
-// The IIFE guard (typeof window + isNativePlatform) ensures this is a no-op:
-//   • During next build / SSR pre-render (Node.js): typeof window === "undefined"
-//     → returns null, no Clerk instance created.
-//   • In a regular browser (web/dev): isNativePlatform() returns false (no bridge)
-//     → returns null, standard CDN ClerkProvider path is used.
-//   • In the iOS/Android Capacitor app: both checks pass → instance created with
-//     callbacks wired, ready before ClerkProvider mounts.
-const _nativeClerkInstance: InstanceType<typeof ClerkBrowser> | null = (() => {
-  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  if (typeof window === "undefined" || !Capacitor.isNativePlatform() || !key) {
-    return null;
+// ── After-response: capture the echoed JWT ────────────────────────────────────
+async function nativeOnAfterResponse(
+  _requestInit: FapiRequestInit,
+  response: FapiResponse,
+): Promise<void> {
+  // Detect the "Native API not enabled" configuration error.
+  const errors = response?.payload?.errors;
+  if (errors?.[0]?.code === "native_api_disabled") {
+    setAuthDiag({
+      nativeApiDisabled: true,
+      lastError:
+        "native_api_disabled — enable at Dashboard → Configure → Native applications",
+    });
+    console.error(
+      "[Clerk native] Native API disabled.\n" +
+        "Go to: https://dashboard.clerk.com/last-active?path=native-applications\n" +
+        "Enable Native Applications, then rebuild.",
+    );
   }
-  return createNativeClerkInstance(key);
-})();
+
+  // Read the JWT Clerk echoes in the "authorization" response header. With
+  // CapacitorHttp enabled (capacitor.config.ts), fetch() routes through iOS
+  // NSURLSession which bypasses CORS — all response headers are readable.
+  const authHeader = response?.headers?.get("authorization");
+  setAuthDiag({ authHeaderReceived: Boolean(authHeader) });
+
+  if (authHeader) {
+    try {
+      await Preferences.set({ key: CLERK_CLIENT_JWT_KEY, value: authHeader });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setAuthDiag({ lastError: `prefs-write: ${msg}` });
+    }
+  }
+}
+
+/**
+ * Registers the native FAPI interception hooks on `window` (gated to native).
+ * Guarded so a failure can never break the render path — at worst the hooks are
+ * simply not set and the app still loads via the standard ClerkProvider.
+ */
+function useNativeFapiHooks(enabled: boolean): void {
+  useEffect(() => {
+    if (!enabled) return;
+    type FapiWindow = typeof window & {
+      __internal_onBeforeRequest?: typeof nativeOnBeforeRequest;
+      __internal_onAfterResponse?: typeof nativeOnAfterResponse;
+    };
+    const w = window as FapiWindow;
+    try {
+      w.__internal_onBeforeRequest = nativeOnBeforeRequest;
+      w.__internal_onAfterResponse = nativeOnAfterResponse;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setAuthDiag({ lastError: `hook-register: ${msg}` });
+      console.error("[authdiag] native FAPI hook registration failed:", err);
+    }
+    return () => {
+      try {
+        delete w.__internal_onBeforeRequest;
+        delete w.__internal_onAfterResponse;
+      } catch {
+        /* noop */
+      }
+    };
+  }, [enabled]);
+}
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   // Check if Clerk is configured (key missing in local dev without .env).
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+  // Capacitor.isNativePlatform() checks window.webkit.messageHandlers.bridge
+  // (iOS) or window.androidBridge — both injected only by the native container,
+  // absent in regular browsers and during Next.js static-export build.
+  const isNative =
+    typeof window !== "undefined" && Capacitor.isNativePlatform();
+
+  // Register the native FAPI hooks (no-op on web/dev and during prerender).
+  useNativeFapiHooks(Boolean(publishableKey) && isNative);
 
   if (!publishableKey) {
     // No Clerk configured — pass children through with no gate.
@@ -211,26 +202,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  // Capacitor.isNativePlatform() checks window.webkit.messageHandlers.bridge
-  // (iOS) or window.androidBridge — both injected only by the native container,
-  // absent in regular browsers and during Next.js static-export build.
-  const isNative = Capacitor.isNativePlatform();
-
+  // Standard ClerkProvider on EVERY platform: clerk-js loads with its UI
+  // components so <SignIn/> mounts without throwing. Native interception is
+  // layered on via the window globals registered above.
   return (
-    <ClerkProvider
-      publishableKey={publishableKey}
-      appearance={clerkAppearance}
-      {...(isNative && _nativeClerkInstance
-        ? {
-            // standardBrowser:false — skip Clerk's cookie-based code path.
-            standardBrowser: false,
-            // Pass the pre-constructed, callback-wired instance.
-            // ClerkProvider detects typeof instance !== "function" and uses it
-            // directly, calling instance.load({ standardBrowser:false, ... }).
-            Clerk: _nativeClerkInstance as unknown as HeadlessBrowserClerk,
-          }
-        : {})}
-    >
+    <ClerkProvider publishableKey={publishableKey} appearance={clerkAppearance}>
       {/* Bridge registers useAuth().getToken into the module singleton so
           non-component code (api.ts / deepgram.ts) can fetch JWTs without
           relying on window.Clerk (which doesn't hydrate on capacitor://). */}
