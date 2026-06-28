@@ -2,12 +2,12 @@
 
 import { ClerkProvider } from "@clerk/react";
 import { Capacitor } from "@capacitor/core";
-import { Preferences } from "@capacitor/preferences";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import ClerkTokenBridge from "@/components/ClerkTokenBridge";
 import AuthGate from "@/components/AuthGate";
 import { setAuthDiag } from "@/lib/auth-diag";
+import { getNativeToken, setNativeToken } from "@/lib/native-token-store";
 
 // Yardage-book appearance: warm paper / dark-ink palette to match the rest of
 // the app. Uses Clerk's CSS-variable layer so the built-in widgets (sign-in,
@@ -68,11 +68,10 @@ const clerkAppearance = {
 // The before-request hook: omit cookies, append _is_native=1 (so FAPI echoes the
 // JWT in the "authorization" response header instead of a cookie — requires
 // Native Applications enabled in the Clerk Dashboard), and inject the persisted
-// JWT from @capacitor/preferences (Keychain on iOS). The after-response hook
+// JWT from the native token store (see native-token-store.ts; @capacitor/
+// preferences today, Keychain-backed before App Store). The after-response hook
 // reads that "authorization" header back and persists it. CapacitorHttp routes
 // fetch() through iOS NSURLSession so all response headers are readable.
-
-const CLERK_CLIENT_JWT_KEY = "__clerk_client_jwt";
 
 // FapiRequestInit = RequestInit & { url?: URL; ... }. At call time
 // requestInit.headers is a Headers instance and requestInit.url is the built URL.
@@ -95,17 +94,17 @@ async function nativeOnBeforeRequest(requestInit: FapiRequestInit): Promise<void
   const path = requestInit.url?.pathname ?? null;
   setAuthDiag({ isNativeSent: true, lastFapiPath: path });
 
-  // (c) Inject the persisted JWT from Keychain (empty string = first launch).
+  // (c) Inject the persisted JWT from the native token store (empty string = first launch).
   let jwt = "";
   try {
-    const { value } = await Preferences.get({ key: CLERK_CLIENT_JWT_KEY });
+    const value = await getNativeToken();
     if (value) {
       jwt = value;
       setAuthDiag({ tokenRestored: true });
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    setAuthDiag({ lastError: `prefs-read: ${msg}` });
+    setAuthDiag({ lastError: `token-read: ${msg}` });
   }
 
   // Always set the header — FAPI uses its mere presence to confirm native mode.
@@ -143,10 +142,10 @@ async function nativeOnAfterResponse(
 
   if (authHeader) {
     try {
-      await Preferences.set({ key: CLERK_CLIENT_JWT_KEY, value: authHeader });
+      await setNativeToken(authHeader);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setAuthDiag({ lastError: `prefs-write: ${msg}` });
+      setAuthDiag({ lastError: `token-write: ${msg}` });
     }
   }
 }
