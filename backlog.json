@@ -656,7 +656,7 @@
     {
       "id": "caddie-altitude-pressure",
       "priority": 14,
-      "status": "ready",
+      "status": "done-shipped-integration-next",
       "phase": 1,
       "epic": "map-gps-caddie-intelligence",
       "classification": "silent",
@@ -665,7 +665,8 @@
       "headless": "yes",
       "area": "backend",
       "title": "Finish altitude\u2192pressure in air-density (weather.py:73 TODO)",
-      "rationale": "Implement ~12 hPa/100m altitude\u2192pressure so high-altitude plays-like/air-density is correct; add unit test. Fully self-verifiable."
+      "rationale": "Implement ~12 hPa/100m altitude\u2192pressure so high-altitude plays-like/air-density is correct; add unit test. Fully self-verifiable.",
+      "progress": "2026-06-28: investigated \u2014 the TODO was moot: the caller passes Open-Meteo surface_pressure (already altitude-adjusted), so applying a 12hPa/100m term would double-count and overstate thin-air at altitude. Corrected the misleading comment + added 5 unit tests verifying direction (standard~1, Denver-alt<0.9, cold/dry>1, hot/humid<1, no double-count)."
     },
     {
       "id": "caddie-comp-legal-mode",
