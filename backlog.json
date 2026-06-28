@@ -440,7 +440,8 @@
       "status": "ready",
       "title": "Promote backend route/integration tests from advisory to required once first CI run is green",
       "rationale": "13 route/integration tests (auth-fails-closed, IDOR, persistence, CRUD) were written without a local Postgres so never executed; currently an advisory continue-on-error CI job. After the first real GitHub Actions run shows the advisory-backend-integration job green, fold it into required-backend (add postgres service there, drop continue-on-error) and delete the advisory job.",
-      "classification": "silent"
+      "classification": "silent",
+      "note": "UNBLOCKED: advisory-backend-integration job passed in real CI on PR #51 (Postgres service). Safe to promote to required + drop continue-on-error."
     },
     {
       "id": "post-round-recap",
@@ -472,10 +473,11 @@
     {
       "id": "auth-https-scheme-fix",
       "priority": 41,
-      "status": "staged",
+      "status": "shipped-pending-verify",
       "title": "Fix voice/auth 401: switch Capacitor iosScheme capacitor->https so Clerk can mint tokens",
       "rationale": "Owner still hits transcribe 401 (no auth token). Token-bridge code verified correct -> root cause is Clerk failing to issue session JWTs on the custom capacitor://localhost origin. Fix: iosScheme https (https://localhost is Capacitor-recommended, first-class secure origin Clerk supports + secure context for mic). COORDINATED: backend CORS must allow https://localhost (added) and deploy together -> ships with the bundle merge. Cannot be a standalone test build vs current prod (would CORS-block). Gates green. UNVERIFIED on-device (cannot test here); fallback if insufficient = Clerk dashboard allowed-origin / pk_live.",
-      "classification": "noticeable + backend (CORS) \u2014 owner can test"
+      "classification": "noticeable + backend (CORS) \u2014 owner can test",
+      "shipped": "v0.1.323 build 202606272115"
     }
   ]
 }
