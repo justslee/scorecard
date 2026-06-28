@@ -828,7 +828,7 @@
     {
       "id": "gps-capacitor-migrate",
       "priority": 26,
-      "status": "ready",
+      "status": "built-integration-next-pending-device-verify",
       "phase": 4,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -837,7 +837,8 @@
       "headless": "no",
       "area": "frontend/ios",
       "title": "Migrate GPS to @capacitor/geolocation (web fallback)",
-      "rationale": "gps.ts currently uses navigator.geolocation though @capacitor/geolocation is installed; swap with web fallback + permissions for better iOS accuracy/background. Owner device test."
+      "rationale": "gps.ts currently uses navigator.geolocation though @capacitor/geolocation is installed; swap with web fallback + permissions for better iOS accuracy/background. Owner device test.",
+      "shipped": "Built f3ef9a7 on integration/next (2026-06-28). Native @capacitor/geolocation + web fallback; public API unchanged; 23 tests. GPS accuracy + iOS permission flow are device-only \u2014 verify on next build."
     },
     {
       "id": "voice-tactical-advice",
