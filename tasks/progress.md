@@ -3,6 +3,45 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (stats-scoring-breakdown — NOTICEABLE)
+- **Done:** Added three new real-data stats sections to the profile screen, computed
+  purely from existing completed-round data (no backend changes, no new data model).
+
+  Files changed:
+  - **New `frontend/src/lib/profile-stats.ts`**: three pure exported helpers:
+    - `deriveParTypeAverages(rounds)` — per-par-type (par-3/4/5) average score and
+      avg-to-par across all the owner's completed rounds; skips non-standard pars,
+      null scores, non-completed rounds.
+    - `deriveScoreDistribution(rounds)` — counts and percentages of eagle-or-better /
+      birdie / par / bogey / double+ holes across all completed rounds; omits zero-count
+      buckets; preserves canonical display order.
+    - `deriveTrend(rounds, recentN=5)` — compares avg to-par of the last N completed
+      rounds vs all prior; returns null when not enough data or either window has no
+      valid (≥9 played holes) rounds.
+  - **New `frontend/src/lib/profile-stats.test.ts`**: 38 unit tests covering all three
+    helpers; edge cases include: no rounds, non-completed rounds, rounds with no players,
+    null strokes, non-standard pars, holes not in round definition, 9-hole rounds,
+    multi-round accumulation, 1dp rounding, only-owner counting, sort order independence
+    for trend, partial rounds excluded from trend averages.
+  - **`frontend/src/app/profile/page.tsx`**: two new `<Section>` components:
+    - `<ParBreakdown>` — 3-column grid (Par N kicker | hole count | avg score + avg-to-par);
+      birdie colour for negative to-par; "E" for even; empty state. Placed between
+      ScoringByTee and YearLog (both are "scoring by category" views).
+    - `<ScoreDistribution>` — labeled rows with proportional bars (eagle=eagle colour /
+      birdie=birdie colour / par=ink / bogey+double+=pencilSoft), count right, percentage
+      below. Quiet "Recent form" footer (dashed hairline separator) shows trend when
+      ≥6 rounds available (recent avg vs prior avg with delta). Placed after YearLog.
+    - Empty states for both: "Play a round to see your …" — consistent with existing
+      profile empty states.
+
+  Section order in final render:
+  ScoringByTee → ParBreakdown (new) → YearLog → ScoreDistribution (new) → ShotAnalytics
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 276/276 (+38) · build 15 pages.
+  NOTICEABLE — two new data sections appear on the Profile screen whenever the owner has
+  completed rounds: par-type breakdown (avg score/to-par by hole type) and score
+  distribution (eagle+/birdie/par/bogey/double+ bar chart with trend note).
+
 ## 2026-06-28 (clerk-token-cache P48 — NOTICEABLE)
 - **Done:** Clerk session now survives force-quit and cold restart on iOS.
 
