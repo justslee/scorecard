@@ -99,12 +99,22 @@ export default function HomePage() {
   const [liveRoundId, setLiveRoundId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   /** loadError: true when the data-fetch threw unexpectedly (e.g. corrupt
-   *  localStorage, race condition in processing code).  storage-api handles
+   *  localStorage schema, sort throwing on malformed dates).  storage-api handles
    *  normal API failures internally (falls back to cache) so this is a safety
    *  net that prevents the screen from staying stuck on the loading state. */
   const [loadError, setLoadError] = useState(false);
   /** Incrementing this triggers the useEffect to re-run load() (Retry path). */
   const [loadKey, setLoadKey] = useState(0);
+  /**
+   * Real-time network availability from navigator.onLine + window online/offline
+   * events.  Drives the "Offline — showing saved data" indicator independently of
+   * loadError (storage-api swallows network failures and returns cache without
+   * throwing, so loadError never fires on normal connectivity loss).
+   * Defaults to true for SSR; the mount effect syncs to the real value.
+   */
+  const [isOnline, setIsOnline] = useState(true);
+  /** True while a Retry is in-flight — hides the note for immediate feedback. */
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -147,12 +157,30 @@ export default function HomePage() {
         setLoadError(true);
       } finally {
         setLoading(false);
+        setRetrying(false); // clear retrying flag whether load succeeded or failed
       }
     }
 
     load();
   // loadKey is incremented by the Retry button to re-trigger this effect.
   }, [loadKey]);
+
+  // ── Online / offline indicator — navigator.onLine + events ───────────────
+  // storage-api swallows network errors and returns the local cache, so loadError
+  // never fires on plain connectivity loss.  We track navigator.onLine directly
+  // to surface the "Offline — showing saved data" note in that (normal) case.
+  useEffect(() => {
+    // Sync to actual value on mount (useState default is true for SSR safety).
+    setIsOnline(navigator.onLine);
+    function handleOnline() { setIsOnline(true); }
+    function handleOffline() { setIsOnline(false); }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // ── Delete round — optimistic remove; logs error on API failure ──────────
   // deleteRoundAsync removes from local cache first, then fires the API call
@@ -536,7 +564,7 @@ export default function HomePage() {
 
           {/* Loading skeleton — calm paper-toned placeholders while data fetches */}
           {loading && (
-            <div aria-label="Loading rounds">
+            <div role="status" aria-label="Loading rounds">
               {[0, 1, 2].map((i) => (
                 <div
                   key={i}
@@ -557,7 +585,11 @@ export default function HomePage() {
                     <div style={{ width: 112, height: 13, background: T.hairlineSoft, borderRadius: 2 }} />
                     <div style={{ width: 34, height: 9, background: T.hairlineSoft, borderRadius: 2, marginTop: 6 }} />
                   </div>
-                  <div style={{ width: 28, height: 26, background: T.hairlineSoft, borderRadius: 2 }} />
+                  {/* Two stacked rects: score (large) + net (small) — mirrors real row layout */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <div style={{ width: 28, height: 22, background: T.hairlineSoft, borderRadius: 2 }} />
+                    <div style={{ width: 22, height: 9, background: T.hairlineSoft, borderRadius: 2 }} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -566,6 +598,7 @@ export default function HomePage() {
           {/* Load error — fetch failed AND no cached data to show */}
           {!loading && loadError && recentRows.length === 0 && (
             <div
+              role="alert"
               style={{
                 padding: "28px 0 24px",
                 textAlign: "center",
@@ -618,8 +651,13 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Offline note — fetch errored but cached data is showing; quiet pencil annotation */}
-          {!loading && loadError && recentRows.length > 0 && (
+          {/* Offline note — shown when offline (!isOnline) OR an unexpected load
+               error occurred (loadError), and cached data IS showing.
+               Hidden while a Retry is in-flight (retrying) for immediate feedback.
+               Contrast: label uses T.pencil (~4.7:1 vs T.warningWash) — legible in
+               sunlight; warningWash background + warningInk border carry the amber
+               signal without relying on low-contrast amber text at 9px. */}
+          {!loading && !retrying && (!isOnline || loadError) && recentRows.length > 0 && (
             <div
               role="status"
               style={{
@@ -631,18 +669,18 @@ export default function HomePage() {
                 marginBottom: 10,
                 borderRadius: 8,
                 background: T.warningWash,
-                border: `1px solid ${T.warningInk}22`,
+                border: `1px solid ${T.warningInk}44`,
               }}
             >
-              <span style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.2, color: T.warningInk, textTransform: "uppercase" }}>
+              <span style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, color: T.pencil, textTransform: "uppercase" }}>
                 Offline — showing saved data
               </span>
               <button
-                onClick={() => setLoadKey((k) => k + 1)}
+                onClick={() => { setRetrying(true); setLoadKey((k) => k + 1); }}
                 style={{
                   background: "none",
                   border: `1px solid ${T.warningInk}55`,
-                  color: T.warningInk,
+                  color: T.pencil,
                   cursor: "pointer",
                   fontFamily: T.mono,
                   fontSize: 9,

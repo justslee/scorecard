@@ -225,6 +225,10 @@ export default function RoundPage() {
 
   useEffect(() => {
     const id = params.id as string;
+    // Cancellation guard: set true in cleanup so a stale in-flight load() (triggered by
+    // a previous retryCount value) skips setState after a newer effect has started.
+    // Prevents a long-running load from clobbering a just-confirmed score-save snapshot.
+    let cancelled = false;
 
     /**
      * Background retry for scores that failed to reach the server in a previous session.
@@ -257,6 +261,9 @@ export default function RoundPage() {
     async function load() {
       try {
         const r = await apiGetRound(id);
+        // Skip setState if a newer effect (from retryCount change or params.id change)
+        // has already started — prevents stale snapshots clobbering fresher UI state.
+        if (cancelled) return;
         const holeCount = r.holes.length || 18;
 
         // Re-discover scores from previous session that never reached the server.
@@ -286,6 +293,7 @@ export default function RoundPage() {
           retrySyncPending(id);
         }
       } catch (e) {
+        if (cancelled) return; // stale error from a superseded request — ignore
         if (isNotFoundOrNetworkError(e)) {
           // 404 (orphan/offline round) or network down → LOCAL mode.
           console.warn(`[round/${id}] falling back to local cache (404 or offline):`, e);
@@ -338,11 +346,14 @@ export default function RoundPage() {
           }
         }
       } finally {
-        setLoading(false);
+        // Only update loading state if this effect is still the active one.
+        if (!cancelled) setLoading(false);
       }
     }
 
     load();
+
+    return () => { cancelled = true; };
   // retryCount is incremented by the Retry button to re-run load() without showing
   // a loading spinner — round data stays visible during the silent re-fetch.
   }, [params.id, retryCount]);
