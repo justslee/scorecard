@@ -2446,3 +2446,34 @@ no per-build assignment or beta review needed. Build v0.1.323 (202606272115) is 
 NOTE for future ships: ship.sh upload → Apple processing (~10 min to VALID) → appears in TestFlight
 for the Looper Team group automatically. If a build ever doesn't show: check processingState via
 the ASC API (scripts pattern in this session), not just the ship.sh exit code.
+
+---
+
+## Native auth VERIFIED + CI crash gate + lockfile fix — 2026-06-28 (cycle close)
+
+**Native Clerk auth confirmed working (not just shipped).** Drove a real credentialed
+sign-in in the iPhone-17 simulator (WebKit remote inspector). Every native-auth signal green:
+`native-sent=true` on every FAPI request incl. the sign_ins POST (the @clerk/react v6 upgrade
+fixed v5's dead token hooks), `auth-hdr=true` + `tok=true` (CapacitorHttp made the auth header
+readable; JWT captured + persisted), `napi=true`, password accepted. `signed=false` reached ONLY
+because Clerk gated the new device behind an emailed second-factor OTP (human-only — needs the
+owner's inbox), which is product security, not a native-auth bug. Shipped verified build
+**v1.0.369 (build 202606281037)**. Owner's one remaining step = sign in + enter the email code.
+
+**P53 done — CI native crash gate.** `required-frontend` now builds with the public prod Clerk
+key and runs `npm run test:native-crash` (ios/simtest-headless.mjs) in Chromium with the iOS
+bridge faked — fails the build on any client-side exception (the v1.0.365 white-screen class).
+Verified live in CI: the "Native client-side crash check (Capacitor path)" step runs + passes.
+
+**Lockfile break fixed (surfaced by the new gate's npm ci).** The @clerk/react v6 upgrade left
+package-lock.json out of sync — npm ci failed (`Missing: utf-8-validate@5.0.10`). Two false starts
+taught the rule: regenerating from scratch on macOS prunes the linux/win platform binding *nodes*
+(@rolldown/binding-linux-x64-gnu → vitest MODULE_NOT_FOUND on CI), and local npm 11 hoists deps
+differently than CI's npm 10. CORRECT FIX: restore the original lock + `npm@10.8.2 install` IN
+PLACE (no delete) → reconciles only the 5 missing nested utf-8-validate@5.0.10 nodes, preserves
+every platform binding. Net: +5 nodes, 0 removed, 0 version bumps. RULE FOR FUTURE DEP CHANGES:
+never delete package-lock.json to regen; install in place, and verify with CI's npm version
+(`npx npm@10.8.2 ci`), not just local npm.
+
+**Bundle = PR #54** (integration/next → main): verified native auth (v1.0.369) [noticeable] +
+CI crash gate + lockfile fix [silent]. **CI fully green.** Awaiting owner "ship it".
