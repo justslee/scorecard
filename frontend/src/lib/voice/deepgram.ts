@@ -8,6 +8,7 @@
  */
 
 import { API_BASE, authHeaders } from '../api';
+import { getAuthDiagnostics } from '../auth-token';
 
 export interface TranscribeResult {
   transcript: string;
@@ -111,6 +112,17 @@ export async function transcribeBlob(blob: Blob): Promise<TranscribeResult> {
   });
   if (!res.ok) {
     const text = await res.text();
+    // On 401 include a client-side auth state snapshot so the owner can see
+    // exactly what happened from a screenshot — since we can't read the device
+    // console after the fact.
+    if (res.status === 401) {
+      const diag = getAuthDiagnostics();
+      throw new Error(
+        `Transcribe 401 (no auth token) — ` +
+        `isLoaded:${diag.isLoaded} isSignedIn:${diag.isSignedIn} ` +
+        `getterReg:${diag.getterRegistered} | ${text}`
+      );
+    }
     throw new Error(`Transcribe failed (${res.status}): ${text}`);
   }
   return res.json();

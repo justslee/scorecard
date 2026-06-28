@@ -117,6 +117,33 @@ Secrets to confirm present on the deploy box: `CLERK_JWKS_URL`, `CLERK_ISSUER`, 
 - **Gates:** new endpoints + data handling must pass `/security-review` + `/code-review`.
 
 ## Review follow-ups (carry into the routes-wiring items)
+- **Cross-endpoint: clear-optional-field (profile + players, deferred):** clearing an optional
+  field (email/phone/nickname/handicap/homeCourse) doesn't persist — frontend sends
+  undefined/`?? undefined` and backends use `model_dump(exclude_none=True)` (players) so the old
+  value sticks. Profile identity already fixed via explicit null + `model_fields_set`; do the
+  same sweep for `routes/players.py` + the players edit form. One-shot cleanup item.
+- **SwipeableRow swipe direction (deferred):** swipe is right-to-delete; iOS convention is
+  swipe-left. Inherited; flip when convenient.
+- **`wire-profile-bag` (P15) / `wire-profile-stats` (P16):** the profile page currently shows
+  `(Preview)` placeholder sections (StrokesGained / FairwayFan / ScoringByTee / YearLog / Bag)
+  + calm "Available after posting scores." for handicap history. Wire these to real data when
+  built. Polish to fold in then: the `(Preview)` badge is low-contrast in sunlight (bump to 9px
+  / `T.pencil`); FairwayFan has a first-person "You miss slightly right…" line that should be
+  neutral/real; the disabled "+ Post score" button contrast. Bag "Coming soon" becomes the real
+  editable club-distances UI (persists via PUT /api/profile/golfer clubDistances).
+- **round-scoring sync hardening (deferred from wire-round-scoring, non-blocking):** (a) a
+  failed score *deletion* (strokes:null) can reappear after reload — pending deletions aren't
+  replayed (recoverable by re-clearing); needs pending-deletion tracking. (b) `localSaveRound`
+  is called inside a `setRound` updater (idempotent; StrictMode double-write harmless) — move
+  the write outside the updater when convenient. Both are low-severity; revisit if a real sync
+  engine is built.
+- **`wire-round-scoring` (from wire-round-new review):** offline-fallback rounds get a CLIENT
+  uuid saved only to localStorage; once the scoring screen reads via the backend
+  (`getRound(id)`), a local-fallback id 404s and scores never sync — silent data loss. Carry a
+  pending-sync / local-only flag into the scoring screen; don't assume the server has the round.
+- **wire-round-new design polish (post-TestFlight, non-blocking):** unify modal backdrops to
+  ink-tinted `rgba(26,42,26,0.35)` (CourseSearch ~162, page ~1085); player row touch target
+  42→44px (page ~763); white-tee dot color `#eae5d6`→`T.paperEdge` for contrast.
 - **`wire-profile-identity`/`wire-profile-bag` (from backend-profile-endpoint review):** the PUT
   is a partial update that skips None, and `storage-api.ts saveGolferProfileAsync` sends
   `?? undefined` — so a user CANNOT clear `handicap`/`homeCourse` back to null (old value

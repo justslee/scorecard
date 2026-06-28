@@ -20,7 +20,13 @@ dependencies = [
 
 [dependency-groups]
 # Dev/CI tooling. `uv sync` installs these by default, so `uv run ruff check .`
-# works in CI without ruff being installed globally.
+# and `uv run pytest` work in CI without global installs.
 dev = [
     "ruff>=0.15.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -407,7 +407,7 @@ interface MappedCourseApiResponse {
 /** Unified search across GolfAPI, OSM, and local courses */
 export async function searchAllCourses(
   query: string,
-  options?: { lat?: number; lng?: number }
+  _options?: { lat?: number; lng?: number }
 ): Promise<CourseSearchResult[]> {
   const results: CourseSearchResult[] = [];
 

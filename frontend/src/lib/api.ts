@@ -21,6 +21,7 @@ import type {
   Course,
   GolferProfile,
 } from './types';
+import { getTokenViaClerk, getAuthDiagnostics } from './auth-token';
 
 // Re-export so callers that import domain types from here keep working.
 export type {
@@ -39,20 +40,84 @@ export type {
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /**
+ * How long (ms) to wait for window.Clerk JS to finish hydrating (fallback path).
+ * Only used when the hook-based getter hasn't been registered yet.
+ */
+const CLERK_LOAD_TIMEOUT_MS = 4000;
+
+/** True when Clerk is configured (publishable key present). */
+const CLERK_ENABLED =
+  typeof process !== 'undefined' &&
+  !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+/**
  * Get auth token from Clerk (client-side only).
+ *
+ * Primary path: useAuth().getToken registered by ClerkTokenBridge — the
+ * supported Clerk React API, which works on capacitor://localhost where
+ * window.Clerk.session often never hydrates.
+ *
+ * Fallback path: window.Clerk (legacy; kept as belt-and-suspenders for
+ * environments where the bridge hasn't mounted yet). Waits up to 4 s for
+ * Clerk JS to finish loading before giving up.
+ *
+ * When both paths return null while the user appears signed in, a diagnostic
+ * is logged to the console (see deepgram.ts for the UI-visible diagnostic on 401).
  */
 async function getAuthToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
+  if (!CLERK_ENABLED) return null;
 
+  // ── 1. Primary: hook-based getter (registered by ClerkTokenBridge) ──────
+  // Poll up to 3 s if the getter isn't registered yet (first-render race where
+  // an API call fires before ClerkTokenBridge's useEffect has run).
+  const hookToken = await getTokenViaClerk(3000);
+  if (hookToken !== null) return hookToken;
+
+  // ── 2. Fallback: window.Clerk ────────────────────────────────────────────
   // @ts-expect-error - Clerk exposes this on window
   const clerk = window.Clerk;
-  if (!clerk?.session) return null;
-
-  try {
-    return await clerk.session.getToken();
-  } catch {
-    return null;
+  if (clerk) {
+    // Await hydration if not yet complete.
+    if (!clerk.loaded) {
+      try {
+        await Promise.race([
+          clerk.load?.() ?? Promise.resolve(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error('Clerk load timeout')),
+              CLERK_LOAD_TIMEOUT_MS
+            )
+          ),
+        ]);
+      } catch {
+        // Fall through — will try clerk.session below anyway
+      }
+    }
+    if (clerk.session) {
+      try {
+        const token = await clerk.session.getToken();
+        if (token) return token;
+      } catch (err) {
+        console.error('[auth] window.Clerk.session.getToken() threw:', err);
+      }
+    }
   }
+
+  // ── 3. No token — emit diagnostic if user appears signed in ─────────────
+  const diag = getAuthDiagnostics();
+  if (diag.isSignedIn) {
+    // Signed-in user but no token obtained from either path — this is the bug.
+    // The UI-visible version of this diagnostic appears in deepgram.ts on 401.
+    console.error(
+      `[auth] DIAGNOSTIC signed-in but no token — ` +
+      `isLoaded=${diag.isLoaded} isSignedIn=${diag.isSignedIn} ` +
+      `getterRegistered=${diag.getterRegistered} ` +
+      `window.Clerk=${typeof window !== 'undefined' && !!(window as unknown as Record<string, unknown>).Clerk}`
+    );
+  }
+
+  return null;
 }
 
 /**
@@ -338,11 +403,17 @@ export interface GolferProfileCreate {
   clubDistances?: GolferProfile['clubDistances'];
 }
 
-/** Fields that can be updated via PUT /api/profile/golfer. */
+/**
+ * Fields that can be updated via PUT /api/profile/golfer.
+ *
+ * Setting a field to null is an EXPLICIT CLEAR — the backend distinguishes
+ * "omitted" (no change) from "set to null" (clear the value) via Pydantic
+ * model_fields_set. Omit a key entirely when no change is intended.
+ */
 export interface GolferProfileUpdate {
-  name?: string;
-  handicap?: number;
-  homeCourse?: string;
+  name?: string | null;
+  handicap?: number | null;
+  homeCourse?: string | null;
   clubDistances?: GolferProfile['clubDistances'];
 }
 

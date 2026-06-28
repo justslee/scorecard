@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseVoiceTranscript } from "@/lib/voice/parseVoiceTranscript";
 import { parseVoiceScores, parseVoiceScoresLocally } from "@/lib/voice/parseVoiceScores";
+import type { VoiceParseSetupResult, VoiceParseScoresResult } from "@/lib/voice/types";
 import type { CommandLaneScenario } from "./schema";
 import { deepSubset } from "./assert";
 import { generateScenario } from "./generators";
@@ -40,14 +41,14 @@ function readJsonl(filePath: string): CommandLaneScenario[] {
   });
 }
 
-function pretty(x: any) {
+function pretty(x: unknown) {
   return JSON.stringify(x, null, 2);
 }
 
 async function runOne(s: CommandLaneScenario, opts: { verbose: boolean; useRealAnthropicForScores: boolean }) {
   const utter = s.utterance;
 
-  let actual: any;
+  let actual: VoiceParseSetupResult | VoiceParseScoresResult;
 
   if (s.endpoint === "/api/parse-voice") {
     // force local by clearing key
@@ -72,8 +73,9 @@ async function runOne(s: CommandLaneScenario, opts: { verbose: boolean; useRealA
     }
   }
 
-  // confidence check (setup only)
-  if (s.expectedConfidenceMin > 0 && typeof actual?.confidence === "number") {
+  // confidence check — applies to both setup and scoring results now that
+  // VoiceParseScoresResult carries an optional confidence field.
+  if (s.expectedConfidenceMin > 0 && "confidence" in actual && typeof actual.confidence === "number") {
     if (actual.confidence < s.expectedConfidenceMin) {
       return {
         ok: false,
@@ -123,7 +125,6 @@ async function main() {
   let fail = 0;
 
   for (const s of scenarios) {
-    // eslint-disable-next-line no-await-in-loop
     const res = await runOne(s, { verbose, useRealAnthropicForScores });
     if (res.ok) {
       pass++;

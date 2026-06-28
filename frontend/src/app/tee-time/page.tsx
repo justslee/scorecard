@@ -716,7 +716,7 @@ function Section({ kicker, title, aside, children }: { kicker: string; title: st
   );
 }
 
-function TTMasthead({ accent, onBack, kicker, title }: { accent: string; onBack: () => void; kicker: string; title: string }) {
+function TTMasthead({ accent: _accent, onBack, kicker, title }: { accent: string; onBack: () => void; kicker: string; title: string }) {
   return (
     <div style={{ padding: "max(14px, env(safe-area-inset-top)) 22px 14px", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>

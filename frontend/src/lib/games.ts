@@ -11,6 +11,22 @@ export interface BestBallResults {
   winnerTeamId: string | null;
 }
 
+/** Per-segment match-play state for match-mode Nassau. */
+export interface NassauMatchSegment {
+  /** Number of holes (in the segment) where both competitors had a score. */
+  holesPlayed: number;
+  /** Running match diff: positive = competitorIds[0] leads, negative = [1] leads. */
+  matchDiff: number;
+  /** Human-readable status: "AS", "3 UP", "5 & 4", etc. */
+  statusLabel: string;
+  /** Competitor ID currently leading this segment, or null if tied (AS). */
+  leaderId: string | null;
+  /** Hole number where the segment was mathematically clinched (null = still live). */
+  closedAt: number | null;
+  /** True if the segment is over (can't be recovered). */
+  closed: boolean;
+}
+
 export interface NassauResults {
   front9WinnerId: string | null;
   back9WinnerId: string | null;
@@ -20,6 +36,10 @@ export interface NassauResults {
   overallTotals: Record<string, number>;
   mode: 'stroke' | 'match';
   scope: 'individual' | 'team';
+  /** Populated only when mode='match'. Hole-by-hole match state per segment. */
+  front9Match?: NassauMatchSegment;
+  back9Match?: NassauMatchSegment;
+  overallMatch?: NassauMatchSegment;
 }
 
 export interface ThreePointResults {
@@ -283,7 +303,104 @@ export function computeNassau(round: Round, game: Game): NassauResults {
     return null;
   };
 
-  // Match-play Nassau is not implemented yet; fall back to stroke totals.
+  // ----- Match-play Nassau -----
+  if (mode === 'match' && competitorIds.length >= 2) {
+    const [aId, bId] = competitorIds;
+
+    /** Gross score for a competitor on a single hole.
+     *  Individual: raw strokes. Team: best-ball (same as stroke mode). */
+    const holeScore = (competitorId: string, holeNumber: number): number | undefined => {
+      if (scope === 'team') {
+        const team = (game.teams ?? []).find(t => t.id === competitorId);
+        if (!team) return undefined;
+        const maps = team.playerIds.map(pid => scoreByHole(round.scores, pid));
+        const strokes = maps.map(m => m.get(holeNumber)).filter((v): v is number => typeof v === 'number');
+        return strokes.length ? Math.min(...strokes) : undefined;
+      }
+      return scoreByHole(round.scores, competitorId).get(holeNumber);
+    };
+
+    /** Compute match-play state for one segment (startHole..endHole, inclusive).
+     *
+     *  Close-check fires only when BOTH players have a score on the current hole.
+     *  This prevents unscored holes from spuriously closing an in-progress match.
+     *  "Holes remaining" = segmentLength − holesPlayed (same as real golf: remaining
+     *  holes to be played, not just holes after the current index). */
+    const computeMatchSeg = (startHole: number, endHole: number): NassauMatchSegment => {
+      const segmentLength = endHole - startHole + 1;
+      let diff = 0; // positive = A leads
+      let holesPlayed = 0;
+      let closedAt: number | null = null;
+      let diffAtClose: number | null = null; // diff at the moment of closure
+
+      for (let h = startHole; h <= endHole; h++) {
+        const sA = holeScore(aId, h);
+        const sB = holeScore(bId, h);
+
+        if (typeof sA === 'number' && typeof sB === 'number') {
+          holesPlayed++;
+          if (sA < sB) diff++;
+          else if (sB < sA) diff--;
+          // tie: halved — no change to diff
+
+          // Close-check: only after a scored hole.
+          // Remaining = total segment holes − played so far.
+          const holesRemainingInSeg = segmentLength - holesPlayed;
+          if (closedAt === null && Math.abs(diff) > holesRemainingInSeg) {
+            closedAt = h;
+            diffAtClose = diff; // freeze the lead at closure
+          }
+        }
+      }
+
+      const closed = closedAt !== null;
+      // Leader is the competitor ahead at closure (if closed) or currently ahead.
+      const effectiveDiff = closed ? diffAtClose! : diff;
+      const leaderId: string | null = effectiveDiff > 0 ? aId : effectiveDiff < 0 ? bId : null;
+
+      let statusLabel: string;
+      if (holesPlayed === 0) {
+        statusLabel = '—';
+      } else if (closed) {
+        const lead = Math.abs(diffAtClose!);
+        const remaining = endHole - closedAt!;
+        // "X & Y" when holes remain; "X UP" when segment ends exactly on the last hole.
+        // Always uppercase so raw label is consistent — LeaderboardSheet may also apply
+        // textTransform:uppercase but GameResults/GameLeaderboards render it raw.
+        statusLabel = remaining === 0 ? `${lead} UP` : `${lead} & ${remaining}`;
+      } else if (diff === 0) {
+        statusLabel = 'AS';
+      } else {
+        statusLabel = `${Math.abs(diff)} UP`;
+      }
+
+      // NOTE: `matchDiff` is the RAW running diff after all iterated holes
+      // (continues past the close point). Use `leaderId` / `statusLabel` / `diffAtClose`
+      // (frozen) for results display; `matchDiff` is only useful for hole-by-hole replay.
+      return { holesPlayed, matchDiff: diff, statusLabel, leaderId, closedAt, closed };
+    };
+
+    const front9Match = computeMatchSeg(1, 9);
+    const back9Match = computeMatchSeg(10, 18);
+    const overallMatch = computeMatchSeg(1, 18);
+
+    // Winner IDs come from match-play leaders (null = AS = no leader yet)
+    return {
+      front9WinnerId: front9Match.leaderId,
+      back9WinnerId: back9Match.leaderId,
+      overallWinnerId: overallMatch.leaderId,
+      front9Totals,
+      back9Totals,
+      overallTotals,
+      mode,
+      scope,
+      front9Match,
+      back9Match,
+      overallMatch,
+    };
+  }
+
+  // ----- Stroke-play Nassau (default) -----
   const front9WinnerId = winnerFor(front9Totals);
   const back9WinnerId = winnerFor(back9Totals);
   const overallWinnerId = winnerFor(overallTotals);

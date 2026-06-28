@@ -4,12 +4,13 @@ name: CI
 # NOT the Claude Max subscription — only the *agent loop* must stay off the metered
 # API path; CI test runs here are fine.
 #
-# RATCHET: `required-*` jobs are green on main today — branch protection should require
-# them. The `advisory` job runs checks that have pre-existing debt (frontend ESLint:
-# ~108 errors; voice-tests: 1 fuzz case `scores:123:63`, an unresolved "jt"->Justin
-# nickname). They run for visibility but do NOT block merges yet. As the team burns each
-# down (see backlog: frontend-lint-cleanup, voice-nickname-jt), move it up into a
-# required job so it becomes blocking.
+# RATCHET: all `required-*` jobs are green on main today — branch protection should
+# require them. As of 2026-06-27 the former `advisory` checks were burned down and
+# promoted to required: frontend ESLint is clean (0/0 — see backlog frontend-lint-cleanup,
+# which also stopped ESLint from scanning the Capacitor ios/ bundle), and voice-tests
+# --smoke passes 260/260. The 238 vitest unit tests (games engine + voice pipeline) are
+# now run here too. Nothing is advisory anymore; add a check back as a new step only if it
+# carries fresh, temporary debt.
 
 on:
   pull_request:
@@ -22,7 +23,7 @@ concurrency:
 
 jobs:
   required-frontend:
-    name: Frontend gates (typecheck · build)
+    name: Frontend gates (lint · typecheck · voice-tests · unit · build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -36,16 +37,27 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install deps
         run: npm ci
+      - name: Lint (ESLint)
+        run: npm run lint
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Voice regression tests (smoke)
+        run: npx tsx voice-tests/runner.ts --smoke
+      - name: Unit tests (vitest)
+        run: npm test
       - name: Build
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: https://api.looperapp.org
 
   required-backend:
-    name: Backend gate (ruff)
+    name: Backend gate (ruff + pytest pure-logic)
     runs-on: ubuntu-latest
+    # No DB here: the pure-logic tests (tests/*.py) need none, and the route
+    # integration tests (tests/integration/) skip gracefully when no Postgres is
+    # reachable (conftest probes the port). So this job runs 138 pure-logic tests
+    # green with no service. The DB-backed integration run is the separate
+    # `advisory-backend-integration` job below.
     defaults:
       run:
         working-directory: backend
@@ -58,25 +70,42 @@ jobs:
         run: uv sync
       - name: Lint (ruff)
         run: uv run ruff check .   # ruff is pinned in pyproject dev group
+      - name: Unit tests (pytest pure-logic; integration skips without DB)
+        run: uv run pytest
 
-  advisory:
-    name: Advisory (known debt — not blocking yet)
+  advisory-backend-integration:
+    name: Backend route/integration tests (advisory until first green)
     runs-on: ubuntu-latest
+    # ADVISORY: the route/integration harness (tests/integration/) has not yet been
+    # executed against a real Postgres (no DB available in the dev env where it was
+    # written). continue-on-error keeps it from blocking merges until a real CI run
+    # proves it green — then promote it into required-backend (drop continue-on-error,
+    # move the postgres service there) and delete this job.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: scorecard_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
-        working-directory: frontend
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/scorecard_test
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: astral-sh/setup-uv@v5
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install deps
-        run: npm ci
-      - name: ESLint (advisory — ~108 pre-existing errors; see backlog frontend-lint-cleanup)
-        run: npm run lint
-        continue-on-error: true
-      - name: Voice regression tests (advisory — 1 fuzz fail; see backlog voice-nickname-jt)
-        run: npx tsx voice-tests/runner.ts --smoke
+          enable-cache: true
+      - name: Sync deps
+        run: uv sync
+      - name: Route/integration tests (pytest tests/integration/)
+        run: uv run pytest tests/integration/
         continue-on-error: true

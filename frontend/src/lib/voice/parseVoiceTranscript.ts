@@ -51,7 +51,7 @@ export async function parseVoiceTranscript(
     throw new Error(`Anthropic parse failed: ${error}`);
   }
 
-  const data: any = await response.json();
+  const data = (await response.json()) as { content?: Array<{ text?: string }> };
   const content = data.content?.[0]?.text ?? "";
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {

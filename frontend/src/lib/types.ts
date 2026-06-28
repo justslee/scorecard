@@ -189,7 +189,8 @@ export interface Tournament {
 
 export interface GolferProfile {
   id: string;
-  name: string;
+  /** Display name — null when the user hasn't set one yet (backend Optional[str]). */
+  name: string | null;
   handicap: number | null;
   homeCourse: string | null;
   clubDistances: {

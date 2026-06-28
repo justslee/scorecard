@@ -9,7 +9,7 @@ export type VoiceParseSetupResult =
         teams?: { name: string; playerNames: string[] }[];
         playerNames: string[];
         handicaps?: Record<string, number>;
-        settings?: Record<string, any>;
+        settings?: Record<string, unknown>;
       };
       confidence: number;
     }
@@ -28,4 +28,6 @@ export type VoiceParseSetupResult =
 export type VoiceParseScoresResult = {
   hole: number;
   scores: Record<string, number>;
+  /** Derived confidence 0–1.  Undefined = treat as high (no amber cue shown). */
+  confidence?: number;
 };

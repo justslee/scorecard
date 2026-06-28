@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 
 // Load the Clerk widget client-only. Under static export the page is prerendered
 // with no ClerkProvider (the publishable key is injected at runtime via the build
@@ -11,18 +12,55 @@ const SignUp = dynamic(() => import("@clerk/clerk-react").then((m) => m.SignUp),
 
 export default function SignUpClient() {
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
-          <p className="text-zinc-400">Start tracking your golf journey</p>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: `${PAPER_NOISE}, ${T.paper}`,
+        backgroundBlendMode: "multiply",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "max(14px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom))",
+        fontFamily: T.sans,
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 400 }}>
+        {/* Yardage-book masthead */}
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div
+            style={{
+              fontFamily: T.serif,
+              fontStyle: "italic",
+              fontSize: 44,
+              letterSpacing: -1,
+              color: T.ink,
+              lineHeight: 1,
+            }}
+          >
+            Looper.
+          </div>
+          <div
+            style={{
+              fontFamily: T.mono,
+              fontSize: 8.5,
+              letterSpacing: 1.8,
+              color: T.pencil,
+              textTransform: "uppercase",
+              marginTop: 10,
+            }}
+          >
+            Create your account
+          </div>
         </div>
+
+        {/* Clerk sign-up widget. Appearance is driven by the ClerkProvider
+            appearance prop (paper/ink palette). Per-element override kept minimal. */}
         <SignUp
           routing="hash"
           appearance={{
             elements: {
               rootBox: "mx-auto",
-              card: "bg-zinc-900/50 backdrop-blur-xl border border-zinc-800 shadow-2xl",
             },
           }}
         />

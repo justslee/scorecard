@@ -74,7 +74,7 @@ Use the exact player names from the list above in your response.`;
     throw new Error(`Anthropic parse failed: ${error}`);
   }
 
-  const data: any = await response.json();
+  const data = (await response.json()) as { content?: Array<{ text?: string }> };
   const content = data.content?.[0]?.text ?? "";
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error(`Could not parse response: ${content}`);
@@ -115,15 +115,35 @@ Use the exact player names from the list above in your response.`;
 
   if (raw && typeof raw === "object" && raw.scores && typeof raw.scores === "object") {
     const mapped: Record<string, number> = {};
-    for (const [k, v] of Object.entries(raw.scores as Record<string, any>)) {
+    for (const [k, v] of Object.entries(raw.scores as Record<string, unknown>)) {
       const resolved = resolvePlayer(String(k));
       const num = typeof v === "number" ? v : parseInt(String(v), 10);
       if (resolved && Number.isFinite(num)) mapped[resolved] = num;
     }
-    return { ...raw, scores: mapped };
+    // Forward confidence from the backend response when present; otherwise compute
+    // from the mapped scores using the same formula as the backend.
+    const backendConfidence = typeof (raw as Record<string, unknown>).confidence === "number"
+      ? ((raw as Record<string, unknown>).confidence as number)
+      : _deriveConfidence(mapped, opts.playerNames);
+    return { ...raw, scores: mapped, confidence: backendConfidence };
   }
 
-  return raw as any;
+  return raw as VoiceParseScoresResult;
+}
+
+// --------------------
+// Shared helpers
+// --------------------
+
+/**
+ * Honest confidence derived from how many players were scored vs total in the round.
+ * Empty parse → 0.2. Otherwise: (scored / total) * 0.8, capped at 1.0.
+ * The 0.8 ceiling (vs 0.9 in the backend) reflects local heuristic reliability.
+ */
+function _deriveConfidence(scores: Record<string, number>, playerNames: string[]): number {
+  const scored = Object.keys(scores).length;
+  if (scored === 0) return 0.2;
+  return Math.min(1.0, (scored / Math.max(1, playerNames.length)) * 0.8);
 }
 
 // --------------------
@@ -234,11 +254,11 @@ export function parseVoiceScoresLocally(
     let val = opts.par;
     if (t.includes("birdie")) val = opts.par - 1;
     else if (t.includes("eagle")) val = opts.par - 2;
-    else if (t.includes("double")) val = opts.par + 2;
+    else if (t.includes("double") || t.includes("dbl")) val = opts.par + 2;
     else if (t.includes("bogey")) val = opts.par + 1;
 
     for (const p of opts.playerNames) scores[p] = val;
-    return { hole: opts.hole, scores };
+    return { hole: opts.hole, scores, confidence: _deriveConfidence(scores, opts.playerNames) };
   }
 
   // First pass: explicit "<player> <result/number>" patterns across the whole string.
@@ -248,7 +268,7 @@ export function parseVoiceScoresLocally(
     if (aliases.length === 0) continue;
     const nameAlt = aliases.join("|");
     const re = new RegExp(
-      `\\b(?:${nameAlt})\\b\\s+(?:made\\s+a\\s+|got\\s+a\\s+|shot\\s+a\\s+|shot\\s+|with\\s+a\\s+|)\\s*(par|birdie|eagle|bogey|double\\s+bogey|dbl\\s+bogey|double|\\d+|zero|one|won|two|to|too|three|tree|four|fore|ford|five|six|seven|eight|ate|nine|ten)`,
+      `\\b(?:${nameAlt})\\b\\s+(?:made\\s+a\\s+|got\\s+a\\s+|shot\\s+a\\s+|shot\\s+|with\\s+a\\s+|)\\s*(par|birdie|eagle|bogey|double\\s+bogey|dbl\\s+bogey|double|\\d+|zero|one|won|two|to|too|three|tree|four|fore|ford|for|five|six|seven|eight|ate|nine|ten)`,
       "gi"
     );
     for (const m of t.matchAll(re)) {
@@ -279,12 +299,12 @@ export function parseVoiceScoresLocally(
     else if (part.includes("bogey")) val = opts.par + 1;
 
     if (val === null) {
-      const m = part.match(/\b(\d+|zero|one|won|two|to|too|three|tree|four|fore|ford|five|six|seven|eight|ate|nine|ten)\b/);
+      const m = part.match(/\b(\d+|zero|one|won|two|to|too|three|tree|four|fore|ford|for|five|six|seven|eight|ate|nine|ten)\b/);
       if (m?.[1]) val = wordOrDigitToNum(m[1]);
     }
 
     if (val !== null) scores[player] = val;
   }
 
-  return { hole: opts.hole, scores };
+  return { hole: opts.hole, scores, confidence: _deriveConfidence(scores, opts.playerNames) };
 }

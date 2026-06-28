@@ -27,7 +27,7 @@ export type VoiceScenario = {
   endpoint: VoiceTestEndpoint;
 
   /** Subset of the expected *effect* (parsed JSON) */
-  expectedEffect: Record<string, any>;
+  expectedEffect: Record<string, unknown>;
 
   /** Optional assertion for result.confidence */
   expectedConfidenceMin?: number;

@@ -63,7 +63,7 @@ export function generateScoresScenario(seed: number, index: number): CommandLane
   const everyone = maybe(rng, 0.18);
 
   let utterance = "";
-  let expectedEffect: any;
+  let expectedEffect: Record<string, unknown>;
 
   if (everyone) {
     const res = pick(rng, RESULT_WORDS);

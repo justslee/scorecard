@@ -136,15 +136,17 @@ async def upsert_golfer_profile(
             )
             db.add(row)
         else:
-            # Partial update — only touch fields the caller supplied.
-            if data.name is not None:
+            # Partial update — only touch fields the caller explicitly supplied.
+            # Use model_fields_set so an explicit null (intentional clear) is
+            # distinguished from an omitted field (no change wanted).
+            if "name" in data.model_fields_set:
                 row.name = data.name
-            if data.handicap is not None:
+            if "handicap" in data.model_fields_set:
                 row.handicap_index = data.handicap
-            if data.homeCourse is not None:
+            if "homeCourse" in data.model_fields_set:
                 row.home_course = data.homeCourse
-            if data.clubDistances is not None:
-                row.bag_clubs = data.clubDistances
+            if "clubDistances" in data.model_fields_set:
+                row.bag_clubs = data.clubDistances if data.clubDistances is not None else {}
             row.updated_at = datetime.now(timezone.utc)
 
         await db.commit()

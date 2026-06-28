@@ -28,8 +28,13 @@ ASC_ISSUER_ID="${ASC_ISSUER_ID:-f58bfc06-549c-4a78-a4ae-3df6d5e3939a}"
 ASC_KEY_PATH="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8}"
 TEAM_ID="${TEAM_ID:-X3F694PQ8B}"
 
-# Monotonic build number (Apple requires a higher one each upload).
+# Monotonic build number (Apple requires a higher CFBundleVersion each upload).
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
+# Human-readable release version (CFBundleShortVersionString) so each TestFlight
+# release is distinguishable instead of all showing "1.0". Auto-increments via the
+# git commit count (0.1.N). Override for a real milestone:
+#   MARKETING_VERSION=1.0.0 bash ops/ios/ship.sh
+MARKETING_VERSION="${MARKETING_VERSION:-0.1.$(git -C "$REPO" rev-list --count HEAD 2>/dev/null || echo 0)}"
 ARCHIVE="/tmp/Looper-${BUILD_NUMBER}.xcarchive"
 
 [ -f "$ASC_KEY_PATH" ] || { echo "ERROR: ASC key not found at $ASC_KEY_PATH"; exit 1; }
@@ -40,12 +45,13 @@ echo "▸ [1/4] Build static web export (API=$NEXT_PUBLIC_API_URL)…"
 echo "▸ [2/4] Sync web + plugins into iOS…"
 ( cd "$FRONTEND" && npx cap sync ios )
 
-echo "▸ [3/4] Archive unsigned (build $BUILD_NUMBER)…"
+echo "▸ [3/4] Archive unsigned (v$MARKETING_VERSION build $BUILD_NUMBER)…"
 xcodebuild -project "$FRONTEND/ios/App/App.xcodeproj" \
   -scheme App -configuration Release \
   -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE" \
   -clonedSourcePackagesDirPath /tmp/looper-spm \
+  MARKETING_VERSION="$MARKETING_VERSION" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   archive
@@ -72,4 +78,4 @@ xcodebuild -exportArchive \
   -authenticationKeyID "$ASC_KEY_ID" \
   -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
-echo "✅ Uploaded build ${BUILD_NUMBER} to TestFlight — processing on Apple's side now."
+echo "✅ Uploaded v${MARKETING_VERSION} (build ${BUILD_NUMBER}) to TestFlight — processing on Apple's side now."

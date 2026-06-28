@@ -1,9 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+/**
+ * CourseSearch — yardage-book styled course-search bottom sheet.
+ *
+ * Rebuilt with T.* tokens (T.paper / T.ink / T.serif / T.mono) and inline SVGs.
+ * No Tailwind classes, no lucide-react, no zinc/emerald dark theme.
+ */
+
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, MapPin, Loader2, X } from "lucide-react";
+import { T } from "@/components/yardage/tokens";
 import { searchCourses, getClubDetails, GolfClub, GolfCourse } from "@/lib/golf-api";
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 
 interface CourseSearchProps {
   onSelectCourse: (course: {
@@ -17,6 +28,40 @@ interface CourseSearchProps {
   }) => void;
   onClose: () => void;
 }
+
+// ---------------------------------------------------------------------------
+// Inline icons
+// ---------------------------------------------------------------------------
+
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.35-4.35" />
+    </svg>
+  );
+}
+
+function MapPinIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M2 2l10 10M12 2L2 12" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchProps) {
   const [query, setQuery] = useState("");
@@ -40,7 +85,7 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
         const clubs = await searchCourses(query);
         setResults(clubs);
       } catch (err) {
-        setError("Failed to search courses. Check your API key.");
+        setError("Search failed. Check your connection.");
         console.error(err);
       } finally {
         setLoading(false);
@@ -53,14 +98,12 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
   const handleSelectClub = async (club: GolfClub) => {
     setClubLoading(true);
     setSelectedClub(club);
-    
+
     try {
       const details = await getClubDetails(club.id);
       if (details?.courses && details.courses.length > 0) {
-        // If multiple courses, show them; otherwise select directly
         setSelectedClub(details);
       } else {
-        // No courses found, use club as single course
         onSelectCourse({
           id: club.id,
           name: club.name,
@@ -69,9 +112,7 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
           location: [club.city, club.state, club.country].filter(Boolean).join(", "),
         });
       }
-    } catch (err) {
-      console.error(err);
-      // Fallback: use club directly
+    } catch {
       onSelectCourse({
         id: club.id,
         name: club.name,
@@ -86,7 +127,6 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
 
   const handleSelectCourse = (course: GolfCourse) => {
     if (!selectedClub) return;
-    
     onSelectCourse({
       id: course.id,
       name: course.name,
@@ -100,123 +140,410 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
     });
   };
 
+  const showCourseList = !!selectedClub?.courses && selectedClub.courses.length > 0;
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
   return (
-    <div className="fixed inset-0 z-50 bg-zinc-950/95 backdrop-blur-xl">
-      <div className="max-w-2xl mx-auto p-4">
+    <AnimatePresence>
+      {/* Backdrop */}
+      <motion.div
+        key="cs-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.35)",
+          zIndex: 50,
+        }}
+      />
+
+      {/* Bottom sheet */}
+      <motion.div
+        key="cs-sheet"
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={T.springSoft}
+        style={{
+          position: "fixed",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 51,
+          background: T.paper,
+          borderRadius: "20px 20px 0 0",
+          maxHeight: "90vh",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 -20px 50px rgba(26,42,26,0.2)",
+          maxWidth: 420,
+          margin: "0 auto",
+          overflow: "hidden",
+        }}
+      >
+        {/* Drag handle */}
+        <div
+          style={{
+            width: 40,
+            height: 4,
+            borderRadius: 99,
+            background: T.hairline,
+            margin: "12px auto 0",
+            flexShrink: 0,
+          }}
+        />
+
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-white">Search Courses</h2>
+        <div
+          style={{
+            padding: "14px 22px 12px",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            borderBottom: `1px solid ${T.hairline}`,
+            flexShrink: 0,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 9,
+                letterSpacing: 1.6,
+                color: T.pencil,
+                textTransform: "uppercase",
+                marginBottom: 2,
+              }}
+            >
+              Course &middot; Search
+            </div>
+            <div
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 22,
+                color: T.ink,
+                letterSpacing: -0.4,
+                lineHeight: 1.05,
+              }}
+            >
+              {showCourseList ? selectedClub?.name : "Find a course"}
+            </div>
+          </div>
           <button
             onClick={onClose}
-            className="btn btn-icon"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 99,
+              border: `1px solid ${T.hairline}`,
+              background: "transparent",
+              color: T.pencil,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
             aria-label="Close"
           >
-            <X className="h-5 w-5" />
+            <CloseIcon />
           </button>
         </div>
 
-        {/* Search Input */}
-        <div className="relative mb-6">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-400" />
-          <input
-            type="text"
-            placeholder="Search by course name or location..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-4 rounded-2xl bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            autoFocus
-          />
-          {loading && (
-            <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-emerald-500 animate-spin" />
-          )}
-        </div>
+        {/* Search input — shown only on main search view */}
+        {!showCourseList && (
+          <div style={{ padding: "12px 22px 0", flexShrink: 0 }}>
+            <div style={{ position: "relative" }}>
+              <div
+                style={{
+                  position: "absolute",
+                  left: 13,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: T.pencilSoft,
+                  pointerEvents: "none",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                <SearchIcon />
+              </div>
+              <input
+                type="text"
+                placeholder="Course name or location…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                autoFocus
+                style={{
+                  width: "100%",
+                  padding: "11px 14px 11px 38px",
+                  borderRadius: 12,
+                  border: `1px solid ${T.hairline}`,
+                  background: T.paperDeep,
+                  color: T.ink,
+                  fontFamily: T.sans,
+                  fontSize: 14,
+                  letterSpacing: -0.1,
+                  outline: "none",
+                  boxSizing: "border-box",
+                  WebkitAppearance: "none",
+                }}
+              />
+              {loading && (
+                <div
+                  style={{
+                    position: "absolute",
+                    right: 13,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                  }}
+                >
+                  <motion.div
+                    animate={{ opacity: [0.3, 0.8, 0.3] }}
+                    transition={{ duration: 1.2, repeat: Infinity }}
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 99,
+                      background: T.pencilSoft,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Error */}
         {error && (
-          <div className="mb-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300">
+          <div
+            style={{
+              margin: "10px 22px 0",
+              padding: "10px 14px",
+              borderRadius: 10,
+              background: "rgba(184,74,58,0.06)",
+              border: "1px solid rgba(184,74,58,0.15)",
+              fontFamily: T.serif,
+              fontStyle: "italic",
+              fontSize: 13,
+              color: "#b84a3a",
+              lineHeight: 1.4,
+            }}
+          >
             {error}
           </div>
         )}
 
-        {/* Results */}
-        <div className="max-h-[60vh] overflow-y-auto space-y-2">
-          <AnimatePresence mode="wait">
-            {selectedClub?.courses && selectedClub.courses.length > 0 ? (
-              // Show courses within selected club
-              <motion.div
-                key="courses"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
+        {/* Results list */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: "8px 0 max(24px, env(safe-area-inset-bottom))",
+          }}
+        >
+          {showCourseList ? (
+            <>
+              {/* Back button */}
+              <button
+                onClick={() => setSelectedClub(null)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "10px 22px",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.3,
+                  color: T.pencil,
+                  textTransform: "uppercase",
+                }}
               >
+                {"← Back to search"}
+              </button>
+
+              {/* Course rows */}
+              {selectedClub?.courses?.map((course: GolfCourse) => (
                 <button
-                  onClick={() => setSelectedClub(null)}
-                  className="text-sm text-emerald-400 hover:text-emerald-300 mb-4 flex items-center gap-1"
+                  key={course.id}
+                  onClick={() => handleSelectCourse(course)}
+                  style={{
+                    width: "100%",
+                    padding: "13px 22px",
+                    background: "transparent",
+                    border: "none",
+                    borderTop: `1px dashed ${T.hairline}`,
+                    cursor: "pointer",
+                    textAlign: "left",
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto",
+                    alignItems: "center",
+                    gap: 10,
+                    minHeight: 60,
+                  }}
                 >
-                  ← Back to search
-                </button>
-                <h3 className="text-sm text-zinc-400 uppercase tracking-wider mb-3">
-                  Courses at {selectedClub.name}
-                </h3>
-                {selectedClub.courses.map((course) => (
-                  <button
-                    key={course.id}
-                    onClick={() => handleSelectCourse(course)}
-                    className="w-full text-left p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:bg-zinc-800/50 transition-colors mb-2"
-                  >
-                    <div className="font-semibold text-white">{course.name}</div>
-                    <div className="text-sm text-zinc-400">
-                      {course.holes} holes • Par {course.par}
+                  <div>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontSize: 17,
+                        color: T.ink,
+                        letterSpacing: -0.2,
+                        marginBottom: 2,
+                      }}
+                    >
+                      {course.name}
                     </div>
-                  </button>
-                ))}
-              </motion.div>
-            ) : (
-              // Show search results
-              <motion.div
-                key="results"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-              >
-                {results.length === 0 && query.length >= 2 && !loading && (
-                  <div className="text-center py-8 text-zinc-400">
-                    No courses found. Try a different search.
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: 1.2,
+                        color: T.pencilSoft,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {course.holes} holes &middot; Par {course.par}
+                    </div>
                   </div>
-                )}
-                {results.map((club) => (
-                  <button
-                    key={club.id}
-                    onClick={() => handleSelectClub(club)}
-                    disabled={clubLoading}
-                    className="w-full text-left p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:bg-zinc-800/50 transition-colors mb-2 disabled:opacity-50"
+                  <div style={{ fontFamily: T.mono, fontSize: 13, color: T.pencil }}>{"›"}</div>
+                </button>
+              ))}
+            </>
+
+          ) : results.length === 0 && query.length >= 2 && !loading ? (
+            <div
+              style={{
+                padding: "32px 22px",
+                textAlign: "center",
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 18,
+                  color: T.pencilSoft,
+                  letterSpacing: -0.3,
+                  marginBottom: 6,
+                }}
+              >
+                No courses found.
+              </div>
+              <div
+                style={{
+                  fontFamily: T.sans,
+                  fontSize: 13,
+                  color: T.pencilSoft,
+                  letterSpacing: -0.1,
+                }}
+              >
+                Try a different name or location.
+              </div>
+            </div>
+
+          ) : query.length < 2 ? (
+            <div style={{ padding: "20px 22px" }}>
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 16,
+                  color: T.pencilSoft,
+                  lineHeight: 1.4,
+                  letterSpacing: -0.2,
+                }}
+              >
+                Type at least two characters to search.
+              </div>
+            </div>
+
+          ) : (
+            results.map((club) => (
+              <button
+                key={club.id}
+                onClick={() => handleSelectClub(club)}
+                disabled={clubLoading}
+                style={{
+                  width: "100%",
+                  padding: "13px 22px",
+                  background: "transparent",
+                  border: "none",
+                  borderTop: `1px dashed ${T.hairline}`,
+                  cursor: clubLoading ? "not-allowed" : "pointer",
+                  textAlign: "left",
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  alignItems: "center",
+                  gap: 10,
+                  opacity: clubLoading ? 0.5 : 1,
+                  minHeight: 60,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontSize: 17,
+                      color: T.ink,
+                      letterSpacing: -0.2,
+                      marginBottom: 2,
+                    }}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-semibold text-white">{club.name}</div>
-                        {(club.city || club.state || club.country) && (
-                          <div className="flex items-center gap-1 text-sm text-zinc-400 mt-1">
-                            <MapPin className="h-3 w-3" />
-                            {[club.city, club.state, club.country]
-                              .filter(Boolean)
-                              .join(", ")}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-zinc-500">→</div>
+                    {club.name}
+                  </div>
+                  {(club.city || club.state || club.country) && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: 1.1,
+                        color: T.pencilSoft,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      <MapPinIcon />
+                      {[club.city, club.state, club.country].filter(Boolean).join(", ")}
                     </div>
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  )}
+                </div>
+                <div style={{ fontFamily: T.mono, fontSize: 13, color: T.pencil }}>{"›"}</div>
+              </button>
+            ))
+          )}
         </div>
 
-        {/* Powered by */}
-        <div className="mt-6 text-center text-xs text-zinc-600">
-          Course data powered by GolfAPI.io
+        {/* Powered by footer */}
+        <div
+          style={{
+            padding: "8px 22px 10px",
+            borderTop: `1px solid ${T.hairline}`,
+            fontFamily: T.mono,
+            fontSize: 8.5,
+            letterSpacing: 1.2,
+            color: T.pencilSoft,
+            textTransform: "uppercase",
+            textAlign: "center",
+            flexShrink: 0,
+          }}
+        >
+          Course data &mdash; GolfAPI.io
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </AnimatePresence>
   );
 }

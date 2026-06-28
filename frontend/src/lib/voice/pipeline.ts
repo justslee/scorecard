@@ -10,7 +10,6 @@ import {
   fuzzyBestMatch,
   clamp01,
   parseSpokenNumber,
-  stripFillerWords,
   normalizeTranscript,
 } from "./utils";
 
@@ -79,7 +78,7 @@ function extractAnthropicText(raw: unknown): string {
 
     const content = anyRaw["content"];
     if (Array.isArray(content) && content.length > 0) {
-      const first = content[0] as any;
+      const first = content[0] as { text?: string } | null | undefined;
       if (first && typeof first === "object" && typeof first.text === "string") {
         return first.text;
       }
@@ -515,16 +514,6 @@ function parseVoiceLocalBasic(
     },
     known
   );
-}
-
-function extractCapitalizedNames(transcript: string): string[] {
-  const out: string[] = [];
-  const re = /\b([A-Z][a-z]+)\b/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(transcript))) {
-    out.push(m[1]);
-  }
-  return Array.from(new Set(out));
 }
 
 function parseVoiceHeuristics(

@@ -14,7 +14,7 @@
 
 import * as api from './api';
 import * as localCache from './storage';
-import { Round, Tournament, GolferProfile } from './types';
+import { Round, Tournament, GolferProfile, SavedPlayer } from './types';
 
 // ---------------------------------------------------------------------------
 // Auth check
@@ -214,14 +214,130 @@ export async function saveGolferProfileAsync(profile: GolferProfile): Promise<vo
   if (!(await isAuthenticated())) return;
 
   try {
-    // Upsert via PUT — creates if absent, partial-updates if present.
+    // Identity fields only — clubDistances is intentionally OMITTED.
+    // Omitting means the backend (model_fields_set) won't touch the bag,
+    // protecting an existing bag from being wiped by a stale/empty cache value
+    // when the identity editor saves. The bag is written via saveGolferBagAsync.
+    //
+    // null flows through explicitly (intentional field clear) — the backend
+    // model_fields_set sees "handicap":null and writes NULL to the column.
     await api.updateGolferProfile({
       name: profile.name,
-      handicap: profile.handicap ?? undefined,
-      homeCourse: profile.homeCourse ?? undefined,
-      clubDistances: profile.clubDistances,
+      handicap: profile.handicap,      // null → explicit clear
+      homeCourse: profile.homeCourse,  // null → explicit clear
     });
   } catch (e) {
     console.error('[storage-api] saveGolferProfile: API sync failed (local cache saved):', e);
+    // Re-throw API rejections (4xx / 5xx) so callers can surface the error in UI.
+    // Keep network-down (TypeError: failed to fetch) as a silent offline operation —
+    // local cache already has the value; a reload will retry.
+    if (!(e instanceof TypeError)) {
+      throw e;
+    }
+  }
+}
+
+// ================
+// Players — API authoritative; localStorage is an explicit offline cache.
+// ================
+
+/**
+ * Fetch the owner's saved players.
+ * When authenticated, uses the API (source of truth) and falls back to the
+ * local cache only when the API is unreachable. When not authenticated,
+ * returns the local cache.
+ */
+export async function getPlayersAsync(): Promise<SavedPlayer[]> {
+  if (!(await isAuthenticated())) {
+    return localCache.getSavedPlayers();
+  }
+  try {
+    return await api.getPlayers();
+  } catch (e) {
+    console.error('[storage-api] getPlayers: API unavailable, falling back to local cache:', e);
+    return localCache.getSavedPlayers();
+  }
+}
+
+/**
+ * Create a new saved player via the API.
+ * Write-through: on success the local cache is updated so the app works offline.
+ * Throws when not authenticated or when the API rejects (4xx/5xx).
+ */
+export async function createPlayerAsync(data: api.PlayerCreate): Promise<SavedPlayer> {
+  if (!(await isAuthenticated())) {
+    throw new Error('Sign in to add players.');
+  }
+  // API-authoritative: throws on any API error; let the caller surface it.
+  const saved = await api.createPlayer(data);
+  localCache.saveSavedPlayer(saved);
+  return saved;
+}
+
+/**
+ * Update an existing saved player via the API.
+ * Write-through: on success the local cache is updated.
+ * Throws when not authenticated or when the API rejects (4xx/5xx).
+ */
+export async function updatePlayerAsync(
+  id: string,
+  data: api.PlayerUpdate
+): Promise<SavedPlayer> {
+  if (!(await isAuthenticated())) {
+    throw new Error('Sign in to edit players.');
+  }
+  const saved = await api.updatePlayer(id, data);
+  localCache.saveSavedPlayer(saved);
+  return saved;
+}
+
+/**
+ * Delete a saved player via the API, then remove from the local cache.
+ * If not authenticated, removes from local cache only.
+ * Throws on API rejection so the caller can roll back optimistic UI updates.
+ * Network errors (offline) are re-thrown as well — the caller decides whether
+ * to rollback or accept the local-only delete.
+ */
+export async function deletePlayerAsync(id: string): Promise<void> {
+  if (!(await isAuthenticated())) {
+    localCache.deleteSavedPlayer(id);
+    return;
+  }
+  // API-authoritative: remove from backend first, then sync local cache.
+  await api.deletePlayer(id);
+  localCache.deleteSavedPlayer(id);
+}
+
+/**
+ * Save only the bag (clubDistances) via PUT /api/profile/golfer.
+ *
+ * Kept separate from saveGolferProfileAsync (identity: name/handicap/homeCourse)
+ * so the two editors never clobber each other's fields. The backend only updates
+ * the fields present in the JSON body (model_fields_set), so sending only
+ * clubDistances here leaves the identity fields untouched, and saving identity
+ * leaves the bag untouched.
+ */
+export async function saveGolferBagAsync(
+  clubDistances: GolferProfile['clubDistances']
+): Promise<void> {
+  // Write-through: merge into local cache so the app works offline.
+  const cached = localCache.getGolferProfile();
+  if (cached) {
+    localCache.saveGolferProfile({ ...cached, clubDistances });
+  }
+
+  if (!(await isAuthenticated())) return;
+
+  try {
+    // Send ONLY clubDistances — name/handicap/homeCourse intentionally omitted
+    // so identity values set by the identity editor are never overwritten here.
+    await api.updateGolferProfile({ clubDistances });
+  } catch (e) {
+    console.error('[storage-api] saveGolferBag: API sync failed (local cache saved):', e);
+    // Re-throw API rejections (4xx / 5xx) so the UI can surface the error.
+    // Keep network-down (TypeError: failed to fetch) silent — local cache updated.
+    if (!(e instanceof TypeError)) {
+      throw e;
+    }
   }
 }

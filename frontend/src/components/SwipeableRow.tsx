@@ -1,8 +1,55 @@
 'use client';
 
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, CSSProperties } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo, animate } from 'framer-motion';
-import { Trash2, AlertTriangle } from 'lucide-react';
+import { T } from '@/components/yardage/tokens';
+
+// ---------------------------------------------------------------------------
+// Inline icons — no lucide-react
+// ---------------------------------------------------------------------------
+
+function TrashIcon({ className, style }: { className?: string; style?: CSSProperties }) {
+  return (
+    <svg
+      className={className}
+      style={style}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  );
+}
+
+function AlertTriangleIcon({ size = 18, style }: { size?: number; style?: CSSProperties }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={style}
+      aria-hidden="true"
+    >
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
 
 interface SwipeableRowProps {
   children: ReactNode;
@@ -20,14 +67,14 @@ export default function SwipeableRow({
   const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const x = useMotionValue(0);
-  
-  // Background color intensity based on swipe distance
+
+  // Swipe reveal: T.errorInk tint fades in as the row is dragged right.
   const backgroundColor = useTransform(
     x,
     [0, deleteThreshold],
-    ['rgba(239, 68, 68, 0)', 'rgba(239, 68, 68, 0.3)']
+    ['rgba(184,74,58,0)', 'rgba(184,74,58,0.18)']
   );
-  
+
   // Trash icon opacity and scale
   const iconOpacity = useTransform(x, [0, deleteThreshold * 0.5, deleteThreshold], [0, 0.5, 1]);
   const iconScale = useTransform(x, [0, deleteThreshold], [0.5, 1]);
@@ -69,13 +116,16 @@ export default function SwipeableRow({
   return (
     <>
       <div className="relative overflow-hidden rounded-2xl">
-        {/* Delete background */}
+        {/* Delete reveal background */}
         <motion.div
           style={{ backgroundColor }}
           className="absolute inset-0 flex items-center pl-6 rounded-2xl"
         >
           <motion.div style={{ opacity: iconOpacity, scale: iconScale }}>
-            <Trash2 className="h-6 w-6 text-red-400" />
+            <TrashIcon
+              className="h-6 w-6"
+              style={{ color: T.errorInk }}
+            />
           </motion.div>
         </motion.div>
 
@@ -92,41 +142,120 @@ export default function SwipeableRow({
         </motion.div>
       </div>
 
-      {/* Confirmation Modal */}
+      {/* Confirmation dialog — yardage-book style */}
       {showConfirm && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            background: 'rgba(26,42,26,0.45)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+          }}
           onClick={handleCancelDelete}
         >
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
+            initial={{ scale: 0.92, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 max-w-sm w-full shadow-xl"
+            exit={{ scale: 0.92, opacity: 0 }}
+            transition={T.spring}
+            style={{
+              background: T.paper,
+              border: `1px solid ${T.hairline}`,
+              borderRadius: 18,
+              padding: 24,
+              maxWidth: 360,
+              width: '100%',
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-red-400" />
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  background: T.errorWash,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <AlertTriangleIcon
+                  size={18}
+                  style={{ color: T.errorInk }}
+                />
               </div>
-              <h3 className="text-lg font-semibold text-white">Confirm Delete</h3>
+              <h3
+                style={{
+                  fontFamily: T.serif,
+                  fontSize: 19,
+                  fontWeight: 400,
+                  color: T.ink,
+                  margin: 0,
+                }}
+              >
+                Confirm delete
+              </h3>
             </div>
-            
-            <p className="text-zinc-400 mb-6">{confirmMessage}</p>
-            
-            <div className="flex gap-3">
+
+            {/* Message */}
+            <p
+              style={{
+                fontSize: 14,
+                color: T.pencil,
+                margin: '0 0 20px',
+                lineHeight: 1.5,
+              }}
+            >
+              {confirmMessage}
+            </p>
+
+            {/* Buttons — both ≥ 44pt */}
+            <div style={{ display: 'flex', gap: 10 }}>
               <button
                 onClick={handleCancelDelete}
-                className="flex-1 px-4 py-3 rounded-xl bg-zinc-800 text-white font-medium hover:bg-zinc-700 transition-colors"
+                style={{
+                  flex: 1,
+                  padding: '12px 0',
+                  borderRadius: 999,
+                  border: `1px solid ${T.hairline}`,
+                  background: T.paperDeep,
+                  color: T.inkSoft,
+                  fontFamily: T.sans,
+                  fontSize: 15,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  minHeight: 44,
+                }}
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmDelete}
-                className="flex-1 px-4 py-3 rounded-xl bg-red-600 text-white font-medium hover:bg-red-500 transition-colors"
+                style={{
+                  flex: 1,
+                  padding: '12px 0',
+                  borderRadius: 999,
+                  border: 'none',
+                  background: T.errorInk,
+                  color: T.paper,
+                  fontFamily: T.sans,
+                  fontSize: 15,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  minHeight: 44,
+                }}
               >
                 Delete
               </button>

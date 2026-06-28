@@ -5,43 +5,189 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
-import { initializeStorage, getRounds } from "@/lib/storage";
+import { getRoundsAsync, getTournamentsAsync, getGolferProfileAsync, deleteRoundAsync } from "@/lib/storage-api";
+import { calculateTotals } from "@/lib/types";
+import type { Round, Tournament, GolferProfile } from "@/lib/types";
+import SwipeableRow from "@/components/SwipeableRow";
 
-type Recent = { id: string; date: string; course: string; score: number; par: number; net: string; hole: number; note: string; tag: string | null };
+// ── Derived-data helpers ──────────────────────────────────────────────────────
 
-const SAMPLE_RECENT: Recent[] = [
-  { id: "r1", date: "Oct 13", course: "Spanish Bay", score: 82, par: 72, net: "+4", hole: 18, note: "Closed out Sunday Cup VII", tag: "T1" },
-  { id: "r2", date: "Oct 12", course: "Spyglass Hill", score: 84, par: 72, net: "+6", hole: 18, note: "Hole-out from 148 on 14", tag: null },
-  { id: "r3", date: "Oct 11", course: "Pebble Beach", score: 77, par: 72, net: "+1", hole: 18, note: "Best round in three years", tag: "★" },
-  { id: "r4", date: "Sep 28", course: "Presidio", score: 41, par: 36, net: "+5", hole: 9, note: "Quick 9 w/ Jack", tag: null },
-  { id: "r5", date: "Sep 14", course: "Harding Park", score: 86, par: 72, net: "+14", hole: 18, note: "Windy; snowman on 7", tag: null },
-];
+/**
+ * One row in the "Recent rounds" list, shaped from a real Round.
+ */
+type RecentRow = {
+  id: string;
+  dateMonth: string; // "Oct"
+  dateDay: string;   // "13"
+  course: string;
+  score: number | null;  // total strokes (null when no scores yet)
+  net: string | null;    // "+4" / "-1" / "E" (null when no scores yet)
+  holesPlayed: number;
+  tag: string | null;    // "T" for tournament rounds
+  isActive: boolean;
+};
 
-const STATS = { handicap: 8.2, trend: -0.6, scoring: 82.3, fairways: 62, gir: 48, putts: 31.2 };
-const HDCP = [10.1, 10.0, 9.8, 9.6, 9.8, 9.4, 9.2, 9.0, 8.8, 9.0, 8.6, 8.2];
+function deriveRecentRows(rounds: Round[]): RecentRow[] {
+  return rounds.slice(0, 5).map((r) => {
+    const d = new Date(r.date);
+    const dateMonth = d.toLocaleString("en-US", { month: "short" });
+    const dateDay = String(d.getDate());
 
-const FEED = [
-  { who: "Jack", what: "shot 74 at Olympic Club", when: "2h" },
-  { who: "Sam", what: "broke 80 for the first time", when: "yesterday" },
-  { who: "Justin", what: "booked Bandon for February", when: "2d" },
-];
+    let score: number | null = null;
+    let net: string | null = null;
+    let holesPlayed = r.holes.length || 18;
+
+    if (r.players.length > 0 && r.scores.length > 0) {
+      // players[0] is the owner in the single-owner beta; revisit when user-identity lands.
+      const totals = calculateTotals(r.scores, r.holes, r.players[0].id);
+      if (totals.playedHoles > 0) {
+        score = totals.total;
+        if (totals.toPar === 0) net = "E";
+        else net = totals.toPar > 0 ? `+${totals.toPar}` : `${totals.toPar}`;
+        holesPlayed = totals.playedHoles;
+      }
+    }
+
+    return {
+      id: r.id,
+      dateMonth,
+      dateDay,
+      course: r.courseName,
+      score,
+      net,
+      holesPlayed,
+      tag: r.tournamentId ? "T" : null,
+      isActive: r.status === "active",
+    };
+  });
+}
+
+/**
+ * Scoring stats over the most recent completed rounds (≥ 9 holes played).
+ * Returns both the stroke average and the average score relative to par,
+ * derived from the SAME eligible rounds so the two numbers are consistent.
+ * Returns null when there is not enough data.
+ */
+function deriveScoringStats(rounds: Round[]): { avg: number; toParAvg: number } | null {
+  const eligible = rounds
+    .filter((r) => r.status === "completed" && r.players.length > 0)
+    .slice(0, 20);
+  if (eligible.length === 0) return null;
+  // players[0] is the owner in the single-owner beta; revisit when user-identity lands.
+  const totals = eligible
+    .map((r) => calculateTotals(r.scores, r.holes, r.players[0].id))
+    .filter((t) => t.playedHoles >= 9);
+  if (totals.length === 0) return null;
+  const avg = totals.reduce((s, t) => s + t.total, 0) / totals.length;
+  const toParAvg = totals.reduce((s, t) => s + t.toPar, 0) / totals.length;
+  return {
+    avg: Math.round(avg * 10) / 10,
+    toParAvg: Math.round(toParAvg * 10) / 10,
+  };
+}
+
+// ── Page component ────────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const accent = DEFAULT_ACCENT;
   const router = useRouter();
-  const [mostRecentLiveId, setMostRecentLiveId] = useState<string | null>(null);
+
+  const [rounds, setRounds] = useState<Round[]>([]);
+  const [recentTournament, setRecentTournament] = useState<Tournament | null>(null);
+  const [profile, setProfile] = useState<GolferProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [liveRoundId, setLiveRoundId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
-    initializeStorage();
-    const rs = getRounds();
-    const live = rs.find((r) => r.status === "active");
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (live) setMostRecentLiveId(live.id);
+    async function load() {
+      // All three calls use the API-authoritative + explicit-offline-cache pattern in
+      // storage-api.ts: API is tried first; on failure it console.errors + falls back
+      // to localStorage (or []/null if no local cache). Errors are never swallowed silently.
+      const [rs, ts, p] = await Promise.all([
+        getRoundsAsync(),
+        getTournamentsAsync(),
+        getGolferProfileAsync(),
+      ]);
+
+      // Most-recent first so the list and live-round search are in correct order.
+      const sorted = [...rs].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      setRounds(sorted);
+      setProfile(p);
+
+      if (ts.length > 0) {
+        const sortedT = [...ts].sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        setRecentTournament(sortedT[0]);
+      }
+
+      // Surface the active round "resume" banner if one exists.
+      const live = sorted.find((r) => r.status === "active");
+      if (live) setLiveRoundId(live.id);
+
+      setLoading(false);
+    }
+
+    load();
   }, []);
+
+  // ── Delete round — optimistic remove; logs error on API failure ──────────
+  // deleteRoundAsync removes from local cache first, then fires the API call
+  // (which it handles internally — it never throws). So the remove is
+  // effectively permanent from this page's perspective; the rollback path
+  // guards against unexpected runtime errors only.
+  async function handleDeleteRound(id: string) {
+    const removed = rounds.find((r) => r.id === id);
+    setRounds((rs) => rs.filter((r) => r.id !== id));
+    if (liveRoundId === id) setLiveRoundId(null);
+    setDeleteError(null);
+    try {
+      await deleteRoundAsync(id);
+    } catch (e) {
+      // Rollback: restore the round (most-recent-first order is already sorted).
+      if (removed) {
+        setRounds((rs) => {
+          const without = rs.filter((r) => r.id !== id);
+          // Re-insert in date order (descending).
+          const idx = without.findIndex(
+            (r) => new Date(r.date).getTime() < new Date(removed.date).getTime()
+          );
+          if (idx === -1) return [...without, removed];
+          const next = [...without];
+          next.splice(idx, 0, removed);
+          return next;
+        });
+      }
+      if (removed?.status === "active") setLiveRoundId(id);
+      setDeleteError(
+        e instanceof Error ? e.message : "Could not remove round. Try again."
+      );
+    }
+  }
 
   const now = new Date();
   const hr = now.getHours();
   const timeOfDay = hr < 11 ? "Morning" : hr < 17 ? "Afternoon" : "Evening";
+
+  const recentRows = deriveRecentRows(rounds);
+  const scoringStats = deriveScoringStats(rounds);
+  const scoringAvg = scoringStats?.avg ?? null;
+  const toParAvg = scoringStats?.toParAvg ?? null;
+  const handicap = profile?.handicap ?? null;
+
+  // Tournament quick-action destination: most recent tournament, or the create page.
+  function handleTournamentTap() {
+    if (recentTournament) {
+      router.push(`/tournament/${recentTournament.id}`);
+    } else {
+      router.push("/tournament/new");
+    }
+  }
 
   return (
     <div
@@ -53,7 +199,7 @@ export default function HomePage() {
         color: T.ink,
       }}
     >
-      <div style={{ maxWidth: 420, margin: "0 auto", position: "relative" }}>
+      <div style={{ maxWidth: 420, margin: "0 auto", position: "relative", paddingBottom: "env(safe-area-inset-bottom, 16px)" }}>
         {/* ── MASTHEAD ─────────────────────────────── */}
         <div style={{ padding: "max(14px, env(safe-area-inset-top)) 22px 14px", position: "relative" }}>
           {/* Profile № card */}
@@ -62,7 +208,7 @@ export default function HomePage() {
             aria-label="Open your profile"
             style={{
               position: "absolute",
-              top: 14,
+              top: "max(14px, env(safe-area-inset-top))",
               right: 22,
               width: 44,
               height: 56,
@@ -80,7 +226,9 @@ export default function HomePage() {
             }}
           >
             <span style={{ position: "absolute", top: 2, left: 2, right: 2, height: 1, background: accent }} />
-            <span style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 24, color: T.ink, letterSpacing: -1, lineHeight: 1 }}>77</span>
+            <span style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 24, color: T.ink, letterSpacing: -1, lineHeight: 1 }}>
+              {handicap !== null ? handicap : "—"}
+            </span>
             <span
               style={{
                 position: "absolute",
@@ -102,21 +250,6 @@ export default function HomePage() {
 
           <div
             style={{
-              fontFamily: T.mono,
-              fontSize: 9.5,
-              letterSpacing: 1.6,
-              color: T.pencil,
-              textTransform: "uppercase",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <span style={{ width: 6, height: 6, borderRadius: 99, background: accent }} />
-            <span>San Francisco</span>
-          </div>
-          <div
-            style={{
               fontFamily: T.serif,
               fontStyle: "italic",
               fontSize: 36,
@@ -127,18 +260,6 @@ export default function HomePage() {
             }}
           >
             {timeOfDay}.
-          </div>
-          <div
-            style={{
-              fontFamily: T.serif,
-              fontSize: 17,
-              letterSpacing: -0.2,
-              color: T.pencil,
-              marginTop: 4,
-              lineHeight: 1.3,
-            }}
-          >
-            66°F, wind WNW 8. Presidio tee times open from 10:40.
           </div>
         </div>
 
@@ -207,9 +328,9 @@ export default function HomePage() {
             <QuickAction
               icon="tournament"
               label="Tournament"
-              sub="Multi-round"
+              sub={recentTournament ? recentTournament.name : "Multi-round"}
               accent={accent}
-              onClick={() => router.push("/tournament/sunday-cup-2024")}
+              onClick={handleTournamentTap}
             />
           </div>
 
@@ -262,9 +383,9 @@ export default function HomePage() {
             </svg>
           </button>
 
-          {mostRecentLiveId && (
+          {liveRoundId && (
             <Link
-              href={`/round/${mostRecentLiveId}`}
+              href={`/round/${liveRoundId}`}
               style={{
                 marginTop: 8,
                 width: "100%",
@@ -308,7 +429,11 @@ export default function HomePage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8 }}>
             <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase" }}>Your card</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft }}>last 12 rounds</span>
+              <span style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft }}>
+                {rounds.filter((r) => r.status === "completed").length > 0
+                  ? `last ${Math.min(rounds.filter((r) => r.status === "completed").length, 20)} rounds`
+                  : "no rounds yet"}
+              </span>
               <span
                 style={{
                   display: "inline-flex",
@@ -326,7 +451,7 @@ export default function HomePage() {
                   fontWeight: 500,
                 }}
               >
-                Open my book {"\u2192"}
+                Open my book {"→"}
               </span>
             </div>
           </div>
@@ -334,194 +459,230 @@ export default function HomePage() {
             <div>
               <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" }}>Handicap index</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                <div style={{ fontFamily: T.serif, fontSize: 44, letterSpacing: -1.2, color: T.ink, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{STATS.handicap}</div>
-                <div style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.1, color: accent }}>↓ {Math.abs(STATS.trend).toFixed(1)}</div>
+                <div style={{ fontFamily: T.serif, fontSize: 44, letterSpacing: -1.2, color: T.ink, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                  {loading ? "—" : handicap !== null ? handicap : "—"}
+                </div>
               </div>
-              <Sparkline data={HDCP} accent={accent} />
+              {/* Sparkline hidden until we have historical handicap data */}
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" }}>Scoring avg</div>
-              <div style={{ fontFamily: T.serif, fontSize: 44, letterSpacing: -1.2, color: T.ink, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{STATS.scoring}</div>
-              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, marginTop: 2 }}>+10.3 to par</div>
+              <div style={{ fontFamily: T.serif, fontSize: 44, letterSpacing: -1.2, color: T.ink, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+                {loading ? "—" : scoringAvg !== null ? scoringAvg : "—"}
+              </div>
+              {toParAvg !== null && (
+                <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, marginTop: 2 }}>
+                  {toParAvg >= 0 ? `+${toParAvg.toFixed(1)}` : toParAvg.toFixed(1)} to par avg
+                </div>
+              )}
+              {!loading && scoringAvg === null && (
+                <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, marginTop: 2 }}>
+                  No rounds yet
+                </div>
+              )}
             </div>
           </div>
 
-          <div
-            style={{
-              marginTop: 12,
-              padding: "10px 0 2px",
-              borderTop: `1px dashed ${T.hairline}`,
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
-              gap: 8,
-            }}
-          >
-            <StatBit label="Fairways" value={`${STATS.fairways}%`} />
-            <StatBit label="Greens" value={`${STATS.gir}%`} />
-            <StatBit label="Putts / rd" value={String(STATS.putts)} />
-          </div>
+          {/* Fairways / GIR / Putts omitted until per-shot tracking is available. */}
         </button>
 
         {/* ── RECENT ROUNDS ──────────────────────── */}
         <div style={{ padding: "20px 22px 10px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
-            <div>
-              <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase" }}>Recent rounds</div>
-              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.4, lineHeight: 1, marginTop: 2 }}>
-                The pages behind you
-              </div>
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase" }}>Recent rounds</div>
+            <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.4, lineHeight: 1, marginTop: 2 }}>
+              The pages behind you
             </div>
-            <button
-              style={{
-                padding: "5px 10px",
-                borderRadius: 99,
-                border: `1px solid ${T.hairline}`,
-                background: "transparent",
-                cursor: "pointer",
-                fontFamily: T.mono,
-                fontSize: 9,
-                letterSpacing: 1.2,
-                color: T.ink,
-                textTransform: "uppercase",
-              }}
-            >
-              All
-            </button>
           </div>
 
+          {/* Delete error banner */}
+          {deleteError && (
+            <div
+              role="alert"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "10px 14px",
+                marginBottom: 16,
+                borderRadius: 12,
+                background: T.errorWash,
+                border: `1px solid ${T.errorInk}30`,
+                color: T.errorInk,
+                fontSize: 13,
+              }}
+            >
+              {deleteError}
+            </div>
+          )}
+
+          {/* Empty state — no rounds yet */}
+          {!loading && recentRows.length === 0 && (
+            <div
+              style={{
+                padding: "28px 0 24px",
+                textAlign: "center",
+                borderTop: `1px dashed ${T.hairline}`,
+              }}
+            >
+              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 18, color: T.pencil, letterSpacing: -0.2, lineHeight: 1.4 }}>
+                No rounds yet.
+              </div>
+              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase", marginTop: 6 }}>
+                Tap &ldquo;Start a round&rdquo; above to begin.
+              </div>
+            </div>
+          )}
+
+          {/* Round rows — swipe-to-delete wired via SwipeableRow */}
           <div>
-            {SAMPLE_RECENT.map((r, i) => (
-              <button
+            {recentRows.map((r, i) => (
+              // Separator lives on the outer wrapper so SwipeableRow's
+              // overflow:hidden doesn't clip it during the swipe animation.
+              <div
                 key={r.id}
-                style={{
-                  width: "100%",
-                  display: "grid",
-                  gridTemplateColumns: "48px 1fr auto",
-                  gap: 12,
-                  padding: "12px 0",
-                  alignItems: "center",
-                  textAlign: "left",
-                  border: "none",
-                  background: "transparent",
-                  cursor: "pointer",
-                  borderTop: i === 0 ? "none" : `1px dashed ${T.hairline}`,
-                }}
+                style={{ borderTop: i === 0 ? "none" : `1px dashed ${T.hairline}` }}
               >
-                <div>
-                  <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>
-                    {r.date.split(" ")[0]}
-                  </div>
-                  <div style={{ fontFamily: T.serif, fontSize: 22, color: T.ink, lineHeight: 1, letterSpacing: -0.4, fontVariantNumeric: "tabular-nums" }}>
-                    {r.date.split(" ")[1]}
-                  </div>
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ fontFamily: T.serif, fontSize: 16, letterSpacing: -0.2, color: T.ink }}>{r.course}</div>
-                    {r.tag && (
+                <SwipeableRow
+                  onDelete={() => handleDeleteRound(r.id)}
+                  confirmMessage={
+                    r.isActive
+                      ? `${r.course} is in progress — remove this round and all its scores?`
+                      : `Remove your round at ${r.course} on ${r.dateMonth} ${r.dateDay}?`
+                  }
+                >
+                  <motion.button
+                    whileTap={{ scale: 0.985 }}
+                    onClick={() => router.push(`/round/${r.id}`)}
+                    style={{
+                      width: "100%",
+                      display: "grid",
+                      gridTemplateColumns: "48px 1fr auto",
+                      gap: 12,
+                      padding: "12px 0",
+                      minHeight: 44,
+                      alignItems: "center",
+                      textAlign: "left",
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>
+                        {r.dateMonth}
+                      </div>
+                      <div style={{ fontFamily: T.serif, fontSize: 22, color: T.ink, lineHeight: 1, letterSpacing: -0.4, fontVariantNumeric: "tabular-nums" }}>
+                        {r.dateDay}
+                      </div>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ fontFamily: T.serif, fontSize: 16, letterSpacing: -0.2, color: T.ink }}>{r.course}</div>
+                        {r.tag && (
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 8,
+                              letterSpacing: 1,
+                              color: accent,
+                              textTransform: "uppercase",
+                              border: `1px solid ${accent}`,
+                              padding: "1px 4px",
+                              borderRadius: 3,
+                            }}
+                          >
+                            {r.tag}
+                          </div>
+                        )}
+                        {r.isActive && (
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 8,
+                              letterSpacing: 1,
+                              color: T.warningInk,
+                              textTransform: "uppercase",
+                              border: `1px solid ${T.warningInk}`,
+                              padding: "1px 4px",
+                              borderRadius: 3,
+                            }}
+                          >
+                            Live
+                          </div>
+                        )}
+                      </div>
                       <div
                         style={{
                           fontFamily: T.mono,
-                          fontSize: 8,
-                          letterSpacing: 1,
-                          color: accent,
-                          textTransform: "uppercase",
-                          border: `1px solid ${accent}`,
-                          padding: "1px 4px",
-                          borderRadius: 3,
+                          fontSize: 8.5,
+                          color: T.pencilSoft,
+                          letterSpacing: 0.8,
+                          marginTop: 2,
+                          lineHeight: 1.25,
                         }}
                       >
-                        {r.tag}
+                        {r.holesPlayed}H
                       </div>
-                    )}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: T.serif,
-                      fontStyle: "italic",
-                      fontSize: 13,
-                      color: T.pencil,
-                      letterSpacing: -0.1,
-                      marginTop: 1,
-                      lineHeight: 1.25,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {r.note}{" "}
-                    <span style={{ color: T.pencilSoft, fontStyle: "normal", fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.1 }}>· {r.hole}H</span>
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: T.serif, fontSize: 26, color: T.ink, lineHeight: 1, letterSpacing: -0.6, fontVariantNumeric: "tabular-nums" }}>
-                    {r.score}
-                  </div>
-                  <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.1, color: T.pencilSoft, marginTop: 1 }}>{r.net}</div>
-                </div>
-              </button>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: T.serif, fontSize: 26, color: T.ink, lineHeight: 1, letterSpacing: -0.6, fontVariantNumeric: "tabular-nums" }}>
+                        {r.score !== null ? r.score : "—"}
+                      </div>
+                      {r.net && (
+                        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.1, color: T.pencilSoft, marginTop: 1 }}>{r.net}</div>
+                      )}
+                    </div>
+                  </motion.button>
+                </SwipeableRow>
+              </div>
             ))}
           </div>
         </div>
 
-        {/* ── TROPHY CASE TEASE ───────────────────── */}
-        <div
-          onClick={() => router.push("/tournament/sunday-cup-2024")}
-          style={{
-            margin: "14px 22px",
-            padding: "14px 16px",
-            background: T.ink,
-            color: T.paper,
-            borderRadius: 14,
-            position: "relative",
-            overflow: "hidden",
-            cursor: "pointer",
-          }}
-        >
+        {/* ── TROPHY CASE ─────────────────────────── */}
+        {recentTournament ? (
           <div
+            onClick={handleTournamentTap}
             style={{
-              position: "absolute",
-              right: -10,
-              top: -20,
-              bottom: -10,
-              fontFamily: T.serif,
-              fontStyle: "italic",
-              fontSize: 120,
-              lineHeight: 1,
-              color: "rgba(244,241,234,0.04)",
-              letterSpacing: -6,
-              pointerEvents: "none",
-              userSelect: "none",
+              margin: "14px 22px",
+              padding: "14px 16px",
+              background: T.ink,
+              color: T.paper,
+              borderRadius: 14,
+              position: "relative",
+              overflow: "hidden",
+              cursor: "pointer",
             }}
           >
-            VII
-          </div>
-          <div style={{ position: "relative" }}>
-            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: "rgba(244,241,234,0.55)", textTransform: "uppercase" }}>Trophy case</div>
-            <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 18, letterSpacing: -0.3, lineHeight: 1.2, marginTop: 2 }}>
-              3× Sunday Cup champion — defending this October.
+            <div
+              style={{
+                position: "absolute",
+                right: -10,
+                top: -20,
+                bottom: -10,
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 120,
+                lineHeight: 1,
+                color: "rgba(244,241,234,0.04)",
+                letterSpacing: -6,
+                pointerEvents: "none",
+                userSelect: "none",
+              }}
+            >
+              {recentTournament.roundIds.length > 0 ? recentTournament.roundIds.length : ""}
             </div>
-            <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-              {["22", "23", "24"].map((y) => (
-                <div
-                  key={y}
-                  style={{
-                    padding: "3px 8px",
-                    borderRadius: 99,
-                    border: `1px solid rgba(244,241,234,0.25)`,
-                    background: "rgba(244,241,234,0.06)",
-                    fontFamily: T.mono,
-                    fontSize: 8.5,
-                    letterSpacing: 1.2,
-                    color: T.paper,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  &rsquo;{y} · won
-                </div>
-              ))}
+            <div style={{ position: "relative" }}>
+              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: "rgba(244,241,234,0.55)", textTransform: "uppercase" }}>
+                Trophy case
+              </div>
+              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 18, letterSpacing: -0.3, lineHeight: 1.2, marginTop: 2 }}>
+                {recentTournament.name}
+              </div>
               <div
                 style={{
+                  marginTop: 10,
                   padding: "3px 8px",
                   borderRadius: 99,
                   border: `1px dashed ${accent}`,
@@ -531,58 +692,53 @@ export default function HomePage() {
                   fontSize: 8.5,
                   letterSpacing: 1.2,
                   textTransform: "uppercase",
+                  display: "inline-block",
                 }}
               >
-                Vol VIII · Oct
+                {recentTournament.roundIds.length} round{recentTournament.roundIds.length !== 1 ? "s" : ""} · Open
               </div>
             </div>
           </div>
-        </div>
-
-        {/* ── FROM THE GROUP ──────────────────────── */}
-        <div style={{ padding: "16px 22px 28px" }}>
-          <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase" }}>From the group</div>
-          <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 20, color: T.ink, letterSpacing: -0.4, lineHeight: 1.1, marginTop: 2 }}>
-            Elsewhere, this week
-          </div>
-          <div style={{ marginTop: 10 }}>
-            {FEED.map((f, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "8px 0",
-                  borderTop: i === 0 ? `1px solid ${T.hairline}` : `1px dashed ${T.hairline}`,
-                }}
-              >
-                <div
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 99,
-                    background: T.ink,
-                    color: T.paper,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontFamily: T.serif,
-                    fontStyle: "italic",
-                    fontSize: 12,
-                  }}
-                >
-                  {f.who[0]}
+        ) : (
+          !loading && (
+            <div
+              onClick={() => router.push("/tournament/new")}
+              style={{
+                margin: "14px 22px",
+                padding: "14px 16px",
+                background: T.paperDeep,
+                color: T.ink,
+                borderRadius: 14,
+                border: `1px dashed ${T.hairline}`,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" }}>
+                  Trophy case
                 </div>
-                <div style={{ flex: 1, fontFamily: T.serif, fontSize: 14, color: T.ink, letterSpacing: -0.1, lineHeight: 1.3 }}>
-                  <span style={{ fontWeight: 500, fontFamily: T.sans, fontSize: 13 }}>{f.who}</span>{" "}
-                  <span style={{ color: T.pencil }}>{f.what}</span>
+                <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 16, color: T.pencil, letterSpacing: -0.2, marginTop: 2 }}>
+                  No tournaments yet.
                 </div>
-                <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>{f.when}</div>
               </div>
-            ))}
-          </div>
-        </div>
+              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.2, color: T.pencilSoft }}>
+                Start one →
+              </div>
+            </div>
+          )
+        )}
+
+        {/*
+          ── "From the group" feed ──────────────────
+          Removed: no real social data source exists yet.
+          The FEED constant showed fabricated entries (Jack, Sam, Justin).
+          A genuine social feed requires a multi-user backend — not available.
+          Decision logged for owner / designer: remove rather than show fakes.
+          Re-introduce when a real activity stream is backed by the API.
+        */}
       </div>
     </div>
   );
@@ -633,37 +789,9 @@ function QuickAction({ icon, label, sub, accent, onClick }: { icon: "round" | "t
         </div>
         <div style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 500, letterSpacing: -0.1, color: T.ink }}>{label}</div>
       </div>
-      <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.1, color: T.pencilSoft, textTransform: "uppercase" }}>{sub}</div>
+      <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.1, color: T.pencilSoft, textTransform: "uppercase",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>
     </button>
   );
 }
 
-function StatBit({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontFamily: T.serif, fontSize: 18, color: T.ink, fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: -0.2, marginTop: 2 }}>{value}</div>
-    </div>
-  );
-}
-
-function Sparkline({ data, accent }: { data: number[]; accent: string }) {
-  const w = 120;
-  const h = 26;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const pts = data
-    .map((v, i) => {
-      const x = (i / (data.length - 1)) * w;
-      const y = h - ((v - min) / (max - min || 1)) * h;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  const lastY = h - ((data[data.length - 1] - min) / (max - min || 1)) * h;
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ marginTop: 4 }}>
-      <polyline points={pts} fill="none" stroke={accent} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={w} cy={lastY} r="2.5" fill={accent} />
-    </svg>
-  );
-}
