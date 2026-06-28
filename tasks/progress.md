@@ -3,6 +3,31 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (round-delete-ui — NOTICEABLE)
+- **Done:** `round-delete-ui` — wired swipe-to-delete for recent rounds on the home screen.
+  Commit `bfecdc9` on `integration/next`.
+
+  What changed: `frontend/src/app/page.tsx` only.
+  - Added `SwipeableRow` import (same component players page uses) and `deleteRoundAsync`
+    import from `storage-api`.
+  - Added `deleteError` state and `handleDeleteRound` — optimistic remove from `rounds` state,
+    clears the "Resume" live-round banner when the active round is deleted, then calls
+    `deleteRoundAsync`. On unexpected runtime error (extremely rare — `deleteRoundAsync`
+    swallows API errors internally): rollback via re-insertion in date order + error banner.
+  - The separator border-top (dashed hairline) moved from the `<button>` to an outer wrapper
+    `<div>` so `SwipeableRow`'s `overflow:hidden` does not clip it.
+  - Each round row is now wrapped in `SwipeableRow` with a context-aware `confirmMessage`:
+    - Completed rounds: "Remove your round at {course} on {month} {day}?"
+    - Active (live) round: "{course} is in progress — remove this round and all its scores?"
+  - `rounds` state drives both `recentRows` and `deriveScoringStats`, so optimistic removal
+    auto-refreshes both the list and the stats/handicap section.
+  - Active rounds are swipeable (confirm provides the safety net). Completed-only v1 was
+    considered but judged unnecessarily restrictive — one clear confirm suffices.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 238/238 · build 15 pages clean.
+  NOTICEABLE — new user-visible action on TestFlight: swiping a round row on the home
+  screen reveals delete, with a confirm dialog before removal.
+
 ## 2026-06-27 (settings-signout-and-restyle — NOTICEABLE)
 - **Done:** `settings-signout-and-restyle` — added Sign Out action (Part A) and restyled
   Settings from Tailwind/CSS classes to T.* inline-style system (Part B).
