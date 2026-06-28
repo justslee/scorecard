@@ -3,6 +3,36 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (fix-integration-test-loop P45 — SILENT)
+- **Done:** Fixed `RuntimeError: Future attached to a different loop` / `Event loop is
+  closed` that caused 5 integration tests to fail when run as part of the full pytest
+  suite.
+
+  Root cause: pytest-asyncio 1.4.0 defaults `asyncio_default_test_loop_scope = "function"` —
+  a new event loop per test. The module-level `engine` + `async_session` in
+  `app/db/engine.py` bind asyncpg connections to the FIRST test's loop. After that loop
+  closes, subsequent tests (with a new loop) try to reuse the same connections →
+  "Future attached to a different loop".
+
+  Fix: added two lines to `[tool.pytest.ini_options]` in `backend/pyproject.toml`:
+    asyncio_default_fixture_loop_scope = "session"
+    asyncio_default_test_loop_scope = "session"
+  One session loop for the entire test run. The module-level engine's asyncpg pool is
+  bound to that loop and stays there throughout all tests. No cross-loop mismatch. No
+  changes to app code, routes, or conftest assertions.
+
+  Evidence:
+  - `uv run pytest tests/ --ignore=tests/integration`: 138 passed (unchanged)
+  - `uv run pytest tests/integration/`: 13 skipped (Postgres not local — correct)
+  - `uv run pytest tests/`: 138 passed, 13 skipped, exit 0
+  - `uv run ruff check .`: clean
+
+  Full validation requires Postgres (no local DB here). CI's `advisory-backend-integration`
+  job (which has the Postgres service) is where the 5 failing tests will be confirmed green.
+  I could not claim they pass locally — that validation is CI's job.
+
+  SILENT — test infrastructure only; no TestFlight-visible change.
+
 ## 2026-06-27 (auth-e2e-gate — SILENT)
 - **Done:** `auth-e2e-gate` — Playwright E2E scaffold covering the critical sign-in
   flow (and 2 core journeys). Directly addresses the #1 QA gap the owner called out:
