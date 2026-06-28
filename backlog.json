@@ -526,10 +526,11 @@
     {
       "id": "clerk-token-cache",
       "priority": 48,
-      "status": "ready",
+      "status": "built-awaiting-device-test",
       "title": "Persist Clerk session across cold restart (tokenCache via @capacitor/preferences)",
       "rationale": "With standardBrowser:false + no tokenCache, the session is in-memory only \u2014 force-quit loses it. Add a tokenCache backed by @capacitor/preferences so sign-in survives app restarts. Follow-up after the native-session fix is confirmed working.",
-      "classification": "noticeable"
+      "classification": "noticeable",
+      "progress": "2026-06-28: implemented via Clerk internal __internal_onBeforeRequest/onAfterResponse hooks + @capacitor/preferences (native Keychain), key __clerk_client_jwt (same as @clerk/expo). Gated to native. Bundled into the complete native-auth build with standardBrowser:false."
     }
   ]
 }
