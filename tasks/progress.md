@@ -3,6 +3,43 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (oncourse-resilience — NOTICEABLE)
+- **Done:** Graceful offline/fetch-failure degradation for the three high-traffic
+  on-course screens. Commit `83fd0ad` on `integration/next`.
+
+  Home (page.tsx) — what was added:
+  - try/catch/finally in load() so setLoading(false) always fires; prevents
+    stuck-loading if post-fetch processing throws (e.g. corrupt localStorage schema).
+  - loadError state + loadKey retry trigger (Retry button re-runs the effect).
+  - Loading skeleton: 3 paper-toned placeholder rows while rounds fetch.
+  - Error state (no cached data): "Couldn't load rounds." + 44pt Retry.
+  - Offline note (cached data shown): amber "Offline — showing saved data" +
+    silent background Retry. T.warningWash/T.warningInk — pencil annotation feel.
+  - Existing empty state, stats "—" during load, deleteError banner: untouched.
+
+  RoundPageClient — what was added:
+  - loadFailed state: distinguishes load errors from score-save errors so Retry
+    only appears for load failures (score saves auto-retry via pendingRef).
+  - retryCount state in useEffect deps: Retry silently re-fetches without
+    resetting to a loading spinner (round data stays visible throughout).
+  - apiError banner: T.errorWash/T.errorInk (red) → T.warningWash/T.warningInk
+    (amber) — scores are always safe locally; red was unnecessarily alarming.
+  - Load failure message: "Failed to load round — check connection." →
+    "Showing saved data — couldn't reach server." + Retry button (loadFailed).
+  - Score-save message: "Score save failed — check connection." →
+    "Score saved locally — couldn't sync, will retry." (no Retry — pendingRef
+    handles auto-retry). Score-save success also clears loadFailed.
+  - Existing seq-guard / pendingRef / optimistic-update / LOCAL mode: untouched.
+
+  LeaderboardSheet — NO CHANGES (already resilient):
+  - Purely presentational, zero API calls, all data as props.
+  - round: Round | null already handled via optional chaining.
+  - All empty states present. LOCAL/offline signals from RoundPageClient provide context.
+
+  Gates: lint 0/0 · tsc clean · voice-tests 265/265 · npm test 276/276 · build clean.
+  NOTICEABLE — on-course users with spotty signal see calm placeholders and Retry
+  affordances instead of blank/broken/stuck screens.
+
 ## 2026-06-28 (stats-scoring-breakdown — NOTICEABLE)
 - **Done:** Added three new real-data stats sections to the profile screen, computed
   purely from existing completed-round data (no backend changes, no new data model).
