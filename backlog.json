@@ -531,6 +531,14 @@
       "rationale": "With standardBrowser:false + no tokenCache, the session is in-memory only \u2014 force-quit loses it. Add a tokenCache backed by @capacitor/preferences so sign-in survives app restarts. Follow-up after the native-session fix is confirmed working.",
       "classification": "noticeable",
       "progress": "2026-06-28: implemented via Clerk internal __internal_onBeforeRequest/onAfterResponse hooks + @capacitor/preferences (native Keychain), key __clerk_client_jwt (same as @clerk/expo). Gated to native. Bundled into the complete native-auth build with standardBrowser:false. | Bundled into COMPLETE native-auth build v1.0.343 (build 202606280228), uploaded; CapacitorPreferences SPM resolved clean. Awaiting owner: sign in -> stays -> force-quit -> still signed in."
+    },
+    {
+      "id": "clerk-jwt-keychain",
+      "priority": 49,
+      "status": "ready",
+      "title": "Store Clerk session JWT in Keychain, not UserDefaults (security)",
+      "rationale": "P48 token-cache stores __clerk_client_jwt via @capacitor/preferences, which is backed by iOS UserDefaults.standard (verified in node_modules) \u2014 plaintext, included in device/iCloud backups. A session credential should live in the Keychain. Swap the storage to a Keychain-backed secure-storage plugin (e.g. @aparajita/capacitor-secure-storage). Functionally fine for the current private beta; FIX before any production/wider release.",
+      "classification": "security"
     }
   ]
 }
