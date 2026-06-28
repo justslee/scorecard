@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
-import { getRoundsAsync, getTournamentsAsync, getGolferProfileAsync } from "@/lib/storage-api";
+import { getRoundsAsync, getTournamentsAsync, getGolferProfileAsync, deleteRoundAsync } from "@/lib/storage-api";
 import { calculateTotals } from "@/lib/types";
 import type { Round, Tournament, GolferProfile } from "@/lib/types";
+import SwipeableRow from "@/components/SwipeableRow";
 
 // ── Derived-data helpers ──────────────────────────────────────────────────────
 
@@ -96,6 +97,7 @@ export default function HomePage() {
   const [profile, setProfile] = useState<GolferProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [liveRoundId, setLiveRoundId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -133,6 +135,40 @@ export default function HomePage() {
 
     load();
   }, []);
+
+  // ── Delete round — optimistic remove; logs error on API failure ──────────
+  // deleteRoundAsync removes from local cache first, then fires the API call
+  // (which it handles internally — it never throws). So the remove is
+  // effectively permanent from this page's perspective; the rollback path
+  // guards against unexpected runtime errors only.
+  async function handleDeleteRound(id: string) {
+    const removed = rounds.find((r) => r.id === id);
+    setRounds((rs) => rs.filter((r) => r.id !== id));
+    if (liveRoundId === id) setLiveRoundId(null);
+    setDeleteError(null);
+    try {
+      await deleteRoundAsync(id);
+    } catch (e) {
+      // Rollback: restore the round (most-recent-first order is already sorted).
+      if (removed) {
+        setRounds((rs) => {
+          const without = rs.filter((r) => r.id !== id);
+          // Re-insert in date order (descending).
+          const idx = without.findIndex(
+            (r) => new Date(r.date).getTime() < new Date(removed.date).getTime()
+          );
+          if (idx === -1) return [...without, removed];
+          const next = [...without];
+          next.splice(idx, 0, removed);
+          return next;
+        });
+      }
+      if (removed?.status === "active") setLiveRoundId(id);
+      setDeleteError(
+        e instanceof Error ? e.message : "Could not remove round. Try again."
+      );
+    }
+  }
 
   const now = new Date();
   const hr = now.getHours();
@@ -459,6 +495,29 @@ export default function HomePage() {
             </div>
           </div>
 
+          {/* Delete error banner */}
+          {deleteError && (
+            <div
+              role="alert"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "10px 14px",
+                marginBottom: 12,
+                borderRadius: 12,
+                background: T.errorWash,
+                border: `1px solid ${T.errorInk}30`,
+                color: T.errorInk,
+                fontFamily: T.mono,
+                fontSize: 12,
+                letterSpacing: 0.4,
+              }}
+            >
+              {deleteError}
+            </div>
+          )}
+
           {/* Empty state — no rounds yet */}
           {!loading && recentRows.length === 0 && (
             <div
@@ -477,93 +536,107 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Round rows */}
+          {/* Round rows — swipe-to-delete wired via SwipeableRow */}
           <div>
             {recentRows.map((r, i) => (
-              <button
+              // Separator lives on the outer wrapper so SwipeableRow's
+              // overflow:hidden doesn't clip it during the swipe animation.
+              <div
                 key={r.id}
-                onClick={() => router.push(`/round/${r.id}`)}
-                style={{
-                  width: "100%",
-                  display: "grid",
-                  gridTemplateColumns: "48px 1fr auto",
-                  gap: 12,
-                  padding: "12px 0",
-                  minHeight: 44,
-                  alignItems: "center",
-                  textAlign: "left",
-                  border: "none",
-                  background: "transparent",
-                  cursor: "pointer",
-                  borderTop: i === 0 ? "none" : `1px dashed ${T.hairline}`,
-                }}
+                style={{ borderTop: i === 0 ? "none" : `1px dashed ${T.hairline}` }}
               >
-                <div>
-                  <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>
-                    {r.dateMonth}
-                  </div>
-                  <div style={{ fontFamily: T.serif, fontSize: 22, color: T.ink, lineHeight: 1, letterSpacing: -0.4, fontVariantNumeric: "tabular-nums" }}>
-                    {r.dateDay}
-                  </div>
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <div style={{ fontFamily: T.serif, fontSize: 16, letterSpacing: -0.2, color: T.ink }}>{r.course}</div>
-                    {r.tag && (
-                      <div
-                        style={{
-                          fontFamily: T.mono,
-                          fontSize: 8,
-                          letterSpacing: 1,
-                          color: accent,
-                          textTransform: "uppercase",
-                          border: `1px solid ${accent}`,
-                          padding: "1px 4px",
-                          borderRadius: 3,
-                        }}
-                      >
-                        {r.tag}
-                      </div>
-                    )}
-                    {r.isActive && (
-                      <div
-                        style={{
-                          fontFamily: T.mono,
-                          fontSize: 8,
-                          letterSpacing: 1,
-                          color: T.warningInk,
-                          textTransform: "uppercase",
-                          border: `1px solid ${T.warningInk}`,
-                          padding: "1px 4px",
-                          borderRadius: 3,
-                        }}
-                      >
-                        Live
-                      </div>
-                    )}
-                  </div>
-                  <div
+                <SwipeableRow
+                  onDelete={() => handleDeleteRound(r.id)}
+                  confirmMessage={
+                    r.isActive
+                      ? `"${r.course}" is in progress — remove this round and all its scores?`
+                      : `Remove your round at ${r.course} on ${r.dateMonth} ${r.dateDay}?`
+                  }
+                >
+                  <button
+                    onClick={() => router.push(`/round/${r.id}`)}
                     style={{
-                      fontFamily: T.mono,
-                      fontSize: 8.5,
-                      color: T.pencilSoft,
-                      letterSpacing: 0.8,
-                      marginTop: 2,
-                      lineHeight: 1.25,
+                      width: "100%",
+                      display: "grid",
+                      gridTemplateColumns: "48px 1fr auto",
+                      gap: 12,
+                      padding: "12px 0",
+                      minHeight: 44,
+                      alignItems: "center",
+                      textAlign: "left",
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
                     }}
                   >
-                    {r.holesPlayed}H
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontFamily: T.serif, fontSize: 26, color: T.ink, lineHeight: 1, letterSpacing: -0.6, fontVariantNumeric: "tabular-nums" }}>
-                    {r.score !== null ? r.score : "—"}
-                  </div>
-                  {r.net && (
-                    <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.1, color: T.pencilSoft, marginTop: 1 }}>{r.net}</div>
-                  )}
-                </div>
-              </button>
+                    <div>
+                      <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>
+                        {r.dateMonth}
+                      </div>
+                      <div style={{ fontFamily: T.serif, fontSize: 22, color: T.ink, lineHeight: 1, letterSpacing: -0.4, fontVariantNumeric: "tabular-nums" }}>
+                        {r.dateDay}
+                      </div>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ fontFamily: T.serif, fontSize: 16, letterSpacing: -0.2, color: T.ink }}>{r.course}</div>
+                        {r.tag && (
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 8,
+                              letterSpacing: 1,
+                              color: accent,
+                              textTransform: "uppercase",
+                              border: `1px solid ${accent}`,
+                              padding: "1px 4px",
+                              borderRadius: 3,
+                            }}
+                          >
+                            {r.tag}
+                          </div>
+                        )}
+                        {r.isActive && (
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 8,
+                              letterSpacing: 1,
+                              color: T.warningInk,
+                              textTransform: "uppercase",
+                              border: `1px solid ${T.warningInk}`,
+                              padding: "1px 4px",
+                              borderRadius: 3,
+                            }}
+                          >
+                            Live
+                          </div>
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 8.5,
+                          color: T.pencilSoft,
+                          letterSpacing: 0.8,
+                          marginTop: 2,
+                          lineHeight: 1.25,
+                        }}
+                      >
+                        {r.holesPlayed}H
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: T.serif, fontSize: 26, color: T.ink, lineHeight: 1, letterSpacing: -0.6, fontVariantNumeric: "tabular-nums" }}>
+                        {r.score !== null ? r.score : "—"}
+                      </div>
+                      {r.net && (
+                        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.1, color: T.pencilSoft, marginTop: 1 }}>{r.net}</div>
+                      )}
+                    </div>
+                  </button>
+                </SwipeableRow>
+              </div>
             ))}
           </div>
         </div>
