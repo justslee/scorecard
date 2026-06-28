@@ -6,6 +6,7 @@ import {
   type RealtimeMessage,
   type RealtimeStatus,
 } from '@/lib/voice/realtime';
+import { sortByOrder } from '@/lib/voice/realtime-ordering';
 
 export interface UseRealtimeCaddieOptions {
   roundId: string;
@@ -33,10 +34,10 @@ export function useRealtimeCaddie(opts: UseRealtimeCaddieOptions): UseRealtimeCa
   const upsertMessage = useCallback((msg: RealtimeMessage) => {
     setMessages((prev) => {
       const idx = prev.findIndex((m) => m.id === msg.id);
-      if (idx === -1) return [...prev, msg];
-      const next = prev.slice();
-      next[idx] = msg;
-      return next;
+      const merged = idx === -1 ? [...prev, msg] : prev.map((m, j) => (j === idx ? msg : m));
+      // Conversation order, not arrival order — the user transcript event lands
+      // after the reply it triggered. See lib/voice/realtime-ordering.ts.
+      return sortByOrder(merged);
     });
   }, []);
 
@@ -70,14 +71,10 @@ export function useRealtimeCaddie(opts: UseRealtimeCaddieOptions): UseRealtimeCa
   }, [isMuted]);
 
   const sendText = useCallback((text: string) => {
+    // The client emits the typed user line via onMessage (with a proper order
+    // key), so it sorts correctly relative to the reply — no manual upsert here.
     clientRef.current?.sendText(text);
-    upsertMessage({
-      id: `user-typed-${Date.now()}`,
-      role: 'user',
-      text,
-      partial: false,
-    });
-  }, [upsertMessage]);
+  }, []);
 
   useEffect(() => {
     return () => {

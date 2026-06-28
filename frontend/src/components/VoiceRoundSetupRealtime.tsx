@@ -22,6 +22,7 @@ import {
   type RealtimeMessage,
   type RealtimeStatus,
 } from "@/lib/voice/realtime";
+import { sortByOrder } from "@/lib/voice/realtime-ordering";
 
 interface SetRoundSetupArgs {
   courseName?: string;
@@ -93,10 +94,11 @@ export default function VoiceRoundSetupRealtime({
   const upsert = useCallback((m: RealtimeMessage) => {
     setMessages((prev) => {
       const i = prev.findIndex((x) => x.id === m.id);
-      if (i === -1) return [...prev, m];
-      const next = prev.slice();
-      next[i] = m;
-      return next;
+      const merged = i === -1 ? [...prev, m] : prev.map((x, j) => (j === i ? m : x));
+      // Render in conversation order, not arrival order: the user transcript
+      // event lands after the reply it triggered, so a plain append would show
+      // the caddie above the user's line. Sort by the stable order key.
+      return sortByOrder(merged);
     });
   }, []);
 

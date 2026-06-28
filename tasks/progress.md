@@ -3,6 +3,37 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (voice-chat-ordering — NOTICEABLE)
+- **Done:** Fixed the Realtime voice round-setup chat rendering the caddie's reply
+  ABOVE the user's line. Root cause: the user transcript event
+  (`conversation.item.input_audio_transcription.completed`) arrives AFTER the
+  assistant's streamed `response.audio_transcript.delta`s, and messages rendered
+  in arrival order. Commit `179d03c` on `integration/next`; bundle PR #64 opened.
+
+  Files changed:
+  - **New `frontend/src/lib/voice/realtime-ordering.ts`**: pure `MessageOrderTracker`
+    (+ `sortByOrder`). Assigns a stable monotonic `order` key when each conversation
+    ITEM begins, not when its text arrives: user slot reserved at
+    `input_audio_buffer.speech_started`, keyed by `item_id` (identity-matched to the
+    transcript); assistant slot at `response.created`/first delta. item_id keying (not
+    FIFO) means a phantom/empty/VAD-bounced speech_started can't desync ordering for
+    the rest of the session.
+  - **New `frontend/src/lib/voice/realtime-ordering.test.ts`**: 9 unit tests incl. the
+    exact bug, multi-turn, and the phantom/empty speech_started regression.
+  - **`frontend/src/lib/voice/realtime.ts`**: `RealtimeMessage` gains required `order`;
+    `handleEvent` threads item_id + reserves slots; `sendText` emits the typed line
+    centrally (renders even if the data channel isn't open).
+  - **`frontend/src/components/VoiceRoundSetupRealtime.tsx`** + **`frontend/src/hooks/useRealtimeCaddie.ts`**:
+    render `sortByOrder(messages)`; dropped the hook's duplicate typed-message upsert.
+
+  Reviewer adversarial pass found + I fixed a real desync (FIFO user-slot matching
+  corrupted ordering on phantom/empty/VAD-bounced speech_started) -> re-keyed by item_id
+  + added the regression test; also fixed a typed-message silent-loss when the DC is closed.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 374/374 · build clean.
+  NOTICEABLE — but WebRTC live voice ordering is DEVICE-ONLY verifiable; must be confirmed
+  on the next TestFlight build. Status = built-integration-next-pending-device-verify.
+
 ## 2026-06-28 (ux-wind-direction-viz — SILENT)
 - **Done:** Wind direction visualisation relative to shot bearing in the caddie wind chip.
   Commit `c03dd8e` on `integration/next`.
@@ -2780,3 +2811,18 @@ gpt-4o-transcribe (env-configurable) + semantic_vad. NOTE: any mint-config chang
 break voice if a field/value is unsupported (cf. the earlier "Invalid modalities" 400) and
 can't be live-tested headlessly — so it must NOT auto-deploy; it accumulates on
 integration/next and ships only with owner approval + a voice-connect test on that build.
+
+---
+
+## SHIPPED — bundle #63 → v1.0.436 — 2026-06-28
+Owner "ship it". Merged PR #63 → main 233e28a; backend deployed + healthy (new Realtime
+mint code imports/runs; mint runtime still device-only). TestFlight v1.0.436 (202606281924).
+Bundle: realtime-noise-hardening (near_field + gpt-4o-transcribe + VAD switch — TEST voice
+CONNECTS), gps-capacitor-migrate, ux-wind-direction-viz, voice-setup-realtime-polish.
+NOTE: mint config can't be verified headlessly — if voice won't connect on device, revert
+the transcription model (env OPENAI_REALTIME_TRANSCRIBE_MODEL=whisper-1 / revert e90a7ef).
+
+Owner reported 2 new bugs (queued, NOT in this build): voice-chat-ordering (HIGH, priority 3
+— reply renders above the user's line; fix = order by conversation-item sequence) +
+grabber-handle-drag-fix (swiping handle scrolls background). Both on backlog + Notion board.
+Loop continues 30-min cadence; next tick takes voice-chat-ordering.
