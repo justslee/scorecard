@@ -504,14 +504,12 @@ export default function HomePage() {
                 alignItems: "center",
                 gap: 8,
                 padding: "10px 14px",
-                marginBottom: 12,
+                marginBottom: 16,
                 borderRadius: 12,
                 background: T.errorWash,
                 border: `1px solid ${T.errorInk}30`,
                 color: T.errorInk,
-                fontFamily: T.mono,
-                fontSize: 12,
-                letterSpacing: 0.4,
+                fontSize: 13,
               }}
             >
               {deleteError}
@@ -549,11 +547,12 @@ export default function HomePage() {
                   onDelete={() => handleDeleteRound(r.id)}
                   confirmMessage={
                     r.isActive
-                      ? `"${r.course}" is in progress — remove this round and all its scores?`
+                      ? `${r.course} is in progress — remove this round and all its scores?`
                       : `Remove your round at ${r.course} on ${r.dateMonth} ${r.dateDay}?`
                   }
                 >
-                  <button
+                  <motion.button
+                    whileTap={{ scale: 0.985 }}
                     onClick={() => router.push(`/round/${r.id}`)}
                     style={{
                       width: "100%",
@@ -634,7 +633,7 @@ export default function HomePage() {
                         <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.1, color: T.pencilSoft, marginTop: 1 }}>{r.net}</div>
                       )}
                     </div>
-                  </button>
+                  </motion.button>
                 </SwipeableRow>
               </div>
             ))}

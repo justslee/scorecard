@@ -28,6 +28,8 @@ Format: date — done / in-progress / blocked.
   NOTICEABLE — new user-visible action on TestFlight: swiping a round row on the home
   screen reveals delete, with a confirm dialog before removal.
 
+  KNOWN-GAP: Delete (rounds + players) swallows API failures in deleteRoundAsync/deletePlayerAsync — UI shows success even if the server DELETE failed, so a round/player can reappear on next authenticated load. Acceptable for now; a future "delete really failed" toast should be added in one place for both flows.
+
 ## 2026-06-27 (settings-signout-and-restyle — NOTICEABLE)
 - **Done:** `settings-signout-and-restyle` — added Sign Out action (Part A) and restyled
   Settings from Tailwind/CSS classes to T.* inline-style system (Part B).
