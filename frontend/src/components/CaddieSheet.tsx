@@ -22,7 +22,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import type { Caddy } from "@/components/yardage/tokens";
 import { Waveform } from "@/components/yardage/Voice";
@@ -142,6 +142,8 @@ export default function CaddieSheet({
   convHistory,
   onUpdateConvHistory,
 }: CaddieSheetProps) {
+  // Controls the swipe-down-to-dismiss drag, started from the grab handle only.
+  const dragControls = useDragControls();
   const [mode, setMode] = useState<Mode>("voice");
 
   // Voice mode state
@@ -447,6 +449,17 @@ export default function CaddieSheet({
           animate={{ y: 0 }}
           exit={{ y: "100%" }}
           transition={T.springSoft}
+          // Swipe down to dismiss — started ONLY from the grab handle (below) via
+          // dragControls, so the sheet's inner content still scrolls normally. A
+          // drag past ~120px or a downward flick closes it; else it springs back.
+          drag="y"
+          dragListener={false}
+          dragControls={dragControls}
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={{ top: 0, bottom: 0.6 }}
+          onDragEnd={(_e, info) => {
+            if (info.offset.y > 120 || info.velocity.y > 600) onClose();
+          }}
           style={{
             position: "fixed",
             bottom: 0,
@@ -464,19 +477,32 @@ export default function CaddieSheet({
             maxHeight: "88dvh",
             paddingBottom: "env(safe-area-inset-bottom)",
             boxShadow: "0 -8px 40px rgba(26,42,26,0.18)",
+            touchAction: "pan-y",
           }}
         >
-          {/* Drag handle */}
+          {/* Drag handle — starts the swipe-down-to-dismiss drag. Generous,
+              invisible touch target around the visible bar for an easy grab. */}
           <div
+            onPointerDown={(e) => dragControls.start(e)}
             style={{
-              width: 36,
-              height: 4,
-              borderRadius: 2,
-              background: T.hairline,
-              margin: "10px auto 0",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              height: 28,
               flexShrink: 0,
+              cursor: "grab",
+              touchAction: "none",
             }}
-          />
+          >
+            <div
+              style={{
+                width: 36,
+                height: 4,
+                borderRadius: 2,
+                background: T.hairline,
+              }}
+            />
+          </div>
 
           {/* Header */}
           <div
