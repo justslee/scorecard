@@ -2677,3 +2677,26 @@ specs/social-course-features-plan.md + both Notion epic cards. New card
 `nav-floating-island-tab` (yardage-book styled, hidden on immersive screens). Saved as
 memory floating-island-tab-nav. Follow-up `ratelimit-live-token` added (from sec review;
 moot while owner-gated).
+
+---
+
+## P0 HOTFIX SHIPPED — v1.0.421 — 2026-06-28
+
+Owner reported (IMG_2961) the voice setup filling with phantom multi-language messages
+he never said. Root cause: the preload/warm-connect (d478828) kept the OpenAI Realtime
+session LIVE while the sheet was hidden → whisper-1 hallucinated on silence/noise →
+phantom user turns the caddie replied to. Fix (cd2e516): removed the preload entirely —
+session mounts only while the sheet is open, tears down on close. Echo fix kept.
+
+Owner approved "ship the bundle now". Merged PR #62 → main 83dfe03; backend deployed
+(competition_legal accepted); TestFlight v1.0.421 (202606281834) uploaded. Bundle:
+voice preload hotfix + plays-like card + comp-legal toggle (all gates green; 48 backend
+tests for comp-legal).
+
+Owner also asked re: noise handling. Answer: Realtime CAN do better — we under-use it
+(no input_audio_noise_reduction, whisper-1 which hallucinates on silence, raw server_vad).
+Queued `realtime-noise-hardening` (priority 12, ready): near_field noise reduction +
+gpt-4o-transcribe (env-configurable) + semantic_vad. NOTE: any mint-config change can
+break voice if a field/value is unsupported (cf. the earlier "Invalid modalities" 400) and
+can't be live-tested headlessly — so it must NOT auto-deploy; it accumulates on
+integration/next and ships only with owner approval + a voice-connect test on that build.
