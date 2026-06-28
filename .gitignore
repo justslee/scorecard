@@ -57,3 +57,5 @@ dist/
 backend/data/
 .env.vercel
 frontend/.env.local
+.clerk-test-creds
+frontend/test-results/
