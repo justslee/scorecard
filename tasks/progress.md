@@ -3,6 +3,33 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (gps-capacitor-migrate — SILENT)
+- **Done:** Migrated GPS from browser `navigator.geolocation` to `@capacitor/geolocation`
+  on native (iOS), with a web fallback. Commit `f3ef9a7` on `integration/next`.
+
+  Files changed:
+  - **`frontend/src/lib/gps.ts`**: Added Capacitor imports. Extracted
+    `normalizeCapacitorPosition()` (pure, exported). `GPSWatcher.watchId` widened to
+    `number | string | null`. New `_startNative()` async helper: `requestPermissions()` then
+    `watchPosition()` via Capacitor; falls back to `_startWeb()` on plugin error. `stop()`
+    routes to `Geolocation.clearWatch()` on native, `clearWatch()` on web.
+    `getCurrentPosition()` uses Capacitor path on native with permission check, falls
+    through to `navigator.geolocation` on failure. Public API unchanged.
+  - **`frontend/src/components/CaddiePanel.tsx`**: Replaced the lone direct
+    `navigator.geolocation.getCurrentPosition()` call (no-hole-coords branch) with
+    `GPSWatcher.getCurrentPosition()` so that path also uses Capacitor on native.
+  - **`frontend/src/lib/gps.test.ts`** (new): 23 vitest tests for
+    `normalizeCapacitorPosition` (null → undefined, 0-heading/speed preserved, full
+    shape) plus smoke tests for the pure utility functions. Both Capacitor packages
+    are vi.mock()'d for headless CI.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 348/348 (23 new) ·
+         build 15 pages clean.
+
+  SILENT — internal plumbing change; no visible UI change. Actual GPS accuracy
+  improvement and iOS permission prompt are DEVICE-ONLY — must be tested on
+  the next TestFlight build. Rides with next noticeable bundle.
+
 ## 2026-06-28 (realtime-noise-hardening — SILENT)
 - **Done:** Hardened the OpenAI Realtime session mint config in
   `backend/app/services/realtime_relay.py`. Commit `e90a7ef` on `integration/next`.
