@@ -40,10 +40,6 @@ interface Props {
   onClose: () => void;
   /** Begin the voice session immediately on open (single tap from the mic). */
   autoStart?: boolean;
-  /** Whether the sheet is visible. While false the component stays mounted and
-   *  the session warms in the background (muted), so opening it is instant — no
-   *  "Connecting…" on the mic tap. */
-  open?: boolean;
 }
 
 const STATUS_LABEL: Record<RealtimeStatus, string> = {
@@ -65,7 +61,6 @@ export default function VoiceRoundSetupRealtime({
   onSetupRound,
   onClose,
   autoStart = false,
-  open = true,
 }: Props) {
   const accent = DEFAULT_ACCENT;
   const clientRef = useRef<RealtimeCaddieClient | null>(null);
@@ -128,12 +123,11 @@ export default function VoiceRoundSetupRealtime({
     }
   }, [upsert, handleSetRoundSetup]);
 
-  // Warm the session as soon as the component mounts (preload on page load), so
-  // opening the sheet is instant. On iOS the mic may need a user gesture; if this
-  // mount-time connect is rejected it fails calm — the open effect below restarts
-  // it on the mic tap (today's behavior), so worst case is unchanged. Torn down
-  // on unmount. start() is deferred a tick so it doesn't setState synchronously
-  // inside the effect body.
+  // Connect on open; tear the session down on unmount. The component is mounted
+  // ONLY while the sheet is open (parent gates it on showVoiceSetup), so the live
+  // Realtime session never runs in the background — a warm/preloaded session let
+  // whisper-1 hallucinate phantom transcripts on silence before the user spoke.
+  // start() is deferred a tick so it doesn't setState synchronously in the effect.
   useEffect(() => {
     mountedRef.current = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -150,30 +144,9 @@ export default function VoiceRoundSetupRealtime({
     };
   }, [autoStart, start]);
 
-  // Visibility ↔ audio. While hidden (warming) the mic + caddie voice are muted so
-  // nothing is captured or spoken before the golfer opens the sheet. On open, the
-  // mic + voice come live; if the warm connect never landed, (re)connect now — the
-  // tap is a user gesture, so getUserMedia is allowed.
-  useEffect(() => {
-    const c = clientRef.current;
-    if (open) {
-      // (re)connect deferred a tick so start()'s setState isn't called synchronously
-      // inside the effect body (cascading-render lint).
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      if (!c && autoStart) {
-        timer = setTimeout(() => { if (mountedRef.current) void start(); }, 0);
-      }
-      c?.setMuted(muted);
-      c?.setOutputMuted(false);
-      return () => { if (timer) clearTimeout(timer); };
-    }
-    c?.setMuted(true);
-    c?.setOutputMuted(true);
-  }, [open, muted, status, autoStart, start]);
-
   const handleClose = useCallback(() => {
-    // Keep the session warm (just hide + mute via the open effect) so reopening is
-    // instant; it's fully torn down when the page unmounts.
+    clientRef.current?.stop();
+    clientRef.current = null;
     onClose();
   }, [onClose]);
 
@@ -185,7 +158,6 @@ export default function VoiceRoundSetupRealtime({
 
   return (
     <AnimatePresence>
-      {open && (
       <motion.div
         key="vrsr-backdrop"
         initial={{ opacity: 0 }}
@@ -201,8 +173,6 @@ export default function VoiceRoundSetupRealtime({
           zIndex: 50,
         }}
       />
-      )}
-      {open && (
       <motion.div
         key="vrsr-sheet"
         initial={{ y: "100%" }}
@@ -327,7 +297,6 @@ export default function VoiceRoundSetupRealtime({
           )}
         </div>
       </motion.div>
-      )}
     </AnimatePresence>
   );
 }
