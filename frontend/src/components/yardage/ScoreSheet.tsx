@@ -7,6 +7,7 @@ import { Waveform } from "./Voice";
 import type { SeedPlayer } from "./Scorecard";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { parseVoiceScoresLocally } from "@/lib/voice/parseVoiceScores";
+import { missingScoreNote } from "@/lib/voice/confirm-guidance";
 import { fetchAPI } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
@@ -141,6 +142,8 @@ function VoiceConfirmPanel({
   // Low-confidence: undefined → treat as high (no cue).
   const isLow = typeof confidence === "number" && confidence < 0.65;
   const hasAnyScore = Object.keys(parsedScores).length > 0;
+  // Calm, specific note naming the players the parse missed (low-conf only).
+  const note = missingScoreNote(players, parsedScores, confidence);
 
   return (
     <div style={{ marginTop: 16 }}>
@@ -157,6 +160,25 @@ function VoiceConfirmPanel({
       >
         {isLow ? "Double-check these — I wasn't sure" : "Confirm scores"}
       </div>
+
+      {/* Specific, calm note naming who the parse missed (low-confidence only).
+          Serif-italic = a quiet aside, not an alarm; matches the yardage-book voice. */}
+      {note && (
+        <div
+          style={{
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 14,
+            lineHeight: 1.35,
+            // Pencil, not amber: the kicker + tiles carry the alert; this is the
+            // calm clarification beneath it (designer note — avoid 3 amber layers).
+            color: T.pencil,
+            marginBottom: 12,
+          }}
+        >
+          {note}
+        </div>
+      )}
 
       {/* Per-player score tiles.
           Surgical amber: only absent/unparsed tiles get the wash — matched
