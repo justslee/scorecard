@@ -2500,3 +2500,30 @@ verify). **CI green** (all 3 jobs).
 
 Remaining for production (not beta-blocking): clerk-jwt-keychain-swap (move
 UserDefaults→Keychain plugin, + the 2 LOW follow-ups).
+
+---
+
+## owner-player-identity plumbing (P34) — 2026-06-28
+
+Fixed the "another player's scores shown as yours" bug by adding an explicit
+owner→player mapping end-to-end. Shipped on integration/next (rides PR #54).
+
+- **Backend:** migration 0005_008 (nullable rounds.owner_player_id); ORM +
+  Pydantic Round/RoundCreate carry ownerPlayerId; create_round stores it
+  (defaults to first player when omitted — behaviour-preserving);
+  _build_full_round returns it with a first-round_player fallback for legacy
+  rows. +2 integration tests.
+- **Frontend:** canonical helper lib/round-owner.ts getOwnerPlayerId() (+4 unit
+  tests); ALL read sites switched off players[0] (page.tsx x2, profile/page.tsx
+  x2, profile-stats.ts x3); stale comments corrected.
+
+**Verified:** frontend lint/tsc/voice265/unit284/build/native-crash green
+locally; **CI Backend gate green = the 2 new integration tests passed in
+Postgres** (couldn't run locally — no PG/Docker). **Security review: clean, no
+findings** (additive migration, no IDOR, no injection; ownerPlayerId is a
+caller-scoped opaque id).
+
+**Remaining:** owner-player-identity-ux (round/new "mark me" UX → lets
+ownerPlayerId differ from players[0]; needs designer review). Until then
+ownerPlayerId defaults to the first player, so the visible fix lands with that
+follow-up — but the plumbing + centralized correct reads are done.
