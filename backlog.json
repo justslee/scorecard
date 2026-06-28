@@ -581,7 +581,11 @@
       "status": "ready",
       "title": "Swap native JWT storage backend from UserDefaults to Keychain plugin",
       "rationale": "Final part of clerk-jwt-keychain. Replace @capacitor/preferences (UserDefaults, plaintext, backup-exposed) with @aparajita/capacitor-secure-storage using kSecAttrAccessibleWhenUnlockedThisDeviceOnly so the Clerk JWT is encrypted at rest + excluded from device/iCloud backups. Thanks to native-token-store.ts this is a single-file backend swap (+ add the plugin + cap sync). NOTE: adds a native dependency (SPM/pod) and the actual Keychain persistence can only be fully verified on a real device/sim sign-in -> bundle with other device-verifiable changes or verify via a credentialed sim run before shipping. REQUIRED before App Store / wider release; NOT beta-blocking (owner-only TestFlight).",
-      "classification": "silent"
+      "classification": "silent",
+      "review_followups": [
+        "LOW (TOCTOU, reviewer 2026-06-28): an in-flight FAPI response can re-persist the JWT just after clearNativeToken() on sign-out. Security-nil (Clerk destroys the session server-side; re-persisted token is revoked). Fix when doing the Keychain swap: gate setNativeToken on a module-level 'signed out' flag that clearNativeToken sets and a sign-in transition (false->true) resets \u2014 taking care NOT to suppress the re-sign-in token write (it happens during the sign_in FAPI exchange, before isSignedIn flips).",
+        "LOW (cold-start stale token, reviewer 2026-06-28): if sign-out happens while the app is killed, the stale (already server-invalid) JWT isn't cleared until it's injected and rejected. Fix: in nativeOnAfterResponse, clearNativeToken() on a FAPI authentication-failure error code \u2014 but first confirm the EXACT Clerk FAPI error code via a credentialed run so a valid token is never wrongly wiped."
+      ]
     }
   ]
 }
