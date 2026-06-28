@@ -22,7 +22,7 @@ import { Round, Tournament, GolferProfile, SavedPlayer } from './types';
 
 async function isAuthenticated(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
-  // @ts-expect-error - Clerk exposes this on window
+  // window.Clerk is typed via @clerk/clerk-js global declaration.
   const clerk = window.Clerk;
   return !!clerk?.session;
 }

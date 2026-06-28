@@ -79,7 +79,7 @@ async function getAuthToken(): Promise<string | null> {
   if (hookToken !== null) return hookToken;
 
   // ── 2. Fallback: window.Clerk ────────────────────────────────────────────
-  // @ts-expect-error - Clerk exposes this on window
+  // window.Clerk is typed via @clerk/clerk-js global declaration.
   const clerk = window.Clerk;
   if (clerk) {
     // Await hydration if not yet complete.

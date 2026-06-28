@@ -3,6 +3,44 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (clerk-native-session-instance-fix — NOTICEABLE)
+- **Done:** Definitive fix for `native-sent:false` — window global hooks NEVER firing.
+  Switched from window-global hooks to registering callbacks DIRECTLY on the locally-bundled
+  `@clerk/clerk-js` Clerk instance. Commits on `integration/next`.
+
+  Root cause: `window.__internal_onBeforeRequest` / `window.__internal_onAfterResponse` were
+  set but `native-sent` was always `false` in on-device builds. The CDN-loaded clerk-js
+  (loaded via `<script>` tag) does not reliably honor those window globals in the Capacitor
+  WKWebView context.
+
+  Fix (the @clerk/expo reference implementation adapted for Capacitor/Next.js):
+  1. Added `@clerk/clerk-js@6.22.0` to package.json (bundled locally, no CDN script).
+  2. Construct the Clerk instance at module load (inside IIFE, gated to native-only):
+     `const instance = new ClerkBrowser(publishableKey)`
+  3. Register callbacks ON THE INSTANCE:
+     `instance.__internal_onBeforeRequest(cb)` wires into the FAPI client singleton
+     created in the constructor — guaranteed to fire on every FAPI request.
+     `instance.__internal_onAfterResponse(cb)` same for responses.
+     Verified in `@clerk/clerk-js@6` dist/clerk.mjs and dist/types/core/clerk.d.ts (lines 241-242).
+  4. Pass to ClerkProvider: `<ClerkProvider Clerk={instance} standardBrowser={false}>`.
+     ClerkProvider calls `instance.load({ standardBrowser: false })` — no CDN script loaded.
+  5. IIFE guard: `typeof window === "undefined"` → null (SSR/build); `isNativePlatform()==false`
+     → null (browser/dev) → standard CDN path untouched.
+  6. Removed old window globals and their TypeScript declarations.
+  7. Fixed two `@ts-expect-error` directives made unnecessary by `@clerk/clerk-js` globals.
+
+  Expected diagnostic after sign-in on the fixed build:
+    `native-sent:true  auth-hdr:true  signed:true  tok:true  napi:true`
+
+  Files changed:
+  - `frontend/src/components/AuthProvider.tsx`
+  - `frontend/src/lib/api.ts`
+  - `frontend/src/lib/storage-api.ts`
+  - `frontend/package.json` / `package-lock.json`
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 276/276 · build clean.
+  NOTICEABLE — native-sent flips to true; full JWT-header auth session should establish.
+
 ## 2026-06-28 (clerk-session-capacitorhttp — NOTICEABLE)
 - **Done:** Definitive fix for Clerk session not persisting in Capacitor iOS WebView.
   Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · unit 276/276 · build clean.
