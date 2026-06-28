@@ -62,8 +62,21 @@ def _safe_json_extract(text: str) -> Optional[str]:
 # ── Parse Round Setup ──
 
 
+class RoundSetupState(BaseModel):
+    """What's known about the round so far (carried across conversational turns)."""
+
+    courseName: str = ""
+    playerNames: list[str] = []
+    teeName: Optional[str] = None
+
+
 class RoundSetupRequest(BaseModel):
     transcript: str
+    # Conversational context: what we already know, and which field this utterance
+    # is answering ("course" | "players" | "tee"). Both optional → one-shot parse,
+    # so existing callers are unaffected.
+    current: Optional[RoundSetupState] = None
+    expecting: Optional[str] = None
 
 
 class RoundSetupResponse(BaseModel):
@@ -73,10 +86,69 @@ class RoundSetupResponse(BaseModel):
     confidence: float = 0.5
     warnings: list[str] = []
     explanations: list[str] = []
+    # Agentic fields: what's still required, the caddie's next question, and whether
+    # the round can start. complete=True ⇒ followUpQuestion is None.
+    missing: list[str] = []
+    followUpQuestion: Optional[str] = None
+    complete: bool = False
 
 
-def _local_parse_round_setup(transcript: str) -> RoundSetupResponse:
-    """Fallback local parser when no API key available."""
+# ── Conversational helpers (pure — unit-tested in tests/test_round_setup_agent.py) ──
+
+# A round needs at minimum a course and ≥1 player to start. Tees are optional
+# (the setup screen defaults them), so they never block completion.
+def round_setup_missing(course_name: str, player_names: list[str]) -> list[str]:
+    """Required fields still absent, in the order we'd ask for them."""
+    missing: list[str] = []
+    if not (course_name or "").strip():
+        missing.append("course")
+    if not [n for n in player_names if (n or "").strip()]:
+        missing.append("players")
+    return missing
+
+
+def round_setup_question(missing: list[str]) -> Optional[str]:
+    """The caddie's next question — one thing at a time, course first."""
+    if "course" in missing:
+        return "Which course are you playing?"
+    if "players" in missing:
+        return "Who's playing today?"
+    return None
+
+
+def merge_round_setup(
+    current: Optional[RoundSetupState], parsed: RoundSetupResponse
+) -> RoundSetupResponse:
+    """Layer a new turn's parse over what we already knew. A newly-heard value
+    wins; otherwise the prior value is kept, so each answer fills a gap without
+    wiping earlier ones. Player names are unioned (order-preserving)."""
+    if current is None:
+        return parsed
+    course = parsed.courseName.strip() or current.courseName
+    tee = parsed.teeName or current.teeName
+    names: list[str] = []
+    for n in [*current.playerNames, *parsed.playerNames]:
+        n = (n or "").strip()
+        if n and n not in names:
+            names.append(n)
+    return RoundSetupResponse(
+        courseName=course,
+        playerNames=names,
+        teeName=tee,
+        confidence=parsed.confidence,
+        warnings=parsed.warnings,
+        explanations=parsed.explanations,
+    )
+
+
+def _local_parse_round_setup(
+    transcript: str, expecting: Optional[str] = None
+) -> RoundSetupResponse:
+    """Fallback local parser when no API key available.
+
+    `expecting` biases a short follow-up answer: when we just asked "which
+    course?" a bare "Pebble Beach" has no "at" cue, so we take the whole utterance
+    as the course; likewise a bare "Dan and Matt" answer to "who's playing?"."""
     text = transcript
 
     player_names: list[str] = []
@@ -105,24 +177,59 @@ def _local_parse_round_setup(transcript: str) -> RoundSetupResponse:
     if tee_match:
         tee_name = tee_match.group(1)
 
+    # Follow-up bias: interpret a bare answer as the field we asked for.
+    cleaned = transcript.strip().rstrip(".!?")
+    if expecting == "course" and not course_name and cleaned:
+        course_name = cleaned
+    elif expecting == "players" and not player_names and cleaned:
+        for n in re.split(r",|\s+and\s+|\s+", cleaned):
+            n = n.strip()
+            if n:
+                player_names.append(n)
+
+    # De-dup players, preserving order.
+    seen: list[str] = []
+    for n in player_names:
+        if n not in seen:
+            seen.append(n)
+
     return RoundSetupResponse(
         courseName=course_name,
-        playerNames=list(set(player_names)),
+        playerNames=seen,
         teeName=tee_name,
         confidence=0.55,
         warnings=["Used local parsing (no API key)."],
     )
 
 
+def _finalize_round_setup(
+    parsed: RoundSetupResponse, current: Optional[RoundSetupState]
+) -> RoundSetupResponse:
+    """Merge this turn over prior state, then attach the agentic status (what's
+    still missing, the caddie's next question, whether we can start)."""
+    merged = merge_round_setup(current, parsed)
+    missing = round_setup_missing(merged.courseName, merged.playerNames)
+    merged.missing = missing
+    merged.complete = not missing
+    merged.followUpQuestion = round_setup_question(missing)
+    return merged
+
+
 @router.post("/parse-round-setup", response_model=RoundSetupResponse)
 async def parse_round_setup(request: RoundSetupRequest):
-    """Parse voice transcript to extract round setup (course, players, tee)."""
+    """Parse a voice transcript into a round setup, conversationally.
+
+    Merges this turn over any `current` state and returns `missing` /
+    `followUpQuestion` / `complete` so the client can ask the golfer for whatever
+    is still needed (course, players) instead of dead-ending on a partial parse.
+    """
     if not request.transcript:
         raise HTTPException(400, "No transcript provided")
 
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        return _local_parse_round_setup(request.transcript)
+        parsed = _local_parse_round_setup(request.transcript, request.expecting)
+        return _finalize_round_setup(parsed, request.current)
 
     client = anthropic.Anthropic(api_key=api_key)
     model = _get_model()
@@ -141,6 +248,13 @@ Rules:
 - courseName should be the course mentioned if any.
 - teeName should be tee color/name if mentioned; otherwise null.
 - Return only JSON, no extra text."""
+
+    # Conversational steering: if this utterance answers a specific question, the
+    # answer may be bare (e.g. just a course name) — tell the model what to expect.
+    if request.expecting == "course":
+        system += '\n- This utterance answers "which course?" — treat it as the courseName even with no "at"/"playing" cue.'
+    elif request.expecting == "players":
+        system += '\n- This utterance answers "who is playing?" — treat the names as playerNames.'
 
     user_msg = f'Transcript: "{request.transcript}"'
 
@@ -165,12 +279,13 @@ Rules:
                 continue
 
             obj = json.loads(json_text)
-            return RoundSetupResponse(
+            parsed = RoundSetupResponse(
                 courseName=obj.get("courseName", ""),
                 playerNames=obj.get("playerNames", []),
                 teeName=obj.get("teeName"),
                 confidence=0.75,
             )
+            return _finalize_round_setup(parsed, request.current)
         except json.JSONDecodeError as e:
             last_err = str(e)
         except Exception as e:
