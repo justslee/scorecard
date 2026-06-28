@@ -2606,3 +2606,35 @@ on the Product Board, and specs/social-course-features-plan.md.
   /players page to "Playing Partners" + contextual entries; one quiet /courses spoke.
 - Biggest constraint surfaced: the app is single-owner gated (require_owner on every
   router); real social needs an owner decision to relax it + a security review.
+
+---
+
+## SHIPPED — bundle #61 merged to main + deployed + TestFlight — 2026-06-28
+
+Owner approved the combined bundle (confirmed via question after the bundle grew past
+the original "ship it"). Merged PR #61 (4 commits) → main @ 912eefb.
+- **Backend deployed** via SSM (deploy.yml): new `POST /api/voice/live-token` is LIVE
+  (returns 401 unauth = exists + auth-gated); config-status all keys present.
+- **TestFlight build v1.0.415** (202606281804) uploaded from integration/next (==main).
+- Fresh integration/next fast-forwarded to main (== main, clean base for next bundle).
+
+Bundle contents (all NOTICEABLE):
+1. Voice setup echo fix — echoCancellation on getUserMedia (caddie's own voice no
+   longer transcribed as the user → fixes garbled/out-of-order transcript).
+2. Caddie preload on round/new — warm Realtime session (muted, hidden) so the mic
+   tap is instant; graceful fallback to connect-on-tap if iOS blocks mount-time mic.
+3. Live score-entry words — Deepgram live WebSocket interim display in ScoreSheet
+   (Web Speech was dead in WKWebView). Authoritative scoring path untouched; live
+   path fully behind try/catch.
+Gates: eslint/tsc/voice265/vitest315(+7)/build/ruff all green (re-run independently).
+Review + /security-review: clean (endpoint fails closed, key stays server-side,
+scoring path untouched). Device-only verification (WS streaming + warm-connect mic
+timing) pending on owner's TestFlight test.
+
+## DECISION CHANGE — floating island tab bar (owner override) — 2026-06-28
+Owner overrode the earlier "no bottom tab" recommendation (IMG_2960): wants a floating
+Instagram-style pill tab bar for the future-features nav. Updated backlog ui_decision +
+specs/social-course-features-plan.md + both Notion epic cards. New card
+`nav-floating-island-tab` (yardage-book styled, hidden on immersive screens). Saved as
+memory floating-island-tab-nav. Follow-up `ratelimit-live-token` added (from sec review;
+moot while owner-gated).

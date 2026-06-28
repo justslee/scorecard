@@ -3,15 +3,24 @@
 Status: planning (owner: "not high priority, but get to it"). Backlog ids:
 `social-*` (epic `social-playing-partners`) and `course-*` (epic `course-search-reviews`).
 
-## UI decision (owner's explicit question: "is a bottom tab the best approach?")
-**No global bottom tab bar.** NORTHSTAR forbids SaaS/dashboard chrome; the app is
-intentionally hub-and-spoke (calm home, full-bleed sub-screens that return to `/`,
-`viewportFit:"cover"` safe-area layout). Neither feature is a "camp here" destination —
-Partners are contextual (adding/inviting players), course search is already mid-flow in
-round-setup and tee-time. A tab bar would also intrude on the immersive voice/round/GPS
-screens where the app is meant to disappear.
+## UI decision — UPDATED 2026-06-28 (owner override)
+**Build a floating "island" pill bottom tab bar** (owner's call, IMG_2960 — Instagram-style:
+rounded, hovers above the bottom edge, NOT an edge-to-edge SaaS bar). The owner finds the
+hub-and-spoke home harder to navigate and wants persistent nav for the new features.
+Tracked by card `nav-floating-island-tab`. Likely tabs: **Round/Home · Partners · Courses
+(+ profile)**.
 
-**Homes instead:**
+To keep it NORTHSTAR-compatible: render it in the yardage-book aesthetic (on-paper,
+restrained palette, calm — not generic SaaS), and **hide it on immersive screens** (active
+round / voice / GPS) where the app should disappear. This is the "minimal home dock" path
+below, promoted to the chosen approach and extended to a persistent floating tab.
+
+> Superseded recommendation (kept for context): originally advised *no* bottom tab on the
+> grounds it's SaaS/dashboard chrome and neither feature is a "camp here" destination. The
+> owner overrode this — the floating-island styling + hiding on immersive screens is how we
+> reconcile it with the calm feel.
+
+**Feature homes (unchanged):**
 - **Playing Partners** — promote the already-built, orphaned `/players` page (full
   SavedPlayer roster CRUD, shows `roundsPlayed`, badges linked accounts) to "Playing
   Partners." Two quiet entry points: a link from home masthead/profile, and inline in the
@@ -21,9 +30,8 @@ screens where the app is meant to disappear.
   round-setup & tee-time) and add ONE quiet `/courses` spoke from home with a
   `/courses/[id]` detail screen ("Start a round here" + reviews).
 
-If the owner ever insists on persistent nav, the only Northstar-compatible form is a 3-item
-home dock (Round · Partners · Courses) shown ONLY on home, hidden on round/voice/GPS — but
-the recommendation is to not build it; the home hub already does this calmly.
+(The contextual entry points above stay even with the tab bar — they're the in-flow places
+invites/course-picks happen. The floating tab is the persistent top-level nav layered on top.)
 
 ## Current-state findings (grounded)
 - **No bottom nav today.** `layout.tsx` wraps everything in `AuthProvider` only; `page.tsx`
