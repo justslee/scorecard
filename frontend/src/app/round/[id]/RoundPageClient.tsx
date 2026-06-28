@@ -22,6 +22,7 @@ import {
   completeRound as apiCompleteRound,
 } from "@/lib/api";
 import { hapticCelebration } from "@/lib/haptics";
+import { shotPointForPath } from "@/lib/hole-shot-point";
 
 // Player accent colors (yardage-book palette — warm ink tones)
 const PLAYER_COLORS = ["#1a2a1a", "#6b3a1a", "#3a3a6a", "#6a3a3a", "#2a5a3a", "#5a2a5a"];
@@ -636,14 +637,8 @@ export default function RoundPage() {
   // ---------------------------------------------------------------------------
 
   const distance = Math.max(80, hole.yards - Math.round(hole.yards * 0.6));
-  const pathPts = hole.path;
-  const midIdx = Math.max(1, pathPts.length - 2);
-  const shotPoint: [number, number] | null = pathPts[midIdx]
-    ? [
-        (pathPts[midIdx][0] + pathPts[midIdx + 1][0]) / 2,
-        (pathPts[midIdx][1] + pathPts[midIdx + 1][1]) / 2 + 0.05,
-      ]
-    : null;
+  // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
+  const shotPoint = shotPointForPath(hole.path);
 
   // ---------------------------------------------------------------------------
   // Loading / not-found states
