@@ -14,6 +14,22 @@
 	<string>Looper can save scorecard photos to your library.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!--
+	  WKAppBoundDomains enables "App-Bound" WKWebView mode for these domains.
+	  iOS 14+ blocks third-party cookies for cross-origin requests in WKWebView
+	  (Intelligent Tracking Prevention). App-Bound domains are treated as
+	  first-party: their cookies are stored in the shared WKHTTPCookieStore and
+	  are visible to the webview, which is required for Clerk's session cookie
+	  (set by clerk.looperapp.org) to survive across page navigations inside the
+	  same WKWebView session. Combined with CapacitorCookies.enabled=true and
+	  standardBrowser=false on ClerkProvider, this forms the three-layer fix for
+	  Clerk session persistence in the Capacitor WKWebView.
+	-->
+	<key>WKAppBoundDomains</key>
+	<array>
+		<string>clerk.looperapp.org</string>
+		<string>looperapp.org</string>
+	</array>
     <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>

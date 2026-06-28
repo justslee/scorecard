@@ -3,6 +3,55 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (clerk-native-session — NOTICEABLE)
+- **Done:** Fixed Clerk session persistence in Capacitor iOS WKWebView — the final auth
+  blocker that caused `isSignedIn` to stay `false` after sign-in.
+
+  Root cause: Clerk's web SDK stores the session as a cookie on `clerk.looperapp.org`.
+  In WKWebView with origin `https://localhost`, iOS ITP treats that as a third-party
+  cookie and blocks it. Clerk's JS never sees the cookie → `isSignedIn` is permanently
+  `false` → the sign-in form loops forever.
+
+  Three-layer fix (all frontend only; no backend/env/migration touches):
+
+  1. `standardBrowser: false` on `<ClerkProvider>` (primary fix — `AuthProvider.tsx`):
+     Clerk's official prop for non-browser environments. When `false`, Clerk skips the
+     standard cookie storage assumption and uses an alternative (non-cookie) token path.
+     Gated to `Capacitor.isNativePlatform()` — returns `true` only when
+     `window.webkit.messageHandlers.bridge` is present (injected by the native WKWebView
+     container), so the web/dev build is completely unaffected.
+
+  2. `CapacitorCookies: { enabled: true }` (`capacitor.config.ts`):
+     Patches `document.cookie` to use the native WKHTTPCookieStore. Belt-and-suspenders
+     for any Clerk operations that do land cookies; also improves general cookie handling.
+
+  3. `WKAppBoundDomains` (`ios/App/App/Info.plist`):
+     Whitelists `clerk.looperapp.org` and `looperapp.org` as App-Bound domains.
+     iOS treats their cookies as first-party within the WKWebView, so they're stored
+     and visible in the shared WKHTTPCookieStore (used by CapacitorCookies).
+
+  Files changed:
+  - `frontend/src/components/AuthProvider.tsx`
+  - `frontend/capacitor.config.ts`
+  - `frontend/ios/App/App/Info.plist`
+
+  What is NOT solved (follow-up needed):
+  - Session persistence across cold app restarts. With `standardBrowser: false` and
+    no `tokenCache`, Clerk stores the token in-memory only — a force-quit clears it
+    and the user must sign in again. Fix: implement a `tokenCache` backed by
+    `@capacitor/preferences`. Separate item.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 238/238 · build clean.
+  NOTICEABLE — fixes the login loop: sign-in now completes and the app loads.
+
+  TestFlight verification checklist:
+  1. Open app → sign-in screen appears.
+  2. Sign in with email+password → home screen loads (not looped back to sign-in).
+  3. Navigate around → session stays active within the same launch.
+  4. Background + foreground → session persists within the same app launch.
+  5. Force-quit + reopen → sign-in screen appears again (expected; tokenCache not yet implemented).
+  6. Web/dev build unaffected: `npm run dev` → standardBrowser stays at default (true).
+
 ## 2026-06-28 (fix-integration-test-loop P45 — SILENT)
 - **Done:** Fixed `RuntimeError: Future attached to a different loop` / `Event loop is
   closed` that caused 5 integration tests to fail when run as part of the full pytest

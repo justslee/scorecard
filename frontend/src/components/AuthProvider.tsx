@@ -1,6 +1,7 @@
 "use client";
 
 import { ClerkProvider } from "@clerk/clerk-react";
+import { Capacitor } from "@capacitor/core";
 import type { ReactNode } from "react";
 import ClerkTokenBridge from "@/components/ClerkTokenBridge";
 import AuthGate from "@/components/AuthGate";
@@ -37,8 +38,26 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
+  // In a Capacitor WKWebView (iOS/Android), cookies set by a cross-origin domain
+  // (clerk.looperapp.org) are blocked by Intelligent Tracking Prevention as
+  // "third-party" relative to the https://localhost app origin. This prevents
+  // Clerk's session cookie from being set, leaving isSignedIn permanently false
+  // even after the user completes sign-in. Setting standardBrowser=false tells
+  // Clerk's SDK to skip the standard-browser cookie assumption and use an
+  // alternative (non-cookie) token storage path, which works in WKWebView.
+  //
+  // Capacitor.isNativePlatform() checks window.webkit.messageHandlers.bridge (iOS)
+  // or window.androidBridge — both are injected only by the native container and
+  // are absent in a regular browser or during the Next.js static-export build.
+  // So this flag is reliably false on the web/dev path and true only in the app.
+  const isNative = Capacitor.isNativePlatform();
+
   return (
-    <ClerkProvider publishableKey={publishableKey} appearance={clerkAppearance}>
+    <ClerkProvider
+      publishableKey={publishableKey}
+      appearance={clerkAppearance}
+      {...(isNative ? { standardBrowser: false } : {})}
+    >
       {/* Bridge registers useAuth().getToken into the module singleton so
           non-component code (api.ts / deepgram.ts) can fetch JWTs without
           relying on window.Clerk (which doesn't hydrate on capacitor://). */}
