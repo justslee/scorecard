@@ -536,9 +536,9 @@
       "id": "clerk-jwt-keychain",
       "priority": 49,
       "status": "ready",
-      "title": "Store Clerk session JWT in Keychain, not UserDefaults (security)",
-      "rationale": "P48 token-cache stores __clerk_client_jwt via @capacitor/preferences, which is backed by iOS UserDefaults.standard (verified in node_modules) \u2014 plaintext, included in device/iCloud backups. A session credential should live in the Keychain. Swap the storage to a Keychain-backed secure-storage plugin (e.g. @aparajita/capacitor-secure-storage). Functionally fine for the current private beta; FIX before any production/wider release.",
-      "classification": "security"
+      "title": "Auth-storage hardening: Keychain for Clerk JWT + clear-on-signout + fix false comments",
+      "rationale": "Security review of v1.0.343 (auth wiring otherwise SOUND). Three items, bundle as one pass before production: (1) store __clerk_client_jwt in a Keychain-backed plugin (@aparajita/capacitor-secure-storage or capacitor-secure-storage-plugin) with kSecAttrAccessibleWhenUnlockedThisDeviceOnly so it is excluded from device/iCloud backups (currently @capacitor/preferences = UserDefaults plaintext, backup-exposed \u2014 Medium); (2) the AuthProvider comments at :50 and :117-118 + the commit msg FALSELY claim Keychain \u2014 correct them; (3) on Clerk sign-out, Preferences.remove/secureStorage.remove the JWT (hooks currently never clear it -> stale credential persists after sign-out). Also confirm Clerk FAPI returns Access-Control-Expose-Headers: Authorization for the native flow (load-bearing for the response-header read). Not beta-blocking (private TestFlight, owner-only); REQUIRED before App Store/wider release.",
+      "classification": "security (pre-production, not beta-blocking)"
     }
   ]
 }
