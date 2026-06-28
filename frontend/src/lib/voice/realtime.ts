@@ -92,7 +92,9 @@ async function dispatchTool(
 
 // ── Client ───────────────────────────────────────────────────────────────
 
-const REALTIME_BASE = 'https://api.openai.com/v1/realtime';
+// GA WebRTC connect endpoint. (Legacy used `${REALTIME_BASE}?model=…`; GA puts
+// the model in the minted session, so the browser POSTs the SDP offer to /calls.)
+const REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 
 export class RealtimeCaddieClient {
   private pc: RTCPeerConnection | null = null;
@@ -149,13 +151,12 @@ export class RealtimeCaddieClient {
       const offer = await this.pc.createOffer();
       await this.pc.setLocalDescription(offer);
 
-      const sdpResp = await fetch(`${REALTIME_BASE}?model=${encodeURIComponent(this.token.model)}`, {
+      const sdpResp = await fetch(REALTIME_CALLS_URL, {
         method: 'POST',
         body: offer.sdp,
         headers: {
           Authorization: `Bearer ${this.token.client_secret}`,
           'Content-Type': 'application/sdp',
-          'OpenAI-Beta': 'realtime=v1',
         },
       });
       if (!sdpResp.ok) throw new Error(`Realtime SDP exchange failed: ${sdpResp.status} ${await sdpResp.text()}`);
@@ -223,7 +224,8 @@ export class RealtimeCaddieClient {
     try { evt = JSON.parse(raw); } catch { return; }
 
     switch (evt.type) {
-      case 'response.audio_transcript.delta': {
+      case 'response.audio_transcript.delta':
+      case 'response.output_audio_transcript.delta': {
         const id = String(evt.response_id || evt.item_id || 'assistant-current');
         const delta = String(evt.delta || '');
         const existing = this.partials.get(id) ?? { id, role: 'assistant', text: '', partial: true };
@@ -234,6 +236,7 @@ export class RealtimeCaddieClient {
         break;
       }
       case 'response.audio_transcript.done':
+      case 'response.output_audio_transcript.done':
       case 'response.output_text.done':
       case 'response.done': {
         const id = String(evt.response_id || evt.item_id || 'assistant-current');
