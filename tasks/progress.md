@@ -3,6 +3,48 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (clerk-session-capacitorhttp — NOTICEABLE)
+- **Done:** Definitive fix for Clerk session not persisting in Capacitor iOS WebView.
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · unit 276/276 · build clean.
+  Commits on `integration/next`.
+
+  Root cause (researched via clerk-js/fapiClient.ts + @clerk/expo/createClerkInstance.ts source):
+  - Our window hooks are mechanically correct: fapiClient.ts reads `window.__internal_onBeforeRequest`
+    on every FAPI request. `_is_native=1` is correctly appended to `requestInit.url` (same URL
+    reference the fetch is called with). This is identical to @clerk/expo's approach.
+  - The ACTUAL bug: browser CORS blocks reading the `authorization` response header in a WebView.
+    In-browser fetch from `capacitor://localhost` to `clerk.looperapp.org` is cross-origin.
+    CORS only exposes safelisted response headers; `authorization` requires
+    `Access-Control-Expose-Headers: Authorization` from the FAPI for OUR origin. Result:
+    `response.headers.get("authorization")` returns null → JWT never saved → `setActive()`
+    → `session.__internal_touch()` sends empty authorization header → FAPI rejects →
+    `handleUnauthenticated()` → session cleared → `isSignedIn` stays false.
+
+  Fix: `CapacitorHttp: { enabled: true }` in `capacitor.config.ts`
+  - Patches `window.fetch` + `window.XMLHttpRequest` to use iOS native NSURLSession.
+  - Native HTTP does NOT enforce browser CORS → reads ALL response headers directly.
+  - `response.headers.get("authorization")` now returns the Clerk JWT.
+  - JWT is saved to @capacitor/preferences (Keychain) after sign-in.
+  - Subsequent FAPI requests send the JWT in the authorization request header.
+  - `session.__internal_touch()` authenticates → `isSignedIn` becomes true.
+  - CapacitorHttp is a built-in Capacitor 4+ plugin (@capacitor/core); no new dep needed.
+  - Web/dev unaffected: native patch only applies in the iOS runtime.
+
+  New diagnostic fields (auth-diag.ts + AuthProvider.tsx):
+  - `isNativeSent`: hook fired and appended `_is_native=1` — confirms hook is working
+  - `authHeaderReceived`: whether authorization header was readable — THE KEY SIGNAL
+  - `lastFapiPath`: last intercepted FAPI endpoint path
+
+  NativeAuthDiag upgraded (NativeAuthDiag.tsx):
+  - Multi-line, 12px font (was 9px single-line strip), yardage-book panel
+  - "Copy" button: writes full diagnostic text to clipboard
+
+  Expected on-device readout after successful sign-in:
+    loaded:true  signed:true  native-sent:true  auth-hdr:true  tok:true  napi:true
+
+  REQUIRED: run `npx cap sync` to push config to iOS Xcode project, then rebuild.
+  NOTICEABLE — fixes sign-in on TestFlight + richer copyable diagnostic.
+
 ## 2026-06-28 (clerk-native-auth-deep-fix — NOTICEABLE)
 - **Done:** Deep-fixed Clerk native session persistence in Capacitor iOS WKWebView.
   Commit `02c808d` on `integration/next`.

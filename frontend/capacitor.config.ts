@@ -25,6 +25,24 @@ const config: CapacitorConfig = {
     CapacitorCookies: {
       enabled: true,
     },
+    // Route all window.fetch / XHR through iOS's native NSURLSession instead
+    // of WKWebView's JS fetch. This bypasses browser-level CORS enforcement:
+    // native HTTP reads ALL response headers directly, including the
+    // "authorization" header that Clerk's FAPI returns in native token mode
+    // (_is_native=1). Without this, browser CORS blocks reading non-safelisted
+    // response headers from cross-origin FAPI responses (capacitor:// →
+    // clerk.looperapp.org), so response.headers.get("authorization") always
+    // returns null even when the header IS present — and the JWT is never saved.
+    // With this enabled, the FAPI authorization response header IS readable,
+    // the JWT is stored to Preferences, and every subsequent request sends it
+    // back in the authorization request header → Clerk authenticates the session.
+    // CapacitorHttp is a built-in Capacitor 4+ plugin in @capacitor/core.
+    // NOTE: also disables CORS preflight for non-simple request headers
+    // (e.g. our "authorization" request header), which is safe here because
+    // we're communicating only with Clerk FAPI and the backend (both controlled).
+    CapacitorHttp: {
+      enabled: true,
+    },
   },
 };
 

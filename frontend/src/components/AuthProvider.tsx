@@ -139,17 +139,25 @@ if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
    */
   window.__internal_onBeforeRequest = async (requestInit) => {
     // (a) Omit browser-managed cookies — WKWebView ITP blocks them for
-    //     cross-origin FAPI requests from https://localhost.
+    //     cross-origin FAPI requests from https://localhost or capacitor://.
+    //     With CapacitorHttp enabled, fetch() routes through native NSURLSession
+    //     anyway, so ITP is already irrelevant — but we still omit to keep the
+    //     request clean (native HTTP reads cookies from WKHTTPCookieStore directly).
     requestInit.credentials = "omit";
 
-    // (b) Signal Clerk backend to return session JWT in response Authorization
-    //     header instead of a Set-Cookie.  Requires Native API enabled in the
-    //     Clerk Dashboard (Configure → Native applications).
+    // (b) Signal Clerk backend to return session JWT in the "authorization"
+    //     response header instead of (or alongside) a Set-Cookie.
+    //     Requires "Native applications" enabled in the Clerk Dashboard:
+    //     https://dashboard.clerk.com/last-active?path=native-applications
     requestInit.url?.searchParams.append("_is_native", "1");
+
+    // Track the path of the intercepted request for the diagnostic overlay.
+    const path = requestInit.url?.pathname ?? null;
+    setAuthDiag({ isNativeSent: true, lastFapiPath: path });
 
     // (c) Inject persisted JWT (or empty string to signal native mode).
     //     The header MUST be present on every request — some FAPI versions
-    //     use its presence (even empty) to confirm native-mode handling.
+    //     use its mere presence (even empty) to confirm native-mode handling.
     let jwt = "";
     try {
       const { value } = await Preferences.get({ key: CLERK_CLIENT_JWT_KEY });
@@ -200,7 +208,20 @@ if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
     }
 
     // Persist the JWT from the authorization response header.
+    //
+    // With CapacitorHttp enabled (capacitor.config.ts → plugins.CapacitorHttp),
+    // fetch() routes through iOS native NSURLSession which bypasses browser-level
+    // CORS enforcement: all response headers are readable from JS regardless of
+    // Access-Control-Expose-Headers.  Without CapacitorHttp, this would return
+    // null because "authorization" is a non-safelisted header and requires
+    // Access-Control-Expose-Headers: Authorization to be readable in a browser.
     const authHeader = response?.headers?.get("authorization");
+
+    // Track in the diagnostic overlay whether the header was readable.
+    // true  = JWT captured — sign-in should fully establish the session.
+    // false = header absent or blocked (run `npx cap sync` after config change).
+    setAuthDiag({ authHeaderReceived: Boolean(authHeader) });
+
     if (authHeader) {
       try {
         await Preferences.set({
