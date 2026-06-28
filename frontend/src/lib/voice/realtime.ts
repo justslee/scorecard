@@ -19,6 +19,7 @@ import {
   getSessionStatus,
   type RealtimeSessionToken,
 } from '@/lib/caddie/api';
+import { MessageOrderTracker } from '@/lib/voice/realtime-ordering';
 
 // ── Public types ─────────────────────────────────────────────────────────
 
@@ -36,6 +37,12 @@ export interface RealtimeMessage {
   role: 'user' | 'assistant';
   text: string;
   partial?: boolean;
+  /**
+   * Stable conversation-order key. Render sorted by this — NOT arrival order —
+   * because the user's transcript event lands after the reply it triggered.
+   * See lib/voice/realtime-ordering.ts.
+   */
+  order: number;
 }
 
 export interface RealtimeCaddieEvents {
@@ -106,6 +113,9 @@ export class RealtimeCaddieClient {
   private opts: RealtimeCaddieOptions;
   // Live partial text by role+response_id to coalesce streamed deltas.
   private partials: Map<string, RealtimeMessage> = new Map();
+  // Hands out stable conversation-order keys so the user's turn renders before
+  // the reply it triggered, despite the transcript event arriving last.
+  private order = new MessageOrderTracker();
 
   constructor(opts: RealtimeCaddieOptions, events: RealtimeCaddieEvents = {}) {
     this.opts = opts;
@@ -180,16 +190,30 @@ export class RealtimeCaddieClient {
 
   /** Send a typed text message (alternative to voice input). */
   sendText(text: string): void {
-    if (!this.dc || this.dc.readyState !== 'open') return;
-    this.dc.send(JSON.stringify({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
+    const open = this.dc?.readyState === 'open';
+    if (open) {
+      this.dc!.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text }],
+        },
+      }));
+      this.dc!.send(JSON.stringify({ type: 'response.create' }));
+    }
+    // Surface the typed line in the transcript regardless of channel state (so
+    // the user always sees what they typed), ordered before the reply it
+    // triggers. Centralized here so ordering matches the voice path.
+    if (text) {
+      this.events.onMessage?.({
+        id: `user-typed-${Date.now()}`,
         role: 'user',
-        content: [{ type: 'input_text', text }],
-      },
-    }));
-    this.dc.send(JSON.stringify({ type: 'response.create' }));
+        text,
+        partial: false,
+        order: this.order.orderForTypedUser(),
+      });
+    }
   }
 
   /** Toggle mic mute (audio still flows from server, but server VAD won't pick up the user). */
@@ -233,6 +257,7 @@ export class RealtimeCaddieClient {
     this.localStream = null;
     this.audioEl = null;
     this.partials.clear();
+    this.order.reset();
   }
 
   private setStatus(status: RealtimeStatus) {
@@ -244,11 +269,20 @@ export class RealtimeCaddieClient {
     try { evt = JSON.parse(raw); } catch { return; }
 
     switch (evt.type) {
+      case 'response.created': {
+        // Reserve the response's order slot as soon as it begins — before its
+        // deltas (and before the user transcript that triggered it) arrive.
+        const respId = (evt.response as { id?: string } | undefined)?.id;
+        if (respId) this.order.orderForResponse(String(respId));
+        break;
+      }
       case 'response.audio_transcript.delta':
       case 'response.output_audio_transcript.delta': {
         const id = String(evt.response_id || evt.item_id || 'assistant-current');
         const delta = String(evt.delta || '');
-        const existing = this.partials.get(id) ?? { id, role: 'assistant', text: '', partial: true };
+        const existing =
+          this.partials.get(id) ??
+          ({ id, role: 'assistant', text: '', partial: true, order: this.order.orderForResponse(id) } as RealtimeMessage);
         const updated: RealtimeMessage = { ...existing, text: existing.text + delta, partial: true };
         this.partials.set(id, updated);
         this.events.onMessage?.(updated);
@@ -270,14 +304,26 @@ export class RealtimeCaddieClient {
         break;
       }
       case 'conversation.item.input_audio_transcription.completed': {
-        const id = String(evt.item_id || `user-${Date.now()}`);
+        const itemId = evt.item_id ? String(evt.item_id) : undefined;
+        const id = itemId ?? `user-${Date.now()}`;
         const text = String(evt.transcript || '');
         if (text) {
-          this.events.onMessage?.({ id, role: 'user', text, partial: false });
+          this.events.onMessage?.({
+            id,
+            role: 'user',
+            text,
+            partial: false,
+            // Identity-matched to this turn's speech_started by item_id.
+            order: this.order.orderForUserTranscript(itemId),
+          });
         }
         break;
       }
       case 'input_audio_buffer.speech_started': {
+        // The user's turn has begun — reserve its order slot now (keyed by the
+        // item_id the transcript will carry) so phantom/empty VAD starts can't
+        // desync ordering, before the model's response and its late transcript.
+        this.order.noteUserTurnStarted(evt.item_id ? String(evt.item_id) : undefined);
         this.setStatus('listening');
         break;
       }
