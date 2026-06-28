@@ -51,36 +51,13 @@ jobs:
           NEXT_PUBLIC_API_URL: https://api.looperapp.org
 
   required-backend:
-    name: Backend gate (ruff + pytest pure-logic)
+    name: Backend gate (ruff + pytest incl. route/integration)
     runs-on: ubuntu-latest
-    # No DB here: the pure-logic tests (tests/*.py) need none, and the route
-    # integration tests (tests/integration/) skip gracefully when no Postgres is
-    # reachable (conftest probes the port). So this job runs 138 pure-logic tests
-    # green with no service. The DB-backed integration run is the separate
-    # `advisory-backend-integration` job below.
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Sync deps
-        run: uv sync
-      - name: Lint (ruff)
-        run: uv run ruff check .   # ruff is pinned in pyproject dev group
-      - name: Unit tests (pytest pure-logic; integration skips without DB)
-        run: uv run pytest
-
-  advisory-backend-integration:
-    name: Backend route/integration tests (advisory until first green)
-    runs-on: ubuntu-latest
-    # ADVISORY: the route/integration harness (tests/integration/) has not yet been
-    # executed against a real Postgres (no DB available in the dev env where it was
-    # written). continue-on-error keeps it from blocking merges until a real CI run
-    # proves it green — then promote it into required-backend (drop continue-on-error,
-    # move the postgres service there) and delete this job.
+    # Postgres service backs the route/integration tests (tests/integration/).
+    # The pure-logic tests (tests/*.py) need no DB. `uv run pytest` runs both;
+    # with the DB present the integration tests execute (they only skip when no
+    # Postgres is reachable). Promoted from advisory → required 2026-06-28 after
+    # the integration harness passed for real against Postgres in CI on PR #51.
     services:
       postgres:
         image: postgres:16
@@ -106,6 +83,7 @@ jobs:
           enable-cache: true
       - name: Sync deps
         run: uv sync
-      - name: Route/integration tests (pytest tests/integration/)
-        run: uv run pytest tests/integration/
-        continue-on-error: true
+      - name: Lint (ruff)
+        run: uv run ruff check .   # ruff is pinned in pyproject dev group
+      - name: Unit + route/integration tests (pytest)
+        run: uv run pytest         # pure-logic + tests/integration/ (Postgres service above)
