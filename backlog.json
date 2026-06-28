@@ -479,6 +479,14 @@
       "rationale": "Owner still hits transcribe 401 (no auth token). Token-bridge code verified correct -> root cause is Clerk failing to issue session JWTs on the custom capacitor://localhost origin. Fix: iosScheme https (https://localhost is Capacitor-recommended, first-class secure origin Clerk supports + secure context for mic). COORDINATED: backend CORS must allow https://localhost (added) and deploy together -> ships with the bundle merge. Cannot be a standalone test build vs current prod (would CORS-block). Gates green. UNVERIFIED on-device (cannot test here); fallback if insufficient = Clerk dashboard allowed-origin / pk_live.",
       "classification": "noticeable + backend (CORS) \u2014 owner can test",
       "shipped": "v0.1.323 build 202606272115"
+    },
+    {
+      "id": "auth-e2e-gate",
+      "priority": 42,
+      "status": "done",
+      "title": "Playwright auth/login E2E gate (owner QA feedback)",
+      "done_note": "Playwright + @clerk/testing. Tier-1 (sign-in screen renders \u2014 would have caught the auth-gate breakage) now RUNS in CI via the public pk_test key (no secret needed). Tier-2 (full sign-in w/ Clerk test user) skips until CLERK_SECRET_KEY repo secret + test user added. Advisory CI job until first green, then promote Tier-1 to required. Limitation: web E2E does NOT reproduce Capacitor webview-origin issues (needs device/simulator smoke).",
+      "classification": "silent"
     }
   ]
 }

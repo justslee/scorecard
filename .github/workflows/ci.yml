@@ -133,8 +133,13 @@ jobs:
       - name: E2E smoke tests
         run: npm run test:e2e
         env:
-          # These are set from CI secrets once configured.
-          # Without them, tests self-skip and the job reports advisory-green.
-          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          # The publishable key is PUBLIC (same value baked into ops/ios/ship.sh), so we
+          # set it directly here — this makes Tier-1 (the "AuthGate renders the sign-in
+          # screen" check) actually RUN in CI, not skip. That tier needs no secret and
+          # would have caught the missing-auth-gate breakage automatically.
+          # CLERK_SECRET_KEY stays a repo secret; Tier-2 (full sign-in with a test user)
+          # self-skips until it's configured. Job is advisory until proven green in CI,
+          # then promote (drop continue-on-error) and require at least Tier-1.
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY || 'pk_test_cHJldHR5LXBpa2EtMTcuY2xlcmsuYWNjb3VudHMuZGV2JA==' }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY || 'pk_test_cHJldHR5LXBpa2EtMTcuY2xlcmsuYWNjb3VudHMuZGV2JA==' }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
