@@ -456,7 +456,6 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
 
   // GPS toggle
   const handleGetLocation = () => {
-    if (!navigator.geolocation) return;
     if (gpsActive && gpsWatcherRef.current) {
       gpsWatcherRef.current.stop();
       gpsWatcherRef.current = null;
@@ -469,15 +468,16 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
       gpsWatcherRef.current = new GPSWatcher(handleGpsPositionUpdate, handleGpsError);
       gpsWatcherRef.current.start();
     } else {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
+      // No hole coordinates — do a one-shot fix via GPSWatcher.getCurrentPosition()
+      // so native builds use the Capacitor plugin (proper iOS permission handling)
+      // rather than calling navigator.geolocation directly.
+      GPSWatcher.getCurrentPosition()
+        .then((pos) => {
           setGpsLoading(false);
-          setGpsPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+          setGpsPosition(pos);
           setGpsActive(true);
-        },
-        () => setGpsLoading(false),
-        { enableHighAccuracy: true, timeout: 10000 },
-      );
+        })
+        .catch(() => setGpsLoading(false));
     }
   };
 
