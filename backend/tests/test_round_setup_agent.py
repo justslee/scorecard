@@ -109,3 +109,15 @@ class TestLocalParseExpecting:
         # No cue and no expecting → don't invent a course from arbitrary words.
         out = _local_parse_round_setup("just testing")
         assert out.courseName == ""
+
+    def test_owner_phrase_splits_all_three_names_no_false_course(self):
+        # Regression: "Dan Matt and John" must be 3 players, and "playing with"
+        # must NOT be read as a course (the reported bug).
+        out = _local_parse_round_setup("I am playing with Dan Matt and John")
+        assert out.playerNames == ["Dan", "Matt", "John"]
+        assert out.courseName == ""
+
+    def test_course_and_players_together(self):
+        out = _local_parse_round_setup("playing Pebble Beach with Dan and Matt")
+        assert out.courseName == "Pebble Beach"
+        assert out.playerNames == ["Dan", "Matt"]
