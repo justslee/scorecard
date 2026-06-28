@@ -98,43 +98,61 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [liveRoundId, setLiveRoundId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  /** loadError: true when the data-fetch threw unexpectedly (e.g. corrupt
+   *  localStorage, race condition in processing code).  storage-api handles
+   *  normal API failures internally (falls back to cache) so this is a safety
+   *  net that prevents the screen from staying stuck on the loading state. */
+  const [loadError, setLoadError] = useState(false);
+  /** Incrementing this triggers the useEffect to re-run load() (Retry path). */
+  const [loadKey, setLoadKey] = useState(0);
 
   useEffect(() => {
     async function load() {
-      // All three calls use the API-authoritative + explicit-offline-cache pattern in
-      // storage-api.ts: API is tried first; on failure it console.errors + falls back
-      // to localStorage (or []/null if no local cache). Errors are never swallowed silently.
-      const [rs, ts, p] = await Promise.all([
-        getRoundsAsync(),
-        getTournamentsAsync(),
-        getGolferProfileAsync(),
-      ]);
+      // storage-api functions are API-first + localStorage fallback; they handle
+      // their own errors internally and never throw for normal API failures.
+      // The outer try/catch is a safety net for unexpected runtime errors (e.g.
+      // corrupt localStorage schema causing JSON parse failures, sort throwing on
+      // malformed dates) so setLoading(false) always fires and we never show a
+      // blank/stuck loading state.
+      try {
+        const [rs, ts, p] = await Promise.all([
+          getRoundsAsync(),
+          getTournamentsAsync(),
+          getGolferProfileAsync(),
+        ]);
 
-      // Most-recent first so the list and live-round search are in correct order.
-      const sorted = [...rs].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-
-      setRounds(sorted);
-      setProfile(p);
-
-      if (ts.length > 0) {
-        const sortedT = [...ts].sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        // Most-recent first so the list and live-round search are in correct order.
+        const sorted = [...rs].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
         );
-        setRecentTournament(sortedT[0]);
+
+        setRounds(sorted);
+        setProfile(p);
+
+        if (ts.length > 0) {
+          const sortedT = [...ts].sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          setRecentTournament(sortedT[0]);
+        }
+
+        // Surface the active round "resume" banner if one exists.
+        const live = sorted.find((r) => r.status === "active");
+        if (live) setLiveRoundId(live.id);
+
+        setLoadError(false); // clear any prior error on success
+      } catch (e) {
+        console.error("[home] load failed:", e);
+        setLoadError(true);
+      } finally {
+        setLoading(false);
       }
-
-      // Surface the active round "resume" banner if one exists.
-      const live = sorted.find((r) => r.status === "active");
-      if (live) setLiveRoundId(live.id);
-
-      setLoading(false);
     }
 
     load();
-  }, []);
+  // loadKey is incremented by the Retry button to re-trigger this effect.
+  }, [loadKey]);
 
   // ── Delete round — optimistic remove; logs error on API failure ──────────
   // deleteRoundAsync removes from local cache first, then fires the API call
@@ -516,8 +534,74 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Empty state — no rounds yet */}
-          {!loading && recentRows.length === 0 && (
+          {/* Loading skeleton — calm paper-toned placeholders while data fetches */}
+          {loading && (
+            <div aria-label="Loading rounds">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "48px 1fr auto",
+                    gap: 12,
+                    padding: "12px 0",
+                    borderTop: i === 0 ? "none" : `1px dashed ${T.hairline}`,
+                    opacity: 1 - i * 0.28,
+                  }}
+                >
+                  <div>
+                    <div style={{ width: 22, height: 10, background: T.hairlineSoft, borderRadius: 2 }} />
+                    <div style={{ width: 28, height: 20, background: T.hairlineSoft, borderRadius: 2, marginTop: 4 }} />
+                  </div>
+                  <div>
+                    <div style={{ width: 112, height: 13, background: T.hairlineSoft, borderRadius: 2 }} />
+                    <div style={{ width: 34, height: 9, background: T.hairlineSoft, borderRadius: 2, marginTop: 6 }} />
+                  </div>
+                  <div style={{ width: 28, height: 26, background: T.hairlineSoft, borderRadius: 2 }} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Load error — fetch failed AND no cached data to show */}
+          {!loading && loadError && recentRows.length === 0 && (
+            <div
+              style={{
+                padding: "28px 0 24px",
+                textAlign: "center",
+                borderTop: `1px dashed ${T.hairline}`,
+              }}
+            >
+              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 18, color: T.pencil, letterSpacing: -0.2, lineHeight: 1.4 }}>
+                Couldn&rsquo;t load rounds.
+              </div>
+              <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase", marginTop: 6 }}>
+                Check connection and try again.
+              </div>
+              <button
+                onClick={() => { setLoading(true); setLoadKey((k) => k + 1); }}
+                style={{
+                  marginTop: 16,
+                  padding: "11px 22px",
+                  borderRadius: 99,
+                  border: `1px solid ${T.hairline}`,
+                  background: "transparent",
+                  color: T.ink,
+                  fontFamily: T.mono,
+                  fontSize: 10,
+                  letterSpacing: 1.3,
+                  cursor: "pointer",
+                  textTransform: "uppercase",
+                  minHeight: 44,
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Empty state — no rounds yet (no error, just none created) */}
+          {!loading && !loadError && recentRows.length === 0 && (
             <div
               style={{
                 padding: "28px 0 24px",
@@ -531,6 +615,49 @@ export default function HomePage() {
               <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase", marginTop: 6 }}>
                 Tap &ldquo;Start a round&rdquo; above to begin.
               </div>
+            </div>
+          )}
+
+          {/* Offline note — fetch errored but cached data is showing; quiet pencil annotation */}
+          {!loading && loadError && recentRows.length > 0 && (
+            <div
+              role="status"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                padding: "7px 12px",
+                marginBottom: 10,
+                borderRadius: 8,
+                background: T.warningWash,
+                border: `1px solid ${T.warningInk}22`,
+              }}
+            >
+              <span style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.2, color: T.warningInk, textTransform: "uppercase" }}>
+                Offline — showing saved data
+              </span>
+              <button
+                onClick={() => setLoadKey((k) => k + 1)}
+                style={{
+                  background: "none",
+                  border: `1px solid ${T.warningInk}55`,
+                  color: T.warningInk,
+                  cursor: "pointer",
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.2,
+                  textTransform: "uppercase",
+                  padding: "4px 10px",
+                  borderRadius: 99,
+                  lineHeight: 1,
+                  minHeight: 44,
+                  display: "flex",
+                  alignItems: "center",
+                }}
+              >
+                Retry
+              </button>
             </div>
           )}
 

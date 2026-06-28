@@ -170,6 +170,18 @@ export default function RoundPage() {
   const [isLocalRound, setIsLocalRound] = useState(false);
   /** Surfaces per-stroke or load errors without silent swallow; null = no active error. */
   const [apiError, setApiError] = useState<string | null>(null);
+  /**
+   * loadFailed: true only when the INITIAL LOAD threw a non-404 error and we fell back
+   * to localStorage.  Distinct from apiError (which is also used for score saves) so we
+   * can show a "Retry" affordance only for load failures, not score-save failures.
+   * Cleared on: successful load, successful score save, user tapping Retry or ×.
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
+  /**
+   * Incrementing retryCount re-runs the load useEffect (Retry button path).
+   * Does NOT reset to a loading spinner — round data stays visible during silent re-fetch.
+   */
+  const [retryCount, setRetryCount] = useState(0);
 
   const [players, setPlayers] = useState<SeedPlayer[]>([]);
   const [scores, setScores] = useState<Record<string, (number | null)[]>>({});
@@ -265,6 +277,9 @@ export default function RoundPage() {
           mergeWithPending(r.players.map((p) => p.id), r.scores, pendingRef.current, holeCount)
         );
         setIsLocalRound(false);
+        // Clear any prior load error — if we reached here the server is reachable again.
+        setLoadFailed(false);
+        setApiError(null);
 
         // Kick off background retry for any re-discovered pending scores.
         if (pendingRef.current.size > 0) {
@@ -297,13 +312,9 @@ export default function RoundPage() {
         } else {
           // Non-404 HTTP error (500, auth, timeout): the round IS on the server but we
           // temporarily can't reach it.  Stay ONLINE (isLocalRound stays false) so later
-          // writes still target the server; show error banner; render from localStorage.
-          const msg = e instanceof Error ? e.message : "Failed to load round.";
-          setApiError(
-            msg.startsWith("{") || msg.length > 100
-              ? "Failed to load round — check connection."
-              : msg
-          );
+          // writes still target the server; show warning banner; render from localStorage.
+          setLoadFailed(true);
+          setApiError("Showing saved data — couldn't reach server.");
           console.error(`[round/${id}] load failed (non-404, staying ONLINE):`, e);
           const local = localGetRound(id);
           if (local) {
@@ -332,7 +343,9 @@ export default function RoundPage() {
     }
 
     load();
-  }, [params.id]);
+  // retryCount is incremented by the Retry button to re-run load() without showing
+  // a loading spinner — round data stays visible during the silent re-fetch.
+  }, [params.id, retryCount]);
 
   // Derived: actual hole count for this round (fall back to 18 if round not yet loaded).
   const holeCount = round?.holes.length || 18;
@@ -522,14 +535,16 @@ export default function RoundPage() {
       setScores(merged);
       // Write through: include remaining pending so a reload doesn't lose them.
       localSaveRound(buildLocalRound(updated, pendingRef.current));
+      // A successful score save confirms the server is reachable — clear any prior
+      // load error and its Retry affordance.
       setApiError(null);
+      setLoadFailed(false);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to save score.";
-      setApiError(
-        msg.startsWith("{") || msg.length > 100
-          ? "Score save failed — check connection."
-          : msg
-      );
+      // Score is safe: pendingRef keeps it and localStorage was already written above.
+      // Clear loadFailed so the Retry button isn't shown for score-save errors (the
+      // retry is automatic via pendingRef — no manual reload needed).
+      setLoadFailed(false);
+      setApiError("Score saved locally — couldn't sync, will retry.");
       console.error(`[round/${id}] addScore failed (score stays in pending):`, e);
 
       // Persist to localStorage via functional update to avoid stale-closure data loss
@@ -912,18 +927,21 @@ export default function RoundPage() {
             WebkitOverflowScrolling: "touch",
           }}
         >
-          {/* API error banner — surfaced, never silently swallowed */}
+          {/* Sync / load warning banner — calm amber annotation, never a red alarm.
+               loadFailed=true  → initial load error, showing saved data → Retry affordance.
+               loadFailed=false → score-save error, auto-retrying via pendingRef → no Retry. */}
           {apiError && (
             <div
               style={{
                 margin: "0 0 10px",
                 padding: "9px 12px",
                 borderRadius: 10,
-                background: T.errorWash,
-                border: `1px solid ${T.errorInk}33`,
+                background: T.warningWash,
+                border: `1px solid ${T.warningInk}33`,
                 fontFamily: T.serif,
+                fontStyle: "italic",
                 fontSize: 12.5,
-                color: T.errorInk,
+                color: T.warningInk,
                 lineHeight: 1.4,
                 display: "flex",
                 alignItems: "center",
@@ -932,27 +950,57 @@ export default function RoundPage() {
               }}
             >
               <span>{apiError}</span>
-              {/* 28×28 tap target — usable on-course in sunlight */}
-              <button
-                onClick={() => setApiError(null)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: T.errorInk,
-                  cursor: "pointer",
-                  fontSize: 15,
-                  padding: 0,
-                  lineHeight: 1,
-                  width: 28,
-                  height: 28,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-              >
-                ×
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                {/* Retry: only for load failures — score saves auto-retry via pendingRef */}
+                {loadFailed && (
+                  <button
+                    onClick={() => {
+                      setApiError(null);
+                      setLoadFailed(false);
+                      setRetryCount((c) => c + 1);
+                    }}
+                    style={{
+                      background: "none",
+                      border: `1px solid ${T.warningInk}55`,
+                      color: T.warningInk,
+                      cursor: "pointer",
+                      fontFamily: T.mono,
+                      fontSize: 9,
+                      letterSpacing: 1.2,
+                      textTransform: "uppercase",
+                      padding: "4px 10px",
+                      borderRadius: 99,
+                      lineHeight: 1,
+                      minHeight: 44,
+                      display: "flex",
+                      alignItems: "center",
+                    }}
+                  >
+                    Retry
+                  </button>
+                )}
+                {/* 44-pt dismiss — usable on-course in sunlight */}
+                <button
+                  onClick={() => { setApiError(null); setLoadFailed(false); }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: T.warningInk,
+                    cursor: "pointer",
+                    fontSize: 15,
+                    padding: 0,
+                    lineHeight: 1,
+                    width: 44,
+                    height: 44,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
             </div>
           )}
 
