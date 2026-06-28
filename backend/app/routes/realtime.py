@@ -15,9 +15,20 @@ from pydantic import BaseModel
 from app.caddie.session import sessions, get_owned_session
 from app.caddie.personalities import load_personality
 from app.caddie.voice_prompts import build_realtime_instructions
+from app.caddie.setup_voice import SETUP_TOOLS, build_setup_instructions
 from app.caddie import memory as memory_mod
 from app.services.realtime_relay import mint_ephemeral_session, DEFAULT_TOOLS
 from app.services.clerk_auth import current_user_id
+
+
+def _client_secret_from_mint(mint: dict) -> tuple[str, int]:
+    """Extract (client_secret value, expires_at) from an OpenAI mint response."""
+    obj = mint.get("client_secret") or {}
+    value = obj.get("value") if isinstance(obj, dict) else None
+    expires = obj.get("expires_at") if isinstance(obj, dict) else None
+    if not value:
+        raise HTTPException(502, f"OpenAI did not return a client_secret: {mint}")
+    return value, int(expires) if expires else 0
 
 
 router = APIRouter(prefix="/api/realtime", tags=["realtime"])
@@ -36,6 +47,42 @@ class StartRealtimeSessionResponse(BaseModel):
     instructions: str
     tools: list[dict]
     realtime_session_id: str
+
+
+class SetupSessionRequest(BaseModel):
+    personality_id: str = "classic"
+
+
+@router.post("/setup-session", response_model=StartRealtimeSessionResponse)
+async def start_setup_session(
+    request: SetupSessionRequest,
+    user_id: str = Depends(current_user_id),
+):
+    """Mint a Realtime session for CONVERSATIONAL ROUND SETUP (no round yet).
+
+    The caddie gathers course / players / tees over a natural back-and-forth and
+    calls the set_round_setup tool; the frontend creates the round from that.
+    Round-less by design — unlike /session it needs no existing caddie session.
+    """
+    personality = await load_personality(request.personality_id)
+    instructions = build_setup_instructions()
+
+    mint = await mint_ephemeral_session(
+        instructions=instructions,
+        voice_id=personality.voice_id,
+        tools=SETUP_TOOLS,
+    )
+    client_secret, expires_at = _client_secret_from_mint(mint)
+
+    return StartRealtimeSessionResponse(
+        client_secret=client_secret,
+        expires_at=expires_at,
+        model=mint.get("model", ""),
+        voice_id=personality.voice_id or mint.get("voice", ""),
+        instructions=instructions,
+        tools=SETUP_TOOLS,
+        realtime_session_id=mint.get("id") or "",
+    )
 
 
 @router.post("/session", response_model=StartRealtimeSessionResponse)
@@ -60,11 +107,7 @@ async def start_realtime_session(
         tools=DEFAULT_TOOLS,
     )
 
-    client_secret_obj = mint.get("client_secret") or {}
-    client_secret = client_secret_obj.get("value") if isinstance(client_secret_obj, dict) else None
-    expires_at = client_secret_obj.get("expires_at") if isinstance(client_secret_obj, dict) else None
-    if not client_secret:
-        raise HTTPException(502, f"OpenAI did not return a client_secret: {mint}")
+    client_secret, expires_at = _client_secret_from_mint(mint)
 
     realtime_session_id = mint.get("id") or ""
 
@@ -75,7 +118,7 @@ async def start_realtime_session(
 
     return StartRealtimeSessionResponse(
         client_secret=client_secret,
-        expires_at=int(expires_at) if expires_at else 0,
+        expires_at=expires_at,
         model=mint.get("model", ""),
         voice_id=personality.voice_id or mint.get("voice", ""),
         instructions=instructions,

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { roundHref } from "@/lib/round-url";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getTournamentAsync, getRoundsAsync } from "@/lib/storage-api";
 import { calculateTotals } from "@/lib/types";
@@ -183,7 +183,10 @@ function suffix(n: number): string {
 export default function TournamentPageClient() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const id = params?.id ?? "";
+  const searchParams = useSearchParams();
+  // id from the query (/tournament/view?id=…) so navigation stays client-side in
+  // the static export; fall back to the path param for any legacy deep link.
+  const id = searchParams.get("id") ?? params?.id ?? "";
   const accent = DEFAULT_ACCENT;
 
   const [tournament, setTournament] = useState<Tournament | null>(null);

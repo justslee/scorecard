@@ -1,11 +1,19 @@
+import { Suspense } from "react";
 import TournamentPageClient from "./TournamentPageClient";
 
-// Static export shim: the real id is read client-side at runtime, so we only
-// emit a placeholder shell for this route.
+// Static export shim: emit ONE real static shell ("view"); the tournament id is
+// carried in the query (/tournament/view?id=…) and read client-side, so
+// navigation stays client-side (no hard reload → no AuthGate cold-boot hang).
+// Same fix as round/[id]. See lib/round-url.ts tournamentHref.
 export function generateStaticParams() {
-  return [{ id: "placeholder" }];
+  return [{ id: "view" }];
 }
 
 export default function Page() {
-  return <TournamentPageClient />;
+  // Suspense required: TournamentPageClient reads useSearchParams (?id=).
+  return (
+    <Suspense>
+      <TournamentPageClient />
+    </Suspense>
+  );
 }

@@ -69,8 +69,14 @@ def compute_air_density_factor(
     temp_c = (temperature_f - 32) * 5 / 9
     std_temp_c = (STANDARD_TEMP_F - 32) * 5 / 9
 
-    # TODO: apply altitude-based pressure adjustment (~12 hPa per 100m); for now
-    # we use the reported pressure directly.
+    # NOTE: no extra altitude→pressure adjustment is applied here. The caller
+    # passes Open-Meteo `surface_pressure` (see fetch_weather), which is ALREADY
+    # the pressure at the location's surface elevation — so altitude is captured
+    # via the lower pressure. Subtracting another ~12 hPa/100m term (as an earlier
+    # TODO suggested) would double-count and overstate the thin-air effect at high
+    # courses. `altitude_ft` is kept in the signature for clarity/future use (e.g.
+    # if a sea-level pressure source is ever substituted) but is intentionally not
+    # used to re-derive pressure.
     effective_pressure = pressure_hpa
 
     # Saturation vapor pressure (Magnus formula)

@@ -9,7 +9,7 @@ import { saveRound as localSaveRound, getSavedPlayers } from "@/lib/storage";
 import { createDefaultCourse } from "@/lib/types";
 import { createRound, getPlayers } from "@/lib/api";
 import type { Player, Round, Game, GameFormat, SavedPlayer, HoleInfo } from "@/lib/types";
-import VoiceRoundSetup from "@/components/VoiceRoundSetup";
+import VoiceRoundSetupRealtime from "@/components/VoiceRoundSetupRealtime";
 import CourseSearch from "@/components/CourseSearch";
 import PlayerAutocomplete from "@/components/PlayerAutocomplete";
 
@@ -1326,10 +1326,10 @@ export default function RoundSetupPage() {
         )}
       </AnimatePresence>
 
-      {/* ── VoiceRoundSetup overlay ── */}
+      {/* ── Voice setup overlay (Realtime conversational caddie) ── */}
       <AnimatePresence>
         {showVoiceSetup && (
-          <VoiceRoundSetup
+          <VoiceRoundSetupRealtime
             onSetupRound={handleVoiceSetup}
             onClose={() => setShowVoiceSetup(false)}
             autoStart

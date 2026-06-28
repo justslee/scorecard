@@ -933,7 +933,13 @@ export default function RoundPage() {
         <div
           style={{
             position: "absolute",
-            top: 72,
+            // Start exactly at the header's bottom. The header is top:0 with
+            // paddingTop max(14px, safe-area-inset-top), so a fixed 72 let the
+            // content slide UNDER the header on notched devices (overlap bug).
+            // Mirror the header's top inset here so they never overlap.
+            // 58px = header content row (~48px) + paddingBottom (10px); if the
+            // header row ever grows, bump this to match.
+            top: "calc(58px + max(14px, env(safe-area-inset-top)))",
             left: 0,
             right: 0,
             bottom: 0,

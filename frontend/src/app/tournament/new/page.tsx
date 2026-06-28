@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { tournamentHref } from "@/lib/round-url";
 import { useRouter } from "next/navigation";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import { createTournament, createPlayer, getPlayers } from "@/lib/api";
@@ -120,7 +121,7 @@ export default function TournamentSetupPage() {
       saveTournament({ ...created, playerNamesById });
 
       // Navigate using the SERVER-RETURNED id (not a client placeholder).
-      router.push(`/tournament/${created.id}`);
+      router.push(tournamentHref(created.id));
     } catch (e) {
       if (!(e instanceof TypeError)) {
         const msg = e instanceof Error ? e.message : "Failed to create tournament.";

@@ -18,3 +18,8 @@ export const ROUND_VIEW_SEGMENT = "view";
 export function roundHref(id: string): string {
   return `/round/${ROUND_VIEW_SEGMENT}?id=${encodeURIComponent(id)}`;
 }
+
+/** Same static-path + query-id trick for tournaments (see round/[id] note). */
+export function tournamentHref(id: string): string {
+  return `/tournament/${ROUND_VIEW_SEGMENT}?id=${encodeURIComponent(id)}`;
+}

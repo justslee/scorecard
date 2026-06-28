@@ -13,6 +13,7 @@
 
 import {
   startRealtimeSession,
+  startSetupSession,
   recordShot,
   sessionRecommend,
   getSessionStatus,
@@ -45,8 +46,11 @@ export interface RealtimeCaddieEvents {
 }
 
 export interface RealtimeCaddieOptions {
-  roundId: string;
+  /** Required in 'caddie' mode; unused in 'setup' mode (no round exists yet). */
+  roundId?: string;
   personalityId: string;
+  /** 'caddie' (default) = in-round caddie; 'setup' = round-less voice round setup. */
+  mode?: 'caddie' | 'setup';
 }
 
 // ── Tool dispatch ────────────────────────────────────────────────────────
@@ -75,6 +79,11 @@ async function dispatchTool(
     }
     case 'get_session_status': {
       return await getSessionStatus(ctx.roundId);
+    }
+    case 'set_round_setup': {
+      // Handled entirely on the client: the component builds + creates the round
+      // from these args via onToolCall. Just ack so the model can wrap up.
+      return { ok: true };
     }
     default:
       return { error: `Unknown tool: ${name}` };
@@ -105,10 +114,13 @@ export class RealtimeCaddieClient {
     if (this.pc) return;
     this.setStatus('connecting');
     try {
-      this.token = await startRealtimeSession({
-        round_id: this.opts.roundId,
-        personality_id: this.opts.personalityId,
-      });
+      this.token =
+        this.opts.mode === 'setup'
+          ? await startSetupSession({ personality_id: this.opts.personalityId })
+          : await startRealtimeSession({
+              round_id: this.opts.roundId ?? '',
+              personality_id: this.opts.personalityId,
+            });
 
       this.pc = new RTCPeerConnection();
       this.pc.onconnectionstatechange = () => {
@@ -278,7 +290,7 @@ export class RealtimeCaddieClient {
 
     let output: unknown;
     try {
-      output = await dispatchTool(name, args, { roundId: this.opts.roundId });
+      output = await dispatchTool(name, args, { roundId: this.opts.roundId ?? '' });
     } catch (e) {
       output = { error: e instanceof Error ? e.message : String(e) };
     }
