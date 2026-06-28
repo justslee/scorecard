@@ -1,0 +1,62 @@
+/**
+ * Native auth diagnostic state.
+ *
+ * Written by AuthProvider's FAPI request/response hooks (which fire
+ * asynchronously, after the first FAPI round-trip completes).  Read by
+ * the on-screen debug strip in SignInClient so the owner can validate
+ * the native-mode setup on-device without rebuilding blind.
+ *
+ * Uses a lightweight subscriber pattern so React components re-render
+ * when async hook data arrives.  No dependency on React state or context
+ * so it can be written to from module-level code (the window global
+ * callbacks run outside the React tree).
+ */
+
+export interface AuthDiagState {
+  /**
+   * True if a persisted JWT was found in @capacitor/preferences on the
+   * initial FAPI request (cold-start token restore succeeded).
+   */
+  tokenRestored: boolean;
+
+  /**
+   * True if the Clerk FAPI returned a native_api_disabled error code.
+   * Fix: Dashboard → Configure → Native applications → enable.
+   * URL: https://dashboard.clerk.com/last-active?path=native-applications
+   */
+  nativeApiDisabled: boolean;
+
+  /**
+   * Last error string encountered inside the native FAPI hooks.
+   * Null when no error has occurred.
+   */
+  lastError: string | null;
+}
+
+let _state: AuthDiagState = {
+  tokenRestored: false,
+  nativeApiDisabled: false,
+  lastError: null,
+};
+
+const _listeners = new Set<() => void>();
+
+/** Merge a partial update into the diagnostic state and notify subscribers. */
+export function setAuthDiag(patch: Partial<AuthDiagState>): void {
+  _state = { ..._state, ...patch };
+  _listeners.forEach((fn) => fn());
+}
+
+/** Read the current diagnostic state snapshot. */
+export function getAuthDiag(): AuthDiagState {
+  return _state;
+}
+
+/**
+ * Subscribe to state changes.  Returns an unsubscribe function.
+ * Call the returned function in a useEffect cleanup to avoid leaks.
+ */
+export function subscribeAuthDiag(listener: () => void): () => void {
+  _listeners.add(listener);
+  return () => _listeners.delete(listener);
+}

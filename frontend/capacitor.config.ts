@@ -15,6 +15,17 @@ const config: CapacitorConfig = {
     // Origin is in the backend CORS allow-list (backend/app/main.py).
     iosScheme: "https",
   },
+  plugins: {
+    // Patch document.cookie to use the native WKHTTPCookieStore on iOS
+    // (and CookieManager on Android). Without this, cookies set by a
+    // cross-origin domain (e.g. clerk.looperapp.org) land in the WKWebView's
+    // isolated storage and are silently dropped by ITP when the webview origin
+    // is https://localhost. The native cookie store persists across webview
+    // reloads and respects the WKAppBoundDomains allowlist in Info.plist.
+    CapacitorCookies: {
+      enabled: true,
+    },
+  },
 };
 
 export default config;

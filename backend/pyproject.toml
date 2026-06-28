@@ -30,3 +30,10 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Use one shared event loop for the entire test session (both fixtures and tests).
+# This prevents "Future attached to a different loop" errors from the module-level
+# asyncpg engine in app.db.engine: with function-scoped loops (the old default),
+# the engine's pool was bound to the first test's loop; after that loop closed the
+# next test's loop was a mismatch.  Session scope keeps one loop alive throughout.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

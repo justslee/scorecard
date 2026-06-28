@@ -6,6 +6,8 @@ import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getGolferProfileAsync, saveGolferProfileAsync, saveGolferBagAsync, getRoundsAsync } from "@/lib/storage-api";
 import { calculateTotals } from "@/lib/types";
 import type { GolferProfile, Round } from "@/lib/types";
+import { deriveParTypeAverages, deriveScoreDistribution, deriveTrend } from "@/lib/profile-stats";
+import type { ParTypeRow, ScoreDistRow, TrendResult } from "@/lib/profile-stats";
 
 // ── Bag club config — ordered for display (matches GolferProfile.clubDistances keys)
 // The caddie (CaddiePanel) normalises these same camelCase keys to short keys
@@ -274,6 +276,8 @@ export default function ProfilePage() {
           onBagSaved={(updated) => setProfile(updated)}
         />
         <ScoringByTee accent={accent} rounds={rounds} loading={loading} />
+        <ParBreakdown rounds={rounds} loading={loading} />
+        <ScoreDistribution rounds={rounds} loading={loading} />
         <YearLog accent={accent} rounds={rounds} loading={loading} />
         {/* Shot analytics — single calm placeholder replacing two stacked ones */}
         <ShotAnalytics />
@@ -1475,6 +1479,329 @@ function YearLog({ accent: _accent, rounds, loading }: { accent: string; rounds:
             >
               Show all {log.length} rounds
             </button>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Par breakdown — scores by par type (par-3 / par-4 / par-5 averages).
+// Grouped after ScoringByTee so the two "how you score by category" views
+// sit together. Only rows with data are rendered.
+// ──────────────────────────────────────────────────────────────────────
+
+function ParBreakdown({ rounds, loading }: { rounds: Round[]; loading: boolean }) {
+  const rows: ParTypeRow[] = useMemo(() => deriveParTypeAverages(rounds), [rounds]);
+  const hasData = rows.length > 0;
+
+  return (
+    <Section kicker="Breakdown" title="By par type">
+      {loading ? (
+        <div style={{ minHeight: 40 }} />
+      ) : !hasData ? (
+        <div
+          style={{
+            padding: "14px 0 6px",
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 14,
+            color: T.pencilSoft,
+            letterSpacing: -0.1,
+            lineHeight: 1.5,
+          }}
+        >
+          Play a round to see your par breakdown.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {rows.map((row, i) => {
+            const toParStr =
+              row.avgToPar === 0
+                ? "E"
+                : row.avgToPar > 0
+                ? `+${row.avgToPar}`
+                : `${row.avgToPar}`;
+            const toParColor =
+              row.avgToPar < 0 ? T.birdie : row.avgToPar === 0 ? T.pencilSoft : T.pencil;
+            return (
+              <div
+                key={row.par}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "52px 1fr auto",
+                  gap: 10,
+                  alignItems: "center",
+                  minHeight: 44,
+                  borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
+                }}
+              >
+                {/* Par label */}
+                <div
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 9,
+                    letterSpacing: 1.3,
+                    color: T.pencil,
+                    textTransform: "uppercase",
+                    fontWeight: 500,
+                  }}
+                >
+                  Par {row.par}
+                </div>
+
+                {/* Hole count */}
+                <div
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 8,
+                    letterSpacing: 1,
+                    color: T.pencilSoft,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {row.holeCount} {row.holeCount === 1 ? "hole" : "holes"}
+                </div>
+
+                {/* Avg score + avg-to-par (right-aligned) */}
+                <div style={{ textAlign: "right" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "baseline",
+                      justifyContent: "flex-end",
+                      gap: 6,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 13,
+                        color: T.ink,
+                        fontWeight: 600,
+                        fontVariantNumeric: "tabular-nums",
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      {row.avgScore}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        color: toParColor,
+                        fontVariantNumeric: "tabular-nums",
+                        letterSpacing: 0.3,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {toParStr}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 7.5,
+                      letterSpacing: 1,
+                      color: T.pencilSoft,
+                      textTransform: "uppercase",
+                      marginTop: 1,
+                    }}
+                  >
+                    avg
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Score distribution — hole-by-hole result counts (eagle+/birdie/par/bogey/double+)
+// with a quiet recent-trend indicator at the bottom.
+// Grouped with ParBreakdown (both are hole-level aggregates) so the two views
+// sit together above the round-level YearLog.
+// ──────────────────────────────────────────────────────────────────────
+
+function ScoreDistribution({ rounds, loading }: { rounds: Round[]; loading: boolean }) {
+  const distRows: ScoreDistRow[] = useMemo(() => deriveScoreDistribution(rounds), [rounds]);
+  const trend: TrendResult | null = useMemo(() => deriveTrend(rounds), [rounds]);
+  const hasData = distRows.length > 0;
+  const maxCount = hasData ? Math.max(...distRows.map((r) => r.count)) : 1;
+
+  return (
+    <Section kicker="Scoring" title="Score distribution">
+      {loading ? (
+        <div style={{ minHeight: 40 }} />
+      ) : !hasData ? (
+        <div
+          style={{
+            padding: "14px 0 6px",
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 14,
+            color: T.pencilSoft,
+            letterSpacing: -0.1,
+            lineHeight: 1.5,
+          }}
+        >
+          Play a round to see your score distribution.
+        </div>
+      ) : (
+        <>
+          {/* Distribution rows */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {distRows.map((row) => {
+              const barPct = (row.count / maxCount) * 100;
+              // Eagle = eagle colour; birdie = flag colour; par = ink;
+              // bogey = pencil (slightly warmer than pencilSoft); double+ = pencilSoft (quietest)
+              const barColor =
+                row.bucket === "eagle_or_better"
+                  ? T.eagle
+                  : row.bucket === "birdie"
+                  ? T.birdie
+                  : row.bucket === "par"
+                  ? T.ink
+                  : row.bucket === "bogey"
+                  ? T.pencil
+                  : T.pencilSoft;
+
+              return (
+                <div
+                  key={row.bucket}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "100px 1fr 36px",
+                    gap: 8,
+                    alignItems: "center",
+                  }}
+                >
+                  {/* Label */}
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontSize: 12,
+                      color: T.ink,
+                      letterSpacing: -0.1,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    {row.label}
+                  </div>
+
+                  {/* Bar track */}
+                  <div
+                    style={{
+                      position: "relative",
+                      height: 8,
+                      background: T.paperDeep,
+                      borderRadius: 1,
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${barPct}%`,
+                        background: barColor,
+                        borderRadius: 1,
+                        opacity: 0.75,
+                      }}
+                    />
+                  </div>
+
+                  {/* Count on top + percentage sub-label beneath — stacked in the same cell,
+                      mirroring the ScoringByTee avgTotal/avg stacking pattern */}
+                  <div style={{ textAlign: "right" }}>
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 11,
+                        color: T.ink,
+                        fontVariantNumeric: "tabular-nums",
+                        fontWeight: 600,
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      {row.count}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 7.5,
+                        color: T.pencilSoft,
+                        letterSpacing: 0.8,
+                        marginTop: 1,
+                      }}
+                    >
+                      {row.pct}%
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Trend — quiet footer, only shown when there is enough data */}
+          {trend && (
+            <div
+              style={{
+                marginTop: 14,
+                paddingTop: 10,
+                borderTop: `1px dashed ${T.hairline}`,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 8.5,
+                  letterSpacing: 1.3,
+                  color: T.pencilSoft,
+                  textTransform: "uppercase",
+                  fontWeight: 500,
+                }}
+              >
+                Recent form
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 13,
+                  color: T.pencil,
+                  letterSpacing: -0.1,
+                  lineHeight: 1.4,
+                }}
+              >
+                {/* Quiet one-line summary of the trend */}
+                Last {trend.recentCount} {trend.recentCount === 1 ? "round" : "rounds"}{" "}
+                avg{" "}
+                {trend.recentAvgToPar === 0
+                  ? "even"
+                  : trend.recentAvgToPar > 0
+                  ? `+${trend.recentAvgToPar}`
+                  : `${trend.recentAvgToPar}`}{" "}
+                vs prior avg{" "}
+                {trend.priorAvgToPar === 0
+                  ? "even"
+                  : trend.priorAvgToPar > 0
+                  ? `+${trend.priorAvgToPar}`
+                  : `${trend.priorAvgToPar}`}
+                {trend.delta !== 0 && (
+                  <span style={{ marginLeft: 4, color: trend.delta < 0 ? T.birdie : T.pencilSoft }}>
+                    ({trend.delta > 0 ? `+${trend.delta}` : `${trend.delta}`})
+                  </span>
+                )}
+              </div>
+            </div>
           )}
         </>
       )}

@@ -3,6 +3,250 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (clerk-native-auth-deep-fix — NOTICEABLE)
+- **Done:** Deep-fixed Clerk native session persistence in Capacitor iOS WKWebView.
+  Commit `02c808d` on `integration/next`.
+
+  Root cause (researched via clerk-js/fapiClient.ts source + @clerk/expo createClerkInstance.ts):
+  - `window.__internal_onBeforeRequest` / `window.__internal_onAfterResponse` ARE
+    the correct mechanism: fapiClient.ts reads both from the window object at request
+    time via `runBeforeRequestCallbacks` / `runAfterResponseCallbacks`.
+  - Two bugs in prior implementation vs the @clerk/expo reference:
+    1. The `authorization` request header was only set when a JWT existed in
+       Preferences. It must ALWAYS be set (empty string when no JWT) — the FAPI
+       uses its presence to confirm native mode and choose header-vs-cookie auth.
+    2. `x-mobile: 1` header was missing (Expo always sets this).
+  - Root cause why `isSignedIn` stays false after sign-in: without the
+    `authorization` header, the FAPI falls back to cookie-based auth. WKWebView ITP
+    blocks these third-party cookies (clerk.looperapp.org from https://localhost).
+  - The Clerk Native API must be enabled in the Dashboard (Configure → Native
+    applications). If not enabled, `_is_native=1` is sent but the FAPI never returns
+    the JWT in the authorization response header. Code now detects and surfaces the
+    `native_api_disabled` error for exactly this case.
+
+  Files changed:
+  - `frontend/src/lib/auth-diag.ts` (new): module-level diagnostic state with subscriber.
+  - `frontend/src/components/AuthProvider.tsx`: fixed hooks (always set authorization
+    header, add x-mobile:1, track tokenRestored, detect native_api_disabled).
+  - `frontend/src/components/NativeAuthDiag.tsx` (new): diagnostic strip component.
+  - `frontend/src/app/sign-in/SignInClient.tsx`: renders NativeAuthDiag via dynamic(ssr:false).
+
+  REQUIRED owner action (one-time, no rebuild):
+    https://dashboard.clerk.com/last-active?path=native-applications
+    → Configure → Native applications → Enable
+
+  On-screen diagnostic (on native / NEXT_PUBLIC_AUTH_DIAG=1):
+    `loaded:true  signed:true  tok:true  napi:true  origin:https://localhost`
+  - `napi:false` = Native API not yet enabled in Clerk Dashboard
+  - `tok:false` = normal on first launch (no saved JWT yet)
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · unit 276/276 · build clean.
+  NOTICEABLE — fixes auth on-device + adds diagnostic strip for on-device validation.
+
+## 2026-06-28 (oncourse-resilience — NOTICEABLE)
+- **Done:** Graceful offline/fetch-failure degradation for the three high-traffic
+  on-course screens. Commit `83fd0ad` on `integration/next`.
+
+  Home (page.tsx) — what was added:
+  - try/catch/finally in load() so setLoading(false) always fires; prevents
+    stuck-loading if post-fetch processing throws (e.g. corrupt localStorage schema).
+  - loadError state + loadKey retry trigger (Retry button re-runs the effect).
+  - Loading skeleton: 3 paper-toned placeholder rows while rounds fetch.
+  - Error state (no cached data): "Couldn't load rounds." + 44pt Retry.
+  - Offline note (cached data shown): amber "Offline — showing saved data" +
+    silent background Retry. T.warningWash/T.warningInk — pencil annotation feel.
+  - Existing empty state, stats "—" during load, deleteError banner: untouched.
+
+  RoundPageClient — what was added:
+  - loadFailed state: distinguishes load errors from score-save errors so Retry
+    only appears for load failures (score saves auto-retry via pendingRef).
+  - retryCount state in useEffect deps: Retry silently re-fetches without
+    resetting to a loading spinner (round data stays visible throughout).
+  - apiError banner: T.errorWash/T.errorInk (red) → T.warningWash/T.warningInk
+    (amber) — scores are always safe locally; red was unnecessarily alarming.
+  - Load failure message: "Failed to load round — check connection." →
+    "Showing saved data — couldn't reach server." + Retry button (loadFailed).
+  - Score-save message: "Score save failed — check connection." →
+    "Score saved locally — couldn't sync, will retry." (no Retry — pendingRef
+    handles auto-retry). Score-save success also clears loadFailed.
+  - Existing seq-guard / pendingRef / optimistic-update / LOCAL mode: untouched.
+
+  LeaderboardSheet — NO CHANGES (already resilient):
+  - Purely presentational, zero API calls, all data as props.
+  - round: Round | null already handled via optional chaining.
+  - All empty states present. LOCAL/offline signals from RoundPageClient provide context.
+
+  Gates: lint 0/0 · tsc clean · voice-tests 265/265 · npm test 276/276 · build clean.
+  NOTICEABLE — on-course users with spotty signal see calm placeholders and Retry
+  affordances instead of blank/broken/stuck screens.
+
+## 2026-06-28 (stats-scoring-breakdown — NOTICEABLE)
+- **Done:** Added three new real-data stats sections to the profile screen, computed
+  purely from existing completed-round data (no backend changes, no new data model).
+
+  Files changed:
+  - **New `frontend/src/lib/profile-stats.ts`**: three pure exported helpers:
+    - `deriveParTypeAverages(rounds)` — per-par-type (par-3/4/5) average score and
+      avg-to-par across all the owner's completed rounds; skips non-standard pars,
+      null scores, non-completed rounds.
+    - `deriveScoreDistribution(rounds)` — counts and percentages of eagle-or-better /
+      birdie / par / bogey / double+ holes across all completed rounds; omits zero-count
+      buckets; preserves canonical display order.
+    - `deriveTrend(rounds, recentN=5)` — compares avg to-par of the last N completed
+      rounds vs all prior; returns null when not enough data or either window has no
+      valid (≥9 played holes) rounds.
+  - **New `frontend/src/lib/profile-stats.test.ts`**: 38 unit tests covering all three
+    helpers; edge cases include: no rounds, non-completed rounds, rounds with no players,
+    null strokes, non-standard pars, holes not in round definition, 9-hole rounds,
+    multi-round accumulation, 1dp rounding, only-owner counting, sort order independence
+    for trend, partial rounds excluded from trend averages.
+  - **`frontend/src/app/profile/page.tsx`**: two new `<Section>` components:
+    - `<ParBreakdown>` — 3-column grid (Par N kicker | hole count | avg score + avg-to-par);
+      birdie colour for negative to-par; "E" for even; empty state. Placed between
+      ScoringByTee and YearLog (both are "scoring by category" views).
+    - `<ScoreDistribution>` — labeled rows with proportional bars (eagle=eagle colour /
+      birdie=birdie colour / par=ink / bogey+double+=pencilSoft), count right, percentage
+      below. Quiet "Recent form" footer (dashed hairline separator) shows trend when
+      ≥6 rounds available (recent avg vs prior avg with delta). Placed after YearLog.
+    - Empty states for both: "Play a round to see your …" — consistent with existing
+      profile empty states.
+
+  Section order in final render:
+  ScoringByTee → ParBreakdown (new) → YearLog → ScoreDistribution (new) → ShotAnalytics
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 276/276 (+38) · build 15 pages.
+  NOTICEABLE — two new data sections appear on the Profile screen whenever the owner has
+  completed rounds: par-type breakdown (avg score/to-par by hole type) and score
+  distribution (eagle+/birdie/par/bogey/double+ bar chart with trend note).
+
+## 2026-06-28 (clerk-token-cache P48 — NOTICEABLE)
+- **Done:** Clerk session now survives force-quit and cold restart on iOS.
+
+  Mechanism discovered: Clerk's `fapiClient` (clerk-js source) checks two
+  `window`-level slots — `window.__internal_onBeforeRequest` and
+  `window.__internal_onAfterResponse` — before/after every FAPI request.
+  This is the same hook mechanism `@clerk/expo` uses internally for its
+  `tokenCache` prop, exposed as a documented public surface in fapiClient.ts.
+
+  Implementation:
+  - At module-evaluation time in `AuthProvider.tsx` (synchronous, before React
+    mounts and before the clerk-js CDN script completes its network download),
+    we install both callbacks — but ONLY when `Capacitor.isNativePlatform()`.
+  - `onBeforeRequest`: sets `credentials:"omit"`, appends `?_is_native=1`
+    (tells Clerk backend to authenticate via header not cookie), then reads
+    `__clerk_client_jwt` from `@capacitor/preferences` and injects it as the
+    `Authorization` header.
+  - `onAfterResponse`: reads the `authorization` response header that Clerk
+    backend echoes back, and persists it to `@capacitor/preferences` (native
+    iOS Keychain via Capacitor).
+  - Storage key `__clerk_client_jwt` matches `@clerk/expo`'s
+    `CLERK_CLIENT_JWT_KEY` constant — intentional for readability.
+
+  New dependency: `@capacitor/preferences@^8.0.1` (matched to existing
+  Capacitor v8 stack). iOS native plugin wired into
+  `ios/App/CapApp-SPM/Package.swift` alongside Camera and Geolocation.
+
+  Files changed:
+  - `frontend/src/components/AuthProvider.tsx` — hook setup + import
+  - `frontend/package.json` — @capacitor/preferences added
+  - `frontend/package-lock.json` — lock updated
+  - `frontend/ios/App/CapApp-SPM/Package.swift` — CapacitorPreferences added
+
+  Web/dev path: completely unchanged. Hooks are gated to
+  `Capacitor.isNativePlatform()` which is false in all browser contexts.
+
+  Gates: lint 0/0 · tsc 0 errors · voice-tests 265/265 · npm test 238/238 ·
+         npm run build clean.
+  NOTICEABLE — session now survives cold restart on TestFlight.
+
+  On-device test steps (next TestFlight build):
+  1. Open app fresh → sign-in form appears (no stored JWT yet).
+  2. Sign in with email+password → home screen loads.
+  3. Force-quit the app (swipe up in app switcher).
+  4. Reopen app → home screen loads WITHOUT sign-in form (JWT persisted).
+  5. Background + foreground → session stays active.
+  6. Sign out via Settings → sign-in form reappears.
+  7. Re-sign-in → persists again through force-quit.
+
+## 2026-06-28 (clerk-native-session — NOTICEABLE)
+- **Done:** Fixed Clerk session persistence in Capacitor iOS WKWebView — the final auth
+  blocker that caused `isSignedIn` to stay `false` after sign-in.
+
+  Root cause: Clerk's web SDK stores the session as a cookie on `clerk.looperapp.org`.
+  In WKWebView with origin `https://localhost`, iOS ITP treats that as a third-party
+  cookie and blocks it. Clerk's JS never sees the cookie → `isSignedIn` is permanently
+  `false` → the sign-in form loops forever.
+
+  Three-layer fix (all frontend only; no backend/env/migration touches):
+
+  1. `standardBrowser: false` on `<ClerkProvider>` (primary fix — `AuthProvider.tsx`):
+     Clerk's official prop for non-browser environments. When `false`, Clerk skips the
+     standard cookie storage assumption and uses an alternative (non-cookie) token path.
+     Gated to `Capacitor.isNativePlatform()` — returns `true` only when
+     `window.webkit.messageHandlers.bridge` is present (injected by the native WKWebView
+     container), so the web/dev build is completely unaffected.
+
+  2. `CapacitorCookies: { enabled: true }` (`capacitor.config.ts`):
+     Patches `document.cookie` to use the native WKHTTPCookieStore. Belt-and-suspenders
+     for any Clerk operations that do land cookies; also improves general cookie handling.
+
+  3. `WKAppBoundDomains` (`ios/App/App/Info.plist`):
+     Whitelists `clerk.looperapp.org` and `looperapp.org` as App-Bound domains.
+     iOS treats their cookies as first-party within the WKWebView, so they're stored
+     and visible in the shared WKHTTPCookieStore (used by CapacitorCookies).
+
+  Files changed:
+  - `frontend/src/components/AuthProvider.tsx`
+  - `frontend/capacitor.config.ts`
+  - `frontend/ios/App/App/Info.plist`
+
+  What is NOT solved (follow-up needed):
+  - Session persistence across cold app restarts. With `standardBrowser: false` and
+    no `tokenCache`, Clerk stores the token in-memory only — a force-quit clears it
+    and the user must sign in again. Fix: implement a `tokenCache` backed by
+    `@capacitor/preferences`. Separate item.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 238/238 · build clean.
+  NOTICEABLE — fixes the login loop: sign-in now completes and the app loads.
+
+  TestFlight verification checklist:
+  1. Open app → sign-in screen appears.
+  2. Sign in with email+password → home screen loads (not looped back to sign-in).
+  3. Navigate around → session stays active within the same launch.
+  4. Background + foreground → session persists within the same app launch.
+  5. Force-quit + reopen → sign-in screen appears again (expected; tokenCache not yet implemented).
+  6. Web/dev build unaffected: `npm run dev` → standardBrowser stays at default (true).
+
+## 2026-06-28 (fix-integration-test-loop P45 — SILENT)
+- **Done:** Fixed `RuntimeError: Future attached to a different loop` / `Event loop is
+  closed` that caused 5 integration tests to fail when run as part of the full pytest
+  suite.
+
+  Root cause: pytest-asyncio 1.4.0 defaults `asyncio_default_test_loop_scope = "function"` —
+  a new event loop per test. The module-level `engine` + `async_session` in
+  `app/db/engine.py` bind asyncpg connections to the FIRST test's loop. After that loop
+  closes, subsequent tests (with a new loop) try to reuse the same connections →
+  "Future attached to a different loop".
+
+  Fix: added two lines to `[tool.pytest.ini_options]` in `backend/pyproject.toml`:
+    asyncio_default_fixture_loop_scope = "session"
+    asyncio_default_test_loop_scope = "session"
+  One session loop for the entire test run. The module-level engine's asyncpg pool is
+  bound to that loop and stays there throughout all tests. No cross-loop mismatch. No
+  changes to app code, routes, or conftest assertions.
+
+  Evidence:
+  - `uv run pytest tests/ --ignore=tests/integration`: 138 passed (unchanged)
+  - `uv run pytest tests/integration/`: 13 skipped (Postgres not local — correct)
+  - `uv run pytest tests/`: 138 passed, 13 skipped, exit 0
+  - `uv run ruff check .`: clean
+
+  Full validation requires Postgres (no local DB here). CI's `advisory-backend-integration`
+  job (which has the Postgres service) is where the 5 failing tests will be confirmed green.
+  I could not claim they pass locally — that validation is CI's job.
+
+  SILENT — test infrastructure only; no TestFlight-visible change.
+
 ## 2026-06-27 (auth-e2e-gate — SILENT)
 - **Done:** `auth-e2e-gate` — Playwright E2E scaffold covering the critical sign-in
   flow (and 2 core journeys). Directly addresses the #1 QA gap the owner called out:

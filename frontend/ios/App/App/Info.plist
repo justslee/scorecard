@@ -14,6 +14,14 @@
 	<string>Looper can save scorecard photos to your library.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!--
+	  NOTE: WKAppBoundDomains was intentionally removed for the first on-device test.
+	  Declaring it makes the ENTIRE WKWebView app-bound, which can break Capacitor's
+	  localhost server load. The primary fix (standardBrowser=false on ClerkProvider)
+	  makes Clerk avoid cookies entirely, so app-bound domains shouldn't be needed.
+	  Re-add ONLY if sign-in still fails after this build AND with the Capacitor
+	  localhost/app-bound handling done correctly.
+	-->
     <key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>

@@ -51,32 +51,12 @@ jobs:
           NEXT_PUBLIC_API_URL: https://api.looperapp.org
 
   required-backend:
-    name: Backend gate (ruff + pytest pure-logic)
+    name: Backend gate (ruff + pytest incl. route/integration)
     runs-on: ubuntu-latest
-    # Pure-logic tests only (tests/*.py — no DB). The route/integration tests
-    # (tests/integration/) run in the separate advisory job below: when promoted
-    # to required + run alongside the full suite they hit an asyncpg "attached to
-    # a different loop" teardown bug (the module-level async engine is loop-bound
-    # while pytest-asyncio recreates the loop per test). Demoted to advisory
-    # 2026-06-28 until that harness bug is fixed — see backlog: fix-integration-test-loop.
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - name: Sync deps
-        run: uv sync
-      - name: Lint (ruff)
-        run: uv run ruff check .   # ruff is pinned in pyproject dev group
-      - name: Unit tests (pytest pure-logic)
-        run: uv run pytest tests/ --ignore=tests/integration
-
-  advisory-backend-integration:
-    name: Backend route/integration tests (advisory — harness loop bug)
-    runs-on: ubuntu-latest
+    # Pure-logic (tests/*.py) + route/integration (tests/integration/, Postgres
+    # service below). Re-promoted to required 2026-06-28 after the event-loop
+    # teardown bug was fixed (session-scoped pytest-asyncio loop, P45) — the full
+    # suite now runs 138 + 13 = 151 tests green in CI (verified on PR #53).
     services:
       postgres:
         image: postgres:16
@@ -102,9 +82,10 @@ jobs:
           enable-cache: true
       - name: Sync deps
         run: uv sync
-      - name: Route/integration tests (pytest tests/integration/)
-        run: uv run pytest tests/integration/
-        continue-on-error: true   # advisory until the event-loop teardown bug is fixed
+      - name: Lint (ruff)
+        run: uv run ruff check .   # ruff is pinned in pyproject dev group
+      - name: Unit + route/integration tests (pytest)
+        run: uv run pytest         # pure-logic + tests/integration/ (Postgres service above)
 
   # ─── Advisory E2E gate (auth flow + core journeys) ──────────────────────────
   #

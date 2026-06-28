@@ -10,6 +10,15 @@ const SignIn = dynamic(() => import("@clerk/clerk-react").then((m) => m.SignIn),
   ssr: false,
 });
 
+// Load the auth diagnostic strip client-only for the same reason: useAuth()
+// requires a live <ClerkProvider> which is not available at prerender time.
+// On-device (TestFlight) this shows auth state, token restoration, Native API
+// status, and the WebView origin so the owner can validate without rebuilding.
+const NativeAuthDiag = dynamic(
+  () => import("@/components/NativeAuthDiag"),
+  { ssr: false },
+);
+
 export default function SignInClient() {
   return (
     <div
@@ -65,6 +74,12 @@ export default function SignInClient() {
           }}
         />
       </div>
+
+      {/* On-screen auth diagnostic — visible on native (TestFlight) or when
+          NEXT_PUBLIC_AUTH_DIAG=1.  Shows the exact Clerk state so the owner
+          can read isLoaded / isSignedIn / token restored / Native API status
+          / origin off the screen without rebuilding blind. */}
+      <NativeAuthDiag />
     </div>
   );
 }
