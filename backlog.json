@@ -437,12 +437,12 @@
     {
       "id": "promote-integration-tests",
       "priority": 37,
-      "status": "reverted-advisory",
+      "status": "done",
       "title": "Promote backend route/integration tests from advisory to required once first CI run is green",
       "rationale": "13 route/integration tests (auth-fails-closed, IDOR, persistence, CRUD) were written without a local Postgres so never executed; currently an advisory continue-on-error CI job. After the first real GitHub Actions run shows the advisory-backend-integration job green, fold it into required-backend (add postgres service there, drop continue-on-error) and delete the advisory job.",
       "classification": "silent",
       "note": "Reverted to advisory 2026-06-28: when required + run with the full suite, the integration harness fails with asyncpg \"attached to a different loop\" (5 tests). Re-promote after fix-integration-test-loop.",
-      "done_note": "Consolidated: required-backend now runs the Postgres service + uv run pytest (pure-logic 138 + 13 route/integration). Advisory job retired + continue-on-error dropped. Safe: the integration harness already passed against Postgres in CI on PR #51."
+      "done_note": "Re-promoted to required after P45 fix: required-backend now runs full suite (138 pure-logic + 13 integration) with Postgres service. 151 tests green in CI."
     },
     {
       "id": "post-round-recap",
@@ -500,10 +500,11 @@
     {
       "id": "fix-integration-test-loop",
       "priority": 45,
-      "status": "ready",
+      "status": "done",
       "title": "Fix integration-test event-loop teardown (asyncpg attached to a different loop)",
       "rationale": "tests/integration fail with RuntimeError: ...attached to a different loop / Event loop is closed when run as part of the full pytest suite. Cause: app.db.engine module-level async engine/async_session is bound to one event loop, but pytest-asyncio (asyncio_mode=auto, function-scoped loop) creates a new loop per test. Fix: create/dispose the engine per test (or per session-scoped loop), e.g. recreate engine in a fixture bound to the running loop, or set a session-scoped event_loop, or dispose engine between tests. Then re-promote integration tests to required (promote-integration-tests).",
-      "classification": "silent"
+      "classification": "silent",
+      "done_note": "Session-scoped pytest-asyncio loop fixed the \"attached to a different loop\" bug. Verified: 13 integration tests pass against Postgres in CI (PR #53)."
     },
     {
       "id": "rotate-clerk-sk",
