@@ -857,7 +857,7 @@
     {
       "id": "ux-wind-direction-viz",
       "priority": 28,
-      "status": "ready",
+      "status": "built-integration-next-pending-device-verify",
       "phase": 4,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -866,7 +866,8 @@
       "headless": "partial",
       "area": "frontend",
       "title": "Wind-direction-relative visualization",
-      "rationale": "Show head/cross/tail relative to the chosen shot bearing on the map/panel using existing compute_wind_adjustment output."
+      "rationale": "Show head/cross/tail relative to the chosen shot bearing on the map/panel using existing compute_wind_adjustment output.",
+      "shipped": "Built c03dd8e on integration/next (2026-06-28). Pure windRelativeToShot helper + 17 tests; extends the plays-like wind chip with head/cross/tail relative to shot bearing. Visible only with GPS+wind \u2014 device-verify."
     },
     {
       "id": "dem-nationwide-ml",
