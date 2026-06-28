@@ -3,6 +3,37 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (voice-live-transcription — NOTICEABLE)
+- **Done:** Live interim display during on-course voice score entry via Deepgram
+  streaming WebSocket, replacing the Web Speech API path that was unavailable in
+  iOS Capacitor WKWebView.
+
+  What changed:
+  - **`backend/app/services/deepgram.py`**: Added `grant_live_token()` — calls
+    `POST https://api.deepgram.com/v1/auth/grant` with the server-side API key and
+    returns a 60-second short-lived `{access_token, expires_in}` so the API key
+    never reaches the browser.
+  - **`backend/app/routes/voice.py`**: Added `POST /api/voice/live-token` — auth-required
+    endpoint that calls `grant_live_token()` and returns the token to the authenticated caller.
+  - **`frontend/src/lib/voice/deepgram.ts`**: Added `getStream(): MediaStream | null`
+    getter to `VoiceRecorder` so the live transcriber can attach to the existing mic
+    stream without a second `getUserMedia` call. Also improved audio constraints to
+    `{ echoCancellation: true, noiseSuppression: true, autoGainControl: true }`.
+  - **`frontend/src/lib/voice/deepgram-live.ts`** (new): `DeepgramLiveTranscriber` class
+    that fetches a token, opens `wss://api.deepgram.com/v1/listen` with the `token`
+    subprotocol, attaches a `MediaRecorder` in 250ms slices, and emits `onInterim` /
+    `onFinal` callbacks. Also exports `parseDeepgramLiveMessage()` as a pure helper.
+  - **`frontend/src/lib/voice/deepgram-live.test.ts`** (new): 7 vitest tests.
+  - **`frontend/src/components/yardage/ScoreSheet.tsx`**: Replaced `recognitionRef`
+    (Web Speech) with `liveRef` (DeepgramLiveTranscriber). After `recorder.start()`,
+    creates and starts the live transcriber; failures are silent. Live transcriber
+    stopped in `stopAndParse` and in both cleanup effects.
+
+  Gates: ruff clean · lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 315/315 (7 new) ·
+         build clean (15 pages).
+
+  NOTICEABLE — words appear on-screen as the owner speaks during score entry on device.
+
 ## 2026-06-28 (clerk-react-v6-upgrade — NOTICEABLE)
 - **Done:** Upgraded `@clerk/clerk-react` (v5) → `@clerk/react` (v6.11.1) — the genuine
   fix for native-token mode: clerk-js v6 honors the `window.__internal_onBeforeRequest` /

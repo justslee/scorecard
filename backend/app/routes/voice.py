@@ -7,10 +7,29 @@ import os
 import json
 import re
 
-from app.services.deepgram import transcribe_audio
+from app.services.deepgram import transcribe_audio, grant_live_token
 from app.services.clerk_auth import current_user_id
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
+
+
+# ── Short-lived Deepgram token for browser-side live WebSocket ──
+
+
+class LiveTokenResponse(BaseModel):
+    access_token: str
+    expires_in: int
+
+
+@router.post("/live-token", response_model=LiveTokenResponse)
+async def get_live_token(user_id: str = Depends(current_user_id)):
+    """Mint a short-lived Deepgram WebSocket token for the browser live-transcription path.
+
+    Auth required — the API key must stay server-side; the browser gets only a
+    time-limited (60-second) token scoped to one streaming session.
+    Returns {access_token, expires_in}.
+    """
+    return await grant_live_token()
 
 
 # ── One-shot speech-to-text via Deepgram ──
