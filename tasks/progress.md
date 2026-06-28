@@ -2544,3 +2544,34 @@ Owner approved ("ship it"). Merged PR #54 (23 commits) → main @ 7bb944b.
 Bundle contents shipped: native Clerk auth (verified), CI native-crash gate,
 clear-on-signout, owner-player-identity (plumbing + UX), voice-low-confidence note,
 lockfile fix.
+
+---
+
+## IN PROGRESS — voice setup fixes + future-feature planning — 2026-06-28
+
+Owner tested the connected voice setup (v1.0.410) and reported (IMG_2959): the
+transcript showed words he never said, out of order ("I only said hello first").
+
+**Fixed (committed on integration/next, NOT yet built/shipped — needs owner go-ahead):**
+- d478828 — Voice setup echo fix + preload:
+  - Root cause of the garbled transcript: the mic had NO echo cancellation, so the
+    phone speaker's caddie audio was picked up + transcribed as the user's turn →
+    the model replied to its own echo → cascading out-of-order conversation. Fix:
+    echoCancellation + noiseSuppression + autoGainControl on getUserMedia.
+  - Preload (owner: "don't show 'loading caddie' on tap"): warm the Realtime
+    session on round/new mount (muted, hidden) so opening is instant. Degrades
+    gracefully — if mount-time getUserMedia is rejected (iOS gesture rule), it
+    reconnects on the mic tap (= today's behavior, no worse).
+  - Gates: tsc/eslint/voice265/build all green locally.
+  - **BLOCKED:** TestFlight build gated by approval classifier (won't auto-deliver
+    to the team without owner "ship it"). Awaiting owner go-ahead to cut the build.
+
+**Planning (silent, done):** 372614d — planned the two future feature areas the
+owner asked for (Social/Playing Partners + Course search/reviews). Added 11 phased
+backlog cards (epics social-playing-partners + course-search-reviews), 2 epic cards
+on the Product Board, and specs/social-course-features-plan.md.
+- Owner's explicit UI question answered: **NO bottom tab bar** (SaaS chrome NORTHSTAR
+  forbids; neither feature is a "camp here" destination). Promote the orphaned
+  /players page to "Playing Partners" + contextual entries; one quiet /courses spoke.
+- Biggest constraint surfaced: the app is single-owner gated (require_owner on every
+  router); real social needs an owner decision to relax it + a security review.
