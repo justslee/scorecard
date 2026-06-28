@@ -491,11 +491,11 @@
     {
       "id": "clerk-prod-instance",
       "priority": 43,
-      "status": "dns-done-awaiting-keys",
+      "status": "deploying",
       "title": "Finish Clerk production instance (pk_live) \u2014 DNS + key swap, the real login fix",
       "rationale": "Owner paused mid-setup. Clerk prod domain looperapp.org needs 5 CNAMEs in Route53 (accounts->accounts.clerk.services; clerk->frontend-api.clerk.services; clk._domainkey->dkim1.y38xe4k5qi21.clerk.services; clk2._domainkey->dkim2.y38xe4k5qi21.clerk.services; clkmail->mail.y38xe4k5qi21.clerk.services). looper-loop IAM lacks route53 perms so owner adds them. Then owner sends pk_live + JWKS URL + issuer; eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. See specs/clerk-production-migration.md. Permanent login fix; auth-bypass build is the stopgap.",
       "classification": "owner-action + eng follow-up",
-      "progress": "2026-06-28: eng added all 5 Clerk CNAMEs to Route53 (zone Z068252329IRE4BQ9U293) after owner granted route53 perms to looper-loop IAM \u2014 all resolve live. Awaiting: owner clicks Verify in Clerk -> sends pk_live + JWKS URL + issuer -> eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds."
+      "progress": "2026-06-28: eng added all 5 Clerk CNAMEs to Route53 (zone Z068252329IRE4BQ9U293) after owner granted route53 perms to looper-loop IAM \u2014 all resolve live. Awaiting: owner clicks Verify in Clerk -> sends pk_live + JWKS URL + issuer -> eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. | 2026-06-28: owner GO. Deploy points backend at prod Clerk for VERIFICATION only (CLERK_JWKS_URL/ISSUER=clerk.looperapp.org); OWNER_CLERK_USER_ID left untouched (no gate weakening). After owner first sign-in: capture their prod sub -> set OWNER_CLERK_USER_ID to it (P44)."
     }
   ]
 }

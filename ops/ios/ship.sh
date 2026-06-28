@@ -19,7 +19,10 @@ FRONTEND="$REPO/frontend"
 
 # Public client config — baked into the bundle at build time (not secret).
 export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-https://api.looperapp.org}"
-export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_test_cHJldHR5LXBpa2EtMTcuY2xlcmsuYWNjb3VudHMuZGV2JA==}"
+# PRODUCTION Clerk instance (clerk.looperapp.org). Publishable keys are public.
+# Swapped from the dev pk_test on 2026-06-28 — the dev instance couldn't mint
+# session tokens in the Capacitor webview (cause of the persistent login 401s).
+export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_live_Y2xlcmsubG9vcGVyYXBwLm9yZyQ}"
 export NEXT_PUBLIC_MAPBOX_TOKEN="${NEXT_PUBLIC_MAPBOX_TOKEN:-}"
 
 # App Store Connect signing — IDs are not secret; the .p8 referenced by path is.
