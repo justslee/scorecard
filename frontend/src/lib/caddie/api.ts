@@ -91,6 +91,9 @@ export async function fetchRecommendation(params: {
   weather?: WeatherConditions;
   hole_intelligence?: HoleIntelligence;
   shot_bearing?: number;
+  /** When true, request a USGA-conforming recommendation (no environmental
+   *  distance adjustments). Default false. */
+  competition_legal?: boolean;
 }): Promise<CaddieRecommendation> {
   return post<CaddieRecommendation>('/caddie/recommend', {
     hole_number: params.hole_number,
@@ -102,6 +105,7 @@ export async function fetchRecommendation(params: {
     weather: params.weather,
     hole_intelligence: params.hole_intelligence,
     shot_bearing: params.shot_bearing,
+    competition_legal: params.competition_legal ?? false,
   });
 }
 

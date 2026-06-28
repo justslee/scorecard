@@ -62,6 +62,7 @@ class SessionRecommendRequest(BaseModel):
     player_lat: Optional[float] = None
     player_lng: Optional[float] = None
     shot_bearing: Optional[float] = None  # degrees from north toward target
+    competition_legal: bool = False  # True = USGA-conforming mode; zeroes all environmental distance adjustments
 
 
 class SessionVoiceRequest(BaseModel):
@@ -232,6 +233,7 @@ async def session_recommend(request: SessionRecommendRequest, user_id: str = Dep
         weather=session.weather,
         player_stats=session.player_stats,
         shot_bearing=request.shot_bearing or 0.0,
+        competition_legal=request.competition_legal,
     )
 
     # Targeted update: only writes last_recommendation + current_hole, so a
@@ -552,6 +554,7 @@ async def get_recommendation(
         weather=weather,
         player_stats=request.player_stats,
         shot_bearing=request.shot_bearing or 0.0,
+        competition_legal=request.competition_legal,
     )
     return rec.model_dump()
 

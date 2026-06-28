@@ -31,6 +31,9 @@ export interface CaddieRecommendation {
   aggressiveness: 'conservative' | 'moderate' | 'aggressive';
   expected_score?: number;
   personality_advice?: string;
+  /** True when the backend produced a USGA-conforming recommendation
+   *  (no environmental distance adjustments; target_yards == raw_yards). */
+  competition_legal?: boolean;
 }
 
 export interface WeatherConditions {

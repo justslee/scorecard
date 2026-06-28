@@ -146,6 +146,9 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
   const [holeIntel, setHoleIntel] = useState<HoleIntelligence | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Competition-legal mode: when on, the recommendation uses raw yardage only
+  // (no wind/elevation/temperature adjustments) — USGA conforming for tournaments.
+  const [competitionLegal, setCompetitionLegal] = useState(false);
 
   // Voice state — OpenAI Realtime over WebRTC.
   const [voiceInput, setVoiceInput] = useState('');
@@ -300,6 +303,7 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
         weather: weather ?? undefined,
         hole_intelligence: holeIntel ?? undefined,
         shot_bearing: bearingToGreen,
+        competition_legal: competitionLegal,
       });
       setRecommendation(rec);
     } catch (e) {
@@ -938,6 +942,33 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
                     </button>
                   </div>
 
+                  {/* Competition-legal toggle — USGA conforming mode */}
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-zinc-400">Competition legal</span>
+                      <span className="text-[10px] text-zinc-600 uppercase tracking-wide">USGA</span>
+                    </div>
+                    <button
+                      role="switch"
+                      aria-checked={competitionLegal}
+                      onClick={() => {
+                        setCompetitionLegal(prev => !prev);
+                        setRecommendation(null); // stale rec doesn't match new mode
+                      }}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border transition-colors focus-visible:outline-none ${
+                        competitionLegal
+                          ? 'bg-amber-500 border-amber-500'
+                          : 'bg-zinc-700 border-zinc-600'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform mt-0.5 ${
+                          competitionLegal ? 'translate-x-4' : 'translate-x-0.5'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
                   {/* Quick distances */}
                   <div className="flex gap-2">
                     {[75, 100, 125, 150, 175, 200].map((d) => (
@@ -973,6 +1004,11 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
                             <div className="text-sm text-zinc-400">
                               {recommendation.target_yards}y
                             </div>
+                            {recommendation.competition_legal && (
+                              <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-400 uppercase">
+                                USGA legal
+                              </span>
+                            )}
                           </div>
                           <div className={`text-sm font-medium ${confidenceColor(recommendation.confidence)}`}>
                             {Math.round(recommendation.confidence * 100)}%

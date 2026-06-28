@@ -3,6 +3,26 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (caddie-comp-legal-mode — NOTICEABLE)
+- **Done:** "Competition legal" (USGA-conforming) toggle for the caddie recommendation.
+  When on, `target_yards == raw_yards` and `adjustments == []` — no environmental
+  distance adjustments (USGA Rule 4-3/10.3a). Default off.
+
+  Files changed:
+  - `backend/app/caddie/types.py`: `competition_legal: bool = False` on `RecommendationRequest` + `CaddieRecommendation`.
+  - `backend/app/caddie/aim_point.py`: `generate_recommendation()` gains `competition_legal: bool = False`. When True: `adjusted_yards = distance_yards`, `adjustments = []`. Reasoning note added. Flag threaded to returned object.
+  - `backend/app/routes/caddie.py`: `competition_legal` on `SessionRecommendRequest`; threaded into both `/session/recommend` and `/recommend`.
+  - `backend/tests/test_competition_legal.py` (new, 14 tests): `TestCompetitionLegalOn` (8), `TestCompetitionLegalOff` (5), `TestAdjustmentsActuallyZeroed` (1).
+  - `frontend/src/lib/caddie/types.ts`: `competition_legal?: boolean` on `CaddieRecommendation`.
+  - `frontend/src/lib/caddie/api.ts`: `competition_legal?` param + body pass-through.
+  - `frontend/src/components/CaddiePanel.tsx`: `competitionLegal` state; toggle switch (amber when on); "USGA legal" chip on recommendation.
+
+  Gates: ruff clean · lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 325/325 · build clean
+         · pytest 48/48 (14 new comp-legal + 34 existing aim_point).
+  Legal correctness verified by backend tests: target==raw, adjustments==[] on inputs that
+  would otherwise produce wind/elevation/temperature adjustments.
+  NOTICEABLE — amber toggle + "USGA legal" chip in caddie recommend view.
+
 ## 2026-06-28 (caddie-playslike-card — NOTICEABLE)
 - **Done:** Surfaces a prominent "Plays like" yardage card in the caddie recommendation
   view. All data was already returned by `/caddie/recommend` — pure UI surfacing win.

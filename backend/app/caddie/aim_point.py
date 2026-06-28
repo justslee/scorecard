@@ -204,21 +204,34 @@ def generate_recommendation(
     weather: Optional[WeatherConditions] = None,
     player_stats: Optional[PlayerStatistics] = None,
     shot_bearing: float = 0.0,
+    competition_legal: bool = False,
 ) -> CaddieRecommendation:
     """Generate a complete caddie recommendation for a shot.
 
     This is the main orchestrator that combines all engines.
+
+    When ``competition_legal`` is True the recommendation is USGA-conforming:
+    no environmental distance adjustments are applied (target_yards == raw_yards,
+    adjustments list is empty).  Aim/miss-side/strategy logic is unchanged —
+    only the yardage calculation is locked to raw geometric distance.
     """
     # Normalize club distances
     clubs = normalize_club_distances(club_distances) if club_distances else {}
 
-    # Compute adjusted distance
-    adjusted_yards, adjustments = compute_adjustments(
-        raw_distance=distance_yards,
-        elevation_change_ft=hole.elevation_change_ft,
-        weather=weather,
-        shot_bearing=shot_bearing,
-    )
+    # Compute adjusted distance.
+    # Competition-legal mode: skip ALL environmental adjustments so the yardage
+    # the golfer uses is pure geometric distance — the only number permitted by
+    # the USGA for distance-measuring devices in competition.
+    if competition_legal:
+        adjusted_yards = distance_yards
+        adjustments = []
+    else:
+        adjusted_yards, adjustments = compute_adjustments(
+            raw_distance=distance_yards,
+            elevation_change_ft=hole.elevation_change_ft,
+            weather=weather,
+            shot_bearing=shot_bearing,
+        )
 
     # Select club
     # DECADE bias: conservative for approach shots, moderate for tee shots
@@ -238,7 +251,9 @@ def generate_recommendation(
     # Build reasoning
     reasoning: list[str] = []
 
-    if adjustments:
+    if competition_legal:
+        reasoning.append("Competition-legal mode: distance adjustments disabled (USGA conforming)")
+    elif adjustments:
         adj_summary = ", ".join(
             f"{a.type}: {'+' if a.yards > 0 else ''}{a.yards}y"
             for a in adjustments
@@ -321,4 +336,5 @@ def generate_recommendation(
         confidence=confidence,
         aggressiveness=aggressiveness,
         expected_score=round(exp_score, 2),
+        competition_legal=competition_legal,
     )
