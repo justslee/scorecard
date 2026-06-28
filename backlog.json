@@ -459,6 +459,14 @@
       "rationale": "GAPS found: (1) no signOut anywhere \u2014 app gates on sign-in but cannot sign out (AuthButtons dead/unmounted); (2) settings/page.tsx is the only screen still on Tailwind/CSS classes (T.* count 0), a NORTHSTAR inconsistency. Sign-out via Clerk useClerk().signOut() -> AuthGate shows sign-in. Restyle whole page to T.*; keep About + Clear Local Cache.",
       "classification": "noticeable",
       "done_note": "Sign Out added (was entirely missing \u2014 Clerk useClerk().signOut -> AuthGate shows sign-in; mount guarded by same env var as AuthProvider). Settings fully restyled Tailwind->T.* yardage-book. Reviewer ship + designer polish (neutral non-alarming sign-out, in-page confirms for both actions, friendly error, honest Beta version) folded. Gates verified."
+    },
+    {
+      "id": "round-delete-ui",
+      "priority": 40,
+      "status": "in-progress",
+      "title": "Wire delete-round UI (plumbing existed, no affordance)",
+      "rationale": "GAP: full delete-round stack already built+tested (DELETE /api/rounds/{id} owner-scoped+cascade, api.deleteRound, deleteRoundAsync, useApi.deleteRound) but NO UI calls it \u2014 users cannot remove a mistaken/test round. Add swipe-to-delete on home recent-rounds reusing existing SwipeableRow (as players page does). Low-risk: only UI wiring.",
+      "classification": "noticeable"
     }
   ]
 }
