@@ -410,7 +410,7 @@
     {
       "id": "owner-player-identity",
       "priority": 34,
-      "status": "plumbing-done (backend+reads); UX (pick \"me\") split to owner-player-identity-ux",
+      "status": "DONE (plumbing + UX both shipped)",
       "title": "Identify the owner by Clerk user id, not players[0] (fix mis-attribution across home + profile)",
       "rationale": "Reviewer flagged: home (recent scores + scoring avg) and profile (ScoringByTee + Season log) all assume r.players[0] is the owner. Player has no owner flag; array order is just entry order, so a round where the owner is not first-listed attributes another players scores to the owner \u2014 a fabricated-fact-by-bug. Pre-existing (3 call sites: page.tsx:40-41,75-77; profile/page.tsx:71,113). Fix all sites together once user-identity lands: map Clerk user -> player (add owner/userId to Player or round-membership), then derive owner totals from that.",
       "blocked_by": "",
@@ -591,10 +591,11 @@
     {
       "id": "owner-player-identity-ux",
       "priority": 34.5,
-      "status": "ready",
+      "status": "done-shipped-integration-next",
       "title": "Round setup: let the owner mark which player is \"me\" (sets ownerPlayerId)",
       "rationale": "Completes owner-player-identity. The backend + read sites now honour round.ownerPlayerId, but round/new (frontend/src/app/round/new/page.tsx) still sends players in form order with no owner designation, so ownerPlayerId always defaults to players[0]. Add a calm, yardage-book-styled way to mark exactly one player row as \"you\" (default the first), pre-filling the owner's Clerk name (useUser) is optional. Pass ownerPlayerId in createRound. THIS is the change that actually fixes mis-attribution when the owner is not first-listed. Needs designer review (user-facing setup UX).",
-      "classification": "noticeable-correctness"
+      "classification": "noticeable-correctness",
+      "progress": "2026-06-28: shipped on integration/next. round/new now lets the owner mark which player is \"you\" \u2014 ownerIndex state (default first), a quiet serif-italic \"you\" marker on the owner row, and a \"\u2713 this is me\" pill in the player editor; ownerPlayerId resolved at create (handles id reassignment + dedup; falls back to first). Designer-reviewed (yardage-book): ship-blocker fixed (pill moved ABOVE the autocomplete so the inline suggestion can not push it off-sheet while typing) + typography moved to serif-italic lowercase to match the \"you\" annotation register; default-checked-on-Player-1 and T.pencil \"you\" marker approved as-is. Gates: lint/tsc/voice265/unit284/build/native-crash. This makes the owner-player-identity fix USER-VISIBLE: a round where the owner is not first-listed now attributes the owner\u2019s own scores correctly in home + profile."
     }
   ]
 }

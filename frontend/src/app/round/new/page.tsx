@@ -109,6 +109,10 @@ export default function RoundSetupPage() {
   ]);
   const [savedPlayers, setSavedPlayers] = useState<SavedPlayer[]>([]);
   const [playerPickerIndex, setPlayerPickerIndex] = useState(0);
+  // Which player row is the owner ("you"). Defaults to the first; the owner can
+  // re-assign it in the player editor. Drives ownerPlayerId on the round so the
+  // owner's own scores power home/profile stats even when not first-listed.
+  const [ownerIndex, setOwnerIndex] = useState(0);
 
   // --- Round options ---
   const [tee, setTee] = useState<TeeId>("white");
@@ -228,18 +232,28 @@ export default function RoundSetupPage() {
     setIsCreating(true);
     setCreateError(null);
 
-    // Resolve player IDs — custom slots get a real UUID.
-    const roundPlayers: Player[] = validPlayers.map((p) => ({
-      id: p.id.startsWith("custom-player-") ? crypto.randomUUID() : p.id,
-      name: p.name.trim(),
-      handicap: p.handicap,
-    }));
+    // Resolve player IDs — custom slots get a real UUID. Track the owner's
+    // final id as we go (ownerSlot is the same object reference in validPlayers).
+    const ownerSlot = players[ownerIndex];
+    let ownerResolvedId: string | undefined;
+    const roundPlayers: Player[] = validPlayers.map((p) => {
+      const newId = p.id.startsWith("custom-player-") ? crypto.randomUUID() : p.id;
+      if (p === ownerSlot) ownerResolvedId = newId;
+      return { id: newId, name: p.name.trim(), handicap: p.handicap };
+    });
 
     // De-dup by id: if voice returns the same name twice both mapping to the same saved
     // player id, keep only the first occurrence to avoid duplicate round_players on backend.
     const deduped = roundPlayers.filter(
       (p, idx, arr) => arr.findIndex((q) => q.id === p.id) === idx
     );
+
+    // The owner's player id: their resolved id if it survived de-dup, else the
+    // first player (matches the backend default and getOwnerPlayerId fallback).
+    const ownerPlayerId =
+      ownerResolvedId && deduped.some((p) => p.id === ownerResolvedId)
+        ? ownerResolvedId
+        : deduped[0]?.id;
 
     // Build default course hole layout (scoring-course data; GolfAPI holes added later).
     const courseName = selectedCourse?.name ?? "New Round";
@@ -273,6 +287,7 @@ export default function RoundSetupPage() {
         courseName,
         teeName: teeLabel,
         players: deduped,
+        ownerPlayerId,
         holes: holeList,
         games: gameObjects,
       });
@@ -813,6 +828,22 @@ export default function RoundSetupPage() {
                     {p.name || "Tap to set name…"}
                   </div>
 
+                  {/* "you" marker — the owner whose scores drive home/profile stats */}
+                  {i === ownerIndex && p.name.trim() !== "" && (
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 13,
+                        color: T.pencil,
+                        letterSpacing: 0.2,
+                        flexShrink: 0,
+                      }}
+                    >
+                      you
+                    </div>
+                  )}
+
                   {/* Handicap */}
                   {p.handicap !== undefined && (
                     <div
@@ -1196,6 +1227,33 @@ export default function RoundSetupPage() {
                     </div>
                   </div>
 
+                  {/* "This is me" — marks this player as the owner (drives stats).
+                      Placed ABOVE the autocomplete so the inline suggestion row
+                      can't push it off the sheet while typing a new name. */}
+                  <button
+                    onClick={() => setOwnerIndex(playerPickerIndex)}
+                    style={{
+                      marginBottom: 12,
+                      width: "100%",
+                      padding: "11px",
+                      borderRadius: 99,
+                      border: `1px solid ${
+                        ownerIndex === playerPickerIndex ? accent : T.hairline
+                      }`,
+                      background:
+                        ownerIndex === playerPickerIndex ? `${accent}14` : "transparent",
+                      color: ownerIndex === playerPickerIndex ? accent : T.pencil,
+                      fontFamily: T.serif,
+                      fontStyle: "italic",
+                      fontSize: 13,
+                      letterSpacing: 0.2,
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    {ownerIndex === playerPickerIndex ? "✓ this is me" : "this is me"}
+                  </button>
+
                   {/* PlayerAutocomplete — designed for dark backgrounds */}
                   <PlayerAutocomplete
                     value={
@@ -1225,6 +1283,12 @@ export default function RoundSetupPage() {
                             setPlayers((prev) =>
                               prev.filter((_, i) => i !== playerPickerIndex)
                             );
+                            // Keep ownerIndex pointing at the right row after removal.
+                            setOwnerIndex((prev) => {
+                              if (playerPickerIndex === prev) return 0; // removed the owner
+                              if (playerPickerIndex < prev) return prev - 1; // rows shifted up
+                              return prev;
+                            });
                             setPicker(null);
                           }
                         : undefined
