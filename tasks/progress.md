@@ -3,6 +3,46 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (realtime-noise-hardening — SILENT)
+- **Done:** Hardened the OpenAI Realtime session mint config in
+  `backend/app/services/realtime_relay.py`. Commit `e90a7ef` on `integration/next`.
+
+  Changes applied (all confirmed against GA Realtime API docs before writing):
+
+  1. **Noise reduction** (APPLIED): Added `audio.input.noise_reduction: {type: "near_field"}`.
+     Field name `noise_reduction` confirmed at `audio.input.noise_reduction` in the GA
+     Realtime client_secrets Python SDK reference (developers.openai.com, 2025). Allowed
+     types: `near_field` (phone/headset) | `far_field` (laptop mic). `near_field` is
+     correct for a mobile app. Reduces false-positive VAD triggers from background noise.
+
+  2. **Transcription model** (APPLIED, default changed): Changed hard-coded `whisper-1`
+     to env-configurable `OPENAI_REALTIME_TRANSCRIBE_MODEL`, defaulting to
+     `gpt-4o-transcribe`. Confirmed supported values (Python SDK session_create_params.py):
+     `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `whisper-1`. Default is
+     `gpt-4o-transcribe` because it hallucinates far less on silence than whisper-1.
+     Can be overridden back to `whisper-1` via env without a deploy.
+
+  3. **Turn detection VAD type** (APPLIED): Added `OPENAI_REALTIME_VAD` env var (default
+     `server_vad`). Setting to `semantic_vad` switches to the semantic classifier with
+     `eagerness: "auto"` (equivalent to "medium"). Confirmed: `semantic_vad` and
+     `eagerness` values (`low`/`medium`/`high`/`auto`) in GA Realtime API reference
+     (AudioInputTurnDetectionSemanticVad, 2025). Default behavior (server_vad + original
+     thresholds) is completely unchanged.
+
+  Refactor: extracted `build_session_payload(instructions, voice_id, tools, *, model,
+  transcribe_model, vad_type)` pure helper (no network) so the mint config is testable
+  without an API key.
+
+  New file: `backend/tests/test_realtime_payload.py` — 10 pure pytest assertions.
+
+  Gates: ruff clean · pytest 204 passed / 15 skipped / 0 failed (10 new tests) ·
+         frontend tsc clean · eslint clean · voice-tests 265/265.
+
+  NOTE: the mint config CANNOT be live-verified headlessly (no local OPENAI_API_KEY).
+  Voice-connect MUST be tested on the next device build before this is trusted.
+
+  SILENT — backend-only; no TestFlight-visible change. Rides with next noticeable bundle.
+
 ## 2026-06-28 (caddie-comp-legal-mode — NOTICEABLE)
 - **Done:** "Competition legal" (USGA-conforming) toggle for the caddie recommendation.
   When on, `target_yards == raw_yards` and `adjustments == []` — no environmental
