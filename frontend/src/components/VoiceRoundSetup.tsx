@@ -26,6 +26,9 @@ interface VoiceRoundSetupProps {
     teeName?: string;
   }) => void;
   onClose: () => void;
+  /** Begin recording immediately on open (single-tap from the mic button) so the
+   *  user doesn't have to tap the mic a second time inside the overlay. */
+  autoStart?: boolean;
 }
 
 interface ParsedRoundConfig {
@@ -76,7 +79,7 @@ function RefreshIcon() {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSetupProps) {
+export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = false }: VoiceRoundSetupProps) {
   const accent = DEFAULT_ACCENT;
 
   const [isListening, setIsListening] = useState(false);
@@ -168,6 +171,16 @@ export default function VoiceRoundSetup({ onSetupRound, onClose }: VoiceRoundSet
       );
     }
   }, []);
+
+  // Single-tap UX: when opened via the mic button (autoStart), begin recording
+  // immediately instead of making the user tap the mic again. Fires once.
+  const didAutoStartRef = useRef(false);
+  useEffect(() => {
+    if (!autoStart || didAutoStartRef.current) return;
+    if (!VoiceRecorder.isSupported()) return;
+    didAutoStartRef.current = true;
+    void startListening();
+  }, [autoStart, startListening]);
 
   const stopListening = useCallback(async () => {
     const recorder = recorderRef.current;

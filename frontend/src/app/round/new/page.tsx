@@ -986,9 +986,11 @@ export default function RoundSetupPage() {
             bottom: 0,
           }}
         >
-          {/* Mic button — opens VoiceRoundSetup */}
+          {/* Mic button — opens VoiceRoundSetup. order:2 places it on the RIGHT
+              (after the Tee off CTA) while keeping DOM/reading order sensible. */}
           <div
             style={{
+              order: 2,
               flexShrink: 0,
               display: "flex",
               flexDirection: "column",
@@ -1329,6 +1331,7 @@ export default function RoundSetupPage() {
           <VoiceRoundSetup
             onSetupRound={handleVoiceSetup}
             onClose={() => setShowVoiceSetup(false)}
+            autoStart
           />
         )}
       </AnimatePresence>
