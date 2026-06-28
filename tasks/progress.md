@@ -3,6 +3,46 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (clerk-native-auth-deep-fix — NOTICEABLE)
+- **Done:** Deep-fixed Clerk native session persistence in Capacitor iOS WKWebView.
+  Commit `02c808d` on `integration/next`.
+
+  Root cause (researched via clerk-js/fapiClient.ts source + @clerk/expo createClerkInstance.ts):
+  - `window.__internal_onBeforeRequest` / `window.__internal_onAfterResponse` ARE
+    the correct mechanism: fapiClient.ts reads both from the window object at request
+    time via `runBeforeRequestCallbacks` / `runAfterResponseCallbacks`.
+  - Two bugs in prior implementation vs the @clerk/expo reference:
+    1. The `authorization` request header was only set when a JWT existed in
+       Preferences. It must ALWAYS be set (empty string when no JWT) — the FAPI
+       uses its presence to confirm native mode and choose header-vs-cookie auth.
+    2. `x-mobile: 1` header was missing (Expo always sets this).
+  - Root cause why `isSignedIn` stays false after sign-in: without the
+    `authorization` header, the FAPI falls back to cookie-based auth. WKWebView ITP
+    blocks these third-party cookies (clerk.looperapp.org from https://localhost).
+  - The Clerk Native API must be enabled in the Dashboard (Configure → Native
+    applications). If not enabled, `_is_native=1` is sent but the FAPI never returns
+    the JWT in the authorization response header. Code now detects and surfaces the
+    `native_api_disabled` error for exactly this case.
+
+  Files changed:
+  - `frontend/src/lib/auth-diag.ts` (new): module-level diagnostic state with subscriber.
+  - `frontend/src/components/AuthProvider.tsx`: fixed hooks (always set authorization
+    header, add x-mobile:1, track tokenRestored, detect native_api_disabled).
+  - `frontend/src/components/NativeAuthDiag.tsx` (new): diagnostic strip component.
+  - `frontend/src/app/sign-in/SignInClient.tsx`: renders NativeAuthDiag via dynamic(ssr:false).
+
+  REQUIRED owner action (one-time, no rebuild):
+    https://dashboard.clerk.com/last-active?path=native-applications
+    → Configure → Native applications → Enable
+
+  On-screen diagnostic (on native / NEXT_PUBLIC_AUTH_DIAG=1):
+    `loaded:true  signed:true  tok:true  napi:true  origin:https://localhost`
+  - `napi:false` = Native API not yet enabled in Clerk Dashboard
+  - `tok:false` = normal on first launch (no saved JWT yet)
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · unit 276/276 · build clean.
+  NOTICEABLE — fixes auth on-device + adds diagnostic strip for on-device validation.
+
 ## 2026-06-28 (oncourse-resilience — NOTICEABLE)
 - **Done:** Graceful offline/fetch-failure degradation for the three high-traffic
   on-course screens. Commit `83fd0ad` on `integration/next`.
