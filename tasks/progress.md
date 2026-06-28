@@ -3,6 +3,55 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (clerk-token-cache P48 — NOTICEABLE)
+- **Done:** Clerk session now survives force-quit and cold restart on iOS.
+
+  Mechanism discovered: Clerk's `fapiClient` (clerk-js source) checks two
+  `window`-level slots — `window.__internal_onBeforeRequest` and
+  `window.__internal_onAfterResponse` — before/after every FAPI request.
+  This is the same hook mechanism `@clerk/expo` uses internally for its
+  `tokenCache` prop, exposed as a documented public surface in fapiClient.ts.
+
+  Implementation:
+  - At module-evaluation time in `AuthProvider.tsx` (synchronous, before React
+    mounts and before the clerk-js CDN script completes its network download),
+    we install both callbacks — but ONLY when `Capacitor.isNativePlatform()`.
+  - `onBeforeRequest`: sets `credentials:"omit"`, appends `?_is_native=1`
+    (tells Clerk backend to authenticate via header not cookie), then reads
+    `__clerk_client_jwt` from `@capacitor/preferences` and injects it as the
+    `Authorization` header.
+  - `onAfterResponse`: reads the `authorization` response header that Clerk
+    backend echoes back, and persists it to `@capacitor/preferences` (native
+    iOS Keychain via Capacitor).
+  - Storage key `__clerk_client_jwt` matches `@clerk/expo`'s
+    `CLERK_CLIENT_JWT_KEY` constant — intentional for readability.
+
+  New dependency: `@capacitor/preferences@^8.0.1` (matched to existing
+  Capacitor v8 stack). iOS native plugin wired into
+  `ios/App/CapApp-SPM/Package.swift` alongside Camera and Geolocation.
+
+  Files changed:
+  - `frontend/src/components/AuthProvider.tsx` — hook setup + import
+  - `frontend/package.json` — @capacitor/preferences added
+  - `frontend/package-lock.json` — lock updated
+  - `frontend/ios/App/CapApp-SPM/Package.swift` — CapacitorPreferences added
+
+  Web/dev path: completely unchanged. Hooks are gated to
+  `Capacitor.isNativePlatform()` which is false in all browser contexts.
+
+  Gates: lint 0/0 · tsc 0 errors · voice-tests 265/265 · npm test 238/238 ·
+         npm run build clean.
+  NOTICEABLE — session now survives cold restart on TestFlight.
+
+  On-device test steps (next TestFlight build):
+  1. Open app fresh → sign-in form appears (no stored JWT yet).
+  2. Sign in with email+password → home screen loads.
+  3. Force-quit the app (swipe up in app switcher).
+  4. Reopen app → home screen loads WITHOUT sign-in form (JWT persisted).
+  5. Background + foreground → session stays active.
+  6. Sign out via Settings → sign-in form reappears.
+  7. Re-sign-in → persists again through force-quit.
+
 ## 2026-06-28 (clerk-native-session — NOTICEABLE)
 - **Done:** Fixed Clerk session persistence in Capacitor iOS WKWebView — the final auth
   blocker that caused `isSignedIn` to stay `false` after sign-in.
