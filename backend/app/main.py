@@ -12,10 +12,12 @@ load_dotenv()
 
 
 def _allowed_origins() -> list[str]:
-    """Locked-down CORS origins. The native app's WebView origin is
-    capacitor://localhost; local web dev uses localhost:3000; an optional
-    ALLOWED_ORIGIN env (comma-separated) adds the production web/app origin."""
-    origins = ["capacitor://localhost", "http://localhost:3000"]
+    """Locked-down CORS origins. The native iOS WebView origin is
+    https://localhost (Capacitor iosScheme: "https" — see frontend/capacitor.config.ts);
+    capacitor://localhost is kept for older installs during the transition; local
+    web dev uses localhost:3000; an optional ALLOWED_ORIGIN env (comma-separated)
+    adds the production web/app origin."""
+    origins = ["https://localhost", "capacitor://localhost", "http://localhost:3000"]
     extra = os.getenv("ALLOWED_ORIGIN")
     if extra:
         origins.extend(o.strip() for o in extra.split(",") if o.strip())

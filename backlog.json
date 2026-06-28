@@ -468,6 +468,14 @@
       "rationale": "GAP: full delete-round stack already built+tested (DELETE /api/rounds/{id} owner-scoped+cascade, api.deleteRound, deleteRoundAsync, useApi.deleteRound) but NO UI calls it \u2014 users cannot remove a mistaken/test round. Add swipe-to-delete on home recent-rounds reusing existing SwipeableRow (as players page does). Low-risk: only UI wiring.",
       "classification": "noticeable",
       "done_note": "Swipe-to-delete on home recent-rounds via existing SwipeableRow + deleteRoundAsync (plumbing pre-existed, no UI). Optimistic removal + date-sorted rollback, liveRoundId cleared, stats refresh. Reviewer SHIP + designer SHIP; 4 consistency nits folded. Known gap (documented): deleteRound/Player swallow API failures."
+    },
+    {
+      "id": "auth-https-scheme-fix",
+      "priority": 41,
+      "status": "staged",
+      "title": "Fix voice/auth 401: switch Capacitor iosScheme capacitor->https so Clerk can mint tokens",
+      "rationale": "Owner still hits transcribe 401 (no auth token). Token-bridge code verified correct -> root cause is Clerk failing to issue session JWTs on the custom capacitor://localhost origin. Fix: iosScheme https (https://localhost is Capacitor-recommended, first-class secure origin Clerk supports + secure context for mic). COORDINATED: backend CORS must allow https://localhost (added) and deploy together -> ships with the bundle merge. Cannot be a standalone test build vs current prod (would CORS-block). Gates green. UNVERIFIED on-device (cannot test here); fallback if insufficient = Clerk dashboard allowed-origin / pk_live.",
+      "classification": "noticeable + backend (CORS) \u2014 owner can test"
     }
   ]
 }
