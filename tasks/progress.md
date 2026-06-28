@@ -2477,3 +2477,26 @@ never delete package-lock.json to regen; install in place, and verify with CI's 
 
 **Bundle = PR #54** (integration/next → main): verified native auth (v1.0.369) [noticeable] +
 CI crash gate + lockfile fix [silent]. **CI fully green.** Awaiting owner "ship it".
+
+---
+
+## P49 auth-storage hardening (clear-on-signout) — 2026-06-28
+
+Shipped on integration/next (rides bundle PR #54). Self-verifiable parts of P49:
+- **Clear-on-signout** (ClerkTokenBridge): persisted native JWT wiped on a real
+  signed-in→signed-out transition, ref-guarded so cold-start session restoration
+  is never clobbered. Fixes stale-credential-after-signout.
+- **Centralized token store** (frontend/src/lib/native-token-store.ts): single
+  read/write/clear path → future Keychain swap = one-file change. +4 unit tests.
+- **Corrected the false "Keychain" comments** (storage is @capacitor/preferences
+  = UserDefaults today; honest TODO).
+- Confirmed sub-item: FAPI exposes Authorization header for native flow (sim test).
+
+**Review:** adversarial reviewer + /security-review → fundamentally sound, no
+High/Medium vulns. 2 LOW defense-in-depth items (TOCTOU re-persist race;
+cold-start stale token) — both security-nil (already-revoked sessions), deferred
+to clerk-jwt-keychain-swap (their fixes risk re-sign-in regression, need device
+verify). **CI green** (all 3 jobs).
+
+Remaining for production (not beta-blocking): clerk-jwt-keychain-swap (move
+UserDefaults→Keychain plugin, + the 2 LOW follow-ups).
