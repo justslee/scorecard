@@ -18,6 +18,9 @@ import {
   ChevronDown,
   Loader2,
   MessageCircle,
+  Thermometer,
+  Mountain,
+  Layers,
 } from 'lucide-react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -47,7 +50,9 @@ import type {
   CaddieRecommendation,
   WeatherConditions,
   HoleIntelligence,
+  ShotAdjustment,
 } from '@/lib/caddie/types';
+import { buildPlaysLike, formatSignedYards } from '@/lib/caddie/plays-like';
 import { useRealtimeCaddie } from '@/hooks/useRealtimeCaddie';
 import CustomPersonaModal from '@/components/CustomPersonaModal';
 import ShotTrackingControl from '@/components/ShotTrackingControl';
@@ -482,6 +487,17 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
   // Confidence color
   const confidenceColor = (c: number) => c >= 0.7 ? 'text-emerald-400' : c >= 0.4 ? 'text-yellow-400' : 'text-red-400';
   const trafficColor = (t: string) => t === 'green' ? 'bg-emerald-500' : t === 'yellow' ? 'bg-yellow-500' : 'bg-red-500';
+
+  // Icon for each ShotAdjustment type — used by the plays-like card
+  const getAdjustmentIcon = (type: ShotAdjustment['type']) => {
+    switch (type) {
+      case 'wind':        return <Wind        className="w-3 h-3 text-sky-400"    />;
+      case 'elevation':   return <TrendingUp  className="w-3 h-3 text-amber-400"  />;
+      case 'temperature': return <Thermometer className="w-3 h-3 text-orange-400" />;
+      case 'altitude':    return <Mountain    className="w-3 h-3 text-zinc-400"   />;
+      case 'conditions':  return <Layers      className="w-3 h-3 text-purple-400" />;
+    }
+  };
 
   // Mapbox token
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
@@ -956,9 +972,6 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
                             </div>
                             <div className="text-sm text-zinc-400">
                               {recommendation.target_yards}y
-                              {recommendation.raw_yards !== recommendation.target_yards && (
-                                <span className="text-zinc-600 ml-1">(raw {recommendation.raw_yards}y)</span>
-                              )}
                             </div>
                           </div>
                           <div className={`text-sm font-medium ${confidenceColor(recommendation.confidence)}`}>
@@ -1005,22 +1018,64 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
                         </div>
                       </div>
 
-                      {/* Adjustments */}
-                      {recommendation.adjustments.length > 0 && (
-                        <div className="bg-zinc-800/50 rounded-xl p-3">
-                          <div className="text-xs font-medium text-zinc-500 mb-2">Adjustments</div>
-                          <div className="space-y-1">
-                            {recommendation.adjustments.map((adj, i) => (
-                              <div key={i} className="flex justify-between text-xs">
-                                <span className="text-zinc-400">{adj.description}</span>
-                                <span className={adj.yards > 0 ? 'text-red-400' : 'text-emerald-400'}>
-                                  {adj.yards > 0 ? '+' : ''}{adj.yards}y
+                      {/* Plays-like card — replaces the old thin adjustments list */}
+                      {(() => {
+                        const playsLike = buildPlaysLike(recommendation);
+                        return (
+                          <div className="bg-zinc-800/50 rounded-xl p-3">
+                            {/* Headline */}
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-xs font-medium text-zinc-500">Plays like</div>
+                              {playsLike.hasAdjustment ? (
+                                <div className="flex items-center gap-1 text-sm font-semibold">
+                                  <span className="text-zinc-500">{playsLike.rawYards}y</span>
+                                  <span className="text-zinc-600 mx-0.5">→</span>
+                                  <span className="text-white">{playsLike.targetYards}y</span>
+                                </div>
+                              ) : (
+                                <div className="text-sm font-semibold text-zinc-400">
+                                  {playsLike.rawYards}y · no adjustment
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Wind chip — shown only when a wind adjustment is present */}
+                            {playsLike.wind && (
+                              <div className="flex items-center gap-1.5 mb-2 bg-sky-500/10 border border-sky-500/20 rounded-lg px-2 py-1">
+                                <Wind className="w-3 h-3 text-sky-400 shrink-0" />
+                                <span className="text-xs text-sky-300">
+                                  {playsLike.wind.description}
+                                  {' · '}
+                                  {formatSignedYards(playsLike.wind.signedYards)}
                                 </span>
                               </div>
-                            ))}
+                            )}
+
+                            {/* Per-factor breakdown */}
+                            {playsLike.rows.length > 0 && (
+                              <div className="space-y-1.5">
+                                {playsLike.rows.map((row, i) => (
+                                  <div key={i} className="flex items-center justify-between text-xs">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      {getAdjustmentIcon(row.type)}
+                                      <span className="text-zinc-400 shrink-0">{row.label}</span>
+                                      <span className="text-zinc-600 shrink-0">·</span>
+                                      <span className="text-zinc-500 truncate">{row.description}</span>
+                                    </div>
+                                    <span
+                                      className={`ml-2 shrink-0 tabular-nums ${
+                                        row.signedYards > 0 ? 'text-red-400' : 'text-emerald-400'
+                                      }`}
+                                    >
+                                      {formatSignedYards(row.signedYards)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       {/* Pin traffic light + aggressiveness */}
                       <div className="flex items-center gap-4 text-xs text-zinc-500">

@@ -3,6 +3,25 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (caddie-playslike-card — NOTICEABLE)
+- **Done:** Surfaces a prominent "Plays like" yardage card in the caddie recommendation
+  view. All data was already returned by `/caddie/recommend` — pure UI surfacing win.
+
+  Files changed:
+  - **New `frontend/src/lib/caddie/plays-like.ts`**: pure helper `buildPlaysLike(rec)`
+    returns `{ rawYards, targetYards, deltaYards, hasAdjustment, rows, wind }`.
+    `formatSignedYards()` produces −7y / +4y / 0y (proper minus sign U+2212). Zero deps.
+  - **New `frontend/src/lib/caddie/plays-like.test.ts`**: 10 vitest tests.
+  - **`frontend/src/components/CaddiePanel.tsx`**: Added Thermometer/Mountain/Layers
+    icon imports, ShotAdjustment type import, buildPlaysLike/formatSignedYards imports,
+    getAdjustmentIcon() helper. Removed old inline `(raw Ny)` span. Replaced old thin
+    Adjustments block with new Plays-like card: headline (185y → 178y or "no adjustment"),
+    wind chip (sky-blue pill when wind adj present), per-factor rows (icon+label+desc+yards).
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 325/325 (+10) · build clean.
+  NOTICEABLE — caddie recommendation view now shows a structured plays-like card with
+  per-factor breakdown and wind chip instead of the old plain adjustments list.
+
 ## 2026-06-28 (voice-live-transcription — NOTICEABLE)
 - **Done:** Live interim display during on-course voice score entry via Deepgram
   streaming WebSocket, replacing the Web Speech API path that was unavailable in
