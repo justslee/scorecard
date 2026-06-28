@@ -14,7 +14,7 @@
  */
 
 import { useEffect } from "react";
-import { useAuth } from "@clerk/clerk-react";
+import { useAuth } from "@clerk/react";
 import { setTokenGetter } from "@/lib/auth-token";
 
 export default function ClerkTokenBridge(): null {

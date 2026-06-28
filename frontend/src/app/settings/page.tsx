@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useClerk } from '@clerk/clerk-react';
+import { useClerk } from '@clerk/react';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
 
 // ---------------------------------------------------------------------------

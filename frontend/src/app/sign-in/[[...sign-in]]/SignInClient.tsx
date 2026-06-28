@@ -6,7 +6,7 @@ import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 // Load the Clerk widget client-only. Under static export the page is prerendered
 // with no ClerkProvider (the publishable key is injected at runtime via the build
 // env), so rendering <SignIn> at prerender would throw.
-const SignIn = dynamic(() => import("@clerk/clerk-react").then((m) => m.SignIn), {
+const SignIn = dynamic(() => import("@clerk/react").then((m) => m.SignIn), {
   ssr: false,
 });
 

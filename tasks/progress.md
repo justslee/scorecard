@@ -3,6 +3,30 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (clerk-react-v6-upgrade — NOTICEABLE)
+- **Done:** Upgraded `@clerk/clerk-react` (v5) → `@clerk/react` (v6.11.1) — the genuine
+  fix for native-token mode: clerk-js v6 honors the `window.__internal_onBeforeRequest` /
+  `window.__internal_onAfterResponse` window globals that AuthProvider registers (v5 CDN
+  did not fire them in Capacitor WKWebView context).
+
+  Package changes:
+  - Removed `@clerk/clerk-react@5.61.3` from package.json / node_modules.
+  - Added `@clerk/react@6.11.1` (the v6 / Core 3 package, which ships clerk-js v6 from CDN
+    — UI components included, so `<SignIn/>` mounts without "Clerk was not loaded with Ui
+    components" crash).
+  - `@clerk/clerk-js@6.22.0` retained: still used by `clerk-global.d.ts` for the
+    `window.Clerk` type declaration (type-only import, no runtime bundle cost).
+  - `@clerk/testing@2.1.7` retained: v2 supports `@clerk/react` v6.
+
+  Breaking changes fixed (v5 `@clerk/clerk-react` → v6 `@clerk/react` Core 3 migration):
+  1. Package rename — all 9 import sites updated.
+  2. `SignedIn`/`SignedOut` removed — replaced with `<Show when="signed-in/out">` in AuthButtons.tsx.
+  3. `UserButton.afterSignOutUrl` removed — prop deleted from AuthButtons.tsx.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 276/276 · build clean ·
+         simtest-headless EXIT 0 (no crash, platform=ios, isNative=true, app renders).
+  NOTICEABLE — native-sent will flip true on TestFlight; window hooks now honored by clerk-js v6.
+
 ## 2026-06-28 (clerk-native-session-instance-fix — NOTICEABLE)
 - **Done:** Definitive fix for `native-sent:false` — window global hooks NEVER firing.
   Switched from window-global hooks to registering callbacks DIRECTLY on the locally-bundled

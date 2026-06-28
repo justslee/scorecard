@@ -48,7 +48,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAuth } from "@clerk/clerk-react";
+import { useAuth } from "@clerk/react";
 import { Capacitor } from "@capacitor/core";
 import { T } from "@/components/yardage/tokens";
 import { getAuthDiag, subscribeAuthDiag, type AuthDiagState } from "@/lib/auth-diag";

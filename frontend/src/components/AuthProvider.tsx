@@ -1,6 +1,6 @@
 "use client";
 
-import { ClerkProvider } from "@clerk/clerk-react";
+import { ClerkProvider } from "@clerk/react";
 import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
 import { useEffect } from "react";
@@ -60,9 +60,9 @@ const clerkAppearance = {
 // / `window.__internal_onAfterResponse` globals — inside a guarded effect that is
 // gated to native and torn down on unmount. This never throws on the render path:
 // the worst case is that interception is inert and the diagnostic shows
-// native-sent:false (full native-token auth then needs the @clerk/clerk-react v6
-// upgrade so clerk-js v6's instance/global hooks are honoured — tracked as a
-// follow-up). The web/dev path is completely unaffected: the globals are only set
+// native-sent:false (full native-token auth then needs the @clerk/react v6
+// upgrade so clerk-js v6's instance/global hooks are honoured — now done via
+// the @clerk/react upgrade in this commit). The web/dev path is completely unaffected: the globals are only set
 // when Capacitor.isNativePlatform() is true.
 //
 // The before-request hook: omit cookies, append _is_native=1 (so FAPI echoes the
