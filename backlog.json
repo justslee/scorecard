@@ -517,20 +517,20 @@
     {
       "id": "clerk-native-session",
       "priority": 47,
-      "status": "build-shipped-awaiting-signin-test",
+      "status": "shipped-v1.0.343-awaiting-test",
       "title": "Clerk session persistence in iOS webview (standardBrowser:false)",
       "rationale": "Sign-in completed but session did not persist (isSignedIn stayed false -> bounced to signed-out) \u2014 iOS WKWebView blocks Clerk third-party session cookie. Fix: standardBrowser:false on ClerkProvider (Clerk official native option, avoids cookies), gated to Capacitor.isNativePlatform() so web/dev unaffected; + CapacitorCookies enabled. WKAppBoundDomains layer REMOVED (risky for Capacitor localhost). Awaiting on-device test.",
       "classification": "noticeable",
-      "progress": "2026-06-28: shipped v1.0.339 (build 202606280108) with standardBrowser:false + CapacitorCookies (WKAppBoundDomains dropped as too risky for Capacitor). Awaiting owner: sign in -> does session persist (reach home + stay)?"
+      "progress": "2026-06-28: shipped v1.0.339 (build 202606280108) with standardBrowser:false + CapacitorCookies (WKAppBoundDomains dropped as too risky for Capacitor). Awaiting owner: sign in -> does session persist (reach home + stay)? | Bundled into COMPLETE native-auth build v1.0.343 (build 202606280228), uploaded; CapacitorPreferences SPM resolved clean. Awaiting owner: sign in -> stays -> force-quit -> still signed in."
     },
     {
       "id": "clerk-token-cache",
       "priority": 48,
-      "status": "built-awaiting-device-test",
+      "status": "shipped-v1.0.343-awaiting-test",
       "title": "Persist Clerk session across cold restart (tokenCache via @capacitor/preferences)",
       "rationale": "With standardBrowser:false + no tokenCache, the session is in-memory only \u2014 force-quit loses it. Add a tokenCache backed by @capacitor/preferences so sign-in survives app restarts. Follow-up after the native-session fix is confirmed working.",
       "classification": "noticeable",
-      "progress": "2026-06-28: implemented via Clerk internal __internal_onBeforeRequest/onAfterResponse hooks + @capacitor/preferences (native Keychain), key __clerk_client_jwt (same as @clerk/expo). Gated to native. Bundled into the complete native-auth build with standardBrowser:false."
+      "progress": "2026-06-28: implemented via Clerk internal __internal_onBeforeRequest/onAfterResponse hooks + @capacitor/preferences (native Keychain), key __clerk_client_jwt (same as @clerk/expo). Gated to native. Bundled into the complete native-auth build with standardBrowser:false. | Bundled into COMPLETE native-auth build v1.0.343 (build 202606280228), uploaded; CapacitorPreferences SPM resolved clean. Awaiting owner: sign in -> stays -> force-quit -> still signed in."
     }
   ]
 }
