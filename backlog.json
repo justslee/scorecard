@@ -517,12 +517,12 @@
     {
       "id": "clerk-native-session",
       "priority": 47,
-      "status": "instance-fix-shipped-v1.0.365-awaiting-test",
+      "status": "crash-fixed-upgrading-clerk-v6",
       "title": "Clerk session persistence in iOS webview (standardBrowser:false)",
       "rationale": "Sign-in completed but session did not persist (isSignedIn stayed false -> bounced to signed-out) \u2014 iOS WKWebView blocks Clerk third-party session cookie. Fix: standardBrowser:false on ClerkProvider (Clerk official native option, avoids cookies), gated to Capacitor.isNativePlatform() so web/dev unaffected; + CapacitorCookies enabled. WKAppBoundDomains layer REMOVED (risky for Capacitor localhost). Awaiting on-device test.",
       "classification": "noticeable",
       "progress": "2026-06-28: shipped v1.0.339 (build 202606280108) with standardBrowser:false + CapacitorCookies (WKAppBoundDomains dropped as too risky for Capacitor). Awaiting owner: sign in -> does session persist (reach home + stay)? | Bundled into COMPLETE native-auth build v1.0.343 (build 202606280228), uploaded; CapacitorPreferences SPM resolved clean. Awaiting owner: sign in -> stays -> force-quit -> still signed in.",
-      "note": "ROOT CAUSE (matches evidence exactly): WebView CORS blocks reading the Authorization response header cross-origin (capacitor://localhost -> clerk.looperapp.org), so the session JWT is never captured (tok never flips). FIX: CapacitorHttp:{enabled:true} routes fetch through native NSURLSession which bypasses browser CORS + reads all headers. + richer copyable diagnostic (auth-hdr field = key signal). Building. WATCH: CapacitorHttp patches global fetch \u2014 verify the audio-blob transcribe upload + other API calls still work on-device. | Shipped v1.0.361 (build 202606280650). Awaiting owner: sign in -> auth-hdr/signed true? Copyable diagnostic added. | v1.0.361 diagnostic: native-sent:FALSE (window hooks never fire with CDN clerk-js) \u2014 CONFIRMED. Fix: bundle @clerk/clerk-js locally + register FAPI callbacks on the INSTANCE + pass Clerk={instance} to ClerkProvider (the @clerk/expo pattern). Building. | Shipped v1.0.365 (build 202606280936): local @clerk/clerk-js instance + instance callbacks. Awaiting owner: native-sent should now be true."
+      "note": "ROOT CAUSE (matches evidence exactly): WebView CORS blocks reading the Authorization response header cross-origin (capacitor://localhost -> clerk.looperapp.org), so the session JWT is never captured (tok never flips). FIX: CapacitorHttp:{enabled:true} routes fetch through native NSURLSession which bypasses browser CORS + reads all headers. + richer copyable diagnostic (auth-hdr field = key signal). Building. WATCH: CapacitorHttp patches global fetch \u2014 verify the audio-blob transcribe upload + other API calls still work on-device. | Shipped v1.0.361 (build 202606280650). Awaiting owner: sign in -> auth-hdr/signed true? Copyable diagnostic added. | v1.0.361 diagnostic: native-sent:FALSE (window hooks never fire with CDN clerk-js) \u2014 CONFIRMED. Fix: bundle @clerk/clerk-js locally + register FAPI callbacks on the INSTANCE + pass Clerk={instance} to ClerkProvider (the @clerk/expo pattern). Building. | Shipped v1.0.365 (build 202606280936): local @clerk/clerk-js instance + instance callbacks. Awaiting owner: native-sent should now be true. | CRASH ROOT CAUSE: bundled Clerk instance had no UI components -> <SignIn> mountSignIn assertComponentsReady throws -> white-screen. FIXED (d78de56): standard CDN ClerkProvider + guarded window hooks; app loads (sim-verified). NATIVE-AUTH ROOT CAUSE: clerk-react@5/clerk-js@5 dont honor the token hooks -> native-sent never fires. REAL FIX: upgrade clerk-react->v6 (clerk-js@6 honors hooks + ships UI). Building v6 upgrade. Autonomous testing now exists: frontend/ios/SIMTEST.md + simtest-headless.mjs (CI-able crash check)."
     },
     {
       "id": "clerk-token-cache",
@@ -564,6 +564,14 @@
       "title": "Enable \"Native Applications\" in Clerk dashboard (native_api_disabled \u2014 the session blocker)",
       "rationale": "Deep-fix found native mode fails with native_api_disabled until Native Applications is enabled in Clerk: https://dashboard.clerk.com/last-active?path=native-applications -> Configure -> Native applications -> Enable. One-time, no rebuild. Combined with the code fix (x-mobile + always-set auth header) this should make the session persist.",
       "classification": "owner-action"
+    },
+    {
+      "id": "headless-crash-gate",
+      "priority": 53,
+      "status": "ready",
+      "title": "Wire simtest-headless.mjs (client-side crash check) into CI",
+      "rationale": "New harness frontend/ios/simtest-headless.mjs runs the prod bundle through Chromium w/ faked iOS bridge, exits non-zero on client-side crash (would have caught the v1.0.365 white-screen). Add as a CI step so client-side crashes are caught automatically (owner QA-feedback aligned).",
+      "classification": "silent"
     }
   ]
 }
