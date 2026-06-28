@@ -45,12 +45,17 @@ interface Props {
 const STATUS_LABEL: Record<RealtimeStatus, string> = {
   idle: "Tap to start",
   connecting: "Connecting…",
-  connected: "Listening",
+  connected: "Ready — go ahead",
   listening: "Listening…",
   speaking: "Caddie speaking…",
   closed: "Ended",
   error: "Couldn't connect",
 };
+
+/** True once the live voice line is open (mic active). */
+function isLive(s: RealtimeStatus): boolean {
+  return s === "connected" || s === "listening" || s === "speaking";
+}
 
 export default function VoiceRoundSetupRealtime({
   onSetupRound,
@@ -204,9 +209,9 @@ export default function VoiceRoundSetupRealtime({
             onClick={handleClose}
             aria-label="Close"
             style={{
-              width: 32, height: 32, borderRadius: 99, border: `1px solid ${T.hairline}`,
+              width: 44, height: 44, borderRadius: 99, border: "none",
               background: "transparent", color: T.pencil, cursor: "pointer", flexShrink: 0,
-              display: "flex", alignItems: "center", justifyContent: "center",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
             }}
           >
             ✕
@@ -219,8 +224,19 @@ export default function VoiceRoundSetupRealtime({
             <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 15, color: T.pencil, lineHeight: 1.4 }}>
               {status === "connecting"
                 ? "Getting the caddie on the line…"
-                : "Say something like “Pebble with Dan and Matt off the whites.” The caddie will ask for anything it's missing."}
+                : isLive(status)
+                ? "Say something like “Pebble with Dan and Matt off the whites.” The caddie will ask for anything it's missing."
+                : "Tap Start to open a live line with your caddie."}
             </div>
+          )}
+          {/* Listening affordance before the first bubble — so the screen never reads as frozen. */}
+          {messages.length === 0 && !error && isLive(status) && (
+            <motion.div
+              aria-hidden
+              animate={{ opacity: [0.3, 1, 0.3] }}
+              transition={{ duration: 1.4, repeat: Infinity }}
+              style={{ width: 8, height: 8, borderRadius: 99, background: accent, marginTop: 2 }}
+            />
           )}
           {messages.map((m) => (
             <div
@@ -244,7 +260,7 @@ export default function VoiceRoundSetupRealtime({
           ))}
           {error && (
             <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 14, color: T.warningInk, lineHeight: 1.4 }}>
-              {error} — tap the mic to try again.
+              {error} — tap Start to try again.
             </div>
           )}
         </div>
@@ -254,14 +270,7 @@ export default function VoiceRoundSetupRealtime({
           <div style={{ flex: 1, fontFamily: T.mono, fontSize: 10, letterSpacing: 1.4, color: status === "error" ? T.warningInk : T.pencil, textTransform: "uppercase" }}>
             {error ? STATUS_LABEL.error : STATUS_LABEL[status]}
           </div>
-          {status === "error" || status === "idle" || status === "closed" ? (
-            <button
-              onClick={() => { clientRef.current = null; void start(); }}
-              style={{ padding: "10px 18px", borderRadius: 99, border: "none", background: accent, color: T.paper, fontFamily: T.sans, fontSize: 13, fontWeight: 500, cursor: "pointer" }}
-            >
-              Start
-            </button>
-          ) : (
+          {isLive(status) ? (
             <button
               onClick={toggleMute}
               aria-label={muted ? "Unmute" : "Mute"}
@@ -270,10 +279,17 @@ export default function VoiceRoundSetupRealtime({
                 border: `1px solid ${muted ? T.warningInk : T.hairline}`,
                 background: muted ? `${T.warningInk}14` : "transparent",
                 color: muted ? T.warningInk : T.ink, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.mono, fontSize: 9,
+                display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.mono, fontSize: 9, letterSpacing: 1,
               }}
             >
-              {muted ? "MUTED" : "MIC"}
+              {muted ? "MUTED" : "MUTE"}
+            </button>
+          ) : status === "connecting" ? null /* status label suffices; nothing to mute yet */ : (
+            <button
+              onClick={() => { clientRef.current = null; void start(); }}
+              style={{ padding: "12px 20px", borderRadius: 99, border: "none", background: accent, color: T.paper, fontFamily: T.sans, fontSize: 14, fontWeight: 500, cursor: "pointer" }}
+            >
+              Start
             </button>
           )}
         </div>

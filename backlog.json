@@ -921,6 +921,14 @@
       "classification": "noticeable",
       "title": "Per-player tee groups (data model + scoring) for 'Dan & I blues, Matt & John whites'",
       "rationale": "The Realtime set_round_setup tool captures per-player tees, but Round/Player carry a single teeName. To honor split tees end-to-end, add per-player tee to the Player/round model + UI + handicap/scoring implications, and map the tool's players[].tee through. Until then the agent uses a single default tee (first player's)."
+    },
+    {
+      "id": "voice-setup-realtime-polish",
+      "priority": 35,
+      "status": "ready",
+      "classification": "noticeable",
+      "title": "VoiceRoundSetupRealtime polish: drag-to-dismiss, mic icon, live header subtitle",
+      "rationale": "Designer nice-to-haves deferred from the first build (ship-blockers already fixed): (8) add drag-to-dismiss like the caddie sheet; (5) replace 'MUTE'/'MUTED' text with the mic SVG + strikethrough; (7) swap the static 'Tell me what you're playing.' subtitle to the live status once a conversation is active. Also apply the 44pt close-target fix to the old VoiceRoundSetup.tsx if it's still reachable."
     }
   ]
 }
