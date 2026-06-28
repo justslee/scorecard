@@ -2527,3 +2527,20 @@ caller-scoped opaque id).
 ownerPlayerId differ from players[0]; needs designer review). Until then
 ownerPlayerId defaults to the first player, so the visible fix lands with that
 follow-up — but the plumbing + centralized correct reads are done.
+
+---
+
+## SHIPPED — bundle #54 merged to main + deployed — 2026-06-28
+
+Owner approved ("ship it"). Merged PR #54 (23 commits) → main @ 7bb944b.
+- Backend deployed via SSM: alembic upgrade 007 -> 008_round_owner_player applied
+  on prod Postgres; scorecard-api restarted; /health {"status":"ok"}.
+- Fresh integration/next cut (== main) for the next bundle.
+- Full-bundle TestFlight build v1.0.383 (202606281304) uploaded from main — includes
+  everything after v1.0.369: owner-identity (plumbing + "you" setup UX + correct
+  home/profile stats), voice low-confidence missing-player note, clear-on-signout,
+  CI crash gate, npm-10 lockfile fix.
+
+Bundle contents shipped: native Clerk auth (verified), CI native-crash gate,
+clear-on-signout, owner-player-identity (plumbing + UX), voice-low-confidence note,
+lockfile fix.
