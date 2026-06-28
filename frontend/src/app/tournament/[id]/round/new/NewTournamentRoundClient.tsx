@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { roundHref } from "@/lib/round-url";
+import { roundHref, tournamentHref } from "@/lib/round-url";
 import { useParams, useRouter } from 'next/navigation';
 import { Course, Round, Player, PlayerGroup, Tournament } from '@/lib/types';
 import { getCourses as localGetCourses, saveRound as localSaveRound } from '@/lib/storage';
@@ -557,7 +557,7 @@ export default function NewTournamentRoundPage() {
             }}
           >
             <button
-              onClick={() => router.push(`/tournament/${tournament.id}`)}
+              onClick={() => router.push(tournamentHref(tournament.id))}
               style={{
                 background: 'transparent',
                 border: 'none',

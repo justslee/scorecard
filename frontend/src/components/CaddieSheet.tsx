@@ -488,7 +488,7 @@ export default function CaddieSheet({
               display: "flex",
               justifyContent: "center",
               alignItems: "center",
-              height: 28,
+              height: 44, // ≥44pt touch target — easy grab on-course with gloves
               flexShrink: 0,
               cursor: "grab",
               touchAction: "none",

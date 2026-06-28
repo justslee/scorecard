@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { roundHref } from "@/lib/round-url";
+import { roundHref, tournamentHref } from "@/lib/round-url";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -233,7 +233,7 @@ export default function HomePage() {
   // Tournament quick-action destination: most recent tournament, or the create page.
   function handleTournamentTap() {
     if (recentTournament) {
-      router.push(`/tournament/${recentTournament.id}`);
+      router.push(tournamentHref(recentTournament.id));
     } else {
       router.push("/tournament/new");
     }

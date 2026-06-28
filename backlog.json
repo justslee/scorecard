@@ -908,7 +908,7 @@
     {
       "id": "tournament-deeplink-nav",
       "priority": 17,
-      "status": "ready",
+      "status": "done-shipped-integration-next",
       "classification": "noticeable-correctness",
       "headless": "partial",
       "title": "Fix /tournament/<id> deep-link (same static-export hard-reload bug as rounds)",
