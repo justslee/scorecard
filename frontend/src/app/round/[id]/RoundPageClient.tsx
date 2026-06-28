@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT, CADDIES, Caddy } from "@/components/yardage/tokens";
 import { HOLES } from "@/components/yardage/HoleIllustration";
@@ -152,7 +152,12 @@ function isNotFoundOrNetworkError(e: unknown): boolean {
 
 export default function RoundPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
+  // The round id is carried in the query (/round/view?id=…) so navigation stays
+  // client-side in the static export; fall back to the path param for any legacy
+  // /round/<id> deep link. See lib/round-url.ts.
+  const roundId = searchParams.get("id") ?? (params.id as string);
   const accent = DEFAULT_ACCENT;
   const density: "dense" | "spacious" = "dense";
   const caddy: Caddy = CADDIES.find((c) => c.id === "steve") ?? CADDIES[0];
@@ -224,7 +229,7 @@ export default function RoundPage() {
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    const id = params.id as string;
+    const id = roundId;
     // Cancellation guard: set true in cleanup so a stale in-flight load() (triggered by
     // a previous retryCount value) skips setState after a newer effect has started.
     // Prevents a long-running load from clobbering a just-confirmed score-save snapshot.
@@ -356,7 +361,7 @@ export default function RoundPage() {
     return () => { cancelled = true; };
   // retryCount is incremented by the Retry button to re-run load() without showing
   // a loading spinner — round data stays visible during the silent re-fetch.
-  }, [params.id, retryCount]);
+  }, [roundId, retryCount]);
 
   // Derived: actual hole count for this round (fall back to 18 if round not yet loaded).
   const holeCount = round?.holes.length || 18;
@@ -480,7 +485,7 @@ export default function RoundPage() {
     const holeNumber = idx + 1;
     const pendingKey = `${pid}:${holeNumber}`;
     const scorePayload: Score = { playerId: pid, holeNumber, strokes: val };
-    const id = params.id as string;
+    const id = roundId;
 
     // 1. Optimistic UI update (functional updater → safe even on rapid concurrent taps)
     setScores((prev) => {
@@ -592,7 +597,7 @@ export default function RoundPage() {
     }
 
     hapticCelebration();
-    const id = params.id as string;
+    const id = roundId;
 
     if (isLocalRound) {
       const updated: Round = {

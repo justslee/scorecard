@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, ReactNode } from "react";
+import { roundHref } from "@/lib/round-url";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT, CADDIES } from "@/components/yardage/tokens";
@@ -296,7 +297,7 @@ export default function RoundSetupPage() {
       localSaveRound(created);
 
       // Navigate using the SERVER-RETURNED id (not the client placeholder).
-      router.push(`/round/${created.id}`);
+      router.push(roundHref(created.id));
     } catch (e) {
       // fetchAPI throws a generic Error (not TypeError) for 4xx / 5xx responses.
       // Only a TypeError signals a genuine network / offline failure — safe to fabricate
@@ -329,7 +330,7 @@ export default function RoundSetupPage() {
         updatedAt: new Date().toISOString(),
       };
       localSaveRound(fallbackRound);
-      router.push(`/round/${fallbackId}`);
+      router.push(roundHref(fallbackId));
     } finally {
       setIsCreating(false);
     }

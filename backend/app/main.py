@@ -101,6 +101,22 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/api/config-status")
+async def config_status():
+    """Public: which server-side API keys are configured (presence ONLY, never
+    values). Lets us verify the Secrets Manager loader populated the env without
+    needing prod shell access. No auth so it can be probed directly."""
+    def _present(*keys: str) -> bool:
+        return any(bool(os.getenv(k)) for k in keys)
+
+    return {
+        "deepgram": _present("DEEPGRAM_API_KEY"),
+        "openai": _present("OPENAI_API_KEY"),
+        "anthropic": _present("ANTHROPIC_API_KEY"),
+        "mapbox": _present("NEXT_PUBLIC_MAPBOX_TOKEN", "MAPBOX_TOKEN"),
+    }
+
+
 @app.get("/")
 async def root():
     """Root endpoint."""

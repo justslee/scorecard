@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { roundHref } from "@/lib/round-url";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -434,7 +435,7 @@ export default function HomePage() {
 
           {liveRoundId && (
             <Link
-              href={`/round/${liveRoundId}`}
+              href={roundHref(liveRoundId)}
               style={{
                 marginTop: 8,
                 width: "100%",
@@ -721,7 +722,7 @@ export default function HomePage() {
                 >
                   <motion.button
                     whileTap={{ scale: 0.985 }}
-                    onClick={() => router.push(`/round/${r.id}`)}
+                    onClick={() => router.push(roundHref(r.id))}
                     style={{
                       width: "100%",
                       display: "grid",

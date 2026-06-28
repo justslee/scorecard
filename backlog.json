@@ -904,6 +904,15 @@
       "area": "backend+frontend",
       "title": "Green-reading / putt-break (LICENSE or SKIP)",
       "rationale": "Integrate a survey-grade green-contour vendor (e.g. iGolf Green Heat Maps) for putt break. Do NOT derive from 1m DEM (physical resolution ceiling). Gated on an owner licensing decision; out of scope until decided."
+    },
+    {
+      "id": "tournament-deeplink-nav",
+      "priority": 17,
+      "status": "ready",
+      "classification": "noticeable-correctness",
+      "headless": "partial",
+      "title": "Fix /tournament/<id> deep-link (same static-export hard-reload bug as rounds)",
+      "rationale": "tournament/[id] uses the same generateStaticParams placeholder pattern as round/[id], so opening a tournament hard-reloads \u2192 Capacitor index.html shell \u2192 AuthGate 'Preparing your book' stuck screen. Apply the same fix as the round-nav fix: a static /tournament/view?id= route + read id from useSearchParams + roundHref-style helper + update tournament nav sites. Verified pattern in the round fix."
     }
   ]
 }
