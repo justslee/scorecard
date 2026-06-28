@@ -31,10 +31,12 @@ TEAM_ID="${TEAM_ID:-X3F694PQ8B}"
 # Monotonic build number (Apple requires a higher CFBundleVersion each upload).
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 # Human-readable release version (CFBundleShortVersionString) so each TestFlight
-# release is distinguishable instead of all showing "1.0". Auto-increments via the
-# git commit count (0.1.N). Override for a real milestone:
-#   MARKETING_VERSION=1.0.0 bash ops/ios/ship.sh
-MARKETING_VERSION="${MARKETING_VERSION:-0.1.$(git -C "$REPO" rev-list --count HEAD 2>/dev/null || echo 0)}"
+# release is distinguishable. MUST be 1.0.N (not 0.1.N): early builds shipped as
+# "1.0", and TestFlight sorts by version string — a 0.1.x version sorts BELOW "1.0",
+# so those builds were buried under the old "1.0" entry and looked like they never
+# arrived. 1.0.N (N = git commit count) is monotonic AND always above "1.0".
+# Override for a real milestone:  MARKETING_VERSION=1.1.0 bash ops/ios/ship.sh
+MARKETING_VERSION="${MARKETING_VERSION:-1.0.$(git -C "$REPO" rev-list --count HEAD 2>/dev/null || echo 0)}"
 ARCHIVE="/tmp/Looper-${BUILD_NUMBER}.xcarchive"
 
 [ -f "$ASC_KEY_PATH" ] || { echo "ERROR: ASC key not found at $ASC_KEY_PATH"; exit 1; }
