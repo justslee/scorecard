@@ -495,7 +495,7 @@
       "title": "Finish Clerk production instance (pk_live) \u2014 DNS + key swap, the real login fix",
       "rationale": "Owner paused mid-setup. Clerk prod domain looperapp.org needs 5 CNAMEs in Route53 (accounts->accounts.clerk.services; clerk->frontend-api.clerk.services; clk._domainkey->dkim1.y38xe4k5qi21.clerk.services; clk2._domainkey->dkim2.y38xe4k5qi21.clerk.services; clkmail->mail.y38xe4k5qi21.clerk.services). looper-loop IAM lacks route53 perms so owner adds them. Then owner sends pk_live + JWKS URL + issuer; eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. See specs/clerk-production-migration.md. Permanent login fix; auth-bypass build is the stopgap.",
       "classification": "owner-action + eng follow-up",
-      "progress": "2026-06-28: eng added all 5 Clerk CNAMEs to Route53 (zone Z068252329IRE4BQ9U293) after owner granted route53 perms to looper-loop IAM \u2014 all resolve live. Awaiting: owner clicks Verify in Clerk -> sends pk_live + JWKS URL + issuer -> eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. | 2026-06-28: owner GO. Deploy points backend at prod Clerk for VERIFICATION only (CLERK_JWKS_URL/ISSUER=clerk.looperapp.org); OWNER_CLERK_USER_ID left untouched (no gate weakening). After owner first sign-in: capture their prod sub -> set OWNER_CLERK_USER_ID to it (P44). | 2026-06-28: PR #52 merged, backend deployed (prod Clerk verification confirmed), pk_live build v1.0.335 (202606280011) uploaded to TestFlight. Awaiting owner sign-in test. If data 403s, set OWNER_CLERK_USER_ID to owner prod sub (P44)."
+      "progress": "2026-06-28: eng added all 5 Clerk CNAMEs to Route53 (zone Z068252329IRE4BQ9U293) after owner granted route53 perms to looper-loop IAM \u2014 all resolve live. Awaiting: owner clicks Verify in Clerk -> sends pk_live + JWKS URL + issuer -> eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. | 2026-06-28: owner GO. Deploy points backend at prod Clerk for VERIFICATION only (CLERK_JWKS_URL/ISSUER=clerk.looperapp.org); OWNER_CLERK_USER_ID left untouched (no gate weakening). After owner first sign-in: capture their prod sub -> set OWNER_CLERK_USER_ID to it (P44). | 2026-06-28: PR #52 merged, backend deployed (prod Clerk verification confirmed), pk_live build v1.0.335 (202606280011) uploaded to TestFlight. Awaiting owner sign-in test. If data 403s, set OWNER_CLERK_USER_ID to owner prod sub (P44). | 2026-06-28: \"Preparing your book\" hang root-caused to prod Clerk rejecting Origin https://localhost (origin_invalid). FIXED via Backend API PATCH /v1/instance allowed_origins=[https://localhost, capacitor://localhost] (HTTP 204; verified /v1/environment now 200 for that origin). No rebuild needed \u2014 owner reopens v1.0.335. SECURITY: owner pasted sk_live in chat -> must rotate."
     },
     {
       "id": "fix-integration-test-loop",
@@ -504,6 +504,14 @@
       "title": "Fix integration-test event-loop teardown (asyncpg attached to a different loop)",
       "rationale": "tests/integration fail with RuntimeError: ...attached to a different loop / Event loop is closed when run as part of the full pytest suite. Cause: app.db.engine module-level async engine/async_session is bound to one event loop, but pytest-asyncio (asyncio_mode=auto, function-scoped loop) creates a new loop per test. Fix: create/dispose the engine per test (or per session-scoped loop), e.g. recreate engine in a fixture bound to the running loop, or set a session-scoped event_loop, or dispose engine between tests. Then re-promote integration tests to required (promote-integration-tests).",
       "classification": "silent"
+    },
+    {
+      "id": "rotate-clerk-sk",
+      "priority": 46,
+      "status": "owner-action",
+      "title": "Rotate Clerk sk_live (pasted in chat during allowed-origins fix)",
+      "rationale": "Owner pasted sk_live to let eng PATCH allowed_origins. Rotate in Clerk Dashboard -> API Keys. allowed_origins change persists after rotation.",
+      "classification": "security"
     }
   ]
 }
