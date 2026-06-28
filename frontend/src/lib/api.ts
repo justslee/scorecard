@@ -240,6 +240,8 @@ export interface RoundCreate {
   teeName?: string;
   /** Each player must include an id (generate with crypto.randomUUID() client-side). */
   players: Player[];
+  /** Which player is the owner. If omitted, the backend defaults to players[0]. */
+  ownerPlayerId?: string;
   holes: HoleInfo[];
   games?: Game[];
   groups?: PlayerGroup[];

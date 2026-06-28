@@ -158,6 +158,12 @@ export interface Round {
   teeName?: string;
   date: string;
   players: Player[];
+  /**
+   * Which player in `players` represents the owner (the signed-in user).
+   * May be absent on legacy rounds; use getOwnerPlayerId() (lib/round-owner.ts),
+   * which falls back to the first player, rather than reading this directly.
+   */
+  ownerPlayerId?: string;
   scores: Score[];
   holes: HoleInfo[];
   /** Side games (skins, nassau, best ball, etc.) attached to this round */

@@ -289,6 +289,9 @@ class Round(Base):
         UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
     )
     owner_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    # Which player in this round represents the owner (the signed-in user).
+    # Nullable: legacy rows fall back to the first round_player in the API.
+    owner_player_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     course_id: Mapped[str] = mapped_column(Text, nullable=False)
     course_name: Mapped[str] = mapped_column(Text, nullable=False)
     tee_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

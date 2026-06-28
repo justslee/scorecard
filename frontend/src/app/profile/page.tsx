@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getGolferProfileAsync, saveGolferProfileAsync, saveGolferBagAsync, getRoundsAsync } from "@/lib/storage-api";
 import { calculateTotals } from "@/lib/types";
+import { getOwnerPlayerId } from "@/lib/round-owner";
 import type { GolferProfile, Round } from "@/lib/types";
 import { deriveParTypeAverages, deriveScoreDistribution, deriveTrend } from "@/lib/profile-stats";
 import type { ParTypeRow, ScoreDistRow, TrendResult } from "@/lib/profile-stats";
@@ -47,7 +48,8 @@ type TeeRow = {
 
 /**
  * Compute per-tee scoring averages from the owner's completed rounds.
- * Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
+ * Owner's player resolved via getOwnerPlayerId() (prefers round.ownerPlayerId,
+ * falls back to the first player for legacy rounds).
  * Buckets: (teeName × holeCount) so 9H and 18H rounds at the same tee stay
  * separate and each bucket's average is meaningful.
  * Rounds with fewer than 9 holes played are excluded (very partial/abandoned).
@@ -70,8 +72,9 @@ function deriveScoringByTee(rounds: Round[]): TeeRow[] {
 
   for (const r of completed) {
     const teeName = r.teeName ?? "—";
-    // players[0] is the owner in the single-owner beta; revisit when user-identity lands.
-    const t = calculateTotals(r.scores, r.holes, r.players[0].id);
+    const ownerPid = getOwnerPlayerId(r);
+    if (!ownerPid) continue;
+    const t = calculateTotals(r.scores, r.holes, ownerPid);
     if (t.playedHoles < 9) continue; // skip very partial rounds
 
     const holeCount = r.holes.length;
@@ -124,7 +127,8 @@ type RoundLogEntry = {
  * Derive a chronological log of the owner's completed rounds with totals.
  * Sorted most-recent first. Includes holes-played count so a 9-hole total
  * isn't mistaken for an 18-hole score. Guards against invalid date strings.
- * Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
+ * Owner's player resolved via getOwnerPlayerId() (prefers round.ownerPlayerId,
+ * falls back to the first player for legacy rounds).
  */
 function deriveRoundLog(rounds: Round[]): RoundLogEntry[] {
   return rounds
@@ -133,17 +137,17 @@ function deriveRoundLog(rounds: Round[]): RoundLogEntry[] {
       // Guard: invalid date → epoch (sinks to bottom after sort, renders gracefully).
       const date = new Date(r.date);
       const safeDate = isNaN(date.getTime()) ? new Date(0) : date;
-      // players[0] is the owner in the single-owner beta; revisit when user-identity lands.
-      const t = calculateTotals(r.scores, r.holes, r.players[0].id);
-      const hasScore = t.playedHoles >= 9;
+      const ownerPid = getOwnerPlayerId(r);
+      const t = ownerPid ? calculateTotals(r.scores, r.holes, ownerPid) : null;
+      const hasScore = t !== null && t.playedHoles >= 9;
       return {
         id: r.id,
         date: safeDate,
         course: r.courseName,
         teeName: r.teeName ?? null,
-        holesPlayed: t.playedHoles,
-        score: hasScore ? t.total : null,
-        toPar: hasScore ? t.toPar : null,
+        holesPlayed: t?.playedHoles ?? 0,
+        score: hasScore ? t!.total : null,
+        toPar: hasScore ? t!.toPar : null,
       };
     })
     .sort((a, b) => b.date.getTime() - a.date.getTime());
@@ -1175,7 +1179,7 @@ function Bag({
 // Bucketed by (teeName × holeCount) so 9H and 18H rounds at the same tee
 // form separate rows with meaningful per-bucket averages.
 // Suppresses body while loading to avoid empty-state flash on mount.
-// Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
+// Owner's player resolved via getOwnerPlayerId() (prefers round.ownerPlayerId).
 // ──────────────────────────────────────────────────────────────────────
 
 function ScoringByTee({ accent, rounds, loading }: { accent: string; rounds: Round[]; loading: boolean }) {
@@ -1293,7 +1297,7 @@ function ScoringByTee({ accent, rounds, loading }: { accent: string; rounds: Rou
 // Shows the owner's real completed rounds: date, course, score vs par,
 // holes played. Sorted most-recent first; capped at 8 with a disclosure.
 // Suppresses body while loading to avoid empty-state flash on mount.
-// Owner = players[0] (single-owner beta — same assumption as home/page.tsx).
+// Owner's player resolved via getOwnerPlayerId() (prefers round.ownerPlayerId).
 // ──────────────────────────────────────────────────────────────────────
 
 const SEASON_LOG_CAP = 8;

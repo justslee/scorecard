@@ -410,11 +410,12 @@
     {
       "id": "owner-player-identity",
       "priority": 34,
-      "status": "needs-spec",
+      "status": "plumbing-done (backend+reads); UX (pick \"me\") split to owner-player-identity-ux",
       "title": "Identify the owner by Clerk user id, not players[0] (fix mis-attribution across home + profile)",
       "rationale": "Reviewer flagged: home (recent scores + scoring avg) and profile (ScoringByTee + Season log) all assume r.players[0] is the owner. Player has no owner flag; array order is just entry order, so a round where the owner is not first-listed attributes another players scores to the owner \u2014 a fabricated-fact-by-bug. Pre-existing (3 call sites: page.tsx:40-41,75-77; profile/page.tsx:71,113). Fix all sites together once user-identity lands: map Clerk user -> player (add owner/userId to Player or round-membership), then derive owner totals from that.",
-      "blocked_by": "needs a Clerk-user -> round-player mapping (user-identity)",
-      "classification": "noticeable-correctness"
+      "blocked_by": "",
+      "classification": "noticeable-correctness",
+      "progress": "2026-06-28: shipped the full ownerPlayerId plumbing on integration/next. BACKEND: migration 0005_008 adds nullable rounds.owner_player_id; ORM + Pydantic Round/RoundCreate carry ownerPlayerId; create_round stores it (defaults to players[0] when omitted); _build_full_round returns it with a first-player fallback for legacy rounds; +2 integration tests (explicit non-first owner round-trips; default-to-first). FRONTEND: Round/RoundCreate types carry ownerPlayerId; new canonical helper lib/round-owner.ts getOwnerPlayerId(round)=ownerPlayerId??players[0] with 4 unit tests; ALL read sites switched off r.players[0] (page.tsx x2, profile/page.tsx x2, profile-stats.ts x3) + stale comments corrected. This centralizes the owner-identity assumption into ONE tested place and makes it correct end-to-end for any round that carries ownerPlayerId. Gates green (fe: lint/tsc/voice265/unit284/build/crash; be: ruff/models/migration-chain; integration tests run in CI Postgres)."
     },
     {
       "id": "voice-to-score-confidence",
@@ -586,6 +587,14 @@
         "LOW (TOCTOU, reviewer 2026-06-28): an in-flight FAPI response can re-persist the JWT just after clearNativeToken() on sign-out. Security-nil (Clerk destroys the session server-side; re-persisted token is revoked). Fix when doing the Keychain swap: gate setNativeToken on a module-level 'signed out' flag that clearNativeToken sets and a sign-in transition (false->true) resets \u2014 taking care NOT to suppress the re-sign-in token write (it happens during the sign_in FAPI exchange, before isSignedIn flips).",
         "LOW (cold-start stale token, reviewer 2026-06-28): if sign-out happens while the app is killed, the stale (already server-invalid) JWT isn't cleared until it's injected and rejected. Fix: in nativeOnAfterResponse, clearNativeToken() on a FAPI authentication-failure error code \u2014 but first confirm the EXACT Clerk FAPI error code via a credentialed run so a valid token is never wrongly wiped."
       ]
+    },
+    {
+      "id": "owner-player-identity-ux",
+      "priority": 34.5,
+      "status": "ready",
+      "title": "Round setup: let the owner mark which player is \"me\" (sets ownerPlayerId)",
+      "rationale": "Completes owner-player-identity. The backend + read sites now honour round.ownerPlayerId, but round/new (frontend/src/app/round/new/page.tsx) still sends players in form order with no owner designation, so ownerPlayerId always defaults to players[0]. Add a calm, yardage-book-styled way to mark exactly one player row as \"you\" (default the first), pre-filling the owner's Clerk name (useUser) is optional. Pass ownerPlayerId in createRound. THIS is the change that actually fixes mis-attribution when the owner is not first-listed. Needs designer review (user-facing setup UX).",
+      "classification": "noticeable-correctness"
     }
   ]
 }

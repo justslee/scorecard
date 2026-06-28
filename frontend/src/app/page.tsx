@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getRoundsAsync, getTournamentsAsync, getGolferProfileAsync, deleteRoundAsync } from "@/lib/storage-api";
 import { calculateTotals } from "@/lib/types";
+import { getOwnerPlayerId } from "@/lib/round-owner";
 import type { Round, Tournament, GolferProfile } from "@/lib/types";
 import SwipeableRow from "@/components/SwipeableRow";
 
@@ -37,9 +38,9 @@ function deriveRecentRows(rounds: Round[]): RecentRow[] {
     let net: string | null = null;
     let holesPlayed = r.holes.length || 18;
 
-    if (r.players.length > 0 && r.scores.length > 0) {
-      // players[0] is the owner in the single-owner beta; revisit when user-identity lands.
-      const totals = calculateTotals(r.scores, r.holes, r.players[0].id);
+    const ownerPid = getOwnerPlayerId(r);
+    if (ownerPid && r.scores.length > 0) {
+      const totals = calculateTotals(r.scores, r.holes, ownerPid);
       if (totals.playedHoles > 0) {
         score = totals.total;
         if (totals.toPar === 0) net = "E";
@@ -73,10 +74,12 @@ function deriveScoringStats(rounds: Round[]): { avg: number; toParAvg: number } 
     .filter((r) => r.status === "completed" && r.players.length > 0)
     .slice(0, 20);
   if (eligible.length === 0) return null;
-  // players[0] is the owner in the single-owner beta; revisit when user-identity lands.
   const totals = eligible
-    .map((r) => calculateTotals(r.scores, r.holes, r.players[0].id))
-    .filter((t) => t.playedHoles >= 9);
+    .map((r) => {
+      const ownerPid = getOwnerPlayerId(r);
+      return ownerPid ? calculateTotals(r.scores, r.holes, ownerPid) : null;
+    })
+    .filter((t) => t !== null && t.playedHoles >= 9) as ReturnType<typeof calculateTotals>[];
   if (totals.length === 0) return null;
   const avg = totals.reduce((s, t) => s + t.total, 0) / totals.length;
   const toParAvg = totals.reduce((s, t) => s + t.toPar, 0) / totals.length;

@@ -96,6 +96,10 @@ async def _build_full_round(db, row: RoundORM, owner_id: str) -> Round:
         for rp in rp_rows
     ]
 
+    # Owner's player: the stored column, falling back to the first round_player
+    # for legacy rounds created before owner_player_id was recorded.
+    owner_player_id = row.owner_player_id or (rp_rows[0].player_id if rp_rows else None)
+
     # Load scores
     s_result = await db.execute(
         select(ScoreORM).where(ScoreORM.round_id == round_id)
@@ -160,6 +164,7 @@ async def _build_full_round(db, row: RoundORM, owner_id: str) -> Round:
         teeName=row.tee_name,
         date=row.date,
         players=players,
+        ownerPlayerId=owner_player_id,
         scores=scores,
         holes=holes,
         games=games,
@@ -252,9 +257,16 @@ async def create_round(
                 pass
 
         # 2. Create the rounds row
+        # Owner's player: honour the client's explicit choice; otherwise default
+        # to the first player (the prior players[0] assumption) so behaviour is
+        # unchanged until clients send ownerPlayerId.
+        owner_player_id = data.ownerPlayerId or (
+            data.players[0].id if data.players else None
+        )
         round_row = RoundORM(
             id=new_id,
             owner_id=owner_id,
+            owner_player_id=owner_player_id,
             course_id=data.courseId,
             course_name=data.courseName,
             tee_id=data.teeId,
