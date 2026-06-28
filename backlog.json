@@ -463,10 +463,11 @@
     {
       "id": "round-delete-ui",
       "priority": 40,
-      "status": "in-progress",
+      "status": "done",
       "title": "Wire delete-round UI (plumbing existed, no affordance)",
       "rationale": "GAP: full delete-round stack already built+tested (DELETE /api/rounds/{id} owner-scoped+cascade, api.deleteRound, deleteRoundAsync, useApi.deleteRound) but NO UI calls it \u2014 users cannot remove a mistaken/test round. Add swipe-to-delete on home recent-rounds reusing existing SwipeableRow (as players page does). Low-risk: only UI wiring.",
-      "classification": "noticeable"
+      "classification": "noticeable",
+      "done_note": "Swipe-to-delete on home recent-rounds via existing SwipeableRow + deleteRoundAsync (plumbing pre-existed, no UI). Optimistic removal + date-sorted rollback, liveRoundId cleared, stats refresh. Reviewer SHIP + designer SHIP; 4 consistency nits folded. Known gap (documented): deleteRound/Player swallow API failures."
     }
   ]
 }
