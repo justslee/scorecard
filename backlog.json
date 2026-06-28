@@ -1138,7 +1138,7 @@
     {
       "id": "realtime-noise-hardening",
       "priority": 12,
-      "status": "ready",
+      "status": "built-integration-next-pending-device-verify",
       "classification": "noticeable-backend-testable",
       "build": "build",
       "size": "S",
@@ -1146,7 +1146,8 @@
       "area": "backend",
       "title": "Harden Realtime voice setup: noise reduction + better transcription + semantic VAD",
       "rationale": "The preload-removal hotfix (cd2e516) stopped background hallucination, but the root noise/silence-hallucination risk remains because the mint uses whisper-1, no noise reduction, and raw server_vad. In realtime_relay.py mint config: (1) add input_audio_noise_reduction {type:'near_field'} (phone-near-mouth); (2) switch audio.input.transcription.model whisper-1 -> gpt-4o-transcribe (or -mini) \u2014 env-configurable (OPENAI_TRANSCRIBE_MODEL) with whisper-1 fallback, since whisper hallucinates on silence; (3) consider turn_detection semantic_vad (eagerness) vs server_vad to cut noise-triggered false turns. VERIFY exact field names against the OpenAI Realtime API reference before shipping (an unsupported transcription model breaks the mint). Owner-testable on device. If wind robustness still inadequate after this, evaluate a Krisp-equipped Deepgram pipeline (LiveKit/Pipecat) \u2014 see notes.",
-      "depends_on": []
+      "depends_on": [],
+      "shipped": "Built e90a7ef on integration/next (2026-06-28). Fields verified vs OpenAI API ref: noise_reduction@audio.input (near_field), transcription gpt-4o-transcribe (env OPENAI_REALTIME_TRANSCRIBE_MODEL), VAD env-switch (default server_vad). 10 payload tests. MUST device-test voice-connect at ship (mint not live-verifiable headlessly)."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
