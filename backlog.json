@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-27",
+  "updated": "2026-06-28",
   "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle).",
   "items": [
     {
@@ -930,6 +930,178 @@
       "classification": "noticeable",
       "title": "VoiceRoundSetupRealtime polish: drag-to-dismiss, mic icon, live header subtitle",
       "rationale": "Designer nice-to-haves deferred from the first build (ship-blockers already fixed): (8) add drag-to-dismiss like the caddie sheet; (5) replace 'MUTE'/'MUTED' text with the mic SVG + strikethrough; (7) swap the static 'Tell me what you're playing.' subtitle to the live status once a conversation is active. Also apply the 44pt close-target fix to the old VoiceRoundSetup.tsx if it's still reachable."
+    },
+    {
+      "id": "social-surface-partners",
+      "priority": 40,
+      "status": "needs-spec",
+      "epic": "social-playing-partners",
+      "classification": "noticeable",
+      "build": "build(FE only)",
+      "size": "S",
+      "headless": "yes",
+      "area": "frontend",
+      "title": "Surface Playing Partners (unhide the orphaned /players roster)",
+      "rationale": "The full SavedPlayer roster CRUD already exists at /players but is linked from nowhere. Rename/restyle to 'Playing Partners' (yardage-book), add two quiet entry points: home masthead/profile link + inline in the round-setup & tee-time player pickers. No backend. NO bottom tab bar (see ui_decision). First, lowest-risk slice of the social epic.",
+      "depends_on": []
+    },
+    {
+      "id": "social-partner-profile",
+      "priority": 41,
+      "status": "needs-spec",
+      "epic": "social-playing-partners",
+      "classification": "noticeable",
+      "build": "build",
+      "size": "S/M",
+      "headless": "yes",
+      "area": "frontend+backend",
+      "title": "Partner profile detail (/players/[id])",
+      "rationale": "Read-only partner profile: name, handicap, rounds played together (roundsPlayed), recent shared rounds. Reuses GET /api/players/{id}. Pushed detail route, not a tab. Optional shared-rounds aggregation backend.",
+      "depends_on": [
+        "social-surface-partners"
+      ]
+    },
+    {
+      "id": "social-invite-surfaces",
+      "priority": 42,
+      "status": "needs-spec",
+      "epic": "social-playing-partners",
+      "classification": "noticeable",
+      "build": "build",
+      "size": "M",
+      "headless": "partial (UI yes; SMS share needs device)",
+      "area": "frontend+backend",
+      "title": "In-app invite surfaces (wire the existing '+ Invite')",
+      "rationale": "From round-setup, tee-time (tee-time/page.tsx:165) and add-players, pick a partner and invite; deliver in-app + native share/SMS link. New RoundInvite table (owner-scoped first). Real recipients arrive with the friend graph (A4).",
+      "depends_on": [
+        "social-surface-partners"
+      ]
+    },
+    {
+      "id": "social-friend-graph",
+      "priority": 43,
+      "status": "needs-decision",
+      "epic": "social-playing-partners",
+      "classification": "noticeable",
+      "build": "build (backend-heavy)",
+      "size": "M/L",
+      "headless": "NO (needs 2 real accounts \u2014 owner device test)",
+      "area": "backend+frontend",
+      "title": "Real cross-account friend graph (Friendship model + relax owner-only gate)",
+      "rationale": "Friendship table + endpoints; link by clerk_user_id; accept/decline. CRITICAL: the app is single-owner gated \u2014 main.py applies require_owner to EVERY router. Real social requires relaxing this for new social routes (use current_user_id with per-row authz). This gate change is the security-review hotspot \u2014 MUST pass /security-review + /code-review. Gates A5/A6. DECISION NEEDED from owner: open the app beyond owner-only?",
+      "depends_on": [
+        "social-invite-surfaces"
+      ]
+    },
+    {
+      "id": "social-phone-matching",
+      "priority": 44,
+      "status": "blocked",
+      "epic": "social-playing-partners",
+      "classification": "noticeable",
+      "build": "build (+ native contacts plugin)",
+      "size": "L",
+      "headless": "NO (device + real contacts + iOS permission)",
+      "area": "frontend+backend+native",
+      "title": "Phone-number friend matching (privacy-preserving)",
+      "rationale": "Capacitor contacts plugin (net-new) + explicit consent screen + client-side E.164 normalize + HMAC-SHA256 hash (never upload raw numbers) \u2192 POST /api/partners/match against hashes of opted-in users. Per-user 'discoverable by phone' toggle (default off). NSContactsUsageDescription + Apple privacy manifest. Privacy/legal (TCPA) \u2014 highest-risk card.",
+      "depends_on": [
+        "social-friend-graph"
+      ]
+    },
+    {
+      "id": "social-push-invites",
+      "priority": 45,
+      "status": "blocked",
+      "epic": "social-playing-partners",
+      "classification": "noticeable",
+      "build": "build (+ native push/APNs)",
+      "size": "L",
+      "headless": "NO (device + APNs)",
+      "area": "frontend+backend+native",
+      "title": "Push-delivered invites (rare-by-design)",
+      "rationale": "Capacitor push plugin + APNs; push ONLY for accepted/tee-time-found invite moments (strict trigger list \u2014 notifications are rare by design per CLAUDE.md). Device-token store + send. Do last.",
+      "depends_on": [
+        "social-friend-graph"
+      ]
+    },
+    {
+      "id": "course-detail-start-round",
+      "priority": 46,
+      "status": "needs-spec",
+      "epic": "course-search-reviews",
+      "classification": "noticeable",
+      "build": "build (on licensed GolfAPI)",
+      "size": "S/M",
+      "headless": "mostly (live GolfAPI; cache repeatable)",
+      "area": "frontend",
+      "title": "Course detail screen + 'Start a round here' (/courses/[id])",
+      "rationale": "Extract the existing CourseSearch/golf-api.ts flow into a /courses route + detail screen; 'Start a round here' reuses round/new onSelectCourse (already works). One quiet new spoke from home \u2014 a route, NOT a tab. Pin id source to golfApiCourseId.",
+      "depends_on": []
+    },
+    {
+      "id": "course-review-model",
+      "priority": 47,
+      "status": "needs-spec",
+      "epic": "course-search-reviews",
+      "classification": "noticeable",
+      "build": "build",
+      "size": "M",
+      "headless": "yes",
+      "area": "backend+frontend",
+      "title": "CourseReview model + write-a-review after a round",
+      "rationale": "CourseReview table keyed on golfApiCourseId (sidesteps the course-table unification refactor). Review entry from the RoundRecap modal (RoundPageClient.tsx:612) \u2014 the natural 'review the course' moment. Rating + short note. Fall back to course name if no golfApiCourseId.",
+      "depends_on": []
+    },
+    {
+      "id": "course-reviews-surface",
+      "priority": 48,
+      "status": "needs-spec",
+      "epic": "course-search-reviews",
+      "classification": "noticeable",
+      "build": "build",
+      "size": "S/M",
+      "headless": "yes",
+      "area": "frontend+backend",
+      "title": "Surface reviews (course detail + profile section)",
+      "rationale": "Show reviews on /courses/[id]; add a 'Reviews' Section to profile (profile/page.tsx:285, the existing Section shell). Endpoints: GET \u2026/reviews, GET /api/users/{id}/reviews.",
+      "depends_on": [
+        "course-detail-start-round",
+        "course-review-model"
+      ]
+    },
+    {
+      "id": "course-discovery-home",
+      "priority": 49,
+      "status": "needs-spec",
+      "epic": "course-search-reviews",
+      "classification": "noticeable",
+      "build": "build",
+      "size": "S/M",
+      "headless": "recent yes; nearby = device (GPS)",
+      "area": "frontend",
+      "title": "Course discovery from home (recent + nearby)",
+      "rationale": "One quiet /courses entry point from home; recent (getRecentCourses) + nearby (searchNearby, golf-api.ts:733). Keep home calm \u2014 one affordance, not a grid.",
+      "depends_on": [
+        "course-detail-start-round"
+      ]
+    },
+    {
+      "id": "course-identity-unify",
+      "priority": 50,
+      "status": "later",
+      "epic": "course-search-reviews",
+      "classification": "silent",
+      "build": "build (heavy migration \u2014 owner applies)",
+      "size": "L",
+      "headless": "backend tests yes; full path device",
+      "area": "backend+data",
+      "title": "Unify course identity (GolfAPI / scoring_courses / mapped PostGIS)",
+      "rationale": "Reconcile the 4 course systems so reviews + GPS + scoring share one course id. Already flagged in specs/real-data-wiring-plan.md. Touches supabase/migrations (guard-protected \u2014 owner applies). Sequence LAST; B1\u2013B4 deliberately avoid depending on it by keying reviews on golfApiCourseId.",
+      "depends_on": [
+        "course-review-model"
+      ]
     }
-  ]
+  ],
+  "ui_decision_social_course": "NO global bottom tab bar. NORTHSTAR forbids SaaS/dashboard chrome; the app is intentionally hub-and-spoke (calm home, full-bleed sub-screens that return to /). Neither feature is a 'camp here' destination \u2014 Partners are contextual (adding/inviting players), course search is already mid-flow in round-setup & tee-time. Homes instead: Playing Partners = promote the orphaned /players page + quiet entry from home/profile and inline in player pickers; Courses = keep search where it lives + ONE quiet /courses spoke from home with /courses/[id] detail. If the owner ever insists on persistent nav, the only Northstar-compatible form is a 3-item home dock (Round\u00b7Partners\u00b7Courses) shown ONLY on home \u2014 but recommendation is to not build it."
 }

@@ -49,7 +49,13 @@ export class VoiceRecorder {
   async start(): Promise<void> {
     if (this.recorder) return;
     this.mimeType = pickMimeType();
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
     this.recorder = new MediaRecorder(
       this.stream,
       this.mimeType ? { mimeType: this.mimeType } : undefined,
@@ -79,6 +85,12 @@ export class VoiceRecorder {
       };
       this.recorder.stop();
     });
+  }
+
+  /** Return the active MediaStream so callers can attach a secondary processor
+   *  (e.g. DeepgramLiveTranscriber) without opening a second getUserMedia call. */
+  getStream(): MediaStream | null {
+    return this.stream;
   }
 
   cancel(): void {

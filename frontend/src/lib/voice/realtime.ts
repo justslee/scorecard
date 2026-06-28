@@ -140,8 +140,16 @@ export class RealtimeCaddieClient {
         if (this.audioEl) this.audioEl.srcObject = e.streams[0];
       };
 
-      // Mic
-      this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Mic — echo cancellation is ESSENTIAL: without it the phone speaker's
+      // caddie audio is picked up by the mic, transcribed as the user's turn, and
+      // the model replies to its own echo (garbled, out-of-order conversation).
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       this.localStream.getTracks().forEach((t) => this.pc!.addTrack(t, this.localStream!));
 
       // Events
@@ -187,6 +195,18 @@ export class RealtimeCaddieClient {
   /** Toggle mic mute (audio still flows from server, but server VAD won't pick up the user). */
   setMuted(muted: boolean): void {
     this.localStream?.getAudioTracks().forEach((t) => { t.enabled = !muted; });
+  }
+
+  /** Silence the caddie's voice output — used while the session is warming in the
+   *  background (preloaded) so the greeting doesn't play before the sheet opens. */
+  setOutputMuted(muted: boolean): void {
+    if (this.audioEl) this.audioEl.muted = muted;
+  }
+
+  /** True once a peer connection exists (connecting or live) — used to decide
+   *  whether a warm preload already established the session. */
+  isActive(): boolean {
+    return this.pc !== null;
   }
 
   isMuted(): boolean {

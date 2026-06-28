@@ -6,6 +6,7 @@ import { T } from "./tokens";
 import { Waveform } from "./Voice";
 import type { SeedPlayer } from "./Scorecard";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
+import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
 import { parseVoiceScoresLocally } from "@/lib/voice/parseVoiceScores";
 import { missingScoreNote } from "@/lib/voice/confirm-guidance";
 import { fetchAPI } from "@/lib/api";
@@ -297,7 +298,8 @@ export default function ScoreSheet({
   const [parseConfidence, setParseConfidence] = useState<number | undefined>(undefined);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const recorderRef = useRef<VoiceRecorder | null>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // Ref for the live-streaming Deepgram transcriber (interim display only).
+  const liveRef = useRef<DeepgramLiveTranscriber | null>(null);
 
   // Open-generation counter — incremented every time the sheet opens.
   // Async operations (startVoice, stopAndParse) snapshot the gen before each
@@ -339,8 +341,8 @@ export default function ScoreSheet({
     if (!open) {
       recorderRef.current?.cancel();
       recorderRef.current = null;
-      recognitionRef.current?.abort();
-      recognitionRef.current = null;
+      liveRef.current?.stop();
+      liveRef.current = null;
     }
   }, [open]);
 
@@ -348,8 +350,8 @@ export default function ScoreSheet({
   useEffect(() => {
     return () => {
       recorderRef.current?.cancel();
-      recognitionRef.current?.abort();
-      recognitionRef.current = null;
+      liveRef.current?.stop();
+      liveRef.current = null;
     };
   }, []);
 
@@ -379,27 +381,27 @@ export default function ScoreSheet({
 
       setVoicePhase("listening");
 
-      // Best-effort interim display via Web Speech API; Deepgram is authoritative.
-      const SpeechRecognitionCtor =
-        (typeof window !== "undefined" &&
-          (window.SpeechRecognition ?? window.webkitSpeechRecognition)) ||
-        null;
-      if (SpeechRecognitionCtor) {
-        const recognition = new SpeechRecognitionCtor();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = "en-US";
-        recognition.onresult = (event: SpeechRecognitionEvent) => {
-          let interim = "";
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            interim += event.results[i][0].transcript;
-          }
-          setInterimTranscript(interim);
-        };
-        recognition.onerror = () => { /* silent — Deepgram is authoritative */ };
-        recognition.onend = () => { /* no-op */ };
-        recognition.start();
-        recognitionRef.current = recognition;
+      // Best-effort interim display via Deepgram live WebSocket. Replaces the
+      // Web Speech API path which is unavailable in iOS Capacitor WKWebView.
+      // The final authoritative transcript still goes through VoiceRecorder →
+      // /api/voice/transcribe → /api/voice/parse-scores — this path is display-only.
+      const stream = recorder.getStream();
+      if (stream && DeepgramLiveTranscriber.isSupported()) {
+        try {
+          const live = new DeepgramLiveTranscriber({
+            onInterim: (t) => {
+              // Guard against stale gen — sheet may have closed or reopened.
+              if (openGenRef.current === gen) setInterimTranscript(t);
+            },
+            onError: () => { /* silent — one-shot Deepgram path is authoritative */ },
+          });
+          liveRef.current = live;
+          await live.start(stream);
+        } catch {
+          // Token fetch or WS open failed — degrade gracefully.
+          // The final transcription path is unaffected; worst case = no live display.
+          liveRef.current = null;
+        }
       }
     } catch (err) {
       // If the error fired after the sheet was closed/reopened, drop it silently.
@@ -420,8 +422,8 @@ export default function ScoreSheet({
     // Snapshot gen before any await — used to detect close/reopen mid-flight.
     const gen = openGenRef.current;
 
-    recognitionRef.current?.abort();
-    recognitionRef.current = null;
+    liveRef.current?.stop();
+    liveRef.current = null;
     setInterimTranscript("");
     setVoicePhase("thinking");
 

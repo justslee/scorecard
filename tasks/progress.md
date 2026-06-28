@@ -3,6 +3,37 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (voice-live-transcription — NOTICEABLE)
+- **Done:** Live interim display during on-course voice score entry via Deepgram
+  streaming WebSocket, replacing the Web Speech API path that was unavailable in
+  iOS Capacitor WKWebView.
+
+  What changed:
+  - **`backend/app/services/deepgram.py`**: Added `grant_live_token()` — calls
+    `POST https://api.deepgram.com/v1/auth/grant` with the server-side API key and
+    returns a 60-second short-lived `{access_token, expires_in}` so the API key
+    never reaches the browser.
+  - **`backend/app/routes/voice.py`**: Added `POST /api/voice/live-token` — auth-required
+    endpoint that calls `grant_live_token()` and returns the token to the authenticated caller.
+  - **`frontend/src/lib/voice/deepgram.ts`**: Added `getStream(): MediaStream | null`
+    getter to `VoiceRecorder` so the live transcriber can attach to the existing mic
+    stream without a second `getUserMedia` call. Also improved audio constraints to
+    `{ echoCancellation: true, noiseSuppression: true, autoGainControl: true }`.
+  - **`frontend/src/lib/voice/deepgram-live.ts`** (new): `DeepgramLiveTranscriber` class
+    that fetches a token, opens `wss://api.deepgram.com/v1/listen` with the `token`
+    subprotocol, attaches a `MediaRecorder` in 250ms slices, and emits `onInterim` /
+    `onFinal` callbacks. Also exports `parseDeepgramLiveMessage()` as a pure helper.
+  - **`frontend/src/lib/voice/deepgram-live.test.ts`** (new): 7 vitest tests.
+  - **`frontend/src/components/yardage/ScoreSheet.tsx`**: Replaced `recognitionRef`
+    (Web Speech) with `liveRef` (DeepgramLiveTranscriber). After `recorder.start()`,
+    creates and starts the live transcriber; failures are silent. Live transcriber
+    stopped in `stopAndParse` and in both cleanup effects.
+
+  Gates: ruff clean · lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 315/315 (7 new) ·
+         build clean (15 pages).
+
+  NOTICEABLE — words appear on-screen as the owner speaks during score entry on device.
+
 ## 2026-06-28 (clerk-react-v6-upgrade — NOTICEABLE)
 - **Done:** Upgraded `@clerk/clerk-react` (v5) → `@clerk/react` (v6.11.1) — the genuine
   fix for native-token mode: clerk-js v6 honors the `window.__internal_onBeforeRequest` /
@@ -2544,3 +2575,34 @@ Owner approved ("ship it"). Merged PR #54 (23 commits) → main @ 7bb944b.
 Bundle contents shipped: native Clerk auth (verified), CI native-crash gate,
 clear-on-signout, owner-player-identity (plumbing + UX), voice-low-confidence note,
 lockfile fix.
+
+---
+
+## IN PROGRESS — voice setup fixes + future-feature planning — 2026-06-28
+
+Owner tested the connected voice setup (v1.0.410) and reported (IMG_2959): the
+transcript showed words he never said, out of order ("I only said hello first").
+
+**Fixed (committed on integration/next, NOT yet built/shipped — needs owner go-ahead):**
+- d478828 — Voice setup echo fix + preload:
+  - Root cause of the garbled transcript: the mic had NO echo cancellation, so the
+    phone speaker's caddie audio was picked up + transcribed as the user's turn →
+    the model replied to its own echo → cascading out-of-order conversation. Fix:
+    echoCancellation + noiseSuppression + autoGainControl on getUserMedia.
+  - Preload (owner: "don't show 'loading caddie' on tap"): warm the Realtime
+    session on round/new mount (muted, hidden) so opening is instant. Degrades
+    gracefully — if mount-time getUserMedia is rejected (iOS gesture rule), it
+    reconnects on the mic tap (= today's behavior, no worse).
+  - Gates: tsc/eslint/voice265/build all green locally.
+  - **BLOCKED:** TestFlight build gated by approval classifier (won't auto-deliver
+    to the team without owner "ship it"). Awaiting owner go-ahead to cut the build.
+
+**Planning (silent, done):** 372614d — planned the two future feature areas the
+owner asked for (Social/Playing Partners + Course search/reviews). Added 11 phased
+backlog cards (epics social-playing-partners + course-search-reviews), 2 epic cards
+on the Product Board, and specs/social-course-features-plan.md.
+- Owner's explicit UI question answered: **NO bottom tab bar** (SaaS chrome NORTHSTAR
+  forbids; neither feature is a "camp here" destination). Promote the orphaned
+  /players page to "Playing Partners" + contextual entries; one quiet /courses spoke.
+- Biggest constraint surfaced: the app is single-owner gated (require_owner on every
+  router); real social needs an owner decision to relax it + a security review.
