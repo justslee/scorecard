@@ -1,6 +1,6 @@
 "use client";
 
-import { SignedIn, SignedOut, UserButton } from "@clerk/clerk-react";
+import { Show, UserButton } from "@clerk/react";
 import Link from "next/link";
 import { LogIn } from "lucide-react";
 
@@ -15,17 +15,16 @@ export default function AuthButtons() {
 
   return (
     <>
-      <SignedIn>
+      <Show when="signed-in">
         <UserButton
-          afterSignOutUrl="/"
           appearance={{
             elements: {
               avatarBox: "w-8 h-8",
             },
           }}
         />
-      </SignedIn>
-      <SignedOut>
+      </Show>
+      <Show when="signed-out">
         <Link
           href="/sign-in"
           className="btn btn-secondary text-sm flex items-center gap-2"
@@ -33,7 +32,7 @@ export default function AuthButtons() {
           <LogIn className="h-4 w-4" />
           Sign In
         </Link>
-      </SignedOut>
+      </Show>
     </>
   );
 }

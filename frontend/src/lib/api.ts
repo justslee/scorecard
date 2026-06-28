@@ -79,7 +79,7 @@ async function getAuthToken(): Promise<string | null> {
   if (hookToken !== null) return hookToken;
 
   // ── 2. Fallback: window.Clerk ────────────────────────────────────────────
-  // @ts-expect-error - Clerk exposes this on window
+  // window.Clerk is typed via @clerk/clerk-js global declaration.
   const clerk = window.Clerk;
   if (clerk) {
     // Await hydration if not yet complete.
@@ -240,6 +240,8 @@ export interface RoundCreate {
   teeName?: string;
   /** Each player must include an id (generate with crypto.randomUUID() client-side). */
   players: Player[];
+  /** Which player is the owner. If omitted, the backend defaults to players[0]. */
+  ownerPlayerId?: string;
   holes: HoleInfo[];
   games?: Game[];
   groups?: PlayerGroup[];

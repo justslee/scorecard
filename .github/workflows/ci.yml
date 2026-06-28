@@ -49,6 +49,18 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: https://api.looperapp.org
+          # Bake the PUBLIC prod publishable key so the build's Clerk init + the
+          # native auth code path are exercised by the crash check below (this is
+          # the same public value in ops/ios/ship.sh — not a secret).
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsubG9vcGVyYXBwLm9yZyQ
+      - name: Install Playwright Chromium (for native crash check)
+        run: npx playwright install --with-deps chromium
+      - name: Native client-side crash check (Capacitor path)
+        # Loads the prod bundle in Chromium with the iOS bridge faked so
+        # Capacitor.isNativePlatform() is true and AuthProvider's native FAPI
+        # hooks run — exits non-zero on any client-side exception. Would have
+        # caught the v1.0.365 white-screen ("a client-side exception occurred").
+        run: npm run test:native-crash
 
   required-backend:
     name: Backend gate (ruff + pytest incl. route/integration)

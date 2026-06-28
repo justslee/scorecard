@@ -21,7 +21,7 @@
  * re-renders → children render → getToken() works → voice + backend calls succeed.
  */
 
-import { useAuth } from "@clerk/clerk-react";
+import { useAuth } from "@clerk/react";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";

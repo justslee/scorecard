@@ -129,6 +129,9 @@ class Round(BaseModel):
     teeName: Optional[str] = None
     date: str
     players: list[Player]
+    # Which player in `players` represents the owner. May be None for legacy
+    # rounds; clients should fall back to the first player when absent.
+    ownerPlayerId: Optional[str] = None
     scores: list[Score]
     holes: list[HoleInfo]
     games: list[Game] = []
@@ -145,6 +148,9 @@ class RoundCreate(BaseModel):
     teeId: Optional[str] = None
     teeName: Optional[str] = None
     players: list[Player]
+    # Which player is the owner. If omitted, the backend defaults to the first
+    # player so behaviour is unchanged until clients send it explicitly.
+    ownerPlayerId: Optional[str] = None
     holes: list[HoleInfo]
     games: list[Game] = []
     groups: Optional[list[PlayerGroup]] = None

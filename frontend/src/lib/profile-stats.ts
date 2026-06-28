@@ -3,10 +3,12 @@
  *
  * All functions accept Round[] (already loaded by the profile page) and
  * return plain data objects — no React, no API calls, no side effects.
- * Owner = players[0].id  (single-owner beta, same assumption as profile/page.tsx).
+ * The owner's player is resolved via getOwnerPlayerId() (round-owner.ts), which
+ * prefers round.ownerPlayerId and falls back to the first player for legacy rounds.
  */
 
 import { calculateTotals } from "./types";
+import { getOwnerPlayerId } from "./round-owner";
 import type { Round } from "./types";
 
 // ── Par-type averages ──────────────────────────────────────────────────────
@@ -41,7 +43,8 @@ export function deriveParTypeAverages(rounds: Round[]): ParTypeRow[] {
 
   for (const r of rounds) {
     if (r.status !== "completed" || r.players.length === 0) continue;
-    const ownerId = r.players[0].id;
+    const ownerId = getOwnerPlayerId(r);
+    if (!ownerId) continue;
     const holeParByNumber = new Map<number, number>(r.holes.map((h) => [h.number, h.par]));
 
     for (const s of r.scores) {
@@ -120,7 +123,8 @@ export function deriveScoreDistribution(rounds: Round[]): ScoreDistRow[] {
 
   for (const r of rounds) {
     if (r.status !== "completed" || r.players.length === 0) continue;
-    const ownerId = r.players[0].id;
+    const ownerId = getOwnerPlayerId(r);
+    if (!ownerId) continue;
     const holeParByNumber = new Map<number, number>(r.holes.map((h) => [h.number, h.par]));
 
     for (const s of r.scores) {
@@ -188,9 +192,12 @@ export function deriveTrend(rounds: Round[], recentN = 5): TrendResult | null {
 
   const validToPars = (rs: Round[]): number[] =>
     rs
-      .map((r) => calculateTotals(r.scores, r.holes, r.players[0].id))
-      .filter((t) => t.playedHoles >= 9)
-      .map((t) => t.toPar);
+      .map((r) => {
+        const ownerId = getOwnerPlayerId(r);
+        return ownerId ? calculateTotals(r.scores, r.holes, ownerId) : null;
+      })
+      .filter((t) => t !== null && t.playedHoles >= 9)
+      .map((t) => t!.toPar);
 
   const recentToPars = validToPars(recent);
   const priorToPars = validToPars(prior);

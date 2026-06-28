@@ -3,6 +3,110 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (clerk-react-v6-upgrade — NOTICEABLE)
+- **Done:** Upgraded `@clerk/clerk-react` (v5) → `@clerk/react` (v6.11.1) — the genuine
+  fix for native-token mode: clerk-js v6 honors the `window.__internal_onBeforeRequest` /
+  `window.__internal_onAfterResponse` window globals that AuthProvider registers (v5 CDN
+  did not fire them in Capacitor WKWebView context).
+
+  Package changes:
+  - Removed `@clerk/clerk-react@5.61.3` from package.json / node_modules.
+  - Added `@clerk/react@6.11.1` (the v6 / Core 3 package, which ships clerk-js v6 from CDN
+    — UI components included, so `<SignIn/>` mounts without "Clerk was not loaded with Ui
+    components" crash).
+  - `@clerk/clerk-js@6.22.0` retained: still used by `clerk-global.d.ts` for the
+    `window.Clerk` type declaration (type-only import, no runtime bundle cost).
+  - `@clerk/testing@2.1.7` retained: v2 supports `@clerk/react` v6.
+
+  Breaking changes fixed (v5 `@clerk/clerk-react` → v6 `@clerk/react` Core 3 migration):
+  1. Package rename — all 9 import sites updated.
+  2. `SignedIn`/`SignedOut` removed — replaced with `<Show when="signed-in/out">` in AuthButtons.tsx.
+  3. `UserButton.afterSignOutUrl` removed — prop deleted from AuthButtons.tsx.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 276/276 · build clean ·
+         simtest-headless EXIT 0 (no crash, platform=ios, isNative=true, app renders).
+  NOTICEABLE — native-sent will flip true on TestFlight; window hooks now honored by clerk-js v6.
+
+## 2026-06-28 (clerk-native-session-instance-fix — NOTICEABLE)
+- **Done:** Definitive fix for `native-sent:false` — window global hooks NEVER firing.
+  Switched from window-global hooks to registering callbacks DIRECTLY on the locally-bundled
+  `@clerk/clerk-js` Clerk instance. Commits on `integration/next`.
+
+  Root cause: `window.__internal_onBeforeRequest` / `window.__internal_onAfterResponse` were
+  set but `native-sent` was always `false` in on-device builds. The CDN-loaded clerk-js
+  (loaded via `<script>` tag) does not reliably honor those window globals in the Capacitor
+  WKWebView context.
+
+  Fix (the @clerk/expo reference implementation adapted for Capacitor/Next.js):
+  1. Added `@clerk/clerk-js@6.22.0` to package.json (bundled locally, no CDN script).
+  2. Construct the Clerk instance at module load (inside IIFE, gated to native-only):
+     `const instance = new ClerkBrowser(publishableKey)`
+  3. Register callbacks ON THE INSTANCE:
+     `instance.__internal_onBeforeRequest(cb)` wires into the FAPI client singleton
+     created in the constructor — guaranteed to fire on every FAPI request.
+     `instance.__internal_onAfterResponse(cb)` same for responses.
+     Verified in `@clerk/clerk-js@6` dist/clerk.mjs and dist/types/core/clerk.d.ts (lines 241-242).
+  4. Pass to ClerkProvider: `<ClerkProvider Clerk={instance} standardBrowser={false}>`.
+     ClerkProvider calls `instance.load({ standardBrowser: false })` — no CDN script loaded.
+  5. IIFE guard: `typeof window === "undefined"` → null (SSR/build); `isNativePlatform()==false`
+     → null (browser/dev) → standard CDN path untouched.
+  6. Removed old window globals and their TypeScript declarations.
+  7. Fixed two `@ts-expect-error` directives made unnecessary by `@clerk/clerk-js` globals.
+
+  Expected diagnostic after sign-in on the fixed build:
+    `native-sent:true  auth-hdr:true  signed:true  tok:true  napi:true`
+
+  Files changed:
+  - `frontend/src/components/AuthProvider.tsx`
+  - `frontend/src/lib/api.ts`
+  - `frontend/src/lib/storage-api.ts`
+  - `frontend/package.json` / `package-lock.json`
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · npm test 276/276 · build clean.
+  NOTICEABLE — native-sent flips to true; full JWT-header auth session should establish.
+
+## 2026-06-28 (clerk-session-capacitorhttp — NOTICEABLE)
+- **Done:** Definitive fix for Clerk session not persisting in Capacitor iOS WebView.
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · unit 276/276 · build clean.
+  Commits on `integration/next`.
+
+  Root cause (researched via clerk-js/fapiClient.ts + @clerk/expo/createClerkInstance.ts source):
+  - Our window hooks are mechanically correct: fapiClient.ts reads `window.__internal_onBeforeRequest`
+    on every FAPI request. `_is_native=1` is correctly appended to `requestInit.url` (same URL
+    reference the fetch is called with). This is identical to @clerk/expo's approach.
+  - The ACTUAL bug: browser CORS blocks reading the `authorization` response header in a WebView.
+    In-browser fetch from `capacitor://localhost` to `clerk.looperapp.org` is cross-origin.
+    CORS only exposes safelisted response headers; `authorization` requires
+    `Access-Control-Expose-Headers: Authorization` from the FAPI for OUR origin. Result:
+    `response.headers.get("authorization")` returns null → JWT never saved → `setActive()`
+    → `session.__internal_touch()` sends empty authorization header → FAPI rejects →
+    `handleUnauthenticated()` → session cleared → `isSignedIn` stays false.
+
+  Fix: `CapacitorHttp: { enabled: true }` in `capacitor.config.ts`
+  - Patches `window.fetch` + `window.XMLHttpRequest` to use iOS native NSURLSession.
+  - Native HTTP does NOT enforce browser CORS → reads ALL response headers directly.
+  - `response.headers.get("authorization")` now returns the Clerk JWT.
+  - JWT is saved to @capacitor/preferences (Keychain) after sign-in.
+  - Subsequent FAPI requests send the JWT in the authorization request header.
+  - `session.__internal_touch()` authenticates → `isSignedIn` becomes true.
+  - CapacitorHttp is a built-in Capacitor 4+ plugin (@capacitor/core); no new dep needed.
+  - Web/dev unaffected: native patch only applies in the iOS runtime.
+
+  New diagnostic fields (auth-diag.ts + AuthProvider.tsx):
+  - `isNativeSent`: hook fired and appended `_is_native=1` — confirms hook is working
+  - `authHeaderReceived`: whether authorization header was readable — THE KEY SIGNAL
+  - `lastFapiPath`: last intercepted FAPI endpoint path
+
+  NativeAuthDiag upgraded (NativeAuthDiag.tsx):
+  - Multi-line, 12px font (was 9px single-line strip), yardage-book panel
+  - "Copy" button: writes full diagnostic text to clipboard
+
+  Expected on-device readout after successful sign-in:
+    loaded:true  signed:true  native-sent:true  auth-hdr:true  tok:true  napi:true
+
+  REQUIRED: run `npx cap sync` to push config to iOS Xcode project, then rebuild.
+  NOTICEABLE — fixes sign-in on TestFlight + richer copyable diagnostic.
+
 ## 2026-06-28 (clerk-native-auth-deep-fix — NOTICEABLE)
 - **Done:** Deep-fixed Clerk native session persistence in Capacitor iOS WKWebView.
   Commit `02c808d` on `integration/next`.
@@ -2342,3 +2446,84 @@ no per-build assignment or beta review needed. Build v0.1.323 (202606272115) is 
 NOTE for future ships: ship.sh upload → Apple processing (~10 min to VALID) → appears in TestFlight
 for the Looper Team group automatically. If a build ever doesn't show: check processingState via
 the ASC API (scripts pattern in this session), not just the ship.sh exit code.
+
+---
+
+## Native auth VERIFIED + CI crash gate + lockfile fix — 2026-06-28 (cycle close)
+
+**Native Clerk auth confirmed working (not just shipped).** Drove a real credentialed
+sign-in in the iPhone-17 simulator (WebKit remote inspector). Every native-auth signal green:
+`native-sent=true` on every FAPI request incl. the sign_ins POST (the @clerk/react v6 upgrade
+fixed v5's dead token hooks), `auth-hdr=true` + `tok=true` (CapacitorHttp made the auth header
+readable; JWT captured + persisted), `napi=true`, password accepted. `signed=false` reached ONLY
+because Clerk gated the new device behind an emailed second-factor OTP (human-only — needs the
+owner's inbox), which is product security, not a native-auth bug. Shipped verified build
+**v1.0.369 (build 202606281037)**. Owner's one remaining step = sign in + enter the email code.
+
+**P53 done — CI native crash gate.** `required-frontend` now builds with the public prod Clerk
+key and runs `npm run test:native-crash` (ios/simtest-headless.mjs) in Chromium with the iOS
+bridge faked — fails the build on any client-side exception (the v1.0.365 white-screen class).
+Verified live in CI: the "Native client-side crash check (Capacitor path)" step runs + passes.
+
+**Lockfile break fixed (surfaced by the new gate's npm ci).** The @clerk/react v6 upgrade left
+package-lock.json out of sync — npm ci failed (`Missing: utf-8-validate@5.0.10`). Two false starts
+taught the rule: regenerating from scratch on macOS prunes the linux/win platform binding *nodes*
+(@rolldown/binding-linux-x64-gnu → vitest MODULE_NOT_FOUND on CI), and local npm 11 hoists deps
+differently than CI's npm 10. CORRECT FIX: restore the original lock + `npm@10.8.2 install` IN
+PLACE (no delete) → reconciles only the 5 missing nested utf-8-validate@5.0.10 nodes, preserves
+every platform binding. Net: +5 nodes, 0 removed, 0 version bumps. RULE FOR FUTURE DEP CHANGES:
+never delete package-lock.json to regen; install in place, and verify with CI's npm version
+(`npx npm@10.8.2 ci`), not just local npm.
+
+**Bundle = PR #54** (integration/next → main): verified native auth (v1.0.369) [noticeable] +
+CI crash gate + lockfile fix [silent]. **CI fully green.** Awaiting owner "ship it".
+
+---
+
+## P49 auth-storage hardening (clear-on-signout) — 2026-06-28
+
+Shipped on integration/next (rides bundle PR #54). Self-verifiable parts of P49:
+- **Clear-on-signout** (ClerkTokenBridge): persisted native JWT wiped on a real
+  signed-in→signed-out transition, ref-guarded so cold-start session restoration
+  is never clobbered. Fixes stale-credential-after-signout.
+- **Centralized token store** (frontend/src/lib/native-token-store.ts): single
+  read/write/clear path → future Keychain swap = one-file change. +4 unit tests.
+- **Corrected the false "Keychain" comments** (storage is @capacitor/preferences
+  = UserDefaults today; honest TODO).
+- Confirmed sub-item: FAPI exposes Authorization header for native flow (sim test).
+
+**Review:** adversarial reviewer + /security-review → fundamentally sound, no
+High/Medium vulns. 2 LOW defense-in-depth items (TOCTOU re-persist race;
+cold-start stale token) — both security-nil (already-revoked sessions), deferred
+to clerk-jwt-keychain-swap (their fixes risk re-sign-in regression, need device
+verify). **CI green** (all 3 jobs).
+
+Remaining for production (not beta-blocking): clerk-jwt-keychain-swap (move
+UserDefaults→Keychain plugin, + the 2 LOW follow-ups).
+
+---
+
+## owner-player-identity plumbing (P34) — 2026-06-28
+
+Fixed the "another player's scores shown as yours" bug by adding an explicit
+owner→player mapping end-to-end. Shipped on integration/next (rides PR #54).
+
+- **Backend:** migration 0005_008 (nullable rounds.owner_player_id); ORM +
+  Pydantic Round/RoundCreate carry ownerPlayerId; create_round stores it
+  (defaults to first player when omitted — behaviour-preserving);
+  _build_full_round returns it with a first-round_player fallback for legacy
+  rows. +2 integration tests.
+- **Frontend:** canonical helper lib/round-owner.ts getOwnerPlayerId() (+4 unit
+  tests); ALL read sites switched off players[0] (page.tsx x2, profile/page.tsx
+  x2, profile-stats.ts x3); stale comments corrected.
+
+**Verified:** frontend lint/tsc/voice265/unit284/build/native-crash green
+locally; **CI Backend gate green = the 2 new integration tests passed in
+Postgres** (couldn't run locally — no PG/Docker). **Security review: clean, no
+findings** (additive migration, no IDOR, no injection; ownerPlayerId is a
+caller-scoped opaque id).
+
+**Remaining:** owner-player-identity-ux (round/new "mark me" UX → lets
+ownerPlayerId differ from players[0]; needs designer review). Until then
+ownerPlayerId defaults to the first player, so the visible fix lands with that
+follow-up — but the plumbing + centralized correct reads are done.

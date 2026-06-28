@@ -311,3 +311,48 @@ class TestPlayersCRUD:
         assert r2.status_code == 404, (
             f"IDOR: owner B fetching owner A's player should be 404, got {r2.status_code}"
         )
+
+
+_PLAYER_ID_2 = "aaaaaaaa-0000-0000-0000-000000000002"
+
+
+class TestRoundOwnerPlayerId:
+    """ownerPlayerId identifies the owner's player explicitly instead of the
+    brittle players[0] assumption (backlog owner-player-identity)."""
+
+    async def test_explicit_owner_player_id_round_trips(self, client):
+        """A round created with an explicit ownerPlayerId (a non-first player)
+        returns and persists that id — not players[0]."""
+        set_auth(TEST_OWNER_ID)
+        payload = {
+            **_MINIMAL_ROUND,
+            "players": [
+                {"id": _PLAYER_ID, "name": "Other Golfer"},
+                {"id": _PLAYER_ID_2, "name": "The Owner"},
+            ],
+            "ownerPlayerId": _PLAYER_ID_2,  # owner is NOT first-listed
+        }
+        r = await client.post("/api/rounds", json=payload)
+        assert r.status_code == 200, f"create failed: {r.text}"
+        assert r.json()["ownerPlayerId"] == _PLAYER_ID_2
+
+        # And it survives a fresh fetch.
+        round_id = r.json()["id"]
+        r2 = await client.get(f"/api/rounds/{round_id}")
+        assert r2.status_code == 200
+        assert r2.json()["ownerPlayerId"] == _PLAYER_ID_2
+
+    async def test_owner_player_id_defaults_to_first_player(self, client):
+        """When the client omits ownerPlayerId, the backend defaults to the
+        first player (preserving the prior players[0] behaviour)."""
+        set_auth(TEST_OWNER_ID)
+        payload = {
+            **_MINIMAL_ROUND,
+            "players": [
+                {"id": _PLAYER_ID, "name": "First Golfer"},
+                {"id": _PLAYER_ID_2, "name": "Second Golfer"},
+            ],
+        }
+        r = await client.post("/api/rounds", json=payload)
+        assert r.status_code == 200, f"create failed: {r.text}"
+        assert r.json()["ownerPlayerId"] == _PLAYER_ID

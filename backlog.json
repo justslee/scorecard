@@ -410,11 +410,12 @@
     {
       "id": "owner-player-identity",
       "priority": 34,
-      "status": "needs-spec",
+      "status": "DONE (plumbing + UX both shipped)",
       "title": "Identify the owner by Clerk user id, not players[0] (fix mis-attribution across home + profile)",
       "rationale": "Reviewer flagged: home (recent scores + scoring avg) and profile (ScoringByTee + Season log) all assume r.players[0] is the owner. Player has no owner flag; array order is just entry order, so a round where the owner is not first-listed attributes another players scores to the owner \u2014 a fabricated-fact-by-bug. Pre-existing (3 call sites: page.tsx:40-41,75-77; profile/page.tsx:71,113). Fix all sites together once user-identity lands: map Clerk user -> player (add owner/userId to Player or round-membership), then derive owner totals from that.",
-      "blocked_by": "needs a Clerk-user -> round-player mapping (user-identity)",
-      "classification": "noticeable-correctness"
+      "blocked_by": "",
+      "classification": "noticeable-correctness",
+      "progress": "2026-06-28: shipped the full ownerPlayerId plumbing on integration/next. BACKEND: migration 0005_008 adds nullable rounds.owner_player_id; ORM + Pydantic Round/RoundCreate carry ownerPlayerId; create_round stores it (defaults to players[0] when omitted); _build_full_round returns it with a first-player fallback for legacy rounds; +2 integration tests (explicit non-first owner round-trips; default-to-first). FRONTEND: Round/RoundCreate types carry ownerPlayerId; new canonical helper lib/round-owner.ts getOwnerPlayerId(round)=ownerPlayerId??players[0] with 4 unit tests; ALL read sites switched off r.players[0] (page.tsx x2, profile/page.tsx x2, profile-stats.ts x3) + stale comments corrected. This centralizes the owner-identity assumption into ONE tested place and makes it correct end-to-end for any round that carries ownerPlayerId. Gates green (fe: lint/tsc/voice265/unit284/build/crash; be: ruff/models/migration-chain; integration tests run in CI Postgres)."
     },
     {
       "id": "voice-to-score-confidence",
@@ -517,12 +518,12 @@
     {
       "id": "clerk-native-session",
       "priority": 47,
-      "status": "STILL-BROKEN-session-not-persisting",
+      "status": "VERIFIED-native-auth-works-shipped-v1.0.369",
       "title": "Clerk session persistence in iOS webview (standardBrowser:false)",
       "rationale": "Sign-in completed but session did not persist (isSignedIn stayed false -> bounced to signed-out) \u2014 iOS WKWebView blocks Clerk third-party session cookie. Fix: standardBrowser:false on ClerkProvider (Clerk official native option, avoids cookies), gated to Capacitor.isNativePlatform() so web/dev unaffected; + CapacitorCookies enabled. WKAppBoundDomains layer REMOVED (risky for Capacitor localhost). Awaiting on-device test.",
       "classification": "noticeable",
       "progress": "2026-06-28: shipped v1.0.339 (build 202606280108) with standardBrowser:false + CapacitorCookies (WKAppBoundDomains dropped as too risky for Capacitor). Awaiting owner: sign in -> does session persist (reach home + stay)? | Bundled into COMPLETE native-auth build v1.0.343 (build 202606280228), uploaded; CapacitorPreferences SPM resolved clean. Awaiting owner: sign in -> stays -> force-quit -> still signed in.",
-      "note": "v1.0.343: Clerk authenticates (last_sign_in_at set, email verified) but app isSignedIn stays false -> \"signed out\". standardBrowser:false + token-cache hooks NOT persisting session. Suspect: clerk-react not in true native mode (_is_native) so FAPI returns session via cookie (blocked) not Authorization header -> token-cache captures nothing. Next: deep fix + on-screen diagnostic."
+      "note": "ROOT CAUSE (matches evidence exactly): WebView CORS blocks reading the Authorization response header cross-origin (capacitor://localhost -> clerk.looperapp.org), so the session JWT is never captured (tok never flips). FIX: CapacitorHttp:{enabled:true} routes fetch through native NSURLSession which bypasses browser CORS + reads all headers. + richer copyable diagnostic (auth-hdr field = key signal). Building. WATCH: CapacitorHttp patches global fetch \u2014 verify the audio-blob transcribe upload + other API calls still work on-device. | Shipped v1.0.361 (build 202606280650). Awaiting owner: sign in -> auth-hdr/signed true? Copyable diagnostic added. | v1.0.361 diagnostic: native-sent:FALSE (window hooks never fire with CDN clerk-js) \u2014 CONFIRMED. Fix: bundle @clerk/clerk-js locally + register FAPI callbacks on the INSTANCE + pass Clerk={instance} to ClerkProvider (the @clerk/expo pattern). Building. | Shipped v1.0.365 (build 202606280936): local @clerk/clerk-js instance + instance callbacks. Awaiting owner: native-sent should now be true. | CRASH ROOT CAUSE: bundled Clerk instance had no UI components -> <SignIn> mountSignIn assertComponentsReady throws -> white-screen. FIXED (d78de56): standard CDN ClerkProvider + guarded window hooks; app loads (sim-verified). NATIVE-AUTH ROOT CAUSE: clerk-react@5/clerk-js@5 dont honor the token hooks -> native-sent never fires. REAL FIX: upgrade clerk-react->v6 (clerk-js@6 honors hooks + ships UI). Building v6 upgrade. Autonomous testing now exists: frontend/ios/SIMTEST.md + simtest-headless.mjs (CI-able crash check). | VERIFIED 2026-06-28 via REAL credentialed sign-in in iPhone-17 sim (WebKit remote inspector + ios-webkit-debug-proxy): @clerk/react 6.11.1 / clerk-js 6.22.0. ALL native-auth signals GREEN: native-sent=true on EVERY FAPI request incl. sign_ins POST/attempt_first_factor (v6 honors window hooks); auth-hdr=true + tok=true (CapacitorHttp made authorization response header readable, JWT captured + persisted to Preferences); napi=true. Password (first factor) ACCEPTED. signed=false reached ONLY because Clerk gated the new device behind an emailed second-factor OTP ('signing in from a new device') which the agent can't read (no inbox) \u2014 Clerk product security, orthogonal to native-auth plumbing. CONCLUSION: native-auth fix CONFIRMED working; remaining step is the human entering the email OTP on first sign-in. Shipped verified build v1.0.369 (build 202606281037)."
     },
     {
       "id": "clerk-token-cache",
@@ -536,10 +537,11 @@
     {
       "id": "clerk-jwt-keychain",
       "priority": 49,
-      "status": "ready",
+      "status": "partly-done-clear-on-signout+comments+storage-module; keychain-swap split out",
       "title": "Auth-storage hardening: Keychain for Clerk JWT + clear-on-signout + fix false comments",
       "rationale": "Security review of v1.0.343 (auth wiring otherwise SOUND). Three items, bundle as one pass before production: (1) store __clerk_client_jwt in a Keychain-backed plugin (@aparajita/capacitor-secure-storage or capacitor-secure-storage-plugin) with kSecAttrAccessibleWhenUnlockedThisDeviceOnly so it is excluded from device/iCloud backups (currently @capacitor/preferences = UserDefaults plaintext, backup-exposed \u2014 Medium); (2) the AuthProvider comments at :50 and :117-118 + the commit msg FALSELY claim Keychain \u2014 correct them; (3) on Clerk sign-out, Preferences.remove/secureStorage.remove the JWT (hooks currently never clear it -> stale credential persists after sign-out). Also confirm Clerk FAPI returns Access-Control-Expose-Headers: Authorization for the native flow (load-bearing for the response-header read). Not beta-blocking (private TestFlight, owner-only); REQUIRED before App Store/wider release.",
-      "classification": "security (pre-production, not beta-blocking)"
+      "classification": "security (pre-production, not beta-blocking)",
+      "progress": "2026-06-28: shipped on integration/next \u2014 (2) corrected the FALSE \"Keychain\" comments in AuthProvider; (3) clear-on-signout: ClerkTokenBridge now clears the persisted native JWT on a real signed-in->signed-out transition (ref-guarded so cold-start restoration is never clobbered; native-only), fixing the stale-credential-after-signout vuln; + centralized all token read/write/clear into frontend/src/lib/native-token-store.ts (one place to swap the backend) with a unit test (4 cases). Sub-item \"confirm FAPI exposes Authorization header for native flow\" = CONFIRMED (credentialed sim test showed auth-hdr=true via CapacitorHttp). REMAINING part (1) Keychain plugin swap split to clerk-jwt-keychain-swap (needs on-device Keychain verification)."
     },
     {
       "id": "stats-scoring-breakdown",
@@ -564,6 +566,45 @@
       "title": "Enable \"Native Applications\" in Clerk dashboard (native_api_disabled \u2014 the session blocker)",
       "rationale": "Deep-fix found native mode fails with native_api_disabled until Native Applications is enabled in Clerk: https://dashboard.clerk.com/last-active?path=native-applications -> Configure -> Native applications -> Enable. One-time, no rebuild. Combined with the code fix (x-mobile + always-set auth header) this should make the session persist.",
       "classification": "owner-action"
+    },
+    {
+      "id": "headless-crash-gate",
+      "priority": 53,
+      "status": "done-shipped-integration-next",
+      "title": "Wire simtest-headless.mjs (client-side crash check) into CI",
+      "rationale": "New harness frontend/ios/simtest-headless.mjs runs the prod bundle through Chromium w/ faked iOS bridge, exits non-zero on client-side crash (would have caught the v1.0.365 white-screen). Add as a CI step so client-side crashes are caught automatically (owner QA-feedback aligned).",
+      "classification": "silent",
+      "progress": "2026-06-28: wired into CI required-frontend job \u2014 build now bakes the public prod Clerk pk so the native auth path executes, then `npm run test:native-crash` (ios/simtest-headless.mjs) runs the prod bundle in Chromium with the iOS bridge faked and fails the build on any client-side exception. Verified locally: healthy build exits 0 (loaded=true, native-sent=true, no PAGEERROR); CORS errors to clerk.looperapp.org are expected requestfailed (no native bridge headlessly) and correctly do NOT count as a crash. Catches the v1.0.365 white-screen class automatically."
+    },
+    {
+      "id": "clerk-jwt-keychain-swap",
+      "priority": 54,
+      "status": "ready",
+      "title": "Swap native JWT storage backend from UserDefaults to Keychain plugin",
+      "rationale": "Final part of clerk-jwt-keychain. Replace @capacitor/preferences (UserDefaults, plaintext, backup-exposed) with @aparajita/capacitor-secure-storage using kSecAttrAccessibleWhenUnlockedThisDeviceOnly so the Clerk JWT is encrypted at rest + excluded from device/iCloud backups. Thanks to native-token-store.ts this is a single-file backend swap (+ add the plugin + cap sync). NOTE: adds a native dependency (SPM/pod) and the actual Keychain persistence can only be fully verified on a real device/sim sign-in -> bundle with other device-verifiable changes or verify via a credentialed sim run before shipping. REQUIRED before App Store / wider release; NOT beta-blocking (owner-only TestFlight).",
+      "classification": "silent",
+      "review_followups": [
+        "LOW (TOCTOU, reviewer 2026-06-28): an in-flight FAPI response can re-persist the JWT just after clearNativeToken() on sign-out. Security-nil (Clerk destroys the session server-side; re-persisted token is revoked). Fix when doing the Keychain swap: gate setNativeToken on a module-level 'signed out' flag that clearNativeToken sets and a sign-in transition (false->true) resets \u2014 taking care NOT to suppress the re-sign-in token write (it happens during the sign_in FAPI exchange, before isSignedIn flips).",
+        "LOW (cold-start stale token, reviewer 2026-06-28): if sign-out happens while the app is killed, the stale (already server-invalid) JWT isn't cleared until it's injected and rejected. Fix: in nativeOnAfterResponse, clearNativeToken() on a FAPI authentication-failure error code \u2014 but first confirm the EXACT Clerk FAPI error code via a credentialed run so a valid token is never wrongly wiped."
+      ]
+    },
+    {
+      "id": "owner-player-identity-ux",
+      "priority": 34.5,
+      "status": "done-shipped-integration-next",
+      "title": "Round setup: let the owner mark which player is \"me\" (sets ownerPlayerId)",
+      "rationale": "Completes owner-player-identity. The backend + read sites now honour round.ownerPlayerId, but round/new (frontend/src/app/round/new/page.tsx) still sends players in form order with no owner designation, so ownerPlayerId always defaults to players[0]. Add a calm, yardage-book-styled way to mark exactly one player row as \"you\" (default the first), pre-filling the owner's Clerk name (useUser) is optional. Pass ownerPlayerId in createRound. THIS is the change that actually fixes mis-attribution when the owner is not first-listed. Needs designer review (user-facing setup UX).",
+      "classification": "noticeable-correctness",
+      "progress": "2026-06-28: shipped on integration/next. round/new now lets the owner mark which player is \"you\" \u2014 ownerIndex state (default first), a quiet serif-italic \"you\" marker on the owner row, and a \"\u2713 this is me\" pill in the player editor; ownerPlayerId resolved at create (handles id reassignment + dedup; falls back to first). Designer-reviewed (yardage-book): ship-blocker fixed (pill moved ABOVE the autocomplete so the inline suggestion can not push it off-sheet while typing) + typography moved to serif-italic lowercase to match the \"you\" annotation register; default-checked-on-Player-1 and T.pencil \"you\" marker approved as-is. Gates: lint/tsc/voice265/unit284/build/native-crash. This makes the owner-player-identity fix USER-VISIBLE: a round where the owner is not first-listed now attributes the owner\u2019s own scores correctly in home + profile."
+    },
+    {
+      "id": "voice-low-confidence-missing-note",
+      "priority": 34.6,
+      "status": "done-shipped-integration-next",
+      "title": "Voice score confirm: name exactly which players a low-confidence parse missed",
+      "rationale": "Voice is the Northstar's primary interface. The score-confirm panel showed only a generic 'double-check these' + amber on absent tiles, so the golfer had to infer which name to fix. Now, on a LOW-confidence parse that missed some (not all) players, a calm note names them.",
+      "classification": "noticeable",
+      "progress": "2026-06-28: shipped on integration/next. New pure helper lib/voice/confirm-guidance.ts (missingScoreNote + joinNames + missingPlayerNames) gated to confidence<0.65 AND some-but-not-all players missing (intentional one-score dictation and empty parses are NOT nagged); +10 unit tests. Rendered as a quiet serif-italic line in VoiceConfirmPanel (ScoreSheet.tsx). Designer-reviewed: ship-blocker fixed (note color amber->T.pencil so it's a calm aside, not a 3rd amber layer) + wording trimmed to just naming who was missed (kept minimal per Northstar). NOTE: backend /api/voice/parse-scores + local fallback only return {scores,confidence} (no warnings/explanations on the SCORE path \u2014 those exist only in the round-SETUP pipeline), so this derives the note deterministically client-side. Gates: lint/tsc/voice265/unit294/build/native-crash."
     }
   ]
 }
