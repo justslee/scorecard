@@ -547,6 +547,14 @@
       "title": "Profile stats: par-type breakdown + score distribution + trend",
       "done_note": "3 pure helpers (deriveParTypeAverages/ScoreDistribution/Trend) + 38 unit tests; 2 yardage-book sections from existing rounds. Designer polish-then-ship, all 5 fixes folded. Frontend-only, gates green (276 tests). Behind login like all features.",
       "classification": "noticeable"
+    },
+    {
+      "id": "oncourse-resilience",
+      "priority": 51,
+      "status": "done",
+      "title": "Graceful offline/error degradation on home + in-round (on-course resilience)",
+      "done_note": "Home: navigator.onLine-driven offline note (was dead via swallowed errors), loading skeleton, error+retry, try/catch/finally. In-round: load-fail retry, red->amber banners (score is locally safe), refined messaging; seq-guard/optimistic/offline logic untouched (reviewer SHIP). Leaderboard already resilient (no change). Designer polish + reviewer nits folded; a11y roles added. Gates green (276 tests).",
+      "classification": "noticeable"
     }
   ]
 }
