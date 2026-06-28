@@ -18,7 +18,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime")
 OPENAI_REALTIME_DEFAULT_VOICE = os.getenv("OPENAI_REALTIME_DEFAULT_VOICE", "sage")
 
-_REALTIME_SESSIONS_URL = "https://api.openai.com/v1/realtime/sessions"
+# GA Realtime ephemeral-token endpoint. The old /v1/realtime/sessions (beta) was
+# removed → OpenAI returns "Invalid URL (POST /v1/realtime/sessions)". The GA
+# endpoint returns the client secret at top-level "value"; the browser then
+# connects WebRTC at /v1/realtime/calls (see frontend realtime.ts).
+_REALTIME_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets"
 
 
 # ── Tools the model can call. The frontend dispatches these against FastAPI. ──
@@ -89,29 +93,37 @@ async def mint_ephemeral_session(
     if not OPENAI_API_KEY:
         raise HTTPException(500, "OPENAI_API_KEY not configured")
 
+    # GA session object: audio config nests under audio.input / audio.output;
+    # transcription + server-VAD (barge-in / natural turn-taking) under
+    # audio.input; voice under audio.output. Full config is set at mint time.
     payload: dict = {
-        "model": OPENAI_REALTIME_MODEL,
-        "voice": voice_id or OPENAI_REALTIME_DEFAULT_VOICE,
-        "instructions": instructions,
-        "modalities": ["audio", "text"],
-        "tools": tools if tools is not None else DEFAULT_TOOLS,
-        "tool_choice": "auto",
-        # Server-side VAD enables barge-in and natural turn-taking.
-        "turn_detection": {
-            "type": "server_vad",
-            "threshold": 0.5,
-            "prefix_padding_ms": 300,
-            "silence_duration_ms": 500,
+        "session": {
+            "type": "realtime",
+            "model": OPENAI_REALTIME_MODEL,
+            "instructions": instructions,
+            "output_modalities": ["audio", "text"],
+            "audio": {
+                "input": {
+                    "transcription": {"model": "whisper-1"},
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.5,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 500,
+                    },
+                },
+                "output": {"voice": voice_id or OPENAI_REALTIME_DEFAULT_VOICE},
+            },
+            "tools": tools if tools is not None else DEFAULT_TOOLS,
+            "tool_choice": "auto",
         },
-        "input_audio_transcription": {"model": "whisper-1"},
     }
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json",
-        "OpenAI-Beta": "realtime=v1",
     }
     async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(_REALTIME_SESSIONS_URL, headers=headers, json=payload)
+        resp = await client.post(_REALTIME_CLIENT_SECRETS_URL, headers=headers, json=payload)
     if resp.status_code >= 400:
         raise HTTPException(resp.status_code, f"OpenAI Realtime mint failed: {resp.text}")
     return resp.json()

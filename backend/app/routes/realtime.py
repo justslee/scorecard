@@ -22,10 +22,18 @@ from app.services.clerk_auth import current_user_id
 
 
 def _client_secret_from_mint(mint: dict) -> tuple[str, int]:
-    """Extract (client_secret value, expires_at) from an OpenAI mint response."""
-    obj = mint.get("client_secret") or {}
-    value = obj.get("value") if isinstance(obj, dict) else None
-    expires = obj.get("expires_at") if isinstance(obj, dict) else None
+    """Extract (client_secret value, expires_at) from an OpenAI mint response.
+
+    GA /v1/realtime/client_secrets returns the secret at top-level "value"; the
+    legacy /sessions nested it under client_secret.value — handle both.
+    """
+    value = mint.get("value")
+    expires = mint.get("expires_at")
+    if not value:
+        obj = mint.get("client_secret")
+        if isinstance(obj, dict):
+            value = obj.get("value")
+            expires = obj.get("expires_at")
     if not value:
         raise HTTPException(502, f"OpenAI did not return a client_secret: {mint}")
     return value, int(expires) if expires else 0
