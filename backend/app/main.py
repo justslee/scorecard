@@ -7,8 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from app.services.clerk_auth import require_owner
+from app.services.secrets import load_secrets_into_env
 
 load_dotenv()
+# Pull prod API keys (Deepgram/OpenAI/Anthropic/…) from AWS Secrets Manager into
+# the env BEFORE routes import (they read os.getenv at import time). No-op locally
+# (no AWS creds) and never overrides an explicit env var / .env value.
+load_secrets_into_env()
 
 
 def _allowed_origins() -> list[str]:

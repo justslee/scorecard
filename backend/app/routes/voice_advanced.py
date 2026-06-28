@@ -152,21 +152,30 @@ def _local_parse_round_setup(
     as the course; likewise a bare "Dan and Matt" answer to "who's playing?"."""
     text = transcript
 
+    # Players: capture the phrase after "with"/"players" up to a course/tee cue or
+    # end, then tokenize on spaces/commas (so "Dan Matt and John" -> 3 names, not
+    # "Dan Matt" merged). Drop connectors.
+    _STOP = {"and", "the", "a"}
     player_names: list[str] = []
-    with_pattern = re.compile(
-        r"(?:with|players?:?)\s+([A-Z][a-z]+(?:\s*,?\s*(?:and\s+)?[A-Z][a-z]+)*)",
+    with_match = re.search(
+        r"\b(?:with|players?:?)\s+(.+?)"
+        r"(?:\s+(?:at|playing|from|on)\b|[.,]|$)",
+        text,
         re.IGNORECASE,
     )
-    for match in with_pattern.finditer(text):
-        names_raw = re.split(r",|\s+and\s+", match.group(1))
-        for n in names_raw:
+    if with_match:
+        for n in re.split(r"[,\s]+", with_match.group(1).strip()):
             n = n.strip()
-            if n:
+            if n and n.lower() not in _STOP:
                 player_names.append(n)
 
+    # Course: after "at"/"playing", but NOT "playing with ..." (players) or
+    # "playing the blues" (tees) — negative lookahead guards those.
     course_name = ""
     at_match = re.search(
-        r"(?:at|playing)\s+([A-Z][A-Za-z\s]+?)(?:\s+(?:golf|course|with|today|everyone)|\s*$|,)",
+        r"\b(?:at|playing)\s+(?!with\b|the\b|from\b)"
+        r"([A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,3}?)"
+        r"(?:\s+(?:golf|course|today|with)\b|[.,]|$)",
         text,
         re.IGNORECASE,
     )
@@ -183,9 +192,9 @@ def _local_parse_round_setup(
     if expecting == "course" and not course_name and cleaned:
         course_name = cleaned
     elif expecting == "players" and not player_names and cleaned:
-        for n in re.split(r",|\s+and\s+|\s+", cleaned):
+        for n in re.split(r"[,\s]+", cleaned):
             n = n.strip()
-            if n:
+            if n and n.lower() not in _STOP:
                 player_names.append(n)
 
     # De-dup players, preserving order.
