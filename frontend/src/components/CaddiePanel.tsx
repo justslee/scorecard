@@ -53,6 +53,7 @@ import type {
   ShotAdjustment,
 } from '@/lib/caddie/types';
 import { buildPlaysLike, formatSignedYards } from '@/lib/caddie/plays-like';
+import { windRelativeToShot } from '@/lib/caddie/wind-relative';
 import { useRealtimeCaddie } from '@/hooks/useRealtimeCaddie';
 import CustomPersonaModal from '@/components/CustomPersonaModal';
 import ShotTrackingControl from '@/components/ShotTrackingControl';
@@ -245,6 +246,14 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
   const bearingToGreen = gpsPosition && aimTarget
     ? calculateBearing(gpsPosition, aimTarget)
     : undefined;
+
+  // Relative wind: classify wind direction against the current shot bearing.
+  // Available only when GPS bearing AND weather with non-zero wind are both known.
+  // Degrades to null — no render — when either is missing.
+  const windRelative =
+    bearingToGreen != null && weather != null && weather.wind_speed_mph > 0
+      ? windRelativeToShot(weather.wind_direction, weather.wind_speed_mph, bearingToGreen)
+      : null;
 
   // Auto-update distanceToPin from GPS — prefer the actual pin when known.
   useEffect(() => {
@@ -1075,12 +1084,16 @@ export default function CaddiePanel({ round, currentHole, onHoleChange, onClose,
                               )}
                             </div>
 
-                            {/* Wind chip — shown only when a wind adjustment is present */}
+                            {/* Wind chip — shown only when a wind adjustment is present.
+                                When GPS bearing + weather are both available the label
+                                shows the shot-relative classification (e.g. "Tailwind
+                                8 mph" or "Crosswind 12 mph · R→L") instead of the
+                                generic backend description. Falls back gracefully. */}
                             {playsLike.wind && (
                               <div className="flex items-center gap-1.5 mb-2 bg-sky-500/10 border border-sky-500/20 rounded-lg px-2 py-1">
                                 <Wind className="w-3 h-3 text-sky-400 shrink-0" />
                                 <span className="text-xs text-sky-300">
-                                  {playsLike.wind.description}
+                                  {windRelative ? windRelative.label : playsLike.wind.description}
                                   {' · '}
                                   {formatSignedYards(playsLike.wind.signedYards)}
                                 </span>
