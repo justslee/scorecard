@@ -87,3 +87,54 @@ jobs:
         run: uv run ruff check .   # ruff is pinned in pyproject dev group
       - name: Unit + route/integration tests (pytest)
         run: uv run pytest         # pure-logic + tests/integration/ (Postgres service above)
+
+  # ─── Advisory E2E gate (auth flow + core journeys) ──────────────────────────
+  #
+  # WHY ADVISORY: this job requires two Clerk credentials that are not yet
+  # configured as CI secrets:
+  #   CLERK_PUBLISHABLE_KEY  — public key; enables the AuthGate in the app.
+  #   CLERK_SECRET_KEY       — private key; lets clerkSetup() fetch a testing
+  #                            token so OTP 424242 bypasses bot detection.
+  #
+  # TO PROMOTE TO REQUIRED:
+  #   1. Add the two secrets above to the repo's Settings → Secrets.
+  #   2. Create (or confirm auto-creation of) the test user
+  #      looper+clerk_test@looperapp.org in the Clerk dev-instance dashboard.
+  #   3. Remove `continue-on-error: true` below and add this job to branch
+  #      protection's required checks.
+  #
+  # WHAT RUNS WITHOUT SECRETS: when CLERK_SECRET_KEY is absent, all four tests
+  # self-skip with a clear message. The job still exits 0 (continue-on-error).
+  # When CLERK_PUBLISHABLE_KEY is also absent, Tier 1 (sign-in screen renders)
+  # additionally skips; with it set only Tier 2 (full sign-in flow) skips.
+  #
+  # NOTE: this web E2E catches web/flow regressions but does NOT reproduce
+  # Capacitor webview-origin (capacitor:// vs https://localhost) issues.
+  # Those still need a simulator/manual smoke per TestFlight build.
+  advisory-e2e:
+    name: "E2E smoke advisory (auth gate + core journeys)"
+    needs: [required-frontend]
+    runs-on: ubuntu-latest
+    continue-on-error: true   # advisory until Clerk CI secrets are configured
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: Install Playwright browsers (Chromium only)
+        run: npx playwright install --with-deps chromium
+      - name: E2E smoke tests
+        run: npm run test:e2e
+        env:
+          # These are set from CI secrets once configured.
+          # Without them, tests self-skip and the job reports advisory-green.
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
