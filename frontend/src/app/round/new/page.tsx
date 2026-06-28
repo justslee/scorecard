@@ -1326,16 +1326,16 @@ export default function RoundSetupPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Voice setup overlay (Realtime conversational caddie) ── */}
-      <AnimatePresence>
-        {showVoiceSetup && (
-          <VoiceRoundSetupRealtime
-            onSetupRound={handleVoiceSetup}
-            onClose={() => setShowVoiceSetup(false)}
-            autoStart
-          />
-        )}
-      </AnimatePresence>
+      {/* ── Voice setup overlay (Realtime conversational caddie) ──
+           Mounted on page load (not gated on showVoiceSetup) so the session warms
+           in the background — opening it from the mic is instant, no "Connecting…".
+           Its own AnimatePresence handles the show/hide animation via `open`. */}
+      <VoiceRoundSetupRealtime
+        open={showVoiceSetup}
+        onSetupRound={handleVoiceSetup}
+        onClose={() => setShowVoiceSetup(false)}
+        autoStart
+      />
 
       {/* ── CourseSearch overlay ── */}
       <AnimatePresence>
