@@ -516,10 +516,11 @@
     {
       "id": "clerk-native-session",
       "priority": 47,
-      "status": "built-awaiting-device-test",
+      "status": "build-shipped-awaiting-signin-test",
       "title": "Clerk session persistence in iOS webview (standardBrowser:false)",
       "rationale": "Sign-in completed but session did not persist (isSignedIn stayed false -> bounced to signed-out) \u2014 iOS WKWebView blocks Clerk third-party session cookie. Fix: standardBrowser:false on ClerkProvider (Clerk official native option, avoids cookies), gated to Capacitor.isNativePlatform() so web/dev unaffected; + CapacitorCookies enabled. WKAppBoundDomains layer REMOVED (risky for Capacitor localhost). Awaiting on-device test.",
-      "classification": "noticeable"
+      "classification": "noticeable",
+      "progress": "2026-06-28: shipped v1.0.339 (build 202606280108) with standardBrowser:false + CapacitorCookies (WKAppBoundDomains dropped as too risky for Capacitor). Awaiting owner: sign in -> does session persist (reach home + stay)?"
     },
     {
       "id": "clerk-token-cache",
