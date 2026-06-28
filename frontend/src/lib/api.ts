@@ -66,6 +66,10 @@ const CLERK_ENABLED =
  */
 async function getAuthToken(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
+  // Test-build auth bypass: no session exists, so don't waste 3 s polling Clerk
+  // on every call — return null immediately (backend stays gated; data falls back
+  // to the local cache). Only active when NEXT_PUBLIC_AUTH_BYPASS=1 at build time.
+  if (process.env.NEXT_PUBLIC_AUTH_BYPASS === '1') return null;
   if (!CLERK_ENABLED) return null;
 
   // ── 1. Primary: hook-based getter (registered by ClerkTokenBridge) ──────

@@ -487,6 +487,14 @@
       "title": "Playwright auth/login E2E gate (owner QA feedback)",
       "done_note": "Playwright + @clerk/testing. Tier-1 (sign-in screen renders \u2014 would have caught the auth-gate breakage) now RUNS in CI via the public pk_test key (no secret needed). Tier-2 (full sign-in w/ Clerk test user) skips until CLERK_SECRET_KEY repo secret + test user added. Advisory CI job until first green, then promote Tier-1 to required. Limitation: web E2E does NOT reproduce Capacitor webview-origin issues (needs device/simulator smoke).",
       "classification": "silent"
+    },
+    {
+      "id": "clerk-prod-instance",
+      "priority": 43,
+      "status": "todo-owner",
+      "title": "Finish Clerk production instance (pk_live) \u2014 DNS + key swap, the real login fix",
+      "rationale": "Owner paused mid-setup. Clerk prod domain looperapp.org needs 5 CNAMEs in Route53 (accounts->accounts.clerk.services; clerk->frontend-api.clerk.services; clk._domainkey->dkim1.y38xe4k5qi21.clerk.services; clk2._domainkey->dkim2.y38xe4k5qi21.clerk.services; clkmail->mail.y38xe4k5qi21.clerk.services). looper-loop IAM lacks route53 perms so owner adds them. Then owner sends pk_live + JWKS URL + issuer; eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. See specs/clerk-production-migration.md. Permanent login fix; auth-bypass build is the stopgap.",
+      "classification": "owner-action + eng follow-up"
     }
   ]
 }
