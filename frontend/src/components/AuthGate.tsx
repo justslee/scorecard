@@ -86,6 +86,16 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const pathname = usePathname();
 
+  // TEMPORARY test-build bypass (NEXT_PUBLIC_AUTH_BYPASS=1, set only by a manual
+  // test build — never by the normal ship.sh prod build). Lets the owner exercise
+  // the app while real login (Clerk pk_live) is being set up. This ONLY skips the
+  // UI sign-in gate; the backend stays owner-gated, so backend-LLM features
+  // (voice/caddie/OCR) still 401 and data uses the local cache. Remove once
+  // pk_live login works — see backlog: clerk-prod-instance.
+  if (process.env.NEXT_PUBLIC_AUTH_BYPASS === "1") {
+    return <>{children}</>;
+  }
+
   // Clerk is still resolving the session — show a calm paper placeholder.
   // This prevents flashing either the app content or the sign-in form.
   if (!isLoaded) {

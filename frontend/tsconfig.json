@@ -32,7 +32,9 @@
   ],
   "exclude": [
     "node_modules",
-    "voice-tests"
+    "voice-tests",
+    "e2e",
+    "playwright.config.ts"
   ]
 }
 

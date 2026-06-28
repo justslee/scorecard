@@ -3,6 +3,73 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-27 (auth-e2e-gate — SILENT)
+- **Done:** `auth-e2e-gate` — Playwright E2E scaffold covering the critical sign-in
+  flow (and 2 core journeys). Directly addresses the #1 QA gap the owner called out:
+  login regressions were never caught by existing gates (voice-tests, vitest, build).
+  Commit on `integration/next`.
+
+  Files added / changed:
+  - **`frontend/package.json`**: added `@playwright/test@^1.61.1` and `@clerk/testing@^2.1.7`
+    as devDependencies; added `"test:e2e": "playwright test"` script.
+  - **`frontend/playwright.config.ts`** (new): Chromium project; webServer = `npm run dev`
+    on port 3000; `globalSetup: './e2e/global.setup.ts'`; forwards
+    `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from `CLERK_PUBLISHABLE_KEY` to the dev-server
+    child process so the AuthGate activates in CI.
+  - **`frontend/e2e/global.setup.ts`** (new): plain `export default async function` so
+    Playwright doesn't mistake it for a test file. Calls `clerkSetup()` when
+    `CLERK_SECRET_KEY` is set; silent no-op otherwise.
+  - **`frontend/e2e/auth.spec.ts`** (new — 4 tests):
+    - **Tier 1** (1 test, needs `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` only):
+      "AuthGate renders sign-in screen for unauthenticated user" — loads `/`, asserts
+      "Your yardage book" kicker (unique to `SignInClient`) is visible and "Recent rounds"
+      is NOT visible. No CLERK_SECRET_KEY needed. Can be promoted to REQUIRED once the
+      publishable key is added as a CI secret.
+    - **Tier 2** (3 tests, needs `CLERK_SECRET_KEY` + test user):
+      "completes sign-in with Clerk test user" — calls `setupClerkTestingToken()`,
+      fills `looper+clerk_test@looperapp.org`, submits, enters OTP `424242`, asserts
+      "Recent rounds" visible and sign-in screen dismissed.
+      "home screen shows expected shell after sign-in" — asserts "Start a round, call a
+      shot" CTA and profile link visible.
+      "navigating to new round screen renders without crashing" — asserts `/round/new`
+      renders (no blank/crash).
+    - All 4 tests self-skip with clear messages when credentials are absent.
+  - **`frontend/tsconfig.json`**: added `"e2e"` and `"playwright.config.ts"` to
+    `exclude` (same pattern as `voice-tests`) — keeps `tsc --noEmit` scoped to
+    Next.js source only.
+  - **`frontend/eslint.config.mjs`**: added `"e2e/**"` and `"playwright.config.ts"`
+    to `globalIgnores` so ESLint's Next.js rules don't flag Playwright test idioms.
+  - **`.github/workflows/ci.yml`**: added `advisory-e2e` job (after `required-frontend`,
+    `continue-on-error: true`). Installs Chromium via `npx playwright install --with-deps
+    chromium`, runs `npm run test:e2e`. Reads `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`
+    from CI secrets (not yet configured). Clear promotion checklist in the YAML comment.
+
+  What runs without Clerk secrets (current state):
+  - All 4 tests self-skip; runner exits 0. The advisory job is green (continue-on-error).
+  - Global setup prints "[clerk setup] CLERK_SECRET_KEY not set — skipping."
+  What needs Clerk CI secrets to unlock:
+  - Tier 1: add `CLERK_PUBLISHABLE_KEY` secret → "sign-in screen renders" runs + can
+    be promoted to required.
+  - Tier 2: add `CLERK_SECRET_KEY` + create test user `looper+clerk_test@looperapp.org`
+    in Clerk dev dashboard → all 3 sign-in flow tests run. After that, remove
+    `continue-on-error: true` from the advisory job.
+
+  IMPORTANT — scope limitation: this web E2E catches web/flow regressions (broken
+  sign-in widget, page crashes, gate bypass) but does NOT reproduce Capacitor
+  `capacitor://` vs `https://localhost` webview-origin issues. Those still need a
+  simulator/manual smoke per TestFlight build.
+
+  Local run:
+    cd frontend && npm run test:e2e
+  With Clerk key set (Tier 1):
+    export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_… && npm run test:e2e
+  Full run (Tier 2):
+    export CLERK_PUBLISHABLE_KEY=pk_test_… CLERK_SECRET_KEY=sk_test_… && npm run test:e2e
+
+  Gates: lint 0/0 · tsc 0 errors · voice-tests 265/265 · vitest 238/238.
+  npm run test:e2e (no secrets): 4 skipped, 0 failed, exit 0.
+  SILENT — test infrastructure only; no TestFlight-visible change.
+
 ## 2026-06-27 (round-delete-ui — NOTICEABLE)
 - **Done:** `round-delete-ui` — wired swipe-to-delete for recent rounds on the home screen.
   Commit `bfecdc9` on `integration/next`.
@@ -2014,3 +2081,20 @@ THE ONLY REMAINING GATE = owner confirms sign-in + voice on TestFlight **v0.1.26
 confirmation: cut one build of this bundle (`ops/ios/ship.sh`) and email looper.approvals →
 owner for "ship it". If sign-in stalls, capture the `[auth] DIAGNOSTIC signed-in but no token`
 log — it's the capacitor://localhost + Clerk-dev-instance origin caveat (owner-side Clerk fix).
+
+---
+
+## TestFlight distribution fixed — 2026-06-28
+
+ROOT CAUSE of "I never see new builds": the App Store Connect app (MyLooper, com.looperapp.app,
+id 6784470752) had **no beta group**, so VALID builds were never delivered to any tester. Owner
+(justinlee627@gmail.com) is Account Holder/Admin → qualifies as internal tester.
+
+FIX (via ASC API, owner-authorized): created internal beta group **"Looper Team"** (id
+7c2116c8-7d05-4e43-afe3-21457ca7c318, isInternalGroup=true, hasAccessToAllBuilds=true) and added
+the owner as a tester (now state=INSTALLED). All future VALID builds auto-deliver to this group —
+no per-build assignment or beta review needed. Build v0.1.323 (202606272115) is VALID + available.
+
+NOTE for future ships: ship.sh upload → Apple processing (~10 min to VALID) → appears in TestFlight
+for the Looper Team group automatically. If a build ever doesn't show: check processingState via
+the ASC API (scripts pattern in this session), not just the ship.sh exit code.

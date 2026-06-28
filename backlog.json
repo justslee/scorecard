@@ -437,10 +437,12 @@
     {
       "id": "promote-integration-tests",
       "priority": 37,
-      "status": "ready",
+      "status": "reverted-advisory",
       "title": "Promote backend route/integration tests from advisory to required once first CI run is green",
       "rationale": "13 route/integration tests (auth-fails-closed, IDOR, persistence, CRUD) were written without a local Postgres so never executed; currently an advisory continue-on-error CI job. After the first real GitHub Actions run shows the advisory-backend-integration job green, fold it into required-backend (add postgres service there, drop continue-on-error) and delete the advisory job.",
-      "classification": "silent"
+      "classification": "silent",
+      "note": "Reverted to advisory 2026-06-28: when required + run with the full suite, the integration harness fails with asyncpg \"attached to a different loop\" (5 tests). Re-promote after fix-integration-test-loop.",
+      "done_note": "Consolidated: required-backend now runs the Postgres service + uv run pytest (pure-logic 138 + 13 route/integration). Advisory job retired + continue-on-error dropped. Safe: the integration harness already passed against Postgres in CI on PR #51."
     },
     {
       "id": "post-round-recap",
@@ -472,10 +474,36 @@
     {
       "id": "auth-https-scheme-fix",
       "priority": 41,
-      "status": "staged",
+      "status": "shipped-pending-verify",
       "title": "Fix voice/auth 401: switch Capacitor iosScheme capacitor->https so Clerk can mint tokens",
       "rationale": "Owner still hits transcribe 401 (no auth token). Token-bridge code verified correct -> root cause is Clerk failing to issue session JWTs on the custom capacitor://localhost origin. Fix: iosScheme https (https://localhost is Capacitor-recommended, first-class secure origin Clerk supports + secure context for mic). COORDINATED: backend CORS must allow https://localhost (added) and deploy together -> ships with the bundle merge. Cannot be a standalone test build vs current prod (would CORS-block). Gates green. UNVERIFIED on-device (cannot test here); fallback if insufficient = Clerk dashboard allowed-origin / pk_live.",
-      "classification": "noticeable + backend (CORS) \u2014 owner can test"
+      "classification": "noticeable + backend (CORS) \u2014 owner can test",
+      "shipped": "v0.1.323 build 202606272115"
+    },
+    {
+      "id": "auth-e2e-gate",
+      "priority": 42,
+      "status": "done",
+      "title": "Playwright auth/login E2E gate (owner QA feedback)",
+      "done_note": "Playwright + @clerk/testing. Tier-1 (sign-in screen renders \u2014 would have caught the auth-gate breakage) now RUNS in CI via the public pk_test key (no secret needed). Tier-2 (full sign-in w/ Clerk test user) skips until CLERK_SECRET_KEY repo secret + test user added. Advisory CI job until first green, then promote Tier-1 to required. Limitation: web E2E does NOT reproduce Capacitor webview-origin issues (needs device/simulator smoke).",
+      "classification": "silent"
+    },
+    {
+      "id": "clerk-prod-instance",
+      "priority": 43,
+      "status": "deploying",
+      "title": "Finish Clerk production instance (pk_live) \u2014 DNS + key swap, the real login fix",
+      "rationale": "Owner paused mid-setup. Clerk prod domain looperapp.org needs 5 CNAMEs in Route53 (accounts->accounts.clerk.services; clerk->frontend-api.clerk.services; clk._domainkey->dkim1.y38xe4k5qi21.clerk.services; clk2._domainkey->dkim2.y38xe4k5qi21.clerk.services; clkmail->mail.y38xe4k5qi21.clerk.services). looper-loop IAM lacks route53 perms so owner adds them. Then owner sends pk_live + JWKS URL + issuer; eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. See specs/clerk-production-migration.md. Permanent login fix; auth-bypass build is the stopgap.",
+      "classification": "owner-action + eng follow-up",
+      "progress": "2026-06-28: eng added all 5 Clerk CNAMEs to Route53 (zone Z068252329IRE4BQ9U293) after owner granted route53 perms to looper-loop IAM \u2014 all resolve live. Awaiting: owner clicks Verify in Clerk -> sends pk_live + JWKS URL + issuer -> eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. | 2026-06-28: owner GO. Deploy points backend at prod Clerk for VERIFICATION only (CLERK_JWKS_URL/ISSUER=clerk.looperapp.org); OWNER_CLERK_USER_ID left untouched (no gate weakening). After owner first sign-in: capture their prod sub -> set OWNER_CLERK_USER_ID to it (P44)."
+    },
+    {
+      "id": "fix-integration-test-loop",
+      "priority": 45,
+      "status": "ready",
+      "title": "Fix integration-test event-loop teardown (asyncpg attached to a different loop)",
+      "rationale": "tests/integration fail with RuntimeError: ...attached to a different loop / Event loop is closed when run as part of the full pytest suite. Cause: app.db.engine module-level async engine/async_session is bound to one event loop, but pytest-asyncio (asyncio_mode=auto, function-scoped loop) creates a new loop per test. Fix: create/dispose the engine per test (or per session-scoped loop), e.g. recreate engine in a fixture bound to the running loop, or set a session-scoped event_loop, or dispose engine between tests. Then re-promote integration tests to required (promote-integration-tests).",
+      "classification": "silent"
     }
   ]
 }

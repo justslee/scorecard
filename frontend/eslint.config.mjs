@@ -14,6 +14,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Capacitor iOS output — copied/minified web bundle, not source:
     "ios/**",
+    // Playwright E2E tests — not a Next.js context; linted by Playwright itself.
+    "e2e/**",
+    "playwright.config.ts",
   ]),
   // Project-wide rule overrides.
   {
