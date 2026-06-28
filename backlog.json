@@ -618,10 +618,11 @@
     {
       "id": "voice-live-transcription",
       "priority": 11,
-      "status": "ready",
+      "status": "shipped-pending-device-verify",
       "title": "Live (real-time) transcription on device while recording",
       "rationale": "OWNER PRIORITY (2026-06-28): show words as they're spoken. Today VoiceRoundSetup runs Web Speech API for interim text (startListening, VoiceRoundSetup.tsx ~142) but that API is unavailable in the iOS WKWebView, so nothing shows on device. Need real streaming STT (e.g. Deepgram live WebSocket) feeding interim text to the existing interimTranscript UI, with the current record->stop->Deepgram batch as fallback. Apply to ScoreSheet voice + VoiceRoundSetup. High priority.",
-      "classification": "noticeable"
+      "classification": "noticeable",
+      "shipped": "PR #61 \u2192 main 912eefb (2026-06-28); backend /api/voice/live-token deployed + live (401 unauth). WS streaming is device-only \u2014 owner to verify live words on TestFlight."
     },
     {
       "id": "voice-single-tap-record",
@@ -642,7 +643,7 @@
     {
       "id": "caddie-playslike-card",
       "priority": 13,
-      "status": "ready",
+      "status": "done-shipped-integration-next",
       "phase": 1,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -651,7 +652,8 @@
       "headless": "partial",
       "area": "frontend",
       "title": "Plays-like yardage card in the caddie panel",
-      "rationale": "Surface target_yards ('plays like') vs raw_yards + the per-factor adjustments breakdown ALREADY returned by /recommend, plus a wind-relative-to-shot chip. CaddiePanel.tsx. Data already present; mostly a UI surfacing win. Component test headless; live GPS = device."
+      "rationale": "Surface target_yards ('plays like') vs raw_yards + the per-factor adjustments breakdown ALREADY returned by /recommend, plus a wind-relative-to-shot chip. CaddiePanel.tsx. Data already present; mostly a UI surfacing win. Component test headless; live GPS = device.",
+      "shipped": "Built f938139 on integration/next (2026-06-28); plays-like card + per-factor breakdown + wind chip in CaddiePanel. Pure helper plays-like.ts + 10 tests. Awaiting next TestFlight bundle."
     },
     {
       "id": "caddie-altitude-pressure",
@@ -1101,7 +1103,37 @@
       "depends_on": [
         "course-review-model"
       ]
+    },
+    {
+      "id": "ratelimit-live-token",
+      "priority": 38,
+      "status": "later",
+      "epic": "course-search-reviews",
+      "classification": "silent",
+      "build": "build",
+      "size": "S",
+      "headless": "yes",
+      "area": "backend",
+      "title": "Rate-limit POST /api/voice/live-token (cost guard)",
+      "rationale": "Security review flagged unbounded token minting (cost/DoS, not a vuln). Moot while the app is owner-gated; do this when the owner gate is relaxed (depends on social-friend-graph). Add a simple per-user rate limit.",
+      "depends_on": [
+        "social-friend-graph"
+      ]
+    },
+    {
+      "id": "nav-floating-island-tab",
+      "priority": 39,
+      "status": "needs-spec",
+      "epic": "social-playing-partners",
+      "classification": "noticeable",
+      "build": "build(FE only)",
+      "size": "M",
+      "headless": "yes",
+      "area": "frontend",
+      "title": "Floating 'island' pill bottom tab bar (owner-requested nav)",
+      "rationale": "Owner wants a floating Instagram-style pill tab bar (IMG_2960) for easy nav across the new features. Yardage-book styled (calm, on-paper), hidden on immersive round/voice/GPS screens. Tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). Foundation for surfacing the social + course epics. See specs/social-course-features-plan.md.",
+      "depends_on": []
     }
   ],
-  "ui_decision_social_course": "NO global bottom tab bar. NORTHSTAR forbids SaaS/dashboard chrome; the app is intentionally hub-and-spoke (calm home, full-bleed sub-screens that return to /). Neither feature is a 'camp here' destination \u2014 Partners are contextual (adding/inviting players), course search is already mid-flow in round-setup & tee-time. Homes instead: Playing Partners = promote the orphaned /players page + quiet entry from home/profile and inline in player pickers; Courses = keep search where it lives + ONE quiet /courses spoke from home with /courses/[id] detail. If the owner ever insists on persistent nav, the only Northstar-compatible form is a 3-item home dock (Round\u00b7Partners\u00b7Courses) shown ONLY on home \u2014 but recommendation is to not build it."
+  "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
 }

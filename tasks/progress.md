@@ -3,6 +3,45 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (caddie-comp-legal-mode — NOTICEABLE)
+- **Done:** "Competition legal" (USGA-conforming) toggle for the caddie recommendation.
+  When on, `target_yards == raw_yards` and `adjustments == []` — no environmental
+  distance adjustments (USGA Rule 4-3/10.3a). Default off.
+
+  Files changed:
+  - `backend/app/caddie/types.py`: `competition_legal: bool = False` on `RecommendationRequest` + `CaddieRecommendation`.
+  - `backend/app/caddie/aim_point.py`: `generate_recommendation()` gains `competition_legal: bool = False`. When True: `adjusted_yards = distance_yards`, `adjustments = []`. Reasoning note added. Flag threaded to returned object.
+  - `backend/app/routes/caddie.py`: `competition_legal` on `SessionRecommendRequest`; threaded into both `/session/recommend` and `/recommend`.
+  - `backend/tests/test_competition_legal.py` (new, 14 tests): `TestCompetitionLegalOn` (8), `TestCompetitionLegalOff` (5), `TestAdjustmentsActuallyZeroed` (1).
+  - `frontend/src/lib/caddie/types.ts`: `competition_legal?: boolean` on `CaddieRecommendation`.
+  - `frontend/src/lib/caddie/api.ts`: `competition_legal?` param + body pass-through.
+  - `frontend/src/components/CaddiePanel.tsx`: `competitionLegal` state; toggle switch (amber when on); "USGA legal" chip on recommendation.
+
+  Gates: ruff clean · lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 325/325 · build clean
+         · pytest 48/48 (14 new comp-legal + 34 existing aim_point).
+  Legal correctness verified by backend tests: target==raw, adjustments==[] on inputs that
+  would otherwise produce wind/elevation/temperature adjustments.
+  NOTICEABLE — amber toggle + "USGA legal" chip in caddie recommend view.
+
+## 2026-06-28 (caddie-playslike-card — NOTICEABLE)
+- **Done:** Surfaces a prominent "Plays like" yardage card in the caddie recommendation
+  view. All data was already returned by `/caddie/recommend` — pure UI surfacing win.
+
+  Files changed:
+  - **New `frontend/src/lib/caddie/plays-like.ts`**: pure helper `buildPlaysLike(rec)`
+    returns `{ rawYards, targetYards, deltaYards, hasAdjustment, rows, wind }`.
+    `formatSignedYards()` produces −7y / +4y / 0y (proper minus sign U+2212). Zero deps.
+  - **New `frontend/src/lib/caddie/plays-like.test.ts`**: 10 vitest tests.
+  - **`frontend/src/components/CaddiePanel.tsx`**: Added Thermometer/Mountain/Layers
+    icon imports, ShotAdjustment type import, buildPlaysLike/formatSignedYards imports,
+    getAdjustmentIcon() helper. Removed old inline `(raw Ny)` span. Replaced old thin
+    Adjustments block with new Plays-like card: headline (185y → 178y or "no adjustment"),
+    wind chip (sky-blue pill when wind adj present), per-factor rows (icon+label+desc+yards).
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 325/325 (+10) · build clean.
+  NOTICEABLE — caddie recommendation view now shows a structured plays-like card with
+  per-factor breakdown and wind chip instead of the old plain adjustments list.
+
 ## 2026-06-28 (voice-live-transcription — NOTICEABLE)
 - **Done:** Live interim display during on-course voice score entry via Deepgram
   streaming WebSocket, replacing the Web Speech API path that was unavailable in
@@ -2606,3 +2645,35 @@ on the Product Board, and specs/social-course-features-plan.md.
   /players page to "Playing Partners" + contextual entries; one quiet /courses spoke.
 - Biggest constraint surfaced: the app is single-owner gated (require_owner on every
   router); real social needs an owner decision to relax it + a security review.
+
+---
+
+## SHIPPED — bundle #61 merged to main + deployed + TestFlight — 2026-06-28
+
+Owner approved the combined bundle (confirmed via question after the bundle grew past
+the original "ship it"). Merged PR #61 (4 commits) → main @ 912eefb.
+- **Backend deployed** via SSM (deploy.yml): new `POST /api/voice/live-token` is LIVE
+  (returns 401 unauth = exists + auth-gated); config-status all keys present.
+- **TestFlight build v1.0.415** (202606281804) uploaded from integration/next (==main).
+- Fresh integration/next fast-forwarded to main (== main, clean base for next bundle).
+
+Bundle contents (all NOTICEABLE):
+1. Voice setup echo fix — echoCancellation on getUserMedia (caddie's own voice no
+   longer transcribed as the user → fixes garbled/out-of-order transcript).
+2. Caddie preload on round/new — warm Realtime session (muted, hidden) so the mic
+   tap is instant; graceful fallback to connect-on-tap if iOS blocks mount-time mic.
+3. Live score-entry words — Deepgram live WebSocket interim display in ScoreSheet
+   (Web Speech was dead in WKWebView). Authoritative scoring path untouched; live
+   path fully behind try/catch.
+Gates: eslint/tsc/voice265/vitest315(+7)/build/ruff all green (re-run independently).
+Review + /security-review: clean (endpoint fails closed, key stays server-side,
+scoring path untouched). Device-only verification (WS streaming + warm-connect mic
+timing) pending on owner's TestFlight test.
+
+## DECISION CHANGE — floating island tab bar (owner override) — 2026-06-28
+Owner overrode the earlier "no bottom tab" recommendation (IMG_2960): wants a floating
+Instagram-style pill tab bar for the future-features nav. Updated backlog ui_decision +
+specs/social-course-features-plan.md + both Notion epic cards. New card
+`nav-floating-island-tab` (yardage-book styled, hidden on immersive screens). Saved as
+memory floating-island-tab-nav. Follow-up `ratelimit-live-token` added (from sec review;
+moot while owner-gated).

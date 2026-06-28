@@ -159,6 +159,7 @@ class CaddieRecommendation(BaseModel):
     aggressiveness: str = "moderate"  # conservative | moderate | aggressive
     expected_score: Optional[float] = None
     personality_advice: Optional[str] = None
+    competition_legal: bool = False  # True = USGA-conforming mode; all distance adjustments zeroed
 
 
 # ── Caddie Personality ──
@@ -207,6 +208,7 @@ class RecommendationRequest(BaseModel):
     player_stats: Optional[PlayerStatistics] = None
     par: int = 4
     yards: int = 400
+    competition_legal: bool = False  # True = USGA-conforming mode; zeroes all environmental distance adjustments
 
 
 class VoiceCaddieRequest(BaseModel):
