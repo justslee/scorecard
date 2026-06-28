@@ -556,6 +556,14 @@
       "title": "Graceful offline/error degradation on home + in-round (on-course resilience)",
       "done_note": "Home: navigator.onLine-driven offline note (was dead via swallowed errors), loading skeleton, error+retry, try/catch/finally. In-round: load-fail retry, red->amber banners (score is locally safe), refined messaging; seq-guard/optimistic/offline logic untouched (reviewer SHIP). Leaderboard already resilient (no change). Designer polish + reviewer nits folded; a11y roles added. Gates green (276 tests).",
       "classification": "noticeable"
+    },
+    {
+      "id": "clerk-native-applications",
+      "priority": 52,
+      "status": "owner-action",
+      "title": "Enable \"Native Applications\" in Clerk dashboard (native_api_disabled \u2014 the session blocker)",
+      "rationale": "Deep-fix found native mode fails with native_api_disabled until Native Applications is enabled in Clerk: https://dashboard.clerk.com/last-active?path=native-applications -> Configure -> Native applications -> Enable. One-time, no rebuild. Combined with the code fix (x-mobile + always-set auth header) this should make the session persist.",
+      "classification": "owner-action"
     }
   ]
 }
