@@ -277,8 +277,8 @@ export default function ProfilePage() {
         />
         <ScoringByTee accent={accent} rounds={rounds} loading={loading} />
         <ParBreakdown rounds={rounds} loading={loading} />
-        <YearLog accent={accent} rounds={rounds} loading={loading} />
         <ScoreDistribution rounds={rounds} loading={loading} />
+        <YearLog accent={accent} rounds={rounds} loading={loading} />
         {/* Shot analytics — single calm placeholder replacing two stacked ones */}
         <ShotAnalytics />
         <Footer />
@@ -1524,7 +1524,7 @@ function ParBreakdown({ rounds, loading }: { rounds: Round[]; loading: boolean }
                 ? `+${row.avgToPar}`
                 : `${row.avgToPar}`;
             const toParColor =
-              row.avgToPar < 0 ? T.birdie : row.avgToPar === 0 ? T.ink : T.pencil;
+              row.avgToPar < 0 ? T.birdie : row.avgToPar === 0 ? T.pencilSoft : T.pencil;
             return (
               <div
                 key={row.par}
@@ -1624,7 +1624,8 @@ function ParBreakdown({ rounds, loading }: { rounds: Round[]; loading: boolean }
 // ──────────────────────────────────────────────────────────────────────
 // Score distribution — hole-by-hole result counts (eagle+/birdie/par/bogey/double+)
 // with a quiet recent-trend indicator at the bottom.
-// Placed after YearLog to serve as a summary view of the season log above.
+// Grouped with ParBreakdown (both are hole-level aggregates) so the two views
+// sit together above the round-level YearLog.
 // ──────────────────────────────────────────────────────────────────────
 
 function ScoreDistribution({ rounds, loading }: { rounds: Round[]; loading: boolean }) {
@@ -1657,7 +1658,8 @@ function ScoreDistribution({ rounds, loading }: { rounds: Round[]; loading: bool
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {distRows.map((row) => {
               const barPct = (row.count / maxCount) * 100;
-              // Eagle = birdie colour (under-par); birdie = birdie; par = ink; rest = pencil
+              // Eagle = eagle colour; birdie = flag colour; par = ink;
+              // bogey = pencil (slightly warmer than pencilSoft); double+ = pencilSoft (quietest)
               const barColor =
                 row.bucket === "eagle_or_better"
                   ? T.eagle
@@ -1665,82 +1667,82 @@ function ScoreDistribution({ rounds, loading }: { rounds: Round[]; loading: bool
                   ? T.birdie
                   : row.bucket === "par"
                   ? T.ink
+                  : row.bucket === "bogey"
+                  ? T.pencil
                   : T.pencilSoft;
 
               return (
-                <div key={row.bucket}>
+                <div
+                  key={row.bucket}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "100px 1fr 36px",
+                    gap: 8,
+                    alignItems: "center",
+                  }}
+                >
+                  {/* Label */}
                   <div
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: "100px 1fr 36px",
-                      gap: 8,
-                      alignItems: "center",
-                      marginBottom: 3,
+                      fontFamily: T.serif,
+                      fontSize: 12,
+                      color: T.ink,
+                      letterSpacing: -0.1,
+                      fontStyle: "italic",
                     }}
                   >
-                    {/* Label */}
-                    <div
-                      style={{
-                        fontFamily: T.serif,
-                        fontSize: 12,
-                        color: T.ink,
-                        letterSpacing: -0.1,
-                        fontStyle: "italic",
-                      }}
-                    >
-                      {row.label}
-                    </div>
-
-                    {/* Bar track */}
-                    <div
-                      style={{
-                        position: "relative",
-                        height: 8,
-                        background: T.paperDeep,
-                        borderRadius: 1,
-                      }}
-                    >
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: 0,
-                          top: 0,
-                          bottom: 0,
-                          width: `${barPct}%`,
-                          background: barColor,
-                          borderRadius: 1,
-                          opacity: 0.75,
-                        }}
-                      />
-                    </div>
-
-                    {/* Count + percentage */}
-                    <div style={{ textAlign: "right" }}>
-                      <span
-                        style={{
-                          fontFamily: T.mono,
-                          fontSize: 10,
-                          color: T.ink,
-                          fontVariantNumeric: "tabular-nums",
-                          fontWeight: 500,
-                          letterSpacing: 0.3,
-                        }}
-                      >
-                        {row.count}
-                      </span>
-                    </div>
+                    {row.label}
                   </div>
+
+                  {/* Bar track */}
                   <div
                     style={{
-                      textAlign: "right",
-                      fontFamily: T.mono,
-                      fontSize: 7.5,
-                      color: T.pencilSoft,
-                      letterSpacing: 0.8,
-                      marginTop: -1,
+                      position: "relative",
+                      height: 8,
+                      background: T.paperDeep,
+                      borderRadius: 1,
                     }}
                   >
-                    {row.pct}%
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${barPct}%`,
+                        background: barColor,
+                        borderRadius: 1,
+                        opacity: 0.75,
+                      }}
+                    />
+                  </div>
+
+                  {/* Count on top + percentage sub-label beneath — stacked in the same cell,
+                      mirroring the ScoringByTee avgTotal/avg stacking pattern */}
+                  <div style={{ textAlign: "right" }}>
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 11,
+                        color: T.ink,
+                        fontVariantNumeric: "tabular-nums",
+                        fontWeight: 600,
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      {row.count}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 7.5,
+                        color: T.pencilSoft,
+                        letterSpacing: 0.8,
+                        marginTop: 1,
+                      }}
+                    >
+                      {row.pct}%
+                    </div>
                   </div>
                 </div>
               );
@@ -1794,16 +1796,7 @@ function ScoreDistribution({ rounds, loading }: { rounds: Round[]; loading: bool
                   ? `+${trend.priorAvgToPar}`
                   : `${trend.priorAvgToPar}`}
                 {trend.delta !== 0 && (
-                  <span
-                    style={{
-                      fontFamily: T.mono,
-                      fontStyle: "normal",
-                      fontSize: 10,
-                      letterSpacing: 0.5,
-                      marginLeft: 6,
-                      color: trend.delta < 0 ? T.birdie : T.pencil,
-                    }}
-                  >
+                  <span style={{ marginLeft: 4, color: trend.delta < 0 ? T.birdie : T.pencilSoft }}>
                     ({trend.delta > 0 ? `+${trend.delta}` : `${trend.delta}`})
                   </span>
                 )}
