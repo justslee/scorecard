@@ -18,6 +18,18 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime")
 OPENAI_REALTIME_DEFAULT_VOICE = os.getenv("OPENAI_REALTIME_DEFAULT_VOICE", "sage")
 
+# Transcription model for input audio. Supported values (confirmed against the
+# GA Realtime session schema, 2025): "gpt-4o-transcribe", "gpt-4o-mini-transcribe",
+# "whisper-1". gpt-4o-transcribe hallucinates far less on silence than whisper-1.
+OPENAI_REALTIME_TRANSCRIBE_MODEL = os.getenv(
+    "OPENAI_REALTIME_TRANSCRIBE_MODEL", "gpt-4o-transcribe"
+)
+
+# VAD type: "server_vad" (default, preserves existing numeric thresholds) or
+# "semantic_vad" (uses a semantic classifier + eagerness instead of energy thresholds).
+# Confirmed from the GA Realtime API reference (AudioInputTurnDetectionSemanticVad).
+OPENAI_REALTIME_VAD = os.getenv("OPENAI_REALTIME_VAD", "server_vad")
+
 # GA Realtime ephemeral-token endpoint. The old /v1/realtime/sessions (beta) was
 # removed → OpenAI returns "Invalid URL (POST /v1/realtime/sessions)". The GA
 # endpoint returns the client secret at top-level "value"; the browser then
@@ -80,6 +92,84 @@ DEFAULT_TOOLS: list[dict] = [
 ]
 
 
+def build_session_payload(
+    instructions: str,
+    voice_id: Optional[str],
+    tools: Optional[list[dict]] = None,
+    *,
+    model: str = OPENAI_REALTIME_MODEL,
+    transcribe_model: str = OPENAI_REALTIME_TRANSCRIBE_MODEL,
+    vad_type: str = OPENAI_REALTIME_VAD,
+) -> dict:
+    """Build the Realtime session object sent to OpenAI at mint time.
+
+    Extracted as a pure, dependency-free helper so it can be unit-tested
+    without a real API key or network call.
+
+    Args:
+        instructions:     System instructions for the model.
+        voice_id:         Output voice; falls back to OPENAI_REALTIME_DEFAULT_VOICE.
+        tools:            Tool list; falls back to DEFAULT_TOOLS when None.
+        model:            Realtime model ID (e.g. "gpt-realtime").
+        transcribe_model: Input transcription model. Confirmed supported values:
+                          "gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1".
+        vad_type:         "server_vad" (default, energy-based) or "semantic_vad"
+                          (semantic classifier; uses eagerness instead of thresholds).
+
+    Returns:
+        Full payload dict suitable for POST to /v1/realtime/client_secrets.
+    """
+    # Turn-detection block. server_vad thresholds are kept exactly as they were
+    # (do not adjust them here); semantic_vad swaps to eagerness="auto" which is
+    # equivalent to "medium" per the API docs.
+    if vad_type == "semantic_vad":
+        turn_detection: dict = {
+            "type": "semantic_vad",
+            # "auto" == "medium" eagerness — balanced responsiveness, no numeric
+            # energy thresholds needed (semantic VAD uses a language classifier).
+            "eagerness": "auto",
+        }
+    else:
+        # Default: server_vad with original thresholds — do not change.
+        turn_detection = {
+            "type": "server_vad",
+            "threshold": 0.5,
+            "prefix_padding_ms": 300,
+            "silence_duration_ms": 500,
+        }
+
+    # GA session object: audio config nests under audio.input / audio.output;
+    # transcription + VAD (barge-in / natural turn-taking) under audio.input;
+    # voice under audio.output. Full config is set at mint time.
+    #
+    # noise_reduction field confirmed at audio.input.noise_reduction in the GA
+    # Realtime schema (developers.openai.com client_secrets Python SDK reference,
+    # 2025). Allowed types: "near_field" (phone / headset) | "far_field" (laptop).
+    # "near_field" is correct for a mobile app where the phone is held to the ear.
+    return {
+        "session": {
+            "type": "realtime",
+            "model": model,
+            "instructions": instructions,
+            # GA allows only ["audio"] OR ["text"], not both. "audio" still emits
+            # the live transcript (output_audio_transcript events) for the UI.
+            "output_modalities": ["audio"],
+            "audio": {
+                "input": {
+                    # Server-side noise suppression applied before VAD and the model.
+                    # Reduces false-positive VAD triggers from background noise.
+                    "noise_reduction": {"type": "near_field"},
+                    "transcription": {"model": transcribe_model},
+                    "turn_detection": turn_detection,
+                },
+                "output": {"voice": voice_id or OPENAI_REALTIME_DEFAULT_VOICE},
+            },
+            "tools": tools if tools is not None else DEFAULT_TOOLS,
+            "tool_choice": "auto",
+        },
+    }
+
+
 async def mint_ephemeral_session(
     instructions: str,
     voice_id: Optional[str],
@@ -93,33 +183,7 @@ async def mint_ephemeral_session(
     if not OPENAI_API_KEY:
         raise HTTPException(500, "OPENAI_API_KEY not configured")
 
-    # GA session object: audio config nests under audio.input / audio.output;
-    # transcription + server-VAD (barge-in / natural turn-taking) under
-    # audio.input; voice under audio.output. Full config is set at mint time.
-    payload: dict = {
-        "session": {
-            "type": "realtime",
-            "model": OPENAI_REALTIME_MODEL,
-            "instructions": instructions,
-            # GA allows only ["audio"] OR ["text"], not both. "audio" still emits
-            # the live transcript (output_audio_transcript events) for the UI.
-            "output_modalities": ["audio"],
-            "audio": {
-                "input": {
-                    "transcription": {"model": "whisper-1"},
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "threshold": 0.5,
-                        "prefix_padding_ms": 300,
-                        "silence_duration_ms": 500,
-                    },
-                },
-                "output": {"voice": voice_id or OPENAI_REALTIME_DEFAULT_VOICE},
-            },
-            "tools": tools if tools is not None else DEFAULT_TOOLS,
-            "tool_choice": "auto",
-        },
-    }
+    payload = build_session_payload(instructions, voice_id, tools)
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json",

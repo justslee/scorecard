@@ -3,6 +3,86 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (ux-wind-direction-viz — SILENT)
+- **Done:** Wind direction visualisation relative to shot bearing in the caddie wind chip.
+  Commit `c03dd8e` on `integration/next`.
+
+  Files changed:
+  - **New `frontend/src/lib/caddie/wind-relative.ts`**: exported `windRelativeToShot(windFromDeg, windSpeedMph, shotBearingDeg)` — pure trig helper. Sign convention: `wind_direction` is meteorological (where wind comes FROM); `relativeAngle = normalise(windFromDeg − bearingDeg)`. `cos(relAngle) * speed` = headTailMph (positive=head, negative=tail); `|sin(relAngle) * speed|` = crossMph (unsigned); `side='R'` when `sin > 0` (from right, R→L ball push). Classifies into 5 kinds using 30°/60°/120°/150° thresholds. Exported type `WindRelativeResult`.
+  - **New `frontend/src/lib/caddie/wind-relative.test.ts`**: 17 vitest tests: zero wind, pure headwind ×2, pure tailwind ×2, crosswind R, crosswind L, head-cross R/L, tail-cross R/L, wraparound 0/360° ×3, headTailMph sign verification ×2.
+  - **`frontend/src/components/CaddiePanel.tsx`**: imported `windRelativeToShot`; added `windRelative` inline computation; extended plays-like wind chip to show `windRelative.label` (e.g. "Tailwind 8 mph" or "Crosswind 12 mph · R→L") when bearing+weather are available. Falls back to backend description silently.
+
+  Gates: lint clean · tsc clean · voice-tests 265/265 · vitest 365/365 (17 new) · build clean.
+  SILENT — logic improvement to an existing chip; only visible when GPS is active AND
+  a caddie recommendation with a wind adjustment has been fetched. No new UI surface.
+
+## 2026-06-28 (gps-capacitor-migrate — SILENT)
+- **Done:** Migrated GPS from browser `navigator.geolocation` to `@capacitor/geolocation`
+  on native (iOS), with a web fallback. Commit `f3ef9a7` on `integration/next`.
+
+  Files changed:
+  - **`frontend/src/lib/gps.ts`**: Added Capacitor imports. Extracted
+    `normalizeCapacitorPosition()` (pure, exported). `GPSWatcher.watchId` widened to
+    `number | string | null`. New `_startNative()` async helper: `requestPermissions()` then
+    `watchPosition()` via Capacitor; falls back to `_startWeb()` on plugin error. `stop()`
+    routes to `Geolocation.clearWatch()` on native, `clearWatch()` on web.
+    `getCurrentPosition()` uses Capacitor path on native with permission check, falls
+    through to `navigator.geolocation` on failure. Public API unchanged.
+  - **`frontend/src/components/CaddiePanel.tsx`**: Replaced the lone direct
+    `navigator.geolocation.getCurrentPosition()` call (no-hole-coords branch) with
+    `GPSWatcher.getCurrentPosition()` so that path also uses Capacitor on native.
+  - **`frontend/src/lib/gps.test.ts`** (new): 23 vitest tests for
+    `normalizeCapacitorPosition` (null → undefined, 0-heading/speed preserved, full
+    shape) plus smoke tests for the pure utility functions. Both Capacitor packages
+    are vi.mock()'d for headless CI.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 348/348 (23 new) ·
+         build 15 pages clean.
+
+  SILENT — internal plumbing change; no visible UI change. Actual GPS accuracy
+  improvement and iOS permission prompt are DEVICE-ONLY — must be tested on
+  the next TestFlight build. Rides with next noticeable bundle.
+
+## 2026-06-28 (realtime-noise-hardening — SILENT)
+- **Done:** Hardened the OpenAI Realtime session mint config in
+  `backend/app/services/realtime_relay.py`. Commit `e90a7ef` on `integration/next`.
+
+  Changes applied (all confirmed against GA Realtime API docs before writing):
+
+  1. **Noise reduction** (APPLIED): Added `audio.input.noise_reduction: {type: "near_field"}`.
+     Field name `noise_reduction` confirmed at `audio.input.noise_reduction` in the GA
+     Realtime client_secrets Python SDK reference (developers.openai.com, 2025). Allowed
+     types: `near_field` (phone/headset) | `far_field` (laptop mic). `near_field` is
+     correct for a mobile app. Reduces false-positive VAD triggers from background noise.
+
+  2. **Transcription model** (APPLIED, default changed): Changed hard-coded `whisper-1`
+     to env-configurable `OPENAI_REALTIME_TRANSCRIBE_MODEL`, defaulting to
+     `gpt-4o-transcribe`. Confirmed supported values (Python SDK session_create_params.py):
+     `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `whisper-1`. Default is
+     `gpt-4o-transcribe` because it hallucinates far less on silence than whisper-1.
+     Can be overridden back to `whisper-1` via env without a deploy.
+
+  3. **Turn detection VAD type** (APPLIED): Added `OPENAI_REALTIME_VAD` env var (default
+     `server_vad`). Setting to `semantic_vad` switches to the semantic classifier with
+     `eagerness: "auto"` (equivalent to "medium"). Confirmed: `semantic_vad` and
+     `eagerness` values (`low`/`medium`/`high`/`auto`) in GA Realtime API reference
+     (AudioInputTurnDetectionSemanticVad, 2025). Default behavior (server_vad + original
+     thresholds) is completely unchanged.
+
+  Refactor: extracted `build_session_payload(instructions, voice_id, tools, *, model,
+  transcribe_model, vad_type)` pure helper (no network) so the mint config is testable
+  without an API key.
+
+  New file: `backend/tests/test_realtime_payload.py` — 10 pure pytest assertions.
+
+  Gates: ruff clean · pytest 204 passed / 15 skipped / 0 failed (10 new tests) ·
+         frontend tsc clean · eslint clean · voice-tests 265/265.
+
+  NOTE: the mint config CANNOT be live-verified headlessly (no local OPENAI_API_KEY).
+  Voice-connect MUST be tested on the next device build before this is trusted.
+
+  SILENT — backend-only; no TestFlight-visible change. Rides with next noticeable bundle.
+
 ## 2026-06-28 (caddie-comp-legal-mode — NOTICEABLE)
 - **Done:** "Competition legal" (USGA-conforming) toggle for the caddie recommendation.
   When on, `target_yards == raw_yards` and `adjustments == []` — no environmental
@@ -2677,3 +2757,26 @@ specs/social-course-features-plan.md + both Notion epic cards. New card
 `nav-floating-island-tab` (yardage-book styled, hidden on immersive screens). Saved as
 memory floating-island-tab-nav. Follow-up `ratelimit-live-token` added (from sec review;
 moot while owner-gated).
+
+---
+
+## P0 HOTFIX SHIPPED — v1.0.421 — 2026-06-28
+
+Owner reported (IMG_2961) the voice setup filling with phantom multi-language messages
+he never said. Root cause: the preload/warm-connect (d478828) kept the OpenAI Realtime
+session LIVE while the sheet was hidden → whisper-1 hallucinated on silence/noise →
+phantom user turns the caddie replied to. Fix (cd2e516): removed the preload entirely —
+session mounts only while the sheet is open, tears down on close. Echo fix kept.
+
+Owner approved "ship the bundle now". Merged PR #62 → main 83dfe03; backend deployed
+(competition_legal accepted); TestFlight v1.0.421 (202606281834) uploaded. Bundle:
+voice preload hotfix + plays-like card + comp-legal toggle (all gates green; 48 backend
+tests for comp-legal).
+
+Owner also asked re: noise handling. Answer: Realtime CAN do better — we under-use it
+(no input_audio_noise_reduction, whisper-1 which hallucinates on silence, raw server_vad).
+Queued `realtime-noise-hardening` (priority 12, ready): near_field noise reduction +
+gpt-4o-transcribe (env-configurable) + semantic_vad. NOTE: any mint-config change can
+break voice if a field/value is unsupported (cf. the earlier "Invalid modalities" 400) and
+can't be live-tested headlessly — so it must NOT auto-deploy; it accumulates on
+integration/next and ships only with owner approval + a voice-connect test on that build.

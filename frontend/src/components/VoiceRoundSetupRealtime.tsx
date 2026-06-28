@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import {
   RealtimeCaddieClient,
@@ -57,12 +57,30 @@ function isLive(s: RealtimeStatus): boolean {
   return s === "connected" || s === "listening" || s === "speaking";
 }
 
+/**
+ * Inline mic glyph (no lucide-react). When `muted`, a slash is drawn across it
+ * so the control reads as "mic off" at a glance rather than relying on a word.
+ */
+function MicIcon({ size = 20, stroke = "currentColor", muted = false }: { size?: number; stroke?: string; muted?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round">
+      <rect x="9" y="3" width="6" height="12" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0" />
+      <path d="M12 18v3" />
+      {muted && <line x1="4" y1="3" x2="20" y2="21" />}
+    </svg>
+  );
+}
+
 export default function VoiceRoundSetupRealtime({
   onSetupRound,
   onClose,
   autoStart = false,
 }: Props) {
   const accent = DEFAULT_ACCENT;
+  // Swipe-down-to-dismiss, started ONLY from the grab handle (below) so the
+  // conversation list still scrolls normally. Mirrors CaddieSheet.
+  const dragControls = useDragControls();
   const clientRef = useRef<RealtimeCaddieClient | null>(null);
   const mountedRef = useRef(true);
   const handledSetupRef = useRef(false);
@@ -179,6 +197,15 @@ export default function VoiceRoundSetupRealtime({
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={T.springSoft}
+        // Drag past ~120px or a downward flick closes it; else it springs back.
+        drag="y"
+        dragListener={false}
+        dragControls={dragControls}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.6 }}
+        onDragEnd={(_e, info) => {
+          if (info.offset.y > 120 || info.velocity.y > 600) handleClose();
+        }}
         style={{
           position: "fixed",
           bottom: 0,
@@ -196,16 +223,41 @@ export default function VoiceRoundSetupRealtime({
           maxHeight: "88dvh",
           paddingBottom: "env(safe-area-inset-bottom)",
           boxShadow: "0 -8px 40px rgba(26,42,26,0.18)",
+          touchAction: "pan-y",
         }}
       >
-        {/* Header */}
-        <div style={{ padding: "16px 20px 10px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        {/* Drag handle — starts the swipe-down-to-dismiss drag. Generous,
+            invisible touch target around the visible bar for an easy grab. */}
+        <div
+          onPointerDown={(e) => dragControls.start(e)}
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            height: 44, // ≥44pt touch target
+            flexShrink: 0,
+            cursor: "grab",
+            touchAction: "none",
+          }}
+        >
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: T.hairline }} />
+        </div>
+
+        {/* Header — the subtitle becomes the live status once a conversation is
+            under way, so the screen reflects the session instead of a static prompt. */}
+        <div style={{ padding: "4px 20px 10px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.6, color: T.pencil, textTransform: "uppercase", marginBottom: 3 }}>
               Voice · Setup
             </div>
             <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 22, color: T.ink, letterSpacing: -0.4 }}>
-              Tell me what you&rsquo;re playing.
+              {error
+                ? "Let's try that again."
+                : isLive(status) || messages.length > 0
+                ? STATUS_LABEL[status]
+                : status === "connecting"
+                ? STATUS_LABEL.connecting
+                : "Tell me what you’re playing."}
             </div>
           </div>
           <button
@@ -282,10 +334,10 @@ export default function VoiceRoundSetupRealtime({
                 border: `1px solid ${muted ? T.warningInk : T.hairline}`,
                 background: muted ? `${T.warningInk}14` : "transparent",
                 color: muted ? T.warningInk : T.ink, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.mono, fontSize: 9, letterSpacing: 1,
+                display: "flex", alignItems: "center", justifyContent: "center",
               }}
             >
-              {muted ? "MUTED" : "MUTE"}
+              <MicIcon muted={muted} stroke={muted ? T.warningInk : T.ink} />
             </button>
           ) : status === "connecting" ? null /* status label suffices; nothing to mute yet */ : (
             <button
