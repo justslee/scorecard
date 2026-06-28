@@ -605,6 +605,31 @@
       "rationale": "Voice is the Northstar's primary interface. The score-confirm panel showed only a generic 'double-check these' + amber on absent tiles, so the golfer had to infer which name to fix. Now, on a LOW-confidence parse that missed some (not all) players, a calm note names them.",
       "classification": "noticeable",
       "progress": "2026-06-28: shipped on integration/next. New pure helper lib/voice/confirm-guidance.ts (missingScoreNote + joinNames + missingPlayerNames) gated to confidence<0.65 AND some-but-not-all players missing (intentional one-score dictation and empty parses are NOT nagged); +10 unit tests. Rendered as a quiet serif-italic line in VoiceConfirmPanel (ScoreSheet.tsx). Designer-reviewed: ship-blocker fixed (note color amber->T.pencil so it's a calm aside, not a 3rd amber layer) + wording trimmed to just naming who was missed (kept minimal per Northstar). NOTE: backend /api/voice/parse-scores + local fallback only return {scores,confidence} (no warnings/explanations on the SCORE path \u2014 those exist only in the round-SETUP pipeline), so this derives the note deterministically client-side. Gates: lint/tsc/voice265/unit294/build/native-crash."
+    },
+    {
+      "id": "voice-agentic-setup",
+      "priority": 10,
+      "status": "DONE (backend + frontend); ships with bundle \u2014 needs backend deploy to demo",
+      "title": "Agentic conversational round setup \u2014 caddie asks back for missing info",
+      "rationale": "OWNER PRIORITY (2026-06-28): make voice setup a back-and-forth agent, not a one-shot parser. If the golfer says who's playing but not the course, the caddie should ASK ('Which course? Which tees?') and fill the gaps over multiple turns, instead of failing with 'no course matched'. Turns voice from parse-or-fail into a conversation that always reaches a complete, startable round. Likely: multi-turn state in VoiceRoundSetup + a backend prompt that returns {filled fields, missing fields, a spoken follow-up question}; loop until complete. High priority.",
+      "classification": "noticeable",
+      "progress": "2026-06-28: BACKEND foundation shipped on integration/next. parse-round-setup is now multi-turn: request carries current+expecting, response returns missing/followUpQuestion/complete; pure helpers (round_setup_missing, round_setup_question, merge_round_setup, _finalize_round_setup) + expecting-biased local fallback; 18 unit tests; backward compatible. REMAINING (next cycle, top priority): wire VoiceRoundSetup to the loop \u2014 on an incomplete parse, show the caddie question and auto-record the answer (pass current+expecting), looping until complete, with a max-turn guard; auto-parse after transcription for a smooth single-tap conversation. That part is device-verifiable (live voice I/O) + needs designer review, so it gets its own focused cycle. Extract a pure nextConvoStep reducer for unit tests. | 2026-06-28: FRONTEND loop shipped on integration/next. VoiceRoundSetup is now multi-turn: nextConvoStep reducer (+8 tests, MAX 4 follow-ups), handleParse sends current+expecting and branches complete/ask, auto-parse (no manual tap), caddie question in header. Reviewer-fixed (mountedRef mic-leak guard; per-turn parse-guard reset) + designer-fixed (question in header, removed dead transcribed phase/Understand-this button, gentler wording). Gates green. NOTE: end-to-end conversation requires the new parse-round-setup on PROD (rides the bundle merge -> deploy); against the old prod endpoint nextConvoStep degrades to one-shot (no fields -> complete)."
+    },
+    {
+      "id": "voice-live-transcription",
+      "priority": 11,
+      "status": "ready",
+      "title": "Live (real-time) transcription on device while recording",
+      "rationale": "OWNER PRIORITY (2026-06-28): show words as they're spoken. Today VoiceRoundSetup runs Web Speech API for interim text (startListening, VoiceRoundSetup.tsx ~142) but that API is unavailable in the iOS WKWebView, so nothing shows on device. Need real streaming STT (e.g. Deepgram live WebSocket) feeding interim text to the existing interimTranscript UI, with the current record->stop->Deepgram batch as fallback. Apply to ScoreSheet voice + VoiceRoundSetup. High priority.",
+      "classification": "noticeable"
+    },
+    {
+      "id": "voice-single-tap-record",
+      "priority": 12,
+      "status": "done-shipped-integration-next",
+      "title": "Mic button on the right + single-tap opens AND starts recording",
+      "rationale": "OWNER simplification ask (2026-06-28): mic was bottom-LEFT and required two taps (open overlay, then tap mic). Moved mic to the RIGHT of the New Round footer (order:2) and added autoStart to VoiceRoundSetup so a single tap opens the overlay and begins recording immediately.",
+      "classification": "noticeable"
     }
   ]
 }
