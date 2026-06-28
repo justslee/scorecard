@@ -2014,3 +2014,20 @@ THE ONLY REMAINING GATE = owner confirms sign-in + voice on TestFlight **v0.1.26
 confirmation: cut one build of this bundle (`ops/ios/ship.sh`) and email looper.approvals →
 owner for "ship it". If sign-in stalls, capture the `[auth] DIAGNOSTIC signed-in but no token`
 log — it's the capacitor://localhost + Clerk-dev-instance origin caveat (owner-side Clerk fix).
+
+---
+
+## TestFlight distribution fixed — 2026-06-28
+
+ROOT CAUSE of "I never see new builds": the App Store Connect app (MyLooper, com.looperapp.app,
+id 6784470752) had **no beta group**, so VALID builds were never delivered to any tester. Owner
+(justinlee627@gmail.com) is Account Holder/Admin → qualifies as internal tester.
+
+FIX (via ASC API, owner-authorized): created internal beta group **"Looper Team"** (id
+7c2116c8-7d05-4e43-afe3-21457ca7c318, isInternalGroup=true, hasAccessToAllBuilds=true) and added
+the owner as a tester (now state=INSTALLED). All future VALID builds auto-deliver to this group —
+no per-build assignment or beta review needed. Build v0.1.323 (202606272115) is VALID + available.
+
+NOTE for future ships: ship.sh upload → Apple processing (~10 min to VALID) → appears in TestFlight
+for the Looper Team group automatically. If a build ever doesn't show: check processingState via
+the ASC API (scripts pattern in this session), not just the ship.sh exit code.
