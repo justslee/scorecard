@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { roundHref } from "@/lib/round-url";
 import { useParams, useRouter } from 'next/navigation';
 import { Course, Round, Player, PlayerGroup, Tournament } from '@/lib/types';
 import { getCourses as localGetCourses, saveRound as localSaveRound } from '@/lib/storage';
@@ -444,7 +445,7 @@ export default function NewTournamentRoundPage() {
       localSaveRound(created);
 
       // Navigate using the SERVER-RETURNED id (not a client-side UUID).
-      router.push(`/round/${created.id}`);
+      router.push(roundHref(created.id));
     } catch (e) {
       if (!(e instanceof TypeError)) {
         const msg = e instanceof Error ? e.message : 'Failed to create round.';

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { roundHref } from "@/lib/round-url";
 import { useRouter, useParams } from "next/navigation";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getTournamentAsync, getRoundsAsync } from "@/lib/storage-api";
@@ -507,7 +508,7 @@ export default function TournamentPageClient() {
                 return (
                   <button
                     key={r.id}
-                    onClick={() => router.push(`/round/${r.id}`)}
+                    onClick={() => router.push(roundHref(r.id))}
                     style={{
                       flex: 1,
                       borderRadius: 12,
@@ -1247,7 +1248,7 @@ export default function TournamentPageClient() {
                     )}
 
                     <button
-                      onClick={() => router.push(`/round/${r.id}`)}
+                      onClick={() => router.push(roundHref(r.id))}
                       style={{
                         marginTop: 10,
                         width: "100%",

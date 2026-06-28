@@ -1,11 +1,20 @@
+import { Suspense } from "react";
 import RoundPageClient from "./RoundPageClient";
 
-// Static export shim: the real id is read client-side (useParams) at runtime,
-// so we only emit a placeholder shell for this route.
+// Static export shim: we emit ONE real static shell ("view"); the round id is
+// carried in the query string (/round/view?id=…) and read client-side, so
+// navigation stays client-side (no hard reload → no Capacitor index.html
+// fallback → no cold-boot AuthGate hang). See lib/round-url.ts.
 export function generateStaticParams() {
-  return [{ id: "placeholder" }];
+  return [{ id: "view" }];
 }
 
 export default function Page() {
-  return <RoundPageClient />;
+  // Suspense boundary required because RoundPageClient reads useSearchParams()
+  // (the round id comes from ?id=) — static export prerender bails to CSR here.
+  return (
+    <Suspense>
+      <RoundPageClient />
+    </Suspense>
+  );
 }
