@@ -643,7 +643,7 @@
     {
       "id": "caddie-playslike-card",
       "priority": 13,
-      "status": "done-shipped-integration-next",
+      "status": "done-shipped-main",
       "phase": 1,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -653,7 +653,7 @@
       "area": "frontend",
       "title": "Plays-like yardage card in the caddie panel",
       "rationale": "Surface target_yards ('plays like') vs raw_yards + the per-factor adjustments breakdown ALREADY returned by /recommend, plus a wind-relative-to-shot chip. CaddiePanel.tsx. Data already present; mostly a UI surfacing win. Component test headless; live GPS = device.",
-      "shipped": "Built f938139 on integration/next (2026-06-28); plays-like card + per-factor breakdown + wind chip in CaddiePanel. Pure helper plays-like.ts + 10 tests. Awaiting next TestFlight bundle."
+      "shipped": "PR #62 \u2192 main 83dfe03 (2026-06-28); in TestFlight build."
     },
     {
       "id": "caddie-altitude-pressure",
@@ -673,7 +673,7 @@
     {
       "id": "caddie-comp-legal-mode",
       "priority": 15,
-      "status": "ready",
+      "status": "done-shipped-main",
       "phase": 1,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -682,7 +682,8 @@
       "headless": "yes",
       "area": "backend+frontend",
       "title": "Competition-legal mode toggle",
-      "rationale": "competition_legal flag on recommend/session that zeroes elevation/wind/slope adjustments and tags the recommendation (USGA device legality); UI switch. Backend self-verifiable; legal-correctness sensitive."
+      "rationale": "competition_legal flag on recommend/session that zeroes elevation/wind/slope adjustments and tags the recommendation (USGA device legality); UI switch. Backend self-verifiable; legal-correctness sensitive.",
+      "shipped": "PR #62 \u2192 main 83dfe03 (2026-06-28); backend deployed (competition_legal accepted), TestFlight build cut. 48 backend tests."
     },
     {
       "id": "caddie-licensed-hazard-polygons",
@@ -1132,6 +1133,19 @@
       "area": "frontend",
       "title": "Floating 'island' pill bottom tab bar (owner-requested nav)",
       "rationale": "Owner wants a floating Instagram-style pill tab bar (IMG_2960) for easy nav across the new features. Yardage-book styled (calm, on-paper), hidden on immersive round/voice/GPS screens. Tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). Foundation for surfacing the social + course epics. See specs/social-course-features-plan.md.",
+      "depends_on": []
+    },
+    {
+      "id": "realtime-noise-hardening",
+      "priority": 12,
+      "status": "ready",
+      "classification": "noticeable-backend-testable",
+      "build": "build",
+      "size": "S",
+      "headless": "partial (config verifiable; quality device-only)",
+      "area": "backend",
+      "title": "Harden Realtime voice setup: noise reduction + better transcription + semantic VAD",
+      "rationale": "The preload-removal hotfix (cd2e516) stopped background hallucination, but the root noise/silence-hallucination risk remains because the mint uses whisper-1, no noise reduction, and raw server_vad. In realtime_relay.py mint config: (1) add input_audio_noise_reduction {type:'near_field'} (phone-near-mouth); (2) switch audio.input.transcription.model whisper-1 -> gpt-4o-transcribe (or -mini) \u2014 env-configurable (OPENAI_TRANSCRIBE_MODEL) with whisper-1 fallback, since whisper hallucinates on silence; (3) consider turn_detection semantic_vad (eagerness) vs server_vad to cut noise-triggered false turns. VERIFY exact field names against the OpenAI Realtime API reference before shipping (an unsupported transcription model breaks the mint). Owner-testable on device. If wind robustness still inadequate after this, evaluate a Krisp-equipped Deepgram pipeline (LiveKit/Pipecat) \u2014 see notes.",
       "depends_on": []
     }
   ],
