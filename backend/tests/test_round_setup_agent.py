@@ -32,7 +32,7 @@ class TestMissingAndQuestion:
         assert "players" in round_setup_missing("Pebble Beach", ["", "  "])
 
     def test_question_asks_for_course_first(self):
-        assert round_setup_question(["course", "players"]) == "Which course are you playing?"
+        assert round_setup_question(["course", "players"]) == "Which course today?"
 
     def test_question_asks_players_when_only_players_missing(self):
         assert round_setup_question(["players"]) == "Who's playing today?"
@@ -72,7 +72,7 @@ class TestFinalize:
         out = _finalize_round_setup(parsed, None)
         assert out.missing == ["course"]
         assert out.complete is False
-        assert out.followUpQuestion == "Which course are you playing?"
+        assert out.followUpQuestion == "Which course today?"
 
     def test_finalize_complete_clears_question(self):
         parsed = RoundSetupResponse(courseName="Pebble", playerNames=["Dan"])
@@ -84,7 +84,7 @@ class TestFinalize:
     def test_conversational_two_turns_reach_complete(self):
         # Turn 1: only players heard → asks for course.
         t1 = _finalize_round_setup(RoundSetupResponse(playerNames=["Dan", "Matt"]), None)
-        assert t1.followUpQuestion == "Which course are you playing?"
+        assert t1.followUpQuestion == "Which course today?"
         # Turn 2: the bare answer "Pebble Beach" while expecting course.
         parsed2 = _local_parse_round_setup("Pebble Beach", expecting="course")
         t2 = _finalize_round_setup(

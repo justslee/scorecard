@@ -108,9 +108,10 @@ def round_setup_missing(course_name: str, player_names: list[str]) -> list[str]:
 
 
 def round_setup_question(missing: list[str]) -> Optional[str]:
-    """The caddie's next question — one thing at a time, course first."""
+    """The caddie's next question — one thing at a time, course first.
+    Kept short + conversational to match the app's quiet caddie voice."""
     if "course" in missing:
-        return "Which course are you playing?"
+        return "Which course today?"
     if "players" in missing:
         return "Who's playing today?"
     return None

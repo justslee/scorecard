@@ -14,6 +14,11 @@ import { T, DEFAULT_ACCENT, PAPER_NOISE } from "@/components/yardage/tokens";
 import { Waveform } from "@/components/yardage/Voice";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { fetchAPI } from "@/lib/api";
+import {
+  nextConvoStep,
+  type ConvoConfig,
+  type SetupParseResponse,
+} from "@/lib/voice/round-setup-convo";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -92,6 +97,19 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(true);
 
+  // ── Conversational (agentic) state ──
+  // What we know so far (merged across turns), the caddie's current question,
+  // which field the next answer fills, and how many follow-ups we've asked.
+  const [config, setConfig] = useState<ConvoConfig | null>(null);
+  const [followUp, setFollowUp] = useState<string | null>(null);
+  const [expecting, setExpecting] = useState<"course" | "players" | undefined>(undefined);
+  const [turns, setTurns] = useState(0);
+  // Guard so each final transcript auto-parses exactly once.
+  const parsedForRef = useRef<string>("");
+  // False once unmounted — prevents an in-flight parse from re-opening the mic
+  // (startListening) after the overlay is closed (would leave the mic live).
+  const mountedRef = useRef(true);
+
   const recorderRef = useRef<VoiceRecorder | null>(null);
   // Web Speech API instance for on-device interim display (best-effort; Deepgram is authoritative)
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -102,12 +120,16 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
       setError("Voice recording not supported in this browser.");
     }
     return () => {
+      mountedRef.current = false;
       recorderRef.current?.cancel();
       recognitionRef.current?.abort();
     };
   }, []);
 
-  // Derive visual phase from state
+  // Derive visual phase from state. A final transcript is auto-parsed (no manual
+  // "Understand this" step), so the brief window between transcript-set and
+  // isParsing=true is shown as "thinking" rather than flashing the now-dead
+  // transcribed phase + Parse button.
   const phase: Phase = parseResult
     ? "result"
     : isTranscribing || isParsing
@@ -115,7 +137,7 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
     : error
     ? "error"
     : transcript.trim()
-    ? "transcribed"
+    ? "thinking"
     : isListening
     ? "listening"
     : "idle";
@@ -132,6 +154,9 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
       (typeof parseResult.confidence === "number" && parseResult.confidence < 0.7));
 
   const startListening = useCallback(async () => {
+    // Don't acquire the mic if the overlay has been closed (e.g. an in-flight
+    // parse resolved after unmount and tried to record the next answer).
+    if (!mountedRef.current) return;
     setError(null);
     setTranscript("");
     setInterimTranscript("");
@@ -139,6 +164,11 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
     try {
       const recorder = new VoiceRecorder();
       await recorder.start();
+      if (!mountedRef.current) {
+        // Unmounted while awaiting mic permission — release it immediately.
+        recorder.cancel();
+        return;
+      }
       recorderRef.current = recorder;
       setIsListening(true);
 
@@ -206,24 +236,60 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
     }
   }, []);
 
-  const handleParse = async () => {
+  const handleParse = useCallback(async () => {
     const fullTranscript = transcript.trim();
     if (!fullTranscript) { setError("No speech detected."); return; }
     setIsParsing(true);
     setError(null);
     try {
-      const result = await fetchAPI<ParsedRoundConfig>("/api/voice/parse-round-setup", {
+      const result = await fetchAPI<SetupParseResponse>("/api/voice/parse-round-setup", {
         method: "POST",
-        body: JSON.stringify({ transcript: fullTranscript }),
+        body: JSON.stringify({
+          transcript: fullTranscript,
+          ...(config ? { current: config } : {}),
+          ...(expecting ? { expecting } : {}),
+        }),
       });
-      setParseResult(result);
+      const step = nextConvoStep(result, turns);
+      setConfig(step.config);
+      if (step.kind === "complete") {
+        // Enough to start — show the confirm screen with the merged config.
+        setFollowUp(null);
+        setExpecting(undefined);
+        setParseResult({
+          courseName: step.config.courseName,
+          playerNames: step.config.playerNames,
+          teeName: step.config.teeName,
+          confidence: result.complete ? 0.9 : 0.5,
+        });
+      } else {
+        // Caddie asks for what's missing, then records the answer (single tap).
+        setTurns((t) => t + 1);
+        setFollowUp(step.question);
+        setExpecting(step.expecting);
+        setTranscript("");
+        setInterimTranscript("");
+        // Judge the next answer fresh, even if it transcribes identically.
+        parsedForRef.current = "";
+        void startListening();
+      }
     } catch (err) {
       console.error("Voice round parse failed:", err);
       setError("Couldn't understand. Check your connection and try again.");
     } finally {
       setIsParsing(false);
     }
-  };
+  }, [transcript, config, expecting, turns, startListening]);
+
+  // Auto-parse each final transcript once (no manual "parse" tap) so the
+  // conversation flows: speak → parse → (ask → speak → parse)* → confirm.
+  useEffect(() => {
+    const t = transcript.trim();
+    if (t && t !== parsedForRef.current && !isParsing && !parseResult) {
+      parsedForRef.current = t;
+      void handleParse();
+    }
+  }, [transcript, isParsing, parseResult, handleParse]);
 
   const handleConfirm = () => {
     if (!parseResult) return;
@@ -239,6 +305,12 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
     setTranscript("");
     setInterimTranscript("");
     setError(null);
+    // Reset the conversation so retry starts a fresh round, not mid-dialogue.
+    setConfig(null);
+    setFollowUp(null);
+    setExpecting(undefined);
+    setTurns(0);
+    parsedForRef.current = "";
   };
 
   const handleMicTap = () => {
@@ -327,7 +399,9 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
                 lineHeight: 1.1,
               }}
             >
-              Tell me what you&rsquo;re playing.
+              {/* During a follow-up turn the header becomes the caddie's question,
+                  so the screen reads as one conversation (not two prompts). */}
+              {followUp ?? "Tell me what you’re playing."}
             </div>
           </div>
           <button
@@ -557,45 +631,6 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
               </div>
             </div>
 
-          ) : phase === "transcribed" ? (
-            /* Transcript ready — waiting for user to trigger parse */
-            <div>
-              <div
-                style={{
-                  padding: "14px",
-                  borderRadius: 14,
-                  background: T.paperDeep,
-                  border: `1px solid ${T.hairline}`,
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: T.mono,
-                    fontSize: 8.5,
-                    letterSpacing: 1.3,
-                    color: T.pencilSoft,
-                    textTransform: "uppercase",
-                    marginBottom: 4,
-                  }}
-                >
-                  You said
-                </div>
-                <div
-                  style={{
-                    fontFamily: T.serif,
-                    fontStyle: "italic",
-                    fontSize: 19,
-                    lineHeight: 1.3,
-                    letterSpacing: -0.2,
-                    color: T.ink,
-                  }}
-                >
-                  <span style={{ color: T.pencil, fontSize: 16 }}>&ldquo;</span>
-                  {transcript}
-                </div>
-              </div>
-            </div>
-
           ) : phase === "thinking" ? (
             /* Thinking / transcribing */
             <div>
@@ -713,7 +748,8 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
             </div>
 
           ) : phase === "listening" ? (
-            /* Actively recording */
+            /* Actively recording. Mid-conversation, the caddie's question lives in
+               the header (set above), so here we just show the listening state. */
             <div>
               <div
                 style={{
@@ -877,55 +913,6 @@ export default function VoiceRoundSetup({ onSetupRound, onClose, autoStart = fal
                 }}
               >
                 <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Start round</span>
-                <span style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, opacity: 0.7 }}>
-                  {"→"}
-                </span>
-              </button>
-            </>
-
-          ) : phase === "transcribed" ? (
-            /* Parse trigger */
-            <>
-              <button
-                onClick={handleRetry}
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 99,
-                  border: `1px solid ${T.hairline}`,
-                  background: "transparent",
-                  color: T.pencil,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                }}
-                aria-label="Discard and try again"
-              >
-                <RefreshIcon />
-              </button>
-              <button
-                onClick={handleParse}
-                style={{
-                  flex: 1,
-                  padding: "14px",
-                  borderRadius: 99,
-                  border: "none",
-                  background: T.ink,
-                  color: T.paper,
-                  cursor: "pointer",
-                  fontFamily: T.sans,
-                  fontSize: 14,
-                  fontWeight: 500,
-                  letterSpacing: -0.1,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                }}
-              >
-                <span style={{ fontFamily: T.serif, fontStyle: "italic" }}>Understand this</span>
                 <span style={{ fontFamily: T.mono, fontSize: 10, letterSpacing: 1.2, opacity: 0.7 }}>
                   {"→"}
                 </span>
