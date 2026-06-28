@@ -297,6 +297,13 @@ export async function startRealtimeSession(params: {
   return post<RealtimeSessionToken>('/realtime/session', params);
 }
 
+/** Round-less Realtime session for conversational round SETUP (no round yet). */
+export async function startSetupSession(params: {
+  personality_id: string;
+}): Promise<RealtimeSessionToken> {
+  return post<RealtimeSessionToken>('/realtime/setup-session', params);
+}
+
 // ── Voice Caddie ──
 
 export async function talkToCaddie(params: {
