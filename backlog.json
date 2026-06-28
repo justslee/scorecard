@@ -828,7 +828,7 @@
     {
       "id": "gps-capacitor-migrate",
       "priority": 26,
-      "status": "built-integration-next-pending-device-verify",
+      "status": "done-shipped-main",
       "phase": 4,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -838,7 +838,7 @@
       "area": "frontend/ios",
       "title": "Migrate GPS to @capacitor/geolocation (web fallback)",
       "rationale": "gps.ts currently uses navigator.geolocation though @capacitor/geolocation is installed; swap with web fallback + permissions for better iOS accuracy/background. Owner device test.",
-      "shipped": "Built f3ef9a7 on integration/next (2026-06-28). Native @capacitor/geolocation + web fallback; public API unchanged; 23 tests. GPS accuracy + iOS permission flow are device-only \u2014 verify on next build."
+      "shipped": "Built f3ef9a7 on integration/next (2026-06-28). Native @capacitor/geolocation + web fallback; public API unchanged; 23 tests. GPS accuracy + iOS permission flow are device-only \u2014 verify on next build. | SHIPPED PR #63 -> main 233e28a (2026-06-28); backend deployed + healthy; TestFlight build cut. Device-verify pending."
     },
     {
       "id": "voice-tactical-advice",
@@ -857,7 +857,7 @@
     {
       "id": "ux-wind-direction-viz",
       "priority": 28,
-      "status": "built-integration-next-pending-device-verify",
+      "status": "done-shipped-main",
       "phase": 4,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -867,7 +867,7 @@
       "area": "frontend",
       "title": "Wind-direction-relative visualization",
       "rationale": "Show head/cross/tail relative to the chosen shot bearing on the map/panel using existing compute_wind_adjustment output.",
-      "shipped": "Built c03dd8e on integration/next (2026-06-28). Pure windRelativeToShot helper + 17 tests; extends the plays-like wind chip with head/cross/tail relative to shot bearing. Visible only with GPS+wind \u2014 device-verify."
+      "shipped": "Built c03dd8e on integration/next (2026-06-28). Pure windRelativeToShot helper + 17 tests; extends the plays-like wind chip with head/cross/tail relative to shot bearing. Visible only with GPS+wind \u2014 device-verify. | SHIPPED PR #63 -> main 233e28a (2026-06-28); backend deployed + healthy; TestFlight build cut. Device-verify pending."
     },
     {
       "id": "dem-nationwide-ml",
@@ -931,11 +931,12 @@
     {
       "id": "voice-setup-realtime-polish",
       "priority": 35,
-      "status": "done-shipped-integration-next",
+      "status": "done-shipped-main",
       "classification": "noticeable",
       "title": "VoiceRoundSetupRealtime polish: drag-to-dismiss, mic icon, live header subtitle",
       "rationale": "Designer nice-to-haves deferred from the first build (ship-blockers already fixed): (8) add drag-to-dismiss like the caddie sheet; (5) replace 'MUTE'/'MUTED' text with the mic SVG + strikethrough; (7) swap the static 'Tell me what you're playing.' subtitle to the live status once a conversation is active. Also apply the 44pt close-target fix to the old VoiceRoundSetup.tsx if it's still reachable.",
-      "done_note": "2026-06-28: shipped on integration/next. (8) drag-to-dismiss via framer-motion useDragControls started from a 44pt grab handle (mirrors CaddieSheet: >120px/flick closes, else springs back; touchAction pan-y so the conversation list still scrolls); (5) MUTE/MUTED text replaced with an inline MicIcon + slash-when-muted (no lucide); (7) header subtitle now reflects live session status (connecting/listening/caddie speaking) once a conversation is active, falling back to the static 'Tell me what you're playing.' prompt at idle, plus a calm 'Let's try that again.' on error. 44pt-close fix N/A \u2014 old VoiceRoundSetup.tsx is unreachable in the app (only its own test + a stale comment reference it; round/new mounts VoiceRoundSetupRealtime). Frontend-only; gates green: lint 0, tsc 0, voice 265/265, vitest 365, build OK. WebRTC voice path is device-only verifiable -> rides the next TestFlight bundle."
+      "done_note": "2026-06-28: shipped on integration/next. (8) drag-to-dismiss via framer-motion useDragControls started from a 44pt grab handle (mirrors CaddieSheet: >120px/flick closes, else springs back; touchAction pan-y so the conversation list still scrolls); (5) MUTE/MUTED text replaced with an inline MicIcon + slash-when-muted (no lucide); (7) header subtitle now reflects live session status (connecting/listening/caddie speaking) once a conversation is active, falling back to the static 'Tell me what you're playing.' prompt at idle, plus a calm 'Let's try that again.' on error. 44pt-close fix N/A \u2014 old VoiceRoundSetup.tsx is unreachable in the app (only its own test + a stale comment reference it; round/new mounts VoiceRoundSetupRealtime). Frontend-only; gates green: lint 0, tsc 0, voice 265/265, vitest 365, build OK. WebRTC voice path is device-only verifiable -> rides the next TestFlight bundle.",
+      "shipped": "SHIPPED PR #63 -> main 233e28a (2026-06-28); backend deployed + healthy; TestFlight build cut. Device-verify pending."
     },
     {
       "id": "social-surface-partners",
@@ -1141,7 +1142,7 @@
     {
       "id": "realtime-noise-hardening",
       "priority": 12,
-      "status": "built-integration-next-pending-device-verify",
+      "status": "done-shipped-main",
       "classification": "noticeable-backend-testable",
       "build": "build",
       "size": "S",
@@ -1150,7 +1151,7 @@
       "title": "Harden Realtime voice setup: noise reduction + better transcription + semantic VAD",
       "rationale": "The preload-removal hotfix (cd2e516) stopped background hallucination, but the root noise/silence-hallucination risk remains because the mint uses whisper-1, no noise reduction, and raw server_vad. In realtime_relay.py mint config: (1) add input_audio_noise_reduction {type:'near_field'} (phone-near-mouth); (2) switch audio.input.transcription.model whisper-1 -> gpt-4o-transcribe (or -mini) \u2014 env-configurable (OPENAI_TRANSCRIBE_MODEL) with whisper-1 fallback, since whisper hallucinates on silence; (3) consider turn_detection semantic_vad (eagerness) vs server_vad to cut noise-triggered false turns. VERIFY exact field names against the OpenAI Realtime API reference before shipping (an unsupported transcription model breaks the mint). Owner-testable on device. If wind robustness still inadequate after this, evaluate a Krisp-equipped Deepgram pipeline (LiveKit/Pipecat) \u2014 see notes.",
       "depends_on": [],
-      "shipped": "Built e90a7ef on integration/next (2026-06-28). Fields verified vs OpenAI API ref: noise_reduction@audio.input (near_field), transcription gpt-4o-transcribe (env OPENAI_REALTIME_TRANSCRIBE_MODEL), VAD env-switch (default server_vad). 10 payload tests. MUST device-test voice-connect at ship (mint not live-verifiable headlessly)."
+      "shipped": "Built e90a7ef on integration/next (2026-06-28). Fields verified vs OpenAI API ref: noise_reduction@audio.input (near_field), transcription gpt-4o-transcribe (env OPENAI_REALTIME_TRANSCRIBE_MODEL), VAD env-switch (default server_vad). 10 payload tests. MUST device-test voice-connect at ship (mint not live-verifiable headlessly). | SHIPPED PR #63 -> main 233e28a (2026-06-28); backend deployed + healthy; TestFlight build cut. Device-verify pending."
     },
     {
       "id": "voice-chat-ordering",
