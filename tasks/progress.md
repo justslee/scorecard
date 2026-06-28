@@ -3,6 +3,19 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (ux-wind-direction-viz — SILENT)
+- **Done:** Wind direction visualisation relative to shot bearing in the caddie wind chip.
+  Commit `c03dd8e` on `integration/next`.
+
+  Files changed:
+  - **New `frontend/src/lib/caddie/wind-relative.ts`**: exported `windRelativeToShot(windFromDeg, windSpeedMph, shotBearingDeg)` — pure trig helper. Sign convention: `wind_direction` is meteorological (where wind comes FROM); `relativeAngle = normalise(windFromDeg − bearingDeg)`. `cos(relAngle) * speed` = headTailMph (positive=head, negative=tail); `|sin(relAngle) * speed|` = crossMph (unsigned); `side='R'` when `sin > 0` (from right, R→L ball push). Classifies into 5 kinds using 30°/60°/120°/150° thresholds. Exported type `WindRelativeResult`.
+  - **New `frontend/src/lib/caddie/wind-relative.test.ts`**: 17 vitest tests: zero wind, pure headwind ×2, pure tailwind ×2, crosswind R, crosswind L, head-cross R/L, tail-cross R/L, wraparound 0/360° ×3, headTailMph sign verification ×2.
+  - **`frontend/src/components/CaddiePanel.tsx`**: imported `windRelativeToShot`; added `windRelative` inline computation; extended plays-like wind chip to show `windRelative.label` (e.g. "Tailwind 8 mph" or "Crosswind 12 mph · R→L") when bearing+weather are available. Falls back to backend description silently.
+
+  Gates: lint clean · tsc clean · voice-tests 265/265 · vitest 365/365 (17 new) · build clean.
+  SILENT — logic improvement to an existing chip; only visible when GPS is active AND
+  a caddie recommendation with a wind adjustment has been fetched. No new UI surface.
+
 ## 2026-06-28 (gps-capacitor-migrate — SILENT)
 - **Done:** Migrated GPS from browser `navigator.geolocation` to `@capacitor/geolocation`
   on native (iOS), with a web fallback. Commit `f3ef9a7` on `integration/next`.
