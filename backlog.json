@@ -643,7 +643,7 @@
     {
       "id": "caddie-playslike-card",
       "priority": 13,
-      "status": "ready",
+      "status": "done-shipped-integration-next",
       "phase": 1,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -652,7 +652,8 @@
       "headless": "partial",
       "area": "frontend",
       "title": "Plays-like yardage card in the caddie panel",
-      "rationale": "Surface target_yards ('plays like') vs raw_yards + the per-factor adjustments breakdown ALREADY returned by /recommend, plus a wind-relative-to-shot chip. CaddiePanel.tsx. Data already present; mostly a UI surfacing win. Component test headless; live GPS = device."
+      "rationale": "Surface target_yards ('plays like') vs raw_yards + the per-factor adjustments breakdown ALREADY returned by /recommend, plus a wind-relative-to-shot chip. CaddiePanel.tsx. Data already present; mostly a UI surfacing win. Component test headless; live GPS = device.",
+      "shipped": "Built f938139 on integration/next (2026-06-28); plays-like card + per-factor breakdown + wind chip in CaddiePanel. Pure helper plays-like.ts + 10 tests. Awaiting next TestFlight bundle."
     },
     {
       "id": "caddie-altitude-pressure",
