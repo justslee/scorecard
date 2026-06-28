@@ -931,10 +931,11 @@
     {
       "id": "voice-setup-realtime-polish",
       "priority": 35,
-      "status": "ready",
+      "status": "done-shipped-integration-next",
       "classification": "noticeable",
       "title": "VoiceRoundSetupRealtime polish: drag-to-dismiss, mic icon, live header subtitle",
-      "rationale": "Designer nice-to-haves deferred from the first build (ship-blockers already fixed): (8) add drag-to-dismiss like the caddie sheet; (5) replace 'MUTE'/'MUTED' text with the mic SVG + strikethrough; (7) swap the static 'Tell me what you're playing.' subtitle to the live status once a conversation is active. Also apply the 44pt close-target fix to the old VoiceRoundSetup.tsx if it's still reachable."
+      "rationale": "Designer nice-to-haves deferred from the first build (ship-blockers already fixed): (8) add drag-to-dismiss like the caddie sheet; (5) replace 'MUTE'/'MUTED' text with the mic SVG + strikethrough; (7) swap the static 'Tell me what you're playing.' subtitle to the live status once a conversation is active. Also apply the 44pt close-target fix to the old VoiceRoundSetup.tsx if it's still reachable.",
+      "done_note": "2026-06-28: shipped on integration/next. (8) drag-to-dismiss via framer-motion useDragControls started from a 44pt grab handle (mirrors CaddieSheet: >120px/flick closes, else springs back; touchAction pan-y so the conversation list still scrolls); (5) MUTE/MUTED text replaced with an inline MicIcon + slash-when-muted (no lucide); (7) header subtitle now reflects live session status (connecting/listening/caddie speaking) once a conversation is active, falling back to the static 'Tell me what you're playing.' prompt at idle, plus a calm 'Let's try that again.' on error. 44pt-close fix N/A — old VoiceRoundSetup.tsx is unreachable in the app (only its own test + a stale comment reference it; round/new mounts VoiceRoundSetupRealtime). Frontend-only; gates green: lint 0, tsc 0, voice 265/265, vitest 365, build OK. WebRTC voice path is device-only verifiable -> rides the next TestFlight bundle."
     },
     {
       "id": "social-surface-partners",
