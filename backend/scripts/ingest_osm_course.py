@@ -86,6 +86,14 @@ from app.services.osm_ingest import (  # noqa: E402
 )
 from app.services.elevation import sample_course_elevations  # noqa: E402
 from app.services.golfapi_cache import get_course_golf_data  # noqa: E402
+from app.services.secrets import load_secrets_into_env  # noqa: E402
+
+# Pull prod secrets (incl. GOLF_API_KEY) from AWS Secrets Manager (looper/prod)
+# into the env, same as the API app does at boot. The standalone ingest sources
+# backend/.env when run via SSM, but GOLF_API_KEY lives in Secrets Manager, not
+# .env — without this the --golfapi-id cache fetch would never see the key.
+# No-op locally (no AWS creds) and never overrides an explicit env var.
+load_secrets_into_env()
 
 # ── Bethpage Black defaults ────────────────────────────────────────────────────
 
