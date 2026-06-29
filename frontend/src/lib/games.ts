@@ -94,6 +94,157 @@ export interface WolfResults {
   totals: Record<string, number>; // final totals
 }
 
+// -----------------
+// Scramble
+// -----------------
+/** Team format: each hole score = team's best (lowest) ball, mirroring how
+ *  scramble play works — everyone picks up after the chosen shot is taken. */
+export interface ScrambleResults {
+  teamScoresByHole: Record<string, (number | null)[]>; // teamId → 18-length array
+  totals: { teamId: string; total: number; holesPlayed: number }[];
+  winnerTeamId: string | null;
+}
+
+// -----------------
+// BingoBangoBongo
+// -----------------
+/** Bingo (first on green) · Bango (closest once all on) · Bongo (first to hole out).
+ *  All three events require shot-by-shot tracking not captured in the current data
+ *  model (strokes total only). Results are unavailable until event capture ships. */
+export interface BingoBangoBongoResults {
+  playerIds: string[];
+  /** Points per player — always empty until event capture is added. */
+  totals: Record<string, number>;
+  dataLimitations: string[];
+}
+
+// -----------------
+// Vegas
+// -----------------
+/** Team pair format: each team combines its two players' scores into a 2-digit
+ *  number (lower score = tens digit), then the difference × pointValue is wagered. */
+export interface VegasResults {
+  teamAId: string;
+  teamBId: string;
+  holes: {
+    holeNumber: number;
+    /** Combined 2-digit score for team A (e.g., scores 4 & 5 → 45). */
+    teamANumber: number | null;
+    teamBNumber: number | null;
+    /** teamBNumber − teamANumber; positive means Team A has the lower number and wins. */
+    diff: number | null;
+    winnerTeamId: string | null;
+  }[];
+  /** Cumulative points won/lost per team (net; wager format). */
+  totals: Record<string, number>;
+}
+
+// -----------------
+// Hammer
+// -----------------
+/** Press/doubling game where any player can "throw the hammer" to double the stakes.
+ *  Per-hole multipliers are stored in game.settings.hammerMultiplierByHole (default 1).
+ *  Live hammer-throw events need per-hole event capture (follow-up item). */
+export interface HammerResults {
+  playerIds: string[];
+  holes: {
+    holeNumber: number;
+    /** Active multiplier for this hole (1 if no hammer thrown). */
+    multiplier: number;
+    /** Player with lowest score, or null on a tie. */
+    winnerPlayerId: string | null;
+    /** Points transferred (multiplier × pointValue); 0 on a tie. */
+    points: number;
+  }[];
+  /** Net cumulative points per player (wager format — sums to zero). */
+  totals: Record<string, number>;
+  dataLimitations: string[];
+}
+
+// -----------------
+// Rabbit
+// -----------------
+/** Win a hole outright to "capture" the rabbit; the rabbit transfers to whoever
+ *  wins the next outright hole. Front-9 and back-9 holders each win a segment. */
+export interface RabbitResults {
+  playerIds: string[];
+  holes: {
+    holeNumber: number;
+    /** Player who won this hole outright (null on a tie / no score). */
+    outright: string | null;
+    /** Who holds the rabbit after this hole resolves. */
+    holder: string | null;
+    /** True when the rabbit changed hands on this hole. */
+    changed: boolean;
+  }[];
+  /** Rabbit holder at end of hole 9. */
+  front9HolderId: string | null;
+  /** Rabbit holder at end of hole 18. */
+  back9HolderId: string | null;
+}
+
+// -----------------
+// Trash / Junk
+// -----------------
+/** Point game for scoring achievements computable from stroke data:
+ *  birdie = pointValue, eagle = 2×, albatross = 3×.
+ *  Greenies, sandies, barkies, and snakes need per-shot event capture. */
+export interface TrashResults {
+  playerIds: string[];
+  events: {
+    type: 'birdie' | 'eagle' | 'albatross';
+    playerId: string;
+    holeNumber: number;
+    /** Points awarded for this event. */
+    pointValue: number;
+  }[];
+  /** Total trash points per player. */
+  totals: Record<string, number>;
+  dataLimitations: string[];
+}
+
+// -----------------
+// Chicago
+// -----------------
+/** Quota-based stableford variant: each player's quota = chicagoQuotaBase − handicap.
+ *  Points: bogey=1, par=2, birdie=4, eagle=8, albatross=16.
+ *  Net = total stableford points − quota; highest net wins. */
+export interface ChicagoResults {
+  playerIds: string[];
+  /** Each player's pre-round quota (base − handicap). */
+  quotas: Record<string, number>;
+  pointsByHole: { holeNumber: number; points: Record<string, number | null> }[];
+  /** Total stableford points per player (before subtracting quota). */
+  totals: Record<string, number>;
+  /** total − quota; positive = beat quota. */
+  netVsQuota: Record<string, number>;
+  /** Player with the highest netVsQuota, or null on a tie. */
+  winnerPlayerId: string | null;
+}
+
+// -----------------
+// Defender
+// -----------------
+/** One player defends each hole against the field. If the defender has the
+ *  sole lowest score they earn pointValue per challenger beaten; otherwise
+ *  each beater earns pointValue from the defender. Defender rotates each hole
+ *  unless game.settings.defenderPlayerId is set for a fixed defender. */
+export interface DefenderResults {
+  holes: {
+    holeNumber: number;
+    /** The player defending this hole. */
+    defenderId: string;
+    /** 'defended' = sole low score; 'beaten' = at least one challenger lower; 'no_score' = incomplete. */
+    result: 'defended' | 'beaten' | 'no_score';
+    /** Players who scored lower than the defender on this hole. */
+    beaterIds: string[];
+    /** Points delta for the defender on this hole (positive = won, negative = lost). */
+    defenderDelta: number;
+  }[];
+  /** Cumulative net points per player. */
+  totals: Record<string, number>;
+}
+
 export interface GameResults {
   skins?: SkinsResults;
   bestBall?: BestBallResults;
@@ -102,10 +253,14 @@ export interface GameResults {
   stableford?: StablefordResults;
   matchPlay?: MatchPlayResults;
   wolf?: WolfResults;
-  // stubs for later
-  scramble?: unknown;
-  bingoBangoBongo?: unknown;
-  vegas?: unknown;
+  scramble?: ScrambleResults;
+  bingoBangoBongo?: BingoBangoBongoResults;
+  vegas?: VegasResults;
+  hammer?: HammerResults;
+  rabbit?: RabbitResults;
+  trash?: TrashResults;
+  chicago?: ChicagoResults;
+  defender?: DefenderResults;
 }
 
 export function computeGameResults(round: Round, game: Game): GameResults {
@@ -125,6 +280,22 @@ export function computeGameResults(round: Round, game: Game): GameResults {
       return { matchPlay: computeMatchPlay(round, game) };
     case 'wolf':
       return { wolf: computeWolf(round, game) };
+    case 'scramble':
+      return { scramble: computeScramble(round, game) };
+    case 'bingoBangoBongo':
+      return { bingoBangoBongo: computeBingoBangoBongo(round, game) };
+    case 'vegas':
+      return { vegas: computeVegas(round, game) };
+    case 'hammer':
+      return { hammer: computeHammer(round, game) };
+    case 'rabbit':
+      return { rabbit: computeRabbit(round, game) };
+    case 'trash':
+      return { trash: computeTrash(round, game) };
+    case 'chicago':
+      return { chicago: computeChicago(round, game) };
+    case 'defender':
+      return { defender: computeDefender(round, game) };
     default:
       return {};
   }
@@ -709,4 +880,457 @@ export function computeWolf(round: Round, game: Game): WolfResults {
   }
 
   return { orderPlayerIds: order, holes, totals };
+}
+
+// -----------------
+// Scramble
+// -----------------
+/** Mirrors computeBestBall: team score per hole = lowest individual score on the team.
+ *  In a real scramble all players hit from the chosen best spot, so the recorded
+ *  scores should already reflect the team's best effort — taking the min is the
+ *  standard approximation when only a single stroke count is stored per player. */
+export function computeScramble(round: Round, game: Game): ScrambleResults {
+  const teams = game.teams ?? [];
+  const teamScoresByHole: ScrambleResults['teamScoresByHole'] = {};
+
+  for (const t of teams) {
+    const holeScores: (number | null)[] = [];
+    const maps = t.playerIds.map(pid => scoreByHole(round.scores, pid));
+
+    for (let holeNumber = 1; holeNumber <= 18; holeNumber++) {
+      const strokes = maps
+        .map(m => m.get(holeNumber))
+        .filter((v): v is number => typeof v === 'number');
+      holeScores.push(strokes.length ? Math.min(...strokes) : null);
+    }
+
+    teamScoresByHole[t.id] = holeScores;
+  }
+
+  const totals = teams.map(t => {
+    const arr = teamScoresByHole[t.id] ?? [];
+    const played = arr.filter((v): v is number => typeof v === 'number');
+    return {
+      teamId: t.id,
+      holesPlayed: played.length,
+      total: played.reduce((a, b) => a + b, 0),
+    };
+  });
+
+  let winnerTeamId: string | null = null;
+  const withScores = totals.filter(t => t.holesPlayed > 0);
+  if (withScores.length >= 2) {
+    const min = Math.min(...withScores.map(t => t.total));
+    const w = withScores.filter(t => t.total === min);
+    if (w.length === 1) winnerTeamId = w[0].teamId;
+  }
+
+  return { teamScoresByHole, totals, winnerTeamId };
+}
+
+// -----------------
+// BingoBangoBongo
+// -----------------
+/** All three events (Bingo/Bango/Bongo) require shot-by-shot event data that is
+ *  not present in the current Score model (strokes total per hole only). This
+ *  function returns a well-typed stub so the UI can render a clear "needs event
+ *  capture" message rather than silently falling through to the generic fallback. */
+export function computeBingoBangoBongo(round: Round, game: Game): BingoBangoBongoResults {
+  const playerIds = game.playerIds.length ? game.playerIds : round.players.map(p => p.id);
+  const totals: Record<string, number> = {};
+  for (const pid of playerIds) totals[pid] = 0;
+  return {
+    playerIds,
+    totals,
+    dataLimitations: [
+      'Bingo (first player to reach the green) — requires shot-by-shot green tracking',
+      'Bango (closest to pin once all are on the green) — requires proximity event capture',
+      'Bongo (first to hole out) — requires holing-out order event capture',
+    ],
+  };
+}
+
+// -----------------
+// Vegas
+// -----------------
+/** Each team combines its two players' scores into a 2-digit number (low score
+ *  as the tens digit, high as the units, e.g., 4 & 5 → 45). The hole winner is
+ *  the team with the smaller number; the difference × pointValue is the wager. */
+export function computeVegas(round: Round, game: Game): VegasResults {
+  const teams = game.teams ?? [];
+  const teamA = teams[0];
+  const teamB = teams[1];
+  const teamAId = teamA?.id ?? 'A';
+  const teamBId = teamB?.id ?? 'B';
+  const pointValue = game.settings.pointValue ?? 1;
+
+  const mapsA = (teamA?.playerIds ?? []).map(pid => scoreByHole(round.scores, pid));
+  const mapsB = (teamB?.playerIds ?? []).map(pid => scoreByHole(round.scores, pid));
+
+  const totals: Record<string, number> = { [teamAId]: 0, [teamBId]: 0 };
+
+  /** Combine two (or more) scores into a Vegas number — lowest two digits, low first. */
+  const vegasNumber = (scores: number[]): number | null => {
+    if (scores.length < 2) return null;
+    const sorted = [...scores].sort((a, b) => a - b);
+    return sorted[0] * 10 + sorted[1];
+  };
+
+  const holes: VegasResults['holes'] = [];
+
+  for (let holeNumber = 1; holeNumber <= 18; holeNumber++) {
+    const aScores = mapsA.map(m => m.get(holeNumber)).filter((v): v is number => typeof v === 'number');
+    const bScores = mapsB.map(m => m.get(holeNumber)).filter((v): v is number => typeof v === 'number');
+
+    const teamANumber = vegasNumber(aScores);
+    const teamBNumber = vegasNumber(bScores);
+
+    let diff: number | null = null;
+    let winnerTeamId: string | null = null;
+
+    if (teamANumber !== null && teamBNumber !== null) {
+      // positive diff → Team A has smaller number → Team A wins
+      diff = teamBNumber - teamANumber;
+      if (diff > 0) {
+        winnerTeamId = teamAId;
+        totals[teamAId] += diff * pointValue;
+        totals[teamBId] -= diff * pointValue;
+      } else if (diff < 0) {
+        winnerTeamId = teamBId;
+        totals[teamBId] += Math.abs(diff) * pointValue;
+        totals[teamAId] -= Math.abs(diff) * pointValue;
+      }
+      // diff === 0: push, no exchange
+    }
+
+    holes.push({ holeNumber, teamANumber, teamBNumber, diff, winnerTeamId });
+  }
+
+  return { teamAId, teamBId, holes, totals };
+}
+
+// -----------------
+// Hammer
+// -----------------
+/** Head-to-head (or multi-player) doubling game. Per-hole multiplier is read from
+ *  game.settings.hammerMultiplierByHole (default 1 for every hole). The hole winner
+ *  (sole lowest score) earns multiplier × pointValue from each loser. Ties push.
+ *
+ *  Follow-up: live hammer-throw events (who throws/accepts per hole) need a
+ *  per-hole event capture UI and a new HammerHoleEvent type in the data model. */
+export function computeHammer(round: Round, game: Game): HammerResults {
+  const playerIds = game.playerIds.length ? game.playerIds : round.players.map(p => p.id);
+  const pointValue = game.settings.pointValue ?? 1;
+  const multipliersByHole = game.settings.hammerMultiplierByHole ?? {};
+
+  const scoreMaps = new Map<string, Map<number, number>>(
+    playerIds.map(pid => [pid, scoreByHole(round.scores, pid)])
+  );
+
+  const totals: Record<string, number> = {};
+  for (const pid of playerIds) totals[pid] = 0;
+
+  const holes: HammerResults['holes'] = [];
+
+  for (let holeNumber = 1; holeNumber <= 18; holeNumber++) {
+    const multiplier = multipliersByHole[holeNumber] ?? 1;
+    const scoresThisHole: { playerId: string; strokes: number }[] = [];
+
+    for (const pid of playerIds) {
+      const strokes = scoreMaps.get(pid)?.get(holeNumber);
+      if (typeof strokes === 'number') scoresThisHole.push({ playerId: pid, strokes });
+    }
+
+    let winnerPlayerId: string | null = null;
+    let points = 0;
+
+    if (scoresThisHole.length >= 2) {
+      const min = Math.min(...scoresThisHole.map(s => s.strokes));
+      const winners = scoresThisHole.filter(s => s.strokes === min);
+
+      if (winners.length === 1) {
+        winnerPlayerId = winners[0].playerId;
+        const losers = scoresThisHole.filter(s => s.strokes > min);
+        points = multiplier * pointValue;
+        // Winner collects `points` from each loser.
+        for (const loser of losers) {
+          totals[winnerPlayerId] += points;
+          totals[loser.playerId] -= points;
+        }
+      }
+      // ties: push — no exchange
+    }
+
+    holes.push({ holeNumber, multiplier, winnerPlayerId, points });
+  }
+
+  return {
+    playerIds,
+    holes,
+    totals,
+    dataLimitations: [
+      'Hammer throws (doubling events) are not tracked per-hole. ' +
+      'Record multipliers in game.settings.hammerMultiplierByHole or add live ' +
+      'event capture for throw/accept/concede per hole.',
+    ],
+  };
+}
+
+// -----------------
+// Rabbit
+// -----------------
+/** Win a hole outright (sole lowest score) to capture the rabbit. The rabbit
+ *  transfers immediately to whoever wins the next outright hole (even if the
+ *  current holder is not the one who lost — the common "direct transfer" variant).
+ *  Ties leave the rabbit with its current holder (or still free if not yet captured).
+ *  Front-9 and back-9 holders win a segment each. */
+export function computeRabbit(round: Round, game: Game): RabbitResults {
+  const playerIds = game.playerIds.length ? game.playerIds : round.players.map(p => p.id);
+  const scoreMaps = new Map<string, Map<number, number>>(
+    playerIds.map(pid => [pid, scoreByHole(round.scores, pid)])
+  );
+
+  let holder: string | null = null;
+  let front9HolderId: string | null = null;
+  const holes: RabbitResults['holes'] = [];
+
+  for (let holeNumber = 1; holeNumber <= 18; holeNumber++) {
+    const scoresThisHole: { playerId: string; strokes: number }[] = [];
+    for (const pid of playerIds) {
+      const strokes = scoreMaps.get(pid)?.get(holeNumber);
+      if (typeof strokes === 'number') scoresThisHole.push({ playerId: pid, strokes });
+    }
+
+    let outright: string | null = null;
+    let changed = false;
+
+    if (scoresThisHole.length >= 2) {
+      const min = Math.min(...scoresThisHole.map(s => s.strokes));
+      const winners = scoresThisHole.filter(s => s.strokes === min);
+
+      if (winners.length === 1) {
+        outright = winners[0].playerId;
+        if (holder !== outright) {
+          holder = outright; // rabbit transfers (or is captured for the first time)
+          changed = true;
+        }
+        // Holder wins again → keep, no change flag
+      }
+      // tie: rabbit stays with current holder, no change
+    }
+
+    if (holeNumber === 9) front9HolderId = holder;
+    holes.push({ holeNumber, outright, holder, changed });
+  }
+
+  return { playerIds, holes, front9HolderId, back9HolderId: holder };
+}
+
+// -----------------
+// Trash / Junk
+// -----------------
+/** Awards points for scoring achievements derivable from stroke + par data.
+ *  Birdie = 1×pointValue, Eagle = 2×, Albatross = 3×.
+ *
+ *  Follow-up (needs event capture per-shot):
+ *    - Greenie: closest to pin on a par-3 in regulation
+ *    - Sandy: up-and-down from a bunker for par or better
+ *    - Barkie: par or better after hitting a tree
+ *    - Snake: three-putt (needs per-hole putt count) */
+export function computeTrash(round: Round, game: Game): TrashResults {
+  const playerIds = game.playerIds.length ? game.playerIds : round.players.map(p => p.id);
+  const pointValue = game.settings.pointValue ?? 1;
+  const parByHole = new Map<number, number>(round.holes.map(h => [h.number, h.par]));
+  const scoreMaps = new Map<string, Map<number, number>>(
+    playerIds.map(pid => [pid, scoreByHole(round.scores, pid)])
+  );
+
+  const events: TrashResults['events'] = [];
+  const totals: Record<string, number> = {};
+  for (const pid of playerIds) totals[pid] = 0;
+
+  for (const pid of playerIds) {
+    const m = scoreMaps.get(pid)!;
+    for (let hole = 1; hole <= 18; hole++) {
+      const strokes = m.get(hole);
+      const par = parByHole.get(hole);
+      if (typeof strokes !== 'number' || typeof par !== 'number') continue;
+
+      const diff = strokes - par;
+      if (diff === -1) {
+        events.push({ type: 'birdie', playerId: pid, holeNumber: hole, pointValue });
+        totals[pid] += pointValue;
+      } else if (diff === -2) {
+        events.push({ type: 'eagle', playerId: pid, holeNumber: hole, pointValue: pointValue * 2 });
+        totals[pid] += pointValue * 2;
+      } else if (diff <= -3) {
+        events.push({ type: 'albatross', playerId: pid, holeNumber: hole, pointValue: pointValue * 3 });
+        totals[pid] += pointValue * 3;
+      }
+    }
+  }
+
+  return {
+    playerIds,
+    events,
+    totals,
+    dataLimitations: [
+      'Greenie (closest to pin on par-3 in regulation) — needs proximity event capture',
+      'Sandy (up-and-down from bunker for par or better) — needs bunker event capture',
+      'Barkie (par or better after hitting a tree) — needs tree/penalty event capture',
+      'Snake (three-putt) — needs per-hole putt count',
+    ],
+  };
+}
+
+// -----------------
+// Chicago
+// -----------------
+/** Quota-based stableford (standard points: bogey=1, par=2, birdie=4, eagle=8,
+ *  albatross=16). Each player's quota = chicagoQuotaBase (default 39) − handicap.
+ *  Net vs quota = total stableford points − quota; highest net wins. */
+export function computeChicago(round: Round, game: Game): ChicagoResults {
+  const playerIds = game.playerIds.length ? game.playerIds : round.players.map(p => p.id);
+  const parByHole = new Map<number, number>(round.holes.map(h => [h.number, h.par]));
+  const quotaBase = game.settings.chicagoQuotaBase ?? 39;
+
+  const quotas: Record<string, number> = {};
+  for (const pid of playerIds) {
+    const player = round.players.find(p => p.id === pid);
+    const handicap = player?.handicap ?? 0;
+    quotas[pid] = Math.max(0, quotaBase - Math.round(handicap));
+  }
+
+  const scoreMaps = new Map<string, Map<number, number>>(
+    playerIds.map(pid => [pid, scoreByHole(round.scores, pid)])
+  );
+
+  const chicagoPoints = (strokes: number, par: number): number => {
+    const diff = strokes - par;
+    if (diff <= -3) return 16; // albatross or better
+    if (diff === -2) return 8;  // eagle
+    if (diff === -1) return 4;  // birdie
+    if (diff === 0) return 2;   // par
+    if (diff === 1) return 1;   // bogey
+    return 0;                   // double bogey or worse
+  };
+
+  const pointsByHole: ChicagoResults['pointsByHole'] = [];
+  const totals: Record<string, number> = {};
+  for (const pid of playerIds) totals[pid] = 0;
+
+  for (let hole = 1; hole <= 18; hole++) {
+    const points: Record<string, number | null> = {};
+    const par = parByHole.get(hole);
+
+    for (const pid of playerIds) {
+      const strokes = scoreMaps.get(pid)?.get(hole);
+      if (typeof strokes === 'number' && typeof par === 'number') {
+        const pts = chicagoPoints(strokes, par);
+        points[pid] = pts;
+        totals[pid] += pts;
+      } else {
+        points[pid] = null;
+      }
+    }
+
+    pointsByHole.push({ holeNumber: hole, points });
+  }
+
+  const netVsQuota: Record<string, number> = {};
+  for (const pid of playerIds) netVsQuota[pid] = (totals[pid] ?? 0) - (quotas[pid] ?? 0);
+
+  let winnerPlayerId: string | null = null;
+  const playersWithAnyScore = playerIds.filter(pid => totals[pid] > 0 || playerIds.length >= 2);
+  if (playersWithAnyScore.length >= 2) {
+    const maxNet = Math.max(...playerIds.map(pid => netVsQuota[pid]));
+    const winners = playerIds.filter(pid => netVsQuota[pid] === maxNet);
+    if (winners.length === 1) winnerPlayerId = winners[0];
+  }
+
+  return { playerIds, quotas, pointsByHole, totals, netVsQuota, winnerPlayerId };
+}
+
+// -----------------
+// Defender
+// -----------------
+/** One player defends each hole against the field. Defender is either fixed
+ *  (game.settings.defenderPlayerId) or rotates by (holeNumber − 1) % playerIds.length.
+ *  Defender wins sole-low → earns pointValue per challenged player who has a score.
+ *  Any challenger scores lower than the defender → each earns pointValue from the defender.
+ *  Ties on the low score (defender ties with a challenger) count as the defender NOT winning.
+ *
+ *  Settlement note: this is a wager format — net totals should feed computeGameNetWinnings
+ *  once the settlement branch adds support for this format. */
+export function computeDefender(round: Round, game: Game): DefenderResults {
+  const playerIds = game.playerIds.length ? game.playerIds : round.players.map(p => p.id);
+  const pointValue = game.settings.pointValue ?? 1;
+  const fixedDefenderId = game.settings.defenderPlayerId ?? null;
+
+  const scoreMaps = new Map<string, Map<number, number>>(
+    playerIds.map(pid => [pid, scoreByHole(round.scores, pid)])
+  );
+
+  const totals: Record<string, number> = {};
+  for (const pid of playerIds) totals[pid] = 0;
+
+  const holes: DefenderResults['holes'] = [];
+
+  for (let holeNumber = 1; holeNumber <= 18; holeNumber++) {
+    const defenderId = fixedDefenderId ?? playerIds[(holeNumber - 1) % playerIds.length];
+    if (!defenderId) {
+      continue; // no players configured
+    }
+
+    const defenderScore = scoreMaps.get(defenderId)?.get(holeNumber);
+    const challengers = playerIds.filter(pid => pid !== defenderId);
+
+    if (typeof defenderScore !== 'number') {
+      holes.push({ holeNumber, defenderId, result: 'no_score', beaterIds: [], defenderDelta: 0 });
+      continue;
+    }
+
+    const beaterIds: string[] = [];
+    const scoredChallengers: string[] = [];
+
+    for (const pid of challengers) {
+      const challengerScore = scoreMaps.get(pid)?.get(holeNumber);
+      if (typeof challengerScore === 'number') {
+        scoredChallengers.push(pid);
+        if (challengerScore < defenderScore) beaterIds.push(pid);
+      }
+    }
+
+    if (scoredChallengers.length === 0) {
+      holes.push({ holeNumber, defenderId, result: 'no_score', beaterIds: [], defenderDelta: 0 });
+      continue;
+    }
+
+    if (beaterIds.length === 0) {
+      // No challenger beat the defender — won only if defender is the sole low score.
+      const isSoleLow = scoredChallengers.every(
+        pid => (scoreMaps.get(pid)!.get(holeNumber) as number) > defenderScore
+      );
+
+      if (isSoleLow) {
+        // Defender collects pointValue from each scored challenger (zero-sum).
+        const delta = pointValue * scoredChallengers.length;
+        totals[defenderId] += delta;
+        for (const pid of scoredChallengers) totals[pid] -= pointValue;
+        holes.push({ holeNumber, defenderId, result: 'defended', beaterIds: [], defenderDelta: delta });
+      } else {
+        // Defender tied with at least one challenger — no exchange.
+        holes.push({ holeNumber, defenderId, result: 'no_score', beaterIds: [], defenderDelta: 0 });
+      }
+    } else {
+      // Defender was beaten by at least one challenger.
+      // Each beater collects pointValue from the defender (zero-sum).
+      const delta = -pointValue * beaterIds.length;
+      totals[defenderId] += delta;
+      for (const bid of beaterIds) totals[bid] += pointValue;
+      holes.push({ holeNumber, defenderId, result: 'beaten', beaterIds, defenderDelta: delta });
+    }
+  }
+
+  return { holes, totals };
 }

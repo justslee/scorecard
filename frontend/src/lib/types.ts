@@ -136,6 +136,19 @@ export interface GameSettings {
     | { mode: 'lone' }
     | { mode: 'partner'; partnerId: string }
   >;
+
+  // hammer — per-hole doubling multiplier recorded after each throw/accept.
+  // Key = hole number (1-18); value = active multiplier for that hole (default 1).
+  // Live hammer doubling events need per-hole event capture (follow-up item).
+  hammerMultiplierByHole?: Record<number, number>;
+
+  // defender — optional fixed defender player ID for the whole round.
+  // When absent, defender rotates by (holeNumber - 1) % playerIds.length each hole.
+  defenderPlayerId?: string;
+
+  // chicago — quota base (default 39). Each player's quota = base - handicap.
+  // Points: bogey=1, par=2, birdie=4, eagle=8, albatross=16.
+  chicagoQuotaBase?: number;
 }
 
 export interface Game {
