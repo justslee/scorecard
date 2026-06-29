@@ -22,6 +22,12 @@
 
 import * as turf from '@turf/turf';
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/** Metres per degree of latitude (WGS-84 mean). Module-level so the forward
+ *  and inverse transform functions share the exact same value. */
+const LAT_M = 111_320;
+
 // ── Public types ──────────────────────────────────────────────────────────────
 
 /** A projected polygon (one per GeoJSON feature) in SVG coordinates. */
@@ -30,6 +36,40 @@ export interface ProjectedPolygon {
   type: string;
   /** Outer-ring vertices in SVG pixel space, in order, NO closing duplicate. */
   points: [number, number][];
+}
+
+/**
+ * All parameters that define the full lat/lng ↔ SVG coordinate transform.
+ *
+ * Exposed so callers can:
+ *   - Invert the projection: SVG pixel → lat/lng  (see `unprojectPoint`)
+ *   - Apply the forward transform to arbitrary lat/lng: e.g. a GPS fix
+ *     (see `projectLatLng`)
+ *   - Detect whether a GPS position is near this hole  (see `isOnHoleBbox`)
+ */
+export interface ProjectionParams {
+  /** SW corner of the raw geographic bounding box (all polygon vertices). */
+  minLng: number;
+  minLat: number;
+  /** NE corner. */
+  maxLng: number;
+  maxLat: number;
+  /** Cosine of the mean latitude — used for the equirectangular x correction. */
+  cosLat: number;
+  /** Rotation angle in radians (positive = CCW in standard math orientation).
+   *  Applied around (cx, cy) in metre-space to orient tee→green axis vertically. */
+  angle: number;
+  /** Rotation centre in pre-rotation metre space. */
+  cx: number;
+  cy: number;
+  /** Metres-to-pixels scale factor (uniform). */
+  scale: number;
+  /** SVG pixel offsets (left/top of the scaled diagram within the viewport). */
+  offsetX: number;
+  offsetY: number;
+  /** Post-rotation metre-space left edge and top edge (used in scale/offset math). */
+  rxMin: number;
+  ryMax: number;
 }
 
 /** The result of projectHole — everything the renderer needs. */
@@ -43,6 +83,12 @@ export interface ProjectedHole {
   teePt: [number, number];
   /** Green centroid in SVG coords. */
   greenPt: [number, number];
+  /** Full coordinate-transform parameters (needed by unprojectPoint / projectLatLng). */
+  params: ProjectionParams;
+  /** Geographic lat/lng of the tee centroid (for distance calculations). */
+  teeLatLng: { lat: number; lng: number } | null;
+  /** Geographic lat/lng of the green centroid (for distance calculations). */
+  greenLatLng: { lat: number; lng: number } | null;
 }
 
 /** Target viewport dimensions for the projection. */
@@ -95,6 +141,93 @@ export function rotatePoint(
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+}
+
+// ── Forward & inverse coordinate transforms ───────────────────────────────────
+
+/**
+ * Forward: project a geographic lat/lng to SVG pixel coordinates using the
+ * transform parameters returned by `projectHole`.
+ *
+ * This is the same math that `projectHole` applies internally; exposed here so
+ * callers can plot arbitrary lat/lng points (e.g. a live GPS fix) onto the
+ * diagram without re-running the full projection.
+ */
+export function projectLatLng(
+  latlng: { lat: number; lng: number },
+  params: ProjectionParams
+): [number, number] {
+  const { minLng, minLat, cosLat, angle, cx, cy, scale, offsetX, offsetY, rxMin, ryMax } = params;
+  // 1. Flat-earth metre space (equirectangular, origin at SW corner of bbox)
+  const xM = (latlng.lng - minLng) * LAT_M * cosLat;
+  const yM = (latlng.lat - minLat) * LAT_M;
+  // 2. Rotate around bbox centre to orient tee→green axis vertically
+  const [xR, yR] = rotatePoint(xM, yM, cx, cy, angle);
+  // 3. Scale + translate + y-flip (SVG y increases downward)
+  return [
+    offsetX + (xR - rxMin) * scale,
+    offsetY + (ryMax - yR) * scale,
+  ];
+}
+
+/**
+ * Inverse: convert an SVG pixel coordinate to a geographic lat/lng by
+ * applying each step of the forward transform in reverse.
+ *
+ * Accuracy: floating-point round-trip errors are <1e-9 degrees for points
+ * within the hole bounding box.
+ */
+export function unprojectPoint(
+  svg: { x: number; y: number },
+  params: ProjectionParams
+): { lat: number; lng: number } {
+  const { minLng, minLat, cosLat, angle, cx, cy, scale, offsetX, offsetY, rxMin, ryMax } = params;
+  // 1. Undo SVG y-flip and scale/translate → rotated metre space
+  const xR = (svg.x - offsetX) / scale + rxMin;
+  const yR = ryMax - (svg.y - offsetY) / scale;
+  // 2. Undo the tee→green orientation rotation
+  const [xM, yM] = rotatePoint(xR, yR, cx, cy, -angle);
+  // 3. Undo the flat-earth projection → lat/lng
+  const lat = yM / LAT_M + minLat;
+  const lng = cosLat > 0 ? xM / (LAT_M * cosLat) + minLng : minLng;
+  return { lat, lng };
+}
+
+// ── GPS / on-hole helpers ──────────────────────────────────────────────────────
+
+/**
+ * Returns true when a GPS position is within the hole's geographic bounding
+ * box expanded by `marginDeg` on all four sides.
+ *
+ * Default margin ≈ 0.006° ≈ 660 m ≈ 720 yds — enough to include a player
+ * who is anywhere near the hole (on the tee, in the fairway, or on the green)
+ * while rejecting a position 28 miles away (the "50531 yds" absurdity).
+ */
+export function isOnHoleBbox(
+  pos: { lat: number; lng: number },
+  params: Pick<ProjectionParams, 'minLat' | 'maxLat' | 'minLng' | 'maxLng'>,
+  marginDeg = 0.006
+): boolean {
+  return (
+    pos.lat >= params.minLat - marginDeg &&
+    pos.lat <= params.maxLat + marginDeg &&
+    pos.lng >= params.minLng - marginDeg &&
+    pos.lng <= params.maxLng + marginDeg
+  );
+}
+
+/**
+ * Compute the straight-line distance between two geographic coordinates in
+ * yards (the standard golf unit).
+ *
+ * Uses the same turf haversine method as `holeLengthYards` for consistency.
+ */
+export function yardsDistance(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number }
+): number {
+  const m = turf.distance([a.lng, a.lat], [b.lng, b.lat], { units: 'meters' });
+  return Math.round(m * 1.09361);
 }
 
 // ── Core projection ────────────────────────────────────────────────────────────
@@ -156,7 +289,6 @@ export function projectHole(
   // the hole would appear horizontally stretched by ~32 %.
   const midLat = (minLat + maxLat) / 2;
   const cosLat = Math.cos((midLat * Math.PI) / 180);
-  const LAT_M = 111_320; // metres per degree of latitude (WGS-84 mean)
 
   function toMeters(coord: number[]): [number, number] {
     const [lng, lat] = coord;
@@ -280,11 +412,35 @@ export function projectHole(
   const svgTee: [number, number] = teeR ? toSVG(teeR) : [W / 2, H - P];
   const svgGreen: [number, number] = greenR ? toSVG(greenR) : [W / 2, P];
 
+  // ── Build projection params (for unproject / GPS plotting) ────────────────
+  const params: ProjectionParams = {
+    minLng,
+    minLat,
+    maxLng,
+    maxLat,
+    cosLat,
+    angle: r,
+    cx,
+    cy,
+    scale,
+    offsetX,
+    offsetY,
+    rxMin,
+    ryMax,
+  };
+
   return {
     polygons: svgPolygons,
     line: [svgTee, svgGreen],
     teePt: svgTee,
     greenPt: svgGreen,
+    params,
+    teeLatLng: teeCentroid
+      ? { lat: teeCentroid[1], lng: teeCentroid[0] }
+      : null,
+    greenLatLng: greenCentroid
+      ? { lat: greenCentroid[1], lng: greenCentroid[0] }
+      : null,
   };
 }
 

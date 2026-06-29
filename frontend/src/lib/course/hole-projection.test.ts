@@ -10,10 +10,15 @@ import {
   ringCentroid,
   rotatePoint,
   projectHole,
+  projectLatLng,
+  unprojectPoint,
+  isOnHoleBbox,
+  yardsDistance,
   holeLengthYards,
   describeHazards,
   type Viewport,
   type ProjectedHole,
+  type ProjectionParams,
 } from './hole-projection';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -415,5 +420,233 @@ describe('describeHazards', () => {
     const features = [makePolygon('bunker', BUNKER_RING)];
     const desc = describeHazards(features, null);
     expect(desc).toBe('1 bunker');
+  });
+});
+
+// ── projectLatLng / unprojectPoint round-trip ─────────────────────────────────
+
+/**
+ * Helper: build a projected hole and return the params.
+ * Uses our standard VIEWPORT and the tee+green+fairway fixture.
+ */
+function getParams(): ProjectionParams {
+  const features = [
+    makePolygon('tee', TEE_RING),
+    makePolygon('green', GREEN_RING),
+    makePolygon('fairway', FAIRWAY_RING),
+  ];
+  const result = projectHole(features, VIEWPORT) as ProjectedHole;
+  return result.params;
+}
+
+describe('projectLatLng / unprojectPoint round-trip', () => {
+  const params = getParams();
+
+  /** Round-trip a lat/lng through the forward then inverse transform. */
+  function roundTrip(lat: number, lng: number): { lat: number; lng: number } {
+    const svg = projectLatLng({ lat, lng }, params);
+    return unprojectPoint({ x: svg[0], y: svg[1] }, params);
+  }
+
+  it('tee centroid round-trips within 1e-7 degrees', () => {
+    // Tee centroid is the mean of TEE_RING vertices
+    const lat = TEE_LAT + 0.0001;  // approx centroid lat
+    const lng = BASE_LNG;
+    const rt = roundTrip(lat, lng);
+    expect(rt.lat).toBeCloseTo(lat, 7);
+    expect(rt.lng).toBeCloseTo(lng, 7);
+  });
+
+  it('green centroid round-trips within 1e-7 degrees', () => {
+    const lat = GREEN_LAT + 0.00015;
+    const lng = BASE_LNG;
+    const rt = roundTrip(lat, lng);
+    expect(rt.lat).toBeCloseTo(lat, 7);
+    expect(rt.lng).toBeCloseTo(lng, 7);
+  });
+
+  it('fairway midpoint round-trips within 1e-7 degrees', () => {
+    const lat = (TEE_LAT + GREEN_LAT) / 2;
+    const lng = BASE_LNG;
+    const rt = roundTrip(lat, lng);
+    expect(rt.lat).toBeCloseTo(lat, 7);
+    expect(rt.lng).toBeCloseTo(lng, 7);
+  });
+
+  it('off-centre point (NE of fairway) round-trips within 1e-7 degrees', () => {
+    const lat = TEE_LAT + 0.002;
+    const lng = BASE_LNG + 0.001;
+    const rt = roundTrip(lat, lng);
+    expect(rt.lat).toBeCloseTo(lat, 7);
+    expect(rt.lng).toBeCloseTo(lng, 7);
+  });
+
+  it('projectLatLng returns an SVG point within viewport bounds for an in-hole coord', () => {
+    // Tee centroid should land inside the padded area
+    const svg = projectLatLng({ lat: TEE_LAT + 0.0001, lng: BASE_LNG }, params);
+    const P = VIEWPORT.padding;
+    expect(svg[0]).toBeGreaterThanOrEqual(P - 1);
+    expect(svg[0]).toBeLessThanOrEqual(VIEWPORT.width - P + 1);
+    expect(svg[1]).toBeGreaterThanOrEqual(P - 1);
+    expect(svg[1]).toBeLessThanOrEqual(VIEWPORT.height - P + 1);
+  });
+
+  it('teePt from projectHole matches projectLatLng applied to teeLatLng', () => {
+    const features = [
+      makePolygon('tee', TEE_RING),
+      makePolygon('green', GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+    ];
+    const result = projectHole(features, VIEWPORT) as ProjectedHole;
+    expect(result.teeLatLng).not.toBeNull();
+    const svg = projectLatLng(result.teeLatLng!, result.params);
+    expect(svg[0]).toBeCloseTo(result.teePt[0], 3);
+    expect(svg[1]).toBeCloseTo(result.teePt[1], 3);
+  });
+});
+
+// ── isOnHoleBbox ──────────────────────────────────────────────────────────────
+
+describe('isOnHoleBbox', () => {
+  const params = getParams();
+
+  it('a point at the tee centroid is on-hole', () => {
+    // Tee centroid is inside the bbox
+    expect(isOnHoleBbox({ lat: TEE_LAT + 0.0001, lng: BASE_LNG }, params)).toBe(true);
+  });
+
+  it('a point at the green centroid is on-hole', () => {
+    expect(isOnHoleBbox({ lat: GREEN_LAT + 0.00015, lng: BASE_LNG }, params)).toBe(true);
+  });
+
+  it('a point 28 miles away is NOT on-hole', () => {
+    // 28 miles ≈ 45 km ≈ 0.40° of latitude — clearly remote
+    const remoteLat = TEE_LAT + 0.40;
+    const remoteLng = BASE_LNG + 0.40;
+    expect(isOnHoleBbox({ lat: remoteLat, lng: remoteLng }, params)).toBe(false);
+  });
+
+  it('a point just outside the margin is NOT on-hole', () => {
+    // Default margin is 0.006° ≈ 720 yds; go 0.01° away
+    const outsideLat = params.minLat - 0.01;
+    expect(isOnHoleBbox({ lat: outsideLat, lng: BASE_LNG }, params)).toBe(false);
+  });
+
+  it('a point just within the margin IS on-hole', () => {
+    // 0.003° inside the default 0.006° margin
+    const nearLat = params.minLat - 0.003;
+    expect(isOnHoleBbox({ lat: nearLat, lng: BASE_LNG }, params)).toBe(true);
+  });
+
+  it('respects a custom margin', () => {
+    // With a tiny margin (0.0001°), a point 0.001° outside is NOT on-hole
+    const slightlyOutside = params.minLat - 0.001;
+    expect(isOnHoleBbox({ lat: slightlyOutside, lng: BASE_LNG }, params, 0.0001)).toBe(false);
+    // But with the default 0.006° margin it IS on-hole
+    expect(isOnHoleBbox({ lat: slightlyOutside, lng: BASE_LNG }, params)).toBe(true);
+  });
+});
+
+// ── yardsDistance ─────────────────────────────────────────────────────────────
+
+describe('yardsDistance', () => {
+  it('returns 0 for the same point', () => {
+    expect(yardsDistance({ lat: TEE_LAT, lng: BASE_LNG }, { lat: TEE_LAT, lng: BASE_LNG })).toBe(0);
+  });
+
+  it('tee → green is within expected range for our ~400-yd fixture', () => {
+    const d = yardsDistance(
+      { lat: TEE_LAT, lng: BASE_LNG },
+      { lat: GREEN_LAT, lng: BASE_LNG }
+    );
+    expect(d).toBeGreaterThan(300);
+    expect(d).toBeLessThan(460);
+  });
+
+  it('returns a positive integer', () => {
+    const d = yardsDistance(
+      { lat: TEE_LAT, lng: BASE_LNG },
+      { lat: GREEN_LAT, lng: BASE_LNG }
+    );
+    expect(Number.isInteger(d)).toBe(true);
+    expect(d).toBeGreaterThan(0);
+  });
+
+  it('is symmetric (d(A,B) ≈ d(B,A))', () => {
+    const a = { lat: TEE_LAT, lng: BASE_LNG };
+    const b = { lat: GREEN_LAT, lng: BASE_LNG };
+    // Haversine is symmetric; integer rounding may differ by at most 1 yd
+    expect(Math.abs(yardsDistance(a, b) - yardsDistance(b, a))).toBeLessThanOrEqual(1);
+  });
+});
+
+// ── Tap-to-measure: distance computation via project+unproject ────────────────
+
+describe('tap-to-measure distance computation', () => {
+  it('tapping the tee centroid SVG point gives ~0 yds from tee', () => {
+    const features = [
+      makePolygon('tee', TEE_RING),
+      makePolygon('green', GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+    ];
+    const result = projectHole(features, VIEWPORT) as ProjectedHole;
+    const { params, teeLatLng } = result;
+    expect(teeLatLng).not.toBeNull();
+
+    // Project the tee lat/lng to SVG and back — this is the round-trip the
+    // tap handler performs when the user taps on the tee position.
+    const svgTee = projectLatLng(teeLatLng!, params);
+    const latlng = unprojectPoint({ x: svgTee[0], y: svgTee[1] }, params);
+    const fromTee = yardsDistance(teeLatLng!, latlng);
+
+    // Round-trip precision: the distance should be nearly zero (< 1 yd)
+    expect(fromTee).toBeLessThanOrEqual(1);
+  });
+
+  it('tapping the green centroid SVG point gives ~0 yds to pin', () => {
+    const features = [
+      makePolygon('tee', TEE_RING),
+      makePolygon('green', GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+    ];
+    const result = projectHole(features, VIEWPORT) as ProjectedHole;
+    const { params, greenLatLng } = result;
+    expect(greenLatLng).not.toBeNull();
+
+    const svgGreen = projectLatLng(greenLatLng!, params);
+    const latlng = unprojectPoint({ x: svgGreen[0], y: svgGreen[1] }, params);
+    const toPin = yardsDistance(latlng, greenLatLng!);
+
+    expect(toPin).toBeLessThanOrEqual(1);
+  });
+
+  it('tapping the fairway midpoint gives plausible fromTee + toPin that sum close to hole length', () => {
+    const features = [
+      makePolygon('tee', TEE_RING),
+      makePolygon('green', GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+    ];
+    const result = projectHole(features, VIEWPORT) as ProjectedHole;
+    const { params, teeLatLng, greenLatLng } = result;
+    expect(teeLatLng).not.toBeNull();
+    expect(greenLatLng).not.toBeNull();
+
+    // Midpoint between tee and green (approx)
+    const midLat = (TEE_LAT + GREEN_LAT) / 2;
+    const svgMid = projectLatLng({ lat: midLat, lng: BASE_LNG }, params);
+    const midLatLng = unprojectPoint({ x: svgMid[0], y: svgMid[1] }, params);
+
+    const fromTee = yardsDistance(teeLatLng!, midLatLng);
+    const toPin = yardsDistance(midLatLng, greenLatLng!);
+    const total = fromTee + toPin;
+    const holeLen = yardsDistance(teeLatLng!, greenLatLng!);
+
+    // fromTee + toPin via a straight midpoint should equal the hole length
+    // (triangle inequality with collinear points → equality).
+    // Allow ±5 yds for rounding.
+    expect(Math.abs(total - holeLen)).toBeLessThanOrEqual(5);
+    // Each leg should be roughly half
+    expect(fromTee).toBeGreaterThan(50);
+    expect(toPin).toBeGreaterThan(50);
   });
 });

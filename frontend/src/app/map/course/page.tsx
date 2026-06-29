@@ -10,23 +10,39 @@
  *
  * What this page does NOT do:
  *   - No Mapbox / satellite imagery
- *   - No live GPS distances (no "50531 yds to green" absurdity)
+ *   - No live GPS distances shown for off-hole positions (no "50531 yds" bug)
  *   - No mapbox-gl import
  *
  * Navigation: ◄ / ► buttons step through holes 1–18.
  * The current hole number and course name are shown in the header.
  *
+ * GPS behaviour:
+ *   - Permission is requested lazily when the component mounts.
+ *   - When the player is within ~720 yds of the current hole, a "you" dot
+ *     appears on the diagram and distances are shown in the info strip.
+ *   - When the player is remote (e.g. on another hole, or at home), GPS info
+ *     is suppressed — no absurd yardage numbers.
+ *   - If GPS permission is denied, tap-to-measure still works normally.
+ *
  * Usage:
  *   http://localhost:3000/map/course?id=<deterministic-uuid-of-bethpage-black>
  */
 
-import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
+import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from "lucide-react";
 import type { CourseData, HoleData } from "@/lib/courses/types";
 import { fetchMappedCourse } from "@/lib/courses/mapped-course-api";
 import HoleDiagram from "@/components/course/HoleDiagram";
-import { holeLengthYards, describeHazards } from "@/lib/course/hole-projection";
+import {
+  holeLengthYards,
+  describeHazards,
+  projectHole,
+  isOnHoleBbox,
+  yardsDistance,
+  type ProjectedHole,
+} from "@/lib/course/hole-projection";
+import { GPSWatcher, type Position } from "@/lib/gps";
 import { T } from "@/components/yardage/tokens";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -48,6 +64,32 @@ function bestYardage(hole: HoleData): number {
   const first = Object.values(yd)[0];
   if (first) return first;
   return holeLengthYards(holeFeatures(hole));
+}
+
+// ── GPS distances from projected hole + player position ───────────────────────
+
+interface GpsDistances {
+  toPin: number;
+}
+
+function computeGpsDistances(
+  pos: Position,
+  features: GeoJSON.Feature[]
+): GpsDistances | null {
+  // Use a 600px viewport — just needs to be something consistent; distances
+  // are computed in lat/lng space so the viewport size doesn't matter.
+  const projected: ProjectedHole | null = projectHole(features, {
+    width: 600,
+    height: 800,
+    padding: 50,
+  });
+  if (!projected) return null;
+  if (!isOnHoleBbox(pos, projected.params)) return null;
+  if (!projected.greenLatLng) return null;
+
+  return {
+    toPin: yardsDistance(pos, projected.greenLatLng),
+  };
 }
 
 // ── Loading / error screens ───────────────────────────────────────────────────
@@ -136,10 +178,16 @@ function HoleInfoStrip({
   hole,
   features,
   yards,
+  gpsDistances,
+  gpsAvailable,
+  gpsOnHole,
 }: {
   hole: HoleData;
   features: GeoJSON.Feature[];
   yards: number;
+  gpsDistances: GpsDistances | null;
+  gpsAvailable: boolean;
+  gpsOnHole: boolean;
 }) {
   // We compute hazard description with projected info when available.
   // Using null projected here (no extra projection pass) keeps it simple.
@@ -226,6 +274,66 @@ function HoleInfoStrip({
             yds
           </span>
         </div>
+      )}
+
+      {/* GPS distance strip — on-hole only */}
+      {gpsOnHole && gpsDistances && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 6,
+            marginBottom: 4,
+            paddingTop: 2,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: T.mono,
+              fontSize: 9,
+              letterSpacing: 1.2,
+              color: T.pencil,
+              textTransform: "uppercase" as const,
+            }}
+          >
+            You to pin
+          </span>
+          <span
+            style={{
+              fontFamily: T.serif,
+              fontSize: 22,
+              lineHeight: 1,
+              color: T.accent,
+            }}
+          >
+            {gpsDistances.toPin}
+          </span>
+          <span
+            style={{
+              fontFamily: T.mono,
+              fontSize: 10,
+              color: T.pencil,
+              letterSpacing: 0.6,
+            }}
+          >
+            yds
+          </span>
+        </div>
+      )}
+
+      {/* Calm GPS hint when GPS is available but off-hole */}
+      {gpsAvailable && !gpsOnHole && (
+        <p
+          style={{
+            fontFamily: T.mono,
+            fontSize: 10,
+            color: T.pencilSoft,
+            margin: "0 0 4px",
+            letterSpacing: 0.6,
+          }}
+        >
+          Not on this hole — tap to measure
+        </p>
       )}
 
       {/* Hazard summary */}
@@ -334,7 +442,38 @@ function MappedCourseMapInner() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [loading, setLoading] = useState(Boolean(courseId));
 
+  // GPS state
+  const [gpsPos, setGpsPos] = useState<Position | null>(null);
+  const [gpsAvailable, setGpsAvailable] = useState(false);
+  const watcherRef = useRef<GPSWatcher | null>(null);
+
   const error = !courseId ? "No course id provided (?id=<uuid>)" : fetchError;
+
+  // ── GPS watcher ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const watcher = new GPSWatcher(
+      (pos) => {
+        setGpsPos(pos);
+        setGpsAvailable(true);
+      },
+      (err) => {
+        // Permission denied or unavailable — GPS display silently disabled.
+        // Tap-to-measure continues to work.
+        if (err.code === err.PERMISSION_DENIED) {
+          setGpsAvailable(false);
+        }
+        // Other errors (position unavailable, timeout) — keep gpsAvailable
+        // true if we already received a position; otherwise stay false.
+      }
+    );
+    watcher.start();
+    watcherRef.current = watcher;
+
+    return () => {
+      watcher.stop();
+      watcherRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!courseId) return;
@@ -415,6 +554,17 @@ function MappedCourseMapInner() {
   const hole = currentHole;
   const features = holeFeatures(hole);
   const yards = bestYardage(hole);
+
+  // GPS: compute on-hole status and distances for the info strip.
+  // We run this on every render; it's cheap (pure math, no I/O).
+  const gpsDist = gpsPos ? computeGpsDistances(gpsPos, features) : null;
+  const gpsOnHole = gpsDist !== null;
+
+  // GPS position to pass into HoleDiagram (as plain lat/lng — the component
+  // does its own on-hole check internally for the SVG dot).
+  const gpsForDiagram = gpsPos
+    ? { lat: gpsPos.lat, lng: gpsPos.lng }
+    : null;
 
   // ── Main layout ──────────────────────────────────────────────────────────
   return (
@@ -499,12 +649,19 @@ function MappedCourseMapInner() {
           padding: "12px 16px",
         }}
       >
-        <HoleDiagramAutosize features={features} />
+        <HoleDiagramAutosize features={features} gpsPosition={gpsForDiagram} />
       </div>
 
       {/* ── Info strip ─────────────────────────────────────────────────── */}
       <div style={{ flexShrink: 0 }}>
-        <HoleInfoStrip hole={hole} features={features} yards={yards} />
+        <HoleInfoStrip
+          hole={hole}
+          features={features}
+          yards={yards}
+          gpsDistances={gpsDist}
+          gpsAvailable={gpsAvailable}
+          gpsOnHole={gpsOnHole}
+        />
       </div>
 
       {/* ── Hole navigation ────────────────────────────────────────────── */}
@@ -524,7 +681,13 @@ function MappedCourseMapInner() {
  * A thin wrapper that sizes the HoleDiagram to fill whatever space is available.
  * Uses a fixed tall aspect ratio (3:4) typical of a yardage-book hole page.
  */
-function HoleDiagramAutosize({ features }: { features: GeoJSON.Feature[] }) {
+function HoleDiagramAutosize({
+  features,
+  gpsPosition,
+}: {
+  features: GeoJSON.Feature[];
+  gpsPosition: { lat: number; lng: number } | null;
+}) {
   // 300×400 is a safe default that fits almost any phone in portrait mode.
   // The component's viewBox + CSS width/height handle responsive scaling.
   const W = 300;
@@ -537,6 +700,7 @@ function HoleDiagramAutosize({ features }: { features: GeoJSON.Feature[] }) {
         height={H}
         padding={32}
         showLabels
+        gpsPosition={gpsPosition}
       />
     </div>
   );

@@ -18,14 +18,21 @@
  *   7. Tee box marker    (T.ink filled circle with paper inner dot)
  *   8. Flag on green     (ink pole + T.flag pennant)
  *   9. Optional: TEE / GRN labels in mono type
+ *  10. GPS "you" dot     (cobalt, only when on-hole)
+ *  11. Tap-to-measure marker + label (moved on each tap; × to dismiss)
  *
  * All colours come from the yardage-book token palette or are close
  * on-paper analogues.  NO neon, NO dashboard chrome.
  */
 
+import { useState, useRef, useCallback } from 'react';
 import { T } from '@/components/yardage/tokens';
 import {
   projectHole,
+  projectLatLng,
+  unprojectPoint,
+  isOnHoleBbox,
+  yardsDistance,
   type Viewport,
   type ProjectedPolygon,
   type ProjectedHole,
@@ -57,6 +64,16 @@ const PAL = {
   flagPole:    T.ink,
   flagFill:    T.flag,           // 'oklch(0.54 0.18 28)' — warm red/coral
   label:       T.pencil,         // '#6b6558'
+
+  // tap-to-measure
+  tapDot:      T.accent,         // cobalt '#3a4a8a'
+  tapLabel:    T.ink,
+  tapDismiss:  T.pencilSoft,
+
+  // GPS "you" dot
+  gpsDot:      T.accent,         // same cobalt — calm, distinct from tee/flag
+  gpsRing:     'rgba(58,74,138,0.25)',
+  gpsLabel:    T.inkSoft,
 } as const;
 
 // ── Geometry helpers ─────────────────────────────────────────────────────────
@@ -92,6 +109,39 @@ function featureStroke(type: string): string | undefined {
 function featureStrokeWidth(type: string): number {
   if (type === 'green') return 0.8;
   return 0.5;
+}
+
+// ── Tap-to-measure state ─────────────────────────────────────────────────────
+
+interface TapMeasure {
+  /** Tap point in SVG viewport coordinates. */
+  svgX: number;
+  svgY: number;
+  /** Distance from tee to tapped point, yards. */
+  fromTee: number;
+  /** Distance from tapped point to pin (green centroid), yards. */
+  toPin: number;
+}
+
+// ── Event → SVG coordinate mapping ──────────────────────────────────────────
+
+/**
+ * Map a pointer/touch client coordinate to SVG user-space coordinates.
+ * Uses createSVGPoint + getScreenCTM so it handles any CSS transform or
+ * scaling applied to the SVG element.
+ */
+function clientToSVG(
+  svgEl: SVGSVGElement,
+  clientX: number,
+  clientY: number
+): [number, number] {
+  const pt = svgEl.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  const ctm = svgEl.getScreenCTM();
+  if (!ctm) return [clientX, clientY]; // fallback (should never happen)
+  const svgPt = pt.matrixTransform(ctm.inverse());
+  return [svgPt.x, svgPt.y];
 }
 
 // ── Empty state ──────────────────────────────────────────────────────────────
@@ -134,6 +184,14 @@ export interface HoleDiagramProps {
   padding?: number;
   /** When true, renders TEE / GRN mono labels near the markers. */
   showLabels?: boolean;
+  /**
+   * Live GPS position from the device. When provided and on-hole, a calm "you"
+   * dot is plotted at the player's position with a distance-to-pin label.
+   * When the position is off-hole (>~720 yds from the hole bbox), the dot is
+   * suppressed — no absurd yardage numbers. When null/undefined, GPS display
+   * is skipped entirely (tap-to-measure still works).
+   */
+  gpsPosition?: { lat: number; lng: number } | null;
 }
 
 export default function HoleDiagram({
@@ -142,9 +200,63 @@ export default function HoleDiagram({
   height = 460,
   padding = 36,
   showLabels = true,
+  gpsPosition,
 }: HoleDiagramProps) {
   const viewport: Viewport = { width, height, padding };
   const projected: ProjectedHole | null = projectHole(features, viewport);
+
+  // Tap-to-measure state: null = no active tap marker
+  const [tap, setTap] = useState<TapMeasure | null>(null);
+
+  // Ref to the SVG element — needed for clientToSVG coordinate mapping
+  const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // ── Process a tap/click at SVG coords (sx, sy) ──────────────────────────
+  const processTap = useCallback(
+    (sx: number, sy: number) => {
+      if (!projected) return;
+      const { params, teeLatLng, greenLatLng } = projected;
+      const latlng = unprojectPoint({ x: sx, y: sy }, params);
+      const fromTee = teeLatLng ? yardsDistance(teeLatLng, latlng) : 0;
+      const toPin = greenLatLng ? yardsDistance(latlng, greenLatLng) : 0;
+      setTap({ svgX: sx, svgY: sy, fromTee, toPin });
+    },
+    [projected]
+  );
+
+  const handleSVGClick = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!svgRef.current || !projected) return;
+      const [sx, sy] = clientToSVG(svgRef.current, e.clientX, e.clientY);
+      processTap(sx, sy);
+    },
+    [projected, processTap]
+  );
+
+  const handleSVGTouch = useCallback(
+    (e: React.TouchEvent<SVGSVGElement>) => {
+      // Use changedTouches[0] for touchend; prevent the ghost click.
+      const touch = e.changedTouches[0];
+      if (!touch || !svgRef.current || !projected) return;
+      e.preventDefault();
+      const [sx, sy] = clientToSVG(svgRef.current, touch.clientX, touch.clientY);
+      processTap(sx, sy);
+    },
+    [projected, processTap]
+  );
+
+  // ── GPS on-hole detection ────────────────────────────────────────────────
+  // Only plot GPS if the player is within ~720 yds of the hole bbox.
+  let gpsSVG: [number, number] | null = null;
+  let gpsToPin: number | null = null;
+
+  if (gpsPosition && projected) {
+    const { params, greenLatLng } = projected;
+    if (isOnHoleBbox(gpsPosition, params)) {
+      gpsSVG = projectLatLng(gpsPosition, params);
+      gpsToPin = greenLatLng ? yardsDistance(gpsPosition, greenLatLng) : null;
+    }
+  }
 
   if (!projected) {
     return <EmptyDiagram width={width} height={height} />;
@@ -158,13 +270,28 @@ export default function HoleDiagram({
   const flagH     = Math.max(6,  height * 0.016);
   const teeR      = Math.max(5,  Math.min(10, height * 0.016));
 
+  // Tap marker dimensions
+  const tapR      = Math.max(5, height * 0.012);
+  const tapFontSz = Math.max(9, height * 0.020);
+  const labelPad  = 5; // px between marker and label
+
+  // GPS dot dimensions
+  const gpsR      = Math.max(6, height * 0.014);
+  const gpsFontSz = Math.max(9, height * 0.018);
+
+  // Hint text when no tap and no GPS on-hole
+  const showHint = !tap && !gpsSVG;
+
   return (
     <svg
+      ref={svgRef}
       viewBox={`0 0 ${width} ${height}`}
       width={width}
       height={height}
-      style={{ display: 'block' }}
-      aria-label="Top-down hole diagram"
+      style={{ display: 'block', cursor: 'crosshair', touchAction: 'none' }}
+      aria-label="Top-down hole diagram — tap to measure"
+      onClick={handleSVGClick}
+      onTouchEnd={handleSVGTouch}
     >
       <defs>
         {/* Rough-grass background pattern — subtle dot texture like printed paper */}
@@ -267,6 +394,150 @@ export default function HoleDiagram({
             GRN
           </text>
         </>
+      )}
+
+      {/* ── Layer 9: GPS "you" dot (only when on-hole) ───────────────────── */}
+      {gpsSVG && (
+        <g>
+          {/* Outer halo — calm, not aggressive */}
+          <circle
+            cx={gpsSVG[0].toFixed(1)}
+            cy={gpsSVG[1].toFixed(1)}
+            r={gpsR * 2.2}
+            fill={PAL.gpsRing}
+          />
+          {/* Inner dot */}
+          <circle
+            cx={gpsSVG[0].toFixed(1)}
+            cy={gpsSVG[1].toFixed(1)}
+            r={gpsR}
+            fill={PAL.gpsDot}
+            opacity={0.92}
+          />
+          {/* "YOU" micro label */}
+          <text
+            x={(gpsSVG[0] + gpsR + 3).toFixed(1)}
+            y={(gpsSVG[1] + 3).toFixed(1)}
+            fontFamily={T.mono}
+            fontSize={gpsFontSz}
+            fill={PAL.gpsLabel}
+            letterSpacing={0.8}
+          >
+            YOU
+          </text>
+          {/* Distance to pin */}
+          {gpsToPin !== null && (
+            <text
+              x={(gpsSVG[0] + gpsR + 3).toFixed(1)}
+              y={(gpsSVG[1] + 3 + gpsFontSz + 2).toFixed(1)}
+              fontFamily={T.mono}
+              fontSize={gpsFontSz}
+              fill={PAL.gpsLabel}
+              letterSpacing={0.6}
+            >
+              {gpsToPin} yds
+            </text>
+          )}
+        </g>
+      )}
+
+      {/* ── Layer 10: Tap-to-measure marker ──────────────────────────────── */}
+      {tap && (
+        <g>
+          {/* Crosshair dot at tapped location */}
+          <circle
+            cx={tap.svgX.toFixed(1)}
+            cy={tap.svgY.toFixed(1)}
+            r={tapR}
+            fill="none"
+            stroke={PAL.tapDot}
+            strokeWidth={1.8}
+          />
+          <circle
+            cx={tap.svgX.toFixed(1)}
+            cy={tap.svgY.toFixed(1)}
+            r={2}
+            fill={PAL.tapDot}
+          />
+          {/* Calm distance label — yardage-book mono style */}
+          {/* Position label above the tap point if it's in the lower half, below if upper */}
+          {(() => {
+            const above = tap.svgY > height / 2;
+            const labelY = above
+              ? tap.svgY - tapR - labelPad - tapFontSz * 0.3
+              : tap.svgY + tapR + labelPad + tapFontSz;
+            const label = `Tee ${tap.fromTee} · Pin ${tap.toPin}`;
+            // Anchor: keep label within bounds
+            const anchorX = Math.min(
+              Math.max(tap.svgX, padding + 2),
+              width - padding - 2
+            );
+            return (
+              <>
+                {/* Label background pill for legibility over busy terrain */}
+                <text
+                  x={anchorX.toFixed(1)}
+                  y={labelY.toFixed(1)}
+                  textAnchor="middle"
+                  fontFamily={T.mono}
+                  fontSize={tapFontSz}
+                  fill={PAL.tapLabel}
+                  letterSpacing={0.6}
+                  paintOrder="stroke"
+                  stroke={T.paper}
+                  strokeWidth={3}
+                  strokeLinejoin="round"
+                >
+                  {label}
+                </text>
+                <text
+                  x={anchorX.toFixed(1)}
+                  y={labelY.toFixed(1)}
+                  textAnchor="middle"
+                  fontFamily={T.mono}
+                  fontSize={tapFontSz}
+                  fill={PAL.tapLabel}
+                  letterSpacing={0.6}
+                >
+                  {label}
+                </text>
+                {/* Dismiss ×  — rendered as a small pressable text glyph */}
+                <text
+                  x={(anchorX + (label.length * tapFontSz * 0.38) / 2 + 10).toFixed(1)}
+                  y={labelY.toFixed(1)}
+                  textAnchor="start"
+                  fontFamily={T.sans}
+                  fontSize={tapFontSz + 1}
+                  fill={PAL.tapDismiss}
+                  style={{ cursor: 'pointer' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTap(null);
+                  }}
+                >
+                  ×
+                </text>
+              </>
+            );
+          })()}
+        </g>
+      )}
+
+      {/* ── Hint: "tap to measure" when no marker and no GPS on-hole ─────── */}
+      {showHint && (
+        <text
+          x={(width / 2).toFixed(1)}
+          y={(height - padding * 0.5).toFixed(1)}
+          textAnchor="middle"
+          fontFamily={T.mono}
+          fontSize={Math.max(8, height * 0.016)}
+          fill={T.pencilSoft}
+          opacity={0.6}
+          letterSpacing={0.8}
+          pointerEvents="none"
+        >
+          tap to measure
+        </text>
       )}
     </svg>
   );
