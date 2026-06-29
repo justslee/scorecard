@@ -256,6 +256,135 @@ def compute_hole_elevation_profile(
     }
 
 
+def _green_slope_grid_points(
+    lat: float,
+    lng: float,
+    r_yards: float = 15.0,
+) -> list[tuple[float, float]]:
+    """Return 9 ``(lat, lng)`` sample points in the 3×3 Sobel grid around *lat/lng*.
+
+    Grid order: **NW, N, NE, W, C, E, SW, S, SE** — must match the index
+    convention used by :func:`_compute_slope_from_grid`.
+
+    The sample points are placed at ``0.7 × r_yards`` from the centre so they
+    fall inside a typical green (radius ≈ 15 yds).
+
+    Pure function — no I/O.
+
+    Args:
+        lat, lng:  green centre in WGS-84 decimal degrees.
+        r_yards:   nominal green radius in yards (default 15).
+
+    Returns:
+        List of 9 ``(lat, lng)`` tuples.
+    """
+    yard_to_lat = 1.0 / 121740.0
+    yard_to_lng = 1.0 / (121740.0 * math.cos(math.radians(lat)))
+    r = r_yards * 0.7
+
+    # offsets: (dx_yards_east, dy_yards_north)
+    offsets = [
+        (-r,  r), (0,  r), ( r,  r),   # top row (north): NW N NE
+        (-r,  0), (0,  0), ( r,  0),   # middle row:      W  C E
+        (-r, -r), (0, -r), ( r, -r),   # bottom row (south): SW S SE
+    ]
+    return [
+        (lat + dy * yard_to_lat, lng + dx * yard_to_lng)
+        for dx, dy in offsets
+    ]
+
+
+def _compute_slope_from_grid(
+    elevations: list[Optional[float]],
+    r_yards: float = 15.0,
+) -> Optional[dict]:
+    """Compute green slope from a 3×3 elevation grid — **pure function, no I/O**.
+
+    Uses a Sobel-like gradient operator to estimate the downhill direction and
+    percent grade from nine elevation samples.
+
+    Args:
+        elevations:
+            9 elevation values in feet in **NW, N, NE, W, C, E, SW, S, SE**
+            order (same ordering as :func:`_green_slope_grid_points`).  ``None``
+            values are treated as missing; fewer than 5 valid samples → ``None``
+            returned (insufficient data to estimate slope).
+        r_yards:
+            Nominal green radius used when generating the grid (default 15).
+            The actual sample spacing is ``0.7 × r_yards``.
+
+    Returns:
+        Dict with keys ``direction`` (degrees, 0 = N, 90 = E), ``severity``
+        (``'flat'`` / ``'mild'`` / ``'moderate'`` / ``'severe'``),
+        ``percent_grade``, ``description``, ``center_elevation_ft``; or
+        ``None`` if fewer than 5 valid elevation values are available.
+    """
+    valid = [(i, e) for i, e in enumerate(elevations) if e is not None]
+    if len(valid) < 5:
+        return None
+
+    grid = [e if e is not None else 0.0 for e in elevations]
+    r = r_yards * 0.7
+
+    # Sobel-like gradient — East-West (dz/dx) and North-South (dz/dy).
+    # Index layout (NW=0, N=1, NE=2, W=3, C=4, E=5, SW=6, S=7, SE=8).
+    dzdx = (
+        (grid[2] + 2 * grid[5] + grid[8])
+        - (grid[0] + 2 * grid[3] + grid[6])
+    ) / (4 * r * 3)  # feet per yard
+
+    dzdy = (
+        (grid[0] + 2 * grid[1] + grid[2])
+        - (grid[6] + 2 * grid[7] + grid[8])
+    ) / (4 * r * 3)
+
+    slope_pct = math.sqrt(dzdx ** 2 + dzdy ** 2) * 100
+    if slope_pct < 0.1:
+        direction = 0.0
+    else:
+        # Direction the slope falls toward (downhill azimuth, 0=N, 90=E, …).
+        # Compass bearing = atan2(east_component, north_component) of the downhill
+        # vector.  The downhill vector in (east, north) geo-coords is (-dzdx, -dzdy)
+        # because both gradients point uphill.  Fixing the earlier bug of atan2(dzdx, …)
+        # which had dzdx's sign inverted and gave the wrong quadrant for E/W slopes.
+        direction = math.degrees(math.atan2(-dzdx, -dzdy)) % 360
+
+    if slope_pct < 1.0:
+        severity = "flat"
+    elif slope_pct < 2.5:
+        severity = "mild"
+    elif slope_pct < 5.0:
+        severity = "moderate"
+    else:
+        severity = "severe"
+
+    compass = [
+        "north", "northeast", "east", "southeast",
+        "south", "southwest", "west", "northwest",
+    ]
+    compass_idx = int((direction + 22.5) / 45) % 8
+    dir_name = compass[compass_idx]
+
+    if severity == "flat":
+        description = "Relatively flat green"
+    else:
+        description = f"Green slopes {severity}ly toward the {dir_name}"
+
+    return {
+        "direction":           round(direction, 1),
+        "severity":            severity,
+        "percent_grade":       round(slope_pct, 2),
+        "description":         description,
+        "center_elevation_ft": grid[4],
+    }
+
+
+# Number of green-slope grid points per hole.
+_GREEN_SLOPE_N = 9
+# Default green radius (yards) used for the 3×3 Sobel grid.
+_GREEN_RADIUS_YARDS: float = 15.0
+
+
 async def sample_course_elevations(
     holes: list[dict],
     target_course_name: str,
@@ -269,6 +398,12 @@ async def sample_course_elevations(
     Each hole's tee coordinate is the **first** vertex of its GeoJSON LineString
     and its green is the **last** vertex — the convention used by
     ``fetch_course_geometry`` / the OSM ingest pipeline.
+
+    Green-slope sampling: a second 3DEP batch fetches a 3×3 Sobel grid (9 points)
+    around each hole's green centre.  The gradient is computed via
+    :func:`_compute_slope_from_grid` and passed into
+    :func:`compute_hole_elevation_profile` so the ``green_slope`` field is
+    populated for all holes where the 3DEP service returns sufficient data.
 
     Holes where USGS returns ``None`` for either endpoint are **omitted** from
     the result so callers can treat absent keys as "no elevation data" and degrade
@@ -290,6 +425,8 @@ async def sample_course_elevations(
     Returns:
         ``dict[hole_number_int → compute_hole_elevation_profile result]`` —
         only holes where **both** tee and green elevation queries succeeded.
+        The ``green_slope`` field in each profile is populated when 3DEP returns
+        at least 5 of the 9 grid samples; ``None`` otherwise.
     """
     target_lower = target_course_name.lower()
 
@@ -316,15 +453,30 @@ async def sample_course_elevations(
     if not target_holes:
         return {}
 
+    # ── Batch 1: tee + green elevations ──────────────────────────────────────
     # Build a flat (lat, lng) list: tee_h1, green_h1, tee_h2, green_h2, …
     # Interleaved so index arithmetic is simple: tee = i*2, green = i*2+1.
-    points: list[tuple[float, float]] = []
+    tee_green_points: list[tuple[float, float]] = []
     for h in target_holes:
-        points.append(h["tee"])
-        points.append(h["green"])
+        tee_green_points.append(h["tee"])
+        tee_green_points.append(h["green"])
 
-    elevations = await fetch_3dep_samples(points)
+    elevations = await fetch_3dep_samples(tee_green_points)
 
+    # ── Batch 2: green-slope 3×3 Sobel grids ─────────────────────────────────
+    # 9 points per hole; stride = _GREEN_SLOPE_N.  All holes batched in one call.
+    slope_points: list[tuple[float, float]] = []
+    for h in target_holes:
+        green_lat, green_lng = h["green"]
+        slope_points.extend(
+            _green_slope_grid_points(green_lat, green_lng, _GREEN_RADIUS_YARDS)
+        )
+
+    slope_elevations: list[Optional[float]] = (
+        await fetch_3dep_samples(slope_points) if slope_points else []
+    )
+
+    # ── Assemble per-hole profiles ─────────────────────────────────────────────
     result: dict[int, dict] = {}
     for i, h in enumerate(target_holes):
         tee_elev   = elevations[i * 2]
@@ -332,7 +484,20 @@ async def sample_course_elevations(
         if tee_elev is None or green_elev is None:
             # USGS missed this point — degrade gracefully; skip the hole.
             continue
-        result[h["number"]] = compute_hole_elevation_profile(tee_elev, green_elev)
+
+        # Slice the 9 green-slope samples for this hole.
+        gs_start = i * _GREEN_SLOPE_N
+        gs_end   = gs_start + _GREEN_SLOPE_N
+        grid = slope_elevations[gs_start:gs_end]
+        green_slope = (
+            _compute_slope_from_grid(grid, _GREEN_RADIUS_YARDS)
+            if len(grid) == _GREEN_SLOPE_N
+            else None
+        )
+
+        result[h["number"]] = compute_hole_elevation_profile(
+            tee_elev, green_elev, green_slope
+        )
 
     return result
 
@@ -343,97 +508,23 @@ async def compute_green_slope(
 ) -> Optional[dict]:
     """Estimate green slope by sampling elevation at a 3x3 grid.
 
+    Used by the interactive caddie path (on-demand, single green).  For bulk
+    ingest across a full course, prefer :func:`sample_course_elevations` which
+    batches all green-slope grids into a single 3DEP round-trip.
+
     Args:
         green_center: {"lat": float, "lng": float}
-        green_radius_yards: approximate green radius
+        green_radius_yards: approximate green radius in yards (default 15)
 
     Returns dict with:
         direction: slope direction in degrees (0=N, 90=E, etc.)
         severity: 'flat', 'mild', 'moderate', 'severe'
         percent_grade: slope percentage
         description: human-readable description
+        center_elevation_ft: green centre elevation in feet
     """
     lat = green_center["lat"]
     lng = green_center["lng"]
-
-    # Convert yards to approximate degrees
-    # 1 degree lat ≈ 69.17 miles ≈ 121,740 yards
-    # 1 degree lng ≈ 69.17 * cos(lat) miles
-    yard_to_lat = 1.0 / 121740.0
-    yard_to_lng = 1.0 / (121740.0 * math.cos(math.radians(lat)))
-
-    r = green_radius_yards * 0.7  # sample inside the green
-
-    # 3x3 grid: NW, N, NE, W, C, E, SW, S, SE
-    offsets = [
-        (-r, r), (0, r), (r, r),       # top row (north)
-        (-r, 0), (0, 0), (r, 0),       # middle row
-        (-r, -r), (0, -r), (r, -r),    # bottom row (south)
-    ]
-
-    points = [
-        (lat + dy * yard_to_lat, lng + dx * yard_to_lng)
-        for dx, dy in offsets
-    ]
-
+    points = _green_slope_grid_points(lat, lng, green_radius_yards)
     elevations = await fetch_elevation_batch(points)
-
-    # Filter out None values
-    valid = [(i, e) for i, e in enumerate(elevations) if e is not None]
-    if len(valid) < 5:
-        return None
-
-    # Create elevation grid
-    grid = [e if e is not None else 0.0 for e in elevations]
-
-    # Compute slope using Sobel-like gradient
-    # East-West gradient (dz/dx)
-    dzdx = (
-        (grid[2] + 2 * grid[5] + grid[8])
-        - (grid[0] + 2 * grid[3] + grid[6])
-    ) / (4 * r * 3)  # feet per yard (r is in yards, elevations in feet)
-
-    # North-South gradient (dz/dy)
-    dzdy = (
-        (grid[0] + 2 * grid[1] + grid[2])
-        - (grid[6] + 2 * grid[7] + grid[8])
-    ) / (4 * r * 3)
-
-    # Slope magnitude and direction
-    slope_pct = math.sqrt(dzdx ** 2 + dzdy ** 2) * 100  # percent grade
-    if slope_pct < 0.1:
-        direction = 0
-    else:
-        # Direction the slope FALLS toward (downhill)
-        direction = math.degrees(math.atan2(dzdx, -dzdy)) % 360
-
-    # Classify severity
-    if slope_pct < 1.0:
-        severity = "flat"
-    elif slope_pct < 2.5:
-        severity = "mild"
-    elif slope_pct < 5.0:
-        severity = "moderate"
-    else:
-        severity = "severe"
-
-    # Human-readable direction
-    compass = [
-        "north", "northeast", "east", "southeast",
-        "south", "southwest", "west", "northwest",
-    ]
-    compass_idx = int((direction + 22.5) / 45) % 8
-    dir_name = compass[compass_idx]
-
-    if severity == "flat":
-        description = "Relatively flat green"
-    else:
-        description = f"Green slopes {severity}ly toward the {dir_name}"
-
-    return {
-        "direction": round(direction, 1),
-        "severity": severity,
-        "percent_grade": round(slope_pct, 2),
-        "description": description,
-        "center_elevation_ft": grid[4],
-    }
+    return _compute_slope_from_grid(elevations, green_radius_yards)

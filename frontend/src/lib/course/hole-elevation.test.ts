@@ -25,7 +25,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { extractHoleElevation, formatPlaysLike } from './hole-elevation';
+import {
+  extractHoleElevation,
+  formatPlaysLike,
+  degreesToCompassLabel,
+  compassLabelToArrow,
+  formatGreenSlope,
+  type GreenSlope,
+} from './hole-elevation';
 
 // ── Fixture helpers ────────────────────────────────────────────────────────────
 
@@ -220,5 +227,166 @@ describe('formatPlaysLike — downhill (negative)', () => {
   it('-0.9 rounds to -1 → shorter', () => {
     // Math.round(-0.9) = -1; abs(-1) = 1 >= 1
     expect(formatPlaysLike(-0.9)).toBe('plays ~1 yds shorter ↓');
+  });
+});
+
+// ── degreesToCompassLabel ─────────────────────────────────────────────────────
+
+describe('degreesToCompassLabel — cardinal directions', () => {
+  it('0° → N', () => { expect(degreesToCompassLabel(0)).toBe('N'); });
+  it('90° → E', () => { expect(degreesToCompassLabel(90)).toBe('E'); });
+  it('180° → S', () => { expect(degreesToCompassLabel(180)).toBe('S'); });
+  it('270° → W', () => { expect(degreesToCompassLabel(270)).toBe('W'); });
+});
+
+describe('degreesToCompassLabel — intercardinal directions', () => {
+  it('45° → NE', () => { expect(degreesToCompassLabel(45)).toBe('NE'); });
+  it('135° → SE', () => { expect(degreesToCompassLabel(135)).toBe('SE'); });
+  it('225° → SW', () => { expect(degreesToCompassLabel(225)).toBe('SW'); });
+  it('315° → NW', () => { expect(degreesToCompassLabel(315)).toBe('NW'); });
+});
+
+describe('degreesToCompassLabel — boundary cases', () => {
+  it('360° normalises to 0° → N', () => {
+    expect(degreesToCompassLabel(360)).toBe('N');
+  });
+  it('negative degrees are normalised (-90° → W)', () => {
+    expect(degreesToCompassLabel(-90)).toBe('W');
+  });
+  it('22.4° is still N (within N sector)', () => {
+    expect(degreesToCompassLabel(22.4)).toBe('N');
+  });
+  it('22.6° tips into NE sector', () => {
+    expect(degreesToCompassLabel(22.6)).toBe('NE');
+  });
+  it('337.5° is the N/NW boundary — rounds to N', () => {
+    expect(degreesToCompassLabel(337.5)).toBe('N');
+  });
+});
+
+// ── compassLabelToArrow ───────────────────────────────────────────────────────
+
+describe('compassLabelToArrow', () => {
+  it('N → ↑', () => { expect(compassLabelToArrow('N')).toBe('↑'); });
+  it('NE → ↗', () => { expect(compassLabelToArrow('NE')).toBe('↗'); });
+  it('E → →', () => { expect(compassLabelToArrow('E')).toBe('→'); });
+  it('SE → ↘', () => { expect(compassLabelToArrow('SE')).toBe('↘'); });
+  it('S → ↓', () => { expect(compassLabelToArrow('S')).toBe('↓'); });
+  it('SW → ↙', () => { expect(compassLabelToArrow('SW')).toBe('↙'); });
+  it('W → ←', () => { expect(compassLabelToArrow('W')).toBe('←'); });
+  it('NW → ↖', () => { expect(compassLabelToArrow('NW')).toBe('↖'); });
+  it('unknown label returns empty string', () => {
+    expect(compassLabelToArrow('XY')).toBe('');
+  });
+});
+
+// ── formatGreenSlope ──────────────────────────────────────────────────────────
+
+function makeSlope(overrides: Partial<GreenSlope> = {}): GreenSlope {
+  return {
+    direction: 180.0,
+    severity: 'mild',
+    percent_grade: 1.8,
+    description: 'Green slopes mildly toward the south',
+    ...overrides,
+  };
+}
+
+describe('formatGreenSlope — absent / flat', () => {
+  it('returns null for undefined', () => {
+    expect(formatGreenSlope(undefined)).toBeNull();
+  });
+  it('returns null for null', () => {
+    expect(formatGreenSlope(null)).toBeNull();
+  });
+  it('returns null for flat severity', () => {
+    expect(formatGreenSlope(makeSlope({ severity: 'flat', percent_grade: 0.4 }))).toBeNull();
+  });
+});
+
+describe('formatGreenSlope — non-flat slopes', () => {
+  it('mild south-draining green → "green: 1.8% ↓ S"', () => {
+    expect(formatGreenSlope(makeSlope())).toBe('green: 1.8% ↓ S');
+  });
+  it('moderate east-draining → "green: 3.2% → E"', () => {
+    const slope = makeSlope({ direction: 90.0, severity: 'moderate', percent_grade: 3.2 });
+    expect(formatGreenSlope(slope)).toBe('green: 3.2% → E');
+  });
+  it('severe west-draining → "green: 6.0% ← W"', () => {
+    const slope = makeSlope({ direction: 270.0, severity: 'severe', percent_grade: 6.0 });
+    expect(formatGreenSlope(slope)).toBe('green: 6.0% ← W');
+  });
+  it('percent grade is formatted to one decimal place', () => {
+    const slope = makeSlope({ percent_grade: 2.0 });
+    const result = formatGreenSlope(slope);
+    expect(result).toContain('2.0%');
+  });
+  it('NE diagonal → arrow ↗', () => {
+    const slope = makeSlope({ direction: 45.0, severity: 'mild', percent_grade: 1.2 });
+    expect(formatGreenSlope(slope)).toBe('green: 1.2% ↗ NE');
+  });
+});
+
+// ── extractHoleElevation — greenSlope field ───────────────────────────────────
+
+describe('extractHoleElevation — greenSlope field', () => {
+  const baseProps = {
+    featureType: 'green',
+    osm_id: 'way/green_h1',
+    tee_elevation_ft: 95.0,
+    green_elevation_ft: 110.0,
+    delta_ft: 15.0,
+    plays_like_yards: 5.0,
+  };
+
+  it('greenSlope is null when green_slope absent from properties', () => {
+    const feat: GeoJSON.Feature = {
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [[]] },
+      properties: { ...baseProps },
+    };
+    const result = extractHoleElevation([feat]);
+    expect(result).not.toBeNull();
+    expect(result!.greenSlope).toBeNull();
+  });
+
+  it('greenSlope is null when green_slope is null in properties', () => {
+    const feat: GeoJSON.Feature = {
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [[]] },
+      properties: { ...baseProps, green_slope: null },
+    };
+    const result = extractHoleElevation([feat]);
+    expect(result!.greenSlope).toBeNull();
+  });
+
+  it('greenSlope is populated when green_slope dict is present', () => {
+    const slopeDict = {
+      direction: 180.0,
+      severity: 'mild',
+      percent_grade: 1.8,
+      description: 'Green slopes mildly toward the south',
+    };
+    const feat: GeoJSON.Feature = {
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [[]] },
+      properties: { ...baseProps, green_slope: slopeDict },
+    };
+    const result = extractHoleElevation([feat]);
+    expect(result).not.toBeNull();
+    expect(result!.greenSlope).not.toBeNull();
+    expect(result!.greenSlope!.direction).toBe(180.0);
+    expect(result!.greenSlope!.severity).toBe('mild');
+    expect(result!.greenSlope!.percent_grade).toBe(1.8);
+  });
+
+  it('greenSlope is null when green_slope has wrong shape', () => {
+    const feat: GeoJSON.Feature = {
+      type: 'Feature',
+      geometry: { type: 'Polygon', coordinates: [[]] },
+      properties: { ...baseProps, green_slope: { some: 'other', dict: true } },
+    };
+    const result = extractHoleElevation([feat]);
+    expect(result!.greenSlope).toBeNull();
   });
 });
