@@ -1058,7 +1058,11 @@
     {
       "id": "course-review-model",
       "priority": 47,
-      "status": "needs-spec",
+      "status": "built-integration-next-pending-device-verify",
+      "spec": "specs/course-review-model.md",
+      "plan": "specs/course-review-model-plan.md",
+      "built_commit": "7dec6d7",
+      "built_note": "NOTICEABLE (rides next approval bundle). NEW authed backend endpoint + table + a review form on RoundRecap. Backend: CourseReview ORM (course_reviews table, owner-scoped, keyed on string course_key = GolfAPI id or name:<slug>) + Pydantic CourseReview/CourseReviewCreate; Alembic migration 009_course_reviews (ADDITIVE only — CREATE TABLE + 2 indexes; verified upgrade->downgrade->upgrade on PG16); router course_reviews.py POST/GET /api/courses/{course_key}/reviews (current_user_id owner-scoped, require_owner UNTOUCHED, registered before catch-all courses.router); 15 integration tests. Frontend: resolveCourseKey/normalizeCourseName pure helper (+15 vitest), getCourseReviews/createCourseReview, calm 1-5 rating + note form on RoundRecap (hidden when no course key, never blocks Done). Reviewer SHIP, /security-review PASS, designer APPROVE-WITH-NITS (4 non-blocking nits: maxLength 2000->280, add Noted. fade, borderRadius 10->14, same-number-tap deselect). Gates: lint 0, tsc clean, voice 265/265, vitest 451/451, build clean, ruff clean, pytest 234/234. Pushed to integration/next; on rolling bundle PR (NOT merged). DEVICE/SHIP-ONLY: live endpoint hits prod only after owner ships (deploy runs alembic upgrade head). Backend the owner can test once shipped. Follow-up: course-reviews-surface (B3).",
       "epic": "course-search-reviews",
       "classification": "noticeable",
       "build": "build",

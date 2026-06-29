@@ -3,6 +3,54 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (course-review-model B2 — NOTICEABLE — BUILT on integration/next, pending device-verify)
+Roadmap feature (epic course-search-reviews, was needs-spec, DRY queue). Wrote brief spec
+(specs/course-review-model.md) + opus plan (specs/course-review-model-plan.md), then built.
+
+Lets a golfer write a short review (1-5 rating + note) of a course right after a round,
+stored server-side, owner-scoped, keyed on a string `course_key` (GolfAPI id when known,
+else `name:<slug>`) — deliberately sidesteps the course-identity unification refactor (B5).
+
+BACKEND (commit 7dec6d7):
+- New `CourseReview` ORM (`course_reviews` table) in backend/app/db/models.py + Pydantic
+  CourseReview/CourseReviewCreate in backend/app/models.py (rating Field(ge=1,le=5),
+  body max_length=2000, playedAt Optional[date]). types.ts kept in sync.
+- Alembic migration backend/migrations/versions/0006_009_course_reviews.py — ADDITIVE ONLY
+  (CREATE TABLE + ix_course_reviews_owner_id + ix_course_reviews_course_key; downgrade drops
+  them). down_revision 008_round_owner_player. VERIFIED on PG16 docker:
+  upgrade->downgrade->upgrade all exit 0. CI uses Base.metadata.create_all (not alembic);
+  deploy.yml runs `alembic upgrade head` on ship — ORM + migration describe identical schema
+  incl. index names.
+- New owner-scoped router backend/app/routes/course_reviews.py:
+  POST /api/courses/{course_key}/reviews + GET /api/courses/{course_key}/reviews. Auth via
+  existing current_user_id (require_owner UNTOUCHED, _owner_only app-level gate). Registered
+  BEFORE catch-all courses.router (two-segment path, no shadowing). 15 integration tests
+  (create/echo, owner isolation, rating 0/6->422, boundaries 1/5->200, body 2001->422,
+  auth fails-closed, name: key URL-encode round-trip, no-shadowing guard). course_reviews
+  added to conftest TRUNCATE list.
+
+FRONTEND:
+- Pure helpers frontend/src/lib/course-review-key.ts (resolveCourseKey + normalizeCourseName,
+  no React/DOM) + 15 vitest. resolveCourseKey: match round.courseName against
+  getRecentCourses() for a GolfAPI id, else name:<slug> (slash-free), else null (hide form).
+- getCourseReviews/createCourseReview in api.ts (encodeURIComponent on courseKey).
+- Calm 1-5 rating + short-note form on RoundRecap.tsx (T.* tokens only, 44pt+ targets,
+  safe-area; hidden when no course key; NEVER blocks the Done flow; "Noted." confirmed state,
+  muted error line). Wired from RoundPageClient.tsx via reviewCourseKey useMemo.
+
+REVIEW: reviewer SHIP · /security-review PASS (owner-scoped, no IDOR, parametrized, validated,
+additive migration) · designer APPROVE-WITH-NITS (4 NON-blocking nits recorded as follow-ups:
+maxLength 2000->280 + backend cap align, add "Noted." fade transition, unify borderRadius
+10->14, same-number-tap deselect). QA gates green: lint 0, tsc clean, voice 265/265,
+vitest 451/451, build clean, ruff clean, pytest 234/234 (incl. 15 new).
+
+Pushed to integration/next (7dec6d7); accumulated on the rolling bundle PR (opened this cycle,
+NOT merged). Per cycle constraints: NO TestFlight build, NO owner notification this cycle.
+Classification NOTICEABLE — rides the next bundle approval. This is a backend change the owner
+can test once the bundle ships (deploy applies migration 009 + the live endpoint).
+Follow-ups (not built): course-reviews-surface (B3 — surface reviews on course detail +
+profile); the 4 designer nits; course-identity-unify (B5).
+
 ## 2026-06-28 (social-partner-profile-polish — SILENT)
 - **Done (commit 8153d9f on integration/next):** Designer-blocker polish + hardening on the partner-profile feature.
 
