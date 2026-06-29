@@ -3,6 +3,14 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (polish-courses-designer-notes — SILENT)
+- **Done (commit a907aa7 on integration/next):** Designer polish pass on the course-detail-start-round work.
+  Files changed (3): `app/courses/[id]/CourseDetailClient.tsx`, `app/courses/page.tsx`, `components/nav/FloatingTabBar.tsx`.
+  Changes: mono/8.5/1.1/pencilSoft/uppercase location sub-label; paddingBottom safe-area calc; back button padding "0 8px";
+  tab label nowrap+ellipsis; CoursesIcon ground-line removed; Find-a-course motion.button with whileTap scale 0.98.
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 417/417 · build clean (out/courses + out/courses/view confirmed).
+  SILENT — micro-polish; not a TestFlight-noticeable change on its own; rides with the bundle.
+
 ## 2026-06-28 (course-detail-start-round — NOTICEABLE)
 - **Done (commit d5db7c6 on integration/next):** Full Courses section — browse, detail, Start-a-round-here, Courses tab.
 
