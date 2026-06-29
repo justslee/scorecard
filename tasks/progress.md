@@ -3,6 +3,40 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (course-poc-i3-validate — SILENT — integration/next)
+I3 Bethpage Black feasibility gate: validate the homegrown pipeline against the published card.
+
+### What was done
+1. Fetched live Overpass data for Bethpage AOI (center 40.7445,-73.4609, radius 2500m) — one-time
+   live call; committed 1.6 MB fixture `backend/tests/fixtures/bethpage_overpass.json`. 820
+   elements, 90 hole LineStrings (5 courses x 18), 96 greens, 215 tees, 270 bunkers.
+2. Assembled Bethpage Black via I0 (`_parse_course_geometry_response` with all holes, no filter)
+   -> I1 spatial join -> I2 (`assemble_osm_course(target_course_name="Black")`).
+3. Published card source: bluegolf.ijgt.com/bluegolf/ijgt/course/bethpageblack/detailedscorecard.htm
+   (verified 2026-06-29). Par 71, 7,486 yards, rating 78.0, slope 155, Black tees.
+4. Wrote `backend/tests/test_bethpage_validation.py` (14 tests, deterministic on fixture, no network).
+
+### Results (VERDICT: VIABLE)
+- Par: 18/18 match. OSM par sequence = card (par 71 total). PERFECT.
+- Handicap: 18/18 match. OSM stroke index = card for all 18 holes. PERFECT.
+- Yardage (straight-line tee->green vs. card Black-tee yardage): 14/18 within 25y.
+  4 holes over tolerance: 7 (+75y), 1 (+40y), 12 (+39y), 9 (+26y).
+  All deltas are POSITIVE (card >= straight-line) -- consistent with dogleg routing adding
+  played distance beyond straight-line. No negative deltas, no gross mis-joins (>200y).
+  Hole 7 is the worst (553y card vs. 478y SL) -- it is famously a severe dogleg par 5.
+- Assembled output: 18 holes, all hole numbers 1-18, all have >=1 polygon feature, par total 71.
+
+### Files changed
+- `backend/tests/fixtures/bethpage_overpass.json` (new, 1.6 MB): committed Overpass fixture.
+- `backend/tests/test_bethpage_validation.py` (new, 14 tests): deterministic I3 validation.
+
+### Gates
+- ruff check .: PASS (all checks passed)
+- pytest tests/test_bethpage_validation.py -v: 14/14 PASS (0.10s)
+- pytest tests/ -k "spatial or osm or ingest": 136/136 PASS (all prior tests green)
+- npx tsc --noEmit: 0 errors
+SILENT -- data/QA work; no user-visible surface. Go/no-go verdict for I4 (3DEP elevation).
+
 ## 2026-06-29 (course-poc-i2-store-render — NOTICEABLE — integration/next)
 I2 Bethpage Black POC: assemble homegrown OSM geometry into the PostGIS course
 store and render it in the map view — proving "a hole map from free data, no GolfAPI."
