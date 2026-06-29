@@ -10,6 +10,9 @@ import { createDefaultCourse } from "@/lib/types";
 import { createRound, getPlayers } from "@/lib/api";
 import type { Player, Round, Game, GameFormat, SavedPlayer, HoleInfo } from "@/lib/types";
 import { matchPlayerNames } from "@/lib/player-match";
+import { fuzzyBestMatch } from "@/lib/voice/utils";
+import { listFavorites } from "@/lib/course-favorites";
+import { getRecentCourses } from "@/lib/golf-api";
 import VoiceRoundSetupRealtime from "@/components/VoiceRoundSetupRealtime";
 import CourseSearch from "@/components/CourseSearch";
 import PlayerAutocomplete from "@/components/PlayerAutocomplete";
@@ -113,6 +116,10 @@ export default function RoundSetupPage() {
     { id: "custom-player-0", name: "", handicap: undefined },
   ]);
   const [savedPlayers, setSavedPlayers] = useState<SavedPlayer[]>([]);
+  // Course candidates for voice disambiguation (favorites + recent — localStorage reads).
+  // Populated once on mount; used in handleVoiceSetup to fuzzy-match the course
+  // name returned by the realtime tool call against known courses.
+  const [knownCourseNames, setKnownCourseNames] = useState<string[]>([]);
   const [playerPickerIndex, setPlayerPickerIndex] = useState(0);
   // Which player row is the owner ("you"). Defaults to the first; the owner can
   // re-assign it in the player editor. Drives ownerPlayerId on the round so the
@@ -150,6 +157,16 @@ export default function RoundSetupPage() {
       });
   }, []);
 
+  // Build the course candidate set for voice disambiguation from localStorage.
+  // Favorites + recently-played — both are synchronous reads, no network needed.
+  // Runs once; the set doesn't need to update mid-session.
+  useEffect(() => {
+    const favNames = listFavorites().map((f) => f.name);
+    const recentNames = getRecentCourses().map((c) => c.name);
+    const unique = [...new Set([...favNames, ...recentNames])].filter(Boolean);
+    setKnownCourseNames(unique);
+  }, []);
+
   // Prefill course from /courses/view "Start a round here" handoff (one-shot).
   // takeCourseForRound() reads + clears sessionStorage so it never fires again
   // or fights a later voice/manual course selection.
@@ -171,11 +188,19 @@ export default function RoundSetupPage() {
     }) => {
       setShowVoiceSetup(false);
 
-      // Populate course
+      // Populate course — fuzzy-match the AI-returned name against the user's
+      // saved / recently-played courses so mis-transcriptions like
+      // "Valley Links" (heard) → "Bally Links" (real saved course) are corrected.
+      // Threshold 0.74 matches pipeline.ts. Falls back to the raw name when the
+      // candidate set is empty or no match clears the threshold.
       if (courseName) {
+        const resolvedCourseName =
+          knownCourseNames.length > 0
+            ? (fuzzyBestMatch(courseName, knownCourseNames, 0.74).match ?? courseName)
+            : courseName;
         setSelectedCourse({
-          id: courseName.toLowerCase().replace(/\s+/g, "-"),
-          name: courseName,
+          id: resolvedCourseName.toLowerCase().replace(/\s+/g, "-"),
+          name: resolvedCourseName,
         });
       }
 
@@ -214,7 +239,7 @@ export default function RoundSetupPage() {
       );
       setPostVoiceChips(["Change game", "Different tees", "Add a player"]);
     },
-    [savedPlayers]
+    [savedPlayers, knownCourseNames]
   );
 
   // Quick-reply chip actions (post-voice)

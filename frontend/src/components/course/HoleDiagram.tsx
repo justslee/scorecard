@@ -44,6 +44,8 @@ import {
   unprojectPoint,
   isOnHoleBbox,
   yardsDistance,
+  nearestGreenCentroid,
+  ringCentroid,
   type Viewport,
   type ProjectedPolygon,
   type ProjectedHole,
@@ -57,6 +59,7 @@ import {
   viewBoxAttr,
   type ViewBox,
 } from '@/lib/course/zoom-pan';
+import type { CourseCoordinates } from '@/lib/golf-api';
 
 // ── On-paper palette ─────────────────────────────────────────────────────────
 // These intentionally do NOT use CSS vars so the SVG is self-contained and
@@ -258,6 +261,16 @@ export interface HoleDiagramProps {
    * is skipped entirely (tap-to-measure still works).
    */
   gpsPosition?: { lat: number; lng: number } | null;
+  /**
+   * GolfAPI-verified coordinates for this hole.  When present:
+   *   - The GolfAPI green-center is used as the authoritative pin (flag position
+   *     and all "to pin" distances — tap-to-measure, GPS dot label).
+   *   - The GolfAPI tee is used as the tee anchor.
+   *   - The corridor clip is anchored on the GolfAPI tee→green segment.
+   *   - Among OSM green polygons, the one nearest the GolfAPI green is preferred.
+   * When absent, falls back to OSM polygon centroids (existing behaviour).
+   */
+  courseCoords?: CourseCoordinates | null;
 }
 
 export default function HoleDiagram({
@@ -267,9 +280,53 @@ export default function HoleDiagram({
   padding = 36,
   showLabels = true,
   gpsPosition,
+  courseCoords,
 }: HoleDiagramProps) {
   const viewport: Viewport = { width, height, padding };
-  const projected: ProjectedHole | null = projectHole(features, viewport);
+
+  // ── Belt-and-suspenders: pick the OSM green polygon nearest GolfAPI green ──
+  // When courseCoords are present, we prefer the OSM green polygon closest to
+  // the GolfAPI green point.  If there's only one green polygon (the normal
+  // case) this is a no-op; it only matters when an OSM mapping artefact has
+  // placed a neighbouring hole's green in this hole's feature list.
+  const effectiveFeatures = useMemo<GeoJSON.Feature[]>(() => {
+    if (!courseCoords?.green) return features;
+    const nearest = nearestGreenCentroid(features, courseCoords.green);
+    if (!nearest) return features;
+    // If the nearest centroid is far from the GolfAPI green (> 300 m) keep all
+    // greens — something odd is in the data and we shouldn't filter aggressively.
+    const cosLat = Math.cos((nearest.lat * Math.PI) / 180);
+    const distM = Math.hypot(
+      (nearest.lng - courseCoords.green.lng) * 111320 * cosLat,
+      (nearest.lat - courseCoords.green.lat) * 111320
+    );
+    if (distM > 300) return features;
+    // Filter: keep the green polygon whose centroid matches `nearest`; discard others.
+    // For all non-green features: always keep.
+    return features.filter((feat) => {
+      const type = (feat.properties?.featureType as string | undefined) ?? '';
+      if (type !== 'green') return true;
+      const geom = feat.geometry;
+      if (!geom || geom.type !== 'Polygon') return true;
+      const ring = (geom as GeoJSON.Polygon).coordinates[0];
+      if (!ring || ring.length < 3) return true;
+      // Compute centroid of this green polygon using ringCentroid (same method as
+      // nearestGreenCentroid, which correctly excludes the GeoJSON closing duplicate).
+      const c = ringCentroid(ring as number[][]);
+      if (!c) return true;  // degenerate ring: keep it
+      const [cLng, cLat] = c;
+      // Keep if this is the nearest green (centroid matches within 1e-6 deg ≈ 11 cm)
+      return Math.abs(cLat - nearest.lat) < 1e-6 && Math.abs(cLng - nearest.lng) < 1e-6;
+    });
+  }, [features, courseCoords]);
+
+  const projected: ProjectedHole | null = projectHole(
+    effectiveFeatures,
+    viewport,
+    courseCoords
+      ? { teeLngLat: courseCoords.tee, greenLngLat: courseCoords.green }
+      : undefined
+  );
 
   // Tap-to-measure state: null = no active tap marker
   const [tap, setTap] = useState<TapMeasure | null>(null);
@@ -515,6 +572,8 @@ export default function HoleDiagram({
       <rect x={0} y={0} width={width} height={height} fill={T.paper} opacity={0.22} />
 
       {/* ── Layers 1–N: Polygon features (sorted back→front: rough→woods→fairway…) */}
+      {/* Synthetic fairway corridors (OSM data-gap fills) render at reduced opacity  */}
+      {/* so they read as a calm implied shape — subtly different from mapped fairways. */}
       <g clipPath="url(#hd-clip)">
         {polygons.map((poly: ProjectedPolygon, i: number) => {
           const stroke = featureStroke(poly.type);
@@ -526,6 +585,7 @@ export default function HoleDiagram({
               stroke={stroke ?? 'none'}
               strokeWidth={stroke ? featureStrokeWidth(poly.type) : 0}
               strokeLinejoin="round"
+              opacity={poly.synthetic ? 0.62 : undefined}
             />
           );
         })}

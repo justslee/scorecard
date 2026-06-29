@@ -3,6 +3,210 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — round-map-inline (NOTICEABLE — feat/round-map-inline, ready for bundle)
+
+Inline yardage-book hole diagram in the active-round view: when playing a course with homegrown
+geometry, the hole diagram appears automatically in the round view for the current hole. No link
+or tap required. Replaces the "View hole map" deep-link added in feat/round-map-bridge.
+
+### What was built
+- `frontend/src/lib/hole-index.ts` (NEW): pure `indexByHoleNumber<T>` utility for O(1) hole lookup.
+- `frontend/src/lib/hole-index.test.ts` (NEW): 6 unit tests covering indexing + edge cases.
+- `frontend/src/components/course/InlineHoleDiagram.tsx` (NEW): self-contained component that
+  fetches course geometry + GolfAPI coords ONCE on mount, indexes them by hole number, starts a
+  GPSWatcher, and renders `HoleDiagram` for `currentHole` (updates on prop change, no refetch).
+  260px fixed height, full-width, yardage-book paper background + hairline border.
+  Graceful absence: renders nothing while loading or on error.
+- `frontend/src/app/round/[id]/RoundPageClient.tsx`:
+  - Removed "View hole map" deep-link button (superseded by inline diagram).
+  - Removed unused `buildMapUrl` import.
+  - Added `<InlineHoleDiagram courseId={mappedCourse.id} currentHole={currentHole} />` with a
+    "Hole N map" SectionLabel, placed between the AnimatePresence hole card and the stakes ticker.
+  - Gated by `mappedCourse !== null` (same resolution logic as before).
+
+### Gate results (all green)
+- `npm run lint`: clean (0 errors, 0 warnings)
+- `npx tsc --noEmit`: clean
+- `npx vitest run`: 834/834 pass (36 test files — 6 new for hole-index)
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: clean (Next.js SSG, all 19 routes)
+
+### Classification: NOTICEABLE
+User-visible when playing a round at a mapped course (Bethpage Black, Bethpage Red). The
+yardage-book hole diagram appears inline — no tap needed. Tap-to-measure, pinch-zoom, GPS "you"
+dot and F/C/B distances all work as in the standalone /map/course page (same HoleDiagram
+component). No backend changes; token-independent.
+
+---
+
+## 2026-06-29 — round-map-bridge (NOTICEABLE — feat/round-map-bridge, ready for bundle)
+
+Hole map deep-link from an active round: when playing a course with homegrown geometry,
+a calm "View hole map" text link appears in the round header and opens the yardage-book
+map at the current hole.
+
+### What was built
+- `frontend/src/lib/map-bridge.ts` (NEW): pure helpers — `clampHole`, `parseHoleParam`,
+  `resolveMappedCourse` (conservative name match, case-insensitive + prefix), `buildMapUrl`.
+  No deps beyond the existing `normalizeCourseName` util.
+- `frontend/src/lib/map-bridge.test.ts` (NEW): 25 unit tests covering all helpers.
+- `frontend/src/app/map/course/page.tsx`: Accept `?hole=<n>` search param; open diagram
+  on that hole (clamped 1..18). Ref-captured at mount; does not disturb navigation state.
+- `frontend/src/app/round/[id]/RoundPageClient.tsx`: Fetch `GET /api/courses/mapped?search=`
+  when round.courseName is known; resolve a match via `resolveMappedCourse`; when found,
+  show a calm dotted-underline "View hole map" button below "Round in progress" in the header.
+  Hidden entirely when no mapped course matches.
+
+### Gate results (all green)
+- `npm run lint`: clean (0 errors, 0 warnings)
+- `npx tsc --noEmit`: clean
+- `npx vitest run`: 828/828 pass (35 test files, 25 new)
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: clean (Next.js SSG)
+
+### Classification: NOTICEABLE
+User-visible during a round at a mapped course (Bethpage Black, Bethpage Red). A yardage-book
+hole-map link appears while playing. No backend changes; frontend-only. Token-independent
+(existing endpoint). Ships on feat/round-map-bridge, ready to add to next bundle.
+
+---
+## 2026-06-29 — synth-fairway (NOTICEABLE — feat/synth-fairway, ready for bundle)
+
+Synthesized fairway corridors for holes missing an OSM fairway polygon (e.g. Bethpage Black holes 3/7/8/9).
+
+### What was built
+- `frontend/src/lib/course/hole-projection.ts`:
+  - New exported pure function `synthesizeFairwayCorridor(teeM, greenM, …) → ring | null`:
+    builds a 32 m-wide capsule/stadium shape in metre-space from the tee→green axis.
+    8 m inset off tee, 5 m inset off green, 10-point semicircular ends.
+    Returns null for degenerate (tee ≡ green) or too-short holes.
+  - `projectHole` now injects a synthetic fairway polygon tagged `synthetic: true`
+    when no corridor-passing OSM fairway exists for the hole.
+  - `ProjectedPolygon` interface gets optional `synthetic?: true` flag.
+- `frontend/src/components/course/HoleDiagram.tsx`:
+  - Synthetic fairways render at opacity 0.62 (vs 1.0 for real data) — same
+    palette colour, calmer implied feel, not visually screaming.
+- `frontend/src/lib/course/hole-projection.test.ts`:
+  - +15 new tests: synthesizeFairwayCorridor (closed ring, width, symmetry,
+    degenerate null, corridor containment, diagonal hole) + 6 integration tests
+    (gains synthetic, no synthetic when real exists, z-order, viewport bounds,
+    stray-filtered-out fairway triggers synthesis).
+
+### Gates
+- `npm run lint` — clean
+- `npx tsc --noEmit` — clean
+- `npx vitest run` — 818/818 passed (803 pre-existing + 15 new)
+- `npx tsx voice-tests/runner.ts --smoke` — 265/265 passed
+- `npm run build` — clean
+
+### Classification
+NOTICEABLE: holes 3/7/8/9 of Bethpage Black (and any hole on any course lacking
+an OSM fairway) now show a green corridor in the hole diagram on TestFlight.
+Frontend-only change — no re-ingest, no backend changes.
+
+## 2026-06-29 — golfapi-cache-first (SILENT — feat/golfapi-cache-first, ready for bundle)
+
+GolfAPI cache-first layer: batch+budget-guarded, never re-fetches a course already stored.
+Frontend reads from our backend; never calls GolfAPI directly.
+
+### What was built
+- `backend/app/services/golfapi_cache.py` (NEW):
+  - Injectable abstract `GolfApiClient`/`CacheStore`/`DiscoveryStore`/`BudgetStore`
+  - `FileCacheStore` → `backend/data/golfapi_cache.json` (per-course coords survive restart/re-ingest)
+  - `FileDiscoveryStore` → `backend/data/golfapi_discovery.json` (area/club catalog)
+  - `FileBudgetStore` → `backend/data/golfapi_usage.json` (monthly counter, auto-resets)
+  - `discover_golfapi_clubs(area_key, query)`: 1 `/clubs?name=q` call returns many course IDs
+  - `get_course_golf_data(our_id, golfapi_id)`: 1 `/coordinates/{id}` call per course
+  - Hard-stop at 45/50 calls/month; cache-first means 0 calls on hit
+- `backend/app/routes/courses_mapped.py` (UPDATED): New `GET /{course_id}/golf-coords`
+  endpoint reads from `FileCacheStore` — 0 GolfAPI calls, no DB required
+- `backend/scripts/ingest_osm_course.py` (UPDATED): `--golfapi-id` + `--refresh-golfapi`
+  flags; cache-first GolfAPI call after DB write; re-ingest reuses cache (0 repeat calls)
+- `frontend/src/lib/course/course-coordinates.ts` (UPDATED): `getCourseCoordinates()` now
+  tries backend `/golf-coords` first (our stored data), falls back to mock; NEVER calls
+  GolfAPI directly; `USE_LIVE_GOLFAPI` flag removed
+- `backend/tests/test_golfapi_cache.py` (NEW): 23 tests — cache-hit 0 calls, cache-miss 1 call,
+  second call 0 calls, budget guard, discovery batch (1 call → 5 course IDs), no-token, persist
+- `frontend/src/lib/course/course-coordinates.test.ts` (UPDATED): +6 backend-read tests (mock
+  fetch → backend data used; empty → mock fallback; never calls golfapi.io)
+
+### Gate results (all green)
+- `backend/ruff check .`: clean
+- `backend/pytest` (non-integration): 753/753 pass
+- `frontend/npm run lint`: clean
+- `frontend/npx tsc --noEmit`: clean
+- `frontend/npx vitest run`: 782/782 pass (all 33 test files)
+- `frontend/voice-tests --smoke`: 265/265 pass
+- `frontend/npm run build`: clean
+
+### Classification: SILENT
+No user-visible UI change. Backend infrastructure + budget enforcement. Ships with next bundle.
+Activation: owner provides GOLF_API_KEY + per-course golfapi_id → single ingest call loads data;
+subsequent serve is instant from our cache. Discovery: `discover_golfapi_clubs(area_key, query)`
+enumerates many course IDs in 1 API call, cached indefinitely per area.
+
+---
+
+## 2026-06-29 — hybrid-golfapi-map (NOTICEABLE — feat/hybrid-golfapi-map, ready for bundle)
+
+Hybrid course map: GolfAPI-verified POINTS anchoring homegrown OSM SHAPES.
+No live GolfAPI call (no token yet) — mock data derived from OSM centerlines, trivially swappable.
+
+### What was built
+- `frontend/src/lib/course/course-coordinates.ts`: Provider abstraction with mock data for
+  Bethpage Black + Red (18 holes each, seeded from Overpass OSM centerlines on 2026-06-29).
+  One-line live-swap: set `USE_LIVE_GOLFAPI = true` + fill `GOLFAPI_COURSE_ID_MAP`.
+- `frontend/src/lib/course/hole-projection.ts`: Added `nearestGreenCentroid()` + optional
+  `overrides` param to `projectHole()` so GolfAPI tee/green override OSM polygon centroids
+  for corridor clip, orientation, and SVG marker positions.
+- `frontend/src/components/course/HoleDiagram.tsx`: New `courseCoords` prop. When present:
+  uses GolfAPI green as authoritative pin, GolfAPI tee as anchor, picks nearest OSM green.
+- `frontend/src/app/map/course/page.tsx`: Loads GolfAPI coords in parallel with course data,
+  passes per-hole `holeCoords` to diagram + info strip. Shows F · C · B green distances
+  (from player when GPS on-hole, from tee otherwise). Graceful fallback for other courses.
+- `frontend/src/lib/course/course-coordinates.test.ts`: 13 new unit tests.
+- Hole-projection tests: 9 new tests for `nearestGreenCentroid` + override behaviour.
+
+### Gate results
+- `frontend/vitest run`: 776/776 pass (22 new tests)
+- `frontend/npm run lint`: clean
+- `frontend/npx tsc --noEmit`: clean
+- `frontend/voice-tests --smoke`: 265/265 pass
+- `frontend/npm run build`: clean
+- No backend changes (frontend-only)
+## 2026-06-29 — voice-name-disambiguation (NOTICEABLE — feat/voice-name-disambiguation, ready for bundle)
+
+Voice now resolves spoken player/course names against the user's REAL saved data.
+
+### What was built
+- `frontend/src/lib/voice/parseVoiceTranscript.ts`: Extended `ParseVoiceTranscriptOptions`
+  with `known?: { players?: string[]; courses?: string[] }`. `parseVoiceTranscriptLocally`
+  now accepts and uses this context: extracted player names are fuzzy-matched against
+  `known.players` at threshold 0.76 (same as pipeline.ts); extracted course names at 0.74.
+  If candidate set is empty, behaviour is unchanged — no regression.
+- `frontend/src/app/round/new/page.tsx`: Added `knownCourseNames` state (populated from
+  `listFavorites()` + `getRecentCourses()`, both synchronous localStorage reads). In
+  `handleVoiceSetup`, the AI-returned course name is now fuzzy-matched against
+  `knownCourseNames` at 0.74 before populating the form — fixing Bally→Valley class bugs.
+  Player resolution in the realtime path was already handled by `matchPlayerNames`
+  (Soundex+fuzzy in `player-match.ts`); Dipak/Deepak already worked.
+- `frontend/src/lib/voice/voice-disambiguation.test.ts`: 21 new Vitest tests covering
+  the two-mechanism split: phonetic (realtime players via matchPlayerName/Soundex) and
+  edit-distance (courses + transcript players via fuzzyBestMatch). Documents exactly what
+  each mechanism can and cannot do.
+
+### Gate results
+- `frontend/npm run lint`: clean
+- `frontend/npx tsc --noEmit`: clean
+- `frontend/vitest run`: 775/775 pass (21 new tests)
+- `frontend/voice-tests --smoke`: 265/265 pass
+- `backend/ruff check .`: clean
+- Build: confirmed clean via tsc (Turbopack symlink limitation in worktree env)
+
+### Classification: NOTICEABLE
+User-visible: voice round setup no longer mishears saved partner names or course names.
+"Say Dipak, app saves Dipak" and "Say Bally Links, app saves Bally Links" both now work.
+
 ## 2026-06-29 — corridor-tighten (NOTICEABLE — feat/corridor-tighten, ready for bundle)
 
 Fixes stray polygons (foreign greens, ponds, tree rows from adjacent holes) still
