@@ -3,6 +3,59 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (yardage-book-hole-diagram — NOTICEABLE — integration/next)
+Replaces the broken GPSMapView satellite viewer on /map/course with a clean, on-paper,
+top-down yardage-book hole diagram derived from homegrown OSM geometry. No Mapbox, no
+live GPS distances. Tee at bottom, green at top, layered SVG polygons in a restrained
+yardage-book palette.
+
+### What was done
+1. `frontend/src/lib/course/hole-projection.ts` (new, pure module):
+   - `projectHole(features, viewport)`: gathers polygon features, applies cosLat-corrected
+     equirectangular projection to metre space, rotates so tee→green axis is vertical
+     (tee bottom, green top), fits to SVG viewport with padding and aspect-ratio preservation.
+   - `holeLengthYards(features)`: LineString sum first; falls back to tee→green centroid distance.
+   - `describeHazards(features, projected)`: counts bunkers/water; adds left/right qualifier
+     from projected geometry when projected is available.
+   - Exports `ringCentroid` and `rotatePoint` as pure helpers for testing.
+
+2. `frontend/src/lib/course/hole-projection.test.ts` (new, 30 pure tests, headless/Node):
+   - ringCentroid: null for empty, closing-vertex exclusion, correct mean.
+   - rotatePoint: 90°/180°/0°/non-origin center cases.
+   - projectHole: null for empty/LineString-only, valid output, all points in bounds,
+     padding respected, green above tee, diagonal hole still oriented, render order.
+   - holeLengthYards: empty=0, no tee/green=0, centroid fallback ~400 yds, LineString
+     takes priority, multi-segment sum.
+   - describeHazards: no hazards, bunker count, water + side qualifier.
+
+3. `frontend/src/components/course/HoleDiagram.tsx` (new):
+   - Renders projected hole as inline SVG with layers: rough-grass background → fairway
+     (sage green) → water (slate blue) → bunker (parchment/sand) → green (deeper green)
+     → dashed centreline → tee marker (ink+paper) → flag pole+pennant (T.flag coral).
+   - All colours from T.* tokens or close on-paper analogues. No neon.
+   - Empty state for holes with no geometry.
+   - Props: features, width, height, padding, showLabels.
+
+4. `frontend/src/app/map/course/page.tsx` (rewritten):
+   - GPSMapView / mapbox-gl dynamic import removed entirely.
+   - Loads course via fetchMappedCourse, iterates sortedHoles with ◄/► nav.
+   - Header: back arrow + course name (serif).
+   - Main area: HoleDiagramAutosize wrapper (300×400 default, fills available space).
+   - Info strip: hole number (large serif), Par/HCP, yards (giant serif), hazard text.
+   - Nav bar: ◄ Hole N / N/total / Hole N ►.
+   - Paper-color background throughout (T.paper). No GPS distances.
+
+### Gates
+- `cd frontend && npm run lint`: PASS (0 errors, 0 warnings)
+- `cd frontend && npx tsc --noEmit`: PASS
+- `cd frontend && npx tsx voice-tests/runner.ts --smoke`: pass=265 fail=0
+- `cd frontend && npx vitest run`: 561/561 PASS (30 new from hole-projection.test.ts)
+- `cd frontend && npm run build`: PASS (clean Turbopack build)
+
+NOTICEABLE — /map/course now shows a calm yardage-book hole diagram instead of a blank
+satellite map with absurd GPS distances. Verify on device by opening the course-maps
+entry from /courses (Bethpage Black) and stepping through holes with ◄/►.
+
 ## 2026-06-29 (osm-ingest-error-hardening — SILENT — integration/next)
 Hardens the OSM/Overpass error handling: flaky public endpoint no longer fails silently,
 and the ingest script refuses to write an empty course.
