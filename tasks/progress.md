@@ -3,6 +3,18 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (social-partner-profile-polish — SILENT)
+- **Done (commit 8153d9f on integration/next):** Designer-blocker polish + hardening on the partner-profile feature.
+
+  Files changed (4):
+  - `frontend/src/app/players/page.tsx`: (1) loading state replaced CSS spinner with mono uppercase "Loading…" text (mirrors CourseDetailClient/PartnerProfileClient); (2) empty state replaced bordered card + UserIcon + 500-weight heading with quiet serif-italic placeholder + ghost button CTA; (3) player row name switched from sans/fontWeight:500 to T.serif + letterSpacing:-0.2; removed now-unused UserIcon component.
+  - `frontend/src/lib/partner-rounds.ts`: sort guard hardened against NaN from malformed/missing dates — treats NaN as epoch-0 (oldest) so sort stays stable.
+  - `frontend/src/lib/partner-rounds.test.ts`: two new tests — invalid date string and empty date string sort stably without throwing.
+  - `frontend/src/app/players/view/PartnerProfileClient.tsx`: date render falls back to raw string or "—" instead of "Invalid Date"; back button gains minWidth:44.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 434/434 (+2 new) · build clean (players/view confirmed).
+  SILENT — polish-only iteration; rides with the existing noticeable bundle.
+
 ## 2026-06-28 (social-partner-profile — NOTICEABLE)
 - **Done (commit e2d6960 on integration/next):** Partner profile detail screen at `/players/view?id=…`.
 
