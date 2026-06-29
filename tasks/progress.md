@@ -3,6 +3,31 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (caddie-decade-optimizer-core — SILENT — integration/next)
+Pure DECADE / strokes-gained aim-point optimizer, additive, not wired to recommendations.
+
+### What was done
+1. `backend/app/caddie/decade.py` (new, 232 lines): pure stdlib-only module implementing:
+   - `LandingArea` enum: GREEN, FAIRWAY, ROUGH, SAND, RECOVERY, WATER, OB.
+   - `Dispersion(sigma_long, sigma_lat)` NamedTuple — explicit caller-supplied 1-sigma values.
+   - `ClassifyFn` type alias — seam for real course geometry to plug in later.
+   - PGA-baseline expected-strokes tables (sources: Broadie 2014, DECADE Golf benchmarks).
+     Area ordering guaranteed: GREEN < FAIRWAY < ROUGH < SAND < RECOVERY;
+     WATER/OB = FAIRWAY + 1.0 penalty stroke.
+   - Deterministic 21-point Gaussian quadrature grid (+-3.5 sigma, captures 99.97%).
+   - `expected_strokes_from(area, distance_yds)` — single lookup, no RNG.
+   - `expected_strokes_for_aim(aim, dispersion, classify_fn, pin)` — convolution evaluator.
+   - `optimize_aim(candidates, dispersion, classify_fn, pin)` — candidate search O(N x 441).
+   - Returns `OptimizeResult` with aim, expected_strokes, breakdown dict, full candidate list.
+2. `backend/tests/test_decade.py` (new, 40 tests): proves all specified behaviours.
+
+### Gates
+- ruff check .: PASS
+- uv run pytest tests/test_decade.py -v: 40/40 PASS in 0.07s
+- npx tsc --noEmit: 0 errors
+
+SILENT — pure backend math module; NOT wired to any recommendation endpoint yet.
+
 ## 2026-06-29 (course-poc-i4-elevation — SILENT — integration/next, commit b621d78)
 I4 Bethpage Black POC: per-hole elevation (tee→green delta + green slope) from free USGS 3DEP,
 woven into the assembled homegrown course. BE/data, headless.
