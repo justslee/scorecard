@@ -3,6 +3,49 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (fuller-course-map — NOTICEABLE — feat/fuller-course-map, commit a5bef42)
+Extends the yardage-book hole diagram with terrain layers (rough, woods, trees), tap-to-measure
+connector lines, iOS safe-area header fix, and responsive ResizeObserver-based diagram sizing.
+
+### What was done
+- Backend `osm.py`: new Overpass queries for golf=rough, natural=wood/scrub, landuse=forest,
+  natural=tree_row, node[natural=tree]; parsed into rough (Polygon), woods (Polygon),
+  trees (Point GeoJSON) buckets.
+- Backend `course_spatial.py`: spatial join extended to handle Point geometry (direct coord
+  extraction) in addition to Polygon (centroid).
+- Backend `osm_ingest.py`: rough/woods/trees added to flat polygon list fed to spatial join.
+- Backend tests: `test_osm_parsing.py` updated key-set test; new `TestTerrainFeatures` class
+  (18 tests). `test_course_spatial.py` new `TestPointGeometrySpatialJoin` class (7 tests).
+- Frontend `hole-projection.ts`: RENDER_ORDER puts rough/woods before fairway; tree Point
+  features projected to SVG coordinates; `trees` field added to `ProjectedHole`.
+- Frontend `HoleDiagram.tsx`: new PAL entries (roughFill, woodsFill, treeGlyph, tapConnector);
+  warm-grass PAL.ground background replaces dot-pattern; tree glyphs as filled circles;
+  tap-to-measure dashed connector lines (tee→tap, tap→green).
+- Frontend `map/course/page.tsx`: safe-area header padding max(14px, env(safe-area-inset-top));
+  ResizeObserver-based HoleDiagramAutosize replacing hardcoded 300×400.
+- Frontend tests: hole-projection.test.ts +18 tests (rough/woods RENDER_ORDER, tree projection).
+
+### Diagnostic (Job B — missing fairways)
+Bethpage fixture has 99 fairway polygons but holes 1,3,7,8,9 lack a fairway after spatial join.
+Verdict: data attribution gap — those fairways exist in OSM but their centroids fall closer to
+an adjacent hole's LineString than the intended one. Not a parsing bug. Re-ingest from live
+Overpass (which may have improved tags) should partially improve this; otherwise a per-hole
+override table is the next step.
+
+### Gates
+- `ruff check .`: PASS (clean)
+- `pytest`: PASS (161/161)
+- `npx vitest run`: PASS (58/58, hole-projection.test.ts)
+- `npm run lint`: PASS
+- `npx tsc --noEmit`: PASS
+- `npx tsx voice-tests/runner.ts --smoke`: PASS (265/265)
+- `npm run build`: PASS (clean)
+
+NOTICEABLE — diagram now shows rough/woods terrain fills, tree glyphs, tap-connector lines,
+fills the screen on any device size, and the back button works on notched iPhones.
+Post-merge: prod needs a re-ingest of Bethpage Black to populate rough/woods/tree data, then
+a new TestFlight build.
+
 ## 2026-06-29 (tap-to-measure-gps-hole-diagram — NOTICEABLE — integration/next, commit 7c2b15f)
 Adds tap-to-measure and live GPS overlay to the /map/course yardage-book hole diagram.
 
