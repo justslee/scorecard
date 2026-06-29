@@ -1096,7 +1096,7 @@
     {
       "id": "course-discovery-home",
       "priority": 49,
-      "status": "needs-spec",
+      "status": "built-integration-next-pending-device-verify",
       "epic": "course-search-reviews",
       "classification": "noticeable",
       "build": "build",
@@ -1107,7 +1107,8 @@
       "rationale": "One quiet /courses entry point from home; recent (getRecentCourses) + nearby (searchNearby, golf-api.ts:733). Keep home calm \u2014 one affordance, not a grid.",
       "depends_on": [
         "course-detail-start-round"
-      ]
+      ],
+      "shipped": "Built aeda9fe (2026-06-29). Calm Recent-courses section on home (up to 3, localStorage, no location prompt, no empty state); reuses mapRecentCourses/course-list.ts. 483 vitest + build green. Nearby skipped (would prompt on load) \u2014 follow-up."
     },
     {
       "id": "course-identity-unify",
