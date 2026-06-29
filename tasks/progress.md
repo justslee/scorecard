@@ -3,6 +3,36 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (personal-bests — NOTICEABLE — integration/next, commit 54c476e, PR #72)
+Adds "Personal bests" career milestones section to the profile page.
+
+### What was done
+1. `frontend/src/lib/personal-bests.ts` (new):
+   - `derivePersonalBests(rounds)` — pure derivation over all completed rounds.
+   - Metrics: rounds played, best round (lowest toPar, tie-break newest date),
+     career eagle/birdie/par totals, best hole vs par by type (par-3/4/5),
+     longest consecutive birdie-or-better streak in a single round.
+   - Uses `getOwnerPlayerId()` (respects explicit `ownerPlayerId`).
+   - Rounds with < 9 played holes excluded from round-level metrics; hole-level
+     stats (milestones, best hole, streak) accept all scored holes.
+
+2. `frontend/src/lib/personal-bests.test.ts` (new):
+   - 45 unit tests covering: zero state, single/mixed 9H+18H rounds, incomplete
+     rounds, owner-not-first-player, eagle/birdie/par counts, best-hole tiebreaking,
+     best-round tiebreaking, streak logic, streak resets on null/absent holes,
+     streak resets between rounds, active-round exclusion.
+
+3. `frontend/src/app/profile/page.tsx`:
+   - New `CareerBests` component added after YearLog, before CourseReviews.
+   - Yardage-book aesthetic: Section wrapper, inline styles matching existing pattern,
+     quiet empty state, no new dependencies.
+
+### Gates
+- ESLint: clean · TypeScript: clean · Vitest personal-bests: 45/45
+- Voice smoke: 265/265 · next build: clean
+
+### Status: DONE — in PR #72
+
 ## 2026-06-29 (tap-to-measure-gps-hole-diagram — NOTICEABLE — integration/next, commit 7c2b15f)
 Adds tap-to-measure and live GPS overlay to the /map/course yardage-book hole diagram.
 
