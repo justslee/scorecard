@@ -62,7 +62,6 @@ function CoursesIcon() {
       strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M6 21V4" />
       <path d="M6 4l11 2.5L6 10" />
-      <path d="M4 21h16" />
     </svg>
   );
 }
@@ -149,7 +148,7 @@ export default function FloatingTabBar() {
               }}
             >
               <Icon />
-              <span>{label}</span>
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
             </Link>
           );
         })}

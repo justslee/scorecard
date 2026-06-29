@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import { getRecentCourses, searchNearby, type CourseSearchResult } from "@/lib/golf-api";
 import { mapRecentCourses, type RecentCourseItem } from "@/lib/course-list";
@@ -98,8 +99,9 @@ export default function CoursesHubPage() {
 
         {/* ── Find a course affordance ── */}
         <div style={{ padding: "4px 22px 18px" }}>
-          <button
+          <motion.button
             onClick={() => setShowSearch(true)}
+            whileTap={{ scale: 0.98 }}
             style={{
               width: "100%",
               border: `1px solid ${T.hairline}`,
@@ -152,7 +154,7 @@ export default function CoursesHubPage() {
             >
               Search by name or location
             </div>
-          </button>
+          </motion.button>
         </div>
 
         {/* ── Recent courses ── */}

@@ -195,7 +195,7 @@ export default function CourseDetailClient() {
         style={{
           maxWidth: 420,
           margin: "0 auto",
-          paddingBottom: 100,
+          paddingBottom: "calc(32px + env(safe-area-inset-bottom, 0px))",
         }}
       >
         {/* ── Header ── */}
@@ -209,7 +209,7 @@ export default function CourseDetailClient() {
             style={{
               background: "transparent",
               border: "none",
-              padding: 0,
+              padding: "0 8px",
               cursor: "pointer",
               fontFamily: T.mono,
               fontSize: 9,
@@ -258,12 +258,12 @@ export default function CourseDetailClient() {
           {location && (
             <div
               style={{
-                fontFamily: T.sans,
-                fontSize: 13,
-                color: T.pencil,
-                letterSpacing: -0.1,
+                fontFamily: T.mono,
+                fontSize: 8.5,
+                letterSpacing: 1.1,
+                color: T.pencilSoft,
+                textTransform: "uppercase",
                 marginTop: 4,
-                lineHeight: 1.3,
               }}
             >
               {location}
