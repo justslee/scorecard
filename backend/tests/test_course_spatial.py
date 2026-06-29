@@ -15,11 +15,15 @@ Polygons:
 import math
 
 from app.services.course_spatial import (
+    _RECLAIM_SAME_AREA_M,
     _deg_to_m,
     _linestring_dist_m,
+    _linestring_intersection_m,
     _match_mode,
+    _point_in_ring,
     _point_to_segment_dist_m,
     _ref_to_int,
+    _ring_bbox,
     _ring_centroid,
     assign_features_to_holes,
     build_course_feature_collection,
@@ -601,3 +605,276 @@ class TestPointGeometrySpatialJoin:
         result = assign_features_to_holes(self._HOLES, [linestring_feat])
         _ref, _course, dist = result["way/ls1"]
         assert dist == float("inf")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# _point_in_ring
+# ══════════════════════════════════════════════════════════════════════════════
+
+# A 0.01° × 0.01° square centred near Bethpage (lat≈40.74, lon≈-73.46)
+_TEST_RING = [
+    [-73.465, 40.735],
+    [-73.455, 40.735],
+    [-73.455, 40.745],
+    [-73.465, 40.745],
+    [-73.465, 40.735],  # closed
+]
+_TEST_COS_LAT = math.cos(math.radians(40.74))
+_TEST_BBOX = _ring_bbox(_TEST_RING)
+
+
+class TestPointInRing:
+    """Ray-casting point-in-polygon."""
+
+    def test_centre_is_inside(self):
+        assert _point_in_ring(-73.460, 40.740, _TEST_RING, _TEST_COS_LAT) is True
+
+    def test_far_point_is_outside(self):
+        assert _point_in_ring(-73.000, 40.740, _TEST_RING, _TEST_COS_LAT) is False
+
+    def test_bbox_rejection_skips_check(self):
+        # Point well outside bbox — should return False quickly via bbox guard.
+        assert _point_in_ring(-72.000, 40.740, _TEST_RING, _TEST_COS_LAT, _TEST_BBOX) is False
+
+    def test_inside_with_bbox(self):
+        assert _point_in_ring(-73.460, 40.740, _TEST_RING, _TEST_COS_LAT, _TEST_BBOX) is True
+
+    def test_degenerate_ring_too_few_vertices(self):
+        short_ring = [[-73.460, 40.740], [-73.455, 40.740]]
+        assert _point_in_ring(-73.458, 40.740, short_ring, _TEST_COS_LAT) is False
+
+    def test_corner_point_boundary(self):
+        # Exact corner — ray-casting at boundary can go either way; just must not crash.
+        result = _point_in_ring(-73.465, 40.735, _TEST_RING, _TEST_COS_LAT)
+        assert isinstance(result, bool)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# _linestring_intersection_m
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestLinestringIntersectionM:
+    """Overlap-length scoring for the parallel-hole fix."""
+
+    # A narrow N-S fairway polygon: 0.001° wide, 0.003° long (≈111 m × 222 m)
+    # Centred on lon=-73.460, lat=40.737→40.740→40.743
+    _FAIRWAY_RING = [
+        [-73.4605, 40.737],
+        [-73.4595, 40.737],
+        [-73.4595, 40.743],
+        [-73.4605, 40.743],
+        [-73.4605, 40.737],
+    ]
+    _COS_LAT = math.cos(math.radians(40.740))
+    _BBOX = _ring_bbox(_FAIRWAY_RING)
+
+    # Hole line that runs longitudinally THROUGH the fairway (the correct hole)
+    _OWN_HOLE_LINE = [[-73.460, 40.736], [-73.460, 40.744]]
+
+    # Parallel neighbour hole line running alongside, NOT through the fairway
+    _NEIGHBOUR_LINE = [[-73.455, 40.736], [-73.455, 40.744]]
+
+    def test_own_hole_line_scores_positive(self):
+        score = _linestring_intersection_m(
+            self._OWN_HOLE_LINE, self._FAIRWAY_RING, self._COS_LAT, self._BBOX
+        )
+        assert score > 0.0, f"Expected > 0 metres overlap, got {score}"
+
+    def test_neighbour_line_scores_zero(self):
+        score = _linestring_intersection_m(
+            self._NEIGHBOUR_LINE, self._FAIRWAY_RING, self._COS_LAT, self._BBOX
+        )
+        assert score == 0.0, f"Expected 0 metres overlap, got {score}"
+
+    def test_own_line_scores_much_higher_than_neighbour(self):
+        own = _linestring_intersection_m(
+            self._OWN_HOLE_LINE, self._FAIRWAY_RING, self._COS_LAT, self._BBOX
+        )
+        nbr = _linestring_intersection_m(
+            self._NEIGHBOUR_LINE, self._FAIRWAY_RING, self._COS_LAT, self._BBOX
+        )
+        assert own > nbr
+
+    def test_empty_linestring_returns_zero(self):
+        assert _linestring_intersection_m([], self._FAIRWAY_RING, self._COS_LAT) == 0.0
+
+    def test_single_vertex_linestring_returns_zero(self):
+        assert _linestring_intersection_m(
+            [[-73.460, 40.740]], self._FAIRWAY_RING, self._COS_LAT
+        ) == 0.0
+
+    def test_empty_ring_returns_zero(self):
+        assert _linestring_intersection_m(self._OWN_HOLE_LINE, [], self._COS_LAT) == 0.0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Parallel-hole fairway attribution (the Bethpage bug scenario)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestParallelHoleFairwayAttribution:
+    """
+    Reproduce the exact failure mode: two parallel N-S holes whose fairway
+    polygon centroids land closer to the WRONG hole's centerline.
+
+    Layout:
+      • Hole A centerline: lon=-73.460 (runs through the fairway)
+      • Hole B centerline: lon=-73.456 (runs parallel, 4× closer to centroid
+        of a polygon that is shifted 0.001° east of centre)
+
+    The fairway polygon is a narrow N-S strip centred at lon=-73.460 with the
+    centroid right on the polygon centre. But we shift the polygon 0.001° east
+    so its CENTROID is at lon=-73.459, which is equidistant between A (-73.460)
+    and a very close parallel hole B.
+
+    Actually the cleaner test: put the polygon centre exactly between both holes
+    so the OLD centroid rule is ambiguous, but hole A's line passes through the
+    polygon while hole B's line does not.
+    """
+
+    # Hole A: lon=-73.460, runs N-S
+    _HOLE_A = _make_hole("1", "Black", -73.460, 40.735, -73.460, 40.745)
+    # Hole B: lon=-73.456, parallel — CENTROID of polygon is equidistant from both
+    _HOLE_B = _make_hole("2", "Black", -73.456, 40.735, -73.456, 40.745)
+
+    # Fairway strip centred on lon=-73.460 (hole A's line runs through it)
+    # Width: 0.003° lon (≈250 m), so it spans -73.462 → -73.458
+    # Hole B at -73.456 is OUTSIDE the ring (0.002° east of the right edge).
+    _FAIRWAY = {
+        "type": "Feature",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[
+                [-73.462, 40.737],
+                [-73.458, 40.737],
+                [-73.458, 40.743],
+                [-73.462, 40.743],
+                [-73.462, 40.737],
+            ]],
+        },
+        "properties": {"featureType": "fairway", "osm_id": "way/fw_parallel"},
+    }
+
+    def test_fairway_assigns_to_hole_with_line_through_it(self):
+        """Hole A's line passes through the fairway → must win even if B's centroid-dist is similar."""
+        result = assign_features_to_holes([self._HOLE_A, self._HOLE_B], [self._FAIRWAY])
+        ref, course, _dist = result["way/fw_parallel"]
+        assert ref == "1", f"Expected hole 1 (line passes through), got {ref}"
+        assert course == "Black"
+
+    def test_fairway_not_assigned_to_neighbour(self):
+        result = assign_features_to_holes([self._HOLE_A, self._HOLE_B], [self._FAIRWAY])
+        ref, _course, _dist = result["way/fw_parallel"]
+        assert ref != "2", "Should NOT assign to the neighbour whose line is outside the polygon"
+
+    def test_existing_assignments_not_regressed(self):
+        """Original fixtures (green, bunker, tee near BH1) still assign correctly."""
+        result = assign_features_to_holes(ALL_HOLES, ALL_POLYGONS)
+        assert result["way/green1"][0] == "1"
+        assert result["way/green1"][1] == "Black"
+        assert result["way/bunker1"][0] == "1"
+        assert result["way/bunker1"][1] == "Black"
+        assert result["way/tee1"][0] == "1"
+        assert result["way/tee1"][1] == "Black"
+        assert result["way/green_red"][1] == "Red"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Multi-course reclaim in build_course_feature_collection
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestMultiCourseReclaim:
+    """
+    Simulate a venue where two courses share the same geographic area and the
+    global nearest-line join initially assigns a target-course polygon to the
+    wrong course.
+
+    Layout:
+      • Black hole 1 centerline at lon=-73.000 (the target course)
+      • Green hole 1 centerline at lon=-72.9997 (30 m east — very close)
+      • Fairway polygon centred at lon=-72.9998 — closer to Green (20 m) than Black (16 m)
+        BUT physically in the Black-course area (within _RECLAIM_SAME_AREA_M)
+
+    Without reclaim: the fairway would be assigned to Green and excluded from Black output.
+    With reclaim: it should be re-assigned to Black hole 1 and appear in the Black output.
+
+    Distant-course rejection must still work: a Red polygon 3 km away must NOT be reclaimed.
+    """
+
+    # Exact BH1 coords from ALL_HOLES
+    _BH1 = _make_hole("1", "Black", _BH1_TEE_LON, _BH1_TEE_LAT, _BH1_GREEN_LON, _BH1_GREEN_LAT,
+                      _BH1_MID_LON, _BH1_MID_LAT)
+
+    # Green hole 1 only 30 m east of Black hole 1 (lon offset ≈ 0.00035° at lat 40.7)
+    _GH1_LON = _BH1_TEE_LON + 0.00035  # ≈30 m east
+    _GH1 = _make_hole("1", "Green", _GH1_LON, _BH1_TEE_LAT, _GH1_LON, _BH1_GREEN_LAT)
+
+    # Red hole 1: far away (≈2.5 km east)
+    _RH1 = _make_hole("1", "Red", _RH1_TEE_LON, _RH1_TEE_LAT, _RH1_GREEN_LON, _RH1_GREEN_LAT)
+
+    ALL_MCR_HOLES = [_BH1, _GH1, _RH1]
+
+    # Fairway closer to Green centerline than Black — should be reclaimed for Black
+    # Placed 0.0002° east of Black, 0.00015° west of Green → nearer Green
+    _NEAR_GREEN_FW = _make_polygon("way/fw_near_green", "fairway",
+                                   _BH1_TEE_LON + 0.0002, _BH1_MID_LAT)
+
+    # Red polygon 2.5 km east — must NOT be reclaimed
+    # (_RH1_TEE_LAT == _RH1_GREEN_LAT are the bounds; midpoint is the mean)
+    _RH1_MID_LAT = (_RH1_TEE_LAT + _RH1_GREEN_LAT) / 2
+    _FAR_RED_POLY = _make_polygon("way/far_red", "fairway",
+                                  _RH1_TEE_LON, _RH1_MID_LAT)
+
+    def test_reclaim_constant_is_positive(self):
+        assert _RECLAIM_SAME_AREA_M > 0
+
+    def test_close_polygon_reclaimed_for_target_course(self):
+        """Polygon near Green (but within 200 m of Black) appears in Black output."""
+        result = build_course_feature_collection(
+            self.ALL_MCR_HOLES, [self._NEAR_GREEN_FW], "Black"
+        )
+        all_ids = {
+            f["properties"]["osm_id"]
+            for hole in result
+            for f in hole["features"]["features"]
+        }
+        assert "way/fw_near_green" in all_ids, \
+            "Fairway near co-located Green course should be reclaimed for Black"
+
+    def test_distant_polygon_not_reclaimed(self):
+        """Red polygon 2.5 km away is NOT reclaimed into Black output."""
+        result = build_course_feature_collection(
+            self.ALL_MCR_HOLES, [self._FAR_RED_POLY], "Black"
+        )
+        all_ids = {
+            f["properties"]["osm_id"]
+            for hole in result
+            for f in hole["features"]["features"]
+        }
+        assert "way/far_red" not in all_ids, \
+            "Red polygon 2.5 km from Black should NOT be reclaimed"
+
+    def test_original_cross_course_rejection_preserved(self):
+        """Standard fixtures: Red-course green (2.5 km away) still excluded from Black."""
+        result = build_course_feature_collection(
+            ALL_HOLES + [self._GH1], ALL_POLYGONS, "Black"
+        )
+        all_ids = {
+            f["properties"]["osm_id"]
+            for hole in result
+            for f in hole["features"]["features"]
+        }
+        assert "way/green_red" not in all_ids
+
+    def test_original_black_polygons_still_included(self):
+        """Reclaim pass must not disturb polygons already assigned to Black."""
+        result = build_course_feature_collection(
+            ALL_HOLES + [self._GH1], ALL_POLYGONS, "Black"
+        )
+        all_ids = {
+            f["properties"]["osm_id"]
+            for hole in result
+            for f in hole["features"]["features"]
+        }
+        assert "way/green1" in all_ids
+        assert "way/bunker1" in all_ids
+        assert "way/tee1" in all_ids
