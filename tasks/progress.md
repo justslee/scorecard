@@ -3,6 +3,36 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (caddie-reasoning-priority-cap — SILENT — integration/next)
+Prioritized + capped CaddieRecommendation.reasoning[] to at most 4 lines (voice-caddie
+calm fix). Pure Python, typed, no new deps, no DB.
+
+### What was done
+1. `backend/app/caddie/aim_point.py`:
+   - New constant `MAX_REASONING_ITEMS: int = 4`.
+   - New exported pure helper `prioritize_reasoning(items, max_items) -> list[str]`.
+     Stable-sorts by priority, caps to max_items. P0 club line is never evicted.
+   - Refactored generate_recommendation to accumulate `list[tuple[int, str]]` with
+     documented priority tags (P0 club always first, P1 safety-critical, P2 slope/miss,
+     P3 terrain, P4 color), then calls prioritize_reasoning at the end.
+   - club, target_yards, aim_point, miss_side completely unchanged.
+2. `backend/tests/test_reasoning_priority.py` (new, 25 pure tests).
+
+### Priority scheme
+- P0: club/distance fit line — ALWAYS kept, ALWAYS first
+- P1: safety-critical — competition-legal note, pin light (red/yellow), DECADE hazard-aim
+- P2: slope miss-advice, player miss-tendency note
+- P3: shot-line terrain advice
+- P4: color — player history, personal-stats note, distance-adjustment summary
+
+### Gates
+- `cd backend && ruff check .`: PASS
+- `cd backend && uv run pytest tests/ -k "reasoning or aim or caddie or decade or slope"`: 205/205 PASS (25 new, 180 existing)
+- `cd frontend && npx tsc --noEmit`: 0 errors
+
+SILENT — pure backend logic. Voice caddie now speaks at most 4 reasoning lines;
+P4 color is the first to drop when over cap.
+
 ## 2026-06-29 (caddie-personal-dispersion — SILENT — integration/next)
 Handicap-scaled shot-dispersion model for the DECADE aim adviser. Pure additive, headless-testable, no new deps, no DB.
 
