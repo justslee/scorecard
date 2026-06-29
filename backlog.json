@@ -1307,7 +1307,7 @@
     {
       "id": "course-poc-i3-validate",
       "priority": 20,
-      "status": "ready",
+      "status": "done-integration-next",
       "epic": "course-search-db-epic",
       "classification": "silent",
       "build": "build(data/QA)",
@@ -1318,7 +1318,8 @@
       "rationale": "Assert par+handicap exact, tee->green yardage within tolerance, flag mis-joined greens. The go/no-go gate for the homegrown approach.",
       "depends_on": [
         "course-poc-i2-store-render"
-      ]
+      ],
+      "shipped": "Built 1b9c15e (2026-06-29). FEASIBILITY GATE = VIABLE. vs published Bethpage Black card: par 18/18, handicap 18/18, yardage 14/18 within 25y (4 outliers all doglegs, straight-line<played, zero mis-joins). Committed Overpass fixture + 14 deterministic tests. Caveat: Bethpage is best-case OSM coverage; scale = long tail."
     },
     {
       "id": "course-poc-i4-elevation",
