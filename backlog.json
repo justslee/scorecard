@@ -718,7 +718,7 @@
     {
       "id": "caddie-decade-wire-recommend",
       "priority": 18,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "phase": 2,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -727,7 +727,8 @@
       "headless": "yes",
       "area": "backend",
       "title": "Wire DECADE optimizer into generate_recommendation",
-      "rationale": "Replace/augment the heuristic aim point in aim_point.py with the optimizer's target + expected-strokes delta vs aim-at-flag; keep traffic-light fallback when geometry missing. Gate behind a flag; snapshot tests to catch regressions."
+      "rationale": "Replace/augment the heuristic aim point in aim_point.py with the optimizer's target + expected-strokes delta vs aim-at-flag; keep traffic-light fallback when geometry missing. Gate behind a flag; snapshot tests to catch regressions.",
+      "shipped": "Built 3f2b5a3 (2026-06-29). SAFE activation: decade_advice.py surfaces the DECADE optimizer as ADDITIVE hazard-aware aim advice in reasoning[] (build_classify_point from OSM hazards + dispersion-scaled optimize_aim, threshold 4y). Club/target/aim_point/miss_side UNCHANGED (verified). 57 tests, 161 caddie green. (Risky aim-override variant intentionally NOT done \u2014 additive advice is the safe activation; real polygons plug into build_classify_point later.)"
     },
     {
       "id": "caddie-tactical-slope-advice",
