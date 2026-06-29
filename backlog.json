@@ -1361,7 +1361,7 @@
     {
       "id": "ocr-scorecard-scan",
       "priority": 14,
-      "status": "built-pending-review",
+      "status": "done-integration-next",
       "classification": "noticeable-backend-testable",
       "build": "build",
       "size": "M",
@@ -1369,7 +1369,22 @@
       "area": "backend(+frontend follow-up)",
       "title": "OCR scorecard scan (photo -> structured scores via Claude vision)",
       "rationale": "From todo.md gap list. POST /api/scorecard/scan: image upload -> Claude vision -> {players, holes, scores} JSON. Kills manual score entry. Backend first iteration built (d926711); camera->review->import UI is the follow-up. New authed endpoint -> reviewer + /security-review in progress.",
-      "shipped": "Backend built d926711 (2026-06-29): double auth-gated, 10MB cap, format guards, pure parser + 19 tests, 621 backend tests green. Vision accuracy = device/manual. Frontend flow = follow-up iteration."
+      "shipped": "Backend built d926711 (2026-06-29): double auth-gated, 10MB cap, format guards, pure parser + 19 tests, 621 backend tests green. Vision accuracy = device/manual. Frontend flow = follow-up iteration. | Reviewer SHIP + /security-review CLEAN (auth double-gated, no injection/secret issues). Hardened 24fcaca (non-text content blocks + shape validation, 28 tests). Backend complete; camera->review->import UI = follow-up ocr-scorecard-ui."
+    },
+    {
+      "id": "ocr-scorecard-ui",
+      "priority": 15,
+      "status": "needs-spec",
+      "classification": "noticeable",
+      "build": "build(FE)",
+      "size": "M",
+      "headless": "partial (UI; vision accuracy device)",
+      "area": "frontend",
+      "title": "OCR scorecard scan UI (camera -> /api/scorecard/scan -> review -> import)",
+      "rationale": "Frontend flow for the OCR backend (ocr-scorecard-scan, d926711): reuse CameraCapture -> POST /api/scorecard/scan -> a review/correct screen -> import scores into the round. Vision accuracy device-tested. Mirror scan response shape into types.ts.",
+      "depends_on": [
+        "ocr-scorecard-scan"
+      ]
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
