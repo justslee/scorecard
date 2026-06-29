@@ -28,6 +28,31 @@ import * as turf from '@turf/turf';
  *  and inverse transform functions share the exact same value. */
 const LAT_M = 111_320;
 
+/**
+ * Tight corridor filter thresholds — used by `isInHoleCorridor`.
+ *
+ * LATERAL_CAP_M: maximum perpendicular distance (metres) from the tee→green
+ * axis for a polygon or tree to be kept.
+ *
+ * Choice: 60 m.
+ *   • A standard golf fairway is 35–40 m wide, so the axis sits ≈18 m from
+ *     either edge — every fairway vertex easily clears 60 m.
+ *   • Greenside bunkers are typically 20–50 m off-centre — inner vertices clear
+ *     60 m even for wide bunker complexes.
+ *   • The strays we're removing (foreign greens, ponds, trailing tree rows) sit
+ *     150–400 m to the side at Bethpage — comfortably outside the cap.
+ *
+ * LONGITUDINAL_MARGIN_M: metres to extend the corridor past the tee and green
+ * endpoints so features BEHIND the tee (multiple tee boxes) and features in the
+ * green surrounds (rear bunkers, backstop rough) are not clipped.
+ *
+ * Choice: 40 m.
+ *   • Deep back tees are typically 20–30 m behind the nominal tee centroid.
+ *   • Bunkers behind a green are rarely more than 30–40 m past the flag.
+ */
+export const CORRIDOR_LATERAL_M = 60;
+export const CORRIDOR_LONGITUDINAL_MARGIN_M = 40;
+
 // ── Public types ──────────────────────────────────────────────────────────────
 
 /** A projected polygon (one per GeoJSON feature) in SVG coordinates. */
@@ -144,6 +169,112 @@ export function rotatePoint(
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+}
+
+// ── Corridor helpers (pure, unit-testable) ────────────────────────────────────
+
+/**
+ * Distance in metres from point P to the nearest point on line segment A→B.
+ *
+ * All coordinates must be in a flat metre space (e.g. the equirectangular
+ * projection used throughout this module).  Returns the perpendicular distance
+ * when the foot of the perpendicular falls within [A, B]; otherwise returns the
+ * distance to the nearer endpoint.
+ *
+ * Pure function — no side-effects, no DOM, headless-testable.
+ */
+export function pointToSegmentDistanceM(
+  px: number, py: number,
+  ax: number, ay: number,
+  bx: number, by: number,
+): number {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const len2 = abx * abx + aby * aby;
+  if (len2 < 1e-9) return Math.hypot(px - ax, py - ay);   // degenerate segment
+  const t = Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / len2));
+  return Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
+}
+
+/**
+ * Returns true if the ring (pre-projected to metre space) lies within the
+ * tee→green hole corridor.
+ *
+ * A ring "lies within" the corridor if its centroid OR any ring vertex satisfies
+ * BOTH constraints:
+ *   • lateral (perpendicular) distance from the tee→green axis ≤ latCapM
+ *   • longitudinal projection along the axis in [-lonMarginM, segLen + lonMarginM]
+ *
+ * Rationale for the two-step (centroid + vertex) check:
+ *   • Large terrain polygons that straddle the axis (rough, wide fairways) have
+ *     their centroid on-axis — the centroid check keeps them with a single test.
+ *   • Off-axis bunkers/water features have vertices that dip toward the fairway
+ *     even when the centroid exceeds the cap — checking vertices catches them.
+ *   • Stray foreign greens/ponds 150–400 m to the side have BOTH centroid and
+ *     all vertices well outside the cap → correctly excluded.
+ *
+ * To test a single Point feature (e.g. a tree node), pass it as
+ * `ringMeters = [[px, py]]`.
+ *
+ * Pure function — no side-effects, no DOM, headless-testable.
+ *
+ * @param ringMeters   Ring vertices in metre-space [[x, y], …] (may be closed)
+ * @param teeM         Tee centroid in metre space [x, y]
+ * @param greenM       Green centroid in metre space [x, y]
+ * @param latCapM      Maximum lateral distance (metres) — corridor half-width
+ * @param lonMarginM   Extension (metres) past each end of the tee→green segment
+ */
+export function isInHoleCorridor(
+  ringMeters: [number, number][],
+  teeM: [number, number],
+  greenM: [number, number],
+  latCapM: number,
+  lonMarginM: number,
+): boolean {
+  if (ringMeters.length === 0) return false;
+
+  const [ax, ay] = teeM;
+  const [bx, by] = greenM;
+  const abx = bx - ax;
+  const aby = by - ay;
+  const segLen = Math.hypot(abx, aby);
+
+  if (segLen < 0.1) {
+    // Degenerate hole (tee === green): use a simple radial test.
+    return ringMeters.some(([px, py]) => Math.hypot(px - ax, py - ay) <= latCapM);
+  }
+
+  // Unit vector along the tee→green axis.
+  const ux = abx / segLen;
+  const uy = aby / segLen;
+
+  /** True when point (px, py) satisfies both corridor constraints. */
+  function inCorridor(px: number, py: number): boolean {
+    const dx = px - ax;
+    const dy = py - ay;
+    const proj = dx * ux + dy * uy;          // longitudinal projection (metres along axis)
+    const lat  = Math.abs(dx * uy - dy * ux); // lateral distance (cross-product magnitude)
+    return proj >= -lonMarginM && proj <= segLen + lonMarginM && lat <= latCapM;
+  }
+
+  // 1. Centroid check — fast path for large polygons straddling the axis.
+  //    Exclude the GeoJSON closing duplicate vertex if present.
+  const verts: [number, number][] =
+    ringMeters.length > 1 &&
+    ringMeters[0][0] === ringMeters[ringMeters.length - 1][0] &&
+    ringMeters[0][1] === ringMeters[ringMeters.length - 1][1]
+      ? ringMeters.slice(0, -1)
+      : ringMeters;
+  let sumX = 0, sumY = 0;
+  for (const [x, y] of verts) { sumX += x; sumY += y; }
+  if (inCorridor(sumX / verts.length, sumY / verts.length)) return true;
+
+  // 2. Vertex check — catches off-axis polygons with an inner edge in corridor.
+  for (const [px, py] of ringMeters) {
+    if (inCorridor(px, py)) return true;
+  }
+
+  return false;
 }
 
 // ── Forward & inverse coordinate transforms ───────────────────────────────────
@@ -287,37 +418,55 @@ export function projectHole(
   // If only one is present, we still proceed; we just can't orient the hole.
   const canOrient = teeCentroid !== null && greenCentroid !== null;
 
-  // ── Corridor guard: exclude stray polygons outside the tee→green bbox ─────
+  // ── Tight corridor guard (perpendicular-distance clip) ───────────────────
   //
-  // Belt-and-suspenders against polygons from adjacent holes that slipped
-  // through the backend spatial join.  When we have both a tee and a green,
-  // compute a corridor bbox around the tee→green axis with generous margins
-  // and exclude any polygon whose centroid falls outside it.
+  // Replaces the old rectangular bbox guard (CORRIDOR_LAT_DEG / CORRIDOR_LNG_DEG)
+  // with a proper perpendicular-distance-from-segment test in metre space.
+  //
+  // Problem with the old bbox: a diagonal hole has a large axis-aligned bbox that
+  // included features 300–400 m to the side (adjacent greens, ponds, tree rows)
+  // even though the lateral (perpendicular) distance to the corridor was large.
+  //
+  // New approach: project each polygon's ring to flat-earth metre coordinates
+  // and test whether its centroid OR any vertex lies within CORRIDOR_LATERAL_M
+  // of the tee→green axis AND within CORRIDOR_LONGITUDINAL_MARGIN_M of each end.
   //
   // Tee and green polygons always pass (they define the corridor).
-  // Without this guard, a stray fairway 4 km away would inflate the geographic
-  // bbox and compress the legitimate diagram into a tiny speck.
-  //
-  // Margins (generous — must include features to the sides of the hole):
-  //   ≈ 330 m latitude / ≈ 337 m longitude at Bethpage (~40.7°)
-  //
-  const CORRIDOR_LAT_DEG = 0.003;
-  const CORRIDOR_LNG_DEG = 0.004;
+  // Tree Point features receive the same corridor test (see below).
+
+  // cosLat for the corridor projection — derived from tee+green centroids
+  // (before the full bbox is computed from filteredPolygons).
+  const corridorMidLat = canOrient && teeCentroid && greenCentroid
+    ? (teeCentroid[1] + greenCentroid[1]) / 2
+    : 0;
+  const corridorCosLat = Math.cos((corridorMidLat * Math.PI) / 180);
+
+  /** Project a [lng, lat] pair to metre-space [x, y] for corridor testing. */
+  function toCorridorM(lng: number, lat: number): [number, number] {
+    return [lng * LAT_M * corridorCosLat, lat * LAT_M];
+  }
+
+  const teeCorM  = canOrient && teeCentroid  ? toCorridorM(teeCentroid[0],  teeCentroid[1])  : null;
+  const greenCorM = canOrient && greenCentroid ? toCorridorM(greenCentroid[0], greenCentroid[1]) : null;
 
   const filteredPolygons: typeof rawPolygons =
-    canOrient && teeCentroid !== null && greenCentroid !== null
+    canOrient && teeCorM && greenCorM
       ? rawPolygons.filter(({ type, ring }) => {
           if (type === 'tee' || type === 'green') return true;  // always keep
-          const c = ringCentroid(ring);
-          if (!c) return false;
-          const [lng, lat] = c;
-          const minLngC = Math.min(teeCentroid[0], greenCentroid[0]) - CORRIDOR_LNG_DEG;
-          const maxLngC = Math.max(teeCentroid[0], greenCentroid[0]) + CORRIDOR_LNG_DEG;
-          const minLatC = Math.min(teeCentroid[1], greenCentroid[1]) - CORRIDOR_LAT_DEG;
-          const maxLatC = Math.max(teeCentroid[1], greenCentroid[1]) + CORRIDOR_LAT_DEG;
-          return lng >= minLngC && lng <= maxLngC && lat >= minLatC && lat <= maxLatC;
+          const ringM = ring.map(([lng, lat]) => toCorridorM(lng, lat)) as [number, number][];
+          return isInHoleCorridor(ringM, teeCorM, greenCorM, CORRIDOR_LATERAL_M, CORRIDOR_LONGITUDINAL_MARGIN_M);
         })
       : rawPolygons;
+
+  // Apply the same corridor test to tree Point features so trailing tree rows
+  // from neighbouring holes (which show up as diagonally drifting dots) are removed.
+  const filteredTreeLngLats: [number, number][] =
+    canOrient && teeCorM && greenCorM
+      ? rawTreeLngLats.filter(([lng, lat]) => {
+          const ptM = toCorridorM(lng, lat);
+          return isInHoleCorridor([ptM], teeCorM, greenCorM, CORRIDOR_LATERAL_M, CORRIDOR_LONGITUDINAL_MARGIN_M);
+        })
+      : rawTreeLngLats;
 
   // ── Geographic bounding box ────────────────────────────────────────────────
   let minLng = Infinity, maxLng = -Infinity;
@@ -480,7 +629,9 @@ export function projectHole(
   // ── Project tree point features ────────────────────────────────────────────
   // Tree points use the same full transform as polygon vertices, projected via
   // projectLatLng so they appear correctly on the oriented, scaled diagram.
-  const svgTrees: [number, number][] = rawTreeLngLats.map(([lng, lat]) =>
+  // filteredTreeLngLats has already had the tight corridor test applied, so
+  // trailing tree rows from neighbouring holes are excluded.
+  const svgTrees: [number, number][] = filteredTreeLngLats.map(([lng, lat]) =>
     projectLatLng({ lat, lng }, params)
   );
 

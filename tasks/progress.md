@@ -3,6 +3,43 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — corridor-tighten (NOTICEABLE — feat/corridor-tighten, ready for bundle)
+
+Fixes stray polygons (foreign greens, ponds, tree rows from adjacent holes) still
+appearing on Bethpage Black hole diagrams after v1.0.556.
+
+### Root cause
+The frontend corridor guard used a rectangular lat/lng bbox around the tee→green axis
+(`CORRIDOR_LAT_DEG = 0.003` ≈ 330 m, `CORRIDOR_LNG_DEG = 0.004` ≈ 440 m). For diagonal
+holes this bbox is much wider than the hole corridor, so features 150–400 m to the side
+still passed the filter.
+
+### Frontend fix (takes effect on BUILD — no re-ingest needed)
+`frontend/src/lib/course/hole-projection.ts`:
+- Replaced the rectangular bbox guard with a perpendicular-distance-from-segment test.
+- New exported constants: `CORRIDOR_LATERAL_M = 60` (60 m lateral band) and
+  `CORRIDOR_LONGITUDINAL_MARGIN_M = 40` (40 m past each end).
+- New exported pure functions: `pointToSegmentDistanceM` and `isInHoleCorridor`.
+  Both are unit-tested in Node without any DOM.
+- Same corridor test applied to tree Point features (was previously unfiltered).
+- The fit/bbox for SVG scaling is computed from `filteredPolygons` (was already the case;
+  confirmed corridor-filtered set drives both the fit AND what is rendered).
+
+### Backend cap tightening (takes effect on NEXT re-ingest)
+`backend/app/services/course_spatial.py` `_CORRIDOR_CAPS_M`:
+- water: 250 → 130 m (stray cross-hole ponds excluded)
+- woods: 500 → 150 m (neighbouring-hole forests excluded)
+- tree:  300 → 120 m (stray tree nodes excluded)
+
+### Test gate results
+- `frontend/vitest run`: 754/754 pass (84 new/updated tests in hole-projection.test.ts)
+- `frontend/npm run lint`: clean
+- `frontend/npx tsc --noEmit`: clean
+- `frontend/voice-tests --smoke`: 265/265 pass
+- `frontend/npm run build`: clean
+- `backend/ruff check .`: clean
+- `backend/pytest tests/test_course_spatial.py`: 95/95 pass
+
 ## 2026-06-29 (course-search — NOTICEABLE — feat/course-search, ready to merge to integration/next)
 Course search now finds mapped courses (Bethpage) + favorites + nearby empty state.
 
