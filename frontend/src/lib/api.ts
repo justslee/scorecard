@@ -301,6 +301,36 @@ export async function completeRound(id: string): Promise<Round> {
   return fetchAPI<Round>(`/api/rounds/${id}/complete`, { method: 'POST' });
 }
 
+// ─── Game settlement ──────────────────────────────────────────────────────────
+// POST /api/rounds/{id}/settlement
+// Persists a client-computed minimized ledger as a 'settlement' game record.
+// Idempotent — calling again overwrites the previous finalized settlement.
+
+export interface SettlementTransferPayload {
+  fromPlayerId: string;
+  toPlayerId: string;
+  amount: number;
+}
+
+export interface SettlementFinalizePayload {
+  transfers: SettlementTransferPayload[];
+  finalizedAt: string; // ISO datetime
+}
+
+/**
+ * Finalize and persist the settlement ledger for a completed round.
+ * Returns the full updated Round (settlement game row now in round.games).
+ */
+export async function finalizeSettlement(
+  roundId: string,
+  data: SettlementFinalizePayload
+): Promise<Round> {
+  return fetchAPI<Round>(`/api/rounds/${roundId}/settlement`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 // ================
 // Tournaments API
 // GET    /api/tournaments                          → Tournament[]

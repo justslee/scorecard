@@ -239,3 +239,25 @@ class CourseReviewCreate(BaseModel):
     courseName: Optional[str] = None
     # Optional ISO date; FastAPI coerces the string to date and 422s on bad format.
     playedAt: Optional[date] = None
+
+
+# ============ Game Settlement ============
+
+class SettlementTransfer(BaseModel):
+    """A single minimized transfer that settles debt between two players.
+    Mirrors frontend SettlementTransfer in lib/settlement.ts."""
+
+    fromPlayerId: str
+    toPlayerId: str
+    amount: float  # always positive
+
+
+class SettlementFinalize(BaseModel):
+    """Request body for POST /api/rounds/{round_id}/settlement.
+
+    Accepts the client-computed minimized ledger and persists it as a
+    synthetic 'settlement' game record on the round (no DB migration needed).
+    """
+
+    transfers: list[SettlementTransfer]
+    finalizedAt: str  # ISO datetime string (client-provided, mirrors FinalizedSettlement)

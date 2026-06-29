@@ -47,6 +47,7 @@ from app.models import (
     RoundCreate,
     RoundUpdate,
     Score,
+    SettlementFinalize,
 )
 from app.services.clerk_auth import current_user_id
 
@@ -491,6 +492,68 @@ async def complete_round(
     async with async_session() as db:
         row = await _get_owned_round_row(db, round_id, owner_id)
         row.status = "completed"
+        row.updated_at = now
+        await db.commit()
+        return await _build_full_round(db, row, owner_id)
+
+
+@router.post("/{round_id}/settlement", response_model=Round)
+async def finalize_settlement(
+    round_id: str,
+    data: SettlementFinalize,
+    owner_id: str = Depends(current_user_id),
+):
+    """Persist a finalized game-money settlement for a round.
+
+    The settlement is stored as a synthetic Game row with format='settlement'
+    — no DB migration needed (the games table already has a flexible JSONB
+    settings column). The ledger is client-computed (the JS scoring engine runs
+    in the browser); the backend stores it verbatim and returns the full Round.
+
+    Idempotent: calling again overwrites the previous settlement.
+    Owner-scoped: 404 when the round_id doesn't belong to the caller.
+    """
+    now = datetime.now(timezone.utc)
+
+    async with async_session() as db:
+        row = await _get_owned_round_row(db, round_id, owner_id)
+
+        settlement_settings = {
+            "transfers": [t.model_dump() for t in data.transfers],
+            "finalizedAt": data.finalizedAt,
+        }
+
+        # Find an existing settlement game for this round (idempotent upsert)
+        existing_result = await db.execute(
+            select(GameORM).where(
+                GameORM.round_id == round_id,
+                GameORM.format == "settlement",
+            )
+        )
+        existing_game = existing_result.scalar_one_or_none()
+
+        if existing_game:
+            # Overwrite the previous settlement in place
+            existing_game.settings = settlement_settings
+            existing_game.updated_at = now
+            # SQLAlchemy needs an explicit flag for JSONB mutation
+            from sqlalchemy.orm.attributes import flag_modified as _flag
+            _flag(existing_game, "settings")
+        else:
+            db.add(
+                GameORM(
+                    id=str(uuid.uuid4()),
+                    round_id=round_id,
+                    format="settlement",
+                    name="Settlement",
+                    player_ids=[],
+                    teams=None,
+                    settings=settlement_settings,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
         row.updated_at = now
         await db.commit()
         return await _build_full_round(db, row, owner_id)
