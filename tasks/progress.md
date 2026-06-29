@@ -3,6 +3,40 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — synth-fairway (NOTICEABLE — feat/synth-fairway, ready for bundle)
+
+Synthesized fairway corridors for holes missing an OSM fairway polygon (e.g. Bethpage Black holes 3/7/8/9).
+
+### What was built
+- `frontend/src/lib/course/hole-projection.ts`:
+  - New exported pure function `synthesizeFairwayCorridor(teeM, greenM, …) → ring | null`:
+    builds a 32 m-wide capsule/stadium shape in metre-space from the tee→green axis.
+    8 m inset off tee, 5 m inset off green, 10-point semicircular ends.
+    Returns null for degenerate (tee ≡ green) or too-short holes.
+  - `projectHole` now injects a synthetic fairway polygon tagged `synthetic: true`
+    when no corridor-passing OSM fairway exists for the hole.
+  - `ProjectedPolygon` interface gets optional `synthetic?: true` flag.
+- `frontend/src/components/course/HoleDiagram.tsx`:
+  - Synthetic fairways render at opacity 0.62 (vs 1.0 for real data) — same
+    palette colour, calmer implied feel, not visually screaming.
+- `frontend/src/lib/course/hole-projection.test.ts`:
+  - +15 new tests: synthesizeFairwayCorridor (closed ring, width, symmetry,
+    degenerate null, corridor containment, diagonal hole) + 6 integration tests
+    (gains synthetic, no synthetic when real exists, z-order, viewport bounds,
+    stray-filtered-out fairway triggers synthesis).
+
+### Gates
+- `npm run lint` — clean
+- `npx tsc --noEmit` — clean
+- `npx vitest run` — 818/818 passed (803 pre-existing + 15 new)
+- `npx tsx voice-tests/runner.ts --smoke` — 265/265 passed
+- `npm run build` — clean
+
+### Classification
+NOTICEABLE: holes 3/7/8/9 of Bethpage Black (and any hole on any course lacking
+an OSM fairway) now show a green corridor in the hole diagram on TestFlight.
+Frontend-only change — no re-ingest, no backend changes.
+
 ## 2026-06-29 — golfapi-cache-first (SILENT — feat/golfapi-cache-first, ready for bundle)
 
 GolfAPI cache-first layer: batch+budget-guarded, never re-fetches a course already stored.
