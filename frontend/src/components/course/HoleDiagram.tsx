@@ -21,11 +21,22 @@
  *  10. GPS "you" dot     (cobalt, only when on-hole)
  *  11. Tap-to-measure marker + label (moved on each tap; × to dismiss)
  *
+ * Gestures (touch):
+ *   - 1-finger drag  → pan (scrolls the zoomed diagram)
+ *   - 2-finger pinch → zoom in/out (anchor at pinch midpoint)
+ *   - double-tap     → reset to fitted (full-hole) view
+ *   - tap (<8 px)    → tap-to-measure (unchanged)
+ *   - wheel          → zoom (desktop)
+ *
+ * Zoom is implemented via SVG viewBox (NOT CSS/`<g>` transform).
+ * This keeps `getScreenCTM().inverse()` working so tap-to-measure
+ * always receives correct SVG user-space coordinates regardless of zoom level.
+ *
  * All colours come from the yardage-book token palette or are close
  * on-paper analogues.  NO neon, NO dashboard chrome.
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { T } from '@/components/yardage/tokens';
 import {
   projectHole,
@@ -37,6 +48,15 @@ import {
   type ProjectedPolygon,
   type ProjectedHole,
 } from '@/lib/course/hole-projection';
+import {
+  applyPinch,
+  applyPan,
+  clampViewBox,
+  pinchDist,
+  pinchMidpoint,
+  viewBoxAttr,
+  type ViewBox,
+} from '@/lib/course/zoom-pan';
 
 // ── On-paper palette ─────────────────────────────────────────────────────────
 // These intentionally do NOT use CSS vars so the SVG is self-contained and
@@ -88,6 +108,20 @@ const PAL = {
   gpsRing:     'rgba(58,74,138,0.25)',
   gpsLabel:    T.inkSoft,
 } as const;
+
+// ── Zoom constants ────────────────────────────────────────────────────────────
+
+/** Maximum zoom factor relative to the fitted (1×) view. */
+const MAX_ZOOM = 5;
+
+/** Wheel zoom step per scroll event. */
+const WHEEL_STEP = 1.18;
+
+/** Tap disambiguation threshold (screen pixels). Moves ≤ this = tap, not pan. */
+const TAP_MAX_MOVE = 8;
+
+/** Double-tap window in milliseconds. */
+const DOUBLE_TAP_MS = 300;
 
 // ── Geometry helpers ─────────────────────────────────────────────────────────
 
@@ -145,8 +179,9 @@ interface TapMeasure {
 
 /**
  * Map a pointer/touch client coordinate to SVG user-space coordinates.
- * Uses createSVGPoint + getScreenCTM so it handles any CSS transform or
- * scaling applied to the SVG element.
+ * Uses createSVGPoint + getScreenCTM so it handles any viewBox transform
+ * applied to the SVG element — this is why we use viewBox-based zoom rather
+ * than a CSS or `<g>` transform: the matrix stays correct here.
  */
 function clientToSVG(
   svgEl: SVGSVGElement,
@@ -160,6 +195,19 @@ function clientToSVG(
   if (!ctm) return [clientX, clientY]; // fallback (should never happen)
   const svgPt = pt.matrixTransform(ctm.inverse());
   return [svgPt.x, svgPt.y];
+}
+
+// ── Gesture tracking (mutable ref — avoids re-renders on every move) ─────────
+
+interface GestureState {
+  /** Touch positions at gesture start (for displacement check). */
+  startTouches: Array<{ clientX: number; clientY: number }>;
+  /** Touch positions from the most-recent touchmove. */
+  lastTouches:  Array<{ clientX: number; clientY: number }>;
+  /** True once the finger has moved > TAP_MAX_MOVE px. */
+  moved: boolean;
+  /** Timestamp (ms) of the previous tap, for double-tap detection. */
+  lastTapTime: number;
 }
 
 // ── Empty state ──────────────────────────────────────────────────────────────
@@ -229,6 +277,25 @@ export default function HoleDiagram({
   // Ref to the SVG element — needed for clientToSVG coordinate mapping
   const svgRef = useRef<SVGSVGElement | null>(null);
 
+  // ── Zoom / pan state ──────────────────────────────────────────────────────
+  // The fitted ViewBox = the initial state: shows the full diagram.
+  // Memoised so it doesn't change identity on each render (only when size changes).
+  const fittedVb = useMemo<ViewBox>(
+    () => ({ x: 0, y: 0, w: width, h: height }),
+    [width, height]
+  );
+
+  // Current viewBox (drives the SVG viewBox attribute).
+  const [vb, setVb] = useState<ViewBox>(() => ({ x: 0, y: 0, w: width, h: height }));
+
+  // Mutable gesture state (updates don't need to trigger re-renders).
+  const gestureRef = useRef<GestureState>({
+    startTouches: [],
+    lastTouches:  [],
+    moved:        false,
+    lastTapTime:  0,
+  });
+
   // ── Process a tap/click at SVG coords (sx, sy) ──────────────────────────
   const processTap = useCallback(
     (sx: number, sy: number) => {
@@ -242,6 +309,7 @@ export default function HoleDiagram({
     [projected]
   );
 
+  // ── Mouse click (desktop) — always a tap ─────────────────────────────────
   const handleSVGClick = useCallback(
     (e: React.MouseEvent<SVGSVGElement>) => {
       if (!svgRef.current || !projected) return;
@@ -251,16 +319,121 @@ export default function HoleDiagram({
     [projected, processTap]
   );
 
-  const handleSVGTouch = useCallback(
-    (e: React.TouchEvent<SVGSVGElement>) => {
-      // Use changedTouches[0] for touchend; prevent the ghost click.
-      const touch = e.changedTouches[0];
-      if (!touch || !svgRef.current || !projected) return;
+  // ── Wheel zoom (desktop) ─────────────────────────────────────────────────
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<SVGSVGElement>) => {
       e.preventDefault();
-      const [sx, sy] = clientToSVG(svgRef.current, touch.clientX, touch.clientY);
-      processTap(sx, sy);
+      const svgEl = svgRef.current;
+      if (!svgEl) return;
+      const scale = e.deltaY < 0 ? WHEEL_STEP : 1 / WHEEL_STEP;
+      const [svgX, svgY] = clientToSVG(svgEl, e.clientX, e.clientY);
+      setVb(cur => clampViewBox(applyPinch(cur, { x: svgX, y: svgY }, scale, fittedVb, MAX_ZOOM), fittedVb));
     },
-    [projected, processTap]
+    [fittedVb]
+  );
+
+  // ── Touch start: record initial positions ────────────────────────────────
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<SVGSVGElement>) => {
+      e.preventDefault();
+      const touches = Array.from(e.touches).map(t => ({
+        clientX: t.clientX,
+        clientY: t.clientY,
+      }));
+      gestureRef.current.startTouches = touches;
+      gestureRef.current.lastTouches  = touches;
+      gestureRef.current.moved        = false;
+    },
+    []
+  );
+
+  // ── Touch move: pan (1 finger) or pinch (2 fingers) ─────────────────────
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<SVGSVGElement>) => {
+      e.preventDefault();
+      const svgEl = svgRef.current;
+      if (!svgEl) return;
+
+      const touches = Array.from(e.touches).map(t => ({
+        clientX: t.clientX,
+        clientY: t.clientY,
+      }));
+      const { lastTouches, startTouches } = gestureRef.current;
+
+      if (touches.length === 1 && lastTouches.length === 1) {
+        // ── 1-finger pan ──────────────────────────────────────────────────
+        const moved = Math.hypot(
+          touches[0].clientX - startTouches[0].clientX,
+          touches[0].clientY - startTouches[0].clientY
+        );
+        if (moved > TAP_MAX_MOVE) gestureRef.current.moved = true;
+
+        if (gestureRef.current.moved) {
+          // Convert delta from screen pixels to SVG user-space units via getScreenCTM.
+          // Computing the delta between two clientToSVG calls eliminates the need for
+          // manual scale factors and stays correct at any zoom level.
+          const svgPrev = clientToSVG(svgEl, lastTouches[0].clientX, lastTouches[0].clientY);
+          const svgCurr = clientToSVG(svgEl, touches[0].clientX, touches[0].clientY);
+          const deltaSvg = {
+            dx: svgCurr[0] - svgPrev[0],
+            dy: svgCurr[1] - svgPrev[1],
+          };
+          setVb(cur => clampViewBox(applyPan(cur, deltaSvg), fittedVb));
+        }
+      } else if (touches.length === 2 && lastTouches.length === 2) {
+        // ── 2-finger pinch ────────────────────────────────────────────────
+        gestureRef.current.moved = true;
+        const prevDist = pinchDist(lastTouches[0], lastTouches[1]);
+        const newDist  = pinchDist(touches[0], touches[1]);
+        if (prevDist < 1) {
+          // Degenerate: fingers too close together to compute scale reliably
+          gestureRef.current.lastTouches = touches;
+          return;
+        }
+        const scale = newDist / prevDist;
+        const mid   = pinchMidpoint(touches[0], touches[1]);
+        const [svgX, svgY] = clientToSVG(svgEl, mid.clientX, mid.clientY);
+        setVb(cur =>
+          clampViewBox(applyPinch(cur, { x: svgX, y: svgY }, scale, fittedVb, MAX_ZOOM), fittedVb)
+        );
+      }
+
+      gestureRef.current.lastTouches = touches;
+    },
+    [fittedVb]
+  );
+
+  // ── Touch end: classify as tap / double-tap / gesture-end ───────────────
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent<SVGSVGElement>) => {
+      e.preventDefault();
+      const { moved, startTouches, lastTapTime } = gestureRef.current;
+
+      if (!moved && startTouches.length === 1) {
+        // ── Tap (no significant movement) ─────────────────────────────────
+        const touch  = e.changedTouches[0];
+        const svgEl  = svgRef.current;
+        if (!touch || !svgEl) return;
+
+        const now = Date.now();
+        if (now - lastTapTime < DOUBLE_TAP_MS) {
+          // Double-tap → reset to fitted view
+          setVb(fittedVb);
+          gestureRef.current.lastTapTime = 0; // consume the tap; prevent triple-tap reset
+        } else {
+          // Single tap → tap-to-measure
+          gestureRef.current.lastTapTime = now;
+          const [sx, sy] = clientToSVG(svgEl, touch.clientX, touch.clientY);
+          processTap(sx, sy);
+        }
+      }
+
+      // Reset per-gesture tracking
+      gestureRef.current.startTouches = [];
+      gestureRef.current.lastTouches  = [];
+      gestureRef.current.moved        = false;
+    },
+    [processTap, fittedVb]
   );
 
   // ── GPS on-hole detection ────────────────────────────────────────────────
@@ -306,13 +479,16 @@ export default function HoleDiagram({
   return (
     <svg
       ref={svgRef}
-      viewBox={`0 0 ${width} ${height}`}
+      viewBox={viewBoxAttr(vb)}
       width={width}
       height={height}
       style={{ display: 'block', cursor: 'crosshair', touchAction: 'none' }}
-      aria-label="Top-down hole diagram — tap to measure"
+      aria-label="Top-down hole diagram — tap to measure, pinch to zoom"
       onClick={handleSVGClick}
-      onTouchEnd={handleSVGTouch}
+      onWheel={handleWheel}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
       <defs>
         {/* Subtle paper-grain texture overlay — keeps the hand-drawn, printed feel */}
@@ -581,7 +757,7 @@ export default function HoleDiagram({
         </g>
       )}
 
-      {/* ── Hint: "tap to measure" when no marker and no GPS on-hole ─────── */}
+      {/* ── Hint: "tap to measure · pinch to zoom" when no marker / GPS ──── */}
       {showHint && (
         <text
           x={(width / 2).toFixed(1)}
@@ -594,7 +770,7 @@ export default function HoleDiagram({
           letterSpacing={0.8}
           pointerEvents="none"
         >
-          tap to measure
+          tap · pinch to zoom
         </text>
       )}
     </svg>

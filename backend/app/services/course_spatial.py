@@ -17,6 +17,9 @@ Algorithm overview
 4.  ``build_course_feature_collection`` keeps only polygons whose nearest hole
     belongs to the target course, then groups them by hole number into the shape
     expected by ``courses_mapped.upsert_course``.
+5.  A per-feature-type corridor distance cap drops features that are assigned to
+    the correct course but are too far from the hole's centerline — belt-and-
+    suspenders against stray polygons from tightly-packed multi-course venues.
 
 Distance maths
 --------------
@@ -34,6 +37,38 @@ from typing import Optional
 # ── Constants ──────────────────────────────────────────────────────────────────
 
 _LAT_M_PER_DEG: float = 111_320.0  # metres per degree of latitude (WGS-84 mean)
+
+
+# ── Corridor distance caps ────────────────────────────────────────────────────
+
+_CORRIDOR_CAPS_M: dict[str, float] = {
+    # Distance (metres) beyond which a polygon is dropped even after it has been
+    # assigned to the correct target-course hole.  Belt-and-suspenders against
+    # stray polygons from neighbouring holes/courses at venues like Bethpage.
+    #
+    # Measurement mode (see _match_mode / assign_features_to_holes):
+    #   green/tee  → "end"/"start": centroid ↔ hole endpoint/start vertex
+    #   everything else → "nearest": centroid ↔ nearest point on centerline
+    "green":   120.0,   # legitimate green centroid ≤ 50–80 m from hole endpoint
+    "tee":     120.0,   # legitimate tee centroid ≤ 50–80 m from hole start
+    "fairway": 200.0,   # fairway can be offset up to ~150 m laterally
+    "bunker":  150.0,   # bunkers hug the corridor
+    "water":   250.0,   # ponds can sit further to the side
+    "rough":   500.0,   # rough strips run the full length of the hole
+    "woods":   500.0,   # forests can be wide (also size-filtered below)
+    "tree":    300.0,   # individual tree nodes — allow broader range
+}
+_CORRIDOR_CAP_DEFAULT_M: float = 200.0
+"""Cap for feature types not in ``_CORRIDOR_CAPS_M``."""
+
+_WOODS_MAX_SPAN_M: float = 450.0
+"""Woods/rough polygons whose bbox diagonal exceeds this are dropped.
+
+A single forest blob whose extent spans more than ~500 m (≈ multiple holes)
+is almost certainly noise — it would appear to cover the entire hole and flood
+the feature count.  Individual tree-cluster polygons comfortably fit within
+450 m; campus-scale forest boundary polygons are excluded.
+"""
 
 
 # ── Equirectangular distance helpers ──────────────────────────────────────────
@@ -480,23 +515,6 @@ def _ref_to_int(ref: Optional[str]) -> int:
         return 0
 
 
-# ── Multi-course reclaim constant ─────────────────────────────────────────────
-
-_RECLAIM_SAME_AREA_M: float = 200.0
-"""Maximum distance (metres) used by the multi-course reclaim heuristic.
-
-When a polygon is initially assigned to a *non*-target course but its centroid
-lies within this distance of the nearest *target*-course hole centerline, the
-polygon is re-assigned to that hole.  This handles venues like Bethpage State
-Park where five courses share the same geographic area: their hole centerlines
-are co-located, so global nearest-line disambiguation fails for fairways that
-sit geometrically closer to a neighbouring course's centerline.
-
-Chosen conservatively — golf courses separated by 200 m or more are considered
-distinct facilities; cross-course rejection still applies beyond this radius.
-"""
-
-
 def build_course_feature_collection(
     holes: list[dict],
     polygons: list[dict],
@@ -506,8 +524,29 @@ def build_course_feature_collection(
 
     Runs the full spatial join over ALL supplied holes (cross-course rejection
     is automatic), then keeps only polygons whose nearest hole belongs to
-    *target_course_name*.  The result is a list of hole dicts — one entry per
-    hole that received at least one feature — ordered by hole number.
+    *target_course_name*.  Two additional guards are applied before the feature
+    is accepted into the output:
+
+    1. **Corridor distance cap** — even for polygons already assigned to the
+       correct course, those whose assignment distance exceeds a per-type cap
+       (see :data:`_CORRIDOR_CAPS_M`) are dropped.  Belt-and-suspenders against
+       stray polygons at multi-course venues like Bethpage State Park.
+
+    2. **Large terrain polygon filter** — woods/rough polygons whose geographic
+       bounding-box diagonal exceeds :data:`_WOODS_MAX_SPAN_M` are dropped.
+       Campus-scale forest boundaries that span multiple holes are noise.
+
+    The reclaim heuristic that was previously in this function (re-attributing
+    non-target polygons within a fixed radius to the target course) was removed
+    because it caused severe cross-course contamination at tightly-packed venues
+    (e.g. Bethpage's 5 courses within 2.5 km): the 200 m reclaim radius
+    captured greens/fairways/bunkers from neighbouring courses and assigned them
+    to the wrong Black hole, producing 4–5 greens and 22 bunkers per hole.
+    The correct fix is strict global nearest-hole rejection (already in place
+    via Tiers 1–3 in :func:`assign_features_to_holes`) plus the corridor cap.
+
+    The result is a list of hole dicts — one entry per hole that received at
+    least one feature — ordered by hole number.
 
     Each hole dict has the structure expected by
     :func:`~app.services.courses_mapped.upsert_course`:
@@ -551,74 +590,49 @@ def build_course_feature_collection(
         for p in polygons
     }
 
-    # ── Multi-course reclaim ──────────────────────────────────────────────────
-    #
-    # At venues with multiple co-located courses (e.g. Bethpage's 5 courses),
-    # hole centerlines from neighbouring courses run through or alongside the
-    # same fairway polygons as the target course.  The global nearest-line join
-    # may assign a target-course fairway to a neighbour's hole.
-    #
-    # Fix: if a polygon was assigned to a non-target course AND the nearest
-    # target-course hole is within _RECLAIM_SAME_AREA_M, re-assign it.
-    # Polygons genuinely on a distant course (e.g. a Red-course green 2.5 km
-    # away) lie beyond the reclaim radius and are correctly excluded.
-
-    target_holes = [
-        h for h in holes
-        if (h.get("properties") or {}).get("course_name", "").lower() == target_lower
-    ]
-
-    if target_holes:
-        reclaim: dict[str, tuple[Optional[str], Optional[str], float]] = {}
-        for osm_id, (hole_ref, course_name, _dist) in assignments.items():
-            # Already assigned to target — nothing to reclaim.
-            if course_name is not None and course_name.lower() == target_lower:
-                continue
-            poly = poly_by_id.get(osm_id)
-            if poly is None:
-                continue
-            # Extract centroid.
-            geom = poly.get("geometry") or {}
-            geom_type = geom.get("type", "")
-            coords_raw = geom.get("coordinates") or []
-            if geom_type == "Point":
-                if len(coords_raw) < 2:
-                    continue
-                clon, clat = float(coords_raw[0]), float(coords_raw[1])
-            elif geom_type == "Polygon":
-                rings = coords_raw
-                if not rings or not rings[0]:
-                    continue
-                clon, clat = _ring_centroid(rings[0])
-            else:
-                continue
-            # Find nearest target-course hole (always nearest-segment mode).
-            best_ref: Optional[str] = None
-            best_course: Optional[str] = None
-            best_d = float("inf")
-            for h in target_holes:
-                h_props = h.get("properties") or {}
-                h_coords = (h.get("geometry") or {}).get("coordinates") or []
-                d = _linestring_dist_m(clon, clat, h_coords, "nearest")
-                if d < best_d:
-                    best_d = d
-                    best_ref = h_props.get("ref")
-                    best_course = h_props.get("course_name")
-            if best_d <= _RECLAIM_SAME_AREA_M and best_ref is not None:
-                reclaim[osm_id] = (best_ref, best_course, best_d)
-
-        assignments.update(reclaim)
-
-    # Group features by hole ref, keeping only target-course assignments.
+    # Group features by hole ref, keeping only target-course assignments that
+    # also pass the corridor distance cap and (for woods/rough) the size filter.
     hole_features: dict[str, list[dict]] = {}
-    for osm_id, (hole_ref, course_name, _dist) in assignments.items():
+    for osm_id, (hole_ref, course_name, dist) in assignments.items():
+        # ── Cross-course rejection ──────────────────────────────────────────
+        # The global nearest-hole assignment (Tiers 1–3) already handles this:
+        # if the nearest hole is on a non-target course the polygon is excluded.
         if course_name is None or course_name.lower() != target_lower:
             continue
         if hole_ref is None:
             continue
+
         poly = poly_by_id.get(osm_id)
         if poly is None:
             continue
+
+        props = poly.get("properties") or {}
+        feature_type: str = props.get("featureType", "")
+
+        # ── Corridor distance cap ───────────────────────────────────────────
+        # Drop the feature if its assignment distance exceeds the type-specific
+        # cap.  This catches strays that the Tier-1/2/3 logic still assigned
+        # to a target hole but that are physically far from the hole axis.
+        cap = _CORRIDOR_CAPS_M.get(feature_type, _CORRIDOR_CAP_DEFAULT_M)
+        if dist > cap:
+            continue
+
+        # ── Large terrain polygon filter (woods/rough only) ─────────────────
+        # Giant forest/scrub polygons that span multiple holes are dropped.
+        if feature_type in ("woods", "rough"):
+            geom = poly.get("geometry") or {}
+            rings = geom.get("coordinates") or []
+            if rings and rings[0]:
+                ring = rings[0]
+                bbox = _ring_bbox(ring)
+                mid_lat = (bbox[1] + bbox[3]) / 2
+                cos_lat_poly = math.cos(math.radians(mid_lat))
+                lat_span_m = (bbox[3] - bbox[1]) * _LAT_M_PER_DEG
+                lon_span_m = (bbox[2] - bbox[0]) * _LAT_M_PER_DEG * cos_lat_poly
+                diagonal_m = math.hypot(lat_span_m, lon_span_m)
+                if diagonal_m > _WOODS_MAX_SPAN_M:
+                    continue  # campus-scale polygon — drop it
+
         hole_features.setdefault(hole_ref, []).append(poly)
 
     # Emit one hole dict per ref, sorted by numeric hole number.
