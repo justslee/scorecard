@@ -3,6 +3,107 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (course-search — NOTICEABLE — feat/course-search, ready to merge to integration/next)
+Course search now finds mapped courses (Bethpage) + favorites + nearby empty state.
+
+### What was done
+1. `frontend/src/components/CourseSearch.tsx` — Full rewrite:
+   - Switched from `searchCourses` (GolfAPI-only) to `searchAllCourses` (mapped+OSM+GolfAPI),
+     so Bethpage Black/Red appear at the top of results (mapped source ranked first).
+   - 250ms debounce + AbortController to cancel stale requests (no flickering).
+   - Empty state: Favorites section (starred courses) then Nearby section (GPS, best-effort).
+   - Star toggle on every result; starred courses persist in localStorage.
+   - Footer updated from "COURSE DATA · GOLFAPI.IO" to "Mapped · Community · OpenStreetMap".
+2. `frontend/src/lib/course-favorites.ts` — New library: localStorage-backed favorites with
+   injectable KVStore for testability (no jsdom needed in tests).
+3. `frontend/src/lib/course-search-helpers.ts` — New pure functions: distanceMiles (Haversine),
+   formatMiles, dedupeByName, mergeAndSortNearby.
+4. `frontend/src/app/courses/page.tsx` — Routes mapped search results to /map/course?id= 
+   (the hole-map view) instead of the GolfAPI detail page (which can't load UUID course ids).
+5. `frontend/src/app/round/new/page.tsx` — Added `source?: string` to SelectedCourse to 
+   accept the extended payload from CourseSearch (no behavior change; field is ignored).
+
+### Test coverage (NEW — 36 new tests, all passing)
+- `course-favorites.test.ts`: add/remove/toggle/list/isFavorite, persistence round-trip, dedupe
+- `course-search-helpers.test.ts`: distanceMiles, formatMiles, dedupeByName, mergeAndSortNearby
+
+### Gate results
+- lint: clean
+- tsc --noEmit: clean
+- vitest: 696/696 pass (up from 660, +36 new)
+- voice-tests --smoke: 265/265 pass
+- next build: clean (verified in main repo; worktree Turbopack blocks external symlinks)
+
+### Classification: NOTICEABLE (Bethpage now appears in search; favorites/nearby are new UX)
+## 2026-06-29 (harden-spatial-join + pinch-zoom — NOTICEABLE — feat/harden-spatial-join, pushed)
+
+### Backend: cross-course polygon contamination fix (Bethpage Black)
+Root cause: `_RECLAIM_SAME_AREA_M = 200.0` in `build_course_feature_collection` was pulling
+Red/Green/Yellow/Blue course features into Black (all 5 courses within ~2.5 km).
+Symptom: H16 showed 670 yds (foreign green corrupted distance); H18 showed 22 bunkers / 5 greens.
+
+Fix:
+- Removed the entire reclaim pass
+- Added per-feature-type corridor distance caps (`_CORRIDOR_CAPS_M`): green/tee 120m, fairway
+  200m, bunker 150m, water 250m, rough/woods 500m
+- Added large-polygon filter: woods/rough with bbox diagonal > 450m dropped
+- Diagnostic: `backend/scripts/diag_bethpage.py` (headless Overpass — H16: 481 yds, card: 490 yds, ~2% off)
+- Backend tests: 95 pass (was 86 — added 9 corridor-cap tests)
+
+### Frontend: corridor guard in hole-projection.ts
+- Added `filteredPolygons` corridor guard (tee→green bbox ± 0.003°/0.004°)
+- All geo bbox + mtrPolygons now use `filteredPolygons` (prevents stray polygon from compressing diagram)
+- Added 4 corridor-guard tests; 88 total hole-projection tests pass
+
+### Frontend: pinch-to-zoom + pan on SVG hole diagram (HoleDiagram.tsx)
+- New `frontend/src/lib/course/zoom-pan.ts`: pure-math helpers (applyPinch, applyPan, clampViewBox,
+  pinchDist, pinchMidpoint, currentScale, viewBoxAttr) — no dependencies
+- New `frontend/src/lib/course/zoom-pan.test.ts`: 32 unit tests, all pass
+- HoleDiagram.tsx: 1-finger pan + 2-finger pinch (up to 5×) + double-tap reset + wheel zoom
+  via SVG viewBox attribute (NOT CSS/g transform — preserves getScreenCTM() for tap-to-measure)
+- Hint updated: "tap · pinch to zoom"
+
+### Gate results
+- Backend: ruff clean; 95/95 pytest (non-DB)
+- Frontend: tsc clean; 120/120 vitest; 265/265 voice-tests smoke
+
+### Classification: NOTICEABLE (yardage numbers corrected; pinch-zoom visible on course screen)
+Branch: feat/harden-spatial-join (pushed)
+
+## 2026-06-29 (second-course — NOTICEABLE — feat/second-course, ready for prod ingest)
+Validated OSM pipeline on Bethpage Red as the 2nd ingested course; added it to the viewer.
+
+### Coverage check (live Overpass, all 4 candidates):
+| Course | AllHoles | TgtHoles | w/par | w/hcp | Greens | Fairways | Tees | Bunkers | Water |
+|--------|----------|----------|-------|-------|--------|----------|------|---------|-------|
+| Torrey Pines South | 36 | 0 | 0 | 0 | 39 | 15 | 157 | 140 | 8 |
+| Chambers Bay | 18 | 18 | 0 | 0 | 23 | 6 | 64 | 51 | 12 |
+| Pinehurst No.2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 (429) |
+| Bethpage Red | 90 | 18 | 18 | 0 | 96 | 99 | 215 | 270 | 50 |
+
+**Choice: Bethpage Red** — only candidate with hole LineStrings AND par tags; same campus
+as Black so cross-course spatial join is already proven; OSM `golf:course:name=Red` filter
+works with existing code (no pipeline changes needed).
+
+### Dry-run output (--dry-run; no DB written):
+- Fetched: 90 hole LineStrings, 730 polygon features
+- Assembled: 18 holes, 561 total polygon features
+- Course UUID: 269e1f2e-65cc-5cf6-a9b0-f5908e298155 (key: osm-bethpage-red)
+- Par sequence: 4-4-4-3-5-4-3-4-4-4-4-3-4-4-4-5-3-4 = 70 (matches Bethpage Red card)
+- Handicap: None (not tagged in OSM — known gap)
+
+### Files changed:
+- `backend/tests/test_ingest_osm_course.py` — pinned UUID for osm-bethpage-red
+- `frontend/src/app/courses/page.tsx` — added Bethpage Red entry to Course maps section
+
+### Prod ingest required (NOT done here — no local DB):
+  uv run backend/scripts/ingest_osm_course.py \
+    --lat 40.7445 --lng -73.4609 --radius 2500 \
+    --target-course Red --course-key osm-bethpage-red \
+    --course-name "Bethpage Red"
+
+### Classification: NOTICEABLE (new viewer entry, visible once ingested to prod)
+
 ## 2026-06-29 (hole-elevation — NOTICEABLE — feat/hole-elevation, ready to merge)
 Per-hole elevation + "plays-like" readout on the yardage-book hole diagram (I4).
 

@@ -44,6 +44,8 @@ interface SelectedCourse {
   location?: string;
   holes?: number; // hole count from GolfAPI (not HoleInfo[])
   par?: number;
+  /** Source from CourseSearch — ignored by round setup but accepted to satisfy the prop type. */
+  source?: string;
 }
 
 // ---------------------------------------------------------------------------
