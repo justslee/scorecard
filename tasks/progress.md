@@ -3596,3 +3596,17 @@ tsc clean, voice 265/265, vitest 434/434, build (out/players/view emitted). Push
 integration/next; accumulated on rolling bundle PR #67 (NOT merged, NOT a TestFlight build
 this cycle per task constraints). Classification: NOTICEABLE — rides the next bundle approval.
 Follow-ups (not built): backend shared-rounds aggregation endpoint; friend graph.
+
+---
+
+## SHIPPED — bundle #68 → v1.0.520 — 2026-06-29 (the big one, ~15 features)
+Owner "ship it". Merged PR #68 → main b475b82; backend deployed via SSM (migration 009
+course_reviews applied; backend healthy; endpoints /api/scorecard/scan, /api/reviews/mine,
+/api/courses/{k}/reviews all live = 401 unauth). TestFlight v1.0.520 (202606290754). 18
+backlog items flipped done-shipped-main. Fresh integration/next == main.
+
+Headline contents: OCR scorecard scan (camera→vision→review→import, end-to-end), materially
+smarter caddie (DECADE hazard-aware aim + handicap-personalized dispersion + slope/terrain
+advice + calm top-4 reasoning), course reviews (write+view), round-recap history insights,
+player-name voice disambiguation, floating-island nav, recent-courses home, + homegrown
+course-data POC (backend, validated viable; ingest script on deploy box to populate).
