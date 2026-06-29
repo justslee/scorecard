@@ -1036,7 +1036,7 @@
     {
       "id": "course-detail-start-round",
       "priority": 46,
-      "status": "needs-spec",
+      "status": "built-integration-next-pending-device-verify",
       "epic": "course-search-reviews",
       "classification": "noticeable",
       "build": "build (on licensed GolfAPI)",
@@ -1045,6 +1045,10 @@
       "area": "frontend",
       "title": "Course detail screen + 'Start a round here' (/courses/[id])",
       "rationale": "Extract the existing CourseSearch/golf-api.ts flow into a /courses route + detail screen; 'Start a round here' reuses round/new onSelectCourse (already works). One quiet new spoke from home \u2014 a route, NOT a tab. Pin id source to golfApiCourseId.",
+      "spec": "specs/course-detail-start-round.md",
+      "plan": "specs/course-detail-start-round-plan.md",
+      "built_commit": "d5db7c6 (+ polish a907aa7)",
+      "built_note": "FE-only. New /courses hub (search via existing CourseSearch sheet + Recent + optional GPS Nearby) and /courses/view detail (name/location/par/holes/tees + 'Start a round here' -> sessionStorage handoff into round/new). 5th Courses tab added to FloatingTabBar + HUB_ROUTES + test. Reuses golf-api.ts, CourseSearch, round/new selectedCourse path, and the round/[id] static-export 'view'+query pattern. Reviewer: SHIP. QA: gates green (lint/tsc 0, voice 265/265, vitest 417/417, build incl out/courses + out/courses/view). Designer: APPROVE-WITH-NITS, 4 fix-before-ship + 2 nits folded in (a907aa7). DEVICE-ONLY remaining: live GolfAPI search/detail, GPS Nearby, tab bar at 320px, tee color dots. Rides next approval bundle.",
       "depends_on": []
     },
     {
