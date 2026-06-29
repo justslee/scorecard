@@ -3,6 +3,36 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (nav-floating-island-tab — NOTICEABLE)
+- **In progress (gates green, pending designer + reviewer):** Floating island tab bar.
+  Per the approved plan — no commit yet, awaiting eng-lead's review pass.
+
+  Files created / edited (all in `frontend/`):
+  - **New `src/components/nav/shouldShowTabBar.ts`**: pure allowlist helper; exact
+    match on HUB_ROUTES `['/', '/players', '/profile', '/tee-time']` after trailing-slash
+    normalization.
+  - **New `src/components/nav/shouldShowTabBar.test.ts`**: 17 vitest tests (4 hub
+    routes + 3 trailing-slash variants + 10 false cases).
+  - **New `src/components/nav/FloatingTabBar.tsx`**: `'use client'` component; uses
+    `usePathname()`; returns null on non-hub routes; fixed floating pill (opaque T.paper,
+    1px T.hairline border, borderRadius:999, soft box-shadow, z-index:40, bottom
+    `calc(12px + env(safe-area-inset-bottom))`); 4 tabs with inline SVG icons (22px,
+    strokeWidth:1.5, no lucide-react); active tab: T.ink color + T.paperDeep pill bg;
+    inactive: T.pencil; framer-motion springSoft entrance; aria-label, aria-current,
+    aria-hidden on SVGs.
+  - **`src/app/layout.tsx`**: imports `FloatingTabBar` and renders it inside
+    `<AuthProvider>` after `{children}`.
+  - **`src/app/page.tsx`**: paddingBottom changed from `env(safe-area-inset-bottom, 16px)`
+    to `calc(84px + env(safe-area-inset-bottom))` on the maxWidth:420 wrapper.
+  - **`src/app/profile/page.tsx`**: `paddingBottom: "calc(84px + env(safe-area-inset-bottom))"`
+    added to the maxWidth:420 wrapper.
+  - **`src/app/tee-time/page.tsx`**: `paddingBottom: "calc(84px + env(safe-area-inset-bottom))"`
+    added to `PaperShell`'s inner maxWidth:420 div.
+
+  Gates: lint 0/0 · tsc 0 errors · voice-tests 265/265 · vitest 399/399 (17 new) ·
+         build clean (15 pages).
+  NOTICEABLE — new bottom tab bar visible on all 4 hub screens on TestFlight.
+
 ## 2026-06-28 (voice-chat-ordering — NOTICEABLE)
 - **Done:** Fixed the Realtime voice round-setup chat rendering the caddie's reply
   ABOVE the user's line. Root cause: the user transcript event

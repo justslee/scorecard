@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Geist, Geist_Mono } from "next/font/google";
 import AuthProvider from "@/components/AuthProvider";
+import FloatingTabBar from "@/components/nav/FloatingTabBar";
 import "./globals.css";
 
 const serif = Instrument_Serif({
@@ -59,6 +60,7 @@ export default function RootLayout({
       <body className={`${serif.variable} ${sans.variable} ${mono.variable} antialiased`}>
         <AuthProvider>
           {children}
+          <FloatingTabBar />
         </AuthProvider>
       </body>
     </html>

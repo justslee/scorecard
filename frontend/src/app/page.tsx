@@ -249,7 +249,7 @@ export default function HomePage() {
         color: T.ink,
       }}
     >
-      <div style={{ maxWidth: 420, margin: "0 auto", position: "relative", paddingBottom: "env(safe-area-inset-bottom, 16px)" }}>
+      <div style={{ maxWidth: 420, margin: "0 auto", position: "relative", paddingBottom: "calc(88px + env(safe-area-inset-bottom, 0px))" }}>
         {/* ── MASTHEAD ─────────────────────────────── */}
         <div style={{ padding: "max(14px, env(safe-area-inset-top)) 22px 14px", position: "relative" }}>
           {/* Profile № card */}
