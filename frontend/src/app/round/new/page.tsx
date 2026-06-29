@@ -9,6 +9,7 @@ import { saveRound as localSaveRound, getSavedPlayers } from "@/lib/storage";
 import { createDefaultCourse } from "@/lib/types";
 import { createRound, getPlayers } from "@/lib/api";
 import type { Player, Round, Game, GameFormat, SavedPlayer, HoleInfo } from "@/lib/types";
+import { matchPlayerNames } from "@/lib/player-match";
 import VoiceRoundSetupRealtime from "@/components/VoiceRoundSetupRealtime";
 import CourseSearch from "@/components/CourseSearch";
 import PlayerAutocomplete from "@/components/PlayerAutocomplete";
@@ -176,17 +177,16 @@ export default function RoundSetupPage() {
         });
       }
 
-      // Populate players — link to saved players where possible.
+      // Populate players — link to saved players where possible using fuzzy +
+      // phonetic matching (handles transcription drift like "Dipak" → "Deepak").
       if (playerNames.length > 0) {
+        const matched = matchPlayerNames(playerNames, savedPlayers);
         setPlayers(
-          playerNames.map((name, i) => {
-            const saved = savedPlayers.find(
-              (sp) => sp.name.toLowerCase() === name.toLowerCase()
-            );
-            return saved
-              ? { id: saved.id, name: saved.name, handicap: saved.handicap }
-              : { id: `custom-player-${i}`, name, handicap: undefined };
-          })
+          matched.map(({ name, player }, i) =>
+            player
+              ? { id: player.id, name: player.name, handicap: player.handicap }
+              : { id: `custom-player-${i}`, name, handicap: undefined }
+          )
         );
       }
 

@@ -3,6 +3,23 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (voice-player-disambiguation — SILENT fix — integration/next)
+Fixed voice round setup: spoken player names now match saved profiles via fuzzy + phonetic
+matching instead of exact lowercase compare. Root cause: "Dipak" != "Deepak" exact-compare
+-> saved profile not linked. Fix: new pure module `src/lib/player-match.ts` with Soundex
+phonetic key + similarity() reuse; Soundex("Dipak") = Soundex("Deepak") = D120 -> confident
+match at 0.8 score. Wired into `handleVoiceSetup` in `round/new/page.tsx`; free-text slot
+unchanged for genuinely unknown names. De-dup guard prevents same SavedPlayer.id linked twice.
+
+Files changed (3):
+  - frontend/src/lib/player-match.ts (new) -- soundex, matchPlayerName, matchPlayerNames
+  - frontend/src/lib/player-match.test.ts (new) -- 20 vitest tests (owner-bug case + edge cases)
+  - frontend/src/app/round/new/page.tsx -- import matchPlayerNames; replace exact find() in handleVoiceSetup
+
+Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 475/475 (+20 new) · build clean.
+SECONDARY backend change (roster name injection into build_setup_instructions) SKIPPED -- follow-up only.
+SILENT -- internal voice UX fix; not a new feature surface; no new UI chrome.
+
 ## 2026-06-28 (B3 designer polish — SILENT fix — commit 2708526 on integration/next)
 Applied 4 review fixes to the course-reviews-surface change (commit 37965cd):
 1. Profile CourseReviews: review body changed from mono UPPERCASE to serif italic (fontSize 12, T.pencilSoft) — NORTHSTAR blocker fix.
