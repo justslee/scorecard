@@ -3,6 +3,45 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (ocr-scorecard-scan — SILENT — integration/next)
+Backend-only first iteration of the scorecard OCR feature. New authed endpoint
+`POST /api/scorecard/scan` that accepts a JPEG/PNG/WEBP/GIF image (≤10 MB) and
+returns structured scores via Claude vision.
+
+### What was done
+1. `backend/app/routes/scorecard.py` (new, ~170 lines):
+   - `HoleScores` + `ScanScorecardResponse` Pydantic models (backend-local;
+     mirror to types.ts when the camera→review→import UI ships).
+   - `_SCAN_PROMPT`: vision prompt instructing Claude to return ONLY JSON with
+     players[], holes[{number, par, scores}]; null for blank/unreadable cells.
+   - `_parse_scan_response(text) -> ScanScorecardResponse`: pure function,
+     mirrors the voice.py regex approach; raises `ValueError` with clear
+     message on no-JSON, malformed JSON, or wrong shape.
+   - `POST /api/scorecard/scan`: auth via `current_user_id` dependency;
+     image upload with 10 MB cap + `image/` MIME guard; calls `client.messages.create`
+     with base64 image block + text prompt; delegates to `_parse_scan_response`;
+     handles `anthropic.AuthenticationError` → 401, `ValueError` → 500.
+2. `backend/app/main.py`: import + `app.include_router(scorecard.router, dependencies=_owner_only)`.
+3. `backend/tests/test_scorecard_scan.py` (new, 19 pure tests, no API/DB):
+   10 happy-path tests (single hole, two players, null scores, null par, prose
+   wrapper, 4-player, 18-hole grid, mixed nulls, empty holes list, type check);
+   9 error-path tests (no JSON, empty string, prose only, malformed JSON,
+   truncated JSON, missing players key, missing holes key, voice-shape, wrong shape).
+
+### NOT verified here (device/CI only)
+- Live Claude vision accuracy on a real scorecard photo (no local ANTHROPIC_API_KEY).
+- Auth end-to-end (no local Clerk JWKS).
+NOTE: This is a new authed endpoint + image upload + external vision API call.
+Reviewer + /security-review have been requested by the eng-lead before the bundle merges.
+
+### Gates
+- `cd backend && ruff check .`: PASS (all checks passed)
+- `cd backend && uv run pytest tests/ -k "scorecard or scan" -v`: 19/19 PASS
+- `cd backend && uv run pytest tests/ --ignore=tests/integration -q`: 621/621 PASS (0 regressions)
+- `cd frontend && npx tsc --noEmit`: 0 errors (no frontend changes)
+
+SILENT — backend only. No user-visible surface until the camera→review→import UI ships.
+
 ## 2026-06-29 (caddie-reasoning-priority-cap — SILENT — integration/next)
 Prioritized + capped CaddieRecommendation.reasoning[] to at most 4 lines (voice-caddie
 calm fix). Pure Python, typed, no new deps, no DB.

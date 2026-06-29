@@ -48,6 +48,7 @@ from app.routes import players, rounds, tournaments, courses, voice  # noqa: E40
 from app.routes import golf, course_search, courses_mapped, voice_advanced, caddie, memory, realtime, shots, pins  # noqa: E402
 from app.routes import profile  # noqa: E402
 from app.routes import course_reviews  # noqa: E402
+from app.routes import scorecard  # noqa: E402
 
 # Every data router is owner-only: require the configured owner's verified Clerk
 # identity. /health and / (defined below) stay open for load-balancer checks.
@@ -75,6 +76,7 @@ app.include_router(memory.router, dependencies=_owner_only)
 app.include_router(realtime.router, dependencies=_owner_only)
 app.include_router(shots.router, dependencies=_owner_only)
 app.include_router(pins.router, dependencies=_owner_only)
+app.include_router(scorecard.router, dependencies=_owner_only)
 
 
 @app.on_event("startup")
