@@ -134,21 +134,30 @@ def _parse_course_geometry_response(
         course_name_filter: If given, only ``golf=hole`` ways whose
             ``golf:course:name`` tag matches this value (case-insensitive) are
             included.  All other feature types (green, fairway, tee, bunker,
-            water) are always included regardless of this filter.
+            water, rough, woods, trees) are always included regardless of this
+            filter — terrain features are unlabeled by course and are assigned
+            to the nearest hole by the spatial join.
 
     Returns:
         Dict with keys: ``holes``, ``greens``, ``fairways``, ``tees``,
-        ``bunkers``, ``water``.  Each value is a list of GeoJSON Feature dicts::
+        ``bunkers``, ``water``, ``rough``, ``woods``, ``trees``.
+        Each value is a list of GeoJSON Feature dicts::
 
             {
                 "type": "Feature",
-                "geometry": <GeoJSON LineString | Polygon>,
+                "geometry": <GeoJSON LineString | Polygon | Point>,
                 "properties": {
                     "featureType": "<type>",
-                    "osm_id": "way/<id>",
+                    "osm_id": "way/<id>" | "node/<id>",
                     # holes also carry: ref, par, handicap, name
                 },
             }
+
+        Terrain feature types added for fuller map rendering:
+        - ``"rough"``  — ``golf=rough`` polygon ways
+        - ``"woods"``  — ``natural=wood``, ``landuse=forest``, ``natural=scrub``,
+          or closed ``natural=tree_row`` ways (open tree_row linestrings skipped)
+        - ``"tree"``   — individual ``natural=tree`` node points (Point geometry)
     """
     holes: list[dict] = []
     greens: list[dict] = []
@@ -156,21 +165,45 @@ def _parse_course_geometry_response(
     tees: list[dict] = []
     bunkers: list[dict] = []
     water: list[dict] = []
+    rough: list[dict] = []
+    woods: list[dict] = []
+    trees: list[dict] = []
 
     name_lower = course_name_filter.lower() if course_name_filter else None
 
     for el in data.get("elements", []):
-        if el.get("type") != "way":
+        el_type = el.get("type")
+        tags = el.get("tags", {})
+
+        # ── Individual tree nodes → Point features ────────────────────────────
+        if el_type == "node":
+            if tags.get("natural") == "tree":
+                trees.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [el["lon"], el["lat"]],
+                    },
+                    "properties": {
+                        "featureType": "tree",
+                        "osm_id": f"node/{el['id']}",
+                    },
+                })
             continue
 
-        tags = el.get("tags", {})
+        if el_type != "way":
+            continue
+
         geom = el.get("geometry", [])
         golf_tag = tags.get("golf", "")
         natural_tag = tags.get("natural", "")
+        landuse_tag = tags.get("landuse", "")
         osm_id = f"way/{el['id']}"
 
         if golf_tag == "hole":
             # Apply course-name filter for multi-course facilities (e.g. Bethpage Black).
+            # Only hole ways are filtered — terrain features (rough/woods/trees) are
+            # unlabeled by course and are assigned via the spatial join.
             if name_lower is not None:
                 el_course_name = tags.get("golf:course:name", "")
                 if el_course_name.lower() != name_lower:
@@ -231,6 +264,34 @@ def _parse_course_geometry_response(
                 },
             })
 
+        elif golf_tag == "rough":
+            # golf=rough → outer rough grass corridor around the fairway
+            polygon = _parse_way_to_polygon(geom)
+            if polygon is None:
+                continue
+            rough.append({
+                "type": "Feature",
+                "geometry": polygon,
+                "properties": {"featureType": "rough", "osm_id": osm_id},
+            })
+
+        elif (
+            natural_tag in ("wood", "scrub")
+            or landuse_tag == "forest"
+            or natural_tag == "tree_row"
+        ):
+            # Woods, forest, scrub, and closed tree_row ways → woods polygon.
+            # Open tree_row linestrings are skipped (< 4 pts → _parse_way_to_polygon
+            # returns None), keeping only closed polygon-shaped tree rows.
+            polygon = _parse_way_to_polygon(geom)
+            if polygon is None:
+                continue
+            woods.append({
+                "type": "Feature",
+                "geometry": polygon,
+                "properties": {"featureType": "woods", "osm_id": osm_id},
+            })
+
     return {
         "holes": holes,
         "greens": greens,
@@ -238,6 +299,9 @@ def _parse_course_geometry_response(
         "tees": tees,
         "bunkers": bunkers,
         "water": water,
+        "rough": rough,
+        "woods": woods,
+        "trees": trees,
     }
 
 
@@ -505,8 +569,8 @@ async def fetch_course_geometry(
 
     Returns:
         Dict with keys: ``holes``, ``greens``, ``fairways``, ``tees``,
-        ``bunkers``, ``water``.  Each value is a list of GeoJSON Feature dicts
-        ready for storage via
+        ``bunkers``, ``water``, ``rough``, ``woods``, ``trees``.
+        Each value is a list of GeoJSON Feature dicts ready for storage via
         :func:`~app.services.courses_mapped.upsert_course`.
         Returns an empty structure on HTTP failure.
     """
@@ -517,10 +581,13 @@ async def fetch_course_geometry(
         "tees": [],
         "bunkers": [],
         "water": [],
+        "rough": [],
+        "woods": [],
+        "trees": [],
     }
 
     query = f"""
-[out:json][timeout:25];
+[out:json][timeout:30];
 (
   way["golf"="green"](around:{radius_m},{lat},{lng});
   way["golf"="fairway"](around:{radius_m},{lat},{lng});
@@ -530,6 +597,12 @@ async def fetch_course_geometry(
   way["golf"="water_hazard"](around:{radius_m},{lat},{lng});
   way["golf"="lateral_water_hazard"](around:{radius_m},{lat},{lng});
   way["golf"="hole"](around:{radius_m},{lat},{lng});
+  way["golf"="rough"](around:{radius_m},{lat},{lng});
+  way["natural"="wood"](around:{radius_m},{lat},{lng});
+  way["landuse"="forest"](around:{radius_m},{lat},{lng});
+  way["natural"="scrub"](around:{radius_m},{lat},{lng});
+  way["natural"="tree_row"](around:{radius_m},{lat},{lng});
+  node["natural"="tree"](around:{radius_m},{lat},{lng});
 );
 out geom;
 """

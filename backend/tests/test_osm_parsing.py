@@ -4,6 +4,8 @@ Covers _parse_way_to_polygon, _parse_way_to_linestring, and
 _parse_course_geometry_response from app.services.osm.
 """
 
+import pytest
+
 from app.services.osm import (
     _parse_course_geometry_response,
     _parse_way_to_linestring,
@@ -197,8 +199,12 @@ class TestParseCourseGeometryResponse:
     # ── result keys ───────────────────────────────────────────────────────────
 
     def test_returns_all_expected_keys(self):
+        # API extended to include terrain feature types: rough, woods, trees.
         result = _parse_course_geometry_response(_FIXTURE)
-        assert set(result.keys()) == {"holes", "greens", "fairways", "tees", "bunkers", "water"}
+        assert set(result.keys()) == {
+            "holes", "greens", "fairways", "tees", "bunkers", "water",
+            "rough", "woods", "trees",
+        }
 
     # ── no-filter behaviour ───────────────────────────────────────────────────
 
@@ -331,3 +337,215 @@ class TestParseCourseGeometryResponse:
             for feat in result[key]:
                 assert "geometry" in feat
                 assert "properties" in feat
+
+
+# ── Terrain features: rough, woods, trees ─────────────────────────────────────
+#
+# Extended fixture adding:
+#   - A golf=rough polygon (4-point open ring)
+#   - A natural=wood polygon (5-point closed ring)
+#   - A landuse=forest polygon
+#   - A natural=scrub polygon
+#   - A natural=tree_row CLOSED polygon (4+ pts, closed → parsed as Polygon)
+#   - A natural=tree_row OPEN way (3 pts only → skipped by _parse_way_to_polygon)
+#   - A natural=tree node → Point feature in "trees"
+#   - A golf=pin node (NOT a tree) → still ignored
+#
+_TERRAIN_FIXTURE: dict = {
+    "elements": [
+        # golf=rough way (4-point open ring)
+        {
+            "type": "way",
+            "id": 400001,
+            "tags": {"golf": "rough"},
+            "geometry": [
+                {"lat": 40.7120, "lon": -73.0060},
+                {"lat": 40.7121, "lon": -73.0055},
+                {"lat": 40.7119, "lon": -73.0050},
+                {"lat": 40.7118, "lon": -73.0055},
+            ],
+        },
+        # natural=wood polygon (5-point closed ring)
+        {
+            "type": "way",
+            "id": 400002,
+            "tags": {"natural": "wood"},
+            "geometry": [
+                {"lat": 40.7130, "lon": -73.0070},
+                {"lat": 40.7131, "lon": -73.0065},
+                {"lat": 40.7129, "lon": -73.0060},
+                {"lat": 40.7128, "lon": -73.0065},
+                {"lat": 40.7130, "lon": -73.0070},
+            ],
+        },
+        # landuse=forest polygon
+        {
+            "type": "way",
+            "id": 400003,
+            "tags": {"landuse": "forest"},
+            "geometry": [
+                {"lat": 40.7140, "lon": -73.0080},
+                {"lat": 40.7141, "lon": -73.0075},
+                {"lat": 40.7139, "lon": -73.0070},
+                {"lat": 40.7138, "lon": -73.0075},
+            ],
+        },
+        # natural=scrub polygon
+        {
+            "type": "way",
+            "id": 400004,
+            "tags": {"natural": "scrub"},
+            "geometry": [
+                {"lat": 40.7150, "lon": -73.0090},
+                {"lat": 40.7151, "lon": -73.0085},
+                {"lat": 40.7149, "lon": -73.0080},
+                {"lat": 40.7148, "lon": -73.0085},
+            ],
+        },
+        # natural=tree_row, CLOSED ring (≥4 pts, first==last) → woods Polygon
+        {
+            "type": "way",
+            "id": 400005,
+            "tags": {"natural": "tree_row"},
+            "geometry": [
+                {"lat": 40.7160, "lon": -73.0100},
+                {"lat": 40.7161, "lon": -73.0095},
+                {"lat": 40.7159, "lon": -73.0090},
+                {"lat": 40.7158, "lon": -73.0095},
+                {"lat": 40.7160, "lon": -73.0100},
+            ],
+        },
+        # natural=tree_row, OPEN with only 3 points → skipped (degenerate polygon)
+        {
+            "type": "way",
+            "id": 400006,
+            "tags": {"natural": "tree_row"},
+            "geometry": [
+                {"lat": 40.7170, "lon": -73.0100},
+                {"lat": 40.7171, "lon": -73.0095},
+                {"lat": 40.7169, "lon": -73.0090},
+            ],
+        },
+        # natural=tree node → tree Point feature
+        {
+            "type": "node",
+            "id": 500001,
+            "tags": {"natural": "tree"},
+            "lat": 40.7125,
+            "lon": -73.0058,
+        },
+        # golf=pin node → still ignored (not a natural=tree)
+        {
+            "type": "node",
+            "id": 500002,
+            "tags": {"golf": "pin"},
+            "lat": 40.7132,
+            "lon": -73.0055,
+        },
+    ]
+}
+
+
+class TestTerrainFeatures:
+    """Rough, woods, and tree parsing — the new terrain coverage types."""
+
+    def test_rough_polygon_classified_correctly(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        assert len(result["rough"]) == 1
+        assert result["rough"][0]["properties"]["featureType"] == "rough"
+
+    def test_rough_geometry_is_polygon(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        assert result["rough"][0]["geometry"]["type"] == "Polygon"
+
+    def test_rough_osm_id_is_way(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        assert result["rough"][0]["properties"]["osm_id"] == "way/400001"
+
+    def test_natural_wood_goes_to_woods(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        wood_ids = {f["properties"]["osm_id"] for f in result["woods"]}
+        assert "way/400002" in wood_ids
+
+    def test_landuse_forest_goes_to_woods(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        wood_ids = {f["properties"]["osm_id"] for f in result["woods"]}
+        assert "way/400003" in wood_ids
+
+    def test_natural_scrub_goes_to_woods(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        wood_ids = {f["properties"]["osm_id"] for f in result["woods"]}
+        assert "way/400004" in wood_ids
+
+    def test_tree_row_closed_ring_goes_to_woods(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        wood_ids = {f["properties"]["osm_id"] for f in result["woods"]}
+        assert "way/400005" in wood_ids
+
+    def test_tree_row_open_linestring_is_skipped(self):
+        # Open tree_row with only 3 points cannot form a valid polygon → skipped.
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        wood_ids = {f["properties"]["osm_id"] for f in result["woods"]}
+        assert "way/400006" not in wood_ids
+
+    def test_woods_total_count(self):
+        # wood + forest + scrub + closed tree_row = 4
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        assert len(result["woods"]) == 4
+
+    def test_woods_feature_type_tag(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        for feat in result["woods"]:
+            assert feat["properties"]["featureType"] == "woods"
+
+    def test_woods_geometry_are_polygons(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        for feat in result["woods"]:
+            assert feat["geometry"]["type"] == "Polygon"
+
+    def test_tree_node_classified_as_tree(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        assert len(result["trees"]) == 1
+
+    def test_tree_geometry_is_point(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        assert result["trees"][0]["geometry"]["type"] == "Point"
+
+    def test_tree_osm_id_is_node(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        assert result["trees"][0]["properties"]["osm_id"] == "node/500001"
+
+    def test_tree_feature_type_tag(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        assert result["trees"][0]["properties"]["featureType"] == "tree"
+
+    def test_tree_point_coordinates_are_lon_lat(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        coords = result["trees"][0]["geometry"]["coordinates"]
+        # GeoJSON = [lon, lat]; our node has lat=40.7125, lon=-73.0058
+        assert coords[0] == pytest.approx(-73.0058, abs=1e-6)
+        assert coords[1] == pytest.approx(40.7125, abs=1e-6)
+
+    def test_golf_pin_node_is_not_a_tree(self):
+        result = _parse_course_geometry_response(_TERRAIN_FIXTURE)
+        tree_ids = {f["properties"]["osm_id"] for f in result["trees"]}
+        assert "node/500002" not in tree_ids
+
+    def test_terrain_buckets_empty_in_base_fixture(self):
+        # Base fixture has no rough/woods/trees → all three buckets empty.
+        result = _parse_course_geometry_response(_FIXTURE)
+        assert result["rough"] == []
+        assert result["woods"] == []
+        assert result["trees"] == []
+
+    def test_course_name_filter_does_not_affect_terrain(self):
+        # Terrain features are not filtered by course name.
+        combined = {
+            "elements": _FIXTURE["elements"] + _TERRAIN_FIXTURE["elements"]
+        }
+        result = _parse_course_geometry_response(combined, course_name_filter="Black")
+        assert len(result["rough"]) == 1
+        assert len(result["woods"]) == 4
+        assert len(result["trees"]) == 1
+        # But only the Black hole should appear.
+        assert len(result["holes"]) == 1

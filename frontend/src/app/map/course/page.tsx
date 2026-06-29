@@ -584,7 +584,9 @@ function MappedCourseMapInner() {
           display: "flex",
           alignItems: "center",
           gap: 8,
-          padding: "14px 16px 10px",
+          // Safe-area top inset so the back button clears the iOS status bar.
+          // Same pattern as courses/page.tsx line 75 and app/page.tsx.
+          padding: "max(14px, env(safe-area-inset-top)) 16px 10px",
           borderBottom: `1px solid ${T.hairline}`,
           flexShrink: 0,
         }}
@@ -638,15 +640,16 @@ function MappedCourseMapInner() {
         </div>
       </div>
 
-      {/* ── Diagram area (flex-1, scrollable if needed) ──────────────────── */}
+      {/* ── Diagram area — flex:1 + minHeight:0 so it expands to fill the gap */}
       <div
         style={{
           flex: 1,
+          minHeight: 0,
           display: "flex",
-          alignItems: "center",
+          alignItems: "stretch",
           justifyContent: "center",
           overflow: "hidden",
-          padding: "12px 16px",
+          padding: "10px 14px",
         }}
       >
         <HoleDiagramAutosize features={features} gpsPosition={gpsForDiagram} />
@@ -678,8 +681,15 @@ function MappedCourseMapInner() {
 }
 
 /**
- * A thin wrapper that sizes the HoleDiagram to fill whatever space is available.
- * Uses a fixed tall aspect ratio (3:4) typical of a yardage-book hole page.
+ * Sizes HoleDiagram to fill whatever pixel space the parent gives it.
+ *
+ * Strategy: attach a ResizeObserver to the outer `div` so we get exact
+ * content-box dimensions; pass them straight to HoleDiagram as `width`/`height`.
+ * SSR / first paint: fall back to 320×430 until the measurement arrives
+ * (one animation frame after mount on a real device).
+ *
+ * Tap-to-measure accuracy is unaffected because HoleDiagram uses
+ * `getScreenCTM().inverse()` — CSS pixel scaling is already handled.
  */
 function HoleDiagramAutosize({
   features,
@@ -688,17 +698,43 @@ function HoleDiagramAutosize({
   features: GeoJSON.Feature[];
   gpsPosition: { lat: number; lng: number } | null;
 }) {
-  // 300×400 is a safe default that fits almost any phone in portrait mode.
-  // The component's viewBox + CSS width/height handle responsive scaling.
-  const W = 300;
-  const H = 400;
+  // Safe SSR / first-paint fallback — replaced after the first ResizeObserver tick.
+  const [size, setSize] = useState<{ width: number; height: number }>({
+    width: 320,
+    height: 430,
+  });
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setSize({ width: Math.floor(width), height: Math.floor(height) });
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Interior padding for the diagram — relative to the measured size so it
+  // stays proportional on small and large viewports.
+  const diagramPadding = Math.max(24, Math.round(Math.min(size.width, size.height) * 0.07));
+
   return (
-    <div style={{ width: "100%", maxWidth: W + 40, display: "flex", justifyContent: "center" }}>
+    <div
+      ref={containerRef}
+      style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+    >
       <HoleDiagram
         features={features}
-        width={W}
-        height={H}
-        padding={32}
+        width={size.width}
+        height={size.height}
+        padding={diagramPadding}
         showLabels
         gpsPosition={gpsPosition}
       />
