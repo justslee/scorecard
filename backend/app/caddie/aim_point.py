@@ -18,6 +18,7 @@ from app.caddie.club_selection import (
 from app.caddie.strokes_gained import expected_strokes, personal_lookup
 from app.caddie.slope_advice import slope_miss_advice
 from app.caddie.shot_line_advice import shot_line_advice
+from app.caddie.decade_advice import decade_aim_advice
 
 
 def classify_pin_position(
@@ -299,6 +300,14 @@ def generate_recommendation(
     sl_advice = shot_line_advice(hole.shot_line_profile_ft or [], distance_yards)
     if sl_advice:
         reasoning.append(sl_advice)
+
+    # DECADE expected-strokes aim advice — additive only; does NOT affect club, target,
+    # aim_point, or miss_side.  Runs the DECADE optimizer over a lateral candidate grid
+    # and surfaces a plain-English insight when the percentages favor aiming away from
+    # the flag.  Returns None when the flag is optimal or hazards are negligible.
+    d_advice = decade_aim_advice(hole.hazards, float(distance_yards))
+    if d_advice:
+        reasoning.append(d_advice)
 
     # Expected score — pulls from personal_sg first, falls back to PGA baseline.
     # Gate the reasoning text on the actual lookup outcome rather than the

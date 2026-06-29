@@ -3,6 +3,29 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (caddie-decade-wire-recommend — SILENT — integration/next)
+Activated the dormant DECADE optimizer as additive caddie reasoning. When the expected-strokes-optimal aim deviates ≥4 yards laterally from the flag, a plain-English tip is appended to reasoning[]. Club, target_yards, aim_point, and miss_side are never touched.
+
+### What was done
+1. `backend/app/caddie/decade_advice.py` (new, 175 lines):
+   - `build_classify_point(hazards, pin) -> ClassifyFn`: approximates hole as coordinate plane centred on pin (+x=right, +y=long). Each Hazard mapped to a half-plane by side+distance_from_green. Severity-sorted so most severe wins on overlap. Default: GREEN within 20 yds, FAIRWAY beyond.
+   - Type map: water→WATER, ob→OB, bunker→SAND, trees→RECOVERY, other→severity-based (death→OB, severe→RECOVERY, else ROUGH).
+   - `decade_aim_advice(hazards, shot_distance_yds, pin) -> str | None`: σ_lat=6%·dist (min 3 yd), σ_long=4%·dist (min 3 yd); 9 candidates (pin ± 12 yd in 3-yd steps); calls `optimize_aim`; threshold 4 yd; returns "The percentages favor aiming ~{N}y {direction} of the flag — {hazard} guards the {side}." or None.
+   - No hazards → None; front/back-only hazards → None (symmetric, no lateral shift); pin-optimal → None.
+2. `backend/app/caddie/aim_point.py`: import + additive call after shot_line_advice. Appends to reasoning[] only.
+3. `backend/tests/test_decade_advice.py` (new, 57 tests, pure, no DB/network).
+
+### Approximation + constants
+- Coordinate plane: side='left' → x < -distance_from_green; side='right' → x > distance_from_green; front/back → y half-planes; center → radius ≤ d from pin.
+- SIGMA_LAT_FRACTION=0.06, SIGMA_LONG_FRACTION=0.04, MIN_SIGMA_YDS=3.0, AIM_THRESHOLD_YDS=4.0.
+
+### Gates
+- `ruff check .`: PASS
+- `uv run pytest tests/ -k "decade or aim or caddie or slope" -v`: 161/161 PASS (57 new)
+- `npx tsc --noEmit`: 0 errors · `npm run lint`: PASS · `voice-tests --smoke`: 265/265
+
+SILENT — pure backend reasoning enhancement; no UI change. Caddie API response gains one extra reasoning[] line when a meaningful lateral hazard is present.
+
 ## 2026-06-29 (dem-slope-line-advice — SILENT — integration/next)
 Additive terrain-shape advice along the shot path. Pure Python, no DB/network, no new deps.
 
