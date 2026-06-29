@@ -1156,7 +1156,7 @@
     {
       "id": "voice-chat-ordering",
       "priority": 3,
-      "status": "built-integration-next-pending-device-verify",
+      "status": "done-shipped-main",
       "classification": "noticeable",
       "build": "build(FE)",
       "size": "S",
@@ -1165,12 +1165,13 @@
       "title": "Fix voice-setup chat ordering \u2014 user message shows AFTER the caddie's reply",
       "rationale": "OWNER HIGH PRIORITY (2026-06-28): owner says 'hello', caddie replies, but the caddie's reply renders ABOVE the 'hello'. Cause: the user transcript event (conversation.item.input_audio_transcription.completed) arrives AFTER the assistant's streamed response deltas, and messages render in arrival/insertion order (VoiceRoundSetupRealtime upsert appends new ids in arrival order). Fix: order messages by conversation-item sequence, not arrival \u2014 the user's input item is created BEFORE the response item. In realtime.ts handleEvent, capture an ordering key (item creation order / a monotonic seq, or use the item_id ordering the API provides) and sort the rendered list by it; keep streamed assistant deltas coalescing. Add a unit test for the ordering helper.",
       "depends_on": [],
-      "progress": "2026-06-28: built 179d03c on integration/next. New pure MessageOrderTracker + sortByOrder (lib/voice/realtime-ordering.ts): a stable monotonic order key assigned when each conversation ITEM begins (user slot reserved at input_audio_buffer.speech_started, identity-matched by item_id to the transcript; assistant slot at response.created/first delta), NOT when transcript text arrives. realtime.ts: RealtimeMessage gains required `order`, handleEvent threads item_id, sendText emits the typed line centrally + renders even if DC closed. Both renderers sort by order (VoiceRoundSetupRealtime + useRealtimeCaddie). Reviewer adversarial pass: found + fixed a real desync (FIFO user-slot matching corrupted ordering for the rest of the session on phantom/empty/VAD-bounced speech_started -> re-keyed by item_id; added the regression test). 9 unit tests. Gates: lint 0/0 / tsc 0 / voice-tests 265/265 / vitest 374/374 / build clean. DEVICE-ONLY verify: WebRTC live voice ordering must be confirmed on the next TestFlight build. NOTICEABLE -> rides the next approval bundle."
+      "progress": "2026-06-28: built 179d03c on integration/next. New pure MessageOrderTracker + sortByOrder (lib/voice/realtime-ordering.ts): a stable monotonic order key assigned when each conversation ITEM begins (user slot reserved at input_audio_buffer.speech_started, identity-matched by item_id to the transcript; assistant slot at response.created/first delta), NOT when transcript text arrives. realtime.ts: RealtimeMessage gains required `order`, handleEvent threads item_id, sendText emits the typed line centrally + renders even if DC closed. Both renderers sort by order (VoiceRoundSetupRealtime + useRealtimeCaddie). Reviewer adversarial pass: found + fixed a real desync (FIFO user-slot matching corrupted ordering for the rest of the session on phantom/empty/VAD-bounced speech_started -> re-keyed by item_id; added the regression test). 9 unit tests. Gates: lint 0/0 / tsc 0 / voice-tests 265/265 / vitest 374/374 / build clean. DEVICE-ONLY verify: WebRTC live voice ordering must be confirmed on the next TestFlight build. NOTICEABLE -> rides the next approval bundle.",
+      "shipped": "SHIPPED PR #64 -> main b0033de (2026-06-28); frontend-only, TestFlight build cut. item_id-keyed ordering; reviewer caught+fixed a FIFO desync. Device-verify the live order."
     },
     {
       "id": "grabber-handle-drag-fix",
       "priority": 8,
-      "status": "ready",
+      "status": "built-integration-next-pending-device-verify",
       "classification": "noticeable",
       "build": "build(FE)",
       "size": "S",
@@ -1178,6 +1179,7 @@
       "area": "frontend",
       "title": "Fix sheet grabber-handle drag \u2014 swiping it scrolls the background page instead of dismissing",
       "rationale": "OWNER (2026-06-28): swiping DOWN on a sheet's grab handle moves the background page instead of dismissing the sheet. The drag isn't being captured at the handle, so the gesture falls through to page scroll. Audit the drag-to-dismiss sheets (CaddieSheet + the new VoiceRoundSetupRealtime grab handle): ensure the handle's onPointerDown calls dragControls.start(e), the draggable motion.div has the dragControls + dragListener=false wired, and the background/body can't scroll under the sheet (lock body scroll / overscroll-behavior: contain / touch-action on the backdrop) while a sheet is open. Verify on device.",
+      "progress": "2026-06-28: built 52a1d9a on integration/next. Audit found BOTH sheets already had the handle wired correctly (onPointerDown -> dragControls.start, touch-action:none, dragListener=false, drag y + dragControls on the motion.div). Root cause of the fall-through was the MISSING piece: nothing locked the page behind an open sheet, so any gesture framer-motion didn't claim scrolled the background (esp. iOS WKWebView document rubber-band, which touch-action alone doesn't suppress). Fix: new src/lib/sheet.ts with useBodyScrollLock(locked) (pins <body> position:fixed + overflow hidden + overscroll-behavior none, restores scroll on close) and the pure shouldDismissSheetDrag(offsetY, velocityY) threshold (>120px OR >600px/s) extracted from both sheets. Wired into CaddieSheet (locked on `open`) and VoiceRoundSetupRealtime (locked for mounted lifetime); added touch-action:none + overscroll-behavior:contain to both backdrops. Inner conversation list stays scrollable. 8 unit tests (src/lib/sheet.test.ts: threshold edges + lock apply/restore via jsdom). Gates: lint 0 / tsc 0 / voice-tests 265/265 / vitest 382/382 / build clean. DEVICE-ONLY verify: the drag gesture is pointer/touch-only \u2014 confirm on next TestFlight that the handle dismisses and the page no longer scrolls behind an open sheet. NOTICEABLE -> rides the next approval bundle.",
       "depends_on": []
     }
   ],
