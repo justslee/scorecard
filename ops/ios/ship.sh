@@ -23,7 +23,27 @@ export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-https://api.looperapp.org}"
 # Swapped from the dev pk_test on 2026-06-28 — the dev instance couldn't mint
 # session tokens in the Capacitor webview (cause of the persistent login 401s).
 export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_live_Y2xlcmsubG9vcGVyYXBwLm9yZyQ}"
-export NEXT_PUBLIC_MAPBOX_TOKEN="${NEXT_PUBLIC_MAPBOX_TOKEN:-}"
+# NEXT_PUBLIC_MAPBOX_TOKEN: baked into the JS bundle at Next.js build time.
+# If not already set in the environment, pull from AWS Secrets Manager (looper/prod).
+# The build machine has IAM credentials — the secret is NEVER printed or committed.
+# When the secret is absent (no creds / key missing) we warn and leave it empty,
+# which makes the app fall back to the on-paper HoleDiagram renderer instead.
+if [ -z "${NEXT_PUBLIC_MAPBOX_TOKEN:-}" ]; then
+  _mb_token="$(aws secretsmanager get-secret-value \
+      --secret-id looper/prod \
+      --query SecretString \
+      --output text 2>/dev/null \
+    | jq -r '.NEXT_PUBLIC_MAPBOX_TOKEN // .MAPBOX_TOKEN // empty' 2>/dev/null \
+    || true)"
+  if [ -n "${_mb_token:-}" ]; then
+    export NEXT_PUBLIC_MAPBOX_TOKEN="$_mb_token"
+    echo "▸ Mapbox token loaded from looper/prod secret (${#_mb_token} chars)"
+  else
+    echo "WARN: NEXT_PUBLIC_MAPBOX_TOKEN not found in looper/prod — map will fall back to HoleDiagram"
+    export NEXT_PUBLIC_MAPBOX_TOKEN=""
+  fi
+  unset _mb_token   # don't leave the token in a shell variable
+fi
 
 # App Store Connect signing — IDs are not secret; the .p8 referenced by path is.
 ASC_KEY_ID="${ASC_KEY_ID:-QG927KHTXR}"
