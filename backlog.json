@@ -1324,7 +1324,7 @@
     {
       "id": "course-poc-i4-elevation",
       "priority": 21,
-      "status": "ready",
+      "status": "built-integration-next-pending-deploy-verify",
       "epic": "course-search-db-epic",
       "classification": "noticeable",
       "build": "build(BE/data)",
@@ -1335,7 +1335,8 @@
       "rationale": "One bbox GeoTIFF via USGS 3DEP ImageServer exportImage -> sample tee->green + green grid -> store profile -> feed course_intel. Maps to dem-3dep-ingestion(slim)+dem-hole-profiles.",
       "depends_on": [
         "course-poc-i2-store-render"
-      ]
+      ],
+      "shipped": "Built b621d78 (2026-06-29). 3DEP getSamples batch sampler (m->ft, EPQS fallback) + pure compute_hole_elevation_profile + optional elevation attach in assemble_osm_course; 29 tests (183/183 non-DB). Live 3DEP + DB = deploy/CI. Completes Bethpage POC backend track I0-I4."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
