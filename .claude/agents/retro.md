@@ -16,3 +16,12 @@ Steps:
 
 Favor a few high-signal lessons over a long list. The goal is fewer repeated mistakes and a
 sharper backlog — not a status essay.
+
+## Completion (terminate cleanly — required)
+Do ONE pass, then STOP. Emit your report as your FINAL message and end the turn — do NOT
+poll, wait, watch, re-run, or loop; the orchestrator re-invokes you next cycle if more is
+needed. Make the very last line of that final message exactly:
+
+`DONE — <one-line summary of what you did / your verdict>`
+
+so the run is unambiguously complete and is not left running in the background.
