@@ -3,6 +3,39 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (course-search — NOTICEABLE — feat/course-search, ready to merge to integration/next)
+Course search now finds mapped courses (Bethpage) + favorites + nearby empty state.
+
+### What was done
+1. `frontend/src/components/CourseSearch.tsx` — Full rewrite:
+   - Switched from `searchCourses` (GolfAPI-only) to `searchAllCourses` (mapped+OSM+GolfAPI),
+     so Bethpage Black/Red appear at the top of results (mapped source ranked first).
+   - 250ms debounce + AbortController to cancel stale requests (no flickering).
+   - Empty state: Favorites section (starred courses) then Nearby section (GPS, best-effort).
+   - Star toggle on every result; starred courses persist in localStorage.
+   - Footer updated from "COURSE DATA · GOLFAPI.IO" to "Mapped · Community · OpenStreetMap".
+2. `frontend/src/lib/course-favorites.ts` — New library: localStorage-backed favorites with
+   injectable KVStore for testability (no jsdom needed in tests).
+3. `frontend/src/lib/course-search-helpers.ts` — New pure functions: distanceMiles (Haversine),
+   formatMiles, dedupeByName, mergeAndSortNearby.
+4. `frontend/src/app/courses/page.tsx` — Routes mapped search results to /map/course?id= 
+   (the hole-map view) instead of the GolfAPI detail page (which can't load UUID course ids).
+5. `frontend/src/app/round/new/page.tsx` — Added `source?: string` to SelectedCourse to 
+   accept the extended payload from CourseSearch (no behavior change; field is ignored).
+
+### Test coverage (NEW — 36 new tests, all passing)
+- `course-favorites.test.ts`: add/remove/toggle/list/isFavorite, persistence round-trip, dedupe
+- `course-search-helpers.test.ts`: distanceMiles, formatMiles, dedupeByName, mergeAndSortNearby
+
+### Gate results
+- lint: clean
+- tsc --noEmit: clean
+- vitest: 696/696 pass (up from 660, +36 new)
+- voice-tests --smoke: 265/265 pass
+- next build: clean (verified in main repo; worktree Turbopack blocks external symlinks)
+
+### Classification: NOTICEABLE (Bethpage now appears in search; favorites/nearby are new UX)
+
 ## 2026-06-29 (second-course — NOTICEABLE — feat/second-course, ready for prod ingest)
 Validated OSM pipeline on Bethpage Red as the 2nd ingested course; added it to the viewer.
 
