@@ -191,6 +191,7 @@ export default function PartnerProfileClient() {
               gap: 4,
               marginBottom: 10,
               minHeight: 44,
+              minWidth: 44,
             }}
           >
             <span style={{ fontSize: 11 }}>{"←"}</span> Players
@@ -325,11 +326,16 @@ export default function PartnerProfileClient() {
                       flexShrink: 0,
                     }}
                   >
-                    {new Date(r.date).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
+                    {(() => {
+                      const d = new Date(r.date);
+                      return isNaN(d.getTime())
+                        ? (r.date || "—")
+                        : d.toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          });
+                    })()}
                   </div>
                 </button>
               ))}

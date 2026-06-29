@@ -21,5 +21,10 @@ export function getSharedRounds(rounds: Round[], playerId: string): Round[] {
   if (!playerId) return [];
   return rounds
     .filter((r) => r.players.some((p) => p.id === playerId))
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    .sort((a, b) => {
+      // Guard against malformed/missing dates — treat NaN as epoch-0 (oldest).
+      const ta = new Date(a.date).getTime();
+      const tb = new Date(b.date).getTime();
+      return (isNaN(tb) ? 0 : tb) - (isNaN(ta) ? 0 : ta);
+    });
 }

@@ -86,4 +86,27 @@ describe('getSharedRounds', () => {
     getSharedRounds(rounds, PLAYER_A);
     expect(rounds.map((r) => r.id)).toEqual(originalOrder);
   });
+
+  it('does not throw when a round has an invalid date string, and sorts it last', () => {
+    const rounds = [
+      makeRound('r1', '2024-06-01', [PLAYER_A]),
+      makeRound('r2', 'not-a-date', [PLAYER_A]),
+      makeRound('r3', '2024-03-15', [PLAYER_A]),
+    ];
+    let result: Round[] = [];
+    expect(() => { result = getSharedRounds(rounds, PLAYER_A); }).not.toThrow();
+    // Invalid date treated as epoch-0 (oldest) — sorts to the end.
+    expect(result.map((r) => r.id)).toEqual(['r1', 'r3', 'r2']);
+  });
+
+  it('does not throw when a round has an empty date string, and sorts it last', () => {
+    const rounds = [
+      makeRound('r1', '2024-06-01', [PLAYER_A]),
+      makeRound('r2', '', [PLAYER_A]),
+    ];
+    let result: Round[] = [];
+    expect(() => { result = getSharedRounds(rounds, PLAYER_A); }).not.toThrow();
+    // Empty string → Invalid Date → treated as epoch-0, sorts last.
+    expect(result.map((r) => r.id)).toEqual(['r1', 'r2']);
+  });
 });
