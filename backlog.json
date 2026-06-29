@@ -703,7 +703,7 @@
     {
       "id": "caddie-decade-optimizer-core",
       "priority": 17,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "phase": 2,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -712,7 +712,8 @@
       "headless": "yes",
       "area": "backend",
       "title": "DECADE expected-strokes target optimizer (dispersion convolution core)",
-      "rationale": "New caddie/target_optimizer.py: over candidate aim points, sample the player's dispersion ellipse (dispersion.get_dispersion) across an expected-strokes field (strokes_gained.expected_strokes + hazard penalties); return the target minimizing expected strokes. Pure, unit-testable. THE differentiator \u2014 high value, low device risk. Calibration is the risk (keep params tunable)."
+      "rationale": "New caddie/target_optimizer.py: over candidate aim points, sample the player's dispersion ellipse (dispersion.get_dispersion) across an expected-strokes field (strokes_gained.expected_strokes + hazard penalties); return the target minimizing expected strokes. Pure, unit-testable. THE differentiator \u2014 high value, low device risk. Calibration is the risk (keep params tunable).",
+      "shipped": "Built e2d38bc (2026-06-29). Pure DECADE aim optimizer backend/app/caddie/decade.py (Gaussian-quadrature dispersion convolution over an area->expected-strokes model; reuses strokes_gained Broadie tables). 40 behavioral tests. Additive (NOT wired into recommend yet = caddie-decade-wire-recommend p18)."
     },
     {
       "id": "caddie-decade-wire-recommend",
