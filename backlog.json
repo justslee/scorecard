@@ -803,7 +803,7 @@
     {
       "id": "dem-slope-line-advice",
       "priority": 24,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "phase": 3,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -812,7 +812,8 @@
       "headless": "yes",
       "area": "backend",
       "title": "Slope severity along the shot line for tactical advice",
-      "rationale": "Feed approach-zone slope (from the profile) into the tactical-advice engine so 'bigger slope there' is data-driven, not green-only. Depends on dem-hole-profiles + caddie-tactical-slope-advice."
+      "rationale": "Feed approach-zone slope (from the profile) into the tactical-advice engine so 'bigger slope there' is data-driven, not green-only. Depends on dem-hole-profiles + caddie-tactical-slope-advice.",
+      "shipped": "Built 4b5ac80 (2026-06-29). Pure shot_line_advice (ridge/swale/elevated-green/downhill) appended to caddie reasoning; additive (no club/aim change); fires when HoleIntelligence.shot_line_profile_ft populated (route wiring = follow-up). 46 tests, 131 caddie green."
     },
     {
       "id": "ux-tap-to-target",
