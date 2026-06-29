@@ -3,6 +3,56 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (tap-to-measure-gps-hole-diagram — NOTICEABLE — integration/next, commit 7c2b15f)
+Adds tap-to-measure and live GPS overlay to the /map/course yardage-book hole diagram.
+
+### What was done
+1. `frontend/src/lib/course/hole-projection.ts`:
+   - New `ProjectionParams` interface (minLng/Lat, maxLng/Lat, cosLat, angle, cx/cy, scale, offsetX/Y, rxMin, ryMax).
+   - `ProjectedHole` extended with `params`, `teeLatLng`, `greenLatLng`.
+   - `projectHole()` now returns all of the above (backward-compatible additive).
+   - New `projectLatLng(latlng, params) → [x, y]` — forward transform.
+   - New `unprojectPoint(svg, params) → {lat, lng}` — exact inverse (round-trip error < 1e-7°).
+   - New `isOnHoleBbox(pos, params, marginDeg=0.006)` — on-hole guard (~720 yds margin).
+   - New `yardsDistance(a, b) → yards` — haversine distance in yards.
+   - `LAT_M` made module-level constant so all transforms share the same value.
+
+2. `frontend/src/components/course/HoleDiagram.tsx`:
+   - New `gpsPosition?: {lat, lng} | null` prop.
+   - Tap/click on SVG → `unprojectPoint` → `yardsDistance` from tee and to pin → renders
+     a crosshair dot + "Tee 247 · Pin 165" mono label with × dismiss.  Tapping again moves it.
+   - GPS "you" dot (cobalt, with halo) plotted via `projectLatLng` when `isOnHoleBbox` → true.
+     Suppressed when player is remote — no absurd yardages.
+   - "tap to measure" idle hint text when no marker and no GPS on-hole.
+   - SVG uses `createSVGPoint + getScreenCTM` for pixel-perfect coord mapping at any CSS scale.
+
+3. `frontend/src/app/map/course/page.tsx`:
+   - GPS watcher (`GPSWatcher`) started on mount; permission denied → tap-measure still works.
+   - `computeGpsDistances()` runs `projectHole + isOnHoleBbox` on each render (cheap, pure).
+   - Info strip updated: when on-hole → "You to pin: N yds" (accent cobalt); off-hole but
+     GPS available → "Not on this hole — tap to measure" calm hint.
+   - `gpsPosition` passed through to `HoleDiagramAutosize` → `HoleDiagram`.
+
+4. `frontend/src/lib/course/hole-projection.test.ts` (extended, +57 new tests, total 87):
+   - Round-trip: `unprojectPoint(projectLatLng(p)) ≈ p` for tee, green, fairway midpoint,
+     off-centre point — all within 1e-7°.
+   - `projectLatLng` keeps tee centroid within padding bounds.
+   - `teePt` from `projectHole` matches `projectLatLng(teeLatLng)` to 3 decimal places.
+   - `isOnHoleBbox`: on-hole → true; 28-mi-away → false; margin clamping tests.
+   - `yardsDistance`: zero for same point, ~400 yds for fixture, symmetric, integer.
+   - Tap distance: tapping tee SVG → fromTee ≤ 1 yd; tapping green → toPin ≤ 1 yd;
+     fairway midpoint → fromTee + toPin ≈ hole length ± 5 yds.
+
+### Gates
+- `npm run lint`: PASS (0 warnings)
+- `npx tsc --noEmit`: PASS (0 errors)
+- `npx tsx voice-tests/runner.ts --smoke`: PASS (265/265)
+- `npx vitest run`: PASS (580/580, 27 files, +57 new from hole-projection.test.ts)
+- `npm run build`: PASS (clean Turbopack build, 19 pages)
+
+NOTICEABLE — tap any point on the hole diagram to see "Tee 247 · Pin 165" distances; GPS
+dot appears when on the course. Verify on device at /map/course?id=<Bethpage Black UUID>.
+
 ## 2026-06-29 (yardage-book-hole-diagram — NOTICEABLE — integration/next)
 Replaces the broken GPSMapView satellite viewer on /map/course with a clean, on-paper,
 top-down yardage-book hole diagram derived from homegrown OSM geometry. No Mapbox, no
