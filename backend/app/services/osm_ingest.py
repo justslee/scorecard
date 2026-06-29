@@ -28,6 +28,24 @@ _DEFAULT_TEE_SETS: list[dict[str, Any]] = [
 ]
 
 
+def _should_abort_empty(n_assembled_holes: int) -> bool:
+    """Return True if the assembled course has zero holes and the write should abort.
+
+    Used by the ingest script as a guard against writing a useless empty course
+    record to the database — which would silently overwrite any previously-ingested
+    good data and produce confusing downstream results.
+
+    Args:
+        n_assembled_holes: Length of the ``"holes"`` list returned by
+            :func:`assemble_osm_course`.
+
+    Returns:
+        ``True``  → abort; do not call ``upsert_course``.
+        ``False`` → proceed; the course has at least one hole.
+    """
+    return n_assembled_holes == 0
+
+
 def _deterministic_uuid(key: str) -> str:
     """Deterministic UUID v5-style from *key*, identical to the frontend.
 

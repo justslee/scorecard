@@ -3,6 +3,34 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (osm-ingest-error-hardening — SILENT — integration/next)
+Hardens the OSM/Overpass error handling: flaky public endpoint no longer fails silently,
+and the ingest script refuses to write an empty course.
+
+### What was done
+1. `backend/app/services/osm.py`:
+   - Added `asyncio`, `logging`, `_log`, `_TRANSIENT_STATUS_CODES` (429/5xx), `_RETRY_BACKOFF_S`.
+   - New `_post_with_retry(client, query, log_tag)`: logs WARNING on every failure (status + URL +
+     truncated body); on transient failures (429/5xx, TimeoutException/TransportError) sleeps 2s
+     and retries once; non-transient 4xx returns None immediately; clean 200 never retried.
+   - All four Overpass fetchers now call `_post_with_retry` instead of the old silent failure path.
+
+2. `backend/app/services/osm_ingest.py`:
+   - New pure `_should_abort_empty(n_assembled_holes) -> bool`: True when 0 holes, False otherwise.
+
+3. `backend/scripts/ingest_osm_course.py`:
+   - After assembly, if NOT dry_run and `_should_abort_empty(n_assembled)`: stderr + `sys.exit(1)`
+     WITHOUT calling `upsert_course`. Dry-run path unaffected.
+
+4. `backend/tests/test_osm_fetch_hardening.py` (new, 30 pure tests, no network/DB).
+
+### Gates
+- `cd backend && ruff check .`: PASS
+- `cd backend && uv run pytest tests/ -k "osm or ingest or overpass" -v`: 98/98 PASS (30 new)
+- `cd frontend && npx tsc --noEmit`: PASS
+
+SILENT — backend-only hardening; no user-visible surface change.
+
 ## 2026-06-29 (course-map-entry-point — NOTICEABLE — integration/next)
 Adds a tappable "Course maps (beta)" entry on the /courses page linking to the homegrown
 Bethpage Black hole map at /map/course?id=2b8caab5-2c55-5752-8cda-336c3a396dac.
