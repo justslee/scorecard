@@ -748,7 +748,7 @@
     {
       "id": "caddie-personal-dispersion",
       "priority": 20,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "phase": 2,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -757,7 +757,8 @@
       "headless": "yes",
       "area": "backend+data",
       "title": "Personalized dispersion & skill profile from logged shots",
-      "rationale": "Extend caddie/learning.py to derive per-club dispersion + miss bias from tracked shots, persisted on PlayerProfile (mirror personal_sg); get_dispersion prefers personal over table. Cold-start fallback to tables."
+      "rationale": "Extend caddie/learning.py to derive per-club dispersion + miss bias from tracked shots, persisted on PlayerProfile (mirror personal_sg); get_dispersion prefers personal over table. Cold-start fallback to tables.",
+      "shipped": "Built 280171c (2026-06-29). dispersion_for_handicap (DECADE/Broadie-calibrated: scratch 5%/-> 36hcp ~11.8% lateral; long=2/3 lat) wired into decade_aim_advice+generate_recommendation. Scratch=tighter (aggressive aim advice), high-hcp=wider (conservative). Additive (club/aim unchanged), 36 tests, 179 caddie green. (Scoped to handicap-based since no precise shot-offset logs exist.)"
     },
     {
       "id": "dem-3dep-ingestion",
