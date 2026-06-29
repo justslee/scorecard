@@ -3,6 +3,40 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (second-course — NOTICEABLE — feat/second-course, ready for prod ingest)
+Validated OSM pipeline on Bethpage Red as the 2nd ingested course; added it to the viewer.
+
+### Coverage check (live Overpass, all 4 candidates):
+| Course | AllHoles | TgtHoles | w/par | w/hcp | Greens | Fairways | Tees | Bunkers | Water |
+|--------|----------|----------|-------|-------|--------|----------|------|---------|-------|
+| Torrey Pines South | 36 | 0 | 0 | 0 | 39 | 15 | 157 | 140 | 8 |
+| Chambers Bay | 18 | 18 | 0 | 0 | 23 | 6 | 64 | 51 | 12 |
+| Pinehurst No.2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 (429) |
+| Bethpage Red | 90 | 18 | 18 | 0 | 96 | 99 | 215 | 270 | 50 |
+
+**Choice: Bethpage Red** — only candidate with hole LineStrings AND par tags; same campus
+as Black so cross-course spatial join is already proven; OSM `golf:course:name=Red` filter
+works with existing code (no pipeline changes needed).
+
+### Dry-run output (--dry-run; no DB written):
+- Fetched: 90 hole LineStrings, 730 polygon features
+- Assembled: 18 holes, 561 total polygon features
+- Course UUID: 269e1f2e-65cc-5cf6-a9b0-f5908e298155 (key: osm-bethpage-red)
+- Par sequence: 4-4-4-3-5-4-3-4-4-4-4-3-4-4-4-5-3-4 = 70 (matches Bethpage Red card)
+- Handicap: None (not tagged in OSM — known gap)
+
+### Files changed:
+- `backend/tests/test_ingest_osm_course.py` — pinned UUID for osm-bethpage-red
+- `frontend/src/app/courses/page.tsx` — added Bethpage Red entry to Course maps section
+
+### Prod ingest required (NOT done here — no local DB):
+  uv run backend/scripts/ingest_osm_course.py \
+    --lat 40.7445 --lng -73.4609 --radius 2500 \
+    --target-course Red --course-key osm-bethpage-red \
+    --course-name "Bethpage Red"
+
+### Classification: NOTICEABLE (new viewer entry, visible once ingested to prod)
+
 ## 2026-06-29 (hole-elevation — NOTICEABLE — feat/hole-elevation, ready to merge)
 Per-hole elevation + "plays-like" readout on the yardage-book hole diagram (I4).
 

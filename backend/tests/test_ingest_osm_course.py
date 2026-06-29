@@ -180,6 +180,25 @@ class TestDeterministicUUID:
         pinned = f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
         assert uid == pinned
 
+    def test_stable_pinned_value_for_bethpage_red(self):
+        """Pin the Bethpage Red UUID so the frontend constant and ingest key stay in sync.
+
+        The ``BETHPAGE_RED_MAP_ID`` constant in ``frontend/src/app/courses/page.tsx``
+        must equal this value.  If this test fails, re-derive the constant from
+        ``_deterministic_uuid("osm-bethpage-red")`` rather than weakening this
+        assertion — row identity depends on it.
+        """
+        uid = _deterministic_uuid("osm-bethpage-red")
+        raw = hashlib.sha1(b"golfapi:osm-bethpage-red").digest()
+        b = bytearray(raw[:16])
+        b[6] = (b[6] & 0x0F) | 0x50
+        b[8] = (b[8] & 0x3F) | 0x80
+        h = b.hex()
+        pinned = f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+        assert uid == pinned
+        # Concrete value as a secondary guard — must match the frontend constant.
+        assert uid == "269e1f2e-65cc-5cf6-a9b0-f5908e298155"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # assemble_osm_course — top-level output shape
