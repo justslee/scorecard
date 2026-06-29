@@ -1430,7 +1430,7 @@
     {
       "id": "hole-diagram-base",
       "priority": 12,
-      "status": "built-integration-next",
+      "status": "built-integration-next-pending-device-verify",
       "classification": "noticeable",
       "area": "frontend",
       "title": "Yardage-book hole diagram (base render)",
@@ -1440,14 +1440,15 @@
     {
       "id": "hole-diagram-interactive-gps",
       "priority": 11,
-      "status": "ready",
+      "status": "built-integration-next-pending-device-verify",
       "classification": "noticeable",
       "area": "frontend",
       "title": "Hole diagram: tap-to-measure (from tee + to pin) + GPS player overlay",
       "rationale": "Owner: tap a spot -> distance from tee + to pin; GPS should work on the yardage book (plot the player + live distances when on the course, graceful when remote).",
       "depends_on": [
         "hole-diagram-base"
-      ]
+      ],
+      "shipped": "Built 7c2b15f (2026-06-29). Inverse projection (unprojectPoint, round-trip<1e-7); tap-to-measure (from-tee/to-pin); GPS on-hole overlay (you dot + live distances when on-hole, graceful when remote \u2014 fixes 50531). 57 new tests, 580 vitest green."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
