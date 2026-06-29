@@ -3,6 +3,50 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — green-slope (NOTICEABLE — feat/green-slope, ready for bundle)
+
+Wires the dormant 3DEP green-slope Sobel sampler into the ingest pipeline and
+surfaces a calm green-slope readout ("green: 2.3% ↘ SE") on the hole-map info strip.
+
+### What was done
+1. **backend/app/services/elevation.py**:
+   - Extracted `_green_slope_grid_points` (pure geometry, 9-point Sobel grid) and
+     `_compute_slope_from_grid` (pure Sobel math) from `compute_green_slope`.
+   - Fixed Sobel atan2 sign bug: `atan2(dzdx, -dzdy)` → `atan2(-dzdx, -dzdy)` so that
+     east/west-draining greens get the correct compass direction (was inverted before).
+   - `sample_course_elevations`: now makes a second `fetch_3dep_samples` batch call for all
+     9×N green-slope grid points (one round-trip), computes slope per hole with
+     `_compute_slope_from_grid`, passes into `compute_hole_elevation_profile`.
+2. **backend/app/services/osm_ingest.py** `embed_elevation_in_green_features`:
+   - Now also embeds `green_slope` as a jsonb sub-dict in the green feature properties
+     when present. No migration needed.
+3. **backend/tests/test_green_slope_ingest.py** (new, 36 tests):
+   - _green_slope_grid_points: 9 points, N>S, E>W, custom radius.
+   - _compute_slope_from_grid: flat/south/east/severe/insufficient-data.
+   - sample_course_elevations: mocked fetch_3dep_samples → green_slope populated.
+   - embed_elevation_in_green_features: green_slope stored/absent/non-green-safe.
+4. **frontend/src/lib/course/hole-elevation.ts**:
+   - Added `GreenSlope` interface, `greenSlope` field on `HoleElevation`.
+   - Added `degreesToCompassLabel` (pure, 8-point), `compassLabelToArrow`.
+   - Added `formatGreenSlope` → "green: 2.3% ↘ SE" or null for flat/absent.
+   - `extractHoleElevation` now reads `green_slope` from green feature properties.
+5. **frontend/src/lib/course/hole-elevation.test.ts**: +23 tests (60 total).
+6. **frontend/src/app/map/course/page.tsx**: renders green-slope readout line below
+   plays-like in HoleInfoStrip. Gracefully absent when no data.
+
+### Test gate results
+- `backend/ruff check .`: clean
+- `backend/pytest --ignore=tests/integration`: 766/766 pass
+- `frontend/npm run lint`: clean
+- `frontend/npx tsc --noEmit`: clean
+- `frontend/npx vitest run`: 788/788 pass (60 in hole-elevation.test.ts)
+- `frontend/voice-tests --smoke`: 265/265 pass
+- `frontend/npm run build`: clean
+
+### Notes for re-ingest
+Bethpage Black/Red need a re-ingest to populate green_slope (free 3DEP, no GolfAPI).
+Until then, the plays-like line shows but the slope line is gracefully absent.
+
 ## 2026-06-29 — corridor-tighten (NOTICEABLE — feat/corridor-tighten, ready for bundle)
 
 Fixes stray polygons (foreign greens, ponds, tree rows from adjacent holes) still
