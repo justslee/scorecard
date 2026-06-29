@@ -3,6 +3,34 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (course-poc-i1-spatial-join — SILENT — commit fc93c94 on integration/next)
+Pure-geometry I1 of the Bethpage Black homegrown course-data track. No DB, no network,
+no new dependencies (stdlib math only).
+
+Changes:
+- backend/app/services/osm.py: added `course_name` property (golf:course:name OSM tag) to
+  every hole Feature returned by `_parse_course_geometry_response`.  Required by the spatial
+  join for cross-course rejection.  Backward-compatible additive change; all 34 existing
+  test_osm_parsing tests still pass.
+- backend/app/services/course_spatial.py (new, 250 lines): pure module implementing:
+  · Equirectangular distance (_deg_to_m) — no shapely/PostGIS, stdlib math only.
+  · Point-to-segment distance (_point_to_segment_dist_m) — flat-metric projection.
+  · _ring_centroid (closing-vertex-aware), _match_mode, _linestring_dist_m (3 modes).
+  · assign_features_to_holes(holes, polygons) — accepts ALL holes (all courses);
+    each polygon's centroid is matched to its nearest hole using the feature-type rule
+    (greens → endpoint, tees → startpoint, others → nearest on segment).  Returns
+    {osm_id: (hole_ref, course_name, dist_m)}.
+  · build_course_feature_collection(holes, polygons, target) — filters to target course,
+    groups by hole ref, emits per-hole dicts compatible with courses_mapped.upsert_course.
+- backend/tests/test_course_spatial.py (new, 60 tests): fixture = 2 Black holes +
+  1 Red hole (nearby) + 4 polygons.  Verifies: Black polygons → correct Black hole via
+  endpoint/start/nearest rules; Red-adjacent green REJECTED from Black output; distance
+  helper sanity (1° lat ≈ 111 320 m); edge cases (empty inputs, missing geometry).
+
+Gates: ruff clean · pytest tests/ -k "spatial or osm" 94/94 (60 new + 34 existing) in
+       0.58 s · frontend tsc 0 errors.
+SILENT — backend-only data layer; no user-visible surface. I2 (store + render Black) is next.
+
 ## 2026-06-28 (course-poc-i0-osm-polygons — SILENT — integration/next)
 Backend-only: extended `backend/app/services/osm.py` to fetch full GeoJSON polygon/linestring
 geometry from Overpass (foundation for the Bethpage Black POC — I0 of the homegrown course-data
