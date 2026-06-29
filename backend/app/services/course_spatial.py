@@ -49,14 +49,29 @@ _CORRIDOR_CAPS_M: dict[str, float] = {
     # Measurement mode (see _match_mode / assign_features_to_holes):
     #   green/tee  → "end"/"start": centroid ↔ hole endpoint/start vertex
     #   everything else → "nearest": centroid ↔ nearest point on centerline
+    #
+    # Cap rationale (tightened 2026-06-29 — corridor-tighten fix):
+    #   • green/tee: legitimate centroid ≤ 50–80 m from endpoint; 120 m gives
+    #     headroom for oddly-shaped greens/tees without pulling in strays.
+    #   • fairway: hole centerline typically runs through the fairway polygon
+    #     (Tier-1 overlap) so centroid-dist is small; 200 m catches offset strips.
+    #   • bunker: greenside and fairway bunkers sit ≤ 120 m from the centerline.
+    #   • water: ponds at Bethpage Black are at most ~100 m from the nearest
+    #     centerline point; tightened from 250 → 130 m to stop stray cross-hole
+    #     pond contamination while retaining genuine lateral water hazards.
+    #   • woods/tree: individual tree rows and clusters that legitimately belong to
+    #     a hole are ≤ 120 m from the centerline; the old 300–500 m caps allowed
+    #     neighbouring-hole forest blocks to appear on the wrong diagram.
+    #     Tightened from 500/300 → 150/120 m.  The large-polygon bbox filter
+    #     (_WOODS_MAX_SPAN_M) handles campus-scale forest blobs separately.
     "green":   120.0,   # legitimate green centroid ≤ 50–80 m from hole endpoint
     "tee":     120.0,   # legitimate tee centroid ≤ 50–80 m from hole start
     "fairway": 200.0,   # fairway can be offset up to ~150 m laterally
     "bunker":  150.0,   # bunkers hug the corridor
-    "water":   250.0,   # ponds can sit further to the side
-    "rough":   500.0,   # rough strips run the full length of the hole
-    "woods":   500.0,   # forests can be wide (also size-filtered below)
-    "tree":    300.0,   # individual tree nodes — allow broader range
+    "water":   130.0,   # tightened from 250 m — stray cross-hole ponds excluded
+    "rough":   500.0,   # rough strips can run the full length of the hole
+    "woods":   150.0,   # tightened from 500 m — neighbouring-hole forests excluded
+    "tree":    120.0,   # tightened from 300 m — stray tree nodes excluded
 }
 _CORRIDOR_CAP_DEFAULT_M: float = 200.0
 """Cap for feature types not in ``_CORRIDOR_CAPS_M``."""

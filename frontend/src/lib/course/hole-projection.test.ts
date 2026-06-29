@@ -16,6 +16,10 @@ import {
   yardsDistance,
   holeLengthYards,
   describeHazards,
+  pointToSegmentDistanceM,
+  isInHoleCorridor,
+  CORRIDOR_LATERAL_M,
+  CORRIDOR_LONGITUDINAL_MARGIN_M,
   type Viewport,
   type ProjectedHole,
   type ProjectionParams,
@@ -661,12 +665,16 @@ const ROUGH_RING: [number, number][] = [
   [BASE_LNG - 0.0015, GREEN_LAT + 0.0005],
 ];
 
-// A woods ring to the side.
+// A woods ring bordering the hole close to the corridor.
+// Updated from OLD [+0.0015 → +0.0025]° ≈ 126–210 m lateral (excluded by new
+// 60 m corridor cap) to a realistic narrow tree row [+0.0003 → +0.0005]° ≈ 25–42 m
+// lateral — within the 60 m cap.  The OLD ring represented a forest strip from
+// a neighbouring hole; the NEW ring represents the actual tree boundary of THIS hole.
 const WOODS_RING: [number, number][] = [
-  [BASE_LNG + 0.0015, TEE_LAT],
-  [BASE_LNG + 0.0025, TEE_LAT],
-  [BASE_LNG + 0.0025, GREEN_LAT],
-  [BASE_LNG + 0.0015, GREEN_LAT],
+  [BASE_LNG + 0.0003, TEE_LAT],
+  [BASE_LNG + 0.0005, TEE_LAT],
+  [BASE_LNG + 0.0005, GREEN_LAT],
+  [BASE_LNG + 0.0003, GREEN_LAT],
 ];
 
 describe('RENDER_ORDER — rough and woods go first', () => {
@@ -752,11 +760,13 @@ describe('tree Point projection', () => {
 
   it('projectHole collects and projects tree Point features', () => {
     const treeLat = (TEE_LAT + GREEN_LAT) / 2;
+    // Tree at +0.0005° east ≈ 42 m lateral — within the 60 m CORRIDOR_LATERAL_M cap.
+    // (OLD: +0.001° ≈ 84 m — now excluded by the tighter corridor filter.)
     const features = [
       makePolygon('tee',     TEE_RING),
       makePolygon('green',   GREEN_RING),
       makePolygon('fairway', FAIRWAY_RING),
-      makeTreePoint(BASE_LNG + 0.001, treeLat),
+      makeTreePoint(BASE_LNG + 0.0005, treeLat),
     ];
     const result = projectHole(features, VIEWPORT);
     expect(result).not.toBeNull();
@@ -769,14 +779,18 @@ describe('tree Point projection', () => {
     expect(ty).toBeLessThanOrEqual(VIEWPORT.height);
   });
 
-  it('projects multiple tree points', () => {
+  it('projects multiple tree points within corridor', () => {
+    // All three trees are within CORRIDOR_LATERAL_M (60 m) of the corridor axis:
+    //   ±0.0004° lng ≈ ±34 m lateral — well within the 60 m cap.
+    // OLD fixture used ±0.001–0.002° ≈ 84–168 m lateral, which are now
+    // correctly excluded as neighbouring-hole tree strays.
     const features = [
       makePolygon('tee',     TEE_RING),
       makePolygon('green',   GREEN_RING),
       makePolygon('fairway', FAIRWAY_RING),
-      makeTreePoint(BASE_LNG + 0.001, TEE_LAT + 0.001),
-      makeTreePoint(BASE_LNG - 0.001, TEE_LAT + 0.002),
-      makeTreePoint(BASE_LNG + 0.002, GREEN_LAT - 0.001),
+      makeTreePoint(BASE_LNG + 0.0004, TEE_LAT + 0.001),
+      makeTreePoint(BASE_LNG - 0.0004, TEE_LAT + 0.002),
+      makeTreePoint(BASE_LNG + 0.0003, GREEN_LAT - 0.001),
     ];
     const result = projectHole(features, VIEWPORT);
     expect(result).not.toBeNull();
@@ -804,14 +818,190 @@ describe('tree Point projection', () => {
     // projectHole needs at least one Polygon to proceed.
     expect(projectHole(features, VIEWPORT)).toBeNull();
   });
+
+  it('tree far off-corridor (80 m+ lateral) is excluded by the corridor filter', () => {
+    // Tree at +0.001° east ≈ 84 m lateral — outside the 60 m CORRIDOR_LATERAL_M cap.
+    // This simulates a tree row from a neighbouring hole (the original bug).
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+      makeTreePoint(BASE_LNG + 0.001, TEE_LAT + 0.001),   // ~84 m lateral
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    // Stray tree must be filtered out
+    expect(result!.trees).toHaveLength(0);
+  });
+
+  it('tree on-corridor is kept; tree off-corridor is excluded (mixed)', () => {
+    const midLat = (TEE_LAT + GREEN_LAT) / 2;
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+      makeTreePoint(BASE_LNG + 0.0004, midLat),   // ~34 m lateral — kept
+      makeTreePoint(BASE_LNG + 0.001,  midLat),   // ~84 m lateral — excluded
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    // Only the close tree survives
+    expect(result!.trees).toHaveLength(1);
+  });
 });
 
-// ── Corridor guard: stray polygons outside tee→green bbox are excluded ─────────
+// ── pointToSegmentDistanceM ───────────────────────────────────────────────────
 
-// A stray fairway far north of the tee→green corridor.
-// Tee is at lat 40.740, green at 40.7433; CORRIDOR_LAT_DEG = 0.003, so the corridor
-// extends to maxLat + 0.003 = 40.7463.  The stray centroid is at lat ~40.8005 —
-// ~0.057° = ~6.3 km north of green, well outside the corridor.
+describe('pointToSegmentDistanceM', () => {
+  it('returns 0 for a point on the segment', () => {
+    // Midpoint of (0,0)→(0,100): point at (0,50)
+    expect(pointToSegmentDistanceM(0, 50, 0, 0, 0, 100)).toBeCloseTo(0, 5);
+  });
+
+  it('perpendicular from midpoint: distance = perpendicular offset', () => {
+    // N-S segment (0,0)→(0,100); point at (40, 50) → lateral = 40 m
+    expect(pointToSegmentDistanceM(40, 50, 0, 0, 0, 100)).toBeCloseTo(40, 5);
+  });
+
+  it('point past end clamps to endpoint distance', () => {
+    // Segment (0,0)→(0,100); point at (0, 150) → distance to (0,100) = 50 m
+    expect(pointToSegmentDistanceM(0, 150, 0, 0, 0, 100)).toBeCloseTo(50, 5);
+  });
+
+  it('point before start clamps to start distance', () => {
+    // Segment (0,0)→(0,100); point at (0,-30) → distance to (0,0) = 30 m
+    expect(pointToSegmentDistanceM(0, -30, 0, 0, 0, 100)).toBeCloseTo(30, 5);
+  });
+
+  it('degenerate segment (zero length) returns point distance', () => {
+    expect(pointToSegmentDistanceM(3, 4, 0, 0, 0, 0)).toBeCloseTo(5, 5);
+  });
+});
+
+// ── isInHoleCorridor — the primary corridor guard (pure function) ──────────────
+
+// Reference geometry for corridor tests: a simple N-S hole 400 m long.
+// cosLat at 40.7° ≈ 0.7572.  Use raw metre coordinates so the test is
+// independent of the lat/lng projection.
+//
+//   Tee  = (0, 0) m
+//   Green = (0, 400) m
+//   Corridor: lateral ≤ 60 m, longitudinal in [-40, 440] m
+//
+const TEE_M: [number, number]  = [0, 0];
+const GREEN_M: [number, number] = [0, 400];
+const LAT_CAP  = CORRIDOR_LATERAL_M;          // 60 m
+const LON_MARGIN = CORRIDOR_LONGITUDINAL_MARGIN_M;  // 40 m
+
+/** Tiny square ring centred at (cx, cy) with half-side s. */
+function mRing(cx: number, cy: number, s = 5): [number, number][] {
+  return [
+    [cx - s, cy - s],
+    [cx + s, cy - s],
+    [cx + s, cy + s],
+    [cx - s, cy + s],
+  ];
+}
+
+describe('isInHoleCorridor', () => {
+  // ── ON-CORRIDOR features (must be KEPT) ────────────────────────────────────
+
+  it('fairway centred on corridor axis is kept', () => {
+    // Ring centred at (0, 200) — dead centre of corridor, lateral = 0
+    expect(isInHoleCorridor(mRing(0, 200), TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(true);
+  });
+
+  it('greenside bunker at 50 m lateral is kept', () => {
+    // Centroid at (50, 380) — 50 m right of axis, near the green end
+    expect(isInHoleCorridor(mRing(50, 380), TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(true);
+  });
+
+  it('tee-end bunker at 55 m lateral is kept', () => {
+    // Centroid at (55, 20) — 55 m right of axis, near the tee (just within 60 m)
+    expect(isInHoleCorridor(mRing(55, 20), TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(true);
+  });
+
+  it('features 35 m behind tee (inside lonMargin) are kept', () => {
+    // Centroid at (0, -35) — 35 m south of tee, within the 40 m longitudinal margin
+    expect(isInHoleCorridor(mRing(0, -35), TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(true);
+  });
+
+  it('features 35 m past green (inside lonMargin) are kept', () => {
+    // Centroid at (0, 435) — 35 m north of green, within the 40 m margin
+    expect(isInHoleCorridor(mRing(0, 435), TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(true);
+  });
+
+  it('large rough polygon straddling axis is kept (centroid on axis)', () => {
+    // Wide ring spanning from -100 to +100 m laterally; centroid at (0,200) — lateral = 0
+    const wideRing: [number, number][] = [
+      [-100, 0], [100, 0], [100, 400], [-100, 400],
+    ];
+    expect(isInHoleCorridor(wideRing, TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(true);
+  });
+
+  // ── OFF-CORRIDOR strays (must be EXCLUDED) ─────────────────────────────────
+
+  it('foreign green 200 m lateral is excluded', () => {
+    // Centroid at (200, 200) — 200 m right of axis, beyond 60 m cap
+    expect(isInHoleCorridor(mRing(200, 200), TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(false);
+  });
+
+  it('stray pond 150 m lateral is excluded', () => {
+    // Centroid at (-150, 300) — 150 m left of axis
+    expect(isInHoleCorridor(mRing(-150, 300), TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(false);
+  });
+
+  it('tree cluster 80 m lateral is excluded', () => {
+    // Centroid at (80, 180) — 80 m lateral, just beyond 60 m cap
+    expect(isInHoleCorridor(mRing(80, 180), TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(false);
+  });
+
+  it('polygon far past the green end (200 m) is excluded', () => {
+    // Centroid at (0, 650) — 250 m north of green (way beyond 40 m margin)
+    expect(isInHoleCorridor(mRing(0, 650), TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(false);
+  });
+
+  it('polygon far behind the tee (100 m) is excluded', () => {
+    // Centroid at (0, -100) — 100 m south of tee (beyond 40 m margin)
+    expect(isInHoleCorridor(mRing(0, -100), TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(false);
+  });
+
+  // ── Edge cases ─────────────────────────────────────────────────────────────
+
+  it('returns false for an empty ring', () => {
+    expect(isInHoleCorridor([], TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(false);
+  });
+
+  it('handles a single-point ring (tree node)', () => {
+    // Tree exactly on the axis midpoint
+    expect(isInHoleCorridor([[0, 200]], TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(true);
+    // Tree 80 m to the side → excluded
+    expect(isInHoleCorridor([[80, 200]], TEE_M, GREEN_M, LAT_CAP, LON_MARGIN)).toBe(false);
+  });
+
+  it('degenerate hole (tee === green) falls back to radial test', () => {
+    const samePt: [number, number] = [0, 0];
+    expect(isInHoleCorridor(mRing(0, 0), samePt, samePt, LAT_CAP, LON_MARGIN)).toBe(true);
+    expect(isInHoleCorridor(mRing(80, 0), samePt, samePt, LAT_CAP, LON_MARGIN)).toBe(false);
+  });
+
+  it('diagonal hole: lateral distance measured perpendicularly, not cardinally', () => {
+    // NE-running hole: tee at (0,0), green at (300, 300) ≈ 424 m (45° diagonal)
+    // Point at (350, -50) — would be INSIDE a cardinal bbox but is actually
+    // ~283 m lateral from the 45° axis → should be excluded.
+    const diagTee: [number, number] = [0, 0];
+    const diagGreen: [number, number] = [300, 300];
+    expect(isInHoleCorridor([[350, -50]], diagTee, diagGreen, LAT_CAP, LON_MARGIN)).toBe(false);
+    // Point at (150, 150) — right on the diagonal axis → should be kept
+    expect(isInHoleCorridor([[150, 150]], diagTee, diagGreen, LAT_CAP, LON_MARGIN)).toBe(true);
+  });
+});
+
+// ── Corridor guard: stray polygons outside tee→green corridor are excluded ──────
+
+// A stray fairway far north of the tee→green corridor (longitudinally).
+// Tee is at lat 40.740, green at 40.7433.  The stray centroid is at lat ~40.8005 —
+// ~6.3 km north of green, well past the 40 m longitudinal margin.
 const STRAY_LAT = 40.80;
 const STRAY_RING: [number, number][] = [
   [BASE_LNG - 0.001, STRAY_LAT],
