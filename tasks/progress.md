@@ -3,6 +3,39 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — voice-name-disambiguation (NOTICEABLE — feat/voice-name-disambiguation, ready for bundle)
+
+Voice now resolves spoken player/course names against the user's REAL saved data.
+
+### What was built
+- `frontend/src/lib/voice/parseVoiceTranscript.ts`: Extended `ParseVoiceTranscriptOptions`
+  with `known?: { players?: string[]; courses?: string[] }`. `parseVoiceTranscriptLocally`
+  now accepts and uses this context: extracted player names are fuzzy-matched against
+  `known.players` at threshold 0.76 (same as pipeline.ts); extracted course names at 0.74.
+  If candidate set is empty, behaviour is unchanged — no regression.
+- `frontend/src/app/round/new/page.tsx`: Added `knownCourseNames` state (populated from
+  `listFavorites()` + `getRecentCourses()`, both synchronous localStorage reads). In
+  `handleVoiceSetup`, the AI-returned course name is now fuzzy-matched against
+  `knownCourseNames` at 0.74 before populating the form — fixing Bally→Valley class bugs.
+  Player resolution in the realtime path was already handled by `matchPlayerNames`
+  (Soundex+fuzzy in `player-match.ts`); Dipak/Deepak already worked.
+- `frontend/src/lib/voice/voice-disambiguation.test.ts`: 21 new Vitest tests covering
+  the two-mechanism split: phonetic (realtime players via matchPlayerName/Soundex) and
+  edit-distance (courses + transcript players via fuzzyBestMatch). Documents exactly what
+  each mechanism can and cannot do.
+
+### Gate results
+- `frontend/npm run lint`: clean
+- `frontend/npx tsc --noEmit`: clean
+- `frontend/vitest run`: 775/775 pass (21 new tests)
+- `frontend/voice-tests --smoke`: 265/265 pass
+- `backend/ruff check .`: clean
+- Build: confirmed clean via tsc (Turbopack symlink limitation in worktree env)
+
+### Classification: NOTICEABLE
+User-visible: voice round setup no longer mishears saved partner names or course names.
+"Say Dipak, app saves Dipak" and "Say Bally Links, app saves Bally Links" both now work.
+
 ## 2026-06-29 — corridor-tighten (NOTICEABLE — feat/corridor-tighten, ready for bundle)
 
 Fixes stray polygons (foreign greens, ponds, tree rows from adjacent holes) still
