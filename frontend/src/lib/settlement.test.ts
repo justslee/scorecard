@@ -2,9 +2,10 @@
  * Unit tests for settlement computation (lib/settlement.ts).
  *
  * Covers:
- *  - computeGameNetWinnings per format (skins, wolf, nassau, matchPlay, threePoint)
+ *  - computeGameNetWinnings per format (skins, wolf, nassau, matchPlay, threePoint,
+ *    vegas, hammer, rabbit, defender)
  *  - zero-sum invariant: sum of all nets == 0
- *  - computeNetSettlement across multiple games
+ *  - computeNetSettlement across multiple games (including mixed skins + vegas)
  *  - minimizeTransfers: single game, multi-game, ties, already-settled
  *  - getPersistedSettlement: present / absent
  *  - isEmpty guard
@@ -399,6 +400,332 @@ describe('computeNetSettlement', () => {
       toPlayerId: 'p1',
       amount: 30, // 3 segments × $10
     });
+  });
+});
+
+// ─── computeGameNetWinnings — Vegas ──────────────────────────────────────────
+
+describe('computeGameNetWinnings — vegas', () => {
+  it('zero-sum: team winner distributes dollarized net equally among team players', () => {
+    // Hole 1: teamA=[p1=3,p2=5]→35, teamB=[p3=4,p4=5]→45  diff=10, teamA wins
+    // pointValue=1 → teamA total +10, teamB total -10
+    // 2 players per team → p1:+5, p2:+5, p3:-5, p4:-5
+    const scores = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 5 },
+      { playerId: 'p3', holeNumber: 1, strokes: 4 },
+      { playerId: 'p4', holeNumber: 1, strokes: 5 },
+    ];
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3', 'p4']),
+      scores,
+    });
+    const game: Game = {
+      id: 'g1',
+      roundId: 'r1',
+      format: 'vegas',
+      name: 'Vegas',
+      playerIds: ['p1', 'p2', 'p3', 'p4'],
+      teams: [
+        { id: 'tA', name: 'Team A', playerIds: ['p1', 'p2'] },
+        { id: 'tB', name: 'Team B', playerIds: ['p3', 'p4'] },
+      ],
+      settings: { pointValue: 1 },
+    };
+    const net = computeGameNetWinnings(round, game);
+    expect(sumNet(net)).toBe(0);
+    expect(net['p1']).toBe(5);
+    expect(net['p2']).toBe(5);
+    expect(net['p3']).toBe(-5);
+    expect(net['p4']).toBe(-5);
+  });
+
+  it('zero-sum: all holes push → all players net $0', () => {
+    // Both teams produce the same vegas number on every hole
+    const scores = Array.from({ length: 18 }, (_, i) => [
+      { playerId: 'p1', holeNumber: i + 1, strokes: 4 },
+      { playerId: 'p2', holeNumber: i + 1, strokes: 5 },
+      { playerId: 'p3', holeNumber: i + 1, strokes: 4 },
+      { playerId: 'p4', holeNumber: i + 1, strokes: 5 },
+    ]).flat();
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3', 'p4']),
+      scores,
+    });
+    const game: Game = {
+      id: 'g1',
+      roundId: 'r1',
+      format: 'vegas',
+      name: 'Vegas',
+      playerIds: ['p1', 'p2', 'p3', 'p4'],
+      teams: [
+        { id: 'tA', name: 'Team A', playerIds: ['p1', 'p2'] },
+        { id: 'tB', name: 'Team B', playerIds: ['p3', 'p4'] },
+      ],
+      settings: { pointValue: 5 },
+    };
+    const net = computeGameNetWinnings(round, game);
+    expect(sumNet(net)).toBe(0);
+    expect(net['p1']).toBe(0);
+    expect(net['p2']).toBe(0);
+    expect(net['p3']).toBe(0);
+    expect(net['p4']).toBe(0);
+  });
+});
+
+// ─── computeGameNetWinnings — Hammer ─────────────────────────────────────────
+
+describe('computeGameNetWinnings — hammer', () => {
+  it('zero-sum: winner collects from each loser; totals already dollarized', () => {
+    // Hole 1: p1=3 (wins), p2=4, p3=5 (both lose). multiplier=1, pointValue=5.
+    // computeHammer: p1 +5 per loser → +10; p2 -5; p3 -5. Net sum = 0.
+    // Settlement must NOT re-multiply by pointValue (totals already in $).
+    const scores = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 4 },
+      { playerId: 'p3', holeNumber: 1, strokes: 5 },
+    ];
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3']),
+      scores,
+    });
+    const game = makeGame({
+      playerIds: ['p1', 'p2', 'p3'],
+      format: 'hammer',
+      settings: { pointValue: 5 },
+    });
+    const net = computeGameNetWinnings(round, game);
+    expect(sumNet(net)).toBe(0);
+    expect(net['p1']).toBe(10);  // +5 from p2 + +5 from p3
+    expect(net['p2']).toBe(-5);
+    expect(net['p3']).toBe(-5);
+  });
+
+  it('zero-sum: all-tie hole → no money moves', () => {
+    const scores = [
+      { playerId: 'p1', holeNumber: 1, strokes: 4 },
+      { playerId: 'p2', holeNumber: 1, strokes: 4 },
+    ];
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2']),
+      scores,
+    });
+    const game = makeGame({
+      playerIds: ['p1', 'p2'],
+      format: 'hammer',
+      settings: { pointValue: 10 },
+    });
+    const net = computeGameNetWinnings(round, game);
+    expect(sumNet(net)).toBe(0);
+    expect(net['p1']).toBe(0);
+    expect(net['p2']).toBe(0);
+  });
+
+  it('zero-sum: multiplier doubles the wager per hole', () => {
+    // Hole 1 has multiplier=2. p1=3 wins vs p2=5. points=2*3=$6.
+    const scores = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 5 },
+    ];
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2']),
+      scores,
+    });
+    const game = makeGame({
+      playerIds: ['p1', 'p2'],
+      format: 'hammer',
+      settings: { pointValue: 3, hammerMultiplierByHole: { 1: 2 } },
+    });
+    const net = computeGameNetWinnings(round, game);
+    expect(sumNet(net)).toBe(0);
+    expect(net['p1']).toBe(6);   // multiplier(2) × pointValue(3) = 6
+    expect(net['p2']).toBe(-6);
+  });
+});
+
+// ─── computeGameNetWinnings — Rabbit ─────────────────────────────────────────
+
+describe('computeGameNetWinnings — rabbit', () => {
+  it('zero-sum: front9 and back9 holders each win pointValue from other players', () => {
+    // p1 wins hole 1 outright → captures rabbit; holes 2-9 all tied → p1 holds F9.
+    // p2 wins hole 10 outright → captures rabbit; holes 11-18 all tied → p2 holds B9.
+    // N=3, pointValue=10.
+    // F9: p1 +10*(3-1)=+20, p2 -10, p3 -10.
+    // B9: p2 +10*(3-1)=+20, p1 -10, p3 -10.
+    // Net: p1 +10, p2 +10, p3 -20. Sum=0.
+    const scores: Score[] = [
+      // p1 wins hole 1 outright
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 4 },
+      { playerId: 'p3', holeNumber: 1, strokes: 4 },
+      // holes 2-9: all tied at par
+      ...Array.from({ length: 8 }, (_, i) => [
+        { playerId: 'p1', holeNumber: i + 2, strokes: 4 },
+        { playerId: 'p2', holeNumber: i + 2, strokes: 4 },
+        { playerId: 'p3', holeNumber: i + 2, strokes: 4 },
+      ]).flat(),
+      // p2 wins hole 10 outright
+      { playerId: 'p1', holeNumber: 10, strokes: 4 },
+      { playerId: 'p2', holeNumber: 10, strokes: 3 },
+      { playerId: 'p3', holeNumber: 10, strokes: 4 },
+      // holes 11-18: all tied at par
+      ...Array.from({ length: 8 }, (_, i) => [
+        { playerId: 'p1', holeNumber: i + 11, strokes: 4 },
+        { playerId: 'p2', holeNumber: i + 11, strokes: 4 },
+        { playerId: 'p3', holeNumber: i + 11, strokes: 4 },
+      ]).flat(),
+    ];
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3']),
+      scores,
+    });
+    const game = makeGame({
+      playerIds: ['p1', 'p2', 'p3'],
+      format: 'rabbit',
+      settings: { pointValue: 10 },
+    });
+    const net = computeGameNetWinnings(round, game);
+    expect(sumNet(net)).toBe(0);
+    expect(net['p1']).toBe(10);   // +20 (F9 win) - 10 (B9 loss)
+    expect(net['p2']).toBe(10);   // -10 (F9 loss) + 20 (B9 win)
+    expect(net['p3']).toBe(-20);  // -10 (F9) - 10 (B9)
+  });
+
+  it('zero-sum: no rabbit holder → no money moves', () => {
+    // All holes tied → rabbit never captured.
+    const scores = Array.from({ length: 18 }, (_, i) => [
+      { playerId: 'p1', holeNumber: i + 1, strokes: 4 },
+      { playerId: 'p2', holeNumber: i + 1, strokes: 4 },
+    ]).flat();
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2']),
+      scores,
+    });
+    const game = makeGame({
+      playerIds: ['p1', 'p2'],
+      format: 'rabbit',
+      settings: { pointValue: 10 },
+    });
+    const net = computeGameNetWinnings(round, game);
+    expect(sumNet(net)).toBe(0);
+    expect(net['p1']).toBe(0);
+    expect(net['p2']).toBe(0);
+  });
+});
+
+// ─── computeGameNetWinnings — Defender ───────────────────────────────────────
+
+describe('computeGameNetWinnings — defender', () => {
+  it('zero-sum: defender wins sole-low → collects from each scored challenger', () => {
+    // Hole 1: defender=p1 (idx 0), scores p1=3, p2=4, p3=5. p1 is sole low.
+    // computeDefender: delta=5*2=10; p1:+10, p2:-5, p3:-5. Net sum=0.
+    // Settlement must NOT re-multiply by pointValue (totals already in $).
+    const scores = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 4 },
+      { playerId: 'p3', holeNumber: 1, strokes: 5 },
+    ];
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3']),
+      scores,
+    });
+    const game = makeGame({
+      playerIds: ['p1', 'p2', 'p3'],
+      format: 'defender',
+      settings: { pointValue: 5 },
+    });
+    const net = computeGameNetWinnings(round, game);
+    expect(sumNet(net)).toBe(0);
+    expect(net['p1']).toBe(10);  // earned from 2 challengers at $5 each
+    expect(net['p2']).toBe(-5);
+    expect(net['p3']).toBe(-5);
+  });
+
+  it('zero-sum: defender beaten → each beater earns pointValue from defender', () => {
+    // Hole 1: defender=p1, p2 and p3 both score lower than p1.
+    // Each beater earns pointValue from defender. computeDefender: p1:-10, p2:+5, p3:+5.
+    const scores = [
+      { playerId: 'p1', holeNumber: 1, strokes: 5 },
+      { playerId: 'p2', holeNumber: 1, strokes: 3 },
+      { playerId: 'p3', holeNumber: 1, strokes: 4 },
+    ];
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3']),
+      scores,
+    });
+    const game = makeGame({
+      playerIds: ['p1', 'p2', 'p3'],
+      format: 'defender',
+      settings: { pointValue: 5 },
+    });
+    const net = computeGameNetWinnings(round, game);
+    expect(sumNet(net)).toBe(0);
+    expect(net['p1']).toBe(-10);  // paid $5 to each of 2 beaters
+    expect(net['p2']).toBe(5);
+    expect(net['p3']).toBe(5);
+  });
+});
+
+// ─── computeNetSettlement — mixed-format round ────────────────────────────────
+
+describe('computeNetSettlement — mixed skins + vegas', () => {
+  it('zero-sum invariant holds across a skins game and a vegas game combined', () => {
+    // 4 players: p1, p2, p3, p4.
+    // Skins game (pointValue=4): p1 wins hole 1 outright vs p2/p3/p4 (all par).
+    //   1 skin at $4, total pot=$4, cost=$1 each.
+    //   p1: +3, p2: -1, p3: -1, p4: -1.
+    // Vegas game (pointValue=1, teamA=[p1,p2], teamB=[p3,p4]):
+    //   Hole 1: p1=3,p2=5 → teamANum=35; p3=4,p4=5 → teamBNum=45. diff=10, teamA wins.
+    //   teamA total +10, teamB total -10.
+    //   p1: +5, p2: +5, p3: -5, p4: -5.
+    // Combined: p1:+8, p2:+4, p3:-6, p4:-6. Sum=0.
+    const scores: Score[] = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 5 },
+      { playerId: 'p3', holeNumber: 1, strokes: 4 },
+      { playerId: 'p4', holeNumber: 1, strokes: 5 },
+      // holes 2-18: all tied so no more skins
+      ...Array.from({ length: 17 }, (_, i) => [
+        { playerId: 'p1', holeNumber: i + 2, strokes: 4 },
+        { playerId: 'p2', holeNumber: i + 2, strokes: 4 },
+        { playerId: 'p3', holeNumber: i + 2, strokes: 4 },
+        { playerId: 'p4', holeNumber: i + 2, strokes: 4 },
+      ]).flat(),
+    ];
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3', 'p4']),
+      scores,
+      games: [
+        makeGame({
+          id: 'g-skins',
+          format: 'skins',
+          playerIds: ['p1', 'p2', 'p3', 'p4'],
+          settings: { pointValue: 4 },
+        }),
+        {
+          id: 'g-vegas',
+          roundId: 'r1',
+          format: 'vegas',
+          name: 'Vegas',
+          playerIds: ['p1', 'p2', 'p3', 'p4'],
+          teams: [
+            { id: 'tA', name: 'Team A', playerIds: ['p1', 'p2'] },
+            { id: 'tB', name: 'Team B', playerIds: ['p3', 'p4'] },
+          ],
+          settings: { pointValue: 1 },
+        },
+      ],
+    });
+
+    const ledger = computeNetSettlement(round);
+    expect(ledger.isEmpty).toBe(false);
+    // Zero-sum invariant across both games combined
+    expect(sumNet(ledger.netByPlayer)).toBe(0);
+    // Verify individual nets
+    expect(ledger.netByPlayer['p1']).toBe(8);   // skins(+3) + vegas(+5)
+    expect(ledger.netByPlayer['p2']).toBe(4);   // skins(-1) + vegas(+5)
+    expect(ledger.netByPlayer['p3']).toBe(-6);  // skins(-1) + vegas(-5)
+    expect(ledger.netByPlayer['p4']).toBe(-6);  // skins(-1) + vegas(-5)
   });
 });
 

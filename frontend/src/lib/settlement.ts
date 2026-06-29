@@ -8,9 +8,11 @@
  *   2. `computeNetSettlement`    → sums across ALL money games in a round.
  *   3. `minimizeTransfers`       → greedy O(n log n) debt minimization (≤ n−1 transfers).
  *
- * Supported formats: skins, wolf, nassau (individual scope), matchPlay, threePoint.
- * Formats without a clear monetary result (bestBall, stableford, etc.) are skipped;
- * they can be added later without changing the API surface.
+ * Supported formats: skins, wolf, nassau (individual scope), matchPlay, threePoint,
+ * vegas, hammer, rabbit, defender.
+ * Formats without a clear monetary result (bestBall, scramble, stableford, chicago,
+ * bingoBangoBongo, trash) are skipped; they can be added later without changing the
+ * API surface.
  *
  * Zero-sum invariant: for any game with money, sum(netByPlayer.values) == 0
  * (to within floating-point rounding, which we cap at 2 decimal places).
@@ -168,6 +170,72 @@ export function computeGameNetWinnings(round: Round, game: Game): Record<string,
       const shareB = r2(-teamANet / teamBPlayers.length);
       for (const pid of teamAPlayers) net[pid] = r2((net[pid] ?? 0) + shareA);
       for (const pid of teamBPlayers) net[pid] = r2((net[pid] ?? 0) + shareB);
+    }
+  }
+
+  // ─── Vegas ──────────────────────────────────────────────────────────────
+  // Vegas totals are already dollarized (computeVegas multiplies diff × pointValue
+  // internally). Totals are keyed by TEAM ID; distribute equally among each team's
+  // players. Rounding residual absorbed by the last player per team, preserving
+  // the zero-sum invariant across all players (teamA.total + teamB.total === 0).
+  if (game.format === 'vegas' && results.vegas) {
+    const { teamAId, teamBId, totals: vegasTotals } = results.vegas;
+
+    const distributeTeam = (teamId: string, members: string[]) => {
+      if (members.length === 0) return;
+      const teamNet = vegasTotals[teamId] ?? 0;
+      const n = members.length;
+      let runningSum = 0;
+      for (let i = 0; i < n - 1; i++) {
+        const share = r2(teamNet / n);
+        net[members[i]] = r2((net[members[i]] ?? 0) + share);
+        runningSum = r2(runningSum + share);
+      }
+      // Last member absorbs rounding residual so the team total is exact.
+      const last = members[n - 1];
+      net[last] = r2((net[last] ?? 0) + r2(teamNet - runningSum));
+    };
+
+    const teamAMembers = game.teams?.find((t) => t.id === teamAId)?.playerIds ?? [];
+    const teamBMembers = game.teams?.find((t) => t.id === teamBId)?.playerIds ?? [];
+    distributeTeam(teamAId, teamAMembers);
+    distributeTeam(teamBId, teamBMembers);
+  }
+
+  // ─── Hammer ─────────────────────────────────────────────────────────────
+  // Hammer totals are already dollarized (computeHammer applies multiplier ×
+  // pointValue per exchange). The per-player totals are zero-sum by construction.
+  if (game.format === 'hammer' && results.hammer) {
+    for (const pid of playerIds) {
+      net[pid] = r2((net[pid] ?? 0) + r2(results.hammer.totals[pid] ?? 0));
+    }
+  }
+
+  // ─── Rabbit ─────────────────────────────────────────────────────────────
+  // Two segment prizes (front-9 and back-9). The holder of each segment wins
+  // pointValue from each of the other N-1 players (same pattern as nassau
+  // individual scope). If no one holds the rabbit at end of the segment, no
+  // money moves for that segment.
+  if (game.format === 'rabbit' && results.rabbit) {
+    const n = playerIds.length;
+    for (const holderId of [results.rabbit.front9HolderId, results.rabbit.back9HolderId]) {
+      if (!holderId) continue; // no holder — segment prize unpaid
+      for (const pid of playerIds) {
+        if (pid === holderId) {
+          net[pid] = r2((net[pid] ?? 0) + r2(pointValue * (n - 1)));
+        } else {
+          net[pid] = r2((net[pid] ?? 0) - pointValue);
+        }
+      }
+    }
+  }
+
+  // ─── Defender ───────────────────────────────────────────────────────────
+  // Defender totals are already dollarized (computeDefender applies pointValue
+  // × challengers per hole). The per-player totals are zero-sum by construction.
+  if (game.format === 'defender' && results.defender) {
+    for (const pid of playerIds) {
+      net[pid] = r2((net[pid] ?? 0) + r2(results.defender.totals[pid] ?? 0));
     }
   }
 
