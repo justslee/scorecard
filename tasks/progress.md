@@ -3,6 +3,41 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (harden-spatial-join + pinch-zoom — NOTICEABLE — feat/harden-spatial-join, pushed)
+
+### Backend: cross-course polygon contamination fix (Bethpage Black)
+Root cause: `_RECLAIM_SAME_AREA_M = 200.0` in `build_course_feature_collection` was pulling
+Red/Green/Yellow/Blue course features into Black (all 5 courses within ~2.5 km).
+Symptom: H16 showed 670 yds (foreign green corrupted distance); H18 showed 22 bunkers / 5 greens.
+
+Fix:
+- Removed the entire reclaim pass
+- Added per-feature-type corridor distance caps (`_CORRIDOR_CAPS_M`): green/tee 120m, fairway
+  200m, bunker 150m, water 250m, rough/woods 500m
+- Added large-polygon filter: woods/rough with bbox diagonal > 450m dropped
+- Diagnostic: `backend/scripts/diag_bethpage.py` (headless Overpass — H16: 481 yds, card: 490 yds, ~2% off)
+- Backend tests: 95 pass (was 86 — added 9 corridor-cap tests)
+
+### Frontend: corridor guard in hole-projection.ts
+- Added `filteredPolygons` corridor guard (tee→green bbox ± 0.003°/0.004°)
+- All geo bbox + mtrPolygons now use `filteredPolygons` (prevents stray polygon from compressing diagram)
+- Added 4 corridor-guard tests; 88 total hole-projection tests pass
+
+### Frontend: pinch-to-zoom + pan on SVG hole diagram (HoleDiagram.tsx)
+- New `frontend/src/lib/course/zoom-pan.ts`: pure-math helpers (applyPinch, applyPan, clampViewBox,
+  pinchDist, pinchMidpoint, currentScale, viewBoxAttr) — no dependencies
+- New `frontend/src/lib/course/zoom-pan.test.ts`: 32 unit tests, all pass
+- HoleDiagram.tsx: 1-finger pan + 2-finger pinch (up to 5×) + double-tap reset + wheel zoom
+  via SVG viewBox attribute (NOT CSS/g transform — preserves getScreenCTM() for tap-to-measure)
+- Hint updated: "tap · pinch to zoom"
+
+### Gate results
+- Backend: ruff clean; 95/95 pytest (non-DB)
+- Frontend: tsc clean; 120/120 vitest; 265/265 voice-tests smoke
+
+### Classification: NOTICEABLE (yardage numbers corrected; pinch-zoom visible on course screen)
+Branch: feat/harden-spatial-join (pushed)
+
 ## 2026-06-29 (second-course — NOTICEABLE — feat/second-course, ready for prod ingest)
 Validated OSM pipeline on Bethpage Red as the 2nd ingested course; added it to the viewer.
 
