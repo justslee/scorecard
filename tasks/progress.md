@@ -3,6 +3,15 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (B3 designer polish — SILENT fix — commit 2708526 on integration/next)
+Applied 4 review fixes to the course-reviews-surface change (commit 37965cd):
+1. Profile CourseReviews: review body changed from mono UPPERCASE to serif italic (fontSize 12, T.pencilSoft) — NORTHSTAR blocker fix.
+2. Profile CourseReviews: Section kicker "Notes" → "Reviews" for consistency.
+3. CourseDetailClient: Reviews block hidden when reviews.length === 0 after load; no "No reviews yet." empty state on course detail.
+4. Both surfaces: YYYY-MM-DD playedAt parsed with T00:00:00 suffix to avoid UTC-midnight off-by-one in negative-UTC timezones.
+Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 451/451 · build clean · ruff clean.
+SILENT (no new feature, pure display polish).
+
 ## 2026-06-28 (course-reviews-surface B3 — NOTICEABLE — BUILT on integration/next)
 Surface the course reviews (written by B2) in two places:
   1. Course detail screen (/courses/[id]) — new "Reviews" section with yardage-book dashed rows.
