@@ -84,3 +84,12 @@ Cost discipline: run `Plan` (opus) + `builder` + `reviewer` + `qa` every cycle; 
 don't spawn the whole roster for a trivial change. ONE item per cycle. If unsure whether
 something is safe to do unattended, mark it "needs owner decision" rather than guessing.
 Keep `backlog.json` and `tasks/progress.md` current.
+
+## Completion (terminate cleanly — required)
+Do ONE pass, then STOP. Emit your report as your FINAL message and end the turn — do NOT
+poll, wait, watch, re-run, or loop; the orchestrator re-invokes you next cycle if more is
+needed. Make the very last line of that final message exactly:
+
+`DONE — <one-line summary of what you did / your verdict>`
+
+so the run is unambiguously complete and is not left running in the background.

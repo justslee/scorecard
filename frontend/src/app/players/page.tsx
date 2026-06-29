@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SavedPlayer } from '@/lib/types';
 
@@ -23,17 +24,6 @@ function PlusIcon({ size = 24, style }: { size?: number; style?: React.CSSProper
       strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
       <line x1="12" y1="5" x2="12" y2="19" />
       <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
-
-function UserIcon({ size = 24, color, style }: { size?: number; color?: string; style?: React.CSSProperties }) {
-  const mergedStyle: React.CSSProperties = color ? { color, ...style } : { ...style };
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={mergedStyle}>
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-      <circle cx="12" cy="7" r="4" />
     </svg>
   );
 }
@@ -73,6 +63,7 @@ import {
   deletePlayerAsync,
 } from '@/lib/storage-api';
 import type { PlayerCreate, PlayerUpdate } from '@/lib/api';
+import { playerHref } from '@/lib/player-url';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
 import SwipeableRow from '@/components/SwipeableRow';
 
@@ -89,6 +80,7 @@ interface PlayerFormData {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PlayersPage() {
+  const router = useRouter();
   const [players, setPlayers] = useState<SavedPlayer[]>([]);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -175,7 +167,7 @@ export default function PlayersPage() {
     setShowModal(true);
   };
 
-  // ── Loading skeleton ──────────────────────────────────────────────────────
+  // ── Loading state ────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div
@@ -186,19 +178,14 @@ export default function PlayersPage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          fontFamily: T.mono,
+          fontSize: 10,
+          letterSpacing: 1.6,
+          color: T.pencilSoft,
+          textTransform: 'uppercase',
         }}
       >
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: '50%',
-            border: `2px solid ${T.hairline}`,
-            borderTopColor: T.pencil,
-            animation: 'spin 0.8s linear infinite',
-          }}
-        />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        Loading&hellip;
       </div>
     );
   }
@@ -361,20 +348,32 @@ export default function PlayersPage() {
         {filteredPlayers.length === 0 ? (
           <div
             style={{
-              padding: '40px 24px',
               textAlign: 'center',
-              borderRadius: 16,
-              border: `1px solid ${T.hairline}`,
-              background: T.paper,
+              padding: '40px 0',
             }}
           >
-            <UserIcon size={36} color={T.pencilSoft} style={{ margin: '0 auto 16px' }} />
-            <p style={{ fontSize: 17, fontWeight: 500, color: T.inkSoft, margin: '0 0 6px' }}>
-              {search ? 'No players found' : 'No players yet'}
+            <p
+              style={{
+                fontFamily: T.serif,
+                fontStyle: 'italic',
+                fontSize: 14,
+                color: T.pencilSoft,
+                letterSpacing: -0.1,
+                margin: '0 0 6px',
+              }}
+            >
+              {search ? 'No players found.' : 'No players yet.'}
             </p>
-            <p style={{ fontSize: 14, color: T.pencil, margin: '0 0 20px' }}>
+            <p
+              style={{
+                fontFamily: T.sans,
+                fontSize: 13,
+                color: T.pencilSoft,
+                margin: '0 0 20px',
+              }}
+            >
               {search
-                ? 'Try a different search'
+                ? 'Try a different search.'
                 : 'Add the people you golf with.'}
             </p>
             {!search && (
@@ -383,20 +382,20 @@ export default function PlayersPage() {
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 6,
-                  padding: '10px 20px',
+                  justifyContent: 'center',
+                  padding: '0 24px',
                   minHeight: 44,
                   borderRadius: 999,
-                  border: 'none',
-                  background: T.ink,
-                  color: T.paper,
-                  fontFamily: T.sans,
-                  fontSize: 15,
-                  fontWeight: 500,
+                  border: `1px solid ${T.hairline}`,
+                  background: 'transparent',
+                  color: T.ink,
+                  fontFamily: T.mono,
+                  fontSize: 10,
+                  letterSpacing: 1.3,
+                  textTransform: 'uppercase',
                   cursor: 'pointer',
                 }}
               >
-                <PlusIcon size={16} />
                 Add First Player
               </button>
             )}
@@ -416,8 +415,8 @@ export default function PlayersPage() {
                 >
                   <motion.button
                     whileTap={{ scale: 0.985 }}
-                    onClick={() => openEditPlayer(player)}
-                    aria-label={`Edit ${player.name}`}
+                    onClick={() => router.push(playerHref(player.id))}
+                    aria-label={`View ${player.name}`}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -466,8 +465,9 @@ export default function PlayersPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
+                          fontFamily: T.serif,
                           fontSize: 16,
-                          fontWeight: 500,
+                          letterSpacing: -0.2,
                           color: T.ink,
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
@@ -513,6 +513,38 @@ export default function PlayersPage() {
                         Linked
                       </span>
                     )}
+
+                    {/* Edit control — span (not button) to avoid nested <button> invalid HTML */}
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Edit ${player.name}`}
+                      onClick={(e) => { e.stopPropagation(); openEditPlayer(player); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openEditPlayer(player);
+                        }
+                      }}
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: 1.3,
+                        textTransform: 'uppercase',
+                        color: T.pencilSoft,
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: 44,
+                        minHeight: 44,
+                        paddingLeft: 8,
+                      }}
+                    >
+                      Edit
+                    </span>
                   </motion.button>
                 </SwipeableRow>
               </motion.div>

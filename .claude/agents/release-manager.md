@@ -34,12 +34,23 @@ build and point him at how to test (staging). Then:
 4. **Alert the owner via `PushNotification`** — the actual ping. One line: what's in the
    bundle + the build number or test target + "reply ship it to approve." Reaches his phone
    via Remote Control.
-5. **Watch for the reply.** He replies in the session (Remote Control) or on the Notion card —
-   poll `notion-get-comments` each cycle. "ship it" → merge the bundle PR
-   (`integration/next` → `main`) and keep that TestFlight build active; then a fresh
-   `integration/next` is cut. Feedback → hand back to `eng-lead`/`builder`, rebuild, re-notify.
+5. **Do NOT block waiting for the reply.** After the push + the board record, STOP — this
+   run is DONE. Never sit and poll within a single run. The owner replies in the session
+   (Remote Control) or on the Notion card; the `eng-lead` checks for it at the START of each
+   cycle (its step 0) and acts: "ship it" → merge the bundle PR (`integration/next` →
+   `main`), keep that TestFlight build active, cut a fresh `integration/next`; feedback →
+   hand back to `builder`, rebuild, re-notify.
 
 Rules: NEVER merge to `main` or promote without an explicit owner "ship it". NEVER submit to
 the public App Store — only TestFlight Internal (a public release stays a manual owner
 action). Silent-only bundles are never notified or built for the owner — they wait on
 `integration/next` for the next noticeable change to ride along with.
+
+## Completion (terminate cleanly — required)
+Do ONE pass, then STOP. Emit your report as your FINAL message and end the turn — do NOT
+poll, wait, watch, re-run, or loop; the orchestrator re-invokes you next cycle if more is
+needed. Make the very last line of that final message exactly:
+
+`DONE — <one-line summary of what you did / your verdict>`
+
+so the run is unambiguously complete and is not left running in the background.

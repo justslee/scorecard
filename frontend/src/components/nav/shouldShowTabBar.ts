@@ -1,4 +1,4 @@
-export const HUB_ROUTES = ['/', '/players', '/profile', '/tee-time'] as const;
+export const HUB_ROUTES = ['/', '/courses', '/players', '/profile', '/tee-time'] as const;
 
 export function normalizePath(p: string): string {
   return p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p;

@@ -3,6 +3,81 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (social-partner-profile-polish — SILENT)
+- **Done (commit 8153d9f on integration/next):** Designer-blocker polish + hardening on the partner-profile feature.
+
+  Files changed (4):
+  - `frontend/src/app/players/page.tsx`: (1) loading state replaced CSS spinner with mono uppercase "Loading…" text (mirrors CourseDetailClient/PartnerProfileClient); (2) empty state replaced bordered card + UserIcon + 500-weight heading with quiet serif-italic placeholder + ghost button CTA; (3) player row name switched from sans/fontWeight:500 to T.serif + letterSpacing:-0.2; removed now-unused UserIcon component.
+  - `frontend/src/lib/partner-rounds.ts`: sort guard hardened against NaN from malformed/missing dates — treats NaN as epoch-0 (oldest) so sort stays stable.
+  - `frontend/src/lib/partner-rounds.test.ts`: two new tests — invalid date string and empty date string sort stably without throwing.
+  - `frontend/src/app/players/view/PartnerProfileClient.tsx`: date render falls back to raw string or "—" instead of "Invalid Date"; back button gains minWidth:44.
+
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 434/434 (+2 new) · build clean (players/view confirmed).
+  SILENT — polish-only iteration; rides with the existing noticeable bundle.
+
+## 2026-06-28 (social-partner-profile — NOTICEABLE)
+- **Done (commit e2d6960 on integration/next):** Partner profile detail screen at `/players/view?id=…`.
+
+  Files added (6):
+  - `frontend/src/lib/player-url.ts` — `playerHref(id)` URL helper (static-export shim pattern)
+  - `frontend/src/lib/partner-rounds.ts` — `getSharedRounds(rounds, playerId)` pure derivation
+  - `frontend/src/app/players/view/page.tsx` — Suspense shell (literal route, no generateStaticParams)
+  - `frontend/src/app/players/view/PartnerProfileClient.tsx` — yardage-book detail screen
+  - `frontend/src/lib/player-url.test.ts` — 7 URL encoding/segment tests
+  - `frontend/src/lib/partner-rounds.test.ts` — 8 membership/sort/edge-case tests
+
+  Files changed (1): `frontend/src/app/players/page.tsx` — row tap navigates to profile via
+  `router.push(playerHref(player.id))`; inline Edit `<span role="button">` with stopPropagation
+  preserves edit affordance without nested-button invalid HTML; swipe-to-delete untouched.
+
+  Approach — row tap-through: kept the existing `<motion.button>` as the row body (preserves
+  swipe-to-delete ownership in SwipeableRow), changed onClick to navigate to profile, added
+  trailing `<span role="button" tabIndex={0}>Edit</span>` whose onClick stopPropagation calls
+  openEditPlayer. No nested button, no lucide-react, no new design language.
+
+  Gates: lint clean · tsc clean · voice-tests 265/265 · vitest 432/432 (+15 new) · build clean.
+  `out/players/view` and `out/players/view.html` confirmed in static export.
+  NOTICEABLE — tapping a player in the roster now navigates to a yardage-book-styled profile
+  showing name, handicap, rounds played, and shared rounds list.
+
+## 2026-06-28 (polish-courses-designer-notes — SILENT)
+- **Done (commit a907aa7 on integration/next):** Designer polish pass on the course-detail-start-round work.
+  Files changed (3): `app/courses/[id]/CourseDetailClient.tsx`, `app/courses/page.tsx`, `components/nav/FloatingTabBar.tsx`.
+  Changes: mono/8.5/1.1/pencilSoft/uppercase location sub-label; paddingBottom safe-area calc; back button padding "0 8px";
+  tab label nowrap+ellipsis; CoursesIcon ground-line removed; Find-a-course motion.button with whileTap scale 0.98.
+  Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 417/417 · build clean (out/courses + out/courses/view confirmed).
+  SILENT — micro-polish; not a TestFlight-noticeable change on its own; rides with the bundle.
+
+## 2026-06-28 (course-detail-start-round — NOTICEABLE)
+- **Done (commit d5db7c6 on integration/next):** Full Courses section — browse, detail, Start-a-round-here, Courses tab.
+
+  Files added (8): `lib/course-url.ts` (courseHref helper, static-export-safe), `lib/course-url.test.ts`,
+  `lib/course-handoff.ts` (sessionStorage stash/take, SSR-safe, one-shot), `lib/course-list.ts`
+  (pure mapRecentCourses), `lib/course-list.test.ts`, `app/courses/page.tsx` (hub: lazy recent list,
+  geolocation Nearby, CourseSearch overlay), `app/courses/[id]/page.tsx` (generateStaticParams+Suspense),
+  `app/courses/[id]/CourseDetailClient.tsx` (name/location/par/holes/tees, loading+not-found states, CTA).
+
+  Files changed (4): `app/round/new/page.tsx` (one mount effect: takeCourseForRound → setSelectedCourse),
+  `components/nav/FloatingTabBar.tsx` (CoursesIcon flagstick SVG + Courses tab as 2nd item),
+  `components/nav/shouldShowTabBar.ts` (/courses added to HUB_ROUTES),
+  `components/nav/shouldShowTabBar.test.ts` (/courses + /courses/ true; /courses/view false).
+
+  Reuses composeCourseName, saveRecentCourse, getRecentCourses, getCourseDetails, getClubDetails,
+  searchNearby, CourseSearch — no new deps, no backend changes.
+
+  Gates: lint clean · tsc clean · voice-tests 265/265 · vitest 417/417 · build clean.
+  out/courses and out/courses/view confirmed in static export.
+  NOTICEABLE — new Courses tab + /courses hub + /courses/view detail page on TestFlight.
+  GPS and live GolfAPI paths are device-only; pure helpers covered by vitest.
+- **Eng-lead cycle close:** opus Plan (specs/course-detail-start-round-plan.md) → builder →
+  reviewer **SHIP** (no correctness/security/Northstar blockers; nits only) → QA **PASS**
+  (gates re-run independently) → designer **APPROVE-WITH-NITS** (4 fix-before-ship + 2 nits
+  folded into a907aa7). Backlog flipped to built-integration-next-pending-device-verify
+  (8b49a27). Opened rolling bundle **PR #67** (integration/next → main) — first item in a
+  fresh bundle after #66 merged. NOT merged; owner NOT notified this cycle (per task scope —
+  no TestFlight/email/push). The bundle is noticeable and ready for a release cut when the
+  owner loop next runs.
+
 ## 2026-06-28 (voice-double-audio — NOTICEABLE, device-only verify)
 - **Done (built 727c7df on integration/next, pushed; in bundle PR #66):** Fix the caddie
   playing TWO overlapping voices on every Realtime response.
@@ -2879,3 +2954,28 @@ Owner reported 2 new bugs (queued, NOT in this build): voice-chat-ordering (HIGH
 — reply renders above the user's line; fix = order by conversation-item sequence) +
 grabber-handle-drag-fix (swiping handle scrolls background). Both on backlog + Notion board.
 Loop continues 30-min cadence; next tick takes voice-chat-ordering.
+
+---
+
+## BUILT on integration/next (pending device-verify) — social-partner-profile — 2026-06-28
+Roadmap feature (epic social-playing-partners, A2; was needs-spec, DRY queue). Wrote spec
+(specs/social-partner-profile.md) + opus plan (specs/social-partner-profile-plan.md), then
+built. NEW read-only partner profile screen at /players/view?id= (static-export view+query
+shell mirroring courses/round; Suspense + useSearchParams). Shows kicker "Partner", serif
+name/nickname, MiniStat handicap + roundsPlayed, and a "rounds together" list (each taps to
+the round). /players roster rows now tap through to the profile (edit + swipe-to-delete
+preserved). Calm not-found/empty/loading states.
+
+REUSED vs BUILT: reused owner-scoped getPlayersAsync (list-and-find, offline-resilient) +
+getRoundsAsync — NO new endpoint, NO storage-api/types change, require_owner untouched, NO
+friend graph. Built new lib/player-url.ts (playerHref) + pure lib/partner-rounds.ts
+(getSharedRounds, NaN-date hardened) + 2 vitest files. SHARED-ROUNDS WAS FEASIBLE
+client-side (round Player.id === SavedPlayer.id for roster players, set in round/new).
+
+Commits: e2d6960 (feature) + 8153d9f (designer polish). Reviewer SHIP, QA PASS, designer
+SHIP after 3 roster NORTHSTAR blockers fixed (row name -> serif; SaaS empty-state card ->
+quiet serif placeholder + ghost CTA; CSS spinner -> mono "Loading..." text). Gates: lint 0,
+tsc clean, voice 265/265, vitest 434/434, build (out/players/view emitted). Pushed to
+integration/next; accumulated on rolling bundle PR #67 (NOT merged, NOT a TestFlight build
+this cycle per task constraints). Classification: NOTICEABLE — rides the next bundle approval.
+Follow-ups (not built): backend shared-rounds aggregation endpoint; friend graph.

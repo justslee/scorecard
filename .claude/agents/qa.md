@@ -17,3 +17,12 @@ Gates to run and report (PASS/FAIL with evidence):
 Report a clear PASS/FAIL with the command output and screenshots. On failure, point to the
 exact failing step and the likely cause — do not fix it yourself; hand back to the
 `builder`. Never weaken or skip a gate to force a pass.
+
+## Completion (terminate cleanly — required)
+Do ONE pass, then STOP. Emit your report as your FINAL message and end the turn — do NOT
+poll, wait, watch, re-run, or loop; the orchestrator re-invokes you next cycle if more is
+needed. Make the very last line of that final message exactly:
+
+`DONE — <one-line summary of what you did / your verdict>`
+
+so the run is unambiguously complete and is not left running in the background.
