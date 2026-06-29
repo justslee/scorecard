@@ -3,6 +3,31 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (social-partner-profile — NOTICEABLE)
+- **Done (commit e2d6960 on integration/next):** Partner profile detail screen at `/players/view?id=…`.
+
+  Files added (6):
+  - `frontend/src/lib/player-url.ts` — `playerHref(id)` URL helper (static-export shim pattern)
+  - `frontend/src/lib/partner-rounds.ts` — `getSharedRounds(rounds, playerId)` pure derivation
+  - `frontend/src/app/players/view/page.tsx` — Suspense shell (literal route, no generateStaticParams)
+  - `frontend/src/app/players/view/PartnerProfileClient.tsx` — yardage-book detail screen
+  - `frontend/src/lib/player-url.test.ts` — 7 URL encoding/segment tests
+  - `frontend/src/lib/partner-rounds.test.ts` — 8 membership/sort/edge-case tests
+
+  Files changed (1): `frontend/src/app/players/page.tsx` — row tap navigates to profile via
+  `router.push(playerHref(player.id))`; inline Edit `<span role="button">` with stopPropagation
+  preserves edit affordance without nested-button invalid HTML; swipe-to-delete untouched.
+
+  Approach — row tap-through: kept the existing `<motion.button>` as the row body (preserves
+  swipe-to-delete ownership in SwipeableRow), changed onClick to navigate to profile, added
+  trailing `<span role="button" tabIndex={0}>Edit</span>` whose onClick stopPropagation calls
+  openEditPlayer. No nested button, no lucide-react, no new design language.
+
+  Gates: lint clean · tsc clean · voice-tests 265/265 · vitest 432/432 (+15 new) · build clean.
+  `out/players/view` and `out/players/view.html` confirmed in static export.
+  NOTICEABLE — tapping a player in the roster now navigates to a yardage-book-styled profile
+  showing name, handicap, rounds played, and shared rounds list.
+
 ## 2026-06-28 (polish-courses-designer-notes — SILENT)
 - **Done (commit a907aa7 on integration/next):** Designer polish pass on the course-detail-start-round work.
   Files changed (3): `app/courses/[id]/CourseDetailClient.tsx`, `app/courses/page.tsx`, `components/nav/FloatingTabBar.tsx`.
