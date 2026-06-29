@@ -9,6 +9,10 @@ import { mapRecentCourses, type RecentCourseItem } from "@/lib/course-list";
 import { courseHref } from "@/lib/course-url";
 import CourseSearch from "@/components/CourseSearch";
 
+// POC: Bethpage Black ingested into the PostGIS mapped-course store.
+// Run `backend/scripts/ingest_osm_course.py` on the deploy box to populate.
+const BETHPAGE_BLACK_MAP_ID = "2b8caab5-2c55-5752-8cda-336c3a396dac";
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -331,6 +335,106 @@ export default function CoursesHubPage() {
             </div>
           </div>
         )}
+        {/* ── Course maps (beta) ── */}
+        <div
+          style={{
+            padding: "0 22px 18px",
+            borderTop: `1px solid ${T.hairline}`,
+            marginTop: 2,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 7,
+              marginBottom: 8,
+              paddingTop: 16,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 9.5,
+                letterSpacing: 1.6,
+                color: T.pencil,
+                textTransform: "uppercase",
+              }}
+            >
+              Course maps
+            </div>
+            <span
+              style={{
+                fontFamily: T.mono,
+                fontSize: 7.5,
+                letterSpacing: 1.2,
+                color: T.pencilSoft,
+                border: `1px solid ${T.hairline}`,
+                padding: "1px 5px",
+                borderRadius: 3,
+                textTransform: "uppercase",
+                lineHeight: 1.6,
+              }}
+            >
+              beta
+            </span>
+          </div>
+
+          <button
+            onClick={() => router.push(`/map/course?id=${BETHPAGE_BLACK_MAP_ID}`)}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "11px 0",
+              background: "transparent",
+              border: "none",
+              borderTop: `1px dashed ${T.hairline}`,
+              cursor: "pointer",
+              textAlign: "left",
+              minHeight: 44,
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontSize: 16,
+                  color: T.ink,
+                  letterSpacing: -0.2,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                Bethpage Black
+              </div>
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 8.5,
+                  letterSpacing: 1.1,
+                  color: T.pencilSoft,
+                  textTransform: "uppercase",
+                  marginTop: 2,
+                }}
+              >
+                Hole map
+              </div>
+            </div>
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 10,
+                color: T.pencil,
+                flexShrink: 0,
+              }}
+            >
+              {"›"}
+            </div>
+          </button>
+        </div>
       </div>
 
       {/* ── CourseSearch overlay ── */}
