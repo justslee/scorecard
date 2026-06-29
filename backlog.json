@@ -1245,6 +1245,92 @@
       "depends_on": [
         "course-search-db-epic"
       ]
+    },
+    {
+      "id": "course-search-db-epic",
+      "priority": 15,
+      "status": "epic",
+      "classification": "noticeable",
+      "title": "EPIC: Course search + homegrown course DB (no GolfAPI)",
+      "rationale": "Owner pivot: build course data from NAIP+OSM+USGS 3DEP + own PostGIS vectors. See specs/homegrown-course-data-plan.md. POC = Bethpage Black (I0-I4); generalize later (I5-I10). Resolver/search layer + location-aware disambiguation ride on top."
+    },
+    {
+      "id": "course-poc-i0-osm-polygons",
+      "priority": 17,
+      "status": "ready",
+      "epic": "course-search-db-epic",
+      "classification": "silent",
+      "build": "build(BE/data)",
+      "size": "S",
+      "headless": "yes",
+      "area": "backend",
+      "title": "POC I0: OSM golf-polygon fetch + per-course hole filter",
+      "rationale": "Extend osm.py fetch_course_features to return full polygon geometry (out geom) + filter golf=hole by golf:course:name; add a User-Agent (Overpass 406s without one). Foundation for the Bethpage POC. See specs/homegrown-course-data-plan.md.",
+      "depends_on": []
+    },
+    {
+      "id": "course-poc-i1-spatial-join",
+      "priority": 18,
+      "status": "ready",
+      "epic": "course-search-db-epic",
+      "classification": "silent",
+      "build": "build(BE/data)",
+      "size": "M",
+      "headless": "yes",
+      "area": "backend",
+      "title": "POC I1: spatial join \u2014 assign green/fairway/tee/bunker polygons to Black holes",
+      "rationale": "Nearest hole-centerline assignment w/ cross-course rejection; output per-hole GeoJSON FeatureCollection. Prefer PostGIS ST_Distance/ST_ClosestPoint (no new dep). The core new algorithm.",
+      "depends_on": [
+        "course-poc-i0-osm-polygons"
+      ]
+    },
+    {
+      "id": "course-poc-i2-store-render",
+      "priority": 19,
+      "status": "ready",
+      "epic": "course-search-db-epic",
+      "classification": "noticeable",
+      "build": "build(FE+BE)",
+      "size": "M",
+      "headless": "partial",
+      "area": "frontend+backend",
+      "title": "POC I2: store + render Bethpage Black (homegrown, no elevation)",
+      "rationale": "upsert_course under Black deterministic UUID + card yardages; render in GPSMapView (+ optional NAIP raster). Proves a hole map from free data without GolfAPI.",
+      "depends_on": [
+        "course-poc-i1-spatial-join"
+      ]
+    },
+    {
+      "id": "course-poc-i3-validate",
+      "priority": 20,
+      "status": "ready",
+      "epic": "course-search-db-epic",
+      "classification": "silent",
+      "build": "build(data/QA)",
+      "size": "S",
+      "headless": "yes",
+      "area": "backend",
+      "title": "POC I3: validate Bethpage Black vs published card (feasibility gate)",
+      "rationale": "Assert par+handicap exact, tee->green yardage within tolerance, flag mis-joined greens. The go/no-go gate for the homegrown approach.",
+      "depends_on": [
+        "course-poc-i2-store-render"
+      ]
+    },
+    {
+      "id": "course-poc-i4-elevation",
+      "priority": 21,
+      "status": "ready",
+      "epic": "course-search-db-epic",
+      "classification": "noticeable",
+      "build": "build(BE/data)",
+      "size": "M",
+      "headless": "yes",
+      "area": "backend",
+      "title": "POC I4: 3DEP AOI elevation for Bethpage Black",
+      "rationale": "One bbox GeoTIFF via USGS 3DEP ImageServer exportImage -> sample tee->green + green grid -> store profile -> feed course_intel. Maps to dem-3dep-ingestion(slim)+dem-hole-profiles.",
+      "depends_on": [
+        "course-poc-i2-store-render"
+      ]
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
