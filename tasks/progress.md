@@ -3,6 +3,36 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (course-poc-i0-osm-polygons — SILENT — integration/next)
+Backend-only: extended `backend/app/services/osm.py` to fetch full GeoJSON polygon/linestring
+geometry from Overpass (foundation for the Bethpage Black POC — I0 of the homegrown course-data
+track). No DB, no frontend changes.
+
+Changes:
+- Added `_USER_AGENT = "Looper/1.0 (golf course mapping)"` + `_OVERPASS_HEADERS` constant.
+  Applied to all three existing Overpass HTTP calls (search_golf_courses, search_osm_with_geometry,
+  fetch_course_features) — public Overpass returns 406 without a User-Agent.
+- Added two pure parsing helpers (unit-test targets):
+  - `_parse_way_to_polygon(geom)` — Overpass {lat,lon} list -> GeoJSON Polygon; auto-closes ring;
+    returns None for degenerate (<4 pt) input.
+  - `_parse_way_to_linestring(geom)` — Overpass {lat,lon} list -> GeoJSON LineString; None if <2 pts.
+- Added `_parse_course_geometry_response(data, course_name_filter)` — pure function; iterates
+  Overpass elements; routes golf=hole ways -> LineString GeoJSON Features (filtered by
+  golf:course:name when course_name_filter is set); routes green/fairway/tee/bunker/water ways ->
+  Polygon GeoJSON Features; skips nodes; returns {holes, greens, fairways, tees, bunkers, water}.
+  Each Feature carries featureType + osm_id; hole Features also carry ref/par/handicap/name (int-cast).
+- Added `fetch_course_geometry(lat, lng, radius_m, course_name)` async function — new public API;
+  issues `out geom` Overpass query for all golf polygon tags + hole ways; delegates parsing to
+  _parse_course_geometry_response; returns GeoJSON Feature dicts compatible with upsert_course.
+  Existing fetch_course_features (centroid-only) is unchanged; existing callers (caddie.py) unaffected.
+- New test file `backend/tests/test_osm_parsing.py` — 34 pure pytest tests, no network, no DB:
+  6 for _parse_way_to_polygon, 4 for _parse_way_to_linestring, 24 for _parse_course_geometry_response
+  (fixture: Black+Red holes + green + bunker + node). Asserts: full ring vs centroid, auto-close,
+  course-name filter (case-insensitive), par/handicap/ref as int, feature-type routing, GeoJSON shape.
+
+Gates: ruff clean (all checks passed) · pytest tests/test_osm_parsing.py 34/34 in 0.06s · tsc 0 errors.
+SILENT — backend-only data-layer change; no user-visible surface yet (I1 spatial join is next).
+
 ## 2026-06-28 (voice-player-disambiguation — SILENT fix — integration/next)
 Fixed voice round setup: spoken player names now match saved profiles via fuzzy + phonetic
 matching instead of exact lowercase compare. Root cause: "Dipak" != "Deepak" exact-compare

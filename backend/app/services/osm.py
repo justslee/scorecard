@@ -6,6 +6,160 @@ from typing import Optional
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
+_USER_AGENT = "Looper/1.0 (golf course mapping)"
+
+# All Overpass requests include a User-Agent; the public endpoint returns 406 without one.
+_OVERPASS_HEADERS = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    "User-Agent": _USER_AGENT,
+}
+
+
+# ── Pure geometry parsers (unit-testable, no I/O) ─────────────────────────────
+
+def _parse_way_to_polygon(geom: list[dict]) -> Optional[dict]:
+    """Convert Overpass way geometry (list of ``{lat, lon}``) to a GeoJSON Polygon.
+
+    Returns ``None`` if the geometry has fewer than 4 points (degenerate ring).
+    Closes the ring automatically if the first and last coordinate pair differ.
+    """
+    if len(geom) < 4:
+        return None
+    ring: list[list[float]] = [[p["lon"], p["lat"]] for p in geom]
+    if ring[0] != ring[-1]:
+        ring.append(ring[0])
+    return {"type": "Polygon", "coordinates": [ring]}
+
+
+def _parse_way_to_linestring(geom: list[dict]) -> Optional[dict]:
+    """Convert Overpass way geometry (list of ``{lat, lon}``) to a GeoJSON LineString.
+
+    Returns ``None`` if fewer than 2 points are present.
+    """
+    if len(geom) < 2:
+        return None
+    coords: list[list[float]] = [[p["lon"], p["lat"]] for p in geom]
+    return {"type": "LineString", "coordinates": coords}
+
+
+def _parse_course_geometry_response(
+    data: dict,
+    course_name_filter: Optional[str] = None,
+) -> dict:
+    """Parse a raw Overpass JSON response into categorized GeoJSON Feature lists.
+
+    This is a pure function (no I/O) and the unit-test target for I0.
+
+    Args:
+        data: Raw JSON dict from Overpass (expected to have an ``"elements"`` list).
+        course_name_filter: If given, only ``golf=hole`` ways whose
+            ``golf:course:name`` tag matches this value (case-insensitive) are
+            included.  All other feature types (green, fairway, tee, bunker,
+            water) are always included regardless of this filter.
+
+    Returns:
+        Dict with keys: ``holes``, ``greens``, ``fairways``, ``tees``,
+        ``bunkers``, ``water``.  Each value is a list of GeoJSON Feature dicts::
+
+            {
+                "type": "Feature",
+                "geometry": <GeoJSON LineString | Polygon>,
+                "properties": {
+                    "featureType": "<type>",
+                    "osm_id": "way/<id>",
+                    # holes also carry: ref, par, handicap, name
+                },
+            }
+    """
+    holes: list[dict] = []
+    greens: list[dict] = []
+    fairways: list[dict] = []
+    tees: list[dict] = []
+    bunkers: list[dict] = []
+    water: list[dict] = []
+
+    name_lower = course_name_filter.lower() if course_name_filter else None
+
+    for el in data.get("elements", []):
+        if el.get("type") != "way":
+            continue
+
+        tags = el.get("tags", {})
+        geom = el.get("geometry", [])
+        golf_tag = tags.get("golf", "")
+        natural_tag = tags.get("natural", "")
+        osm_id = f"way/{el['id']}"
+
+        if golf_tag == "hole":
+            # Apply course-name filter for multi-course facilities (e.g. Bethpage Black).
+            if name_lower is not None:
+                el_course_name = tags.get("golf:course:name", "")
+                if el_course_name.lower() != name_lower:
+                    continue
+
+            linestring = _parse_way_to_linestring(geom)
+            if linestring is None:
+                continue
+
+            par_str = tags.get("par", "")
+            hcp_str = tags.get("handicap", "")
+            holes.append({
+                "type": "Feature",
+                "geometry": linestring,
+                "properties": {
+                    "featureType": "hole",
+                    "osm_id": osm_id,
+                    "ref": tags.get("ref"),
+                    "par": int(par_str) if par_str.isdigit() else None,
+                    "handicap": int(hcp_str) if hcp_str.isdigit() else None,
+                    "name": tags.get("name"),
+                },
+            })
+
+        elif (
+            golf_tag in ("green", "fairway", "tee", "bunker", "water_hazard", "lateral_water_hazard")
+            or natural_tag == "water"
+        ):
+            polygon = _parse_way_to_polygon(geom)
+            if polygon is None:
+                continue
+
+            if golf_tag == "green":
+                feature_type = "green"
+                bucket = greens
+            elif golf_tag == "fairway":
+                feature_type = "fairway"
+                bucket = fairways
+            elif golf_tag == "tee":
+                feature_type = "tee"
+                bucket = tees
+            elif golf_tag == "bunker":
+                feature_type = "bunker"
+                bucket = bunkers
+            else:  # water_hazard, lateral_water_hazard, natural=water
+                feature_type = "water"
+                bucket = water
+
+            bucket.append({
+                "type": "Feature",
+                "geometry": polygon,
+                "properties": {
+                    "featureType": feature_type,
+                    "osm_id": osm_id,
+                },
+            })
+
+    return {
+        "holes": holes,
+        "greens": greens,
+        "fairways": fairways,
+        "tees": tees,
+        "bunkers": bunkers,
+        "water": water,
+    }
+
+
+# ── HTTP fetch functions ───────────────────────────────────────────────────────
 
 async def search_golf_courses(
     name: Optional[str] = None,
@@ -39,7 +193,7 @@ out center;
         resp = await client.post(
             OVERPASS_URL,
             data={"data": query},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers=_OVERPASS_HEADERS,
         )
         if not resp.is_success:
             return []
@@ -101,7 +255,7 @@ out geom;
         resp = await client.post(
             OVERPASS_URL,
             data={"data": query},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers=_OVERPASS_HEADERS,
         )
         if not resp.is_success:
             return []
@@ -175,7 +329,8 @@ async def fetch_course_features(
 ) -> dict:
     """Fetch detailed golf features (bunkers, water, fairways, greens) near a course.
 
-    Returns categorized features for hazard analysis.
+    Returns categorized features with centroid geometry (existing callers depend on
+    this shape; use :func:`fetch_course_geometry` for full polygon geometry).
     """
     query = f"""
 [out:json][timeout:15];
@@ -197,7 +352,7 @@ out geom;
         resp = await client.post(
             OVERPASS_URL,
             data={"data": query},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers=_OVERPASS_HEADERS,
         )
         if not resp.is_success:
             return {"bunkers": [], "water": [], "fairways": [], "greens": [], "pins": []}
@@ -252,3 +407,74 @@ out geom;
         "greens": greens,
         "pins": pins,
     }
+
+
+async def fetch_course_geometry(
+    lat: float,
+    lng: float,
+    radius_m: int = 2000,
+    course_name: Optional[str] = None,
+) -> dict:
+    """Fetch full polygon/linestring geometry for golf features near a course.
+
+    Unlike :func:`fetch_course_features` (which returns centroids only), this
+    returns full ring geometry via Overpass ``out geom`` for:
+
+    - ``golf=green|fairway|tee|bunker`` ways → GeoJSON Polygon features
+    - ``natural=water`` / ``golf=water_hazard|lateral_water_hazard`` → GeoJSON Polygon
+    - ``golf=hole`` ways → GeoJSON LineString features
+
+    Parsing is handled by :func:`_parse_course_geometry_response`, which is a
+    pure function and the primary unit-test target.
+
+    Args:
+        lat: Latitude of the course center.
+        lng: Longitude of the course center.
+        radius_m: Search radius in metres (default 2000).
+        course_name: If set, ``golf=hole`` ways are filtered to those whose
+            ``golf:course:name`` tag matches this string (case-insensitive).
+            Useful for multi-course facilities — e.g. pass ``"Black"`` at
+            Bethpage State Park to get only Bethpage Black holes.
+
+    Returns:
+        Dict with keys: ``holes``, ``greens``, ``fairways``, ``tees``,
+        ``bunkers``, ``water``.  Each value is a list of GeoJSON Feature dicts
+        ready for storage via
+        :func:`~app.services.courses_mapped.upsert_course`.
+        Returns an empty structure on HTTP failure.
+    """
+    _empty: dict = {
+        "holes": [],
+        "greens": [],
+        "fairways": [],
+        "tees": [],
+        "bunkers": [],
+        "water": [],
+    }
+
+    query = f"""
+[out:json][timeout:25];
+(
+  way["golf"="green"](around:{radius_m},{lat},{lng});
+  way["golf"="fairway"](around:{radius_m},{lat},{lng});
+  way["golf"="tee"](around:{radius_m},{lat},{lng});
+  way["golf"="bunker"](around:{radius_m},{lat},{lng});
+  way["natural"="water"](around:{radius_m},{lat},{lng});
+  way["golf"="water_hazard"](around:{radius_m},{lat},{lng});
+  way["golf"="lateral_water_hazard"](around:{radius_m},{lat},{lng});
+  way["golf"="hole"](around:{radius_m},{lat},{lng});
+);
+out geom;
+"""
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            OVERPASS_URL,
+            data={"data": query},
+            headers=_OVERPASS_HEADERS,
+        )
+        if not resp.is_success:
+            return _empty
+        data = resp.json()
+
+    return _parse_course_geometry_response(data, course_name_filter=course_name)
