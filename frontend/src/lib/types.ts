@@ -218,6 +218,32 @@ export interface GolferProfile {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Course Reviews (B2) — kept in sync with backend/app/models.py CourseReview
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Server-persisted course review. Mirrors backend CourseReview Pydantic model. */
+export interface CourseReview {
+  id: string;
+  ownerId: string;
+  courseKey: string;
+  courseName?: string;
+  roundId?: string;
+  rating: number;       // 1–5, validated server-side
+  body?: string;
+  playedAt?: string;    // ISO date string (YYYY-MM-DD)
+  createdAt: string;    // ISO datetime string
+}
+
+/** Request body for POST /api/courses/{courseKey}/reviews. */
+export interface CourseReviewCreate {
+  rating: number;       // 1–5
+  body?: string;
+  roundId?: string;
+  courseName?: string;
+  playedAt?: string;    // ISO date string
+}
+
 // Helper to create a standard 18-hole course with default pars
 export function createDefaultCourse(name: string): Course {
   const holes: HoleInfo[] = [];

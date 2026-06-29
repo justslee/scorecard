@@ -23,6 +23,8 @@ import {
 } from "@/lib/api";
 import { hapticCelebration } from "@/lib/haptics";
 import { shotPointForPath } from "@/lib/hole-shot-point";
+import { resolveCourseKey } from "@/lib/course-review-key";
+import { getRecentCourses } from "@/lib/golf-api";
 
 // Player accent colors (yardage-book palette — warm ink tones)
 const PLAYER_COLORS = ["#1a2a1a", "#6b3a1a", "#3a3a6a", "#6a3a3a", "#2a5a3a", "#5a2a5a"];
@@ -366,6 +368,14 @@ export default function RoundPage() {
 
   // Derived: actual hole count for this round (fall back to 18 if round not yet loaded).
   const holeCount = round?.holes.length || 18;
+
+  // Resolve the course key for the B2 review affordance once (when courseName changes).
+  // getRecentCourses() reads localStorage; returns [] on SSR (typeof window guard inside).
+  const reviewCourseKey = useMemo(() => {
+    if (!round) return null;
+    return resolveCourseKey(round, getRecentCourses());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [round?.courseName, round?.id]);
 
   const hole = HOLES[currentHole - 1] ?? HOLES[0];
   // Prefer round's par data (authoritative); fall back to illustration constant.
@@ -1383,6 +1393,8 @@ export default function RoundPage() {
         open={recapOpen}
         round={round}
         onDone={() => router.push("/")}
+        courseKey={reviewCourseKey}
+        courseName={round.courseName}
       />
     </div>
   );

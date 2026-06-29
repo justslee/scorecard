@@ -13,13 +13,18 @@
  *
  * Data: reads existing Round/scores/players — no new data model or endpoints.
  * Games: delegates to <GameResults readOnly> which already owns all format logic.
+ *
+ * B2: Adds an optional course-review affordance (rating 1-5 + short note).
+ * courseKey is resolved by the parent (RoundPageClient) and passed as a prop.
+ * The review POST never blocks the Done flow.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
 import { Round, calculateTotals } from '@/lib/types';
 import GameResults from '@/components/GameResults';
+import { createCourseReview } from '@/lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -30,6 +35,14 @@ export interface RoundRecapProps {
   round: Round;
   /** Parent calls router.push('/') here — recap is purely a display view. */
   onDone: () => void;
+  /**
+   * Resolved course key (GolfAPI id string, or name:<slug>).
+   * When null or absent the review affordance is hidden.
+   * Resolved by RoundPageClient to keep RoundRecap a display-plus-one-action view.
+   */
+  courseKey?: string | null;
+  /** Raw display name captured at write time (so B3 can render without re-resolving). */
+  courseName?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,7 +65,13 @@ function toParColor(n: number): string {
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function RoundRecap({ open, round, onDone }: RoundRecapProps) {
+export default function RoundRecap({
+  open,
+  round,
+  onDone,
+  courseKey,
+  courseName,
+}: RoundRecapProps) {
   // Compute per-player totals + quiet highlights (birdies, eagles, best hole).
   // calculateTotals is the same helper used everywhere else in the app.
   const playerStats = useMemo(() => {
@@ -104,6 +123,42 @@ export default function RoundRecap({ open, round, onDone }: RoundRecapProps) {
 
   const games = round.games ?? [];
   const hasGames = games.length > 0;
+
+  // ─── Course review affordance (B2) ───────────────────────────────────────
+  // Self-contained state; never blocks the Done flow.
+  const showReview = Boolean(courseKey);
+  const [reviewRating, setReviewRating] = useState<number | null>(null);
+  const [reviewBody, setReviewBody] = useState('');
+  type ReviewStatus = 'idle' | 'saving' | 'saved' | 'error';
+  const [reviewStatus, setReviewStatus] = useState<ReviewStatus>('idle');
+
+  async function handleSubmitReview() {
+    if (!courseKey || reviewRating === null) return;
+    setReviewStatus('saving');
+
+    // Derive a safe ISO date from round.date — guard against non-ISO strings.
+    let playedAt: string | undefined;
+    try {
+      const d = new Date(round.date);
+      if (!isNaN(d.getTime())) playedAt = d.toISOString().slice(0, 10);
+    } catch {
+      // leave playedAt undefined — server treats absent as NULL
+    }
+
+    try {
+      await createCourseReview(courseKey, {
+        rating: reviewRating,
+        body: reviewBody.trim() || undefined,
+        roundId: round.id,
+        courseName: courseName ?? round.courseName,
+        playedAt,
+      });
+      setReviewStatus('saved');
+    } catch {
+      // Never throw — the Done button keeps working regardless.
+      setReviewStatus('error');
+    }
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Inline style constants — mirrors CaddieSheet / ScanSheet patterns
@@ -398,6 +453,145 @@ export default function RoundRecap({ open, round, onDone }: RoundRecapProps) {
               >
                 {isPartial ? `Thru ${maxPlayedHoles}` : `${holeCount} holes`}
               </div>
+
+              {/* ── Course review affordance (B2) — hidden when courseKey is absent ── */}
+              {showReview && (
+                <>
+                  <div style={{ ...hairlineRule, marginTop: 28 }} />
+
+                  {reviewStatus === 'saved' ? (
+                    /* Quiet confirmed state — replaces the form once submitted */
+                    <div
+                      style={{
+                        textAlign: 'center',
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        letterSpacing: '1.2px',
+                        color: T.pencilSoft,
+                        textTransform: 'uppercase',
+                        paddingBottom: 8,
+                      }}
+                    >
+                      Noted.
+                    </div>
+                  ) : (
+                    <div style={{ paddingBottom: 8 }}>
+                      {/* Section kicker */}
+                      <div style={{ ...sectionLabel, marginBottom: 16 }}>
+                        How was it?
+                      </div>
+
+                      {/* Star rating — 5 tappable marks, ≥44pt targets */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 4,
+                          marginBottom: 16,
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            aria-label={`Rate ${n} star${n !== 1 ? 's' : ''}`}
+                            onClick={() => setReviewRating(n)}
+                            style={{
+                              minWidth: 44,
+                              minHeight: 44,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: 'none',
+                              background: 'transparent',
+                              cursor: 'pointer',
+                              padding: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: T.serif,
+                                fontStyle: 'italic',
+                                fontSize: 24,
+                                color: reviewRating !== null && n <= reviewRating
+                                  ? T.ink
+                                  : T.pencilSoft,
+                                lineHeight: 1,
+                                userSelect: 'none',
+                              }}
+                            >
+                              {n}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Short note — quiet single-line textarea */}
+                      <textarea
+                        placeholder="A word or two…"
+                        value={reviewBody}
+                        onChange={(e) => setReviewBody(e.target.value)}
+                        maxLength={2000}
+                        rows={2}
+                        style={{
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          resize: 'none',
+                          background: T.paper,
+                          border: `1px solid ${T.hairline}`,
+                          borderRadius: 10,
+                          padding: '10px 12px',
+                          fontFamily: T.sans,
+                          fontSize: 14,
+                          color: T.ink,
+                          lineHeight: 1.5,
+                          outline: 'none',
+                          marginBottom: 12,
+                        }}
+                      />
+
+                      {/* Submit — quiet ink button; disabled until rating chosen */}
+                      <button
+                        onClick={handleSubmitReview}
+                        disabled={reviewRating === null || reviewStatus === 'saving'}
+                        style={{
+                          width: '100%',
+                          padding: '12px 20px',
+                          minHeight: 44,
+                          borderRadius: 10,
+                          border: `1px solid ${T.hairline}`,
+                          background: reviewRating === null ? 'transparent' : T.paperDeep,
+                          color: reviewRating === null ? T.pencilSoft : T.ink,
+                          fontFamily: T.sans,
+                          fontSize: 14,
+                          fontWeight: 500,
+                          cursor: reviewRating === null ? 'default' : 'pointer',
+                          letterSpacing: '0.1px',
+                          transition: 'background 0.15s',
+                        }}
+                      >
+                        {reviewStatus === 'saving' ? 'Saving…' : 'Save note'}
+                      </button>
+
+                      {/* Error state — muted, never blocks Done */}
+                      {reviewStatus === 'error' && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontFamily: T.mono,
+                            fontSize: 10,
+                            letterSpacing: '0.8px',
+                            color: T.errorInk,
+                            textAlign: 'center',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          Couldn&apos;t save — tap again or skip
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
 
             </div>
           </div>

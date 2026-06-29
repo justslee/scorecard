@@ -20,6 +20,8 @@ import type {
   SavedPlayer,
   Course,
   GolferProfile,
+  CourseReview,
+  CourseReviewCreate,
 } from './types';
 import { getTokenViaClerk, getAuthDiagnostics } from './auth-token';
 
@@ -35,6 +37,8 @@ export type {
   SavedPlayer,
   Course,
   GolferProfile,
+  CourseReview,
+  CourseReviewCreate,
 };
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -470,3 +474,31 @@ export async function updateGolferProfile(data: GolferProfileUpdate): Promise<Go
 // Create/update games via RoundCreate.games or updateRound({ games }).
 // ================
 // (getGame / createGame / updateGame / deleteGame removed — no route exists)
+
+// ===== Course Reviews API (B2) =====
+// GET  /api/courses/{courseKey}/reviews  → CourseReview[]
+// POST /api/courses/{courseKey}/reviews  → CourseReview
+
+/**
+ * List the calling user's reviews for a given course key.
+ * courseKey is URL-encoded; the key is slash-free by construction (§0.3 of plan).
+ */
+export async function getCourseReviews(courseKey: string): Promise<CourseReview[]> {
+  return fetchAPI<CourseReview[]>(
+    `/api/courses/${encodeURIComponent(courseKey)}/reviews`,
+  );
+}
+
+/**
+ * Create a course review for the calling user.
+ * courseKey is URL-encoded; rating must be 1–5 (enforced server-side as 422).
+ */
+export async function createCourseReview(
+  courseKey: string,
+  data: CourseReviewCreate,
+): Promise<CourseReview> {
+  return fetchAPI<CourseReview>(
+    `/api/courses/${encodeURIComponent(courseKey)}/reviews`,
+    { method: 'POST', body: JSON.stringify(data) },
+  );
+}

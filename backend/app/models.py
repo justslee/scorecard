@@ -1,6 +1,7 @@
 """Pydantic models for the Scorecard API."""
 
-from pydantic import BaseModel
+from datetime import date
+from pydantic import BaseModel, Field
 from typing import Any, Optional
 
 
@@ -211,3 +212,30 @@ class CourseCreate(BaseModel):
     holes: list[HoleInfo]
     tees: Optional[list[TeeOption]] = None
     location: Optional[str] = None
+
+
+# ============ Course Reviews ============
+
+class CourseReview(BaseModel):
+    """Response contract (camelCase) — mirrors types.ts CourseReview."""
+
+    id: str
+    ownerId: str
+    courseKey: str
+    courseName: Optional[str] = None
+    roundId: Optional[str] = None
+    rating: int
+    body: Optional[str] = None
+    playedAt: Optional[str] = None   # ISO date string (date.isoformat())
+    createdAt: str                   # ISO datetime string
+
+
+class CourseReviewCreate(BaseModel):
+    """Request body for POST /api/courses/{course_key}/reviews."""
+
+    rating: int = Field(ge=1, le=5)
+    body: Optional[str] = Field(default=None, max_length=2000)
+    roundId: Optional[str] = None
+    courseName: Optional[str] = None
+    # Optional ISO date; FastAPI coerces the string to date and 422s on bad format.
+    playedAt: Optional[date] = None

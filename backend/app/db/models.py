@@ -6,7 +6,7 @@ Caddie schema (supabase/migrations 001–004, baseline revision 001_baseline):
 
 Core scoring schema (Alembic revision 002_core_scoring / 005_core_scoring):
   Player, GolferProfile, Tournament, Round, PlayerGroup, RoundPlayer,
-  Score, Game.
+  Score, Game, CourseReview.
 """
 
 from datetime import datetime, date
@@ -449,5 +449,26 @@ class Game(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class CourseReview(Base):
+    """Owner-scoped course review (B2). Keyed on a string course_key (GolfAPI id
+    when known, else name:<slug>) to sidestep course-identity unification (B5)."""
+
+    __tablename__ = "course_reviews"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    owner_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    course_key: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    course_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    round_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    played_at: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
