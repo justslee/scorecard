@@ -17,6 +17,14 @@ import {
   computeStableford,
   computeMatchPlay,
   computeWolf,
+  computeScramble,
+  computeBingoBangoBongo,
+  computeVegas,
+  computeHammer,
+  computeRabbit,
+  computeTrash,
+  computeChicago,
+  computeDefender,
   computeGameResults,
 } from './games';
 import type { Round, Game, Score, HoleInfo, Player } from './types';
@@ -1106,10 +1114,817 @@ describe('computeGameResults', () => {
     expect(result.wolf).toBeDefined();
   });
 
-  it('returns empty object for unimplemented formats (scramble, bingoBangoBongo, etc.)', () => {
-    for (const fmt of ['scramble', 'bingoBangoBongo', 'vegas'] as const) {
-      const result = computeGameResults(BASE_ROUND, makeGame({ format: fmt }));
-      expect(Object.keys(result)).toHaveLength(0);
-    }
+  it('routes scramble → result.scramble defined', () => {
+    const result = computeGameResults(BASE_ROUND, makeGame({ format: 'scramble', teams: [] }));
+    expect(result.scramble).toBeDefined();
+  });
+
+  it('routes bingoBangoBongo → result.bingoBangoBongo defined', () => {
+    const result = computeGameResults(BASE_ROUND, makeGame({ format: 'bingoBangoBongo' }));
+    expect(result.bingoBangoBongo).toBeDefined();
+  });
+
+  it('routes vegas → result.vegas defined', () => {
+    const result = computeGameResults(BASE_ROUND, makeGame({ format: 'vegas', teams: [] }));
+    expect(result.vegas).toBeDefined();
+  });
+
+  it('routes hammer → result.hammer defined', () => {
+    const result = computeGameResults(BASE_ROUND, makeGame({ format: 'hammer' }));
+    expect(result.hammer).toBeDefined();
+  });
+
+  it('routes rabbit → result.rabbit defined', () => {
+    const result = computeGameResults(BASE_ROUND, makeGame({ format: 'rabbit' }));
+    expect(result.rabbit).toBeDefined();
+  });
+
+  it('routes trash → result.trash defined', () => {
+    const result = computeGameResults(BASE_ROUND, makeGame({ format: 'trash' }));
+    expect(result.trash).toBeDefined();
+  });
+
+  it('routes chicago → result.chicago defined', () => {
+    const result = computeGameResults(BASE_ROUND, makeGame({ format: 'chicago' }));
+    expect(result.chicago).toBeDefined();
+  });
+
+  it('routes defender → result.defender defined', () => {
+    const result = computeGameResults(BASE_ROUND, makeGame({ format: 'defender' }));
+    expect(result.defender).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeScramble
+// ---------------------------------------------------------------------------
+
+describe('computeScramble', () => {
+  const FOUR_PLAYERS = ['p1', 'p2', 'p3', 'p4'];
+
+  function scrambleGame(): Partial<Game> {
+    return {
+      format: 'scramble',
+      playerIds: FOUR_PLAYERS,
+      teams: [
+        { id: 'tA', name: 'Team A', playerIds: ['p1', 'p2'] },
+        { id: 'tB', name: 'Team B', playerIds: ['p3', 'p4'] },
+      ],
+    };
+  }
+
+  it('uses the lowest (best) score per team per hole', () => {
+    const round = makeRound({
+      players: makePlayers(FOUR_PLAYERS),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 4 },
+        { playerId: 'p2', holeNumber: 1, strokes: 5 }, // team A best = 4
+        { playerId: 'p3', holeNumber: 1, strokes: 3 },
+        { playerId: 'p4', holeNumber: 1, strokes: 6 }, // team B best = 3
+      ],
+    });
+    const game = makeGame(scrambleGame());
+    const result = computeScramble(round, game);
+
+    expect(result.teamScoresByHole['tA'][0]).toBe(4);
+    expect(result.teamScoresByHole['tB'][0]).toBe(3);
+  });
+
+  it('declares the team with the lower total the winner', () => {
+    const round = makeRound({
+      players: makePlayers(FOUR_PLAYERS),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 },
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+        { playerId: 'p3', holeNumber: 1, strokes: 4 },
+        { playerId: 'p4', holeNumber: 1, strokes: 6 },
+        { playerId: 'p1', holeNumber: 2, strokes: 3 },
+        { playerId: 'p2', holeNumber: 2, strokes: 5 },
+        { playerId: 'p3', holeNumber: 2, strokes: 4 },
+        { playerId: 'p4', holeNumber: 2, strokes: 6 },
+      ],
+    });
+    const game = makeGame(scrambleGame());
+    const result = computeScramble(round, game);
+
+    expect(result.winnerTeamId).toBe('tA');
+    expect(result.totals.find(t => t.teamId === 'tA')?.total).toBe(6);
+    expect(result.totals.find(t => t.teamId === 'tB')?.total).toBe(8);
+  });
+
+  it('returns null winnerTeamId on a tie', () => {
+    const round = makeRound({
+      players: makePlayers(FOUR_PLAYERS),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 },
+        { playerId: 'p3', holeNumber: 1, strokes: 3 },
+      ],
+    });
+    const game = makeGame(scrambleGame());
+    const result = computeScramble(round, game);
+    expect(result.winnerTeamId).toBeNull();
+  });
+
+  it('stores null for unscored holes', () => {
+    const round = makeRound({ players: makePlayers(FOUR_PLAYERS), scores: [] });
+    const game = makeGame(scrambleGame());
+    const result = computeScramble(round, game);
+    expect(result.teamScoresByHole['tA']).toHaveLength(18);
+    expect(result.teamScoresByHole['tA'][0]).toBeNull();
+    expect(result.totals.find(t => t.teamId === 'tA')?.holesPlayed).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeBingoBangoBongo
+// ---------------------------------------------------------------------------
+
+describe('computeBingoBangoBongo', () => {
+  it('returns all-zero totals and a non-empty dataLimitations array', () => {
+    const round = makeRound({
+      scores: [...uniformScores('p1', 3), ...uniformScores('p2', 4)],
+    });
+    const game = makeGame({ format: 'bingoBangoBongo', playerIds: ['p1', 'p2'] });
+    const result = computeBingoBangoBongo(round, game);
+
+    expect(result.playerIds).toEqual(['p1', 'p2']);
+    expect(result.totals['p1']).toBe(0);
+    expect(result.totals['p2']).toBe(0);
+    expect(result.dataLimitations.length).toBeGreaterThan(0);
+    // All three event types noted
+    const joined = result.dataLimitations.join(' ');
+    expect(joined).toMatch(/[Bb]ingo/);
+    expect(joined).toMatch(/[Bb]ango/);
+    expect(joined).toMatch(/[Bb]ongo/);
+  });
+
+  it('falls back to round.players when playerIds is empty', () => {
+    const round = makeRound({ players: makePlayers(['p1', 'p2', 'p3']) });
+    const game = makeGame({ format: 'bingoBangoBongo', playerIds: [] });
+    const result = computeBingoBangoBongo(round, game);
+    expect(result.playerIds).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeVegas
+// ---------------------------------------------------------------------------
+
+describe('computeVegas', () => {
+  const FOUR_PLAYERS = ['p1', 'p2', 'p3', 'p4'];
+
+  function vegasGame(pv = 1): Partial<Game> {
+    return {
+      format: 'vegas',
+      playerIds: FOUR_PLAYERS,
+      teams: [
+        { id: 'tA', name: 'Team A', playerIds: ['p1', 'p2'] },
+        { id: 'tB', name: 'Team B', playerIds: ['p3', 'p4'] },
+      ],
+      settings: { pointValue: pv },
+    };
+  }
+
+  it('combines 2-player scores into correct Vegas number (low digit first)', () => {
+    // Team A: 4 & 5 → 45; Team B: 5 & 6 → 56
+    const round = makeRound({
+      players: makePlayers(FOUR_PLAYERS),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 4 },
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+        { playerId: 'p3', holeNumber: 1, strokes: 5 },
+        { playerId: 'p4', holeNumber: 1, strokes: 6 },
+      ],
+    });
+    const game = makeGame(vegasGame());
+    const result = computeVegas(round, game);
+
+    expect(result.holes[0].teamANumber).toBe(45);
+    expect(result.holes[0].teamBNumber).toBe(56);
+    expect(result.holes[0].diff).toBe(11); // 56 - 45 = 11 (positive → A wins)
+    expect(result.holes[0].winnerTeamId).toBe('tA');
+  });
+
+  it('sorts scores low-high regardless of player order (3 & 5 → 35, not 53)', () => {
+    const round = makeRound({
+      players: makePlayers(FOUR_PLAYERS),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 5 }, // high first
+        { playerId: 'p2', holeNumber: 1, strokes: 3 }, // low second
+        { playerId: 'p3', holeNumber: 2, strokes: 4 },
+        { playerId: 'p4', holeNumber: 2, strokes: 4 },
+      ],
+    });
+    const game = makeGame(vegasGame());
+    const result = computeVegas(round, game);
+    expect(result.holes[0].teamANumber).toBe(35); // sorted 3,5 → 35
+  });
+
+  it('team B winning produces negative totals for team A', () => {
+    // Team A: 5 & 6 → 56; Team B: 4 & 4 → 44; diff = 44 - 56 = -12 → B wins 12
+    const round = makeRound({
+      players: makePlayers(FOUR_PLAYERS),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 5 },
+        { playerId: 'p2', holeNumber: 1, strokes: 6 },
+        { playerId: 'p3', holeNumber: 1, strokes: 4 },
+        { playerId: 'p4', holeNumber: 1, strokes: 4 },
+      ],
+    });
+    const game = makeGame(vegasGame());
+    const result = computeVegas(round, game);
+
+    expect(result.holes[0].winnerTeamId).toBe('tB');
+    expect(result.totals['tA']).toBe(-12);
+    expect(result.totals['tB']).toBe(12);
+    // Zero-sum check
+    expect(result.totals['tA'] + result.totals['tB']).toBe(0);
+  });
+
+  it('totals are zero-sum across a push (equal Vegas numbers)', () => {
+    // Team A: 4 & 5 → 45; Team B: 4 & 5 → 45; push
+    const round = makeRound({
+      players: makePlayers(FOUR_PLAYERS),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 4 },
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+        { playerId: 'p3', holeNumber: 1, strokes: 4 },
+        { playerId: 'p4', holeNumber: 1, strokes: 5 },
+      ],
+    });
+    const game = makeGame(vegasGame());
+    const result = computeVegas(round, game);
+    expect(result.holes[0].winnerTeamId).toBeNull();
+    expect(result.totals['tA']).toBe(0);
+    expect(result.totals['tB']).toBe(0);
+  });
+
+  it('scales by pointValue', () => {
+    // Diff = 11, pointValue = 5 → each team ±55
+    const round = makeRound({
+      players: makePlayers(FOUR_PLAYERS),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 4 },
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+        { playerId: 'p3', holeNumber: 1, strokes: 5 },
+        { playerId: 'p4', holeNumber: 1, strokes: 6 },
+      ],
+    });
+    const game = makeGame(vegasGame(5));
+    const result = computeVegas(round, game);
+    expect(result.totals['tA']).toBe(55);
+    expect(result.totals['tB']).toBe(-55);
+  });
+
+  it('returns null Vegas numbers when fewer than 2 players on a team have scores', () => {
+    const round = makeRound({
+      players: makePlayers(FOUR_PLAYERS),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 4 },
+        // p2 has no score — Team A can't form a Vegas number
+        { playerId: 'p3', holeNumber: 1, strokes: 4 },
+        { playerId: 'p4', holeNumber: 1, strokes: 5 },
+      ],
+    });
+    const game = makeGame(vegasGame());
+    const result = computeVegas(round, game);
+    expect(result.holes[0].teamANumber).toBeNull();
+    expect(result.holes[0].winnerTeamId).toBeNull();
+    expect(result.totals['tA']).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeHammer
+// ---------------------------------------------------------------------------
+
+describe('computeHammer', () => {
+  it('winner of a hole earns pointValue from each loser', () => {
+    const round = makeRound({
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 }, // wins
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+      ],
+    });
+    const game = makeGame({
+      format: 'hammer',
+      playerIds: ['p1', 'p2'],
+      settings: { pointValue: 2 },
+    });
+    const result = computeHammer(round, game);
+
+    expect(result.totals['p1']).toBe(2);  // +2 from p2
+    expect(result.totals['p2']).toBe(-2); // -2 to p1
+    // Zero-sum
+    expect(result.totals['p1'] + result.totals['p2']).toBe(0);
+  });
+
+  it('tie (equal scores) results in no exchange', () => {
+    const round = makeRound({
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 4 },
+        { playerId: 'p2', holeNumber: 1, strokes: 4 },
+      ],
+    });
+    const game = makeGame({ format: 'hammer', playerIds: ['p1', 'p2'], settings: { pointValue: 1 } });
+    const result = computeHammer(round, game);
+
+    expect(result.holes[0].winnerPlayerId).toBeNull();
+    expect(result.totals['p1']).toBe(0);
+    expect(result.totals['p2']).toBe(0);
+  });
+
+  it('applies multiplier from hammerMultiplierByHole', () => {
+    // hole 1: multiplier 2, pointValue 3 → winner earns 6 from each loser
+    const round = makeRound({
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 },
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+      ],
+    });
+    const game = makeGame({
+      format: 'hammer',
+      playerIds: ['p1', 'p2'],
+      settings: { pointValue: 3, hammerMultiplierByHole: { 1: 2 } },
+    });
+    const result = computeHammer(round, game);
+
+    expect(result.holes[0].multiplier).toBe(2);
+    expect(result.holes[0].points).toBe(6); // 2 × 3
+    expect(result.totals['p1']).toBe(6);
+    expect(result.totals['p2']).toBe(-6);
+  });
+
+  it('default multiplier is 1 for holes not listed', () => {
+    const round = makeRound({
+      scores: [
+        { playerId: 'p1', holeNumber: 3, strokes: 3 },
+        { playerId: 'p2', holeNumber: 3, strokes: 5 },
+      ],
+    });
+    const game = makeGame({
+      format: 'hammer',
+      playerIds: ['p1', 'p2'],
+      settings: { pointValue: 1, hammerMultiplierByHole: {} },
+    });
+    const result = computeHammer(round, game);
+    expect(result.holes[2].multiplier).toBe(1);
+  });
+
+  it('totals are zero-sum across multiple holes', () => {
+    // hole 1: p1 wins; hole 2: p2 wins; net should cancel
+    const scores: Score[] = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 5 },
+      { playerId: 'p1', holeNumber: 2, strokes: 5 },
+      { playerId: 'p2', holeNumber: 2, strokes: 3 },
+    ];
+    const round = makeRound({ scores });
+    const game = makeGame({ format: 'hammer', playerIds: ['p1', 'p2'], settings: { pointValue: 1 } });
+    const result = computeHammer(round, game);
+    expect(result.totals['p1'] + result.totals['p2']).toBe(0);
+    expect(result.totals['p1']).toBe(0);
+  });
+
+  it('reports a dataLimitations entry about live hammer events', () => {
+    const round = makeRound({ scores: [] });
+    const game = makeGame({ format: 'hammer', playerIds: ['p1', 'p2'], settings: {} });
+    const result = computeHammer(round, game);
+    expect(result.dataLimitations.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeRabbit
+// ---------------------------------------------------------------------------
+
+describe('computeRabbit', () => {
+  it('first outright hole winner captures the rabbit', () => {
+    const round = makeRound({
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 },
+        { playerId: 'p2', holeNumber: 1, strokes: 4 },
+      ],
+    });
+    const game = makeGame({ format: 'rabbit', playerIds: ['p1', 'p2'] });
+    const result = computeRabbit(round, game);
+
+    expect(result.holes[0].outright).toBe('p1');
+    expect(result.holes[0].holder).toBe('p1');
+    expect(result.holes[0].changed).toBe(true);
+  });
+
+  it('tie leaves rabbit with its current holder (or still free)', () => {
+    // hole 1: p1 captures; hole 2: tie → p1 keeps
+    const round = makeRound({
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 },
+        { playerId: 'p2', holeNumber: 1, strokes: 4 },
+        { playerId: 'p1', holeNumber: 2, strokes: 4 },
+        { playerId: 'p2', holeNumber: 2, strokes: 4 },
+      ],
+    });
+    const game = makeGame({ format: 'rabbit', playerIds: ['p1', 'p2'] });
+    const result = computeRabbit(round, game);
+
+    expect(result.holes[1].outright).toBeNull();
+    expect(result.holes[1].holder).toBe('p1'); // p1 still holds
+    expect(result.holes[1].changed).toBe(false);
+  });
+
+  it('rabbit transfers when a different player wins outright', () => {
+    // hole 1: p1 captures; hole 2: p2 wins → rabbit transfers
+    const round = makeRound({
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 },
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+        { playerId: 'p1', holeNumber: 2, strokes: 5 },
+        { playerId: 'p2', holeNumber: 2, strokes: 3 },
+      ],
+    });
+    const game = makeGame({ format: 'rabbit', playerIds: ['p1', 'p2'] });
+    const result = computeRabbit(round, game);
+
+    expect(result.holes[1].holder).toBe('p2');
+    expect(result.holes[1].changed).toBe(true);
+  });
+
+  it('tracks front9HolderId and back9HolderId correctly', () => {
+    // p1 wins hole 1, p2 wins hole 10 (transfer midway)
+    const scores: Score[] = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 5 },
+      { playerId: 'p1', holeNumber: 10, strokes: 5 },
+      { playerId: 'p2', holeNumber: 10, strokes: 3 },
+    ];
+    const round = makeRound({ scores });
+    const game = makeGame({ format: 'rabbit', playerIds: ['p1', 'p2'] });
+    const result = computeRabbit(round, game);
+
+    expect(result.front9HolderId).toBe('p1'); // p1 held through hole 9
+    expect(result.back9HolderId).toBe('p2');  // p2 captured on hole 10
+  });
+
+  it('returns null holders when no outright hole wins occur', () => {
+    // All ties — rabbit never captured
+    const round = makeRound({
+      scores: [...uniformScores('p1', 4), ...uniformScores('p2', 4)],
+    });
+    const game = makeGame({ format: 'rabbit', playerIds: ['p1', 'p2'] });
+    const result = computeRabbit(round, game);
+
+    expect(result.front9HolderId).toBeNull();
+    expect(result.back9HolderId).toBeNull();
+    expect(result.holes.every(h => h.holder === null)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeTrash
+// ---------------------------------------------------------------------------
+
+describe('computeTrash', () => {
+  const PAR4_HOLES = makeHoles(Array<number>(18).fill(4));
+
+  it('awards 1× pointValue for a birdie, 2× for eagle, 3× for albatross', () => {
+    const round = makeRound({
+      holes: PAR4_HOLES,
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 }, // birdie on par 4
+        { playerId: 'p1', holeNumber: 2, strokes: 2 }, // eagle on par 4
+        { playerId: 'p1', holeNumber: 3, strokes: 1 }, // albatross on par 4
+      ],
+    });
+    const game = makeGame({ format: 'trash', playerIds: ['p1', 'p2'], settings: { pointValue: 2 } });
+    const result = computeTrash(round, game);
+
+    const events = result.events.filter(e => e.playerId === 'p1');
+    expect(events.find(e => e.type === 'birdie')?.pointValue).toBe(2);
+    expect(events.find(e => e.type === 'eagle')?.pointValue).toBe(4);
+    expect(events.find(e => e.type === 'albatross')?.pointValue).toBe(6);
+    expect(result.totals['p1']).toBe(12); // 2+4+6
+  });
+
+  it('par or worse scores earn no trash points', () => {
+    const round = makeRound({
+      holes: PAR4_HOLES,
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 4 }, // par
+        { playerId: 'p1', holeNumber: 2, strokes: 5 }, // bogey
+        { playerId: 'p1', holeNumber: 3, strokes: 6 }, // double
+      ],
+    });
+    const game = makeGame({ format: 'trash', playerIds: ['p1'], settings: { pointValue: 1 } });
+    const result = computeTrash(round, game);
+    expect(result.events).toHaveLength(0);
+    expect(result.totals['p1']).toBe(0);
+  });
+
+  it('records events for all players independently', () => {
+    const round = makeRound({
+      holes: PAR4_HOLES,
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 }, // birdie
+        { playerId: 'p2', holeNumber: 1, strokes: 3 }, // birdie
+      ],
+    });
+    const game = makeGame({ format: 'trash', playerIds: ['p1', 'p2'], settings: { pointValue: 1 } });
+    const result = computeTrash(round, game);
+
+    expect(result.events).toHaveLength(2);
+    expect(result.totals['p1']).toBe(1);
+    expect(result.totals['p2']).toBe(1);
+  });
+
+  it('reports dataLimitations for events that need capture (greenie, sandy, etc.)', () => {
+    const round = makeRound({ holes: PAR4_HOLES, scores: [] });
+    const game = makeGame({ format: 'trash', playerIds: ['p1'], settings: {} });
+    const result = computeTrash(round, game);
+
+    const text = result.dataLimitations.join(' ').toLowerCase();
+    expect(text).toMatch(/greenie/);
+    expect(text).toMatch(/sandy/);
+    expect(result.dataLimitations.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('uses par from round.holes per hole', () => {
+    // par-3 hole 1; strokes=2 → birdie (diff=-1); strokes=1 → eagle (diff=-2)
+    const holes: HoleInfo[] = [
+      { number: 1, par: 3 },
+      ...Array.from({ length: 17 }, (_, i) => ({ number: i + 2, par: 4 })),
+    ];
+    const round = makeRound({
+      holes,
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 2 }, // birdie on par-3 (diff=-1)
+        { playerId: 'p1', holeNumber: 2, strokes: 2 }, // eagle on par-4 (diff=-2)
+      ],
+    });
+    const game = makeGame({ format: 'trash', playerIds: ['p1'], settings: { pointValue: 1 } });
+    const result = computeTrash(round, game);
+    expect(result.events.find(e => e.holeNumber === 1)?.type).toBe('birdie');
+    expect(result.events.find(e => e.holeNumber === 2)?.type).toBe('eagle');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeChicago
+// ---------------------------------------------------------------------------
+
+describe('computeChicago', () => {
+  const PAR4_HOLES = makeHoles(Array<number>(18).fill(4));
+
+  it('awards Chicago points correctly per score category', () => {
+    const round = makeRound({
+      holes: PAR4_HOLES,
+      players: [
+        { id: 'p1', name: 'p1', handicap: 0 },
+        { id: 'p2', name: 'p2', handicap: 0 },
+      ],
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 1 }, // albatross (diff=-3) → 16
+        { playerId: 'p1', holeNumber: 2, strokes: 2 }, // eagle → 8
+        { playerId: 'p1', holeNumber: 3, strokes: 3 }, // birdie → 4
+        { playerId: 'p1', holeNumber: 4, strokes: 4 }, // par → 2
+        { playerId: 'p1', holeNumber: 5, strokes: 5 }, // bogey → 1
+        { playerId: 'p1', holeNumber: 6, strokes: 6 }, // double → 0
+      ],
+    });
+    const game = makeGame({
+      format: 'chicago',
+      playerIds: ['p1', 'p2'],
+      settings: {},
+    });
+    const result = computeChicago(round, game);
+    expect(result.pointsByHole[0].points['p1']).toBe(16);
+    expect(result.pointsByHole[1].points['p1']).toBe(8);
+    expect(result.pointsByHole[2].points['p1']).toBe(4);
+    expect(result.pointsByHole[3].points['p1']).toBe(2);
+    expect(result.pointsByHole[4].points['p1']).toBe(1);
+    expect(result.pointsByHole[5].points['p1']).toBe(0);
+    expect(result.totals['p1']).toBe(31); // 16+8+4+2+1+0
+  });
+
+  it('calculates quota as chicagoQuotaBase - handicap (default base 39)', () => {
+    const round = makeRound({
+      holes: PAR4_HOLES,
+      players: [
+        { id: 'p1', name: 'p1', handicap: 10 },
+        { id: 'p2', name: 'p2', handicap: 20 },
+      ],
+      scores: [],
+    });
+    const game = makeGame({ format: 'chicago', playerIds: ['p1', 'p2'], settings: {} });
+    const result = computeChicago(round, game);
+
+    expect(result.quotas['p1']).toBe(29); // 39 - 10
+    expect(result.quotas['p2']).toBe(19); // 39 - 20
+  });
+
+  it('respects chicagoQuotaBase setting', () => {
+    const round = makeRound({
+      holes: PAR4_HOLES,
+      players: [{ id: 'p1', name: 'p1', handicap: 5 }],
+      scores: [],
+    });
+    const game = makeGame({
+      format: 'chicago',
+      playerIds: ['p1'],
+      settings: { chicagoQuotaBase: 36 },
+    });
+    const result = computeChicago(round, game);
+    expect(result.quotas['p1']).toBe(31); // 36 - 5
+  });
+
+  it('quota does not go below 0 for high handicappers', () => {
+    const round = makeRound({
+      holes: PAR4_HOLES,
+      players: [{ id: 'p1', name: 'p1', handicap: 50 }],
+      scores: [],
+    });
+    const game = makeGame({ format: 'chicago', playerIds: ['p1'], settings: {} });
+    const result = computeChicago(round, game);
+    expect(result.quotas['p1']).toBe(0);
+  });
+
+  it('netVsQuota = total - quota; highest net wins', () => {
+    // p1: handicap 15, quota 24; p2: handicap 10, quota 29
+    // p1 scores 30 total pts, p2 scores 30 total pts
+    // p1 net = 30-24 = +6; p2 net = 30-29 = +1 → p1 wins
+    const round = makeRound({
+      holes: PAR4_HOLES,
+      players: [
+        { id: 'p1', name: 'p1', handicap: 15 },
+        { id: 'p2', name: 'p2', handicap: 10 },
+      ],
+      // Give each player 15 pars (15×2=30) and 3 unscored holes to keep math clean
+      scores: [
+        ...Array.from({ length: 15 }, (_, i) => ({ playerId: 'p1', holeNumber: i + 1, strokes: 4 })),
+        ...Array.from({ length: 15 }, (_, i) => ({ playerId: 'p2', holeNumber: i + 1, strokes: 4 })),
+      ],
+    });
+    const game = makeGame({ format: 'chicago', playerIds: ['p1', 'p2'], settings: {} });
+    const result = computeChicago(round, game);
+
+    expect(result.totals['p1']).toBe(30);
+    expect(result.totals['p2']).toBe(30);
+    expect(result.netVsQuota['p1']).toBe(6);  // 30 - 24
+    expect(result.netVsQuota['p2']).toBe(1);  // 30 - 29
+    expect(result.winnerPlayerId).toBe('p1');
+  });
+
+  it('returns null winnerPlayerId on a net tie', () => {
+    // Both players same handicap, same score → same net
+    const round = makeRound({
+      holes: PAR4_HOLES,
+      players: [
+        { id: 'p1', name: 'p1', handicap: 10 },
+        { id: 'p2', name: 'p2', handicap: 10 },
+      ],
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 4 }, // par → 2 pts
+        { playerId: 'p2', holeNumber: 1, strokes: 4 },
+      ],
+    });
+    const game = makeGame({ format: 'chicago', playerIds: ['p1', 'p2'], settings: {} });
+    const result = computeChicago(round, game);
+    expect(result.winnerPlayerId).toBeNull();
+  });
+
+  it('stores null for unscored holes', () => {
+    const round = makeRound({
+      holes: PAR4_HOLES,
+      players: [{ id: 'p1', name: 'p1', handicap: 0 }],
+      scores: [{ playerId: 'p1', holeNumber: 1, strokes: 4 }],
+    });
+    const game = makeGame({ format: 'chicago', playerIds: ['p1'], settings: {} });
+    const result = computeChicago(round, game);
+    expect(result.pointsByHole[1].points['p1']).toBeNull(); // hole 2 unscored
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeDefender
+// ---------------------------------------------------------------------------
+
+describe('computeDefender', () => {
+  it('defender earns pointValue per scored challenger when they have the sole low score; challengers pay', () => {
+    const round = makeRound({
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 }, // defender (fixed)
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+        { playerId: 'p3', holeNumber: 1, strokes: 5 },
+      ],
+      players: makePlayers(['p1', 'p2', 'p3']),
+    });
+    const game = makeGame({
+      format: 'defender',
+      playerIds: ['p1', 'p2', 'p3'],
+      settings: { pointValue: 2, defenderPlayerId: 'p1' },
+    });
+    const result = computeDefender(round, game);
+
+    expect(result.holes[0].result).toBe('defended');
+    expect(result.holes[0].defenderId).toBe('p1');
+    expect(result.holes[0].defenderDelta).toBe(4); // 2 challengers × 2 pts
+    expect(result.totals['p1']).toBe(4);
+    expect(result.totals['p2']).toBe(-2); // paid 2 to defender
+    expect(result.totals['p3']).toBe(-2); // paid 2 to defender
+    // Zero-sum: 4 + (-2) + (-2) = 0
+    expect(result.totals['p1'] + result.totals['p2'] + result.totals['p3']).toBe(0);
+  });
+
+  it('challenger who beats defender earns pointValue; defender loses pointValue per beater', () => {
+    const round = makeRound({
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 5 }, // defender (fixed)
+        { playerId: 'p2', holeNumber: 1, strokes: 3 }, // beater
+        { playerId: 'p3', holeNumber: 1, strokes: 5 },
+      ],
+      players: makePlayers(['p1', 'p2', 'p3']),
+    });
+    const game = makeGame({
+      format: 'defender',
+      playerIds: ['p1', 'p2', 'p3'],
+      settings: { pointValue: 1, defenderPlayerId: 'p1' },
+    });
+    const result = computeDefender(round, game);
+
+    expect(result.holes[0].result).toBe('beaten');
+    expect(result.holes[0].beaterIds).toEqual(['p2']);
+    expect(result.totals['p1']).toBe(-1);
+    expect(result.totals['p2']).toBe(1);
+    expect(result.totals['p3']).toBe(0);
+  });
+
+  it('defender rotates by hole index when defenderPlayerId is not set', () => {
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3']),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 }, // p1 defends hole 1 (index 0 % 3 = 0)
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+        { playerId: 'p3', holeNumber: 1, strokes: 5 },
+        { playerId: 'p2', holeNumber: 2, strokes: 3 }, // p2 defends hole 2 (index 1 % 3 = 1)
+        { playerId: 'p1', holeNumber: 2, strokes: 5 },
+        { playerId: 'p3', holeNumber: 2, strokes: 5 },
+      ],
+    });
+    const game = makeGame({
+      format: 'defender',
+      playerIds: ['p1', 'p2', 'p3'],
+      settings: { pointValue: 1 },
+    });
+    const result = computeDefender(round, game);
+
+    expect(result.holes[0].defenderId).toBe('p1'); // hole 1
+    expect(result.holes[1].defenderId).toBe('p2'); // hole 2
+    // p1 defended hole 1 (sole low vs p2 & p3) → +2 from challengers
+    // p2 defended hole 2 (sole low vs p1 & p3) → +2 from challengers
+    expect(result.holes[0].result).toBe('defended');
+    expect(result.holes[1].result).toBe('defended');
+    // Net across both holes: zero-sum
+    const totalSum = Object.values(result.totals).reduce((a, b) => a + b, 0);
+    expect(totalSum).toBe(0);
+  });
+
+  it('no_score when defender has no score for the hole', () => {
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2']),
+      scores: [{ playerId: 'p2', holeNumber: 1, strokes: 3 }],
+    });
+    const game = makeGame({
+      format: 'defender',
+      playerIds: ['p1', 'p2'],
+      settings: { defenderPlayerId: 'p1' },
+    });
+    const result = computeDefender(round, game);
+    expect(result.holes[0].result).toBe('no_score');
+    expect(result.totals['p1']).toBe(0);
+  });
+
+  it('totals are zero-sum across all holes (wager format)', () => {
+    // 3 players, 4 holes, various results
+    const scores: Score[] = [
+      // hole 1: p1 defends (fixed), beats p2 & p3
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 5 },
+      { playerId: 'p3', holeNumber: 1, strokes: 5 },
+      // hole 2: p1 defends, beaten by p2
+      { playerId: 'p1', holeNumber: 2, strokes: 5 },
+      { playerId: 'p2', holeNumber: 2, strokes: 3 },
+      { playerId: 'p3', holeNumber: 2, strokes: 5 },
+    ];
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3']),
+      scores,
+    });
+    const game = makeGame({
+      format: 'defender',
+      playerIds: ['p1', 'p2', 'p3'],
+      settings: { pointValue: 1, defenderPlayerId: 'p1' },
+    });
+    const result = computeDefender(round, game);
+    const totalSum = Object.values(result.totals).reduce((a, b) => a + b, 0);
+    expect(totalSum).toBe(0);
   });
 });

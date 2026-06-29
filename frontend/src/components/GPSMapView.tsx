@@ -27,12 +27,17 @@ import {
 import { CourseCoordinates } from "@/lib/golf-api";
 
 interface GPSMapViewProps {
-  courseId: number;
+  /** Course identifier — currently unused internally (prefixed _). */
+  courseId: string | number;
   courseName: string;
   holeCoordinates: CourseCoordinates[];
   currentHole: number;
   onHoleChange: (hole: number) => void;
-  onClose: () => void;
+  /**
+   * Called when the user taps "Back".
+   * Required in fullscreen mode; optional in inline mode.
+   */
+  onClose?: () => void;
   /** Auto-detect hole based on nearest green. Defaults true. */
   autoDetectHole?: boolean;
   /**
@@ -43,6 +48,12 @@ interface GPSMapViewProps {
    * fill layers beneath the satellite imagery.
    */
   osmFeatures?: GeoJSON.Feature[];
+  /**
+   * When true, the map fills its parent container (relative positioning) instead
+   * of a fixed full-screen overlay.  Used by InlineHoleDiagram inside the round
+   * view.  Header and heavy chrome are suppressed; a compact bottom strip is shown.
+   */
+  inline?: boolean;
 }
 
 // Layup ring distances in yards
@@ -109,6 +120,7 @@ export default function GPSMapView({
   onClose,
   autoDetectHole = true,
   osmFeatures,
+  inline = false,
 }: GPSMapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -118,7 +130,14 @@ export default function GPSMapView({
   const pinMarker = useRef<mapboxgl.Marker | null>(null);
   const hazardMarkers = useRef<mapboxgl.Marker[]>([]);
   const distanceLabelMarker = useRef<mapboxgl.Marker | null>(null);
+  const tapMeasureMarker = useRef<mapboxgl.Marker | null>(null);
   const mapLoaded = useRef(false);
+
+  // Keep a ref to currentHoleData that the Mapbox click handler can read without
+  // being re-added on every hole change (the handler is set up once on map load).
+  const currentHoleRef = useRef(
+    holeCoordinates.find((h) => h.holeNumber === currentHole)
+  );
 
   const [position, setPosition] = useState<Position | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -130,6 +149,14 @@ export default function GPSMapView({
   const currentHoleData = holeCoordinates.find(
     (h) => h.holeNumber === currentHole
   );
+
+  // Keep the click-handler ref in sync whenever hole changes.
+  useEffect(() => {
+    currentHoleRef.current = currentHoleData;
+    // Clear stale tap marker when navigating holes
+    tapMeasureMarker.current?.remove();
+    tapMeasureMarker.current = null;
+  }, [currentHoleData]);
 
   const distances = useMemo(() => {
     if (!position || !currentHoleData) {
@@ -539,6 +566,58 @@ export default function GPSMapView({
       updateOsmPolygons();
     });
 
+    // ── Tap-to-measure: click anywhere on the map ──────────────────────────
+    // Shows a compact bubble with "Tee <n>y · Pin <n>y" at the tapped point.
+    // The handler reads from currentHoleRef (not a closure over currentHoleData)
+    // so it always sees the latest hole when nav changes occur.
+    map.current.on("click", (e) => {
+      const hd = currentHoleRef.current;
+      if (!hd) return;
+
+      const tapPos = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+      const pinPos = hd.pin ?? hd.green;
+      const toPin = calculateDistance(tapPos, pinPos).yards;
+      const fromTee = hd.tee
+        ? calculateDistance(tapPos, hd.tee).yards
+        : null;
+
+      const label =
+        fromTee !== null
+          ? `Tee ${fromTee}y · Pin ${toPin}y`
+          : `Pin ${toPin}y`;
+
+      // Remove previous tap marker
+      tapMeasureMarker.current?.remove();
+
+      const el = document.createElement("div");
+      el.className = "tap-measure-marker";
+      el.innerHTML = `
+        <div style="position:relative;display:inline-block;">
+          <div style="background:rgba(0,0,0,0.78);color:white;padding:4px 10px 4px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap;backdrop-filter:blur(6px);box-shadow:0 2px 10px rgba(0,0,0,0.5);display:flex;align-items:center;gap:6px;">
+            <span class="tap-measure-label">${label}</span>
+            <span class="tap-dismiss-btn" style="cursor:pointer;opacity:0.65;font-size:14px;line-height:1;">×</span>
+          </div>
+          <div style="position:absolute;bottom:-5px;left:50%;transform:translateX(-50%);width:2px;height:6px;background:rgba(255,255,255,0.6);"></div>
+        </div>
+      `;
+
+      const dismissBtn = el.querySelector(".tap-dismiss-btn");
+      if (dismissBtn) {
+        dismissBtn.addEventListener("click", (evt) => {
+          evt.stopPropagation();
+          tapMeasureMarker.current?.remove();
+          tapMeasureMarker.current = null;
+        });
+      }
+
+      tapMeasureMarker.current = new mapboxgl.Marker({
+        element: el,
+        anchor: "bottom",
+      })
+        .setLngLat([e.lngLat.lng, e.lngLat.lat])
+        .addTo(map.current!);
+    });
+
     return () => {
       mapLoaded.current = false;
       map.current?.remove();
@@ -785,8 +864,9 @@ export default function GPSMapView({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-zinc-950">
-      {/* Header */}
+    <div className={inline ? "relative w-full h-full bg-zinc-950" : "fixed inset-0 z-50 bg-zinc-950"}>
+      {/* Header — only shown in fullscreen mode */}
+      {!inline && (
       <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-zinc-950/90 to-transparent p-4 pb-8">
         <div className="flex items-center justify-between">
           <button
@@ -815,6 +895,23 @@ export default function GPSMapView({
           </button>
         </div>
       </div>
+      )}
+      {/* Inline overlay toggle — small button, top-right */}
+      {inline && (
+        <div className="absolute top-2 right-2 z-10">
+          <button
+            onClick={() => setShowOverlays(!showOverlays)}
+            className={`w-8 h-8 rounded-full flex items-center justify-center ${
+              showOverlays
+                ? "bg-emerald-500/30 text-emerald-400"
+                : "bg-zinc-800/80 text-zinc-500"
+            }`}
+            title="Toggle overlays"
+          >
+            <Crosshair size={16} />
+          </button>
+        </div>
+      )}
 
       <div ref={mapContainer} className="w-full h-full" />
 
@@ -851,6 +948,8 @@ export default function GPSMapView({
 
       {/* Distance Panel */}
       <div className="absolute bottom-0 left-0 right-0 z-10">
+        {/* Hole navigation \u2014 fullscreen only */}
+        {!inline && (
         <div className="flex items-center justify-center gap-4 pb-4">
           <button
             onClick={prevHole}
@@ -874,117 +973,144 @@ export default function GPSMapView({
             <ChevronRight className="text-white" size={24} />
           </button>
         </div>
+        )}
 
-        <div className="bg-zinc-900/95 backdrop-blur-xl rounded-t-3xl p-6 pt-8">
-          <div className="grid grid-cols-3 gap-4 mb-3">
-            <div className="text-center">
-              <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">
-                Front
-              </p>
-              <p className="text-white text-2xl font-bold">
-                {distances.front ?? "\u2014"}
-              </p>
-              <p className="text-zinc-500 text-xs">yds</p>
+        {/* Inline compact strip: F/C/B + GPS status only */}
+        {inline ? (
+          <div className="bg-zinc-900/90 backdrop-blur-sm px-4 py-2 flex items-center justify-between gap-4">
+            {/* F / C / B */}
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-zinc-500">F</span>
+              <span className="text-white font-semibold">{distances.front ?? "\u2014"}</span>
+              <span className="text-emerald-400 font-bold">{distances.center ?? "\u2014"}</span>
+              <span className="text-zinc-500">B</span>
+              <span className="text-white font-semibold">{distances.back ?? "\u2014"}</span>
+              <span className="text-zinc-500 text-[10px]">yds</span>
             </div>
-
-            <div className="text-center">
-              <div className="bg-emerald-500/20 rounded-2xl p-3 -mt-2">
-                <p className="text-emerald-400 text-xs uppercase tracking-wider mb-1">
-                  Center
-                </p>
-                <p className="text-emerald-400 text-4xl font-bold">
-                  {distances.center ?? "\u2014"}
-                </p>
-                <p className="text-emerald-400/60 text-xs">yds</p>
-              </div>
-            </div>
-
-            <div className="text-center">
-              <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">
-                Back
-              </p>
-              <p className="text-white text-2xl font-bold">
-                {distances.back ?? "\u2014"}
-              </p>
-              <p className="text-zinc-500 text-xs">yds</p>
-            </div>
-          </div>
-
-          {/* Pin distance */}
-          {currentHoleData?.pin ? (
-            <div className="flex items-center justify-center gap-2 mb-4 text-sm text-zinc-200">
-              <Flag className="w-4 h-4 text-red-400" />
-              <span className="text-zinc-400">Pin:</span>
-              <span className="font-semibold">
-                {distances.pin ?? "\u2014"} yds
-              </span>
-            </div>
-          ) : null}
-
-          {/* Hazards */}
-          {hazardDistances.length > 0 ? (
-            <div className="mb-4">
-              <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                <Target className="w-4 h-4 text-orange-400" />
-                Targets / Hazards
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {hazardDistances.map((h, idx) => (
-                  <div
-                    key={`${h.type}-${idx}`}
-                    className="rounded-xl bg-zinc-800/70 border border-zinc-700 px-3 py-2 text-sm flex items-center justify-between"
-                  >
-                    <span className="text-zinc-300 capitalize">{h.type}</span>
-                    <span className="text-white font-semibold">
-                      {Math.round(h.yards)}y
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            {/* GPS status */}
+            <div className="flex items-center gap-1">
               <Signal
-                size={16}
-                className={position ? "text-emerald-500" : "text-zinc-500"}
+                size={12}
+                className={position ? "text-emerald-500" : "text-zinc-600"}
               />
-              <span className="text-zinc-400 text-sm">
-                {position
-                  ? `GPS: ${getAccuracyDescription(position.accuracy || 0)} (\u00b1${Math.round(
-                      position.accuracy || 0
-                    )}m)`
-                  : "Acquiring GPS..."}
+              <span className="text-zinc-500 text-[10px]">
+                {position ? `\u00b1${Math.round(position.accuracy || 0)}m` : "GPS\u2026"}
               </span>
             </div>
+          </div>
+        ) : (
+          /* Fullscreen full-detail panel */
+          <div className="bg-zinc-900/95 backdrop-blur-xl rounded-t-3xl p-6 pt-8">
+            <div className="grid grid-cols-3 gap-4 mb-3">
+              <div className="text-center">
+                <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">
+                  Front
+                </p>
+                <p className="text-white text-2xl font-bold">
+                  {distances.front ?? "\u2014"}
+                </p>
+                <p className="text-zinc-500 text-xs">yds</p>
+              </div>
 
-            <div className="flex gap-2">
-              <button
-                onClick={fitHole}
-                className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center"
-                title="Fit hole"
-              >
-                <Target className="text-yellow-400" size={20} />
-              </button>
+              <div className="text-center">
+                <div className="bg-emerald-500/20 rounded-2xl p-3 -mt-2">
+                  <p className="text-emerald-400 text-xs uppercase tracking-wider mb-1">
+                    Center
+                  </p>
+                  <p className="text-emerald-400 text-4xl font-bold">
+                    {distances.center ?? "\u2014"}
+                  </p>
+                  <p className="text-emerald-400/60 text-xs">yds</p>
+                </div>
+              </div>
 
-              <button
-                onClick={centerOnUser}
-                disabled={!position}
-                className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center disabled:opacity-30"
-              >
-                <Navigation className="text-blue-400" size={20} />
-              </button>
+              <div className="text-center">
+                <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">
+                  Back
+                </p>
+                <p className="text-white text-2xl font-bold">
+                  {distances.back ?? "\u2014"}
+                </p>
+                <p className="text-zinc-500 text-xs">yds</p>
+              </div>
+            </div>
 
-              <button
-                onClick={centerOnGreen}
-                className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center"
-              >
-                <MapPin className="text-emerald-400" size={20} />
-              </button>
+            {/* Pin distance */}
+            {currentHoleData?.pin ? (
+              <div className="flex items-center justify-center gap-2 mb-4 text-sm text-zinc-200">
+                <Flag className="w-4 h-4 text-red-400" />
+                <span className="text-zinc-400">Pin:</span>
+                <span className="font-semibold">
+                  {distances.pin ?? "\u2014"} yds
+                </span>
+              </div>
+            ) : null}
+
+            {/* Hazards */}
+            {hazardDistances.length > 0 ? (
+              <div className="mb-4">
+                <div className="text-xs text-zinc-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                  <Target className="w-4 h-4 text-orange-400" />
+                  Targets / Hazards
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {hazardDistances.map((h, idx) => (
+                    <div
+                      key={`${h.type}-${idx}`}
+                      className="rounded-xl bg-zinc-800/70 border border-zinc-700 px-3 py-2 text-sm flex items-center justify-between"
+                    >
+                      <span className="text-zinc-300 capitalize">{h.type}</span>
+                      <span className="text-white font-semibold">
+                        {Math.round(h.yards)}y
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Signal
+                  size={16}
+                  className={position ? "text-emerald-500" : "text-zinc-500"}
+                />
+                <span className="text-zinc-400 text-sm">
+                  {position
+                    ? `GPS: ${getAccuracyDescription(position.accuracy || 0)} (\u00b1${Math.round(
+                        position.accuracy || 0
+                      )}m)`
+                    : "Acquiring GPS..."}
+                </span>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={fitHole}
+                  className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center"
+                  title="Fit hole"
+                >
+                  <Target className="text-yellow-400" size={20} />
+                </button>
+
+                <button
+                  onClick={centerOnUser}
+                  disabled={!position}
+                  className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center disabled:opacity-30"
+                >
+                  <Navigation className="text-blue-400" size={20} />
+                </button>
+
+                <button
+                  onClick={centerOnGreen}
+                  className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center"
+                >
+                  <MapPin className="text-emerald-400" size={20} />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       <style jsx global>{`
@@ -993,7 +1119,8 @@ export default function GPSMapView({
         .pin-marker,
         .tee-marker,
         .hazard-marker,
-        .distance-label-marker {
+        .distance-label-marker,
+        .tap-measure-marker {
           cursor: pointer;
         }
         .mapboxgl-ctrl-logo,

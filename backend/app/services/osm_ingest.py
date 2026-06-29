@@ -292,6 +292,11 @@ def embed_elevation_in_green_features(course_data: dict) -> None:
             "delta_ft":           elev["net_change_ft"],   # alias for storage/frontend
             "plays_like_yards":   elev.get("plays_like_yards", 0.0),
         }
+        # green_slope: populated during ingest via the 3DEP Sobel batch; None
+        # for holes sampled before this feature was wired (or if USGS returned
+        # insufficient grid data).  Stored as a jsonb sub-dict — no migration.
+        if elev.get("green_slope") is not None:
+            fields["green_slope"] = elev["green_slope"]
         features = (hole.get("features") or {}).get("features") or []
         for feature in features:
             props = feature.get("properties") or {}

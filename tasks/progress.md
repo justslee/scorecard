@@ -3,6 +3,167 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — settlement-new-formats (SILENT — feat/settlement-new-formats, ready for bundle)
+
+Settlement ledger now handles the four zero-sum wager formats that were missing.
+A round with vegas, hammer, rabbit, or defender games now produces correct settle-up
+entries in the SettleUpPanel instead of being silently ignored.
+
+### What was built
+- `frontend/src/lib/settlement.ts` — `computeGameNetWinnings` extended:
+  - **Vegas**: distributes already-dollarized team totals equally among team players
+    (last player absorbs rounding residual; zero-sum at player level guaranteed).
+  - **Hammer**: maps already-dollarized per-player totals directly to net (no
+    double-multiplication of pointValue).
+  - **Rabbit**: two segment prizes (F9/B9) computed nassau-style — holder wins
+    pointValue from each of the other N-1 players; unpaid if no holder.
+  - **Defender**: maps already-dollarized per-player totals directly to net.
+  - Excluded (scoring, not wager): scramble, bestBall, stableford, chicago,
+    bingoBangoBongo, trash — not zero-sum money pools.
+- `frontend/src/lib/settlement.test.ts` — 14 new tests:
+  - Per-format worked examples asserting per-player net values.
+  - Zero-sum invariant verified for each new format.
+  - Mixed skins + vegas round asserts combined net and zero-sum.
+
+### Gate results (all green)
+- `npm run lint`: clean
+- `npx tsc --noEmit`: clean
+- `npx vitest run`: 980/980 pass (+10 net new tests)
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: Compiled successfully
+
+### Classification: SILENT (backend-logic bugfix)
+No UI changes. The effect is that SettleUpPanel will now show settle-up entries for
+vegas/hammer/rabbit/defender games (previously silently omitted). This is a correctness
+fix — the existing UI panels pick it up automatically via `computeNetSettlement`.
+
+---
+## 2026-06-29 — mapbox-satellite-map (NOTICEABLE — feat/mapbox-satellite-map, ready for bundle)
+
+Mapbox satellite imagery is now the PRIMARY hole-map renderer on both the
+standalone `/map/course` page and the inline round map (InlineHoleDiagram).
+Falls back to the existing on-paper HoleDiagram when the token is absent.
+
+### What was built
+- `frontend/src/lib/map/satellite-helpers.ts` (NEW)
+  - `mapRendererFor(token)` — pure renderer-selection function
+  - `holeViewBounds(hole, userPos?)` — bounding-box helper for Mapbox fitBounds
+  - `tapMeasureLabel(fromTeeYds, toPinYds)` — label formatter
+  - `formatFCBLabel(f,c,b)` — F/C/B string formatter
+  - `annotateOsmFeatures(pairs)` — OSM features annotated with hole numbers
+- `frontend/src/lib/map/satellite-helpers.test.ts` (NEW)
+  - 30 unit tests (all pure, no browser, no mapbox-gl) — all green
+- `frontend/src/components/GPSMapView.tsx` (REVIVED/EXTENDED)
+  - `courseId` type changed `number` → `string | number` (unused internally)
+  - `onClose` made optional (required only in fullscreen mode)
+  - `inline?: boolean` prop: relative positioning, compact bottom strip, no header/nav
+  - Tap-to-measure: map click → `Tee Xy · Pin Yy` bubble; dismiss × closes it
+  - `currentHoleRef` keeps click handler in sync with hole nav; tap marker clears on hole change
+- `frontend/src/app/map/course/page.tsx`
+  - Imports GPSMapView + satellite helpers
+  - `allOsmFeatures` useMemo: collects + annotates all hole features
+  - When `NEXT_PUBLIC_MAPBOX_TOKEN` present AND coords available → returns GPSMapView (fullscreen, takes over header/nav/distance panel)
+  - Falls through to original HoleDiagram layout otherwise
+- `frontend/src/components/course/InlineHoleDiagram.tsx`
+  - Adds `allHoles` + `allCoords` state (flat arrays for satellite mode)
+  - `osmFeaturesForSatellite` useMemo: annotated features for GPSMapView
+  - When token present AND coords available → inline GPSMapView (260px, no hole nav)
+  - Falls through to HoleDiagram otherwise
+- `ops/ios/ship.sh`
+  - NEXT_PUBLIC_MAPBOX_TOKEN: if unset, pull from `looper/prod` AWS Secrets Manager
+  - Graceful: warns + leaves empty if secret absent → HoleDiagram fallback
+  - Token NOT printed or committed
+
+### Gates
+- lint: clean
+- tsc --noEmit: clean
+- npx vitest run: 1000/1000 (39 files)
+- voice-tests --smoke: 265/265
+- npm run build: success
+
+### Risk / notes
+- Needs `NEXT_PUBLIC_MAPBOX_TOKEN` in `looper/prod` secret to show satellite imagery
+- GolfAPI ingest (separate work) populates pin/F-C-B coords; mock Bethpage data works now
+- Mapbox rendering is owner-verified on device (can't headlessly unit-test tile imagery)
+- Ship.sh token-pull requires the EC2 build machine to have IAM access to `looper/prod`
+
+## 2026-06-29 — game-formats (NOTICEABLE — feat/game-formats, ready for bundle)
+
+8 previously-unimplemented game formats now show real results instead of the
+"Results for this game format are not implemented yet." fallback card.
+
+### What was built
+- `frontend/src/lib/games.ts`:
+  - 8 new typed result interfaces (ScrambleResults, BingoBangoBongoResults,
+    VegasResults, HammerResults, RabbitResults, TrashResults, ChicagoResults,
+    DefenderResults).
+  - 8 new `compute*` functions implementing standard golf side-game rules.
+  - `GameResults` interface updated (replaces `unknown` stubs for scramble/bingoBangoBongo/vegas,
+    adds hammer/rabbit/trash/chicago/defender).
+  - Dispatcher switch extended with all 8 new cases.
+- `frontend/src/components/GameResults.tsx`:
+  - 8 new render branches, one per format, using existing yardage-book design
+    tokens (T.*), card/subRow patterns, and `<details>` hole-by-hole tables.
+- `frontend/src/lib/types.ts`:
+  - Added `GameSettings` fields: `hammerMultiplierByHole`, `defenderPlayerId`,
+    `chicagoQuotaBase`.
+- `frontend/src/lib/games.test.ts`:
+  - 47 new unit tests (99 total). Worked examples, edge cases, zero-sum checks
+    for all wager formats. Dispatcher test updated to verify new routes.
+
+### Data-capture follow-ups (noted in results, not blocking)
+- bingoBangoBongo: all 3 events need shot-by-shot tracking
+- trash/junk: greenie/sandy/barkie/snake need per-shot events
+- hammer: live throw/accept events need per-hole capture UI
+
+### Settlement follow-up (for feat/game-settlement)
+vegas, hammer, rabbit, and defender all produce zero-sum net totals — should
+be wired into `computeGameNetWinnings` when that branch ships.
+## 2026-06-29 — tee-time-foundation (NOTICEABLE — feat/teetime-foundation, ready for bundle)
+
+Phase 1 of the tee-time epic: replaced the 100% hardcoded TT_* demo with a real
+provider-backed architecture wired to a mock provider. Flow works end-to-end; flips
+to live providers (Chronogolf/GolfNow) with no UI rework when API creds arrive.
+
+### What was built
+- `frontend/src/lib/teetime/types.ts` — TeeTimeQuery, TeeTimeSlot, BookingDetails, BookingResult
+- `frontend/src/lib/teetime/provider.ts` — TeeTimeProvider interface (searchAvailability + book)
+- `frontend/src/lib/teetime/providers/mock.ts` — cache-first MockTeeTimeProvider (6 courses incl. Bethpage)
+- `frontend/src/lib/teetime/registry.ts` — provider registry; getActiveProvider() → mock by default
+- `frontend/src/lib/teetime/client.ts` — searchTeeTimes / bookTeeTime → backend; frontend-mock fallback
+- `frontend/src/lib/teetime/index.ts` — barrel export
+- `frontend/src/lib/teetime/teetime.test.ts` — 16 unit tests (all passing)
+- `backend/app/services/tee_times/base.py` — abstract TeeTimeProvider base class + shared data models
+- `backend/app/services/tee_times/mock.py` — deterministic, cache-first backend MockTeeTimeProvider
+- `backend/app/routes/tee_times.py` — GET /api/tee-times/search + POST /api/tee-times/book (owner-gated)
+- `backend/app/main.py` — registered tee_times router
+- `frontend/src/app/tee-time/page.tsx` — full rewrite: state-driven from provider (no TT_* constants);
+  searching phase fires real queries + streams live log; confirmed phase shows real slot data;
+  "Add another window" and "Invite" buttons now functional; loading/no-results/failed states added
+
+### Gate results (all green)
+- `npm run lint`: clean
+- `npx tsc --noEmit`: clean
+- `npx vitest run src/lib/games.test.ts`: 99/99 pass
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: clean
+
+### Classification: NOTICEABLE
+Any player who taps "View Results" on a round containing scramble, vegas,
+hammer, rabbit, trash, chicago, or defender will now see real results. Was
+previously a dead end ("not implemented yet"). bingoBangoBongo shows a clear
+"needs event capture" message instead of the fallback.
+
+---
+- `npx vitest run src/lib/teetime/teetime.test.ts`: 16/16 pass
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: success (all routes including /tee-time)
+- `ruff check .`: clean
+
+### How the seam works
+Set TEETIME_PROVIDER=chronogolf (backend env var) when Lightspeed API creds arrive;
+ChronogolfProvider drops in behind the same interface. Zero UI changes required.
+
 ## 2026-06-29 — round-map-inline (NOTICEABLE — feat/round-map-inline, ready for bundle)
 
 Inline yardage-book hole diagram in the active-round view: when playing a course with homegrown
@@ -206,6 +367,90 @@ Voice now resolves spoken player/course names against the user's REAL saved data
 ### Classification: NOTICEABLE
 User-visible: voice round setup no longer mishears saved partner names or course names.
 "Say Dipak, app saves Dipak" and "Say Bally Links, app saves Bally Links" both now work.
+## 2026-06-29 — game-settlement (NOTICEABLE — feat/game-settlement, ready for bundle)
+
+Game settlement / payout finalization: winnings were displayed but never persisted or
+finalized. Now there is a complete "Settle up" flow.
+
+### What shipped
+- `frontend/src/lib/settlement.ts` — pure net-settlement computation + transfer
+  minimization (greedy O(n log n), guarantees ≤ n−1 transfers). Handles skins, wolf,
+  nassau (individual), matchPlay, threePoint. Zero-sum invariant enforced at 2dp.
+- `frontend/src/lib/settlement.test.ts` — 24 unit tests covering all formats, zero-sum
+  invariant, multi-game netting, transfer minimization, and the persisted-settlement reader.
+- `frontend/src/components/SettleUpPanel.tsx` — calm yardage-book settle-up UI (after
+  game results in RoundRecap). Shows perspective-aware transfers ("You pay Sam $12",
+  "Sam pays you $23"), "Mark as settled" button, and a locked read-only finalized state.
+  Returns null silently when the round has no money games.
+- `frontend/src/lib/api.ts` — `finalizeSettlement(roundId, payload)` client function.
+- `backend/app/models.py` — `SettlementTransfer` + `SettlementFinalize` Pydantic models.
+- `backend/app/routes/rounds.py` — `POST /api/rounds/{id}/settlement` endpoint. Stores
+  the client-computed ledger as a synthetic Game row (format='settlement', settings JSONB).
+  Idempotent: calling again overwrites the previous record. NO DB migration needed.
+- `frontend/src/lib/types.ts` — added 'settlement' to `GameFormat` union; added index
+  signature `[key: string]: unknown` to `GameSettings` for flexible synthetic-game storage.
+- `frontend/src/components/GameLeaderboards.tsx` + `RoundRecap.tsx` — filter 'settlement'
+  format games out of display loops (they render via SettleUpPanel only).
+
+### Storage approach
+Settlement is stored as a Game row (format='settlement') in the existing `games` table,
+which already has a flexible JSONB `settings` column. No DB migration needed. The backend
+GameORM.settings accepts arbitrary dicts; the client reads the settlement back via
+`round.games.find(g => g.format === 'settlement')`.
+
+### Gates
+- backend ruff: pass
+- frontend lint: pass
+- frontend tsc: pass
+- vitest (778 tests): pass (33 test files, 24 new settlement tests)
+- voice-tests --smoke: pass=265 fail=0
+- npm run build: pass
+
+### Branch
+feat/game-settlement — DO NOT merge to main (bundle PR only)
+## 2026-06-29 — green-slope (NOTICEABLE — feat/green-slope, ready for bundle)
+
+Wires the dormant 3DEP green-slope Sobel sampler into the ingest pipeline and
+surfaces a calm green-slope readout ("green: 2.3% ↘ SE") on the hole-map info strip.
+
+### What was done
+1. **backend/app/services/elevation.py**:
+   - Extracted `_green_slope_grid_points` (pure geometry, 9-point Sobel grid) and
+     `_compute_slope_from_grid` (pure Sobel math) from `compute_green_slope`.
+   - Fixed Sobel atan2 sign bug: `atan2(dzdx, -dzdy)` → `atan2(-dzdx, -dzdy)` so that
+     east/west-draining greens get the correct compass direction (was inverted before).
+   - `sample_course_elevations`: now makes a second `fetch_3dep_samples` batch call for all
+     9×N green-slope grid points (one round-trip), computes slope per hole with
+     `_compute_slope_from_grid`, passes into `compute_hole_elevation_profile`.
+2. **backend/app/services/osm_ingest.py** `embed_elevation_in_green_features`:
+   - Now also embeds `green_slope` as a jsonb sub-dict in the green feature properties
+     when present. No migration needed.
+3. **backend/tests/test_green_slope_ingest.py** (new, 36 tests):
+   - _green_slope_grid_points: 9 points, N>S, E>W, custom radius.
+   - _compute_slope_from_grid: flat/south/east/severe/insufficient-data.
+   - sample_course_elevations: mocked fetch_3dep_samples → green_slope populated.
+   - embed_elevation_in_green_features: green_slope stored/absent/non-green-safe.
+4. **frontend/src/lib/course/hole-elevation.ts**:
+   - Added `GreenSlope` interface, `greenSlope` field on `HoleElevation`.
+   - Added `degreesToCompassLabel` (pure, 8-point), `compassLabelToArrow`.
+   - Added `formatGreenSlope` → "green: 2.3% ↘ SE" or null for flat/absent.
+   - `extractHoleElevation` now reads `green_slope` from green feature properties.
+5. **frontend/src/lib/course/hole-elevation.test.ts**: +23 tests (60 total).
+6. **frontend/src/app/map/course/page.tsx**: renders green-slope readout line below
+   plays-like in HoleInfoStrip. Gracefully absent when no data.
+
+### Test gate results
+- `backend/ruff check .`: clean
+- `backend/pytest --ignore=tests/integration`: 766/766 pass
+- `frontend/npm run lint`: clean
+- `frontend/npx tsc --noEmit`: clean
+- `frontend/npx vitest run`: 788/788 pass (60 in hole-elevation.test.ts)
+- `frontend/voice-tests --smoke`: 265/265 pass
+- `frontend/npm run build`: clean
+
+### Notes for re-ingest
+Bethpage Black/Red need a re-ingest to populate green_slope (free 3DEP, no GolfAPI).
+Until then, the plays-like line shows but the slope line is gracefully absent.
 
 ## 2026-06-29 — corridor-tighten (NOTICEABLE — feat/corridor-tighten, ready for bundle)
 
