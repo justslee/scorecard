@@ -1171,7 +1171,7 @@
     {
       "id": "grabber-handle-drag-fix",
       "priority": 8,
-      "status": "ready",
+      "status": "built-integration-next-pending-device-verify",
       "classification": "noticeable",
       "build": "build(FE)",
       "size": "S",
@@ -1179,6 +1179,7 @@
       "area": "frontend",
       "title": "Fix sheet grabber-handle drag \u2014 swiping it scrolls the background page instead of dismissing",
       "rationale": "OWNER (2026-06-28): swiping DOWN on a sheet's grab handle moves the background page instead of dismissing the sheet. The drag isn't being captured at the handle, so the gesture falls through to page scroll. Audit the drag-to-dismiss sheets (CaddieSheet + the new VoiceRoundSetupRealtime grab handle): ensure the handle's onPointerDown calls dragControls.start(e), the draggable motion.div has the dragControls + dragListener=false wired, and the background/body can't scroll under the sheet (lock body scroll / overscroll-behavior: contain / touch-action on the backdrop) while a sheet is open. Verify on device.",
+      "progress": "2026-06-28: built 52a1d9a on integration/next. Audit found BOTH sheets already had the handle wired correctly (onPointerDown -> dragControls.start, touch-action:none, dragListener=false, drag y + dragControls on the motion.div). Root cause of the fall-through was the MISSING piece: nothing locked the page behind an open sheet, so any gesture framer-motion didn't claim scrolled the background (esp. iOS WKWebView document rubber-band, which touch-action alone doesn't suppress). Fix: new src/lib/sheet.ts with useBodyScrollLock(locked) (pins <body> position:fixed + overflow hidden + overscroll-behavior none, restores scroll on close) and the pure shouldDismissSheetDrag(offsetY, velocityY) threshold (>120px OR >600px/s) extracted from both sheets. Wired into CaddieSheet (locked on `open`) and VoiceRoundSetupRealtime (locked for mounted lifetime); added touch-action:none + overscroll-behavior:contain to both backdrops. Inner conversation list stays scrollable. 8 unit tests (src/lib/sheet.test.ts: threshold edges + lock apply/restore via jsdom). Gates: lint 0 / tsc 0 / voice-tests 265/265 / vitest 382/382 / build clean. DEVICE-ONLY verify: the drag gesture is pointer/touch-only \u2014 confirm on next TestFlight that the handle dismisses and the page no longer scrolls behind an open sheet. NOTICEABLE -> rides the next approval bundle.",
       "depends_on": []
     }
   ],
