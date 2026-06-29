@@ -1,15 +1,22 @@
-"""Unit tests for _parse_scan_response in routes/scorecard.py.
+"""Unit tests for _parse_scan_response and _extract_text_content in routes/scorecard.py.
 
 Pure function tests — no live Anthropic API, no image upload, no DB required.
 Verifies the parser that turns a Claude vision response string into a
-ScanScorecardResponse.
+ScanScorecardResponse, and the content-block text extractor that handles
+non-text (e.g. thinking) blocks.
 """
 
 import json
+import types
 
 import pytest
 
-from app.routes.scorecard import HoleScores, ScanScorecardResponse, _parse_scan_response
+from app.routes.scorecard import (
+    HoleScores,
+    ScanScorecardResponse,
+    _extract_text_content,
+    _parse_scan_response,
+)
 
 
 class TestParseScanResponseHappyPaths:
@@ -201,3 +208,97 @@ class TestParseScanResponseErrorPaths:
     def test_entirely_wrong_json_raises_value_error(self):
         with pytest.raises(ValueError, match="missing 'players' or 'holes'"):
             _parse_scan_response('{"courseName": "Augusta", "par": 72}')
+
+    # ── FIX 2: shape validation ──────────────────────────────────────────────
+
+    def test_players_is_dict_not_list_raises_value_error(self):
+        """Model emits an object instead of a list for 'players'."""
+        text = json.dumps(
+            {"players": {"0": "Alice"}, "holes": []}
+        )
+        with pytest.raises(ValueError, match="'players' must be a list"):
+            _parse_scan_response(text)
+
+    def test_holes_is_not_a_list_raises_value_error(self):
+        """Model emits a non-list value for 'holes'."""
+        text = json.dumps(
+            {"players": ["Alice"], "holes": "all 18 holes were great"}
+        )
+        with pytest.raises(ValueError, match="'holes' must be a list"):
+            _parse_scan_response(text)
+
+    def test_hole_entry_missing_number_raises_value_error(self):
+        """A hole dict that lacks the required 'number' field must be rejected."""
+        text = json.dumps(
+            {
+                "players": ["Alice"],
+                "holes": [{"par": 4, "scores": {"Alice": 5}}],
+            }
+        )
+        with pytest.raises(ValueError, match="missing required 'number' field"):
+            _parse_scan_response(text)
+
+    def test_hole_entry_is_string_not_dict_raises_value_error(self):
+        """A holes list entry that is a plain string must be rejected."""
+        text = json.dumps(
+            {"players": ["Alice"], "holes": ["hole 1 par 4"]}
+        )
+        with pytest.raises(ValueError, match="Each hole entry must be a dict"):
+            _parse_scan_response(text)
+
+
+class TestExtractTextContent:
+    """Unit tests for _extract_text_content — the content-block helper."""
+
+    @staticmethod
+    def _block(type_name: str, text: str | None = None):
+        """Build a minimal mock content block using SimpleNamespace."""
+        obj = types.SimpleNamespace(type=type_name)
+        if text is not None:
+            obj.text = text
+        return obj
+
+    def test_text_only_block_returns_text(self):
+        blocks = [self._block("text", "hello")]
+        assert _extract_text_content(blocks) == "hello"
+
+    def test_thinking_block_before_text_block_returns_text(self):
+        """When a thinking block precedes the text block, the text block is found."""
+        payload = json.dumps(
+            {
+                "players": ["Alice"],
+                "holes": [{"number": 1, "par": 4, "scores": {"Alice": 5}}],
+            }
+        )
+        blocks = [
+            self._block("thinking"),   # no .text — simulates extended-thinking
+            self._block("text", payload),
+        ]
+        text = _extract_text_content(blocks)
+        # Confirm the extracted text parses successfully end-to-end.
+        result = _parse_scan_response(text)
+        assert result.players == ["Alice"]
+        assert result.holes[0].scores["Alice"] == 5
+
+    def test_multiple_non_text_blocks_then_text(self):
+        """Multiple non-text blocks before the text block — still finds text."""
+        blocks = [
+            self._block("thinking"),
+            self._block("tool_use"),
+            self._block("text", '{"players": ["Bob"], "holes": []}'),
+        ]
+        text = _extract_text_content(blocks)
+        result = _parse_scan_response(text)
+        assert result.players == ["Bob"]
+
+    def test_no_text_block_returns_empty_string(self):
+        """No text block → empty string → _parse_scan_response raises ValueError."""
+        blocks = [self._block("thinking")]
+        result = _extract_text_content(blocks)
+        assert result == ""
+        # Verify the empty string flows into the clean error path.
+        with pytest.raises(ValueError, match="No JSON object found"):
+            _parse_scan_response(result)
+
+    def test_empty_content_list_returns_empty_string(self):
+        assert _extract_text_content([]) == ""

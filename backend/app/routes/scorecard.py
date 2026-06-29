@@ -76,7 +76,21 @@ Rules:
 """
 
 
-# ── Pure parser — testable without a live API call ──
+# ── Pure helpers — testable without a live API call ──
+
+
+def _extract_text_content(content) -> str:
+    """Return the text of the first text-type block in a Claude message content list.
+
+    Skips non-text blocks (e.g. extended-thinking blocks) that may appear before
+    the text block.  Returns an empty string when no text block is found;
+    ``_parse_scan_response`` will then raise a clean ValueError("No JSON object
+    found") which routes to the 500 error path.
+    """
+    return next(
+        (b.text for b in content if getattr(b, "type", None) == "text"),
+        "",
+    )
 
 
 def _parse_scan_response(text: str) -> ScanScorecardResponse:
@@ -86,7 +100,8 @@ def _parse_scan_response(text: str) -> ScanScorecardResponse:
 
     Raises:
         ValueError: if the text contains no JSON object, if the JSON is malformed,
-                    or if the object is missing the required ``players`` / ``holes`` keys.
+                    if the object is missing required keys, if ``players`` / ``holes``
+                    are not lists, or if any hole entry is malformed.
     """
     # Mirror the regex used in voice.py / voice_advanced.py to tolerate fenced blocks
     # or prose wrappers that a model might accidentally emit.
@@ -105,8 +120,26 @@ def _parse_scan_response(text: str) -> ScanScorecardResponse:
             f"Got keys: {sorted(raw.keys())}"
         )
 
+    # Validate top-level shapes — a model might emit an object or scalar instead of a list.
+    if not isinstance(raw["players"], list):
+        raise ValueError(
+            f"'players' must be a list; got {type(raw['players']).__name__!r}"
+        )
+    if not isinstance(raw["holes"], list):
+        raise ValueError(
+            f"'holes' must be a list; got {type(raw['holes']).__name__!r}"
+        )
+
     holes: list[HoleScores] = []
-    for h in raw.get("holes", []):
+    for h in raw["holes"]:
+        if not isinstance(h, dict):
+            raise ValueError(
+                f"Each hole entry must be a dict; got {type(h).__name__!r}: {h!r}"
+            )
+        if "number" not in h:
+            raise ValueError(
+                f"Hole entry missing required 'number' field: {h!r}"
+            )
         holes.append(
             HoleScores(
                 number=h["number"],
@@ -208,7 +241,10 @@ async def scan_scorecard(
             ],
         )
 
-        response_text = message.content[0].text
+        # Use the helper so that non-text first blocks (e.g. thinking blocks) are
+        # skipped safely; an empty result flows into _parse_scan_response's
+        # "No JSON object found" ValueError → clean 500 path.
+        response_text = _extract_text_content(message.content)
         # Log a preview for server-side debugging without spilling the full image.
         print(f"[scorecard/scan] Claude response ({len(response_text)} chars): "
               f"{response_text[:300]}...")
