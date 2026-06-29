@@ -64,6 +64,7 @@ app.include_router(course_search.router, dependencies=_owner_only)
 app.include_router(courses_mapped.router, dependencies=_owner_only)
 # Two-segment /api/courses/{course_key}/reviews sub-resource — MUST precede catch-all.
 app.include_router(course_reviews.router, dependencies=_owner_only)
+app.include_router(course_reviews.reviews_router, dependencies=_owner_only)  # B3 — /api/reviews/mine
 app.include_router(courses.router, dependencies=_owner_only)
 app.include_router(voice.router, dependencies=_owner_only)
 # Migrated from Next.js + new caddie system

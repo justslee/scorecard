@@ -502,3 +502,11 @@ export async function createCourseReview(
     { method: 'POST', body: JSON.stringify(data) },
   );
 }
+
+/**
+ * List ALL of the calling user's course reviews across every course key.
+ * Owner-scoped server-side; ordered created_at desc. (B3 read surface.)
+ */
+export async function getMyReviews(): Promise<CourseReview[]> {
+  return fetchAPI<CourseReview[]>('/api/reviews/mine');
+}

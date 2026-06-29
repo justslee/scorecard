@@ -13,6 +13,8 @@ import {
   type Tee,
 } from "@/lib/golf-api";
 import { stashCourseForRound } from "@/lib/course-handoff";
+import { getCourseReviews } from "@/lib/api";
+import type { CourseReview } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -27,6 +29,7 @@ export default function CourseDetailClient() {
   const [course, setCourse] = useState<GolfCourse | null>(null);
   const [club, setClub] = useState<GolfClub | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reviews, setReviews] = useState<CourseReview[]>([]);
 
   useEffect(() => {
     if (!courseId) {
@@ -39,13 +42,15 @@ export default function CourseDetailClient() {
     async function load() {
       setLoading(true);
       try {
-        const [courseData, clubData] = await Promise.all([
+        const [courseData, clubData, reviewData] = await Promise.all([
           getCourseDetails(courseId!),
           clubId ? getClubDetails(clubId) : Promise.resolve(null),
+          getCourseReviews(courseId!).catch(() => [] as CourseReview[]), // silent fail → empty
         ]);
         if (!cancelled) {
           setCourse(courseData);
           setClub(clubData);
+          setReviews(reviewData);
         }
       } catch {
         // getCourseDetails / getClubDetails already swallow errors and return null.
@@ -53,6 +58,7 @@ export default function CourseDetailClient() {
         if (!cancelled) {
           setCourse(null);
           setClub(null);
+          setReviews([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -359,6 +365,104 @@ export default function CourseDetailClient() {
                   )}
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Reviews section ── */}
+        <div style={{ padding: "18px 22px 10px" }}>
+          <div
+            style={{
+              fontFamily: T.mono,
+              fontSize: 9.5,
+              letterSpacing: 1.6,
+              color: T.pencil,
+              textTransform: "uppercase",
+              marginBottom: 8,
+            }}
+          >
+            Reviews
+          </div>
+
+          {reviews.length === 0 ? (
+            <div
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 14,
+                color: T.pencilSoft,
+                letterSpacing: -0.1,
+                paddingTop: 4,
+              }}
+            >
+              No reviews yet.
+            </div>
+          ) : (
+            <div>
+              {reviews.map((review, i) => {
+                // Prefer playedAt (YYYY-MM-DD); fall back to createdAt (ISO datetime).
+                const rawDate = review.playedAt ?? review.createdAt;
+                const d = new Date(rawDate);
+                const dateLabel = isNaN(d.getTime())
+                  ? ""
+                  : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                return (
+                  <div
+                    key={review.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 10,
+                      padding: "11px 0",
+                      borderTop: i === 0 ? "none" : `1px dashed ${T.hairline}`,
+                      minHeight: 44,
+                    }}
+                  >
+                    {/* Left: body note + date */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {review.body && (
+                        <div
+                          style={{
+                            fontFamily: T.serif,
+                            fontSize: 15,
+                            color: T.ink,
+                            letterSpacing: -0.1,
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {review.body}
+                        </div>
+                      )}
+                      {dateLabel && (
+                        <div
+                          style={{
+                            fontFamily: T.mono,
+                            fontSize: 9,
+                            letterSpacing: 1.1,
+                            color: T.pencilSoft,
+                            textTransform: "uppercase",
+                            marginTop: review.body ? 3 : 0,
+                          }}
+                        >
+                          {dateLabel}
+                        </div>
+                      )}
+                    </div>
+                    {/* Right: rating */}
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        letterSpacing: 1.1,
+                        color: T.ink,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {review.rating} / 5
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

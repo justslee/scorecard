@@ -21,6 +21,9 @@ from app.services.clerk_auth import current_user_id
 
 router = APIRouter(prefix="/api/courses", tags=["course-reviews"])
 
+# Second router: distinct prefix so it cannot shadow /api/courses/* routes.
+reviews_router = APIRouter(prefix="/api/reviews", tags=["course-reviews"])
+
 
 def _orm_to_pydantic(row: CourseReviewORM) -> CourseReview:
     """Map a CourseReview ORM row to the camelCase CourseReview response model."""
@@ -82,6 +85,24 @@ async def list_reviews(
                 CourseReviewORM.course_key == course_key,
                 CourseReviewORM.owner_id == owner_id,
             )
+            .order_by(CourseReviewORM.created_at.desc())
+        )
+        return [_orm_to_pydantic(r) for r in result.scalars().all()]
+
+
+@reviews_router.get("/mine", response_model=list[CourseReview])
+async def list_my_reviews(
+    owner_id: str = Depends(current_user_id),
+) -> list[CourseReview]:
+    """List ALL of the calling owner's reviews across every course_key.
+
+    B3 read surface. Owner-scoped (owner_id == current_user_id), ordered
+    created_at desc. Reuses _orm_to_pydantic; no new model, no migration.
+    """
+    async with async_session() as db:
+        result = await db.execute(
+            select(CourseReviewORM)
+            .where(CourseReviewORM.owner_id == owner_id)
             .order_by(CourseReviewORM.created_at.desc())
         )
         return [_orm_to_pydantic(r) for r in result.scalars().all()]

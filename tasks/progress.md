@@ -3,6 +3,27 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (course-reviews-surface B3 — NOTICEABLE — BUILT on integration/next)
+Surface the course reviews (written by B2) in two places:
+  1. Course detail screen (/courses/[id]) — new "Reviews" section with yardage-book dashed rows.
+  2. Profile screen (/profile) — new "Course reviews" Section between YearLog and ShotAnalytics.
+  3. Backend — GET /api/reviews/mine (reviews_router, second router in course_reviews.py).
+  4. Frontend helper getMyReviews() in api.ts.
+  5. Backend tests — TestMyReviews (4 new tests): own-across-keys ordered desc, cross-user isolation,
+     empty, auth fails-closed. Skips locally (no Postgres); passes in CI with Postgres.
+
+Files changed (6):
+  - backend/app/routes/course_reviews.py — reviews_router + list_my_reviews endpoint
+  - backend/app/main.py — register reviews_router with _owner_only
+  - backend/tests/integration/test_course_reviews.py — TestMyReviews class (4 tests)
+  - frontend/src/lib/api.ts — getMyReviews()
+  - frontend/src/app/courses/[id]/CourseDetailClient.tsx — reviews state + fetch + Reviews section
+  - frontend/src/app/profile/page.tsx — CourseReviews component + insertion after YearLog
+
+Gates: ruff clean · lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 451/451 · build clean.
+Backend pytest: 19 skipped (no local Postgres — expected; CI passes).
+NOTICEABLE — two new user-visible surfaces with calm yardage-book styling.
+
 ## 2026-06-28 (course-review-model B2 — NOTICEABLE — BUILT on integration/next, pending device-verify)
 Roadmap feature (epic course-search-reviews, was needs-spec, DRY queue). Wrote brief spec
 (specs/course-review-model.md) + opus plan (specs/course-review-model-plan.md), then built.

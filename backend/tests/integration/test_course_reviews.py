@@ -1,4 +1,4 @@
-"""Integration tests for course-reviews endpoints (B2).
+"""Integration tests for course-reviews endpoints (B2 + B3).
 
 Covers:
   1. Create + echo (POST → 200, fields round-trip)
@@ -8,6 +8,7 @@ Covers:
   5. Auth fails-closed (no auth → 401 or 503)
   6. name: key with special chars (URL-encoded, slash-free round-trip)
   7. No-shadowing guard (/{id} 404 via catch-all still works alongside /{key}/reviews)
+  8. GET /api/reviews/mine — own reviews across keys (B3)
 """
 
 from urllib.parse import quote
@@ -224,3 +225,55 @@ class TestNoShadowing:
             f"Expected 200 for /{random_id}/reviews, got {r_reviews.status_code}: {r_reviews.text}"
         )
         assert r_reviews.json() == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. GET /api/reviews/mine — own reviews across all course keys (B3)
+# ─────────────────────────────────────────────────────────────────────────────
+
+MINE = "/api/reviews/mine"
+
+
+class TestMyReviews:
+    async def test_returns_own_across_keys_ordered_desc(self, client):
+        set_auth(TEST_OWNER_ID)
+        # Seed reviews across multiple course_keys
+        await client.post(f"{BASE}/11111/reviews", json={"rating": 3, "body": "first"})
+        await client.post(f"{BASE}/22222/reviews", json={"rating": 5, "body": "second"})
+        encoded_name_key = quote("name:third-course", safe="")
+        await client.post(
+            f"{BASE}/{encoded_name_key}/reviews",
+            json={"rating": 4, "body": "third"},
+        )
+        r = await client.get(MINE)
+        assert r.status_code == 200, r.text
+        items = r.json()
+        assert len(items) == 3
+        # All owned by caller
+        assert all(it["ownerId"] == TEST_OWNER_ID for it in items)
+        # Spans multiple keys
+        assert {it["courseKey"] for it in items} == {"11111", "22222", "name:third-course"}
+        # created_at desc — non-increasing
+        created = [it["createdAt"] for it in items]
+        assert created == sorted(created, reverse=True)
+
+    async def test_cross_user_isolation(self, client):
+        set_auth(TEST_OWNER_ID)
+        await client.post(f"{BASE}/11111/reviews", json={"rating": 4})
+        set_auth(OTHER_OWNER_ID)
+        r = await client.get(MINE)
+        assert r.status_code == 200, r.text
+        assert r.json() == [], f"owner B must not see owner A's reviews, got {r.json()}"
+
+    async def test_empty_when_none(self, client):
+        set_auth(OTHER_OWNER_ID)
+        r = await client.get(MINE)
+        assert r.status_code == 200, r.text
+        assert r.json() == []
+
+    async def test_auth_fails_closed(self, client):
+        # No set_auth — dependency overrides are cleared by the fixture
+        r = await client.get(MINE)
+        assert r.status_code in (401, 503), (
+            f"expected fail-closed, got {r.status_code}"
+        )

@@ -6,7 +6,8 @@ import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getGolferProfileAsync, saveGolferProfileAsync, saveGolferBagAsync, getRoundsAsync } from "@/lib/storage-api";
 import { calculateTotals } from "@/lib/types";
 import { getOwnerPlayerId } from "@/lib/round-owner";
-import type { GolferProfile, Round } from "@/lib/types";
+import type { GolferProfile, Round, CourseReview } from "@/lib/types";
+import { getMyReviews } from "@/lib/api";
 import { deriveParTypeAverages, deriveScoreDistribution, deriveTrend } from "@/lib/profile-stats";
 import type { ParTypeRow, ScoreDistRow, TrendResult } from "@/lib/profile-stats";
 
@@ -283,6 +284,7 @@ export default function ProfilePage() {
         <ParBreakdown rounds={rounds} loading={loading} />
         <ScoreDistribution rounds={rounds} loading={loading} />
         <YearLog accent={accent} rounds={rounds} loading={loading} />
+        <CourseReviews />
         {/* Shot analytics — single calm placeholder replacing two stacked ones */}
         <ShotAnalytics />
         <Footer />
@@ -1808,6 +1810,148 @@ function ScoreDistribution({ rounds, loading }: { rounds: Round[]; loading: bool
             </div>
           )}
         </>
+      )}
+    </Section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Course reviews — the owner's reviews across all courses (B3)
+// Self-contained fetch via getMyReviews() so the parent doesn't need to
+// know about reviews. Mirrors the YearLog loading/empty/data pattern.
+// ──────────────────────────────────────────────────────────────────────
+
+function CourseReviews() {
+  const [reviews, setReviews] = useState<CourseReview[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMyReviews()
+      .then((rs) => { if (!cancelled) setReviews(rs); })
+      .catch(() => { if (!cancelled) setReviews([]); })   // silent fail → empty
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Review count aside only when there is data — suppress during load and empty state.
+  const aside = !loading && reviews.length > 0 ? (
+    <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase", fontWeight: 500 }}>
+      {reviews.length} {reviews.length === 1 ? "review" : "reviews"}
+    </div>
+  ) : undefined;
+
+  return (
+    <Section kicker="Notes" title="Course reviews" aside={aside}>
+      {loading ? (
+        // Suppress body during load — avoids empty-state flash.
+        <div style={{ minHeight: 40 }} />
+      ) : reviews.length === 0 ? (
+        <div
+          style={{
+            padding: "14px 0 6px",
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 14,
+            color: T.pencilSoft,
+            letterSpacing: -0.1,
+            lineHeight: 1.5,
+          }}
+        >
+          No reviews yet.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {reviews.map((review, i) => {
+            // Prefer playedAt (YYYY-MM-DD); fall back to createdAt (ISO datetime).
+            const rawDate = review.playedAt ?? review.createdAt;
+            const d = new Date(rawDate);
+            const dateLabel = isNaN(d.getTime())
+              ? ""
+              : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+            // For name:<slug> keys, strip the prefix for display.
+            const displayName =
+              review.courseName ??
+              (review.courseKey.startsWith("name:")
+                ? review.courseKey.slice(5).replace(/-/g, " ")
+                : review.courseKey);
+            return (
+              <div
+                key={review.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto auto",
+                  gap: 10,
+                  alignItems: "center",
+                  padding: "9px 0",
+                  borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
+                  minHeight: 44,
+                }}
+              >
+                {/* Course name */}
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontSize: 14,
+                      color: T.ink,
+                      letterSpacing: -0.1,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {displayName}
+                  </div>
+                  {review.body && (
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 7.5,
+                        color: T.pencilSoft,
+                        letterSpacing: 1,
+                        textTransform: "uppercase",
+                        marginTop: 1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {review.body}
+                    </div>
+                  )}
+                </div>
+                {/* Rating */}
+                <div
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 10,
+                    letterSpacing: 1.1,
+                    color: T.ink,
+                    flexShrink: 0,
+                  }}
+                >
+                  {review.rating} / 5
+                </div>
+                {/* Date */}
+                {dateLabel && (
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 9,
+                      letterSpacing: 1.1,
+                      color: T.pencilSoft,
+                      textTransform: "uppercase",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {dateLabel}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </Section>
   );
