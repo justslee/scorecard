@@ -3,6 +3,31 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (caddie-tactical-slope-advice — SILENT — integration/next)
+Additive "where to miss" tactical advice derived from green slope relative to approach bearing.
+Pure function, no DB/network, no new deps.
+
+### What was done
+1. `backend/app/caddie/slope_advice.py` (new, 82 lines):
+   - Pure `slope_miss_advice(green_slope, approach_bearing_deg) -> str | None`
+   - Sign convention: `GreenSlope.direction` = compass bearing of the downhill direction (where water flows); `approach_bearing_deg` = compass bearing the golfer shoots toward the green.
+   - `rel = (slope_direction - approach_bearing) % 360` maps to four quadrants:
+     - rel ≤ 45° or > 315°: drops toward back (front-to-back) → "back edge is lower; playing to pin depth keeps you below the hole"
+     - 45° < rel ≤ 135°: drops toward golfer's right (left-to-right) → "favor the left / high side"
+     - 135° < rel ≤ 225°: drops toward front/near side (back-to-front) → "leave it below the hole; miss short"
+     - 225° < rel ≤ 315°: drops toward golfer's left (right-to-left) → "favor the right / high side"
+   - Only moderate/severe slopes get advice; flat/mild return None (no noise).
+   - `severity == "severe"` → qualifier "hard"; `"moderate"` → "moderately".
+2. Wired ADDITIVELY into `generate_recommendation` (aim_point.py): slope advice appended to `reasoning` list ONLY — club, target_yards, aim_point, miss_side.preferred are all unchanged.
+3. `backend/tests/test_slope_advice.py` (new, 39 tests, no DB/network): severity gating, back-to-front "miss short" + "below the hole", right-to-left "right"+"high", left-to-right "left"+"high", front-to-back "lower", relative-direction math (same slope + different bearings = different advice), bearing wraparound (360°), boundary conditions (45°, 46°), determinism, integration tests (wired-into-recommendation, additive-only, flat-adds-nothing).
+
+### Gates
+- `ruff check .`: PASS (all checks passed)
+- `uv run pytest tests/ -k "slope or aim or caddie" -v`: 87/87 PASS (0.55s) — includes all 34 pre-existing aim_point + competition_legal tests
+- `npx tsc --noEmit`: 0 errors (no frontend changes)
+
+SILENT — pure backend logic; no user-visible UI change. No model change (only reasoning list gets an extra line).
+
 ## 2026-06-29 (caddie-decade-optimizer-core — SILENT — integration/next)
 Pure DECADE / strokes-gained aim-point optimizer, additive, not wired to recommendations.
 

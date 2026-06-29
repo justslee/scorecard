@@ -16,6 +16,7 @@ from app.caddie.club_selection import (
     CLUB_DISPLAY_NAMES,
 )
 from app.caddie.strokes_gained import expected_strokes, personal_lookup
+from app.caddie.slope_advice import slope_miss_advice
 
 
 def classify_pin_position(
@@ -283,6 +284,11 @@ def generate_recommendation(
         reasoning.append(
             f"Your history: avg {h.avg_score:.1f} (best {h.best_score}) in {h.times_played} rounds"
         )
+
+    # Green slope tactical advice — additive only; does NOT affect club, target, or miss_side.
+    slope_advice = slope_miss_advice(hole.green_slope, shot_bearing)
+    if slope_advice:
+        reasoning.append(slope_advice)
 
     # Expected score — pulls from personal_sg first, falls back to PGA baseline.
     # Gate the reasoning text on the actual lookup outcome rather than the
