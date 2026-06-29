@@ -6,9 +6,22 @@ green-slope sample that's already been fetched once never round-trips again.
 
 The raw `fetch_elevation` is still exported for code paths that don't have
 DB access (tests, scripts).
+
+3DEP batch sampler (I4)
+-----------------------
+``fetch_3dep_samples`` hits the USGS 3DEP ArcGIS ImageServer ``getSamples``
+endpoint, which accepts a multipoint geometry and returns one elevation per
+point in a **single HTTP round-trip** — far cheaper than N serial EPQS calls
+when seeding a full 18-hole course.  Falls back to ``fetch_elevation_batch``
+on any error so existing callers are unaffected.
+
+``compute_hole_elevation_profile`` is a **pure, zero-I/O** function that
+wraps two sampled elevations into the per-hole profile dict consumed by
+``assemble_osm_course`` (I4 attachment) and ``course_intel`` (caddie side).
 """
 
 import asyncio
+import json
 import httpx
 import math
 from typing import Optional
@@ -18,8 +31,16 @@ from sqlalchemy.exc import IntegrityError
 from app.db.engine import async_session
 from app.db.models import ElevationCache
 
-# USGS Elevation Point Query Service
+# USGS Elevation Point Query Service (single-point, returns feet)
 USGS_EPQS_URL = "https://epqs.nationalmap.gov/v1/json"
+
+# USGS 3DEP ArcGIS ImageServer — batch ``getSamples`` (returns metres)
+USGS_3DEP_IMAGESERVER_URL = (
+    "https://elevation.nationalmap.gov/arcgis/rest/services/"
+    "3DEPElevation/ImageServer/getSamples"
+)
+
+_M_TO_FT: float = 3.28084  # metres → feet (3DEP native unit is metres)
 
 # 5 decimal places ≈ 1.1m at the equator. Plenty for green-slope sampling and
 # stays well under int32. Multiple callers within the same green/tee/fairway
@@ -94,6 +115,123 @@ async def fetch_elevation_batch(
 ) -> list[Optional[float]]:
     """Fetch elevation for multiple points in parallel, cache-aware."""
     return await asyncio.gather(*[fetch_elevation_cached(lat, lng) for lat, lng in points])
+
+
+async def fetch_3dep_samples(
+    points: list[tuple[float, float]],
+) -> list[Optional[float]]:
+    """Fetch elevations for multiple points in a single 3DEP ImageServer call.
+
+    Uses the USGS 3DEP ArcGIS ImageServer ``getSamples`` endpoint, which accepts
+    a multipoint geometry and returns one elevation per point in a **single HTTP
+    round-trip**.  This is more efficient than N parallel EPQS calls when sampling
+    tee + green points across a full 18-hole course.
+
+    The ImageServer returns elevations in **metres**; this function converts to
+    **feet** to match the EPQS convention used everywhere else in this module.
+
+    Falls back to ``fetch_elevation_batch`` (parallel per-point EPQS queries, with
+    DB cache) on any HTTP or parse error so callers always receive a result.
+
+    Args:
+        points: ``(lat, lng)`` pairs in WGS-84 decimal degrees.
+
+    Returns:
+        List of elevations in **feet**, same length as *points*.  ``None`` where
+        no sample was available (out-of-coverage, nodata, or parse failure).
+    """
+    if not points:
+        return []
+
+    # ArcGIS expects [lon, lat] (x, y) order in WKID 4326.
+    pts_lonlat = [[lng, lat] for lat, lng in points]
+    geometry_json = {
+        "points": pts_lonlat,
+        "spatialReference": {"wkid": 4326},
+    }
+
+    params = {
+        "geometry": json.dumps(geometry_json, separators=(",", ":")),
+        "geometryType": "esriGeometryMultipoint",
+        "returnFirstValueOnly": "false",
+        "f": "json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(USGS_3DEP_IMAGESERVER_URL, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+        samples = data.get("samples") or []
+
+        # Pre-fill with None; use locationId (0-indexed) for robust ordering.
+        results: list[Optional[float]] = [None] * len(points)
+        for sample in samples:
+            try:
+                idx = int(sample.get("locationId", -1))
+            except (TypeError, ValueError):
+                continue
+            if idx < 0 or idx >= len(points):
+                continue
+            raw = sample.get("value")
+            if raw is None or raw in ("", "NoData"):
+                continue
+            try:
+                elev_m = float(raw)
+            except (TypeError, ValueError):
+                continue
+            # 3DEP nodata sentinel is typically -999999 or similar large negative.
+            if elev_m < -1000:
+                continue
+            results[idx] = round(elev_m * _M_TO_FT, 2)
+
+        return results
+
+    except Exception:
+        # Network error, HTTP error, or unexpected response shape:
+        # fall back to parallel per-point EPQS queries (cache-aware).
+        return await fetch_elevation_batch(points)
+
+
+def compute_hole_elevation_profile(
+    tee_elevation_ft: float,
+    green_elevation_ft: float,
+    green_slope: Optional[dict] = None,
+) -> dict:
+    """Compute a per-hole elevation profile from sampled tee and green elevations.
+
+    **Pure function** — no I/O, no network, no database.  Pass fixture values in
+    unit tests; pass live-sampled elevations (from ``fetch_3dep_samples`` or
+    ``fetch_elevation_batch``) in production.
+
+    The ``net_change_ft`` sign convention matches ``course_intel.py``:
+    positive = the green is **higher** than the tee (uphill approach shot);
+    negative = the green is **lower** (downhill).
+
+    Args:
+        tee_elevation_ft:   Elevation at the tee in feet.
+        green_elevation_ft: Elevation at the green center in feet.
+        green_slope:        Optional dict from ``compute_green_slope`` (or a
+                            fixture); passed through unchanged as-is.
+
+    Returns:
+        Dict with keys::
+
+            {
+                "tee_elevation_ft":   float,   # rounded to 1 dp
+                "green_elevation_ft": float,   # rounded to 1 dp
+                "net_change_ft":      float,   # green − tee, 1 dp; + = uphill
+                "green_slope":        dict | None,
+            }
+    """
+    net_change = round(green_elevation_ft - tee_elevation_ft, 1)
+    return {
+        "tee_elevation_ft":   round(tee_elevation_ft, 1),
+        "green_elevation_ft": round(green_elevation_ft, 1),
+        "net_change_ft":      net_change,
+        "green_slope":        green_slope,
+    }
 
 
 async def compute_green_slope(

@@ -68,6 +68,7 @@ def assemble_osm_course(
     address: Optional[str] = None,
     location: Optional[dict[str, float]] = None,
     tee_sets: Optional[list[dict[str, Any]]] = None,
+    hole_elevations: Optional[dict[int, dict]] = None,
 ) -> dict[str, Any]:
     """Combine I0 geometry + I1 spatial join into the ``upsert_course`` input dict.
 
@@ -114,6 +115,21 @@ def assemble_osm_course(
         tee_sets:
             Optional list of ``{"name": str, "color": str}`` dicts.
             Defaults to ``[Black, Blue, White, Red]``.
+        hole_elevations:
+            Optional mapping of hole number (int) →
+            ``compute_hole_elevation_profile`` result dict::
+
+                {
+                    "tee_elevation_ft":   float,
+                    "green_elevation_ft": float,
+                    "net_change_ft":      float,   # positive = uphill
+                    "green_slope":        dict | None,
+                }
+
+            When provided, each matching hole dict gains an ``"elevation"`` key.
+            Holes without a matching entry are left unchanged (no ``"elevation"``
+            key).  Passing ``None`` (the default) keeps the output shape
+            identical to earlier iterations — no existing callers break.
 
     Returns:
         Dict matching the :func:`~app.services.courses_mapped.upsert_course`
@@ -135,6 +151,13 @@ def assemble_osm_course(
                             "type": "FeatureCollection",
                             "features": [...]
                         },
+                        # present only when hole_elevations supplies this hole:
+                        "elevation": {
+                            "tee_elevation_ft":   float,
+                            "green_elevation_ft": float,
+                            "net_change_ft":      float,
+                            "green_slope":        dict | None,
+                        } | None,
                     },
                     ...  # one entry per hole that received ≥1 polygon
                 ],
@@ -182,6 +205,16 @@ def assemble_osm_course(
             hole_dict["par"] = par
         if hcp is not None:
             hole_dict["handicap"] = hcp
+
+    # I4: Optionally attach per-hole elevation profile (3DEP / EPQS sampled).
+    # ``hole_elevations`` is intentionally additive — callers that do not yet
+    # have elevation data (or tests that don't care about it) pass nothing and
+    # the output shape is identical to I2 / I3.
+    if hole_elevations:
+        for hole_dict in hole_dicts:
+            elev = hole_elevations.get(hole_dict["number"])
+            if elev is not None:
+                hole_dict["elevation"] = elev
 
     return {
         "id":       course_id,
