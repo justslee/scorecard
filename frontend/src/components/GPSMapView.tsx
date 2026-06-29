@@ -35,6 +35,14 @@ interface GPSMapViewProps {
   onClose: () => void;
   /** Auto-detect hole based on nearest green. Defaults true. */
   autoDetectHole?: boolean;
+  /**
+   * Full-polygon GeoJSON features from a homegrown mapped course (OSM ingest).
+   * Each feature must have ``properties.hole`` (number) and
+   * ``properties.featureType`` ("green" | "fairway" | "tee" | "bunker" | "water").
+   * When provided, the current hole's polygon outlines are rendered as calm
+   * fill layers beneath the satellite imagery.
+   */
+  osmFeatures?: GeoJSON.Feature[];
 }
 
 // Layup ring distances in yards
@@ -51,6 +59,47 @@ function createCircleGeoJSON(
   }) as GeoJSON.Feature<GeoJSON.Polygon>;
 }
 
+// ── OSM polygon layer config ──────────────────────────────────────────────────
+// Single source "osm-current-hole" holding the current hole's polygon features.
+// Layers use Mapbox match expressions to colour by featureType.
+
+const _OSM_SOURCE_ID = "osm-current-hole";
+const _OSM_FILL_LAYER_ID = "osm-polygons-fill";
+const _OSM_OUTLINE_LAYER_ID = "osm-polygons-outline";
+
+/** Fill colour per OSM feature type — calm palette over satellite. */
+const _OSM_FILL_COLOR_EXPR: mapboxgl.Expression = [
+  "match", ["get", "featureType"],
+  "green",   "#22c55e",
+  "fairway", "#86efac",
+  "bunker",  "#fbbf24",
+  "tee",     "#c084fc",
+  "water",   "#60a5fa",
+  /* default */ "#9ca3af",
+];
+
+/** Fill opacity per OSM feature type. */
+const _OSM_FILL_OPACITY_EXPR: mapboxgl.Expression = [
+  "match", ["get", "featureType"],
+  "green",   0.40,
+  "fairway", 0.18,
+  "bunker",  0.50,
+  "tee",     0.30,
+  "water",   0.40,
+  /* default */ 0.25,
+];
+
+/** Outline colour per OSM feature type. */
+const _OSM_OUTLINE_COLOR_EXPR: mapboxgl.Expression = [
+  "match", ["get", "featureType"],
+  "green",   "#16a34a",
+  "fairway", "#22c55e",
+  "bunker",  "#d97706",
+  "tee",     "#9333ea",
+  "water",   "#3b82f6",
+  /* default */ "#6b7280",
+];
+
 export default function GPSMapView({
   courseId: _courseId,
   courseName,
@@ -59,6 +108,7 @@ export default function GPSMapView({
   onHoleChange,
   onClose,
   autoDetectHole = true,
+  osmFeatures,
 }: GPSMapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -121,6 +171,58 @@ export default function GPSMapView({
       .sort((a, b) => a.yards - b.yards)
       .slice(0, 4);
   }, [position, currentHoleData]);
+
+  // ── OSM polygon overlay ────────────────────────────────────────────────────
+  // Renders full polygon outlines (greens, fairways, bunkers, tees, water) for
+  // the current hole when homegrown OSM geometry is available.
+
+  const updateOsmPolygons = useCallback(() => {
+    if (!map.current || !mapLoaded.current) return;
+    const m = map.current;
+
+    // Build a FeatureCollection containing only the current hole's features.
+    const holeFeatures = (osmFeatures ?? []).filter(
+      (f) => f.properties?.hole === currentHole
+    );
+    const fc: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: holeFeatures,
+    };
+
+    const src = m.getSource(_OSM_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
+    if (src) {
+      src.setData(fc);
+    } else {
+      m.addSource(_OSM_SOURCE_ID, { type: "geojson", data: fc });
+
+      // Fill layer — drawn behind markers; calm opacity doesn't obscure satellite.
+      m.addLayer(
+        {
+          id: _OSM_FILL_LAYER_ID,
+          type: "fill",
+          source: _OSM_SOURCE_ID,
+          paint: {
+            "fill-color":   _OSM_FILL_COLOR_EXPR,
+            "fill-opacity": _OSM_FILL_OPACITY_EXPR,
+          },
+        },
+        // Insert before the first symbol layer so text/icons stay on top.
+        m.getStyle()?.layers?.find((l) => l.type === "symbol")?.id
+      );
+
+      // Outline layer — drawn on top of fill.
+      m.addLayer({
+        id: _OSM_OUTLINE_LAYER_ID,
+        type: "line",
+        source: _OSM_SOURCE_ID,
+        paint: {
+          "line-color":   _OSM_OUTLINE_COLOR_EXPR,
+          "line-width":   1.5,
+          "line-opacity": 0.75,
+        },
+      });
+    }
+  }, [currentHole, osmFeatures]);
 
   // Add/update overlay layers (distance line, layup rings, tee-to-green)
   const updateOverlays = useCallback(() => {
@@ -432,8 +534,9 @@ export default function GPSMapView({
         hazardMarkers.current.push(m);
       });
 
-      // Add initial overlays
+      // Add initial overlays (standard + OSM polygons)
       updateOverlays();
+      updateOsmPolygons();
     });
 
     return () => {
@@ -546,14 +649,20 @@ export default function GPSMapView({
       duration: 900,
     });
 
-    // Remove old overlays and redraw
+    // Remove old overlays and redraw (including OSM polygon overlay)
     updateOverlays();
-  }, [currentHoleData, updateOverlays]);
+    updateOsmPolygons();
+  }, [currentHoleData, updateOverlays, updateOsmPolygons]);
 
   // Update overlays when position changes
   useEffect(() => {
     updateOverlays();
   }, [position, showOverlays, updateOverlays]);
+
+  // Update OSM polygon overlay when osmFeatures changes (e.g. async load).
+  useEffect(() => {
+    updateOsmPolygons();
+  }, [updateOsmPolygons]);
 
   const handlePositionUpdate = useCallback(
     (pos: Position) => {

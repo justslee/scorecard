@@ -3,6 +3,66 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (course-poc-i2-store-render — NOTICEABLE — integration/next)
+I2 Bethpage Black POC: assemble homegrown OSM geometry into the PostGIS course
+store and render it in the map view — proving "a hole map from free data, no GolfAPI."
+
+### Verified here (pure/offline)
+- `ruff check .` clean
+- `pytest tests/ -k "spatial or osm or ingest"` 136/136 passed (44 new ingest tests +
+  60 spatial + 34 OSM parsing). New tests cover `_deterministic_uuid` (UUID format,
+  version/variant bits, SHA-1 alignment, pinned stable value) and `assemble_osm_course`
+  (output shape, par/handicap merge, cross-course rejection, edge cases).
+- Frontend: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 483/483 · build clean
+  (/map/course page visible in static export).
+
+### Verified on deploy box / device only
+- Live Overpass fetch (`fetch_course_geometry(lat=40.7445, lng=-73.4609, radius=2500)`)
+  → expected 90 hole LineStrings (5 courses × 18) + polygon features.
+- `upsert_course` DB write (requires ASYNC_DATABASE_URL on deploy box).
+- `GPSMapView` OSM polygon overlay render on TestFlight device.
+
+### Files changed
+BACKEND:
+- `backend/app/services/osm_ingest.py` (new, 130 lines): `_deterministic_uuid(key)`
+  mirrors frontend `deterministicUUID()` exactly (SHA-1 + UUID v5 bits); comment
+  explains how a later GolfAPI id discovery aligns with the stored UUID without
+  migration. `assemble_osm_course(geometry, course_id, course_name, target_course_name,
+  address, location, tee_sets)` — combines I0 holes + I1 spatial join + par/handicap
+  merge from OSM hole LineStrings → exact dict shape for `upsert_course`.
+- `backend/scripts/ingest_osm_course.py` (new, 170 lines): runnable script with
+  argparse; defaults to Bethpage Black (lat=40.7445, lng=-73.4609, radius=2500,
+  target_course_name="Black", course_key="osm-bethpage-black"). `--dry-run` flag
+  shows assembled payload without DB write. Calls fetch_course_geometry (all courses,
+  no filter) → assemble_osm_course → upsert_course.
+- `backend/tests/test_ingest_osm_course.py` (new, 44 tests): pure unit tests for
+  `_deterministic_uuid` and `assemble_osm_course` — no DB, no network.
+
+FRONTEND:
+- `frontend/src/lib/courses/mapped-course-api.ts` (new): `fetchMappedCourse(id)`,
+  `mappedCourseToCoordinates(course)` (extracts green/tee/hazard centroids from
+  polygon features), `getAllHoleFeatures(course)` (flat array with properties.hole).
+- `frontend/src/components/GPSMapView.tsx`: added optional `osmFeatures` prop +
+  `updateOsmPolygons` callback; single GeoJSON source `osm-current-hole` updated on
+  hole change; fill + outline layers with calm palette per featureType (green/fairway/
+  bunker/tee/water). Wired into map load + hole-change effects.
+- `frontend/src/app/map/course/page.tsx` (new): minimal POC viewer at
+  `/map/course?id=<uuid>`; loads mapped course, converts to CourseCoordinates,
+  renders GPSMapView with osmFeatures polygon overlay.
+
+### How to run the ingest (deploy box)
+```
+cd backend
+uv run python scripts/ingest_osm_course.py --dry-run  # preview, no DB
+uv run python scripts/ingest_osm_course.py            # real write (needs ASYNC_DATABASE_URL)
+```
+
+### How to view the map (after ingest)
+Navigate to: http://<host>/map/course?id=<Course UUID from dry-run output>
+
+Classification: NOTICEABLE (new map view + polygon rendering), but device-only for
+the render verification (requires ingest on deploy box + TestFlight build).
+
 ## 2026-06-29 (course-poc-i1-spatial-join — SILENT — commit fc93c94 on integration/next)
 Pure-geometry I1 of the Bethpage Black homegrown course-data track. No DB, no network,
 no new dependencies (stdlib math only).
