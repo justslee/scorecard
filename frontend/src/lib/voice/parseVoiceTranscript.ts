@@ -1,4 +1,5 @@
 import type { VoiceParseSetupResult } from "./types";
+import { fuzzyBestMatch } from "./utils";
 
 export interface ParseVoiceTranscriptOptions {
   /** Set true to skip any network / LLM and use local rules. */
@@ -9,6 +10,18 @@ export interface ParseVoiceTranscriptOptions {
   anthropicApiKey?: string;
   /** Dependency injection for fetch (tests). */
   fetchFn?: typeof fetch;
+  /**
+   * Known players + courses for name disambiguation.
+   *
+   * When provided, extracted names are fuzzy-matched against these candidates
+   * before being returned — same thresholds as pipeline.ts (players 0.76,
+   * courses 0.74). If the candidate set is empty, behaviour is unchanged so
+   * there is no regression when the caller omits context.
+   */
+  known?: {
+    players?: string[];
+    courses?: string[];
+  };
 }
 
 /**
@@ -26,7 +39,7 @@ export async function parseVoiceTranscript(
 
   const anthropicApiKey = opts.anthropicApiKey;
   if (opts.forceLocal || !anthropicApiKey) {
-    return parseVoiceTranscriptLocally(transcript);
+    return parseVoiceTranscriptLocally(transcript, opts);
   }
 
   const fetchFn = opts.fetchFn ?? fetch;
@@ -63,9 +76,16 @@ export async function parseVoiceTranscript(
 /**
  * Local parsing (heuristic). This is used for offline tests and as a fallback in dev.
  *
+ * When `opts.known` is provided, extracted player and course names are fuzzy-
+ * matched against the supplied candidate lists (same thresholds as pipeline.ts).
+ * Callers that omit `opts` get the original behaviour unchanged.
+ *
  * NOTE: Keep this in sync with user-facing expectations.
  */
-export function parseVoiceTranscriptLocally(transcript: string): VoiceParseSetupResult {
+export function parseVoiceTranscriptLocally(
+  transcript: string,
+  opts?: Pick<ParseVoiceTranscriptOptions, "known">,
+): VoiceParseSetupResult {
   const lower = transcript.toLowerCase();
 
   // Detect game format
@@ -140,12 +160,20 @@ export function parseVoiceTranscriptLocally(transcript: string): VoiceParseSetup
     if (!playerNames.includes(playerName)) playerNames.push(playerName);
   }
 
+  // Disambiguate extracted player names against a known roster when provided.
+  // Uses the same threshold as pipeline.ts (0.76). If no candidates are supplied
+  // the behaviour is unchanged — no forced match is ever made.
+  const knownPlayerCandidates = opts?.known?.players ?? [];
+  const resolvedPlayerNames = knownPlayerCandidates.length > 0
+    ? playerNames.map((n) => fuzzyBestMatch(n, knownPlayerCandidates, 0.76).match ?? n)
+    : playerNames;
+
   // Detect teams for 2v2
   const teams: { name: string; playerNames: string[] }[] = [];
   if (lower.includes("2v2") || lower.includes("2 v 2") || lower.includes("two on two") || lower.includes("two vs two")) {
-    if (playerNames.length >= 4) {
-      teams.push({ name: "Team 1", playerNames: playerNames.slice(0, 2) });
-      teams.push({ name: "Team 2", playerNames: playerNames.slice(2, 4) });
+    if (resolvedPlayerNames.length >= 4) {
+      teams.push({ name: "Team 1", playerNames: resolvedPlayerNames.slice(0, 2) });
+      teams.push({ name: "Team 2", playerNames: resolvedPlayerNames.slice(2, 4) });
     }
   }
 
@@ -164,13 +192,20 @@ export function parseVoiceTranscriptLocally(transcript: string): VoiceParseSetup
       if (c && c.length > 2) courses.push(c);
     }
 
+    // Disambiguate course names against a known candidate set when provided.
+    // Uses the same threshold as pipeline.ts (0.74). No forced match when empty.
+    const knownCourseCandidates = opts?.known?.courses ?? [];
+    const resolvedCourses = knownCourseCandidates.length > 0
+      ? courses.map((c) => fuzzyBestMatch(c, knownCourseCandidates, 0.74).match ?? c)
+      : courses;
+
     return {
       type: "tournament",
       tournament: {
         name: "Tournament",
         numRounds,
-        courses,
-        playerNames: [...new Set(playerNames)],
+        courses: resolvedCourses,
+        playerNames: [...new Set(resolvedPlayerNames)],
         handicaps: Object.keys(handicaps).length > 0 ? handicaps : undefined,
       },
       confidence: 0.6,
@@ -183,7 +218,7 @@ export function parseVoiceTranscriptLocally(transcript: string): VoiceParseSetup
       format,
       name,
       teams: teams.length > 0 ? teams : undefined,
-      playerNames: [...new Set(playerNames)],
+      playerNames: [...new Set(resolvedPlayerNames)],
       handicaps: Object.keys(handicaps).length > 0 ? handicaps : undefined,
       settings: {
         handicapped: Object.keys(handicaps).length > 0,
