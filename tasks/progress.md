@@ -3,6 +3,30 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (course-poc-i4-elevation — SILENT — integration/next, commit b621d78)
+I4 Bethpage Black POC: per-hole elevation (tee→green delta + green slope) from free USGS 3DEP,
+woven into the assembled homegrown course. BE/data, headless.
+
+### What was done
+1. `backend/app/services/elevation.py` — two new exports:
+   - `fetch_3dep_samples(points)` — batch elevation query via USGS 3DEP ArcGIS ImageServer
+     `getSamples` endpoint. Single HTTP round-trip for N points (vs N serial EPQS calls). Returns
+     elevations in feet (converts from 3DEP native metres). Falls back to `fetch_elevation_batch`
+     (parallel EPQS + DB cache) on any error. No new deps.
+   - `compute_hole_elevation_profile(tee_ft, green_ft, green_slope=None)` — PURE function.
+     Returns: tee_elevation_ft, green_elevation_ft, net_change_ft (+= uphill), green_slope passthrough.
+2. `backend/app/services/osm_ingest.py` — `assemble_osm_course` gains optional
+   `hole_elevations: dict[int, dict] | None = None`. Attaches `elevation` key per hole when
+   provided. Backward-compatible: existing callers/tests unaffected.
+3. `backend/tests/test_elevation_profile.py` (new, 29 pure tests, no network/DB).
+
+### Gates
+- ruff check .: PASS
+- pytest tests/ --ignore=tests/integration -k "elevation or spatial or osm or ingest or bethpage": 183/183 PASS
+- npx tsc --noEmit: 0 errors
+
+SILENT — BE/data only; no user-visible surface yet.
+
 ## 2026-06-29 (course-poc-i3-validate — SILENT — integration/next)
 I3 Bethpage Black feasibility gate: validate the homegrown pipeline against the published card.
 
