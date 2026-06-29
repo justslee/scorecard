@@ -3,6 +3,27 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (job-f-spatial-join — SILENT improvement — feat/fuller-course-map, commit 761c9a9)
+Improved fairway attribution from 13/18 to 14/18 Black holes (Job F). Holes 3/7/8/9 are
+verified OSM data gaps (400–700 m from Black centerlines) — no per-hole hardcodes used.
+
+### What was done
+- course_spatial.py: Added _point_in_ring (ray-casting), _linestring_intersection_m (densified
+  polygon-interior scoring), 3-tier assign_features_to_holes (Tier 1 overlap / Tier 2 ring-vertex
+  voting / Tier 3 original centroid-to-line), and _RECLAIM_SAME_AREA_M (200 m) reclaim pass in
+  build_course_feature_collection for multi-course venues (Bethpage 5 courses share one property).
+- test_course_spatial.py: +20 tests (86 total). TestPointInRing, TestLinestringIntersectionM,
+  TestParallelHoleFairwayAttribution, TestMultiCourseReclaim.
+
+### Live Overpass diagnostic (Bethpage Black lat=40.7445, lng=-73.4609)
+Holes missing fairway before: [1,3,7,8,9] (13/18). After: [3,7,8,9] (14/18).
+Holes 3/7/8/9: verified OSM data gaps — Green course h3/h7/h8/h9 are 400–700 m from Black.
+
+### Gates
+ruff: PASS · pytest 697/697 · eslint PASS · tsc PASS · voice-tests 265/265
+
+SILENT — backend-only change; requires prod re-ingest to take effect.
+
 ## 2026-06-29 (fuller-course-map — NOTICEABLE — feat/fuller-course-map, commit a5bef42)
 Extends the yardage-book hole diagram with terrain layers (rough, woods, trees), tap-to-measure
 connector lines, iOS safe-area header fix, and responsive ResizeObserver-based diagram sizing.
