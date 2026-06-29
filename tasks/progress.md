@@ -3,6 +3,38 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (scorecard-scan-robustness — SILENT — integration/next, commit 24fcaca)
+Robustness hardening on `POST /api/scorecard/scan` — two reviewer should-fix items.
+No new deps, no endpoint behavior change, no DB.
+
+### What was done
+1. `backend/app/routes/scorecard.py`:
+   - FIX 1: Factored out `_extract_text_content(content) -> str` (new exported pure helper).
+     Picks the first text-type block from Claude's content list via `getattr(b, "type", None) == "text"`,
+     skipping thinking/tool_use blocks. Replaces `message.content[0].text` which raises
+     AttributeError/IndexError if the first block is a thinking block or content is empty.
+     Empty result flows into `_parse_scan_response`'s existing ValueError("No JSON object found") → clean 500.
+   - FIX 2: Added shape validation in `_parse_scan_response`:
+     - `isinstance(raw["players"], list)` — raises clear ValueError if not a list.
+     - `isinstance(raw["holes"], list)` — raises clear ValueError if not a list.
+     - Per-hole loop: `isinstance(h, dict)` check + `"number" in h` check; all bad shapes
+       raise informative ValueError → existing 500 handler (replaces opaque KeyError/TypeError).
+
+2. `backend/tests/test_scorecard_scan.py`:
+   - Added import for `types` + `_extract_text_content`.
+   - 4 new shape-validation error tests in `TestParseScanResponseErrorPaths`:
+     players-is-dict, holes-not-a-list, hole-missing-number, hole-entry-is-string.
+   - New `TestExtractTextContent` class (5 tests): text-only, thinking-then-text
+     (end-to-end through `_parse_scan_response`), multi-non-text-then-text, no-text-block →
+     empty string → ValueError, empty content list.
+
+### Gates
+- `cd backend && ruff check .`: PASS (all checks passed)
+- `cd backend && uv run pytest tests/ -k "scorecard or scan" -v`: 28/28 PASS (19 existing + 9 new)
+- `cd frontend && npx tsc --noEmit`: 0 errors
+
+SILENT — backend-only robustness fix; no user-visible behavior change.
+
 ## 2026-06-29 (ocr-scorecard-scan — SILENT — integration/next)
 Backend-only first iteration of the scorecard OCR feature. New authed endpoint
 `POST /api/scorecard/scan` that accepts a JPEG/PNG/WEBP/GIF image (≤10 MB) and
