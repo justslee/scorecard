@@ -12,6 +12,7 @@ Tests are grouped by behaviour:
 
 from __future__ import annotations
 
+import re
 import pytest
 
 from app.caddie.decade_advice import (
@@ -19,13 +20,23 @@ from app.caddie.decade_advice import (
     SIGMA_LAT_FRACTION,
     SIGMA_LONG_FRACTION,
     MIN_SIGMA_YDS,
+    HCP_MIN,
+    HCP_MAX,
+    SIGMA_LONG_FRACTION_OF_LAT,
     build_classify_point,
     decade_aim_advice,
+    dispersion_for_handicap,
     _hazard_to_area,
     _friendly_hazard_name,
 )
 from app.caddie.decade import LandingArea
 from app.caddie.types import Hazard, HoleIntelligence
+
+
+def _extract_yards(advice: str) -> int:
+    """Pull the integer yardage from an advice string of the form '~Ny direction'."""
+    m = re.search(r"~(\d+)y", advice)
+    return int(m.group(1)) if m else 0
 
 
 # ── Shared test helpers ───────────────────────────────────────────────────────
@@ -448,4 +459,178 @@ class TestWiredIntoRecommendation:
         # compute_miss_side: water left → right side is safer → preferred = "right"
         assert rec1.miss_side.preferred == "right", (
             f"Expected 'right' miss side for water left; got: {rec1.miss_side.preferred!r}"
+        )
+
+
+# ── TestHandicapDispersionScaling ────────────────────────────────────────────
+
+
+class TestHandicapDispersionScaling:
+    """Handicap-scaled dispersion is personalised and behaviorally correct.
+
+    All tests are pure (no DB / no network) and deterministic.
+    """
+
+    WATER_LEFT = [_hazard(type="water", side="left", severity="death", distance=5.0)]
+    BAG = {"7iron": 160, "9iron": 140, "pw": 130}
+
+    # ── dispersion_for_handicap unit tests ────────────────────────────────────
+
+    def test_scratch_sigma_smaller_than_mid_hcp(self):
+        """Scratch player (hcp=2) has a strictly tighter lateral sigma than mid-hcp (15)."""
+        lat_scratch, _ = dispersion_for_handicap(2.0, 150.0)
+        lat_mid, _ = dispersion_for_handicap(15.0, 150.0)
+        assert lat_scratch < lat_mid
+
+    def test_mid_hcp_sigma_smaller_than_high_hcp(self):
+        """Mid-hcp (15) has a strictly tighter sigma than high-hcp (25)."""
+        lat_mid, _ = dispersion_for_handicap(15.0, 150.0)
+        lat_high, _ = dispersion_for_handicap(25.0, 150.0)
+        assert lat_mid < lat_high
+
+    def test_sigma_monotone_scratch_to_high(self):
+        """sigma_lat is strictly increasing from hcp=2 through hcp=25 at 150 yds."""
+        hcps = [2, 8, 15, 20, 25]
+        sigs = [dispersion_for_handicap(h, 150.0)[0] for h in hcps]
+        for i in range(len(sigs) - 1):
+            assert sigs[i] < sigs[i + 1], (
+                f"sigma not monotone: hcp {hcps[i]}→{hcps[i+1]}: {sigs[i]:.3f}→{sigs[i+1]:.3f}"
+            )
+
+    def test_hcp_clamping_below_min(self):
+        """Plus-handicap (+0, −1) is clamped to HCP_MIN before interpolation."""
+        lat_neg1, _ = dispersion_for_handicap(-1.0, 150.0)
+        lat_floor, _ = dispersion_for_handicap(HCP_MIN, 150.0)
+        assert lat_neg1 == pytest.approx(lat_floor, abs=1e-9)
+
+    def test_hcp_clamping_above_max(self):
+        """Excessively high handicap is clamped to HCP_MAX."""
+        lat_100, _ = dispersion_for_handicap(100.0, 150.0)
+        lat_ceil, _ = dispersion_for_handicap(HCP_MAX, 150.0)
+        assert lat_100 == pytest.approx(lat_ceil, abs=1e-9)
+
+    def test_sigma_long_is_two_thirds_of_sigma_lat(self):
+        """sigma_long = SIGMA_LONG_FRACTION_OF_LAT × sigma_lat for above-floor values."""
+        sigma_lat, sigma_long = dispersion_for_handicap(15.0, 150.0)
+        assert sigma_long == pytest.approx(SIGMA_LONG_FRACTION_OF_LAT * sigma_lat, abs=1e-9)
+
+    # ── Wiring: handicap flows into decade_aim_advice ─────────────────────────
+
+    def test_handicap_none_uses_fixed_fracs(self):
+        """With handicap=None the fixed fracs are used — existing behaviour is unchanged."""
+        advice = decade_aim_advice(self.WATER_LEFT, shot_distance_yds=150.0)
+        advice_none = decade_aim_advice(self.WATER_LEFT, shot_distance_yds=150.0, handicap=None)
+        assert advice == advice_none, "handicap=None must match the no-kwarg default"
+
+    def test_handicap_param_accepted_no_crash(self):
+        """decade_aim_advice accepts handicap kwarg for all sane values without error."""
+        for hcp in (2.0, 15.0, 25.0, 36.0):
+            result = decade_aim_advice(self.WATER_LEFT, shot_distance_yds=150.0, handicap=hcp)
+            assert result is None or isinstance(result, str), (
+                f"Unexpected return type at hcp={hcp}: {result!r}"
+            )
+
+    def test_handicap_wired_deterministic(self):
+        """Same handicap → same advice, repeated calls."""
+        for hcp in (2.0, 15.0, 25.0):
+            r1 = decade_aim_advice(self.WATER_LEFT, 150.0, handicap=hcp)
+            r2 = decade_aim_advice(self.WATER_LEFT, 150.0, handicap=hcp)
+            assert r1 == r2, f"Non-deterministic at hcp={hcp}"
+
+    # ── Behavioral: scratch more aggressive, high-hcp more conservative ───────
+
+    def test_scratch_shift_leq_high_hcp_shift(self):
+        """Scratch (hcp=2) gets same-or-smaller recommended offset than 25-hcp.
+
+        Scenario: death water 5 yds LEFT, 150-yd approach.
+        Scratch has tighter dispersion → less risk from the same hazard →
+        the optimizer recommends aiming less far from the flag (or not at all).
+        High-hcp has wider dispersion → higher water probability → larger shift.
+
+        Both may return advice; if so, the scratch yardage must be ≤ 25-hcp yardage.
+        If scratch returns None (threshold not crossed), the assertion is trivially
+        satisfied (0 ≤ any positive number).
+        """
+        advice_scratch = decade_aim_advice(self.WATER_LEFT, 150.0, handicap=2.0)
+        advice_high = decade_aim_advice(self.WATER_LEFT, 150.0, handicap=25.0)
+
+        # High-hcp must get advice for this scenario (wide dispersion + death hazard)
+        assert advice_high is not None, (
+            "25-hcp should receive aim advice for death water 5y left at 150 yds"
+        )
+
+        yards_scratch = _extract_yards(advice_scratch) if advice_scratch else 0
+        yards_high = _extract_yards(advice_high)
+
+        assert yards_scratch <= yards_high, (
+            f"Scratch offset ({yards_scratch}y) must be ≤ 25-hcp offset ({yards_high}y) — "
+            "tighter dispersion should never require a larger shift"
+        )
+
+    def test_high_hcp_gets_advice_where_scratch_may_not(self):
+        """For a moderate hazard scenario, high-hcp gets advice while scratch may not.
+
+        Scenario: water 5 yds LEFT (death), 100-yd shot.
+        Scratch σ_lat = 5 yds (tight) → optimizer may stay near the flag.
+        25-hcp σ_lat = 9 yds (wide)  → more water exposure → larger shift.
+
+        This test asserts the DIRECTION of the difference is correct: the
+        scratch advice yardage ≤ high-hcp advice yardage.
+        """
+        hazards = [_hazard(type="water", side="left", severity="death", distance=5.0)]
+        advice_scratch = decade_aim_advice(hazards, shot_distance_yds=100.0, handicap=2.0)
+        advice_high = decade_aim_advice(hazards, shot_distance_yds=100.0, handicap=25.0)
+
+        yards_scratch = _extract_yards(advice_scratch) if advice_scratch else 0
+        yards_high = _extract_yards(advice_high) if advice_high else 0
+
+        assert yards_scratch <= yards_high, (
+            f"Scratch ({yards_scratch}y) should recommend ≤ shift than 25-hcp ({yards_high}y)"
+        )
+
+    # ── Additive-only: club / target / aim_point / miss_side unchanged ────────
+
+    def test_handicap_does_not_change_club(self):
+        """Changing handicap in generate_recommendation must not change the club selected.
+
+        The club depends on distance + club bag, not dispersion.
+        """
+        from app.caddie.aim_point import generate_recommendation
+        hole = _make_hole(self.WATER_LEFT)
+        rec_scratch = generate_recommendation(hole, 150, self.BAG, handicap=2.0)
+        rec_high = generate_recommendation(hole, 150, self.BAG, handicap=25.0)
+        assert rec_scratch.club == rec_high.club, (
+            f"Club changed with handicap: scratch={rec_scratch.club!r}, high={rec_high.club!r}"
+        )
+
+    def test_handicap_does_not_change_target_yards(self):
+        """Changing handicap must not change target_yards."""
+        from app.caddie.aim_point import generate_recommendation
+        hole = _make_hole(self.WATER_LEFT)
+        rec_scratch = generate_recommendation(hole, 150, self.BAG, handicap=2.0)
+        rec_high = generate_recommendation(hole, 150, self.BAG, handicap=25.0)
+        assert rec_scratch.target_yards == rec_high.target_yards
+
+    def test_handicap_does_not_change_aim_point(self):
+        """Changing handicap must not mutate aim_point.description.
+
+        The aim_point is set by compute_aim_point (traffic-light + death-side logic),
+        which is orthogonal to DECADE dispersion.
+        """
+        from app.caddie.aim_point import generate_recommendation
+        hole = _make_hole(self.WATER_LEFT)
+        rec_scratch = generate_recommendation(hole, 150, self.BAG, handicap=2.0)
+        rec_high = generate_recommendation(hole, 150, self.BAG, handicap=25.0)
+        assert rec_scratch.aim_point.description == rec_high.aim_point.description, (
+            "aim_point.description must not change when only handicap changes"
+        )
+
+    def test_handicap_does_not_change_miss_side(self):
+        """Changing handicap must not mutate miss_side.preferred."""
+        from app.caddie.aim_point import generate_recommendation
+        hole = _make_hole(self.WATER_LEFT)
+        rec_scratch = generate_recommendation(hole, 150, self.BAG, handicap=2.0)
+        rec_high = generate_recommendation(hole, 150, self.BAG, handicap=25.0)
+        assert rec_scratch.miss_side.preferred == rec_high.miss_side.preferred, (
+            "miss_side.preferred must not change when only handicap changes"
         )

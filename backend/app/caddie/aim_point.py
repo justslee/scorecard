@@ -305,7 +305,9 @@ def generate_recommendation(
     # aim_point, or miss_side.  Runs the DECADE optimizer over a lateral candidate grid
     # and surfaces a plain-English insight when the percentages favor aiming away from
     # the flag.  Returns None when the flag is optimal or hazards are negligible.
-    d_advice = decade_aim_advice(hole.hazards, float(distance_yards))
+    # Handicap is forwarded so dispersion is personalised to the player's skill level;
+    # better players get tighter sigma, leading to more aggressive (flag-proximate) advice.
+    d_advice = decade_aim_advice(hole.hazards, float(distance_yards), handicap=handicap)
     if d_advice:
         reasoning.append(d_advice)
 

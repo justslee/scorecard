@@ -48,9 +48,11 @@ Default area (no hazard matches):
     ≤ GREEN_RADIUS_YDS from pin → GREEN
     beyond                       → FAIRWAY
 
-Dispersion defaults
--------------------
-Tuned to a mid-handicap (≈14) amateur; swap the constants to personalise.
+Dispersion defaults (fixed, mid-handicap)
+------------------------------------------
+Tuned to a mid-handicap (≈14) amateur; used when ``handicap`` is not supplied.
+When ``handicap`` is provided, ``dispersion_for_handicap`` derives personalised
+sigma values instead of these fixed fractions.
 
     SIGMA_LAT_FRACTION  = 0.06   σ_lat  = 6 % of distance (lateral spread)
     SIGMA_LONG_FRACTION = 0.04   σ_long = 4 % of distance (long/short spread)
@@ -58,6 +60,23 @@ Tuned to a mid-handicap (≈14) amateur; swap the constants to personalise.
 
 Reference: Broadie (2014) "Every Shot Counts".  At 150 yards these give
 σ_lat = 9 yds, σ_long = 6 yds — broadly consistent with a 14-handicap amateur.
+
+Handicap-scaled dispersion
+---------------------------
+``dispersion_for_handicap(handicap, distance_yds)`` returns personalised
+``(sigma_lat_yds, sigma_long_yds)`` using a piecewise-linear table derived
+from DECADE / Broadie amateur data:
+
+    Handicap +2  → σ_lat ≈ 5 % of distance   (scratch/plus-level)
+    Handicap  15 → σ_lat ≈ 6.5 %             (mid-amateur)
+    Handicap  25 → σ_lat ≈ 9 %               (high handicapper)
+    Handicap  36 → σ_lat ≈ 11.8 % (upper clamp)
+
+    σ_long = 2/3 × σ_lat   (long/short spread is consistently tighter)
+    Both floored at MIN_SIGMA_YDS.
+
+Handicap is clamped to [HCP_MIN=+2, HCP_MAX=36].  Better player → tighter
+dispersion → aim closer to the flag (smaller or no recommended shift).
 """
 
 from __future__ import annotations
@@ -73,11 +92,99 @@ from app.caddie.decade import (
 from app.caddie.types import Hazard
 
 
-# ── Dispersion constants ──────────────────────────────────────────────────────
+# ── Dispersion constants (fixed / default path) ───────────────────────────────
 
-SIGMA_LAT_FRACTION: float = 0.06    # σ_lat  = 6 % of shot distance
-SIGMA_LONG_FRACTION: float = 0.04   # σ_long = 4 % of shot distance
+SIGMA_LAT_FRACTION: float = 0.06    # σ_lat  = 6 % of shot distance (mid-hcp default)
+SIGMA_LONG_FRACTION: float = 0.04   # σ_long = 4 % of shot distance (mid-hcp default)
 MIN_SIGMA_YDS: float = 3.0          # floor — prevents degenerate grids for short shots
+
+# ── Handicap-scaled dispersion ─────────────────────────────────────────────────
+#
+# Piecewise-linear table: (handicap_index, sigma_lat_fraction_of_distance).
+# Calibrated to DECADE / Broadie "Every Shot Counts" amateur approach data:
+#
+#   +2-hcp (scratch-level) ≈ 5 % lateral fraction
+#   15-hcp (mid-amateur)   ≈ 6.5 %
+#   25-hcp (high-hcp)      ≈ 9 %
+#   36-hcp (upper bound)   ≈ 11.8 % (extrapolated linearly from 25-hcp segment)
+#
+# σ_long = SIGMA_LONG_FRACTION_OF_LAT × σ_lat, consistent with Broadie's
+# finding that long/short spread is roughly 2/3 of lateral spread.
+
+HCP_MIN: float = 2.0    # clamp floor — treat any better-than-+2 as +2
+HCP_MAX: float = 36.0   # clamp ceiling — cap for beginners / high-hcp players
+
+# Each entry: (handicap_breakpoint, lateral_sigma_fraction)
+_LAT_FRACTION_BREAKPOINTS: list[tuple[float, float]] = [
+    (HCP_MIN, 0.050),   # scratch-level: ~5 % of distance
+    (15.0,    0.065),   # mid-amateur:   ~6.5 %
+    (25.0,    0.090),   # high handicapper: ~9 %
+    (HCP_MAX, 0.118),   # upper clamp:   ~11.8 % (extrapolated)
+]
+
+# Ratio of longitudinal to lateral sigma (Broadie: long/short is tighter than lateral).
+SIGMA_LONG_FRACTION_OF_LAT: float = 2.0 / 3.0
+
+
+def dispersion_for_handicap(
+    handicap: float,
+    distance_yds: float,
+) -> tuple[float, float]:
+    """Return ``(sigma_lat_yds, sigma_long_yds)`` personalised to *handicap* and distance.
+
+    Better players have tighter dispersion; higher handicaps spread wider.
+    Both values are floored at ``MIN_SIGMA_YDS`` to prevent degenerate grids on
+    very short shots.
+
+    The model uses piecewise-linear interpolation between four calibrated
+    breakpoints derived from DECADE / Broadie amateur approach data (see module
+    docstring for full table).  Handicap is clamped to ``[HCP_MIN, HCP_MAX]``.
+
+    Args:
+        handicap:     Player's handicap index.  Values outside ``[HCP_MIN, HCP_MAX]``
+                      are clamped to that range before interpolation.
+        distance_yds: Shot distance in yards.  Scales both sigma values linearly.
+
+    Returns:
+        ``(sigma_lat_yds, sigma_long_yds)`` — 1-sigma values in yards for the
+        lateral (left/right) and longitudinal (long/short) spread, respectively.
+
+    Example::
+
+        # 150-yd approach, scratch player
+        >>> dispersion_for_handicap(2, 150)
+        (7.5, 5.0)
+
+        # Same shot, 25-handicap
+        >>> dispersion_for_handicap(25, 150)
+        (13.5, 9.0)
+    """
+    # Clamp handicap to the defined range
+    hcp = max(HCP_MIN, min(HCP_MAX, handicap))
+
+    bps = _LAT_FRACTION_BREAKPOINTS
+    lat_frac: float
+
+    if hcp <= bps[0][0]:
+        lat_frac = bps[0][1]
+    elif hcp >= bps[-1][0]:
+        lat_frac = bps[-1][1]
+    else:
+        # Piecewise-linear interpolation between adjacent breakpoints
+        lat_frac = bps[-1][1]  # fallback; overwritten in the loop below
+        for i in range(len(bps) - 1):
+            h0, f0 = bps[i]
+            h1, f1 = bps[i + 1]
+            if h0 <= hcp <= h1:
+                t = (hcp - h0) / (h1 - h0)
+                lat_frac = f0 + t * (f1 - f0)
+                break
+
+    sigma_lat = max(lat_frac * distance_yds, MIN_SIGMA_YDS)
+    sigma_long = max(SIGMA_LONG_FRACTION_OF_LAT * sigma_lat, MIN_SIGMA_YDS)
+
+    return sigma_lat, sigma_long
+
 
 # ── Candidate aims ────────────────────────────────────────────────────────────
 
@@ -220,6 +327,7 @@ def decade_aim_advice(
     hazards: list[Hazard],
     shot_distance_yds: float,
     pin: tuple[float, float] = (0.0, 0.0),
+    handicap: Optional[float] = None,
 ) -> Optional[str]:
     """Expected-strokes aim insight, surfaced as caddie advice text.
 
@@ -236,6 +344,13 @@ def decade_aim_advice(
                            Empty list always returns ``None`` gracefully.
         shot_distance_yds: Distance to the pin in yards; scales the dispersion.
         pin:               Pin location in the coordinate plane (default: origin).
+        handicap:          Player's handicap index.  When provided, dispersion is
+                           personalised via ``dispersion_for_handicap`` — better
+                           players get tighter dispersion, leading to more
+                           aggressive (closer-to-flag) advice.  When ``None``,
+                           the fixed ``SIGMA_LAT_FRACTION`` / ``SIGMA_LONG_FRACTION``
+                           constants are used (mid-handicap defaults, preserving
+                           prior behaviour).
 
     Returns:
         Advice string, e.g.::
@@ -247,9 +362,13 @@ def decade_aim_advice(
     if not hazards:
         return None
 
-    # Scale dispersion to shot distance; floor at MIN_SIGMA_YDS
-    sigma_lat = max(SIGMA_LAT_FRACTION * shot_distance_yds, MIN_SIGMA_YDS)
-    sigma_long = max(SIGMA_LONG_FRACTION * shot_distance_yds, MIN_SIGMA_YDS)
+    # Derive dispersion: personalised when handicap is provided, fixed otherwise.
+    if handicap is not None:
+        sigma_lat, sigma_long = dispersion_for_handicap(handicap, shot_distance_yds)
+    else:
+        # Fixed mid-handicap defaults — backwards-compatible fallback path.
+        sigma_lat = max(SIGMA_LAT_FRACTION * shot_distance_yds, MIN_SIGMA_YDS)
+        sigma_long = max(SIGMA_LONG_FRACTION * shot_distance_yds, MIN_SIGMA_YDS)
     dispersion = Dispersion(sigma_long=sigma_long, sigma_lat=sigma_lat)
 
     # Candidate aims: lateral offsets around the pin, all at pin depth

@@ -3,6 +3,37 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (caddie-personal-dispersion — SILENT — integration/next)
+Handicap-scaled shot-dispersion model for the DECADE aim adviser. Pure additive, headless-testable, no new deps, no DB.
+
+### What was done
+1. `backend/app/caddie/decade_advice.py`:
+   - New constants: `HCP_MIN=2.0`, `HCP_MAX=36.0`, `SIGMA_LONG_FRACTION_OF_LAT=2/3`, `_LAT_FRACTION_BREAKPOINTS` (piecewise table: hcp+2->5%, hcp15->6.5%, hcp25->9%, hcp36->11.8%).
+   - New pure function `dispersion_for_handicap(handicap, distance_yds) -> tuple[float, float]` returning `(sigma_lat_yds, sigma_long_yds)`. Piecewise-linear interpolation; clamped to [HCP_MIN, HCP_MAX]; floored at MIN_SIGMA_YDS. Source: DECADE / Broadie (2014) -- scratch ~5% lateral, mid-hcp ~6.5%, high-hcp ~9%, longitudinal ~2/3 of lateral.
+   - `decade_aim_advice`: optional `handicap: float | None = None`. When provided, calls `dispersion_for_handicap`; when None, uses fixed fractions (backward-compatible). Additive only -- club/target_yards/aim_point/miss_side never touched.
+2. `backend/app/caddie/aim_point.py`: threads `handicap` into `decade_aim_advice(hole.hazards, float(distance_yards), handicap=handicap)`.
+
+### Scaling constants / source (DECADE/Broadie-calibrated)
+- hcp +2  -> sigma_lat = 5.0%  (scratch-level)
+- hcp 15  -> sigma_lat = 6.5%  (mid-amateur)
+- hcp 25  -> sigma_lat = 9.0%  (high handicapper)
+- hcp 36  -> sigma_lat = 11.8% (upper clamp)
+- sigma_long = (2/3) x sigma_lat; both floored at MIN_SIGMA_YDS=3.0 yds
+- Clamped to [+2, 36]
+
+### Tests
+- `backend/tests/test_dispersion.py`: `TestDispersionForHandicap` (22 tests): breakpoints, monotone, distance scaling, clamping, floor, determinism.
+- `backend/tests/test_decade_advice.py`: `TestHandicapDispersionScaling` (14 tests): sigma monotone, clamping, wiring (None=default), no crash, deterministic, behavioral (scratch shift <= high-hcp shift for water hazard at 150 yds), club/target/aim/miss unchanged.
+
+### Gates
+- `cd backend && ruff check .`: PASS
+- `cd backend && uv run pytest tests/test_dispersion.py tests/test_decade_advice.py -v`: 103/103 PASS
+- `cd backend && uv run pytest tests/ -k "dispersion or decade or aim or caddie" --ignore=tests/integration`: 179/179 PASS
+- `cd frontend && npx tsc --noEmit`: 0 errors
+- `cd frontend && npm run lint`: PASS
+
+SILENT -- pure backend reasoning. Caddie advice now uses personalised dispersion instead of fixed mid-hcp constants. No UI change.
+
 ## 2026-06-29 (caddie-decade-wire-recommend — SILENT — integration/next)
 Activated the dormant DECADE optimizer as additive caddie reasoning. When the expected-strokes-optimal aim deviates ≥4 yards laterally from the flag, a plain-English tip is appended to reasoning[]. Club, target_yards, aim_point, and miss_side are never touched.
 

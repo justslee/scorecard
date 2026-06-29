@@ -1,4 +1,4 @@
-"""Unit tests for caddie/dispersion.py — pure, no DB/network."""
+"""Unit tests for caddie/dispersion.py and dispersion_for_handicap — pure, no DB/network."""
 
 import pytest
 from app.caddie.dispersion import (
@@ -6,6 +6,13 @@ from app.caddie.dispersion import (
     get_dispersion,
     dispersion_covers_hazard,
     _DISPERSION_BY_CLUB_AND_HANDICAP,
+)
+from app.caddie.decade_advice import (
+    dispersion_for_handicap,
+    HCP_MIN,
+    HCP_MAX,
+    MIN_SIGMA_YDS,
+    SIGMA_LONG_FRACTION_OF_LAT,
 )
 
 
@@ -141,3 +148,152 @@ class TestDispersionCoversHazard:
         disp = get_dispersion("sw", handicap=15)
         # wedge hcp15: width=30, half=15; hazard at 20 from center → NOT covered
         assert dispersion_covers_hazard(disp, 0, 20) is False
+
+
+# ── TestDispersionForHandicap ─────────────────────────────────────────────────
+
+
+class TestDispersionForHandicap:
+    """dispersion_for_handicap(handicap, distance_yds) → (sigma_lat, sigma_long).
+
+    Pure function from decade_advice; no DB/network required.
+
+    Model reference (piecewise-linear, DECADE / Broadie-calibrated):
+        hcp  2 → sigma_lat = 5.0 % of distance
+        hcp 15 → sigma_lat = 6.5 %
+        hcp 25 → sigma_lat = 9.0 %
+        hcp 36 → sigma_lat = 11.8 %
+        sigma_long = 2/3 × sigma_lat (Broadie: long/short spread is tighter)
+        Both floored at MIN_SIGMA_YDS.
+    """
+
+    # ── Return values at calibration breakpoints ───────────────────────────────
+
+    def test_scratch_at_150yds(self):
+        """hcp=2 at 150 yds: sigma_lat = 5 % × 150 = 7.5, sigma_long = 2/3 × 7.5 = 5.0."""
+        sigma_lat, sigma_long = dispersion_for_handicap(2.0, 150.0)
+        assert sigma_lat == pytest.approx(7.5, abs=1e-6)
+        assert sigma_long == pytest.approx(5.0, abs=1e-6)
+
+    def test_mid_hcp_at_150yds(self):
+        """hcp=15 at 150 yds: sigma_lat = 6.5 % × 150 = 9.75."""
+        sigma_lat, sigma_long = dispersion_for_handicap(15.0, 150.0)
+        assert sigma_lat == pytest.approx(9.75, abs=1e-6)
+        assert sigma_long == pytest.approx(9.75 * SIGMA_LONG_FRACTION_OF_LAT, abs=1e-6)
+
+    def test_high_hcp_at_150yds(self):
+        """hcp=25 at 150 yds: sigma_lat = 9 % × 150 = 13.5."""
+        sigma_lat, sigma_long = dispersion_for_handicap(25.0, 150.0)
+        assert sigma_lat == pytest.approx(13.5, abs=1e-6)
+        assert sigma_long == pytest.approx(9.0, abs=1e-6)
+
+    # ── Monotonicity: lower handicap → tighter dispersion ────────────────────
+
+    def test_sigma_lat_monotone_ascending_with_handicap(self):
+        """Higher handicap → wider lateral dispersion at any fixed distance."""
+        distance = 150.0
+        hcps = [2, 10, 15, 20, 25, 30]
+        sigmas = [dispersion_for_handicap(h, distance)[0] for h in hcps]
+        for i in range(len(sigmas) - 1):
+            assert sigmas[i] < sigmas[i + 1], (
+                f"sigma_lat not strictly increasing: hcp {hcps[i]}→{hcps[i+1]}: "
+                f"{sigmas[i]:.3f}→{sigmas[i+1]:.3f}"
+            )
+
+    def test_scratch_tighter_than_mid_tighter_than_high(self):
+        """sigma_lat(scratch=2) < sigma_lat(mid=15) < sigma_lat(high=25)."""
+        d = 150.0
+        lat_scratch, _ = dispersion_for_handicap(2.0, d)
+        lat_mid, _ = dispersion_for_handicap(15.0, d)
+        lat_high, _ = dispersion_for_handicap(25.0, d)
+        assert lat_scratch < lat_mid < lat_high
+
+    def test_sigma_long_monotone_with_handicap(self):
+        """sigma_long also increases with handicap (derived from sigma_lat)."""
+        distance = 200.0
+        hcps = [2, 15, 25]
+        longs = [dispersion_for_handicap(h, distance)[1] for h in hcps]
+        for i in range(len(longs) - 1):
+            assert longs[i] < longs[i + 1]
+
+    # ── Scales with distance ──────────────────────────────────────────────────
+
+    def test_scales_with_distance_scratch(self):
+        """sigma_lat doubles when distance doubles (above the MIN_SIGMA_YDS floor)."""
+        lat_100, _ = dispersion_for_handicap(2.0, 100.0)
+        lat_200, _ = dispersion_for_handicap(2.0, 200.0)
+        # Both above floor (0.05 × 100 = 5 > 3): ratio should be exactly 2.
+        assert lat_200 == pytest.approx(2.0 * lat_100, abs=1e-6)
+
+    def test_scales_with_distance_high_hcp(self):
+        """Same scaling behaviour for a high handicapper."""
+        lat_100, _ = dispersion_for_handicap(25.0, 100.0)
+        lat_200, _ = dispersion_for_handicap(25.0, 200.0)
+        assert lat_200 == pytest.approx(2.0 * lat_100, abs=1e-6)
+
+    def test_sigma_long_is_two_thirds_of_sigma_lat(self):
+        """sigma_long = (2/3) × sigma_lat when above the MIN_SIGMA_YDS floor."""
+        for hcp in (2.0, 15.0, 25.0):
+            sigma_lat, sigma_long = dispersion_for_handicap(hcp, 150.0)
+            expected_long = SIGMA_LONG_FRACTION_OF_LAT * sigma_lat
+            assert sigma_long == pytest.approx(max(expected_long, MIN_SIGMA_YDS), abs=1e-6)
+
+    # ── Handicap clamping ─────────────────────────────────────────────────────
+
+    def test_below_hcp_min_clamped(self):
+        """Handicap < HCP_MIN (plus-handicap player) is clamped to HCP_MIN."""
+        lat_minus2, _ = dispersion_for_handicap(-2.0, 150.0)
+        lat_min, _ = dispersion_for_handicap(HCP_MIN, 150.0)
+        assert lat_minus2 == pytest.approx(lat_min, abs=1e-9)
+
+    def test_above_hcp_max_clamped(self):
+        """Handicap > HCP_MAX (very high beginner) is clamped to HCP_MAX."""
+        lat_50, _ = dispersion_for_handicap(50.0, 150.0)
+        lat_max, _ = dispersion_for_handicap(HCP_MAX, 150.0)
+        assert lat_50 == pytest.approx(lat_max, abs=1e-9)
+
+    def test_clamp_at_exact_boundaries(self):
+        """Exact HCP_MIN and HCP_MAX values are not clamped (they're within range)."""
+        lat_min, _ = dispersion_for_handicap(HCP_MIN, 150.0)
+        lat_max, _ = dispersion_for_handicap(HCP_MAX, 150.0)
+        # Min should be tighter than max
+        assert lat_min < lat_max
+
+    # ── MIN_SIGMA_YDS floor ───────────────────────────────────────────────────
+
+    def test_very_short_shot_floored_at_min_sigma(self):
+        """Very short shots: fraction × distance < MIN_SIGMA_YDS → clamped to floor."""
+        # hcp=2: 5 % × 1 yd = 0.05, well below MIN_SIGMA_YDS=3
+        sigma_lat, sigma_long = dispersion_for_handicap(2.0, 1.0)
+        assert sigma_lat == pytest.approx(MIN_SIGMA_YDS, abs=1e-9)
+        assert sigma_long == pytest.approx(MIN_SIGMA_YDS, abs=1e-9)
+
+    def test_floor_does_not_apply_at_normal_distances(self):
+        """At 150 yds even scratch exceeds the floor: 7.5 > MIN_SIGMA_YDS=3."""
+        sigma_lat, _ = dispersion_for_handicap(2.0, 150.0)
+        assert sigma_lat > MIN_SIGMA_YDS
+
+    # ── Determinism ───────────────────────────────────────────────────────────
+
+    def test_deterministic(self):
+        """Same inputs always produce the same outputs."""
+        for hcp, dist in [(2.0, 150.0), (15.0, 100.0), (25.0, 200.0)]:
+            r1 = dispersion_for_handicap(hcp, dist)
+            r2 = dispersion_for_handicap(hcp, dist)
+            assert r1 == r2, f"Non-deterministic at hcp={hcp}, dist={dist}"
+
+    # ── Return type ───────────────────────────────────────────────────────────
+
+    def test_returns_tuple_of_two_floats(self):
+        result = dispersion_for_handicap(15.0, 150.0)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        assert all(isinstance(v, float) for v in result)
+
+    def test_both_values_positive(self):
+        """Both sigma values must always be positive (≥ MIN_SIGMA_YDS)."""
+        for hcp in (2.0, 15.0, 25.0):
+            for dist in (5.0, 50.0, 150.0, 300.0):
+                sigma_lat, sigma_long = dispersion_for_handicap(hcp, dist)
+                assert sigma_lat > 0, f"sigma_lat <= 0 at hcp={hcp}, dist={dist}"
+                assert sigma_long > 0, f"sigma_long <= 0 at hcp={hcp}, dist={dist}"
