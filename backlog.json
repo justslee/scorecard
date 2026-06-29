@@ -732,7 +732,7 @@
     {
       "id": "caddie-tactical-slope-advice",
       "priority": 19,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "phase": 2,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -741,7 +741,8 @@
       "headless": "yes",
       "area": "backend",
       "title": "Tactical slope/miss-bias advice ('bigger slope long \u2192 miss short, club down')",
-      "rationale": "Use green/approach slope + hazard asymmetry so the engine emits DECADE-style lines and biases select_club + miss-side. Unit-test the decision, not the prose. This is the owner's headline 'club down' tactic."
+      "rationale": "Use green/approach slope + hazard asymmetry so the engine emits DECADE-style lines and biases select_club + miss-side. Unit-test the decision, not the prose. This is the owner's headline 'club down' tactic.",
+      "shipped": "Built 4e0ea0b (2026-06-29). Pure slope_miss_advice (relative-to-approach, severity-gated) appended to caddie reasoning; additive (no club/aim/model change); 39 tests, 87 caddie tests green."
     },
     {
       "id": "caddie-personal-dispersion",
