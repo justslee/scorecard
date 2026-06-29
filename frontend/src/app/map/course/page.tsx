@@ -3,26 +3,20 @@
 /**
  * Homegrown-course hole diagram viewer — /map/course?id=<mapped-course-uuid>
  *
- * Loads a mapped course from GET /api/courses/mapped/{id} and renders each
- * hole as a calm, top-down yardage-book diagram: tee at bottom, green at top,
- * geometry derived from ingested OSM polygons (green / fairway / tee / bunker
- * / water).
+ * PRIMARY renderer: Mapbox satellite imagery (GPSMapView) when
+ * NEXT_PUBLIC_MAPBOX_TOKEN is set.  Falls back to the on-paper HoleDiagram
+ * when the token is absent so the page never goes blank.
  *
- * What this page does NOT do:
- *   - No Mapbox / satellite imagery
- *   - No live GPS distances shown for off-hole positions (no "50531 yds" bug)
- *   - No mapbox-gl import
+ * Satellite mode (token present):
+ *   - Full-screen Mapbox satellite map with F/C/B distances, GPS dot,
+ *     tap-to-measure, and OSM polygon overlays.
+ *   - GPSMapView owns the header, hole nav, and distance panel.
  *
- * Navigation: ◄ / ► buttons step through holes 1–18.
- * The current hole number and course name are shown in the header.
+ * Paper mode (token absent / no-token fallback):
+ *   - Original on-paper yardage-book SVG diagram with tap-to-measure,
+ *     pinch-zoom, GPS dot, and info strip.
  *
- * GPS behaviour:
- *   - Permission is requested lazily when the component mounts.
- *   - When the player is within ~720 yds of the current hole, a "you" dot
- *     appears on the diagram and distances are shown in the info strip.
- *   - When the player is remote (e.g. on another hole, or at home), GPS info
- *     is suppressed — no absurd yardage numbers.
- *   - If GPS permission is denied, tap-to-measure still works normally.
+ * Navigation: ◄ / ► buttons step through holes 1–18 in both modes.
  *
  * Usage:
  *   http://localhost:3000/map/course?id=<deterministic-uuid-of-bethpage-black>
@@ -35,6 +29,8 @@ import type { CourseData, HoleData } from "@/lib/courses/types";
 import { fetchMappedCourse } from "@/lib/courses/mapped-course-api";
 import { parseHoleParam } from "@/lib/map-bridge";
 import HoleDiagram from "@/components/course/HoleDiagram";
+import GPSMapView from "@/components/GPSMapView";
+import { mapRendererFor, annotateOsmFeatures } from "@/lib/map/satellite-helpers";
 import {
   holeLengthYards,
   describeHazards,
@@ -633,6 +629,19 @@ function MappedCourseMapInner() {
     [sortedHoles, currentHoleNum]
   );
 
+  // All OSM features annotated with hole numbers — for GPSMapView polygon overlays.
+  // Built once from the sorted holes; GPSMapView filters by currentHole internally.
+  const allOsmFeatures = useMemo(
+    () =>
+      annotateOsmFeatures(
+        sortedHoles.map((h) => ({
+          holeNumber: h.number,
+          features: (h.features?.features ?? []) as GeoJSON.Feature[],
+        }))
+      ),
+    [sortedHoles]
+  );
+
   const handleBack = useCallback(() => router.back(), [router]);
 
   const handlePrev = useCallback(() => {
@@ -661,6 +670,26 @@ function MappedCourseMapInner() {
       <ErrorScreen
         message="This course has no mapped geometry yet. Run the ingest script to populate it."
         onBack={handleBack}
+      />
+    );
+  }
+
+  // ── PRIMARY: Mapbox satellite map ────────────────────────────────────────
+  // When NEXT_PUBLIC_MAPBOX_TOKEN is set AND we have GolfAPI coordinates for
+  // this course, render the satellite map as the primary hole viewer.
+  // Falls back to the paper HoleDiagram below when the token is absent or
+  // when no coordinates are available (e.g. a course not yet in GolfAPI cache).
+  const renderer = mapRendererFor(process.env.NEXT_PUBLIC_MAPBOX_TOKEN);
+  if (renderer === "mapbox" && allCourseCoords.length > 0) {
+    return (
+      <GPSMapView
+        courseId={0}
+        courseName={course.name}
+        holeCoordinates={allCourseCoords}
+        currentHole={currentHoleNum}
+        onHoleChange={setCurrentHoleNum}
+        onClose={handleBack}
+        osmFeatures={allOsmFeatures}
       />
     );
   }

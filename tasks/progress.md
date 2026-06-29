@@ -3,6 +3,55 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — mapbox-satellite-map (NOTICEABLE — feat/mapbox-satellite-map, ready for bundle)
+
+Mapbox satellite imagery is now the PRIMARY hole-map renderer on both the
+standalone `/map/course` page and the inline round map (InlineHoleDiagram).
+Falls back to the existing on-paper HoleDiagram when the token is absent.
+
+### What was built
+- `frontend/src/lib/map/satellite-helpers.ts` (NEW)
+  - `mapRendererFor(token)` — pure renderer-selection function
+  - `holeViewBounds(hole, userPos?)` — bounding-box helper for Mapbox fitBounds
+  - `tapMeasureLabel(fromTeeYds, toPinYds)` — label formatter
+  - `formatFCBLabel(f,c,b)` — F/C/B string formatter
+  - `annotateOsmFeatures(pairs)` — OSM features annotated with hole numbers
+- `frontend/src/lib/map/satellite-helpers.test.ts` (NEW)
+  - 30 unit tests (all pure, no browser, no mapbox-gl) — all green
+- `frontend/src/components/GPSMapView.tsx` (REVIVED/EXTENDED)
+  - `courseId` type changed `number` → `string | number` (unused internally)
+  - `onClose` made optional (required only in fullscreen mode)
+  - `inline?: boolean` prop: relative positioning, compact bottom strip, no header/nav
+  - Tap-to-measure: map click → `Tee Xy · Pin Yy` bubble; dismiss × closes it
+  - `currentHoleRef` keeps click handler in sync with hole nav; tap marker clears on hole change
+- `frontend/src/app/map/course/page.tsx`
+  - Imports GPSMapView + satellite helpers
+  - `allOsmFeatures` useMemo: collects + annotates all hole features
+  - When `NEXT_PUBLIC_MAPBOX_TOKEN` present AND coords available → returns GPSMapView (fullscreen, takes over header/nav/distance panel)
+  - Falls through to original HoleDiagram layout otherwise
+- `frontend/src/components/course/InlineHoleDiagram.tsx`
+  - Adds `allHoles` + `allCoords` state (flat arrays for satellite mode)
+  - `osmFeaturesForSatellite` useMemo: annotated features for GPSMapView
+  - When token present AND coords available → inline GPSMapView (260px, no hole nav)
+  - Falls through to HoleDiagram otherwise
+- `ops/ios/ship.sh`
+  - NEXT_PUBLIC_MAPBOX_TOKEN: if unset, pull from `looper/prod` AWS Secrets Manager
+  - Graceful: warns + leaves empty if secret absent → HoleDiagram fallback
+  - Token NOT printed or committed
+
+### Gates
+- lint: clean
+- tsc --noEmit: clean
+- npx vitest run: 1000/1000 (39 files)
+- voice-tests --smoke: 265/265
+- npm run build: success
+
+### Risk / notes
+- Needs `NEXT_PUBLIC_MAPBOX_TOKEN` in `looper/prod` secret to show satellite imagery
+- GolfAPI ingest (separate work) populates pin/F-C-B coords; mock Bethpage data works now
+- Mapbox rendering is owner-verified on device (can't headlessly unit-test tile imagery)
+- Ship.sh token-pull requires the EC2 build machine to have IAM access to `looper/prod`
+
 ## 2026-06-29 — game-formats (NOTICEABLE — feat/game-formats, ready for bundle)
 
 8 previously-unimplemented game formats now show real results instead of the
