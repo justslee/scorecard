@@ -127,6 +127,22 @@ export interface Viewport {
   padding: number;
 }
 
+/**
+ * Optional GolfAPI-verified anchor overrides for `projectHole`.
+ *
+ * When provided, these replace the OSM polygon centroids for the tee and/or
+ * green anchor points used in rotation, corridor clip, and the flag/tee marker
+ * SVG positions.  They also flow through to `teeLatLng` / `greenLatLng` on the
+ * output, so tap-to-measure and GPS distances reference the verified GolfAPI
+ * points rather than the OSM polygon centroids.
+ */
+export interface ProjectedHoleOverrides {
+  /** GolfAPI tee lat/lng — overrides the OSM tee polygon centroid. */
+  teeLngLat?: { lat: number; lng: number };
+  /** GolfAPI green-center lat/lng — overrides the OSM green polygon centroid. */
+  greenLngLat?: { lat: number; lng: number };
+}
+
 // ── Internal geometry helpers ──────────────────────────────────────────────────
 
 /**
@@ -364,6 +380,57 @@ export function yardsDistance(
   return Math.round(m * 1.09361);
 }
 
+// ── GolfAPI anchor helper ──────────────────────────────────────────────────────
+
+/**
+ * Among all GeoJSON features with `featureType === "green"` (Polygon geometry),
+ * return the lat/lng centroid of the one closest to `target`.
+ *
+ * Used as a belt-and-suspenders filter when multiple green polygons are present
+ * (e.g. an OSM mapping artefact included an adjacent hole's green): we prefer
+ * the one nearest the GolfAPI verified green point.
+ *
+ * Returns null when no green polygons exist.
+ *
+ * Pure function — no side-effects, no DOM, headless-testable.
+ */
+export function nearestGreenCentroid(
+  features: GeoJSON.Feature[],
+  target: { lat: number; lng: number }
+): { lat: number; lng: number } | null {
+  // Flat-earth cosLat for distance comparison (consistent with the projection).
+  const cosLat = Math.cos((target.lat * Math.PI) / 180);
+
+  let bestDist = Infinity;
+  let bestCentroid: { lat: number; lng: number } | null = null;
+
+  for (const feat of features) {
+    const geom = feat.geometry;
+    if (!geom || geom.type !== 'Polygon') continue;
+    const type = (feat.properties?.featureType as string | undefined) ?? '';
+    if (type !== 'green') continue;
+
+    const ring = (geom as GeoJSON.Polygon).coordinates[0];
+    if (!ring || ring.length < 3) continue;
+
+    const c = ringCentroid(ring);
+    if (!c) continue;
+    const [cLng, cLat] = c;
+
+    // Flat-earth squared distance (no sqrt needed for comparison)
+    const dx = (cLng - target.lng) * LAT_M * cosLat;
+    const dy = (cLat - target.lat) * LAT_M;
+    const dist2 = dx * dx + dy * dy;
+
+    if (dist2 < bestDist) {
+      bestDist = dist2;
+      bestCentroid = { lat: cLat, lng: cLng };
+    }
+  }
+
+  return bestCentroid;
+}
+
 // ── Core projection ────────────────────────────────────────────────────────────
 
 /**
@@ -372,13 +439,19 @@ export function yardsDistance(
  * Returns null when the feature list has no usable polygon geometry or lacks
  * both a tee and a green polygon (needed to establish orientation).
  *
- * @param features  Flat array of GeoJSON Feature objects from HoleData.features.features.
- *                  Only Polygon geometries are considered; others are silently skipped.
- * @param viewport  Target SVG dimensions + padding.
+ * @param features   Flat array of GeoJSON Feature objects from HoleData.features.features.
+ *                   Only Polygon geometries are considered; others are silently skipped.
+ * @param viewport   Target SVG dimensions + padding.
+ * @param overrides  Optional GolfAPI-verified tee/green lat/lng.  When supplied, these
+ *                   replace the OSM polygon centroids for orientation, corridor clip, and
+ *                   the flag/tee SVG positions — giving more accurate anchoring than OSM.
+ *                   All other geometry (fairway, bunker, water, trees) is still derived
+ *                   from the OSM features so the visual shapes remain correct.
  */
 export function projectHole(
   features: GeoJSON.Feature[],
-  viewport: Viewport
+  viewport: Viewport,
+  overrides?: ProjectedHoleOverrides
 ): ProjectedHole | null {
   // ── Collect polygon rings and raw tree point coords ───────────────────────
   const rawPolygons: Array<{ type: string; ring: number[][] }> = [];
@@ -414,6 +487,18 @@ export function projectHole(
   }
 
   if (rawPolygons.length === 0) return null;
+
+  // ── Apply GolfAPI overrides (more accurate than OSM polygon centroids) ─────
+  // When provided, override the OSM-derived centroids for the tee and/or green.
+  // These drive: corridor clip axis, rotation orientation, and SVG marker positions.
+  // The OSM polygon shapes (fairway, bunker, water, trees) are unchanged.
+  if (overrides?.teeLngLat) {
+    teeCentroid = [overrides.teeLngLat.lng, overrides.teeLngLat.lat];
+  }
+  if (overrides?.greenLngLat) {
+    greenCentroid = [overrides.greenLngLat.lng, overrides.greenLngLat.lat];
+  }
+
   // We need at least one orientation anchor — tee or green.
   // If only one is present, we still proceed; we just can't orient the hole.
   const canOrient = teeCentroid !== null && greenCentroid !== null;

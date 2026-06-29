@@ -47,6 +47,12 @@ import {
   formatPlaysLike,
   type HoleElevation,
 } from "@/lib/course/hole-elevation";
+import {
+  getCourseCoordinates,
+  computeFCBDistances,
+  type FCBDistances,
+} from "@/lib/course/course-coordinates";
+import type { CourseCoordinates } from "@/lib/golf-api";
 import { GPSWatcher, type Position } from "@/lib/gps";
 import { T } from "@/components/yardage/tokens";
 
@@ -75,26 +81,46 @@ function bestYardage(hole: HoleData): number {
 
 interface GpsDistances {
   toPin: number;
+  /** F/C/B distances from player; present when GolfAPI coords are available. */
+  fcb?: FCBDistances;
+  /** F/C/B distances from the tee (static); present when GolfAPI coords available. */
+  fcbFromTee?: FCBDistances;
 }
 
 function computeGpsDistances(
   pos: Position,
-  features: GeoJSON.Feature[]
+  features: GeoJSON.Feature[],
+  holeCoords?: CourseCoordinates | null
 ): GpsDistances | null {
   // Use a 600px viewport — just needs to be something consistent; distances
   // are computed in lat/lng space so the viewport size doesn't matter.
-  const projected: ProjectedHole | null = projectHole(features, {
-    width: 600,
-    height: 800,
-    padding: 50,
-  });
+  const projected: ProjectedHole | null = projectHole(
+    features,
+    { width: 600, height: 800, padding: 50 },
+    holeCoords
+      ? { teeLngLat: holeCoords.tee, greenLngLat: holeCoords.green }
+      : undefined
+  );
   if (!projected) return null;
   if (!isOnHoleBbox(pos, projected.params)) return null;
-  if (!projected.greenLatLng) return null;
 
-  return {
-    toPin: yardsDistance(pos, projected.greenLatLng),
-  };
+  // Prefer GolfAPI green for "to pin" distance; fall back to OSM centroid.
+  const pinLatLng = holeCoords?.green ?? projected.greenLatLng;
+  if (!pinLatLng) return null;
+
+  const toPin = yardsDistance(pos, pinLatLng);
+
+  // F/C/B from player (only when GolfAPI coords present)
+  const fcb = holeCoords
+    ? computeFCBDistances(pos, holeCoords)
+    : undefined;
+
+  // F/C/B from tee (static — useful in the info strip even without GPS fix)
+  const fcbFromTee = holeCoords?.tee
+    ? computeFCBDistances(holeCoords.tee, holeCoords)
+    : undefined;
+
+  return { toPin, fcb, fcbFromTee };
 }
 
 // ── Loading / error screens ───────────────────────────────────────────────────
@@ -187,6 +213,7 @@ function HoleInfoStrip({
   gpsAvailable,
   gpsOnHole,
   elevation,
+  holeCoords,
 }: {
   hole: HoleData;
   features: GeoJSON.Feature[];
@@ -196,10 +223,17 @@ function HoleInfoStrip({
   gpsOnHole: boolean;
   /** Per-hole elevation data from the green feature's properties (null = none). */
   elevation: HoleElevation | null;
+  /** GolfAPI-verified coordinates for this hole — enables F/C/B readout. */
+  holeCoords?: CourseCoordinates | null;
 }) {
   // We compute hazard description with projected info when available.
   // Using null projected here (no extra projection pass) keeps it simple.
   const hazardText = describeHazards(features, null);
+
+  // F/C/B to show: from player when GPS on-hole, from tee otherwise.
+  const fcb = gpsOnHole
+    ? (gpsDistances?.fcb ?? null)
+    : (gpsDistances?.fcbFromTee ?? null);
 
   return (
     <div
@@ -344,6 +378,33 @@ function HoleInfoStrip({
         </div>
       )}
 
+      {/* F / C / B green distances — yardage-book style, printed planner feel.
+          Shown from player when GPS on-hole; from tee when GPS off-hole (static). */}
+      {fcb && holeCoords && (
+        <p
+          style={{
+            fontFamily: T.mono,
+            fontSize: 11,
+            color: T.pencilSoft,
+            margin: "0 0 4px",
+            letterSpacing: 0.5,
+          }}
+        >
+          <span style={{ color: T.pencil }}>F</span>{" "}
+          <span style={{ color: T.ink }}>{fcb.front}</span>
+          {"  ·  "}
+          <span style={{ color: T.pencil }}>C</span>{" "}
+          <span style={{ color: T.ink }}>{fcb.center}</span>
+          {"  ·  "}
+          <span style={{ color: T.pencil }}>B</span>{" "}
+          <span style={{ color: T.ink }}>{fcb.back}</span>
+          {" "}
+          <span style={{ fontSize: 9, letterSpacing: 0.8 }}>
+            {gpsOnHole ? "yds to green" : "yds from tee"}
+          </span>
+        </p>
+      )}
+
       {/* Calm GPS hint when GPS is available but off-hole */}
       {gpsAvailable && !gpsOnHole && (
         <p
@@ -465,6 +526,9 @@ function MappedCourseMapInner() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [loading, setLoading] = useState(Boolean(courseId));
 
+  // GolfAPI-verified per-hole coordinates (mock until token provided)
+  const [allCourseCoords, setAllCourseCoords] = useState<CourseCoordinates[]>([]);
+
   // GPS state
   const [gpsPos, setGpsPos] = useState<Position | null>(null);
   const [gpsAvailable, setGpsAvailable] = useState(false);
@@ -507,9 +571,14 @@ function MappedCourseMapInner() {
 
     (async () => {
       try {
-        const c = await fetchMappedCourse(courseId);
+        // Load course geometry + GolfAPI coordinates in parallel.
+        const [c, coords] = await Promise.all([
+          fetchMappedCourse(courseId),
+          getCourseCoordinates(courseId),
+        ]);
         if (cancelled) return;
         setCourse(c);
+        setAllCourseCoords(coords);
         // Start on the first hole (sorted ascending by number)
         const firstHoleNum = [...(c.holes ?? [])]
           .sort((a, b) => a.number - b.number)
@@ -578,15 +647,31 @@ function MappedCourseMapInner() {
   const features = holeFeatures(hole);
   const yards = bestYardage(hole);
 
+  // GolfAPI coordinates for the current hole (null if course has no verified data).
+  const holeCoords: CourseCoordinates | null =
+    allCourseCoords.find((c) => c.holeNumber === currentHoleNum) ?? null;
+
   // Elevation: read from the green feature's properties (persisted during ingest).
   // extractHoleElevation returns null when no elevation data exists for this hole
   // (e.g. pre-elevation ingest or USGS returned None) — the UI shows nothing.
   const holeElevation = extractHoleElevation(features);
 
   // GPS: compute on-hole status and distances for the info strip.
+  // Pass holeCoords so the distance uses the GolfAPI pin and F/C/B is computed.
   // We run this on every render; it's cheap (pure math, no I/O).
-  const gpsDist = gpsPos ? computeGpsDistances(gpsPos, features) : null;
+  const gpsDist = gpsPos ? computeGpsDistances(gpsPos, features, holeCoords) : null;
   const gpsOnHole = gpsDist !== null;
+
+  // Static F/C/B from tee — shown in the info strip even without GPS, as long
+  // as GolfAPI coords are available for this hole.
+  const fcbFromTee: FCBDistances | undefined = holeCoords?.tee
+    ? computeFCBDistances(holeCoords.tee, holeCoords)
+    : undefined;
+
+  // Merge: GPS distances win when on-hole; static tee distances fill in the rest.
+  const displayDist: GpsDistances | null = gpsDist ?? (fcbFromTee
+    ? { toPin: 0, fcbFromTee }
+    : null);
 
   // GPS position to pass into HoleDiagram (as plain lat/lng — the component
   // does its own on-hole check internally for the SVG dot).
@@ -680,7 +765,11 @@ function MappedCourseMapInner() {
           padding: "10px 14px",
         }}
       >
-        <HoleDiagramAutosize features={features} gpsPosition={gpsForDiagram} />
+        <HoleDiagramAutosize
+          features={features}
+          gpsPosition={gpsForDiagram}
+          courseCoords={holeCoords}
+        />
       </div>
 
       {/* ── Info strip ─────────────────────────────────────────────────── */}
@@ -689,10 +778,11 @@ function MappedCourseMapInner() {
           hole={hole}
           features={features}
           yards={yards}
-          gpsDistances={gpsDist}
+          gpsDistances={displayDist}
           gpsAvailable={gpsAvailable}
           gpsOnHole={gpsOnHole}
           elevation={holeElevation}
+          holeCoords={holeCoords}
         />
       </div>
 
@@ -723,9 +813,11 @@ function MappedCourseMapInner() {
 function HoleDiagramAutosize({
   features,
   gpsPosition,
+  courseCoords,
 }: {
   features: GeoJSON.Feature[];
   gpsPosition: { lat: number; lng: number } | null;
+  courseCoords?: CourseCoordinates | null;
 }) {
   // Safe SSR / first-paint fallback — replaced after the first ResizeObserver tick.
   const [size, setSize] = useState<{ width: number; height: number }>({
@@ -766,6 +858,7 @@ function HoleDiagramAutosize({
         padding={diagramPadding}
         showLabels
         gpsPosition={gpsPosition}
+        courseCoords={courseCoords}
       />
     </div>
   );

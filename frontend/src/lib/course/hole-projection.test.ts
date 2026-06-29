@@ -18,6 +18,7 @@ import {
   describeHazards,
   pointToSegmentDistanceM,
   isInHoleCorridor,
+  nearestGreenCentroid,
   CORRIDOR_LATERAL_M,
   CORRIDOR_LONGITUDINAL_MARGIN_M,
   type Viewport,
@@ -1068,5 +1069,161 @@ describe('corridor guard', () => {
     const result = projectHole(features, VIEWPORT);
     expect(result).not.toBeNull();
     expect(result!.polygons).toHaveLength(2);
+  });
+});
+
+// ── nearestGreenCentroid ───────────────────────────────────────────────────────
+
+describe('nearestGreenCentroid', () => {
+  /** Build a green polygon centred at (lat, lng) with a small radius. */
+  function greenAt(lat: number, lng: number): GeoJSON.Feature {
+    const d = 0.0001; // ~11 m
+    return {
+      type: 'Feature',
+      properties: { featureType: 'green' },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [lng - d, lat - d],
+          [lng + d, lat - d],
+          [lng + d, lat + d],
+          [lng - d, lat + d],
+          [lng - d, lat - d],
+        ]],
+      },
+    };
+  }
+
+  it('returns null when no green features exist', () => {
+    const features: GeoJSON.Feature[] = [
+      { type: 'Feature', properties: { featureType: 'fairway' }, geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] } },
+    ];
+    expect(nearestGreenCentroid(features, { lat: 40.745, lng: -73.451 })).toBeNull();
+  });
+
+  it('returns the single green centroid when there is only one', () => {
+    const target = { lat: 40.745, lng: -73.451 };
+    const features = [greenAt(40.745, -73.451)];
+    const result = nearestGreenCentroid(features, target);
+    expect(result).not.toBeNull();
+    // centroid ≈ target (within floating-point rounding of the tiny polygon)
+    expect(Math.abs(result!.lat - 40.745)).toBeLessThan(0.001);
+    expect(Math.abs(result!.lng - (-73.451))).toBeLessThan(0.001);
+  });
+
+  it('returns the closest green centroid when multiple greens exist', () => {
+    const target = { lat: 40.745, lng: -73.451 };
+    const nearGreen = greenAt(40.7452, -73.4511);   // ≈20 m from target
+    const farGreen  = greenAt(40.7500, -73.4600);   // ≈800 m away
+    const features  = [nearGreen, farGreen];
+    const result = nearestGreenCentroid(features, target);
+    expect(result).not.toBeNull();
+    // Should pick the near one
+    expect(Math.abs(result!.lat - 40.7452)).toBeLessThan(0.001);
+  });
+
+  it('ignores non-green polygon features', () => {
+    const target = { lat: 40.745, lng: -73.451 };
+    const features: GeoJSON.Feature[] = [
+      { type: 'Feature', properties: { featureType: 'fairway' }, geometry: { type: 'Polygon', coordinates: [[[target.lng, target.lat], [target.lng + 0.001, target.lat], [target.lng, target.lat + 0.001], [target.lng, target.lat]]] } },
+      greenAt(40.750, -73.460),
+    ];
+    const result = nearestGreenCentroid(features, target);
+    expect(result).not.toBeNull();
+    // Should return the far green (only green), not the nearby fairway
+    expect(Math.abs(result!.lat - 40.750)).toBeLessThan(0.001);
+  });
+});
+
+// ── projectHole with GolfAPI overrides ────────────────────────────────────────
+
+describe('projectHole — GolfAPI tee/green overrides', () => {
+  // Reuse the simple hole geometry (tee at south, green at north) from earlier
+  // tests but override with GolfAPI points slightly offset from the OSM centroids.
+
+  const TEE_RING: [number, number][] = [
+    [-73.455, 40.743],
+    [-73.454, 40.743],
+    [-73.454, 40.744],
+    [-73.455, 40.744],
+  ];
+  const GREEN_RING: [number, number][] = [
+    [-73.455, 40.748],
+    [-73.454, 40.748],
+    [-73.454, 40.749],
+    [-73.455, 40.749],
+  ];
+  const VIEWPORT: Viewport = { width: 300, height: 400, padding: 20 };
+
+  function makeFeature(type: string, ring: [number, number][]): GeoJSON.Feature {
+    const closed: [number, number][] = [...ring, ring[0]];
+    return {
+      type: 'Feature',
+      properties: { featureType: type },
+      geometry: { type: 'Polygon', coordinates: [closed] },
+    };
+  }
+
+  const features = [
+    makeFeature('tee',   TEE_RING),
+    makeFeature('fairway', [[-73.455, 40.744], [-73.454, 40.744], [-73.454, 40.748], [-73.455, 40.748]]),
+    makeFeature('green', GREEN_RING),
+  ];
+
+  it('without overrides: teeLatLng and greenLatLng come from OSM polygon centroids', () => {
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    // OSM tee centroid ≈ (-73.4545, 40.7435)
+    expect(result!.teeLatLng).not.toBeNull();
+    expect(result!.teeLatLng!.lat).toBeCloseTo(40.7435, 3);
+    expect(result!.greenLatLng).not.toBeNull();
+    expect(result!.greenLatLng!.lat).toBeCloseTo(40.7485, 3);
+  });
+
+  it('with overrides: teeLatLng and greenLatLng use the GolfAPI points', () => {
+    const golfApiTee   = { lat: 40.7431, lng: -73.4548 };
+    const golfApiGreen = { lat: 40.7488, lng: -73.4543 };
+    const result = projectHole(features, VIEWPORT, {
+      teeLngLat:   golfApiTee,
+      greenLngLat: golfApiGreen,
+    });
+    expect(result).not.toBeNull();
+    expect(result!.teeLatLng!.lat).toBeCloseTo(golfApiTee.lat, 5);
+    expect(result!.teeLatLng!.lng).toBeCloseTo(golfApiTee.lng, 5);
+    expect(result!.greenLatLng!.lat).toBeCloseTo(golfApiGreen.lat, 5);
+    expect(result!.greenLatLng!.lng).toBeCloseTo(golfApiGreen.lng, 5);
+  });
+
+  it('with overrides: OSM polygon shapes are still present in the output', () => {
+    const result = projectHole(features, VIEWPORT, {
+      teeLngLat:   { lat: 40.7431, lng: -73.4548 },
+      greenLngLat: { lat: 40.7488, lng: -73.4543 },
+    });
+    expect(result).not.toBeNull();
+    // All three polygons (tee, fairway, green) should still be in the output
+    const types = result!.polygons.map((p) => p.type);
+    expect(types).toContain('tee');
+    expect(types).toContain('fairway');
+    expect(types).toContain('green');
+  });
+
+  it('green-only override: only greenLatLng changes, tee stays from OSM', () => {
+    const golfApiGreen = { lat: 40.7488, lng: -73.4543 };
+    const result = projectHole(features, VIEWPORT, { greenLngLat: golfApiGreen });
+    expect(result).not.toBeNull();
+    // Green override applied
+    expect(result!.greenLatLng!.lat).toBeCloseTo(golfApiGreen.lat, 5);
+    // Tee not overridden → OSM centroid
+    expect(result!.teeLatLng!.lat).toBeCloseTo(40.7435, 3);
+  });
+
+  it('tee-only override: only teeLatLng changes, green stays from OSM', () => {
+    const golfApiTee = { lat: 40.7431, lng: -73.4548 };
+    const result = projectHole(features, VIEWPORT, { teeLngLat: golfApiTee });
+    expect(result).not.toBeNull();
+    // Tee override applied
+    expect(result!.teeLatLng!.lat).toBeCloseTo(golfApiTee.lat, 5);
+    // Green not overridden → OSM centroid
+    expect(result!.greenLatLng!.lat).toBeCloseTo(40.7485, 3);
   });
 });

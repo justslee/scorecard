@@ -3,6 +3,34 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — hybrid-golfapi-map (NOTICEABLE — feat/hybrid-golfapi-map, ready for bundle)
+
+Hybrid course map: GolfAPI-verified POINTS anchoring homegrown OSM SHAPES.
+No live GolfAPI call (no token yet) — mock data derived from OSM centerlines, trivially swappable.
+
+### What was built
+- `frontend/src/lib/course/course-coordinates.ts`: Provider abstraction with mock data for
+  Bethpage Black + Red (18 holes each, seeded from Overpass OSM centerlines on 2026-06-29).
+  One-line live-swap: set `USE_LIVE_GOLFAPI = true` + fill `GOLFAPI_COURSE_ID_MAP`.
+- `frontend/src/lib/course/hole-projection.ts`: Added `nearestGreenCentroid()` + optional
+  `overrides` param to `projectHole()` so GolfAPI tee/green override OSM polygon centroids
+  for corridor clip, orientation, and SVG marker positions.
+- `frontend/src/components/course/HoleDiagram.tsx`: New `courseCoords` prop. When present:
+  uses GolfAPI green as authoritative pin, GolfAPI tee as anchor, picks nearest OSM green.
+- `frontend/src/app/map/course/page.tsx`: Loads GolfAPI coords in parallel with course data,
+  passes per-hole `holeCoords` to diagram + info strip. Shows F · C · B green distances
+  (from player when GPS on-hole, from tee otherwise). Graceful fallback for other courses.
+- `frontend/src/lib/course/course-coordinates.test.ts`: 13 new unit tests.
+- Hole-projection tests: 9 new tests for `nearestGreenCentroid` + override behaviour.
+
+### Gate results
+- `frontend/vitest run`: 776/776 pass (22 new tests)
+- `frontend/npm run lint`: clean
+- `frontend/npx tsc --noEmit`: clean
+- `frontend/voice-tests --smoke`: 265/265 pass
+- `frontend/npm run build`: clean
+- No backend changes (frontend-only)
+
 ## 2026-06-29 — corridor-tighten (NOTICEABLE — feat/corridor-tighten, ready for bundle)
 
 Fixes stray polygons (foreign greens, ponds, tree rows from adjacent holes) still
