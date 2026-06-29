@@ -1417,7 +1417,7 @@
     {
       "id": "osm-ingest-hardening",
       "priority": 18,
-      "status": "done-integration-next",
+      "status": "done-shipped-main",
       "classification": "silent",
       "build": "build(BE)",
       "size": "S",
@@ -1425,22 +1425,22 @@
       "area": "backend",
       "title": "Harden OSM ingest: log+retry transient Overpass failures, abort-on-empty",
       "rationale": "The silent return-empty on a flaky Overpass response made the first Bethpage ingest confusingly succeed with 0 holes. _post_with_retry logs failures + retries once on 429/5xx/timeout (not on clean-200/4xx); ingest aborts (exit 1, no upsert) on 0 holes. Makes future course ingests reliable.",
-      "shipped": "Built 23546fd (2026-06-29). All 4 Overpass fetchers + ingest guard; 30 tests, 98 osm/ingest green. Silent backend."
+      "shipped": "Built 23546fd (2026-06-29). All 4 Overpass fetchers + ingest guard; 30 tests, 98 osm/ingest green. Silent backend. | SHIPPED PR #71 -> main 6b667fd (2026-06-29)."
     },
     {
       "id": "hole-diagram-base",
       "priority": 12,
-      "status": "built-integration-next-pending-device-verify",
+      "status": "done-shipped-main",
       "classification": "noticeable",
       "area": "frontend",
       "title": "Yardage-book hole diagram (base render)",
       "rationale": "Replaced broken Mapbox satellite /map/course with pure-SVG yardage-book hole diagram (cosLat projection, tee->green rotation, on-paper palette, hole info). Owner-requested significant improvement. Base for tap-measure + GPS.",
-      "shipped": "Built 44de60c (2026-06-29). hole-projection.ts + HoleDiagram.tsx + 30 tests, 561 vitest. Not shipped alone \u2014 ships with the interactive+GPS layer."
+      "shipped": "Built 44de60c (2026-06-29). hole-projection.ts + HoleDiagram.tsx + 30 tests, 561 vitest. Not shipped alone \u2014 ships with the interactive+GPS layer. | SHIPPED PR #71 -> main 6b667fd (2026-06-29)."
     },
     {
       "id": "hole-diagram-interactive-gps",
       "priority": 11,
-      "status": "built-integration-next-pending-device-verify",
+      "status": "done-shipped-main",
       "classification": "noticeable",
       "area": "frontend",
       "title": "Hole diagram: tap-to-measure (from tee + to pin) + GPS player overlay",
@@ -1448,7 +1448,7 @@
       "depends_on": [
         "hole-diagram-base"
       ],
-      "shipped": "Built 7c2b15f (2026-06-29). Inverse projection (unprojectPoint, round-trip<1e-7); tap-to-measure (from-tee/to-pin); GPS on-hole overlay (you dot + live distances when on-hole, graceful when remote \u2014 fixes 50531). 57 new tests, 580 vitest green."
+      "shipped": "Built 7c2b15f (2026-06-29). Inverse projection (unprojectPoint, round-trip<1e-7); tap-to-measure (from-tee/to-pin); GPS on-hole overlay (you dot + live distances when on-hole, graceful when remote \u2014 fixes 50531). 57 new tests, 580 vitest green. | SHIPPED PR #71 -> main 6b667fd (2026-06-29)."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
