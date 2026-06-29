@@ -1374,7 +1374,7 @@
     {
       "id": "ocr-scorecard-ui",
       "priority": 15,
-      "status": "needs-spec",
+      "status": "built-integration-next-pending-device-verify",
       "classification": "noticeable",
       "build": "build(FE)",
       "size": "M",
@@ -1384,7 +1384,8 @@
       "rationale": "Frontend flow for the OCR backend (ocr-scorecard-scan, d926711): reuse CameraCapture -> POST /api/scorecard/scan -> a review/correct screen -> import scores into the round. Vision accuracy device-tested. Mirror scan response shape into types.ts.",
       "depends_on": [
         "ocr-scorecard-scan"
-      ]
+      ],
+      "shipped": "Built e572b32 (2026-06-29). ScanSheet: CameraCapture -> scanScorecard(POST /api/scorecard/scan) -> editable review grid w/ fuzzy player mapping (reuses player-match) -> confirm -> import via existing handleSetScore (no silent overwrite). scan-helpers.ts + 27 tests; 504 vitest green. Camera + vision accuracy = device-verify. OCR feature now COMPLETE end-to-end."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
