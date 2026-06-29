@@ -1184,6 +1184,19 @@
       "progress": "2026-06-28: built 52a1d9a on integration/next. Audit found BOTH sheets already had the handle wired correctly (onPointerDown -> dragControls.start, touch-action:none, dragListener=false, drag y + dragControls on the motion.div). Root cause of the fall-through was the MISSING piece: nothing locked the page behind an open sheet, so any gesture framer-motion didn't claim scrolled the background (esp. iOS WKWebView document rubber-band, which touch-action alone doesn't suppress). Fix: new src/lib/sheet.ts with useBodyScrollLock(locked) (pins <body> position:fixed + overflow hidden + overscroll-behavior none, restores scroll on close) and the pure shouldDismissSheetDrag(offsetY, velocityY) threshold (>120px OR >600px/s) extracted from both sheets. Wired into CaddieSheet (locked on `open`) and VoiceRoundSetupRealtime (locked for mounted lifetime); added touch-action:none + overscroll-behavior:contain to both backdrops. Inner conversation list stays scrollable. 8 unit tests (src/lib/sheet.test.ts: threshold edges + lock apply/restore via jsdom). Gates: lint 0 / tsc 0 / voice-tests 265/265 / vitest 382/382 / build clean. DEVICE-ONLY verify: the drag gesture is pointer/touch-only \u2014 confirm on next TestFlight that the handle dismisses and the page no longer scrolls behind an open sheet. NOTICEABLE -> rides the next approval bundle.",
       "depends_on": [],
       "shipped": "SHIPPED PR #65 -> main 5bc63f4 (2026-06-28); frontend-only, TestFlight build cut. Body-scroll-lock behind sheets (position:fixed) fixes WKWebView bg bounce. Device-verify the swipe."
+    },
+    {
+      "id": "voice-double-audio",
+      "priority": 2,
+      "status": "ready",
+      "classification": "noticeable",
+      "build": "build(FE)",
+      "size": "S-M",
+      "headless": "no (audio is device-only)",
+      "area": "frontend",
+      "title": "Caddie voice plays TWICE (two overlapping voices) on every response",
+      "rationale": "OWNER 2026-06-28 (voice is otherwise much better now): when the caddie responds, two overlapping voices play. Setup uses ONE RealtimeCaddieClient, so NOT two sessions. Top suspects, in order: (1) the WebRTC remote audio element in realtime.ts is created with document.createElement(\"audio\")+autoplay but NEVER appended to the DOM and has no playsInline \u2014 on iOS WKWebView the remote track can auto-play via the audio session AND the element \u2192 two offset copies. FIX candidate: append the audioEl to document.body (display:none), set playsInline + autoplay, and ensure it is the SOLE sink; remove on cleanup. (2) double response per turn \u2014 verify only ONE response.created fires per user turn (no stray response.create; confirm server_vad create_response not combined with an explicit create; confirm interrupt_response cancels an in-progress response so a new turn does not overlap an old one). (3) stale session/audioEl not torn down on reconnect. Device-verify with the owner. HIGH priority.",
+      "depends_on": []
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
