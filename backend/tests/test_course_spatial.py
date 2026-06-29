@@ -15,7 +15,9 @@ Polygons:
 import math
 
 from app.services.course_spatial import (
-    _RECLAIM_SAME_AREA_M,
+    _CORRIDOR_CAPS_M,
+    _CORRIDOR_CAP_DEFAULT_M,
+    _WOODS_MAX_SPAN_M,
     _deg_to_m,
     _linestring_dist_m,
     _linestring_intersection_m,
@@ -779,25 +781,41 @@ class TestParallelHoleFairwayAttribution:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Multi-course reclaim in build_course_feature_collection
+# Multi-course strict rejection (formerly "reclaim") in build_course_feature_collection
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestMultiCourseReclaim:
     """
-    Simulate a venue where two courses share the same geographic area and the
-    global nearest-line join initially assigns a target-course polygon to the
-    wrong course.
+    Verify the STRICT cross-course rejection introduced in feat/harden-spatial-join.
+
+    The old reclaim heuristic (re-attributing polygons within 200 m to the target
+    course) caused severe cross-course contamination at Bethpage State Park where
+    5 courses share the same 2.5 km area.  It pulled neighbouring courses' greens,
+    fairways, and bunkers into Bethpage Black, giving H18 5 greens and 22 bunkers.
+
+    The fix removes the reclaim pass entirely.  The strict rule is:
+      - A polygon's course assignment is determined solely by the global nearest-hole
+        logic (Tiers 1–3 in assign_features_to_holes).
+      - If the globally nearest hole belongs to a non-target course, the polygon is
+        DROPPED — no second-chance reclaim.
+
+    This means a fairway polygon that is geometrically closest to a co-located Green
+    course centerline (even if it is only 13 m away vs 17 m for Black) stays on Green
+    and is correctly excluded from the Black output.  In practice at Bethpage, each
+    course's own fairway polygons have the correct course's centerline running through
+    them (Tier-1 overlap), so correct attribution is not lost.
 
     Layout:
       • Black hole 1 centerline at lon=-73.000 (the target course)
-      • Green hole 1 centerline at lon=-72.9997 (30 m east — very close)
-      • Fairway polygon centred at lon=-72.9998 — closer to Green (20 m) than Black (16 m)
-        BUT physically in the Black-course area (within _RECLAIM_SAME_AREA_M)
+      • Green hole 1 centerline at lon=-72.9997 (≈30 m east — very close)
+      • Fairway polygon centred at lon=-72.9998 — closer to Green (≈13 m) than Black (≈17 m)
+        and too small for Black's centerline to pass through (Tier-1 = 0)
 
-    Without reclaim: the fairway would be assigned to Green and excluded from Black output.
-    With reclaim: it should be re-assigned to Black hole 1 and appear in the Black output.
-
-    Distant-course rejection must still work: a Red polygon 3 km away must NOT be reclaimed.
+    Expected behaviour after the fix:
+      • The fairway is assigned to Green (globally nearest).
+      • It does NOT appear in Black output (no reclaim).
+      • Distant Red polygons still excluded (same as before).
+      • Black-assigned polygons still included (no regression).
     """
 
     # Exact BH1 coords from ALL_HOLES
@@ -813,22 +831,55 @@ class TestMultiCourseReclaim:
 
     ALL_MCR_HOLES = [_BH1, _GH1, _RH1]
 
-    # Fairway closer to Green centerline than Black — should be reclaimed for Black
-    # Placed 0.0002° east of Black, 0.00015° west of Green → nearer Green
-    _NEAR_GREEN_FW = _make_polygon("way/fw_near_green", "fairway",
-                                   _BH1_TEE_LON + 0.0002, _BH1_MID_LAT)
+    # Fairway polygon that spans EAST of Green's centerline — Green's line passes
+    # through it (Tier-1 overlap), so it is clearly assigned to Green.
+    # Without reclaim, it must NOT appear in Black output.
+    #
+    # Polygon spans lon = (-72.9999 → -72.9994):
+    #   • Green centerline at lon=-72.99965 is inside the polygon → Tier-1 assigns to Green
+    #   • Black centerline at lon=-73.000 is WEST of the polygon's left edge → NOT inside
+    #   • Old reclaim would have pulled this into Black (it's within 200 m of Black)
+    #   • After removing reclaim: stays with Green, excluded from Black
+    _GREEN_FW_HALF = 0.0002  # half-width in degrees lon ≈ 17 m
+    _GREEN_FW_CEN = _BH1_TEE_LON + 0.00035 + 0.00005  # centre: 0.0004° east of Black ≈ 33 m
+    _NEAR_GREEN_FW = {
+        "type": "Feature",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[
+                [_GREEN_FW_CEN - _GREEN_FW_HALF, _BH1_MID_LAT - 0.0001],
+                [_GREEN_FW_CEN + _GREEN_FW_HALF, _BH1_MID_LAT - 0.0001],
+                [_GREEN_FW_CEN + _GREEN_FW_HALF, _BH1_MID_LAT + 0.0001],
+                [_GREEN_FW_CEN - _GREEN_FW_HALF, _BH1_MID_LAT + 0.0001],
+                [_GREEN_FW_CEN - _GREEN_FW_HALF, _BH1_MID_LAT - 0.0001],
+            ]],
+        },
+        "properties": {"featureType": "fairway", "osm_id": "way/fw_near_green"},
+    }
 
-    # Red polygon 2.5 km east — must NOT be reclaimed
-    # (_RH1_TEE_LAT == _RH1_GREEN_LAT are the bounds; midpoint is the mean)
+    # Red polygon 2.5 km east — must NOT appear in Black output
     _RH1_MID_LAT = (_RH1_TEE_LAT + _RH1_GREEN_LAT) / 2
     _FAR_RED_POLY = _make_polygon("way/far_red", "fairway",
                                   _RH1_TEE_LON, _RH1_MID_LAT)
 
-    def test_reclaim_constant_is_positive(self):
-        assert _RECLAIM_SAME_AREA_M > 0
+    def test_corridor_cap_constants_are_positive(self):
+        """All corridor cap values and the woods span limit are positive."""
+        for feature_type, cap in _CORRIDOR_CAPS_M.items():
+            assert cap > 0, f"Corridor cap for {feature_type!r} must be positive, got {cap}"
+        assert _CORRIDOR_CAP_DEFAULT_M > 0
+        assert _WOODS_MAX_SPAN_M > 0
 
-    def test_close_polygon_reclaimed_for_target_course(self):
-        """Polygon near Green (but within 200 m of Black) appears in Black output."""
+    def test_no_false_reclaim_for_co_located_course(self):
+        """Strict rejection: polygon assigned to Green via Tier-1 overlap is NOT pulled into Black.
+
+        The polygon is wide enough that Green's centerline (30 m east of Black) runs
+        through it, so Tier-1 clearly assigns it to Green.  Black's centerline does not
+        enter the polygon.
+
+        Previously (with the 200 m reclaim pass) this polygon WOULD have been reclaimed
+        for Black because it sits within 200 m of a Black hole centerline.  After removing
+        reclaim, it correctly stays with Green and is excluded from Black.
+        """
         result = build_course_feature_collection(
             self.ALL_MCR_HOLES, [self._NEAR_GREEN_FW], "Black"
         )
@@ -837,11 +888,15 @@ class TestMultiCourseReclaim:
             for hole in result
             for f in hole["features"]["features"]
         }
-        assert "way/fw_near_green" in all_ids, \
-            "Fairway near co-located Green course should be reclaimed for Black"
+        # The fairway has Green's centerline running through it → assigned to Green.
+        # No reclaim → excluded from Black.
+        assert "way/fw_near_green" not in all_ids, (
+            "Fairway with Green centerline through it must NOT appear in Black output "
+            "(reclaim pass removed — strict global-nearest assignment is the rule)."
+        )
 
-    def test_distant_polygon_not_reclaimed(self):
-        """Red polygon 2.5 km away is NOT reclaimed into Black output."""
+    def test_distant_polygon_excluded(self):
+        """Red polygon 2.5 km away is NOT included in Black output."""
         result = build_course_feature_collection(
             self.ALL_MCR_HOLES, [self._FAR_RED_POLY], "Black"
         )
@@ -851,7 +906,7 @@ class TestMultiCourseReclaim:
             for f in hole["features"]["features"]
         }
         assert "way/far_red" not in all_ids, \
-            "Red polygon 2.5 km from Black should NOT be reclaimed"
+            "Red polygon 2.5 km from Black must be excluded"
 
     def test_original_cross_course_rejection_preserved(self):
         """Standard fixtures: Red-course green (2.5 km away) still excluded from Black."""
@@ -866,7 +921,7 @@ class TestMultiCourseReclaim:
         assert "way/green_red" not in all_ids
 
     def test_original_black_polygons_still_included(self):
-        """Reclaim pass must not disturb polygons already assigned to Black."""
+        """Strict rejection must not disturb polygons correctly assigned to Black."""
         result = build_course_feature_collection(
             ALL_HOLES + [self._GH1], ALL_POLYGONS, "Black"
         )
@@ -878,3 +933,139 @@ class TestMultiCourseReclaim:
         assert "way/green1" in all_ids
         assert "way/bunker1" in all_ids
         assert "way/tee1" in all_ids
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Corridor distance cap in build_course_feature_collection
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestCorridorCap:
+    """
+    Verify the per-feature-type corridor distance cap in build_course_feature_collection.
+
+    A polygon correctly assigned to the target course but farther from the hole
+    centerline than the type-specific cap is dropped.  This is the belt-and-
+    suspenders guard that prevents stray features (e.g. a green from a distant
+    hole whose endpoint happens to be nearest) from inflating the hole's display.
+
+    Layout: single Black hole 1 running N-S.  We place polygons at various
+    distances from the centerline to verify the cap is applied correctly.
+    """
+
+    _BLACK_H1 = _make_hole("1", "Black", _BH1_TEE_LON, _BH1_TEE_LAT,
+                            _BH1_GREEN_LON, _BH1_GREEN_LAT,
+                            _BH1_MID_LON, _BH1_MID_LAT)
+    _HOLES = [_BLACK_H1]
+
+    def _build(self, polygons: list[dict], target: str = "Black") -> set[str]:
+        result = build_course_feature_collection(self._HOLES, polygons, target)
+        return {
+            f["properties"]["osm_id"]
+            for hole in result
+            for f in hole["features"]["features"]
+        }
+
+    # ── Green (end mode: dist to endpoint) ───────────────────────────────────
+
+    def test_green_near_endpoint_is_kept(self):
+        """Green centroid 0 m from the endpoint → distance << cap → kept."""
+        green = _make_polygon("way/g_near", "green", _BH1_GREEN_LON, _BH1_GREEN_LAT)
+        assert "way/g_near" in self._build([green])
+
+    def test_green_far_from_endpoint_is_dropped(self):
+        """Green centroid 0.003° from endpoint ≈ 334 m > 120 m cap → dropped."""
+        # Place the green 0.003° south of the green endpoint (far from the hole end)
+        far_lon = _BH1_GREEN_LON
+        far_lat = _BH1_GREEN_LAT - 0.003  # ~334 m south of the green end
+        green = _make_polygon("way/g_far", "green", far_lon, far_lat)
+        assert "way/g_far" not in self._build([green]), (
+            "Green far from the endpoint must be rejected by the corridor cap"
+        )
+
+    # ── Bunker (nearest mode: dist to any centerline segment) ─────────────
+
+    def test_bunker_within_cap_is_kept(self):
+        """Bunker 0.001° west of midpoint ≈ 84 m < 150 m cap → kept."""
+        # Same placement as POLY_BUNKER_BH1 in ALL_POLYGONS
+        bunker = _make_polygon("way/b_near", "bunker", _BH1_MID_LON - 0.001, _BH1_MID_LAT)
+        assert "way/b_near" in self._build([bunker])
+
+    def test_bunker_beyond_cap_is_dropped(self):
+        """Bunker 0.003° west of midpoint ≈ 253 m > 150 m cap → dropped."""
+        bunker = _make_polygon("way/b_far", "bunker", _BH1_MID_LON - 0.003, _BH1_MID_LAT)
+        assert "way/b_far" not in self._build([bunker]), (
+            "Bunker too far from the hole centerline must be rejected by the corridor cap"
+        )
+
+    # ── Fairway (nearest mode) ──────────────────────────────────────────────
+
+    def test_fairway_within_cap_is_kept(self):
+        """Fairway whose centerline runs through it (0 m distance) → kept."""
+        # Fairway centred on the hole centerline
+        fairway = _make_polygon("way/fw_near", "fairway", _BH1_MID_LON, _BH1_MID_LAT)
+        assert "way/fw_near" in self._build([fairway])
+
+    def test_fairway_beyond_cap_is_dropped(self):
+        """Fairway 0.003° west of centerline ≈ 253 m > 200 m cap → dropped."""
+        fairway = _make_polygon("way/fw_far", "fairway", _BH1_MID_LON - 0.003, _BH1_MID_LAT)
+        assert "way/fw_far" not in self._build([fairway]), (
+            "Fairway too far from the hole centerline must be rejected by the corridor cap"
+        )
+
+    # ── Large woods polygon filter ──────────────────────────────────────────
+
+    def test_large_woods_polygon_is_dropped(self):
+        """A woods polygon whose bbox diagonal > _WOODS_MAX_SPAN_M is dropped.
+
+        Simulates a campus-scale forest that spans multiple holes.  Even if it
+        is assigned to a Black hole (nearest-line), it should be excluded.
+        """
+        # Build a huge polygon spanning 0.01° lat × 0.01° lon ≈ 1100 m × 845 m
+        # centred on the hole midpoint — diagonal ≈ 1388 m >> 450 m cap.
+        big_half = 0.005  # 0.01° span
+        big_lon = _BH1_MID_LON
+        big_lat = _BH1_MID_LAT
+        ring = [
+            [big_lon - big_half, big_lat - big_half],
+            [big_lon + big_half, big_lat - big_half],
+            [big_lon + big_half, big_lat + big_half],
+            [big_lon - big_half, big_lat + big_half],
+            [big_lon - big_half, big_lat - big_half],  # close
+        ]
+        big_woods = {
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [ring]},
+            "properties": {"featureType": "woods", "osm_id": "way/big_woods"},
+        }
+        assert "way/big_woods" not in self._build([big_woods]), (
+            "Campus-scale woods polygon must be dropped by the large-polygon filter"
+        )
+
+    def test_small_woods_polygon_is_kept(self):
+        """A small woods cluster near the hole centerline is kept."""
+        # 0.001° span ≈ 111 m × 84 m, diagonal ≈ 140 m << 450 m cap
+        small_woods = _make_polygon("way/small_woods", "woods", _BH1_MID_LON, _BH1_MID_LAT,
+                                    half_deg=0.0005)
+        assert "way/small_woods" in self._build([small_woods])
+
+    def test_polygon_nearest_non_target_is_dropped(self):
+        """A polygon whose globally nearest hole is on a NON-target course is always dropped.
+
+        No corridor cap involved — this is pure cross-course rejection.
+        """
+        # Red hole 1 far to the east; a polygon right next to it goes to Red.
+        red_h1 = _make_hole("1", "Red", _RH1_TEE_LON, _RH1_TEE_LAT,
+                             _RH1_GREEN_LON, _RH1_GREEN_LAT)
+        black_h1 = _make_hole("1", "Black", _BH1_TEE_LON, _BH1_TEE_LAT,
+                               _BH1_GREEN_LON, _BH1_GREEN_LAT)
+        # Place a green right at Red hole 1's endpoint
+        red_green = _make_polygon("way/red_g", "green", _RH1_GREEN_LON, _RH1_GREEN_LAT)
+        result = build_course_feature_collection([black_h1, red_h1], [red_green], "Black")
+        all_ids = {
+            f["properties"]["osm_id"]
+            for hole in result
+            for f in hole["features"]["features"]
+        }
+        assert "way/red_g" not in all_ids, (
+            "Polygon nearest a Red hole must be excluded from Black output"
+        )

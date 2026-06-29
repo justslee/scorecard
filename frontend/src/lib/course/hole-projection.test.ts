@@ -805,3 +805,78 @@ describe('tree Point projection', () => {
     expect(projectHole(features, VIEWPORT)).toBeNull();
   });
 });
+
+// ── Corridor guard: stray polygons outside tee→green bbox are excluded ─────────
+
+// A stray fairway far north of the tee→green corridor.
+// Tee is at lat 40.740, green at 40.7433; CORRIDOR_LAT_DEG = 0.003, so the corridor
+// extends to maxLat + 0.003 = 40.7463.  The stray centroid is at lat ~40.8005 —
+// ~0.057° = ~6.3 km north of green, well outside the corridor.
+const STRAY_LAT = 40.80;
+const STRAY_RING: [number, number][] = [
+  [BASE_LNG - 0.001, STRAY_LAT],
+  [BASE_LNG + 0.001, STRAY_LAT],
+  [BASE_LNG + 0.001, STRAY_LAT + 0.001],
+  [BASE_LNG - 0.001, STRAY_LAT + 0.001],
+];
+
+describe('corridor guard', () => {
+  it('stray fairway outside the corridor is excluded from projected polygons', () => {
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+      makePolygon('fairway', STRAY_RING),  // stray — far north
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    // Stray fairway must be excluded: only 3 polygons remain
+    expect(result!.polygons).toHaveLength(3);
+  });
+
+  it('adding a stray polygon does not inflate the teePt/greenPt positions', () => {
+    const normal = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+    ];
+    const withStray = [
+      ...normal,
+      makePolygon('bunker', STRAY_RING),  // stray bunker far north
+    ];
+    const rNormal   = projectHole(normal,    VIEWPORT)!;
+    const rWithStray = projectHole(withStray, VIEWPORT)!;
+    expect(rNormal).not.toBeNull();
+    expect(rWithStray).not.toBeNull();
+    // The corridor guard removes the stray; the two projections should be equivalent
+    expect(rWithStray.polygons).toHaveLength(rNormal.polygons.length);
+    expect(rWithStray.teePt[0]).toBeCloseTo(rNormal.teePt[0], 1);
+    expect(rWithStray.teePt[1]).toBeCloseTo(rNormal.teePt[1], 1);
+    expect(rWithStray.greenPt[0]).toBeCloseTo(rNormal.greenPt[0], 1);
+    expect(rWithStray.greenPt[1]).toBeCloseTo(rNormal.greenPt[1], 1);
+  });
+
+  it('a fairway close to the corridor is NOT excluded', () => {
+    // This fairway is within the corridor (between tee and green)
+    const inCorridor = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),  // centroid within corridor bounds
+    ];
+    const result = projectHole(inCorridor, VIEWPORT);
+    expect(result).not.toBeNull();
+    // All 3 must survive
+    expect(result!.polygons).toHaveLength(3);
+  });
+
+  it('tee and green are always kept regardless of corridor filter', () => {
+    // Even in a feature list with only tee + green, both survive
+    const features = [
+      makePolygon('tee',   TEE_RING),
+      makePolygon('green', GREEN_RING),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    expect(result!.polygons).toHaveLength(2);
+  });
+});

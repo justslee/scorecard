@@ -287,10 +287,42 @@ export function projectHole(
   // If only one is present, we still proceed; we just can't orient the hole.
   const canOrient = teeCentroid !== null && greenCentroid !== null;
 
+  // ── Corridor guard: exclude stray polygons outside the tee→green bbox ─────
+  //
+  // Belt-and-suspenders against polygons from adjacent holes that slipped
+  // through the backend spatial join.  When we have both a tee and a green,
+  // compute a corridor bbox around the tee→green axis with generous margins
+  // and exclude any polygon whose centroid falls outside it.
+  //
+  // Tee and green polygons always pass (they define the corridor).
+  // Without this guard, a stray fairway 4 km away would inflate the geographic
+  // bbox and compress the legitimate diagram into a tiny speck.
+  //
+  // Margins (generous — must include features to the sides of the hole):
+  //   ≈ 330 m latitude / ≈ 337 m longitude at Bethpage (~40.7°)
+  //
+  const CORRIDOR_LAT_DEG = 0.003;
+  const CORRIDOR_LNG_DEG = 0.004;
+
+  const filteredPolygons: typeof rawPolygons =
+    canOrient && teeCentroid !== null && greenCentroid !== null
+      ? rawPolygons.filter(({ type, ring }) => {
+          if (type === 'tee' || type === 'green') return true;  // always keep
+          const c = ringCentroid(ring);
+          if (!c) return false;
+          const [lng, lat] = c;
+          const minLngC = Math.min(teeCentroid[0], greenCentroid[0]) - CORRIDOR_LNG_DEG;
+          const maxLngC = Math.max(teeCentroid[0], greenCentroid[0]) + CORRIDOR_LNG_DEG;
+          const minLatC = Math.min(teeCentroid[1], greenCentroid[1]) - CORRIDOR_LAT_DEG;
+          const maxLatC = Math.max(teeCentroid[1], greenCentroid[1]) + CORRIDOR_LAT_DEG;
+          return lng >= minLngC && lng <= maxLngC && lat >= minLatC && lat <= maxLatC;
+        })
+      : rawPolygons;
+
   // ── Geographic bounding box ────────────────────────────────────────────────
   let minLng = Infinity, maxLng = -Infinity;
   let minLat = Infinity, maxLat = -Infinity;
-  for (const { ring } of rawPolygons) {
+  for (const { ring } of filteredPolygons) {
     for (const [lng, lat] of ring) {
       if (lng < minLng) minLng = lng;
       if (lng > maxLng) maxLng = lng;
@@ -313,8 +345,8 @@ export function projectHole(
     ];
   }
 
-  // Project all polygon rings
-  const mtrPolygons = rawPolygons.map(({ type, ring }) => ({
+  // Project all polygon rings (use filteredPolygons to exclude stray features)
+  const mtrPolygons = filteredPolygons.map(({ type, ring }) => ({
     type,
     pts: ring.map(toMeters),
   }));
