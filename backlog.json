@@ -1344,6 +1344,19 @@
         "course-poc-i2-store-render"
       ],
       "shipped": "Built b621d78 (2026-06-29). 3DEP getSamples batch sampler (m->ft, EPQS fallback) + pure compute_hole_elevation_profile + optional elevation attach in assemble_osm_course; 29 tests (183/183 non-DB). Live 3DEP + DB = deploy/CI. Completes Bethpage POC backend track I0-I4."
+    },
+    {
+      "id": "caddie-reasoning-cap",
+      "priority": 17,
+      "status": "done-integration-next",
+      "classification": "silent",
+      "build": "build(BE)",
+      "size": "S",
+      "headless": "yes",
+      "area": "backend",
+      "title": "Prioritize + cap caddie reasoning (calm, voice-first)",
+      "rationale": "The 3 new advice layers (slope/terrain/DECADE) could push reasoning to 8+ lines \u2014 too noisy for the voice caddie + the calm Northstar. Added prioritize_reasoning() + MAX_REASONING_ITEMS=4, safety-first ordering (club > pin/hazard > slope/miss > terrain > color), club line never dropped.",
+      "shipped": "Built f746c2d (2026-06-29). 25 tests; all 180 existing pass unweakened; club/aim unchanged."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
