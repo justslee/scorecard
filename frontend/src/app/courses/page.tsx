@@ -9,9 +9,14 @@ import { mapRecentCourses, type RecentCourseItem } from "@/lib/course-list";
 import { courseHref } from "@/lib/course-url";
 import CourseSearch from "@/components/CourseSearch";
 
-// POC: Bethpage Black ingested into the PostGIS mapped-course store.
-// Run `backend/scripts/ingest_osm_course.py` on the deploy box to populate.
-const BETHPAGE_BLACK_MAP_ID = "2b8caab5-2c55-5752-8cda-336c3a396dac";
+// Mapped courses ingested into the PostGIS store via ingest_osm_course.py.
+// UUIDs are deterministic: _deterministic_uuid(<course-key>) in osm_ingest.py.
+// Run the ingest script on the deploy box to populate each course; the viewer
+// renders once the row exists in the DB.
+const BETHPAGE_BLACK_MAP_ID = "2b8caab5-2c55-5752-8cda-336c3a396dac"; // key: osm-bethpage-black
+// Bethpage Red: ingest with --course-key osm-bethpage-red --target-course Red
+// (prod ingest required before this entry renders in the viewer)
+const BETHPAGE_RED_MAP_ID   = "269e1f2e-65cc-5cf6-a9b0-f5908e298155"; // key: osm-bethpage-red
 
 // ---------------------------------------------------------------------------
 // Component
@@ -409,6 +414,61 @@ export default function CoursesHubPage() {
                 }}
               >
                 Bethpage Black
+              </div>
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 8.5,
+                  letterSpacing: 1.1,
+                  color: T.pencilSoft,
+                  textTransform: "uppercase",
+                  marginTop: 2,
+                }}
+              >
+                Hole map
+              </div>
+            </div>
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 10,
+                color: T.pencil,
+                flexShrink: 0,
+              }}
+            >
+              {"›"}
+            </div>
+          </button>
+
+          <button
+            onClick={() => router.push(`/map/course?id=${BETHPAGE_RED_MAP_ID}`)}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "11px 0",
+              background: "transparent",
+              border: "none",
+              borderTop: `1px dashed ${T.hairline}`,
+              cursor: "pointer",
+              textAlign: "left",
+              minHeight: 44,
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontSize: 16,
+                  color: T.ink,
+                  letterSpacing: -0.2,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                Bethpage Red
               </div>
               <div
                 style={{
