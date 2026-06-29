@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-28",
+  "updated": "2026-06-29",
   "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle).",
   "items": [
     {
@@ -1273,7 +1273,7 @@
     {
       "id": "course-poc-i1-spatial-join",
       "priority": 18,
-      "status": "ready",
+      "status": "done-integration-next",
       "epic": "course-search-db-epic",
       "classification": "silent",
       "build": "build(BE/data)",
@@ -1284,7 +1284,8 @@
       "rationale": "Nearest hole-centerline assignment w/ cross-course rejection; output per-hole GeoJSON FeatureCollection. Prefer PostGIS ST_Distance/ST_ClosestPoint (no new dep). The core new algorithm.",
       "depends_on": [
         "course-poc-i0-osm-polygons"
-      ]
+      ],
+      "shipped": "Built fc93c94 on integration/next (2026-06-29). course_spatial.py pure-geometry join (greens->hole-end, tees->start, others->nearest segment; cross-course rejection); osm.py holes carry course_name; 60 new tests (94/94 spatial+osm). Output feeds upsert_course in I2."
     },
     {
       "id": "course-poc-i2-store-render",
