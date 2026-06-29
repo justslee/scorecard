@@ -18,6 +18,7 @@ import {
   describeHazards,
   pointToSegmentDistanceM,
   isInHoleCorridor,
+  synthesizeFairwayCorridor,
   nearestGreenCentroid,
   CORRIDOR_LATERAL_M,
   CORRIDOR_LONGITUDINAL_MARGIN_M,
@@ -1061,14 +1062,22 @@ describe('corridor guard', () => {
   });
 
   it('tee and green are always kept regardless of corridor filter', () => {
-    // Even in a feature list with only tee + green, both survive
+    // Even in a feature list with only tee + green, both survive the corridor filter.
+    // Since 2026-06 synthesis: a hole with no OSM fairway also gains a synthetic
+    // fairway polygon, so the total is 3 (tee + green + synthetic fairway).
     const features = [
       makePolygon('tee',   TEE_RING),
       makePolygon('green', GREEN_RING),
     ];
     const result = projectHole(features, VIEWPORT);
     expect(result).not.toBeNull();
-    expect(result!.polygons).toHaveLength(2);
+    const types = result!.polygons.map(p => p.type);
+    // Tee and green must always survive
+    expect(types).toContain('tee');
+    expect(types).toContain('green');
+    // Synthesis adds a fairway when none is present (so total = 3)
+    expect(types).toContain('fairway');
+    expect(result!.polygons).toHaveLength(3);
   });
 });
 
@@ -1225,5 +1234,211 @@ describe('projectHole — GolfAPI tee/green overrides', () => {
     expect(result!.teeLatLng!.lat).toBeCloseTo(golfApiTee.lat, 5);
     // Green not overridden → OSM centroid
     expect(result!.greenLatLng!.lat).toBeCloseTo(40.7485, 3);
+  });
+});
+
+// ── synthesizeFairwayCorridor — pure function unit tests ───────────────────────
+//
+// Reference geometry: simple N-S hole in metre-space.
+//   Tee  = (0, 0) m
+//   Green = (0, 400) m  ≈ 437 yds
+//   Default halfWidthM = 16 (32 m total width)
+//
+const SYNTH_TEE_M:   [number, number] = [0, 0];
+const SYNTH_GREEN_M: [number, number] = [0, 400];
+
+describe('synthesizeFairwayCorridor', () => {
+  // ── Basic geometry ──────────────────────────────────────────────────────────
+
+  it('returns null for a degenerate hole (tee === green)', () => {
+    expect(synthesizeFairwayCorridor([0, 0], [0, 0])).toBeNull();
+    // tee very close to green (< 1 m)
+    expect(synthesizeFairwayCorridor([0, 0], [0, 0.5])).toBeNull();
+  });
+
+  it('returns null when total inset collapses the capsule body', () => {
+    // 10 m hole, default insets 8+5 = 13 m > 10 - 1 = 9 m
+    expect(synthesizeFairwayCorridor([0, 0], [0, 10])).toBeNull();
+  });
+
+  it('returns a closed ring (first point === last point)', () => {
+    const ring = synthesizeFairwayCorridor(SYNTH_TEE_M, SYNTH_GREEN_M);
+    expect(ring).not.toBeNull();
+    const first = ring![0];
+    const last  = ring![ring!.length - 1];
+    expect(last[0]).toBeCloseTo(first[0], 8);
+    expect(last[1]).toBeCloseTo(first[1], 8);
+  });
+
+  it('ring has the expected number of points (2*endPts + 3 + 1 closing)', () => {
+    // endPts=10 → (10+1) tee semi + 1 right corner + 10 green semi + 1 closing = 23
+    const ring = synthesizeFairwayCorridor(SYNTH_TEE_M, SYNTH_GREEN_M, 16, 8, 5, 10);
+    expect(ring).not.toBeNull();
+    // 11 (tee semi) + 1 (corner) + 10 (green semi, i=1..10) + 1 (close) = 23
+    expect(ring!.length).toBe(23);
+  });
+
+  it('capsule half-width at the axis midpoint ≈ requested halfWidthM', () => {
+    const halfW = 16;
+    const ring = synthesizeFairwayCorridor(SYNTH_TEE_M, SYNTH_GREEN_M, halfW);
+    expect(ring).not.toBeNull();
+    // For a N-S hole the straight sides run at x ≈ ±halfW; find the extremes
+    const xCoords = ring!.map(([x]) => x);
+    const maxX = Math.max(...xCoords);
+    const minX = Math.min(...xCoords);
+    // Straight-side x should be ≈ ±halfW (semicircles may equal it exactly)
+    expect(maxX).toBeCloseTo( halfW, 1);
+    expect(minX).toBeCloseTo(-halfW, 1);
+  });
+
+  it('capsule is centred on the tee→green axis (symmetric cross-section)', () => {
+    const ring = synthesizeFairwayCorridor(SYNTH_TEE_M, SYNTH_GREEN_M);
+    expect(ring).not.toBeNull();
+    // For a N-S hole centred on x=0, the ring should be symmetric about x=0.
+    const xCoords = ring!.map(([x]) => x);
+    const maxX = Math.max(...xCoords);
+    const minX = Math.min(...xCoords);
+    // Centre x should be 0 (symmetric)
+    expect((maxX + minX) / 2).toBeCloseTo(0, 5);
+  });
+
+  it('capsule stays within the tee→green corridor clip (16 m << 60 m lateral cap)', () => {
+    // All ring vertices must pass isInHoleCorridor with the standard 60 m / 40 m params.
+    const ring = synthesizeFairwayCorridor(SYNTH_TEE_M, SYNTH_GREEN_M);
+    expect(ring).not.toBeNull();
+    const openRing = ring!.slice(0, -1); // exclude closing duplicate for the point test
+    for (const pt of openRing) {
+      expect(
+        isInHoleCorridor([pt], SYNTH_TEE_M, SYNTH_GREEN_M, CORRIDOR_LATERAL_M, CORRIDOR_LONGITUDINAL_MARGIN_M)
+      ).toBe(true);
+    }
+  });
+
+  it('works for a diagonal (NE-running) hole', () => {
+    const diagGreen: [number, number] = [300, 300];   // 45° NE, ~424 m
+    const ring = synthesizeFairwayCorridor([0, 0], diagGreen, 16);
+    expect(ring).not.toBeNull();
+    // Ring must be closed
+    expect(ring![ring!.length - 1][0]).toBeCloseTo(ring![0][0], 8);
+    expect(ring![ring!.length - 1][1]).toBeCloseTo(ring![0][1], 8);
+  });
+
+  it('returns a non-trivial ring for a short but valid hole', () => {
+    // 50 m hole, insets 8+5 = 13 < 50 − 1 → should succeed
+    const ring = synthesizeFairwayCorridor([0, 0], [0, 50], 10);
+    expect(ring).not.toBeNull();
+    expect(ring!.length).toBeGreaterThan(3);
+  });
+});
+
+// ── projectHole — synthetic fairway integration ────────────────────────────────
+//
+// These tests verify the full pipeline: a hole WITHOUT an OSM fairway gains
+// exactly one synthetic fairway polygon (marked synthetic: true), and a hole
+// WITH a real fairway polygon gains none.
+
+describe('projectHole — synthetic fairway integration', () => {
+  // Hole geometry reusing the module-level fixtures (TEE_RING, GREEN_RING, etc.)
+
+  it('hole with NO fairway feature gains exactly one synthetic fairway polygon', () => {
+    const features = [
+      makePolygon('tee',   TEE_RING),
+      makePolygon('green', GREEN_RING),
+      // No 'fairway' polygon — triggers synthesis
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+
+    const fairwayPolys = result!.polygons.filter(p => p.type === 'fairway');
+    expect(fairwayPolys).toHaveLength(1);
+    // Must be tagged synthetic
+    expect(fairwayPolys[0].synthetic).toBe(true);
+  });
+
+  it('hole WITH a real OSM fairway gains NO synthetic fairway polygon', () => {
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),   // real OSM fairway present
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+
+    const fairwayPolys = result!.polygons.filter(p => p.type === 'fairway');
+    expect(fairwayPolys).toHaveLength(1);
+    // Real fairway must NOT be tagged synthetic
+    expect(fairwayPolys[0].synthetic).toBeUndefined();
+  });
+
+  it('synthetic fairway polygon has NO closing duplicate in its SVG points', () => {
+    // projectHole strips the closing GeoJSON vertex before returning SVG points.
+    const features = [
+      makePolygon('tee',   TEE_RING),
+      makePolygon('green', GREEN_RING),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+
+    const synthFairway = result!.polygons.find(p => p.type === 'fairway' && p.synthetic);
+    expect(synthFairway).toBeDefined();
+    const pts = synthFairway!.points;
+    // The ring must not have a closing duplicate (first != last in SVG space)
+    const first = pts[0];
+    const last  = pts[pts.length - 1];
+    const same  = Math.abs(first[0] - last[0]) < 0.01 && Math.abs(first[1] - last[1]) < 0.01;
+    expect(same).toBe(false);
+  });
+
+  it('synthetic fairway is rendered before bunkers and green (correct z-order)', () => {
+    const features = [
+      makePolygon('tee',    TEE_RING),
+      makePolygon('green',  GREEN_RING),
+      makePolygon('bunker', BUNKER_RING),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+
+    const types = result!.polygons.map(p => p.type);
+    const fairwayIdx = types.indexOf('fairway');
+    const bunkerIdx  = types.indexOf('bunker');
+    const greenIdx   = types.indexOf('green');
+    expect(fairwayIdx).toBeGreaterThanOrEqual(0);
+    expect(fairwayIdx).toBeLessThan(bunkerIdx);
+    expect(fairwayIdx).toBeLessThan(greenIdx);
+  });
+
+  it('synthetic fairway polygon SVG points are all within the viewport', () => {
+    const features = [
+      makePolygon('tee',   TEE_RING),
+      makePolygon('green', GREEN_RING),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+
+    const synthFairway = result!.polygons.find(p => p.synthetic);
+    expect(synthFairway).toBeDefined();
+    for (const [x, y] of synthFairway!.points) {
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThanOrEqual(VIEWPORT.width);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(y).toBeLessThanOrEqual(VIEWPORT.height);
+    }
+  });
+
+  it('adding only a stray (corridor-filtered-out) fairway still triggers synthesis', () => {
+    // The stray fairway is outside the corridor, so it gets clipped.
+    // The hole then has NO corridor-passing fairway → synthesis fires.
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', STRAY_RING),   // stray — excluded by corridor filter
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+
+    const fairwayPolys = result!.polygons.filter(p => p.type === 'fairway');
+    // Only the synthetic one should exist (stray was filtered out)
+    expect(fairwayPolys).toHaveLength(1);
+    expect(fairwayPolys[0].synthetic).toBe(true);
   });
 });
