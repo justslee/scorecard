@@ -503,7 +503,13 @@ export default function CoursesHubPage() {
           onClose={() => setShowSearch(false)}
           onSelectCourse={(c) => {
             setShowSearch(false);
-            router.push(courseHref({ courseId: c.id, clubId: c.clubId }));
+            // Mapped courses have a full hole-map view; route there instead of the
+            // GolfAPI detail page (which uses a numeric course id, not a UUID).
+            if (c.source === "mapped") {
+              router.push(`/map/course?id=${encodeURIComponent(String(c.id))}`);
+            } else {
+              router.push(courseHref({ courseId: c.id, clubId: c.clubId }));
+            }
           }}
         />
       )}
