@@ -3,6 +3,29 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (voice-double-audio — NOTICEABLE, device-only verify)
+- **Done (built 727c7df on integration/next, pushed; in bundle PR #66):** Fix the caddie
+  playing TWO overlapping voices on every Realtime response.
+  - Root cause (hypothesis 1, evidence-backed via webrtcHacks Safari guide + Capacitor
+    #8176): the remote WebRTC audio sink in `frontend/src/lib/voice/realtime.ts` was
+    `document.createElement('audio')`+autoplay but NEVER appended to the DOM and had no
+    inline-playback attr. iOS WKWebView renders remote audio through a single ATTACHED
+    element; a detached autoplay element can leave the track to ALSO render via the audio
+    session → two slightly-offset copies = "two overlapping voices."
+  - Fix: single, in-DOM, hidden, `playsinline`, autoplay sink; idempotent `srcObject`
+    (only on a different stream); `audioEl.remove()` in `cleanup()` so reconnects/warm
+    preloads never stack a sink. `start()` is guarded (`if(this.pc)return`) + error path
+    calls cleanup → at most one element per client.
+  - Defensive rule-out: NO double-response path — `response.create` fires only on typed
+    input (sendText) and after a tool result (runTool); minted session is server_vad with
+    no `create_response:false`, so voice turns auto-respond once. Mint config untouched.
+  - Reviewer (fresh opus context): SOUND/ship, no blocking issues. Non-blocking nit logged
+    (onconnectionstatechange doesn't cleanup on silent network drop — pre-existing, not the
+    cause, out of scope).
+  - Gates: lint 0 / tsc 0 / voice-tests 265/265 / vitest 399/399 / build clean.
+  - **DEVICE-ONLY verifiable (audio):** must confirm on next TestFlight build. Rides the
+    next approval bundle (PR #66).
+
 ## 2026-06-28 (nav-floating-island-tab — NOTICEABLE)
 - **In progress (gates green, pending designer + reviewer):** Floating island tab bar.
   Per the approved plan — no commit yet, awaiting eng-lead's review pass.
