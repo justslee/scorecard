@@ -956,18 +956,20 @@
     {
       "id": "social-partner-profile",
       "priority": 41,
-      "status": "needs-spec",
+      "status": "built-integration-next-pending-device-verify",
       "epic": "social-playing-partners",
       "classification": "noticeable",
       "build": "build",
       "size": "S/M",
       "headless": "yes",
-      "area": "frontend+backend",
-      "title": "Partner profile detail (/players/[id])",
-      "rationale": "Read-only partner profile: name, handicap, rounds played together (roundsPlayed), recent shared rounds. Reuses GET /api/players/{id}. Pushed detail route, not a tab. Optional shared-rounds aggregation backend.",
+      "area": "frontend",
+      "title": "Partner profile detail (/players/view?id=)",
+      "rationale": "Read-only partner profile: name/nickname, handicap, rounds played (roundsPlayed), recent shared rounds. Reuses existing GET /api/players/{id} + getRoundsAsync. Pushed detail route (static-export view+query shell), not a tab. NO friend graph, NO require_owner change.",
+      "spec": "specs/social-partner-profile.md",
       "depends_on": [
         "social-surface-partners"
-      ]
+      ],
+      "done_note": "Built on integration/next (e2d6960 + designer-polish 8153d9f). New read-only partner profile at /players/view?id= (static-export view+query shell mirroring courses/round): kicker 'Partner', serif name/nickname, MiniStat handicap + roundsPlayed, 'rounds together' list (each taps to roundHref). REUSED: owner-scoped getPlayersAsync (list-and-find, offline-resilient) + getRoundsAsync; NO new endpoint, NO storage-api/types change, require_owner untouched. SHARED-ROUNDS WAS FEASIBLE client-side: round Player.id === SavedPlayer.id for roster players (round/new), so getSharedRounds = rounds where a member id matches, date-desc (new pure lib/partner-rounds.ts, NaN-date-hardened). /players rows now tap through (motion.button -> playerHref) with edit preserved (role=button span + stopPropagation) and swipe-to-delete intact. Reviewer SHIP (no blocking issues), QA PASS, designer SHIP after 3 roster NORTHSTAR blockers fixed (row name -> serif, SaaS empty-state card -> quiet serif placeholder + ghost CTA, CSS spinner -> mono 'Loading...' text). Tests: lib/player-url.test.ts + lib/partner-rounds.test.ts. Gates: lint 0, tsc clean, voice 265/265, vitest 434/434, build (out/players/view emitted). FOLLOW-UPS (not built): backend shared-rounds aggregation endpoint; friend graph (social-friend-graph). NOT yet on a TestFlight build / not owner-approved (rides the next noticeable bundle approval; pending on-device verify)."
     },
     {
       "id": "social-invite-surfaces",

@@ -2954,3 +2954,28 @@ Owner reported 2 new bugs (queued, NOT in this build): voice-chat-ordering (HIGH
 — reply renders above the user's line; fix = order by conversation-item sequence) +
 grabber-handle-drag-fix (swiping handle scrolls background). Both on backlog + Notion board.
 Loop continues 30-min cadence; next tick takes voice-chat-ordering.
+
+---
+
+## BUILT on integration/next (pending device-verify) — social-partner-profile — 2026-06-28
+Roadmap feature (epic social-playing-partners, A2; was needs-spec, DRY queue). Wrote spec
+(specs/social-partner-profile.md) + opus plan (specs/social-partner-profile-plan.md), then
+built. NEW read-only partner profile screen at /players/view?id= (static-export view+query
+shell mirroring courses/round; Suspense + useSearchParams). Shows kicker "Partner", serif
+name/nickname, MiniStat handicap + roundsPlayed, and a "rounds together" list (each taps to
+the round). /players roster rows now tap through to the profile (edit + swipe-to-delete
+preserved). Calm not-found/empty/loading states.
+
+REUSED vs BUILT: reused owner-scoped getPlayersAsync (list-and-find, offline-resilient) +
+getRoundsAsync — NO new endpoint, NO storage-api/types change, require_owner untouched, NO
+friend graph. Built new lib/player-url.ts (playerHref) + pure lib/partner-rounds.ts
+(getSharedRounds, NaN-date hardened) + 2 vitest files. SHARED-ROUNDS WAS FEASIBLE
+client-side (round Player.id === SavedPlayer.id for roster players, set in round/new).
+
+Commits: e2d6960 (feature) + 8153d9f (designer polish). Reviewer SHIP, QA PASS, designer
+SHIP after 3 roster NORTHSTAR blockers fixed (row name -> serif; SaaS empty-state card ->
+quiet serif placeholder + ghost CTA; CSS spinner -> mono "Loading..." text). Gates: lint 0,
+tsc clean, voice 265/265, vitest 434/434, build (out/players/view emitted). Pushed to
+integration/next; accumulated on rolling bundle PR #67 (NOT merged, NOT a TestFlight build
+this cycle per task constraints). Classification: NOTICEABLE — rides the next bundle approval.
+Follow-ups (not built): backend shared-rounds aggregation endpoint; friend graph.
