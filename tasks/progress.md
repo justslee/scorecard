@@ -3,6 +3,31 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — air-density altitude→pressure (SILENT — feat/air-density, CLOSE BY-DESIGN)
+
+Investigated the Notion caddie-epic P1 card "air-density altitude→pressure".
+
+### Verdict: Path B — by design, no conversion needed; card can be closed.
+
+**What I found (file:line evidence):**
+- backend/app/services/weather.py:72-79 — The stale TODO was already replaced in commit
+  9770439 with a clear NOTE explaining: Open-Meteo surface_pressure is ALREADY
+  altitude-adjusted station pressure. A separate 12 hPa/100m altitude→pressure term
+  would double-count and overstate the thin-air effect at high-altitude courses.
+  altitude_ft is intentionally not used to re-derive pressure in compute_air_density_factor.
+- backend/tests/test_air_density.py — 5 unit tests added in that same commit document
+  and lock the correct behaviour, including test_pressure_dominates_altitude_param_no_double_count
+  which asserts same pressure + different altitude_ft → same density factor.
+
+**No double-count gap exists.** compute_air_density_factor (weather.py:56) uses
+surface_pressure (altitude-correct). club_selection.py:131-138 applies a SEPARATE
+simple linear altitude correction (2%/1000 ft) via altitude_ft directly — that path
+does not touch air_density_factor, so there is no stacking.
+
+### Gates (all non-DB unit tests)
+- ruff check . — clean
+- pytest tests/ --ignore=tests/integration — 730/730 pass
+
 ## 2026-06-29 — corridor-tighten (NOTICEABLE — feat/corridor-tighten, ready for bundle)
 
 Fixes stray polygons (foreign greens, ponds, tree rows from adjacent holes) still
