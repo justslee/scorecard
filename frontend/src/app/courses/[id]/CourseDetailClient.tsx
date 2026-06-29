@@ -369,40 +369,31 @@ export default function CourseDetailClient() {
           )}
         </div>
 
-        {/* ── Reviews section ── */}
-        <div style={{ padding: "18px 22px 10px" }}>
-          <div
-            style={{
-              fontFamily: T.mono,
-              fontSize: 9.5,
-              letterSpacing: 1.6,
-              color: T.pencil,
-              textTransform: "uppercase",
-              marginBottom: 8,
-            }}
-          >
-            Reviews
-          </div>
-
-          {reviews.length === 0 ? (
+        {/* ── Reviews section — only rendered when there is at least one review ── */}
+        {reviews.length > 0 && (
+          <div style={{ padding: "18px 22px 10px" }}>
             <div
               style={{
-                fontFamily: T.serif,
-                fontStyle: "italic",
-                fontSize: 14,
-                color: T.pencilSoft,
-                letterSpacing: -0.1,
-                paddingTop: 4,
+                fontFamily: T.mono,
+                fontSize: 9.5,
+                letterSpacing: 1.6,
+                color: T.pencil,
+                textTransform: "uppercase",
+                marginBottom: 8,
               }}
             >
-              No reviews yet.
+              Reviews
             </div>
-          ) : (
+
             <div>
               {reviews.map((review, i) => {
                 // Prefer playedAt (YYYY-MM-DD); fall back to createdAt (ISO datetime).
                 const rawDate = review.playedAt ?? review.createdAt;
-                const d = new Date(rawDate);
+                // YYYY-MM-DD parses as UTC midnight and can show the prior day in negative-UTC
+                // timezones; force local-midnight parsing by appending a local time component.
+                const d = /^\d{4}-\d{2}-\d{2}$/.test(rawDate ?? "")
+                  ? new Date(`${rawDate}T00:00:00`)
+                  : new Date(rawDate);
                 const dateLabel = isNaN(d.getTime())
                   ? ""
                   : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -464,8 +455,8 @@ export default function CourseDetailClient() {
                 );
               })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* ── Primary CTA ── */}
         <div style={{ padding: "10px 22px 20px" }}>

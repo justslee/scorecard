@@ -1842,7 +1842,7 @@ function CourseReviews() {
   ) : undefined;
 
   return (
-    <Section kicker="Notes" title="Course reviews" aside={aside}>
+    <Section kicker="Reviews" title="Course reviews" aside={aside}>
       {loading ? (
         // Suppress body during load — avoids empty-state flash.
         <div style={{ minHeight: 40 }} />
@@ -1865,7 +1865,11 @@ function CourseReviews() {
           {reviews.map((review, i) => {
             // Prefer playedAt (YYYY-MM-DD); fall back to createdAt (ISO datetime).
             const rawDate = review.playedAt ?? review.createdAt;
-            const d = new Date(rawDate);
+            // YYYY-MM-DD parses as UTC midnight and can show the prior day in negative-UTC
+            // timezones; force local-midnight parsing by appending a local time component.
+            const d = /^\d{4}-\d{2}-\d{2}$/.test(rawDate ?? "")
+              ? new Date(`${rawDate}T00:00:00`)
+              : new Date(rawDate);
             const dateLabel = isNaN(d.getTime())
               ? ""
               : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -1906,11 +1910,10 @@ function CourseReviews() {
                   {review.body && (
                     <div
                       style={{
-                        fontFamily: T.mono,
-                        fontSize: 7.5,
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 12,
                         color: T.pencilSoft,
-                        letterSpacing: 1,
-                        textTransform: "uppercase",
                         marginTop: 1,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
