@@ -1,18 +1,97 @@
 """OpenStreetMap Overpass API service for golf course features."""
 
-import httpx
+import asyncio
+import logging
 import re
 from typing import Optional
+
+import httpx
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 _USER_AGENT = "Looper/1.0 (golf course mapping)"
+_log = logging.getLogger(__name__)
+
+# HTTP status codes that indicate a transient Overpass failure and warrant one retry.
+# 429 = rate-limited, 5xx = server-side errors (the public endpoint intermittently
+# returns 504 under load — a single retry avoids a confusing "0 holes" ingest).
+_TRANSIENT_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
+# Back-off between the first attempt and the single retry (seconds).
+_RETRY_BACKOFF_S: float = 2.0
 
 # All Overpass requests include a User-Agent; the public endpoint returns 406 without one.
 _OVERPASS_HEADERS = {
     "Content-Type": "application/x-www-form-urlencoded",
     "User-Agent": _USER_AGENT,
 }
+
+
+# ── Overpass HTTP helper (retry + logging) ────────────────────────────────────
+
+async def _post_with_retry(
+    client: httpx.AsyncClient,
+    query: str,
+    log_tag: str = "Overpass",
+) -> Optional[dict]:
+    """POST *query* to the Overpass interpreter with one retry on transient failures.
+
+    Transient failures (HTTP 429 / 5xx, or ``httpx`` timeout / transport errors)
+    are retried once after :data:`_RETRY_BACKOFF_S` seconds.  Non-transient HTTP
+    errors (any 4xx other than 429) are logged and returned immediately as
+    ``None`` without a retry.  A clean 200 response with an empty ``"elements"``
+    list is **never** retried — that is a real "no data" result, not a fault.
+
+    Args:
+        client: An open ``httpx.AsyncClient`` (caller controls timeout).
+        query: Raw Overpass QL query string.
+        log_tag: Label prepended to log messages (use the calling function's name
+            so the source is visible in the log stream).
+
+    Returns:
+        Parsed JSON ``dict`` on success, or ``None`` after a persistent failure.
+        Callers should treat ``None`` as an empty/error result and log or surface
+        accordingly — this function never raises.
+    """
+    for attempt in range(2):
+        try:
+            resp = await client.post(
+                OVERPASS_URL,
+                data={"data": query},
+                headers=_OVERPASS_HEADERS,
+            )
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            _log.warning(
+                "%s request error (attempt %d/2) url=%s exc=%r",
+                log_tag, attempt + 1, OVERPASS_URL, exc,
+            )
+            if attempt == 0:
+                await asyncio.sleep(_RETRY_BACKOFF_S)
+                continue
+            return None
+
+        if resp.is_success:
+            return resp.json()
+
+        body = resp.text[:200].strip()
+        if resp.status_code in _TRANSIENT_STATUS_CODES:
+            _log.warning(
+                "%s transient HTTP %d (attempt %d/2) url=%s body=%r",
+                log_tag, resp.status_code, attempt + 1, OVERPASS_URL, body,
+            )
+            if attempt == 0:
+                await asyncio.sleep(_RETRY_BACKOFF_S)
+                continue
+            return None
+
+        # Non-transient HTTP error (e.g. 400 Bad Request, 406 No User-Agent).
+        _log.warning(
+            "%s non-retryable HTTP %d url=%s body=%r",
+            log_tag, resp.status_code, OVERPASS_URL, body,
+        )
+        return None
+
+    return None  # exhausted both attempts (should be unreachable)
 
 
 # ── Pure geometry parsers (unit-testable, no I/O) ─────────────────────────────
@@ -193,14 +272,9 @@ out center;
 """
 
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(
-            OVERPASS_URL,
-            data={"data": query},
-            headers=_OVERPASS_HEADERS,
-        )
-        if not resp.is_success:
-            return []
-        data = resp.json()
+        data = await _post_with_retry(client, query, log_tag="search_golf_courses")
+    if data is None:
+        return []
 
     results = []
     for el in data.get("elements", []):
@@ -255,14 +329,9 @@ out geom;
 """
 
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            OVERPASS_URL,
-            data={"data": query},
-            headers=_OVERPASS_HEADERS,
-        )
-        if not resp.is_success:
-            return []
-        data = resp.json()
+        data = await _post_with_retry(client, query, log_tag="search_osm_with_geometry")
+    if data is None:
+        return []
 
     results = []
     for el in data.get("elements", []):
@@ -352,14 +421,9 @@ out geom;
 """
 
     async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.post(
-            OVERPASS_URL,
-            data={"data": query},
-            headers=_OVERPASS_HEADERS,
-        )
-        if not resp.is_success:
-            return {"bunkers": [], "water": [], "fairways": [], "greens": [], "pins": []}
-        data = resp.json()
+        data = await _post_with_retry(client, query, log_tag="fetch_course_features")
+    if data is None:
+        return {"bunkers": [], "water": [], "fairways": [], "greens": [], "pins": []}
 
     bunkers = []
     water = []
@@ -471,13 +535,8 @@ out geom;
 """
 
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            OVERPASS_URL,
-            data={"data": query},
-            headers=_OVERPASS_HEADERS,
-        )
-        if not resp.is_success:
-            return _empty
-        data = resp.json()
+        data = await _post_with_retry(client, query, log_tag="fetch_course_geometry")
+    if data is None:
+        return _empty
 
     return _parse_course_geometry_response(data, course_name_filter=course_name)

@@ -1404,7 +1404,7 @@
     {
       "id": "course-map-viewer-entry",
       "priority": 14,
-      "status": "built-integration-next-pending-ship",
+      "status": "done-shipped-main",
       "classification": "noticeable",
       "build": "build(FE)",
       "size": "S",
@@ -1412,7 +1412,43 @@
       "area": "frontend",
       "title": "Reachable entry for the homegrown course-map viewer (Bethpage Black)",
       "rationale": "/map/course was URL-only (no nav) \u2014 unreachable in the iOS app. Added a calm Course maps (beta) entry on /courses -> Bethpage Black -> /map/course?id=2b8caab5... so the owner can tap to see the homegrown hole map.",
-      "shipped": "Built 4ae5fb4 (2026-06-29). Frontend-only; 531 tests green. Needs ship for the owner to view it. Bethpage Black ingested (18 holes, 181 features) on prod."
+      "shipped": "Built 4ae5fb4 (2026-06-29). Frontend-only; 531 tests green. Needs ship for the owner to view it. Bethpage Black ingested (18 holes, 181 features) on prod. | SHIPPED PR #70 -> main fe18b78 (2026-06-29); TestFlight build cut. Bethpage Black viewable via Courses tab -> Course maps (beta)."
+    },
+    {
+      "id": "osm-ingest-hardening",
+      "priority": 18,
+      "status": "done-integration-next",
+      "classification": "silent",
+      "build": "build(BE)",
+      "size": "S",
+      "headless": "yes",
+      "area": "backend",
+      "title": "Harden OSM ingest: log+retry transient Overpass failures, abort-on-empty",
+      "rationale": "The silent return-empty on a flaky Overpass response made the first Bethpage ingest confusingly succeed with 0 holes. _post_with_retry logs failures + retries once on 429/5xx/timeout (not on clean-200/4xx); ingest aborts (exit 1, no upsert) on 0 holes. Makes future course ingests reliable.",
+      "shipped": "Built 23546fd (2026-06-29). All 4 Overpass fetchers + ingest guard; 30 tests, 98 osm/ingest green. Silent backend."
+    },
+    {
+      "id": "hole-diagram-base",
+      "priority": 12,
+      "status": "built-integration-next-pending-device-verify",
+      "classification": "noticeable",
+      "area": "frontend",
+      "title": "Yardage-book hole diagram (base render)",
+      "rationale": "Replaced broken Mapbox satellite /map/course with pure-SVG yardage-book hole diagram (cosLat projection, tee->green rotation, on-paper palette, hole info). Owner-requested significant improvement. Base for tap-measure + GPS.",
+      "shipped": "Built 44de60c (2026-06-29). hole-projection.ts + HoleDiagram.tsx + 30 tests, 561 vitest. Not shipped alone \u2014 ships with the interactive+GPS layer."
+    },
+    {
+      "id": "hole-diagram-interactive-gps",
+      "priority": 11,
+      "status": "built-integration-next-pending-device-verify",
+      "classification": "noticeable",
+      "area": "frontend",
+      "title": "Hole diagram: tap-to-measure (from tee + to pin) + GPS player overlay",
+      "rationale": "Owner: tap a spot -> distance from tee + to pin; GPS should work on the yardage book (plot the player + live distances when on the course, graceful when remote).",
+      "depends_on": [
+        "hole-diagram-base"
+      ],
+      "shipped": "Built 7c2b15f (2026-06-29). Inverse projection (unprojectPoint, round-trip<1e-7); tap-to-measure (from-tee/to-pin); GPS on-hole overlay (you dot + live distances when on-hole, graceful when remote \u2014 fixes 50531). 57 new tests, 580 vitest green."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."

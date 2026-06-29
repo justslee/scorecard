@@ -61,7 +61,11 @@ import sys
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent))
 
 from app.services.osm import fetch_course_geometry  # noqa: E402
-from app.services.osm_ingest import _deterministic_uuid, assemble_osm_course  # noqa: E402
+from app.services.osm_ingest import (  # noqa: E402
+    _deterministic_uuid,
+    _should_abort_empty,
+    assemble_osm_course,
+)
 
 # ── Bethpage Black defaults ────────────────────────────────────────────────────
 
@@ -149,6 +153,19 @@ async def _ingest(
         if len(payload_str) > 2000:
             print("… (truncated)")
         return
+
+    # Guard: refuse to write an empty course to the database.
+    # This prevents a transient Overpass failure from silently overwriting a
+    # previously-ingested good record with a blank one.
+    if _should_abort_empty(n_assembled):
+        print(
+            f"ERROR: assembled 0 holes for target course {target_course_name!r}.  "
+            "The Overpass fetch may have failed or the course-name filter matched "
+            "nothing.  NOT writing to DB — re-run once the endpoint is healthy or "
+            "verify --lat/--lng/--radius/--target-course.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Late import keeps DB engine initialisation out of dry-run paths.
     from app.services.courses_mapped import upsert_course  # noqa: PLC0415

@@ -3,6 +3,137 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (tap-to-measure-gps-hole-diagram — NOTICEABLE — integration/next, commit 7c2b15f)
+Adds tap-to-measure and live GPS overlay to the /map/course yardage-book hole diagram.
+
+### What was done
+1. `frontend/src/lib/course/hole-projection.ts`:
+   - New `ProjectionParams` interface (minLng/Lat, maxLng/Lat, cosLat, angle, cx/cy, scale, offsetX/Y, rxMin, ryMax).
+   - `ProjectedHole` extended with `params`, `teeLatLng`, `greenLatLng`.
+   - `projectHole()` now returns all of the above (backward-compatible additive).
+   - New `projectLatLng(latlng, params) → [x, y]` — forward transform.
+   - New `unprojectPoint(svg, params) → {lat, lng}` — exact inverse (round-trip error < 1e-7°).
+   - New `isOnHoleBbox(pos, params, marginDeg=0.006)` — on-hole guard (~720 yds margin).
+   - New `yardsDistance(a, b) → yards` — haversine distance in yards.
+   - `LAT_M` made module-level constant so all transforms share the same value.
+
+2. `frontend/src/components/course/HoleDiagram.tsx`:
+   - New `gpsPosition?: {lat, lng} | null` prop.
+   - Tap/click on SVG → `unprojectPoint` → `yardsDistance` from tee and to pin → renders
+     a crosshair dot + "Tee 247 · Pin 165" mono label with × dismiss.  Tapping again moves it.
+   - GPS "you" dot (cobalt, with halo) plotted via `projectLatLng` when `isOnHoleBbox` → true.
+     Suppressed when player is remote — no absurd yardages.
+   - "tap to measure" idle hint text when no marker and no GPS on-hole.
+   - SVG uses `createSVGPoint + getScreenCTM` for pixel-perfect coord mapping at any CSS scale.
+
+3. `frontend/src/app/map/course/page.tsx`:
+   - GPS watcher (`GPSWatcher`) started on mount; permission denied → tap-measure still works.
+   - `computeGpsDistances()` runs `projectHole + isOnHoleBbox` on each render (cheap, pure).
+   - Info strip updated: when on-hole → "You to pin: N yds" (accent cobalt); off-hole but
+     GPS available → "Not on this hole — tap to measure" calm hint.
+   - `gpsPosition` passed through to `HoleDiagramAutosize` → `HoleDiagram`.
+
+4. `frontend/src/lib/course/hole-projection.test.ts` (extended, +57 new tests, total 87):
+   - Round-trip: `unprojectPoint(projectLatLng(p)) ≈ p` for tee, green, fairway midpoint,
+     off-centre point — all within 1e-7°.
+   - `projectLatLng` keeps tee centroid within padding bounds.
+   - `teePt` from `projectHole` matches `projectLatLng(teeLatLng)` to 3 decimal places.
+   - `isOnHoleBbox`: on-hole → true; 28-mi-away → false; margin clamping tests.
+   - `yardsDistance`: zero for same point, ~400 yds for fixture, symmetric, integer.
+   - Tap distance: tapping tee SVG → fromTee ≤ 1 yd; tapping green → toPin ≤ 1 yd;
+     fairway midpoint → fromTee + toPin ≈ hole length ± 5 yds.
+
+### Gates
+- `npm run lint`: PASS (0 warnings)
+- `npx tsc --noEmit`: PASS (0 errors)
+- `npx tsx voice-tests/runner.ts --smoke`: PASS (265/265)
+- `npx vitest run`: PASS (580/580, 27 files, +57 new from hole-projection.test.ts)
+- `npm run build`: PASS (clean Turbopack build, 19 pages)
+
+NOTICEABLE — tap any point on the hole diagram to see "Tee 247 · Pin 165" distances; GPS
+dot appears when on the course. Verify on device at /map/course?id=<Bethpage Black UUID>.
+
+## 2026-06-29 (yardage-book-hole-diagram — NOTICEABLE — integration/next)
+Replaces the broken GPSMapView satellite viewer on /map/course with a clean, on-paper,
+top-down yardage-book hole diagram derived from homegrown OSM geometry. No Mapbox, no
+live GPS distances. Tee at bottom, green at top, layered SVG polygons in a restrained
+yardage-book palette.
+
+### What was done
+1. `frontend/src/lib/course/hole-projection.ts` (new, pure module):
+   - `projectHole(features, viewport)`: gathers polygon features, applies cosLat-corrected
+     equirectangular projection to metre space, rotates so tee→green axis is vertical
+     (tee bottom, green top), fits to SVG viewport with padding and aspect-ratio preservation.
+   - `holeLengthYards(features)`: LineString sum first; falls back to tee→green centroid distance.
+   - `describeHazards(features, projected)`: counts bunkers/water; adds left/right qualifier
+     from projected geometry when projected is available.
+   - Exports `ringCentroid` and `rotatePoint` as pure helpers for testing.
+
+2. `frontend/src/lib/course/hole-projection.test.ts` (new, 30 pure tests, headless/Node):
+   - ringCentroid: null for empty, closing-vertex exclusion, correct mean.
+   - rotatePoint: 90°/180°/0°/non-origin center cases.
+   - projectHole: null for empty/LineString-only, valid output, all points in bounds,
+     padding respected, green above tee, diagonal hole still oriented, render order.
+   - holeLengthYards: empty=0, no tee/green=0, centroid fallback ~400 yds, LineString
+     takes priority, multi-segment sum.
+   - describeHazards: no hazards, bunker count, water + side qualifier.
+
+3. `frontend/src/components/course/HoleDiagram.tsx` (new):
+   - Renders projected hole as inline SVG with layers: rough-grass background → fairway
+     (sage green) → water (slate blue) → bunker (parchment/sand) → green (deeper green)
+     → dashed centreline → tee marker (ink+paper) → flag pole+pennant (T.flag coral).
+   - All colours from T.* tokens or close on-paper analogues. No neon.
+   - Empty state for holes with no geometry.
+   - Props: features, width, height, padding, showLabels.
+
+4. `frontend/src/app/map/course/page.tsx` (rewritten):
+   - GPSMapView / mapbox-gl dynamic import removed entirely.
+   - Loads course via fetchMappedCourse, iterates sortedHoles with ◄/► nav.
+   - Header: back arrow + course name (serif).
+   - Main area: HoleDiagramAutosize wrapper (300×400 default, fills available space).
+   - Info strip: hole number (large serif), Par/HCP, yards (giant serif), hazard text.
+   - Nav bar: ◄ Hole N / N/total / Hole N ►.
+   - Paper-color background throughout (T.paper). No GPS distances.
+
+### Gates
+- `cd frontend && npm run lint`: PASS (0 errors, 0 warnings)
+- `cd frontend && npx tsc --noEmit`: PASS
+- `cd frontend && npx tsx voice-tests/runner.ts --smoke`: pass=265 fail=0
+- `cd frontend && npx vitest run`: 561/561 PASS (30 new from hole-projection.test.ts)
+- `cd frontend && npm run build`: PASS (clean Turbopack build)
+
+NOTICEABLE — /map/course now shows a calm yardage-book hole diagram instead of a blank
+satellite map with absurd GPS distances. Verify on device by opening the course-maps
+entry from /courses (Bethpage Black) and stepping through holes with ◄/►.
+
+## 2026-06-29 (osm-ingest-error-hardening — SILENT — integration/next)
+Hardens the OSM/Overpass error handling: flaky public endpoint no longer fails silently,
+and the ingest script refuses to write an empty course.
+
+### What was done
+1. `backend/app/services/osm.py`:
+   - Added `asyncio`, `logging`, `_log`, `_TRANSIENT_STATUS_CODES` (429/5xx), `_RETRY_BACKOFF_S`.
+   - New `_post_with_retry(client, query, log_tag)`: logs WARNING on every failure (status + URL +
+     truncated body); on transient failures (429/5xx, TimeoutException/TransportError) sleeps 2s
+     and retries once; non-transient 4xx returns None immediately; clean 200 never retried.
+   - All four Overpass fetchers now call `_post_with_retry` instead of the old silent failure path.
+
+2. `backend/app/services/osm_ingest.py`:
+   - New pure `_should_abort_empty(n_assembled_holes) -> bool`: True when 0 holes, False otherwise.
+
+3. `backend/scripts/ingest_osm_course.py`:
+   - After assembly, if NOT dry_run and `_should_abort_empty(n_assembled)`: stderr + `sys.exit(1)`
+     WITHOUT calling `upsert_course`. Dry-run path unaffected.
+
+4. `backend/tests/test_osm_fetch_hardening.py` (new, 30 pure tests, no network/DB).
+
+### Gates
+- `cd backend && ruff check .`: PASS
+- `cd backend && uv run pytest tests/ -k "osm or ingest or overpass" -v`: 98/98 PASS (30 new)
+- `cd frontend && npx tsc --noEmit`: PASS
+
+SILENT — backend-only hardening; no user-visible surface change.
+
 ## 2026-06-29 (course-map-entry-point — NOTICEABLE — integration/next)
 Adds a tappable "Course maps (beta)" entry on the /courses page linking to the homegrown
 Bethpage Black hole map at /map/course?id=2b8caab5-2c55-5752-8cda-336c3a396dac.
