@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SavedPlayer } from '@/lib/types';
 
@@ -73,6 +74,7 @@ import {
   deletePlayerAsync,
 } from '@/lib/storage-api';
 import type { PlayerCreate, PlayerUpdate } from '@/lib/api';
+import { playerHref } from '@/lib/player-url';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
 import SwipeableRow from '@/components/SwipeableRow';
 
@@ -89,6 +91,7 @@ interface PlayerFormData {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PlayersPage() {
+  const router = useRouter();
   const [players, setPlayers] = useState<SavedPlayer[]>([]);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -416,8 +419,8 @@ export default function PlayersPage() {
                 >
                   <motion.button
                     whileTap={{ scale: 0.985 }}
-                    onClick={() => openEditPlayer(player)}
-                    aria-label={`Edit ${player.name}`}
+                    onClick={() => router.push(playerHref(player.id))}
+                    aria-label={`View ${player.name}`}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -513,6 +516,38 @@ export default function PlayersPage() {
                         Linked
                       </span>
                     )}
+
+                    {/* Edit control — span (not button) to avoid nested <button> invalid HTML */}
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Edit ${player.name}`}
+                      onClick={(e) => { e.stopPropagation(); openEditPlayer(player); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openEditPlayer(player);
+                        }
+                      }}
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: 1.3,
+                        textTransform: 'uppercase',
+                        color: T.pencilSoft,
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: 44,
+                        minHeight: 44,
+                        paddingLeft: 8,
+                      }}
+                    >
+                      Edit
+                    </span>
                   </motion.button>
                 </SwipeableRow>
               </motion.div>
