@@ -3,6 +3,40 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — tee-time-foundation (NOTICEABLE — feat/teetime-foundation, ready for bundle)
+
+Phase 1 of the tee-time epic: replaced the 100% hardcoded TT_* demo with a real
+provider-backed architecture wired to a mock provider. Flow works end-to-end; flips
+to live providers (Chronogolf/GolfNow) with no UI rework when API creds arrive.
+
+### What was built
+- `frontend/src/lib/teetime/types.ts` — TeeTimeQuery, TeeTimeSlot, BookingDetails, BookingResult
+- `frontend/src/lib/teetime/provider.ts` — TeeTimeProvider interface (searchAvailability + book)
+- `frontend/src/lib/teetime/providers/mock.ts` — cache-first MockTeeTimeProvider (6 courses incl. Bethpage)
+- `frontend/src/lib/teetime/registry.ts` — provider registry; getActiveProvider() → mock by default
+- `frontend/src/lib/teetime/client.ts` — searchTeeTimes / bookTeeTime → backend; frontend-mock fallback
+- `frontend/src/lib/teetime/index.ts` — barrel export
+- `frontend/src/lib/teetime/teetime.test.ts` — 16 unit tests (all passing)
+- `backend/app/services/tee_times/base.py` — abstract TeeTimeProvider base class + shared data models
+- `backend/app/services/tee_times/mock.py` — deterministic, cache-first backend MockTeeTimeProvider
+- `backend/app/routes/tee_times.py` — GET /api/tee-times/search + POST /api/tee-times/book (owner-gated)
+- `backend/app/main.py` — registered tee_times router
+- `frontend/src/app/tee-time/page.tsx` — full rewrite: state-driven from provider (no TT_* constants);
+  searching phase fires real queries + streams live log; confirmed phase shows real slot data;
+  "Add another window" and "Invite" buttons now functional; loading/no-results/failed states added
+
+### Gate results (all green)
+- `npm run lint`: clean
+- `npx tsc --noEmit`: clean
+- `npx vitest run src/lib/teetime/teetime.test.ts`: 16/16 pass
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: success (all routes including /tee-time)
+- `ruff check .`: clean
+
+### How the seam works
+Set TEETIME_PROVIDER=chronogolf (backend env var) when Lightspeed API creds arrive;
+ChronogolfProvider drops in behind the same interface. Zero UI changes required.
+
 ## 2026-06-29 — round-map-inline (NOTICEABLE — feat/round-map-inline, ready for bundle)
 
 Inline yardage-book hole diagram in the active-round view: when playing a course with homegrown
