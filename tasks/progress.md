@@ -32,6 +32,14 @@ Format: date — done / in-progress / blocked.
   out/courses and out/courses/view confirmed in static export.
   NOTICEABLE — new Courses tab + /courses hub + /courses/view detail page on TestFlight.
   GPS and live GolfAPI paths are device-only; pure helpers covered by vitest.
+- **Eng-lead cycle close:** opus Plan (specs/course-detail-start-round-plan.md) → builder →
+  reviewer **SHIP** (no correctness/security/Northstar blockers; nits only) → QA **PASS**
+  (gates re-run independently) → designer **APPROVE-WITH-NITS** (4 fix-before-ship + 2 nits
+  folded into a907aa7). Backlog flipped to built-integration-next-pending-device-verify
+  (8b49a27). Opened rolling bundle **PR #67** (integration/next → main) — first item in a
+  fresh bundle after #66 merged. NOT merged; owner NOT notified this cycle (per task scope —
+  no TestFlight/email/push). The bundle is noticeable and ready for a release cut when the
+  owner loop next runs.
 
 ## 2026-06-28 (voice-double-audio — NOTICEABLE, device-only verify)
 - **Done (built 727c7df on integration/next, pushed; in bundle PR #66):** Fix the caddie
