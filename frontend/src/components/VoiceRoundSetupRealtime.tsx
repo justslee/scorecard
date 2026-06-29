@@ -23,6 +23,7 @@ import {
   type RealtimeStatus,
 } from "@/lib/voice/realtime";
 import { sortByOrder } from "@/lib/voice/realtime-ordering";
+import { shouldDismissSheetDrag, useBodyScrollLock } from "@/lib/sheet";
 
 interface SetRoundSetupArgs {
   courseName?: string;
@@ -82,6 +83,9 @@ export default function VoiceRoundSetupRealtime({
   // Swipe-down-to-dismiss, started ONLY from the grab handle (below) so the
   // conversation list still scrolls normally. Mirrors CaddieSheet.
   const dragControls = useDragControls();
+  // The sheet is mounted only while open, so lock the page behind it for its
+  // whole lifetime — stops a handle swipe from scrolling the background page.
+  useBodyScrollLock(true);
   const clientRef = useRef<RealtimeCaddieClient | null>(null);
   const mountedRef = useRef(true);
   const handledSetupRef = useRef(false);
@@ -191,6 +195,10 @@ export default function VoiceRoundSetupRealtime({
           background: "rgba(26,42,26,0.35)",
           backdropFilter: "blur(4px)",
           zIndex: 50,
+          // Swallow touch-move so the page underneath can't scroll (belt-and-braces
+          // alongside the body lock above).
+          touchAction: "none",
+          overscrollBehavior: "contain",
         }}
       />
       <motion.div
@@ -206,7 +214,7 @@ export default function VoiceRoundSetupRealtime({
         dragConstraints={{ top: 0, bottom: 0 }}
         dragElastic={{ top: 0, bottom: 0.6 }}
         onDragEnd={(_e, info) => {
-          if (info.offset.y > 120 || info.velocity.y > 600) handleClose();
+          if (shouldDismissSheetDrag(info.offset.y, info.velocity.y)) handleClose();
         }}
         style={{
           position: "fixed",

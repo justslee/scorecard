@@ -29,6 +29,7 @@ import { Waveform } from "@/components/yardage/Voice";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { talkToCaddie, fetchRecommendation } from "@/lib/caddie/api";
 import { getGolferProfile } from "@/lib/storage";
+import { shouldDismissSheetDrag, useBodyScrollLock } from "@/lib/sheet";
 import type { CaddieRecommendation, VoiceCaddieMessage } from "@/lib/caddie/types";
 
 // ---------------------------------------------------------------------------
@@ -144,6 +145,9 @@ export default function CaddieSheet({
 }: CaddieSheetProps) {
   // Controls the swipe-down-to-dismiss drag, started from the grab handle only.
   const dragControls = useDragControls();
+  // Lock the page behind the sheet so a swipe on the grab handle can't fall
+  // through to scroll the background (esp. iOS WKWebView rubber-banding).
+  useBodyScrollLock(open);
   const [mode, setMode] = useState<Mode>("voice");
 
   // Voice mode state
@@ -438,6 +442,10 @@ export default function CaddieSheet({
             background: "rgba(26,42,26,0.32)",
             backdropFilter: "blur(3px)",
             zIndex: 50,
+            // Swallow touch-move on the backdrop so the page underneath can't
+            // scroll; the body lock above is the primary guard, this is belt-and-braces.
+            touchAction: "none",
+            overscrollBehavior: "contain",
           }}
         />
       )}
@@ -458,7 +466,7 @@ export default function CaddieSheet({
           dragConstraints={{ top: 0, bottom: 0 }}
           dragElastic={{ top: 0, bottom: 0.6 }}
           onDragEnd={(_e, info) => {
-            if (info.offset.y > 120 || info.velocity.y > 600) onClose();
+            if (shouldDismissSheetDrag(info.offset.y, info.velocity.y)) onClose();
           }}
           style={{
             position: "fixed",
