@@ -2,21 +2,29 @@
  * Course-coordinates PROVIDER
  *
  * Returns GolfAPI-verified per-hole tee + green (center / front / back)
- * coordinates for any course.  Today this returns MOCK data for the two
- * homegrown Bethpage courses; it is trivially swappable to live GolfAPI data
- * with the one-line change noted below.
+ * coordinates for any course.
  *
- * ── LIVE SWAP (one-line change) ───────────────────────────────────────────────
- * When the owner supplies a GolfAPI token:
- *   1. Set `USE_LIVE_GOLFAPI = true` below.
- *   2. Fill in `GOLFAPI_COURSE_ID_MAP` with the real GolfAPI numeric course IDs.
- *   3. Done — no other change needed.  The function falls through to the live
- *      `fetchCourseCoordinates` proxy, which already decodes the poi/location
- *      response via `_normalize_coordinates` in backend/app/routes/golf.py.
- * ─────────────────────────────────────────────────────────────────────────────
+ * ── DATA PATH ─────────────────────────────────────────────────────────────────
+ *
+ *   frontend  →  our backend (GET /api/courses/mapped/{id}/golf-coords)
+ *              →  backend reads from backend/data/golfapi_cache.json (0 GolfAPI calls)
+ *              →  if empty / error: fall through to MOCK data below
+ *
+ * The frontend NEVER calls GolfAPI directly.  All GolfAPI fetching happens
+ * server-side through ``golfapi_cache.get_course_golf_data()`` which enforces:
+ *   • cache-first (0 calls if already stored)
+ *   • 50-call/month budget guard with safety margin
+ *   • batch (1 ``fetch_all`` = course detail + coords)
+ *
+ * ── ACTIVATING LIVE DATA ──────────────────────────────────────────────────────
+ * 1. Owner supplies a GolfAPI token → set ``GOLF_API_KEY`` in the backend env.
+ * 2. For each course, call ``get_course_golf_data(our_id, golfapi_id)`` once
+ *    (e.g. via ``ingest_osm_course.py --golfapi-id <id>``).  Data is cached in
+ *    ``backend/data/golfapi_cache.json`` on the first call.
+ * 3. Done — this provider automatically serves the cached data.
  *
  * ── MOCK DATA PROVENANCE ─────────────────────────────────────────────────────
- * Tee and green-center coordinates are derived from the OSM `golf=hole`
+ * Tee and green-center coordinates are derived from the OSM ``golf=hole``
  * LineString centerlines fetched via Overpass on 2026-06-29:
  *   • First endpoint of each LineString → tee
  *   • Last endpoint                    → green center
@@ -27,19 +35,8 @@
  */
 
 import type { CourseCoordinates } from '@/lib/golf-api';
-import { fetchCourseCoordinates } from '@/lib/golf-api';
+import { API_BASE } from '@/lib/api';
 import { yardsDistance } from './hole-projection';
-
-// ── Live-swap flag ─────────────────────────────────────────────────────────────
-// SWAP TO LIVE: change to `true` and fill in GOLFAPI_COURSE_ID_MAP below.
-const USE_LIVE_GOLFAPI = false;
-
-/** Map from our homegrown UUID → GolfAPI numeric course ID.
- *  Fill in the real IDs when the owner supplies a token. */
-const GOLFAPI_COURSE_ID_MAP: Record<string, number> = {
-  // '2b8caab5-2c55-5752-8cda-336c3a396dac': 0,  // Bethpage Black — fill in real ID
-  // '269e1f2e-65cc-5cf6-a9b0-f5908e298155': 0,  // Bethpage Red   — fill in real ID
-};
 
 // ── Known Bethpage UUIDs ───────────────────────────────────────────────────────
 export const BETHPAGE_BLACK_ID = '2b8caab5-2c55-5752-8cda-336c3a396dac';
@@ -97,30 +94,56 @@ const MOCK_COORDS: Record<string, CourseCoordinates[]> = {
   [BETHPAGE_RED_ID]:   MOCK_RED,
 };
 
+// ── Backend golf-coords response shape ────────────────────────────────────────
+
+interface BackendHoleCoord {
+  hole: number;
+  green: { lat: number; lng: number };
+  tee?: { lat: number; lng: number } | null;
+  front?: { lat: number; lng: number } | null;
+  back?: { lat: number; lng: number } | null;
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────────
 
 /**
  * Return GolfAPI-verified per-hole coordinates for a course.
  *
- * Today this returns mock data derived from OSM centerlines for the two Bethpage
- * courses; all other courses get an empty array (OSM-only fallback).
+ * Tries the backend's cached store first (GET /api/courses/mapped/{id}/golf-coords)
+ * which reads from ``backend/data/golfapi_cache.json`` and makes ZERO GolfAPI API
+ * calls.  Falls through to OSM-derived MOCK data when the backend has no stored
+ * coords for this course yet.
  *
- * SWAP TO LIVE (one-line change):
- *   Set `USE_LIVE_GOLFAPI = true` at the top of this file, fill in
- *   `GOLFAPI_COURSE_ID_MAP`, and this function will call the real GolfAPI proxy
- *   (`fetchCourseCoordinates`) for any course that has a mapped ID.
+ * The frontend NEVER calls GolfAPI directly — all live-data fetching is handled
+ * server-side by ``golfapi_cache.get_course_golf_data()`` within the budget guard.
  */
 export async function getCourseCoordinates(courseId: string): Promise<CourseCoordinates[]> {
-  // ── Live path (disabled until owner supplies token) ────────────────────────
-  if (USE_LIVE_GOLFAPI) {
-    const golfApiId = GOLFAPI_COURSE_ID_MAP[courseId];
-    if (golfApiId) {
-      return fetchCourseCoordinates(golfApiId);
+  if (courseId) {
+    // ── Try our backend (stored GolfAPI coords, 0 API calls) ──────────────────
+    try {
+      const url = `${API_BASE}/api/courses/mapped/${encodeURIComponent(courseId)}/golf-coords`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json() as { holeData?: BackendHoleCoord[] };
+        const holes = data.holeData ?? [];
+        if (holes.length > 0) {
+          return holes
+            .filter((h) => h.green)
+            .map((h) => ({
+              holeNumber: h.hole,
+              green: h.green,
+              tee: h.tee ?? undefined,
+              front: h.front ?? undefined,
+              back: h.back ?? undefined,
+            }));
+        }
+      }
+    } catch {
+      // Backend unavailable or no data — fall through to mock
     }
-    return [];
   }
 
-  // ── Mock path (default) ────────────────────────────────────────────────────
+  // ── Mock fallback (OSM-derived tee/green centerlines) ─────────────────────
   return MOCK_COORDS[courseId] ?? [];
 }
 

@@ -3,6 +3,49 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — golfapi-cache-first (SILENT — feat/golfapi-cache-first, ready for bundle)
+
+GolfAPI cache-first layer: batch+budget-guarded, never re-fetches a course already stored.
+Frontend reads from our backend; never calls GolfAPI directly.
+
+### What was built
+- `backend/app/services/golfapi_cache.py` (NEW):
+  - Injectable abstract `GolfApiClient`/`CacheStore`/`DiscoveryStore`/`BudgetStore`
+  - `FileCacheStore` → `backend/data/golfapi_cache.json` (per-course coords survive restart/re-ingest)
+  - `FileDiscoveryStore` → `backend/data/golfapi_discovery.json` (area/club catalog)
+  - `FileBudgetStore` → `backend/data/golfapi_usage.json` (monthly counter, auto-resets)
+  - `discover_golfapi_clubs(area_key, query)`: 1 `/clubs?name=q` call returns many course IDs
+  - `get_course_golf_data(our_id, golfapi_id)`: 1 `/coordinates/{id}` call per course
+  - Hard-stop at 45/50 calls/month; cache-first means 0 calls on hit
+- `backend/app/routes/courses_mapped.py` (UPDATED): New `GET /{course_id}/golf-coords`
+  endpoint reads from `FileCacheStore` — 0 GolfAPI calls, no DB required
+- `backend/scripts/ingest_osm_course.py` (UPDATED): `--golfapi-id` + `--refresh-golfapi`
+  flags; cache-first GolfAPI call after DB write; re-ingest reuses cache (0 repeat calls)
+- `frontend/src/lib/course/course-coordinates.ts` (UPDATED): `getCourseCoordinates()` now
+  tries backend `/golf-coords` first (our stored data), falls back to mock; NEVER calls
+  GolfAPI directly; `USE_LIVE_GOLFAPI` flag removed
+- `backend/tests/test_golfapi_cache.py` (NEW): 23 tests — cache-hit 0 calls, cache-miss 1 call,
+  second call 0 calls, budget guard, discovery batch (1 call → 5 course IDs), no-token, persist
+- `frontend/src/lib/course/course-coordinates.test.ts` (UPDATED): +6 backend-read tests (mock
+  fetch → backend data used; empty → mock fallback; never calls golfapi.io)
+
+### Gate results (all green)
+- `backend/ruff check .`: clean
+- `backend/pytest` (non-integration): 753/753 pass
+- `frontend/npm run lint`: clean
+- `frontend/npx tsc --noEmit`: clean
+- `frontend/npx vitest run`: 782/782 pass (all 33 test files)
+- `frontend/voice-tests --smoke`: 265/265 pass
+- `frontend/npm run build`: clean
+
+### Classification: SILENT
+No user-visible UI change. Backend infrastructure + budget enforcement. Ships with next bundle.
+Activation: owner provides GOLF_API_KEY + per-course golfapi_id → single ingest call loads data;
+subsequent serve is instant from our cache. Discovery: `discover_golfapi_clubs(area_key, query)`
+enumerates many course IDs in 1 API call, cached indefinitely per area.
+
+---
+
 ## 2026-06-29 — hybrid-golfapi-map (NOTICEABLE — feat/hybrid-golfapi-map, ready for bundle)
 
 Hybrid course map: GolfAPI-verified POINTS anchoring homegrown OSM SHAPES.

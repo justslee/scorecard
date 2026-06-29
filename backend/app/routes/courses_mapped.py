@@ -9,6 +9,9 @@ Response shapes mirror the old Next routes so the UI is unchanged:
   one   -> {"course": CourseData}
   write -> {"course": CourseData}
   del   -> {"ok": true}
+
+Also provides:
+  GET /{course_id}/golf-coords -> {"holeData": [...]}  (stored GolfAPI coords, 0 API calls)
 """
 
 from typing import Any, Optional
@@ -17,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.services import courses_mapped as store
+from app.services.golfapi_cache import FileCacheStore
 
 router = APIRouter(prefix="/api/courses/mapped", tags=["courses-mapped"])
 
@@ -43,8 +47,8 @@ class CourseIn(BaseModel):
     holes: list[HoleIn] = Field(default_factory=list)
 
 
-# NOTE: declare static sub-paths (/nearby) before the dynamic /{course_id} so they
-# are not captured by the path parameter.
+# NOTE: declare static sub-paths (/nearby, /{id}/golf-coords) BEFORE the dynamic
+# /{course_id} route so they are not captured by the path parameter.
 @router.get("")
 async def list_mapped(search: Optional[str] = Query(None)):
     return {"courses": await store.list_courses(search)}
@@ -64,6 +68,22 @@ async def create_mapped(body: CourseIn):
     if not body.id or not body.name:
         raise HTTPException(400, "Missing id or name")
     return {"course": await store.upsert_course(body.model_dump())}
+
+
+@router.get("/{course_id}/golf-coords")
+async def get_golf_coords(course_id: str):
+    """Return stored GolfAPI coordinates for a course — ZERO GolfAPI API calls.
+
+    Reads from ``backend/data/golfapi_cache.json`` (our own storage).  Returns
+    ``{"holeData": [...]}`` with the same shape as the ``/api/golf`` coordinates
+    proxy so the frontend can swap between them transparently.
+
+    Returns an empty ``holeData`` list when the course has not yet been cached
+    (owner has not supplied a GolfAPI token + course ID mapping).
+    """
+    cache = FileCacheStore()
+    coords = cache.get_cached(course_id) or []
+    return {"holeData": coords}
 
 
 @router.get("/{course_id}")

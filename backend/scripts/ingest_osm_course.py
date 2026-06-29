@@ -17,6 +17,14 @@ Pipeline
    Writes the assembled course into the ``courses / tee_sets / holes /
    hole_yardages / hole_features`` tables via PostGIS (requires ASYNC_DATABASE_URL).
 
+4. **GolfAPI cache-first** (optional, I5): if ``--golfapi-id`` is given, calls
+   ``get_course_golf_data(course_id, golfapi_id, force=...)`` AFTER the DB write
+   to populate ``backend/data/golfapi_cache.json``.  By default this is a
+   cache-first call (0 GolfAPI API calls if already cached); pass
+   ``--refresh-golfapi`` to force a re-fetch even when cached.  The JSON cache
+   survives re-ingest — re-running without ``--refresh-golfapi`` never makes a
+   new GolfAPI call for a course already in the cache.
+
 Course identity
 ---------------
 Stored under ``_deterministic_uuid("osm-bethpage-black")`` — a UUID v5-style hash
@@ -48,6 +56,15 @@ Custom centre / target course::
         --lat 40.7445 --lng -73.4609 --radius 2500 \\
         --target-course Black --course-key osm-bethpage-black \\
         --course-name "Bethpage Black"
+
+GolfAPI cache-first (populates backend/data/golfapi_cache.json, reuses cache on re-run)::
+
+    uv run backend/scripts/ingest_osm_course.py \\
+        --golfapi-id 12345 --course-key osm-bethpage-black
+
+Force GolfAPI re-fetch even when already cached::
+
+    uv run backend/scripts/ingest_osm_course.py --golfapi-id 12345 --refresh-golfapi
 """
 
 from __future__ import annotations
@@ -68,6 +85,7 @@ from app.services.osm_ingest import (  # noqa: E402
     embed_elevation_in_green_features,
 )
 from app.services.elevation import sample_course_elevations  # noqa: E402
+from app.services.golfapi_cache import get_course_golf_data  # noqa: E402
 
 # ── Bethpage Black defaults ────────────────────────────────────────────────────
 
@@ -90,6 +108,8 @@ async def _ingest(
     course_name: str,
     address: str | None,
     dry_run: bool,
+    golfapi_id: str,
+    refresh_golfapi: bool,
 ) -> None:
     course_id = _deterministic_uuid(course_key)
     location = {"lat": lat, "lng": lng}
@@ -222,6 +242,35 @@ async def _ingest(
         print("upsert_course returned None — check ASYNC_DATABASE_URL.", file=sys.stderr)
         sys.exit(1)
 
+    # ── GolfAPI cache-first (I5) ─────────────────────────────────────────────────
+    # If a golfapi_id is provided, populate the coordinate cache from GolfAPI.
+    # Cache-first: if already cached and --refresh-golfapi is not set, this makes
+    # ZERO GolfAPI API calls.  The JSON cache in backend/data/golfapi_cache.json
+    # survives re-ingest so re-running never wastes quota on a cached course.
+    if golfapi_id:
+        print(
+            f"GolfAPI cache-first: course_id={course_id} golfapi_id={golfapi_id} "
+            f"force={refresh_golfapi} …",
+            flush=True,
+        )
+        golf_coords = await get_course_golf_data(
+            course_id,
+            golfapi_id,
+            force=refresh_golfapi,
+        )
+        if golf_coords:
+            print(
+                f"GolfAPI coords ready: {len(golf_coords)} hole(s) cached for "
+                f"course={course_id}. Serve via GET /api/courses/mapped/{course_id}/golf-coords",
+                flush=True,
+            )
+        else:
+            print(
+                "GolfAPI coords not available (no token, budget exceeded, or cache hit "
+                "returned empty). Serve will fall back to OSM mock on the frontend.",
+                flush=True,
+            )
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -266,6 +315,23 @@ def main() -> None:
         "--dry-run", action="store_true",
         help="Print the assembled payload without writing to DB",
     )
+    parser.add_argument(
+        "--golfapi-id", dest="golfapi_id",
+        default="",
+        help=(
+            "GolfAPI numeric course ID (e.g. '12345').  When provided, the ingest "
+            "script calls get_course_golf_data() after the DB write to populate "
+            "backend/data/golfapi_cache.json.  Cache-first: no GolfAPI call is made "
+            "if the course is already cached (see --refresh-golfapi)."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-golfapi", dest="refresh_golfapi", action="store_true",
+        help=(
+            "Force a fresh GolfAPI fetch even when coords are already cached. "
+            "Without this flag, re-ingest reuses the cache (0 extra GolfAPI calls)."
+        ),
+    )
 
     args = parser.parse_args()
     asyncio.run(_ingest(
@@ -277,6 +343,8 @@ def main() -> None:
         course_name=args.course_name,
         address=args.address,
         dry_run=args.dry_run,
+        golfapi_id=args.golfapi_id,
+        refresh_golfapi=args.refresh_golfapi,
     ))
 
 

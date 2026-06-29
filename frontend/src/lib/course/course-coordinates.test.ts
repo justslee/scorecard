@@ -7,12 +7,18 @@
  *   3. Each hole entry has the required fields in the right shape.
  *   4. computeFCBDistances() — reasonable values and fallback when front/back absent.
  *   5. F < C < B ordering (front is closer to the tee than back).
+ *   6. Backend-read path: uses backend data when returned; falls back to mock on
+ *      empty response or network failure.
+ *   7. Frontend NEVER calls GolfAPI directly (no requests to golfapi.io).
  *
- * Pure unit tests — no React, no browser, no network.
+ * Pure unit tests — no React, no browser, no live network.
  * Run via `cd frontend && npx vitest run`.
+ *
+ * Note: the existing Bethpage tests pass via the mock-fallback path because fetch
+ * throws (no backend running in the test environment) → catch → MOCK_COORDS.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   getCourseCoordinates,
   computeFCBDistances,
@@ -163,5 +169,123 @@ describe('computeFCBDistances — from a midpoint position', () => {
     expect(fcb.back).toBeGreaterThan(0);
     expect(fcb.front).toBeLessThan(fcb.center);
     expect(fcb.center).toBeLessThan(fcb.back);
+  });
+});
+
+// ── Backend-read path ──────────────────────────────────────────────────────────
+// These tests stub `global.fetch` to simulate backend responses without a real
+// network connection.  afterEach restores the original fetch.
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+/**
+ * Build a fake fetch that returns a 200 JSON response for the golf-coords
+ * endpoint and throws for any other URL (including golfapi.io).
+ */
+function makeFakeFetch(holeData: unknown[]) {
+  return vi.fn((url: string) => {
+    if (typeof url === 'string' && url.includes('/golf-coords')) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ holeData }),
+      } as Response);
+    }
+    // Reject any direct GolfAPI call so tests catch it.
+    return Promise.reject(new Error(`Unexpected fetch to: ${url}`));
+  });
+}
+
+const BACKEND_HOLE_DATA = [
+  {
+    hole: 1,
+    green: { lat: 40.9999, lng: -73.9999 },
+    tee: { lat: 40.9998, lng: -73.9998 },
+    front: { lat: 40.9997, lng: -73.9997 },
+    back: { lat: 41.0000, lng: -74.0000 },
+  },
+  {
+    hole: 2,
+    green: { lat: 41.0001, lng: -74.0001 },
+    tee: null,
+    front: null,
+    back: null,
+  },
+];
+
+describe('getCourseCoordinates — backend-read path', () => {
+  it('uses backend data when the endpoint returns holeData', async () => {
+    vi.stubGlobal('fetch', makeFakeFetch(BACKEND_HOLE_DATA));
+
+    const coords = await getCourseCoordinates(BETHPAGE_BLACK_ID);
+
+    // Backend data has 2 holes at coordinates that differ from the mock
+    expect(coords).toHaveLength(2);
+    expect(coords[0].holeNumber).toBe(1);
+    expect(coords[0].green.lat).toBeCloseTo(40.9999, 4);
+    expect(coords[1].holeNumber).toBe(2);
+  });
+
+  it('maps optional tee/front/back to undefined when null in backend response', async () => {
+    vi.stubGlobal('fetch', makeFakeFetch(BACKEND_HOLE_DATA));
+
+    const coords = await getCourseCoordinates(BETHPAGE_BLACK_ID);
+    const h2 = coords.find((c) => c.holeNumber === 2)!;
+
+    expect(h2.tee).toBeUndefined();
+    expect(h2.front).toBeUndefined();
+    expect(h2.back).toBeUndefined();
+  });
+
+  it('falls back to mock when backend returns empty holeData', async () => {
+    vi.stubGlobal('fetch', makeFakeFetch([]));  // empty list
+
+    const coords = await getCourseCoordinates(BETHPAGE_BLACK_ID);
+
+    // Should fall through to MOCK_BLACK (18 holes)
+    expect(coords).toHaveLength(18);
+    // Verify these are mock coordinates (Bethpage area)
+    expect(coords[0].green.lat).toBeGreaterThan(40.73);
+  });
+
+  it('falls back to mock when backend fetch throws a network error', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('connection refused'))));
+
+    const coords = await getCourseCoordinates(BETHPAGE_BLACK_ID);
+
+    // Should fall through to mock
+    expect(coords).toHaveLength(18);
+  });
+
+  it('falls back to mock when backend returns a non-ok status', async () => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve({ ok: false, status: 404 } as Response)
+    ));
+
+    const coords = await getCourseCoordinates(BETHPAGE_BLACK_ID);
+
+    // Should fall through to mock
+    expect(coords).toHaveLength(18);
+  });
+
+  it('never calls GolfAPI directly (all requests go to our backend)', async () => {
+    // Stub fetch to track all URLs called
+    const calledUrls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      calledUrls.push(url);
+      return Promise.reject(new Error('no network'));  // backend unavailable → mock fallback
+    }));
+
+    await getCourseCoordinates(BETHPAGE_BLACK_ID);
+
+    // Verify no request went to golfapi.io
+    const golfApiCalls = calledUrls.filter((u) => u.includes('golfapi.io'));
+    expect(golfApiCalls).toHaveLength(0);
+
+    // The only fetch attempted should be to our own backend
+    if (calledUrls.length > 0) {
+      expect(calledUrls[0]).toContain('/api/courses/mapped/');
+    }
   });
 });
