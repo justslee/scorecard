@@ -3,6 +3,33 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (round-recap-insights — NOTICEABLE — integration/next)
+History-relative insights in the round-completion recap. After finishing a round, a calm
+"How this round compared" section appears showing delta vs historical average, ranking
+("Best of your last N"), and per-par-type comparison. Only shown when ≥2 valid history
+rounds exist; graceful first-round and thin-history states return no fabricated numbers.
+
+### What was done
+1. `frontend/src/lib/round-insights.ts` (new, pure, no React/API):
+   - `computeRoundInsights(round, history)` — owner-scoped via `getOwnerPlayerId()`; reuses
+     `deriveParTypeAverages()` from profile-stats for historical par-type side; computes
+     `vsAverageToPar` (thisRound, historicalAvg, delta, sampleSize), `parTypeComparison`
+     (delta per par type), and `ranking` (1-indexed, lowest to-par = rank 1).
+   - MIN_PLAYED_HOLES=9, MIN_HISTORY_ROUNDS=2. Current round filtered from history internally.
+2. `frontend/src/lib/round-insights.test.ts` (new, 27 vitest tests, pure/offline):
+   - Graceful states, vsAverageToPar sign/magnitude, ranking (best/middle/worst), par-type
+     comparison (overlap filtering, empty result), owner scoping (ownerPlayerId override), edge cases.
+3. `frontend/src/components/RoundRecap.tsx` — "How this round compared" section:
+   - Async history load via useEffect on open; insights via useMemo; shown only when 'ready'.
+   - Narrative line + mono kicker + ranking line (birdie color when rank 1) + par-type table.
+   - T.* tokens only; calm yardage-book feel; never blocks the Done flow.
+
+### Gates
+- `npm run lint`: PASS · `npx tsc --noEmit`: PASS · voice-tests --smoke: 265/265
+- `npx vitest run`: PASS (531/531, 26 files, +27 new) · `npm run build`: PASS (19 pages)
+
+NOTICEABLE — "How this round compared" appears in the recap after ≥2 tracked rounds.
+
 ## 2026-06-29 (ocr-scorecard-ui — NOTICEABLE — integration/next)
 Camera → review → import UI for the OCR scorecard scan, making the feature end-to-end testable.
 

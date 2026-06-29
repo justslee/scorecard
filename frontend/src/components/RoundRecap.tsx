@@ -19,12 +19,14 @@
  * The review POST never blocks the Done flow.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
 import { Round, calculateTotals } from '@/lib/types';
 import GameResults from '@/components/GameResults';
 import { createCourseReview } from '@/lib/api';
+import { getRoundsAsync } from '@/lib/storage-api';
+import { computeRoundInsights } from '@/lib/round-insights';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -53,6 +55,30 @@ function formatToPar(n: number): string {
   if (n === 0) return 'E';
   if (n > 0) return `+${n}`;
   return String(n); // negative already carries the '-' sign
+}
+
+/** Format a float average-to-par with sign, 1 decimal place. */
+function formatAvgToPar(n: number): string {
+  if (n === 0) return 'E';
+  const rounded = Math.round(n * 10) / 10;
+  const sign = rounded > 0 ? '+' : '';
+  return `${sign}${rounded.toFixed(1)}`;
+}
+
+/**
+ * Format an absolute delta value for the "better / worse than average" narrative.
+ * Strips trailing .0 so "3.0 strokes" becomes "3 strokes".
+ */
+function formatDeltaStr(n: number): string {
+  const abs = Math.abs(Math.round(n * 10) / 10);
+  return abs % 1 === 0 ? String(Math.round(abs)) : abs.toFixed(1);
+}
+
+/** Return an English ordinal string: 1 → "1st", 2 → "2nd", 3 → "3rd", etc. */
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
 function toParColor(n: number): string {
@@ -123,6 +149,33 @@ export default function RoundRecap({
 
   const games = round.games ?? [];
   const hasGames = games.length > 0;
+
+  // ─── Round insights: history-relative comparison ────────────────────────
+  // Loaded async on open; silently absent if history fails to load.
+  const [roundHistory, setRoundHistory] = useState<Round[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    getRoundsAsync()
+      .then((rounds) => {
+        if (!cancelled) {
+          setRoundHistory(rounds);
+          setHistoryReady(true);
+        }
+      })
+      .catch(() => {
+        // Silently ignore — insights section simply won't appear.
+        if (!cancelled) setHistoryReady(true);
+      });
+    return () => { cancelled = true; };
+  }, [open, round.id]);
+
+  const insights = useMemo(
+    () => (historyReady ? computeRoundInsights(round, roundHistory) : null),
+    [round, roundHistory, historyReady]
+  );
 
   // ─── Course review affordance (B2) ───────────────────────────────────────
   // Self-contained state; never blocks the Done flow.
@@ -440,6 +493,119 @@ export default function RoundRecap({
                 </>
               )}
 
+              {/* ── Round insights: how this round compared to history ───────── */}
+              {/* Only shown when state === 'ready' (≥2 valid history rounds). */}
+              {insights && insights.state === 'ready' && insights.vsAverageToPar && (
+                <>
+                  <div style={hairlineRule} />
+                  <div style={sectionLabel}>How this round compared</div>
+
+                  {/* Main narrative: strokes better / worse than average */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div
+                      style={{
+                        fontFamily: T.sans,
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color:
+                          insights.vsAverageToPar.delta < 0
+                            ? T.birdie
+                            : insights.vsAverageToPar.delta === 0
+                            ? T.ink
+                            : T.pencil,
+                        marginBottom: 5,
+                      }}
+                    >
+                      {insights.vsAverageToPar.delta < 0
+                        ? `${formatDeltaStr(insights.vsAverageToPar.delta)} strokes better than your average`
+                        : insights.vsAverageToPar.delta === 0
+                        ? 'Even with your average'
+                        : `${formatDeltaStr(insights.vsAverageToPar.delta)} strokes above your average`}
+                    </div>
+                    {/* Compact kicker: this round / avg / sample */}
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: '0.8px',
+                        color: T.pencilSoft,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {formatToPar(insights.vsAverageToPar.thisRound)} this round
+                      {' · '}avg {formatAvgToPar(insights.vsAverageToPar.historicalAvg)}
+                      {' over '}
+                      {insights.vsAverageToPar.sampleSize} round
+                      {insights.vsAverageToPar.sampleSize !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+
+                  {/* Ranking line — highlighted when it's the best round */}
+                  {insights.ranking && (
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: '1px',
+                        color: insights.ranking.rank === 1 ? T.birdie : T.pencilSoft,
+                        textTransform: 'uppercase',
+                        marginBottom: 16,
+                      }}
+                    >
+                      {insights.ranking.rank === 1
+                        ? `Best round of your last ${insights.ranking.total}`
+                        : `${ordinal(insights.ranking.rank)} best of your last ${insights.ranking.total}`}
+                    </div>
+                  )}
+
+                  {/* Par-type breakdown — quiet table */}
+                  {insights.parTypeComparison && insights.parTypeComparison.length > 0 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 6,
+                        marginBottom: 8,
+                      }}
+                    >
+                      {insights.parTypeComparison.map((pt) => (
+                        <div
+                          key={pt.par}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'baseline',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: '1px',
+                              color: T.pencil,
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            Par {pt.par}s
+                          </span>
+                          <span
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: '0.5px',
+                              color: pt.delta < 0 ? T.birdie : T.pencilSoft,
+                            }}
+                          >
+                            {formatAvgToPar(pt.thisRoundAvgToPar)} · avg{' '}
+                            {formatAvgToPar(pt.historicalAvgToPar)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
               {/* ── Closing caption — just the holes info, course already in header ── */}
               <div
                 style={{
@@ -449,6 +615,7 @@ export default function RoundRecap({
                   fontSize: 13,
                   color: T.pencilSoft,
                   letterSpacing: -0.1,
+                  marginTop: insights && insights.state === 'ready' ? 20 : 0,
                 }}
               >
                 {isPartial ? `Thru ${maxPlayedHoles}` : `${holeCount} holes`}
