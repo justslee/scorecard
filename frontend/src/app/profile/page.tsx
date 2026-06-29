@@ -251,7 +251,7 @@ export default function ProfilePage() {
         color: T.ink,
       }}
     >
-      <div style={{ maxWidth: 420, margin: "0 auto" }}>
+      <div style={{ maxWidth: 420, margin: "0 auto", paddingBottom: "calc(88px + env(safe-area-inset-bottom, 0px))" }}>
         <Masthead
           onBack={() => router.push("/")}
           profile={profile}

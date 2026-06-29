@@ -688,7 +688,7 @@ function PaperShell({ children }: { children: ReactNode }) {
         color: T.ink,
       }}
     >
-      <div style={{ maxWidth: 420, margin: "0 auto" }}>{children}</div>
+      <div style={{ maxWidth: 420, margin: "0 auto", paddingBottom: "calc(88px + env(safe-area-inset-bottom, 0px))" }}>{children}</div>
     </div>
   );
 }

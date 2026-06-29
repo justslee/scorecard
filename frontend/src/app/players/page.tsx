@@ -211,7 +211,7 @@ export default function PlayersPage() {
         backgroundBlendMode: 'multiply',
         fontFamily: T.sans,
         color: T.ink,
-        paddingBottom: 'max(80px, calc(80px + env(safe-area-inset-bottom)))',
+        paddingBottom: 'calc(88px + env(safe-area-inset-bottom, 0px))',
       }}
     >
       {/* ── Header ──────────────────────────────────────────────────────── */}

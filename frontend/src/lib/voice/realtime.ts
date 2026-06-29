@@ -143,11 +143,25 @@ export class RealtimeCaddieClient {
         }
       };
 
-      // Remote audio sink
+      // Remote audio sink — a SINGLE, controlled, in-DOM element.
+      // iOS WKWebView only reliably renders a remote WebRTC track through an
+      // <audio> element that is ATTACHED to the document. A detached autoplay
+      // element (the previous code) can leave the track to also be rendered by
+      // the audio session, producing two slightly-offset copies — the "two
+      // overlapping voices" the owner hears. Keep exactly one hidden, inline,
+      // autoplaying sink, set srcObject once, and remove it on cleanup so a
+      // reconnect (e.g. warm preload) never stacks a second sink.
       this.audioEl = document.createElement('audio');
       this.audioEl.autoplay = true;
+      this.audioEl.setAttribute('playsinline', ''); // inline playback on iOS WKWebView
+      this.audioEl.style.display = 'none';
+      document.body.appendChild(this.audioEl);
       this.pc.ontrack = (e) => {
-        if (this.audioEl) this.audioEl.srcObject = e.streams[0];
+        // Idempotent: only (re)assign if it's a different stream, so a second
+        // ontrack can't introduce another playback of the same audio.
+        if (this.audioEl && this.audioEl.srcObject !== e.streams[0]) {
+          this.audioEl.srcObject = e.streams[0];
+        }
       };
 
       // Mic — echo cancellation is ESSENTIAL: without it the phone speaker's
@@ -251,6 +265,8 @@ export class RealtimeCaddieClient {
     this.localStream?.getTracks().forEach((t) => t.stop());
     if (this.audioEl) {
       try { this.audioEl.srcObject = null; } catch {}
+      // Remove the element from the DOM so reconnects don't stack sinks.
+      try { this.audioEl.remove(); } catch {}
     }
     this.dc = null;
     this.pc = null;
