@@ -1221,7 +1221,7 @@
     {
       "id": "voice-player-disambiguation",
       "priority": 14,
-      "status": "ready",
+      "status": "built-integration-next-pending-device-verify",
       "classification": "noticeable",
       "build": "build(FE-first)",
       "size": "S-M",
@@ -1229,7 +1229,8 @@
       "area": "frontend(+small backend)",
       "title": "Voice player-name disambiguation \u2014 match spoken names to saved partners (Dipak not Deepak)",
       "rationale": "Owner 2026-06-28. PRIMARY (frontend-only, safe): fuzzy/phonetic match the player names from set_round_setup against the saved roster (getPlayers) in handleSetRoundSetup/round-new, mapping each to a SavedPlayer.id so the round links the real partner + profile; unknown -> keep free-text (today). Pure match helper + tests. SECONDARY (only if it does NOT risk the voice mint): inject saved player names into build_setup_instructions (setup_voice.py) to bias transcription. NOT blocked \u2014 roster exists.",
-      "depends_on": []
+      "depends_on": [],
+      "shipped": "Built 84edfad on integration/next (2026-06-28). Fuzzy+phonetic player-name match vs saved roster in voice setup (Dipak->Deepak resolves to saved partner). gates: lint/tsc/vitest475/voice265/build green. Device-verify the voice flow."
     },
     {
       "id": "course-location-disambiguation",
