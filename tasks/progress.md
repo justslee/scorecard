@@ -3,6 +3,54 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — game-formats (NOTICEABLE — feat/game-formats, ready for bundle)
+
+8 previously-unimplemented game formats now show real results instead of the
+"Results for this game format are not implemented yet." fallback card.
+
+### What was built
+- `frontend/src/lib/games.ts`:
+  - 8 new typed result interfaces (ScrambleResults, BingoBangoBongoResults,
+    VegasResults, HammerResults, RabbitResults, TrashResults, ChicagoResults,
+    DefenderResults).
+  - 8 new `compute*` functions implementing standard golf side-game rules.
+  - `GameResults` interface updated (replaces `unknown` stubs for scramble/bingoBangoBongo/vegas,
+    adds hammer/rabbit/trash/chicago/defender).
+  - Dispatcher switch extended with all 8 new cases.
+- `frontend/src/components/GameResults.tsx`:
+  - 8 new render branches, one per format, using existing yardage-book design
+    tokens (T.*), card/subRow patterns, and `<details>` hole-by-hole tables.
+- `frontend/src/lib/types.ts`:
+  - Added `GameSettings` fields: `hammerMultiplierByHole`, `defenderPlayerId`,
+    `chicagoQuotaBase`.
+- `frontend/src/lib/games.test.ts`:
+  - 47 new unit tests (99 total). Worked examples, edge cases, zero-sum checks
+    for all wager formats. Dispatcher test updated to verify new routes.
+
+### Data-capture follow-ups (noted in results, not blocking)
+- bingoBangoBongo: all 3 events need shot-by-shot tracking
+- trash/junk: greenie/sandy/barkie/snake need per-shot events
+- hammer: live throw/accept events need per-hole capture UI
+
+### Settlement follow-up (for feat/game-settlement)
+vegas, hammer, rabbit, and defender all produce zero-sum net totals — should
+be wired into `computeGameNetWinnings` when that branch ships.
+
+### Gate results (all green)
+- `npm run lint`: clean
+- `npx tsc --noEmit`: clean
+- `npx vitest run src/lib/games.test.ts`: 99/99 pass
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: clean
+
+### Classification: NOTICEABLE
+Any player who taps "View Results" on a round containing scramble, vegas,
+hammer, rabbit, trash, chicago, or defender will now see real results. Was
+previously a dead end ("not implemented yet"). bingoBangoBongo shows a clear
+"needs event capture" message instead of the fallback.
+
+---
+
 ## 2026-06-29 — round-map-inline (NOTICEABLE — feat/round-map-inline, ready for bundle)
 
 Inline yardage-book hole diagram in the active-round view: when playing a course with homegrown
