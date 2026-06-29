@@ -3,6 +3,59 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (ocr-scorecard-ui — NOTICEABLE — integration/next)
+Camera → review → import UI for the OCR scorecard scan, making the feature end-to-end testable.
+
+### What was done
+1. `frontend/src/lib/types.ts` — added `ScanHole` + `ScanScorecardResponse` interfaces, mirroring
+   the backend `HoleScores` + `ScanScorecardResponse` Pydantic models exactly.
+
+2. `frontend/src/lib/api.ts` — added `scanScorecard(imageBlob: Blob) → ScanScorecardResponse`.
+   Sends a multipart form POST to the existing `POST /api/scorecard/scan` endpoint (field name
+   `image`). Auth via the existing `getAuthToken()` path. Re-exported `ScanScorecardResponse`.
+
+3. `frontend/src/lib/scan-helpers.ts` (new, pure, no I/O):
+   - `OcrPlayerReview` — per-player review row type (ocrName, 18-slot scores[], mappedPlayerId).
+   - `scanResponseToReviewModel(response, roundPlayers)` — converts hole-centric backend response
+     → per-player review rows; uses `matchPlayerName` from `player-match.ts` for fuzzy + phonetic
+     matching ("Bob"/"Robert", "Dipak"/"Deepak" via Soundex). Unknown names → mappedPlayerId=null.
+   - `buildScoreUpdates(reviewModel)` → `[pid, holeIdx, val][]` — collects confirmed entries for
+     the existing handleSetScore path; skips null/out-of-range cells and unmapped rows.
+   - `dataUrlToBlob(dataUrl)` — converts CameraCapture's base64 data URL → Blob for multipart upload.
+
+4. `frontend/src/lib/scan-helpers.test.ts` (new, 27 vitest tests):
+   - Shape conversion: correct slot indices, exactly 18 slots, null for blank/missing keys.
+   - Player matching: exact, case-insensitive, fuzzy, phonetic (Dipak→Deepak), unrecognised.
+   - buildScoreUpdates: valid entries, skip null/unmapped/out-of-range, multi-player, empty.
+
+5. `frontend/src/components/ScanSheet.tsx` — rewired to use the new endpoint + helpers:
+   - `handleCapture`: `dataUrlToBlob` → `scanScorecard(blob)` → `scanResponseToReviewModel`.
+   - Removed old `parseScorecard` dependency (now calls real OCR endpoint directly).
+   - Fuzzy + phonetic player matching replaces case-insensitive exact find().
+   - Graceful error path unchanged: scan fails → error phase with "Try again" button.
+   - Apply button remains the explicit confirm gate — no silent overwrite ever.
+
+### Entry point
+"Scan card" button in the Scorecard section header on the round screen. Tap → CameraCapture
+→ upload → loading → review grid (editable cells + player dropdowns) → "Apply scores"
+confirm → existing handleSetScore path (optimistic + pending overlay, unchanged).
+
+### Device-only (not unit-tested here)
+- Camera capture (native device API)
+- Live Claude vision accuracy on a real scorecard photo
+- Auth end-to-end (Clerk token + server-side verification)
+
+### Gates
+- `npm run lint`: PASS (0 warnings)
+- `npx tsc --noEmit`: PASS (0 errors)
+- `npx tsx voice-tests/runner.ts --smoke`: PASS (265/265)
+- `npx vitest run`: PASS (504/504, 25 test files, +27 new scan-helpers tests)
+- `npm run build`: PASS (19 static pages)
+- `cd backend && ruff check .`: PASS
+
+NOTICEABLE — the "Scan card" affordance on the round screen is now end-to-end: real OCR
+endpoint, fuzzy player matching, review-before-import, no silent overwrite.
+
 ## 2026-06-29 (scorecard-scan-robustness — SILENT — integration/next, commit 24fcaca)
 Robustness hardening on `POST /api/scorecard/scan` — two reviewer should-fix items.
 No new deps, no endpoint behavior change, no DB.

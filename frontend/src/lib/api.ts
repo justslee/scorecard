@@ -22,6 +22,7 @@ import type {
   GolferProfile,
   CourseReview,
   CourseReviewCreate,
+  ScanScorecardResponse,
 } from './types';
 import { getTokenViaClerk, getAuthDiagnostics } from './auth-token';
 
@@ -39,6 +40,7 @@ export type {
   GolferProfile,
   CourseReview,
   CourseReviewCreate,
+  ScanScorecardResponse,
 };
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -509,4 +511,45 @@ export async function createCourseReview(
  */
 export async function getMyReviews(): Promise<CourseReview[]> {
   return fetchAPI<CourseReview[]>('/api/reviews/mine');
+}
+
+// ================
+// Scorecard OCR scan
+// POST /api/scorecard/scan — multipart image upload → ScanScorecardResponse
+// Auth required (Claude API usage is metered; key is server-side only).
+// ================
+
+/**
+ * Upload a scorecard photo to the OCR endpoint.
+ *
+ * The endpoint accepts a multipart form upload (field name `image`) of a JPEG,
+ * PNG, WEBP, or GIF image up to 10 MB.  Returns structured player names and
+ * per-hole scores; null cells = blank / unreadable on the physical card.
+ *
+ * Use `dataUrlToBlob` (from scan-helpers.ts) to convert the base64 data URL
+ * produced by CameraCapture before calling this function.
+ */
+export async function scanScorecard(imageBlob: Blob): Promise<ScanScorecardResponse> {
+  const token = await getAuthToken();
+
+  const formData = new FormData();
+  // The backend expects field name `image` (matching UploadFile = File(...) param)
+  formData.append('image', imageBlob, 'scorecard.jpg');
+
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  // Do NOT set Content-Type — let fetch set it with the multipart boundary automatically.
+
+  const res = await fetch(`${API_BASE}/api/scorecard/scan`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const error = await res.text();
+    throw new Error(error || `API error: ${res.status}`);
+  }
+
+  return res.json() as Promise<ScanScorecardResponse>;
 }

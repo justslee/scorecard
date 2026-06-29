@@ -244,6 +244,28 @@ export interface CourseReviewCreate {
   playedAt?: string;    // ISO date string
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Scorecard OCR scan — kept in sync with backend/app/routes/scorecard.py
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-hole data returned by POST /api/scorecard/scan.
+ * `par` is null when not printed on the card or unreadable.
+ * `scores` values are null when a cell is blank or unreadable.
+ * The key is the player name exactly as written on the scanned card.
+ */
+export interface ScanHole {
+  number: number;
+  par: number | null;
+  scores: Record<string, number | null>;
+}
+
+/** Full response from POST /api/scorecard/scan. Mirrors backend ScanScorecardResponse. */
+export interface ScanScorecardResponse {
+  players: string[];   // OCR player names, in card order
+  holes: ScanHole[];   // Per-hole data, ordered by hole number
+}
+
 // Helper to create a standard 18-hole course with default pars
 export function createDefaultCourse(name: string): Course {
   const holes: HoleInfo[] = [];
