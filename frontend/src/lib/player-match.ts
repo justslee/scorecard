@@ -65,14 +65,28 @@ const MIN_MATCH = 0.72;
 /**
  * Minimum plain-similarity score required before a phonetic key match is
  * allowed to win. Guards against unrelated names that share a Soundex key.
- * e.g. "Dan" (D500) would not collide with "Dane" (D500) and get a phonetic
- * boost above threshold by accident if their plain similarity is already below
- * this floor — they simply won't match.
  */
 const PHONETIC_SIM_FLOOR = 0.5;
 
 /** Score assigned when the phonetic path wins (sits above MIN_MATCH). */
 const PHONETIC_SCORE = 0.8;
+
+/**
+ * Minimum character length (the shorter of spoken vs candidate) required to
+ * allow the fuzzy similarity path. Below this length, only an exact normalized
+ * match is accepted. Prevents containment boosts like "Dan" -> "Dane" (0.92)
+ * or cross-linking "Dan" -> "Don" via Levenshtein drift.
+ */
+const MIN_LEN_FUZZY = 4;
+
+/**
+ * Minimum character length (the shorter of spoken vs candidate) required to
+ * allow the Soundex phonetic boost. 3-letter names share Soundex codes too
+ * readily (Dan/Don both D500, Tim/Tom both T500, Jon/Jan both J500) so the
+ * phonetic path is only trusted for longer names where the key is a meaningful
+ * discriminator (Dipak/Deepak both D120, Robert/Rupert both R163).
+ */
+const MIN_LEN_PHONETIC = 5;
 
 export type MatchVia = "exact" | "fuzzy" | "phonetic" | "none";
 
@@ -89,11 +103,17 @@ export interface MatchResult {
  * The best score across all (player, candidate) pairs determines the result.
  *
  * Scoring strategy (highest score wins):
- *   1. Exact normalized equality           → 1.0       (via: "exact")
+ *   1. Exact normalized equality           → 1.0       (via: "exact")  [always]
  *   2. `similarity()` from voice/utils     → [0, 1)    (via: "fuzzy")
+ *      [only when min(spoken.len, cand.len) >= MIN_LEN_FUZZY=4]
  *   3. Soundex phonetic key match AND
  *      first normalized letter match AND
  *      plain similarity ≥ PHONETIC_SIM_FLOOR → PHONETIC_SCORE  (via: "phonetic")
+ *      [only when min(spoken.len, cand.len) >= MIN_LEN_PHONETIC=5]
+ *
+ * Length guards prevent false matches for short names (Dan/Don, Tim/Tom,
+ * Dan/Dane) while keeping the phonetic path for longer names (Dipak/Deepak,
+ * Robert/Rupert) where Soundex is a reliable discriminator.
  *
  * Returns `{ player: null, ..., via: "none" }` when:
  *   - roster is empty, or
@@ -126,6 +146,8 @@ export function matchPlayerName(
       if (!normCand) continue;
 
       // 1. Exact normalized match — perfect score, no need to check further.
+      //    This path is always available regardless of name length, so "Bob"→"Bob"
+      //    and short-nickname matches (e.g. "JB"→"JB") still link correctly.
       if (normSpoken === normCand) {
         if (1.0 > bestScore) {
           bestScore = 1.0;
@@ -135,19 +157,31 @@ export function matchPlayerName(
         break; // done with this player's candidates
       }
 
+      // Length of the shorter of the two sides — used to gate fuzzy/phonetic.
+      const minLen = Math.min(normSpoken.length, normCand.length);
+
       // 2. Fuzzy similarity (Levenshtein + containment boost from voice/utils).
-      const sim = similarity(normSpoken, normCand);
-      if (sim > bestScore) {
-        bestScore = sim;
-        bestPlayer = sp;
-        bestVia = "fuzzy";
+      //    Gated on MIN_LEN_FUZZY: for very short names the containment boost
+      //    fires on unrelated names (e.g. "dan".startsWith("dan") ⊂ "dane" → 0.92).
+      //    Short names (< 4 chars) only link via exact equality (path 1 above).
+      let sim = 0;
+      if (minLen >= MIN_LEN_FUZZY) {
+        sim = similarity(normSpoken, normCand);
+        if (sim > bestScore) {
+          bestScore = sim;
+          bestPlayer = sp;
+          bestVia = "fuzzy";
+        }
       }
 
       // 3. Phonetic boost: Soundex keys collide AND first letter matches AND
-      //    plain similarity is already "close" (guards against false collisions
-      //    between short names that happen to share a Soundex bucket).
+      //    plain similarity is already "close" AND name is long enough.
+      //    The MIN_LEN_PHONETIC guard blocks Dan/Don, Tim/Tom, Jon/Jan (all 3
+      //    chars, D500/T500/J500) while allowing Dipak/Deepak (5+6, D120) and
+      //    Robert/Rupert (both 6, R163) where the key is meaningful.
       const sdxCand = soundex(normCand);
       if (
+        minLen >= MIN_LEN_PHONETIC &&
         sdxSpoken === sdxCand &&
         normSpoken[0] === normCand[0] &&
         sim >= PHONETIC_SIM_FLOOR &&

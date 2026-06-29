@@ -131,6 +131,68 @@ describe("matchPlayerName — general", () => {
 });
 
 // ---------------------------------------------------------------------------
+// matchPlayerName — short-name false-positive regression (reviewer-blocking)
+// ---------------------------------------------------------------------------
+// These are the dangerous class: 3-letter names that previously false-matched
+// via Soundex collision (Dan/Don share D500, Tim/Tom share T500, Jon/Jan share
+// J500) or containment boost (Dan ⊂ Dane). All must return player:null so the
+// slot falls back to free-text rather than silently linking the wrong profile.
+
+describe("matchPlayerName — short-name false-positive regression", () => {
+  it("Dan vs Don → null (Soundex D500 collision, both 3 chars)", () => {
+    const r = matchPlayerName("Dan", [sp("x", "Don")]);
+    expect(r.player).toBeNull();
+    expect(r.via).toBe("none");
+  });
+
+  it("Tim vs Tom → null (Soundex T500 collision, both 3 chars)", () => {
+    const r = matchPlayerName("Tim", [sp("x", "Tom")]);
+    expect(r.player).toBeNull();
+    expect(r.via).toBe("none");
+  });
+
+  it("Jon vs Jan → null (Soundex J500 collision, both 3 chars)", () => {
+    const r = matchPlayerName("Jon", [sp("x", "Jan")]);
+    expect(r.player).toBeNull();
+    expect(r.via).toBe("none");
+  });
+
+  it("Dan vs Dane → null (containment boost would give 0.92 without length guard)", () => {
+    const r = matchPlayerName("Dan", [sp("x", "Dane")]);
+    expect(r.player).toBeNull();
+    expect(r.via).toBe("none");
+  });
+
+  // Confirm the GOOD cases still work after the length guards are applied.
+  it("Dipak → Deepak still matches via phonetic (min len 5 >= MIN_LEN_PHONETIC)", () => {
+    const r = matchPlayerName("Dipak", [sp("p1", "Deepak")]);
+    expect(r.player?.id).toBe("p1");
+    expect(r.via).toBe("phonetic");
+    expect(r.score).toBeGreaterThanOrEqual(0.72);
+  });
+
+  it("Robert → Rupert matches via phonetic (min len 6 >= MIN_LEN_PHONETIC)", () => {
+    const r = matchPlayerName("Robert", [sp("p2", "Rupert")]);
+    expect(r.player?.id).toBe("p2");
+    expect(r.via).toBe("phonetic");
+    expect(r.score).toBeGreaterThanOrEqual(0.72);
+  });
+
+  it("exact short-name match: 'Bob' → 'Bob' still links (exact path unaffected)", () => {
+    const r = matchPlayerName("Bob", [sp("p3", "Bob")]);
+    expect(r.player?.id).toBe("p3");
+    expect(r.via).toBe("exact");
+    expect(r.score).toBe(1.0);
+  });
+
+  it("exact 2-letter nickname: 'JB' → 'JB' still links", () => {
+    const r = matchPlayerName("JB", [sp("p4", "Justin", "JB")]);
+    expect(r.player?.id).toBe("p4");
+    expect(r.via).toBe("exact");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // matchPlayerNames — multi-slot deduplication
 // ---------------------------------------------------------------------------
 
