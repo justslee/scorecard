@@ -24,6 +24,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
 import { Round, calculateTotals } from '@/lib/types';
 import GameResults from '@/components/GameResults';
+import SettleUpPanel from '@/components/SettleUpPanel';
 import { createCourseReview } from '@/lib/api';
 import { getRoundsAsync } from '@/lib/storage-api';
 import { computeRoundInsights } from '@/lib/round-insights';
@@ -147,8 +148,14 @@ export default function RoundRecap({
     });
   }, [round.date]);
 
-  const games = round.games ?? [];
+  // Filter out the synthetic 'settlement' game record — it is rendered via
+  // SettleUpPanel below, not via GameResults, to avoid double-rendering.
+  const games = (round.games ?? []).filter((g) => g.format !== 'settlement');
   const hasGames = games.length > 0;
+  // Does this round have any money games (including the settlement record)?
+  const hasMoneyGames = (round.games ?? []).some(
+    (g) => g.format !== 'settlement' && (g.settings?.pointValue ?? 0) > 0
+  );
 
   // ─── Round insights: history-relative comparison ────────────────────────
   // Loaded async on open; silently absent if history fails to load.
@@ -490,6 +497,18 @@ export default function RoundRecap({
                       </div>
                     ))}
                   </div>
+                </>
+              )}
+
+              {/* ── Settle up (money games only) ────────────────────────────── */}
+              {/* Shown when at least one game has a pointValue; hidden otherwise.  */}
+              {hasMoneyGames && (
+                <>
+                  <div style={hairlineRule} />
+                  <SettleUpPanel
+                    round={round}
+                    ownerPlayerId={round.ownerPlayerId}
+                  />
                 </>
               )}
 

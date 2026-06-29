@@ -97,7 +97,14 @@ export type GameFormat =
   | 'rabbit'
   | 'trash'
   | 'chicago'
-  | 'defender';
+  | 'defender'
+  /**
+   * Synthetic format — not a playable game, but the persisted settlement
+   * ledger for a completed round. Stored as a game row so no DB migration
+   * is required. Rendered by SettleUpPanel, filtered out of GameResults /
+   * GameLeaderboards.  settings = { transfers: SettlementTransfer[], finalizedAt: string }.
+   */
+  | 'settlement';
 
 export interface GameTeam {
   id: string;
@@ -106,6 +113,13 @@ export interface GameTeam {
 }
 
 export interface GameSettings {
+  /**
+   * Index signature allows synthetic game formats (e.g. 'settlement') to
+   * store arbitrary JSONB in settings without requiring a DB migration or
+   * a separate table. Well-typed formats use the explicit fields below.
+   */
+  [key: string]: unknown;
+
   // shared
   pointValue?: number;
   handicapped?: boolean;

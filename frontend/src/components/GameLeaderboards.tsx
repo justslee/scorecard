@@ -59,7 +59,8 @@ function CardHeader({ gameName, betAmount, betSuffix }: { gameName: string; betA
 }
 
 export default function GameLeaderboards({ round }: GameLeaderboardsProps) {
-  const games = round.games ?? [];
+  // Filter out the synthetic 'settlement' game (rendered by SettleUpPanel, not here)
+  const games = (round.games ?? []).filter((g) => g.format !== 'settlement');
 
   if (games.length === 0) return null;
 

@@ -3,6 +3,48 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — game-settlement (NOTICEABLE — feat/game-settlement, ready for bundle)
+
+Game settlement / payout finalization: winnings were displayed but never persisted or
+finalized. Now there is a complete "Settle up" flow.
+
+### What shipped
+- `frontend/src/lib/settlement.ts` — pure net-settlement computation + transfer
+  minimization (greedy O(n log n), guarantees ≤ n−1 transfers). Handles skins, wolf,
+  nassau (individual), matchPlay, threePoint. Zero-sum invariant enforced at 2dp.
+- `frontend/src/lib/settlement.test.ts` — 24 unit tests covering all formats, zero-sum
+  invariant, multi-game netting, transfer minimization, and the persisted-settlement reader.
+- `frontend/src/components/SettleUpPanel.tsx` — calm yardage-book settle-up UI (after
+  game results in RoundRecap). Shows perspective-aware transfers ("You pay Sam $12",
+  "Sam pays you $23"), "Mark as settled" button, and a locked read-only finalized state.
+  Returns null silently when the round has no money games.
+- `frontend/src/lib/api.ts` — `finalizeSettlement(roundId, payload)` client function.
+- `backend/app/models.py` — `SettlementTransfer` + `SettlementFinalize` Pydantic models.
+- `backend/app/routes/rounds.py` — `POST /api/rounds/{id}/settlement` endpoint. Stores
+  the client-computed ledger as a synthetic Game row (format='settlement', settings JSONB).
+  Idempotent: calling again overwrites the previous record. NO DB migration needed.
+- `frontend/src/lib/types.ts` — added 'settlement' to `GameFormat` union; added index
+  signature `[key: string]: unknown` to `GameSettings` for flexible synthetic-game storage.
+- `frontend/src/components/GameLeaderboards.tsx` + `RoundRecap.tsx` — filter 'settlement'
+  format games out of display loops (they render via SettleUpPanel only).
+
+### Storage approach
+Settlement is stored as a Game row (format='settlement') in the existing `games` table,
+which already has a flexible JSONB `settings` column. No DB migration needed. The backend
+GameORM.settings accepts arbitrary dicts; the client reads the settlement back via
+`round.games.find(g => g.format === 'settlement')`.
+
+### Gates
+- backend ruff: pass
+- frontend lint: pass
+- frontend tsc: pass
+- vitest (778 tests): pass (33 test files, 24 new settlement tests)
+- voice-tests --smoke: pass=265 fail=0
+- npm run build: pass
+
+### Branch
+feat/game-settlement — DO NOT merge to main (bundle PR only)
+
 ## 2026-06-29 — corridor-tighten (NOTICEABLE — feat/corridor-tighten, ready for bundle)
 
 Fixes stray polygons (foreign greens, ponds, tree rows from adjacent holes) still
