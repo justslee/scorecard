@@ -120,6 +120,7 @@ async def config_status():
         "openai": _present("OPENAI_API_KEY"),
         "anthropic": _present("ANTHROPIC_API_KEY"),
         "mapbox": _present("NEXT_PUBLIC_MAPBOX_TOKEN", "MAPBOX_TOKEN"),
+        "golfapi": _present("GOLF_API_KEY"),
     }
 
 
