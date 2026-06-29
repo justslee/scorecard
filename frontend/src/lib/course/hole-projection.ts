@@ -61,6 +61,13 @@ export interface ProjectedPolygon {
   type: string;
   /** Outer-ring vertices in SVG pixel space, in order, NO closing duplicate. */
   points: [number, number][];
+  /**
+   * True only for synthetic fairway corridors — polygons computed from the
+   * tee→green axis when no OSM fairway polygon exists for the hole.
+   * Callers can use this to apply subtly different rendering (e.g. lower
+   * opacity) without changing the feature type.  Never set for real OSM data.
+   */
+  synthetic?: true;
 }
 
 /**
@@ -431,6 +438,109 @@ export function nearestGreenCentroid(
   return bestCentroid;
 }
 
+// ── Synthetic fairway corridor ─────────────────────────────────────────────────
+
+/**
+ * Synthesize a fairway-corridor capsule (stadium shape) in metre-space from
+ * a tee→green axis.  Called when a hole has no OSM `golf=fairway` polygon.
+ *
+ * Returns a **closed** GeoJSON-style ring of [x, y] metre-space points.
+ * The ring is in the same coordinate system used by `projectHole` internally
+ * (origin at the SW corner of the hole's geographic bbox, x = east, y = north).
+ * Returns null for degenerate holes where tee and green coincide.
+ *
+ * Shape: two straight parallel sides joined by semicircular ends ("stadium"):
+ *   • Tee end — semicircle curves AWAY from green (backward arc).
+ *   • Green end — semicircle curves TOWARD green (forward arc).
+ * Both ends are inset slightly from the centroid markers so the capsule does
+ * not visually overlap the tee box or green circle.
+ *
+ * Design parameters (conservative — synthesised shape must read as a calm
+ * implied corridor, never louder than a real OSM fairway):
+ *   halfWidthM   = 16 m  → 32 m total width (golf fairways ≈ 30–40 m)
+ *   insetTeeM    =  8 m  → clears the tee-box marker (~5–8 m deep)
+ *   insetGreenM  =  5 m  → clears the green polygon edge
+ *
+ * Pure function — no side effects, headless-testable.
+ *
+ * @param teeM        Tee centroid [x, y] in the hole's metre-space.
+ * @param greenM      Green centroid [x, y] in the hole's metre-space.
+ * @param halfWidthM  Half-width of the corridor (metres).  Default 16 → 32 m total.
+ * @param insetTeeM   Metres to inset from the tee centroid.
+ * @param insetGreenM Metres to inset from the green centroid.
+ * @param endPts      Points per semicircular end (higher = smoother).  Default 10.
+ * @returns           Closed ring, or null if the hole is degenerate/too short.
+ */
+export function synthesizeFairwayCorridor(
+  teeM: [number, number],
+  greenM: [number, number],
+  halfWidthM = 16,
+  insetTeeM = 8,
+  insetGreenM = 5,
+  endPts = 10,
+): [number, number][] | null {
+  const [tx, ty] = teeM;
+  const [gx, gy] = greenM;
+  const segLen = Math.hypot(gx - tx, gy - ty);
+
+  // Degenerate hole (tee ≡ green) — skip synthesis.
+  if (segLen < 1) return null;
+
+  // Guard against collapsed capsule when insets exceed the hole length.
+  if (insetTeeM + insetGreenM >= segLen - 1) return null;
+
+  // Unit vectors: along the tee→green axis (ux, uy) and left-perpendicular (px, py).
+  const ux = (gx - tx) / segLen;
+  const uy = (gy - ty) / segLen;
+  const px = -uy;   // left perpendicular when facing green
+  const py =  ux;
+
+  // Capsule axis endpoints (inset from tee / green centroids).
+  const startX = tx + insetTeeM * ux;
+  const startY = ty + insetTeeM * uy;
+  const endX   = gx - insetGreenM * ux;
+  const endY   = gy - insetGreenM * uy;
+
+  const ring: [number, number][] = [];
+
+  // ── Tee-end semicircle ────────────────────────────────────────────────────
+  // Sweeps from +perp (left) to −perp (right) going through the backward
+  // (away-from-green) direction.
+  //   α = 0   → (px, py)     left side of tee end
+  //   α = π/2 → (−ux, −uy)  directly backward (away from green)
+  //   α = π   → (−px, −py)  right side of tee end
+  for (let i = 0; i <= endPts; i++) {
+    const α = Math.PI * (i / endPts);
+    const rx = Math.cos(α) * px - Math.sin(α) * ux;
+    const ry = Math.cos(α) * py - Math.sin(α) * uy;
+    ring.push([startX + halfWidthM * rx, startY + halfWidthM * ry]);
+  }
+
+  // ── Right straight-edge corner at the green end ───────────────────────────
+  // Connects the right side of the tee semicircle to the right side of the
+  // green semicircle (the straight sides are implied by the polygon fill).
+  ring.push([endX - px * halfWidthM, endY - py * halfWidthM]);
+
+  // ── Green-end semicircle ──────────────────────────────────────────────────
+  // Sweeps from −perp (right) to +perp (left) going through the forward
+  // (toward-green) direction.
+  //   α = 0   → (−px, −py)  right side of green end   (already pushed as corner)
+  //   α = π/2 → (ux, uy)    directly forward (toward green)
+  //   α = π   → (px, py)    left side of green end
+  // Start at i = 1 to avoid duplicating the corner just pushed.
+  for (let i = 1; i <= endPts; i++) {
+    const α = Math.PI * (i / endPts);
+    const rx = -Math.cos(α) * px + Math.sin(α) * ux;
+    const ry = -Math.cos(α) * py + Math.sin(α) * uy;
+    ring.push([endX + halfWidthM * rx, endY + halfWidthM * ry]);
+  }
+
+  // Close the ring (GeoJSON convention: first point === last point).
+  ring.push(ring[0]);
+
+  return ring;
+}
+
 // ── Core projection ────────────────────────────────────────────────────────────
 
 /**
@@ -580,14 +690,31 @@ export function projectHole(
   }
 
   // Project all polygon rings (use filteredPolygons to exclude stray features)
-  const mtrPolygons = filteredPolygons.map(({ type, ring }) => ({
-    type,
-    pts: ring.map(toMeters),
-  }));
+  // The `synthetic` flag is undefined for all real OSM features.
+  const mtrPolygons: Array<{ type: string; pts: [number, number][]; synthetic?: true }> =
+    filteredPolygons.map(({ type, ring }) => ({
+      type,
+      pts: ring.map(toMeters),
+    }));
 
   // Project tee and green centroids (needed for orientation)
   const teeM = teeCentroid ? toMeters(teeCentroid) : null;
   const greenM = greenCentroid ? toMeters(greenCentroid) : null;
+
+  // ── Synthesize fairway corridor when no OSM fairway exists ───────────────
+  // This fills in the mown corridor for holes with an OSM data gap (e.g.
+  // Bethpage Black holes 3/7/8/9 have no golf=fairway polygon in OSM).
+  // Only runs when:
+  //   • the hole can be oriented (both tee and green are known), AND
+  //   • no filtered polygon already carries type === 'fairway'.
+  // The resulting polygon is tagged `synthetic: true` for code distinction
+  // but rendered identically to a real fairway (same fill/stroke).
+  if (canOrient && teeM && greenM && !mtrPolygons.some(p => p.type === 'fairway')) {
+    const synthRing = synthesizeFairwayCorridor(teeM, greenM);
+    if (synthRing) {
+      mtrPolygons.push({ type: 'fairway', pts: synthRing, synthetic: true });
+    }
+  }
 
   // ── Compute metre-space bbox to find rotation centre ──────────────────────
   let mxMin = Infinity, mxMax = -Infinity;
@@ -620,9 +747,10 @@ export function projectHole(
   }
 
   // ── Apply rotation around bbox centre ─────────────────────────────────────
-  const rotPolygons = mtrPolygons.map(({ type, pts }) => ({
+  const rotPolygons = mtrPolygons.map(({ type, pts, synthetic }) => ({
     type,
     pts: pts.map(([x, y]) => rotatePoint(x, y, cx, cy, r)),
+    synthetic,
   }));
 
   const teeR = teeM ? rotatePoint(teeM[0], teeM[1], cx, cy, r) : null;
@@ -674,8 +802,9 @@ export function projectHole(
       const bi = RENDER_ORDER.indexOf(b.type);
       return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
     })
-    .map(({ type, pts }) => ({
+    .map(({ type, pts, synthetic }) => ({
       type,
+      ...(synthetic ? { synthetic: true as const } : {}),
       // Remove the closing duplicate vertex if present (GeoJSON rings are closed)
       points: ((): [number, number][] => {
         const svgPts = pts.map(toSVG);

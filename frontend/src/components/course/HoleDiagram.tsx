@@ -572,6 +572,8 @@ export default function HoleDiagram({
       <rect x={0} y={0} width={width} height={height} fill={T.paper} opacity={0.22} />
 
       {/* ── Layers 1–N: Polygon features (sorted back→front: rough→woods→fairway…) */}
+      {/* Synthetic fairway corridors (OSM data-gap fills) render at reduced opacity  */}
+      {/* so they read as a calm implied shape — subtly different from mapped fairways. */}
       <g clipPath="url(#hd-clip)">
         {polygons.map((poly: ProjectedPolygon, i: number) => {
           const stroke = featureStroke(poly.type);
@@ -583,6 +585,7 @@ export default function HoleDiagram({
               stroke={stroke ?? 'none'}
               strokeWidth={stroke ? featureStrokeWidth(poly.type) : 0}
               strokeLinejoin="round"
+              opacity={poly.synthetic ? 0.62 : undefined}
             />
           );
         })}
