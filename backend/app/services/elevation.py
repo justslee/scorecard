@@ -28,8 +28,12 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.db.engine import async_session
-from app.db.models import ElevationCache
+# DB imports are lazy (inside fetch_elevation_cached) so that the pure
+# functions in this module — compute_hole_elevation_profile,
+# sample_course_elevations, fetch_elevation, fetch_3dep_samples — are all
+# importable and usable from scripts that run without DATABASE_URL (e.g. the
+# dry-run path of ingest_osm_course.py).  The cached path still works fine
+# when the DB is available; it just defers the import to first call.
 
 # USGS Elevation Point Query Service (single-point, returns feet)
 USGS_EPQS_URL = "https://epqs.nationalmap.gov/v1/json"
@@ -41,6 +45,13 @@ USGS_3DEP_IMAGESERVER_URL = (
 )
 
 _M_TO_FT: float = 3.28084  # metres → feet (3DEP native unit is metres)
+
+# Golf plays-like rule of thumb: ≈ 1 yard per 3 feet of elevation change.
+# Uphill holes play longer (positive plays_like_yards = add yardage);
+# downhill holes play shorter (negative = subtract yardage).
+# Source: USGA / caddie handbook rule-of-thumb; same as 18Birdies / Arccos
+# default.  Stored as a module constant so tests and callers can reference it.
+PLAYS_LIKE_YARD_PER_FT: float = 1.0 / 3.0
 
 # 5 decimal places ≈ 1.1m at the equator. Plenty for green-slope sampling and
 # stays well under int32. Multiple callers within the same green/tee/fairway
@@ -85,6 +96,11 @@ async def fetch_elevation_cached(lat: float, lng: float) -> Optional[float]:
     Misses are persisted on success so the next caller hits the cache. Failures
     are not cached — we want to retry transient USGS errors.
     """
+    # Lazy DB imports so the pure functions in this module are importable
+    # without DATABASE_URL (e.g. dry-run scripts, unit tests without stubs).
+    from app.db.engine import async_session  # noqa: PLC0415
+    from app.db.models import ElevationCache  # noqa: PLC0415
+
     lat_q, lng_q = _quantize(lat, lng)
 
     async with async_session() as db:
@@ -222,16 +238,103 @@ def compute_hole_elevation_profile(
                 "tee_elevation_ft":   float,   # rounded to 1 dp
                 "green_elevation_ft": float,   # rounded to 1 dp
                 "net_change_ft":      float,   # green − tee, 1 dp; + = uphill
+                "plays_like_yards":   float,   # net_change_ft / 3.0; + = plays longer
                 "green_slope":        dict | None,
             }
+
+        The ``plays_like_yards`` value applies the ``PLAYS_LIKE_YARD_PER_FT``
+        constant: uphill (net_change_ft > 0) → plays longer; downhill → shorter.
     """
     net_change = round(green_elevation_ft - tee_elevation_ft, 1)
+    plays_like = round(net_change * PLAYS_LIKE_YARD_PER_FT, 1)
     return {
         "tee_elevation_ft":   round(tee_elevation_ft, 1),
         "green_elevation_ft": round(green_elevation_ft, 1),
         "net_change_ft":      net_change,
+        "plays_like_yards":   plays_like,
         "green_slope":        green_slope,
     }
+
+
+async def sample_course_elevations(
+    holes: list[dict],
+    target_course_name: str,
+) -> dict[int, dict]:
+    """Sample tee + green elevations for every hole in *target_course_name*.
+
+    Uses :func:`fetch_3dep_samples` for efficiency — all tee and green points
+    are batched into a **single** 3DEP ImageServer HTTP round-trip.  Falls back
+    to per-point EPQS queries (with DB cache) on any 3DEP error.
+
+    Each hole's tee coordinate is the **first** vertex of its GeoJSON LineString
+    and its green is the **last** vertex — the convention used by
+    ``fetch_course_geometry`` / the OSM ingest pipeline.
+
+    Holes where USGS returns ``None`` for either endpoint are **omitted** from
+    the result so callers can treat absent keys as "no elevation data" and degrade
+    gracefully (e.g. show nothing in the UI).
+
+    Constant applied: :data:`PLAYS_LIKE_YARD_PER_FT` (``1/3``) — ≈ 1 yard per
+    3 feet of elevation change (USGA / caddie handbook rule of thumb).
+
+    Args:
+        holes:
+            GeoJSON hole LineString Feature list as returned by
+            ``fetch_course_geometry`` (geometry dict's ``"holes"`` key).
+            Each feature's ``properties.course_name`` and ``properties.ref``
+            fields identify which course and hole number it belongs to.
+        target_course_name:
+            OSM ``golf:course:name`` value to select (case-insensitive),
+            e.g. ``"Black"``.
+
+    Returns:
+        ``dict[hole_number_int → compute_hole_elevation_profile result]`` —
+        only holes where **both** tee and green elevation queries succeeded.
+    """
+    target_lower = target_course_name.lower()
+
+    # Filter and index holes that belong to the target course.
+    target_holes: list[dict] = []
+    for hole in holes:
+        props = hole.get("properties") or {}
+        if (props.get("course_name") or "").lower() != target_lower:
+            continue
+        ref = props.get("ref")
+        if ref is None:
+            continue
+        coords = (hole.get("geometry") or {}).get("coordinates") or []
+        if len(coords) < 2:
+            continue
+        tee_coord   = coords[0]   # [lng, lat]
+        green_coord = coords[-1]  # [lng, lat]
+        target_holes.append({
+            "number":    int(ref),
+            "tee":   (tee_coord[1],   tee_coord[0]),    # (lat, lng)
+            "green": (green_coord[1], green_coord[0]),  # (lat, lng)
+        })
+
+    if not target_holes:
+        return {}
+
+    # Build a flat (lat, lng) list: tee_h1, green_h1, tee_h2, green_h2, …
+    # Interleaved so index arithmetic is simple: tee = i*2, green = i*2+1.
+    points: list[tuple[float, float]] = []
+    for h in target_holes:
+        points.append(h["tee"])
+        points.append(h["green"])
+
+    elevations = await fetch_3dep_samples(points)
+
+    result: dict[int, dict] = {}
+    for i, h in enumerate(target_holes):
+        tee_elev   = elevations[i * 2]
+        green_elev = elevations[i * 2 + 1]
+        if tee_elev is None or green_elev is None:
+            # USGS missed this point — degrade gracefully; skip the hole.
+            continue
+        result[h["number"]] = compute_hole_elevation_profile(tee_elev, green_elev)
+
+    return result
 
 
 async def compute_green_slope(

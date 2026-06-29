@@ -3,6 +3,160 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (hole-elevation — NOTICEABLE — feat/hole-elevation, ready to merge)
+Per-hole elevation + "plays-like" readout on the yardage-book hole diagram (I4).
+
+### What was done
+1. `backend/app/services/elevation.py`:
+   - Added `PLAYS_LIKE_YARD_PER_FT = 1/3` constant (1 yd per 3 ft, USGA rule of thumb).
+   - `compute_hole_elevation_profile` now includes `plays_like_yards` in return dict.
+   - Added `sample_course_elevations(holes, target_course_name)` — async, batches
+     all tee+green points into a single USGS 3DEP ImageServer call.
+   - Made `app.db.engine` import lazy (inside `fetch_elevation_cached`) so pure
+     functions work without DATABASE_URL (dry-run / unit tests).
+
+2. `backend/app/services/osm_ingest.py`:
+   - Added `embed_elevation_in_green_features(course_data)` — injects 4 fields
+     (`tee_elevation_ft`, `green_elevation_ft`, `delta_ft`, `plays_like_yards`) into
+     each hole's green feature properties (shallow-copy to avoid mutating shared fixtures).
+     These persist through `upsert_course` → `hole_features.properties` jsonb without
+     any schema migration.
+
+3. `backend/scripts/ingest_osm_course.py`:
+   - Wired elevation sampling after Overpass fetch, before assembly.
+   - Passes `hole_elevations` to `assemble_osm_course`; calls `embed_elevation_in_green_features`.
+   - Dry-run now prints per-hole tee/green/delta/plays-like table.
+
+4. `backend/tests/test_hole_elevation_ingest.py` (new):
+   - 33 tests: `plays_like_yards` math (uphill/downhill/flat/PLAYS_LIKE_YARD_PER_FT),
+     `embed_elevation_in_green_features` (green-only injection, non-green untouched,
+     None-elevation handling, in-place return, both holes, partial maps).
+
+5. `frontend/src/lib/course/hole-elevation.ts` (new):
+   - `extractHoleElevation(features)` — reads elevation from green feature properties.
+   - `formatPlaysLike(playsLikeYards)` — "plays ~N yds longer ↑" / "shorter ↓" / "flat".
+
+6. `frontend/src/lib/course/hole-elevation.test.ts` (new):
+   - 30 tests: null handling, happy path field extraction, formatPlaysLike rounding.
+
+7. `frontend/src/app/map/course/page.tsx`:
+   - `HoleInfoStrip` now accepts `elevation: HoleElevation | null` prop.
+   - Renders a calm mono readout below yardage (absent when no data).
+
+### Storage proof (no migration)
+`embed_elevation_in_green_features` injects into `feature.properties` dicts.
+`upsert_course` stores those as `hole_features.properties` jsonb (existing column).
+`get_course` reads them back and spreads into each feature's `properties`. Verified
+via dry-run: green feature properties contain all 4 fields in the JSON payload.
+
+### Headless dry-run table (live USGS 3DEP, Bethpage Black)
+All 18 holes returned sane Long Island elevations (86–161 ft). Sample:
+  H1: tee=124.5 ft, green=86.0 ft, delta=-38.5 ft, plays=-12.8 yds (downhill)
+  H16: tee=147.9 ft, green=88.0 ft, delta=-59.9 ft, plays=-20.0 yds (dramatic!)
+
+### Prod re-ingest required
+The frontend readout only shows data AFTER the next production re-ingest of Bethpage Black.
+Run: `uv run backend/scripts/ingest_osm_course.py` (no --dry-run) on the EC2.
+
+### Gates
+- Backend ruff: clean · pytest 720/720 (unit) · dry-run: clean
+- Frontend lint: clean · tsc: clean · vitest 660/660 · voice smoke 265/265 · next build: clean
+
+### Status: DONE — on feat/hole-elevation, pushed, ready for eng-lead to include in bundle
+
+## 2026-06-29 (personal-bests — NOTICEABLE — integration/next, commit 54c476e, PR #72)
+Adds "Personal bests" career milestones section to the profile page.
+
+### What was done
+1. `frontend/src/lib/personal-bests.ts` (new):
+   - `derivePersonalBests(rounds)` — pure derivation over all completed rounds.
+   - Metrics: rounds played, best round (lowest toPar, tie-break newest date),
+     career eagle/birdie/par totals, best hole vs par by type (par-3/4/5),
+     longest consecutive birdie-or-better streak in a single round.
+   - Uses `getOwnerPlayerId()` (respects explicit `ownerPlayerId`).
+   - Rounds with < 9 played holes excluded from round-level metrics; hole-level
+     stats (milestones, best hole, streak) accept all scored holes.
+
+2. `frontend/src/lib/personal-bests.test.ts` (new):
+   - 45 unit tests covering: zero state, single/mixed 9H+18H rounds, incomplete
+     rounds, owner-not-first-player, eagle/birdie/par counts, best-hole tiebreaking,
+     best-round tiebreaking, streak logic, streak resets on null/absent holes,
+     streak resets between rounds, active-round exclusion.
+
+3. `frontend/src/app/profile/page.tsx`:
+   - New `CareerBests` component added after YearLog, before CourseReviews.
+   - Yardage-book aesthetic: Section wrapper, inline styles matching existing pattern,
+     quiet empty state, no new dependencies.
+
+### Gates
+- ESLint: clean · TypeScript: clean · Vitest personal-bests: 45/45
+- Voice smoke: 265/265 · next build: clean
+
+### Status: DONE — in PR #72
+## 2026-06-29 (job-f-spatial-join — SILENT improvement — feat/fuller-course-map, commit 761c9a9)
+Improved fairway attribution from 13/18 to 14/18 Black holes (Job F). Holes 3/7/8/9 are
+verified OSM data gaps (400–700 m from Black centerlines) — no per-hole hardcodes used.
+
+### What was done
+- course_spatial.py: Added _point_in_ring (ray-casting), _linestring_intersection_m (densified
+  polygon-interior scoring), 3-tier assign_features_to_holes (Tier 1 overlap / Tier 2 ring-vertex
+  voting / Tier 3 original centroid-to-line), and _RECLAIM_SAME_AREA_M (200 m) reclaim pass in
+  build_course_feature_collection for multi-course venues (Bethpage 5 courses share one property).
+- test_course_spatial.py: +20 tests (86 total). TestPointInRing, TestLinestringIntersectionM,
+  TestParallelHoleFairwayAttribution, TestMultiCourseReclaim.
+
+### Live Overpass diagnostic (Bethpage Black lat=40.7445, lng=-73.4609)
+Holes missing fairway before: [1,3,7,8,9] (13/18). After: [3,7,8,9] (14/18).
+Holes 3/7/8/9: verified OSM data gaps — Green course h3/h7/h8/h9 are 400–700 m from Black.
+
+### Gates
+ruff: PASS · pytest 697/697 · eslint PASS · tsc PASS · voice-tests 265/265
+
+SILENT — backend-only change; requires prod re-ingest to take effect.
+
+## 2026-06-29 (fuller-course-map — NOTICEABLE — feat/fuller-course-map, commit a5bef42)
+Extends the yardage-book hole diagram with terrain layers (rough, woods, trees), tap-to-measure
+connector lines, iOS safe-area header fix, and responsive ResizeObserver-based diagram sizing.
+
+### What was done
+- Backend `osm.py`: new Overpass queries for golf=rough, natural=wood/scrub, landuse=forest,
+  natural=tree_row, node[natural=tree]; parsed into rough (Polygon), woods (Polygon),
+  trees (Point GeoJSON) buckets.
+- Backend `course_spatial.py`: spatial join extended to handle Point geometry (direct coord
+  extraction) in addition to Polygon (centroid).
+- Backend `osm_ingest.py`: rough/woods/trees added to flat polygon list fed to spatial join.
+- Backend tests: `test_osm_parsing.py` updated key-set test; new `TestTerrainFeatures` class
+  (18 tests). `test_course_spatial.py` new `TestPointGeometrySpatialJoin` class (7 tests).
+- Frontend `hole-projection.ts`: RENDER_ORDER puts rough/woods before fairway; tree Point
+  features projected to SVG coordinates; `trees` field added to `ProjectedHole`.
+- Frontend `HoleDiagram.tsx`: new PAL entries (roughFill, woodsFill, treeGlyph, tapConnector);
+  warm-grass PAL.ground background replaces dot-pattern; tree glyphs as filled circles;
+  tap-to-measure dashed connector lines (tee→tap, tap→green).
+- Frontend `map/course/page.tsx`: safe-area header padding max(14px, env(safe-area-inset-top));
+  ResizeObserver-based HoleDiagramAutosize replacing hardcoded 300×400.
+- Frontend tests: hole-projection.test.ts +18 tests (rough/woods RENDER_ORDER, tree projection).
+
+### Diagnostic (Job B — missing fairways)
+Bethpage fixture has 99 fairway polygons but holes 1,3,7,8,9 lack a fairway after spatial join.
+Verdict: data attribution gap — those fairways exist in OSM but their centroids fall closer to
+an adjacent hole's LineString than the intended one. Not a parsing bug. Re-ingest from live
+Overpass (which may have improved tags) should partially improve this; otherwise a per-hole
+override table is the next step.
+
+### Gates
+- `ruff check .`: PASS (clean)
+- `pytest`: PASS (161/161)
+- `npx vitest run`: PASS (58/58, hole-projection.test.ts)
+- `npm run lint`: PASS
+- `npx tsc --noEmit`: PASS
+- `npx tsx voice-tests/runner.ts --smoke`: PASS (265/265)
+- `npm run build`: PASS (clean)
+
+NOTICEABLE — diagram now shows rough/woods terrain fills, tree glyphs, tap-connector lines,
+fills the screen on any device size, and the back button works on notched iPhones.
+Post-merge: prod needs a re-ingest of Bethpage Black to populate rough/woods/tree data, then
+a new TestFlight build.
+
 ## 2026-06-29 (tap-to-measure-gps-hole-diagram — NOTICEABLE — integration/next, commit 7c2b15f)
 Adds tap-to-measure and live GPS overlay to the /map/course yardage-book hole diagram.
 

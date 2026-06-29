@@ -183,13 +183,18 @@ def assemble_osm_course(
     """
     all_holes: list[dict] = geometry.get("holes", [])
 
-    # Flatten all polygon feature types for the spatial join.
+    # Flatten all polygon + point feature types for the spatial join.
+    # rough/woods are polygon features; trees are Point features (handled by
+    # the updated assign_features_to_holes which accepts Point geometry).
     polygons: list[dict] = (
         geometry.get("greens",   [])
         + geometry.get("fairways", [])
         + geometry.get("tees",     [])
         + geometry.get("bunkers",  [])
         + geometry.get("water",    [])
+        + geometry.get("rough",    [])
+        + geometry.get("woods",    [])
+        + geometry.get("trees",    [])
     )
 
     # I1: spatial join — assigns each polygon to the nearest hole across ALL
@@ -242,3 +247,57 @@ def assemble_osm_course(
         "teeSets":  tee_sets if tee_sets is not None else list(_DEFAULT_TEE_SETS),
         "holes":    hole_dicts,
     }
+
+
+def embed_elevation_in_green_features(course_data: dict) -> None:
+    """Inject per-hole elevation data into each hole's green feature properties (in-place).
+
+    ``assemble_osm_course`` attaches elevation to ``hole_dict["elevation"]`` when
+    ``hole_elevations`` is supplied.  However ``upsert_course`` does **not** persist
+    that top-level hole key — it only stores feature ``properties`` as jsonb.  This
+    function bridges the gap by copying the elevation fields into the **green feature's
+    ``properties``** so they survive the DB round-trip and are returned by
+    ``get_course`` inside the feature's ``properties`` dict.
+
+    Fields written to the green feature's properties::
+
+        tee_elevation_ft   — elevation at the tee in feet
+        green_elevation_ft — elevation at the green centre in feet
+        delta_ft           — net_change_ft alias (positive = uphill, negative = downhill)
+        plays_like_yards   — plays-like yardage adjustment (PLAYS_LIKE_YARD_PER_FT = 1/3)
+
+    Storage guarantee:
+        ``upsert_course`` stores each feature's ``properties`` dict as jsonb in the
+        ``hole_features.properties`` column.  ``get_course`` reads that jsonb and
+        spreads it into the returned feature's ``"properties"`` dict — so these
+        fields round-trip without any schema change or migration.
+
+    Only the **green** feature type receives elevation fields.  Tee, fairway, bunker,
+    water, rough, woods, and tree features are not modified.  Holes without an
+    ``"elevation"`` key (i.e. where USGS returned None for that hole) are skipped.
+
+    Modifies *course_data* in-place; returns ``None``.
+
+    Args:
+        course_data: dict produced by :func:`assemble_osm_course` (after the optional
+            ``hole_elevations`` attachment step).
+    """
+    for hole in course_data.get("holes", []):
+        elev = hole.get("elevation")
+        if not elev:
+            continue
+        fields: dict = {
+            "tee_elevation_ft":   elev["tee_elevation_ft"],
+            "green_elevation_ft": elev["green_elevation_ft"],
+            "delta_ft":           elev["net_change_ft"],   # alias for storage/frontend
+            "plays_like_yards":   elev.get("plays_like_yards", 0.0),
+        }
+        features = (hole.get("features") or {}).get("features") or []
+        for feature in features:
+            props = feature.get("properties") or {}
+            if props.get("featureType") == "green":
+                # Shallow-copy before mutating so module-level test fixtures
+                # (shared dict objects from course_spatial) are not contaminated.
+                props = dict(props)
+                props.update(fields)
+                feature["properties"] = props

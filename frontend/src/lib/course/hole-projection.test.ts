@@ -650,3 +650,158 @@ describe('tap-to-measure distance computation', () => {
     expect(toPin).toBeGreaterThan(50);
   });
 });
+
+// ── RENDER_ORDER: rough + woods at the back ───────────────────────────────────
+
+// A rough ring surrounding the fairway (bigger, encloses it).
+const ROUGH_RING: [number, number][] = [
+  [BASE_LNG - 0.0015, TEE_LAT - 0.0005],
+  [BASE_LNG + 0.0015, TEE_LAT - 0.0005],
+  [BASE_LNG + 0.0015, GREEN_LAT + 0.0005],
+  [BASE_LNG - 0.0015, GREEN_LAT + 0.0005],
+];
+
+// A woods ring to the side.
+const WOODS_RING: [number, number][] = [
+  [BASE_LNG + 0.0015, TEE_LAT],
+  [BASE_LNG + 0.0025, TEE_LAT],
+  [BASE_LNG + 0.0025, GREEN_LAT],
+  [BASE_LNG + 0.0015, GREEN_LAT],
+];
+
+describe('RENDER_ORDER — rough and woods go first', () => {
+  it('rough comes before fairway in the sorted polygon list', () => {
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+      makePolygon('rough',   ROUGH_RING),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    const types = result!.polygons.map((p) => p.type);
+    expect(types.indexOf('rough')).toBeLessThan(types.indexOf('fairway'));
+  });
+
+  it('woods comes before fairway in the sorted polygon list', () => {
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+      makePolygon('woods',   WOODS_RING),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    const types = result!.polygons.map((p) => p.type);
+    expect(types.indexOf('woods')).toBeLessThan(types.indexOf('fairway'));
+  });
+
+  it('rough comes before woods', () => {
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+      makePolygon('rough',   ROUGH_RING),
+      makePolygon('woods',   WOODS_RING),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    const types = result!.polygons.map((p) => p.type);
+    expect(types.indexOf('rough')).toBeLessThan(types.indexOf('woods'));
+  });
+
+  it('rough is the first polygon when it is the outermost layer', () => {
+    const features = [
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+      makePolygon('tee',     TEE_RING),
+      makePolygon('bunker',  BUNKER_RING),
+      makePolygon('rough',   ROUGH_RING),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    expect(result!.polygons[0].type).toBe('rough');
+  });
+});
+
+// ── Tree Point projection ──────────────────────────────────────────────────────
+
+/** Build a minimal GeoJSON Point feature (natural=tree node). */
+function makeTreePoint(
+  lng: number,
+  lat: number
+): GeoJSON.Feature {
+  return {
+    type: 'Feature',
+    properties: { featureType: 'tree' },
+    geometry: { type: 'Point', coordinates: [lng, lat] },
+  };
+}
+
+describe('tree Point projection', () => {
+  it('projectHole returns trees as an empty array when no Point features', () => {
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    expect(result!.trees).toEqual([]);
+  });
+
+  it('projectHole collects and projects tree Point features', () => {
+    const treeLat = (TEE_LAT + GREEN_LAT) / 2;
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+      makeTreePoint(BASE_LNG + 0.001, treeLat),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    expect(result!.trees).toHaveLength(1);
+    // The projected tree point should be within the viewport bounds.
+    const [tx, ty] = result!.trees[0];
+    expect(tx).toBeGreaterThanOrEqual(0);
+    expect(tx).toBeLessThanOrEqual(VIEWPORT.width);
+    expect(ty).toBeGreaterThanOrEqual(0);
+    expect(ty).toBeLessThanOrEqual(VIEWPORT.height);
+  });
+
+  it('projects multiple tree points', () => {
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+      makeTreePoint(BASE_LNG + 0.001, TEE_LAT + 0.001),
+      makeTreePoint(BASE_LNG - 0.001, TEE_LAT + 0.002),
+      makeTreePoint(BASE_LNG + 0.002, GREEN_LAT - 0.001),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    expect(result!.trees).toHaveLength(3);
+  });
+
+  it('polygon count is unaffected by Point features', () => {
+    const features = [
+      makePolygon('tee',     TEE_RING),
+      makePolygon('green',   GREEN_RING),
+      makePolygon('fairway', FAIRWAY_RING),
+      makeTreePoint(BASE_LNG, TEE_LAT + 0.001),
+    ];
+    const result = projectHole(features, VIEWPORT);
+    expect(result).not.toBeNull();
+    // Only 3 polygons — the tree Point is not added to polygons.
+    expect(result!.polygons).toHaveLength(3);
+  });
+
+  it('a feature list with only Point features returns null (no polygons)', () => {
+    const features = [
+      makeTreePoint(BASE_LNG, TEE_LAT),
+      makeTreePoint(BASE_LNG, GREEN_LAT),
+    ];
+    // projectHole needs at least one Polygon to proceed.
+    expect(projectHole(features, VIEWPORT)).toBeNull();
+  });
+});

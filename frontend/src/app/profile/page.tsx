@@ -10,6 +10,7 @@ import type { GolferProfile, Round, CourseReview } from "@/lib/types";
 import { getMyReviews } from "@/lib/api";
 import { deriveParTypeAverages, deriveScoreDistribution, deriveTrend } from "@/lib/profile-stats";
 import type { ParTypeRow, ScoreDistRow, TrendResult } from "@/lib/profile-stats";
+import { derivePersonalBests } from "@/lib/personal-bests";
 
 // ── Bag club config — ordered for display (matches GolferProfile.clubDistances keys)
 // The caddie (CaddiePanel) normalises these same camelCase keys to short keys
@@ -284,6 +285,7 @@ export default function ProfilePage() {
         <ParBreakdown rounds={rounds} loading={loading} />
         <ScoreDistribution rounds={rounds} loading={loading} />
         <YearLog accent={accent} rounds={rounds} loading={loading} />
+        <CareerBests rounds={rounds} loading={loading} />
         <CourseReviews />
         {/* Shot analytics — single calm placeholder replacing two stacked ones */}
         <ShotAnalytics />
@@ -1954,6 +1956,378 @@ function CourseReviews() {
               </div>
             );
           })}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Career Bests — personal milestones across all completed rounds.
+// Distinct from the averages/distribution sections: these are career
+// records, not averages. Derives data from the same rounds[] prop via
+// derivePersonalBests() (personal-bests.ts).
+// ──────────────────────────────────────────────────────────────────────
+
+/** Format YYYY-MM-DD (or ISO datetime) as "Jun 1" local-safe */
+function _pbFormatDate(dateStr: string): string {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
+    ? new Date(`${dateStr}T00:00:00`)
+    : new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** Hole-score label relative to par */
+function _pbDeltaLabel(delta: number): string {
+  if (delta <= -2) return "Eagle or better";
+  if (delta === -1) return "Birdie";
+  if (delta === 0) return "Par";
+  if (delta === 1) return "Bogey";
+  if (delta === 2) return "Double";
+  return `+${delta}`;
+}
+
+/** Ink colour for a score relative to par */
+function _pbDeltaColor(delta: number): string {
+  if (delta <= -2) return T.eagle;
+  if (delta === -1) return T.birdie;
+  if (delta === 0) return T.pencil;
+  return T.pencilSoft;
+}
+
+type ParBestKey = "par3" | "par4" | "par5";
+const PAR_BEST_ROWS: { key: ParBestKey; label: string }[] = [
+  { key: "par3", label: "Par 3" },
+  { key: "par4", label: "Par 4" },
+  { key: "par5", label: "Par 5" },
+];
+
+function CareerBests({ rounds, loading }: { rounds: Round[]; loading: boolean }) {
+  const bests = useMemo(() => derivePersonalBests(rounds), [rounds]);
+  const isEmpty = bests.roundsPlayed === 0 && bests.milestones.eagles === 0 &&
+    bests.milestones.birdies === 0 && bests.milestones.pars === 0;
+
+  const hasBestHole =
+    bests.bestHoleByPar.par3 !== null ||
+    bests.bestHoleByPar.par4 !== null ||
+    bests.bestHoleByPar.par5 !== null;
+
+  return (
+    <Section kicker="Career" title="Personal bests">
+      {loading ? (
+        // Suppress body during load — avoids empty-state flash.
+        <div style={{ minHeight: 40 }} />
+      ) : isEmpty ? (
+        <div
+          style={{
+            padding: "14px 0 6px",
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 14,
+            color: T.pencilSoft,
+            letterSpacing: -0.1,
+            lineHeight: 1.5,
+          }}
+        >
+          Play a few rounds to unlock your career bests.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+
+          {/* ── Rounds played ─────────────────────────────────── */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              alignItems: "center",
+              minHeight: 44,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 14,
+                color: T.ink,
+                letterSpacing: -0.1,
+              }}
+            >
+              Rounds played
+            </div>
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 18,
+                color: T.ink,
+                fontVariantNumeric: "tabular-nums",
+                fontWeight: 600,
+                letterSpacing: -0.3,
+              }}
+            >
+              {bests.roundsPlayed}
+            </div>
+          </div>
+
+          {/* ── Best round ────────────────────────────────────── */}
+          {bests.bestRound && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                alignItems: "center",
+                padding: "9px 0",
+                borderTop: `1px dashed ${T.hairlineSoft}`,
+                gap: 10,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontFamily: T.serif,
+                    fontStyle: "italic",
+                    fontSize: 14,
+                    color: T.ink,
+                    letterSpacing: -0.1,
+                  }}
+                >
+                  Best round
+                </div>
+                <div
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 8,
+                    letterSpacing: 1,
+                    color: T.pencilSoft,
+                    textTransform: "uppercase",
+                    marginTop: 2,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {bests.bestRound.courseName}
+                  {" · "}
+                  {_pbFormatDate(bests.bestRound.date)}
+                  {" · "}
+                  {bests.bestRound.holeCount}H
+                </div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div
+                  style={{
+                    fontFamily: T.serif,
+                    fontSize: 22,
+                    color: T.ink,
+                    letterSpacing: -0.5,
+                    fontVariantNumeric: "tabular-nums",
+                    lineHeight: 1,
+                  }}
+                >
+                  {bests.bestRound.totalStrokes}
+                </div>
+                <div
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 8.5,
+                    letterSpacing: 1.1,
+                    color: T.pencilSoft,
+                    marginTop: 1,
+                  }}
+                >
+                  {bests.bestRound.toPar === 0
+                    ? "E"
+                    : bests.bestRound.toPar > 0
+                    ? `+${bests.bestRound.toPar}`
+                    : `${bests.bestRound.toPar}`}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Milestone counts: Eagles / Birdies / Pars ──────── */}
+          <div
+            style={{
+              borderTop: `1px dashed ${T.hairline}`,
+              marginTop: 4,
+              paddingTop: 12,
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 6,
+            }}
+          >
+            {(
+              [
+                { label: "Eagles", value: bests.milestones.eagles },
+                { label: "Birdies", value: bests.milestones.birdies },
+                { label: "Pars", value: bests.milestones.pars },
+              ] as { label: string; value: number }[]
+            ).map(({ label, value }) => (
+              <div key={label} style={{ textAlign: "center" }}>
+                <div
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 20,
+                    color: T.ink,
+                    fontVariantNumeric: "tabular-nums",
+                    fontWeight: 600,
+                    letterSpacing: -0.5,
+                    lineHeight: 1,
+                  }}
+                >
+                  {value}
+                </div>
+                <div
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 7.5,
+                    letterSpacing: 1.3,
+                    color: T.pencilSoft,
+                    textTransform: "uppercase",
+                    fontWeight: 500,
+                    marginTop: 4,
+                  }}
+                >
+                  {label}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Best hole by par type ──────────────────────────── */}
+          {hasBestHole && (
+            <div
+              style={{
+                borderTop: `1px dashed ${T.hairline}`,
+                marginTop: 12,
+                paddingTop: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 8.5,
+                  letterSpacing: 1.3,
+                  color: T.pencilSoft,
+                  textTransform: "uppercase",
+                  fontWeight: 500,
+                  marginBottom: 4,
+                }}
+              >
+                Best hole vs par
+              </div>
+              {PAR_BEST_ROWS.map(({ key, label }, i) => {
+                const hole = bests.bestHoleByPar[key];
+                if (!hole) return null;
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "52px 1fr auto",
+                      gap: 8,
+                      alignItems: "center",
+                      minHeight: 36,
+                      borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
+                    }}
+                  >
+                    {/* Par label */}
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: 1.3,
+                        color: T.pencil,
+                        textTransform: "uppercase",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {label}
+                    </div>
+                    {/* Score name (Birdie, Eagle …) */}
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 13,
+                        color: _pbDeltaColor(hole.delta),
+                        letterSpacing: -0.1,
+                      }}
+                    >
+                      {_pbDeltaLabel(hole.delta)}
+                    </div>
+                    {/* Raw strokes */}
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 13,
+                        color: _pbDeltaColor(hole.delta),
+                        fontVariantNumeric: "tabular-nums",
+                        letterSpacing: 0.3,
+                        fontWeight: 600,
+                        textAlign: "right",
+                      }}
+                    >
+                      {hole.strokes}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Longest birdie run (only shown when ≥2) ─────────── */}
+          {bests.longestBirdieStreak >= 2 && (
+            <div
+              style={{
+                borderTop: `1px dashed ${T.hairline}`,
+                marginTop: 12,
+                paddingTop: 10,
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontStyle: "italic",
+                  fontSize: 13,
+                  color: T.pencil,
+                  letterSpacing: -0.1,
+                }}
+              >
+                Longest birdie run
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <span
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 16,
+                    color: T.ink,
+                    fontVariantNumeric: "tabular-nums",
+                    letterSpacing: 0.3,
+                    fontWeight: 600,
+                  }}
+                >
+                  {bests.longestBirdieStreak}
+                </span>
+                <span
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 8,
+                    color: T.pencilSoft,
+                    letterSpacing: 1,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  in a row
+                </span>
+              </div>
+            </div>
+          )}
+
         </div>
       )}
     </Section>

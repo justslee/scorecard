@@ -109,6 +109,117 @@ def _point_to_segment_dist_m(
     return math.hypot(px_m - cx_m, py_m - cy_m)
 
 
+# ── Polygon interior tests ────────────────────────────────────────────────────
+
+
+def _ring_bbox(ring: list[list[float]]) -> tuple[float, float, float, float]:
+    """Return (min_lon, min_lat, max_lon, max_lat) bounding box of a GeoJSON ring."""
+    lons = [c[0] for c in ring]
+    lats = [c[1] for c in ring]
+    return min(lons), min(lats), max(lons), max(lats)
+
+
+def _point_in_ring(
+    lon: float,
+    lat: float,
+    ring: list[list[float]],
+    cos_lat: float,
+    bbox: tuple[float, float, float, float] | None = None,
+) -> bool:
+    """Ray-casting point-in-polygon test in equirectangular metre space.
+
+    Projects both the query point and every ring vertex into metres using the
+    supplied ``cos_lat`` so that the ray-casting arithmetic is scale-correct
+    (avoids the longitude-compression artefact that raw degrees would introduce
+    for near-horizontal edges at high latitudes).
+
+    Args:
+        lon, lat:  Query point in decimal degrees.
+        ring:      GeoJSON outer ring — list of ``[lon, lat]`` pairs.
+        cos_lat:   ``cos(mean_latitude)`` for the polygon, used for projection.
+        bbox:      Optional pre-computed bounding box for fast rejection.
+
+    Returns:
+        ``True`` if the point is strictly inside the ring.
+    """
+    # Fast bbox rejection.
+    if bbox is not None:
+        min_lon, min_lat, max_lon, max_lat = bbox
+        if not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat):
+            return False
+
+    m_per_lon = _LAT_M_PER_DEG * cos_lat
+    px = lon * m_per_lon
+    py = lat * _LAT_M_PER_DEG
+
+    # Exclude the closing duplicate vertex.
+    verts = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+    n = len(verts)
+    if n < 3:
+        return False
+
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi = verts[i][0] * m_per_lon
+        yi = verts[i][1] * _LAT_M_PER_DEG
+        xj = verts[j][0] * m_per_lon
+        yj = verts[j][1] * _LAT_M_PER_DEG
+        # Standard ray-casting crossing test.
+        if (yi > py) != (yj > py):
+            x_intersect = (xj - xi) * (py - yi) / (yj - yi) + xi
+            if px < x_intersect:
+                inside = not inside
+        j = i
+    return inside
+
+
+def _linestring_intersection_m(
+    ls_coords: list[list[float]],
+    ring: list[list[float]],
+    cos_lat: float,
+    bbox: tuple[float, float, float, float] | None = None,
+    step_m: float = 15.0,
+) -> float:
+    """Approximate length (metres) of *ls_coords* that passes inside *ring*.
+
+    Densifies the LineString to ~``step_m`` intervals, tests each sample point
+    with :func:`_point_in_ring`, and sums the sub-segment lengths of samples
+    that fall inside.  This is the primary signal for the improved spatial join:
+    a fairway's own hole line runs longitudinally through it; a neighbour's line
+    at best clips a corner, giving a much smaller (usually zero) score.
+
+    Args:
+        ls_coords: LineString coordinates — list of ``[lon, lat]`` pairs.
+        ring:      GeoJSON outer ring of the polygon.
+        cos_lat:   Cosine of mean polygon latitude for projection.
+        bbox:      Pre-computed ring bounding box for fast inner rejection.
+        step_m:    Sampling interval in metres (default 15 m).
+
+    Returns:
+        Approximate intersection length in metres (≥ 0).
+    """
+    if not ls_coords or len(ls_coords) < 2 or not ring:
+        return 0.0
+
+    total = 0.0
+    for i in range(len(ls_coords) - 1):
+        ax, ay = ls_coords[i][0], ls_coords[i][1]
+        bx, by = ls_coords[i + 1][0], ls_coords[i + 1][1]
+        seg_len = _deg_to_m(ay, ax, by, bx)
+        if seg_len == 0.0:
+            continue
+        n_steps = max(1, int(math.ceil(seg_len / step_m)))
+        chunk = seg_len / n_steps
+        for k in range(n_steps + 1):
+            t = k / n_steps
+            slon = ax + t * (bx - ax)
+            slat = ay + t * (by - ay)
+            if _point_in_ring(slon, slat, ring, cos_lat, bbox):
+                total += chunk
+    return total
+
+
 # ── Polygon centroid ──────────────────────────────────────────────────────────
 
 
@@ -228,14 +339,115 @@ def assign_features_to_holes(
         osm_id: str = props.get("osm_id", "")
         feature_type: str = props.get("featureType", "")
         geom = poly.get("geometry") or {}
-        rings = geom.get("coordinates") or []
+        geom_type: str = geom.get("type", "")
+        coords_raw = geom.get("coordinates") or []
 
-        if not rings or not rings[0]:
+        # ── Extract centroid and outer ring ───────────────────────────────────
+
+        outer_ring: Optional[list[list[float]]] = None
+
+        if geom_type == "Point":
+            # Individual tree/pin nodes — use coordinates directly as centroid.
+            if len(coords_raw) < 2:
+                assignments[osm_id] = (None, None, float("inf"))
+                continue
+            clon, clat = float(coords_raw[0]), float(coords_raw[1])
+        elif geom_type == "Polygon":
+            rings = coords_raw
+            if not rings or not rings[0]:
+                assignments[osm_id] = (None, None, float("inf"))
+                continue
+            outer_ring = rings[0]
+            clon, clat = _ring_centroid(outer_ring)
+        else:
+            # Unsupported geometry type (e.g. LineString, missing) — skip.
             assignments[osm_id] = (None, None, float("inf"))
             continue
 
-        clon, clat = _ring_centroid(rings[0])
         mode = _match_mode(feature_type)
+        cos_lat = math.cos(math.radians(clat))
+
+        # ── Tier 1 (Polygon only): centerline-through-polygon overlap ─────────
+        #
+        # Assign to the hole whose centerline (golf=hole LineString) has the
+        # greatest length of intersection running THROUGH the polygon.  A
+        # fairway's own hole line runs longitudinally down it; a parallel
+        # neighbour's line clips at most a corner — giving a much smaller score.
+        # This resolves the Bethpage parallel-hole mis-attribution bug.
+
+        if outer_ring is not None:
+            bbox = _ring_bbox(outer_ring)
+            best_overlap = 0.0
+            best_overlap_ref: Optional[str] = None
+            best_overlap_course: Optional[str] = None
+            best_overlap_dist = float("inf")
+
+            for hole in holes:
+                h_props = hole.get("properties") or {}
+                h_coords = (hole.get("geometry") or {}).get("coordinates") or []
+                if not h_coords:
+                    continue
+                overlap = _linestring_intersection_m(h_coords, outer_ring, cos_lat, bbox)
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_overlap_ref = h_props.get("ref")
+                    best_overlap_course = h_props.get("course_name")
+                    best_overlap_dist = _linestring_dist_m(clon, clat, h_coords, mode)
+
+            if best_overlap > 0.0:
+                assignments[osm_id] = (best_overlap_ref, best_overlap_course, best_overlap_dist)
+                continue
+
+            # ── Tier 2: ring-vertex voting ────────────────────────────────────
+            #
+            # No centerline passes through the polygon (e.g. a corner bunker, a
+            # rough strip between holes).  Vote: each ring vertex picks its nearest
+            # hole; the hole with the most votes wins.  This is more robust than
+            # centroid-to-line because an elongated polygon's centroid may drift
+            # close to a parallel neighbour even when most of its boundary is near
+            # the intended hole.
+
+            sample_verts = (
+                outer_ring[:-1]
+                if len(outer_ring) > 1 and outer_ring[0] == outer_ring[-1]
+                else outer_ring
+            )
+            vote_count: dict[str, int] = {}
+            vote_course_map: dict[str, Optional[str]] = {}
+            vote_best_dist: dict[str, float] = {}
+
+            for vcoord in sample_verts:
+                vlon, vlat = vcoord[0], vcoord[1]
+                v_best_ref: Optional[str] = None
+                v_best_course: Optional[str] = None
+                v_best_dist = float("inf")
+                for hole in holes:
+                    h_props = hole.get("properties") or {}
+                    h_coords = (hole.get("geometry") or {}).get("coordinates") or []
+                    if not h_coords:
+                        continue
+                    d = _linestring_dist_m(vlon, vlat, h_coords, mode)
+                    if d < v_best_dist:
+                        v_best_dist = d
+                        v_best_ref = h_props.get("ref")
+                        v_best_course = h_props.get("course_name")
+                if v_best_ref is not None:
+                    vote_count[v_best_ref] = vote_count.get(v_best_ref, 0) + 1
+                    vote_course_map[v_best_ref] = v_best_course
+                    if v_best_ref not in vote_best_dist or v_best_dist < vote_best_dist[v_best_ref]:
+                        vote_best_dist[v_best_ref] = v_best_dist
+
+            if vote_count:
+                winner = max(vote_count, key=lambda r: vote_count[r])
+                assignments[osm_id] = (
+                    winner,
+                    vote_course_map[winner],
+                    vote_best_dist.get(winner, float("inf")),
+                )
+                continue
+
+        # ── Tier 3 (fallback for Points and degenerate Polygons): ─────────────
+        # Original centroid-to-nearest-line distance.
 
         best_ref: Optional[str] = None
         best_course: Optional[str] = None
@@ -266,6 +478,23 @@ def _ref_to_int(ref: Optional[str]) -> int:
         return int(ref or "0")
     except ValueError:
         return 0
+
+
+# ── Multi-course reclaim constant ─────────────────────────────────────────────
+
+_RECLAIM_SAME_AREA_M: float = 200.0
+"""Maximum distance (metres) used by the multi-course reclaim heuristic.
+
+When a polygon is initially assigned to a *non*-target course but its centroid
+lies within this distance of the nearest *target*-course hole centerline, the
+polygon is re-assigned to that hole.  This handles venues like Bethpage State
+Park where five courses share the same geographic area: their hole centerlines
+are co-located, so global nearest-line disambiguation fails for fairways that
+sit geometrically closer to a neighbouring course's centerline.
+
+Chosen conservatively — golf courses separated by 200 m or more are considered
+distinct facilities; cross-course rejection still applies beyond this radius.
+"""
 
 
 def build_course_feature_collection(
@@ -321,6 +550,64 @@ def build_course_feature_collection(
         (p.get("properties") or {}).get("osm_id", ""): p
         for p in polygons
     }
+
+    # ── Multi-course reclaim ──────────────────────────────────────────────────
+    #
+    # At venues with multiple co-located courses (e.g. Bethpage's 5 courses),
+    # hole centerlines from neighbouring courses run through or alongside the
+    # same fairway polygons as the target course.  The global nearest-line join
+    # may assign a target-course fairway to a neighbour's hole.
+    #
+    # Fix: if a polygon was assigned to a non-target course AND the nearest
+    # target-course hole is within _RECLAIM_SAME_AREA_M, re-assign it.
+    # Polygons genuinely on a distant course (e.g. a Red-course green 2.5 km
+    # away) lie beyond the reclaim radius and are correctly excluded.
+
+    target_holes = [
+        h for h in holes
+        if (h.get("properties") or {}).get("course_name", "").lower() == target_lower
+    ]
+
+    if target_holes:
+        reclaim: dict[str, tuple[Optional[str], Optional[str], float]] = {}
+        for osm_id, (hole_ref, course_name, _dist) in assignments.items():
+            # Already assigned to target — nothing to reclaim.
+            if course_name is not None and course_name.lower() == target_lower:
+                continue
+            poly = poly_by_id.get(osm_id)
+            if poly is None:
+                continue
+            # Extract centroid.
+            geom = poly.get("geometry") or {}
+            geom_type = geom.get("type", "")
+            coords_raw = geom.get("coordinates") or []
+            if geom_type == "Point":
+                if len(coords_raw) < 2:
+                    continue
+                clon, clat = float(coords_raw[0]), float(coords_raw[1])
+            elif geom_type == "Polygon":
+                rings = coords_raw
+                if not rings or not rings[0]:
+                    continue
+                clon, clat = _ring_centroid(rings[0])
+            else:
+                continue
+            # Find nearest target-course hole (always nearest-segment mode).
+            best_ref: Optional[str] = None
+            best_course: Optional[str] = None
+            best_d = float("inf")
+            for h in target_holes:
+                h_props = h.get("properties") or {}
+                h_coords = (h.get("geometry") or {}).get("coordinates") or []
+                d = _linestring_dist_m(clon, clat, h_coords, "nearest")
+                if d < best_d:
+                    best_d = d
+                    best_ref = h_props.get("ref")
+                    best_course = h_props.get("course_name")
+            if best_d <= _RECLAIM_SAME_AREA_M and best_ref is not None:
+                reclaim[osm_id] = (best_ref, best_course, best_d)
+
+        assignments.update(reclaim)
 
     # Group features by hole ref, keeping only target-course assignments.
     hole_features: dict[str, list[dict]] = {}
