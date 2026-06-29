@@ -3,6 +3,28 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-28 (course-detail-start-round — NOTICEABLE)
+- **Done (commit d5db7c6 on integration/next):** Full Courses section — browse, detail, Start-a-round-here, Courses tab.
+
+  Files added (8): `lib/course-url.ts` (courseHref helper, static-export-safe), `lib/course-url.test.ts`,
+  `lib/course-handoff.ts` (sessionStorage stash/take, SSR-safe, one-shot), `lib/course-list.ts`
+  (pure mapRecentCourses), `lib/course-list.test.ts`, `app/courses/page.tsx` (hub: lazy recent list,
+  geolocation Nearby, CourseSearch overlay), `app/courses/[id]/page.tsx` (generateStaticParams+Suspense),
+  `app/courses/[id]/CourseDetailClient.tsx` (name/location/par/holes/tees, loading+not-found states, CTA).
+
+  Files changed (4): `app/round/new/page.tsx` (one mount effect: takeCourseForRound → setSelectedCourse),
+  `components/nav/FloatingTabBar.tsx` (CoursesIcon flagstick SVG + Courses tab as 2nd item),
+  `components/nav/shouldShowTabBar.ts` (/courses added to HUB_ROUTES),
+  `components/nav/shouldShowTabBar.test.ts` (/courses + /courses/ true; /courses/view false).
+
+  Reuses composeCourseName, saveRecentCourse, getRecentCourses, getCourseDetails, getClubDetails,
+  searchNearby, CourseSearch — no new deps, no backend changes.
+
+  Gates: lint clean · tsc clean · voice-tests 265/265 · vitest 417/417 · build clean.
+  out/courses and out/courses/view confirmed in static export.
+  NOTICEABLE — new Courses tab + /courses hub + /courses/view detail page on TestFlight.
+  GPS and live GolfAPI paths are device-only; pure helpers covered by vitest.
+
 ## 2026-06-28 (voice-double-audio — NOTICEABLE, device-only verify)
 - **Done (built 727c7df on integration/next, pushed; in bundle PR #66):** Fix the caddie
   playing TWO overlapping voices on every Realtime response.
