@@ -56,10 +56,22 @@ function ProfileIcon() {
   );
 }
 
+function CoursesIcon() {
+  return (
+    <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 21V4" />
+      <path d="M6 4l11 2.5L6 10" />
+      <path d="M4 21h16" />
+    </svg>
+  );
+}
+
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
 const TABS = [
   { href: '/', label: 'Home', Icon: HomeIcon },
+  { href: '/courses', label: 'Courses', Icon: CoursesIcon },
   { href: '/players', label: 'Partners', Icon: UsersIcon },
   { href: '/tee-time', label: 'Tee times', Icon: CalendarClockIcon },
   { href: '/profile', label: 'Profile', Icon: ProfileIcon },

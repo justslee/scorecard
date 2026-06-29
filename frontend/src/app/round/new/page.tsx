@@ -12,6 +12,7 @@ import type { Player, Round, Game, GameFormat, SavedPlayer, HoleInfo } from "@/l
 import VoiceRoundSetupRealtime from "@/components/VoiceRoundSetupRealtime";
 import CourseSearch from "@/components/CourseSearch";
 import PlayerAutocomplete from "@/components/PlayerAutocomplete";
+import { takeCourseForRound } from "@/lib/course-handoff";
 
 // ---------------------------------------------------------------------------
 // Local types
@@ -144,6 +145,14 @@ export default function RoundSetupPage() {
       .catch(() => {
         setSavedPlayers(getSavedPlayers());
       });
+  }, []);
+
+  // Prefill course from /courses/view "Start a round here" handoff (one-shot).
+  // takeCourseForRound() reads + clears sessionStorage so it never fires again
+  // or fights a later voice/manual course selection.
+  useEffect(() => {
+    const c = takeCourseForRound();
+    if (c) setSelectedCourse(c);
   }, []);
 
   // --- Voice setup callback ---

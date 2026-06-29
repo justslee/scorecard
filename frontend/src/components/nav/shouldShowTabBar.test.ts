@@ -3,7 +3,7 @@ import { shouldShowTabBar } from './shouldShowTabBar';
 
 describe('shouldShowTabBar', () => {
   // Hub routes (exact)
-  it.each(['/', '/players', '/profile', '/tee-time'])(
+  it.each(['/', '/courses', '/players', '/profile', '/tee-time'])(
     'returns true for hub route %s',
     (path) => {
       expect(shouldShowTabBar(path)).toBe(true);
@@ -11,7 +11,7 @@ describe('shouldShowTabBar', () => {
   );
 
   // Trailing-slash variants of non-root hub routes
-  it.each(['/players/', '/profile/', '/tee-time/'])(
+  it.each(['/courses/', '/players/', '/profile/', '/tee-time/'])(
     'returns true for trailing-slash variant %s',
     (path) => {
       expect(shouldShowTabBar(path)).toBe(true);
@@ -20,6 +20,7 @@ describe('shouldShowTabBar', () => {
 
   // Non-hub routes — bar must not appear
   it.each([
+    '/courses/view',
     '/round/new',
     '/round/abc123',
     '/round/123/view',
