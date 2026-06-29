@@ -25,6 +25,9 @@ import { hapticCelebration } from "@/lib/haptics";
 import { shotPointForPath } from "@/lib/hole-shot-point";
 import { resolveCourseKey } from "@/lib/course-review-key";
 import { getRecentCourses } from "@/lib/golf-api";
+import { resolveMappedCourse, buildMapUrl } from "@/lib/map-bridge";
+import type { MappedCourseListItem } from "@/lib/map-bridge";
+import { fetchAPI } from "@/lib/api";
 
 // Player accent colors (yardage-book palette — warm ink tones)
 const PLAYER_COLORS = ["#1a2a1a", "#6b3a1a", "#3a3a6a", "#6a3a3a", "#2a5a3a", "#5a2a5a"];
@@ -227,6 +230,13 @@ export default function RoundPage() {
   const [turnIdx, setTurnIdx] = useState(0);
   const draggedRef = useRef(false);
 
+  /**
+   * Resolved mapped course for the active round's courseName.
+   * null  = not yet resolved (loading) or no mapped course found.
+   * Set once when round.courseName becomes available.
+   */
+  const [mappedCourse, setMappedCourse] = useState<MappedCourseListItem | null>(null);
+
   // ---------------------------------------------------------------------------
   // Load round: try API → fall back to localStorage on 404 / network error.
   // ---------------------------------------------------------------------------
@@ -376,6 +386,31 @@ export default function RoundPage() {
     return resolveCourseKey(round, getRecentCourses());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round?.courseName, round?.id]);
+
+  // Resolve mapped course: query GET /api/courses/mapped?search=<courseName> once the
+  // round's courseName is known. When a confident name match is found, `mappedCourse`
+  // is set so the "View hole map" link can be shown. Silently hides on any error.
+  useEffect(() => {
+    const courseName = round?.courseName?.trim();
+    if (!courseName) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchAPI<{ courses: MappedCourseListItem[] }>(
+          `/api/courses/mapped?search=${encodeURIComponent(courseName)}`
+        );
+        if (cancelled) return;
+        const match = resolveMappedCourse(courseName, data.courses ?? []);
+        setMappedCourse(match);
+      } catch {
+        // Silent — no mapped course shown on error (keeps the UI calm).
+        if (!cancelled) setMappedCourse(null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [round?.courseName]);
 
   const hole = HOLES[currentHole - 1] ?? HOLES[0];
   // Prefer round's par data (authoritative); fall back to illustration constant.
@@ -865,6 +900,33 @@ export default function RoundPage() {
               >
                 Round in progress
               </div>
+              {/* Hole-map deep link — shown only when this course has homegrown geometry */}
+              {mappedCourse && (
+                <button
+                  onClick={() => router.push(buildMapUrl(mappedCourse.id, currentHole))}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    fontFamily: T.mono,
+                    fontSize: 9,
+                    letterSpacing: 1.2,
+                    color: T.pencil,
+                    textTransform: "uppercase" as const,
+                    textDecoration: "underline",
+                    textDecorationStyle: "dotted" as const,
+                    textUnderlineOffset: 2,
+                    lineHeight: 1,
+                    marginTop: 2,
+                    display: "block",
+                    textAlign: "left" as const,
+                  }}
+                  aria-label={`View hole ${currentHole} map`}
+                >
+                  View hole map
+                </button>
+              )}
             </div>
           </div>
 

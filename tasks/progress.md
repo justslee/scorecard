@@ -3,6 +3,38 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — round-map-bridge (NOTICEABLE — feat/round-map-bridge, ready for bundle)
+
+Hole map deep-link from an active round: when playing a course with homegrown geometry,
+a calm "View hole map" text link appears in the round header and opens the yardage-book
+map at the current hole.
+
+### What was built
+- `frontend/src/lib/map-bridge.ts` (NEW): pure helpers — `clampHole`, `parseHoleParam`,
+  `resolveMappedCourse` (conservative name match, case-insensitive + prefix), `buildMapUrl`.
+  No deps beyond the existing `normalizeCourseName` util.
+- `frontend/src/lib/map-bridge.test.ts` (NEW): 25 unit tests covering all helpers.
+- `frontend/src/app/map/course/page.tsx`: Accept `?hole=<n>` search param; open diagram
+  on that hole (clamped 1..18). Ref-captured at mount; does not disturb navigation state.
+- `frontend/src/app/round/[id]/RoundPageClient.tsx`: Fetch `GET /api/courses/mapped?search=`
+  when round.courseName is known; resolve a match via `resolveMappedCourse`; when found,
+  show a calm dotted-underline "View hole map" button below "Round in progress" in the header.
+  Hidden entirely when no mapped course matches.
+
+### Gate results (all green)
+- `npm run lint`: clean (0 errors, 0 warnings)
+- `npx tsc --noEmit`: clean
+- `npx vitest run`: 828/828 pass (35 test files, 25 new)
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: clean (Next.js SSG)
+
+### Classification: NOTICEABLE
+User-visible during a round at a mapped course (Bethpage Black, Bethpage Red). A yardage-book
+hole-map link appears while playing. No backend changes; frontend-only. Token-independent
+(existing endpoint). Ships on feat/round-map-bridge, ready to add to next bundle.
+
+---
+
 ## 2026-06-29 — golfapi-cache-first (SILENT — feat/golfapi-cache-first, ready for bundle)
 
 GolfAPI cache-first layer: batch+budget-guarded, never re-fetches a course already stored.

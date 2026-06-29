@@ -33,6 +33,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from "lucide-react";
 import type { CourseData, HoleData } from "@/lib/courses/types";
 import { fetchMappedCourse } from "@/lib/courses/mapped-course-api";
+import { parseHoleParam } from "@/lib/map-bridge";
 import HoleDiagram from "@/components/course/HoleDiagram";
 import {
   holeLengthYards,
@@ -521,8 +522,12 @@ function MappedCourseMapInner() {
   const router = useRouter();
   const courseId = params.get("id") ?? "";
 
+  // Optional ?hole=<n> deep-link: open the diagram on that hole (clamped 1..18).
+  // Capture in a ref at mount time so the load effect's dependency array stays stable
+  // (the URL doesn't change while on the page; a ref avoids a lint dep-array warning).
+  const holeParamRef = useRef(parseHoleParam(params.get("hole")));
   const [course, setCourse] = useState<CourseData | null>(null);
-  const [currentHoleNum, setCurrentHoleNum] = useState(1);
+  const [currentHoleNum, setCurrentHoleNum] = useState(() => holeParamRef.current ?? 1);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [loading, setLoading] = useState(Boolean(courseId));
 
@@ -579,11 +584,12 @@ function MappedCourseMapInner() {
         if (cancelled) return;
         setCourse(c);
         setAllCourseCoords(coords);
-        // Start on the first hole (sorted ascending by number)
+        // Start on the ?hole= param when provided; fall back to the first sorted hole.
+        // The hole param is validated/clamped by parseHoleParam at mount time.
         const firstHoleNum = [...(c.holes ?? [])]
           .sort((a, b) => a.number - b.number)
           .find(() => true)?.number ?? 1;
-        setCurrentHoleNum(firstHoleNum);
+        setCurrentHoleNum(holeParamRef.current ?? firstHoleNum);
       } catch (e: unknown) {
         if (!cancelled) {
           setFetchError(
