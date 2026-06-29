@@ -16,6 +16,54 @@ from app.caddie.club_selection import (
     CLUB_DISPLAY_NAMES,
 )
 from app.caddie.strokes_gained import expected_strokes, personal_lookup
+from app.caddie.slope_advice import slope_miss_advice
+from app.caddie.shot_line_advice import shot_line_advice
+from app.caddie.decade_advice import decade_aim_advice
+
+# ── Reasoning priority cap ────────────────────────────────────────────────────
+#
+# The voice caddie reads reasoning lines aloud, so brevity matters.
+# Priorities (lower = more important; always shown first):
+#   P0 — club/distance fit line       ALWAYS kept, ALWAYS first
+#   P1 — safety-critical              pin light (red/yellow), DECADE hazard-aim,
+#                                     competition-legal note
+#   P2 — slope miss-advice + miss     green-slope advice, player miss tendency
+#   P3 — shot-line terrain advice     terrain shape (elevated green, ridge, swale…)
+#   P4 — color                        player history, personal-stats note,
+#                                     generic distance-adjustment summary
+#
+MAX_REASONING_ITEMS: int = 4
+
+
+def prioritize_reasoning(
+    items: list[tuple[int, str]],
+    max_items: int = MAX_REASONING_ITEMS,
+) -> list[str]:
+    """Sort reasoning items by priority and cap to *max_items*.
+
+    Args:
+        items: Sequence of ``(priority, text)`` tuples.  Lower priority value
+               means more important (P0 is always shown first).
+        max_items: Maximum number of lines to return.  The P0 club/distance fit
+                   line is never dropped even when *max_items* < total items.
+
+    Returns:
+        Ordered, trimmed list of text strings — priorities stripped.
+    """
+    # Stable sort: Python's sort is stable, so same-priority items keep
+    # their original insertion order.
+    sorted_items = sorted(items, key=lambda x: x[0])
+
+    if len(sorted_items) <= max_items:
+        return [text for _, text in sorted_items]
+
+    # Always preserve P0 (the club line) regardless of the cap.
+    p0_items = [(p, t) for p, t in sorted_items if p == 0]
+    rest = [(p, t) for p, t in sorted_items if p > 0]
+
+    remaining_slots = max_items - len(p0_items)
+    trimmed = p0_items + rest[:remaining_slots]
+    return [text for _, text in trimmed]
 
 
 def classify_pin_position(
@@ -248,41 +296,73 @@ def generate_recommendation(
     # Pin traffic light
     pin_light = classify_pin_position(hole)
 
-    # Build reasoning
-    reasoning: list[str] = []
+    # Build reasoning as (priority, text) tuples; see prioritize_reasoning for
+    # the full priority scheme.  Order of appends within a priority is preserved
+    # (stable sort), so add items in the order you want them to appear when two
+    # items share a priority level.
+    _r: list[tuple[int, str]] = []
 
+    # Distance context: P1 for competition-legal (safety-critical), P4 otherwise (color)
     if competition_legal:
-        reasoning.append("Competition-legal mode: distance adjustments disabled (USGA conforming)")
+        _r.append((1, "Competition-legal mode: distance adjustments disabled (USGA conforming)"))
     elif adjustments:
         adj_summary = ", ".join(
             f"{a.type}: {'+' if a.yards > 0 else ''}{a.yards}y"
             for a in adjustments
         )
-        reasoning.append(f"Distance adjustments: {adj_summary}")
+        _r.append((4, f"Distance adjustments: {adj_summary}"))
 
+    # P4 — adjusted distance note (color; the club line already shows the adjusted yards)
     if adjusted_yards != distance_yards:
-        reasoning.append(
-            f"Plays {adjusted_yards} yards (raw {distance_yards})"
-        )
+        _r.append((4, f"Plays {adjusted_yards} yards (raw {distance_yards})"))
 
+    # P0 — club/distance fit line (ALWAYS kept, ALWAYS first)
     display_name = CLUB_DISPLAY_NAMES.get(club, club)
-    reasoning.append(f"{display_name} ({club_dist}y) — best fit for {adjusted_yards}y")
+    _r.append((0, f"{display_name} ({club_dist}y) — best fit for {adjusted_yards}y"))
 
+    # P1 — safety-critical: pin traffic-light warning
     if pin_light == "red":
-        reasoning.append("Red light pin — play to the center, don't short-side yourself")
+        _r.append((1, "Red light pin — play to the center, don't short-side yourself"))
     elif pin_light == "yellow":
-        reasoning.append("Yellow light pin — aim between pin and center")
+        _r.append((1, "Yellow light pin — aim between pin and center"))
 
+    # P2 — miss-tendency note (directly affects where to aim)
     if player_stats and player_stats.tendencies.miss_direction != "balanced":
-        reasoning.append(
-            f"Your miss tendency is {player_stats.tendencies.miss_direction} — aim point accounts for this"
-        )
+        _r.append((
+            2,
+            f"Your miss tendency is {player_stats.tendencies.miss_direction}"
+            " — aim point accounts for this",
+        ))
 
+    # P4 — player history on this hole (color / motivational)
     if hole.player_history and hole.player_history.times_played >= 3:
         h = hole.player_history
-        reasoning.append(
-            f"Your history: avg {h.avg_score:.1f} (best {h.best_score}) in {h.times_played} rounds"
-        )
+        _r.append((
+            4,
+            f"Your history: avg {h.avg_score:.1f} (best {h.best_score})"
+            f" in {h.times_played} rounds",
+        ))
+
+    # P2 — green-slope tactical advice (affects where to miss)
+    # Additive only; does NOT affect club, target, or miss_side.
+    slope_advice = slope_miss_advice(hole.green_slope, shot_bearing)
+    if slope_advice:
+        _r.append((2, slope_advice))
+
+    # P3 — shot-line terrain advice (terrain SHAPE color)
+    # Fires only when a pre-sampled elevation profile is attached (via
+    # hole.shot_line_profile_ft, populated by the route handler).
+    # Additive only; does NOT affect club, target, or miss_side.
+    sl_advice = shot_line_advice(hole.shot_line_profile_ft or [], distance_yards)
+    if sl_advice:
+        _r.append((3, sl_advice))
+
+    # P1 — DECADE expected-strokes aim advice (safety-critical lateral shift)
+    # Additive only; does NOT affect club, target, aim_point, or miss_side.
+    # Handicap forwarded so dispersion is personalised.
+    d_advice = decade_aim_advice(hole.hazards, float(distance_yards), handicap=handicap)
+    if d_advice:
+        _r.append((1, d_advice))
 
     # Expected score — pulls from personal_sg first, falls back to PGA baseline.
     # Gate the reasoning text on the actual lookup outcome rather than the
@@ -299,11 +379,16 @@ def generate_recommendation(
             if isinstance(b, dict) and b.get("mean_strokes") is not None
         )
         if sample_count > 0:
-            reasoning.append(
-                f"Expected score uses your personal stats ({sample_count} fairway shots logged)"
-            )
+            # P4 — personal-stats note (color; useful but not safety-critical)
+            _r.append((
+                4,
+                f"Expected score uses your personal stats ({sample_count} fairway shots logged)",
+            ))
     else:
         exp_score = expected_strokes(distance_yards, "fairway", handicap)
+
+    # Apply priority sort + cap → final reasoning list (calm, voice-readable)
+    reasoning = prioritize_reasoning(_r)
 
     # Aggressiveness
     if pin_light == "red" or len([h for h in hole.hazards if h.penalty_severity == "death"]) >= 2:

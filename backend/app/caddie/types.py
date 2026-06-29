@@ -99,6 +99,10 @@ class HoleIntelligence(BaseModel):
     hazards: list[Hazard] = []
     pin_traffic_light: str = "green"  # green | yellow | red
     player_history: Optional[HolePlayerHistory] = None
+    # Elevations (ft) sampled at equal intervals along the shot path, from
+    # start (index 0) to target (index -1).  Populated lazily by the route
+    # handler via sample_shot_line(); None = no along-line profile available.
+    shot_line_profile_ft: Optional[list[float]] = None
 
 
 # ── Weather ──

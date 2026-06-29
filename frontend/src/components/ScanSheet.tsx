@@ -15,18 +15,22 @@
  * zinc/emerald/slate. Mirrors CaddieSheet's bottom-sheet pattern.
  *
  * Persistence: calls the same onSetScore callback as manual per-hole entry
- * in RoundPageClient — no new API endpoint.
+ * in RoundPageClient — no new API endpoint, no silent overwrites.
  *
- * Auth note: voice_advanced.router is registered with dependencies=_owner_only
- * in backend/app/main.py. fetchAPI (used by parseScorecard) attaches the
- * Clerk Bearer token automatically — no extra auth wiring needed here.
+ * Auth note: POST /api/scorecard/scan is auth-gated (Claude API usage is
+ * metered); fetchAPI attaches the Clerk Bearer token automatically.
  */
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import type { Round, Player } from "@/lib/types";
-import { parseScorecard } from "@/lib/ocr";
+import { scanScorecard } from "@/lib/api";
+import {
+  dataUrlToBlob,
+  scanResponseToReviewModel,
+  type OcrPlayerReview,
+} from "@/lib/scan-helpers";
 import CameraCapture from "@/components/CameraCapture";
 
 // ---------------------------------------------------------------------------
@@ -35,15 +39,6 @@ import CameraCapture from "@/components/CameraCapture";
 
 type ScanPhase = "capture" | "scanning" | "review" | "applying" | "error";
 
-/** Internal per-player review state */
-interface OcrPlayerLocal {
-  ocrName: string;
-  /** Always 18 slots; null = blank/unreadable hole */
-  scores: (number | null)[];
-  /** null = "Skip" (do not apply) */
-  mappedPlayerId: string | null;
-}
-
 export interface ScanSheetProps {
   open: boolean;
   onClose: () => void;
@@ -51,7 +46,8 @@ export interface ScanSheetProps {
   /**
    * Same callback as manual hole entry in RoundPageClient (handleSetScore).
    * Called per (player, holeIdx, strokes) triple — reuses the existing
-   * optimistic+persist path unchanged.
+   * optimistic+persist path unchanged.  Import NEVER happens without explicit
+   * user confirmation (the Apply button).
    */
   onSetScore: (pid: string, idx: number, val: number | null) => void | Promise<void>;
   accent: string;
@@ -75,8 +71,7 @@ function CloseIcon() {
 
 export default function ScanSheet({ open, onClose, round, onSetScore, accent }: ScanSheetProps) {
   const [phase, setPhase] = useState<ScanPhase>("capture");
-  const [ocrPlayers, setOcrPlayers] = useState<OcrPlayerLocal[]>([]);
-  const [confidence, setConfidence] = useState(0);
+  const [ocrPlayers, setOcrPlayers] = useState<OcrPlayerReview[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [applyCount, setApplyCount] = useState(0);
   const [applyTotal, setApplyTotal] = useState(0);
@@ -91,8 +86,9 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
     setPhase("scanning");
     setError(null);
     try {
-      const result = await parseScorecard(imageBase64, round.players);
-      setConfidence(result.confidence);
+      // Convert data URL → Blob for multipart upload (CameraCapture gives a data URL).
+      const blob = dataUrlToBlob(imageBase64);
+      const result = await scanScorecard(blob);
 
       if (result.players.length === 0) {
         setError("No players found in the scan. Try a clearer photo or better lighting.");
@@ -100,28 +96,16 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
         return;
       }
 
-      // Match OCR names to round players (case-insensitive)
-      const init: OcrPlayerLocal[] = result.players.map((p) => {
-        const match = round.players.find(
-          (rp: Player) => rp.name.toLowerCase() === p.name.toLowerCase()
-        );
-        // Pad / truncate to exactly 18 slots
-        const padded: (number | null)[] = Array(18).fill(null);
-        p.scores.forEach((s: number | null, i: number) => {
-          if (i < 18) padded[i] = s;
-        });
-        return {
-          ocrName: p.name,
-          scores: padded,
-          mappedPlayerId: match?.id ?? null,
-        };
-      });
+      // Map scanned player names → round players via fuzzy + phonetic matching
+      // (player-match.ts handles "Bob"/"Robert", "Dipak"/"Deepak", etc.).
+      // Unknown names get mappedPlayerId = null so the user can assign them.
+      const init = scanResponseToReviewModel(result, round.players);
 
       setOcrPlayers(init);
       setPhase("review");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Scan failed.";
-      setError(msg.length > 120 ? "Scan failed — check connection." : msg);
+      setError(msg.length > 120 ? "Scan failed — check connection and try again." : msg);
       setPhase("error");
     }
   };
@@ -161,10 +145,19 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
 
   // ── Apply scores ────────────────────────────────────────────────────────────
 
+  /**
+   * Import confirmed scores into the round via the existing score-entry path.
+   *
+   * EXPLICIT CONFIRM REQUIRED: this function is only reachable via the "Apply
+   * scores" button — it is never called automatically.  The existing
+   * handleSetScore in RoundPageClient applies the scores through the optimistic
+   * update + API persist path, which guards against silent overwrites.
+   */
   const handleApply = async () => {
     setPhase("applying");
     setApplyError(null);
-    // Collect all valid (playerId, holeIdx, strokes) to persist
+
+    // Collect all valid (playerId, holeIdx, strokes) — skips nulls and unmapped rows.
     const entries: [string, number, number][] = [];
     for (const op of ocrPlayers) {
       if (!op.mappedPlayerId) continue;
@@ -206,8 +199,6 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
   // ── Render ──────────────────────────────────────────────────────────────────
 
   if (!open) return null;
-
-  const isLowConfidence = confidence > 0 && confidence < 0.6;
 
   // Detect duplicate player assignments across OCR rows
   const mappedIds = ocrPlayers.map((op) => op.mappedPlayerId).filter(Boolean) as string[];
@@ -374,8 +365,8 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
                     ? "Try again"
                     : "Confirm scores"}
                 </div>
-                {/* Confidence kicker — review phase only; semantic plain language */}
-                {phase === "review" && confidence > 0 && (
+                {/* Subtitle kicker — review phase only */}
+                {phase === "review" && (
                   <div
                     style={{
                       marginTop: 5,
@@ -383,12 +374,10 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
                       fontSize: 10,
                       letterSpacing: 1.2,
                       textTransform: "uppercase",
-                      color: isLowConfidence ? T.warningInk : T.pencil,
+                      color: T.pencil,
                     }}
                   >
-                    {isLowConfidence
-                      ? "Hard to read — check each score carefully"
-                      : "Looks good — confirm scores below"}
+                    Check each score, then apply
                   </div>
                 )}
               </div>
@@ -526,25 +515,6 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
                     </div>
                   )}
 
-                  {/* Low-confidence notice */}
-                  {isLowConfidence && (
-                    <div
-                      style={{
-                        padding: "9px 12px",
-                        borderRadius: 12,
-                        background: T.warningWash,
-                        border: `1px solid ${T.warningInk}33`,
-                        fontFamily: T.serif,
-                        fontStyle: "italic",
-                        fontSize: 13,
-                        color: T.warningInk,
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      Low confidence read — check each score before applying.
-                    </div>
-                  )}
-
                   {/* Per-player review cards */}
                   {ocrPlayers.map((op, pi) => (
                     <OcrPlayerCard
@@ -552,7 +522,6 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
                       playerIdx={pi}
                       op={op}
                       roundPlayers={round.players}
-                      isLowConfidence={isLowConfidence}
                       allMappedPlayerIds={mappedIds}
                       accent={accent}
                       onMappingChange={handleMappingChange}
@@ -657,9 +626,8 @@ export default function ScanSheet({ open, onClose, round, onSetScore, accent }: 
 
 interface OcrPlayerCardProps {
   playerIdx: number;
-  op: OcrPlayerLocal;
+  op: OcrPlayerReview;
   roundPlayers: Player[];
-  isLowConfidence: boolean;
   /** All mapped player IDs across all rows (including this row's own mapping). */
   allMappedPlayerIds: string[];
   accent: string;
@@ -671,7 +639,6 @@ function OcrPlayerCard({
   playerIdx,
   op,
   roundPlayers,
-  isLowConfidence,
   allMappedPlayerIds,
   accent,
   onMappingChange,
@@ -787,7 +754,6 @@ function OcrPlayerCard({
         holeStart={1}
         scores={op.scores}
         playerIdx={playerIdx}
-        isLowConfidence={isLowConfidence}
         accent={accent}
         onCellChange={onCellChange}
       />
@@ -796,7 +762,6 @@ function OcrPlayerCard({
           holeStart={10}
           scores={op.scores}
           playerIdx={playerIdx}
-          isLowConfidence={isLowConfidence}
           accent={accent}
           onCellChange={onCellChange}
         />
@@ -814,12 +779,11 @@ interface ScoreRowProps {
   holeStart: number;
   scores: (number | null)[];
   playerIdx: number;
-  isLowConfidence: boolean;
   accent: string;
   onCellChange: (playerIdx: number, holeIdx: number, raw: string) => void;
 }
 
-function ScoreRow({ holeStart, scores, playerIdx, isLowConfidence, onCellChange }: ScoreRowProps) {
+function ScoreRow({ holeStart, scores, playerIdx, onCellChange }: ScoreRowProps) {
   // 9 cells: holes holeStart…holeStart+8
   const holes = Array.from({ length: 9 }, (_, i) => holeStart + i);
 
@@ -850,8 +814,6 @@ function ScoreRow({ holeStart, scores, playerIdx, isLowConfidence, onCellChange 
         {holes.map((h) => {
           const holeIdx = h - 1; // 0-based
           const val = scores[holeIdx];
-          // Amber highlight: low confidence AND cell has a value
-          const flagged = isLowConfidence && val !== null;
           return (
             <input
               key={holeIdx}
@@ -872,9 +834,8 @@ function ScoreRow({ holeStart, scores, playerIdx, isLowConfidence, onCellChange 
                 fontSize: 14,
                 fontVariantNumeric: "tabular-nums",
                 color: T.ink,
-                // Amber cell background (highlighter-annotation feel) when confidence is low
-                background: flagged ? T.warningWash : T.paper,
-                border: `1px solid ${flagged ? T.warningInk : T.hairline}`,
+                background: T.paper,
+                border: `1px solid ${T.hairline}`,
                 borderRadius: 6,
                 outline: "none",
                 // Remove browser number spinners

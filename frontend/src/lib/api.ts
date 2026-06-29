@@ -20,6 +20,9 @@ import type {
   SavedPlayer,
   Course,
   GolferProfile,
+  CourseReview,
+  CourseReviewCreate,
+  ScanScorecardResponse,
 } from './types';
 import { getTokenViaClerk, getAuthDiagnostics } from './auth-token';
 
@@ -35,6 +38,9 @@ export type {
   SavedPlayer,
   Course,
   GolferProfile,
+  CourseReview,
+  CourseReviewCreate,
+  ScanScorecardResponse,
 };
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -470,3 +476,80 @@ export async function updateGolferProfile(data: GolferProfileUpdate): Promise<Go
 // Create/update games via RoundCreate.games or updateRound({ games }).
 // ================
 // (getGame / createGame / updateGame / deleteGame removed — no route exists)
+
+// ===== Course Reviews API (B2) =====
+// GET  /api/courses/{courseKey}/reviews  → CourseReview[]
+// POST /api/courses/{courseKey}/reviews  → CourseReview
+
+/**
+ * List the calling user's reviews for a given course key.
+ * courseKey is URL-encoded; the key is slash-free by construction (§0.3 of plan).
+ */
+export async function getCourseReviews(courseKey: string): Promise<CourseReview[]> {
+  return fetchAPI<CourseReview[]>(
+    `/api/courses/${encodeURIComponent(courseKey)}/reviews`,
+  );
+}
+
+/**
+ * Create a course review for the calling user.
+ * courseKey is URL-encoded; rating must be 1–5 (enforced server-side as 422).
+ */
+export async function createCourseReview(
+  courseKey: string,
+  data: CourseReviewCreate,
+): Promise<CourseReview> {
+  return fetchAPI<CourseReview>(
+    `/api/courses/${encodeURIComponent(courseKey)}/reviews`,
+    { method: 'POST', body: JSON.stringify(data) },
+  );
+}
+
+/**
+ * List ALL of the calling user's course reviews across every course key.
+ * Owner-scoped server-side; ordered created_at desc. (B3 read surface.)
+ */
+export async function getMyReviews(): Promise<CourseReview[]> {
+  return fetchAPI<CourseReview[]>('/api/reviews/mine');
+}
+
+// ================
+// Scorecard OCR scan
+// POST /api/scorecard/scan — multipart image upload → ScanScorecardResponse
+// Auth required (Claude API usage is metered; key is server-side only).
+// ================
+
+/**
+ * Upload a scorecard photo to the OCR endpoint.
+ *
+ * The endpoint accepts a multipart form upload (field name `image`) of a JPEG,
+ * PNG, WEBP, or GIF image up to 10 MB.  Returns structured player names and
+ * per-hole scores; null cells = blank / unreadable on the physical card.
+ *
+ * Use `dataUrlToBlob` (from scan-helpers.ts) to convert the base64 data URL
+ * produced by CameraCapture before calling this function.
+ */
+export async function scanScorecard(imageBlob: Blob): Promise<ScanScorecardResponse> {
+  const token = await getAuthToken();
+
+  const formData = new FormData();
+  // The backend expects field name `image` (matching UploadFile = File(...) param)
+  formData.append('image', imageBlob, 'scorecard.jpg');
+
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  // Do NOT set Content-Type — let fetch set it with the multipart boundary automatically.
+
+  const res = await fetch(`${API_BASE}/api/scorecard/scan`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const error = await res.text();
+    throw new Error(error || `API error: ${res.status}`);
+  }
+
+  return res.json() as Promise<ScanScorecardResponse>;
+}

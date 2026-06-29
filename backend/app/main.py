@@ -47,6 +47,8 @@ app.add_middleware(
 from app.routes import players, rounds, tournaments, courses, voice  # noqa: E402  (after load_dotenv: routes read env at import)
 from app.routes import golf, course_search, courses_mapped, voice_advanced, caddie, memory, realtime, shots, pins  # noqa: E402
 from app.routes import profile  # noqa: E402
+from app.routes import course_reviews  # noqa: E402
+from app.routes import scorecard  # noqa: E402
 
 # Every data router is owner-only: require the configured owner's verified Clerk
 # identity. /health and / (defined below) stay open for load-balancer checks.
@@ -61,6 +63,9 @@ app.include_router(profile.router, dependencies=_owner_only)
 # so otherwise /{course_id} shadows /search, /nearby, /mapped/*.
 app.include_router(course_search.router, dependencies=_owner_only)
 app.include_router(courses_mapped.router, dependencies=_owner_only)
+# Two-segment /api/courses/{course_key}/reviews sub-resource — MUST precede catch-all.
+app.include_router(course_reviews.router, dependencies=_owner_only)
+app.include_router(course_reviews.reviews_router, dependencies=_owner_only)  # B3 — /api/reviews/mine
 app.include_router(courses.router, dependencies=_owner_only)
 app.include_router(voice.router, dependencies=_owner_only)
 # Migrated from Next.js + new caddie system
@@ -71,6 +76,7 @@ app.include_router(memory.router, dependencies=_owner_only)
 app.include_router(realtime.router, dependencies=_owner_only)
 app.include_router(shots.router, dependencies=_owner_only)
 app.include_router(pins.router, dependencies=_owner_only)
+app.include_router(scorecard.router, dependencies=_owner_only)
 
 
 @app.on_event("startup")

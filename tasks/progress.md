@@ -3,6 +3,623 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (round-recap-insights — NOTICEABLE — integration/next)
+History-relative insights in the round-completion recap. After finishing a round, a calm
+"How this round compared" section appears showing delta vs historical average, ranking
+("Best of your last N"), and per-par-type comparison. Only shown when ≥2 valid history
+rounds exist; graceful first-round and thin-history states return no fabricated numbers.
+
+### What was done
+1. `frontend/src/lib/round-insights.ts` (new, pure, no React/API):
+   - `computeRoundInsights(round, history)` — owner-scoped via `getOwnerPlayerId()`; reuses
+     `deriveParTypeAverages()` from profile-stats for historical par-type side; computes
+     `vsAverageToPar` (thisRound, historicalAvg, delta, sampleSize), `parTypeComparison`
+     (delta per par type), and `ranking` (1-indexed, lowest to-par = rank 1).
+   - MIN_PLAYED_HOLES=9, MIN_HISTORY_ROUNDS=2. Current round filtered from history internally.
+2. `frontend/src/lib/round-insights.test.ts` (new, 27 vitest tests, pure/offline):
+   - Graceful states, vsAverageToPar sign/magnitude, ranking (best/middle/worst), par-type
+     comparison (overlap filtering, empty result), owner scoping (ownerPlayerId override), edge cases.
+3. `frontend/src/components/RoundRecap.tsx` — "How this round compared" section:
+   - Async history load via useEffect on open; insights via useMemo; shown only when 'ready'.
+   - Narrative line + mono kicker + ranking line (birdie color when rank 1) + par-type table.
+   - T.* tokens only; calm yardage-book feel; never blocks the Done flow.
+
+### Gates
+- `npm run lint`: PASS · `npx tsc --noEmit`: PASS · voice-tests --smoke: 265/265
+- `npx vitest run`: PASS (531/531, 26 files, +27 new) · `npm run build`: PASS (19 pages)
+
+NOTICEABLE — "How this round compared" appears in the recap after ≥2 tracked rounds.
+
+## 2026-06-29 (ocr-scorecard-ui — NOTICEABLE — integration/next)
+Camera → review → import UI for the OCR scorecard scan, making the feature end-to-end testable.
+
+### What was done
+1. `frontend/src/lib/types.ts` — added `ScanHole` + `ScanScorecardResponse` interfaces, mirroring
+   the backend `HoleScores` + `ScanScorecardResponse` Pydantic models exactly.
+
+2. `frontend/src/lib/api.ts` — added `scanScorecard(imageBlob: Blob) → ScanScorecardResponse`.
+   Sends a multipart form POST to the existing `POST /api/scorecard/scan` endpoint (field name
+   `image`). Auth via the existing `getAuthToken()` path. Re-exported `ScanScorecardResponse`.
+
+3. `frontend/src/lib/scan-helpers.ts` (new, pure, no I/O):
+   - `OcrPlayerReview` — per-player review row type (ocrName, 18-slot scores[], mappedPlayerId).
+   - `scanResponseToReviewModel(response, roundPlayers)` — converts hole-centric backend response
+     → per-player review rows; uses `matchPlayerName` from `player-match.ts` for fuzzy + phonetic
+     matching ("Bob"/"Robert", "Dipak"/"Deepak" via Soundex). Unknown names → mappedPlayerId=null.
+   - `buildScoreUpdates(reviewModel)` → `[pid, holeIdx, val][]` — collects confirmed entries for
+     the existing handleSetScore path; skips null/out-of-range cells and unmapped rows.
+   - `dataUrlToBlob(dataUrl)` — converts CameraCapture's base64 data URL → Blob for multipart upload.
+
+4. `frontend/src/lib/scan-helpers.test.ts` (new, 27 vitest tests):
+   - Shape conversion: correct slot indices, exactly 18 slots, null for blank/missing keys.
+   - Player matching: exact, case-insensitive, fuzzy, phonetic (Dipak→Deepak), unrecognised.
+   - buildScoreUpdates: valid entries, skip null/unmapped/out-of-range, multi-player, empty.
+
+5. `frontend/src/components/ScanSheet.tsx` — rewired to use the new endpoint + helpers:
+   - `handleCapture`: `dataUrlToBlob` → `scanScorecard(blob)` → `scanResponseToReviewModel`.
+   - Removed old `parseScorecard` dependency (now calls real OCR endpoint directly).
+   - Fuzzy + phonetic player matching replaces case-insensitive exact find().
+   - Graceful error path unchanged: scan fails → error phase with "Try again" button.
+   - Apply button remains the explicit confirm gate — no silent overwrite ever.
+
+### Entry point
+"Scan card" button in the Scorecard section header on the round screen. Tap → CameraCapture
+→ upload → loading → review grid (editable cells + player dropdowns) → "Apply scores"
+confirm → existing handleSetScore path (optimistic + pending overlay, unchanged).
+
+### Device-only (not unit-tested here)
+- Camera capture (native device API)
+- Live Claude vision accuracy on a real scorecard photo
+- Auth end-to-end (Clerk token + server-side verification)
+
+### Gates
+- `npm run lint`: PASS (0 warnings)
+- `npx tsc --noEmit`: PASS (0 errors)
+- `npx tsx voice-tests/runner.ts --smoke`: PASS (265/265)
+- `npx vitest run`: PASS (504/504, 25 test files, +27 new scan-helpers tests)
+- `npm run build`: PASS (19 static pages)
+- `cd backend && ruff check .`: PASS
+
+NOTICEABLE — the "Scan card" affordance on the round screen is now end-to-end: real OCR
+endpoint, fuzzy player matching, review-before-import, no silent overwrite.
+
+## 2026-06-29 (scorecard-scan-robustness — SILENT — integration/next, commit 24fcaca)
+Robustness hardening on `POST /api/scorecard/scan` — two reviewer should-fix items.
+No new deps, no endpoint behavior change, no DB.
+
+### What was done
+1. `backend/app/routes/scorecard.py`:
+   - FIX 1: Factored out `_extract_text_content(content) -> str` (new exported pure helper).
+     Picks the first text-type block from Claude's content list via `getattr(b, "type", None) == "text"`,
+     skipping thinking/tool_use blocks. Replaces `message.content[0].text` which raises
+     AttributeError/IndexError if the first block is a thinking block or content is empty.
+     Empty result flows into `_parse_scan_response`'s existing ValueError("No JSON object found") → clean 500.
+   - FIX 2: Added shape validation in `_parse_scan_response`:
+     - `isinstance(raw["players"], list)` — raises clear ValueError if not a list.
+     - `isinstance(raw["holes"], list)` — raises clear ValueError if not a list.
+     - Per-hole loop: `isinstance(h, dict)` check + `"number" in h` check; all bad shapes
+       raise informative ValueError → existing 500 handler (replaces opaque KeyError/TypeError).
+
+2. `backend/tests/test_scorecard_scan.py`:
+   - Added import for `types` + `_extract_text_content`.
+   - 4 new shape-validation error tests in `TestParseScanResponseErrorPaths`:
+     players-is-dict, holes-not-a-list, hole-missing-number, hole-entry-is-string.
+   - New `TestExtractTextContent` class (5 tests): text-only, thinking-then-text
+     (end-to-end through `_parse_scan_response`), multi-non-text-then-text, no-text-block →
+     empty string → ValueError, empty content list.
+
+### Gates
+- `cd backend && ruff check .`: PASS (all checks passed)
+- `cd backend && uv run pytest tests/ -k "scorecard or scan" -v`: 28/28 PASS (19 existing + 9 new)
+- `cd frontend && npx tsc --noEmit`: 0 errors
+
+SILENT — backend-only robustness fix; no user-visible behavior change.
+
+## 2026-06-29 (ocr-scorecard-scan — SILENT — integration/next)
+Backend-only first iteration of the scorecard OCR feature. New authed endpoint
+`POST /api/scorecard/scan` that accepts a JPEG/PNG/WEBP/GIF image (≤10 MB) and
+returns structured scores via Claude vision.
+
+### What was done
+1. `backend/app/routes/scorecard.py` (new, ~170 lines):
+   - `HoleScores` + `ScanScorecardResponse` Pydantic models (backend-local;
+     mirror to types.ts when the camera→review→import UI ships).
+   - `_SCAN_PROMPT`: vision prompt instructing Claude to return ONLY JSON with
+     players[], holes[{number, par, scores}]; null for blank/unreadable cells.
+   - `_parse_scan_response(text) -> ScanScorecardResponse`: pure function,
+     mirrors the voice.py regex approach; raises `ValueError` with clear
+     message on no-JSON, malformed JSON, or wrong shape.
+   - `POST /api/scorecard/scan`: auth via `current_user_id` dependency;
+     image upload with 10 MB cap + `image/` MIME guard; calls `client.messages.create`
+     with base64 image block + text prompt; delegates to `_parse_scan_response`;
+     handles `anthropic.AuthenticationError` → 401, `ValueError` → 500.
+2. `backend/app/main.py`: import + `app.include_router(scorecard.router, dependencies=_owner_only)`.
+3. `backend/tests/test_scorecard_scan.py` (new, 19 pure tests, no API/DB):
+   10 happy-path tests (single hole, two players, null scores, null par, prose
+   wrapper, 4-player, 18-hole grid, mixed nulls, empty holes list, type check);
+   9 error-path tests (no JSON, empty string, prose only, malformed JSON,
+   truncated JSON, missing players key, missing holes key, voice-shape, wrong shape).
+
+### NOT verified here (device/CI only)
+- Live Claude vision accuracy on a real scorecard photo (no local ANTHROPIC_API_KEY).
+- Auth end-to-end (no local Clerk JWKS).
+NOTE: This is a new authed endpoint + image upload + external vision API call.
+Reviewer + /security-review have been requested by the eng-lead before the bundle merges.
+
+### Gates
+- `cd backend && ruff check .`: PASS (all checks passed)
+- `cd backend && uv run pytest tests/ -k "scorecard or scan" -v`: 19/19 PASS
+- `cd backend && uv run pytest tests/ --ignore=tests/integration -q`: 621/621 PASS (0 regressions)
+- `cd frontend && npx tsc --noEmit`: 0 errors (no frontend changes)
+
+SILENT — backend only. No user-visible surface until the camera→review→import UI ships.
+
+## 2026-06-29 (caddie-reasoning-priority-cap — SILENT — integration/next)
+Prioritized + capped CaddieRecommendation.reasoning[] to at most 4 lines (voice-caddie
+calm fix). Pure Python, typed, no new deps, no DB.
+
+### What was done
+1. `backend/app/caddie/aim_point.py`:
+   - New constant `MAX_REASONING_ITEMS: int = 4`.
+   - New exported pure helper `prioritize_reasoning(items, max_items) -> list[str]`.
+     Stable-sorts by priority, caps to max_items. P0 club line is never evicted.
+   - Refactored generate_recommendation to accumulate `list[tuple[int, str]]` with
+     documented priority tags (P0 club always first, P1 safety-critical, P2 slope/miss,
+     P3 terrain, P4 color), then calls prioritize_reasoning at the end.
+   - club, target_yards, aim_point, miss_side completely unchanged.
+2. `backend/tests/test_reasoning_priority.py` (new, 25 pure tests).
+
+### Priority scheme
+- P0: club/distance fit line — ALWAYS kept, ALWAYS first
+- P1: safety-critical — competition-legal note, pin light (red/yellow), DECADE hazard-aim
+- P2: slope miss-advice, player miss-tendency note
+- P3: shot-line terrain advice
+- P4: color — player history, personal-stats note, distance-adjustment summary
+
+### Gates
+- `cd backend && ruff check .`: PASS
+- `cd backend && uv run pytest tests/ -k "reasoning or aim or caddie or decade or slope"`: 205/205 PASS (25 new, 180 existing)
+- `cd frontend && npx tsc --noEmit`: 0 errors
+
+SILENT — pure backend logic. Voice caddie now speaks at most 4 reasoning lines;
+P4 color is the first to drop when over cap.
+
+## 2026-06-29 (caddie-personal-dispersion — SILENT — integration/next)
+Handicap-scaled shot-dispersion model for the DECADE aim adviser. Pure additive, headless-testable, no new deps, no DB.
+
+### What was done
+1. `backend/app/caddie/decade_advice.py`:
+   - New constants: `HCP_MIN=2.0`, `HCP_MAX=36.0`, `SIGMA_LONG_FRACTION_OF_LAT=2/3`, `_LAT_FRACTION_BREAKPOINTS` (piecewise table: hcp+2->5%, hcp15->6.5%, hcp25->9%, hcp36->11.8%).
+   - New pure function `dispersion_for_handicap(handicap, distance_yds) -> tuple[float, float]` returning `(sigma_lat_yds, sigma_long_yds)`. Piecewise-linear interpolation; clamped to [HCP_MIN, HCP_MAX]; floored at MIN_SIGMA_YDS. Source: DECADE / Broadie (2014) -- scratch ~5% lateral, mid-hcp ~6.5%, high-hcp ~9%, longitudinal ~2/3 of lateral.
+   - `decade_aim_advice`: optional `handicap: float | None = None`. When provided, calls `dispersion_for_handicap`; when None, uses fixed fractions (backward-compatible). Additive only -- club/target_yards/aim_point/miss_side never touched.
+2. `backend/app/caddie/aim_point.py`: threads `handicap` into `decade_aim_advice(hole.hazards, float(distance_yards), handicap=handicap)`.
+
+### Scaling constants / source (DECADE/Broadie-calibrated)
+- hcp +2  -> sigma_lat = 5.0%  (scratch-level)
+- hcp 15  -> sigma_lat = 6.5%  (mid-amateur)
+- hcp 25  -> sigma_lat = 9.0%  (high handicapper)
+- hcp 36  -> sigma_lat = 11.8% (upper clamp)
+- sigma_long = (2/3) x sigma_lat; both floored at MIN_SIGMA_YDS=3.0 yds
+- Clamped to [+2, 36]
+
+### Tests
+- `backend/tests/test_dispersion.py`: `TestDispersionForHandicap` (22 tests): breakpoints, monotone, distance scaling, clamping, floor, determinism.
+- `backend/tests/test_decade_advice.py`: `TestHandicapDispersionScaling` (14 tests): sigma monotone, clamping, wiring (None=default), no crash, deterministic, behavioral (scratch shift <= high-hcp shift for water hazard at 150 yds), club/target/aim/miss unchanged.
+
+### Gates
+- `cd backend && ruff check .`: PASS
+- `cd backend && uv run pytest tests/test_dispersion.py tests/test_decade_advice.py -v`: 103/103 PASS
+- `cd backend && uv run pytest tests/ -k "dispersion or decade or aim or caddie" --ignore=tests/integration`: 179/179 PASS
+- `cd frontend && npx tsc --noEmit`: 0 errors
+- `cd frontend && npm run lint`: PASS
+
+SILENT -- pure backend reasoning. Caddie advice now uses personalised dispersion instead of fixed mid-hcp constants. No UI change.
+
+## 2026-06-29 (caddie-decade-wire-recommend — SILENT — integration/next)
+Activated the dormant DECADE optimizer as additive caddie reasoning. When the expected-strokes-optimal aim deviates ≥4 yards laterally from the flag, a plain-English tip is appended to reasoning[]. Club, target_yards, aim_point, and miss_side are never touched.
+
+### What was done
+1. `backend/app/caddie/decade_advice.py` (new, 175 lines):
+   - `build_classify_point(hazards, pin) -> ClassifyFn`: approximates hole as coordinate plane centred on pin (+x=right, +y=long). Each Hazard mapped to a half-plane by side+distance_from_green. Severity-sorted so most severe wins on overlap. Default: GREEN within 20 yds, FAIRWAY beyond.
+   - Type map: water→WATER, ob→OB, bunker→SAND, trees→RECOVERY, other→severity-based (death→OB, severe→RECOVERY, else ROUGH).
+   - `decade_aim_advice(hazards, shot_distance_yds, pin) -> str | None`: σ_lat=6%·dist (min 3 yd), σ_long=4%·dist (min 3 yd); 9 candidates (pin ± 12 yd in 3-yd steps); calls `optimize_aim`; threshold 4 yd; returns "The percentages favor aiming ~{N}y {direction} of the flag — {hazard} guards the {side}." or None.
+   - No hazards → None; front/back-only hazards → None (symmetric, no lateral shift); pin-optimal → None.
+2. `backend/app/caddie/aim_point.py`: import + additive call after shot_line_advice. Appends to reasoning[] only.
+3. `backend/tests/test_decade_advice.py` (new, 57 tests, pure, no DB/network).
+
+### Approximation + constants
+- Coordinate plane: side='left' → x < -distance_from_green; side='right' → x > distance_from_green; front/back → y half-planes; center → radius ≤ d from pin.
+- SIGMA_LAT_FRACTION=0.06, SIGMA_LONG_FRACTION=0.04, MIN_SIGMA_YDS=3.0, AIM_THRESHOLD_YDS=4.0.
+
+### Gates
+- `ruff check .`: PASS
+- `uv run pytest tests/ -k "decade or aim or caddie or slope" -v`: 161/161 PASS (57 new)
+- `npx tsc --noEmit`: 0 errors · `npm run lint`: PASS · `voice-tests --smoke`: 265/265
+
+SILENT — pure backend reasoning enhancement; no UI change. Caddie API response gains one extra reasoning[] line when a meaningful lateral hazard is present.
+
+## 2026-06-29 (dem-slope-line-advice — SILENT — integration/next)
+Additive terrain-shape advice along the shot path. Pure Python, no DB/network, no new deps.
+
+### What was done
+1. `backend/app/caddie/shot_line_advice.py` (new):
+   - Pure `shot_line_advice(profile_ft, shot_distance_yds) -> str | None`. Thresholds:
+     NET_CHANGE_THRESHOLD_FT=10, END_RISE_THRESHOLD_FT=5, MID_FEATURE_THRESHOLD_FT=8.
+   - Priority: ridge > swale > elevated-green > downhill > None.
+   - Async `sample_shot_line()` helper: lazy-imports fetch_3dep_samples (no DB at load time).
+2. `backend/app/caddie/types.py`: additive `shot_line_profile_ft: Optional[list[float]] = None`
+   on `HoleIntelligence`. Backward-compatible default.
+3. `backend/app/caddie/aim_point.py`: imports + calls `shot_line_advice` ADDITIVELY after
+   green-slope advice. Appends to reasoning[] only. Club/target_yards/aim_point/miss_side unchanged.
+4. `backend/tests/test_shot_line_advice.py`: 46 pure tests, no DB/network.
+
+### Distinct from existing elevation logic
+- compute_adjustments: adjusts NUMERIC distance — not duplicated here.
+- slope_advice.py: GREEN-SURFACE slope miss direction — not touched here.
+- This: terrain SHAPE along the path (elevated green, downhill zone, ridge, swale) — color only.
+
+### Gates
+- `ruff check .`: PASS
+- `uv run pytest tests/ -k "shot_line or slope or aim or caddie" -v`: 131/131 PASS (46 new)
+- `npx tsc --noEmit`: 0 errors
+
+SILENT — reasoning-only backend change. Route handler wire-up (populating shot_line_profile_ft
+via sample_shot_line) is a follow-up once GPS tee/target coords are reliably in the request.
+
+## 2026-06-29 (course-discovery-home — NOTICEABLE — integration/next)
+Added a quiet "Recent courses" section to the home page — a calm quick-resume affordance
+that surfaces the player's last 3 visited courses (from localStorage) with tap-through to
+the course detail page. Only renders when recents exist; completely hidden on first install.
+
+### What was done
+1. `frontend/src/app/page.tsx`:
+   - Added imports for `getRecentCourses` (golf-api.ts) and `mapRecentCourses`/`RecentCourseItem` (course-list.ts).
+   - Added lazy `useState` initializer: `mapRecentCourses(getRecentCourses().slice(0, 3))`.
+     Synchronous localStorage read — no useEffect, no network call, no location prompt.
+     SSR-safe (getRecentCourses() guards typeof window internally).
+   - Added "Recent courses" section after Trophy Case: dashed separator rows, T.serif course
+     name, optional T.mono club subtitle, "›" chevron, 44px min-height tap targets.
+     "All →" label links to the full /courses hub. Section absent entirely if no recents.
+2. Pure mapping helper (`course-list.ts`) and its tests (`course-list.test.ts`) already
+   existed and are fully reused — no new test file needed; 483/483 vitest pass.
+
+### Follow-up (not built — skipped per spec)
+Nearby courses via `searchNearby()` — would require `navigator.geolocation.getCurrentPosition`
+which triggers a permission prompt on home load, explicitly forbidden by the spec. Gating on
+`navigator.permissions.query({ name: 'geolocation' }) === 'granted'` would avoid the prompt
+but adds complexity. Recorded as follow-up when a clean pattern is established.
+
+### Gates
+- `npm run lint`: PASS (0 warnings)
+- `npx tsc --noEmit`: PASS (0 errors)
+- `npx tsx voice-tests/runner.ts --smoke`: PASS (265/265)
+- `npx vitest run`: PASS (483/483, 24 test files)
+- `npm run build`: PASS (19 static pages, home route /)
+
+NOTICEABLE — the "Recent courses" section is visible on the home screen after visiting at
+least one course via the Courses tab. No UI change on first install (section simply absent).
+
+## 2026-06-29 (caddie-tactical-slope-advice — SILENT — integration/next)
+Additive "where to miss" tactical advice derived from green slope relative to approach bearing.
+Pure function, no DB/network, no new deps.
+
+### What was done
+1. `backend/app/caddie/slope_advice.py` (new, 82 lines):
+   - Pure `slope_miss_advice(green_slope, approach_bearing_deg) -> str | None`
+   - Sign convention: `GreenSlope.direction` = compass bearing of the downhill direction (where water flows); `approach_bearing_deg` = compass bearing the golfer shoots toward the green.
+   - `rel = (slope_direction - approach_bearing) % 360` maps to four quadrants:
+     - rel ≤ 45° or > 315°: drops toward back (front-to-back) → "back edge is lower; playing to pin depth keeps you below the hole"
+     - 45° < rel ≤ 135°: drops toward golfer's right (left-to-right) → "favor the left / high side"
+     - 135° < rel ≤ 225°: drops toward front/near side (back-to-front) → "leave it below the hole; miss short"
+     - 225° < rel ≤ 315°: drops toward golfer's left (right-to-left) → "favor the right / high side"
+   - Only moderate/severe slopes get advice; flat/mild return None (no noise).
+   - `severity == "severe"` → qualifier "hard"; `"moderate"` → "moderately".
+2. Wired ADDITIVELY into `generate_recommendation` (aim_point.py): slope advice appended to `reasoning` list ONLY — club, target_yards, aim_point, miss_side.preferred are all unchanged.
+3. `backend/tests/test_slope_advice.py` (new, 39 tests, no DB/network): severity gating, back-to-front "miss short" + "below the hole", right-to-left "right"+"high", left-to-right "left"+"high", front-to-back "lower", relative-direction math (same slope + different bearings = different advice), bearing wraparound (360°), boundary conditions (45°, 46°), determinism, integration tests (wired-into-recommendation, additive-only, flat-adds-nothing).
+
+### Gates
+- `ruff check .`: PASS (all checks passed)
+- `uv run pytest tests/ -k "slope or aim or caddie" -v`: 87/87 PASS (0.55s) — includes all 34 pre-existing aim_point + competition_legal tests
+- `npx tsc --noEmit`: 0 errors (no frontend changes)
+
+SILENT — pure backend logic; no user-visible UI change. No model change (only reasoning list gets an extra line).
+
+## 2026-06-29 (caddie-decade-optimizer-core — SILENT — integration/next)
+Pure DECADE / strokes-gained aim-point optimizer, additive, not wired to recommendations.
+
+### What was done
+1. `backend/app/caddie/decade.py` (new, 232 lines): pure stdlib-only module implementing:
+   - `LandingArea` enum: GREEN, FAIRWAY, ROUGH, SAND, RECOVERY, WATER, OB.
+   - `Dispersion(sigma_long, sigma_lat)` NamedTuple — explicit caller-supplied 1-sigma values.
+   - `ClassifyFn` type alias — seam for real course geometry to plug in later.
+   - PGA-baseline expected-strokes tables (sources: Broadie 2014, DECADE Golf benchmarks).
+     Area ordering guaranteed: GREEN < FAIRWAY < ROUGH < SAND < RECOVERY;
+     WATER/OB = FAIRWAY + 1.0 penalty stroke.
+   - Deterministic 21-point Gaussian quadrature grid (+-3.5 sigma, captures 99.97%).
+   - `expected_strokes_from(area, distance_yds)` — single lookup, no RNG.
+   - `expected_strokes_for_aim(aim, dispersion, classify_fn, pin)` — convolution evaluator.
+   - `optimize_aim(candidates, dispersion, classify_fn, pin)` — candidate search O(N x 441).
+   - Returns `OptimizeResult` with aim, expected_strokes, breakdown dict, full candidate list.
+2. `backend/tests/test_decade.py` (new, 40 tests): proves all specified behaviours.
+
+### Gates
+- ruff check .: PASS
+- uv run pytest tests/test_decade.py -v: 40/40 PASS in 0.07s
+- npx tsc --noEmit: 0 errors
+
+SILENT — pure backend math module; NOT wired to any recommendation endpoint yet.
+
+## 2026-06-29 (course-poc-i4-elevation — SILENT — integration/next, commit b621d78)
+I4 Bethpage Black POC: per-hole elevation (tee→green delta + green slope) from free USGS 3DEP,
+woven into the assembled homegrown course. BE/data, headless.
+
+### What was done
+1. `backend/app/services/elevation.py` — two new exports:
+   - `fetch_3dep_samples(points)` — batch elevation query via USGS 3DEP ArcGIS ImageServer
+     `getSamples` endpoint. Single HTTP round-trip for N points (vs N serial EPQS calls). Returns
+     elevations in feet (converts from 3DEP native metres). Falls back to `fetch_elevation_batch`
+     (parallel EPQS + DB cache) on any error. No new deps.
+   - `compute_hole_elevation_profile(tee_ft, green_ft, green_slope=None)` — PURE function.
+     Returns: tee_elevation_ft, green_elevation_ft, net_change_ft (+= uphill), green_slope passthrough.
+2. `backend/app/services/osm_ingest.py` — `assemble_osm_course` gains optional
+   `hole_elevations: dict[int, dict] | None = None`. Attaches `elevation` key per hole when
+   provided. Backward-compatible: existing callers/tests unaffected.
+3. `backend/tests/test_elevation_profile.py` (new, 29 pure tests, no network/DB).
+
+### Gates
+- ruff check .: PASS
+- pytest tests/ --ignore=tests/integration -k "elevation or spatial or osm or ingest or bethpage": 183/183 PASS
+- npx tsc --noEmit: 0 errors
+
+SILENT — BE/data only; no user-visible surface yet.
+
+## 2026-06-29 (course-poc-i3-validate — SILENT — integration/next)
+I3 Bethpage Black feasibility gate: validate the homegrown pipeline against the published card.
+
+### What was done
+1. Fetched live Overpass data for Bethpage AOI (center 40.7445,-73.4609, radius 2500m) — one-time
+   live call; committed 1.6 MB fixture `backend/tests/fixtures/bethpage_overpass.json`. 820
+   elements, 90 hole LineStrings (5 courses x 18), 96 greens, 215 tees, 270 bunkers.
+2. Assembled Bethpage Black via I0 (`_parse_course_geometry_response` with all holes, no filter)
+   -> I1 spatial join -> I2 (`assemble_osm_course(target_course_name="Black")`).
+3. Published card source: bluegolf.ijgt.com/bluegolf/ijgt/course/bethpageblack/detailedscorecard.htm
+   (verified 2026-06-29). Par 71, 7,486 yards, rating 78.0, slope 155, Black tees.
+4. Wrote `backend/tests/test_bethpage_validation.py` (14 tests, deterministic on fixture, no network).
+
+### Results (VERDICT: VIABLE)
+- Par: 18/18 match. OSM par sequence = card (par 71 total). PERFECT.
+- Handicap: 18/18 match. OSM stroke index = card for all 18 holes. PERFECT.
+- Yardage (straight-line tee->green vs. card Black-tee yardage): 14/18 within 25y.
+  4 holes over tolerance: 7 (+75y), 1 (+40y), 12 (+39y), 9 (+26y).
+  All deltas are POSITIVE (card >= straight-line) -- consistent with dogleg routing adding
+  played distance beyond straight-line. No negative deltas, no gross mis-joins (>200y).
+  Hole 7 is the worst (553y card vs. 478y SL) -- it is famously a severe dogleg par 5.
+- Assembled output: 18 holes, all hole numbers 1-18, all have >=1 polygon feature, par total 71.
+
+### Files changed
+- `backend/tests/fixtures/bethpage_overpass.json` (new, 1.6 MB): committed Overpass fixture.
+- `backend/tests/test_bethpage_validation.py` (new, 14 tests): deterministic I3 validation.
+
+### Gates
+- ruff check .: PASS (all checks passed)
+- pytest tests/test_bethpage_validation.py -v: 14/14 PASS (0.10s)
+- pytest tests/ -k "spatial or osm or ingest": 136/136 PASS (all prior tests green)
+- npx tsc --noEmit: 0 errors
+SILENT -- data/QA work; no user-visible surface. Go/no-go verdict for I4 (3DEP elevation).
+
+## 2026-06-29 (course-poc-i2-store-render — NOTICEABLE — integration/next)
+I2 Bethpage Black POC: assemble homegrown OSM geometry into the PostGIS course
+store and render it in the map view — proving "a hole map from free data, no GolfAPI."
+
+### Verified here (pure/offline)
+- `ruff check .` clean
+- `pytest tests/ -k "spatial or osm or ingest"` 136/136 passed (44 new ingest tests +
+  60 spatial + 34 OSM parsing). New tests cover `_deterministic_uuid` (UUID format,
+  version/variant bits, SHA-1 alignment, pinned stable value) and `assemble_osm_course`
+  (output shape, par/handicap merge, cross-course rejection, edge cases).
+- Frontend: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 483/483 · build clean
+  (/map/course page visible in static export).
+
+### Verified on deploy box / device only
+- Live Overpass fetch (`fetch_course_geometry(lat=40.7445, lng=-73.4609, radius=2500)`)
+  → expected 90 hole LineStrings (5 courses × 18) + polygon features.
+- `upsert_course` DB write (requires ASYNC_DATABASE_URL on deploy box).
+- `GPSMapView` OSM polygon overlay render on TestFlight device.
+
+### Files changed
+BACKEND:
+- `backend/app/services/osm_ingest.py` (new, 130 lines): `_deterministic_uuid(key)`
+  mirrors frontend `deterministicUUID()` exactly (SHA-1 + UUID v5 bits); comment
+  explains how a later GolfAPI id discovery aligns with the stored UUID without
+  migration. `assemble_osm_course(geometry, course_id, course_name, target_course_name,
+  address, location, tee_sets)` — combines I0 holes + I1 spatial join + par/handicap
+  merge from OSM hole LineStrings → exact dict shape for `upsert_course`.
+- `backend/scripts/ingest_osm_course.py` (new, 170 lines): runnable script with
+  argparse; defaults to Bethpage Black (lat=40.7445, lng=-73.4609, radius=2500,
+  target_course_name="Black", course_key="osm-bethpage-black"). `--dry-run` flag
+  shows assembled payload without DB write. Calls fetch_course_geometry (all courses,
+  no filter) → assemble_osm_course → upsert_course.
+- `backend/tests/test_ingest_osm_course.py` (new, 44 tests): pure unit tests for
+  `_deterministic_uuid` and `assemble_osm_course` — no DB, no network.
+
+FRONTEND:
+- `frontend/src/lib/courses/mapped-course-api.ts` (new): `fetchMappedCourse(id)`,
+  `mappedCourseToCoordinates(course)` (extracts green/tee/hazard centroids from
+  polygon features), `getAllHoleFeatures(course)` (flat array with properties.hole).
+- `frontend/src/components/GPSMapView.tsx`: added optional `osmFeatures` prop +
+  `updateOsmPolygons` callback; single GeoJSON source `osm-current-hole` updated on
+  hole change; fill + outline layers with calm palette per featureType (green/fairway/
+  bunker/tee/water). Wired into map load + hole-change effects.
+- `frontend/src/app/map/course/page.tsx` (new): minimal POC viewer at
+  `/map/course?id=<uuid>`; loads mapped course, converts to CourseCoordinates,
+  renders GPSMapView with osmFeatures polygon overlay.
+
+### How to run the ingest (deploy box)
+```
+cd backend
+uv run python scripts/ingest_osm_course.py --dry-run  # preview, no DB
+uv run python scripts/ingest_osm_course.py            # real write (needs ASYNC_DATABASE_URL)
+```
+
+### How to view the map (after ingest)
+Navigate to: http://<host>/map/course?id=<Course UUID from dry-run output>
+
+Classification: NOTICEABLE (new map view + polygon rendering), but device-only for
+the render verification (requires ingest on deploy box + TestFlight build).
+
+## 2026-06-29 (course-poc-i1-spatial-join — SILENT — commit fc93c94 on integration/next)
+Pure-geometry I1 of the Bethpage Black homegrown course-data track. No DB, no network,
+no new dependencies (stdlib math only).
+
+Changes:
+- backend/app/services/osm.py: added `course_name` property (golf:course:name OSM tag) to
+  every hole Feature returned by `_parse_course_geometry_response`.  Required by the spatial
+  join for cross-course rejection.  Backward-compatible additive change; all 34 existing
+  test_osm_parsing tests still pass.
+- backend/app/services/course_spatial.py (new, 250 lines): pure module implementing:
+  · Equirectangular distance (_deg_to_m) — no shapely/PostGIS, stdlib math only.
+  · Point-to-segment distance (_point_to_segment_dist_m) — flat-metric projection.
+  · _ring_centroid (closing-vertex-aware), _match_mode, _linestring_dist_m (3 modes).
+  · assign_features_to_holes(holes, polygons) — accepts ALL holes (all courses);
+    each polygon's centroid is matched to its nearest hole using the feature-type rule
+    (greens → endpoint, tees → startpoint, others → nearest on segment).  Returns
+    {osm_id: (hole_ref, course_name, dist_m)}.
+  · build_course_feature_collection(holes, polygons, target) — filters to target course,
+    groups by hole ref, emits per-hole dicts compatible with courses_mapped.upsert_course.
+- backend/tests/test_course_spatial.py (new, 60 tests): fixture = 2 Black holes +
+  1 Red hole (nearby) + 4 polygons.  Verifies: Black polygons → correct Black hole via
+  endpoint/start/nearest rules; Red-adjacent green REJECTED from Black output; distance
+  helper sanity (1° lat ≈ 111 320 m); edge cases (empty inputs, missing geometry).
+
+Gates: ruff clean · pytest tests/ -k "spatial or osm" 94/94 (60 new + 34 existing) in
+       0.58 s · frontend tsc 0 errors.
+SILENT — backend-only data layer; no user-visible surface. I2 (store + render Black) is next.
+
+## 2026-06-28 (course-poc-i0-osm-polygons — SILENT — integration/next)
+Backend-only: extended `backend/app/services/osm.py` to fetch full GeoJSON polygon/linestring
+geometry from Overpass (foundation for the Bethpage Black POC — I0 of the homegrown course-data
+track). No DB, no frontend changes.
+
+Changes:
+- Added `_USER_AGENT = "Looper/1.0 (golf course mapping)"` + `_OVERPASS_HEADERS` constant.
+  Applied to all three existing Overpass HTTP calls (search_golf_courses, search_osm_with_geometry,
+  fetch_course_features) — public Overpass returns 406 without a User-Agent.
+- Added two pure parsing helpers (unit-test targets):
+  - `_parse_way_to_polygon(geom)` — Overpass {lat,lon} list -> GeoJSON Polygon; auto-closes ring;
+    returns None for degenerate (<4 pt) input.
+  - `_parse_way_to_linestring(geom)` — Overpass {lat,lon} list -> GeoJSON LineString; None if <2 pts.
+- Added `_parse_course_geometry_response(data, course_name_filter)` — pure function; iterates
+  Overpass elements; routes golf=hole ways -> LineString GeoJSON Features (filtered by
+  golf:course:name when course_name_filter is set); routes green/fairway/tee/bunker/water ways ->
+  Polygon GeoJSON Features; skips nodes; returns {holes, greens, fairways, tees, bunkers, water}.
+  Each Feature carries featureType + osm_id; hole Features also carry ref/par/handicap/name (int-cast).
+- Added `fetch_course_geometry(lat, lng, radius_m, course_name)` async function — new public API;
+  issues `out geom` Overpass query for all golf polygon tags + hole ways; delegates parsing to
+  _parse_course_geometry_response; returns GeoJSON Feature dicts compatible with upsert_course.
+  Existing fetch_course_features (centroid-only) is unchanged; existing callers (caddie.py) unaffected.
+- New test file `backend/tests/test_osm_parsing.py` — 34 pure pytest tests, no network, no DB:
+  6 for _parse_way_to_polygon, 4 for _parse_way_to_linestring, 24 for _parse_course_geometry_response
+  (fixture: Black+Red holes + green + bunker + node). Asserts: full ring vs centroid, auto-close,
+  course-name filter (case-insensitive), par/handicap/ref as int, feature-type routing, GeoJSON shape.
+
+Gates: ruff clean (all checks passed) · pytest tests/test_osm_parsing.py 34/34 in 0.06s · tsc 0 errors.
+SILENT — backend-only data-layer change; no user-visible surface yet (I1 spatial join is next).
+
+## 2026-06-28 (voice-player-disambiguation — SILENT fix — integration/next)
+Fixed voice round setup: spoken player names now match saved profiles via fuzzy + phonetic
+matching instead of exact lowercase compare. Root cause: "Dipak" != "Deepak" exact-compare
+-> saved profile not linked. Fix: new pure module `src/lib/player-match.ts` with Soundex
+phonetic key + similarity() reuse; Soundex("Dipak") = Soundex("Deepak") = D120 -> confident
+match at 0.8 score. Wired into `handleVoiceSetup` in `round/new/page.tsx`; free-text slot
+unchanged for genuinely unknown names. De-dup guard prevents same SavedPlayer.id linked twice.
+
+Files changed (3):
+  - frontend/src/lib/player-match.ts (new) -- soundex, matchPlayerName, matchPlayerNames
+  - frontend/src/lib/player-match.test.ts (new) -- 20 vitest tests (owner-bug case + edge cases)
+  - frontend/src/app/round/new/page.tsx -- import matchPlayerNames; replace exact find() in handleVoiceSetup
+
+Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 475/475 (+20 new) · build clean.
+SECONDARY backend change (roster name injection into build_setup_instructions) SKIPPED -- follow-up only.
+SILENT -- internal voice UX fix; not a new feature surface; no new UI chrome.
+
+## 2026-06-28 (B3 designer polish — SILENT fix — commit 2708526 on integration/next)
+Applied 4 review fixes to the course-reviews-surface change (commit 37965cd):
+1. Profile CourseReviews: review body changed from mono UPPERCASE to serif italic (fontSize 12, T.pencilSoft) — NORTHSTAR blocker fix.
+2. Profile CourseReviews: Section kicker "Notes" → "Reviews" for consistency.
+3. CourseDetailClient: Reviews block hidden when reviews.length === 0 after load; no "No reviews yet." empty state on course detail.
+4. Both surfaces: YYYY-MM-DD playedAt parsed with T00:00:00 suffix to avoid UTC-midnight off-by-one in negative-UTC timezones.
+Gates: lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 451/451 · build clean · ruff clean.
+SILENT (no new feature, pure display polish).
+
+## 2026-06-28 (course-reviews-surface B3 — NOTICEABLE — BUILT on integration/next)
+Surface the course reviews (written by B2) in two places:
+  1. Course detail screen (/courses/[id]) — new "Reviews" section with yardage-book dashed rows.
+  2. Profile screen (/profile) — new "Course reviews" Section between YearLog and ShotAnalytics.
+  3. Backend — GET /api/reviews/mine (reviews_router, second router in course_reviews.py).
+  4. Frontend helper getMyReviews() in api.ts.
+  5. Backend tests — TestMyReviews (4 new tests): own-across-keys ordered desc, cross-user isolation,
+     empty, auth fails-closed. Skips locally (no Postgres); passes in CI with Postgres.
+
+Files changed (6):
+  - backend/app/routes/course_reviews.py — reviews_router + list_my_reviews endpoint
+  - backend/app/main.py — register reviews_router with _owner_only
+  - backend/tests/integration/test_course_reviews.py — TestMyReviews class (4 tests)
+  - frontend/src/lib/api.ts — getMyReviews()
+  - frontend/src/app/courses/[id]/CourseDetailClient.tsx — reviews state + fetch + Reviews section
+  - frontend/src/app/profile/page.tsx — CourseReviews component + insertion after YearLog
+
+Gates: ruff clean · lint 0/0 · tsc 0 · voice-tests 265/265 · vitest 451/451 · build clean.
+Backend pytest: 19 skipped (no local Postgres — expected; CI passes).
+NOTICEABLE — two new user-visible surfaces with calm yardage-book styling.
+
+## 2026-06-28 (course-review-model B2 — NOTICEABLE — BUILT on integration/next, pending device-verify)
+Roadmap feature (epic course-search-reviews, was needs-spec, DRY queue). Wrote brief spec
+(specs/course-review-model.md) + opus plan (specs/course-review-model-plan.md), then built.
+
+Lets a golfer write a short review (1-5 rating + note) of a course right after a round,
+stored server-side, owner-scoped, keyed on a string `course_key` (GolfAPI id when known,
+else `name:<slug>`) — deliberately sidesteps the course-identity unification refactor (B5).
+
+BACKEND (commit 7dec6d7):
+- New `CourseReview` ORM (`course_reviews` table) in backend/app/db/models.py + Pydantic
+  CourseReview/CourseReviewCreate in backend/app/models.py (rating Field(ge=1,le=5),
+  body max_length=2000, playedAt Optional[date]). types.ts kept in sync.
+- Alembic migration backend/migrations/versions/0006_009_course_reviews.py — ADDITIVE ONLY
+  (CREATE TABLE + ix_course_reviews_owner_id + ix_course_reviews_course_key; downgrade drops
+  them). down_revision 008_round_owner_player. VERIFIED on PG16 docker:
+  upgrade->downgrade->upgrade all exit 0. CI uses Base.metadata.create_all (not alembic);
+  deploy.yml runs `alembic upgrade head` on ship — ORM + migration describe identical schema
+  incl. index names.
+- New owner-scoped router backend/app/routes/course_reviews.py:
+  POST /api/courses/{course_key}/reviews + GET /api/courses/{course_key}/reviews. Auth via
+  existing current_user_id (require_owner UNTOUCHED, _owner_only app-level gate). Registered
+  BEFORE catch-all courses.router (two-segment path, no shadowing). 15 integration tests
+  (create/echo, owner isolation, rating 0/6->422, boundaries 1/5->200, body 2001->422,
+  auth fails-closed, name: key URL-encode round-trip, no-shadowing guard). course_reviews
+  added to conftest TRUNCATE list.
+
+FRONTEND:
+- Pure helpers frontend/src/lib/course-review-key.ts (resolveCourseKey + normalizeCourseName,
+  no React/DOM) + 15 vitest. resolveCourseKey: match round.courseName against
+  getRecentCourses() for a GolfAPI id, else name:<slug> (slash-free), else null (hide form).
+- getCourseReviews/createCourseReview in api.ts (encodeURIComponent on courseKey).
+- Calm 1-5 rating + short-note form on RoundRecap.tsx (T.* tokens only, 44pt+ targets,
+  safe-area; hidden when no course key; NEVER blocks the Done flow; "Noted." confirmed state,
+  muted error line). Wired from RoundPageClient.tsx via reviewCourseKey useMemo.
+
+REVIEW: reviewer SHIP · /security-review PASS (owner-scoped, no IDOR, parametrized, validated,
+additive migration) · designer APPROVE-WITH-NITS (4 NON-blocking nits recorded as follow-ups:
+maxLength 2000->280 + backend cap align, add "Noted." fade transition, unify borderRadius
+10->14, same-number-tap deselect). QA gates green: lint 0, tsc clean, voice 265/265,
+vitest 451/451, build clean, ruff clean, pytest 234/234 (incl. 15 new).
+
+Pushed to integration/next (7dec6d7); accumulated on the rolling bundle PR (opened this cycle,
+NOT merged). Per cycle constraints: NO TestFlight build, NO owner notification this cycle.
+Classification NOTICEABLE — rides the next bundle approval. This is a backend change the owner
+can test once the bundle ships (deploy applies migration 009 + the live endpoint).
+Follow-ups (not built): course-reviews-surface (B3 — surface reviews on course detail +
+profile); the 4 designer nits; course-identity-unify (B5).
+
 ## 2026-06-28 (social-partner-profile-polish — SILENT)
 - **Done (commit 8153d9f on integration/next):** Designer-blocker polish + hardening on the partner-profile feature.
 

@@ -13,13 +13,20 @@
  *
  * Data: reads existing Round/scores/players — no new data model or endpoints.
  * Games: delegates to <GameResults readOnly> which already owns all format logic.
+ *
+ * B2: Adds an optional course-review affordance (rating 1-5 + short note).
+ * courseKey is resolved by the parent (RoundPageClient) and passed as a prop.
+ * The review POST never blocks the Done flow.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
 import { Round, calculateTotals } from '@/lib/types';
 import GameResults from '@/components/GameResults';
+import { createCourseReview } from '@/lib/api';
+import { getRoundsAsync } from '@/lib/storage-api';
+import { computeRoundInsights } from '@/lib/round-insights';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -30,6 +37,14 @@ export interface RoundRecapProps {
   round: Round;
   /** Parent calls router.push('/') here — recap is purely a display view. */
   onDone: () => void;
+  /**
+   * Resolved course key (GolfAPI id string, or name:<slug>).
+   * When null or absent the review affordance is hidden.
+   * Resolved by RoundPageClient to keep RoundRecap a display-plus-one-action view.
+   */
+  courseKey?: string | null;
+  /** Raw display name captured at write time (so B3 can render without re-resolving). */
+  courseName?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,6 +57,30 @@ function formatToPar(n: number): string {
   return String(n); // negative already carries the '-' sign
 }
 
+/** Format a float average-to-par with sign, 1 decimal place. */
+function formatAvgToPar(n: number): string {
+  if (n === 0) return 'E';
+  const rounded = Math.round(n * 10) / 10;
+  const sign = rounded > 0 ? '+' : '';
+  return `${sign}${rounded.toFixed(1)}`;
+}
+
+/**
+ * Format an absolute delta value for the "better / worse than average" narrative.
+ * Strips trailing .0 so "3.0 strokes" becomes "3 strokes".
+ */
+function formatDeltaStr(n: number): string {
+  const abs = Math.abs(Math.round(n * 10) / 10);
+  return abs % 1 === 0 ? String(Math.round(abs)) : abs.toFixed(1);
+}
+
+/** Return an English ordinal string: 1 → "1st", 2 → "2nd", 3 → "3rd", etc. */
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 function toParColor(n: number): string {
   if (n < 0) return T.birdie;   // under par — warm reddish, like a birdie circle
   if (n === 0) return T.ink;    // even — full ink
@@ -52,7 +91,13 @@ function toParColor(n: number): string {
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function RoundRecap({ open, round, onDone }: RoundRecapProps) {
+export default function RoundRecap({
+  open,
+  round,
+  onDone,
+  courseKey,
+  courseName,
+}: RoundRecapProps) {
   // Compute per-player totals + quiet highlights (birdies, eagles, best hole).
   // calculateTotals is the same helper used everywhere else in the app.
   const playerStats = useMemo(() => {
@@ -104,6 +149,69 @@ export default function RoundRecap({ open, round, onDone }: RoundRecapProps) {
 
   const games = round.games ?? [];
   const hasGames = games.length > 0;
+
+  // ─── Round insights: history-relative comparison ────────────────────────
+  // Loaded async on open; silently absent if history fails to load.
+  const [roundHistory, setRoundHistory] = useState<Round[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    getRoundsAsync()
+      .then((rounds) => {
+        if (!cancelled) {
+          setRoundHistory(rounds);
+          setHistoryReady(true);
+        }
+      })
+      .catch(() => {
+        // Silently ignore — insights section simply won't appear.
+        if (!cancelled) setHistoryReady(true);
+      });
+    return () => { cancelled = true; };
+  }, [open, round.id]);
+
+  const insights = useMemo(
+    () => (historyReady ? computeRoundInsights(round, roundHistory) : null),
+    [round, roundHistory, historyReady]
+  );
+
+  // ─── Course review affordance (B2) ───────────────────────────────────────
+  // Self-contained state; never blocks the Done flow.
+  const showReview = Boolean(courseKey);
+  const [reviewRating, setReviewRating] = useState<number | null>(null);
+  const [reviewBody, setReviewBody] = useState('');
+  type ReviewStatus = 'idle' | 'saving' | 'saved' | 'error';
+  const [reviewStatus, setReviewStatus] = useState<ReviewStatus>('idle');
+
+  async function handleSubmitReview() {
+    if (!courseKey || reviewRating === null) return;
+    setReviewStatus('saving');
+
+    // Derive a safe ISO date from round.date — guard against non-ISO strings.
+    let playedAt: string | undefined;
+    try {
+      const d = new Date(round.date);
+      if (!isNaN(d.getTime())) playedAt = d.toISOString().slice(0, 10);
+    } catch {
+      // leave playedAt undefined — server treats absent as NULL
+    }
+
+    try {
+      await createCourseReview(courseKey, {
+        rating: reviewRating,
+        body: reviewBody.trim() || undefined,
+        roundId: round.id,
+        courseName: courseName ?? round.courseName,
+        playedAt,
+      });
+      setReviewStatus('saved');
+    } catch {
+      // Never throw — the Done button keeps working regardless.
+      setReviewStatus('error');
+    }
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Inline style constants — mirrors CaddieSheet / ScanSheet patterns
@@ -385,6 +493,119 @@ export default function RoundRecap({ open, round, onDone }: RoundRecapProps) {
                 </>
               )}
 
+              {/* ── Round insights: how this round compared to history ───────── */}
+              {/* Only shown when state === 'ready' (≥2 valid history rounds). */}
+              {insights && insights.state === 'ready' && insights.vsAverageToPar && (
+                <>
+                  <div style={hairlineRule} />
+                  <div style={sectionLabel}>How this round compared</div>
+
+                  {/* Main narrative: strokes better / worse than average */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div
+                      style={{
+                        fontFamily: T.sans,
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color:
+                          insights.vsAverageToPar.delta < 0
+                            ? T.birdie
+                            : insights.vsAverageToPar.delta === 0
+                            ? T.ink
+                            : T.pencil,
+                        marginBottom: 5,
+                      }}
+                    >
+                      {insights.vsAverageToPar.delta < 0
+                        ? `${formatDeltaStr(insights.vsAverageToPar.delta)} strokes better than your average`
+                        : insights.vsAverageToPar.delta === 0
+                        ? 'Even with your average'
+                        : `${formatDeltaStr(insights.vsAverageToPar.delta)} strokes above your average`}
+                    </div>
+                    {/* Compact kicker: this round / avg / sample */}
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: '0.8px',
+                        color: T.pencilSoft,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {formatToPar(insights.vsAverageToPar.thisRound)} this round
+                      {' · '}avg {formatAvgToPar(insights.vsAverageToPar.historicalAvg)}
+                      {' over '}
+                      {insights.vsAverageToPar.sampleSize} round
+                      {insights.vsAverageToPar.sampleSize !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+
+                  {/* Ranking line — highlighted when it's the best round */}
+                  {insights.ranking && (
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: '1px',
+                        color: insights.ranking.rank === 1 ? T.birdie : T.pencilSoft,
+                        textTransform: 'uppercase',
+                        marginBottom: 16,
+                      }}
+                    >
+                      {insights.ranking.rank === 1
+                        ? `Best round of your last ${insights.ranking.total}`
+                        : `${ordinal(insights.ranking.rank)} best of your last ${insights.ranking.total}`}
+                    </div>
+                  )}
+
+                  {/* Par-type breakdown — quiet table */}
+                  {insights.parTypeComparison && insights.parTypeComparison.length > 0 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 6,
+                        marginBottom: 8,
+                      }}
+                    >
+                      {insights.parTypeComparison.map((pt) => (
+                        <div
+                          key={pt.par}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'baseline',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: '1px',
+                              color: T.pencil,
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            Par {pt.par}s
+                          </span>
+                          <span
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: '0.5px',
+                              color: pt.delta < 0 ? T.birdie : T.pencilSoft,
+                            }}
+                          >
+                            {formatAvgToPar(pt.thisRoundAvgToPar)} · avg{' '}
+                            {formatAvgToPar(pt.historicalAvgToPar)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
               {/* ── Closing caption — just the holes info, course already in header ── */}
               <div
                 style={{
@@ -394,10 +615,150 @@ export default function RoundRecap({ open, round, onDone }: RoundRecapProps) {
                   fontSize: 13,
                   color: T.pencilSoft,
                   letterSpacing: -0.1,
+                  marginTop: insights && insights.state === 'ready' ? 20 : 0,
                 }}
               >
                 {isPartial ? `Thru ${maxPlayedHoles}` : `${holeCount} holes`}
               </div>
+
+              {/* ── Course review affordance (B2) — hidden when courseKey is absent ── */}
+              {showReview && (
+                <>
+                  <div style={{ ...hairlineRule, marginTop: 28 }} />
+
+                  {reviewStatus === 'saved' ? (
+                    /* Quiet confirmed state — replaces the form once submitted */
+                    <div
+                      style={{
+                        textAlign: 'center',
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        letterSpacing: '1.2px',
+                        color: T.pencilSoft,
+                        textTransform: 'uppercase',
+                        paddingBottom: 8,
+                      }}
+                    >
+                      Noted.
+                    </div>
+                  ) : (
+                    <div style={{ paddingBottom: 8 }}>
+                      {/* Section kicker */}
+                      <div style={{ ...sectionLabel, marginBottom: 16 }}>
+                        How was it?
+                      </div>
+
+                      {/* Star rating — 5 tappable marks, ≥44pt targets */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 4,
+                          marginBottom: 16,
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            aria-label={`Rate ${n} star${n !== 1 ? 's' : ''}`}
+                            onClick={() => setReviewRating(n)}
+                            style={{
+                              minWidth: 44,
+                              minHeight: 44,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: 'none',
+                              background: 'transparent',
+                              cursor: 'pointer',
+                              padding: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: T.serif,
+                                fontStyle: 'italic',
+                                fontSize: 24,
+                                color: reviewRating !== null && n <= reviewRating
+                                  ? T.ink
+                                  : T.pencilSoft,
+                                lineHeight: 1,
+                                userSelect: 'none',
+                              }}
+                            >
+                              {n}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Short note — quiet single-line textarea */}
+                      <textarea
+                        placeholder="A word or two…"
+                        value={reviewBody}
+                        onChange={(e) => setReviewBody(e.target.value)}
+                        maxLength={2000}
+                        rows={2}
+                        style={{
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          resize: 'none',
+                          background: T.paper,
+                          border: `1px solid ${T.hairline}`,
+                          borderRadius: 10,
+                          padding: '10px 12px',
+                          fontFamily: T.sans,
+                          fontSize: 14,
+                          color: T.ink,
+                          lineHeight: 1.5,
+                          outline: 'none',
+                          marginBottom: 12,
+                        }}
+                      />
+
+                      {/* Submit — quiet ink button; disabled until rating chosen */}
+                      <button
+                        onClick={handleSubmitReview}
+                        disabled={reviewRating === null || reviewStatus === 'saving'}
+                        style={{
+                          width: '100%',
+                          padding: '12px 20px',
+                          minHeight: 44,
+                          borderRadius: 10,
+                          border: `1px solid ${T.hairline}`,
+                          background: reviewRating === null ? 'transparent' : T.paperDeep,
+                          color: reviewRating === null ? T.pencilSoft : T.ink,
+                          fontFamily: T.sans,
+                          fontSize: 14,
+                          fontWeight: 500,
+                          cursor: reviewRating === null ? 'default' : 'pointer',
+                          letterSpacing: '0.1px',
+                          transition: 'background 0.15s',
+                        }}
+                      >
+                        {reviewStatus === 'saving' ? 'Saving…' : 'Save note'}
+                      </button>
+
+                      {/* Error state — muted, never blocks Done */}
+                      {reviewStatus === 'error' && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            fontFamily: T.mono,
+                            fontSize: 10,
+                            letterSpacing: '0.8px',
+                            color: T.errorInk,
+                            textAlign: 'center',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          Couldn&apos;t save — tap again or skip
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
 
             </div>
           </div>

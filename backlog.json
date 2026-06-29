@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-28",
+  "updated": "2026-06-29",
   "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle).",
   "items": [
     {
@@ -703,7 +703,7 @@
     {
       "id": "caddie-decade-optimizer-core",
       "priority": 17,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "phase": 2,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -712,12 +712,13 @@
       "headless": "yes",
       "area": "backend",
       "title": "DECADE expected-strokes target optimizer (dispersion convolution core)",
-      "rationale": "New caddie/target_optimizer.py: over candidate aim points, sample the player's dispersion ellipse (dispersion.get_dispersion) across an expected-strokes field (strokes_gained.expected_strokes + hazard penalties); return the target minimizing expected strokes. Pure, unit-testable. THE differentiator \u2014 high value, low device risk. Calibration is the risk (keep params tunable)."
+      "rationale": "New caddie/target_optimizer.py: over candidate aim points, sample the player's dispersion ellipse (dispersion.get_dispersion) across an expected-strokes field (strokes_gained.expected_strokes + hazard penalties); return the target minimizing expected strokes. Pure, unit-testable. THE differentiator \u2014 high value, low device risk. Calibration is the risk (keep params tunable).",
+      "shipped": "Built e2d38bc (2026-06-29). Pure DECADE aim optimizer backend/app/caddie/decade.py (Gaussian-quadrature dispersion convolution over an area->expected-strokes model; reuses strokes_gained Broadie tables). 40 behavioral tests. Additive (NOT wired into recommend yet = caddie-decade-wire-recommend p18)."
     },
     {
       "id": "caddie-decade-wire-recommend",
       "priority": 18,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "phase": 2,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -726,12 +727,13 @@
       "headless": "yes",
       "area": "backend",
       "title": "Wire DECADE optimizer into generate_recommendation",
-      "rationale": "Replace/augment the heuristic aim point in aim_point.py with the optimizer's target + expected-strokes delta vs aim-at-flag; keep traffic-light fallback when geometry missing. Gate behind a flag; snapshot tests to catch regressions."
+      "rationale": "Replace/augment the heuristic aim point in aim_point.py with the optimizer's target + expected-strokes delta vs aim-at-flag; keep traffic-light fallback when geometry missing. Gate behind a flag; snapshot tests to catch regressions.",
+      "shipped": "Built 3f2b5a3 (2026-06-29). SAFE activation: decade_advice.py surfaces the DECADE optimizer as ADDITIVE hazard-aware aim advice in reasoning[] (build_classify_point from OSM hazards + dispersion-scaled optimize_aim, threshold 4y). Club/target/aim_point/miss_side UNCHANGED (verified). 57 tests, 161 caddie green. (Risky aim-override variant intentionally NOT done \u2014 additive advice is the safe activation; real polygons plug into build_classify_point later.)"
     },
     {
       "id": "caddie-tactical-slope-advice",
       "priority": 19,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "phase": 2,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -740,12 +742,13 @@
       "headless": "yes",
       "area": "backend",
       "title": "Tactical slope/miss-bias advice ('bigger slope long \u2192 miss short, club down')",
-      "rationale": "Use green/approach slope + hazard asymmetry so the engine emits DECADE-style lines and biases select_club + miss-side. Unit-test the decision, not the prose. This is the owner's headline 'club down' tactic."
+      "rationale": "Use green/approach slope + hazard asymmetry so the engine emits DECADE-style lines and biases select_club + miss-side. Unit-test the decision, not the prose. This is the owner's headline 'club down' tactic.",
+      "shipped": "Built 4e0ea0b (2026-06-29). Pure slope_miss_advice (relative-to-approach, severity-gated) appended to caddie reasoning; additive (no club/aim/model change); 39 tests, 87 caddie tests green."
     },
     {
       "id": "caddie-personal-dispersion",
       "priority": 20,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "phase": 2,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -754,7 +757,8 @@
       "headless": "yes",
       "area": "backend+data",
       "title": "Personalized dispersion & skill profile from logged shots",
-      "rationale": "Extend caddie/learning.py to derive per-club dispersion + miss bias from tracked shots, persisted on PlayerProfile (mirror personal_sg); get_dispersion prefers personal over table. Cold-start fallback to tables."
+      "rationale": "Extend caddie/learning.py to derive per-club dispersion + miss bias from tracked shots, persisted on PlayerProfile (mirror personal_sg); get_dispersion prefers personal over table. Cold-start fallback to tables.",
+      "shipped": "Built 280171c (2026-06-29). dispersion_for_handicap (DECADE/Broadie-calibrated: scratch 5%/-> 36hcp ~11.8% lateral; long=2/3 lat) wired into decade_aim_advice+generate_recommendation. Scratch=tighter (aggressive aim advice), high-hcp=wider (conservative). Additive (club/aim unchanged), 36 tests, 179 caddie green. (Scoped to handicap-based since no precise shot-offset logs exist.)"
     },
     {
       "id": "dem-3dep-ingestion",
@@ -801,7 +805,7 @@
     {
       "id": "dem-slope-line-advice",
       "priority": 24,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "phase": 3,
       "epic": "map-gps-caddie-intelligence",
       "classification": "noticeable",
@@ -810,7 +814,8 @@
       "headless": "yes",
       "area": "backend",
       "title": "Slope severity along the shot line for tactical advice",
-      "rationale": "Feed approach-zone slope (from the profile) into the tactical-advice engine so 'bigger slope there' is data-driven, not green-only. Depends on dem-hole-profiles + caddie-tactical-slope-advice."
+      "rationale": "Feed approach-zone slope (from the profile) into the tactical-advice engine so 'bigger slope there' is data-driven, not green-only. Depends on dem-hole-profiles + caddie-tactical-slope-advice.",
+      "shipped": "Built 4b5ac80 (2026-06-29). Pure shot_line_advice (ridge/swale/elevated-green/downhill) appended to caddie reasoning; additive (no club/aim change); fires when HoleIntelligence.shot_line_profile_ft populated (route wiring = follow-up). 46 tests, 131 caddie green."
     },
     {
       "id": "ux-tap-to-target",
@@ -956,7 +961,7 @@
     {
       "id": "social-partner-profile",
       "priority": 41,
-      "status": "built-integration-next-pending-device-verify",
+      "status": "done-shipped-main",
       "epic": "social-playing-partners",
       "classification": "noticeable",
       "build": "build",
@@ -969,7 +974,8 @@
       "depends_on": [
         "social-surface-partners"
       ],
-      "done_note": "Built on integration/next (e2d6960 + designer-polish 8153d9f). New read-only partner profile at /players/view?id= (static-export view+query shell mirroring courses/round): kicker 'Partner', serif name/nickname, MiniStat handicap + roundsPlayed, 'rounds together' list (each taps to roundHref). REUSED: owner-scoped getPlayersAsync (list-and-find, offline-resilient) + getRoundsAsync; NO new endpoint, NO storage-api/types change, require_owner untouched. SHARED-ROUNDS WAS FEASIBLE client-side: round Player.id === SavedPlayer.id for roster players (round/new), so getSharedRounds = rounds where a member id matches, date-desc (new pure lib/partner-rounds.ts, NaN-date-hardened). /players rows now tap through (motion.button -> playerHref) with edit preserved (role=button span + stopPropagation) and swipe-to-delete intact. Reviewer SHIP (no blocking issues), QA PASS, designer SHIP after 3 roster NORTHSTAR blockers fixed (row name -> serif, SaaS empty-state card -> quiet serif placeholder + ghost CTA, CSS spinner -> mono 'Loading...' text). Tests: lib/player-url.test.ts + lib/partner-rounds.test.ts. Gates: lint 0, tsc clean, voice 265/265, vitest 434/434, build (out/players/view emitted). FOLLOW-UPS (not built): backend shared-rounds aggregation endpoint; friend graph (social-friend-graph). NOT yet on a TestFlight build / not owner-approved (rides the next noticeable bundle approval; pending on-device verify)."
+      "done_note": "Built on integration/next (e2d6960 + designer-polish 8153d9f). New read-only partner profile at /players/view?id= (static-export view+query shell mirroring courses/round): kicker 'Partner', serif name/nickname, MiniStat handicap + roundsPlayed, 'rounds together' list (each taps to roundHref). REUSED: owner-scoped getPlayersAsync (list-and-find, offline-resilient) + getRoundsAsync; NO new endpoint, NO storage-api/types change, require_owner untouched. SHARED-ROUNDS WAS FEASIBLE client-side: round Player.id === SavedPlayer.id for roster players (round/new), so getSharedRounds = rounds where a member id matches, date-desc (new pure lib/partner-rounds.ts, NaN-date-hardened). /players rows now tap through (motion.button -> playerHref) with edit preserved (role=button span + stopPropagation) and swipe-to-delete intact. Reviewer SHIP (no blocking issues), QA PASS, designer SHIP after 3 roster NORTHSTAR blockers fixed (row name -> serif, SaaS empty-state card -> quiet serif placeholder + ghost CTA, CSS spinner -> mono 'Loading...' text). Tests: lib/player-url.test.ts + lib/partner-rounds.test.ts. Gates: lint 0, tsc clean, voice 265/265, vitest 434/434, build (out/players/view emitted). FOLLOW-UPS (not built): backend shared-rounds aggregation endpoint; friend graph (social-friend-graph). NOT yet on a TestFlight build / not owner-approved (rides the next noticeable bundle approval; pending on-device verify).",
+      "shipped": "SHIPPED PR #67 -> main e68c424 (2026-06-28); frontend-only, TestFlight build cut."
     },
     {
       "id": "social-invite-surfaces",
@@ -1038,7 +1044,7 @@
     {
       "id": "course-detail-start-round",
       "priority": 46,
-      "status": "built-integration-next-pending-device-verify",
+      "status": "done-shipped-main",
       "epic": "course-search-reviews",
       "classification": "noticeable",
       "build": "build (on licensed GolfAPI)",
@@ -1051,12 +1057,17 @@
       "plan": "specs/course-detail-start-round-plan.md",
       "built_commit": "d5db7c6 (+ polish a907aa7)",
       "built_note": "FE-only. New /courses hub (search via existing CourseSearch sheet + Recent + optional GPS Nearby) and /courses/view detail (name/location/par/holes/tees + 'Start a round here' -> sessionStorage handoff into round/new). 5th Courses tab added to FloatingTabBar + HUB_ROUTES + test. Reuses golf-api.ts, CourseSearch, round/new selectedCourse path, and the round/[id] static-export 'view'+query pattern. Reviewer: SHIP. QA: gates green (lint/tsc 0, voice 265/265, vitest 417/417, build incl out/courses + out/courses/view). Designer: APPROVE-WITH-NITS, 4 fix-before-ship + 2 nits folded in (a907aa7). DEVICE-ONLY remaining: live GolfAPI search/detail, GPS Nearby, tab bar at 320px, tee color dots. Rides next approval bundle.",
-      "depends_on": []
+      "depends_on": [],
+      "shipped": "SHIPPED PR #67 -> main e68c424 (2026-06-28); frontend-only, TestFlight build cut."
     },
     {
       "id": "course-review-model",
       "priority": 47,
-      "status": "needs-spec",
+      "status": "built-integration-next-pending-device-verify",
+      "spec": "specs/course-review-model.md",
+      "plan": "specs/course-review-model-plan.md",
+      "built_commit": "7dec6d7",
+      "built_note": "NOTICEABLE (rides next approval bundle). NEW authed backend endpoint + table + a review form on RoundRecap. Backend: CourseReview ORM (course_reviews table, owner-scoped, keyed on string course_key = GolfAPI id or name:<slug>) + Pydantic CourseReview/CourseReviewCreate; Alembic migration 009_course_reviews (ADDITIVE only \u2014 CREATE TABLE + 2 indexes; verified upgrade->downgrade->upgrade on PG16); router course_reviews.py POST/GET /api/courses/{course_key}/reviews (current_user_id owner-scoped, require_owner UNTOUCHED, registered before catch-all courses.router); 15 integration tests. Frontend: resolveCourseKey/normalizeCourseName pure helper (+15 vitest), getCourseReviews/createCourseReview, calm 1-5 rating + note form on RoundRecap (hidden when no course key, never blocks Done). Reviewer SHIP, /security-review PASS, designer APPROVE-WITH-NITS (4 non-blocking nits: maxLength 2000->280, add Noted. fade, borderRadius 10->14, same-number-tap deselect). Gates: lint 0, tsc clean, voice 265/265, vitest 451/451, build clean, ruff clean, pytest 234/234. Pushed to integration/next; on rolling bundle PR (NOT merged). DEVICE/SHIP-ONLY: live endpoint hits prod only after owner ships (deploy runs alembic upgrade head). Backend the owner can test once shipped. Follow-up: course-reviews-surface (B3).",
       "epic": "course-search-reviews",
       "classification": "noticeable",
       "build": "build",
@@ -1070,7 +1081,7 @@
     {
       "id": "course-reviews-surface",
       "priority": 48,
-      "status": "needs-spec",
+      "status": "done-integration-next",
       "epic": "course-search-reviews",
       "classification": "noticeable",
       "build": "build",
@@ -1082,12 +1093,14 @@
       "depends_on": [
         "course-detail-start-round",
         "course-review-model"
-      ]
+      ],
+      "spec": "specs/course-reviews-surface.md",
+      "shipped": "(status corrected from stale in-progress; built + in PR #68)."
     },
     {
       "id": "course-discovery-home",
       "priority": 49,
-      "status": "needs-spec",
+      "status": "built-integration-next-pending-device-verify",
       "epic": "course-search-reviews",
       "classification": "noticeable",
       "build": "build",
@@ -1098,7 +1111,8 @@
       "rationale": "One quiet /courses entry point from home; recent (getRecentCourses) + nearby (searchNearby, golf-api.ts:733). Keep home calm \u2014 one affordance, not a grid.",
       "depends_on": [
         "course-detail-start-round"
-      ]
+      ],
+      "shipped": "Built aeda9fe (2026-06-29). Calm Recent-courses section on home (up to 3, localStorage, no location prompt, no empty state); reuses mapRecentCourses/course-list.ts. 483 vitest + build green. Nearby skipped (would prompt on load) \u2014 follow-up."
     },
     {
       "id": "course-identity-unify",
@@ -1210,6 +1224,181 @@
       "rationale": "OWNER 2026-06-28 (voice is otherwise much better now): when the caddie responds, two overlapping voices play. Setup uses ONE RealtimeCaddieClient, so NOT two sessions. Top suspects, in order: (1) the WebRTC remote audio element in realtime.ts is created with document.createElement(\"audio\")+autoplay but NEVER appended to the DOM and has no playsInline \u2014 on iOS WKWebView the remote track can auto-play via the audio session AND the element \u2192 two offset copies. FIX candidate: append the audioEl to document.body (display:none), set playsInline + autoplay, and ensure it is the SOLE sink; remove on cleanup. (2) double response per turn \u2014 verify only ONE response.created fires per user turn (no stray response.create; confirm server_vad create_response not combined with an explicit create; confirm interrupt_response cancels an in-progress response so a new turn does not overlap an old one). (3) stale session/audioEl not torn down on reconnect. Device-verify with the owner. HIGH priority.",
       "depends_on": [],
       "shipped": "SHIPPED PR #66 -> main 4b902b7 (2026-06-28); TestFlight build cut."
+    },
+    {
+      "id": "voice-player-disambiguation",
+      "priority": 14,
+      "status": "built-integration-next-pending-device-verify",
+      "classification": "noticeable",
+      "build": "build(FE-first)",
+      "size": "S-M",
+      "headless": "partial (match logic headless; voice device-only)",
+      "area": "frontend(+small backend)",
+      "title": "Voice player-name disambiguation \u2014 match spoken names to saved partners (Dipak not Deepak)",
+      "rationale": "Owner 2026-06-28. PRIMARY (frontend-only, safe): fuzzy/phonetic match the player names from set_round_setup against the saved roster (getPlayers) in handleSetRoundSetup/round-new, mapping each to a SavedPlayer.id so the round links the real partner + profile; unknown -> keep free-text (today). Pure match helper + tests. SECONDARY (only if it does NOT risk the voice mint): inject saved player names into build_setup_instructions (setup_voice.py) to bias transcription. NOT blocked \u2014 roster exists.",
+      "depends_on": [],
+      "shipped": "Built 84edfad on integration/next (2026-06-28). Fuzzy+phonetic player-name match vs saved roster in voice setup (Dipak->Deepak resolves to saved partner). gates: lint/tsc/vitest475/voice265/build green. Device-verify the voice flow."
+    },
+    {
+      "id": "course-location-disambiguation",
+      "priority": 16,
+      "status": "blocked",
+      "classification": "noticeable",
+      "build": "build",
+      "size": "M",
+      "headless": "partial",
+      "area": "frontend+backend",
+      "title": "Location-aware course-name disambiguation (Bally not Valley)",
+      "rationale": "Owner 2026-06-28: resolve spoken/typed course names against real nearby courses using current location. BLOCKED on the course search+DB epic (needs the resolver + course DB foundation). Lands at epic iteration 3.",
+      "depends_on": [
+        "course-search-db-epic"
+      ]
+    },
+    {
+      "id": "course-search-db-epic",
+      "priority": 15,
+      "status": "epic",
+      "classification": "noticeable",
+      "title": "EPIC: Course search + homegrown course DB (no GolfAPI)",
+      "rationale": "Owner pivot: build course data from NAIP+OSM+USGS 3DEP + own PostGIS vectors. See specs/homegrown-course-data-plan.md. POC = Bethpage Black (I0-I4); generalize later (I5-I10). Resolver/search layer + location-aware disambiguation ride on top."
+    },
+    {
+      "id": "course-poc-i0-osm-polygons",
+      "priority": 17,
+      "status": "done-integration-next",
+      "epic": "course-search-db-epic",
+      "classification": "silent",
+      "build": "build(BE/data)",
+      "size": "S",
+      "headless": "yes",
+      "area": "backend",
+      "title": "POC I0: OSM golf-polygon fetch + per-course hole filter",
+      "rationale": "Extend osm.py fetch_course_features to return full polygon geometry (out geom) + filter golf=hole by golf:course:name; add a User-Agent (Overpass 406s without one). Foundation for the Bethpage POC. See specs/homegrown-course-data-plan.md.",
+      "depends_on": [],
+      "shipped": "Built 6598245 on integration/next (2026-06-28). osm.py: User-Agent fix + fetch_course_geometry (full GeoJSON polygons + LineString holes) + golf:course:name filter; 34 pure parsing tests; ruff+tsc clean. Foundation for I1 spatial join."
+    },
+    {
+      "id": "course-poc-i1-spatial-join",
+      "priority": 18,
+      "status": "done-integration-next",
+      "epic": "course-search-db-epic",
+      "classification": "silent",
+      "build": "build(BE/data)",
+      "size": "M",
+      "headless": "yes",
+      "area": "backend",
+      "title": "POC I1: spatial join \u2014 assign green/fairway/tee/bunker polygons to Black holes",
+      "rationale": "Nearest hole-centerline assignment w/ cross-course rejection; output per-hole GeoJSON FeatureCollection. Prefer PostGIS ST_Distance/ST_ClosestPoint (no new dep). The core new algorithm.",
+      "depends_on": [
+        "course-poc-i0-osm-polygons"
+      ],
+      "shipped": "Built fc93c94 on integration/next (2026-06-29). course_spatial.py pure-geometry join (greens->hole-end, tees->start, others->nearest segment; cross-course rejection); osm.py holes carry course_name; 60 new tests (94/94 spatial+osm). Output feeds upsert_course in I2."
+    },
+    {
+      "id": "course-poc-i2-store-render",
+      "priority": 19,
+      "status": "built-integration-next-pending-deploy-verify",
+      "epic": "course-search-db-epic",
+      "classification": "noticeable",
+      "build": "build(FE+BE)",
+      "size": "M",
+      "headless": "partial",
+      "area": "frontend+backend",
+      "title": "POC I2: store + render Bethpage Black (homegrown, no elevation)",
+      "rationale": "upsert_course under Black deterministic UUID + card yardages; render in GPSMapView (+ optional NAIP raster). Proves a hole map from free data without GolfAPI.",
+      "depends_on": [
+        "course-poc-i1-spatial-join"
+      ],
+      "shipped": "Built 8c69602 (2026-06-29). osm_ingest.py (deterministic UUID + assemble_osm_course) + scripts/ingest_osm_course.py (Bethpage Black defaults, --dry-run) + 44 tests; GPSMapView polygon overlay + /map/course viewer. Live ingest (Overpass+DB) = run on deploy box; render = device. gates: 136 backend non-DB + 483 vitest + build green."
+    },
+    {
+      "id": "course-poc-i3-validate",
+      "priority": 20,
+      "status": "done-integration-next",
+      "epic": "course-search-db-epic",
+      "classification": "silent",
+      "build": "build(data/QA)",
+      "size": "S",
+      "headless": "yes",
+      "area": "backend",
+      "title": "POC I3: validate Bethpage Black vs published card (feasibility gate)",
+      "rationale": "Assert par+handicap exact, tee->green yardage within tolerance, flag mis-joined greens. The go/no-go gate for the homegrown approach.",
+      "depends_on": [
+        "course-poc-i2-store-render"
+      ],
+      "shipped": "Built 1b9c15e (2026-06-29). FEASIBILITY GATE = VIABLE. vs published Bethpage Black card: par 18/18, handicap 18/18, yardage 14/18 within 25y (4 outliers all doglegs, straight-line<played, zero mis-joins). Committed Overpass fixture + 14 deterministic tests. Caveat: Bethpage is best-case OSM coverage; scale = long tail."
+    },
+    {
+      "id": "course-poc-i4-elevation",
+      "priority": 21,
+      "status": "built-integration-next-pending-deploy-verify",
+      "epic": "course-search-db-epic",
+      "classification": "noticeable",
+      "build": "build(BE/data)",
+      "size": "M",
+      "headless": "yes",
+      "area": "backend",
+      "title": "POC I4: 3DEP AOI elevation for Bethpage Black",
+      "rationale": "One bbox GeoTIFF via USGS 3DEP ImageServer exportImage -> sample tee->green + green grid -> store profile -> feed course_intel. Maps to dem-3dep-ingestion(slim)+dem-hole-profiles.",
+      "depends_on": [
+        "course-poc-i2-store-render"
+      ],
+      "shipped": "Built b621d78 (2026-06-29). 3DEP getSamples batch sampler (m->ft, EPQS fallback) + pure compute_hole_elevation_profile + optional elevation attach in assemble_osm_course; 29 tests (183/183 non-DB). Live 3DEP + DB = deploy/CI. Completes Bethpage POC backend track I0-I4."
+    },
+    {
+      "id": "caddie-reasoning-cap",
+      "priority": 17,
+      "status": "done-integration-next",
+      "classification": "silent",
+      "build": "build(BE)",
+      "size": "S",
+      "headless": "yes",
+      "area": "backend",
+      "title": "Prioritize + cap caddie reasoning (calm, voice-first)",
+      "rationale": "The 3 new advice layers (slope/terrain/DECADE) could push reasoning to 8+ lines \u2014 too noisy for the voice caddie + the calm Northstar. Added prioritize_reasoning() + MAX_REASONING_ITEMS=4, safety-first ordering (club > pin/hazard > slope/miss > terrain > color), club line never dropped.",
+      "shipped": "Built f746c2d (2026-06-29). 25 tests; all 180 existing pass unweakened; club/aim unchanged."
+    },
+    {
+      "id": "ocr-scorecard-scan",
+      "priority": 14,
+      "status": "done-integration-next",
+      "classification": "noticeable-backend-testable",
+      "build": "build",
+      "size": "M",
+      "headless": "partial (parser headless; vision accuracy device)",
+      "area": "backend(+frontend follow-up)",
+      "title": "OCR scorecard scan (photo -> structured scores via Claude vision)",
+      "rationale": "From todo.md gap list. POST /api/scorecard/scan: image upload -> Claude vision -> {players, holes, scores} JSON. Kills manual score entry. Backend first iteration built (d926711); camera->review->import UI is the follow-up. New authed endpoint -> reviewer + /security-review in progress.",
+      "shipped": "Backend built d926711 (2026-06-29): double auth-gated, 10MB cap, format guards, pure parser + 19 tests, 621 backend tests green. Vision accuracy = device/manual. Frontend flow = follow-up iteration. | Reviewer SHIP + /security-review CLEAN (auth double-gated, no injection/secret issues). Hardened 24fcaca (non-text content blocks + shape validation, 28 tests). Backend complete; camera->review->import UI = follow-up ocr-scorecard-ui."
+    },
+    {
+      "id": "ocr-scorecard-ui",
+      "priority": 15,
+      "status": "built-integration-next-pending-device-verify",
+      "classification": "noticeable",
+      "build": "build(FE)",
+      "size": "M",
+      "headless": "partial (UI; vision accuracy device)",
+      "area": "frontend",
+      "title": "OCR scorecard scan UI (camera -> /api/scorecard/scan -> review -> import)",
+      "rationale": "Frontend flow for the OCR backend (ocr-scorecard-scan, d926711): reuse CameraCapture -> POST /api/scorecard/scan -> a review/correct screen -> import scores into the round. Vision accuracy device-tested. Mirror scan response shape into types.ts.",
+      "depends_on": [
+        "ocr-scorecard-scan"
+      ],
+      "shipped": "Built e572b32 (2026-06-29). ScanSheet: CameraCapture -> scanScorecard(POST /api/scorecard/scan) -> editable review grid w/ fuzzy player mapping (reuses player-match) -> confirm -> import via existing handleSetScore (no silent overwrite). scan-helpers.ts + 27 tests; 504 vitest green. Camera + vision accuracy = device-verify. OCR feature now COMPLETE end-to-end."
+    },
+    {
+      "id": "round-recap-insights",
+      "priority": 16,
+      "status": "built-integration-next-pending-device-verify",
+      "classification": "noticeable",
+      "build": "build(FE)",
+      "size": "M",
+      "headless": "yes",
+      "area": "frontend",
+      "title": "Round-recap history insights (this round vs your average / par-type / ranking)",
+      "rationale": "Post-round reflection in RoundRecap: compares the finished round to the owner history (vs avg to-par, par-type vs norms, best-of-last-N). Distinct from this-round highlights + profile aggregates. Reuses profile-stats + owner-scoping. Graceful first-round/thin-history (no fabrication).",
+      "shipped": "Built ead1213 (2026-06-29). Pure computeRoundInsights (first-round/thin-history/ready states) + calm recap section; 27 tests, 531 vitest green. Additive (Done flow untouched)."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
