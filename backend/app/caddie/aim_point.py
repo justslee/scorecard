@@ -17,6 +17,7 @@ from app.caddie.club_selection import (
 )
 from app.caddie.strokes_gained import expected_strokes, personal_lookup
 from app.caddie.slope_advice import slope_miss_advice
+from app.caddie.shot_line_advice import shot_line_advice
 
 
 def classify_pin_position(
@@ -289,6 +290,15 @@ def generate_recommendation(
     slope_advice = slope_miss_advice(hole.green_slope, shot_bearing)
     if slope_advice:
         reasoning.append(slope_advice)
+
+    # Shot-line terrain advice — additive only; does NOT affect club, target, or miss_side.
+    # Fires only when a pre-sampled elevation profile is attached to the hole (via
+    # hole.shot_line_profile_ft, populated by the route handler using sample_shot_line).
+    # Gives tactical color about terrain SHAPE (elevated green, downhill zone, ridge,
+    # swale) — distinct from the numeric distance adjustment and from green-surface slope.
+    sl_advice = shot_line_advice(hole.shot_line_profile_ft or [], distance_yards)
+    if sl_advice:
+        reasoning.append(sl_advice)
 
     # Expected score — pulls from personal_sg first, falls back to PGA baseline.
     # Gate the reasoning text on the actual lookup outcome rather than the

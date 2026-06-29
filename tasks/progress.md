@@ -3,6 +3,34 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (dem-slope-line-advice — SILENT — integration/next)
+Additive terrain-shape advice along the shot path. Pure Python, no DB/network, no new deps.
+
+### What was done
+1. `backend/app/caddie/shot_line_advice.py` (new):
+   - Pure `shot_line_advice(profile_ft, shot_distance_yds) -> str | None`. Thresholds:
+     NET_CHANGE_THRESHOLD_FT=10, END_RISE_THRESHOLD_FT=5, MID_FEATURE_THRESHOLD_FT=8.
+   - Priority: ridge > swale > elevated-green > downhill > None.
+   - Async `sample_shot_line()` helper: lazy-imports fetch_3dep_samples (no DB at load time).
+2. `backend/app/caddie/types.py`: additive `shot_line_profile_ft: Optional[list[float]] = None`
+   on `HoleIntelligence`. Backward-compatible default.
+3. `backend/app/caddie/aim_point.py`: imports + calls `shot_line_advice` ADDITIVELY after
+   green-slope advice. Appends to reasoning[] only. Club/target_yards/aim_point/miss_side unchanged.
+4. `backend/tests/test_shot_line_advice.py`: 46 pure tests, no DB/network.
+
+### Distinct from existing elevation logic
+- compute_adjustments: adjusts NUMERIC distance — not duplicated here.
+- slope_advice.py: GREEN-SURFACE slope miss direction — not touched here.
+- This: terrain SHAPE along the path (elevated green, downhill zone, ridge, swale) — color only.
+
+### Gates
+- `ruff check .`: PASS
+- `uv run pytest tests/ -k "shot_line or slope or aim or caddie" -v`: 131/131 PASS (46 new)
+- `npx tsc --noEmit`: 0 errors
+
+SILENT — reasoning-only backend change. Route handler wire-up (populating shot_line_profile_ft
+via sample_shot_line) is a follow-up once GPS tee/target coords are reliably in the request.
+
 ## 2026-06-29 (course-discovery-home — NOTICEABLE — integration/next)
 Added a quiet "Recent courses" section to the home page — a calm quick-resume affordance
 that surfaces the player's last 3 visited courses (from localStorage) with tap-through to
