@@ -11,6 +11,8 @@ import { calculateTotals } from "@/lib/types";
 import { getOwnerPlayerId } from "@/lib/round-owner";
 import type { Round, Tournament, GolferProfile } from "@/lib/types";
 import SwipeableRow from "@/components/SwipeableRow";
+import { getRecentCourses } from "@/lib/golf-api";
+import { mapRecentCourses, type RecentCourseItem } from "@/lib/course-list";
 
 // ── Derived-data helpers ──────────────────────────────────────────────────────
 
@@ -99,6 +101,12 @@ export default function HomePage() {
   const [rounds, setRounds] = useState<Round[]>([]);
   const [recentTournament, setRecentTournament] = useState<Tournament | null>(null);
   const [profile, setProfile] = useState<GolferProfile | null>(null);
+  // Synchronous localStorage read — no useEffect, no network, no location prompt.
+  // SSR-safe: getRecentCourses() guards typeof window internally.
+  // Sliced to 3 so the home section stays compact; the full list lives on /courses.
+  const [recentCourseItems] = useState<RecentCourseItem[]>(() =>
+    mapRecentCourses(getRecentCourses().slice(0, 3))
+  );
   const [loading, setLoading] = useState(true);
   const [liveRoundId, setLiveRoundId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -898,6 +906,119 @@ export default function HomePage() {
               </div>
             </div>
           )
+        )}
+
+        {/* ── RECENT COURSES ─────────────────────── */}
+        {/* Only rendered when the player has visited courses before (localStorage).
+            No location prompt, no network call, no empty-state clutter. Nearby courses
+            (searchNearby gated on existing GPS permission) is a follow-up item — skipped
+            here to keep home load side-effect-free. Full list lives on /courses tab. */}
+        {recentCourseItems.length > 0 && (
+          <div
+            style={{
+              padding: "16px 22px 20px",
+              borderTop: `1px solid ${T.hairline}`,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                justifyContent: "space-between",
+                marginBottom: 8,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 9.5,
+                  letterSpacing: 1.6,
+                  color: T.pencil,
+                  textTransform: "uppercase",
+                }}
+              >
+                Recent courses
+              </div>
+              <Link
+                href="/courses"
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 8.5,
+                  letterSpacing: 1.2,
+                  color: T.pencilSoft,
+                  textDecoration: "none",
+                }}
+              >
+                All →
+              </Link>
+            </div>
+            <div>
+              {recentCourseItems.map((item, i) => (
+                <div
+                  key={item.id}
+                  style={{
+                    borderTop: i === 0 ? "none" : `1px dashed ${T.hairline}`,
+                  }}
+                >
+                  <button
+                    onClick={() => router.push(item.href)}
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "11px 0",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      minHeight: 44,
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontFamily: T.serif,
+                          fontSize: 16,
+                          color: T.ink,
+                          letterSpacing: -0.2,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {item.title}
+                      </div>
+                      {item.subtitle && (
+                        <div
+                          style={{
+                            fontFamily: T.mono,
+                            fontSize: 8.5,
+                            letterSpacing: 1.1,
+                            color: T.pencilSoft,
+                            textTransform: "uppercase",
+                            marginTop: 2,
+                          }}
+                        >
+                          {item.subtitle}
+                        </div>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        color: T.pencil,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {"›"}
+                    </div>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {/*

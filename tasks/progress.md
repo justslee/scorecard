@@ -3,6 +3,39 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (course-discovery-home — NOTICEABLE — integration/next)
+Added a quiet "Recent courses" section to the home page — a calm quick-resume affordance
+that surfaces the player's last 3 visited courses (from localStorage) with tap-through to
+the course detail page. Only renders when recents exist; completely hidden on first install.
+
+### What was done
+1. `frontend/src/app/page.tsx`:
+   - Added imports for `getRecentCourses` (golf-api.ts) and `mapRecentCourses`/`RecentCourseItem` (course-list.ts).
+   - Added lazy `useState` initializer: `mapRecentCourses(getRecentCourses().slice(0, 3))`.
+     Synchronous localStorage read — no useEffect, no network call, no location prompt.
+     SSR-safe (getRecentCourses() guards typeof window internally).
+   - Added "Recent courses" section after Trophy Case: dashed separator rows, T.serif course
+     name, optional T.mono club subtitle, "›" chevron, 44px min-height tap targets.
+     "All →" label links to the full /courses hub. Section absent entirely if no recents.
+2. Pure mapping helper (`course-list.ts`) and its tests (`course-list.test.ts`) already
+   existed and are fully reused — no new test file needed; 483/483 vitest pass.
+
+### Follow-up (not built — skipped per spec)
+Nearby courses via `searchNearby()` — would require `navigator.geolocation.getCurrentPosition`
+which triggers a permission prompt on home load, explicitly forbidden by the spec. Gating on
+`navigator.permissions.query({ name: 'geolocation' }) === 'granted'` would avoid the prompt
+but adds complexity. Recorded as follow-up when a clean pattern is established.
+
+### Gates
+- `npm run lint`: PASS (0 warnings)
+- `npx tsc --noEmit`: PASS (0 errors)
+- `npx tsx voice-tests/runner.ts --smoke`: PASS (265/265)
+- `npx vitest run`: PASS (483/483, 24 test files)
+- `npm run build`: PASS (19 static pages, home route /)
+
+NOTICEABLE — the "Recent courses" section is visible on the home screen after visiting at
+least one course via the Courses tab. No UI change on first install (section simply absent).
+
 ## 2026-06-29 (caddie-tactical-slope-advice — SILENT — integration/next)
 Additive "where to miss" tactical advice derived from green slope relative to approach bearing.
 Pure function, no DB/network, no new deps.
