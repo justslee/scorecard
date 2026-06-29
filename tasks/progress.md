@@ -3,6 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (course-map-entry-point — NOTICEABLE — integration/next)
+Adds a tappable "Course maps (beta)" entry on the /courses page linking to the homegrown
+Bethpage Black hole map at /map/course?id=2b8caab5-2c55-5752-8cda-336c3a396dac.
+Frontend-only. FALLBACK approach (hardcoded UUID POC constant with a comment).
+
+### What was done
+- `frontend/src/app/courses/page.tsx`:
+  - Added `BETHPAGE_BLACK_MAP_ID` named constant (with comment pointing to ingest script).
+  - Added a quiet "Course maps / beta" section at the bottom of the page (after Nearby,
+    before the CourseSearch overlay). Single row: "Bethpage Black / Hole map" with "›"
+    chevron and a hairline "beta" badge on the section header. Matches existing row
+    pattern (T.serif name, T.mono subtitle, 44px min-height tap target, dashed separator).
+  - No new deps, no backend changes, no layout disruption.
+
+### Entry point
+/courses tab → scroll to bottom → "Course maps (beta)" section → tap "Bethpage Black" row
+→ /map/course?id=2b8caab5-2c55-5752-8cda-336c3a396dac (map viewer, requires ingest on deploy box).
+
+### Gates
+- `npm run lint`: PASS (0 warnings)
+- `npx tsc --noEmit`: PASS (0 errors)
+- `npx tsx voice-tests/runner.ts --smoke`: PASS (265/265)
+- `npx vitest run`: PASS (531/531, 26 files)
+- `npm run build`: PASS (19 pages; /courses and /map/course both present)
+
+NOTICEABLE — the Bethpage Black map is now reachable from the iOS app via a tappable
+entry on the Courses tab (no typed URL needed). Requires the ingest script to have run
+on the deploy box for the map to populate; entry is visible regardless.
+
 ## 2026-06-29 (round-recap-insights — NOTICEABLE — integration/next)
 History-relative insights in the round-completion recap. After finishing a round, a calm
 "How this round compared" section appears showing delta vs historical average, ranking

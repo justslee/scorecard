@@ -1400,6 +1400,19 @@
       "title": "Round-recap history insights (this round vs your average / par-type / ranking)",
       "rationale": "Post-round reflection in RoundRecap: compares the finished round to the owner history (vs avg to-par, par-type vs norms, best-of-last-N). Distinct from this-round highlights + profile aggregates. Reuses profile-stats + owner-scoping. Graceful first-round/thin-history (no fabrication).",
       "shipped": "Built ead1213 (2026-06-29). Pure computeRoundInsights (first-round/thin-history/ready states) + calm recap section; 27 tests, 531 vitest green. Additive (Done flow untouched). | SHIPPED in bundle #68 -> main b475b82 (2026-06-29); backend deployed (migration 009), TestFlight build cut."
+    },
+    {
+      "id": "course-map-viewer-entry",
+      "priority": 14,
+      "status": "built-integration-next-pending-ship",
+      "classification": "noticeable",
+      "build": "build(FE)",
+      "size": "S",
+      "headless": "partial (link; render device)",
+      "area": "frontend",
+      "title": "Reachable entry for the homegrown course-map viewer (Bethpage Black)",
+      "rationale": "/map/course was URL-only (no nav) \u2014 unreachable in the iOS app. Added a calm Course maps (beta) entry on /courses -> Bethpage Black -> /map/course?id=2b8caab5... so the owner can tap to see the homegrown hole map.",
+      "shipped": "Built 4ae5fb4 (2026-06-29). Frontend-only; 531 tests green. Needs ship for the owner to view it. Bethpage Black ingested (18 holes, 181 features) on prod."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
