@@ -1079,7 +1079,7 @@
     {
       "id": "course-reviews-surface",
       "priority": 48,
-      "status": "in-progress",
+      "status": "done-integration-next",
       "epic": "course-search-reviews",
       "classification": "noticeable",
       "build": "build",
@@ -1092,7 +1092,8 @@
         "course-detail-start-round",
         "course-review-model"
       ],
-      "spec": "specs/course-reviews-surface.md"
+      "spec": "specs/course-reviews-surface.md",
+      "shipped": "(status corrected from stale in-progress; built + in PR #68)."
     },
     {
       "id": "course-discovery-home",
