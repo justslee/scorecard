@@ -956,7 +956,7 @@
     {
       "id": "social-partner-profile",
       "priority": 41,
-      "status": "built-integration-next-pending-device-verify",
+      "status": "done-shipped-main",
       "epic": "social-playing-partners",
       "classification": "noticeable",
       "build": "build",
@@ -969,7 +969,8 @@
       "depends_on": [
         "social-surface-partners"
       ],
-      "done_note": "Built on integration/next (e2d6960 + designer-polish 8153d9f). New read-only partner profile at /players/view?id= (static-export view+query shell mirroring courses/round): kicker 'Partner', serif name/nickname, MiniStat handicap + roundsPlayed, 'rounds together' list (each taps to roundHref). REUSED: owner-scoped getPlayersAsync (list-and-find, offline-resilient) + getRoundsAsync; NO new endpoint, NO storage-api/types change, require_owner untouched. SHARED-ROUNDS WAS FEASIBLE client-side: round Player.id === SavedPlayer.id for roster players (round/new), so getSharedRounds = rounds where a member id matches, date-desc (new pure lib/partner-rounds.ts, NaN-date-hardened). /players rows now tap through (motion.button -> playerHref) with edit preserved (role=button span + stopPropagation) and swipe-to-delete intact. Reviewer SHIP (no blocking issues), QA PASS, designer SHIP after 3 roster NORTHSTAR blockers fixed (row name -> serif, SaaS empty-state card -> quiet serif placeholder + ghost CTA, CSS spinner -> mono 'Loading...' text). Tests: lib/player-url.test.ts + lib/partner-rounds.test.ts. Gates: lint 0, tsc clean, voice 265/265, vitest 434/434, build (out/players/view emitted). FOLLOW-UPS (not built): backend shared-rounds aggregation endpoint; friend graph (social-friend-graph). NOT yet on a TestFlight build / not owner-approved (rides the next noticeable bundle approval; pending on-device verify)."
+      "done_note": "Built on integration/next (e2d6960 + designer-polish 8153d9f). New read-only partner profile at /players/view?id= (static-export view+query shell mirroring courses/round): kicker 'Partner', serif name/nickname, MiniStat handicap + roundsPlayed, 'rounds together' list (each taps to roundHref). REUSED: owner-scoped getPlayersAsync (list-and-find, offline-resilient) + getRoundsAsync; NO new endpoint, NO storage-api/types change, require_owner untouched. SHARED-ROUNDS WAS FEASIBLE client-side: round Player.id === SavedPlayer.id for roster players (round/new), so getSharedRounds = rounds where a member id matches, date-desc (new pure lib/partner-rounds.ts, NaN-date-hardened). /players rows now tap through (motion.button -> playerHref) with edit preserved (role=button span + stopPropagation) and swipe-to-delete intact. Reviewer SHIP (no blocking issues), QA PASS, designer SHIP after 3 roster NORTHSTAR blockers fixed (row name -> serif, SaaS empty-state card -> quiet serif placeholder + ghost CTA, CSS spinner -> mono 'Loading...' text). Tests: lib/player-url.test.ts + lib/partner-rounds.test.ts. Gates: lint 0, tsc clean, voice 265/265, vitest 434/434, build (out/players/view emitted). FOLLOW-UPS (not built): backend shared-rounds aggregation endpoint; friend graph (social-friend-graph). NOT yet on a TestFlight build / not owner-approved (rides the next noticeable bundle approval; pending on-device verify).",
+      "shipped": "SHIPPED PR #67 -> main e68c424 (2026-06-28); frontend-only, TestFlight build cut."
     },
     {
       "id": "social-invite-surfaces",
@@ -1038,7 +1039,7 @@
     {
       "id": "course-detail-start-round",
       "priority": 46,
-      "status": "built-integration-next-pending-device-verify",
+      "status": "done-shipped-main",
       "epic": "course-search-reviews",
       "classification": "noticeable",
       "build": "build (on licensed GolfAPI)",
@@ -1051,7 +1052,8 @@
       "plan": "specs/course-detail-start-round-plan.md",
       "built_commit": "d5db7c6 (+ polish a907aa7)",
       "built_note": "FE-only. New /courses hub (search via existing CourseSearch sheet + Recent + optional GPS Nearby) and /courses/view detail (name/location/par/holes/tees + 'Start a round here' -> sessionStorage handoff into round/new). 5th Courses tab added to FloatingTabBar + HUB_ROUTES + test. Reuses golf-api.ts, CourseSearch, round/new selectedCourse path, and the round/[id] static-export 'view'+query pattern. Reviewer: SHIP. QA: gates green (lint/tsc 0, voice 265/265, vitest 417/417, build incl out/courses + out/courses/view). Designer: APPROVE-WITH-NITS, 4 fix-before-ship + 2 nits folded in (a907aa7). DEVICE-ONLY remaining: live GolfAPI search/detail, GPS Nearby, tab bar at 320px, tee color dots. Rides next approval bundle.",
-      "depends_on": []
+      "depends_on": [],
+      "shipped": "SHIPPED PR #67 -> main e68c424 (2026-06-28); frontend-only, TestFlight build cut."
     },
     {
       "id": "course-review-model",
