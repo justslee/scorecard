@@ -25,8 +25,9 @@ import { hapticCelebration } from "@/lib/haptics";
 import { shotPointForPath } from "@/lib/hole-shot-point";
 import { resolveCourseKey } from "@/lib/course-review-key";
 import { getRecentCourses } from "@/lib/golf-api";
-import { resolveMappedCourse, buildMapUrl } from "@/lib/map-bridge";
+import { resolveMappedCourse } from "@/lib/map-bridge";
 import type { MappedCourseListItem } from "@/lib/map-bridge";
+import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import { fetchAPI } from "@/lib/api";
 
 // Player accent colors (yardage-book palette — warm ink tones)
@@ -389,7 +390,7 @@ export default function RoundPage() {
 
   // Resolve mapped course: query GET /api/courses/mapped?search=<courseName> once the
   // round's courseName is known. When a confident name match is found, `mappedCourse`
-  // is set so the "View hole map" link can be shown. Silently hides on any error.
+  // is set so the inline hole diagram can be shown. Silently hides on any error.
   useEffect(() => {
     const courseName = round?.courseName?.trim();
     if (!courseName) return;
@@ -900,33 +901,8 @@ export default function RoundPage() {
               >
                 Round in progress
               </div>
-              {/* Hole-map deep link — shown only when this course has homegrown geometry */}
-              {mappedCourse && (
-                <button
-                  onClick={() => router.push(buildMapUrl(mappedCourse.id, currentHole))}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                    fontFamily: T.mono,
-                    fontSize: 9,
-                    letterSpacing: 1.2,
-                    color: T.pencil,
-                    textTransform: "uppercase" as const,
-                    textDecoration: "underline",
-                    textDecorationStyle: "dotted" as const,
-                    textUnderlineOffset: 2,
-                    lineHeight: 1,
-                    marginTop: 2,
-                    display: "block",
-                    textAlign: "left" as const,
-                  }}
-                  aria-label={`View hole ${currentHole} map`}
-                >
-                  View hole map
-                </button>
-              )}
+              {/* Inline hole map replaces the former "View hole map" link.
+                  Shown below in the scroll body when mappedCourse is resolved. */}
             </div>
           </div>
 
@@ -1212,6 +1188,19 @@ export default function RoundPage() {
               />
             </motion.div>
           </AnimatePresence>
+
+          {/* Inline yardage-book hole map — appears when this course has mapped geometry.
+               Data is fetched once (on mappedCourse resolution) and cached inside
+               InlineHoleDiagram; only the feature lookup changes as currentHole changes. */}
+          {mappedCourse && (
+            <div style={{ marginBottom: 14 }}>
+              <SectionLabel>Hole {currentHole} map</SectionLabel>
+              <InlineHoleDiagram
+                courseId={mappedCourse.id}
+                currentHole={currentHole}
+              />
+            </div>
+          )}
 
           {/* Stakes ticker */}
           <div style={{ marginBottom: 14 }}>

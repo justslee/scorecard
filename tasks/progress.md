@@ -3,6 +3,42 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — round-map-inline (NOTICEABLE — feat/round-map-inline, ready for bundle)
+
+Inline yardage-book hole diagram in the active-round view: when playing a course with homegrown
+geometry, the hole diagram appears automatically in the round view for the current hole. No link
+or tap required. Replaces the "View hole map" deep-link added in feat/round-map-bridge.
+
+### What was built
+- `frontend/src/lib/hole-index.ts` (NEW): pure `indexByHoleNumber<T>` utility for O(1) hole lookup.
+- `frontend/src/lib/hole-index.test.ts` (NEW): 6 unit tests covering indexing + edge cases.
+- `frontend/src/components/course/InlineHoleDiagram.tsx` (NEW): self-contained component that
+  fetches course geometry + GolfAPI coords ONCE on mount, indexes them by hole number, starts a
+  GPSWatcher, and renders `HoleDiagram` for `currentHole` (updates on prop change, no refetch).
+  260px fixed height, full-width, yardage-book paper background + hairline border.
+  Graceful absence: renders nothing while loading or on error.
+- `frontend/src/app/round/[id]/RoundPageClient.tsx`:
+  - Removed "View hole map" deep-link button (superseded by inline diagram).
+  - Removed unused `buildMapUrl` import.
+  - Added `<InlineHoleDiagram courseId={mappedCourse.id} currentHole={currentHole} />` with a
+    "Hole N map" SectionLabel, placed between the AnimatePresence hole card and the stakes ticker.
+  - Gated by `mappedCourse !== null` (same resolution logic as before).
+
+### Gate results (all green)
+- `npm run lint`: clean (0 errors, 0 warnings)
+- `npx tsc --noEmit`: clean
+- `npx vitest run`: 834/834 pass (36 test files — 6 new for hole-index)
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: clean (Next.js SSG, all 19 routes)
+
+### Classification: NOTICEABLE
+User-visible when playing a round at a mapped course (Bethpage Black, Bethpage Red). The
+yardage-book hole diagram appears inline — no tap needed. Tap-to-measure, pinch-zoom, GPS "you"
+dot and F/C/B distances all work as in the standalone /map/course page (same HoleDiagram
+component). No backend changes; token-independent.
+
+---
+
 ## 2026-06-29 — round-map-bridge (NOTICEABLE — feat/round-map-bridge, ready for bundle)
 
 Hole map deep-link from an active round: when playing a course with homegrown geometry,
