@@ -626,6 +626,374 @@ export default function GameResults({ round, game, onUpdateGame, readOnly = fals
     );
   }
 
+  // ───────────────────────────────────────────────────
+  // Scramble
+  // ───────────────────────────────────────────────────
+  if (game.format === 'scramble' && results.scramble) {
+    const sc = results.scramble;
+    const teamName = (id: string) => game.teams?.find((t) => t.id === id)?.name ?? id;
+    const playersForTeam = (id: string) => {
+      const team = game.teams?.find((t) => t.id === id);
+      if (!team) return '';
+      return team.playerIds.map(playerName).join(' / ');
+    };
+
+    const sorted = [...sc.totals].sort((a, b) => {
+      if (a.holesPlayed === 0 && b.holesPlayed === 0) return 0;
+      if (a.holesPlayed === 0) return 1;
+      if (b.holesPlayed === 0) return -1;
+      return a.total - b.total;
+    });
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {sorted.map((t) => (
+            <div key={t.teamId} style={{ ...subRow }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontFamily: T.sans, fontSize: 14, fontWeight: 500, color: T.ink }}>
+                    {teamName(t.teamId)}
+                  </div>
+                  <div style={monoKicker}>{playersForTeam(t.teamId) || '–'}</div>
+                </div>
+                <div style={{ fontFamily: T.serif, fontSize: 26, color: t.holesPlayed ? T.ink : T.pencilSoft, fontVariantNumeric: 'tabular-nums' }}>
+                  {t.holesPlayed ? t.total : '–'}
+                </div>
+              </div>
+              {sc.winnerTeamId === t.teamId && (
+                <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '1px', color: T.accent, textTransform: 'uppercase', marginTop: 4 }}>
+                  Leader
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <details style={{ ...card }}>
+          <summary style={{ cursor: 'pointer', fontFamily: T.mono, fontSize: 10, letterSpacing: '1px', color: T.pencil, textTransform: 'uppercase', padding: '12px 16px', listStyle: 'none' }}>
+            Hole-by-hole best ball
+          </summary>
+          <div style={{ padding: '0 16px 16px', overflowX: 'auto' }}>
+            <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${T.hairline}` }}>
+                  <th style={{ textAlign: 'left', padding: '8px 8px 8px 0', fontFamily: T.mono, fontSize: 9, letterSpacing: '1px', color: T.pencilSoft, textTransform: 'uppercase', fontWeight: 400 }}>Team</th>
+                  {Array.from({ length: 18 }).map((_, i) => (
+                    <th key={i} style={{ padding: '8px 6px', textAlign: 'center', fontFamily: T.mono, fontSize: 9, letterSpacing: '0.5px', color: T.pencilSoft, fontWeight: 400 }}>{i + 1}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(game.teams ?? []).map((team, rowIdx) => (
+                  <tr key={team.id} style={{ borderTop: rowIdx > 0 ? `1px solid ${T.hairlineSoft}` : 'none' }}>
+                    <td style={{ padding: '8px 8px 8px 0', fontFamily: T.sans, fontSize: 13, fontWeight: 500, color: T.ink }}>{team.name}</td>
+                    {(sc.teamScoresByHole[team.id] ?? []).map((v, idx) => (
+                      <td key={idx} style={{ padding: '8px 6px', textAlign: 'center', fontFamily: T.serif, fontSize: 13, color: v != null ? T.ink : T.pencilSoft }}>{v ?? '–'}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+    );
+  }
+
+  // ───────────────────────────────────────────────────
+  // BingoBangoBongo
+  // ───────────────────────────────────────────────────
+  if (game.format === 'bingoBangoBongo' && results.bingoBangoBongo) {
+    const bbb = results.bingoBangoBongo;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ ...card, padding: '16px' }}>
+          <div style={sectionLabel}>Bingo · Bango · Bongo</div>
+          <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 14, color: T.pencilSoft, marginBottom: 12 }}>
+            Scoring requires shot-by-shot event tracking not yet captured.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {bbb.dataLimitations.map((note, i) => (
+              <div key={i} style={{ ...subRow, padding: '10px 12px' }}>
+                <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '1px', color: T.warningInk, textTransform: 'uppercase' }}>
+                  Needs event capture
+                </div>
+                <div style={{ fontFamily: T.sans, fontSize: 13, color: T.pencil, marginTop: 2 }}>{note}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ───────────────────────────────────────────────────
+  // Vegas
+  // ───────────────────────────────────────────────────
+  if (game.format === 'vegas' && results.vegas) {
+    const vg = results.vegas;
+    const teamName = (id: string) => game.teams?.find((t) => t.id === id)?.name ?? id;
+
+    const totalsSorted = Object.entries(vg.totals).sort((a, b) => b[1] - a[1]);
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {totalsSorted.map(([teamId, pts]) => (
+            <div key={teamId} style={{ ...subRow, padding: '16px 14px' }}>
+              <div style={monoKicker}>{teamName(teamId)}</div>
+              <div style={{ fontFamily: T.serif, fontSize: 36, color: pts >= 0 ? T.ink : T.errorInk, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
+                {pts > 0 ? `+${pts}` : pts}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <details style={{ ...card }}>
+          <summary style={{ cursor: 'pointer', fontFamily: T.mono, fontSize: 10, letterSpacing: '1px', color: T.pencil, textTransform: 'uppercase', padding: '12px 16px', listStyle: 'none' }}>
+            Hole-by-hole
+          </summary>
+          <div style={{ padding: '12px 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+            {vg.holes.filter(h => h.teamANumber !== null || h.teamBNumber !== null).map((h) => (
+              <div key={h.holeNumber} style={{ ...subRow, padding: 12 }}>
+                <div style={monoKicker}>Hole {h.holeNumber}</div>
+                <div style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 500, color: T.ink, marginTop: 2 }}>
+                  {h.teamANumber ?? '–'} vs {h.teamBNumber ?? '–'}
+                </div>
+                <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '1px', color: h.winnerTeamId ? T.accent : T.pencilSoft, textTransform: 'uppercase', marginTop: 2 }}>
+                  {h.winnerTeamId ? `${teamName(h.winnerTeamId)} +${Math.abs(h.diff ?? 0)}` : h.diff === 0 ? 'Push' : '–'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+    );
+  }
+
+  // ───────────────────────────────────────────────────
+  // Hammer
+  // ───────────────────────────────────────────────────
+  if (game.format === 'hammer' && results.hammer) {
+    const hm = results.hammer;
+    const totalsSorted = Object.entries(hm.totals).sort((a, b) => b[1] - a[1]);
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {totalsSorted.map(([pid, pts]) => (
+            <div key={pid} style={{ ...subRow, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontFamily: T.sans, fontSize: 14, fontWeight: 500, color: T.ink }}>{playerName(pid)}</div>
+              <div style={{ fontFamily: T.serif, fontSize: 26, color: pts > 0 ? T.ink : pts < 0 ? T.errorInk : T.pencilSoft, fontVariantNumeric: 'tabular-nums' }}>
+                {pts > 0 ? `+${pts}` : pts}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {hm.dataLimitations.length > 0 && (
+          <div style={{ ...card, padding: '12px 14px' }}>
+            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '1px', color: T.warningInk, textTransform: 'uppercase', marginBottom: 4 }}>
+              Note
+            </div>
+            {hm.dataLimitations.map((note, i) => (
+              <div key={i} style={{ fontFamily: T.sans, fontSize: 12, color: T.pencil }}>{note}</div>
+            ))}
+          </div>
+        )}
+
+        <details style={{ ...card }}>
+          <summary style={{ cursor: 'pointer', fontFamily: T.mono, fontSize: 10, letterSpacing: '1px', color: T.pencil, textTransform: 'uppercase', padding: '12px 16px', listStyle: 'none' }}>
+            Hole-by-hole
+          </summary>
+          <div style={{ padding: '12px 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+            {hm.holes.filter(h => h.winnerPlayerId !== null).map((h) => (
+              <div key={h.holeNumber} style={{ ...subRow, padding: 12 }}>
+                <div style={monoKicker}>Hole {h.holeNumber}{h.multiplier > 1 ? ` (×${h.multiplier})` : ''}</div>
+                <div style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 500, color: T.ink, marginTop: 2 }}>
+                  {h.winnerPlayerId ? playerName(h.winnerPlayerId) : '–'}
+                </div>
+                <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '1px', color: T.pencilSoft, textTransform: 'uppercase', marginTop: 2 }}>
+                  {h.points > 0 ? `${h.points} pts/loser` : '–'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+    );
+  }
+
+  // ───────────────────────────────────────────────────
+  // Rabbit
+  // ───────────────────────────────────────────────────
+  if (game.format === 'rabbit' && results.rabbit) {
+    const rb = results.rabbit;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {[
+            { label: 'Front 9 (holes 1–9)', holderId: rb.front9HolderId },
+            { label: 'Back 9 (holes 10–18)', holderId: rb.back9HolderId },
+          ].map((seg) => (
+            <div key={seg.label} style={{ ...subRow, padding: '16px 14px' }}>
+              <div style={monoKicker}>{seg.label}</div>
+              <div style={{ fontFamily: T.serif, fontStyle: 'italic', fontSize: 18, color: seg.holderId ? T.ink : T.pencilSoft, marginTop: 4 }}>
+                {seg.holderId ? playerName(seg.holderId) : 'Uncaptured'}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <details style={{ ...card }}>
+          <summary style={{ cursor: 'pointer', fontFamily: T.mono, fontSize: 10, letterSpacing: '1px', color: T.pencil, textTransform: 'uppercase', padding: '12px 16px', listStyle: 'none' }}>
+            Hole-by-hole
+          </summary>
+          <div style={{ padding: '12px 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+            {rb.holes.filter(h => h.outright !== null).map((h) => (
+              <div key={h.holeNumber} style={{ ...subRow, padding: 12 }}>
+                <div style={monoKicker}>Hole {h.holeNumber}</div>
+                <div style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 500, color: T.ink, marginTop: 2 }}>
+                  {h.outright ? playerName(h.outright) : '–'}
+                </div>
+                {h.changed && (
+                  <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '1px', color: T.accent, textTransform: 'uppercase', marginTop: 2 }}>
+                    {h.holder ? `${playerName(h.holder)} grabs rabbit` : '–'}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+    );
+  }
+
+  // ───────────────────────────────────────────────────
+  // Trash / Junk
+  // ───────────────────────────────────────────────────
+  if (game.format === 'trash' && results.trash) {
+    const tr = results.trash;
+    const totalsSorted = Object.entries(tr.totals).sort((a, b) => b[1] - a[1]);
+    const typeLabel = { birdie: 'Birdie', eagle: 'Eagle', albatross: 'Albatross' } as const;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {totalsSorted.map(([pid, pts]) => (
+            <div key={pid} style={{ ...subRow, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontFamily: T.sans, fontSize: 14, fontWeight: 500, color: T.ink }}>{playerName(pid)}</div>
+                <div style={monoKicker}>
+                  {tr.events.filter(e => e.playerId === pid).map(e => typeLabel[e.type]).join(' · ') || '–'}
+                </div>
+              </div>
+              <div style={{ fontFamily: T.serif, fontSize: 26, color: pts > 0 ? T.ink : T.pencilSoft, fontVariantNumeric: 'tabular-nums' }}>
+                {pts}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {tr.dataLimitations.length > 0 && (
+          <details style={{ ...card }}>
+            <summary style={{ cursor: 'pointer', fontFamily: T.mono, fontSize: 10, letterSpacing: '1px', color: T.pencil, textTransform: 'uppercase', padding: '12px 16px', listStyle: 'none' }}>
+              Junk types needing event capture
+            </summary>
+            <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {tr.dataLimitations.map((note, i) => (
+                <div key={i} style={{ ...subRow, padding: '8px 12px', fontFamily: T.sans, fontSize: 12, color: T.pencil }}>{note}</div>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+    );
+  }
+
+  // ───────────────────────────────────────────────────
+  // Chicago
+  // ───────────────────────────────────────────────────
+  if (game.format === 'chicago' && results.chicago) {
+    const ch = results.chicago;
+    const netSorted = [...ch.playerIds].sort((a, b) => (ch.netVsQuota[b] ?? 0) - (ch.netVsQuota[a] ?? 0));
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {netSorted.map((pid) => {
+            const net = ch.netVsQuota[pid] ?? 0;
+            const quota = ch.quotas[pid] ?? 0;
+            const total = ch.totals[pid] ?? 0;
+            return (
+              <div key={pid} style={{ ...subRow }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontFamily: T.sans, fontSize: 14, fontWeight: 500, color: T.ink }}>{playerName(pid)}</div>
+                    <div style={monoKicker}>
+                      Quota {quota} · Points {total}
+                    </div>
+                  </div>
+                  <div style={{ fontFamily: T.serif, fontSize: 26, color: net > 0 ? T.ink : net < 0 ? T.errorInk : T.pencilSoft, fontVariantNumeric: 'tabular-nums' }}>
+                    {net > 0 ? `+${net}` : net}
+                  </div>
+                </div>
+                {ch.winnerPlayerId === pid && (
+                  <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '1px', color: T.accent, textTransform: 'uppercase', marginTop: 4 }}>
+                    Leader
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ───────────────────────────────────────────────────
+  // Defender
+  // ───────────────────────────────────────────────────
+  if (game.format === 'defender' && results.defender) {
+    const df = results.defender;
+    const totalsSorted = Object.entries(df.totals).sort((a, b) => b[1] - a[1]);
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {totalsSorted.map(([pid, pts]) => (
+            <div key={pid} style={{ ...subRow, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontFamily: T.sans, fontSize: 14, fontWeight: 500, color: T.ink }}>{playerName(pid)}</div>
+              <div style={{ fontFamily: T.serif, fontSize: 26, color: pts > 0 ? T.ink : pts < 0 ? T.errorInk : T.pencilSoft, fontVariantNumeric: 'tabular-nums' }}>
+                {pts > 0 ? `+${pts}` : pts}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <details style={{ ...card }}>
+          <summary style={{ cursor: 'pointer', fontFamily: T.mono, fontSize: 10, letterSpacing: '1px', color: T.pencil, textTransform: 'uppercase', padding: '12px 16px', listStyle: 'none' }}>
+            Hole-by-hole
+          </summary>
+          <div style={{ padding: '12px 16px 16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+            {df.holes.filter(h => h.result !== 'no_score').map((h) => (
+              <div key={h.holeNumber} style={{ ...subRow, padding: 12 }}>
+                <div style={monoKicker}>Hole {h.holeNumber} · Def: {playerName(h.defenderId)}</div>
+                <div style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 500, color: h.result === 'defended' ? T.ink : T.errorInk, marginTop: 2 }}>
+                  {h.result === 'defended' ? 'Defended' : `Beaten by ${h.beaterIds.map(playerName).join(', ')}`}
+                </div>
+                <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: '1px', color: T.pencilSoft, textTransform: 'uppercase', marginTop: 2 }}>
+                  {h.defenderDelta > 0 ? `+${h.defenderDelta}` : h.defenderDelta}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+    );
+  }
+
   return (
     <div style={{ ...card, padding: '16px', fontFamily: T.serif, fontStyle: 'italic', fontSize: 14, color: T.pencilSoft }}>
       Results for this game format are not implemented yet.
