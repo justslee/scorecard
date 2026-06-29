@@ -1217,6 +1217,34 @@
       "rationale": "OWNER 2026-06-28 (voice is otherwise much better now): when the caddie responds, two overlapping voices play. Setup uses ONE RealtimeCaddieClient, so NOT two sessions. Top suspects, in order: (1) the WebRTC remote audio element in realtime.ts is created with document.createElement(\"audio\")+autoplay but NEVER appended to the DOM and has no playsInline \u2014 on iOS WKWebView the remote track can auto-play via the audio session AND the element \u2192 two offset copies. FIX candidate: append the audioEl to document.body (display:none), set playsInline + autoplay, and ensure it is the SOLE sink; remove on cleanup. (2) double response per turn \u2014 verify only ONE response.created fires per user turn (no stray response.create; confirm server_vad create_response not combined with an explicit create; confirm interrupt_response cancels an in-progress response so a new turn does not overlap an old one). (3) stale session/audioEl not torn down on reconnect. Device-verify with the owner. HIGH priority.",
       "depends_on": [],
       "shipped": "SHIPPED PR #66 -> main 4b902b7 (2026-06-28); TestFlight build cut."
+    },
+    {
+      "id": "voice-player-disambiguation",
+      "priority": 14,
+      "status": "ready",
+      "classification": "noticeable",
+      "build": "build(FE-first)",
+      "size": "S-M",
+      "headless": "partial (match logic headless; voice device-only)",
+      "area": "frontend(+small backend)",
+      "title": "Voice player-name disambiguation \u2014 match spoken names to saved partners (Dipak not Deepak)",
+      "rationale": "Owner 2026-06-28. PRIMARY (frontend-only, safe): fuzzy/phonetic match the player names from set_round_setup against the saved roster (getPlayers) in handleSetRoundSetup/round-new, mapping each to a SavedPlayer.id so the round links the real partner + profile; unknown -> keep free-text (today). Pure match helper + tests. SECONDARY (only if it does NOT risk the voice mint): inject saved player names into build_setup_instructions (setup_voice.py) to bias transcription. NOT blocked \u2014 roster exists.",
+      "depends_on": []
+    },
+    {
+      "id": "course-location-disambiguation",
+      "priority": 16,
+      "status": "blocked",
+      "classification": "noticeable",
+      "build": "build",
+      "size": "M",
+      "headless": "partial",
+      "area": "frontend+backend",
+      "title": "Location-aware course-name disambiguation (Bally not Valley)",
+      "rationale": "Owner 2026-06-28: resolve spoken/typed course names against real nearby courses using current location. BLOCKED on the course search+DB epic (needs the resolver + course DB foundation). Lands at epic iteration 3.",
+      "depends_on": [
+        "course-search-db-epic"
+      ]
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
