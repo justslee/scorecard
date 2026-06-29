@@ -525,3 +525,79 @@ class TestBuildCourseFeatureCollection:
     def test_empty_holes_returns_empty_list(self):
         result = build_course_feature_collection([], ALL_POLYGONS, "Black")
         assert result == []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Point geometry support — trees in assign_features_to_holes
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _make_tree_node(osm_id: str, lon: float, lat: float) -> dict:
+    """Build a GeoJSON Point Feature representing an individual tree node."""
+    return {
+        "type": "Feature",
+        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+        "properties": {"featureType": "tree", "osm_id": osm_id},
+    }
+
+
+class TestPointGeometrySpatialJoin:
+    """assign_features_to_holes handles Point geometry (natural=tree nodes)."""
+
+    # A single Black H1 hole running N-S (same coords as ALL_HOLES[0]).
+    _HOLES = [
+        _make_hole("1", "Black", _BH1_TEE_LON, _BH1_TEE_LAT,
+                   _BH1_GREEN_LON, _BH1_GREEN_LAT),
+    ]
+
+    def test_tree_near_bh1_assigns_to_black(self):
+        # Tree placed right at BH1 midpoint.
+        tree = _make_tree_node("node/tree1", _BH1_MID_LON, _BH1_MID_LAT)
+        result = assign_features_to_holes(self._HOLES, [tree])
+        _ref, course, _dist = result["node/tree1"]
+        assert course == "Black"
+
+    def test_tree_near_bh1_assigns_to_hole_1(self):
+        tree = _make_tree_node("node/tree1", _BH1_MID_LON, _BH1_MID_LAT)
+        result = assign_features_to_holes(self._HOLES, [tree])
+        ref, _course, _dist = result["node/tree1"]
+        assert ref == "1"
+
+    def test_tree_point_distance_is_small_on_line(self):
+        # Tree exactly on the BH1 midpoint → distance ≈ 0.
+        tree = _make_tree_node("node/tree1", _BH1_MID_LON, _BH1_MID_LAT)
+        result = assign_features_to_holes(self._HOLES, [tree])
+        _ref, _course, dist = result["node/tree1"]
+        assert dist < 1.0
+
+    def test_tree_with_degenerate_point_coords_gets_inf(self):
+        # Point with only one coordinate value → invalid → inf assignment.
+        bad_tree = {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [-73.000]},
+            "properties": {"featureType": "tree", "osm_id": "node/bad_tree"},
+        }
+        result = assign_features_to_holes(self._HOLES, [bad_tree])
+        _ref, _course, dist = result["node/bad_tree"]
+        assert dist == float("inf")
+
+    def test_mixed_polygon_and_point_features(self):
+        # Both polygon (rough) and point (tree) near BH1.
+        rough = _make_polygon("way/rough1", "rough", _BH1_MID_LON, _BH1_MID_LAT)
+        tree = _make_tree_node("node/tree1", _BH1_MID_LON, _BH1_MID_LAT)
+        result = assign_features_to_holes(self._HOLES, [rough, tree])
+        assert "way/rough1" in result
+        assert "node/tree1" in result
+        # Both should assign to Black H1.
+        assert result["way/rough1"][1] == "Black"
+        assert result["node/tree1"][1] == "Black"
+
+    def test_unsupported_geometry_type_gets_inf(self):
+        # A LineString feature (not Polygon or Point) → inf assignment.
+        linestring_feat = {
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": [[-73.0, 40.7], [-73.0, 40.701]]},
+            "properties": {"featureType": "unknown", "osm_id": "way/ls1"},
+        }
+        result = assign_features_to_holes(self._HOLES, [linestring_feat])
+        _ref, _course, dist = result["way/ls1"]
+        assert dist == float("inf")

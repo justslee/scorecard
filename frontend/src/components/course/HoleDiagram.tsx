@@ -44,8 +44,18 @@ import {
 
 const PAL = {
   // backgrounds
-  rough:       '#d8d3c2',        // slightly darker than T.paperDeep for rough grass
+  // groundFill: a soft warm-grass tone richer than plain paper, so holes with
+  // sparse OSM data still read "full" rather than blank-paper empty.
+  ground:      '#ddd8c6',        // muted warm grass — richer than T.paper
   paper:       T.paper,          // '#f4f1ea'
+
+  // terrain features (render behind fairway)
+  roughFill:   'rgba(190,195,140,0.78)',   // mid-sage, distinct from fairway but greener than ground
+  roughEdge:   'rgba(140,148,90,0.40)',
+  woodsFill:   'rgba(90,118,78,0.72)',     // deeper forest green, muted and calm
+  woodsEdge:   'rgba(60,88,50,0.50)',
+  // tree glyph — slightly lighter than woods fill; small filled canopy dots
+  treeGlyph:   'rgba(75,105,60,0.82)',
 
   // feature fills
   fairway:     'rgba(168,198,126,0.82)',   // soft sage — calm, not neon
@@ -65,7 +75,10 @@ const PAL = {
   flagFill:    T.flag,           // 'oklch(0.54 0.18 28)' — warm red/coral
   label:       T.pencil,         // '#6b6558'
 
-  // tap-to-measure
+  // tap-to-measure connector lines (tee→tap, tap→green)
+  tapConnector: T.inkSoft,       // thin dashed lines, calm ink tone
+
+  // tap-to-measure dot/label
   tapDot:      T.accent,         // cobalt '#3a4a8a'
   tapLabel:    T.ink,
   tapDismiss:  T.pencilSoft,
@@ -89,15 +102,20 @@ function polyPath(pts: [number, number][]): string {
 
 /** Fill colour for a feature type. */
 function featureFill(type: string): string {
+  if (type === 'rough')   return PAL.roughFill;
+  if (type === 'woods')   return PAL.woodsFill;
   if (type === 'fairway') return PAL.fairway;
   if (type === 'water')   return PAL.water;
   if (type === 'bunker')  return PAL.bunker;
   if (type === 'green')   return PAL.green;
-  return PAL.rough;
+  // Unknown types (tee, etc.) fall back to ground tone
+  return PAL.ground;
 }
 
 /** Stroke colour for a feature type (undefined = no stroke). */
 function featureStroke(type: string): string | undefined {
+  if (type === 'rough')   return PAL.roughEdge;
+  if (type === 'woods')   return PAL.woodsEdge;
   if (type === 'fairway') return PAL.fairwayEdge;
   if (type === 'water')   return PAL.waterEdge;
   if (type === 'bunker')  return PAL.bunkerEdge;
@@ -262,7 +280,7 @@ export default function HoleDiagram({
     return <EmptyDiagram width={width} height={height} />;
   }
 
-  const { polygons, line, teePt, greenPt } = projected;
+  const { polygons, line, teePt, greenPt, trees: treePts } = projected;
 
   // Flag pin dimensions — scaled relative to viewport height
   const flagPoleH = Math.max(14, height * 0.038);
@@ -274,6 +292,9 @@ export default function HoleDiagram({
   const tapR      = Math.max(5, height * 0.012);
   const tapFontSz = Math.max(9, height * 0.020);
   const labelPad  = 5; // px between marker and label
+
+  // Tree glyph radius — small canopy dots, calm and quiet
+  const treeR     = Math.max(2.5, height * 0.006);
 
   // GPS dot dimensions
   const gpsR      = Math.max(6, height * 0.014);
@@ -294,19 +315,16 @@ export default function HoleDiagram({
       onTouchEnd={handleSVGTouch}
     >
       <defs>
-        {/* Rough-grass background pattern — subtle dot texture like printed paper */}
-        <pattern
-          id="hd-rough"
-          x="0"
-          y="0"
-          width="4"
-          height="4"
-          patternUnits="userSpaceOnUse"
-        >
-          <rect width="4" height="4" fill={PAL.rough} />
-          <circle cx="1"   cy="1"   r="0.3" fill={T.paperEdge} opacity="0.5" />
-          <circle cx="2.5" cy="2.8" r="0.25" fill={T.paperEdge} opacity="0.4" />
-        </pattern>
+        {/* Subtle paper-grain texture overlay — keeps the hand-drawn, printed feel */}
+        <filter id="hd-grain" x="0%" y="0%" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch" result="noise" />
+          <feColorMatrix type="saturate" values="0" in="noise" result="grey" />
+          <feBlend in="SourceGraphic" in2="grey" mode="multiply" result="out" />
+          <feComponentTransfer in="out">
+            <feFuncA type="linear" slope="0.06" />
+          </feComponentTransfer>
+          <feComposite in="SourceGraphic" in2="out" operator="over" />
+        </filter>
 
         {/* Clip: keep all content within the SVG bounds */}
         <clipPath id="hd-clip">
@@ -314,11 +332,13 @@ export default function HoleDiagram({
         </clipPath>
       </defs>
 
-      {/* ── Layer 0: Paper ground ─────────────────────────────────────────── */}
-      <rect x={0} y={0} width={width} height={height} fill={T.paper} />
-      <rect x={0} y={0} width={width} height={height} fill="url(#hd-rough)" opacity={0.55} />
+      {/* ── Layer 0: Ground fill — a warm-grass tone so sparse-OSM holes read full */}
+      {/* Even without rough/woods polygons the hole always looks inhabited, not blank. */}
+      <rect x={0} y={0} width={width} height={height} fill={PAL.ground} />
+      {/* Faint paper-grain overlay — keeps the printed yardage-book feel */}
+      <rect x={0} y={0} width={width} height={height} fill={T.paper} opacity={0.22} />
 
-      {/* ── Layers 1–4: Polygon features (already sorted back→front) ─────── */}
+      {/* ── Layers 1–N: Polygon features (sorted back→front: rough→woods→fairway…) */}
       <g clipPath="url(#hd-clip)">
         {polygons.map((poly: ProjectedPolygon, i: number) => {
           const stroke = featureStroke(poly.type);
@@ -335,7 +355,23 @@ export default function HoleDiagram({
         })}
       </g>
 
-      {/* ── Layer 5: Routing centreline (dashed, very subtle) ─────────────── */}
+      {/* ── Tree glyphs (natural=tree nodes) — calm canopy dots in woods green ─ */}
+      {treePts.length > 0 && (
+        <g clipPath="url(#hd-clip)">
+          {treePts.map(([tx, ty], i) => (
+            <circle
+              key={i}
+              cx={tx.toFixed(1)}
+              cy={ty.toFixed(1)}
+              r={treeR}
+              fill={PAL.treeGlyph}
+              opacity={0.75}
+            />
+          ))}
+        </g>
+      )}
+
+      {/* ── Routing centreline (dashed, very subtle) ──────────────────────── */}
       {line.length === 2 && (
         <line
           x1={line[0][0].toFixed(1)}
@@ -349,11 +385,11 @@ export default function HoleDiagram({
         />
       )}
 
-      {/* ── Layer 6: Tee box marker (ink circle + paper centre dot) ──────── */}
-      <circle cx={teePt[0]} cy={teePt[1]} r={teeR}     fill={PAL.teeMarker} />
+      {/* ── Tee box marker (ink circle + paper centre dot) ────────────────── */}
+      <circle cx={teePt[0]} cy={teePt[1]} r={teeR}        fill={PAL.teeMarker} />
       <circle cx={teePt[0]} cy={teePt[1]} r={teeR * 0.38} fill={PAL.teePaper} />
 
-      {/* ── Layer 7: Flag on green ────────────────────────────────────────── */}
+      {/* ── Flag on green ─────────────────────────────────────────────────── */}
       <g transform={`translate(${greenPt[0].toFixed(1)},${greenPt[1].toFixed(1)})`}>
         {/* pole */}
         <line
@@ -370,7 +406,7 @@ export default function HoleDiagram({
         />
       </g>
 
-      {/* ── Layer 8: Optional mono labels ────────────────────────────────── */}
+      {/* ── Optional mono labels ──────────────────────────────────────────── */}
       {showLabels && (
         <>
           <text
@@ -396,7 +432,7 @@ export default function HoleDiagram({
         </>
       )}
 
-      {/* ── Layer 9: GPS "you" dot (only when on-hole) ───────────────────── */}
+      {/* ── GPS "you" dot (only when on-hole) ────────────────────────────── */}
       {gpsSVG && (
         <g>
           {/* Outer halo — calm, not aggressive */}
@@ -441,9 +477,31 @@ export default function HoleDiagram({
         </g>
       )}
 
-      {/* ── Layer 10: Tap-to-measure marker ──────────────────────────────── */}
+      {/* ── Tap-to-measure (Job C): connector lines + marker ─────────────── */}
       {tap && (
         <g>
+          {/* Connector: tee → tapped point (shows "from tee" path as a line) */}
+          <line
+            x1={teePt[0].toFixed(1)}
+            y1={teePt[1].toFixed(1)}
+            x2={tap.svgX.toFixed(1)}
+            y2={tap.svgY.toFixed(1)}
+            stroke={PAL.tapConnector}
+            strokeWidth={1.0}
+            strokeDasharray="5 6"
+            opacity={0.45}
+          />
+          {/* Connector: tapped point → green/pin (shows "to pin" path as a line) */}
+          <line
+            x1={tap.svgX.toFixed(1)}
+            y1={tap.svgY.toFixed(1)}
+            x2={greenPt[0].toFixed(1)}
+            y2={greenPt[1].toFixed(1)}
+            stroke={PAL.tapConnector}
+            strokeWidth={1.0}
+            strokeDasharray="5 6"
+            opacity={0.45}
+          />
           {/* Crosshair dot at tapped location */}
           <circle
             cx={tap.svgX.toFixed(1)}

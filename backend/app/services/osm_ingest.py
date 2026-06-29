@@ -183,13 +183,18 @@ def assemble_osm_course(
     """
     all_holes: list[dict] = geometry.get("holes", [])
 
-    # Flatten all polygon feature types for the spatial join.
+    # Flatten all polygon + point feature types for the spatial join.
+    # rough/woods are polygon features; trees are Point features (handled by
+    # the updated assign_features_to_holes which accepts Point geometry).
     polygons: list[dict] = (
         geometry.get("greens",   [])
         + geometry.get("fairways", [])
         + geometry.get("tees",     [])
         + geometry.get("bunkers",  [])
         + geometry.get("water",    [])
+        + geometry.get("rough",    [])
+        + geometry.get("woods",    [])
+        + geometry.get("trees",    [])
     )
 
     # I1: spatial join — assigns each polygon to the nearest hole across ALL

@@ -228,13 +228,26 @@ def assign_features_to_holes(
         osm_id: str = props.get("osm_id", "")
         feature_type: str = props.get("featureType", "")
         geom = poly.get("geometry") or {}
-        rings = geom.get("coordinates") or []
+        geom_type: str = geom.get("type", "")
+        coords_raw = geom.get("coordinates") or []
 
-        if not rings or not rings[0]:
+        if geom_type == "Point":
+            # Individual tree nodes — use coordinates directly as the centroid.
+            if len(coords_raw) < 2:
+                assignments[osm_id] = (None, None, float("inf"))
+                continue
+            clon, clat = float(coords_raw[0]), float(coords_raw[1])
+        elif geom_type == "Polygon":
+            rings = coords_raw
+            if not rings or not rings[0]:
+                assignments[osm_id] = (None, None, float("inf"))
+                continue
+            clon, clat = _ring_centroid(rings[0])
+        else:
+            # Unsupported geometry type (e.g. LineString, missing) — skip.
             assignments[osm_id] = (None, None, float("inf"))
             continue
 
-        clon, clat = _ring_centroid(rings[0])
         mode = _match_mode(feature_type)
 
         best_ref: Optional[str] = None

@@ -74,7 +74,7 @@ export interface ProjectionParams {
 
 /** The result of projectHole — everything the renderer needs. */
 export interface ProjectedHole {
-  /** All polygon features, sorted tee → fairway → bunker → water → green.
+  /** All polygon features, sorted rough → woods → fairway → water → bunker → green → tee.
    *  Callers can override render order if desired. */
   polygons: ProjectedPolygon[];
   /** Two-point routing line [tee, green] in SVG coords for the dashed centreline. */
@@ -89,6 +89,9 @@ export interface ProjectedHole {
   teeLatLng: { lat: number; lng: number } | null;
   /** Geographic lat/lng of the green centroid (for distance calculations). */
   greenLatLng: { lat: number; lng: number } | null;
+  /** Projected tree positions in SVG coords (from natural=tree node Point features).
+   *  Empty array when no tree points exist for this hole. */
+  trees: [number, number][];
 }
 
 /** Target viewport dimensions for the projection. */
@@ -246,15 +249,27 @@ export function projectHole(
   features: GeoJSON.Feature[],
   viewport: Viewport
 ): ProjectedHole | null {
-  // ── Collect polygon rings ────────────────────────────────────────────────
+  // ── Collect polygon rings and raw tree point coords ───────────────────────
   const rawPolygons: Array<{ type: string; ring: number[][] }> = [];
+  const rawTreeLngLats: [number, number][] = [];  // [lng, lat] pairs from Point features
   let teeCentroid: [number, number] | null = null;
   let greenCentroid: [number, number] | null = null;
 
   for (const feat of features) {
     const geom = feat.geometry;
-    if (!geom || geom.type !== 'Polygon') continue;
+    if (!geom) continue;
     const type = (feat.properties?.featureType as string | undefined) ?? '';
+
+    if (geom.type === 'Point') {
+      // Collect tree point positions — projected after the transform is established.
+      const coords = (geom as GeoJSON.Point).coordinates;
+      if (coords && coords.length >= 2) {
+        rawTreeLngLats.push([coords[0], coords[1]]);
+      }
+      continue;
+    }
+
+    if (geom.type !== 'Polygon') continue;
     const ring = (geom as GeoJSON.Polygon).coordinates[0];
     if (!ring || ring.length < 3) continue;
 
@@ -384,8 +399,9 @@ export function projectHole(
   }
 
   // ── Assemble output ────────────────────────────────────────────────────────
-  // Sort so rendering is back→front: fairway, water, bunker, green, tee (handled by component).
-  const RENDER_ORDER = ['fairway', 'water', 'bunker', 'green', 'tee'];
+  // Sort so rendering is back→front.  Terrain layers (rough, woods) go first so
+  // they underlie the mown corridor; fairway, water, bunker, green, tee follow.
+  const RENDER_ORDER = ['rough', 'woods', 'fairway', 'water', 'bunker', 'green', 'tee'];
   const svgPolygons: ProjectedPolygon[] = rotPolygons
     .sort((a, b) => {
       const ai = RENDER_ORDER.indexOf(a.type);
@@ -429,6 +445,13 @@ export function projectHole(
     ryMax,
   };
 
+  // ── Project tree point features ────────────────────────────────────────────
+  // Tree points use the same full transform as polygon vertices, projected via
+  // projectLatLng so they appear correctly on the oriented, scaled diagram.
+  const svgTrees: [number, number][] = rawTreeLngLats.map(([lng, lat]) =>
+    projectLatLng({ lat, lng }, params)
+  );
+
   return {
     polygons: svgPolygons,
     line: [svgTee, svgGreen],
@@ -441,6 +464,7 @@ export function projectHole(
     greenLatLng: greenCentroid
       ? { lat: greenCentroid[1], lng: greenCentroid[0] }
       : null,
+    trees: svgTrees,
   };
 }
 
