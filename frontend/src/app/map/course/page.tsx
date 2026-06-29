@@ -42,6 +42,11 @@ import {
   yardsDistance,
   type ProjectedHole,
 } from "@/lib/course/hole-projection";
+import {
+  extractHoleElevation,
+  formatPlaysLike,
+  type HoleElevation,
+} from "@/lib/course/hole-elevation";
 import { GPSWatcher, type Position } from "@/lib/gps";
 import { T } from "@/components/yardage/tokens";
 
@@ -181,6 +186,7 @@ function HoleInfoStrip({
   gpsDistances,
   gpsAvailable,
   gpsOnHole,
+  elevation,
 }: {
   hole: HoleData;
   features: GeoJSON.Feature[];
@@ -188,6 +194,8 @@ function HoleInfoStrip({
   gpsDistances: GpsDistances | null;
   gpsAvailable: boolean;
   gpsOnHole: boolean;
+  /** Per-hole elevation data from the green feature's properties (null = none). */
+  elevation: HoleElevation | null;
 }) {
   // We compute hazard description with projected info when available.
   // Using null projected here (no extra projection pass) keeps it simple.
@@ -274,6 +282,21 @@ function HoleInfoStrip({
             yds
           </span>
         </div>
+      )}
+
+      {/* Plays-like elevation readout — calm mono line, shown only when data exists */}
+      {elevation && (
+        <p
+          style={{
+            fontFamily: T.mono,
+            fontSize: 11,
+            color: T.pencilSoft,
+            margin: "0 0 6px",
+            letterSpacing: 0.6,
+          }}
+        >
+          {formatPlaysLike(elevation.playsLikeYards)}
+        </p>
       )}
 
       {/* GPS distance strip — on-hole only */}
@@ -555,6 +578,11 @@ function MappedCourseMapInner() {
   const features = holeFeatures(hole);
   const yards = bestYardage(hole);
 
+  // Elevation: read from the green feature's properties (persisted during ingest).
+  // extractHoleElevation returns null when no elevation data exists for this hole
+  // (e.g. pre-elevation ingest or USGS returned None) — the UI shows nothing.
+  const holeElevation = extractHoleElevation(features);
+
   // GPS: compute on-hole status and distances for the info strip.
   // We run this on every render; it's cheap (pure math, no I/O).
   const gpsDist = gpsPos ? computeGpsDistances(gpsPos, features) : null;
@@ -664,6 +692,7 @@ function MappedCourseMapInner() {
           gpsDistances={gpsDist}
           gpsAvailable={gpsAvailable}
           gpsOnHole={gpsOnHole}
+          elevation={holeElevation}
         />
       </div>
 

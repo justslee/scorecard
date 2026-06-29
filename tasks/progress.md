@@ -3,6 +3,67 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 (hole-elevation — NOTICEABLE — feat/hole-elevation, ready to merge)
+Per-hole elevation + "plays-like" readout on the yardage-book hole diagram (I4).
+
+### What was done
+1. `backend/app/services/elevation.py`:
+   - Added `PLAYS_LIKE_YARD_PER_FT = 1/3` constant (1 yd per 3 ft, USGA rule of thumb).
+   - `compute_hole_elevation_profile` now includes `plays_like_yards` in return dict.
+   - Added `sample_course_elevations(holes, target_course_name)` — async, batches
+     all tee+green points into a single USGS 3DEP ImageServer call.
+   - Made `app.db.engine` import lazy (inside `fetch_elevation_cached`) so pure
+     functions work without DATABASE_URL (dry-run / unit tests).
+
+2. `backend/app/services/osm_ingest.py`:
+   - Added `embed_elevation_in_green_features(course_data)` — injects 4 fields
+     (`tee_elevation_ft`, `green_elevation_ft`, `delta_ft`, `plays_like_yards`) into
+     each hole's green feature properties (shallow-copy to avoid mutating shared fixtures).
+     These persist through `upsert_course` → `hole_features.properties` jsonb without
+     any schema migration.
+
+3. `backend/scripts/ingest_osm_course.py`:
+   - Wired elevation sampling after Overpass fetch, before assembly.
+   - Passes `hole_elevations` to `assemble_osm_course`; calls `embed_elevation_in_green_features`.
+   - Dry-run now prints per-hole tee/green/delta/plays-like table.
+
+4. `backend/tests/test_hole_elevation_ingest.py` (new):
+   - 33 tests: `plays_like_yards` math (uphill/downhill/flat/PLAYS_LIKE_YARD_PER_FT),
+     `embed_elevation_in_green_features` (green-only injection, non-green untouched,
+     None-elevation handling, in-place return, both holes, partial maps).
+
+5. `frontend/src/lib/course/hole-elevation.ts` (new):
+   - `extractHoleElevation(features)` — reads elevation from green feature properties.
+   - `formatPlaysLike(playsLikeYards)` — "plays ~N yds longer ↑" / "shorter ↓" / "flat".
+
+6. `frontend/src/lib/course/hole-elevation.test.ts` (new):
+   - 30 tests: null handling, happy path field extraction, formatPlaysLike rounding.
+
+7. `frontend/src/app/map/course/page.tsx`:
+   - `HoleInfoStrip` now accepts `elevation: HoleElevation | null` prop.
+   - Renders a calm mono readout below yardage (absent when no data).
+
+### Storage proof (no migration)
+`embed_elevation_in_green_features` injects into `feature.properties` dicts.
+`upsert_course` stores those as `hole_features.properties` jsonb (existing column).
+`get_course` reads them back and spreads into each feature's `properties`. Verified
+via dry-run: green feature properties contain all 4 fields in the JSON payload.
+
+### Headless dry-run table (live USGS 3DEP, Bethpage Black)
+All 18 holes returned sane Long Island elevations (86–161 ft). Sample:
+  H1: tee=124.5 ft, green=86.0 ft, delta=-38.5 ft, plays=-12.8 yds (downhill)
+  H16: tee=147.9 ft, green=88.0 ft, delta=-59.9 ft, plays=-20.0 yds (dramatic!)
+
+### Prod re-ingest required
+The frontend readout only shows data AFTER the next production re-ingest of Bethpage Black.
+Run: `uv run backend/scripts/ingest_osm_course.py` (no --dry-run) on the EC2.
+
+### Gates
+- Backend ruff: clean · pytest 720/720 (unit) · dry-run: clean
+- Frontend lint: clean · tsc: clean · vitest 660/660 · voice smoke 265/265 · next build: clean
+
+### Status: DONE — on feat/hole-elevation, pushed, ready for eng-lead to include in bundle
+
 ## 2026-06-29 (personal-bests — NOTICEABLE — integration/next, commit 54c476e, PR #72)
 Adds "Personal bests" career milestones section to the profile page.
 

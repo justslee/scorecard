@@ -65,7 +65,9 @@ from app.services.osm_ingest import (  # noqa: E402
     _deterministic_uuid,
     _should_abort_empty,
     assemble_osm_course,
+    embed_elevation_in_green_features,
 )
+from app.services.elevation import sample_course_elevations  # noqa: E402
 
 # ── Bethpage Black defaults ────────────────────────────────────────────────────
 
@@ -113,6 +115,20 @@ async def _ingest(
             flush=True,
         )
 
+    # I4: Sample 3DEP / EPQS elevations for every tee + green on the target course.
+    # Uses a single batch HTTP round-trip via fetch_3dep_samples → compute_hole_elevation_profile.
+    # PLAYS_LIKE_YARD_PER_FT = 1/3 ≈ 1 yard per 3 ft of elevation change (USGA rule of thumb).
+    print(f"Sampling tee + green elevations via USGS 3DEP (target: {target_course_name!r}) …", flush=True)
+    hole_elevations = await sample_course_elevations(
+        holes=geometry.get("holes", []),
+        target_course_name=target_course_name,
+    )
+    print(
+        f"Got elevations for {len(hole_elevations)} hole(s) "
+        f"(holes with no USGS coverage are skipped — shows nothing in UI).",
+        flush=True,
+    )
+
     print(f"Running spatial join → target course: {target_course_name!r} …", flush=True)
     course_data = assemble_osm_course(
         geometry=geometry,
@@ -121,7 +137,12 @@ async def _ingest(
         target_course_name=target_course_name,
         address=address,
         location=location,
+        hole_elevations=hole_elevations,
     )
+
+    # Persist elevation in green feature properties so upsert_course stores it in jsonb.
+    # The hole["elevation"] key is NOT stored by upsert_course; only feature properties are.
+    embed_elevation_in_green_features(course_data)
 
     n_assembled = len(course_data.get("holes", []))
     n_features  = sum(
@@ -147,6 +168,26 @@ async def _ingest(
                 f"polygon features={n_feats}",
                 flush=True,
             )
+
+        # ── Per-hole elevation table ──────────────────────────────────────────
+        if hole_elevations:
+            print("\n  Hole  Tee(ft)  Green(ft)  Delta(ft)  Plays-like(yds)", flush=True)
+            print("  " + "-" * 55, flush=True)
+            for num in sorted(hole_elevations):
+                e = hole_elevations[num]
+                sign = "+" if e["net_change_ft"] >= 0 else ""
+                pl_sign = "+" if e["plays_like_yards"] >= 0 else ""
+                print(
+                    f"  H{num:<4d}  {e['tee_elevation_ft']:<8.1f} "
+                    f"{e['green_elevation_ft']:<10.1f} "
+                    f"{sign}{e['net_change_ft']:<10.1f} "
+                    f"{pl_sign}{e['plays_like_yards']:.1f}",
+                    flush=True,
+                )
+            print("", flush=True)
+        else:
+            print("  (no elevation data — USGS 3DEP returned None for all points)", flush=True)
+
         # Print the first 2 000 chars of the payload for a quick sanity check.
         payload_str = json.dumps(course_data, indent=2)
         print(payload_str[:2000])
