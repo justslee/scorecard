@@ -113,6 +113,9 @@ def _parse_course_geometry_response(
                     "par": int(par_str) if par_str.isdigit() else None,
                     "handicap": int(hcp_str) if hcp_str.isdigit() else None,
                     "name": tags.get("name"),
+                    # Carry the OSM course name so the spatial join can do
+                    # cross-course rejection without re-fetching.
+                    "course_name": tags.get("golf:course:name"),
                 },
             })
 
