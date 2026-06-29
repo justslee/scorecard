@@ -3,6 +3,42 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — settlement-new-formats (SILENT — feat/settlement-new-formats, ready for bundle)
+
+Settlement ledger now handles the four zero-sum wager formats that were missing.
+A round with vegas, hammer, rabbit, or defender games now produces correct settle-up
+entries in the SettleUpPanel instead of being silently ignored.
+
+### What was built
+- `frontend/src/lib/settlement.ts` — `computeGameNetWinnings` extended:
+  - **Vegas**: distributes already-dollarized team totals equally among team players
+    (last player absorbs rounding residual; zero-sum at player level guaranteed).
+  - **Hammer**: maps already-dollarized per-player totals directly to net (no
+    double-multiplication of pointValue).
+  - **Rabbit**: two segment prizes (F9/B9) computed nassau-style — holder wins
+    pointValue from each of the other N-1 players; unpaid if no holder.
+  - **Defender**: maps already-dollarized per-player totals directly to net.
+  - Excluded (scoring, not wager): scramble, bestBall, stableford, chicago,
+    bingoBangoBongo, trash — not zero-sum money pools.
+- `frontend/src/lib/settlement.test.ts` — 14 new tests:
+  - Per-format worked examples asserting per-player net values.
+  - Zero-sum invariant verified for each new format.
+  - Mixed skins + vegas round asserts combined net and zero-sum.
+
+### Gate results (all green)
+- `npm run lint`: clean
+- `npx tsc --noEmit`: clean
+- `npx vitest run`: 980/980 pass (+10 net new tests)
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: Compiled successfully
+
+### Classification: SILENT (backend-logic bugfix)
+No UI changes. The effect is that SettleUpPanel will now show settle-up entries for
+vegas/hammer/rabbit/defender games (previously silently omitted). This is a correctness
+fix — the existing UI panels pick it up automatically via `computeNetSettlement`.
+
+---
+
 ## 2026-06-29 — game-formats (NOTICEABLE — feat/game-formats, ready for bundle)
 
 8 previously-unimplemented game formats now show real results instead of the
