@@ -26,3 +26,10 @@ needed. Make the very last line of that final message exactly:
 `DONE — <one-line summary of what you did / your verdict>`
 
 so the run is unambiguously complete and is not left running in the background.
+## Backend integration tests run in CI — never block on a local DB
+This machine has NO local Postgres. Do NOT `docker run`/pull a Postgres (or any) container
+to run DB-backed backend tests locally — that stalls the run on a slow image pull and is a
+known cause of a hung cycle. Locally run `ruff check .` and any non-DB unit tests only; the
+**CI backend gate runs the Postgres integration tests** on the PR. Trust CI for DB-backed
+verification. If a backend test needs a DB, note it and move on — never spin up a container
+or wait on one.
