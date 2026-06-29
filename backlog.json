@@ -1258,7 +1258,7 @@
     {
       "id": "course-poc-i0-osm-polygons",
       "priority": 17,
-      "status": "ready",
+      "status": "done-integration-next",
       "epic": "course-search-db-epic",
       "classification": "silent",
       "build": "build(BE/data)",
@@ -1267,7 +1267,8 @@
       "area": "backend",
       "title": "POC I0: OSM golf-polygon fetch + per-course hole filter",
       "rationale": "Extend osm.py fetch_course_features to return full polygon geometry (out geom) + filter golf=hole by golf:course:name; add a User-Agent (Overpass 406s without one). Foundation for the Bethpage POC. See specs/homegrown-course-data-plan.md.",
-      "depends_on": []
+      "depends_on": [],
+      "shipped": "Built 6598245 on integration/next (2026-06-28). osm.py: User-Agent fix + fetch_course_geometry (full GeoJSON polygons + LineString holes) + golf:course:name filter; 34 pure parsing tests; ruff+tsc clean. Foundation for I1 spatial join."
     },
     {
       "id": "course-poc-i1-spatial-join",
