@@ -45,6 +45,7 @@ import {
 import {
   extractHoleElevation,
   formatPlaysLike,
+  formatGreenSlope,
   type HoleElevation,
 } from "@/lib/course/hole-elevation";
 import { GPSWatcher, type Position } from "@/lib/gps";
@@ -291,11 +292,26 @@ function HoleInfoStrip({
             fontFamily: T.mono,
             fontSize: 11,
             color: T.pencilSoft,
-            margin: "0 0 6px",
+            margin: "0 0 4px",
             letterSpacing: 0.6,
           }}
         >
           {formatPlaysLike(elevation.playsLikeYards)}
+        </p>
+      )}
+
+      {/* Green-slope readout — shown only when green_slope was populated during ingest */}
+      {elevation?.greenSlope && formatGreenSlope(elevation.greenSlope) && (
+        <p
+          style={{
+            fontFamily: T.mono,
+            fontSize: 11,
+            color: T.pencilSoft,
+            margin: "0 0 6px",
+            letterSpacing: 0.6,
+          }}
+        >
+          {formatGreenSlope(elevation.greenSlope)}
         </p>
       )}
 
