@@ -1290,7 +1290,7 @@
     {
       "id": "course-poc-i2-store-render",
       "priority": 19,
-      "status": "ready",
+      "status": "built-integration-next-pending-deploy-verify",
       "epic": "course-search-db-epic",
       "classification": "noticeable",
       "build": "build(FE+BE)",
@@ -1301,7 +1301,8 @@
       "rationale": "upsert_course under Black deterministic UUID + card yardages; render in GPSMapView (+ optional NAIP raster). Proves a hole map from free data without GolfAPI.",
       "depends_on": [
         "course-poc-i1-spatial-join"
-      ]
+      ],
+      "shipped": "Built 8c69602 (2026-06-29). osm_ingest.py (deterministic UUID + assemble_osm_course) + scripts/ingest_osm_course.py (Bethpage Black defaults, --dry-run) + 44 tests; GPSMapView polygon overlay + /map/course viewer. Live ingest (Overpass+DB) = run on deploy box; render = device. gates: 136 backend non-DB + 483 vitest + build green."
     },
     {
       "id": "course-poc-i3-validate",
