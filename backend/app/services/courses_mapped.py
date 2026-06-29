@@ -351,7 +351,7 @@ async def upsert_course(course: dict) -> Optional[dict]:
                         insert into public.hole_features (hole_id, feature_type, tee_set_id, geom, properties)
                         values (
                             :hole_id, :feature_type, :tee_set_id,
-                            ST_SetSRID(ST_GeomFromGeoJSON(:geom), 4326), :props::jsonb
+                            ST_SetSRID(ST_GeomFromGeoJSON(:geom), 4326), CAST(:props AS jsonb)
                         )
                         """
                     ),
