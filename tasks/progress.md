@@ -3,6 +3,52 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — shot-analytics (NOTICEABLE — feat/shot-analytics, ready for bundle)
+
+Per-club distance + dispersion view in the Profile. Replaces the "available when
+shot tracking ships" placeholder with real aggregated data from the logged shots.
+
+### What was built
+- `backend/app/caddie/shot_stats.py` (NEW — pure, no I/O)
+  - `ClubStat` dataclass: club, n, avg_distance, median_distance, stdev_distance, most_common_lie
+  - `aggregate_by_club(rows)` — median/avg/stdev per club; longest→shortest sort; skips rows with no club/distance
+- `backend/app/routes/shots.py` — added:
+  - `ClubStat` Pydantic model (mirrors dataclass for FastAPI serialization)
+  - `GET /api/shots/stats` — queries shots table (existing, no migration), delegates math to pure module
+- `backend/tests/test_shot_stats.py` (NEW) — 24 pure-function tests (no DB): empty, single shot, multiple clubs, avg/median/stdev correctness, most_common_lie, sort order, rounding, tie-breaking
+- `frontend/src/lib/shot-stats.ts` (NEW)
+  - `ClubStat` TS interface (mirrors backend)
+  - `fetchShotStats()` → GET /api/shots/stats
+  - `sortClubStats()`, `dispersionLabel()`, `formatClubName()` — pure display helpers
+- `frontend/src/lib/shot-stats.test.ts` (NEW) — 19 tests: sortClubStats (empty/single/multi/immutability), dispersionLabel (stdev/null/n<2), formatClubName, fetchShotStats (success/error/empty/URL check via global fetch mock)
+- `frontend/src/app/profile/page.tsx` — `ShotAnalytics` component rewritten:
+  - Self-contained fetch on mount (mirrors CourseReviews pattern)
+  - Empty state: "Log shots with the voice caddie to build your distances."
+  - Per-club rows: proportional distance bar + avg yardage + ±dispersion label
+  - Loading suppression (avoids empty-state flash), shot count aside, footer legend
+  - Follows Bag section visual language (3-col grid, accent bar for longest club)
+
+### Gate results (all green)
+- `cd backend && ruff check .`: All checks passed
+- `cd backend && uv run pytest tests/test_shot_stats.py -v`: 24/24 passed in 0.02s
+- `cd frontend && npm run lint`: clean
+- `cd frontend && npx tsc --noEmit`: clean
+- `cd frontend && npx vitest run`: 1067/1067 passed (40 test files)
+- `cd frontend && npx tsx voice-tests/runner.ts --smoke`: 265/265 passed
+- `cd frontend && npm run build`: compiled successfully
+
+### Classification: NOTICEABLE
+Profile page now shows real per-club shot analytics instead of a placeholder. Owner
+will see the "Club distances" section populated with their voice-caddie logged shots.
+
+### Capture confirmed: NOT rebuilt
+Shot CAPTURE is unchanged. `backend/app/routes/shots.py` POST/GET-round/DELETE
+endpoints, `frontend/src/lib/caddie/api.ts` `recordTrackedShot`, and the realtime
+voice pipeline integration are all untouched — only analytics (read-only aggregate
+endpoint + UI) added.
+
+---
+
 ## 2026-06-29 — settlement-new-formats (SILENT — feat/settlement-new-formats, ready for bundle)
 
 Settlement ledger now handles the four zero-sum wager formats that were missing.

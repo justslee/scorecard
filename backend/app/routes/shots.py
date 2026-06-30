@@ -15,6 +15,7 @@ from sqlalchemy import select, delete, func as sqlfunc, text
 from app.db.engine import async_session
 from app.db.models import Shot
 from app.caddie.session import get_owned_session
+from app.caddie.shot_stats import aggregate_by_club, ShotAggRow
 from app.services.clerk_auth import current_user_id
 from app.services.lie_detection import classify_lie
 
@@ -63,6 +64,16 @@ class ShotOut(BaseModel):
     created_at: str
 
 
+class ClubStat(BaseModel):
+    """Per-club distance aggregate returned by GET /api/shots/stats."""
+    club: str
+    n: int                            # shots with a valid distance for this club
+    avg_distance: float               # mean carry distance, yards, 1 dp
+    median_distance: float            # median carry distance, yards, 1 dp
+    stdev_distance: Optional[float]   # 1-sigma spread; None when n < 2
+    most_common_lie: Optional[str]    # most frequent end_lie for this club (or None)
+
+
 # ── Helpers ──
 
 
@@ -102,6 +113,45 @@ def _row_to_out(row: Shot) -> ShotOut:
 
 
 # ── Endpoints ──
+
+
+@router.get("/stats", response_model=list[ClubStat])
+async def shot_stats(
+    user_id: str = Depends(current_user_id),
+):
+    """Per-club distance aggregates for the calling user across all their shots.
+
+    Queries all shots where club and distance_yards are both non-null, then
+    delegates to aggregate_by_club() (caddie/shot_stats.py — pure, no I/O) to
+    compute per-club stats sorted longest → shortest.
+    Returns [] when the user has no qualifying shots.
+    No DB migration required — reads the existing shots table.
+    """
+    async with async_session() as db:
+        result = await db.execute(
+            select(Shot.club, Shot.distance_yards, Shot.end_lie)
+            .where(
+                Shot.user_id == user_id,
+                Shot.club.isnot(None),
+                Shot.distance_yards.isnot(None),
+            )
+        )
+        rows: list[ShotAggRow] = [
+            (row[0], float(row[1]) if row[1] is not None else None, row[2])
+            for row in result.all()
+        ]
+    # Dataclass → Pydantic conversion for FastAPI serialization.
+    return [
+        ClubStat(
+            club=s.club,
+            n=s.n,
+            avg_distance=s.avg_distance,
+            median_distance=s.median_distance,
+            stdev_distance=s.stdev_distance,
+            most_common_lie=s.most_common_lie,
+        )
+        for s in aggregate_by_club(rows)
+    ]
 
 
 @router.post("", response_model=ShotOut)
