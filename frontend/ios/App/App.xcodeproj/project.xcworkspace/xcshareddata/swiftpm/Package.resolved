@@ -11,6 +11,15 @@
       }
     },
     {
+      "identity" : "google-maps-ios-utils",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/googlemaps/google-maps-ios-utils.git",
+      "state" : {
+        "revision" : "22c6e764d14daaf5de2aa4a3700bc2e9dccae5ac",
+        "version" : "6.1.0"
+      }
+    },
+    {
       "identity" : "ion-ios-camera",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/ionic-team/ion-ios-camera.git",
@@ -26,6 +35,15 @@
       "state" : {
         "revision" : "db363927d3a954e3ea24d2e72b6e9814769a84be",
         "version" : "2.1.1"
+      }
+    },
+    {
+      "identity" : "ios-maps-sdk",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/googlemaps/ios-maps-sdk.git",
+      "state" : {
+        "revision" : "02f8f144ef266da44d50a68d1562ca051bac27cc",
+        "version" : "9.4.0"
       }
     }
   ],

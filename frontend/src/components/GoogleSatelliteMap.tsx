@@ -436,30 +436,71 @@ export default function GoogleSatelliteMap({
         // at the top of the file. The JS engine caches the module after first use.
         const { GoogleMap, MapType } = await import("@capacitor/google-maps");
 
-        gMap = await GoogleMap.create({
-          id:          mapIdRef.current,
-          element:     el as HTMLElement,
-          apiKey,
-          config: {
-            center:         initCenter,
-            zoom:           centerOnly ? CENTER_ONLY_ZOOM : 16,
-            mapTypeId:      MapType.Satellite,
-            disableDefaultUI: true,
+        // Seed the create config with the hole-framed camera so the very first
+        // paint is already centered/zoomed on tee→green (no post-create move
+        // needed just to frame it).
+        const initCamera = (currentHd && !centerOnly)
+          ? cameraForHole(currentHd)
+          : { coordinate: initCenter, zoom: centerOnly ? CENTER_ONLY_ZOOM : 16 };
+
+        // ── Readiness gate (THE crash fix) ───────────────────────────────────
+        // The native plugin force-unwraps its `GMSMapView!` (Map.swift:13) in
+        // EVERY camera/overlay method (setCamera, fitBounds, addMarkers, …).
+        // That view is assigned only in the controller's viewDidLoad, which runs
+        // asynchronously AFTER `create()` already resolves its JS promise — and
+        // never at all if the plugin can't find a target container. Calling any
+        // of those methods before the view exists nil-unwraps → uncatchable
+        // native SIGTRAP. So we wait for the plugin's own `onMapReady` event
+        // (fired once GMapView is live) before issuing ANY native call, and if
+        // it never arrives we fall back to paper instead of crashing.
+        let signalReady: () => void = () => {};
+        const mapReadyPromise = new Promise<void>((res) => { signalReady = res; });
+
+        gMap = await GoogleMap.create(
+          {
+            id:          mapIdRef.current,
+            element:     el as HTMLElement,
+            apiKey,
+            config: {
+              center:         initCamera.coordinate,
+              zoom:           initCamera.zoom,
+              mapTypeId:      MapType.Satellite,
+              disableDefaultUI: true,
+            },
+            forceCreate: true,
           },
-          forceCreate: true,
-        });
+          // onMapReady — native GMSMapView now exists; safe to draw.
+          () => { signalReady(); },
+        );
+
+        if (destroyed) { await gMap.destroy(); return; }
+        googleMapRef.current = gMap;
+
+        // Wait for confirmed readiness, with a timeout that means "never became
+        // ready" → graceful paper fallback (NOT a forced proceed, which would
+        // re-introduce the nil-unwrap crash).
+        const becameReady = await Promise.race([
+          mapReadyPromise.then(() => true),
+          new Promise<boolean>((res) => setTimeout(() => res(false), 4000)),
+        ]);
 
         if (destroyed) { await gMap.destroy(); return; }
 
-        googleMapRef.current = gMap;
-        mapReadyRef.current  = true;
-
-        // ── Initial camera framing ───────────────────────────────────────
-        if (currentHd && !centerOnly) {
-          await fitCameraToHole(currentHd);
+        if (!becameReady) {
+          // The map view never initialized (e.g. plugin couldn't bind the
+          // container). Do NOT touch the map — fall back to the paper diagram.
+          onFallback?.();
+          setGpsError("Map could not initialize — showing the paper map");
+          setIsLoading(false);
+          await gMap.destroy().catch(() => {});
+          googleMapRef.current = null;
+          return;
         }
 
+        mapReadyRef.current = true;
+
         // ── Initial overlays ─────────────────────────────────────────────
+        // (Camera is already framed via the create config above.)
         if (currentHd && !centerOnly) {
           const gpsOnHole = false; // no GPS yet on mount
           await addHoleOverlays(currentHd, gpsOnHole, null);

@@ -14,6 +14,7 @@ let package = Package(
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.4.1"),
         .package(name: "CapacitorCamera", path: "../../../node_modules/@capacitor/camera"),
         .package(name: "CapacitorGeolocation", path: "../../../node_modules/@capacitor/geolocation"),
+        .package(name: "CapacitorGoogleMaps", path: "../../../node_modules/@capacitor/google-maps"),
         .package(name: "CapacitorPreferences", path: "../../../node_modules/@capacitor/preferences")
     ],
     targets: [
@@ -24,6 +25,7 @@ let package = Package(
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
                 .product(name: "CapacitorCamera", package: "CapacitorCamera"),
                 .product(name: "CapacitorGeolocation", package: "CapacitorGeolocation"),
+                .product(name: "CapacitorGoogleMaps", package: "CapacitorGoogleMaps"),
                 .product(name: "CapacitorPreferences", package: "CapacitorPreferences")
             ]
         )
