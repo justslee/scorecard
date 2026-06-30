@@ -3,6 +3,30 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — fix-offhole-map (NOTICEABLE — feat/fix-offhole-map, ready for bundle)
+
+P1 regression fix: vector map broke when GPS was far from the hole (home/simulator).
+
+### Root causes fixed
+1. `fitBounds` included the GPS position → 28-mile span → course rendered as sub-pixel speck.
+   Fix: `holeViewBounds` calls in hole-change effect and `fitHole` now never include GPS.
+2. Distances / FCB rings / distance line used raw GPS with no on-hole guard → ~49 000 yd.
+   Fix: `isGpsOnHole` guard (reuses `isOnHoleBbox` logic, new helper in satellite-helpers.ts).
+
+### What changed
+- `frontend/src/lib/map/satellite-helpers.ts` — added `holeCoordsBbox` + `isGpsOnHole` (pure helpers)
+- `frontend/src/lib/map/satellite-helpers.test.ts` — added tests for both new helpers (inside 40-file/1080-test suite)
+- `frontend/src/components/GPSMapView.tsx`:
+  - `distances` useMemo: uses tee as origin when off-hole (never GPS-based absurd yardages)
+  - `hazardDistances` useMemo: returns empty when off-hole
+  - `updateOverlays`: distance line + FCB ring origin guarded by `isGpsOnHole`
+  - `handlePositionUpdate`: GPS "you" dot only shown/updated when on-hole
+  - `holeViewBounds` callers (hole-change effect, fitHole): GPS position argument removed
+  - Bottom panel: shows "GPS · Not on this hole · Tee distances shown" / "off hole" when off-hole
+
+### Gates
+- lint: clean · tsc: clean · vitest: 1080/1080 · voice-tests: 265/265 · build: pass
+
 ## 2026-06-29 — shot-analytics (NOTICEABLE — feat/shot-analytics, ready for bundle)
 
 Per-club distance + dispersion view in the Profile. Replaces the "available when
