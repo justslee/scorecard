@@ -38,6 +38,12 @@ export interface CourseSelectPayload {
   par?: number;
   /** Source — callers can use this to route to the map view for mapped courses. */
   source?: string;
+  /**
+   * Geographic centre of the course (from CourseSearchResult.center).
+   * Present for GolfAPI and OSM results; used to open a center-only map view
+   * for non-ingested courses instead of the old GolfAPI detail dead-end.
+   */
+  center?: { lat: number; lng: number };
 }
 
 interface CourseSearchProps {
@@ -108,6 +114,7 @@ function resultToPayload(r: CourseSearchResult): CourseSelectPayload {
     clubId,
     location,
     source: r.source,
+    center: r.center,
   };
 }
 

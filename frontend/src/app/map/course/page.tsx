@@ -30,7 +30,13 @@ import { fetchMappedCourse } from "@/lib/courses/mapped-course-api";
 import { parseHoleParam } from "@/lib/map-bridge";
 import HoleDiagram from "@/components/course/HoleDiagram";
 import GPSMapView from "@/components/GPSMapView";
-import { mapRendererFor, annotateOsmFeatures } from "@/lib/map/satellite-helpers";
+import {
+  mapRendererFor,
+  annotateOsmFeatures,
+  parseCenterParams,
+  courseDisplayMode,
+  type CenterParams,
+} from "@/lib/map/satellite-helpers";
 import {
   holeLengthYards,
   describeHazards,
@@ -534,13 +540,19 @@ function MappedCourseMapInner() {
   const router = useRouter();
   const courseId = params.get("id") ?? "";
 
+  // Parse center params (?lat=&lng=&name=) for non-ingested courses.
+  // Captured at mount; URL doesn't change while on the page.
+  const centerParamsRef = useRef<CenterParams | null>(
+    parseCenterParams((key) => params.get(key))
+  );
+  const centerParams = centerParamsRef.current;
+
   // Optional ?hole=<n> deep-link: open the diagram on that hole (clamped 1..18).
-  // Capture in a ref at mount time so the load effect's dependency array stays stable
-  // (the URL doesn't change while on the page; a ref avoids a lint dep-array warning).
   const holeParamRef = useRef(parseHoleParam(params.get("hole")));
   const [course, setCourse] = useState<CourseData | null>(null);
   const [currentHoleNum, setCurrentHoleNum] = useState(() => holeParamRef.current ?? 1);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  // Only show loading spinner when we have an id to fetch
   const [loading, setLoading] = useState(Boolean(courseId));
 
   // GolfAPI-verified per-hole coordinates (mock until token provided)
@@ -551,7 +563,18 @@ function MappedCourseMapInner() {
   const [gpsAvailable, setGpsAvailable] = useState(false);
   const watcherRef = useRef<GPSWatcher | null>(null);
 
-  const error = !courseId ? "No course id provided (?id=<uuid>)" : fetchError;
+  // Determine display mode based on what params are available.
+  // fetchError is set after the course load attempt, so we evaluate dynamically.
+  const hasIngestedCourse = course !== null;
+  const hasCenterParams   = centerParams !== null;
+  const dispMode = courseDisplayMode({ hasIngestedCourse, hasCenterParams });
+
+  // Error for "no data at all" case (no id AND no center params)
+  const error = !courseId && !hasCenterParams
+    ? "No course id or location provided"
+    : (!hasCenterParams && !hasIngestedCourse && fetchError)
+    ? fetchError
+    : null;
 
   // ── GPS watcher ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -580,6 +603,7 @@ function MappedCourseMapInner() {
   }, []);
 
   useEffect(() => {
+    // Skip the fetch when there's no id — we'll render center-only mode instead.
     if (!courseId) return;
 
     let cancelled = false;
@@ -597,13 +621,14 @@ function MappedCourseMapInner() {
         setCourse(c);
         setAllCourseCoords(coords);
         // Start on the ?hole= param when provided; fall back to the first sorted hole.
-        // The hole param is validated/clamped by parseHoleParam at mount time.
         const firstHoleNum = [...(c.holes ?? [])]
           .sort((a, b) => a.number - b.number)
           .find(() => true)?.number ?? 1;
         setCurrentHoleNum(holeParamRef.current ?? firstHoleNum);
       } catch (e: unknown) {
         if (!cancelled) {
+          // Failed to load as an ingested course.  If we have center params,
+          // we'll fall through to center-only mode rather than showing an error.
           setFetchError(
             e instanceof Error ? e.message : "Failed to load course"
           );
@@ -655,12 +680,41 @@ function MappedCourseMapInner() {
   }, [sortedHoles, currentHoleNum]);
 
   // ── Loading ─────────────────────────────────────────────────────────────
-  if (loading) return <Spinner />;
+  // Show spinner only while fetching an ingested course; center-only renders immediately.
+  if (loading && !centerParams) return <Spinner />;
 
-  // ── Error ────────────────────────────────────────────────────────────────
-  if (error || !course) {
+  // ── No data at all ───────────────────────────────────────────────────────
+  if (error) {
     return (
-      <ErrorScreen message={error ?? "Course not found"} onBack={handleBack} />
+      <ErrorScreen message={error} onBack={handleBack} />
+    );
+  }
+
+  // ── CENTER-ONLY mode ─────────────────────────────────────────────────────
+  // Non-ingested course: satellite + GPS + tap-to-measure centred on lat/lng.
+  // Shown when:
+  //   • No id was provided, but lat/lng/name params are present, OR
+  //   • An id was provided but the course wasn't found AND we have lat/lng.
+  const renderer = mapRendererFor(process.env.NEXT_PUBLIC_MAPBOX_TOKEN);
+  if (dispMode === "center-only" && renderer === "mapbox" && centerParams) {
+    return (
+      <GPSMapView
+        courseId={0}
+        courseName={centerParams.name || "Course Map"}
+        holeCoordinates={[]}
+        currentHole={1}
+        onHoleChange={() => {}}
+        onClose={handleBack}
+        fallbackCenter={{ lat: centerParams.lat, lng: centerParams.lng }}
+        centerOnly={true}
+      />
+    );
+  }
+
+  // ── Ingested course required from here ───────────────────────────────────
+  if (!course) {
+    return (
+      <ErrorScreen message={fetchError ?? "Course not found"} onBack={handleBack} />
     );
   }
 
@@ -674,12 +728,11 @@ function MappedCourseMapInner() {
     );
   }
 
-  // ── PRIMARY: Mapbox satellite map ────────────────────────────────────────
+  // ── PRIMARY: Mapbox vector/satellite map ─────────────────────────────────
   // When NEXT_PUBLIC_MAPBOX_TOKEN is set AND we have GolfAPI coordinates for
-  // this course, render the satellite map as the primary hole viewer.
+  // this course, render the GPS map as the primary hole viewer.
   // Falls back to the paper HoleDiagram below when the token is absent or
-  // when no coordinates are available (e.g. a course not yet in GolfAPI cache).
-  const renderer = mapRendererFor(process.env.NEXT_PUBLIC_MAPBOX_TOKEN);
+  // when no coordinates are available.
   if (renderer === "mapbox" && allCourseCoords.length > 0) {
     return (
       <GPSMapView
