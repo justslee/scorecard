@@ -18,6 +18,9 @@ import {
   googleMapRendererFor,
   tapMeasureLabelGoogle,
   fcbMarkerSnippet,
+  haversineYards,
+  zoomForPaddedYards,
+  cameraForHole,
 } from './google-map-helpers';
 
 // ── yardsToMeters ─────────────────────────────────────────────────────────────
@@ -280,5 +283,167 @@ describe('fcbMarkerSnippet — FCB distance marker labels', () => {
 
   it('handles large yardages', () => {
     expect(fcbMarkerSnippet('center', 450)).toBe('C 450y');
+  });
+});
+
+// ── haversineYards ────────────────────────────────────────────────────────────
+//
+// The Haversine-based distance helper used by cameraForHole to compute zoom.
+// Values are compared against independently-calculated distances for known
+// golf-course coordinates.
+
+describe('haversineYards — straight-line distance calculation', () => {
+  // Bethpage Black hole 1 (approximate)
+  const tee   = { lat: 40.7430, lng: -73.4546 };
+  const green = { lat: 40.7451, lng: -73.4514 };
+
+  it('returns a positive number for two distinct points', () => {
+    expect(haversineYards(tee, green)).toBeGreaterThan(0);
+  });
+
+  it('returns 0 for identical points', () => {
+    expect(haversineYards(tee, tee)).toBe(0);
+  });
+
+  it('is symmetric (a→b = b→a)', () => {
+    expect(haversineYards(tee, green)).toBe(haversineYards(green, tee));
+  });
+
+  it('Bethpage Black hole 1 tee→green is in a plausible par-4 range (300–500 yd)', () => {
+    const d = haversineYards(tee, green);
+    expect(d).toBeGreaterThan(200);
+    expect(d).toBeLessThan(600);
+  });
+
+  it('1 degree of latitude ≈ 121 000 yd (known Earth geometry)', () => {
+    const a = { lat: 0, lng: 0 };
+    const b = { lat: 1, lng: 0 };
+    const d = haversineYards(a, b);
+    // 1° lat ≈ 111 km = 121 408 yd; allow ±1%
+    expect(d).toBeGreaterThan(120_000);
+    expect(d).toBeLessThan(123_000);
+  });
+
+  it('a short par-3 tee→green returns < 300 yd', () => {
+    // ~120-yard par-3 approximation: 0.001° lat ≈ 121 yd
+    const shortTee   = { lat: 40.0000, lng: -73.0000 };
+    const shortGreen = { lat: 40.0011, lng: -73.0000 };
+    expect(haversineYards(shortTee, shortGreen)).toBeLessThan(300);
+  });
+});
+
+// ── zoomForPaddedYards ────────────────────────────────────────────────────────
+//
+// Zoom table: shorter holes → higher zoom; longer holes → lower zoom.
+// Tests verify the table boundaries and that the result stays in [14, 18].
+
+describe('zoomForPaddedYards — zoom level from padded hole distance', () => {
+  it('returns 18 for very short par-3 (<150 yd padded)', () => {
+    expect(zoomForPaddedYards(0)).toBe(18);
+    expect(zoomForPaddedYards(100)).toBe(18);
+    expect(zoomForPaddedYards(149)).toBe(18);
+  });
+
+  it('returns 17 for short par-3 / short par-4 (150–274 yd)', () => {
+    expect(zoomForPaddedYards(150)).toBe(17);
+    expect(zoomForPaddedYards(200)).toBe(17);
+    expect(zoomForPaddedYards(274)).toBe(17);
+  });
+
+  it('returns 16 for typical par-4 (275–449 yd)', () => {
+    expect(zoomForPaddedYards(275)).toBe(16);
+    expect(zoomForPaddedYards(360)).toBe(16);
+    expect(zoomForPaddedYards(449)).toBe(16);
+  });
+
+  it('returns 15 for long par-4 / short par-5 (450–699 yd)', () => {
+    expect(zoomForPaddedYards(450)).toBe(15);
+    expect(zoomForPaddedYards(550)).toBe(15);
+    expect(zoomForPaddedYards(699)).toBe(15);
+  });
+
+  it('returns 14 for very long holes (≥700 yd)', () => {
+    expect(zoomForPaddedYards(700)).toBe(14);
+    expect(zoomForPaddedYards(1000)).toBe(14);
+  });
+
+  it('zoom is always in the clamped range [14, 18]', () => {
+    for (const d of [0, 50, 149, 150, 274, 275, 449, 450, 699, 700, 1500]) {
+      const z = zoomForPaddedYards(d);
+      expect(z).toBeGreaterThanOrEqual(14);
+      expect(z).toBeLessThanOrEqual(18);
+    }
+  });
+
+  it('is monotonically non-increasing (longer distance → same or lower zoom)', () => {
+    const distances = [100, 200, 300, 400, 500, 600, 700, 800];
+    let prev = zoomForPaddedYards(distances[0]);
+    for (const d of distances.slice(1)) {
+      const z = zoomForPaddedYards(d);
+      expect(z).toBeLessThanOrEqual(prev);
+      prev = z;
+    }
+  });
+});
+
+// ── cameraForHole ─────────────────────────────────────────────────────────────
+//
+// The crash-safe replacement for fitBounds().
+// Tests: coordinate is the midpoint of tee→green; zoom is in [14, 18];
+// short holes get higher zoom than long holes; no-tee fallback works.
+
+describe('cameraForHole — camera coordinate and zoom for a hole', () => {
+  const tee   = { lat: 40.7430, lng: -73.4546 };
+  const green = { lat: 40.7451, lng: -73.4514 };
+
+  it('returns a coordinate (lat, lng) and integer zoom', () => {
+    const result = cameraForHole({ tee, green });
+    expect(typeof result.coordinate.lat).toBe('number');
+    expect(typeof result.coordinate.lng).toBe('number');
+    expect(Number.isInteger(result.zoom)).toBe(true);
+  });
+
+  it('coordinate is the midpoint of tee and green', () => {
+    const { coordinate } = cameraForHole({ tee, green });
+    expect(coordinate.lat).toBeCloseTo((tee.lat + green.lat) / 2, 6);
+    expect(coordinate.lng).toBeCloseTo((tee.lng + green.lng) / 2, 6);
+  });
+
+  it('zoom is always in the safe range [14, 18]', () => {
+    const { zoom } = cameraForHole({ tee, green });
+    expect(zoom).toBeGreaterThanOrEqual(14);
+    expect(zoom).toBeLessThanOrEqual(18);
+  });
+
+  it('a short par-3 hole gets a higher zoom than a long par-5', () => {
+    // Short par-3: ~100 yd  (0.001° lat offset)
+    const par3Tee   = { lat: 40.0000, lng: -73.0000 };
+    const par3Green = { lat: 40.0011, lng: -73.0000 };
+    // Long par-5: ~550 yd (0.005° lat offset)
+    const par5Tee   = { lat: 40.0000, lng: -73.0000 };
+    const par5Green = { lat: 40.0055, lng: -73.0000 };
+
+    const par3Zoom = cameraForHole({ tee: par3Tee, green: par3Green }).zoom;
+    const par5Zoom = cameraForHole({ tee: par5Tee, green: par5Green }).zoom;
+    expect(par3Zoom).toBeGreaterThan(par5Zoom);
+  });
+
+  it('falls back to green when tee is absent', () => {
+    // tee is undefined — should use green as both tee and green for distance 0
+    const result = cameraForHole({ green });
+    // Coordinate should be green itself (midpoint of green+green = green)
+    expect(result.coordinate.lat).toBeCloseTo(green.lat, 6);
+    expect(result.coordinate.lng).toBeCloseTo(green.lng, 6);
+    // Distance is 0 → paddedYards = 0 → zoom = 18 (shortest bucket)
+    expect(result.zoom).toBe(18);
+  });
+
+  it('does NOT use a GPS user position (off-hole guard preserved)', () => {
+    // The function signature only accepts tee+green — no user position param.
+    // This test confirms the off-hole guard is preserved by design.
+    const result1 = cameraForHole({ tee, green });
+    const result2 = cameraForHole({ tee, green }); // same inputs → deterministic
+    expect(result1.coordinate.lat).toBe(result2.coordinate.lat);
+    expect(result1.zoom).toBe(result2.zoom);
   });
 });

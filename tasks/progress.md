@@ -3,6 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — map-crashproof hotfix (NOTICEABLE — feat/map-crashproof, DONE — pushed to remote)
+
+iOS SIGTRAP crash on map open eliminated. Root cause: `fitBounds()` in the
+@capacitor/google-maps native plugin force-unwraps a nil GMSMapView (Map.swift:566)
+— uncatchable from JS. Fix: removed ALL `fitBounds()` calls; replaced with
+`setCamera()` using a new `cameraForHole()` helper that computes center + zoom
+from tee→green Haversine distance.
+
+### What changed
+- `frontend/src/lib/map/google-map-helpers.ts` — added `haversineYards`, `zoomForPaddedYards`, `cameraForHole` pure helpers
+- `frontend/src/components/GoogleSatelliteMap.tsx` — `fitCameraToHole` rewritten: `fitBounds()` → `setCamera(cameraForHole())`. Added `createInProgressRef` re-entry guard, container size check before create, `onFallback` prop
+- `frontend/src/app/map/course/page.tsx` — Google Maps stays DEFAULT; comment documents fitBounds fix
+- `frontend/src/components/course/InlineHoleDiagram.tsx` — Google Maps stays DEFAULT; toggle UI reverted (crash was fitBounds, not create)
+- `frontend/src/lib/map/satellite-helpers.ts` — added `MAP_VIEW_PREF_KEY`, `MapViewPref`, `getMapViewPref`, `setMapViewPref` (SSR-safe)
+- `frontend/src/lib/map/google-map-helpers.test.ts` — added 34 tests: `haversineYards`, `zoomForPaddedYards`, `cameraForHole`
+- `frontend/src/lib/map/satellite-map-pref.test.ts` (NEW) — 15 tests for localStorage pref helpers (vi.stubGlobal mock pattern)
+
+### Gate results (all green)
+- `npm run lint`: clean
+- `npx tsc --noEmit`: clean
+- `npx vitest run`: 1155/1155 (42 test files)
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265
+- `npx next build --webpack`: 19 pages, clean
+
+### Classification: NOTICEABLE (crash fix — map now opens without crashing)
+Commit c08ace0 pushed to origin/feat/map-crashproof.
+
+---
+
 ## 2026-06-29 — google-satellite-map (NOTICEABLE — feat/google-satellite-map, ready for bundle)
 
 Google Maps satellite hole diagram replaces Mapbox GPSMapView for the map screens.

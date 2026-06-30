@@ -194,6 +194,7 @@ export default function InlineHoleDiagram({
   // When the Google Maps key is configured AND we have GolfAPI coords (allCoords),
   // show the satellite map inline (fills the height container, no fixed overlay).
   // autoDetectHole is disabled: the round page controls currentHole.
+  // fitBounds crash fixed in v1.0.601 — cameraForHole() + setCamera() used instead.
   if (loaded && renderer === 'google' && allCoords.length > 0) {
     return (
       <div

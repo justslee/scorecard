@@ -53,13 +53,13 @@ import type { CourseCoordinates } from "@/lib/golf-api";
 import { isGpsOnHole } from "@/lib/map/satellite-helpers";
 import {
   yardsToMeters,
-  holeMapBounds,
   CENTER_ONLY_ZOOM,
   LAYUP_RING_YARDS,
   LAYUP_RING_COLORS,
   FCB_RING_COLORS,
   tapMeasureLabelGoogle,
   fcbMarkerSnippet,
+  cameraForHole,
 } from "@/lib/map/google-map-helpers";
 import { T } from "@/components/yardage/tokens";
 
@@ -95,6 +95,22 @@ export interface GoogleSatelliteMapProps {
    * or per-hole nav are shown (non-ingested course with imagery only).
    */
   centerOnly?: boolean;
+  /**
+   * Called when Google Maps fails to initialize (JS-catchable error).
+   * The parent should switch back to the HoleDiagram renderer.
+   *
+   * Note: a native iOS NSException crash cannot be caught in JS — the
+   * default-to-HoleDiagram pattern (not auto-loading Google on open) is the
+   * primary safeguard against that.  This callback catches JS-level failures
+   * such as a bad API key, an unsized container, or a plugin rejection.
+   */
+  onFallback?: () => void;
+  /**
+   * When provided, renders a calm "Paper" toggle in the fullscreen header so
+   * the user can switch back to HoleDiagram without closing the map.
+   * Has no effect in inline mode (parent manages the toggle there).
+   */
+  onSwitchToPaper?: () => void;
 }
 
 // ── FCB types ─────────────────────────────────────────────────────────────────
@@ -122,11 +138,16 @@ export default function GoogleSatelliteMap({
   inline = false,
   fallbackCenter,
   centerOnly = false,
+  onFallback,
+  onSwitchToPaper,
 }: GoogleSatelliteMapProps) {
   const mapContainerRef = useRef<HTMLElement | null>(null);
   const googleMapRef    = useRef<GoogleMap | null>(null);
   const mapReadyRef     = useRef(false);
   const mapIdRef        = useRef<string>(nextMapId());
+  // Re-entry guard: prevents StrictMode double-invoke and any other case where
+  // the init effect fires while a previous create is still in-flight.
+  const createInProgressRef = useRef(false);
 
   // Overlay ID tracking — needed to remove markers/circles/lines before re-adding.
   const holeMarkerIdsRef    = useRef<string[]>([]);
@@ -351,23 +372,17 @@ export default function GoogleSatelliteMap({
    * Frame the camera on the current hole's tee→green corridor.
    * Never includes GPS position (off-hole guard — v1.0.598 fix).
    *
-   * LatLngBounds is obtained via dynamic import — @capacitor/google-maps
-   * cannot be imported at the module level (HTMLElement is not defined in SSR).
-   * The module is cached by the JS engine after the first call, so the dynamic
-   * import here is effectively free on subsequent calls.
+   * Uses `setCamera` + the pure `cameraForHole` helper instead of the plugin's
+   * `fitBounds()`.  `fitBounds` crashes on iOS with a native NSException when
+   * the GMSMapView is nil (v9.4.0 race condition — Swift force-unwrap at
+   * Map.swift:566 / CapacitorGoogleMapsPlugin.swift:942).  JS try/catch cannot
+   * intercept a native SIGTRAP, so replacement is the only fix.
    */
   const fitCameraToHole = useCallback(async (hd: CourseCoordinates) => {
     const m = googleMapRef.current;
     if (!m || !mapReadyRef.current) return;
-    const { southwest, northeast, center } = holeMapBounds(hd);
-    try {
-      const { LatLngBounds } = await import("@capacitor/google-maps");
-      const bounds = new LatLngBounds({ southwest, northeast, center });
-      await m.fitBounds(bounds, 60);
-    } catch {
-      // fitBounds not supported on this platform — fall back to setCamera
-      await m.setCamera({ coordinate: center, zoom: 16, animate: true, animationDuration: 600 }).catch(() => {});
-    }
+    const { coordinate, zoom } = cameraForHole(hd);
+    await m.setCamera({ coordinate, zoom, animate: true, animationDuration: 600 }).catch(() => {});
   }, []);
 
   // ── Map initialisation ─────────────────────────────────────────────────────
@@ -376,13 +391,22 @@ export default function GoogleSatelliteMap({
     const el = mapContainerRef.current;
     if (!el) return;
 
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? "";
+    // ── Defensive guard: non-empty API key ───────────────────────────────────
+    // Trim so whitespace-only values are treated as absent.
+    const apiKey = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? "").trim();
     if (!apiKey) {
       // Key absent — caller should have shown HoleDiagram instead; bail gracefully.
+      onFallback?.();
       setGpsError("Google Maps API key not configured");
       setIsLoading(false);
       return;
     }
+
+    // ── Defensive guard: re-entry / StrictMode double-invoke ─────────────────
+    // React StrictMode mounts → unmounts → mounts in dev.  The cleanup below
+    // resets this ref so the second mount proceeds normally after cleanup.
+    if (createInProgressRef.current) return;
+    createInProgressRef.current = true;
 
     const currentHd = holeCoordinates.find((h) => h.holeNumber === currentHole);
     const initCenter = currentHd
@@ -393,6 +417,19 @@ export default function GoogleSatelliteMap({
     let gMap: GoogleMap | null = null;
 
     (async () => {
+      // ── Defensive guard: container must have non-zero dimensions ──────────
+      // The native plugin will crash / silently fail on an unsized element.
+      // getBoundingClientRect is available inside useEffect (client-only).
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        if (!destroyed) {
+          onFallback?.();
+          setGpsError("Map container not yet sized — try the Paper map");
+          setIsLoading(false);
+        }
+        return;
+      }
+
       try {
         // Dynamic import — module evaluates HTMLElement at load time, which is
         // not defined during Next.js SSR / static prerender. Must stay here, NOT
@@ -454,6 +491,12 @@ export default function GoogleSatelliteMap({
         setIsLoading(false);
       } catch (err) {
         if (!destroyed) {
+          // JS-catchable init failure (bad key, plugin error, etc.).
+          // Call onFallback so the parent can swap to HoleDiagram.
+          // Note: a true native NSException on iOS cannot be caught here —
+          // the default-to-HoleDiagram pattern (never auto-loading Google) is
+          // the primary defence against that class of crash.
+          onFallback?.();
           setGpsError(err instanceof Error ? err.message : "Map failed to load");
           setIsLoading(false);
         }
@@ -464,6 +507,9 @@ export default function GoogleSatelliteMap({
       destroyed = true;
       mapReadyRef.current = false;
       googleMapRef.current = null;
+      // Reset re-entry guard so a subsequent mount (HMR / StrictMode second pass)
+      // can proceed cleanly.
+      createInProgressRef.current = false;
       // Destroy asynchronously — don't block the cleanup.
       if (gMap) gMap.destroy().catch(() => {});
     };
@@ -611,8 +657,29 @@ export default function GoogleSatelliteMap({
                 <p className="text-zinc-300 text-sm">Hole {currentHole}</p>
               )}
             </div>
-            {/* spacer to centre-balance the back button */}
-            <div className="w-16" />
+            {/* Paper toggle — shown when parent provides the callback; otherwise a spacer */}
+            {onSwitchToPaper ? (
+              <button
+                onClick={onSwitchToPaper}
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 10,
+                  letterSpacing: 0.8,
+                  color: "rgba(255,255,255,0.80)",
+                  background: "rgba(0,0,0,0.35)",
+                  border: "1px solid rgba(255,255,255,0.20)",
+                  borderRadius: 6,
+                  padding: "5px 10px",
+                  cursor: "pointer",
+                  backdropFilter: "blur(4px)",
+                }}
+              >
+                Paper
+              </button>
+            ) : (
+              /* spacer to centre-balance the back button */
+              <div className="w-16" />
+            )}
           </div>
         </div>
       )}

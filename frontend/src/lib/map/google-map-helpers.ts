@@ -60,7 +60,10 @@ export const FCB_RING_COLORS: Record<'front' | 'center' | 'back', string> = {
 /**
  * Compute the SW / NE corners and geographic centre of a hole's bounding box.
  *
- * Passed directly to `GoogleMap.fitBounds()` to frame the tee→green corridor.
+ * Kept for compatibility with existing tests and the `holeMapBounds` export.
+ * NOTE: Do NOT pass the result to `GoogleMap.fitBounds()` — that method crashes
+ * on iOS with a native NSException when the GMSMapView is nil (v9.4.0 race).
+ * Use `cameraForHole()` + `map.setCamera()` instead.
  *
  * Deliberately excludes the GPS position so a far-away GPS fix (e.g. at home)
  * cannot force the map to zoom out to frame a 28-mile span — preserving the
@@ -85,6 +88,105 @@ export function holeMapBounds(
 
 /** Default zoom level for center-only mode (non-ingested course, no hole data). */
 export const CENTER_ONLY_ZOOM = 17;
+
+// ── fitBounds-free camera framing ─────────────────────────────────────────────
+//
+// The plugin's map.fitBounds() crashes on iOS with a native NSException when
+// the GMSMapView is still nil (race condition in @capacitor/google-maps v9.4.0):
+//   Swift runtime failure: Unexpectedly found nil while implicitly unwrapping an Optional
+//     Map.fitBounds(bounds:padding:)            Map.swift:566
+//     CapacitorGoogleMapsPlugin.fitBounds(_:)  CapacitorGoogleMapsPlugin.swift:942
+//
+// The fix: compute center + zoom ourselves and use map.setCamera() instead.
+// JS cannot catch native NSExceptions, so replacing the call is the only fix.
+
+/**
+ * Approximate straight-line distance in yards between two lat/lng points.
+ *
+ * Uses the Haversine formula — accurate to ~0.1% within the scale of a golf
+ * hole (< 1 km).  Inlined here to keep google-map-helpers.ts dependency-free
+ * (avoids importing the GPS watcher from @/lib/gps).
+ *
+ * Pure function — no side effects, headless-testable.
+ */
+export function haversineYards(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const R_KM = 6371; // Earth mean radius in km
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const dlat = toRad(b.lat - a.lat);
+  const dlng = toRad(b.lng - a.lng);
+
+  const sinDlat = Math.sin(dlat / 2);
+  const sinDlng = Math.sin(dlng / 2);
+  const h = sinDlat * sinDlat + Math.cos(lat1) * Math.cos(lat2) * sinDlng * sinDlng;
+  const km = 2 * R_KM * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+
+  return Math.round((km * 1000) / METRES_PER_YARD);
+}
+
+/**
+ * Return a Google Maps integer zoom level for a padded hole length in yards.
+ *
+ * Table tuned for a ~390×844 px iPhone 14 viewport so the whole hole fits
+ * within the screen at each zoom level.  Padded yards = tee→green straight
+ * distance × 1.35 (35% buffer for fairway width on either side).
+ *
+ * Clamp range [14, 18]:
+ *   18 — short par-3 (<150 yd padded)
+ *   17 — mid par-3 / short par-4 (150–275 yd)
+ *   16 — typical par-4 (275–450 yd)
+ *   15 — long par-4 / short par-5 (450–700 yd)
+ *   14 — long par-5 / >700 yd
+ *
+ * Pure function — no side effects, headless-testable.
+ */
+export function zoomForPaddedYards(paddedYards: number): number {
+  if (paddedYards < 150) return 18;
+  if (paddedYards < 275) return 17;
+  if (paddedYards < 450) return 16;
+  if (paddedYards < 700) return 15;
+  return 14;
+}
+
+/**
+ * Compute the camera `{ coordinate, zoom }` needed to frame a hole.
+ *
+ * This is the crash-safe replacement for `GoogleMap.fitBounds()`.  Pass the
+ * result directly to `map.setCamera({ ...cameraForHole(hd), animate: true })`.
+ *
+ * Algorithm:
+ *   • center = geographic midpoint of tee → green
+ *   • zoom   = `zoomForPaddedYards(distance * 1.35)` so fairway width fits
+ *
+ * The GPS position is deliberately excluded (same off-hole guard as holeMapBounds)
+ * so a far-away GPS fix cannot expand the view.
+ *
+ * Pure function — no side effects, headless-testable.
+ */
+export function cameraForHole(
+  holeCoords: Pick<CourseCoordinates, 'tee' | 'green'>,
+): { coordinate: { lat: number; lng: number }; zoom: number } {
+  const tee   = holeCoords.tee ?? holeCoords.green; // fall back to green if no tee
+  const green = holeCoords.green;
+
+  // Geographic midpoint (equirectangular OK for < 1 km distances).
+  const coordinate = {
+    lat: (tee.lat + green.lat) / 2,
+    lng: (tee.lng + green.lng) / 2,
+  };
+
+  // Tee→green yards; pad 35% for fairway width on each side.
+  const distYards    = haversineYards(tee, green);
+  const paddedYards  = distYards * 1.35;
+  const zoom         = zoomForPaddedYards(paddedYards);
+
+  return { coordinate, zoom };
+}
 
 // ── Course centre resolution ──────────────────────────────────────────────────
 

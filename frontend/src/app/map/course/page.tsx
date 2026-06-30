@@ -719,6 +719,7 @@ function MappedCourseMapInner() {
   // ── PRIMARY: Google satellite map ────────────────────────────────────────
   // When NEXT_PUBLIC_GOOGLE_MAPS_KEY is set AND we have GolfAPI coordinates for
   // this course, render the Google satellite map as the primary hole viewer.
+  // fitBounds crash fixed in GoogleSatelliteMap v1.0.601 — see cameraForHole().
   // Falls back to the paper HoleDiagram below when the key is absent or
   // when no coordinates are available.
   if (renderer === "google" && allCourseCoords.length > 0) {
