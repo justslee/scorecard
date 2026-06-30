@@ -294,6 +294,54 @@ export function isGpsOnHole(
   );
 }
 
+// ── Map view preference (localStorage) ───────────────────────────────────────
+
+/** localStorage key for the user's map view preference. */
+export const MAP_VIEW_PREF_KEY = 'looper_map_view_pref';
+
+/**
+ * User's preferred map view — persisted across sessions.
+ *
+ * 'holediagram' — on-paper SVG (safe default; no Google Maps init on load)
+ * 'satellite'   — Google satellite imagery (user has explicitly opted in)
+ */
+export type MapViewPref = 'holediagram' | 'satellite';
+
+/**
+ * Read the user's map view preference from localStorage.
+ *
+ * Returns 'holediagram' (the safe default) when:
+ *   • no preference has been stored yet (fresh user / after a crash)
+ *   • localStorage is unavailable (SSR / sandboxed env)
+ *   • the stored value is not a recognised preference
+ *
+ * SSR-safe: checks `typeof window` before touching localStorage.
+ */
+export function getMapViewPref(): MapViewPref {
+  try {
+    if (typeof window === 'undefined') return 'holediagram';
+    const v = localStorage.getItem(MAP_VIEW_PREF_KEY);
+    if (v === 'satellite') return 'satellite';
+  } catch {
+    // localStorage unavailable (sandboxed iframe, private browsing, etc.)
+  }
+  return 'holediagram';
+}
+
+/**
+ * Persist the user's map view preference.
+ *
+ * No-ops silently when localStorage is unavailable.
+ */
+export function setMapViewPref(pref: MapViewPref): void {
+  try {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(MAP_VIEW_PREF_KEY, pref);
+  } catch {
+    // localStorage unavailable — preference is ephemeral this session.
+  }
+}
+
 // ── Label formatters ──────────────────────────────────────────────────────────
 
 /**
