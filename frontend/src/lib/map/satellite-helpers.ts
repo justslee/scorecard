@@ -174,18 +174,29 @@ export function parseCenterParams(
 
 // ── Renderer selection ────────────────────────────────────────────────────────
 
-export type MapRenderer = 'mapbox' | 'holediagram';
+/**
+ * Which hole-map renderer to use.
+ *
+ * 'google'      — Google Maps satellite imagery via @capacitor/google-maps.
+ *                 Active when NEXT_PUBLIC_GOOGLE_MAPS_KEY is set.
+ * 'holediagram' — on-paper SVG fallback (no key / development / offline).
+ *
+ * NOTE: Mapbox was the previous renderer; it has been retired in favour of
+ * Google Maps satellite.  CaddiePanel.tsx still uses mapbox-gl directly
+ * (a separate sub-feature) — the mapbox-gl package is kept for that use.
+ */
+export type MapRenderer = 'google' | 'holediagram';
 
 /**
- * Decide which hole-map renderer to use based on the Mapbox public token.
+ * Decide which hole-map renderer to use based on the Google Maps public key.
  *
- * 'mapbox'      — token is a non-empty, non-whitespace string
- * 'holediagram' — token is absent, empty, or whitespace-only
+ * 'google'      — key is a non-empty, non-whitespace string
+ * 'holediagram' — key is absent, empty, or whitespace-only
  *
  * Pure function — safe in SSR / server components (no window/DOM access).
  */
-export function mapRendererFor(token: string | undefined | null): MapRenderer {
-  return token && token.trim().length > 0 ? 'mapbox' : 'holediagram';
+export function mapRendererFor(key: string | undefined | null): MapRenderer {
+  return key && key.trim().length > 0 ? 'google' : 'holediagram';
 }
 
 // ── Hole bounds ───────────────────────────────────────────────────────────────

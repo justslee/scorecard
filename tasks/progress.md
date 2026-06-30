@@ -3,6 +3,55 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-06-29 — google-satellite-map (NOTICEABLE — feat/google-satellite-map, ready for bundle)
+
+Google Maps satellite hole diagram replaces Mapbox GPSMapView for the map screens.
+Tapping the map icon in-round now shows real satellite imagery with pin/tee markers,
+F/C/B distance rings, layup rings (100/150/200y), GPS dot, and tap-to-measure.
+
+### What was built
+- `frontend/src/components/GoogleSatelliteMap.tsx` (NEW)
+  - Props match GPSMapView for drop-in replacement
+  - Native Google Maps via @capacitor/google-maps (Satellite tile type)
+  - Dynamic import inside useEffect — prevents SSR HTMLElement crash
+  - Overlays: G/T/F/B/P markers, layup rings, FCB rings, tee→green guide line, GPS→green distance line
+  - Tap-to-measure click handler with yardage label
+  - Per-hole camera framing via fitBounds(tee→green bounds)
+  - Off-hole guard (v1.0.598 fix preserved): holeMapBounds never includes GPS position
+  - center-only mode for non-ingested courses
+  - inline mode for InlineHoleDiagram (compact strip footer instead of full panel)
+- `frontend/src/lib/map/google-map-helpers.ts` (NEW — pure, headless-testable)
+  - yardsToMeters, LAYUP_RING_YARDS, LAYUP_RING_COLORS, FCB_RING_COLORS
+  - holeMapBounds (tee→green bounds for fitBounds), CENTER_ONLY_ZOOM
+  - resolveCourseCenter, googleMapRendererFor, tapMeasureLabelGoogle, fcbMarkerSnippet
+- `frontend/src/lib/map/google-map-helpers.test.ts` (NEW — 41 tests)
+- `frontend/src/lib/map/satellite-helpers.ts` — MapRenderer 'mapbox'→'google'; mapRendererFor checks NEXT_PUBLIC_GOOGLE_MAPS_KEY
+- `frontend/src/lib/map/satellite-helpers.test.ts` — updated mapRendererFor expectations to 'google'
+- `frontend/src/app/map/course/page.tsx` — imports GoogleSatelliteMap; checks NEXT_PUBLIC_GOOGLE_MAPS_KEY; renderer 'mapbox'→'google'
+- `frontend/src/components/course/InlineHoleDiagram.tsx` — imports GoogleSatelliteMap; checks NEXT_PUBLIC_GOOGLE_MAPS_KEY; renderer 'google'
+- `ops/ios/ship.sh` — pulls NEXT_PUBLIC_GOOGLE_MAPS_KEY from looper/client AWS secret; graceful warn if absent; Mapbox pull retired
+- `frontend/package.json` + `frontend/package-lock.json` — @capacitor/google-maps@8.0.1 added (npx npm@10.8.2 install per lockfile rule)
+
+### Key technical decisions
+- @capacitor/google-maps MUST be dynamic-imported inside useEffect (HTMLElement crash on SSR)
+- LatLngBounds also dynamic-imported inside fitCameraToHole callback (same reason)
+- mapbox-gl package NOT removed (CaddiePanel.tsx uses it directly)
+- MapRenderer type: 'mapbox'→'google' (satellite-helpers.ts)
+- Fallback: HoleDiagram when NEXT_PUBLIC_GOOGLE_MAPS_KEY absent (unchanged path)
+
+### Gate results (all green)
+- `cd frontend && npm run lint`: clean
+- `cd frontend && npx tsc --noEmit`: clean
+- `cd frontend && npx vitest run`: 1121/1121 passed (41 test files — incl. 41 new google-map-helpers tests)
+- `cd frontend && npx tsx voice-tests/runner.ts --smoke`: 265/265 passed
+- `cd frontend && npm run build`: all 19 pages generated, no SSR crash
+
+### Classification: NOTICEABLE
+Hole map screen now shows Google Maps satellite imagery with overlays instead of the
+Mapbox vector renderer. Owner will see satellite photo with markers + distance rings.
+
+---
+
 ## 2026-06-29 — fix-offhole-map (NOTICEABLE — feat/fix-offhole-map, ready for bundle)
 
 P1 regression fix: vector map broke when GPS was far from the hole (home/simulator).

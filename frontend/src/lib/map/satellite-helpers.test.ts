@@ -23,14 +23,18 @@ import {
 } from './satellite-helpers';
 
 // ── mapRendererFor ────────────────────────────────────────────────────────────
+//
+// NOTE: mapRendererFor now checks for the Google Maps key and returns 'google'
+// instead of the retired 'mapbox' value.  These tests were updated when the
+// hole-map renderer was switched from Mapbox to @capacitor/google-maps.
 
-describe('mapRendererFor — renderer selection', () => {
-  it('returns "mapbox" for a real-looking public token', () => {
-    expect(mapRendererFor('pk.eyJ1IjoiZXhhbXBsZSJ9.abc123')).toBe('mapbox');
+describe('mapRendererFor — renderer selection (Google Maps key)', () => {
+  it('returns "google" for a real-looking Google Maps API key', () => {
+    expect(mapRendererFor('AIzaSyABC123')).toBe('google');
   });
 
-  it('returns "mapbox" for any non-empty string', () => {
-    expect(mapRendererFor('anytokenvalue')).toBe('mapbox');
+  it('returns "google" for any non-empty string', () => {
+    expect(mapRendererFor('anytokenvalue')).toBe('google');
   });
 
   it('returns "holediagram" for an empty string', () => {
