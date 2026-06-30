@@ -4511,3 +4511,63 @@ smarter caddie (DECADE hazard-aware aim + handicap-personalized dispersion + slo
 advice + calm top-4 reasoning), course reviews (write+view), round-recap history insights,
 player-name voice disambiguation, floating-island nav, recent-courses home, + homegrown
 course-data POC (backend, validated viable; ingest script on deploy box to populate).
+
+---
+
+## 2026-06-29 — map-quality-loadany (NOTICEABLE — feat/map-quality-loadany, ready for bundle)
+
+Vector yardage-book map as the primary hole-map style + load ANY searched course in the map
+view (non-ingested courses center on GPS coordinates with a graceful "no detailed data yet" note).
+
+### What was built
+
+**Part A — Map Quality Polish (vector yardage-book primary)**
+- `frontend/src/lib/map/satellite-helpers.ts` (extended): `MapBaseStyle`, `baseStyleUrl`,
+  `osmFillColor`, `osmFillOpacity`, `osmOutlineColor` (HoleDiagram PAL colors for vector mode),
+  `CourseDisplayMode`, `courseDisplayMode`, `CenterParams`, `parseCenterParams` pure helpers.
+- `frontend/src/components/GPSMapView.tsx`: complete rewrite of the map init + overlay system.
+  - Default style: `mapbox://styles/mapbox/empty-v9` base + T.paper background layer + OSM
+    fill polygons at HoleDiagram PAL colors (sage fairway, deeper green, sand bunker, slate water).
+  - Satellite toggle: `Layers` icon button adds/hides a `mapbox://mapbox.satellite` raster layer
+    via `setLayoutProperty` (no `setStyle()` teardown, so custom sources/layers survive the toggle).
+  - Per-hole `fitBounds` framing: tee→green bounding box with `pitch:35 / maxZoom:18 / bearing`
+    aligned along the hole axis — replaces the old fixed `zoom:17/pitch:50/flyTo`.
+  - F/C/B distance rings from player GPS position (or tee if no GPS): labeled arcs at front,
+    center, back distances in yards; colored amber/emerald/orange.
+  - Front/back green edge markers (white/orange `●`) added alongside existing pin/tee markers.
+  - `centerOnly` prop: renders GPS + tap-to-measure on a centered view when `holeCoordinates` is
+    empty (used for non-ingested courses).
+
+**Part B — Load ANY Selected Course**
+- `frontend/src/lib/map/satellite-helpers.ts`: `parseCenterParams` / `courseDisplayMode` functions
+  route display to one of three modes: `ingested` (full hole data), `center-only` (lat/lng only),
+  `no-data` (no course at all).
+- `frontend/src/app/map/course/page.tsx`: reads `?lat=&lng=&name=` URL params; if the course ID
+  doesn't resolve to an ingested course but valid center params exist, renders `<GPSMapView
+  centerOnly={true} fallbackCenter={...}>` with a calm "detailed hole data not available" note.
+- `frontend/src/components/CourseSearch.tsx`: `CourseSelectPayload` now includes `center?: {lat, lng}`
+  forwarded from `CourseSearchResult.center`.
+- `frontend/src/app/courses/page.tsx`: `onSelectCourse` now routes non-mapped courses (those with
+  a `center` from the GolfAPI cache) to `/map/course?lat=…&lng=…&name=…` instead of a dead-end.
+  Ingested courses still route to `/map/course?id=…` (full experience).
+
+### Tests added
+- `frontend/src/lib/map/satellite-helpers.test.ts`: 38 new vitest tests covering
+  `baseStyleUrl`, `osmFillColor`, `osmFillOpacity`, `osmOutlineColor`, `courseDisplayMode`,
+  `parseCenterParams` (valid, invalid lat/lng ranges, missing params, out-of-range coords).
+
+### Gate results (all green)
+- `npm run lint`: clean
+- `npx tsc --noEmit`: clean
+- `npx vitest run`: 1048/1048 pass (38 new tests)
+- `npx tsx voice-tests/runner.ts --smoke`: 265/265 pass
+- `npm run build`: succeeded
+
+### Classification: NOTICEABLE
+Map screen has a completely new default appearance (yardage-book vector instead of satellite),
+a style toggle button, better per-hole framing, F/C/B distance rings, and any course from search
+now opens in the map view instead of hitting a dead-end.
+
+Branch: feat/map-quality-loadany (pushed to origin). NOT on integration/next yet — awaiting
+eng-lead to fold into the rolling bundle.
+
