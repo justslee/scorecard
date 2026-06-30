@@ -11,6 +11,8 @@ import { getMyReviews } from "@/lib/api";
 import { deriveParTypeAverages, deriveScoreDistribution, deriveTrend } from "@/lib/profile-stats";
 import type { ParTypeRow, ScoreDistRow, TrendResult } from "@/lib/profile-stats";
 import { derivePersonalBests } from "@/lib/personal-bests";
+import { fetchShotStats, sortClubStats, dispersionLabel, formatClubName } from "@/lib/shot-stats";
+import type { ClubStat } from "@/lib/shot-stats";
 
 // ── Bag club config — ordered for display (matches GolferProfile.clubDistances keys)
 // The caddie (CaddiePanel) normalises these same camelCase keys to short keys
@@ -2335,28 +2337,247 @@ function CareerBests({ rounds, loading }: { rounds: Round[]; loading: boolean })
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Shot analytics — single calm placeholder (P16, replaces two stacked ones)
-// Covers strokes gained + fairway tendency + any future per-shot analytics.
-// Per-shot data doesn't exist until shot tracking ships (P28). Placed at the
-// bottom so real data sections lead.
+// Shot analytics — per-club distance + dispersion view (P28)
+// Replaces the "available when shot tracking ships" placeholder with real
+// data from GET /api/shots/stats. Self-contained fetch (mirrors CourseReviews).
+// Empty state surfaces when the user has no logged shots with distance data.
 // ──────────────────────────────────────────────────────────────────────
 
 function ShotAnalytics() {
-  return (
-    <Section kicker="Shot analytics" title="Strokes gained · Fairway">
+  const [stats, setStats] = useState<ClubStat[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchShotStats()
+      .then((raw) => {
+        if (!cancelled) setStats(sortClubStats(raw));
+      })
+      .catch(() => {
+        // Silent fail — no shots logged or not authenticated; stays empty state.
+        if (!cancelled) setStats([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Shot count aside only when there is data — suppress during load and empty state.
+  const totalShots = stats.reduce((s, c) => s + c.n, 0);
+  const aside =
+    !loading && stats.length > 0 ? (
       <div
         style={{
-          padding: "14px 0 6px",
-          fontFamily: T.serif,
-          fontStyle: "italic",
-          fontSize: 14,
+          fontFamily: T.mono,
+          fontSize: 8.5,
+          letterSpacing: 1.2,
           color: T.pencilSoft,
-          letterSpacing: -0.1,
-          lineHeight: 1.5,
+          textTransform: "uppercase",
+          fontWeight: 500,
         }}
       >
-        Available when shot tracking ships.
+        {totalShots} {totalShots === 1 ? "shot" : "shots"}
       </div>
+    ) : undefined;
+
+  // Max avg_distance for proportional bar widths
+  const maxAvg = stats.length > 0 ? stats[0].avg_distance : 1;
+
+  return (
+    <Section kicker="Shot analytics" title="Club distances" aside={aside}>
+      {loading ? (
+        // Suppress body during load — avoids empty-state flash (matches HandicapModule).
+        <div style={{ minHeight: 40 }} />
+      ) : stats.length === 0 ? (
+        <div
+          style={{
+            padding: "14px 0 6px",
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 14,
+            color: T.pencilSoft,
+            letterSpacing: -0.1,
+            lineHeight: 1.5,
+          }}
+        >
+          Log shots with the voice caddie to build your distances.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {/* ── Header row ── */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "80px 1fr 80px",
+              gap: 10,
+              alignItems: "center",
+              marginBottom: 6,
+            }}
+          >
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 8,
+                letterSpacing: 1.2,
+                color: T.pencilSoft,
+                textTransform: "uppercase",
+                fontWeight: 500,
+              }}
+            >
+              Club
+            </div>
+            <div /> {/* bar column — no header */}
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 8,
+                letterSpacing: 1.2,
+                color: T.pencilSoft,
+                textTransform: "uppercase",
+                fontWeight: 500,
+                textAlign: "right",
+              }}
+            >
+              Avg · ±
+            </div>
+          </div>
+
+          {/* ── Per-club rows ── */}
+          {stats.map((stat, i) => {
+            const widthPct = (stat.avg_distance / maxAvg) * 100;
+            const isFirst = i === 0;
+            const disp = dispersionLabel(stat);
+            return (
+              <div
+                key={stat.club}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "80px 1fr 80px",
+                  gap: 10,
+                  alignItems: "center",
+                  padding: "7px 0",
+                  borderTop: isFirst ? "none" : `1px dashed ${T.hairlineSoft}`,
+                }}
+              >
+                {/* Club name */}
+                <div
+                  style={{
+                    fontFamily: T.serif,
+                    fontStyle: "italic",
+                    fontSize: 13,
+                    color: T.ink,
+                    letterSpacing: -0.1,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {formatClubName(stat.club)}
+                </div>
+
+                {/* Proportional bar track */}
+                <div
+                  style={{
+                    position: "relative",
+                    height: 10,
+                    background: T.paperDeep,
+                    borderRadius: 1,
+                  }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: `${widthPct}%`,
+                      // Accent for the longest club (isFirst); ink for the rest —
+                      // same visual language as the Bag section distance bars.
+                      background: isFirst ? DEFAULT_ACCENT : T.ink,
+                      borderRadius: 1,
+                      opacity: isFirst ? 1 : 0.7,
+                    }}
+                  />
+                </div>
+
+                {/* Avg distance + dispersion (right-aligned, stacked) */}
+                <div style={{ textAlign: "right" }}>
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 12,
+                      color: isFirst ? DEFAULT_ACCENT : T.ink,
+                      fontVariantNumeric: "tabular-nums",
+                      letterSpacing: 0.5,
+                      fontWeight: 500,
+                    }}
+                  >
+                    {Math.round(stat.avg_distance)}
+                    <span
+                      style={{
+                        fontSize: 8,
+                        color: T.pencilSoft,
+                        marginLeft: 2,
+                        letterSpacing: 1,
+                      }}
+                    >
+                      yd
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 8,
+                      color: T.pencilSoft,
+                      letterSpacing: 0.8,
+                      marginTop: 1,
+                    }}
+                  >
+                    {disp}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* ── Footer legend ── */}
+          <div
+            style={{
+              marginTop: 8,
+              padding: "8px 0 0",
+              borderTop: `1px dashed ${T.hairline}`,
+              display: "flex",
+              gap: 16,
+              fontFamily: T.mono,
+              fontSize: 8,
+              letterSpacing: 1.1,
+              color: T.pencilSoft,
+              textTransform: "uppercase",
+              fontWeight: 500,
+            }}
+          >
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span
+                style={{
+                  width: 10,
+                  height: 6,
+                  background: T.ink,
+                  borderRadius: 1,
+                  display: "inline-block",
+                  opacity: 0.7,
+                }}
+              />
+              Avg carry
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              ± Dispersion (1σ)
+            </span>
+          </div>
+        </div>
+      )}
     </Section>
   );
 }
