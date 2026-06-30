@@ -63,6 +63,22 @@ import {
 } from "@/lib/map/google-map-helpers";
 import { T } from "@/components/yardage/tokens";
 
+// The plugin registers a `<capacitor-google-map>` custom element (see the
+// plugin's map.js). On iOS its connectedCallback sets `overflow: scroll` and
+// appends a 200%-height child, which makes WebKit create the WKChildScrollView
+// that the NATIVE side matches on to attach the map (Map.swift getTargetContainer
+// requires contentSize.height == 2× the element height). A plain <div> never
+// produces that scroll view, so the native map can't attach at all. Declare the
+// element so JSX/TS accept it.
+declare module "react" {
+  // eslint-disable-next-line @typescript-eslint/no-namespace -- JSX augmentation requires a namespace
+  namespace JSX {
+    interface IntrinsicElements {
+      "capacitor-google-map": DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement>;
+    }
+  }
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface GoogleSatelliteMapProps {
@@ -436,6 +452,14 @@ export default function GoogleSatelliteMap({
         // at the top of the file. The JS engine caches the module after first use.
         const { GoogleMap, MapType } = await import("@capacitor/google-maps");
 
+        // Importing the plugin registers the <capacitor-google-map> custom
+        // element; wait for the definition so our element upgrades (runs its
+        // connectedCallback → builds the iOS scroll-view structure the native
+        // map binds to) BEFORE create reads the element bounds / attaches.
+        if (typeof customElements !== "undefined") {
+          await customElements.whenDefined("capacitor-google-map");
+        }
+
         // Seed the create config with the hole-framed camera so the very first
         // paint is already centered/zoomed on tee→green (no post-create move
         // needed just to frame it).
@@ -725,11 +749,15 @@ export default function GoogleSatelliteMap({
         </div>
       )}
 
-      {/* Map canvas — the native Google Maps view attaches to this element */}
-      {/* Must use style (not className) for dimensions — required by the plugin */}
-      <div
-        ref={(el) => { mapContainerRef.current = el; }}
-        style={{ width: "100%", height: "100%", background: "transparent" }}
+      {/* Map canvas — MUST be the plugin's <capacitor-google-map> custom element,
+          NOT a plain <div>: on iOS its connectedCallback builds the scroll-view
+          structure the native side binds to. A <div> leaves the map unattached
+          (black screen / onMapReady never fires). Style (not className) for
+          dimensions — required by the plugin; display:block so width/height apply
+          (custom elements are display:inline by default). */}
+      <capacitor-google-map
+        ref={(el: HTMLElement | null) => { mapContainerRef.current = el; }}
+        style={{ display: "block", width: "100%", height: "100%", background: "transparent" }}
       />
 
       {/* Center-only note */}

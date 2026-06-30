@@ -557,6 +557,11 @@ function MappedCourseMapInner() {
   // GolfAPI-verified per-hole coordinates (mock until token provided)
   const [allCourseCoords, setAllCourseCoords] = useState<CourseCoordinates[]>([]);
 
+  // Runtime Google-map failure → fall back to the paper HoleDiagram instead of
+  // leaving the user on a black screen. Set when GoogleSatelliteMap can't
+  // initialize (onMapReady never fires, container unbindable, etc.).
+  const [googleMapFailed, setGoogleMapFailed] = useState(false);
+
   // GPS state
   const [gpsPos, setGpsPos] = useState<Position | null>(null);
   const [gpsAvailable, setGpsAvailable] = useState(false);
@@ -684,7 +689,8 @@ function MappedCourseMapInner() {
   // Key changed from NEXT_PUBLIC_MAPBOX_TOKEN (Mapbox, retired) to
   // NEXT_PUBLIC_GOOGLE_MAPS_KEY (@capacitor/google-maps).
   const renderer = mapRendererFor(process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY);
-  if (dispMode === "center-only" && renderer === "google" && centerParams) {
+  const useGoogle = renderer === "google" && !googleMapFailed;
+  if (dispMode === "center-only" && useGoogle && centerParams) {
     return (
       <GoogleSatelliteMap
         courseId={0}
@@ -695,6 +701,7 @@ function MappedCourseMapInner() {
         onClose={handleBack}
         fallbackCenter={{ lat: centerParams.lat, lng: centerParams.lng }}
         centerOnly={true}
+        onFallback={() => setGoogleMapFailed(true)}
       />
     );
   }
@@ -722,7 +729,7 @@ function MappedCourseMapInner() {
   // fitBounds crash fixed in GoogleSatelliteMap v1.0.601 — see cameraForHole().
   // Falls back to the paper HoleDiagram below when the key is absent or
   // when no coordinates are available.
-  if (renderer === "google" && allCourseCoords.length > 0) {
+  if (useGoogle && allCourseCoords.length > 0) {
     return (
       <GoogleSatelliteMap
         courseId={0}
@@ -731,6 +738,7 @@ function MappedCourseMapInner() {
         currentHole={currentHoleNum}
         onHoleChange={setCurrentHoleNum}
         onClose={handleBack}
+        onFallback={() => setGoogleMapFailed(true)}
       />
     );
   }
