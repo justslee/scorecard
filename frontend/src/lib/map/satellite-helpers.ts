@@ -11,6 +11,167 @@
 
 import type { CourseCoordinates } from '@/lib/golf-api';
 
+// ── Map base style ────────────────────────────────────────────────────────────
+
+/**
+ * The two base rendering modes for the GPS map view.
+ *
+ * 'vector'    — clean yardage-book style: paper background + OSM shape fills
+ *               (uses mapbox://styles/mapbox/empty-v9 as the Mapbox base so
+ *               there are no street labels, roads, or satellite imagery).
+ * 'satellite' — aerial imagery (mapbox://styles/mapbox/satellite-v9) shown as
+ *               a raster layer beneath the OSM fill/outline overlays.
+ */
+export type MapBaseStyle = 'vector' | 'satellite';
+
+/**
+ * Mapbox style URL for each base rendering mode.
+ *
+ * Pure function — safe in SSR / server components.
+ */
+export function baseStyleUrl(_mode: MapBaseStyle): string {
+  // Both modes share the same Mapbox base style (empty-v9) because we toggle
+  // the satellite raster layer on/off as a custom layer rather than calling
+  // map.setStyle() — this avoids re-initialising all custom sources/layers.
+  // Keeping 'empty-v9' means the canvas starts blank, and we paint everything:
+  //   vector mode:    paper-background layer  + OSM fills  (full opacity)
+  //   satellite mode: satellite-raster layer  + OSM fills  (reduced opacity)
+  return 'mapbox://styles/mapbox/empty-v9';
+}
+
+// ── OSM layer paint helpers ────────────────────────────────────────────────────
+
+/** Return the hex fill colour for an OSM feature type in a given rendering mode. */
+export function osmFillColor(featureType: string, mode: MapBaseStyle): string {
+  if (mode === 'vector') {
+    const MAP: Record<string, string> = {
+      green:   '#8cb264',   // PAL.green solid (rgba 140,178,100)
+      fairway: '#a8c67e',   // PAL.fairway solid (rgba 168,198,126)
+      bunker:  '#dec896',   // PAL.bunker solid (rgba 222,200,150)
+      tee:     '#a8c67e',   // same as fairway
+      water:   '#6894b4',   // PAL.water solid (rgba 104,148,180)
+      rough:   '#bec38c',   // PAL.roughFill solid (rgba 190,195,140)
+    };
+    return MAP[featureType] ?? '#ddd8c6'; // PAL.ground
+  } else {
+    const MAP: Record<string, string> = {
+      green:   '#22c55e',
+      fairway: '#86efac',
+      bunker:  '#fbbf24',
+      tee:     '#c084fc',
+      water:   '#60a5fa',
+    };
+    return MAP[featureType] ?? '#9ca3af';
+  }
+}
+
+/** Return the fill opacity for an OSM feature type in a given rendering mode. */
+export function osmFillOpacity(featureType: string, mode: MapBaseStyle): number {
+  if (mode === 'vector') {
+    const MAP: Record<string, number> = {
+      green:   0.90,
+      fairway: 0.82,
+      bunker:  0.90,
+      tee:     0.80,
+      water:   0.68,
+      rough:   0.78,
+    };
+    return MAP[featureType] ?? 1.0;
+  } else {
+    const MAP: Record<string, number> = {
+      green:   0.40,
+      fairway: 0.18,
+      bunker:  0.50,
+      tee:     0.30,
+      water:   0.40,
+    };
+    return MAP[featureType] ?? 0.25;
+  }
+}
+
+/** Return the outline (line) colour for an OSM feature type in a given rendering mode. */
+export function osmOutlineColor(featureType: string, mode: MapBaseStyle): string {
+  if (mode === 'vector') {
+    const MAP: Record<string, string> = {
+      green:   '#3a4a38',   // T.inkSoft (PAL.greenEdge)
+      fairway: '#789b50',   // PAL.fairwayEdge solid
+      bunker:  '#af965f',   // PAL.bunkerEdge solid
+      tee:     '#789b50',
+      water:   '#4670a4',   // PAL.waterEdge solid
+      rough:   '#8c945a',   // PAL.roughEdge solid
+    };
+    return MAP[featureType] ?? '#6b6558';
+  } else {
+    const MAP: Record<string, string> = {
+      green:   '#16a34a',
+      fairway: '#22c55e',
+      bunker:  '#d97706',
+      tee:     '#9333ea',
+      water:   '#3b82f6',
+    };
+    return MAP[featureType] ?? '#6b7280';
+  }
+}
+
+// ── Course display mode ───────────────────────────────────────────────────────
+
+/**
+ * Which rendering path the /map/course page should take.
+ *
+ * 'ingested'    — course has full hole-by-hole geometry in our DB.
+ * 'center-only' — no ingested data, but lat/lng are available; satellite +
+ *                 GPS + tap-to-measure work; no hole overlays or nav.
+ * 'no-data'     — neither id nor lat/lng — show the error/no-course-found screen.
+ */
+export type CourseDisplayMode = 'ingested' | 'center-only' | 'no-data';
+
+/**
+ * Determine which map display mode to use.
+ * Pure function — safe to call anywhere (SSR, tests, useMemo).
+ */
+export function courseDisplayMode(opts: {
+  hasIngestedCourse: boolean;
+  hasCenterParams: boolean;
+}): CourseDisplayMode {
+  if (opts.hasIngestedCourse) return 'ingested';
+  if (opts.hasCenterParams) return 'center-only';
+  return 'no-data';
+}
+
+// ── Center params parsing ─────────────────────────────────────────────────────
+
+/** Parsed lat/lng/name from a URL query string. */
+export interface CenterParams {
+  lat: number;
+  lng: number;
+  name: string;
+}
+
+/**
+ * Parse lat, lng, and name search params for center-only map mode.
+ *
+ * Returns `null` when `lat` or `lng` are missing or not valid finite coordinates.
+ * `name` defaults to `''` when absent.
+ *
+ * The `get` parameter is decoupled from URLSearchParams so this function can be
+ * called in unit tests without a DOM or Next.js router.
+ */
+export function parseCenterParams(
+  get: (key: string) => string | null
+): CenterParams | null {
+  const latStr = get('lat');
+  const lngStr = get('lng');
+  if (!latStr || !lngStr) return null;
+
+  const lat = Number(latStr);
+  const lng = Number(lngStr);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+
+  return { lat, lng, name: get('name') ?? '' };
+}
+
 // ── Renderer selection ────────────────────────────────────────────────────────
 
 export type MapRenderer = 'mapbox' | 'holediagram';

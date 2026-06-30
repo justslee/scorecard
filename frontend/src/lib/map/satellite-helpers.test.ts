@@ -12,6 +12,12 @@ import {
   tapMeasureLabel,
   formatFCBLabel,
   annotateOsmFeatures,
+  baseStyleUrl,
+  osmFillColor,
+  osmFillOpacity,
+  osmOutlineColor,
+  courseDisplayMode,
+  parseCenterParams,
 } from './satellite-helpers';
 
 // ── mapRendererFor ────────────────────────────────────────────────────────────
@@ -216,5 +222,214 @@ describe('annotateOsmFeatures — OSM feature annotation', () => {
     annotateOsmFeatures(pairs);
     // Original should not have hole property
     expect(feat.properties?.hole).toBeUndefined();
+  });
+});
+
+// ── baseStyleUrl ──────────────────────────────────────────────────────────────
+
+describe('baseStyleUrl — Mapbox style URL selection', () => {
+  it('returns empty-v9 for vector mode (blank canvas)', () => {
+    expect(baseStyleUrl('vector')).toContain('empty-v9');
+  });
+
+  it('returns empty-v9 for satellite mode (raster toggled via custom layer)', () => {
+    // Both modes share the same base style; satellite is toggled as a custom layer.
+    expect(baseStyleUrl('satellite')).toContain('empty-v9');
+  });
+
+  it('always returns a mapbox:// style URL', () => {
+    expect(baseStyleUrl('vector')).toMatch(/^mapbox:\/\//);
+    expect(baseStyleUrl('satellite')).toMatch(/^mapbox:\/\//);
+  });
+});
+
+// ── osmFillColor ──────────────────────────────────────────────────────────────
+
+describe('osmFillColor — fill colour by feature type and mode', () => {
+  it('vector: green is a muted sage hex', () => {
+    const c = osmFillColor('green', 'vector');
+    expect(c).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(c).toBe('#8cb264');
+  });
+
+  it('vector: fairway is lighter sage than green', () => {
+    const fairway = osmFillColor('fairway', 'vector');
+    const green   = osmFillColor('green', 'vector');
+    expect(fairway).not.toBe(green);
+    expect(fairway).toBe('#a8c67e');
+  });
+
+  it('vector: bunker is a warm sand tone', () => {
+    expect(osmFillColor('bunker', 'vector')).toBe('#dec896');
+  });
+
+  it('vector: water is a muted slate blue', () => {
+    expect(osmFillColor('water', 'vector')).toBe('#6894b4');
+  });
+
+  it('vector: unknown type returns a neutral ground tone', () => {
+    const c = osmFillColor('unknown', 'vector');
+    expect(c).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+
+  it('satellite: green is bright Tailwind green (high contrast over imagery)', () => {
+    expect(osmFillColor('green', 'satellite')).toBe('#22c55e');
+  });
+
+  it('satellite: unknown type returns a neutral grey', () => {
+    const c = osmFillColor('unknown', 'satellite');
+    expect(c).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+});
+
+// ── osmFillOpacity ────────────────────────────────────────────────────────────
+
+describe('osmFillOpacity — fill opacity by feature type and mode', () => {
+  it('vector: green is near-opaque (0.90)', () => {
+    expect(osmFillOpacity('green', 'vector')).toBeCloseTo(0.90, 2);
+  });
+
+  it('vector: fairway is slightly transparent (0.82)', () => {
+    expect(osmFillOpacity('fairway', 'vector')).toBeCloseTo(0.82, 2);
+  });
+
+  it('vector: water is 0.68 (lets paper show faintly through)', () => {
+    expect(osmFillOpacity('water', 'vector')).toBeCloseTo(0.68, 2);
+  });
+
+  it('vector: unknown type falls back to 1.0', () => {
+    expect(osmFillOpacity('unknown', 'vector')).toBeCloseTo(1.0, 2);
+  });
+
+  it('satellite: green is 0.40 (subtle over imagery)', () => {
+    expect(osmFillOpacity('green', 'satellite')).toBeCloseTo(0.40, 2);
+  });
+
+  it('satellite: fairway is 0.18 (barely visible over imagery)', () => {
+    expect(osmFillOpacity('fairway', 'satellite')).toBeCloseTo(0.18, 2);
+  });
+
+  it('satellite: all opacities are < 0.60 (imagery must show through)', () => {
+    for (const t of ['green', 'fairway', 'bunker', 'tee', 'water']) {
+      expect(osmFillOpacity(t, 'satellite')).toBeLessThan(0.60);
+    }
+  });
+
+  it('vector: all opacities are >= 0.65 (fills must be clearly visible)', () => {
+    for (const t of ['green', 'fairway', 'bunker', 'water']) {
+      expect(osmFillOpacity(t, 'vector')).toBeGreaterThanOrEqual(0.65);
+    }
+  });
+});
+
+// ── osmOutlineColor ───────────────────────────────────────────────────────────
+
+describe('osmOutlineColor — outline colour by feature type and mode', () => {
+  it('vector: green outline is T.inkSoft', () => {
+    expect(osmOutlineColor('green', 'vector')).toBe('#3a4a38');
+  });
+
+  it('vector: water outline is distinct from fill', () => {
+    const outline = osmOutlineColor('water', 'vector');
+    const fill    = osmFillColor('water', 'vector');
+    expect(outline).not.toBe(fill);
+  });
+
+  it('satellite: green outline is bright green', () => {
+    expect(osmOutlineColor('green', 'satellite')).toBe('#16a34a');
+  });
+
+  it('vector and satellite outlines differ for all known types', () => {
+    for (const t of ['green', 'fairway', 'bunker', 'water']) {
+      expect(osmOutlineColor(t, 'vector')).not.toBe(osmOutlineColor(t, 'satellite'));
+    }
+  });
+});
+
+// ── courseDisplayMode ─────────────────────────────────────────────────────────
+
+describe('courseDisplayMode — which rendering path to take', () => {
+  it('returns "ingested" when hasIngestedCourse is true', () => {
+    expect(courseDisplayMode({ hasIngestedCourse: true, hasCenterParams: false })).toBe('ingested');
+  });
+
+  it('returns "ingested" even when hasCenterParams is also true', () => {
+    expect(courseDisplayMode({ hasIngestedCourse: true, hasCenterParams: true })).toBe('ingested');
+  });
+
+  it('returns "center-only" when no ingested course but center params present', () => {
+    expect(courseDisplayMode({ hasIngestedCourse: false, hasCenterParams: true })).toBe('center-only');
+  });
+
+  it('returns "no-data" when neither condition is met', () => {
+    expect(courseDisplayMode({ hasIngestedCourse: false, hasCenterParams: false })).toBe('no-data');
+  });
+});
+
+// ── parseCenterParams ─────────────────────────────────────────────────────────
+
+describe('parseCenterParams — lat/lng/name extraction from URL params', () => {
+  function makeGet(params: Record<string, string>) {
+    return (key: string) => params[key] ?? null;
+  }
+
+  it('returns CenterParams for valid lat/lng', () => {
+    const result = parseCenterParams(makeGet({ lat: '40.7430', lng: '-73.4546', name: 'Bethpage Black' }));
+    expect(result).not.toBeNull();
+    expect(result!.lat).toBeCloseTo(40.7430, 4);
+    expect(result!.lng).toBeCloseTo(-73.4546, 4);
+    expect(result!.name).toBe('Bethpage Black');
+  });
+
+  it('defaults name to empty string when absent', () => {
+    const result = parseCenterParams(makeGet({ lat: '40.7430', lng: '-73.4546' }));
+    expect(result).not.toBeNull();
+    expect(result!.name).toBe('');
+  });
+
+  it('returns null when lat is missing', () => {
+    expect(parseCenterParams(makeGet({ lng: '-73.4546' }))).toBeNull();
+  });
+
+  it('returns null when lng is missing', () => {
+    expect(parseCenterParams(makeGet({ lat: '40.7430' }))).toBeNull();
+  });
+
+  it('returns null for non-numeric lat', () => {
+    expect(parseCenterParams(makeGet({ lat: 'abc', lng: '-73.4546' }))).toBeNull();
+  });
+
+  it('returns null for non-numeric lng', () => {
+    expect(parseCenterParams(makeGet({ lat: '40.7430', lng: 'NaN' }))).toBeNull();
+  });
+
+  it('returns null for lat out of range (> 90)', () => {
+    expect(parseCenterParams(makeGet({ lat: '91', lng: '-73.4546' }))).toBeNull();
+  });
+
+  it('returns null for lat out of range (< -90)', () => {
+    expect(parseCenterParams(makeGet({ lat: '-91', lng: '0' }))).toBeNull();
+  });
+
+  it('returns null for lng out of range (> 180)', () => {
+    expect(parseCenterParams(makeGet({ lat: '40', lng: '181' }))).toBeNull();
+  });
+
+  it('returns null for lng out of range (< -180)', () => {
+    expect(parseCenterParams(makeGet({ lat: '40', lng: '-181' }))).toBeNull();
+  });
+
+  it('handles zero coordinates (0,0 is valid)', () => {
+    const result = parseCenterParams(makeGet({ lat: '0', lng: '0' }));
+    expect(result).not.toBeNull();
+    expect(result!.lat).toBe(0);
+    expect(result!.lng).toBe(0);
+  });
+
+  it('handles negative coordinates (southern hemisphere)', () => {
+    const result = parseCenterParams(makeGet({ lat: '-33.8688', lng: '151.2093' }));
+    expect(result).not.toBeNull();
+    expect(result!.lat).toBeCloseTo(-33.8688, 4);
+    expect(result!.lng).toBeCloseTo(151.2093, 4);
   });
 });

@@ -503,11 +503,22 @@ export default function CoursesHubPage() {
           onClose={() => setShowSearch(false)}
           onSelectCourse={(c) => {
             setShowSearch(false);
-            // Mapped courses have a full hole-map view; route there instead of the
-            // GolfAPI detail page (which uses a numeric course id, not a UUID).
             if (c.source === "mapped") {
+              // Full hole-by-hole map (ingested course with OSM geometry)
               router.push(`/map/course?id=${encodeURIComponent(String(c.id))}`);
+            } else if (c.center) {
+              // Non-ingested course with known location → satellite/vector map
+              // centred on lat/lng (GPS + tap-to-measure work everywhere; no hole data yet)
+              const qs = new URLSearchParams({
+                name: c.name,
+                lat:  String(c.center.lat),
+                lng:  String(c.center.lng),
+              });
+              // Include id for display even if not yet ingested
+              if (c.id) qs.set("id", String(c.id));
+              router.push(`/map/course?${qs.toString()}`);
             } else {
+              // Fallback: GolfAPI detail page (no location available)
               router.push(courseHref({ courseId: c.id, clubId: c.clubId }));
             }
           }}
