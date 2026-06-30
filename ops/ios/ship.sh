@@ -23,27 +23,37 @@ export NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-https://api.looperapp.org}"
 # Swapped from the dev pk_test on 2026-06-28 — the dev instance couldn't mint
 # session tokens in the Capacitor webview (cause of the persistent login 401s).
 export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-pk_live_Y2xlcmsubG9vcGVyYXBwLm9yZyQ}"
-# NEXT_PUBLIC_MAPBOX_TOKEN: baked into the JS bundle at Next.js build time.
-# If not already set in the environment, pull from AWS Secrets Manager (looper/prod).
-# The build machine has IAM credentials — the secret is NEVER printed or committed.
-# When the secret is absent (no creds / key missing) we warn and leave it empty,
-# which makes the app fall back to the on-paper HoleDiagram renderer instead.
-if [ -z "${NEXT_PUBLIC_MAPBOX_TOKEN:-}" ]; then
-  _mb_token="$(aws secretsmanager get-secret-value \
-      --secret-id looper/prod \
+
+# NEXT_PUBLIC_GOOGLE_MAPS_KEY: baked into the JS bundle at Next.js build time.
+# Passed to @capacitor/google-maps GoogleMap.create({ apiKey }) so the native
+# iOS Google Maps SDK authenticates via the iOS bundle restriction on this key.
+# If not already set in the environment, pull from AWS Secrets Manager (looper/client).
+# The build machine IAM role has read access to looper/client (verified).
+# The secret is NEVER printed or committed — unset immediately after export.
+# When absent (no creds / key missing) we warn and skip; the app falls back to
+# the on-paper HoleDiagram renderer.
+if [ -z "${NEXT_PUBLIC_GOOGLE_MAPS_KEY:-}" ]; then
+  _gm_key="$(aws secretsmanager get-secret-value \
+      --secret-id looper/client \
+      --region us-east-1 \
       --query SecretString \
       --output text 2>/dev/null \
-    | jq -r '.NEXT_PUBLIC_MAPBOX_TOKEN // .MAPBOX_TOKEN // empty' 2>/dev/null \
+    | jq -r '.GOOGLE_MAPS_KEY // empty' 2>/dev/null \
     || true)"
-  if [ -n "${_mb_token:-}" ]; then
-    export NEXT_PUBLIC_MAPBOX_TOKEN="$_mb_token"
-    echo "▸ Mapbox token loaded from looper/prod secret (${#_mb_token} chars)"
+  if [ -n "${_gm_key:-}" ]; then
+    export NEXT_PUBLIC_GOOGLE_MAPS_KEY="$_gm_key"
+    echo "▸ Google Maps key loaded from looper/client (${#_gm_key} chars)"
   else
-    echo "WARN: NEXT_PUBLIC_MAPBOX_TOKEN not found in looper/prod — map will fall back to HoleDiagram"
-    export NEXT_PUBLIC_MAPBOX_TOKEN=""
+    echo "WARN: GOOGLE_MAPS_KEY not found in looper/client — hole map will fall back to HoleDiagram"
+    export NEXT_PUBLIC_GOOGLE_MAPS_KEY=""
   fi
-  unset _mb_token   # don't leave the token in a shell variable
+  unset _gm_key   # never leave the key in a shell variable
 fi
+
+# NOTE: Mapbox (NEXT_PUBLIC_MAPBOX_TOKEN) is retired — the hole-map renderer
+# was switched to @capacitor/google-maps in feat/google-satellite-map.
+# CaddiePanel.tsx still uses mapboxgl directly; its token is embedded in the
+# looper/prod secret and loaded by the backend; it is NOT needed at build time.
 
 # App Store Connect signing — IDs are not secret; the .p8 referenced by path is.
 ASC_KEY_ID="${ASC_KEY_ID:-QG927KHTXR}"

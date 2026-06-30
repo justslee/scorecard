@@ -3,16 +3,16 @@
 /**
  * Homegrown-course hole diagram viewer — /map/course?id=<mapped-course-uuid>
  *
- * PRIMARY renderer: Mapbox satellite imagery (GPSMapView) when
- * NEXT_PUBLIC_MAPBOX_TOKEN is set.  Falls back to the on-paper HoleDiagram
- * when the token is absent so the page never goes blank.
+ * PRIMARY renderer: Google Maps satellite imagery (GoogleSatelliteMap) when
+ * NEXT_PUBLIC_GOOGLE_MAPS_KEY is set.  Falls back to the on-paper HoleDiagram
+ * when the key is absent so the page never goes blank.
  *
- * Satellite mode (token present):
- *   - Full-screen Mapbox satellite map with F/C/B distances, GPS dot,
- *     tap-to-measure, and OSM polygon overlays.
- *   - GPSMapView owns the header, hole nav, and distance panel.
+ * Satellite mode (key present):
+ *   - Full-screen Google Maps satellite view with F/C/B distances, GPS dot,
+ *     tap-to-measure, and native overlay markers/circles/polylines.
+ *   - GoogleSatelliteMap owns the header, hole nav, and distance panel.
  *
- * Paper mode (token absent / no-token fallback):
+ * Paper mode (key absent / no-key fallback):
  *   - Original on-paper yardage-book SVG diagram with tap-to-measure,
  *     pinch-zoom, GPS dot, and info strip.
  *
@@ -29,10 +29,9 @@ import type { CourseData, HoleData } from "@/lib/courses/types";
 import { fetchMappedCourse } from "@/lib/courses/mapped-course-api";
 import { parseHoleParam } from "@/lib/map-bridge";
 import HoleDiagram from "@/components/course/HoleDiagram";
-import GPSMapView from "@/components/GPSMapView";
+import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
 import {
   mapRendererFor,
-  annotateOsmFeatures,
   parseCenterParams,
   courseDisplayMode,
   type CenterParams,
@@ -654,19 +653,6 @@ function MappedCourseMapInner() {
     [sortedHoles, currentHoleNum]
   );
 
-  // All OSM features annotated with hole numbers — for GPSMapView polygon overlays.
-  // Built once from the sorted holes; GPSMapView filters by currentHole internally.
-  const allOsmFeatures = useMemo(
-    () =>
-      annotateOsmFeatures(
-        sortedHoles.map((h) => ({
-          holeNumber: h.number,
-          features: (h.features?.features ?? []) as GeoJSON.Feature[],
-        }))
-      ),
-    [sortedHoles]
-  );
-
   const handleBack = useCallback(() => router.back(), [router]);
 
   const handlePrev = useCallback(() => {
@@ -695,10 +681,12 @@ function MappedCourseMapInner() {
   // Shown when:
   //   • No id was provided, but lat/lng/name params are present, OR
   //   • An id was provided but the course wasn't found AND we have lat/lng.
-  const renderer = mapRendererFor(process.env.NEXT_PUBLIC_MAPBOX_TOKEN);
-  if (dispMode === "center-only" && renderer === "mapbox" && centerParams) {
+  // Key changed from NEXT_PUBLIC_MAPBOX_TOKEN (Mapbox, retired) to
+  // NEXT_PUBLIC_GOOGLE_MAPS_KEY (@capacitor/google-maps).
+  const renderer = mapRendererFor(process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY);
+  if (dispMode === "center-only" && renderer === "google" && centerParams) {
     return (
-      <GPSMapView
+      <GoogleSatelliteMap
         courseId={0}
         courseName={centerParams.name || "Course Map"}
         holeCoordinates={[]}
@@ -728,21 +716,20 @@ function MappedCourseMapInner() {
     );
   }
 
-  // ── PRIMARY: Mapbox vector/satellite map ─────────────────────────────────
-  // When NEXT_PUBLIC_MAPBOX_TOKEN is set AND we have GolfAPI coordinates for
-  // this course, render the GPS map as the primary hole viewer.
-  // Falls back to the paper HoleDiagram below when the token is absent or
+  // ── PRIMARY: Google satellite map ────────────────────────────────────────
+  // When NEXT_PUBLIC_GOOGLE_MAPS_KEY is set AND we have GolfAPI coordinates for
+  // this course, render the Google satellite map as the primary hole viewer.
+  // Falls back to the paper HoleDiagram below when the key is absent or
   // when no coordinates are available.
-  if (renderer === "mapbox" && allCourseCoords.length > 0) {
+  if (renderer === "google" && allCourseCoords.length > 0) {
     return (
-      <GPSMapView
+      <GoogleSatelliteMap
         courseId={0}
         courseName={course.name}
         holeCoordinates={allCourseCoords}
         currentHole={currentHoleNum}
         onHoleChange={setCurrentHoleNum}
         onClose={handleBack}
-        osmFeatures={allOsmFeatures}
       />
     );
   }
