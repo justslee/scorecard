@@ -33,6 +33,7 @@ import {
   osmFillOpacity,
   osmOutlineColor,
   holeViewBounds,
+  isGpsOnHole,
 } from "@/lib/map/satellite-helpers";
 import { T } from "@/components/yardage/tokens";
 
@@ -193,7 +194,7 @@ export default function GPSMapView({
   }, [currentHoleData]);
 
   const distances = useMemo(() => {
-    if (!position || !currentHoleData) {
+    if (!currentHoleData) {
       return {
         front:  null as number | null,
         center: null as number | null,
@@ -202,13 +203,32 @@ export default function GPSMapView({
       };
     }
 
-    const center = calculateDistance(position, currentHoleData.green);
+    // Guard: only use GPS position when it is actually near this hole.
+    // When GPS is far away (home, simulator) the raw coordinates produce
+    // absurd distances (~49 000 yds). Fall back to tee-based distances so
+    // the info strip always shows sane yardages.
+    const onHole = position ? isGpsOnHole(position, currentHoleData) : false;
+    const origin = (onHole && position) ? position : currentHoleData.tee;
+
+    if (!origin) {
+      // No tee and no on-hole GPS — can't compute meaningful distances.
+      return {
+        front:  null as number | null,
+        center: null as number | null,
+        back:   null as number | null,
+        pin:    null as number | null,
+      };
+    }
+
+    const center = calculateDistance(origin, currentHoleData.green);
     const front  = currentHoleData.front
-      ? calculateDistance(position, currentHoleData.front) : null;
+      ? calculateDistance(origin, currentHoleData.front) : null;
     const back   = currentHoleData.back
-      ? calculateDistance(position, currentHoleData.back)  : null;
-    const pin    = currentHoleData.pin
-      ? calculateDistance(position, currentHoleData.pin)   : null;
+      ? calculateDistance(origin, currentHoleData.back)  : null;
+    // Pin distance is only meaningful when the player is actually on the hole.
+    const pin    = (onHole && position && currentHoleData.pin)
+      ? calculateDistance(position, currentHoleData.pin)
+      : null;
 
     return {
       front:  front?.yards ?? null,
@@ -221,6 +241,8 @@ export default function GPSMapView({
   const hazardDistances = useMemo(() => {
     if (!position || !currentHoleData?.hazards?.length)
       return [] as Array<{ type: string; yards: number }>;
+    // Same on-hole guard: skip hazard distances when GPS is far from the hole.
+    if (!isGpsOnHole(position, currentHoleData)) return [];
     return currentHoleData.hazards
       .map((h) => ({
         type:  h.type,
@@ -229,6 +251,13 @@ export default function GPSMapView({
       .sort((a, b) => a.yards - b.yards)
       .slice(0, 4);
   }, [position, currentHoleData]);
+
+  // True when the GPS fix is near enough to this hole to be meaningful.
+  // Drives: which distances to show, whether to draw the GPS dot/line/rings.
+  const isOnHole = useMemo(
+    () => (position && currentHoleData ? isGpsOnHole(position, currentHoleData) : false),
+    [position, currentHoleData]
+  );
 
   // ── OSM polygon overlay ────────────────────────────────────────────────────
 
@@ -293,14 +322,19 @@ export default function GPSMapView({
     const m = map.current;
 
     // --- Distance line from user to green ---
-    if (position && showOverlays && currentHoleData) {
+    // Only draw when GPS is actually on this hole — off-hole GPS produces a line
+    // spanning tens of miles which zooms the course to a sub-pixel speck.
+    const gpsOnHole = (position && currentHoleData) ? isGpsOnHole(position, currentHoleData) : false;
+    if (gpsOnHole && showOverlays && currentHoleData) {
+      // gpsOnHole being true guarantees position is non-null here.
+      const pos = position!;
       const distLineData: GeoJSON.Feature<GeoJSON.LineString> = {
         type: "Feature",
         properties: {},
         geometry: {
           type: "LineString",
           coordinates: [
-            [position.lng, position.lat],
+            [pos.lng, pos.lat],
             [currentHoleData.green.lng, currentHoleData.green.lat],
           ],
         },
@@ -324,8 +358,8 @@ export default function GPSMapView({
       }
 
       // Distance label at midpoint
-      const midLng = (position.lng + currentHoleData.green.lng) / 2;
-      const midLat = (position.lat + currentHoleData.green.lat) / 2;
+      const midLng = (pos.lng + currentHoleData.green.lng) / 2;
+      const midLat = (pos.lat + currentHoleData.green.lat) / 2;
       const yds    = distances.center;
 
       if (yds !== null) {
@@ -473,9 +507,11 @@ export default function GPSMapView({
 
     // --- F/C/B rings: from player/tee to front/center/back of green ---
     // Shows the player the approach distance bracket to each part of the green.
-    // Origin = GPS position when available, tee otherwise (static planning view).
+    // Origin = GPS position when the player IS on the hole; tee otherwise.
+    // Using raw GPS when off-hole (e.g. at home) would produce rings with radii
+    // of tens of thousands of yards — the same bug as the distance line above.
     if (showOverlays && (currentHoleData.front || currentHoleData.back)) {
-      const ringOrigin = position ?? currentHoleData.tee;
+      const ringOrigin = (gpsOnHole && position) ? position : currentHoleData.tee;
       if (ringOrigin) {
         const fcbDefs: Array<{ type: FcbType; coord: { lat: number; lng: number } | undefined }> = [
           { type: "front",  coord: currentHoleData.front  },
@@ -887,13 +923,16 @@ export default function GPSMapView({
       hazardMarkers.current.push(hm);
     });
 
-    // Fly to hole using fitBounds — frames the whole tee-to-green extent.
+    // Fly to hole using fitBounds — frames the whole tee-to-green corridor.
     // green is "up" via the bearing; pitch 35° gives a gentle perspective.
+    // IMPORTANT: never include the GPS position in the bounds — when the player
+    // is at home/simulator the map would zoom out to frame a 28-mile span and
+    // render the course as a sub-pixel speck.
     const bearing = currentHoleData.tee
       ? calculateBearing(currentHoleData.tee, currentHoleData.green)
       : 0;
 
-    const bounds = holeViewBounds(currentHoleData, position ?? undefined);
+    const bounds = holeViewBounds(currentHoleData);
     map.current.fitBounds(bounds as mapboxgl.LngLatBoundsLike, {
       padding:  { top: 120, bottom: 280, left: 40, right: 40 },
       bearing,
@@ -925,18 +964,31 @@ export default function GPSMapView({
 
       if (!map.current) return;
 
-      if (!userMarker.current) {
-        const userEl = document.createElement("div");
-        userEl.innerHTML = `
-          <div style="position:relative;">
-            <div style="width:22px;height:22px;border-radius:50%;background:${T.accent};border:3px solid white;box-shadow:0 2px 12px rgba(58,74,138,0.6);"></div>
-            <div style="position:absolute;inset:0;width:22px;height:22px;border-radius:50%;background:${T.accent};animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;opacity:0.3;"></div>
-          </div>`;
-        userMarker.current = new mapboxgl.Marker({ element: userEl })
-          .setLngLat([pos.lng, pos.lat])
-          .addTo(map.current);
+      // Only show the GPS "you" dot when the player is actually near this hole.
+      // When GPS is far away (home / simulator) the marker would appear tens of
+      // miles from the hole and the auto-centre would zoom out to frame both,
+      // shrinking the course outline to a sub-pixel speck.
+      const hd = currentHoleRef.current;
+      const onHole = hd ? isGpsOnHole(pos, hd) : false;
+
+      if (onHole) {
+        if (!userMarker.current) {
+          const userEl = document.createElement("div");
+          userEl.innerHTML = `
+            <div style="position:relative;">
+              <div style="width:22px;height:22px;border-radius:50%;background:${T.accent};border:3px solid white;box-shadow:0 2px 12px rgba(58,74,138,0.6);"></div>
+              <div style="position:absolute;inset:0;width:22px;height:22px;border-radius:50%;background:${T.accent};animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;opacity:0.3;"></div>
+            </div>`;
+          userMarker.current = new mapboxgl.Marker({ element: userEl })
+            .setLngLat([pos.lng, pos.lat])
+            .addTo(map.current);
+        } else {
+          userMarker.current.setLngLat([pos.lng, pos.lat]);
+        }
       } else {
-        userMarker.current.setLngLat([pos.lng, pos.lat]);
+        // Off-hole: remove the stale GPS dot so it doesn't linger.
+        userMarker.current?.remove();
+        userMarker.current = null;
       }
 
       // Auto-detect hole
@@ -995,7 +1047,8 @@ export default function GPSMapView({
     if (!map.current || !currentHoleData) return;
     const bearing = currentHoleData.tee
       ? calculateBearing(currentHoleData.tee, currentHoleData.green) : 0;
-    const bounds = holeViewBounds(currentHoleData, position ?? undefined);
+    // Always frame the hole tee→green corridor; never extend to a far GPS fix.
+    const bounds = holeViewBounds(currentHoleData);
     map.current.fitBounds(bounds as mapboxgl.LngLatBoundsLike, {
       padding:  { top: 120, bottom: 280, left: 40, right: 40 },
       bearing,
@@ -1191,9 +1244,13 @@ export default function GPSMapView({
                 <span className="text-zinc-500 text-[10px]">yds</span>
               </div>
               <div className="flex items-center gap-1">
-                <Signal size={12} className={position ? "text-emerald-500" : "text-zinc-600"} />
+                <Signal size={12} className={
+                  !position ? "text-zinc-600" :
+                  isOnHole  ? "text-emerald-500" :
+                              "text-amber-500"
+                } />
                 <span className="text-zinc-500 text-[10px]">
-                  {position ? `±${Math.round(position.accuracy || 0)}m` : "GPS…"}
+                  {!position ? "GPS…" : isOnHole ? `±${Math.round(position.accuracy || 0)}m` : "off hole"}
                 </span>
               </div>
             </div>
@@ -1250,11 +1307,17 @@ export default function GPSMapView({
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Signal size={16} className={position ? "text-emerald-500" : "text-zinc-500"} />
+                  <Signal size={16} className={
+                    !position ? "text-zinc-500" :
+                    isOnHole  ? "text-emerald-500" :
+                                "text-amber-500"
+                  } />
                   <span className="text-zinc-400 text-sm">
-                    {position
+                    {!position
+                      ? "Acquiring GPS…"
+                      : isOnHole
                       ? `GPS: ${getAccuracyDescription(position.accuracy || 0)} (±${Math.round(position.accuracy || 0)}m)`
-                      : "Acquiring GPS…"}
+                      : "GPS · Not on this hole · Tee distances shown"}
                   </span>
                 </div>
                 <div className="flex gap-2">

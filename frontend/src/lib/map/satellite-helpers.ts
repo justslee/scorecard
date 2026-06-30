@@ -224,6 +224,65 @@ export function holeViewBounds(
   ];
 }
 
+// ── On-hole GPS guard ─────────────────────────────────────────────────────────
+
+/**
+ * Compute the geographic bounding box of a hole from its known coordinate points.
+ *
+ * Includes tee, green, front of green, and back of green when available.
+ * The resulting bbox is used by `isGpsOnHole` to decide whether a GPS position
+ * is near the hole or far away (e.g. at home 28 miles away).
+ *
+ * Pure function — no side effects, headless-testable.
+ */
+export function holeCoordsBbox(
+  holeCoords: Pick<CourseCoordinates, 'tee' | 'green' | 'front' | 'back'>
+): { minLat: number; maxLat: number; minLng: number; maxLng: number } {
+  const pts: Array<{ lat: number; lng: number }> = [holeCoords.green];
+  if (holeCoords.tee)   pts.push(holeCoords.tee);
+  if (holeCoords.front) pts.push(holeCoords.front);
+  if (holeCoords.back)  pts.push(holeCoords.back);
+
+  let minLat = pts[0].lat, maxLat = pts[0].lat;
+  let minLng = pts[0].lng, maxLng = pts[0].lng;
+  for (const p of pts) {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lng < minLng) minLng = p.lng;
+    if (p.lng > maxLng) maxLng = p.lng;
+  }
+  return { minLat, maxLat, minLng, maxLng };
+}
+
+/**
+ * Returns true when a GPS position is within (or near) the hole's bounding box.
+ *
+ * The default margin of 0.006° ≈ 660 m covers any player anywhere on the hole
+ * (tee box, fairway, green approach) while correctly rejecting a position that
+ * is many miles away (e.g. at home — the root cause of the "49 000 yd" bug).
+ *
+ * When this returns false:
+ *   • Do NOT draw the GPS "you" dot or the GPS→pin distance line.
+ *   • Do NOT use GPS as the origin for F/C/B distance rings.
+ *   • Show tee-based distances in the info strip instead.
+ *   • Frame the map on the hole tee→green corridor only (never on a far GPS fix).
+ *
+ * Pure function — no side effects, headless-testable.
+ */
+export function isGpsOnHole(
+  pos: { lat: number; lng: number },
+  holeCoords: Pick<CourseCoordinates, 'tee' | 'green' | 'front' | 'back'>,
+  marginDeg = 0.006
+): boolean {
+  const { minLat, maxLat, minLng, maxLng } = holeCoordsBbox(holeCoords);
+  return (
+    pos.lat >= minLat - marginDeg &&
+    pos.lat <= maxLat + marginDeg &&
+    pos.lng >= minLng - marginDeg &&
+    pos.lng <= maxLng + marginDeg
+  );
+}
+
 // ── Label formatters ──────────────────────────────────────────────────────────
 
 /**

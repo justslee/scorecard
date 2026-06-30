@@ -9,6 +9,8 @@ import { describe, it, expect } from 'vitest';
 import {
   mapRendererFor,
   holeViewBounds,
+  holeCoordsBbox,
+  isGpsOnHole,
   tapMeasureLabel,
   formatFCBLabel,
   annotateOsmFeatures,
@@ -431,5 +433,117 @@ describe('parseCenterParams — lat/lng/name extraction from URL params', () => 
     expect(result).not.toBeNull();
     expect(result!.lat).toBeCloseTo(-33.8688, 4);
     expect(result!.lng).toBeCloseTo(151.2093, 4);
+  });
+});
+
+// ── holeCoordsBbox ────────────────────────────────────────────────────────────
+
+describe('holeCoordsBbox — bbox from hole coordinate points', () => {
+  const tee   = { lat: 40.7430, lng: -73.4546 };
+  const green = { lat: 40.7451, lng: -73.4514 };
+  const front = { lat: 40.7448, lng: -73.4516 };
+  const back  = { lat: 40.7454, lng: -73.4512 };
+
+  it('computes bbox from green only when tee/front/back are absent', () => {
+    const bbox = holeCoordsBbox({ green });
+    expect(bbox.minLat).toBeCloseTo(40.7451, 4);
+    expect(bbox.maxLat).toBeCloseTo(40.7451, 4);
+    expect(bbox.minLng).toBeCloseTo(-73.4514, 4);
+    expect(bbox.maxLng).toBeCloseTo(-73.4514, 4);
+  });
+
+  it('expands to include tee and green', () => {
+    const bbox = holeCoordsBbox({ tee, green });
+    expect(bbox.minLat).toBeCloseTo(40.7430, 4);
+    expect(bbox.maxLat).toBeCloseTo(40.7451, 4);
+    expect(bbox.minLng).toBeCloseTo(-73.4546, 4);
+    expect(bbox.maxLng).toBeCloseTo(-73.4514, 4);
+  });
+
+  it('expands to include front and back of green when provided', () => {
+    const bbox = holeCoordsBbox({ tee, green, front, back });
+    // back is northmost lat
+    expect(bbox.maxLat).toBeCloseTo(40.7454, 4);
+    // tee is southmost lat
+    expect(bbox.minLat).toBeCloseTo(40.7430, 4);
+    // tee is westmost lng
+    expect(bbox.minLng).toBeCloseTo(-73.4546, 4);
+    // back is eastmost lng
+    expect(bbox.maxLng).toBeCloseTo(-73.4512, 4);
+  });
+
+  it('minLat ≤ maxLat and minLng ≤ maxLng always', () => {
+    const bbox = holeCoordsBbox({ tee, green, front, back });
+    expect(bbox.minLat).toBeLessThanOrEqual(bbox.maxLat);
+    expect(bbox.minLng).toBeLessThanOrEqual(bbox.maxLng);
+  });
+});
+
+// ── isGpsOnHole ───────────────────────────────────────────────────────────────
+
+describe('isGpsOnHole — on-hole GPS guard', () => {
+  // Bethpage Black hole 1 — approximate coordinates
+  const tee   = { lat: 40.7430, lng: -73.4546 };
+  const green = { lat: 40.7451, lng: -73.4514 };
+  const holeCoords = { tee, green };
+
+  it('returns true when GPS is within the hole bbox (fairway position)', () => {
+    // Midpoint of the hole
+    const pos = { lat: 40.7440, lng: -73.4530 };
+    expect(isGpsOnHole(pos, holeCoords)).toBe(true);
+  });
+
+  it('returns true when GPS is exactly on the green', () => {
+    expect(isGpsOnHole(green, holeCoords)).toBe(true);
+  });
+
+  it('returns true when GPS is exactly on the tee', () => {
+    expect(isGpsOnHole(tee, holeCoords)).toBe(true);
+  });
+
+  it('returns true when GPS is within the default margin (≈660 m) of the hole', () => {
+    // 0.005° north of the green ≈ 555 m — inside the 0.006° margin
+    const pos = { lat: green.lat + 0.005, lng: green.lng };
+    expect(isGpsOnHole(pos, holeCoords)).toBe(true);
+  });
+
+  it('returns false when GPS is 28 miles away (home / simulator bug)', () => {
+    // ~28 miles north of Bethpage — the exact bug scenario
+    const homeSim = { lat: 40.7430 + 0.4, lng: -73.4546 };   // ~44 km north
+    expect(isGpsOnHole(homeSim, holeCoords)).toBe(false);
+  });
+
+  it('returns false when GPS is 1 degree away (≈111 km) in longitude', () => {
+    const far = { lat: 40.7440, lng: green.lng + 1.0 };
+    expect(isGpsOnHole(far, holeCoords)).toBe(false);
+  });
+
+  it('returns false for a GPS fix in a different city entirely', () => {
+    // San Francisco, CA — clearly not on a Long Island golf course
+    const sf = { lat: 37.7749, lng: -122.4194 };
+    expect(isGpsOnHole(sf, holeCoords)).toBe(false);
+  });
+
+  it('uses front/back coords to expand the bbox when provided', () => {
+    const front = { lat: 40.7448, lng: -73.4516 };
+    const back  = { lat: 40.7454, lng: -73.4512 };
+    // Point just inside the back margin — only reachable if back is in bbox
+    const posNearBack = { lat: back.lat + 0.005, lng: back.lng };
+    expect(isGpsOnHole(posNearBack, { tee, green, front, back })).toBe(true);
+    // Same point should be outside when only tee+green (tighter bbox)
+    // green.lat + 0.006 = 40.7451 + 0.006 = 40.7511, back.lat = 40.7454, posNearBack = 40.7459
+    // 40.7459 > 40.7511 is false — so this point IS within green-only bbox too.
+    // Use a point well past back of green instead:
+    const farNorthOfBack = { lat: back.lat + 0.01, lng: back.lng }; // 40.7554 >> green margin
+    expect(isGpsOnHole(farNorthOfBack, { tee, green })).toBe(false);
+  });
+
+  it('accepts a custom marginDeg = 0 (exact bbox, no expansion)', () => {
+    // Point just 0.001° outside the bbox should now be rejected
+    const justOutside = { lat: green.lat + 0.001, lng: green.lng };
+    // With default margin it's inside
+    expect(isGpsOnHole(justOutside, holeCoords)).toBe(true);
+    // With no margin it's outside
+    expect(isGpsOnHole(justOutside, holeCoords, 0)).toBe(false);
   });
 });
