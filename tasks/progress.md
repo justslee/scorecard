@@ -5134,3 +5134,21 @@ no unique work — owner may delete it).
 Polish backlog (from builders): live interim transcript while holding, clock-time parsing
 ("around 8am"), sat/sun abbreviations, guest placeholder hdcp, ICS share-sheet fallback if
 WKWebView download is flaky, ICS URL escaping.
+
+---
+
+## 2026-07-01 — round map: interactive inline + fullscreen blow-up
+
+Owner wants the hole map interactive + zoomable to a big fullscreen view. The native
+Google map can't live inside the swipeable/animated hole card (renders behind the
+webview, can't track CSS drag/animation). So: kept the interactive inline map in the
+round view, added an expand button → full-screen interactive map overlay (fixed
+inset-0, whole screen, pan + tap-target + hole nav + GPS; hole changes sync back).
+New useHoleCoordinates hook shares per-hole coords between inline + fullscreen.
+Verified in sim: fullscreen fills the entire screen (Bethpage, hole framed). Pushed
+to integration/next (ba2eaf9). NEXT: one-card composition (map inside the hole card
+replacing the schematic) — to land with the owner's Claude Design layout.
+
+Also this session: security(search) — URL-encoded Mapbox query + auth on /search
+(paid Places). Places key saved (goes live on backend restart; verify config-status
++ a real search). Fable session pushed tee-time phase 1b-A to the same branch.
