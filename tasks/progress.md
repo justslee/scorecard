@@ -5083,3 +5083,54 @@ Silent item (backend-only; nothing owner-visible on TestFlight — the simulate
 endpoint is a QA surface). Real-call track still needs: telephony platform choice
 (Twilio DIY vs Vapi/Retell), creds + number + STIR/SHAKEN, per-course tz + verified
 landline allowlist, TCPA attorney review, first supervised test call.
+
+---
+
+## 2026-07-01 (owner-directed session, Fable 5) — TEE-TIME BOOKING EPIC: Phase 1b + Phase 4 pre-build
+
+Owner asked (in-session) to drive the tee-time booking EPIC (board card 38e1c525…7050,
+plan specs/tee-time-booking-plan.md). Recon found Phase 1 scaffolding ALREADY on
+integration/next (TeeTimeProvider ABC + mock + /api/tee-times/* + real 3-phase UI), so
+scoped "Phase 1b — make it real" (specs/tee-time-booking-phase1b.md) and ran 4 Fable 5
+builders sequentially/parallel on the #86 bundle:
+
+- A `7b10be1` backend real data: AffiliateLinkProvider (real courses via extracted
+  services/course_finder.py — OSM/Places/Mapbox; NEVER fabricates availability; book() →
+  needs_human + bookingUrl), 15-min TTL search cache (services/tee_times/search_cache.py),
+  owner-scoped tee_time_bookings table + Alembic 0007 + GET /api/tee-times/bookings.
+  Slot gained estimated:bool; priceUsd nullable (3-layer sync).
+- B `304a19b` frontend real data: geolocated area on every query (lib/teetime/location.ts,
+  GPSWatcher pattern), real nearby courses replace DEFAULT_COURSES (+ radar pins), honest
+  "Held for you to book → Book on the course site" confirm, zero-dep ICS calendar with
+  VALARM (lib/teetime/ics.ts), per-window date fix (Sunday ≠ Saturday; lib/teetime/dates.ts).
+- C `bb05ae6` hold-to-talk voice prefs: parseTeeTimePrefs intent (Zod + heuristics +
+  repair loop per pipeline.ts), appliers in lib/teetime/voice-prefs.ts, auto-advance on
+  complete request; +9 voice-tests cases (new /api/parse-tee-time lane). NOTICEABLE.
+- D `87424b9` voice booking agent PRE-BUILD (epic Phase 4, "paused for Fable 5" → unblocked):
+  services/voice_booking/ pure modules (dialog state machine, IVR nav, outcome→BookingResult,
+  compliance-as-code: landline allowlist, disclosure-first, 8am–9pm, STORE_AUDIO=False,
+  suppression list — all fail closed) + 7-persona pro-shop simulator + owner-auth'd
+  POST /api/tee-times/book-by-call/simulate. NO card vault (eng-lead call: human takes
+  payment, per plan Track B). telephony.py stub raises unless VOICE_BOOKING_ENABLED+creds,
+  then still NotImplemented — launch stays owner-gated (budget + TCPA attorney).
+
+Mid-session the other loop session committed e22b9c0 (auth on /api/courses/search) — rode along.
+
+Combined-tree gates (re-run by eng-lead): ruff clean; pytest 895 passed/51 skipped; tsc/lint
+clean; vitest 1265/1265; voice smoke 274/274; next build green. Adversarial + security
+review (fresh context): 1 medium finding — /api/tee-times/search unauthenticated + paid
+Places — VERIFIED FALSE POSITIVE (main.py:81 registers the router with require_owner);
+cleared: IDOR on bookings, OSM/Mapbox injection, PII/transcript persistence (none), no
+live-dial path reachable. Follow-up nit: RFC-5545-escape bookingUrl in ics.ts (defensive).
+
+Board: sub-card "Tee-time booking Phase 1b" (Needs Review, Major) 3901c525…b74b; epic card
+phases updated. Default provider still mock — flip TEETIME_PROVIDER=affiliate after the
+owner sets GOOGLE_PLACES_API_KEY. Owner actions unchanged: Lightspeed creds email, GolfNow
+affiliate application, voice-track go (platform/budget/lawyer/allowlist).
+
+Housekeeping: gitignored the stale accidental nested clone ./scorecard/ (634M, old commit,
+no unique work — owner may delete it).
+
+Polish backlog (from builders): live interim transcript while holding, clock-time parsing
+("around 8am"), sat/sun abbreviations, guest placeholder hdcp, ICS share-sheet fallback if
+WKWebView download is flaky, ICS URL escaping.
