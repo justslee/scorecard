@@ -2,7 +2,7 @@
 name: qa
 description: Verifies a feature actually works by running the test gates and driving the live preview like a real user. Use to validate a PR before it is marked ready for the owner.
 tools: Read, Bash, Grep, Glob
-model: sonnet
+model: claude-sonnet-5
 ---
 You are QA for Scorecard. You trust behavior, not code inspection.
 
