@@ -29,7 +29,7 @@ import { useEffect, useRef, useState, useCallback, useMemo, type CSSProperties }
 // @capacitor/google-maps references HTMLElement at module evaluation time,
 // so it must NOT be imported at the top level (would crash SSR / static build).
 // We dynamic-import it inside the useEffect (client-only) instead.
-import type { GoogleMap, Polyline } from "@capacitor/google-maps";
+import type { GoogleMap } from "@capacitor/google-maps";
 import {
   Navigation,
   Target,
@@ -52,7 +52,6 @@ import type { CourseCoordinates } from "@/lib/golf-api";
 import { isGpsOnHole } from "@/lib/map/satellite-helpers";
 import {
   CENTER_ONLY_ZOOM,
-  tapMeasureLabelGoogle,
   cameraForHole,
   cameraFraming,
   movedBeyondYards,
@@ -199,6 +198,8 @@ export default function GoogleSatelliteMap({
   const holePolylineIdsRef  = useRef<string[]>([]);
   const gpsMarkerIdRef      = useRef<string | null>(null);
   const tapMarkerIdRef      = useRef<string | null>(null);
+  // Polylines drawn from a tapped target point (tee→point + point→green).
+  const tapLineIdsRef       = useRef<string[]>([]);
   // Last position the camera auto-followed to (null when off-hole) — so GPS
   // re-anchoring only fires on coming on-hole or after a meaningful move.
   const cameraFollowRef     = useRef<{ lat: number; lng: number } | null>(null);
@@ -296,14 +297,19 @@ export default function GoogleSatelliteMap({
   }, []);
 
   /**
-   * Remove the tap-to-measure marker (if any).
+   * Remove the tap target marker + its two distance lines (if any).
    */
   const clearTapMarker = useCallback(async () => {
     const m  = googleMapRef.current;
+    if (!m) return;
     const id = tapMarkerIdRef.current;
-    if (m && id) {
+    if (id) {
       await m.removeMarker(id).catch(() => {});
       tapMarkerIdRef.current = null;
+    }
+    if (tapLineIdsRef.current.length > 0) {
+      await m.removePolylines(tapLineIdsRef.current).catch(() => {});
+      tapLineIdsRef.current = [];
     }
   }, []);
 
@@ -320,57 +326,15 @@ export default function GoogleSatelliteMap({
   }, []);
 
   /**
-   * Add the (deliberately minimal) overlays for the current hole:
-   *   • a subtle tee→green guide line to orient the hole
-   *   • a GPS→green line only while the player is on the hole
-   * No point markers and no distance rings — the satellite imagery + the bottom
-   * distance panel carry the information; extra pins/circles made the map noisy.
+   * Per-hole overlays are intentionally EMPTY: the map stays clean satellite
+   * (no tee→green line, no rings, no pins). Distance lines are drawn only when
+   * the golfer taps a target point (see the tap handler → tee→point + point→green).
+   * Kept as a no-op so the hole-change / GPS effects can call it uniformly.
    */
-  const addHoleOverlays = useCallback(async (hd: CourseCoordinates, gpsOnHole: boolean, pos: Position | null) => {
-    const m = googleMapRef.current;
-    if (!m || !mapReadyRef.current) return;
-
-    const newPolylineIds: string[] = [];
-
-    // ── Tee-to-green guide line (subtle) ─────────────────────────────────
-    if (hd.tee) {
-      const guideLine: Polyline = {
-        path: [
-          { lat: hd.tee.lat,   lng: hd.tee.lng   },
-          { lat: hd.green.lat, lng: hd.green.lng  },
-        ],
-        // The native plugin parses strokeColor as a HEX string (UIColor(hex:) ??
-        // .blue) and applies strokeOpacity separately — an rgba() string silently
-        // renders BLUE. Use hex + opacity so the line is the intended subtle white.
-        strokeColor:   "#FFFFFF",
-        strokeOpacity: 0.6,
-        strokeWeight:  2,
-        geodesic:      true,
-        clickable:     false,
-      };
-      const lineIds = await m.addPolylines([guideLine]).catch(() => [] as string[]);
-      newPolylineIds.push(...lineIds);
-    }
-
-    // ── GPS → green line (on-hole only) ──────────────────────────────────
-    if (gpsOnHole && pos) {
-      const distLine: Polyline = {
-        path: [
-          { lat: pos.lat,       lng: pos.lng       },
-          { lat: hd.green.lat,  lng: hd.green.lng  },
-        ],
-        strokeColor:   T.accent,
-        strokeWeight:  2.5,
-        geodesic:      true,
-        clickable:     false,
-      };
-      const distIds = await m.addPolylines([distLine]).catch(() => [] as string[]);
-      newPolylineIds.push(...distIds);
-    }
-
+  const addHoleOverlays = useCallback(async (_hd: CourseCoordinates, _gpsOnHole: boolean, _pos: Position | null) => {
     holeMarkerIdsRef.current   = [];
     holeCircleIdsRef.current   = [];
-    holePolylineIdsRef.current = newPolylineIds;
+    holePolylineIdsRef.current = [];
   }, []);
 
   /**
@@ -520,6 +484,14 @@ export default function GoogleSatelliteMap({
 
         mapReadyRef.current = true;
 
+        // Reserve the bottom distance panel so the hole frames ABOVE it (owner:
+        // the panel slightly covered the tee box). setPadding shifts the camera's
+        // effective centre up; re-apply the framing so the hole sits in the band.
+        if (!inline && !centerOnly && currentHd) {
+          await gMap.setPadding({ top: 8, left: 0, right: 0, bottom: 150 }).catch(() => {});
+          await fitCameraToHole(currentHd);
+        }
+
         // ── Initial overlays ─────────────────────────────────────────────
         // (Camera is already framed via the create config above.)
         if (currentHd && !centerOnly) {
@@ -535,29 +507,50 @@ export default function GoogleSatelliteMap({
 
           if (!hd) return; // center-only mode — no reference point
 
-          // Origin = the player when on the hole (carry from where you are),
-          // else the tee. Distances use the same turf function as the panel.
-          const gpsPos  = positionRef.current;
-          const onHole  = gpsPos ? isGpsOnHole(gpsPos, hd) : false;
-          const origin  = onHole && gpsPos ? { lat: gpsPos.lat, lng: gpsPos.lng } : hd.tee ?? null;
-          const target  = tapTargetDistances(
+          // Two measured legs from the tapped target: tee → point ("From tee")
+          // and point → green center ("To green"). Same turf fn as the panel.
+          const tee    = hd.tee ?? null;
+          const target = tapTargetDistances(
             tapPos,
             hd.green,
-            origin,
-            onHole,
+            tee,
+            false,
             (a, b) => calculateDistance(a, b).yards,
           );
           setTapTarget(target);
 
-          const label = tapMeasureLabelGoogle(target.carry, target.toGreen);
-
-          // Remove old tap marker
+          // Clear the previous target + its lines, then draw the new ones.
           await clearTapMarker();
+          const m = googleMapRef.current!;
+          const lineIds: string[] = [];
 
-          // Add new tap marker at the tapped location
-          const tapId = await googleMapRef.current!
-            .addMarker({ coordinate: tapPos, title: label })
-            .catch(() => null);
+          // Leg 1 — tee → target (the carry): white.
+          if (tee) {
+            const ids = await m.addPolylines([{
+              path: [{ lat: tee.lat, lng: tee.lng }, tapPos],
+              strokeColor: "#FFFFFF", strokeOpacity: 0.9, strokeWeight: 3,
+              geodesic: true, clickable: false,
+            }]).catch(() => [] as string[]);
+            lineIds.push(...ids);
+          }
+          // Leg 2 — target → green centre (what's left): amber, distinct from white.
+          {
+            const ids = await m.addPolylines([{
+              path: [tapPos, { lat: hd.green.lat, lng: hd.green.lng }],
+              strokeColor: "#F2C14E", strokeOpacity: 0.95, strokeWeight: 3,
+              geodesic: true, clickable: false,
+            }]).catch(() => [] as string[]);
+            lineIds.push(...ids);
+          }
+          tapLineIdsRef.current = lineIds;
+
+          // White target reticle at the tapped point (yardage-book vibe, not a red pin).
+          const tapId = await m.addMarker({
+            coordinate: tapPos,
+            iconUrl: "assets/tap-target.png",
+            iconSize:   { width: 38, height: 38 },
+            iconAnchor: { x: 19, y: 19 },
+          }).catch(() => null);
           if (tapId) tapMarkerIdRef.current = tapId;
         });
 
