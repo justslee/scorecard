@@ -4850,3 +4850,14 @@ slice of ux-tap-to-target (PR #86, rides along).
 
 Gates: backend ruff + pytest green (new test_course_search); frontend tsc/lint/
 full-vitest 1173/voice 265/build green. Backend change → deploys on merge to main.
+
+---
+
+## 2026-07-01 (loop tick) — OSM name-matching improvement (rides on #86)
+
+Complement to the Google Places search fix: extracted osm_name_filter() — matches
+all significant words (any order), drops generic golf stopwords, so "pebble golf"
+matches "Pebble Beach Golf Links" and "bethpage black golf course" matches OSM's
+"Bethpage Black". Works NOW without the Places key (which is still needed for
+multi-course facilities OSM doesn't name per-course). Used by both OSM search
+functions. 4 new tests; backend ruff + pytest green. PR #86 bundle.
