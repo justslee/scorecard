@@ -3,6 +3,48 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-01 — tee-time phase 1b item B: frontend real-data wiring (NOTICEABLE — integration/next, DONE)
+
+Frontend slice of the tee-time booking epic (`specs/tee-time-booking-phase1b.md`,
+work item B). The /tee-time page now searches with the golfer's real location,
+lists real nearby courses, renders affiliate results as honest estimates/handoffs,
+and produces a real .ics calendar file.
+
+### What changed
+- `frontend/src/lib/teetime/dates.ts` (NEW) — day-label → date logic; each window
+  searches its OWN day (fixes the Sunday-window-got-Saturday's-date bug); local-time
+  ISO formatting (old `nextSaturday()` used UTC and drifted near midnight)
+- `frontend/src/lib/teetime/query.ts` (NEW) — pure prefs → TeeTimeQuery fan-out
+  (`buildTeeTimeQueries`), area ("lat,lng") included on every query when known
+- `frontend/src/lib/teetime/location.ts` (NEW) — non-blocking geolocation via
+  `GPSWatcher.getCurrentPosition` (dynamic import), last-known "lat,lng" persisted
+  under `looper_teetime_last_area`; search never waits on the permission prompt
+- `frontend/src/lib/teetime/courses.ts` (NEW) — `searchNearby` (existing course-search
+  client) → prefs `CourseOption[]`: honest haversine distances, favorites flagged +
+  pre-selected (else nearest 3), capped at 8; hardcoded SF `DEFAULT_COURSES` kept
+  only as offline/dev fallback
+- `frontend/src/lib/teetime/ics.ts` (NEW) — zero-dep RFC 5545 generator with VALARM
+  (-PT2H) + blob download; "Add to calendar · Set reminder" now does the real thing
+- `frontend/src/app/tee-time/page.tsx` — wires all of the above; Radar pins render
+  the golfer's actual selected courses (name + relative distance, capped at 4);
+  Confirmed screen: `needs_human` reads as a handoff ("Held" stamp, "Book on the
+  course site →" / "Call the course to book", no fabricated confirmation number),
+  estimated slots render "~" times and no invented price
+- Tests: `dates.test.ts`, `query.test.ts`, `ics.test.ts`, `courses.test.ts` (+35)
+
+### Gate results (all green)
+- `tsc --noEmit` clean; `eslint` clean; `vitest` 1228/1228 (was 1193);
+  voice smoke 265/265; `next build` succeeds
+
+### Classification: NOTICEABLE (user-visible once TEETIME_PROVIDER=affiliate; the
+prefs course list + calendar button + honest confirm are visible even on mock)
+Item C (voice prefs) note: prefs state shape unchanged — `windows: TimeWindow[]`,
+`courses: CourseOption[]` (now imported from `@/lib/teetime/courses`), `maxMiles`,
+`group`; voice should mutate those via the existing setters; query building is
+centralized in `buildTeeTimeQueries` so voice-set prefs flow through untouched.
+
+---
+
 ## 2026-07-01 — tee-time phase 1b item A: real courses + cache + booking persistence (SILENT — integration/next, DONE)
 
 Backend real-data slice of the tee-time booking epic (`specs/tee-time-booking-phase1b.md`,
