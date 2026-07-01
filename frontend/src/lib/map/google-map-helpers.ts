@@ -146,11 +146,14 @@ export function haversineYards(
  * Pure function — no side effects, headless-testable.
  */
 export function zoomForPaddedYards(paddedYards: number): number {
-  if (paddedYards < 150) return 18;
-  if (paddedYards < 275) return 17;
-  if (paddedYards < 450) return 16;
-  if (paddedYards < 700) return 15;
-  return 14;
+  // Tuned to frame a single hole tightly (owner feedback: the map was far too
+  // zoomed out). Fractional zooms are supported by the Google Maps SDK.
+  if (paddedYards < 130) return 18.5;
+  if (paddedYards < 200) return 18;
+  if (paddedYards < 300) return 17.5;
+  if (paddedYards < 430) return 17;
+  if (paddedYards < 600) return 16.5;
+  return 16;
 }
 
 /**
@@ -180,9 +183,9 @@ export function cameraForHole(
     lng: (tee.lng + green.lng) / 2,
   };
 
-  // Tee→green yards; pad 35% for fairway width on each side.
+  // Tee→green yards; small pad so the hole fills the view (was 1.35 — too wide).
   const distYards    = haversineYards(tee, green);
-  const paddedYards  = distYards * 1.35;
+  const paddedYards  = distYards * 1.15;
   const zoom         = zoomForPaddedYards(paddedYards);
 
   return { coordinate, zoom };

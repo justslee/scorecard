@@ -338,40 +338,42 @@ describe('haversineYards — straight-line distance calculation', () => {
 // Tests verify the table boundaries and that the result stays in [14, 18].
 
 describe('zoomForPaddedYards — zoom level from padded hole distance', () => {
-  it('returns 18 for very short par-3 (<150 yd padded)', () => {
-    expect(zoomForPaddedYards(0)).toBe(18);
-    expect(zoomForPaddedYards(100)).toBe(18);
-    expect(zoomForPaddedYards(149)).toBe(18);
+  it('returns 18.5 for very short holes (<130 yd padded)', () => {
+    expect(zoomForPaddedYards(0)).toBe(18.5);
+    expect(zoomForPaddedYards(100)).toBe(18.5);
+    expect(zoomForPaddedYards(129)).toBe(18.5);
   });
 
-  it('returns 17 for short par-3 / short par-4 (150–274 yd)', () => {
-    expect(zoomForPaddedYards(150)).toBe(17);
-    expect(zoomForPaddedYards(200)).toBe(17);
-    expect(zoomForPaddedYards(274)).toBe(17);
+  it('returns 18 for short par-3 (130–199 yd)', () => {
+    expect(zoomForPaddedYards(130)).toBe(18);
+    expect(zoomForPaddedYards(199)).toBe(18);
   });
 
-  it('returns 16 for typical par-4 (275–449 yd)', () => {
-    expect(zoomForPaddedYards(275)).toBe(16);
-    expect(zoomForPaddedYards(360)).toBe(16);
-    expect(zoomForPaddedYards(449)).toBe(16);
+  it('returns 17.5 for short par-4 (200–299 yd)', () => {
+    expect(zoomForPaddedYards(200)).toBe(17.5);
+    expect(zoomForPaddedYards(299)).toBe(17.5);
   });
 
-  it('returns 15 for long par-4 / short par-5 (450–699 yd)', () => {
-    expect(zoomForPaddedYards(450)).toBe(15);
-    expect(zoomForPaddedYards(550)).toBe(15);
-    expect(zoomForPaddedYards(699)).toBe(15);
+  it('returns 17 for typical par-4 (300–429 yd)', () => {
+    expect(zoomForPaddedYards(300)).toBe(17);
+    expect(zoomForPaddedYards(429)).toBe(17);
   });
 
-  it('returns 14 for very long holes (≥700 yd)', () => {
-    expect(zoomForPaddedYards(700)).toBe(14);
-    expect(zoomForPaddedYards(1000)).toBe(14);
+  it('returns 16.5 for long par-4 / short par-5 (430–599 yd)', () => {
+    expect(zoomForPaddedYards(430)).toBe(16.5);
+    expect(zoomForPaddedYards(599)).toBe(16.5);
   });
 
-  it('zoom is always in the clamped range [14, 18]', () => {
-    for (const d of [0, 50, 149, 150, 274, 275, 449, 450, 699, 700, 1500]) {
+  it('returns 16 for very long holes (≥600 yd)', () => {
+    expect(zoomForPaddedYards(600)).toBe(16);
+    expect(zoomForPaddedYards(1000)).toBe(16);
+  });
+
+  it('zoom is always in the range [16, 18.5]', () => {
+    for (const d of [0, 50, 129, 130, 299, 300, 599, 600, 1500]) {
       const z = zoomForPaddedYards(d);
-      expect(z).toBeGreaterThanOrEqual(14);
-      expect(z).toBeLessThanOrEqual(18);
+      expect(z).toBeGreaterThanOrEqual(16);
+      expect(z).toBeLessThanOrEqual(18.5);
     }
   });
 
@@ -396,11 +398,11 @@ describe('cameraForHole — camera coordinate and zoom for a hole', () => {
   const tee   = { lat: 40.7430, lng: -73.4546 };
   const green = { lat: 40.7451, lng: -73.4514 };
 
-  it('returns a coordinate (lat, lng) and integer zoom', () => {
+  it('returns a coordinate (lat, lng) and a finite zoom', () => {
     const result = cameraForHole({ tee, green });
     expect(typeof result.coordinate.lat).toBe('number');
     expect(typeof result.coordinate.lng).toBe('number');
-    expect(Number.isInteger(result.zoom)).toBe(true);
+    expect(Number.isFinite(result.zoom)).toBe(true);
   });
 
   it('coordinate is the midpoint of tee and green', () => {
@@ -409,10 +411,10 @@ describe('cameraForHole — camera coordinate and zoom for a hole', () => {
     expect(coordinate.lng).toBeCloseTo((tee.lng + green.lng) / 2, 6);
   });
 
-  it('zoom is always in the safe range [14, 18]', () => {
+  it('zoom is always in the safe range [16, 18.5]', () => {
     const { zoom } = cameraForHole({ tee, green });
-    expect(zoom).toBeGreaterThanOrEqual(14);
-    expect(zoom).toBeLessThanOrEqual(18);
+    expect(zoom).toBeGreaterThanOrEqual(16);
+    expect(zoom).toBeLessThanOrEqual(18.5);
   });
 
   it('a short par-3 hole gets a higher zoom than a long par-5', () => {
@@ -434,8 +436,8 @@ describe('cameraForHole — camera coordinate and zoom for a hole', () => {
     // Coordinate should be green itself (midpoint of green+green = green)
     expect(result.coordinate.lat).toBeCloseTo(green.lat, 6);
     expect(result.coordinate.lng).toBeCloseTo(green.lng, 6);
-    // Distance is 0 → paddedYards = 0 → zoom = 18 (shortest bucket)
-    expect(result.zoom).toBe(18);
+    // Distance is 0 → paddedYards = 0 → zoom = 18.5 (shortest bucket)
+    expect(result.zoom).toBe(18.5);
   });
 
   it('does NOT use a GPS user position (off-hole guard preserved)', () => {

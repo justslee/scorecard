@@ -26,7 +26,7 @@ import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from "rea
 import { useSearchParams, useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from "lucide-react";
 import type { CourseData, HoleData } from "@/lib/courses/types";
-import { fetchMappedCourse } from "@/lib/courses/mapped-course-api";
+import { fetchMappedCourse, mappedCourseToCoordinates } from "@/lib/courses/mapped-course-api";
 import { parseHoleParam } from "@/lib/map-bridge";
 import HoleDiagram from "@/components/course/HoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
@@ -623,7 +623,9 @@ function MappedCourseMapInner() {
         ]);
         if (cancelled) return;
         setCourse(c);
-        setAllCourseCoords(coords);
+        // Fall back to green/tee centroids from the mapped geometry when no
+        // GolfAPI coords exist, so the satellite map renders for any mapped course.
+        setAllCourseCoords(coords.length > 0 ? coords : mappedCourseToCoordinates(c));
         // Start on the ?hole= param when provided; fall back to the first sorted hole.
         const firstHoleNum = [...(c.holes ?? [])]
           .sort((a, b) => a.number - b.number)
