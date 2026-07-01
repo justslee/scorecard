@@ -56,6 +56,8 @@ import {
   cameraForHole,
   cameraFraming,
   movedBeyondYards,
+  tapTargetDistances,
+  type TapTarget,
 } from "@/lib/map/google-map-helpers";
 import { fetchWeather } from "@/lib/caddie/api";
 import type { WeatherConditions } from "@/lib/caddie/types";
@@ -200,6 +202,9 @@ export default function GoogleSatelliteMap({
   // Last position the camera auto-followed to (null when off-hole) — so GPS
   // re-anchoring only fires on coming on-hole or after a meaningful move.
   const cameraFollowRef     = useRef<{ lat: number; lng: number } | null>(null);
+  // Live GPS position mirror — the tap handler is registered once (stale closure)
+  // so it reads the current position from this ref.
+  const positionRef         = useRef<Position | null>(null);
 
   // Keep currentHoleData in a ref so the click handler reads the latest value
   // without being re-registered on every hole change.
@@ -211,6 +216,8 @@ export default function GoogleSatelliteMap({
   const [gpsError,  setGpsError]  = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [weather,   setWeather]   = useState<WeatherConditions | null>(null);
+  // Tap-to-target readout (carry + distance to green for a tapped point).
+  const [tapTarget, setTapTarget] = useState<TapTarget | null>(null);
 
   const gpsWatcherRef = useRef<GPSWatcher | null>(null);
 
@@ -528,10 +535,21 @@ export default function GoogleSatelliteMap({
 
           if (!hd) return; // center-only mode — no reference point
 
-          const pinPos    = hd.pin ?? hd.green;
-          const toPin     = calculateDistance(tapPos, pinPos).yards;
-          const fromTee   = hd.tee ? calculateDistance(tapPos, hd.tee).yards : null;
-          const label     = tapMeasureLabelGoogle(fromTee, toPin);
+          // Origin = the player when on the hole (carry from where you are),
+          // else the tee. Distances use the same turf function as the panel.
+          const gpsPos  = positionRef.current;
+          const onHole  = gpsPos ? isGpsOnHole(gpsPos, hd) : false;
+          const origin  = onHole && gpsPos ? { lat: gpsPos.lat, lng: gpsPos.lng } : hd.tee ?? null;
+          const target  = tapTargetDistances(
+            tapPos,
+            hd.green,
+            origin,
+            onHole,
+            (a, b) => calculateDistance(a, b).yards,
+          );
+          setTapTarget(target);
+
+          const label = tapMeasureLabelGoogle(target.carry, target.toGreen);
 
           // Remove old tap marker
           await clearTapMarker();
@@ -575,8 +593,9 @@ export default function GoogleSatelliteMap({
 
   useEffect(() => {
     currentHoleRef.current = currentHoleData;
-    // Clear the tap marker when navigating holes.
+    // Clear the tap marker + target readout when navigating holes.
     clearTapMarker();
+    setTapTarget(null);
 
     if (!googleMapRef.current || !mapReadyRef.current || !currentHoleData || centerOnly) return;
 
@@ -596,6 +615,7 @@ export default function GoogleSatelliteMap({
   const handlePositionUpdate = useCallback(
     async (pos: Position) => {
       setPosition(pos);
+      positionRef.current = pos;
       setGpsError(null);
 
       const m  = googleMapRef.current;
@@ -773,6 +793,45 @@ export default function GoogleSatelliteMap({
             />
             <span className="text-white text-xs font-semibold">{Math.round(weather.wind_speed_mph ?? 0)}</span>
             <span className="text-zinc-400 text-[10px] tracking-wide">mph</span>
+          </div>
+        </div>
+      )}
+
+      {/* Tap-to-target readout — appears when the golfer taps a point on the map:
+          carry from where they are (or the tee) + distance left to the green. */}
+      {!centerOnly && tapTarget && (
+        <div
+          className="absolute left-0 right-0 z-20 flex justify-center pointer-events-none"
+          style={{ top: "max(108px, calc(env(safe-area-inset-top) + 90px))" }}
+        >
+          <div
+            className="flex items-center gap-3 pointer-events-auto"
+            style={{ background: T.paper, border: `1px solid ${T.hairline}`, borderRadius: 12, padding: "8px 10px 8px 14px", boxShadow: "0 4px 14px rgba(0,0,0,0.22)" }}
+          >
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
+                {tapTarget.fromGps ? "Carry" : "From tee"}
+              </div>
+              <div style={{ fontFamily: T.serif, fontSize: 23, lineHeight: 1, color: T.ink }}>
+                {tapTarget.carry ?? "—"}
+              </div>
+            </div>
+            <div style={{ width: 1, height: 26, background: T.hairline }} />
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
+                To green
+              </div>
+              <div style={{ fontFamily: T.serif, fontSize: 23, lineHeight: 1, color: T.accent }}>
+                {tapTarget.toGreen}
+              </div>
+            </div>
+            <button
+              onClick={() => { setTapTarget(null); clearTapMarker(); }}
+              aria-label="Clear target"
+              style={{ marginLeft: 2, width: 22, height: 22, borderRadius: 999, border: "none", background: "transparent", color: T.pencil, cursor: "pointer", fontSize: 16, lineHeight: 1 }}
+            >
+              ×
+            </button>
           </div>
         </div>
       )}
