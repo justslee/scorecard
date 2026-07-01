@@ -1,15 +1,25 @@
 "use client";
 
-import { useEffect, useState, useRef, ReactNode } from "react";
+import { useEffect, useState, useRef, useCallback, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
+import { Waveform } from "@/components/yardage/Voice";
 import { searchTeeTimes, bookTeeTime } from "@/lib/teetime/client";
 import type { TeeTimeSlot, TeeTimeQuery, BookingResult } from "@/lib/teetime/types";
 import { fetchNearbyCourseOptions, type CourseOption } from "@/lib/teetime/courses";
 import { buildTeeTimeQueries } from "@/lib/teetime/query";
 import { readLastKnownArea, acquireArea } from "@/lib/teetime/location";
 import { buildTeeTimeICS, icsFilename, downloadICS } from "@/lib/teetime/ics";
+import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
+import { parseTeeTimePrefs, hasTeeTimeSignal } from "@/lib/voice/parseTeeTimePrefs";
+import type { TeeTimePrefsParseResultValidated } from "@/lib/voice/schemas";
+import {
+  applyParsedWindows,
+  applyParsedCourses,
+  applyPartySize,
+  teeTimeAckLine,
+} from "@/lib/teetime/voice-prefs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +83,8 @@ export default function TeeTimePage() {
   const [courses, setCourses] = useState<CourseOption[]>(DEFAULT_COURSES);
   const [maxMiles, setMaxMiles] = useState(15);
   const [group, setGroup] = useState<GroupMember[]>([SELF_MEMBER]);
+  // Price ceiling — only voice sets this today ("under eighty dollars").
+  const [maxPriceUsd, setMaxPriceUsd] = useState<number | null>(null);
 
   // Golfer location ("lat,lng") — last-known immediately, fresh fix when granted.
   // Search never blocks on this: it fires with whatever is available.
@@ -114,6 +126,7 @@ export default function TeeTimePage() {
         setMaxMiles={setMaxMiles}
         group={group}
         setGroup={setGroup}
+        setMaxPriceUsd={setMaxPriceUsd}
         onBack={() => router.push("/")}
         onDispatch={() => setPhase("searching")}
       />
@@ -128,6 +141,7 @@ export default function TeeTimePage() {
         courses={courses}
         maxMiles={maxMiles}
         group={group}
+        maxPriceUsd={maxPriceUsd}
         area={area}
         onBack={() => setPhase("prefs")}
         onFound={(allSlots, best, result) => {
@@ -165,16 +179,135 @@ interface PrefsProps {
   setMaxMiles: (m: number) => void;
   group: GroupMember[];
   setGroup: (g: GroupMember[]) => void;
+  setMaxPriceUsd: (p: number | null) => void;
   onBack: () => void;
   onDispatch: () => void;
 }
 
+/** How the voice affordance currently feels: quiet, live, or working. */
+type TalkState = "idle" | "listening" | "thinking";
+
 function Prefs({
   accent, windows, setWindows, courses, setCourses,
-  maxMiles, setMaxMiles, group, setGroup,
+  maxMiles, setMaxMiles, group, setGroup, setMaxPriceUsd,
   onBack, onDispatch,
 }: PrefsProps) {
   const [showRoster, setShowRoster] = useState(false);
+
+  // ── Voice ("Hold to talk") ──
+  // Same capture path as the rest of the app: VoiceRecorder (MediaRecorder)
+  // → /api/voice/transcribe (Deepgram) → the deterministic tee-time intent
+  // parser. Hold = record; release = send. Tapping remains the fallback.
+  const [talkState, setTalkState] = useState<TalkState>("idle");
+  const [voiceLines, setVoiceLines] = useState<Array<{ who: "looper" | "you"; text: string }>>([
+    { who: "looper", text: "What do you have in mind for this weekend? I'll rustle one up." },
+  ]);
+  const recorderRef = useRef<VoiceRecorder | null>(null);
+  const heldRef = useRef(false);
+  const dispatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    heldRef.current = false;
+    recorderRef.current?.cancel();
+    recorderRef.current = null;
+    if (dispatchTimerRef.current) clearTimeout(dispatchTimerRef.current);
+  }, []);
+
+  /** Append a looper line, keeping the exchange short (calm, not a chat log). */
+  const say = useCallback((text: string) => {
+    setVoiceLines((ls) => [...ls, { who: "looper" as const, text }].slice(-4));
+  }, []);
+
+  const applyParsed = useCallback((parsed: TeeTimePrefsParseResultValidated) => {
+    if (!hasTeeTimeSignal(parsed)) {
+      say("Didn’t quite get that — try “Saturday morning at Presidio”, or fill it in below.");
+      return;
+    }
+
+    if (parsed.windows.length > 0) {
+      setWindows(applyParsedWindows(windows, parsed.windows));
+    }
+    if (parsed.courseNames.length > 0 || parsed.favoritesOnly) {
+      const next = applyParsedCourses(courses, parsed.courseNames, parsed.favoritesOnly);
+      setCourses(next);
+      // Widen the drive radius when a named course sits beyond it — the golfer
+      // asked for that course; silently filtering it out would be dishonest.
+      const farthest = Math.max(0, ...next.filter((c) => c.selected).map((c) => c.distance));
+      if (parsed.courseNames.length > 0 && farthest > maxMiles) {
+        setMaxMiles(Math.min(50, Math.ceil(farthest)));
+      }
+    }
+    if (parsed.maxDistanceMiles != null) {
+      setMaxMiles(Math.max(1, Math.min(50, Math.round(parsed.maxDistanceMiles))));
+    }
+    if (parsed.partySize != null) setGroup(applyPartySize(group, parsed.partySize));
+    if (parsed.maxPriceUsd != null) setMaxPriceUsd(parsed.maxPriceUsd);
+
+    say(teeTimeAckLine(parsed) ?? "Got it.");
+
+    // Voice-first: a complete request (a day/time) or an explicit go-ahead
+    // sends the looper out — speak, and it searches. A short beat lets the
+    // acknowledgement land first.
+    if (parsed.windows.length > 0 || parsed.dispatch) {
+      dispatchTimerRef.current = setTimeout(onDispatch, 1400);
+    }
+  }, [windows, setWindows, courses, setCourses, maxMiles, setMaxMiles, group, setGroup, setMaxPriceUsd, onDispatch, say]);
+
+  /** Press: open the mic. */
+  const startHold = useCallback(async () => {
+    if (recorderRef.current || talkState === "thinking") return;
+    heldRef.current = true;
+    if (!VoiceRecorder.isSupported()) {
+      say("Voice needs a microphone here — fill it in below and I’ll take it from there.");
+      heldRef.current = false;
+      return;
+    }
+    const recorder = new VoiceRecorder();
+    recorderRef.current = recorder;
+    try {
+      await recorder.start(); // may show the mic permission prompt
+    } catch {
+      if (recorderRef.current === recorder) recorderRef.current = null;
+      say("Couldn’t reach the microphone — fill it in below instead.");
+      return;
+    }
+    // Released (or left the screen) before the mic came up — let it go quietly.
+    if (!heldRef.current || recorderRef.current !== recorder) {
+      recorder.cancel();
+      if (recorderRef.current === recorder) recorderRef.current = null;
+      return;
+    }
+    setTalkState("listening");
+  }, [talkState, say]);
+
+  /** Release: stop, transcribe, parse, apply. */
+  const finishHold = useCallback(async () => {
+    heldRef.current = false;
+    const recorder = recorderRef.current;
+    if (!recorder || talkState !== "listening") return;
+    recorderRef.current = null;
+    setTalkState("thinking");
+    try {
+      const blob = await recorder.stop();
+      const { transcript } = await transcribeBlob(blob);
+      const heard = transcript.trim();
+      if (!heard) {
+        setTalkState("idle");
+        say("Didn’t catch that — hold the button down and tell me when and where.");
+        return;
+      }
+      setVoiceLines((ls) => [...ls, { who: "you" as const, text: heard }].slice(-4));
+      const parsed = await parseTeeTimePrefs({
+        transcript: heard,
+        known: { courses: courses.map((c) => c.name) },
+      });
+      setTalkState("idle");
+      applyParsed(parsed);
+    } catch {
+      setTalkState("idle");
+      say("Lost that one — mind saying it again? Or fill it in below.");
+    }
+  }, [talkState, courses, applyParsed, say]);
 
   const toggleWin    = (id: string) => setWindows(windows.map((w) => (w.id === id ? { ...w, selected: !w.selected } : w)));
   const toggleCourse = (id: string) => setCourses(courses.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c)));
@@ -207,35 +340,52 @@ function Prefs({
       <TTMasthead accent={accent} onBack={onBack} kicker="Dispatch" title="Find me a tee time" />
 
       <div style={{ padding: "0 22px 16px" }}>
-        <Transcript accent={accent} lines={[{ who: "looper", text: "What do you have in mind for this weekend? I'll rustle one up." }]} />
+        <Transcript accent={accent} lines={voiceLines} />
         <button
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            void startHold();
+          }}
+          onPointerUp={() => void finishHold()}
+          onPointerCancel={() => void finishHold()}
+          onContextMenu={(e) => e.preventDefault()}
           style={{
             marginTop: 10,
             width: "100%",
             padding: "12px 14px",
             borderRadius: 12,
             border: `1.5px solid ${T.ink}`,
-            background: T.paper,
-            cursor: "pointer",
+            background: talkState === "listening" ? T.ink : T.paper,
+            cursor: talkState === "thinking" ? "wait" : "pointer",
             display: "flex",
             alignItems: "center",
             gap: 10,
             fontFamily: T.mono,
             fontSize: 10,
             letterSpacing: 1.4,
-            color: T.ink,
+            color: talkState === "listening" ? T.paper : T.ink,
             textTransform: "uppercase" as const,
             fontWeight: 600,
+            touchAction: "none" as const,
+            userSelect: "none" as const,
+            WebkitUserSelect: "none" as const,
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="9" y="3" width="6" height="12" rx="3" />
-            <path d="M5 11a7 7 0 0 0 14 0" />
-            <path d="M12 18v3" />
-          </svg>
-          Hold to talk
+          {talkState === "listening" ? (
+            <Waveform accent={accent} playing bars={5} height={14} />
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="9" y="3" width="6" height="12" rx="3" />
+              <path d="M5 11a7 7 0 0 0 14 0" />
+              <path d="M12 18v3" />
+            </svg>
+          )}
+          {talkState === "listening" ? "Listening — let go to send"
+            : talkState === "thinking" ? "One sec…"
+            : "Hold to talk"}
           <span style={{ flex: 1 }} />
-          <span style={{ color: T.pencilSoft }}>or fill it in below</span>
+          {talkState === "idle" && <span style={{ color: T.pencilSoft }}>or fill it in below</span>}
         </button>
       </div>
 
@@ -467,13 +617,15 @@ interface SearchingProps {
   courses: CourseOption[];
   maxMiles: number;
   group: GroupMember[];
+  /** Price ceiling in USD — null when the golfer never named one. */
+  maxPriceUsd: number | null;
   /** Golfer location as "lat,lng" — null when unknown (search runs without it). */
   area: string | null;
   onBack: () => void;
   onFound: (slots: TeeTimeSlot[], chosen: TeeTimeSlot, result: BookingResult) => void;
 }
 
-function Searching({ accent, windows, courses, maxMiles, group, area, onBack, onFound }: SearchingProps) {
+function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, area, onBack, onFound }: SearchingProps) {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [log, setLog] = useState<LogLine[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -489,6 +641,7 @@ function Searching({ accent, windows, courses, maxMiles, group, area, onBack, on
     courseIds: selectedCourses.map((c) => c.id),
     partySize,
     maxDistanceMiles: maxMiles,
+    maxPriceUsd: maxPriceUsd ?? undefined,
     area: area ?? undefined,
   });
   const targetDate = queries[0].date;
@@ -647,6 +800,7 @@ function Searching({ accent, windows, courses, maxMiles, group, area, onBack, on
             ["Who",    `${group.length} · ${group.map((p) => p.name).join(", ")}`],
             ["Where",  courseSummary],
             ["Radius", `Under ${maxMiles} miles`],
+            ...(maxPriceUsd != null ? [["Budget", `Under $${Math.round(maxPriceUsd)}`]] : []),
           ].map(([k, v]) => (
             <div key={k} style={{ display: "contents" }}>
               <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.4, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500, paddingTop: 2 }}>{k}</div>

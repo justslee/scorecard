@@ -14,6 +14,8 @@ export interface QueryPrefs {
   courseIds: string[];
   partySize: number;
   maxDistanceMiles: number;
+  /** Price ceiling in USD — set by voice ("under $80"). Omitted when unset. */
+  maxPriceUsd?: number;
   /** "lat,lng" from geolocation, or a place name. Omitted when unknown. */
   area?: string;
 }
@@ -30,6 +32,7 @@ export function buildTeeTimeQueries(prefs: QueryPrefs, from: Date = new Date()):
   const base = {
     partySize: prefs.partySize,
     maxDistanceMiles: prefs.maxDistanceMiles,
+    ...(prefs.maxPriceUsd != null ? { maxPriceUsd: prefs.maxPriceUsd } : {}),
     ...(prefs.area ? { area: prefs.area } : {}),
     ...(prefs.courseIds.length > 0 ? { courseIds: prefs.courseIds } : {}),
   };

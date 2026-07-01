@@ -3,6 +3,50 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-01 — tee-time phase 1b item C: hold-to-talk voice prefs (NOTICEABLE — integration/next, DONE)
+
+Voice slice of the tee-time booking epic (`specs/tee-time-booking-phase1b.md`,
+work item C). The decorative "Hold to talk" button on /tee-time is now the real
+voice-first path: hold → speak ("find me a tee time Saturday morning at
+Presidio, party of 4, under $80") → release → prefs update themselves and, when
+the utterance names a day/time (or says "go ahead / book it"), the search
+dispatches on its own.
+
+### What changed
+- `frontend/src/lib/voice/parseTeeTimePrefs.ts` (NEW) — deterministic tee-time
+  intent: day/period windows ("weekend" → Sat+Sun), course names matched on
+  distinctive tokens against the listed courses (generic words like "park"
+  never match alone), party size ("foursome", "three of us"), spoken price
+  ceilings ("under eighty dollars", "$50") kept apart from spoken distances
+  ("within ten miles"), go-ahead confirmations. Heuristics-first + optional
+  LLM pass with Zod validation + repair loop (pipeline.ts pattern); pure/offline
+- `frontend/src/lib/voice/schemas.ts` — `TeeTimePrefsParseResultSchema` (partial
+  by design: every field optional so "party of four" alone is a valid parse)
+- `frontend/src/lib/teetime/voice-prefs.ts` (NEW) — pure appliers: spoken windows
+  select/create prefs windows, named courses replace the selection (+ radius
+  widened so a named course is never silently filtered out), party size pads
+  with "+1" guest placeholders (real people never removed), calm ack line
+- `frontend/src/lib/teetime/query.ts` — `maxPriceUsd` rides on every query
+- `frontend/src/app/tee-time/page.tsx` — hold-to-talk wired to the same capture
+  path as the rest of the app (VoiceRecorder → /api/voice/transcribe → parser);
+  exchange shown in the page's Transcript idiom; unrecognized speech gets a
+  gentle fallback line, never an error state; Brief shows "Budget" when spoken
+- Tests: `parseTeeTimePrefs.test.ts` + `voice-prefs.test.ts` (+37 vitest);
+  9 deterministic tee-time cases in `voice-tests` (runner gained the
+  `/api/parse-tee-time` lane)
+
+### Gate results (all green)
+- `tsc --noEmit` clean; `eslint` clean; `vitest` 1265/1265 (was 1228);
+  voice smoke 274/274 (was 265); `next build` succeeds
+
+### Classification: NOTICEABLE (the tee-time screen becomes voice-first)
+Rough edges for a polish pass: no live interim transcript while holding (final
+Deepgram text only); clock times ("around 8am") not parsed — periods only;
+guest placeholders show "hdcp 0" in the group list; day abbreviations
+("sat"/"sun") unrecognized.
+
+---
+
 ## 2026-07-01 — tee-time phase 1b item B: frontend real-data wiring (NOTICEABLE — integration/next, DONE)
 
 Frontend slice of the tee-time booking epic (`specs/tee-time-booking-phase1b.md`,
