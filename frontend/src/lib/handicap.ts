@@ -12,9 +12,12 @@
  *                         below, of the most recent 20) + the low-count adjustment,
  *                         rounded to one decimal.
  *
+ * Adjusted Gross Score:
+ *   • Each hole is capped at par + 5 — the WHS "maximum hole score for a player
+ *     without an established Handicap Index" (non-circular, so no course handicap
+ *     is needed). Blow-up holes no longer inflate the estimate.
+ *
  * Limitations (documented, not hidden):
- *   • Uses GROSS as the adjusted gross score (no net-double-bogey cap yet — that
- *     needs a course handicap, a follow-up).
  *   • Rating/slope default to 72.0 / 113 when a round doesn't carry them, so the
  *     estimate sharpens as courses gain rating/slope data. Clearly labelled an
  *     "estimate" in the UI.
@@ -28,6 +31,9 @@ import { getOwnerPlayerId } from './round-owner';
 
 export const NEUTRAL_RATING = 72.0;
 export const NEUTRAL_SLOPE = 113;
+// WHS maximum hole score for a player without an established Handicap Index:
+// par + 5. Applied per hole when computing the Adjusted Gross Score.
+export const MAX_STROKES_OVER_PAR = 5;
 
 /**
  * Number of lowest differentials to average, and the adjustment to add, for a
@@ -81,25 +87,26 @@ export interface HandicapEstimate {
 /** Optional per-round rating/slope source (e.g. from the course's tee). */
 export type RatingSlopeFor = (round: Round) => { rating?: number; slope?: number } | undefined;
 
-/** Owner's total gross strokes for a round, or null if the round isn't a
- *  complete 18 for that player. */
-function ownerGross(round: Round): number | null {
+/** Owner's Adjusted Gross Score for a round (each hole capped at par + 5), or
+ *  null if the round isn't a complete 18 for that player. */
+function ownerAdjustedGross(round: Round): number | null {
   const ownerId = getOwnerPlayerId(round);
   if (!ownerId) return null;
-  const holeCount = round.holes?.length ?? 0;
-  if (holeCount < 18) return null; // 18-hole rounds only (v1)
+  const holes = round.holes ?? [];
+  if (holes.length < 18) return null; // 18-hole rounds only (v1)
   const strokesByHole = new Map<number, number>();
   for (const s of round.scores) {
     if (s.playerId === ownerId && typeof s.strokes === 'number') {
       strokesByHole.set(s.holeNumber, s.strokes);
     }
   }
-  // Require a score on every hole (a complete round).
-  for (const h of round.holes) {
-    if (!strokesByHole.has(h.number)) return null;
-  }
   let total = 0;
-  for (const v of strokesByHole.values()) total += v;
+  for (const h of holes) {
+    const strokes = strokesByHole.get(h.number);
+    if (strokes == null) return null; // require a score on every hole
+    const cap = (h.par ?? 4) + MAX_STROKES_OVER_PAR;
+    total += Math.min(strokes, cap);
+  }
   return total;
 }
 
@@ -117,7 +124,7 @@ export function estimateHandicapFromRounds(
   const diffs: number[] = [];
   for (const r of rounds) {
     if (r.status !== 'completed') continue;
-    const gross = ownerGross(r);
+    const gross = ownerAdjustedGross(r);
     if (gross == null) continue;
     const rs = ratingSlopeFor?.(r);
     const rating = rs?.rating ?? NEUTRAL_RATING;

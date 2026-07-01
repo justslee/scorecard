@@ -88,10 +88,11 @@ function holes18(): HoleInfo[] {
 function mkRound(gross: number, extra: Partial<Round> = {}): Round {
   const holes = holes18();
   const base = Math.floor(gross / 18);
+  const rem = gross - base * 18; // spread across the first `rem` holes (base+1)
   const scores: Score[] = holes.map((h, i) => ({
     playerId: OWNER,
     holeNumber: h.number,
-    strokes: base + (i === 0 ? gross - base * 18 : 0),
+    strokes: base + (i < rem ? 1 : 0),
   }));
   return {
     id: `r-${gross}-${Math.random()}`,
@@ -109,9 +110,27 @@ function mkRound(gross: number, extra: Partial<Round> = {}): Round {
   } as Round;
 }
 
+/** A round from an explicit per-hole strokes array (all par-4 holes). */
+function mkRoundFromStrokes(strokesPerHole: number[], id: string): Round {
+  const holes = holes18();
+  const scores: Score[] = holes.map((h, i) => ({
+    playerId: OWNER, holeNumber: h.number, strokes: strokesPerHole[i],
+  }));
+  return { ...mkRound(72, { id }), holes, scores };
+}
+
 describe('estimateHandicapFromRounds', () => {
   it('returns null with fewer than 3 eligible rounds', () => {
     expect(estimateHandicapFromRounds([mkRound(90), mkRound(88)])).toBeNull();
+  });
+
+  it('caps each hole at par + 5 in the adjusted gross (blow-ups do not inflate it)', () => {
+    // 17 par-4 holes at 4, one blow-up of 12 → capped at par+5 = 9.
+    const blow = Array.from({ length: 18 }, (_, i) => (i === 0 ? 12 : 4));
+    // adjusted gross = 17*4 + min(12, 9) = 77 → diff (77 − 72) = 5.0
+    // three identical → lowest 1 (5.0) + (−2.0) = 3.0  (raw gross 80 would give 6.0)
+    const rounds = [0, 1, 2].map((i) => mkRoundFromStrokes(blow, `b${i}`));
+    expect(estimateHandicapFromRounds(rounds)!.index).toBe(3.0);
   });
 
   it('computes an index from 3 rounds at neutral defaults', () => {
