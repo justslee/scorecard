@@ -4719,3 +4719,41 @@ now opens in the map view instead of hitting a dead-end.
 Branch: feat/map-quality-loadany (pushed to origin). NOT on integration/next yet — awaiting
 eng-lead to fold into the rolling bundle.
 
+
+---
+
+## 2026-07-01 — Google Maps hole map: made it actually render, then polished (eng-lead)
+
+### Shipped to main (merged)
+- **#82 — Google satellite map finally attaches (simulator-verified).** The map never
+  attached because we rendered a plain `<div>`; the plugin needs its own
+  `<capacitor-google-map>` custom element (builds the WKChildScrollView the native side
+  binds to). Plus a `patch-package` patch to the plugin: `render()` retries
+  `getTargetContainer()` (permission dialog blocks WebView layout on first try),
+  `onMapReady` listener registered BEFORE `create()` (was missed on fast attach), native
+  `mapType` switch made case-insensitive (`"Satellite"` vs `"satellite"` → satellite now
+  applies), + nil guards. Reproduced + verified in the iOS Simulator (see the
+  `ios-simulator-map-testing` memory). Shipped TestFlight v1.0.608/609.
+- **#83 — CI fix.** `npm install -D patch-package` under npm 11 deduped
+  `utf-8-validate@5.0.10` out of the lockfile; CI's npm 10 `npm ci` failed (EUSAGE).
+  Regenerated the lock in place with npm 10. main green again.
+
+### In flight — PR #84 (map polish, TestFlight v1.0.612, awaiting owner on-device test)
+Owner feedback on v1.0.609 ("renders but looks crazy"):
+- Removed distance rings + red point markers; only a subtle tee→green guide line remains.
+- Retuned `zoomForPaddedYards` (fractional 16–18.5) + pad 1.35→1.15 so it frames one hole.
+- Safe-area top padding on the header so the Back button clears the status bar / notch.
+- Subtle wind badge (arrow rotated to wind dir + mph, from `fetchWeather`).
+- Inline round map + fullscreen page now derive green/tee centroids from mapped OSM
+  geometry (`mappedCourseToCoordinates`) when GolfAPI coords are absent — satellite renders
+  for any mapped course instead of dropping to the paper diagram.
+- Fixed the guide line rendering blue (plugin parses strokeColor as hex, not rgba →
+  `#FFFFFF` + strokeOpacity). Verified in the simulator.
+
+### Ops
+- Autonomous loop re-armed hourly at :07 (cron 7376c980).
+- Sonnet-tier agents (builder/designer/product-manager/qa/release-manager) → `claude-sonnet-5`.
+
+### Gates (all green): tsc · eslint · voice-tests 265/265 · map unit tests 61/61 · next build.
+Classification: NOTICEABLE (map is visibly cleaner + zoomed in + Back works + wind + round map).
+Branch: integration/next (PR #84 → main), awaiting owner "ship it" after testing v1.0.612.

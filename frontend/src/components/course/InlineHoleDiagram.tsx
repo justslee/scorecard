@@ -30,7 +30,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { HoleData } from '@/lib/courses/types';
-import { fetchMappedCourse } from '@/lib/courses/mapped-course-api';
+import { fetchMappedCourse, mappedCourseToCoordinates } from '@/lib/courses/mapped-course-api';
 import { getCourseCoordinates } from '@/lib/course/course-coordinates';
 import { GPSWatcher, type Position } from '@/lib/gps';
 import { T } from '@/components/yardage/tokens';
@@ -158,10 +158,16 @@ export default function InlineHoleDiagram({
         // Index holes and coordinates for O(1) per-hole lookup.
         setHoleIndex(indexByHoleNumber(course.holes));
 
+        // Prefer GolfAPI-verified coords; fall back to green/tee centroids derived
+        // from the mapped OSM geometry so the satellite map still renders for
+        // courses without GolfAPI data (e.g. any newly-mapped course) instead of
+        // dropping to the paper diagram.
+        const effectiveCoords = coords.length > 0 ? coords : mappedCourseToCoordinates(course);
+
         const ci = new Map<number, CourseCoordinates>();
-        for (const c of coords) ci.set(c.holeNumber, c);
+        for (const c of effectiveCoords) ci.set(c.holeNumber, c);
         setCoordsIndex(ci);
-        setAllCoords(coords);
+        setAllCoords(effectiveCoords);
 
         setLoaded(true);
       } catch {

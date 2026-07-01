@@ -29,7 +29,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 // @capacitor/google-maps references HTMLElement at module evaluation time,
 // so it must NOT be imported at the top level (would crash SSR / static build).
 // We dynamic-import it inside the useEffect (client-only) instead.
-import type { GoogleMap, Marker, Circle, Polyline } from "@capacitor/google-maps";
+import type { GoogleMap, Polyline } from "@capacitor/google-maps";
 import {
   Navigation,
   Target,
@@ -40,6 +40,7 @@ import {
   MapPin,
   Signal,
   Flag,
+  ArrowUp,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -52,15 +53,12 @@ import {
 import type { CourseCoordinates } from "@/lib/golf-api";
 import { isGpsOnHole } from "@/lib/map/satellite-helpers";
 import {
-  yardsToMeters,
   CENTER_ONLY_ZOOM,
-  LAYUP_RING_YARDS,
-  LAYUP_RING_COLORS,
-  FCB_RING_COLORS,
   tapMeasureLabelGoogle,
-  fcbMarkerSnippet,
   cameraForHole,
 } from "@/lib/map/google-map-helpers";
+import { fetchWeather } from "@/lib/caddie/api";
+import type { WeatherConditions } from "@/lib/caddie/types";
 import { T } from "@/components/yardage/tokens";
 
 // The plugin registers a `<capacitor-google-map>` custom element (see the
@@ -129,10 +127,6 @@ export interface GoogleSatelliteMapProps {
   onSwitchToPaper?: () => void;
 }
 
-// ── FCB types ─────────────────────────────────────────────────────────────────
-
-type FcbType = "front" | "center" | "back";
-
 // ── Unique map ID helper ──────────────────────────────────────────────────────
 
 let _mapCounter = 0;
@@ -181,8 +175,22 @@ export default function GoogleSatelliteMap({
   const [position,  setPosition]  = useState<Position | null>(null);
   const [gpsError,  setGpsError]  = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [weather,   setWeather]   = useState<WeatherConditions | null>(null);
 
   const gpsWatcherRef = useRef<GPSWatcher | null>(null);
+
+  // ── Wind: fetch course-area weather once per course (for the subtle wind
+  // badge). Backend is owner-gated, so this is a no-op when unauthenticated. ──
+  useEffect(() => {
+    const loc = holeCoordinates[0]?.green ?? holeCoordinates[0]?.tee ?? fallbackCenter;
+    if (!loc) return;
+    let cancelled = false;
+    fetchWeather(loc.lat, loc.lng)
+      .then((w) => { if (!cancelled) setWeather(w); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holeCoordinates]);
 
   // ── Derived data ───────────────────────────────────────────────────────────
 
@@ -270,90 +278,31 @@ export default function GoogleSatelliteMap({
   }, []);
 
   /**
-   * Add all overlays for the current hole:
-   *   • Green (G), tee (T), front (F), back (B), pin (P) markers
-   *   • Layup rings (100 / 150 / 200 yd from green)
-   *   • F/C/B approach rings + tee→green guide line
+   * Add the (deliberately minimal) overlays for the current hole:
+   *   • a subtle tee→green guide line to orient the hole
+   *   • a GPS→green line only while the player is on the hole
+   * No point markers and no distance rings — the satellite imagery + the bottom
+   * distance panel carry the information; extra pins/circles made the map noisy.
    */
   const addHoleOverlays = useCallback(async (hd: CourseCoordinates, gpsOnHole: boolean, pos: Position | null) => {
     const m = googleMapRef.current;
     if (!m || !mapReadyRef.current) return;
 
-    const newMarkerIds:   string[] = [];
-    const newCircleIds:   string[] = [];
     const newPolylineIds: string[] = [];
 
-    // ── Point markers ─────────────────────────────────────────────────────
-
-    const markers: Marker[] = [
-      // Green center
-      { coordinate: { lat: hd.green.lat, lng: hd.green.lng }, title: "G", snippet: "Green center" },
-    ];
-    if (hd.tee)   markers.push({ coordinate: { lat: hd.tee.lat,   lng: hd.tee.lng   }, title: "T", snippet: "Tee" });
-    if (hd.front) markers.push({ coordinate: { lat: hd.front.lat, lng: hd.front.lng }, title: "F", snippet: fcbMarkerSnippet("front",  calculateDistance(hd.tee ?? hd.green, hd.front).yards) });
-    if (hd.back)  markers.push({ coordinate: { lat: hd.back.lat,  lng: hd.back.lng  }, title: "B", snippet: fcbMarkerSnippet("back",   calculateDistance(hd.tee ?? hd.green, hd.back).yards)  });
-    if (hd.pin)   markers.push({ coordinate: { lat: hd.pin.lat,   lng: hd.pin.lng   }, title: "P", snippet: "Pin" });
-
-    const addedMarkerIds = await m.addMarkers(markers).catch(() => [] as string[]);
-    newMarkerIds.push(...addedMarkerIds);
-
-    // ── Layup rings (100 / 150 / 200 yd centered on green) ───────────────
-
-    const layupCircles: Circle[] = LAYUP_RING_YARDS.map((yd) => ({
-      center:        { lat: hd.green.lat, lng: hd.green.lng },
-      radius:        yardsToMeters(yd),
-      strokeColor:   LAYUP_RING_COLORS[yd],
-      strokeWeight:  2,
-      fillOpacity:   0,
-      clickable:     false,
-      tag:           `layup-${yd}`,
-    }));
-    const addedCircleIds = await m.addCircles(layupCircles).catch(() => [] as string[]);
-    newCircleIds.push(...addedCircleIds);
-
-    // ── F/C/B approach rings ─────────────────────────────────────────────
-    // Origin: GPS when on-hole; tee otherwise (same guard as GPSMapView).
-
-    if (hd.front || hd.back) {
-      const ringOrigin = (gpsOnHole && pos) ? pos : hd.tee;
-      if (ringOrigin) {
-        const fcbDefs: Array<{ type: FcbType; coord: { lat: number; lng: number } | undefined }> = [
-          { type: "front",  coord: hd.front },
-          { type: "center", coord: hd.green },
-          { type: "back",   coord: hd.back  },
-        ];
-        const fcbCircles: Circle[] = [];
-        for (const { type, coord } of fcbDefs) {
-          if (!coord) continue;
-          const yds = calculateDistance(ringOrigin, coord).yards;
-          fcbCircles.push({
-            center:       { lat: ringOrigin.lat, lng: ringOrigin.lng },
-            radius:       yardsToMeters(yds),
-            strokeColor:  FCB_RING_COLORS[type],
-            strokeWeight: type === "center" ? 2.5 : 1.5,
-            fillOpacity:  0,
-            clickable:    false,
-            tag:          `fcb-${type}`,
-          });
-        }
-        if (fcbCircles.length > 0) {
-          const fcbIds = await m.addCircles(fcbCircles).catch(() => [] as string[]);
-          newCircleIds.push(...fcbIds);
-        }
-      }
-    }
-
-    // ── Tee-to-green guide line ──────────────────────────────────────────
-
+    // ── Tee-to-green guide line (subtle) ─────────────────────────────────
     if (hd.tee) {
       const guideLine: Polyline = {
         path: [
           { lat: hd.tee.lat,   lng: hd.tee.lng   },
           { lat: hd.green.lat, lng: hd.green.lng  },
         ],
-        strokeColor:   "rgba(255,255,255,0.45)",
-        strokeOpacity: 0.45,
-        strokeWeight:  1.5,
+        // The native plugin parses strokeColor as a HEX string (UIColor(hex:) ??
+        // .blue) and applies strokeOpacity separately — an rgba() string silently
+        // renders BLUE. Use hex + opacity so the line is the intended subtle white.
+        strokeColor:   "#FFFFFF",
+        strokeOpacity: 0.6,
+        strokeWeight:  2,
         geodesic:      true,
         clickable:     false,
       };
@@ -361,8 +310,7 @@ export default function GoogleSatelliteMap({
       newPolylineIds.push(...lineIds);
     }
 
-    // ── GPS → green distance line (on-hole only) ─────────────────────────
-
+    // ── GPS → green line (on-hole only) ──────────────────────────────────
     if (gpsOnHole && pos) {
       const distLine: Polyline = {
         path: [
@@ -370,7 +318,6 @@ export default function GoogleSatelliteMap({
           { lat: hd.green.lat,  lng: hd.green.lng  },
         ],
         strokeColor:   T.accent,
-        strokeOpacity: 0.85,
         strokeWeight:  2.5,
         geodesic:      true,
         clickable:     false,
@@ -379,8 +326,8 @@ export default function GoogleSatelliteMap({
       newPolylineIds.push(...distIds);
     }
 
-    holeMarkerIdsRef.current   = newMarkerIds;
-    holeCircleIdsRef.current   = newCircleIds;
+    holeMarkerIdsRef.current   = [];
+    holeCircleIdsRef.current   = [];
     holePolylineIdsRef.current = newPolylineIds;
   }, []);
 
@@ -710,9 +657,14 @@ export default function GoogleSatelliteMap({
   return (
     <div className={inline ? "relative w-full h-full bg-zinc-900" : "fixed inset-0 z-50 bg-zinc-900"}>
 
-      {/* Header — fullscreen only */}
+      {/* Header — fullscreen only. Pad the top by the safe-area inset so the
+          Back button clears the status bar / Dynamic Island (owner: the header
+          sat under the status bar and Back wasn't tappable). */}
       {!inline && (
-        <div className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-zinc-950/80 to-transparent p-4 pb-8 pointer-events-none">
+        <div
+          className="absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-zinc-950/80 to-transparent px-4 pb-8 pointer-events-none"
+          style={{ paddingTop: "max(16px, calc(env(safe-area-inset-top) + 8px))" }}
+        >
           <div className="flex items-center justify-between pointer-events-auto">
             <button
               onClick={onClose}
@@ -750,6 +702,25 @@ export default function GoogleSatelliteMap({
               /* spacer to centre-balance the back button */
               <div className="w-16" />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Subtle wind badge — top-right, below the header. Arrow points the way the
+          wind is blowing (meteorological direction + 180°) on the north-up map. */}
+      {!inline && weather != null && (weather.wind_speed_mph ?? 0) > 0 && (
+        <div
+          className="absolute right-4 z-10 pointer-events-none"
+          style={{ top: "max(72px, calc(env(safe-area-inset-top) + 60px))" }}
+        >
+          <div className="flex items-center gap-1.5 rounded-full bg-zinc-900/60 backdrop-blur-sm px-3 py-1.5">
+            <ArrowUp
+              size={14}
+              className="text-sky-300"
+              style={{ transform: `rotate(${(weather.wind_direction ?? 0) + 180}deg)` }}
+            />
+            <span className="text-white text-xs font-semibold">{Math.round(weather.wind_speed_mph ?? 0)}</span>
+            <span className="text-zinc-400 text-[10px] tracking-wide">mph</span>
           </div>
         </div>
       )}
