@@ -1,0 +1,115 @@
+diff --git a/node_modules/@capacitor/google-maps/dist/esm/map.js b/node_modules/@capacitor/google-maps/dist/esm/map.js
+index e80ae4e..3039808 100644
+--- a/node_modules/@capacitor/google-maps/dist/esm/map.js
++++ b/node_modules/@capacitor/google-maps/dist/esm/map.js
+@@ -112,6 +112,17 @@ export class GoogleMap {
+             });
+             newMap.resizeObserver.observe(newMap.element);
+         }
++        // LOOPER PATCH: register the onMapReady listener BEFORE create() so a
++        // fast native attach can't fire onMapReady before we're listening (the
++        // event was being missed → callers timed out / fell back on a working map).
++        if (callback) {
++            const onMapReadyListener = await CapacitorGoogleMaps.addListener('onMapReady', (data) => {
++                if (data.mapId == newMap.id) {
++                    callback(data);
++                    onMapReadyListener.remove();
++                }
++            });
++        }
+         // small delay to allow for iOS WKWebView to setup corresponding element sub-scroll views ???
+         await new Promise((resolve, reject) => {
+             setTimeout(async () => {
+@@ -124,14 +135,6 @@ export class GoogleMap {
+                 }
+             }, 200);
+         });
+-        if (callback) {
+-            const onMapReadyListener = await CapacitorGoogleMaps.addListener('onMapReady', (data) => {
+-                if (data.mapId == newMap.id) {
+-                    callback(data);
+-                    onMapReadyListener.remove();
+-                }
+-            });
+-        }
+         return newMap;
+     }
+     static async getElementBounds(element) {
+diff --git a/node_modules/@capacitor/google-maps/ios/Sources/CapacitorGoogleMapsPlugin/Map.swift b/node_modules/@capacitor/google-maps/ios/Sources/CapacitorGoogleMapsPlugin/Map.swift
+index 85a8953..fd66cea 100644
+--- a/node_modules/@capacitor/google-maps/ios/Sources/CapacitorGoogleMapsPlugin/Map.swift
++++ b/node_modules/@capacitor/google-maps/ios/Sources/CapacitorGoogleMapsPlugin/Map.swift
+@@ -90,6 +90,13 @@ public class Map {
+     // swiftlint:disable weak_delegate
+     private var delegate: CapacitorGoogleMapsPlugin
+ 
++    // LOOPER PATCH: render() retry counter. On fresh installs the iOS location
++    // permission dialog blocks WebView layout, so getTargetContainer() finds no
++    // matching WKChildScrollView on the first try and the map never attaches
++    // (GMapView stays nil → black map / crash). Retry render() until layout
++    // settles. See patches/@capacitor+google-maps+*.patch.
++    private var renderRetryCount = 0
++
+     init(id: String, config: GoogleMapConfig, delegate: CapacitorGoogleMapsPlugin) {
+         self.id = id
+         self.config = config
+@@ -120,10 +127,22 @@ public class Map {
+             self.targetViewController = self.getTargetContainer(refWidth: self.config.width, refHeight: self.config.height)
+ 
+             if let target = self.targetViewController {
++                self.renderRetryCount = 0
+                 target.tag = Map.MAP_TAG
+                 target.removeAllSubview()
+                 self.mapViewController.view.frame = target.bounds
+                 target.addSubview(self.mapViewController.view)
++            } else if self.renderRetryCount < 20 {
++                // LOOPER PATCH: container not laid out yet (e.g. a permission
++                // dialog is blocking layout). Retry every 0.5s for up to 10s
++                // instead of silently failing forever.
++                self.renderRetryCount += 1
++                CAPLog.print("CapacitorGoogleMaps: target container not found, retrying render (\(self.renderRetryCount)/20)")
++                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
++                    self.render()
++                }
++            } else {
++                CAPLog.print("CapacitorGoogleMaps: target container not found after 20 retries; map could not attach")
+             }
+         }
+     }
+@@ -145,7 +164,10 @@ public class Map {
+             self.mapViewController.GMapView.setMinZoom(minZoom, maxZoom: maxZoom)
+ 
+             if let mapTypeId = self.config.mapTypeId {
+-                switch mapTypeId {
++                // LOOPER PATCH: JS MapType enum is capitalized ("Satellite") but
++                // these cases are lowercase — compare case-insensitively so the
++                // configured map type (e.g. satellite) actually applies.
++                switch mapTypeId.lowercased() {
+                 case "hybrid":
+                     self.mapViewController.GMapView.mapType = .hybrid
+                 case "roadmap":
+@@ -477,6 +499,12 @@ public class Map {
+     }
+ 
+     func setCamera(config: GoogleMapCameraConfig) throws {
++        // LOOPER PATCH: skip if the map view isn't initialized yet (render()
++        // may still be retrying). Prevents a nil force-unwrap SIGTRAP.
++        guard self.mapViewController.GMapView != nil else {
++            CAPLog.print("CapacitorGoogleMaps: GMapView not ready, skipping setCamera")
++            return
++        }
+         let currentCamera = self.mapViewController.GMapView.camera
+ 
+         let lat = config.coordinate?.lat ?? currentCamera.target.latitude
+@@ -535,6 +563,11 @@ public class Map {
+     }
+ 
+     func setPadding(padding: GoogleMapPadding) throws {
++        // LOOPER PATCH: skip if the map view isn't initialized yet.
++        guard self.mapViewController.GMapView != nil else {
++            CAPLog.print("CapacitorGoogleMaps: GMapView not ready, skipping setPadding")
++            return
++        }
+         DispatchQueue.main.sync {
+             let mapInsets = UIEdgeInsets(top: CGFloat(padding.top), left: CGFloat(padding.left), bottom: CGFloat(padding.bottom), right: CGFloat(padding.right))
+             self.mapViewController.GMapView.padding = mapInsets

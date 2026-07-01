@@ -134,6 +134,9 @@ export default function InlineHoleDiagram({
   // Flat coords array — passed to GoogleSatelliteMap as holeCoordinates.
   const [allCoords, setAllCoords] = useState<CourseCoordinates[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Runtime Google-map failure → fall through to the on-paper HoleDiagram below
+  // instead of an empty black box.
+  const [googleMapFailed, setGoogleMapFailed] = useState(false);
 
   // Live GPS position from the watcher; null until first fix or on error.
   const [gpsPos, setGpsPos] = useState<Position | null>(null);
@@ -195,7 +198,7 @@ export default function InlineHoleDiagram({
   // show the satellite map inline (fills the height container, no fixed overlay).
   // autoDetectHole is disabled: the round page controls currentHole.
   // fitBounds crash fixed in v1.0.601 — cameraForHole() + setCamera() used instead.
-  if (loaded && renderer === 'google' && allCoords.length > 0) {
+  if (loaded && renderer === 'google' && !googleMapFailed && allCoords.length > 0) {
     return (
       <div
         style={{
@@ -216,6 +219,7 @@ export default function InlineHoleDiagram({
           }}
           autoDetectHole={false}
           inline
+          onFallback={() => setGoogleMapFailed(true)}
         />
       </div>
     );
