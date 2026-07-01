@@ -28,6 +28,8 @@ import { getRecentCourses } from "@/lib/golf-api";
 import { resolveMappedCourse } from "@/lib/map-bridge";
 import type { MappedCourseListItem } from "@/lib/map-bridge";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
+import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
+import { useHoleCoordinates } from "@/lib/map/use-hole-coordinates";
 import { fetchAPI } from "@/lib/api";
 
 // Player accent colors (yardage-book palette — warm ink tones)
@@ -218,6 +220,8 @@ export default function RoundPage() {
   const [currentHole, setCurrentHole] = useState(1);
   const [expanded, setExpanded] = useState(true);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  // Fullscreen ("blow it up") satellite map overlay.
+  const [mapZoom, setMapZoom] = useState(false);
   const [scoreOpen, setScoreOpen] = useState(false);
   const [lbOpen, setLbOpen] = useState(false);
   const [caddieOpen, setCaddieOpen] = useState(false);
@@ -237,6 +241,9 @@ export default function RoundPage() {
    * Set once when round.courseName becomes available.
    */
   const [mappedCourse, setMappedCourse] = useState<MappedCourseListItem | null>(null);
+  // Shared per-hole coordinates for the fullscreen blow-up map (the inline map
+  // fetches its own; this feeds the big overlay framed on the current hole).
+  const { allCoords: mapCoords, courseCenter: mapCenter } = useHoleCoordinates(mappedCourse?.id ?? null);
 
   // ---------------------------------------------------------------------------
   // Load round: try API → fall back to localStorage on 404 / network error.
@@ -1195,10 +1202,28 @@ export default function RoundPage() {
           {mappedCourse && (
             <div style={{ marginBottom: 14 }}>
               <SectionLabel>Hole {currentHole} map</SectionLabel>
-              <InlineHoleDiagram
-                courseId={mappedCourse.id}
-                currentHole={currentHole}
-              />
+              <div style={{ position: "relative" }}>
+                <InlineHoleDiagram
+                  courseId={mappedCourse.id}
+                  currentHole={currentHole}
+                />
+                {/* Blow it up — opens the fullscreen interactive map. */}
+                <button
+                  onClick={() => setMapZoom(true)}
+                  aria-label="Expand map to fullscreen"
+                  style={{
+                    position: "absolute", top: 8, right: 8, zIndex: 5,
+                    width: 34, height: 34, borderRadius: 8,
+                    border: `1px solid ${T.hairline}`, background: `${T.paper}f2`,
+                    backdropFilter: "blur(4px)", display: "flex",
+                    alignItems: "center", justifyContent: "center", cursor: "pointer",
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.ink} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+                  </svg>
+                </button>
+              </div>
             </div>
           )}
 
@@ -1447,6 +1472,22 @@ export default function RoundPage() {
         courseKey={reviewCourseKey}
         courseName={round.courseName}
       />
+
+      {/* Fullscreen "blow it up" satellite map — full-screen interactive overlay,
+          framed on the current hole. Hole changes sync back to the round. */}
+      {mapZoom && mappedCourse && (
+        <GoogleSatelliteMap
+          courseId={mappedCourse.id}
+          courseName={round.courseName}
+          holeCoordinates={mapCoords}
+          currentHole={currentHole}
+          onHoleChange={goHole}
+          onClose={() => setMapZoom(false)}
+          autoDetectHole={false}
+          centerOnly={mapCoords.length === 0}
+          fallbackCenter={mapCenter ?? undefined}
+        />
+      )}
     </div>
   );
 }
