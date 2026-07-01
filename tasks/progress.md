@@ -3,6 +3,47 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-01 — tee-time phase 1b item A: real courses + cache + booking persistence (SILENT — integration/next, DONE)
+
+Backend real-data slice of the tee-time booking epic (`specs/tee-time-booking-phase1b.md`,
+work item A). Default provider stays `mock` — nothing user-visible until item B wires
+the frontend, so this rides the bundle silently.
+
+### What changed
+- `backend/app/services/course_finder.py` (NEW) — Google Places / Mapbox / de-dupe
+  helpers extracted from `routes/course_search.py` (shared, no self-HTTP); Places
+  field mask now includes `websiteUri` + `rating`
+- `backend/app/services/tee_times/affiliate.py` (NEW) — `AffiliateLinkProvider`:
+  real nearby courses (OSM around lat/lng, Places text search, Mapbox fallback),
+  ONE `estimated=True` slot per course per window at the window start, `price_usd=None`
+  (never fabricated), `booking_url` from the Places website; `book()` → `needs_human`
+- `backend/app/services/tee_times/search_cache.py` (NEW) — 15-min TTL search cache
+  (in-memory + `backend/data/tee_time_search_cache.json`), injectable-store pattern
+- `backend/app/services/tee_times/base.py` — slot gains `estimated: bool = False`;
+  `price_usd` now `float | None`
+- `backend/app/routes/tee_times.py` — `TEETIME_PROVIDER=affiliate` wired (default
+  still mock); search cache replaces hardcoded `cached=False`; `POST /book` gains
+  `owner_id = Depends(current_user_id)` + persists EVERY attempt (incl. needs_human);
+  NEW `GET /api/tee-times/bookings` (owner-scoped, newest first)
+- `backend/app/db/models.py` + `backend/migrations/versions/0007_010_tee_time_bookings.py`
+  — `TeeTimeBooking` ORM + Alembic migration (revision 010)
+- `frontend/src/lib/teetime/types.ts` — `estimated?: boolean`; `priceUsd: number | null`
+  (+ two null-guards in `app/tee-time/page.tsx` to keep tsc green)
+- Tests: `tests/test_tee_time_affiliate.py`, `tests/test_tee_time_search_cache.py`,
+  `tests/integration/test_tee_time_bookings.py` (+ conftest truncates the new table)
+
+### Gate results (all green)
+- backend: `ruff check .` clean; `pytest` 844 passed / 45 skipped (was 821/34 —
+  new integration tests skip locally, run on CI Postgres)
+- frontend: `tsc --noEmit` clean; `vitest` 1193/1193; `eslint` clean; voice smoke 265/265
+
+### Classification: SILENT (backend-only; provider default unchanged)
+Item B (frontend wiring) consumes: `estimated` flag, nullable `priceUsd`,
+`GET /api/tee-times/bookings` (camelCase: slotId, courseId, courseName, date, time,
+partySize, priceUsd, status, bookingUrl, provider, confirmationCode, createdAt).
+
+---
+
 ## 2026-06-29 — map-crashproof hotfix (NOTICEABLE — feat/map-crashproof, DONE — pushed to remote)
 
 iOS SIGTRAP crash on map open eliminated. Root cause: `fitBounds()` in the

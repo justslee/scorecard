@@ -518,7 +518,11 @@ function Searching({ accent, windows, courses, maxMiles, group, onBack, onFound 
         return;
       }
 
-      const best = unique.slice().sort((a, b) => a.distanceMiles - b.distanceMiles || a.priceUsd - b.priceUsd)[0];
+      // Unknown (null) prices sort last — never preferred over a known price.
+      const best = unique.slice().sort((a, b) =>
+        a.distanceMiles - b.distanceMiles ||
+        (a.priceUsd ?? Number.MAX_SAFE_INTEGER) - (b.priceUsd ?? Number.MAX_SAFE_INTEGER)
+      )[0];
       append({ t: nowStr(), text: `${best.courseName} ${best.time} — ${best.players} open. Locking in.`, state: "ok", course: best.courseName });
 
       let result: BookingResult;
@@ -740,7 +744,7 @@ function Confirmed({ accent, slot, bookingResult, group, onBack, onStart }: Conf
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4, marginTop: 14, paddingTop: 12, borderTop: "1px dashed rgba(244,241,234,0.2)" }}>
               {[
                 ["Group",    `${group.length} players`],
-                ["Price",    `$${Math.round(slot.priceUsd)}`],
+                ["Price",    slot.priceUsd != null ? `$${Math.round(slot.priceUsd)}` : "—"],
                 ["Distance", `${slot.distanceMiles} mi`],
               ].map(([k, v], i) => (
                 <div key={k} style={{ paddingLeft: i === 0 ? 0 : 10, borderLeft: i === 0 ? "none" : "1px dashed rgba(244,241,234,0.18)" }}>

@@ -453,6 +453,38 @@ class Game(Base):
     )
 
 
+class TeeTimeBooking(Base):
+    """A tee-time booking attempt (Phase 1b). Every provider.book() call is
+    persisted — including needs_human handoffs — so the owner has a durable
+    record of what was (or still needs to be) booked.
+
+    slot_date/slot_time are Text matching the TeeTimeSlot wire shape
+    (YYYY-MM-DD / HH:MM); price_usd is nullable — affiliate slots have no
+    known price and we never fabricate one."""
+
+    __tablename__ = "tee_time_bookings"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    owner_id: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    slot_id: Mapped[str] = mapped_column(Text, nullable=False)
+    course_id: Mapped[str] = mapped_column(Text, nullable=False)
+    course_name: Mapped[str] = mapped_column(Text, nullable=False)
+    slot_date: Mapped[str] = mapped_column(Text, nullable=False)
+    slot_time: Mapped[str] = mapped_column(Text, nullable=False)
+    party_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_usd: Mapped[Optional[float]] = mapped_column(Numeric, nullable=True)
+    # BookingResult.status: confirmed | pending | failed | needs_human | not_supported
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    booking_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    confirmation_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class CourseReview(Base):
     """Owner-scoped course review (B2). Keyed on a string course_key (GolfAPI id
     when known, else name:<slug>) to sidestep course-identity unification (B5)."""
