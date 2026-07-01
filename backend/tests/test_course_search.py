@@ -43,3 +43,18 @@ def test_dedupe_by_name_keeps_first_occurrence_and_drops_empty():
 async def test_google_places_is_noop_without_key(monkeypatch):
     monkeypatch.setattr(course_search, "GOOGLE_PLACES_API_KEY", "")
     assert await course_search._search_google_places("bethpage black") == []
+
+
+def test_mapbox_url_encodes_query_path_injection():
+    # A query with path metacharacters must be percent-encoded so it can't alter
+    # the Mapbox request path (path-injection guard).
+    url = course_search._mapbox_geocode_url("foo/bar")
+    assert "/mapbox.places/foo%2Fbar.json" in url
+    # The traversal-critical "/" is encoded (dots are harmless without a slash),
+    # and spaces are encoded too.
+    assert course_search._mapbox_geocode_url("../x").endswith("..%2Fx.json")
+    assert "%20" in course_search._mapbox_geocode_url("st andrews")
+
+
+def test_mapbox_url_normal_query_unaffected():
+    assert course_search._mapbox_geocode_url("pebble").endswith("/mapbox.places/pebble.json")

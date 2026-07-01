@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 import httpx
 import os
 from typing import Optional
+from urllib.parse import quote
 from app.services.osm import search_golf_courses, search_osm_with_geometry
 
 router = APIRouter(prefix="/api/courses", tags=["course-search"])
@@ -68,11 +69,20 @@ def _dedupe_by_name(courses: list[dict]) -> list[dict]:
     return out
 
 
+def _mapbox_geocode_url(query: str) -> str:
+    """Build the Mapbox geocoding URL for a user query.
+
+    Mapbox puts the search term in the URL PATH, so the query must be encoded —
+    `quote(safe="")` escapes "/", "?", "#", "." etc. so a query like "foo/bar"
+    or "../x" can't manipulate the request path (path-injection guard)."""
+    return f"https://api.mapbox.com/geocoding/v5/mapbox.places/{quote(query, safe='')}.json"
+
+
 async def _search_mapbox(query: str) -> list[dict]:
     """Search Mapbox for places (fallback when OSM has no results)."""
     if not MAPBOX_TOKEN:
         return []
-    url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{query}.json"
+    url = _mapbox_geocode_url(query)
     async with httpx.AsyncClient(timeout=8) as client:
         try:
             resp = await client.get(url, params={"limit": 10, "access_token": MAPBOX_TOKEN})
