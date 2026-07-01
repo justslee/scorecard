@@ -123,6 +123,7 @@ async def config_status():
         "anthropic": _present("ANTHROPIC_API_KEY"),
         "mapbox": _present("NEXT_PUBLIC_MAPBOX_TOKEN", "MAPBOX_TOKEN"),
         "golfapi": _present("GOLF_API_KEY"),
+        "google_places": _present("GOOGLE_PLACES_API_KEY"),
     }
 
 
