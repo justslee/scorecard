@@ -54,6 +54,7 @@ import {
   CENTER_ONLY_ZOOM,
   tapMeasureLabelGoogle,
   cameraForHole,
+  cameraFraming,
 } from "@/lib/map/google-map-helpers";
 import { fetchWeather } from "@/lib/caddie/api";
 import type { WeatherConditions } from "@/lib/caddie/types";
@@ -195,6 +196,9 @@ export default function GoogleSatelliteMap({
   const holePolylineIdsRef  = useRef<string[]>([]);
   const gpsMarkerIdRef      = useRef<string | null>(null);
   const tapMarkerIdRef      = useRef<string | null>(null);
+  // Last position the camera auto-followed to (null when off-hole) — so GPS
+  // re-anchoring only fires on coming on-hole or after a meaningful move.
+  const cameraFollowRef     = useRef<{ lat: number; lng: number } | null>(null);
 
   // Keep currentHoleData in a ref so the click handler reads the latest value
   // without being re-registered on every hole change.
@@ -374,8 +378,8 @@ export default function GoogleSatelliteMap({
   const fitCameraToHole = useCallback(async (hd: CourseCoordinates) => {
     const m = googleMapRef.current;
     if (!m || !mapReadyRef.current) return;
-    const { coordinate, zoom } = cameraForHole(hd);
-    await m.setCamera({ coordinate, zoom, animate: true, animationDuration: 600 }).catch(() => {});
+    const { coordinate, zoom, bearing } = cameraForHole(hd);
+    await m.setCamera({ coordinate, zoom, bearing, animate: true, animationDuration: 600 }).catch(() => {});
   }, []);
 
   // ── Map initialisation ─────────────────────────────────────────────────────
@@ -442,7 +446,7 @@ export default function GoogleSatelliteMap({
         // needed just to frame it).
         const initCamera = (currentHd && !centerOnly)
           ? cameraForHole(currentHd)
-          : { coordinate: initCenter, zoom: centerOnly ? CENTER_ONLY_ZOOM : 16 };
+          : { coordinate: initCenter, zoom: centerOnly ? CENTER_ONLY_ZOOM : 16, bearing: 0 };
 
         // ── Readiness gate (THE crash fix) ───────────────────────────────────
         // The native plugin force-unwraps its `GMSMapView!` (Map.swift:13) in
@@ -465,6 +469,9 @@ export default function GoogleSatelliteMap({
             config: {
               center:         initCamera.coordinate,
               zoom:           initCamera.zoom,
+              // Rotate so the hole plays UP the screen (looking down the fairway
+              // from the tee), not a north-up diagonal.
+              heading:        initCamera.bearing,
               mapTypeId:      MapType.Satellite,
               disableDefaultUI: true,
             },
@@ -608,6 +615,22 @@ export default function GoogleSatelliteMap({
         if (gpsId) gpsMarkerIdRef.current = gpsId;
       } else {
         await clearGpsMarker();
+      }
+
+      // ── Camera follow ──────────────────────────────────────────────────
+      // On the hole → re-anchor the view to the player, looking down toward the
+      // green (GPS view "scales to where they are"). Only re-frame when they come
+      // on-hole or move > 20 yd so the camera doesn't jitter on every GPS tick.
+      if (onHole && hd && !centerOnly) {
+        const last  = cameraFollowRef.current;
+        const moved = last ? calculateDistance(last, pos).yards : Infinity;
+        if (moved > 20) {
+          cameraFollowRef.current = { lat: pos.lat, lng: pos.lng };
+          const cam = cameraFraming(pos, hd.green);
+          await m.setCamera({ ...cam, animate: true, animationDuration: 600 }).catch(() => {});
+        }
+      } else {
+        cameraFollowRef.current = null;
       }
 
       // ── Refresh hole overlays so FCB/distance rings reflect new GPS ────
