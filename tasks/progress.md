@@ -4884,3 +4884,27 @@ OSM name matching, map tap-target lines + reticle + readout). Gates: full vitest
 1188/1188, voice 265/265, tsc/lint/build green.
 
 Still paused: voice booking agent (Fable/Mythos access) — scaffold on feat/voice-booking-agent.
+
+---
+
+## 2026-07-01 (loop tick) — green-slope Q + handicap AGS cap
+
+Owner asked (twice) about USGS-3DEP green-slope topology. Verified + answered: it's
+built (elevation.py: EPQS + 3DEP batch sampler, Postgres cache; compute_green_slope
+= 3x3 DEM grid around the green → direction/severity/description), wired into the
+caddie (course-intel on caddie open → effective yards + "Green slope: <desc>" in
+context; slope_miss_advice gives "where to miss" in the recommendation reasoning),
+and already well-tested (test_slope_advice / test_green_slope_ingest / etc.). It gives
+good/bad-miss guidance (overall tilt), not putt-reading — which matches what the owner
+wants. Known gap (NOT built — owner is redesigning the hole card in Claude Design): the
+round-card "ELEV +3ft" is a hardcoded placeholder; wiring it to the real per-hole data
+is deferred into that design pass.
+
+Loop tick (board query is plan-gated; reconciled against code — active threads all
+blocked/under-design): correctness fix to the WHS handicap engine I shipped — cap each
+hole at par+5 for the Adjusted Gross Score (WHS max for players without an established
+index), so blow-up holes no longer inflate the estimate. Pure + non-circular. +1 test;
+fixed the mkRound fixture. Commit 12c4b9c. Gates: full vitest 1193/1193, voice 265/265.
+
+Still blocked on owner: GOOGLE_PLACES_API_KEY (search half of #86), Fable/Mythos
+(voice booking agent). Deferred to Claude Design: round hole-card map + real ELEV/PLAYS.
