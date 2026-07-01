@@ -305,6 +305,31 @@ def _parse_course_geometry_response(
     }
 
 
+# Generic golf words dropped from a name query so the remaining significant words
+# drive the match (order-independent, qualifier-tolerant).
+_OSM_STOPWORDS = {"golf", "course", "club", "links", "cc", "gc", "the", "at", "and", "&", "-"}
+
+
+def osm_name_filter(name: str) -> str:
+    """Build the Overpass `["name"~...]` filter(s) for a course-name query.
+
+    Matches ALL significant words (any order) so "bethpage black golf course"
+    matches OSM's "Bethpage Black" and "pebble golf" matches "Pebble Beach Golf
+    Links". Chained `["name"~w,i]` filters are ANDed by Overpass. Falls back to the
+    raw phrase when the query is only stopwords. Strips quotes/backslashes to keep
+    the Overpass regex safe.
+    """
+    def _safe(s: str) -> str:
+        return re.sub(r'["\'\\]', "", s)
+
+    words = [_safe(w) for w in name.split()]
+    significant = [w for w in words if w and w.lower() not in _OSM_STOPWORDS]
+    if significant:
+        return "".join(f'["name"~"{w}",i]' for w in significant)
+    phrase = _safe(name).strip()
+    return f'["name"~"{phrase}",i]' if phrase else ""
+
+
 # ── HTTP fetch functions ───────────────────────────────────────────────────────
 
 async def search_golf_courses(
@@ -318,10 +343,7 @@ async def search_golf_courses(
     if lat is not None and lng is not None:
         around = f"(around:{radius_m},{lat},{lng})"
 
-    name_filter = ""
-    if name:
-        safe = re.sub(r'["\']', "", name)
-        name_filter = f'["name"~"{safe}",i]'
+    name_filter = osm_name_filter(name) if name else ""
 
     if not name_filter and not around:
         return []
@@ -373,10 +395,7 @@ async def search_osm_with_geometry(
     if lat is not None and lng is not None:
         around = f"(around:{radius_m},{lat},{lng})"
 
-    name_filter = ""
-    if name:
-        safe = re.sub(r'["\']', "", name)
-        name_filter = f'["name"~"{safe}",i]'
+    name_filter = osm_name_filter(name) if name else ""
 
     if not name_filter and not around:
         return []
