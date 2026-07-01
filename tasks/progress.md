@@ -4831,3 +4831,22 @@ CI caught a real miss: I'd flipped getMapViewPref default holediagram→satellit
 only updated one of TWO test files (ran targeted vitest locally, not the full suite).
 Fixed satellite-map-pref.test.ts; full suite 1169/1169. LESSON: run `npx vitest run`
 (whole suite) before pushing, and verify TestFlight builds land via the ASC API.
+
+---
+
+## 2026-07-01 (loop tick) — Google Places course search + map tap-to-target (PR #86)
+
+Owner reported search broken ("bethpage black" → nothing). Root cause: fragile
+OSM name-match + Mapbox geocoding + metered GolfAPI. FIX: added Google Places API
+(New) text search as a robust source in backend course_search.py (_search_google_places
++ _dedupe_by_name; search_courses merges OSM-by-name + Places + OSM-near-Places).
+Frontend unchanged (backend results already surface; map renders from a center
+point). NEEDS OWNER SETUP: enable "Places API (New)" + a SERVER key (not the iOS
+bundle key) → GOOGLE_PLACES_API_KEY in looper/prod. config-status now reports it.
+Graceful no-op without the key.
+
+Also this tick: map tap-to-target readout (carry + to-green on tap) — first DEM-free
+slice of ux-tap-to-target (PR #86, rides along).
+
+Gates: backend ruff + pytest green (new test_course_search); frontend tsc/lint/
+full-vitest 1173/voice 265/build green. Backend change → deploys on merge to main.
