@@ -55,6 +55,7 @@ import {
   tapMeasureLabelGoogle,
   cameraForHole,
   cameraFraming,
+  movedBeyondYards,
 } from "@/lib/map/google-map-helpers";
 import { fetchWeather } from "@/lib/caddie/api";
 import type { WeatherConditions } from "@/lib/caddie/types";
@@ -622,9 +623,7 @@ export default function GoogleSatelliteMap({
       // green (GPS view "scales to where they are"). Only re-frame when they come
       // on-hole or move > 20 yd so the camera doesn't jitter on every GPS tick.
       if (onHole && hd && !centerOnly) {
-        const last  = cameraFollowRef.current;
-        const moved = last ? calculateDistance(last, pos).yards : Infinity;
-        if (moved > 20) {
+        if (movedBeyondYards(cameraFollowRef.current, pos, 20)) {
           cameraFollowRef.current = { lat: pos.lat, lng: pos.lng };
           const cam = cameraFraming(pos, hd.green);
           await m.setCamera({ ...cam, animate: true, animationDuration: 600 }).catch(() => {});

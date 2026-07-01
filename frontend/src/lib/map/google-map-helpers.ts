@@ -130,6 +130,21 @@ export function haversineYards(
 }
 
 /**
+ * Should the GPS camera re-anchor to a new position? True when there is no prior
+ * anchor (first fix on the hole) or the player has moved more than `thresholdYards`
+ * since the last anchor — so the map follows the golfer without jittering on every
+ * sub-threshold GPS tick.
+ */
+export function movedBeyondYards(
+  from: { lat: number; lng: number } | null | undefined,
+  to: { lat: number; lng: number },
+  thresholdYards: number,
+): boolean {
+  if (!from) return true;
+  return haversineYards(from, to) > thresholdYards;
+}
+
+/**
  * Return a Google Maps integer zoom level for a padded hole length in yards.
  *
  * Table tuned for a ~390×844 px iPhone 14 viewport so the whole hole fits

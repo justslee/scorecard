@@ -23,6 +23,7 @@ import {
   cameraForHole,
   bearingDegrees,
   cameraFraming,
+  movedBeyondYards,
 } from './google-map-helpers';
 
 // ── yardsToMeters ─────────────────────────────────────────────────────────────
@@ -503,5 +504,37 @@ describe('cameraFraming — frame from → green (used for tee and GPS views)', 
     expect(a.coordinate.lat).toBe(b.coordinate.lat);
     expect(a.zoom).toBe(b.zoom);
     expect(a.bearing).toBe(b.bearing);
+  });
+
+  it('also frames from a GPS position (from = player), not just the tee', () => {
+    const player = { lat: 40.7440, lng: -73.4530 };
+    const c = cameraFraming(player, green);
+    expect(c.coordinate.lat).toBeCloseTo((player.lat + green.lat) / 2, 6);
+    expect(c.bearing).toBeCloseTo(bearingDegrees(player, green), 6);
+  });
+});
+
+// ── movedBeyondYards (GPS camera re-anchor threshold) ─────────────────────────
+
+describe('movedBeyondYards — GPS re-anchor decision', () => {
+  const a = { lat: 40.7440, lng: -73.4530 };
+
+  it('is true when there is no prior anchor (first fix)', () => {
+    expect(movedBeyondYards(null, a, 20)).toBe(true);
+    expect(movedBeyondYards(undefined, a, 20)).toBe(true);
+  });
+
+  it('is false for a tiny sub-threshold move (no jitter)', () => {
+    const b = { lat: a.lat + 0.00003, lng: a.lng }; // ~3–4 yd north
+    expect(movedBeyondYards(a, b, 20)).toBe(false);
+  });
+
+  it('is true once the player moves past the threshold', () => {
+    const b = { lat: a.lat + 0.0005, lng: a.lng }; // ~55 yd north
+    expect(movedBeyondYards(a, b, 20)).toBe(true);
+  });
+
+  it('is false when standing still', () => {
+    expect(movedBeyondYards(a, { ...a }, 20)).toBe(false);
   });
 });
