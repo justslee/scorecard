@@ -55,6 +55,13 @@ class TestAuthRequired:
             f"Expected 401 or 503 without auth, got {r.status_code}"
         )
 
+    async def test_course_search_requires_auth(self, client):
+        # /search calls the PAID Google Places API — must reject anonymous callers.
+        r = await client.get("/api/courses/search?q=bethpage")
+        assert r.status_code in (401, 503), (
+            f"Expected 401 or 503 without auth, got {r.status_code}"
+        )
+
     async def test_get_players_requires_auth(self, client):
         r = await client.get("/api/players")
         assert r.status_code in (401, 503), (

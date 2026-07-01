@@ -5,10 +5,11 @@ The Google Places / Mapbox / de-dupe helpers live in services/course_finder.py
 module's private names for existing callers and tests.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 import os
 from typing import Optional
 from app.services import course_finder
+from app.services.clerk_auth import current_user_id
 from app.services.osm import search_golf_courses, search_osm_with_geometry
 
 router = APIRouter(prefix="/api/courses", tags=["course-search"])
@@ -29,8 +30,16 @@ async def _search_google_places(query: str) -> list[dict]:
 
 
 @router.get("/search")
-async def search_courses(q: str = Query(..., min_length=1)):
+async def search_courses(
+    q: str = Query(..., min_length=1),
+    _user_id: str = Depends(current_user_id),
+):
     """Search for golf courses by name.
+
+    Auth required: this endpoint calls the PAID Google Places API, so it is gated
+    behind a verified Clerk session (like the caddie endpoints) to prevent
+    anonymous abuse of the metered quota. The app already sends the owner Bearer
+    via fetchAPI, so this is transparent for the real client.
 
     Sources, merged best-first (geometry-rich results before location-only):
       1. OSM by name — full hole geometry when the name matches.
