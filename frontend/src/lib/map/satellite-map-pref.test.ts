@@ -47,7 +47,14 @@ afterEach(() => {
 // ── getMapViewPref — default and stored preference ────────────────────────────
 
 describe('getMapViewPref — default and stored preference', () => {
-  it('returns "holediagram" when nothing is stored (fresh user / safe default)', () => {
+  // Default flipped to 'satellite' (owner: Google satellite is THE map route);
+  // only an explicit stored 'holediagram' opts into the on-paper diagram.
+  it('returns "satellite" when nothing is stored (fresh user / default map route)', () => {
+    expect(getMapViewPref()).toBe('satellite');
+  });
+
+  it('returns "holediagram" when "holediagram" was explicitly stored', () => {
+    mockStorage.setItem(MAP_VIEW_PREF_KEY, 'holediagram');
     expect(getMapViewPref()).toBe('holediagram');
   });
 
@@ -56,19 +63,19 @@ describe('getMapViewPref — default and stored preference', () => {
     expect(getMapViewPref()).toBe('satellite');
   });
 
-  it('returns "holediagram" for an unrecognised stored value (defensive)', () => {
+  it('returns "satellite" for an unrecognised stored value (defensive)', () => {
     mockStorage.setItem(MAP_VIEW_PREF_KEY, 'google');
-    expect(getMapViewPref()).toBe('holediagram');
+    expect(getMapViewPref()).toBe('satellite');
   });
 
-  it('returns "holediagram" for an empty string', () => {
+  it('returns "satellite" for an empty string', () => {
     mockStorage.setItem(MAP_VIEW_PREF_KEY, '');
-    expect(getMapViewPref()).toBe('holediagram');
+    expect(getMapViewPref()).toBe('satellite');
   });
 
-  it('returns "holediagram" for a random string', () => {
+  it('returns "satellite" for a random string', () => {
     mockStorage.setItem(MAP_VIEW_PREF_KEY, 'mapbox');
-    expect(getMapViewPref()).toBe('holediagram');
+    expect(getMapViewPref()).toBe('satellite');
   });
 });
 
@@ -107,9 +114,9 @@ describe('setMapViewPref — persisting the preference', () => {
 //   • Key present + pref "satellite" → both ready for satellite mode
 
 describe('renderer selection + preference — combined logic', () => {
-  it('key absent + no stored pref → renderer "holediagram", pref "holediagram"', () => {
+  it('key absent + no stored pref → renderer "holediagram", pref "satellite"', () => {
     expect(mapRendererFor(undefined)).toBe('holediagram');
-    expect(getMapViewPref()).toBe('holediagram');
+    expect(getMapViewPref()).toBe('satellite'); // default map route
   });
 
   it('key absent + pref "satellite" → renderer still "holediagram" (key wins)', () => {
@@ -120,12 +127,11 @@ describe('renderer selection + preference — combined logic', () => {
     expect(mapRendererFor('   ')).toBe('holediagram');
   });
 
-  it('key present + no stored pref → renderer "google", pref "holediagram" (safe default)', () => {
-    // Key is present but no preference stored yet — renderer says 'google'
-    // but the UI gate should check getMapViewPref() before auto-loading.
-    // This test documents the expected values for each part of the gate.
+  it('key present + no stored pref → renderer "google", pref "satellite" (default map route)', () => {
+    // Key is present and no preference stored yet — renderer says 'google' and
+    // the pref defaults to 'satellite', so the map loads satellite by default.
     expect(mapRendererFor('AIzaSyABC123')).toBe('google');
-    expect(getMapViewPref()).toBe('holediagram'); // no pref stored → safe default
+    expect(getMapViewPref()).toBe('satellite'); // default map route
   });
 
   it('key present + pref "satellite" → both ready for satellite mode (user opted in)', () => {
