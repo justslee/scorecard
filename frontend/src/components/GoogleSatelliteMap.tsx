@@ -503,9 +503,14 @@ export default function GoogleSatelliteMap({
         // Wait for confirmed readiness, with a timeout that means "never became
         // ready" → graceful paper fallback (NOT a forced proceed, which would
         // re-introduce the nil-unwrap crash).
+        // Timeout must exceed the native render() retry window (up to ~10s while
+        // a location-permission dialog blocks WebView layout) so we don't fall
+        // back on a map that's still legitimately attaching. onMapReady is now
+        // reliable (listener registered before create — plugin patch), so in the
+        // common case this resolves in well under a second.
         const becameReady = await Promise.race([
           mapReadyPromise.then(() => true),
-          new Promise<boolean>((res) => setTimeout(() => res(false), 4000)),
+          new Promise<boolean>((res) => setTimeout(() => res(false), 13000)),
         ]);
 
         if (destroyed) { await gMap.destroy(); return; }

@@ -1,5 +1,42 @@
+diff --git a/node_modules/@capacitor/google-maps/dist/esm/map.js b/node_modules/@capacitor/google-maps/dist/esm/map.js
+index e80ae4e..3039808 100644
+--- a/node_modules/@capacitor/google-maps/dist/esm/map.js
++++ b/node_modules/@capacitor/google-maps/dist/esm/map.js
+@@ -112,6 +112,17 @@ export class GoogleMap {
+             });
+             newMap.resizeObserver.observe(newMap.element);
+         }
++        // LOOPER PATCH: register the onMapReady listener BEFORE create() so a
++        // fast native attach can't fire onMapReady before we're listening (the
++        // event was being missed → callers timed out / fell back on a working map).
++        if (callback) {
++            const onMapReadyListener = await CapacitorGoogleMaps.addListener('onMapReady', (data) => {
++                if (data.mapId == newMap.id) {
++                    callback(data);
++                    onMapReadyListener.remove();
++                }
++            });
++        }
+         // small delay to allow for iOS WKWebView to setup corresponding element sub-scroll views ???
+         await new Promise((resolve, reject) => {
+             setTimeout(async () => {
+@@ -124,14 +135,6 @@ export class GoogleMap {
+                 }
+             }, 200);
+         });
+-        if (callback) {
+-            const onMapReadyListener = await CapacitorGoogleMaps.addListener('onMapReady', (data) => {
+-                if (data.mapId == newMap.id) {
+-                    callback(data);
+-                    onMapReadyListener.remove();
+-                }
+-            });
+-        }
+         return newMap;
+     }
+     static async getElementBounds(element) {
 diff --git a/node_modules/@capacitor/google-maps/ios/Sources/CapacitorGoogleMapsPlugin/Map.swift b/node_modules/@capacitor/google-maps/ios/Sources/CapacitorGoogleMapsPlugin/Map.swift
-index 85a8953..b3fbd6a 100644
+index 85a8953..fd66cea 100644
 --- a/node_modules/@capacitor/google-maps/ios/Sources/CapacitorGoogleMapsPlugin/Map.swift
 +++ b/node_modules/@capacitor/google-maps/ios/Sources/CapacitorGoogleMapsPlugin/Map.swift
 @@ -90,6 +90,13 @@ public class Map {
@@ -39,7 +76,19 @@ index 85a8953..b3fbd6a 100644
              }
          }
      }
-@@ -477,6 +496,12 @@ public class Map {
+@@ -145,7 +164,10 @@ public class Map {
+             self.mapViewController.GMapView.setMinZoom(minZoom, maxZoom: maxZoom)
+ 
+             if let mapTypeId = self.config.mapTypeId {
+-                switch mapTypeId {
++                // LOOPER PATCH: JS MapType enum is capitalized ("Satellite") but
++                // these cases are lowercase — compare case-insensitively so the
++                // configured map type (e.g. satellite) actually applies.
++                switch mapTypeId.lowercased() {
+                 case "hybrid":
+                     self.mapViewController.GMapView.mapType = .hybrid
+                 case "roadmap":
+@@ -477,6 +499,12 @@ public class Map {
      }
  
      func setCamera(config: GoogleMapCameraConfig) throws {
@@ -52,7 +101,7 @@ index 85a8953..b3fbd6a 100644
          let currentCamera = self.mapViewController.GMapView.camera
  
          let lat = config.coordinate?.lat ?? currentCamera.target.latitude
-@@ -535,6 +560,11 @@ public class Map {
+@@ -535,6 +563,11 @@ public class Map {
      }
  
      func setPadding(padding: GoogleMapPadding) throws {
