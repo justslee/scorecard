@@ -4783,3 +4783,17 @@ Branch: integration/next (PR #84 → main), awaiting owner "ship it" after testi
 1. Social / Virtual Match — needs the multi-user product decision (relax owner-gate for
    social routes). 2. Tee-time real integration — needs Chronogolf/Lightspeed creds.
    3. Otherwise: greenlight Course-Search polish (B4 discovery) or map shot-tracking.
+
+---
+
+## 2026-07-01 (later 2) — map: tighter zoom + yardage-book distance panel
+
+Owner feedback on v1.0.615 initial map load ("still a little far away", "yardages
+aren't following the UI theme and color", "taking up too much space"):
+- Bumped zoomForPaddedYards (~+1.5 levels) → loads zoomed into just the hole;
+  matched the owner's reference screenshot framing in the iOS simulator.
+- Restyled the fullscreen distance panel dark-SaaS → yardage-book (T.paper bg,
+  serif ink numbers, T.mono labels, center in T.accent; paper-pill nav/controls);
+  compact (dropped oversized padding + the noisy pin line).
+- Rides on PR #85 (with the Paper⇄Satellite toggle). Gates: map units 60/60,
+  voice 265/265, tsc/lint/build green. Verified in the simulator.
