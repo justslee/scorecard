@@ -294,6 +294,36 @@ export function tapMeasureLabelGoogle(
   return `Pin ${toPinYards}y`;
 }
 
+export interface TapTarget {
+  /** Yards from the origin (the player when on-hole, else the tee) to the tapped
+   *  point — the shot's carry. Null when there's no origin. */
+  carry: number | null;
+  /** Yards from the tapped point to the green — what's left after the shot. */
+  toGreen: number;
+  /** True when `carry` was measured from the live GPS position, not the tee. */
+  fromGps: boolean;
+}
+
+/**
+ * Distances for a tapped target point: carry from the origin (GPS position when
+ * on the hole, otherwise the tee) and the remaining distance to the green.
+ * `distanceYards` is injected so callers reuse the SAME distance function as the
+ * rest of the map (turf-based) — keeps this pure + headless-testable.
+ */
+export function tapTargetDistances(
+  tap: { lat: number; lng: number },
+  green: { lat: number; lng: number },
+  origin: { lat: number; lng: number } | null,
+  fromGps: boolean,
+  distanceYards: (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => number,
+): TapTarget {
+  return {
+    carry: origin ? Math.round(distanceYards(origin, tap)) : null,
+    toGreen: Math.round(distanceYards(tap, green)),
+    fromGps: fromGps && origin != null,
+  };
+}
+
 /**
  * Build a snippet label for a Front / Center / Back distance marker.
  *

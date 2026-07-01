@@ -43,14 +43,18 @@ class TeeTimeSlot:
     date: str                        # YYYY-MM-DD
     time: str                        # "HH:MM"
     players: int                     # available slots (1–4)
-    price_usd: float
+    price_usd: float | None          # None = unknown (affiliate) — NEVER fabricated
     cart_included: bool
     distance_miles: float
-    rating: float                    # 0–5
+    rating: float                    # 0–5 (0 = unknown)
     provider: str                    # "mock" | "affiliate" | "golfnow" | "chronogolf"
     holes: Literal[9, 18]
     designer: str | None = None
     booking_url: str | None = None   # deep-link for Affiliate / Phase 1
+    # True when `time` is the requested window start, NOT verified live
+    # availability (AffiliateLinkProvider). Legal posture: estimated slots are
+    # suggestions to book on the course's own site — never presented as live.
+    estimated: bool = False
 
 
 @dataclass

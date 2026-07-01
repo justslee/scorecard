@@ -1,62 +1,77 @@
-"""Course search routes (migrated from Next.js /api/courses/search and search-osm)."""
+"""Course search routes (migrated from Next.js /api/courses/search and search-osm).
 
-from fastapi import APIRouter, HTTPException, Query
-import httpx
+The Google Places / Mapbox / de-dupe helpers live in services/course_finder.py
+(shared with the tee-time AffiliateLinkProvider); the aliases below preserve this
+module's private names for existing callers and tests.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 import os
 from typing import Optional
+from app.services import course_finder
+from app.services.clerk_auth import current_user_id
 from app.services.osm import search_golf_courses, search_osm_with_geometry
 
 router = APIRouter(prefix="/api/courses", tags=["course-search"])
 
-MAPBOX_TOKEN = os.getenv("NEXT_PUBLIC_MAPBOX_TOKEN", os.getenv("MAPBOX_TOKEN", ""))
+MAPBOX_TOKEN = course_finder.MAPBOX_TOKEN
+# Kept as a module global so tests can monkeypatch it (see test_course_search.py);
+# passed explicitly into the shared helper on every call.
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
+
+_dedupe_by_name = course_finder.dedupe_by_name
+_mapbox_geocode_url = course_finder.mapbox_geocode_url
+_search_mapbox = course_finder.search_mapbox
 
 
-async def _search_mapbox(query: str) -> list[dict]:
-    """Search Mapbox for places (fallback when OSM has no results)."""
-    if not MAPBOX_TOKEN:
-        return []
-    url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{query}.json"
-    async with httpx.AsyncClient(timeout=8) as client:
-        try:
-            resp = await client.get(url, params={"limit": 10, "access_token": MAPBOX_TOKEN})
-            if not resp.is_success:
-                return []
-            data = resp.json()
-            return [
-                {
-                    "id": f"mapbox-{f['id']}",
-                    "name": f.get("text") or f.get("place_name", "").split(",")[0] or query,
-                    "address": f.get("place_name"),
-                    "center": {"lat": f["center"][1], "lng": f["center"][0]},
-                    "source": "mapbox",
-                }
-                for f in data.get("features", [])
-            ]
-        except Exception:
-            return []
+async def _search_google_places(query: str) -> list[dict]:
+    """Delegates to the shared helper with this module's (monkeypatchable) key."""
+    return await course_finder.search_google_places(query, api_key=GOOGLE_PLACES_API_KEY)
 
 
 @router.get("/search")
-async def search_courses(q: str = Query(..., min_length=1)):
-    """Search for golf courses by name (OSM primary, Mapbox fallback)."""
-    # 1. Search OSM by name
-    osm_results = await search_golf_courses(name=q)
-    if osm_results:
-        return {"courses": osm_results, "query": q}
+async def search_courses(
+    q: str = Query(..., min_length=1),
+    _user_id: str = Depends(current_user_id),
+):
+    """Search for golf courses by name.
 
-    # 2. Fallback: Mapbox location search, then OSM nearby
+    Auth required: this endpoint calls the PAID Google Places API, so it is gated
+    behind a verified Clerk session (like the caddie endpoints) to prevent
+    anonymous abuse of the metered quota. The app already sends the owner Bearer
+    via fetchAPI, so this is transparent for the real client.
+
+    Sources, merged best-first (geometry-rich results before location-only):
+      1. OSM by name — full hole geometry when the name matches.
+      2. Google Places (New) text search — robust name → course + precise
+         location — then OSM courses NEAR that location to attach geometry.
+      3. Mapbox geocoding — legacy fallback.
+    De-duplicated by course name.
+    """
+    osm_named = await search_golf_courses(name=q)
+    places = await _search_google_places(q)
+
+    # Attach hole geometry to a Places hit by pulling OSM courses near it.
+    nearby: list[dict] = []
+    if places:
+        top = places[0]
+        nearby = await search_golf_courses(
+            lat=top["center"]["lat"], lng=top["center"]["lng"], radius_m=8000,
+        )
+
+    combined = _dedupe_by_name(osm_named + nearby + places)
+    if combined:
+        return {"courses": combined, "query": q}
+
+    # Fallback: legacy Mapbox geocoding → OSM nearby.
     mapbox_results = await _search_mapbox(q)
     if mapbox_results:
         top = mapbox_results[0]
-        nearby = await search_golf_courses(
-            lat=top["center"]["lat"],
-            lng=top["center"]["lng"],
-            radius_m=20000,
+        near = await search_golf_courses(
+            lat=top["center"]["lat"], lng=top["center"]["lng"], radius_m=20000,
         )
-        if nearby:
-            return {"courses": nearby, "query": q, "searchedNear": top["name"]}
-
-    # 3. Last resort: return Mapbox results
+        if near:
+            return {"courses": near, "query": q, "searchedNear": top["name"]}
     return {"courses": mapbox_results[:15], "query": q}
 
 

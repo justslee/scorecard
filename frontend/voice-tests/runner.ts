@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseVoiceTranscript } from "@/lib/voice/parseVoiceTranscript";
 import { parseVoiceScores, parseVoiceScoresLocally } from "@/lib/voice/parseVoiceScores";
+import { parseTeeTimePrefs } from "@/lib/voice/parseTeeTimePrefs";
+import type { TeeTimePrefsParseResultValidated } from "@/lib/voice/schemas";
 import type { VoiceParseSetupResult, VoiceParseScoresResult } from "@/lib/voice/types";
 import type { CommandLaneScenario } from "./schema";
 import { deepSubset } from "./assert";
@@ -48,11 +50,18 @@ function pretty(x: unknown) {
 async function runOne(s: CommandLaneScenario, opts: { verbose: boolean; useRealAnthropicForScores: boolean }) {
   const utter = s.utterance;
 
-  let actual: VoiceParseSetupResult | VoiceParseScoresResult;
+  let actual: VoiceParseSetupResult | VoiceParseScoresResult | TeeTimePrefsParseResultValidated;
 
   if (s.endpoint === "/api/parse-voice") {
     // force local by clearing key
     actual = await parseVoiceTranscript(utter, { forceLocal: true });
+  } else if (s.endpoint === "/api/parse-tee-time") {
+    // Deterministic tee-time prefs intent (no LLM key → local heuristics).
+    const ctx = s.context as { knownCourses?: string[] };
+    actual = await parseTeeTimePrefs({
+      transcript: utter,
+      known: { courses: ctx.knownCourses },
+    });
   } else {
     if (s.context.kind !== "scores") throw new Error(`Scenario ${s.id} has endpoint scores but wrong context`);
 

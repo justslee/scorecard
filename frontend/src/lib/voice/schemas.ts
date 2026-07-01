@@ -97,6 +97,62 @@ export const VoiceParseResultSchema = z
 
 export type VoiceParseResultValidated = z.infer<typeof VoiceParseResultSchema>;
 
+// ─── Tee-time prefs (the /tee-time "Hold to talk" intent) ─────────────────────
+
+export const TeeTimeDaySchema = z.enum([
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+]);
+
+export const TeeTimePeriodSchema = z.enum([
+  "early",
+  "morning",
+  "midday",
+  "afternoon",
+  "twilight",
+]);
+
+/**
+ * A structured PREFS UPDATE parsed from one utterance — deliberately partial:
+ * every field is optional/defaulted so "party of four" alone is a valid parse.
+ * Empty arrays / false / undefined mean "the golfer didn't mention it" and the
+ * UI leaves that pref untouched.
+ */
+export const TeeTimePrefsParseResultSchema = z
+  .object({
+    /** Day/time windows asked for ("Saturday morning"). Period null = whole day. */
+    windows: z
+      .array(
+        z.object({
+          day: TeeTimeDaySchema,
+          period: TeeTimePeriodSchema.nullable().default(null),
+        })
+      )
+      .default([]),
+    /** Course names, already resolved against the caller's known-courses list. */
+    courseNames: z.array(z.string().min(1)).default([]),
+    /** "just my favorites" — restrict to favorited courses. */
+    favoritesOnly: z.boolean().default(false),
+    partySize: z.number().int().min(1).max(8).optional(),
+    maxPriceUsd: z.number().positive().optional(),
+    maxDistanceMiles: z.number().positive().optional(),
+    /** "go ahead / find it / book it" — confirmation to start the search now. */
+    dispatch: z.boolean().default(false),
+    confidence: z.number().min(0).max(1),
+    explanations: z.array(z.string()).optional(),
+    warnings: z.array(z.string()).optional(),
+  })
+  .strict();
+
+export type TeeTimePrefsParseResultValidated = z.infer<
+  typeof TeeTimePrefsParseResultSchema
+>;
+
 export const VoiceScoreParseResultSchema = z
   .object({
     hole: z.number().int().positive(),

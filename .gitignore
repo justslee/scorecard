@@ -59,3 +59,4 @@ backend/data/
 frontend/.env.local
 .clerk-test-creds
 frontend/test-results/
+/scorecard/
