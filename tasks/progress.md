@@ -4815,3 +4815,19 @@ Did: extracted the GPS camera-follow re-anchor decision into a pure tested helpe
 Awaiting owner: (a) confirm the map framing on #85 (then cut a TestFlight build +
 merge), (b) direction on the next epic — the actionable ones need his decision
 (multi-user/social) or creds (tee-time) or a spec sign-off (tap-to-target plays-like).
+
+---
+
+## 2026-07-01 — SHIPPED map polish (PR #85) → TestFlight v1.0.624 (owner: "ship it")
+
+Merged #85 to main (877652b). Build v1.0.624 (202607011339) VALID in App Store
+Connect (verified via ASC API — 612/615 earlier had been dropped by an Apple hold
+that has since cleared). Bundle: down-the-fairway camera bearing (hole plays up the
+screen, tee box at bottom), tee-box framing, GPS re-anchor to the player, Paper⇄
+Satellite toggle (persisted, default satellite), yardage-book themed compact
+distance panel, guide-line/wind fixes.
+
+CI caught a real miss: I'd flipped getMapViewPref default holediagram→satellite but
+only updated one of TWO test files (ran targeted vitest locally, not the full suite).
+Fixed satellite-map-pref.test.ts; full suite 1169/1169. LESSON: run `npx vitest run`
+(whole suite) before pushing, and verify TestFlight builds land via the ASC API.
