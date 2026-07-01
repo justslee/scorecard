@@ -4861,3 +4861,26 @@ matches "Pebble Beach Golf Links" and "bethpage black golf course" matches OSM's
 "Bethpage Black". Works NOW without the Places key (which is still needed for
 multi-course facilities OSM doesn't name per-course). Used by both OSM search
 functions. 4 new tests; backend ruff + pytest green. PR #86 bundle.
+
+---
+
+## 2026-07-01 (loop tick) — map readout to the side + WHS handicap estimate
+
+Owner feedback mid-tick: the tap-target readout tile covered the green → redesigned
+it as a compact VERTICAL pill anchored to the LEFT edge (off the fairway/green).
+Verified in the simulator (green now visible). Committed a667e74.
+
+Loop tick (reconciled: Partners tab already wired to /players; handicap was
+manual-only with differentials removed as "fabricated"): built a correct, fully-
+tested WHS Handicap Index engine (frontend/src/lib/handicap.ts — scoreDifferential,
+official lowest-N+adjustment table, estimateHandicapFromRounds best-8-of-20 over
+completed 18-hole rounds; 15 tests). Wired into the profile: a manual handicap
+still wins; when none is set + ≥3 rounds, show the computed estimate labelled
+"Estimated from your last N rounds." Uses real tee rating/slope when available,
+neutral 72/113 defaults otherwise (sharpens as course data fills in). Commit 7e076ae.
+
+All rides in PR #86 (which also has: Google Places search [needs owner's Places key],
+OSM name matching, map tap-target lines + reticle + readout). Gates: full vitest
+1188/1188, voice 265/265, tsc/lint/build green.
+
+Still paused: voice booking agent (Fable/Mythos access) — scaffold on feat/voice-booking-agent.
