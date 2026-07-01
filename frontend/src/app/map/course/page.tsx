@@ -24,7 +24,7 @@
 
 import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, AlertCircle, Layers } from "lucide-react";
 import type { CourseData, HoleData } from "@/lib/courses/types";
 import { fetchMappedCourse, mappedCourseToCoordinates } from "@/lib/courses/mapped-course-api";
 import { parseHoleParam } from "@/lib/map-bridge";
@@ -34,7 +34,10 @@ import {
   mapRendererFor,
   parseCenterParams,
   courseDisplayMode,
+  getMapViewPref,
+  setMapViewPref,
   type CenterParams,
+  type MapViewPref,
 } from "@/lib/map/satellite-helpers";
 import {
   holeLengthYards,
@@ -562,6 +565,15 @@ function MappedCourseMapInner() {
   // initialize (onMapReady never fires, container unbindable, etc.).
   const [googleMapFailed, setGoogleMapFailed] = useState(false);
 
+  // User's satellite ⇄ paper preference. Default satellite (SSR-safe constant to
+  // avoid a hydration mismatch); the real persisted value is read on mount.
+  const [mapView, setMapView] = useState<MapViewPref>("satellite");
+  useEffect(() => { setMapView(getMapViewPref()); }, []);
+  const chooseMapView = useCallback((v: MapViewPref) => {
+    setMapView(v);
+    setMapViewPref(v);
+  }, []);
+
   // GPS state
   const [gpsPos, setGpsPos] = useState<Position | null>(null);
   const [gpsAvailable, setGpsAvailable] = useState(false);
@@ -691,7 +703,8 @@ function MappedCourseMapInner() {
   // Key changed from NEXT_PUBLIC_MAPBOX_TOKEN (Mapbox, retired) to
   // NEXT_PUBLIC_GOOGLE_MAPS_KEY (@capacitor/google-maps).
   const renderer = mapRendererFor(process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY);
-  const useGoogle = renderer === "google" && !googleMapFailed;
+  const satelliteAvailable = renderer === "google" && !googleMapFailed;
+  const useGoogle = satelliteAvailable && mapView === "satellite";
   if (dispMode === "center-only" && useGoogle && centerParams) {
     return (
       <GoogleSatelliteMap
@@ -704,6 +717,7 @@ function MappedCourseMapInner() {
         fallbackCenter={{ lat: centerParams.lat, lng: centerParams.lng }}
         centerOnly={true}
         onFallback={() => setGoogleMapFailed(true)}
+        onSwitchToPaper={() => chooseMapView("holediagram")}
       />
     );
   }
@@ -741,6 +755,7 @@ function MappedCourseMapInner() {
         onHoleChange={setCurrentHoleNum}
         onClose={handleBack}
         onFallback={() => setGoogleMapFailed(true)}
+        onSwitchToPaper={() => chooseMapView("holediagram")}
       />
     );
   }
@@ -853,6 +868,33 @@ function MappedCourseMapInner() {
             {course.name}
           </h1>
         </div>
+
+        {/* Switch to the Google satellite view (only when it's available). Mirrors
+            the "Paper" toggle in GoogleSatelliteMap's header. */}
+        {satelliteAvailable && (
+          <button
+            onClick={() => chooseMapView("satellite")}
+            style={{
+              marginLeft: "auto",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              fontFamily: T.mono,
+              fontSize: 10,
+              letterSpacing: 0.8,
+              color: T.inkSoft,
+              background: "none",
+              border: `1px solid ${T.hairline}`,
+              borderRadius: 6,
+              padding: "5px 9px",
+              cursor: "pointer",
+            }}
+            aria-label="Switch to satellite view"
+          >
+            <Layers size={12} /> Satellite
+          </button>
+        )}
       </div>
 
       {/* ── Diagram area — flex:1 + minHeight:0 so it expands to fill the gap */}
