@@ -4797,3 +4797,21 @@ aren't following the UI theme and color", "taking up too much space"):
   compact (dropped oversized padding + the noisy pin line).
 - Rides on PR #85 (with the Paper⇄Satellite toggle). Gates: map units 60/60,
   voice 265/265, tsc/lint/build green. Verified in the simulator.
+
+---
+
+## 2026-07-01 (loop tick) — silent hardening of GPS camera-follow
+
+Backlog reconciled: no build-ready small item — remaining backlog is [needs-spec]
+(caddie/DEM/social/tap-to-target), [needs-decision] (social-friend-graph, green-
+reading), [owner-action] (Clerk), or [epic]. PR #85 (map bundle: toggle + zoom +
+panel + down-the-fairway bearing + GPS follow) is open awaiting owner's framing
+confirmation. Didn't add churn to it or start a speculative epic.
+
+Did: extracted the GPS camera-follow re-anchor decision into a pure tested helper
+`movedBeyondYards(from,to,yards)` (true on first fix or >threshold move) + tests
+(map helpers 73/73). No behavior change. Silent, rides along with #85.
+
+Awaiting owner: (a) confirm the map framing on #85 (then cut a TestFlight build +
+merge), (b) direction on the next epic — the actionable ones need his decision
+(multi-user/social) or creds (tee-time) or a spec sign-off (tap-to-target plays-like).
