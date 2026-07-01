@@ -297,7 +297,11 @@ export default function GoogleSatelliteMap({
           { lat: hd.tee.lat,   lng: hd.tee.lng   },
           { lat: hd.green.lat, lng: hd.green.lng  },
         ],
-        strokeColor:   "rgba(255,255,255,0.55)",
+        // The native plugin parses strokeColor as a HEX string (UIColor(hex:) ??
+        // .blue) and applies strokeOpacity separately — an rgba() string silently
+        // renders BLUE. Use hex + opacity so the line is the intended subtle white.
+        strokeColor:   "#FFFFFF",
+        strokeOpacity: 0.6,
         strokeWeight:  2,
         geodesic:      true,
         clickable:     false,
