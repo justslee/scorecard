@@ -146,14 +146,13 @@ export function haversineYards(
  * Pure function — no side effects, headless-testable.
  */
 export function zoomForPaddedYards(paddedYards: number): number {
-  // Tuned to frame a single hole tightly (owner feedback: the map was far too
-  // zoomed out). Fractional zooms are supported by the Google Maps SDK.
-  if (paddedYards < 130) return 18.5;
-  if (paddedYards < 200) return 18;
-  if (paddedYards < 300) return 17.5;
-  if (paddedYards < 430) return 17;
-  if (paddedYards < 600) return 16.5;
-  return 16;
+  // Tuned to frame a SINGLE hole tightly (owner: "more zoomed in to just that
+  // hole"). Fractional zooms are supported by the Google Maps SDK.
+  if (paddedYards < 130) return 19;
+  if (paddedYards < 220) return 18.5;
+  if (paddedYards < 480) return 18;
+  if (paddedYards < 650) return 17.5;
+  return 17;
 }
 
 /**
