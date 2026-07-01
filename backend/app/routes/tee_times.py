@@ -4,6 +4,8 @@ Tee-time API routes.
 GET  /api/tee-times/search   — availability search (provider-backed, TTL-cached)
 POST /api/tee-times/book     — book a slot (provider-backed; attempt persisted)
 GET  /api/tee-times/bookings — the owner's booking attempts, newest first
+POST /api/tee-times/book-by-call/simulate — run the voice booking agent against
+     a scripted pro-shop persona (dev/QA surface; NO real call is ever placed)
 
 The active provider is chosen by the TEETIME_PROVIDER env var (default: "mock").
   TEETIME_PROVIDER=affiliate → AffiliateLinkProvider (real courses, estimated
@@ -43,6 +45,12 @@ from app.services.tee_times.search_cache import (
     SearchCacheStore,
     query_cache_key,
 )
+from app.services.voice_booking.simulator import (
+    PERSONA_NAMES,
+    default_context,
+    run_simulation,
+)
+from app.services.voice_booking.types import VoiceBookingContext
 
 log = logging.getLogger(__name__)
 
@@ -336,3 +344,92 @@ async def list_bookings(owner_id: str = Depends(current_user_id)):
             .order_by(TeeTimeBookingORM.created_at.desc())
         )
         return [TeeTimeBookingOut.from_orm_row(r) for r in result.scalars().all()]
+
+
+# ─── Voice booking agent — simulator (dev/QA surface; NO real calls) ──────────
+
+class SimulateCallRequest(BaseModel):
+    persona: str = "friendly"        # see PERSONA_NAMES
+    courseName: str | None = None    # optional overrides of the demo context
+    golferName: str | None = None
+    date: str | None = None          # YYYY-MM-DD
+    timeWindowStart: str | None = None   # "HH:MM" 24h
+    timeWindowEnd: str | None = None
+    partySize: int | None = None
+    maxPriceUsd: float | None = None
+
+
+class CallTurnOut(BaseModel):
+    speaker: str                     # "agent" | "shop"
+    text: str
+
+
+class CallOutcomeOut(BaseModel):
+    result: str
+    date: str | None
+    time: str | None
+    partySize: int | None
+    confirmationNumber: str | None
+    costUsd: float | None
+    detail: str | None
+
+
+class SimulateCallResponse(BaseModel):
+    persona: str
+    transcript: list[CallTurnOut]
+    outcome: CallOutcomeOut
+    result: BookingResultOut
+
+
+@router.post("/book-by-call/simulate", response_model=SimulateCallResponse)
+async def simulate_book_by_call(
+    req: SimulateCallRequest, _owner_id: str = Depends(current_user_id)
+):
+    """
+    Run the voice booking agent against a scripted pro-shop persona and return
+    the full transcript + structured outcome + BookingResult.
+
+    This is a dev/QA surface: it exercises the SAME dialog / IVR / compliance /
+    outcome code the live telephony bridge will use, but never dials anything.
+    The real-call route ships only with the owner-gated launch (TCPA review).
+    """
+    if req.persona not in PERSONA_NAMES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown persona '{req.persona}' — expected one of {PERSONA_NAMES}",
+        )
+
+    base = default_context()
+    ctx = VoiceBookingContext(
+        course_id=base.course_id,
+        course_name=req.courseName or base.course_name,
+        phone=base.phone,
+        golfer_name=req.golferName or base.golfer_name,
+        callback_number=base.callback_number,
+        date=req.date or base.date,
+        time_window_start=req.timeWindowStart or base.time_window_start,
+        time_window_end=req.timeWindowEnd or base.time_window_end,
+        party_size=req.partySize or base.party_size,
+        max_price_usd=req.maxPriceUsd if req.maxPriceUsd is not None else base.max_price_usd,
+    )
+
+    sim = run_simulation(req.persona, ctx)
+    return SimulateCallResponse(
+        persona=sim.persona,
+        transcript=[CallTurnOut(speaker=t.speaker, text=t.text) for t in sim.transcript],
+        outcome=CallOutcomeOut(
+            result=sim.outcome.result,
+            date=sim.outcome.date,
+            time=sim.outcome.time,
+            partySize=sim.outcome.party_size,
+            confirmationNumber=sim.outcome.confirmation_number,
+            costUsd=sim.outcome.cost_usd,
+            detail=sim.outcome.detail,
+        ),
+        result=BookingResultOut(
+            status=sim.booking_result.status,
+            confirmationNumber=sim.booking_result.confirmation_number,
+            message=sim.booking_result.message,
+            bookingUrl=sim.booking_result.booking_url,
+        ),
+    )

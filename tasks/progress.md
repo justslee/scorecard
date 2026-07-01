@@ -5010,3 +5010,32 @@ CLAUDE.md-required security review. Reviewed it:
   the PR. Not pinged (minor decision, not a blocker).
 
 Gates: ruff clean; full backend suite 821 passed / 34 skipped.
+
+---
+
+## 2026-07-01 (builder) — voice booking agent PRE-BUILD (phase 1b-D / epic phase 4)
+
+Built work item D of specs/tee-time-booking-phase1b.md: the outbound voice booking
+agent as PURE modules + a pro-shop simulator — NO real telephony, launch stays
+owner-gated (budget + TCPA attorney). Ported specs/tee-time-voice-agent.md from
+feat/voice-booking-agent onto integration/next, amended per the locked eng-lead
+decision: NO card vault — payment is handed to the human staffer (epic §Track B);
+the dialog declines card requests → needs_human.
+
+- backend/app/services/voice_booking/: types, dialog (state machine: opener →
+  slot negotiation → confirm → outcome), ivr (menu detect + DTMF choice),
+  outcome (CallOutcome → stable BookingResult statuses), compliance (the Track B
+  gates AS CODE: verified-landline allowlist, AI-disclosure-first line, 8am–9pm
+  local hours, no-audio-storage flag, suppression list), phone_lookup (Places →
+  pro-shop number; None without key), simulator (7 deterministic personas),
+  provider (VoiceCallProvider behind the TeeTimeProvider ABC), telephony (STUB —
+  RuntimeError unless VOICE_BOOKING_ENABLED=1 + Twilio creds, then NotImplemented).
+- Route: POST /api/tee-times/book-by-call/simulate (owner-auth; dev/QA surface;
+  never dials). NO real-call route yet.
+- Tests: 51 pure unit tests + 5 route integration tests (CI's Postgres gate).
+  Gates: ruff clean; full backend suite 895 passed / 51 skipped.
+
+Silent item (backend-only; nothing owner-visible on TestFlight — the simulate
+endpoint is a QA surface). Real-call track still needs: telephony platform choice
+(Twilio DIY vs Vapi/Retell), creds + number + STIR/SHAKEN, per-course tz + verified
+landline allowlist, TCPA attorney review, first supervised test call.
