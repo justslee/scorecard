@@ -4908,3 +4908,22 @@ fixed the mkRound fixture. Commit 12c4b9c. Gates: full vitest 1193/1193, voice 2
 
 Still blocked on owner: GOOGLE_PLACES_API_KEY (search half of #86), Fable/Mythos
 (voice booking agent). Deferred to Claude Design: round hole-card map + real ELEV/PLAYS.
+
+---
+
+## 2026-07-01 (loop tick) — security review of PR #86 search endpoint
+
+Board query plan-gated; #86 is a 13-commit bundle nearing ship (awaits owner Places
+key), and its NEW backend endpoint (Google Places course search) hadn't had the
+CLAUDE.md-required security review. Reviewed it:
+- FIXED (A): _search_mapbox interpolated the raw query into the Mapbox URL path →
+  path-injection. Now quote()-encoded via _mapbox_geocode_url(); +2 tests. (c55dfdf)
+- Clean: Google Places (JSON body + key in header), OSM (quotes/backslashes stripped),
+  graceful [] on error.
+- FOR OWNER (B): /api/courses/search is unauthenticated but now calls the PAID Places
+  API → anonymous quota-burn risk. Frontend already sends the Clerk token via fetchAPI,
+  so gating it behind Depends(current_user_id) would be transparent. Left as owner
+  decision (shifts auth posture; matches other public course-data endpoints). Noted on
+  the PR. Not pinged (minor decision, not a blocker).
+
+Gates: ruff clean; full backend suite 821 passed / 34 skipped.
