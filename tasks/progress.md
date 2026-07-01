@@ -4757,3 +4757,29 @@ Owner feedback on v1.0.609 ("renders but looks crazy"):
 ### Gates (all green): tsc · eslint · voice-tests 265/265 · map unit tests 61/61 · next build.
 Classification: NOTICEABLE (map is visibly cleaner + zoomed in + Back works + wind + round map).
 Branch: integration/next (PR #84 → main), awaiting owner "ship it" after testing v1.0.612.
+
+---
+
+## 2026-07-01 (later) — TestFlight unblocked + map Paper⇄Satellite toggle (eng-lead loop)
+
+### TestFlight
+- v1.0.615 (build 202607011134) and v1.0.612 had been silently DROPPED by Apple at
+  ingestion (verified via the App Store Connect API — no Build record while the upload
+  reported success). Root cause was Apple-side (agreement/hold); it cleared and BOTH are
+  now VALID. 1.0.615 (the fully-polished map build) is the newest testable build.
+  LESSON: verify builds land via the ASC API (JWT + /v1/builds), don't trust altool's
+  "Upload succeeded" alone. Helper: $CLAUDE_JOB_DIR ascbuilds/ascfilter scripts.
+
+### Loop iteration — backlog reconciled, well-scoped feature built
+- Board + backlog.json reconciled: small items all [done]; epics are blocked (tee-time —
+  needs Chronogolf creds), need owner product decision (Social / Virtual Match — multi-user),
+  or low-priority/mostly-built (Course Search — /courses/[id] B1 ALREADY exists; backend
+  reviews B2/B3 exist). No ready small item.
+- Built: **Paper ⇄ Satellite map toggle** (PR #85). Wired the pre-existing but unused
+  onSwitchToPaper + getMapViewPref/setMapViewPref. Default satellite; persists; on-Northstar.
+  Verified in the iOS simulator. Gates green (satellite-helpers 81/81, voice 265/265, build).
+
+### Needs owner direction (next big moves)
+1. Social / Virtual Match — needs the multi-user product decision (relax owner-gate for
+   social routes). 2. Tee-time real integration — needs Chronogolf/Lightspeed creds.
+   3. Otherwise: greenlight Course-Search polish (B4 discovery) or map shot-tracking.
