@@ -25,7 +25,7 @@
  *     this component is not mounted.
  */
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, type CSSProperties } from "react";
 // @capacitor/google-maps references HTMLElement at module evaluation time,
 // so it must NOT be imported at the top level (would crash SSR / static build).
 // We dynamic-import it inside the useEffect (client-only) instead.
@@ -39,7 +39,6 @@ import {
   AlertCircle,
   MapPin,
   Signal,
-  Flag,
   ArrowUp,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -47,7 +46,6 @@ import {
   GPSWatcher,
   calculateDistance,
   calculateBearing,
-  getAccuracyDescription,
   type Position,
 } from "@/lib/gps";
 import type { CourseCoordinates } from "@/lib/golf-api";
@@ -56,6 +54,8 @@ import {
   CENTER_ONLY_ZOOM,
   tapMeasureLabelGoogle,
   cameraForHole,
+  cameraFraming,
+  movedBeyondYards,
 } from "@/lib/map/google-map-helpers";
 import { fetchWeather } from "@/lib/caddie/api";
 import type { WeatherConditions } from "@/lib/caddie/types";
@@ -127,6 +127,38 @@ export interface GoogleSatelliteMapProps {
   onSwitchToPaper?: () => void;
 }
 
+// ── Yardage-book distance stat (matches the app's paper/ink theme) ────────────
+
+// Shared paper-pill control button (hole nav + map controls).
+const MAP_PILL_BTN: CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 999,
+  background: `${T.paper}f2`,
+  border: `1px solid ${T.hairline}`,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  backdropFilter: "blur(4px)",
+  cursor: "pointer",
+};
+
+function YardageStat({ label, value, big = false }: { label: string; value: number | null; big?: boolean }) {
+  return (
+    <div style={{ textAlign: "center", flex: 1 }}>
+      <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.2, textTransform: "uppercase", color: T.pencil, marginBottom: 3 }}>
+        {label}
+      </div>
+      <div style={{ fontFamily: T.serif, fontSize: big ? 40 : 26, lineHeight: 0.95, color: big ? T.accent : T.ink }}>
+        {value ?? "—"}
+      </div>
+      <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 0.8, color: T.pencilSoft, marginTop: 2 }}>
+        YDS
+      </div>
+    </div>
+  );
+}
+
 // ── Unique map ID helper ──────────────────────────────────────────────────────
 
 let _mapCounter = 0;
@@ -165,6 +197,9 @@ export default function GoogleSatelliteMap({
   const holePolylineIdsRef  = useRef<string[]>([]);
   const gpsMarkerIdRef      = useRef<string | null>(null);
   const tapMarkerIdRef      = useRef<string | null>(null);
+  // Last position the camera auto-followed to (null when off-hole) — so GPS
+  // re-anchoring only fires on coming on-hole or after a meaningful move.
+  const cameraFollowRef     = useRef<{ lat: number; lng: number } | null>(null);
 
   // Keep currentHoleData in a ref so the click handler reads the latest value
   // without being re-registered on every hole change.
@@ -344,8 +379,8 @@ export default function GoogleSatelliteMap({
   const fitCameraToHole = useCallback(async (hd: CourseCoordinates) => {
     const m = googleMapRef.current;
     if (!m || !mapReadyRef.current) return;
-    const { coordinate, zoom } = cameraForHole(hd);
-    await m.setCamera({ coordinate, zoom, animate: true, animationDuration: 600 }).catch(() => {});
+    const { coordinate, zoom, bearing } = cameraForHole(hd);
+    await m.setCamera({ coordinate, zoom, bearing, animate: true, animationDuration: 600 }).catch(() => {});
   }, []);
 
   // ── Map initialisation ─────────────────────────────────────────────────────
@@ -412,7 +447,7 @@ export default function GoogleSatelliteMap({
         // needed just to frame it).
         const initCamera = (currentHd && !centerOnly)
           ? cameraForHole(currentHd)
-          : { coordinate: initCenter, zoom: centerOnly ? CENTER_ONLY_ZOOM : 16 };
+          : { coordinate: initCenter, zoom: centerOnly ? CENTER_ONLY_ZOOM : 16, bearing: 0 };
 
         // ── Readiness gate (THE crash fix) ───────────────────────────────────
         // The native plugin force-unwraps its `GMSMapView!` (Map.swift:13) in
@@ -435,6 +470,9 @@ export default function GoogleSatelliteMap({
             config: {
               center:         initCamera.coordinate,
               zoom:           initCamera.zoom,
+              // Rotate so the hole plays UP the screen (looking down the fairway
+              // from the tee), not a north-up diagonal.
+              heading:        initCamera.bearing,
               mapTypeId:      MapType.Satellite,
               disableDefaultUI: true,
             },
@@ -578,6 +616,20 @@ export default function GoogleSatelliteMap({
         if (gpsId) gpsMarkerIdRef.current = gpsId;
       } else {
         await clearGpsMarker();
+      }
+
+      // ── Camera follow ──────────────────────────────────────────────────
+      // On the hole → re-anchor the view to the player, looking down toward the
+      // green (GPS view "scales to where they are"). Only re-frame when they come
+      // on-hole or move > 20 yd so the camera doesn't jitter on every GPS tick.
+      if (onHole && hd && !centerOnly) {
+        if (movedBeyondYards(cameraFollowRef.current, pos, 20)) {
+          cameraFollowRef.current = { lat: pos.lat, lng: pos.lng };
+          const cam = cameraFraming(pos, hd.green);
+          await m.setCamera({ ...cam, animate: true, animationDuration: 600 }).catch(() => {});
+        }
+      } else {
+        cameraFollowRef.current = null;
       }
 
       // ── Refresh hole overlays so FCB/distance rings reflect new GPS ────
@@ -792,80 +844,60 @@ export default function GoogleSatelliteMap({
         )}
       </AnimatePresence>
 
-      {/* Distance panel (bottom) — fullscreen mode */}
+      {/* Distance panel (bottom) — fullscreen mode. Yardage-book themed + compact. */}
       {!centerOnly && !inline && (
         <div className="absolute bottom-0 left-0 right-0 z-10">
           {/* Hole nav */}
-          <div className="flex items-center justify-center gap-4 pb-4">
+          <div className="flex items-center justify-center gap-3 pb-2">
             <button
               onClick={prevHole}
               disabled={currentHole <= 1}
-              className="w-10 h-10 rounded-full bg-zinc-800/80 backdrop-blur-sm flex items-center justify-center disabled:opacity-30"
+              aria-label="Previous hole"
+              style={{ ...MAP_PILL_BTN, opacity: currentHole <= 1 ? 0.35 : 1 }}
             >
-              <ChevronLeft className="text-white" size={24} />
+              <ChevronLeft size={18} style={{ color: T.ink }} />
             </button>
-            <div className="bg-zinc-800/80 backdrop-blur-sm rounded-full px-6 py-2">
-              <span className="text-white font-bold text-lg">Hole {currentHole}</span>
+            <div style={{ background: `${T.paper}f2`, border: `1px solid ${T.hairline}`, borderRadius: 999, padding: "5px 16px", fontFamily: T.mono, fontSize: 11, letterSpacing: 1.2, color: T.ink, textTransform: "uppercase", backdropFilter: "blur(4px)" }}>
+              Hole {currentHole}
             </div>
             <button
               onClick={nextHole}
               disabled={currentHole >= 18}
-              className="w-10 h-10 rounded-full bg-zinc-800/80 backdrop-blur-sm flex items-center justify-center disabled:opacity-30"
+              aria-label="Next hole"
+              style={{ ...MAP_PILL_BTN, opacity: currentHole >= 18 ? 0.35 : 1 }}
             >
-              <ChevronRight className="text-white" size={24} />
+              <ChevronRight size={18} style={{ color: T.ink }} />
             </button>
           </div>
 
-          {/* Detail panel */}
-          <div className="bg-zinc-900/95 backdrop-blur-xl rounded-t-3xl p-6 pt-8">
-            <div className="grid grid-cols-3 gap-4 mb-3">
-              <div className="text-center">
-                <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">Front</p>
-                <p className="text-white text-2xl font-bold">{distances.front ?? "—"}</p>
-                <p className="text-zinc-500 text-xs">yds</p>
-              </div>
-              <div className="text-center">
-                <div className="bg-emerald-500/20 rounded-2xl p-3 -mt-2">
-                  <p className="text-emerald-400 text-xs uppercase tracking-wider mb-1">Center</p>
-                  <p className="text-emerald-400 text-4xl font-bold">{distances.center ?? "—"}</p>
-                  <p className="text-emerald-400/60 text-xs">yds</p>
-                </div>
-              </div>
-              <div className="text-center">
-                <p className="text-zinc-500 text-xs uppercase tracking-wider mb-1">Back</p>
-                <p className="text-white text-2xl font-bold">{distances.back ?? "—"}</p>
-                <p className="text-zinc-500 text-xs">yds</p>
-              </div>
+          {/* Detail panel — paper */}
+          <div style={{ background: T.paper, borderTop: `1px solid ${T.hairline}`, borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: "12px 20px calc(10px + env(safe-area-inset-bottom))", boxShadow: "0 -6px 20px rgba(0,0,0,0.18)" }}>
+            <div className="flex items-end justify-between" style={{ gap: 8 }}>
+              <YardageStat label="Front"  value={distances.front} />
+              <YardageStat label="Center" value={distances.center} big />
+              <YardageStat label="Back"   value={distances.back} />
             </div>
 
-            {currentHoleData?.pin && (
-              <div className="flex items-center justify-center gap-2 mb-4 text-sm text-zinc-200">
-                <Flag className="w-4 h-4 text-red-400" />
-                <span className="text-zinc-400">Pin:</span>
-                <span className="font-semibold">{distances.pin ?? "—"} yds</span>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Signal size={16} className={!position ? "text-zinc-500" : isOnHole ? "text-emerald-500" : "text-amber-500"} />
-                <span className="text-zinc-400 text-sm">
+            <div className="flex items-center justify-between" style={{ marginTop: 10 }}>
+              <div className="flex items-center gap-1.5">
+                <Signal size={13} style={{ color: !position ? T.pencilSoft : isOnHole ? T.accent : "#9a7b16" }} />
+                <span style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 0.4, color: T.pencil }}>
                   {!position
                     ? "Acquiring GPS…"
                     : isOnHole
-                    ? `GPS: ${getAccuracyDescription(position.accuracy || 0)} (±${Math.round(position.accuracy || 0)}m)`
-                    : "GPS · Not on this hole · Tee distances shown"}
+                    ? `GPS ±${Math.round(position.accuracy || 0)}m`
+                    : "Not on hole · tee distances"}
                 </span>
               </div>
-              <div className="flex gap-2">
-                <button onClick={fitHole} className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center" title="Fit hole">
-                  <Target className="text-yellow-400" size={20} />
+              <div className="flex" style={{ gap: 6 }}>
+                <button onClick={fitHole} title="Fit hole" style={MAP_PILL_BTN}>
+                  <Target size={15} style={{ color: T.ink }} />
                 </button>
-                <button onClick={centerOnUser} disabled={!position} className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center disabled:opacity-30">
-                  <Navigation className="text-blue-400" size={20} />
+                <button onClick={centerOnUser} disabled={!position} aria-label="Center on me" style={{ ...MAP_PILL_BTN, opacity: position ? 1 : 0.35 }}>
+                  <Navigation size={15} style={{ color: T.accent }} />
                 </button>
-                <button onClick={centerOnGreen} className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center">
-                  <MapPin className="text-emerald-400" size={20} />
+                <button onClick={centerOnGreen} aria-label="Center on green" style={MAP_PILL_BTN}>
+                  <MapPin size={15} style={{ color: T.ink }} />
                 </button>
               </div>
             </div>

@@ -130,6 +130,21 @@ export function haversineYards(
 }
 
 /**
+ * Should the GPS camera re-anchor to a new position? True when there is no prior
+ * anchor (first fix on the hole) or the player has moved more than `thresholdYards`
+ * since the last anchor — so the map follows the golfer without jittering on every
+ * sub-threshold GPS tick.
+ */
+export function movedBeyondYards(
+  from: { lat: number; lng: number } | null | undefined,
+  to: { lat: number; lng: number },
+  thresholdYards: number,
+): boolean {
+  if (!from) return true;
+  return haversineYards(from, to) > thresholdYards;
+}
+
+/**
  * Return a Google Maps integer zoom level for a padded hole length in yards.
  *
  * Table tuned for a ~390×844 px iPhone 14 viewport so the whole hole fits
@@ -146,49 +161,76 @@ export function haversineYards(
  * Pure function — no side effects, headless-testable.
  */
 export function zoomForPaddedYards(paddedYards: number): number {
-  // Tuned to frame a single hole tightly (owner feedback: the map was far too
-  // zoomed out). Fractional zooms are supported by the Google Maps SDK.
-  if (paddedYards < 130) return 18.5;
-  if (paddedYards < 200) return 18;
-  if (paddedYards < 300) return 17.5;
-  if (paddedYards < 430) return 17;
-  if (paddedYards < 600) return 16.5;
+  // Tuned to frame a SINGLE hole tightly (owner: "more zoomed in to just that
+  // hole"). Fractional zooms are supported by the Google Maps SDK.
+  // Rotated (down-the-fairway) view needs the whole tee→green to fit vertically
+  // AND the tee box to clear the bottom panel, so it's ~1 level back from a pure
+  // fill. Still tight to the single hole (no surrounding-hole clutter).
+  if (paddedYards < 130) return 18;
+  if (paddedYards < 220) return 17.5;
+  if (paddedYards < 480) return 17;
+  if (paddedYards < 650) return 16.5;
   return 16;
 }
 
 /**
- * Compute the camera `{ coordinate, zoom }` needed to frame a hole.
+ * Initial bearing in degrees clockwise from true north, from `a` to `b`.
+ * Used to rotate the map so a line (tee→green, or player→green) points UP the
+ * screen — the yardage-book "looking down the fairway" orientation.
+ */
+export function bearingDegrees(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const phi1 = toRad(a.lat);
+  const phi2 = toRad(b.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const y = Math.sin(dLng) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+export interface HoleCamera {
+  coordinate: { lat: number; lng: number };
+  zoom: number;
+  /** Degrees clockwise from north; rotates the map to look from→to (up-screen). */
+  bearing: number;
+}
+
+/**
+ * Frame the camera to look from `from` down to `to` (the green), oriented so
+ * the from→to line runs UP the screen — a golfer looking down the fairway.
+ *   • center  = midpoint(from, to) → `from` sits near the bottom, green near top
+ *   • zoom    = fit the from→to distance (small pad)
+ *   • bearing = from→to heading so the map rotates to look down the line
  *
- * This is the crash-safe replacement for `GoogleMap.fitBounds()`.  Pass the
- * result directly to `map.setCamera({ ...cameraForHole(hd), animate: true })`.
- *
- * Algorithm:
- *   • center = geographic midpoint of tee → green
- *   • zoom   = `zoomForPaddedYards(distance * 1.35)` so fairway width fits
- *
- * The GPS position is deliberately excluded (same off-hole guard as holeMapBounds)
- * so a far-away GPS fix cannot expand the view.
- *
- * Pure function — no side effects, headless-testable.
+ * Pure function — no side effects, headless-testable. Used for both the tee view
+ * (from = tee) and the GPS view (from = the player's position).
+ */
+export function cameraFraming(
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+): HoleCamera {
+  const coordinate = {
+    lat: (from.lat + to.lat) / 2,
+    lng: (from.lng + to.lng) / 2,
+  };
+  const zoom = zoomForPaddedYards(haversineYards(from, to) * 1.15);
+  const bearing = bearingDegrees(from, to);
+  return { coordinate, zoom, bearing };
+}
+
+/**
+ * Camera to frame a whole hole from the tee box, looking down the fairway.
+ * Crash-safe fitBounds replacement — pass to `setCamera` or the create config
+ * (map `heading` = `bearing`). Falls back to the green when there is no tee.
  */
 export function cameraForHole(
   holeCoords: Pick<CourseCoordinates, 'tee' | 'green'>,
-): { coordinate: { lat: number; lng: number }; zoom: number } {
-  const tee   = holeCoords.tee ?? holeCoords.green; // fall back to green if no tee
-  const green = holeCoords.green;
-
-  // Geographic midpoint (equirectangular OK for < 1 km distances).
-  const coordinate = {
-    lat: (tee.lat + green.lat) / 2,
-    lng: (tee.lng + green.lng) / 2,
-  };
-
-  // Tee→green yards; small pad so the hole fills the view (was 1.35 — too wide).
-  const distYards    = haversineYards(tee, green);
-  const paddedYards  = distYards * 1.15;
-  const zoom         = zoomForPaddedYards(paddedYards);
-
-  return { coordinate, zoom };
+): HoleCamera {
+  const tee = holeCoords.tee ?? holeCoords.green; // fall back to green if no tee
+  return cameraFraming(tee, holeCoords.green);
 }
 
 // ── Course centre resolution ──────────────────────────────────────────────────

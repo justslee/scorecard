@@ -310,22 +310,21 @@ export type MapViewPref = 'holediagram' | 'satellite';
 /**
  * Read the user's map view preference from localStorage.
  *
- * Returns 'holediagram' (the safe default) when:
- *   • no preference has been stored yet (fresh user / after a crash)
- *   • localStorage is unavailable (SSR / sandboxed env)
- *   • the stored value is not a recognised preference
+ * Returns 'satellite' (the owner-chosen default — Google satellite is THE map
+ * route) UNLESS the user has explicitly opted into the on-paper diagram.
+ * Also returns 'satellite' when localStorage is unavailable (SSR / sandboxed).
  *
  * SSR-safe: checks `typeof window` before touching localStorage.
  */
 export function getMapViewPref(): MapViewPref {
   try {
-    if (typeof window === 'undefined') return 'holediagram';
+    if (typeof window === 'undefined') return 'satellite';
     const v = localStorage.getItem(MAP_VIEW_PREF_KEY);
-    if (v === 'satellite') return 'satellite';
+    if (v === 'holediagram') return 'holediagram';
   } catch {
     // localStorage unavailable (sandboxed iframe, private browsing, etc.)
   }
-  return 'holediagram';
+  return 'satellite';
 }
 
 /**

@@ -21,6 +21,9 @@ import {
   haversineYards,
   zoomForPaddedYards,
   cameraForHole,
+  bearingDegrees,
+  cameraFraming,
+  movedBeyondYards,
 } from './google-map-helpers';
 
 // ── yardsToMeters ─────────────────────────────────────────────────────────────
@@ -338,42 +341,38 @@ describe('haversineYards — straight-line distance calculation', () => {
 // Tests verify the table boundaries and that the result stays in [14, 18].
 
 describe('zoomForPaddedYards — zoom level from padded hole distance', () => {
-  it('returns 18.5 for very short holes (<130 yd padded)', () => {
-    expect(zoomForPaddedYards(0)).toBe(18.5);
-    expect(zoomForPaddedYards(100)).toBe(18.5);
-    expect(zoomForPaddedYards(129)).toBe(18.5);
+  it('returns 18 for very short holes (<130 yd padded)', () => {
+    expect(zoomForPaddedYards(0)).toBe(18);
+    expect(zoomForPaddedYards(100)).toBe(18);
+    expect(zoomForPaddedYards(129)).toBe(18);
   });
 
-  it('returns 18 for short par-3 (130–199 yd)', () => {
-    expect(zoomForPaddedYards(130)).toBe(18);
-    expect(zoomForPaddedYards(199)).toBe(18);
+  it('returns 17.5 for short par-3 (130–219 yd)', () => {
+    expect(zoomForPaddedYards(130)).toBe(17.5);
+    expect(zoomForPaddedYards(219)).toBe(17.5);
   });
 
-  it('returns 17.5 for short par-4 (200–299 yd)', () => {
-    expect(zoomForPaddedYards(200)).toBe(17.5);
-    expect(zoomForPaddedYards(299)).toBe(17.5);
+  it('returns 17 for typical par-4 (220–479 yd)', () => {
+    expect(zoomForPaddedYards(220)).toBe(17);
+    expect(zoomForPaddedYards(400)).toBe(17);
+    expect(zoomForPaddedYards(479)).toBe(17);
   });
 
-  it('returns 17 for typical par-4 (300–429 yd)', () => {
-    expect(zoomForPaddedYards(300)).toBe(17);
-    expect(zoomForPaddedYards(429)).toBe(17);
+  it('returns 16.5 for long par-4 / short par-5 (480–649 yd)', () => {
+    expect(zoomForPaddedYards(480)).toBe(16.5);
+    expect(zoomForPaddedYards(649)).toBe(16.5);
   });
 
-  it('returns 16.5 for long par-4 / short par-5 (430–599 yd)', () => {
-    expect(zoomForPaddedYards(430)).toBe(16.5);
-    expect(zoomForPaddedYards(599)).toBe(16.5);
-  });
-
-  it('returns 16 for very long holes (≥600 yd)', () => {
-    expect(zoomForPaddedYards(600)).toBe(16);
+  it('returns 16 for very long holes (≥650 yd)', () => {
+    expect(zoomForPaddedYards(650)).toBe(16);
     expect(zoomForPaddedYards(1000)).toBe(16);
   });
 
-  it('zoom is always in the range [16, 18.5]', () => {
-    for (const d of [0, 50, 129, 130, 299, 300, 599, 600, 1500]) {
+  it('zoom is always in the range [16, 18]', () => {
+    for (const d of [0, 50, 129, 130, 479, 480, 649, 650, 1500]) {
       const z = zoomForPaddedYards(d);
       expect(z).toBeGreaterThanOrEqual(16);
-      expect(z).toBeLessThanOrEqual(18.5);
+      expect(z).toBeLessThanOrEqual(18);
     }
   });
 
@@ -411,10 +410,10 @@ describe('cameraForHole — camera coordinate and zoom for a hole', () => {
     expect(coordinate.lng).toBeCloseTo((tee.lng + green.lng) / 2, 6);
   });
 
-  it('zoom is always in the safe range [16, 18.5]', () => {
+  it('zoom is always in the safe range [16, 18]', () => {
     const { zoom } = cameraForHole({ tee, green });
     expect(zoom).toBeGreaterThanOrEqual(16);
-    expect(zoom).toBeLessThanOrEqual(18.5);
+    expect(zoom).toBeLessThanOrEqual(18);
   });
 
   it('a short par-3 hole gets a higher zoom than a long par-5', () => {
@@ -436,8 +435,8 @@ describe('cameraForHole — camera coordinate and zoom for a hole', () => {
     // Coordinate should be green itself (midpoint of green+green = green)
     expect(result.coordinate.lat).toBeCloseTo(green.lat, 6);
     expect(result.coordinate.lng).toBeCloseTo(green.lng, 6);
-    // Distance is 0 → paddedYards = 0 → zoom = 18.5 (shortest bucket)
-    expect(result.zoom).toBe(18.5);
+    // Distance is 0 → paddedYards = 0 → zoom = 18 (shortest bucket)
+    expect(result.zoom).toBe(18);
   });
 
   it('does NOT use a GPS user position (off-hole guard preserved)', () => {
@@ -447,5 +446,95 @@ describe('cameraForHole — camera coordinate and zoom for a hole', () => {
     const result2 = cameraForHole({ tee, green }); // same inputs → deterministic
     expect(result1.coordinate.lat).toBe(result2.coordinate.lat);
     expect(result1.zoom).toBe(result2.zoom);
+  });
+
+  it('includes a bearing so the map looks down the fairway (tee→green)', () => {
+    const { bearing } = cameraForHole({ tee, green });
+    expect(bearing).toBeGreaterThanOrEqual(0);
+    expect(bearing).toBeLessThan(360);
+  });
+});
+
+// ── bearingDegrees / cameraFraming ────────────────────────────────────────────
+
+describe('bearingDegrees — compass heading from a → b', () => {
+  const p = { lat: 40.0, lng: -73.0 };
+
+  it('is ~0° / 360° due north', () => {
+    const b = bearingDegrees(p, { lat: 40.01, lng: -73.0 });
+    expect(Math.min(b, 360 - b)).toBeLessThan(1);
+  });
+
+  it('is ~90° due east', () => {
+    expect(bearingDegrees(p, { lat: 40.0, lng: -72.99 })).toBeCloseTo(90, 0);
+  });
+
+  it('is ~180° due south', () => {
+    expect(bearingDegrees(p, { lat: 39.99, lng: -73.0 })).toBeCloseTo(180, 0);
+  });
+
+  it('is ~270° due west', () => {
+    expect(bearingDegrees(p, { lat: 40.0, lng: -73.01 })).toBeCloseTo(270, 0);
+  });
+
+  it('always returns a value in [0, 360)', () => {
+    for (const to of [{ lat: 41, lng: -72 }, { lat: 39, lng: -74 }, { lat: 40, lng: -73 }]) {
+      const b = bearingDegrees(p, to);
+      expect(b).toBeGreaterThanOrEqual(0);
+      expect(b).toBeLessThan(360);
+    }
+  });
+});
+
+describe('cameraFraming — frame from → green (used for tee and GPS views)', () => {
+  const from  = { lat: 40.7430, lng: -73.4546 };
+  const green = { lat: 40.7451, lng: -73.4514 };
+
+  it('centers on the midpoint and returns zoom + bearing', () => {
+    const c = cameraFraming(from, green);
+    expect(c.coordinate.lat).toBeCloseTo((from.lat + green.lat) / 2, 6);
+    expect(c.coordinate.lng).toBeCloseTo((from.lng + green.lng) / 2, 6);
+    expect(Number.isFinite(c.zoom)).toBe(true);
+    expect(c.bearing).toBeCloseTo(bearingDegrees(from, green), 6);
+  });
+
+  it('cameraForHole(tee,green) equals cameraFraming(tee,green)', () => {
+    const a = cameraForHole({ tee: from, green });
+    const b = cameraFraming(from, green);
+    expect(a.coordinate.lat).toBe(b.coordinate.lat);
+    expect(a.zoom).toBe(b.zoom);
+    expect(a.bearing).toBe(b.bearing);
+  });
+
+  it('also frames from a GPS position (from = player), not just the tee', () => {
+    const player = { lat: 40.7440, lng: -73.4530 };
+    const c = cameraFraming(player, green);
+    expect(c.coordinate.lat).toBeCloseTo((player.lat + green.lat) / 2, 6);
+    expect(c.bearing).toBeCloseTo(bearingDegrees(player, green), 6);
+  });
+});
+
+// ── movedBeyondYards (GPS camera re-anchor threshold) ─────────────────────────
+
+describe('movedBeyondYards — GPS re-anchor decision', () => {
+  const a = { lat: 40.7440, lng: -73.4530 };
+
+  it('is true when there is no prior anchor (first fix)', () => {
+    expect(movedBeyondYards(null, a, 20)).toBe(true);
+    expect(movedBeyondYards(undefined, a, 20)).toBe(true);
+  });
+
+  it('is false for a tiny sub-threshold move (no jitter)', () => {
+    const b = { lat: a.lat + 0.00003, lng: a.lng }; // ~3–4 yd north
+    expect(movedBeyondYards(a, b, 20)).toBe(false);
+  });
+
+  it('is true once the player moves past the threshold', () => {
+    const b = { lat: a.lat + 0.0005, lng: a.lng }; // ~55 yd north
+    expect(movedBeyondYards(a, b, 20)).toBe(true);
+  });
+
+  it('is false when standing still', () => {
+    expect(movedBeyondYards(a, { ...a }, 20)).toBe(false);
   });
 });
