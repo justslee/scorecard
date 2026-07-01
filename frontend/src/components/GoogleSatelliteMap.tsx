@@ -790,41 +790,39 @@ export default function GoogleSatelliteMap({
         </div>
       )}
 
-      {/* Tap-to-target readout — appears when the golfer taps a point on the map:
-          carry from where they are (or the tee) + distance left to the green. */}
+      {/* Tap-to-target readout — a compact vertical pill anchored to the LEFT edge
+          so it stays off the fairway/green (which run up the centre of the
+          down-the-fairway view). From-tee carry above, distance-to-green below. */}
       {!centerOnly && tapTarget && (
-        <div
-          className="absolute left-0 right-0 z-20 flex justify-center pointer-events-none"
-          style={{ top: "max(108px, calc(env(safe-area-inset-top) + 90px))" }}
-        >
+        <div className="absolute left-3 z-20 pointer-events-none" style={{ top: "36%" }}>
           <div
-            className="flex items-center gap-3 pointer-events-auto"
-            style={{ background: T.paper, border: `1px solid ${T.hairline}`, borderRadius: 12, padding: "8px 10px 8px 14px", boxShadow: "0 4px 14px rgba(0,0,0,0.22)" }}
+            className="pointer-events-auto"
+            style={{ position: "relative", background: T.paper, border: `1px solid ${T.hairline}`, borderRadius: 12, padding: "10px 12px 10px", boxShadow: "0 4px 14px rgba(0,0,0,0.22)", minWidth: 76 }}
           >
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
-                {tapTarget.fromGps ? "Carry" : "From tee"}
-              </div>
-              <div style={{ fontFamily: T.serif, fontSize: 23, lineHeight: 1, color: T.ink }}>
-                {tapTarget.carry ?? "—"}
-              </div>
-            </div>
-            <div style={{ width: 1, height: 26, background: T.hairline }} />
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
-                To green
-              </div>
-              <div style={{ fontFamily: T.serif, fontSize: 23, lineHeight: 1, color: T.accent }}>
-                {tapTarget.toGreen}
-              </div>
-            </div>
             <button
               onClick={() => { setTapTarget(null); clearTapMarker(); }}
               aria-label="Clear target"
-              style={{ marginLeft: 2, width: 22, height: 22, borderRadius: 999, border: "none", background: "transparent", color: T.pencil, cursor: "pointer", fontSize: 16, lineHeight: 1 }}
+              style={{ position: "absolute", top: 1, right: 3, width: 18, height: 18, border: "none", background: "transparent", color: T.pencil, cursor: "pointer", fontSize: 14, lineHeight: 1 }}
             >
               ×
             </button>
+            <div style={{ textAlign: "center", marginTop: 4 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
+                {tapTarget.fromGps ? "Carry" : "From tee"}
+              </div>
+              <div style={{ fontFamily: T.serif, fontSize: 22, lineHeight: 1, color: T.ink }}>
+                {tapTarget.carry ?? "—"}
+              </div>
+            </div>
+            <div style={{ height: 1, background: T.hairline, margin: "7px 2px" }} />
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
+                To green
+              </div>
+              <div style={{ fontFamily: T.serif, fontSize: 22, lineHeight: 1, color: T.accent }}>
+                {tapTarget.toGreen}
+              </div>
+            </div>
           </div>
         </div>
       )}
