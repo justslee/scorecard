@@ -5165,3 +5165,46 @@ OSM name matching + map tap-to-target + WHS handicap + round-map interactive/ful
 (ba2eaf9, landed by the loop session just before merge — flagged to owner post-merge).
 Board: Phase 1b card → Shipped. Provider default still mock: flip TEETIME_PROVIDER=affiliate
 once GOOGLE_PLACES_API_KEY is set (also needed for search half of the shipped work).
+
+---
+
+## 2026-07-01 — course-search race fix + append-only rendering (work item 2, frontend)
+
+Owner escalation: search results slow, reshuffle mid-read, show irrelevant towns
+("Bethpa" → Bethel Island/Bethanga). Implemented specs/course-search-fix-plan.md
+work item 2 (frontend half; a parallel builder did item 1, backend relevance/speed/
+local-first, in the same working tree — untouched here). Committed d20b289 to
+integration/next.
+
+- `frontend/src/lib/golf-api.ts` searchAllCourses(query, {signal, onResults}):
+  the AbortSignal was created in CourseSearch.tsx but never threaded through
+  (dead code) — now passed into all three legs (mapped, golfapi proxy incl. its
+  own fetch call, osm), restructured from Promise.all-then-sort into an
+  append-only merge (each leg calls onResults with the cumulative filtered/
+  deduped list as it settles; nothing already delivered is ever removed/reordered).
+- New `frontend/src/lib/course-search-session.ts`: owns the AbortController +
+  a stale-query guard (belt for abort-race browsers) so a superseded query's
+  results/errors can never reach the UI. Pure TS, independently unit-tested.
+- `frontend/src/components/CourseSearch.tsx`: wired to the session. Also fixed
+  2 new eslint-plugin-react-hooks `set-state-in-effect` errors that appeared
+  once the effect shape changed (pre-existing code was apparently under an
+  analyzer bailout that lifted after the refactor) — moved the query-change
+  reset into the input's onChange handler and made GPS-nearby state start
+  "loading" directly instead of setting it synchronously in an effect body.
+- `frontend/src/lib/course-search-helpers.ts`: added matchesQueryPrefix /
+  tokenizeCourseName / courseNameKey — mirrors the backend's
+  matches_query_prefix (stopwords golf/course/club/links/country/the stripped
+  from the query only; every query token must prefix-match a name token) as
+  defense in depth so towns never render even against a stale backend.
+
+Tests: +27 (helpers: prefix filter incl. Bethpage repro table; golf-api-search:
+append-only batches, dedupe, relevance filter, abort reaching every fetch leg;
+course-search-session: stale-guard under out-of-order resolution). Gates:
+tsc/lint clean, vitest 1292/1292 (was 1265), voice smoke 274/274, build green.
+SILENT (bug fix, not a new surface) — rides along in the bundle.
+
+NEXT (work item 3, needs both halves): persist courseLat/courseLng on Round,
+drive RoundPageClient's satellite map from the anchor instead of by-name
+resolution, and unify the Courses-tab select handler to route to course detail
+instead of bare /map/course. Touches resultToPayload/onSelectCourse callers in
+CourseSearch.tsx (unchanged by this item) plus round/new + RoundPageClient.
