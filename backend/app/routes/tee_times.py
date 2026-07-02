@@ -62,14 +62,18 @@ router = APIRouter(prefix="/api/tee-times", tags=["tee-times"])
 def _get_provider() -> TeeTimeProvider:
     """
     Return the active provider based on TEETIME_PROVIDER env var.
-    Falls back to MockTeeTimeProvider when the env is unset or unknown.
+
+    Default is AFFILIATE (real nearby courses + honest booking handoff) since
+    2026-07-02, when GOOGLE_PLACES_API_KEY went live in prod — the phase-1b
+    plan's flip point. TEETIME_PROVIDER=mock restores the demo provider; the
+    search route also falls back to mock results when affiliate finds nothing
+    (no location / unmapped area), so the screen never goes empty.
 
     This is the injection point for real providers:
-      TEETIME_PROVIDER=affiliate  → AffiliateLinkProvider (Phase 1b)
       TEETIME_PROVIDER=chronogolf → ChronogolfProvider    (Phase 2)
       TEETIME_PROVIDER=golfnow    → GolfNowProvider       (Phase 3)
     """
-    provider_name = os.getenv("TEETIME_PROVIDER", "mock")
+    provider_name = os.getenv("TEETIME_PROVIDER", "affiliate")
     if provider_name == "affiliate":
         return AffiliateLinkProvider()
     # TODO(Phase 2): if provider_name == "chronogolf": return ChronogolfProvider()
@@ -239,13 +243,21 @@ async def search_tee_times(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Provider error: {exc}") from exc
 
+    provider_name = provider.name
+    if not slots and not isinstance(provider, MockTeeTimeProvider):
+        # Real provider found nothing (no location / unmapped area) — fall back
+        # to the demo catalogue so the screen never goes empty. Labeled via
+        # `provider` so the client can tell handoff slots from demo slots.
+        provider_name = "mock-fallback"
+        slots = await MockTeeTimeProvider().search_availability(query)
+
     results = [TeeTimeSlotOut.from_svc(s) for s in slots]
     _search_cache.set(cache_key, [r.model_dump() for r in results])
 
     return SearchResponse(
         query=echo_query,
         results=results,
-        provider=provider.name,
+        provider=provider_name,
         cached=False,
     )
 
