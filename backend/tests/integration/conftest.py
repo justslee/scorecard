@@ -122,7 +122,8 @@ async def _db():
             await conn.execute(
                 text(
                     "TRUNCATE TABLE scores, games, round_players, player_groups,"
-                    " rounds, course_reviews, players, golfer_profiles, tournaments"
+                    " rounds, course_reviews, players, golfer_profiles, tournaments,"
+                    " tee_time_bookings"
                     " RESTART IDENTITY CASCADE"
                 )
             )

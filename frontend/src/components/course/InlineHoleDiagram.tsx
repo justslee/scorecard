@@ -134,6 +134,9 @@ export default function InlineHoleDiagram({
   // Flat coords array — passed to GoogleSatelliteMap as holeCoordinates.
   const [allCoords, setAllCoords] = useState<CourseCoordinates[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Course centre (every CourseData has one) — a guaranteed satellite fallback so
+  // the round map never drops to paper just because per-hole coords are missing.
+  const [courseCenter, setCourseCenter] = useState<{ lat: number; lng: number } | null>(null);
   // Runtime Google-map failure → fall through to the on-paper HoleDiagram below
   // instead of an empty black box.
   const [googleMapFailed, setGoogleMapFailed] = useState(false);
@@ -157,6 +160,7 @@ export default function InlineHoleDiagram({
 
         // Index holes and coordinates for O(1) per-hole lookup.
         setHoleIndex(indexByHoleNumber(course.holes));
+        if (course.location) setCourseCenter(course.location);
 
         // Prefer GolfAPI-verified coords; fall back to green/tee centroids derived
         // from the mapped OSM geometry so the satellite map still renders for
@@ -204,7 +208,10 @@ export default function InlineHoleDiagram({
   // show the satellite map inline (fills the height container, no fixed overlay).
   // autoDetectHole is disabled: the round page controls currentHole.
   // fitBounds crash fixed in v1.0.601 — cameraForHole() + setCamera() used instead.
-  if (loaded && renderer === 'google' && !googleMapFailed && allCoords.length > 0) {
+  const hasHoleCoords = allCoords.length > 0;
+  const canShowSatellite =
+    loaded && renderer === 'google' && !googleMapFailed && (hasHoleCoords || courseCenter != null);
+  if (canShowSatellite) {
     return (
       <div
         style={{
@@ -218,13 +225,17 @@ export default function InlineHoleDiagram({
         <GoogleSatelliteMap
           courseId={courseId}
           courseName=""
-          holeCoordinates={allCoords}
+          holeCoordinates={hasHoleCoords ? allCoords : []}
           currentHole={currentHole}
           onHoleChange={() => {
             // Round page controls the hole — ignore auto-detection updates.
           }}
           autoDetectHole={false}
           inline
+          // Per-hole framing when we have coords; otherwise a course-centred
+          // satellite view so the round map never falls back to paper.
+          centerOnly={!hasHoleCoords}
+          fallbackCenter={courseCenter ?? undefined}
           onFallback={() => setGoogleMapFailed(true)}
         />
       </div>

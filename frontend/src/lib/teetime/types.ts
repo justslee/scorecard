@@ -55,7 +55,8 @@ export interface TeeTimeSlot {
   time: string;
   /** Available player slots (1–4). */
   players: number;
-  priceUsd: number;
+  /** Price in USD — null when unknown (affiliate slots; prices are never fabricated). */
+  priceUsd: number | null;
   cartIncluded: boolean;
   distanceMiles: number;
   /** 0–5 star rating. */
@@ -66,6 +67,12 @@ export interface TeeTimeSlot {
   /** Identifies which provider generated this slot (mock | affiliate | golfnow | chronogolf). */
   provider: string;
   holes: 9 | 18;
+  /**
+   * True when `time` is the requested window start, NOT verified live
+   * availability (affiliate provider). Render as an estimate ("~"), never as
+   * a confirmed tee time.
+   */
+  estimated?: boolean;
 }
 
 // ─── Booking ──────────────────────────────────────────────────────────────────

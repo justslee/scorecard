@@ -3,6 +3,133 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-01 — tee-time phase 1b item C: hold-to-talk voice prefs (NOTICEABLE — integration/next, DONE)
+
+Voice slice of the tee-time booking epic (`specs/tee-time-booking-phase1b.md`,
+work item C). The decorative "Hold to talk" button on /tee-time is now the real
+voice-first path: hold → speak ("find me a tee time Saturday morning at
+Presidio, party of 4, under $80") → release → prefs update themselves and, when
+the utterance names a day/time (or says "go ahead / book it"), the search
+dispatches on its own.
+
+### What changed
+- `frontend/src/lib/voice/parseTeeTimePrefs.ts` (NEW) — deterministic tee-time
+  intent: day/period windows ("weekend" → Sat+Sun), course names matched on
+  distinctive tokens against the listed courses (generic words like "park"
+  never match alone), party size ("foursome", "three of us"), spoken price
+  ceilings ("under eighty dollars", "$50") kept apart from spoken distances
+  ("within ten miles"), go-ahead confirmations. Heuristics-first + optional
+  LLM pass with Zod validation + repair loop (pipeline.ts pattern); pure/offline
+- `frontend/src/lib/voice/schemas.ts` — `TeeTimePrefsParseResultSchema` (partial
+  by design: every field optional so "party of four" alone is a valid parse)
+- `frontend/src/lib/teetime/voice-prefs.ts` (NEW) — pure appliers: spoken windows
+  select/create prefs windows, named courses replace the selection (+ radius
+  widened so a named course is never silently filtered out), party size pads
+  with "+1" guest placeholders (real people never removed), calm ack line
+- `frontend/src/lib/teetime/query.ts` — `maxPriceUsd` rides on every query
+- `frontend/src/app/tee-time/page.tsx` — hold-to-talk wired to the same capture
+  path as the rest of the app (VoiceRecorder → /api/voice/transcribe → parser);
+  exchange shown in the page's Transcript idiom; unrecognized speech gets a
+  gentle fallback line, never an error state; Brief shows "Budget" when spoken
+- Tests: `parseTeeTimePrefs.test.ts` + `voice-prefs.test.ts` (+37 vitest);
+  9 deterministic tee-time cases in `voice-tests` (runner gained the
+  `/api/parse-tee-time` lane)
+
+### Gate results (all green)
+- `tsc --noEmit` clean; `eslint` clean; `vitest` 1265/1265 (was 1228);
+  voice smoke 274/274 (was 265); `next build` succeeds
+
+### Classification: NOTICEABLE (the tee-time screen becomes voice-first)
+Rough edges for a polish pass: no live interim transcript while holding (final
+Deepgram text only); clock times ("around 8am") not parsed — periods only;
+guest placeholders show "hdcp 0" in the group list; day abbreviations
+("sat"/"sun") unrecognized.
+
+---
+
+## 2026-07-01 — tee-time phase 1b item B: frontend real-data wiring (NOTICEABLE — integration/next, DONE)
+
+Frontend slice of the tee-time booking epic (`specs/tee-time-booking-phase1b.md`,
+work item B). The /tee-time page now searches with the golfer's real location,
+lists real nearby courses, renders affiliate results as honest estimates/handoffs,
+and produces a real .ics calendar file.
+
+### What changed
+- `frontend/src/lib/teetime/dates.ts` (NEW) — day-label → date logic; each window
+  searches its OWN day (fixes the Sunday-window-got-Saturday's-date bug); local-time
+  ISO formatting (old `nextSaturday()` used UTC and drifted near midnight)
+- `frontend/src/lib/teetime/query.ts` (NEW) — pure prefs → TeeTimeQuery fan-out
+  (`buildTeeTimeQueries`), area ("lat,lng") included on every query when known
+- `frontend/src/lib/teetime/location.ts` (NEW) — non-blocking geolocation via
+  `GPSWatcher.getCurrentPosition` (dynamic import), last-known "lat,lng" persisted
+  under `looper_teetime_last_area`; search never waits on the permission prompt
+- `frontend/src/lib/teetime/courses.ts` (NEW) — `searchNearby` (existing course-search
+  client) → prefs `CourseOption[]`: honest haversine distances, favorites flagged +
+  pre-selected (else nearest 3), capped at 8; hardcoded SF `DEFAULT_COURSES` kept
+  only as offline/dev fallback
+- `frontend/src/lib/teetime/ics.ts` (NEW) — zero-dep RFC 5545 generator with VALARM
+  (-PT2H) + blob download; "Add to calendar · Set reminder" now does the real thing
+- `frontend/src/app/tee-time/page.tsx` — wires all of the above; Radar pins render
+  the golfer's actual selected courses (name + relative distance, capped at 4);
+  Confirmed screen: `needs_human` reads as a handoff ("Held" stamp, "Book on the
+  course site →" / "Call the course to book", no fabricated confirmation number),
+  estimated slots render "~" times and no invented price
+- Tests: `dates.test.ts`, `query.test.ts`, `ics.test.ts`, `courses.test.ts` (+35)
+
+### Gate results (all green)
+- `tsc --noEmit` clean; `eslint` clean; `vitest` 1228/1228 (was 1193);
+  voice smoke 265/265; `next build` succeeds
+
+### Classification: NOTICEABLE (user-visible once TEETIME_PROVIDER=affiliate; the
+prefs course list + calendar button + honest confirm are visible even on mock)
+Item C (voice prefs) note: prefs state shape unchanged — `windows: TimeWindow[]`,
+`courses: CourseOption[]` (now imported from `@/lib/teetime/courses`), `maxMiles`,
+`group`; voice should mutate those via the existing setters; query building is
+centralized in `buildTeeTimeQueries` so voice-set prefs flow through untouched.
+
+---
+
+## 2026-07-01 — tee-time phase 1b item A: real courses + cache + booking persistence (SILENT — integration/next, DONE)
+
+Backend real-data slice of the tee-time booking epic (`specs/tee-time-booking-phase1b.md`,
+work item A). Default provider stays `mock` — nothing user-visible until item B wires
+the frontend, so this rides the bundle silently.
+
+### What changed
+- `backend/app/services/course_finder.py` (NEW) — Google Places / Mapbox / de-dupe
+  helpers extracted from `routes/course_search.py` (shared, no self-HTTP); Places
+  field mask now includes `websiteUri` + `rating`
+- `backend/app/services/tee_times/affiliate.py` (NEW) — `AffiliateLinkProvider`:
+  real nearby courses (OSM around lat/lng, Places text search, Mapbox fallback),
+  ONE `estimated=True` slot per course per window at the window start, `price_usd=None`
+  (never fabricated), `booking_url` from the Places website; `book()` → `needs_human`
+- `backend/app/services/tee_times/search_cache.py` (NEW) — 15-min TTL search cache
+  (in-memory + `backend/data/tee_time_search_cache.json`), injectable-store pattern
+- `backend/app/services/tee_times/base.py` — slot gains `estimated: bool = False`;
+  `price_usd` now `float | None`
+- `backend/app/routes/tee_times.py` — `TEETIME_PROVIDER=affiliate` wired (default
+  still mock); search cache replaces hardcoded `cached=False`; `POST /book` gains
+  `owner_id = Depends(current_user_id)` + persists EVERY attempt (incl. needs_human);
+  NEW `GET /api/tee-times/bookings` (owner-scoped, newest first)
+- `backend/app/db/models.py` + `backend/migrations/versions/0007_010_tee_time_bookings.py`
+  — `TeeTimeBooking` ORM + Alembic migration (revision 010)
+- `frontend/src/lib/teetime/types.ts` — `estimated?: boolean`; `priceUsd: number | null`
+  (+ two null-guards in `app/tee-time/page.tsx` to keep tsc green)
+- Tests: `tests/test_tee_time_affiliate.py`, `tests/test_tee_time_search_cache.py`,
+  `tests/integration/test_tee_time_bookings.py` (+ conftest truncates the new table)
+
+### Gate results (all green)
+- backend: `ruff check .` clean; `pytest` 844 passed / 45 skipped (was 821/34 —
+  new integration tests skip locally, run on CI Postgres)
+- frontend: `tsc --noEmit` clean; `vitest` 1193/1193; `eslint` clean; voice smoke 265/265
+
+### Classification: SILENT (backend-only; provider default unchanged)
+Item B (frontend wiring) consumes: `estimated` flag, nullable `priceUsd`,
+`GET /api/tee-times/bookings` (camelCase: slotId, courseId, courseName, date, time,
+partySize, priceUsd, status, bookingUrl, provider, confirmationCode, createdAt).
+
+---
+
 ## 2026-06-29 — map-crashproof hotfix (NOTICEABLE — feat/map-crashproof, DONE — pushed to remote)
 
 iOS SIGTRAP crash on map open eliminated. Root cause: `fitBounds()` in the
@@ -4815,3 +4942,213 @@ Did: extracted the GPS camera-follow re-anchor decision into a pure tested helpe
 Awaiting owner: (a) confirm the map framing on #85 (then cut a TestFlight build +
 merge), (b) direction on the next epic — the actionable ones need his decision
 (multi-user/social) or creds (tee-time) or a spec sign-off (tap-to-target plays-like).
+
+---
+
+## 2026-07-01 — SHIPPED map polish (PR #85) → TestFlight v1.0.624 (owner: "ship it")
+
+Merged #85 to main (877652b). Build v1.0.624 (202607011339) VALID in App Store
+Connect (verified via ASC API — 612/615 earlier had been dropped by an Apple hold
+that has since cleared). Bundle: down-the-fairway camera bearing (hole plays up the
+screen, tee box at bottom), tee-box framing, GPS re-anchor to the player, Paper⇄
+Satellite toggle (persisted, default satellite), yardage-book themed compact
+distance panel, guide-line/wind fixes.
+
+CI caught a real miss: I'd flipped getMapViewPref default holediagram→satellite but
+only updated one of TWO test files (ran targeted vitest locally, not the full suite).
+Fixed satellite-map-pref.test.ts; full suite 1169/1169. LESSON: run `npx vitest run`
+(whole suite) before pushing, and verify TestFlight builds land via the ASC API.
+
+---
+
+## 2026-07-01 (loop tick) — Google Places course search + map tap-to-target (PR #86)
+
+Owner reported search broken ("bethpage black" → nothing). Root cause: fragile
+OSM name-match + Mapbox geocoding + metered GolfAPI. FIX: added Google Places API
+(New) text search as a robust source in backend course_search.py (_search_google_places
++ _dedupe_by_name; search_courses merges OSM-by-name + Places + OSM-near-Places).
+Frontend unchanged (backend results already surface; map renders from a center
+point). NEEDS OWNER SETUP: enable "Places API (New)" + a SERVER key (not the iOS
+bundle key) → GOOGLE_PLACES_API_KEY in looper/prod. config-status now reports it.
+Graceful no-op without the key.
+
+Also this tick: map tap-to-target readout (carry + to-green on tap) — first DEM-free
+slice of ux-tap-to-target (PR #86, rides along).
+
+Gates: backend ruff + pytest green (new test_course_search); frontend tsc/lint/
+full-vitest 1173/voice 265/build green. Backend change → deploys on merge to main.
+
+---
+
+## 2026-07-01 (loop tick) — OSM name-matching improvement (rides on #86)
+
+Complement to the Google Places search fix: extracted osm_name_filter() — matches
+all significant words (any order), drops generic golf stopwords, so "pebble golf"
+matches "Pebble Beach Golf Links" and "bethpage black golf course" matches OSM's
+"Bethpage Black". Works NOW without the Places key (which is still needed for
+multi-course facilities OSM doesn't name per-course). Used by both OSM search
+functions. 4 new tests; backend ruff + pytest green. PR #86 bundle.
+
+---
+
+## 2026-07-01 (loop tick) — map readout to the side + WHS handicap estimate
+
+Owner feedback mid-tick: the tap-target readout tile covered the green → redesigned
+it as a compact VERTICAL pill anchored to the LEFT edge (off the fairway/green).
+Verified in the simulator (green now visible). Committed a667e74.
+
+Loop tick (reconciled: Partners tab already wired to /players; handicap was
+manual-only with differentials removed as "fabricated"): built a correct, fully-
+tested WHS Handicap Index engine (frontend/src/lib/handicap.ts — scoreDifferential,
+official lowest-N+adjustment table, estimateHandicapFromRounds best-8-of-20 over
+completed 18-hole rounds; 15 tests). Wired into the profile: a manual handicap
+still wins; when none is set + ≥3 rounds, show the computed estimate labelled
+"Estimated from your last N rounds." Uses real tee rating/slope when available,
+neutral 72/113 defaults otherwise (sharpens as course data fills in). Commit 7e076ae.
+
+All rides in PR #86 (which also has: Google Places search [needs owner's Places key],
+OSM name matching, map tap-target lines + reticle + readout). Gates: full vitest
+1188/1188, voice 265/265, tsc/lint/build green.
+
+Still paused: voice booking agent (Fable/Mythos access) — scaffold on feat/voice-booking-agent.
+
+---
+
+## 2026-07-01 (loop tick) — green-slope Q + handicap AGS cap
+
+Owner asked (twice) about USGS-3DEP green-slope topology. Verified + answered: it's
+built (elevation.py: EPQS + 3DEP batch sampler, Postgres cache; compute_green_slope
+= 3x3 DEM grid around the green → direction/severity/description), wired into the
+caddie (course-intel on caddie open → effective yards + "Green slope: <desc>" in
+context; slope_miss_advice gives "where to miss" in the recommendation reasoning),
+and already well-tested (test_slope_advice / test_green_slope_ingest / etc.). It gives
+good/bad-miss guidance (overall tilt), not putt-reading — which matches what the owner
+wants. Known gap (NOT built — owner is redesigning the hole card in Claude Design): the
+round-card "ELEV +3ft" is a hardcoded placeholder; wiring it to the real per-hole data
+is deferred into that design pass.
+
+Loop tick (board query is plan-gated; reconciled against code — active threads all
+blocked/under-design): correctness fix to the WHS handicap engine I shipped — cap each
+hole at par+5 for the Adjusted Gross Score (WHS max for players without an established
+index), so blow-up holes no longer inflate the estimate. Pure + non-circular. +1 test;
+fixed the mkRound fixture. Commit 12c4b9c. Gates: full vitest 1193/1193, voice 265/265.
+
+Still blocked on owner: GOOGLE_PLACES_API_KEY (search half of #86), Fable/Mythos
+(voice booking agent). Deferred to Claude Design: round hole-card map + real ELEV/PLAYS.
+
+---
+
+## 2026-07-01 (loop tick) — security review of PR #86 search endpoint
+
+Board query plan-gated; #86 is a 13-commit bundle nearing ship (awaits owner Places
+key), and its NEW backend endpoint (Google Places course search) hadn't had the
+CLAUDE.md-required security review. Reviewed it:
+- FIXED (A): _search_mapbox interpolated the raw query into the Mapbox URL path →
+  path-injection. Now quote()-encoded via _mapbox_geocode_url(); +2 tests. (c55dfdf)
+- Clean: Google Places (JSON body + key in header), OSM (quotes/backslashes stripped),
+  graceful [] on error.
+- FOR OWNER (B): /api/courses/search is unauthenticated but now calls the PAID Places
+  API → anonymous quota-burn risk. Frontend already sends the Clerk token via fetchAPI,
+  so gating it behind Depends(current_user_id) would be transparent. Left as owner
+  decision (shifts auth posture; matches other public course-data endpoints). Noted on
+  the PR. Not pinged (minor decision, not a blocker).
+
+Gates: ruff clean; full backend suite 821 passed / 34 skipped.
+
+---
+
+## 2026-07-01 (builder) — voice booking agent PRE-BUILD (phase 1b-D / epic phase 4)
+
+Built work item D of specs/tee-time-booking-phase1b.md: the outbound voice booking
+agent as PURE modules + a pro-shop simulator — NO real telephony, launch stays
+owner-gated (budget + TCPA attorney). Ported specs/tee-time-voice-agent.md from
+feat/voice-booking-agent onto integration/next, amended per the locked eng-lead
+decision: NO card vault — payment is handed to the human staffer (epic §Track B);
+the dialog declines card requests → needs_human.
+
+- backend/app/services/voice_booking/: types, dialog (state machine: opener →
+  slot negotiation → confirm → outcome), ivr (menu detect + DTMF choice),
+  outcome (CallOutcome → stable BookingResult statuses), compliance (the Track B
+  gates AS CODE: verified-landline allowlist, AI-disclosure-first line, 8am–9pm
+  local hours, no-audio-storage flag, suppression list), phone_lookup (Places →
+  pro-shop number; None without key), simulator (7 deterministic personas),
+  provider (VoiceCallProvider behind the TeeTimeProvider ABC), telephony (STUB —
+  RuntimeError unless VOICE_BOOKING_ENABLED=1 + Twilio creds, then NotImplemented).
+- Route: POST /api/tee-times/book-by-call/simulate (owner-auth; dev/QA surface;
+  never dials). NO real-call route yet.
+- Tests: 51 pure unit tests + 5 route integration tests (CI's Postgres gate).
+  Gates: ruff clean; full backend suite 895 passed / 51 skipped.
+
+Silent item (backend-only; nothing owner-visible on TestFlight — the simulate
+endpoint is a QA surface). Real-call track still needs: telephony platform choice
+(Twilio DIY vs Vapi/Retell), creds + number + STIR/SHAKEN, per-course tz + verified
+landline allowlist, TCPA attorney review, first supervised test call.
+
+---
+
+## 2026-07-01 (owner-directed session, Fable 5) — TEE-TIME BOOKING EPIC: Phase 1b + Phase 4 pre-build
+
+Owner asked (in-session) to drive the tee-time booking EPIC (board card 38e1c525…7050,
+plan specs/tee-time-booking-plan.md). Recon found Phase 1 scaffolding ALREADY on
+integration/next (TeeTimeProvider ABC + mock + /api/tee-times/* + real 3-phase UI), so
+scoped "Phase 1b — make it real" (specs/tee-time-booking-phase1b.md) and ran 4 Fable 5
+builders sequentially/parallel on the #86 bundle:
+
+- A `7b10be1` backend real data: AffiliateLinkProvider (real courses via extracted
+  services/course_finder.py — OSM/Places/Mapbox; NEVER fabricates availability; book() →
+  needs_human + bookingUrl), 15-min TTL search cache (services/tee_times/search_cache.py),
+  owner-scoped tee_time_bookings table + Alembic 0007 + GET /api/tee-times/bookings.
+  Slot gained estimated:bool; priceUsd nullable (3-layer sync).
+- B `304a19b` frontend real data: geolocated area on every query (lib/teetime/location.ts,
+  GPSWatcher pattern), real nearby courses replace DEFAULT_COURSES (+ radar pins), honest
+  "Held for you to book → Book on the course site" confirm, zero-dep ICS calendar with
+  VALARM (lib/teetime/ics.ts), per-window date fix (Sunday ≠ Saturday; lib/teetime/dates.ts).
+- C `bb05ae6` hold-to-talk voice prefs: parseTeeTimePrefs intent (Zod + heuristics +
+  repair loop per pipeline.ts), appliers in lib/teetime/voice-prefs.ts, auto-advance on
+  complete request; +9 voice-tests cases (new /api/parse-tee-time lane). NOTICEABLE.
+- D `87424b9` voice booking agent PRE-BUILD (epic Phase 4, "paused for Fable 5" → unblocked):
+  services/voice_booking/ pure modules (dialog state machine, IVR nav, outcome→BookingResult,
+  compliance-as-code: landline allowlist, disclosure-first, 8am–9pm, STORE_AUDIO=False,
+  suppression list — all fail closed) + 7-persona pro-shop simulator + owner-auth'd
+  POST /api/tee-times/book-by-call/simulate. NO card vault (eng-lead call: human takes
+  payment, per plan Track B). telephony.py stub raises unless VOICE_BOOKING_ENABLED+creds,
+  then still NotImplemented — launch stays owner-gated (budget + TCPA attorney).
+
+Mid-session the other loop session committed e22b9c0 (auth on /api/courses/search) — rode along.
+
+Combined-tree gates (re-run by eng-lead): ruff clean; pytest 895 passed/51 skipped; tsc/lint
+clean; vitest 1265/1265; voice smoke 274/274; next build green. Adversarial + security
+review (fresh context): 1 medium finding — /api/tee-times/search unauthenticated + paid
+Places — VERIFIED FALSE POSITIVE (main.py:81 registers the router with require_owner);
+cleared: IDOR on bookings, OSM/Mapbox injection, PII/transcript persistence (none), no
+live-dial path reachable. Follow-up nit: RFC-5545-escape bookingUrl in ics.ts (defensive).
+
+Board: sub-card "Tee-time booking Phase 1b" (Needs Review, Major) 3901c525…b74b; epic card
+phases updated. Default provider still mock — flip TEETIME_PROVIDER=affiliate after the
+owner sets GOOGLE_PLACES_API_KEY. Owner actions unchanged: Lightspeed creds email, GolfNow
+affiliate application, voice-track go (platform/budget/lawyer/allowlist).
+
+Housekeeping: gitignored the stale accidental nested clone ./scorecard/ (634M, old commit,
+no unique work — owner may delete it).
+
+Polish backlog (from builders): live interim transcript while holding, clock-time parsing
+("around 8am"), sat/sun abbreviations, guest placeholder hdcp, ICS share-sheet fallback if
+WKWebView download is flaky, ICS URL escaping.
+
+---
+
+## 2026-07-01 — round map: interactive inline + fullscreen blow-up
+
+Owner wants the hole map interactive + zoomable to a big fullscreen view. The native
+Google map can't live inside the swipeable/animated hole card (renders behind the
+webview, can't track CSS drag/animation). So: kept the interactive inline map in the
+round view, added an expand button → full-screen interactive map overlay (fixed
+inset-0, whole screen, pan + tap-target + hole nav + GPS; hole changes sync back).
+New useHoleCoordinates hook shares per-hole coords between inline + fullscreen.
+Verified in sim: fullscreen fills the entire screen (Bethpage, hole framed). Pushed
+to integration/next (ba2eaf9). NEXT: one-card composition (map inside the hole card
+replacing the schematic) — to land with the owner's Claude Design layout.
+
+Also this session: security(search) — URL-encoded Mapbox query + auth on /search
+(paid Places). Places key saved (goes live on backend restart; verify config-status
++ a real search). Fable session pushed tee-time phase 1b-A to the same branch.

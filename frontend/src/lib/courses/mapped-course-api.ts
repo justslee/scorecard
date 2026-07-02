@@ -101,26 +101,44 @@ export function mappedCourseToCoordinates(course: CourseData): CourseCoordinates
 
     let green: { lat: number; lng: number } | undefined;
     let tee: { lat: number; lng: number } | undefined;
+    // The golf=hole centerline (first point = tee, last = green center) — the most
+    // reliable green/tee source, used as a fallback when polygons are absent.
+    let centerline: number[][] | undefined;
     const hazards: Array<{ type: string; lat: number; lng: number }> = [];
 
     for (const feat of features) {
       const ft = (feat.properties?.featureType as string | undefined) ?? '';
       const geom = feat.geometry;
-      if (!geom || geom.type !== 'Polygon') continue;
+      if (!geom) continue;
 
-      const centroid = _polygonCentroid(geom as GeoJSON.Polygon);
-      if (!centroid) continue;
-
-      if (ft === 'green' && !green) {
-        green = centroid;
-      } else if (ft === 'tee' && !tee) {
-        tee = centroid;
-      } else if (ft === 'bunker' || ft === 'water') {
-        hazards.push({ type: ft, ...centroid });
+      if (geom.type === 'Polygon') {
+        const centroid = _polygonCentroid(geom as GeoJSON.Polygon);
+        if (!centroid) continue;
+        if (ft === 'green' && !green) green = centroid;
+        else if (ft === 'tee' && !tee) tee = centroid;
+        else if (ft === 'bunker' || ft === 'water') hazards.push({ type: ft, ...centroid });
+      } else if (geom.type === 'LineString' && (ft === 'hole' || !centerline)) {
+        // Prefer the feature explicitly typed 'hole'; else the first LineString.
+        const coords = (geom as GeoJSON.LineString).coordinates;
+        if (coords.length >= 2) centerline = coords;
       }
     }
 
-    // GPSMapView uses green as the primary distance target; skip holes without one.
+    // Fall back to the hole centerline endpoints so a hole always yields a green
+    // (and tee) even when its green/tee aren't tagged as polygons — the previous
+    // behaviour skipped these holes, leaving the satellite map with no coords.
+    if (centerline) {
+      if (!tee) {
+        const first = centerline[0];
+        tee = { lat: first[1], lng: first[0] };
+      }
+      if (!green) {
+        const last = centerline[centerline.length - 1];
+        green = { lat: last[1], lng: last[0] };
+      }
+    }
+
+    // Green is the primary distance target; skip holes with no derivable green.
     if (!green) continue;
 
     coords.push({

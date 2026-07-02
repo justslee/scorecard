@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getGolferProfileAsync, saveGolferProfileAsync, saveGolferBagAsync, getRoundsAsync } from "@/lib/storage-api";
 import { calculateTotals } from "@/lib/types";
+import { estimateHandicapFromRounds } from "@/lib/handicap";
 import { getOwnerPlayerId } from "@/lib/round-owner";
 import type { GolferProfile, Round, CourseReview } from "@/lib/types";
 import { getMyReviews } from "@/lib/api";
@@ -275,6 +276,7 @@ export default function ProfilePage() {
           editing={editing}
           draft={draft}
           setDraft={setDraft}
+          rounds={rounds}
         />
         {/* Real-data sections lead; placeholder at bottom (item 2 re-order) */}
         <Bag
@@ -592,14 +594,22 @@ interface HandicapModuleProps {
   editing: boolean;
   draft: IdentityDraft;
   setDraft: React.Dispatch<React.SetStateAction<IdentityDraft>>;
+  rounds: Round[];
 }
 
-function HandicapModule({ profile, loading, editing, draft, setDraft }: HandicapModuleProps) {
-  // Real index value; "—" while loading or when not set.
+function HandicapModule({ profile, loading, editing, draft, setDraft, rounds }: HandicapModuleProps) {
+  // A manually-set handicap always wins. When none is set, show a computed WHS
+  // estimate from the owner's completed 18-hole rounds (≥3 needed), clearly
+  // labelled — it sharpens as courses gain rating/slope data.
+  const estimate =
+    !loading && profile?.handicap == null ? estimateHandicapFromRounds(rounds) : null;
+
   const indexDisplay = loading
     ? "—"
     : profile?.handicap != null
     ? String(profile.handicap)
+    : estimate
+    ? estimate.index.toFixed(1)
     : "—";
 
   return (
@@ -682,7 +692,12 @@ function HandicapModule({ profile, loading, editing, draft, setDraft }: Handicap
         </div>
 
         {/* Status line: honest empty-state or neutral note */}
-        {!editing && profile?.handicap == null && !loading && (
+        {!editing && profile?.handicap == null && !loading && estimate && (
+          <div style={{ fontFamily: T.serif, fontSize: 13, color: T.pencil, fontStyle: "italic", marginTop: 6 }}>
+            Estimated from your last {estimate.roundsUsed} round{estimate.roundsUsed === 1 ? "" : "s"} · tap Edit to set your own.
+          </div>
+        )}
+        {!editing && profile?.handicap == null && !loading && !estimate && (
           <div style={{ fontFamily: T.serif, fontSize: 13, color: T.pencilSoft, fontStyle: "italic", marginTop: 6 }}>
             No handicap set — tap Edit to add one.
           </div>

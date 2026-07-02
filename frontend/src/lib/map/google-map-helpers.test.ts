@@ -24,6 +24,7 @@ import {
   bearingDegrees,
   cameraFraming,
   movedBeyondYards,
+  tapTargetDistances,
 } from './google-map-helpers';
 
 // ── yardsToMeters ─────────────────────────────────────────────────────────────
@@ -536,5 +537,43 @@ describe('movedBeyondYards — GPS re-anchor decision', () => {
 
   it('is false when standing still', () => {
     expect(movedBeyondYards(a, { ...a }, 20)).toBe(false);
+  });
+});
+
+// ── tapTargetDistances (tap-to-target readout) ────────────────────────────────
+
+describe('tapTargetDistances — carry + distance-to-green for a tapped point', () => {
+  const tap   = { lat: 40.7445, lng: -73.4525 };
+  const green = { lat: 40.7451, lng: -73.4514 };
+  const tee   = { lat: 40.7430, lng: -73.4546 };
+  const gps   = { lat: 40.7438, lng: -73.4535 };
+  // Deterministic fake distance: yards ∝ great-circle-ish; just needs to be a
+  // stable function of the two points for the test.
+  const dist = (p: { lat: number; lng: number }, q: { lat: number; lng: number }) =>
+    Math.hypot(p.lat - q.lat, p.lng - q.lng) * 100000;
+
+  it('carry from the tee when off the hole; rounds to whole yards', () => {
+    const t = tapTargetDistances(tap, green, tee, false, dist);
+    expect(t.carry).toBe(Math.round(dist(tee, tap)));
+    expect(t.toGreen).toBe(Math.round(dist(tap, green)));
+    expect(t.fromGps).toBe(false);
+  });
+
+  it('carry from the GPS position when on the hole (fromGps=true)', () => {
+    const t = tapTargetDistances(tap, green, gps, true, dist);
+    expect(t.carry).toBe(Math.round(dist(gps, tap)));
+    expect(t.fromGps).toBe(true);
+  });
+
+  it('carry is null when there is no origin (no tee, off hole)', () => {
+    const t = tapTargetDistances(tap, green, null, false, dist);
+    expect(t.carry).toBeNull();
+    expect(t.fromGps).toBe(false);
+    expect(t.toGreen).toBe(Math.round(dist(tap, green)));
+  });
+
+  it('fromGps is false when flagged but no origin', () => {
+    const t = tapTargetDistances(tap, green, null, true, dist);
+    expect(t.fromGps).toBe(false);
   });
 });
