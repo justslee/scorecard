@@ -1,17 +1,48 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, Caddy } from "./tokens";
+
+/** Long-press guards for hold-to-talk surfaces (no text selection / iOS callout). */
+const HOLD_STYLE = {
+  touchAction: "none",
+  WebkitUserSelect: "none",
+  userSelect: "none",
+  WebkitTouchCallout: "none",
+} as CSSProperties;
 
 export type VoiceState = "idle" | "listening" | "thinking" | "speaking";
 export type VoiceTurn = { role: "user" | "caddy"; text: string };
 
-export function VoiceOrb({ state = "idle", accent, onTap }: { state?: VoiceState; accent: string; onTap?: () => void }) {
+export function VoiceOrb({
+  state = "idle",
+  accent,
+  onTap,
+  onPressStart,
+  onPressEnd,
+}: {
+  state?: VoiceState;
+  accent: string;
+  onTap?: () => void;
+  /** Hold-to-talk: press opens the live burst + unmutes the mic… */
+  onPressStart?: () => void;
+  /** …release stops the mic input (the caddie replies aloud). */
+  onPressEnd?: () => void;
+}) {
   const bars = state === "listening" || state === "speaking";
+  const holdable = !!onPressStart;
   return (
     <button
-      onClick={onTap}
+      onClick={holdable ? undefined : onTap}
+      onPointerDown={holdable ? onPressStart : undefined}
+      onPointerUp={holdable ? onPressEnd : undefined}
+      onPointerLeave={holdable ? onPressEnd : undefined}
+      onPointerCancel={holdable ? onPressEnd : undefined}
+      onContextMenu={holdable ? (e) => e.preventDefault() : undefined}
       style={{
+        // Hold-to-talk: suppress long-press text selection / iOS callout.
+        ...(holdable ? HOLD_STYLE : {}),
         position: "relative",
         width: 36,
         height: 36,
@@ -127,7 +158,8 @@ export function VoiceSheet({
   caddy,
   voiceState,
   turns = [],
-  onMicTap,
+  onMicDown,
+  onMicUp,
 }: {
   open: boolean;
   onClose: () => void;
@@ -135,7 +167,9 @@ export function VoiceSheet({
   caddy: Caddy;
   voiceState: VoiceState;
   turns?: VoiceTurn[];
-  onMicTap: () => void;
+  /** Hold-to-talk: press opens the mic, release sends the turn. */
+  onMicDown: () => void;
+  onMicUp: () => void;
 }) {
   const hasTurns = turns.length > 0;
 
@@ -216,7 +250,7 @@ export function VoiceSheet({
             ) : (
               <div style={{ minHeight: 80 }}>
                 <div style={{ fontFamily: T.serif, fontSize: 26, lineHeight: 1.2, letterSpacing: -0.5, color: T.ink, fontStyle: "italic" }}>
-                  <span style={{ color: T.pencilSoft }}>Tap the mic and ask anything&hellip;</span>
+                  <span style={{ color: T.pencilSoft }}>Hold the mic and ask anything&hellip;</span>
                 </div>
                 <div style={{ marginTop: 18 }}>
                   <div style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.4, color: T.pencilSoft, textTransform: "uppercase", marginBottom: 8 }}>
@@ -259,16 +293,21 @@ export function VoiceSheet({
           }}
         >
           <div style={{ flex: 1, fontFamily: T.mono, fontSize: 10, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" }}>
-            {voiceState === "listening" && "Hold and talk · release to send"}
+            {voiceState === "listening" && "Listening · release when done"}
             {voiceState === "thinking" && "One sec…"}
-            {voiceState === "speaking" && "Tap to interrupt"}
-            {voiceState === "idle" && "Tap to talk"}
+            {voiceState === "speaking" && "Hold to cut in"}
+            {voiceState === "idle" && "Hold to talk"}
           </div>
           <motion.button
-            onClick={onMicTap}
+            onPointerDown={onMicDown}
+            onPointerUp={onMicUp}
+            onPointerLeave={onMicUp}
+            onPointerCancel={onMicUp}
+            onContextMenu={(e) => e.preventDefault()}
             animate={voiceState === "listening" ? { scale: [1, 1.06, 1] } : { scale: 1 }}
             transition={{ duration: 1.3, repeat: voiceState === "listening" ? Infinity : 0 }}
             style={{
+              ...HOLD_STYLE,
               width: 64,
               height: 64,
               borderRadius: 99,

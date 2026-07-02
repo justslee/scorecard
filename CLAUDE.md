@@ -24,7 +24,8 @@ See @tasks/todo.md for the build plan and @ops/mac/RUN.md for how the team runs.
 - Games engine: `frontend/src/lib/games.ts` (15 formats; isolated — safe to extend with tests)
 - Caddie: `frontend/src/components/CaddiePanel.tsx` + `backend/app/caddie/*`
 - Course / GolfAPI: `frontend/src/lib/golf-api.ts` + `backend/app/routes/golf.py`
-- Backend storage = JSON files in `backend/data/` (no real DB yet)
+- Backend storage = Postgres + PostGIS via async SQLAlchemy (`backend/app/db/`),
+  schema versioned with Alembic (`backend/migrations/versions/`, guarded — don't edit)
 
 ## Conventions
 - TypeScript strict. Match the surrounding code's style, naming, and comment density.

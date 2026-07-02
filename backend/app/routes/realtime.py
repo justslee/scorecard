@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.caddie.session import sessions, get_owned_session
-from app.caddie.personalities import load_personality
+from app.caddie.personalities import load_personality, personality_visible
 from app.caddie.voice_prompts import build_realtime_instructions
 from app.caddie.setup_voice import SETUP_TOOLS, build_setup_instructions
 from app.caddie import memory as memory_mod
@@ -105,7 +105,14 @@ async def start_realtime_session(
     """
     session = await get_owned_session(request.round_id, user_id)
 
-    personality = await load_personality(request.personality_id)
+    # Visibility gate (matches session_voice / talk_to_caddie): never render
+    # another user's private persona prompt into the returned instructions.
+    persona_id = (
+        request.personality_id
+        if await personality_visible(request.personality_id, user_id)
+        else "classic"
+    )
+    personality = await load_personality(persona_id)
     memories = await memory_mod.get_top_memories(user_id) if user_id else []
     instructions = build_realtime_instructions(personality, session=session, memories=memories)
 
@@ -121,7 +128,7 @@ async def start_realtime_session(
 
     # Targeted column update — won't clobber a concurrent /session/shot append.
     await sessions.set_realtime_session_id(
-        request.round_id, realtime_session_id, personality_id=request.personality_id,
+        request.round_id, realtime_session_id, personality_id=persona_id,
     )
 
     return StartRealtimeSessionResponse(

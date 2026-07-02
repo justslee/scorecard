@@ -89,6 +89,52 @@ DEFAULT_TOOLS: list[dict] = [
             "properties": {},
         },
     },
+    {
+        "type": "function",
+        "name": "get_conditions",
+        "description": (
+            "Current weather (wind, temperature) plus how the hole plays — the "
+            "plays-like yardage delta from elevation. Always call this before "
+            "discussing wind, temperature, or effective distance."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "hole_number": {
+                    "type": "integer",
+                    "description": "Hole to evaluate (1-18). Omit for the current hole.",
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "name": "get_player_profile",
+        "description": (
+            "The player's handicap, club distances, and miss tendencies. "
+            "Always call this before referencing the player's own numbers."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "type": "function",
+        "name": "get_carries",
+        "description": (
+            "Carry distances needed to clear bunkers/water off the tee. If it "
+            "returns available:false the course isn't mapped — say you don't "
+            "have carries here and NEVER invent a carry number."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "hole_number": {"type": "integer", "description": "Hole the player is on (1-18)"},
+            },
+            "required": ["hole_number"],
+        },
+    },
 ]
 
 

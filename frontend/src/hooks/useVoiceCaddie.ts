@@ -1,0 +1,285 @@
+'use client';
+
+/**
+ * useVoiceCaddie — hold-to-talk realtime caddie for the round screen orb.
+ *
+ * Owns the side effects around the pure transport ladder
+ * (lib/caddie/transport.ts):
+ *   press()   → tier 1: mint + connect the WebRTC burst (3s mint deadline),
+ *               unmute the mic while held; tier 2/3: report which fallback
+ *               surface to open (CaddieSheet / offline card).
+ *   release() → mute the mic (server VAD finishes the turn; the model replies
+ *               aloud). The connection stays warm for follow-ups and
+ *               auto-disconnects after 90s idle (lib/voice/idle-timer.ts).
+ *
+ * Every completed turn is appended to the round's shared caddie_messages
+ * ledger (POST /caddie/session/message) so the text sheet shares history.
+ * Downgrades are SILENT — no error toasts, the next surface just opens.
+ */
+
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import {
+  RealtimeCaddieClient,
+  type RealtimeMessage,
+  type RealtimeStatus,
+} from '@/lib/voice/realtime';
+import { sortByOrder } from '@/lib/voice/realtime-ordering';
+import { appendSessionMessage } from '@/lib/caddie/api';
+import {
+  INITIAL_TRANSPORT_STATE,
+  MINT_DEADLINE_MS,
+  mapStatusToVoiceState,
+  messagesToTurns,
+  surfaceForTier,
+  transportReducer,
+  type TransportTier,
+} from '@/lib/caddie/transport';
+import type { VoiceState, VoiceTurn } from '@/components/yardage/Voice';
+
+export interface UseVoiceCaddieOptions {
+  roundId: string;
+  personaId: string;
+  /** False for local/offline rounds or before the caddie session starts —
+   *  presses go straight to the text sheet (tier 2). */
+  enabled: boolean;
+  currentHole: number;
+  /** Tier 2: open the existing CaddieSheet (Deepgram + Claude text). */
+  onDegradeToText: () => void;
+  /** Tier 3: open the offline recommendation card (IndexedDB bundle). */
+  onOffline: () => void;
+}
+
+export interface UseVoiceCaddieResult {
+  voiceState: VoiceState;
+  turns: VoiceTurn[];
+  tier: TransportTier;
+  /** Press the orb/mic. Returns which surface the press opened. */
+  press: () => 'voice' | 'text' | 'offline';
+  /** Release the mic — mutes input; the model replies aloud. */
+  release: () => void;
+  /** Hard-stop the burst (leave round). */
+  stop: () => void;
+}
+
+export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResult {
+  const [transport, dispatch] = useReducer(transportReducer, INITIAL_TRANSPORT_STATE);
+  const [status, setStatus] = useState<RealtimeStatus>('idle');
+  const [messages, setMessages] = useState<RealtimeMessage[]>([]);
+  const [held, setHeld] = useState(false);
+
+  const clientRef = useRef<RealtimeCaddieClient | null>(null);
+  const heldRef = useRef(false);
+  const mintDeadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const everConnectedRef = useRef(false);
+  const degradedRef = useRef(false);
+  // Ledger bookkeeping: message ids already persisted to caddie_messages.
+  const persistedIdsRef = useRef<Set<string>>(new Set());
+  // Live copies for use inside client callbacks without re-creating the client
+  // (assigned in an effect — render-time ref writes trip react-hooks/refs).
+  const optsRef = useRef(opts);
+  useEffect(() => {
+    optsRef.current = opts;
+  });
+
+  const clearMintDeadline = useCallback(() => {
+    if (mintDeadlineRef.current !== null) {
+      clearTimeout(mintDeadlineRef.current);
+      mintDeadlineRef.current = null;
+    }
+  }, []);
+
+  const teardownClient = useCallback(() => {
+    clearMintDeadline();
+    clientRef.current?.stop();
+    clientRef.current = null;
+    everConnectedRef.current = false;
+    setStatus('idle');
+  }, [clearMintDeadline]);
+
+  /** Silent downgrade to the text sheet — stop the burst, open the fallback. */
+  const degradeToText = useCallback(
+    (event: 'MINT_TIMEOUT' | 'CONNECT_FAILED' | 'REALTIME_ERROR') => {
+      if (degradedRef.current) return;
+      degradedRef.current = true;
+      dispatch({ type: event });
+      teardownClient();
+      optsRef.current.onDegradeToText();
+    },
+    [teardownClient],
+  );
+
+  const upsertMessage = useCallback((msg: RealtimeMessage) => {
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === msg.id);
+      const merged = idx === -1 ? [...prev, msg] : prev.map((m, j) => (j === idx ? msg : m));
+      // Conversation order, not arrival order — see lib/voice/realtime-ordering.ts.
+      return sortByOrder(merged);
+    });
+  }, []);
+
+  const startBurst = useCallback(() => {
+    if (clientRef.current) return;
+    degradedRef.current = false;
+    dispatch({ type: 'PRESS' });
+
+    // Tier-1 failure condition #1: mint slower than the 3s budget.
+    mintDeadlineRef.current = setTimeout(() => {
+      mintDeadlineRef.current = null;
+      degradeToText('MINT_TIMEOUT');
+    }, MINT_DEADLINE_MS);
+
+    const client = new RealtimeCaddieClient(
+      { roundId: optsRef.current.roundId, personalityId: optsRef.current.personaId },
+      {
+        onMinted: () => {
+          clearMintDeadline();
+          dispatch({ type: 'MINT_OK' });
+        },
+        onStatus: (s) => {
+          setStatus(s);
+          if (s === 'connected' && !everConnectedRef.current) {
+            everConnectedRef.current = true;
+            dispatch({ type: 'CONNECTED' });
+            // Apply the CURRENT hold state — the player may have released
+            // (or never released) while the connection was being set up.
+            clientRef.current?.setMuted(!heldRef.current);
+          }
+          if (s === 'closed') {
+            if (everConnectedRef.current) {
+              // Clean close (90s idle disconnect) — tier stays healthy.
+              dispatch({ type: 'DISCONNECTED' });
+              clientRef.current = null;
+              everConnectedRef.current = false;
+            } else {
+              // Tier-1 failure condition #2: ICE/SDP failed before going live.
+              degradeToText('CONNECT_FAILED');
+            }
+          }
+          if (s === 'error') {
+            if (!everConnectedRef.current) degradeToText('CONNECT_FAILED');
+            else degradeToText('REALTIME_ERROR');
+          }
+        },
+        onMessage: upsertMessage,
+      },
+    );
+    clientRef.current = client;
+    client.start().catch(() => {
+      // start() rejection (mint 4xx/5xx, mic denied, SDP failure) — degrade.
+      degradeToText('CONNECT_FAILED');
+    });
+    // Mic live from the first frame of the hold (tracks start enabled).
+  }, [clearMintDeadline, degradeToText, upsertMessage]);
+
+  const press = useCallback((): 'voice' | 'text' | 'offline' => {
+    // Fully offline → tier 3 immediately (no point minting).
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      dispatch({ type: 'WENT_OFFLINE' });
+      optsRef.current.onOffline();
+      return 'offline';
+    }
+    // No caddie session (local round / start failed) → the text sheet is the top tier.
+    const surface = optsRef.current.enabled ? surfaceForTier(transport.tier) : 'text';
+    if (surface === 'text') {
+      optsRef.current.onDegradeToText();
+      return 'text';
+    }
+    if (surface === 'offline') {
+      optsRef.current.onOffline();
+      return 'offline';
+    }
+
+    heldRef.current = true;
+    setHeld(true);
+    if (clientRef.current) {
+      clientRef.current.setMuted(false); // warm connection — just open the mic
+    } else {
+      startBurst();
+    }
+    return 'voice';
+  }, [startBurst, transport.tier]);
+
+  const release = useCallback(() => {
+    heldRef.current = false;
+    setHeld(false);
+    clientRef.current?.setMuted(true);
+  }, []);
+
+  const stop = useCallback(() => {
+    heldRef.current = false;
+    setHeld(false);
+    teardownClient();
+  }, [teardownClient]);
+
+  // ── Shared ledger: persist each completed turn pair ──
+  useEffect(() => {
+    if (!opts.enabled) return;
+    const persisted = persistedIdsRef.current;
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i];
+      if (m.role !== 'assistant' || m.partial || !m.text.trim() || persisted.has(m.id)) continue;
+      // Pair with the nearest preceding un-persisted user turn (may be absent
+      // when the caddie speaks first).
+      let userTurn: RealtimeMessage | undefined;
+      for (let j = i - 1; j >= 0; j--) {
+        const c = messages[j];
+        if (c.role === 'user' && !persisted.has(c.id) && c.text.trim()) {
+          userTurn = c;
+          break;
+        }
+        if (c.role === 'assistant' && persisted.has(c.id)) break;
+      }
+      persisted.add(m.id);
+      if (userTurn) persisted.add(userTurn.id);
+      appendSessionMessage({
+        round_id: opts.roundId,
+        user_content: userTurn?.text,
+        assistant_content: m.text,
+        hole_number: opts.currentHole,
+      }).catch(() => {
+        // Fire-and-forget — the ledger is context, never a failure surface.
+      });
+    }
+  }, [messages, opts.enabled, opts.roundId, opts.currentHole]);
+
+  // ── Silent tier-1 retry on hole change (fresh cell, fresh chance) ──
+  const lastHoleRef = useRef(opts.currentHole);
+  useEffect(() => {
+    if (opts.currentHole !== lastHoleRef.current) {
+      lastHoleRef.current = opts.currentHole;
+      if (transport.tier === 'text') dispatch({ type: 'RETRY_REALTIME' });
+    }
+  }, [opts.currentHole, transport.tier]);
+
+  // ── Network transitions drive the ladder's top/bottom rungs ──
+  useEffect(() => {
+    const goOffline = () => {
+      dispatch({ type: 'WENT_OFFLINE' });
+      teardownClient();
+    };
+    const goOnline = () => dispatch({ type: 'BACK_ONLINE' });
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
+    };
+  }, [teardownClient]);
+
+  // Disconnect when leaving the round screen.
+  useEffect(() => {
+    return () => {
+      clientRef.current?.stop();
+      clientRef.current = null;
+    };
+  }, []);
+
+  return {
+    voiceState: mapStatusToVoiceState(status, held),
+    turns: messagesToTurns(messages),
+    tier: transport.tier,
+    press,
+    release,
+    stop,
+  };
+}
