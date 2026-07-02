@@ -1317,7 +1317,9 @@ export default function RoundPage() {
                     <span style={{ color: T.pencil }}>Hcp {hole.hcp}</span>
                   </div>
 
-                  {/* Zoom — above the map's distance strip */}
+                  {/* Zoom — bottom-right corner of the MAP portion (the card
+                      continues below with the stats section, so anchor by the
+                      map's height rather than the card bottom). */}
                   <button
                     data-overlay
                     onClick={() => {
@@ -1326,7 +1328,7 @@ export default function RoundPage() {
                     aria-label="Expand map"
                     style={{
                       position: "absolute",
-                      bottom: 64,
+                      top: mapHeight - 40,
                       right: 10,
                       zIndex: 6,
                       padding: "6px 10px",

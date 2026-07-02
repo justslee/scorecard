@@ -955,27 +955,8 @@ export default function GoogleSatelliteMap({
         </div>
       )}
 
-      {/* Compact inline strip */}
-      {!centerOnly && inline && (
-        <div className="absolute bottom-0 left-0 right-0 z-10">
-          <div className="bg-zinc-900/90 backdrop-blur-sm px-4 py-2 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 text-xs">
-              <span className="text-zinc-500">F</span>
-              <span className="text-white font-semibold">{distances.front ?? "—"}</span>
-              <span className="text-emerald-400 font-bold">{distances.center ?? "—"}</span>
-              <span className="text-zinc-500">B</span>
-              <span className="text-white font-semibold">{distances.back ?? "—"}</span>
-              <span className="text-zinc-500 text-[10px]">yds</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Signal size={12} className={!position ? "text-zinc-600" : isOnHole ? "text-emerald-500" : "text-amber-500"} />
-              <span className="text-zinc-500 text-[10px]">
-                {!position ? "GPS…" : isOnHole ? `±${Math.round(position.accuracy || 0)}m` : "off hole"}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Inline mode intentionally has NO bottom strip — the round page renders
+          its own F/C/B tiles under the map (owner 2026-07-02: strip was redundant). */}
 
       {/* Center-only GPS panel */}
       {centerOnly && (
