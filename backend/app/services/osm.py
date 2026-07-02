@@ -33,27 +33,36 @@ async def _post_with_retry(
     client: httpx.AsyncClient,
     query: str,
     log_tag: str = "Overpass",
+    *,
+    max_attempts: int = 2,
+    backoff_s: float = _RETRY_BACKOFF_S,
 ) -> Optional[dict]:
     """POST *query* to the Overpass interpreter with one retry on transient failures.
 
     Transient failures (HTTP 429 / 5xx, or ``httpx`` timeout / transport errors)
-    are retried once after :data:`_RETRY_BACKOFF_S` seconds.  Non-transient HTTP
-    errors (any 4xx other than 429) are logged and returned immediately as
-    ``None`` without a retry.  A clean 200 response with an empty ``"elements"``
-    list is **never** retried — that is a real "no data" result, not a fault.
+    are retried once after *backoff_s* seconds (default :data:`_RETRY_BACKOFF_S`).
+    Non-transient HTTP errors (any 4xx other than 429) are logged and returned
+    immediately as ``None`` without a retry.  A clean 200 response with an empty
+    ``"elements"`` list is **never** retried — that is a real "no data" result,
+    not a fault.
 
     Args:
         client: An open ``httpx.AsyncClient`` (caller controls timeout).
         query: Raw Overpass QL query string.
         log_tag: Label prepended to log messages (use the calling function's name
             so the source is visible in the log stream).
+        max_attempts: Total attempts including the first (default 2 = one retry).
+            The interactive search path passes 1 to skip the retry entirely and
+            stay inside its tight latency budget.
+        backoff_s: Seconds to sleep before the retry. The interactive search path
+            passes a shorter value (0.5s) than the ingest-path default (2s).
 
     Returns:
         Parsed JSON ``dict`` on success, or ``None`` after a persistent failure.
         Callers should treat ``None`` as an empty/error result and log or surface
         accordingly — this function never raises.
     """
-    for attempt in range(2):
+    for attempt in range(max_attempts):
         try:
             resp = await client.post(
                 OVERPASS_URL,
@@ -62,11 +71,11 @@ async def _post_with_retry(
             )
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             _log.warning(
-                "%s request error (attempt %d/2) url=%s exc=%r",
-                log_tag, attempt + 1, OVERPASS_URL, exc,
+                "%s request error (attempt %d/%d) url=%s exc=%r",
+                log_tag, attempt + 1, max_attempts, OVERPASS_URL, exc,
             )
-            if attempt == 0:
-                await asyncio.sleep(_RETRY_BACKOFF_S)
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(backoff_s)
                 continue
             return None
 
@@ -76,11 +85,11 @@ async def _post_with_retry(
         body = resp.text[:200].strip()
         if resp.status_code in _TRANSIENT_STATUS_CODES:
             _log.warning(
-                "%s transient HTTP %d (attempt %d/2) url=%s body=%r",
-                log_tag, resp.status_code, attempt + 1, OVERPASS_URL, body,
+                "%s transient HTTP %d (attempt %d/%d) url=%s body=%r",
+                log_tag, resp.status_code, attempt + 1, max_attempts, OVERPASS_URL, body,
             )
-            if attempt == 0:
-                await asyncio.sleep(_RETRY_BACKOFF_S)
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(backoff_s)
                 continue
             return None
 
@@ -337,8 +346,17 @@ async def search_golf_courses(
     lat: Optional[float] = None,
     lng: Optional[float] = None,
     radius_m: int = 10000,
+    *,
+    interactive: bool = False,
 ) -> list[dict]:
-    """Search OSM for golf courses by name and/or location."""
+    """Search OSM for golf courses by name and/or location.
+
+    ``interactive=True`` (the live-search path, ``routes/course_search.py``)
+    uses a tight latency budget so a single slow request can't stall the UI:
+    ``[timeout:4]`` server-side, 5s client timeout, at most ONE retry with a
+    short 0.5s backoff (vs. the 2s ingest-path backoff). Non-interactive
+    callers (course ingest) keep the generous defaults.
+    """
     around = ""
     if lat is not None and lng is not None:
         around = f"(around:{radius_m},{lat},{lng})"
@@ -348,8 +366,9 @@ async def search_golf_courses(
     if not name_filter and not around:
         return []
 
+    overpass_timeout = 4 if interactive else 8
     query = f"""
-[out:json][timeout:8];
+[out:json][timeout:{overpass_timeout}];
 (
   way["leisure"="golf_course"]{name_filter}{around};
   relation["leisure"="golf_course"]{name_filter}{around};
@@ -357,8 +376,12 @@ async def search_golf_courses(
 out center;
 """
 
-    async with httpx.AsyncClient(timeout=10) as client:
-        data = await _post_with_retry(client, query, log_tag="search_golf_courses")
+    client_timeout = 5 if interactive else 10
+    backoff_s = 0.5 if interactive else _RETRY_BACKOFF_S
+    async with httpx.AsyncClient(timeout=client_timeout) as client:
+        data = await _post_with_retry(
+            client, query, log_tag="search_golf_courses", backoff_s=backoff_s,
+        )
     if data is None:
         return []
 
