@@ -28,6 +28,7 @@ import { getRecentCourses } from "@/lib/golf-api";
 import { resolveMappedCourse } from "@/lib/map-bridge";
 import type { MappedCourseListItem } from "@/lib/map-bridge";
 import { roundCourseAnchor } from "@/lib/round-anchor";
+import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
 import { useHoleCoordinates } from "@/lib/map/use-hole-coordinates";
@@ -226,6 +227,8 @@ export default function RoundPage() {
   const [scoreOpen, setScoreOpen] = useState(false);
   const [lbOpen, setLbOpen] = useState(false);
   const [caddieOpen, setCaddieOpen] = useState(false);
+  // Grid modal for jumping between holes (replaces the old top chip strip).
+  const [holePickerOpen, setHolePickerOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [recapOpen, setRecapOpen] = useState(false);
   /** Conversation history — lifted here so close→score-entry→reopen retains the thread. */
@@ -1107,51 +1110,38 @@ export default function RoundPage() {
             </div>
           )}
 
-          {/* Hole nav chips — rendered for the round's actual hole count, not hardcoded 18 */}
-          <div
-            style={{
-              display: "flex",
-              gap: 5,
-              marginBottom: 12,
-              overflowX: "auto",
-              paddingBottom: 4,
-              scrollSnapType: "x proximity",
-            }}
-          >
-            {Array.from({ length: holeCount }, (_, i) => i + 1).map((h) => {
-              const isCur = h === currentHole;
-              const played = firstPlayerId
-                ? scores[firstPlayerId]?.[h - 1] != null
-                : false;
-              return (
-                <button
-                  key={h}
-                  onClick={() => goHole(h)}
-                  style={{
-                    flexShrink: 0,
-                    minWidth: 44,
-                    height: 44,
-                    borderRadius: 12,
-                    padding: "4px 8px",
-                    border: `1px solid ${isCur ? accent : T.hairline}`,
-                    background: isCur ? accent : played ? T.paperDeep : "transparent",
-                    color: isCur ? "#fff" : T.ink,
-                    fontFamily: T.mono,
-                    cursor: "pointer",
-                    fontVariantNumeric: "tabular-nums",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    scrollSnapAlign: "center",
-                    fontSize: 15,
-                    fontWeight: 600,
-                    lineHeight: 1,
-                  }}
-                >
-                  {h}
-                </button>
-              );
-            })}
+          {/* Hole picker — the chip strip moved into a grid modal (owner request
+              2026-07-01): a quiet pill shows the position; tap for the full grid.
+              Swiping the hole card still steps prev/next. */}
+          <div style={{ display: "flex", marginBottom: 12 }}>
+            <button
+              onClick={() => setHolePickerOpen(true)}
+              aria-label="Switch hole"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "8px 14px",
+                borderRadius: 99,
+                border: `1px solid ${T.hairline}`,
+                background: "transparent",
+                color: T.ink,
+                fontFamily: T.mono,
+                fontSize: 11,
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+                cursor: "pointer",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                <rect x="14" y="14" width="7" height="7" rx="1.5" />
+              </svg>
+              Hole {currentHole} / {holeCount}
+            </button>
           </div>
 
           {/* Hero hole card — swipe L/R */}
@@ -1195,51 +1185,32 @@ export default function RoundPage() {
                 }}
                 onCollapse={() => setExpanded(false)}
                 onZoom={() => {
-                  if (!draggedRef.current) setExpanded(true);
+                  if (draggedRef.current) return;
+                  // With real course data the card's map expands to the
+                  // fullscreen interactive satellite; the mock falls back to
+                  // the old in-card expand.
+                  if (mappedCourse || roundAnchor) setMapZoom(true);
+                  else setExpanded(true);
                 }}
-                onAskCaddy={() => setVoiceOpen(true)}
-                caddy={caddy}
                 accent={accent}
-                club={hole.par === 3 ? "7i" : hole.yards > 450 ? "5w" : "8i"}
                 density={density}
                 shotPoint={shotPoint}
+                // Real satellite hole map fills the card's map space (the
+                // abstract HoleIllustration mock renders only when the round
+                // has no course data at all).
+                mapSlot={
+                  mappedCourse || roundAnchor ? (
+                    <InlineHoleDiagram
+                      courseId={mappedCourse?.id}
+                      fallbackCenter={roundAnchor ?? undefined}
+                      currentHole={currentHole}
+                      height={300}
+                    />
+                  ) : undefined
+                }
               />
             </motion.div>
           </AnimatePresence>
-
-          {/* Inline yardage-book hole map — mapped geometry when available,
-               otherwise a course-centred satellite view from the round's anchor,
-               so the real course map is always part of the yardage book. Data is
-               fetched once (on mappedCourse resolution) and cached inside
-               InlineHoleDiagram; only the feature lookup changes as currentHole changes. */}
-          {(mappedCourse || roundAnchor) && (
-            <div style={{ marginBottom: 14 }}>
-              <SectionLabel>Hole {currentHole} map</SectionLabel>
-              <div style={{ position: "relative" }}>
-                <InlineHoleDiagram
-                  courseId={mappedCourse?.id}
-                  fallbackCenter={roundAnchor ?? undefined}
-                  currentHole={currentHole}
-                />
-                {/* Blow it up — opens the fullscreen interactive map. */}
-                <button
-                  onClick={() => setMapZoom(true)}
-                  aria-label="Expand map to fullscreen"
-                  style={{
-                    position: "absolute", top: 8, right: 8, zIndex: 5,
-                    width: 34, height: 34, borderRadius: 8,
-                    border: `1px solid ${T.hairline}`, background: `${T.paper}f2`,
-                    backdropFilter: "blur(4px)", display: "flex",
-                    alignItems: "center", justifyContent: "center", cursor: "pointer",
-                  }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.ink} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Stakes ticker */}
           <div style={{ marginBottom: 14 }}>
@@ -1486,6 +1457,101 @@ export default function RoundPage() {
         courseKey={reviewCourseKey}
         courseName={round.courseName}
       />
+
+      {/* Hole picker modal — grid of holes, replaces the old top chip strip. */}
+      <AnimatePresence>
+        {holePickerOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={() => setHolePickerOpen(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 60,
+              background: "rgba(26,42,26,0.35)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 24,
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.2, ease: T.ease }}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "100%",
+                maxWidth: 360,
+                borderRadius: 18,
+                border: `1px solid ${T.hairline}`,
+                background: T.paper,
+                padding: "18px 18px 16px",
+                boxShadow: "0 18px 48px rgba(26,42,26,0.28)",
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 10,
+                  letterSpacing: 1.4,
+                  color: T.pencil,
+                  textTransform: "uppercase",
+                  marginBottom: 12,
+                }}
+              >
+                Go to hole
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(6, 1fr)",
+                  gap: 6,
+                }}
+              >
+                {Array.from({ length: holeCount }, (_, i) => i + 1).map((h) => {
+                  const isCur = h === currentHole;
+                  const played = firstPlayerId
+                    ? scores[firstPlayerId]?.[h - 1] != null
+                    : false;
+                  return (
+                    <button
+                      key={h}
+                      onClick={() => {
+                        haptic("light");
+                        goHole(h);
+                        setHolePickerOpen(false);
+                      }}
+                      style={{
+                        height: 44,
+                        borderRadius: 12,
+                        border: `1px solid ${isCur ? accent : T.hairline}`,
+                        background: isCur ? accent : played ? T.paperDeep : "transparent",
+                        color: isCur ? "#fff" : T.ink,
+                        fontFamily: T.mono,
+                        cursor: "pointer",
+                        fontVariantNumeric: "tabular-nums",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 15,
+                        fontWeight: 600,
+                        lineHeight: 1,
+                      }}
+                    >
+                      {h}
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Fullscreen "blow it up" satellite map — full-screen interactive overlay,
           framed on the current hole. Hole changes sync back to the round. Renders

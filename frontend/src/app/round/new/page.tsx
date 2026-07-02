@@ -18,6 +18,7 @@ import CourseSearch from "@/components/CourseSearch";
 import PlayerAutocomplete from "@/components/PlayerAutocomplete";
 import { takeCourseForRound } from "@/lib/course-handoff";
 import { anchorFromSelectedCourse } from "@/lib/round-anchor";
+import { haptic } from "@/lib/haptics";
 
 // ---------------------------------------------------------------------------
 // Local types
@@ -123,7 +124,10 @@ export default function RoundSetupPage() {
   // Populated once on mount; used in handleVoiceSetup to fuzzy-match the course
   // name returned by the realtime tool call against known courses.
   const [knownCourseNames, setKnownCourseNames] = useState<string[]>([]);
-  const [playerPickerIndex, setPlayerPickerIndex] = useState(0);
+  // Which group row the player sheet edits; null = multi-add mode ("+ Add"),
+  // where several people can be added without the sheet closing.
+  const [playerPickerIndex, setPlayerPickerIndex] = useState<number | null>(0);
+  const [multiAddName, setMultiAddName] = useState("");
   // Which player row is the owner ("you"). Defaults to the first; the owner can
   // re-assign it in the player editor. Drives ownerPlayerId on the round so the
   // owner's own scores power home/profile stats even when not first-listed.
@@ -133,8 +137,11 @@ export default function RoundSetupPage() {
   const [tee, setTee] = useState<TeeId>("white");
   const [holes, setHoles] = useState(18);
   const [walking, setWalking] = useState(true);
-  const [game, setGame] = useState<GameId>("stroke");
-  const [stake, setStake] = useState("$5");
+  // Selected formats with per-format stakes — several side games can run at
+  // once (owner request 2026-07-01: multi-select, define bets in the sheet).
+  const [selectedGames, setSelectedGames] = useState<{ id: GameId; stake: string }[]>([
+    { id: "stroke", stake: "$5" },
+  ]);
   const [sides, setSides] = useState<SideId[]>([]);
 
   // --- UI ---
@@ -306,15 +313,17 @@ export default function RoundSetupPage() {
       TEE_OPTIONS.find((t) => t.id === tee)?.l.split(" · ")[0] ?? "White";
 
     // Build game objects for the round (sent to backend; backend assigns roundId).
+    // One per selected format, each with its own stake.
     const gameObjects: Game[] = [];
-    const gameFormat = GAME_ID_TO_FORMAT[game];
-    if (gameFormat) {
-      const stakeValue = parseFloat(stake.replace("$", "")) || 0;
+    for (const sel of selectedGames) {
+      const gameFormat = GAME_ID_TO_FORMAT[sel.id];
+      if (!gameFormat) continue; // "none" has no engine format
+      const stakeValue = parseFloat(sel.stake.replace("$", "")) || 0;
       gameObjects.push({
         id: crypto.randomUUID(),
         roundId: "", // placeholder — backend assigns its own roundId FK
         format: gameFormat,
-        name: GAME_OPTIONS.find((g) => g.id === game)?.l ?? game,
+        name: GAME_OPTIONS.find((g) => g.id === sel.id)?.l ?? sel.id,
         playerIds: deduped.map((p) => p.id),
         settings: { pointValue: stakeValue > 0 ? stakeValue : undefined },
       });
@@ -381,7 +390,12 @@ export default function RoundSetupPage() {
   // Derived readiness: at least one named player.
   const isReady = players.some((p) => p.name.trim().length > 0);
 
-  const gameLabel = GAME_OPTIONS.find((g) => g.id === game)?.l ?? "Stroke play";
+  const gameLabel =
+    selectedGames.length === 0
+      ? "No stakes"
+      : selectedGames
+          .map((sel) => GAME_OPTIONS.find((g) => g.id === sel.id)?.l ?? sel.id)
+          .join(" + ");
   const teeLabel = TEE_OPTIONS.find((t) => t.id === tee)?.l.split(" · ")[0] ?? "White";
   const teeColor = TEE_OPTIONS.find((t) => t.id === tee)?.c ?? "#eae5d6";
 
@@ -778,12 +792,10 @@ export default function RoundSetupPage() {
                 </div>
                 <button
                   onClick={() => {
-                    const newIdx = players.length;
-                    setPlayers((prev) => [
-                      ...prev,
-                      { id: `custom-player-${prev.length}`, name: "", handicap: undefined },
-                    ]);
-                    setPlayerPickerIndex(newIdx);
+                    // Multi-add mode: one sheet, several people (owner request
+                    // 2026-07-01 — no more one-by-one).
+                    setPlayerPickerIndex(null);
+                    setMultiAddName("");
                     setPicker("player");
                   }}
                   style={{
@@ -992,7 +1004,7 @@ export default function RoundSetupPage() {
             />
             <PickerRow
               label="Game"
-              value={game === "skins" ? `${gameLabel} · ${stake}` : gameLabel}
+              value={gameLabel}
               hint={`“skins at ten bucks”, “add a nassau”, “match play”`}
               accent={accent}
               onClick={() => setPicker("game")}
@@ -1199,13 +1211,28 @@ export default function RoundSetupPage() {
               {picker === "game" && (
                 <GamePicker
                   accent={accent}
-                  current={game}
-                  stake={stake}
-                  onPick={(id: GameId) => {
-                    setGame(id);
-                    setPicker(null);
+                  selected={selectedGames}
+                  onToggle={(id: GameId) => {
+                    haptic("light");
+                    setSelectedGames((prev) => {
+                      if (prev.some((s) => s.id === id)) {
+                        return prev.filter((s) => s.id !== id);
+                      }
+                      const withDefault = {
+                        id,
+                        stake: id === "nassau" ? "$20" : "$5",
+                      };
+                      // "No stakes" is exclusive of everything else.
+                      if (id === "none") return [withDefault];
+                      return [...prev.filter((s) => s.id !== "none"), withDefault];
+                    });
                   }}
-                  onStake={setStake}
+                  onStakeFor={(id: GameId, stake: string) => {
+                    setSelectedGames((prev) =>
+                      prev.map((s) => (s.id === id ? { ...s, stake } : s))
+                    );
+                  }}
+                  onDone={() => setPicker(null)}
                 />
               )}
 
@@ -1242,8 +1269,214 @@ export default function RoundSetupPage() {
                 />
               )}
 
+              {/* Multi-add player sheet — tap saved players to add/remove several
+                  in one visit; type to add anyone new. Stays open until Done. */}
+              {picker === "player" && playerPickerIndex === null && (
+                <div style={{ padding: "4px 22px 0", flex: 1, overflow: "auto" }}>
+                  <div style={{ marginBottom: 14 }}>
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: 1.5,
+                        color: T.pencil,
+                        textTransform: "uppercase",
+                        marginBottom: 2,
+                      }}
+                    >
+                      Group · {players.filter((p) => p.name.trim() !== "").length}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 22,
+                        color: T.ink,
+                        letterSpacing: -0.3,
+                      }}
+                    >
+                      Add players.
+                    </div>
+                  </div>
+
+                  {/* New name — add anyone not in the saved list, stays open */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                    <input
+                      value={multiAddName}
+                      onChange={(e) => setMultiAddName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && multiAddName.trim() !== "") {
+                          const name = multiAddName.trim();
+                          setPlayers((prev) => [
+                            ...prev,
+                            { id: `custom-player-${prev.length}`, name, handicap: undefined },
+                          ]);
+                          setMultiAddName("");
+                        }
+                      }}
+                      placeholder="New player name"
+                      style={{
+                        flex: 1,
+                        padding: "11px 14px",
+                        borderRadius: 99,
+                        border: `1px solid ${T.hairline}`,
+                        background: "transparent",
+                        color: T.ink,
+                        fontFamily: T.sans,
+                        fontSize: 14,
+                        outline: "none",
+                      }}
+                    />
+                    <button
+                      onClick={() => {
+                        const name = multiAddName.trim();
+                        if (name === "") return;
+                        setPlayers((prev) => [
+                          ...prev,
+                          { id: `custom-player-${prev.length}`, name, handicap: undefined },
+                        ]);
+                        setMultiAddName("");
+                      }}
+                      style={{
+                        flexShrink: 0,
+                        padding: "0 18px",
+                        borderRadius: 99,
+                        border: `1px solid ${multiAddName.trim() ? accent : T.hairline}`,
+                        background: "transparent",
+                        color: multiAddName.trim() ? accent : T.pencilSoft,
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        letterSpacing: 1.2,
+                        textTransform: "uppercase",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {/* Saved players — tap to add, tap again to remove; sheet stays open */}
+                  {savedPlayers.map((sp) => {
+                    const inGroup = players.some((p) => p.id === sp.id);
+                    return (
+                      <button
+                        key={sp.id}
+                        onClick={() => {
+                          haptic("light");
+                          if (inGroup) {
+                            const idx = players.findIndex((p) => p.id === sp.id);
+                            if (idx === ownerIndex) return; // never remove "you" here
+                            setPlayers((prev) => prev.filter((p) => p.id !== sp.id));
+                            setOwnerIndex((prev) => (idx < prev ? prev - 1 : prev));
+                          } else {
+                            setPlayers((prev) => [
+                              ...prev,
+                              { id: sp.id, name: sp.name, handicap: sp.handicap },
+                            ]);
+                          }
+                        }}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "10px 0",
+                          borderTop: `1px dashed ${T.hairline}`,
+                          background: "transparent",
+                          borderLeft: "none",
+                          borderRight: "none",
+                          borderBottom: "none",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 99,
+                            background: inGroup ? T.ink : T.hairline,
+                            color: inGroup ? T.paper : T.pencilSoft,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontFamily: T.serif,
+                            fontStyle: "italic",
+                            fontSize: 13,
+                            flexShrink: 0,
+                            transition: "background 0.25s",
+                          }}
+                        >
+                          {sp.name[0]?.toUpperCase() ?? "?"}
+                        </div>
+                        <div
+                          style={{
+                            flex: 1,
+                            fontFamily: T.sans,
+                            fontSize: 14,
+                            color: T.ink,
+                            fontWeight: 500,
+                            letterSpacing: -0.1,
+                          }}
+                        >
+                          {sp.name}
+                        </div>
+                        {sp.handicap !== undefined && (
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: 1.2,
+                              color: T.pencilSoft,
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            hcp {sp.handicap}
+                          </div>
+                        )}
+                        <div
+                          style={{
+                            fontFamily: T.serif,
+                            fontStyle: "italic",
+                            fontSize: 13,
+                            color: inGroup ? accent : T.pencilSoft,
+                            flexShrink: 0,
+                            width: 44,
+                            textAlign: "right",
+                          }}
+                        >
+                          {inGroup ? "✓ added" : "add"}
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {/* Done */}
+                  <button
+                    onClick={() => setPicker(null)}
+                    style={{
+                      marginTop: 16,
+                      marginBottom: 20,
+                      width: "100%",
+                      padding: "14px",
+                      borderRadius: 99,
+                      border: "none",
+                      background: accent,
+                      color: T.paper,
+                      fontFamily: T.sans,
+                      fontSize: 14,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      letterSpacing: -0.1,
+                    }}
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+
               {/* Player picker — light paper sheet hosting light-themed PlayerAutocomplete */}
-              {picker === "player" && (
+              {picker === "player" && playerPickerIndex !== null && (
                 <div style={{ padding: "4px 22px 0", flex: 1, overflow: "auto" }}>
                   {/* Header */}
                   <div style={{ marginBottom: 14 }}>
@@ -1512,16 +1745,16 @@ function MiniStat({ k, v }: { k: string; v: number | string }) {
 
 function GamePicker({
   accent,
-  current,
-  stake,
-  onPick,
-  onStake,
+  selected,
+  onToggle,
+  onStakeFor,
+  onDone,
 }: {
   accent: string;
-  current: GameId;
-  stake: string;
-  onPick: (g: GameId) => void;
-  onStake: (s: string) => void;
+  selected: { id: GameId; stake: string }[];
+  onToggle: (g: GameId) => void;
+  onStakeFor: (g: GameId, s: string) => void;
+  onDone: () => void;
 }) {
   const stakes = ["$2", "$5", "$10", "$20"];
   return (
@@ -1536,7 +1769,7 @@ function GamePicker({
             textTransform: "uppercase",
           }}
         >
-          Pick a game
+          Pick your games
         </div>
         <div
           style={{
@@ -1547,7 +1780,7 @@ function GamePicker({
             letterSpacing: -0.3,
           }}
         >
-          The format
+          The formats
         </div>
         <div
           style={{
@@ -1558,18 +1791,25 @@ function GamePicker({
             marginTop: 2,
           }}
         >
-          Or say:{" "}
+          Stack several &mdash; or say:{" "}
           <span style={{ color: accent }}>&ldquo;skins at ten&rdquo;</span>,{" "}
           <span style={{ color: accent }}>&ldquo;wolf, no money&rdquo;</span>
         </div>
       </div>
       <div style={{ padding: "8px 14px 0" }}>
         {GAME_OPTIONS.map((g) => {
-          const active = current === g.id;
+          const sel = selected.find((s) => s.id === g.id);
+          const active = sel !== undefined;
+          const takesStake = g.id !== "none";
           return (
-            <button
+            <div
               key={g.id}
-              onClick={() => onPick(g.id)}
+              role="button"
+              tabIndex={0}
+              onClick={() => onToggle(g.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onToggle(g.id);
+              }}
               style={{
                 width: "100%",
                 padding: "12px",
@@ -1579,120 +1819,165 @@ function GamePicker({
                 background: active ? T.paperDeep : "transparent",
                 cursor: "pointer",
                 textAlign: "left",
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 10,
-                alignItems: "center",
               }}
             >
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span
-                    style={{
-                      fontFamily: T.serif,
-                      fontSize: 17,
-                      color: T.ink,
-                      letterSpacing: -0.2,
-                    }}
-                  >
-                    {g.l}
-                  </span>
-                  {g.tag && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  gap: 10,
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span
                       style={{
-                        fontFamily: T.mono,
-                        fontSize: 8,
-                        letterSpacing: 1,
-                        color: T.pencil,
-                        border: `1px solid ${T.hairline}`,
-                        padding: "1px 5px",
-                        borderRadius: 3,
-                        textTransform: "uppercase",
+                        fontFamily: T.serif,
+                        fontSize: 17,
+                        color: T.ink,
+                        letterSpacing: -0.2,
                       }}
                     >
-                      {g.tag}
+                      {g.l}
                     </span>
-                  )}
+                    {g.tag && (
+                      <span
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 8,
+                          letterSpacing: 1,
+                          color: T.pencil,
+                          border: `1px solid ${T.hairline}`,
+                          padding: "1px 5px",
+                          borderRadius: 3,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {g.tag}
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontStyle: "italic",
+                      fontSize: 12.5,
+                      color: T.pencil,
+                      letterSpacing: -0.1,
+                      marginTop: 1,
+                    }}
+                  >
+                    {g.sub}
+                  </div>
                 </div>
-                <div
-                  style={{
-                    fontFamily: T.serif,
-                    fontStyle: "italic",
-                    fontSize: 12.5,
-                    color: T.pencil,
-                    letterSpacing: -0.1,
-                    marginTop: 1,
-                  }}
-                >
-                  {g.sub}
-                </div>
+                {active && (
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 99,
+                      background: accent,
+                      color: T.paper,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 11,
+                      fontFamily: T.mono,
+                    }}
+                  >
+                    {"✓"}
+                  </div>
+                )}
               </div>
-              {active && (
+
+              {/* Per-format stake — inline in the selected card, so several
+                  games and their bets are defined in one visit. */}
+              {active && takesStake && sel && (
                 <div
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
                   style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: 99,
-                    background: accent,
-                    color: T.paper,
                     display: "flex",
+                    gap: 5,
+                    marginTop: 10,
+                    paddingTop: 10,
+                    borderTop: `1px dashed ${T.hairline}`,
                     alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 11,
-                    fontFamily: T.mono,
                   }}
                 >
-                  {"✓"}
+                  {stakes.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => onStakeFor(g.id, s)}
+                      style={{
+                        flex: 1,
+                        padding: "7px 0",
+                        borderRadius: 10,
+                        border: `1px solid ${sel.stake === s ? T.ink : T.hairline}`,
+                        background: sel.stake === s ? T.ink : "transparent",
+                        color: sel.stake === s ? T.paper : T.ink,
+                        fontFamily: T.serif,
+                        fontSize: 14,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                  <input
+                    value={stakes.includes(sel.stake) ? "" : sel.stake}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9$]/g, "");
+                      onStakeFor(g.id, raw.startsWith("$") ? raw : `$${raw}`);
+                    }}
+                    placeholder="$…"
+                    inputMode="numeric"
+                    style={{
+                      width: 52,
+                      padding: "7px 6px",
+                      borderRadius: 10,
+                      border: `1px solid ${
+                        !stakes.includes(sel.stake) && sel.stake !== ""
+                          ? T.ink
+                          : T.hairline
+                      }`,
+                      background: "transparent",
+                      color: T.ink,
+                      fontFamily: T.serif,
+                      fontSize: 14,
+                      textAlign: "center",
+                      outline: "none",
+                    }}
+                  />
                 </div>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
-      {(current === "skins" || current === "nassau" || current === "match") && (
-        <div
+
+      {/* Done — multi-select never auto-closes */}
+      <div style={{ padding: "10px 22px 0" }}>
+        <button
+          onClick={onDone}
           style={{
-            padding: "8px 22px 0",
-            borderTop: `1px solid ${T.hairline}`,
-            marginTop: 6,
-            paddingTop: 10,
+            width: "100%",
+            padding: "14px",
+            borderRadius: 99,
+            border: "none",
+            background: accent,
+            color: T.paper,
+            fontFamily: T.sans,
+            fontSize: 14,
+            fontWeight: 500,
+            cursor: "pointer",
+            letterSpacing: -0.1,
           }}
         >
-          <div
-            style={{
-              fontFamily: T.mono,
-              fontSize: 9,
-              letterSpacing: 1.3,
-              color: T.pencil,
-              textTransform: "uppercase",
-              marginBottom: 6,
-            }}
-          >
-            Stake
-          </div>
-          <div style={{ display: "flex", gap: 5 }}>
-            {stakes.map((s) => (
-              <button
-                key={s}
-                onClick={() => onStake(s)}
-                style={{
-                  flex: 1,
-                  padding: "8px",
-                  borderRadius: 10,
-                  border: `1px solid ${stake === s ? T.ink : T.hairline}`,
-                  background: stake === s ? T.ink : "transparent",
-                  color: stake === s ? T.paper : T.ink,
-                  fontFamily: T.serif,
-                  fontSize: 15,
-                  cursor: "pointer",
-                }}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+          Done
+        </button>
+      </div>
     </div>
   );
 }
