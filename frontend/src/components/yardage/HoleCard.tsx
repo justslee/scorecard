@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { T, Caddy } from "./tokens";
+import { T } from "./tokens";
 import HoleIllustration from "./HoleIllustration";
 import type { HoleSpec } from "./HoleIllustration";
 
@@ -16,11 +16,8 @@ export default function HoleCard({
   onExpand,
   onCollapse,
   onZoom,
-  onAskCaddy,
   accent,
-  club,
   density,
-  caddy,
 }: {
   holeNumber: number;
   hole: HoleSpec;
@@ -32,11 +29,8 @@ export default function HoleCard({
   onExpand: () => void;
   onCollapse: () => void;
   onZoom: () => void;
-  onAskCaddy: () => void;
   accent: string;
-  club: string;
   density: "spacious" | "dense";
-  caddy: Caddy;
 }) {
   const pad = density === "dense" ? 14 : 18;
   return (
@@ -170,117 +164,9 @@ export default function HoleCard({
                 <Stat k="Plays" v={`${Math.round(distance * 1.04)}Y`} sub="adjusted" />
               </div>
 
-              {/* Caddy voice panel */}
-              <div
-                style={{
-                  position: "relative",
-                  border: `1px solid ${T.hairline}`,
-                  borderRadius: 16,
-                  background: `linear-gradient(180deg, ${T.paperDeep} 0%, ${T.paper} 100%)`,
-                  padding: 14,
-                }}
-              >
-                {/* Club badge */}
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 12,
-                    right: 12,
-                    width: 56,
-                    height: 56,
-                    borderRadius: 14,
-                    border: `1.5px solid ${T.ink}`,
-                    background: T.paper,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    lineHeight: 1,
-                  }}
-                >
-                  <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencil, textTransform: "uppercase", marginBottom: 2 }}>CLUB</div>
-                  <div style={{ fontFamily: T.serif, fontSize: 20, color: T.ink, fontWeight: 500 }}>{club}</div>
-                </div>
-
-                <div style={{ display: "flex", gap: 12, alignItems: "flex-start", paddingRight: 60 }}>
-                  <div style={{ position: "relative", flexShrink: 0 }}>
-                    <motion.div
-                      animate={{ scale: [1, 1.12, 1], opacity: [0.35, 0.1, 0.35] }}
-                      transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-                      style={{ position: "absolute", inset: -4, borderRadius: 99, background: accent }}
-                    />
-                    <div
-                      style={{
-                        position: "relative",
-                        width: 44,
-                        height: 44,
-                        borderRadius: 99,
-                        background: T.ink,
-                        color: T.paper,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontFamily: T.serif,
-                        fontStyle: "italic",
-                        fontSize: 20,
-                      }}
-                    >
-                      {caddy.initial}
-                    </div>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.4, color: T.pencil, textTransform: "uppercase" }}>{caddy.name}</span>
-                      <div style={{ display: "flex", gap: 2, alignItems: "center", height: 10 }}>
-                        {[5, 9, 6, 11, 7, 4, 8, 5].map((h, i) => (
-                          <span key={i} style={{ display: "block", width: 1.5, height: h, borderRadius: 1, background: accent, opacity: 0.55 + (i % 3) * 0.15 }} />
-                        ))}
-                      </div>
-                      <span style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.2, color: T.pencilSoft, marginLeft: "auto" }}>0:06</span>
-                    </div>
-                    <div style={{ fontFamily: T.serif, fontSize: 17, fontStyle: "italic", color: T.ink, lineHeight: 1.28, letterSpacing: -0.2 }}>
-                      Smooth {club.toLowerCase()} &mdash; the breeze is off your right. Favor the left side of the green.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Ask-back row */}
-                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${T.hairline}`, display: "flex", alignItems: "center", gap: 10 }}>
-                  <motion.button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAskCaddy();
-                    }}
-                    whileTap={{ scale: 0.96 }}
-                    style={{
-                      flexShrink: 0,
-                      width: 40,
-                      height: 40,
-                      borderRadius: 99,
-                      border: "none",
-                      background: accent,
-                      color: T.paper,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      boxShadow: `0 0 0 4px ${accent}22, 0 6px 14px rgba(26,42,26,0.2)`,
-                    }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <rect x="9" y="3" width="6" height="12" rx="3" />
-                      <path d="M5 11a7 7 0 0 0 14 0" />
-                      <path d="M12 18v3" />
-                    </svg>
-                  </motion.button>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" }}>Hold to talk</div>
-                    <div style={{ fontFamily: T.serif, fontSize: 14, fontStyle: "italic", color: T.pencil, letterSpacing: -0.1 }}>
-                      &ldquo;Should I lay up?&rdquo; · &ldquo;Give me the 9 instead&rdquo; · &ldquo;Log my score&rdquo;
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {/* Caddie interaction lives in the Ask Caddie modal (CaddieSheet),
+                  opened from the round screen's Ask Caddie pill — the card stays
+                  a quiet printed page (owner request 2026-07-01). */}
 
               {/* Flag distance markers */}
               <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
