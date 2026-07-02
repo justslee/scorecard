@@ -5371,3 +5371,17 @@ Verification: full frontend gates (vitest 1300, voice 274, build) + iOS SIM chec
 SIMTEST.md (Debug build w/ haptics pod, healthy boot, authdiag loaded=true, no page
 errors, sign-in screenshot) BEFORE TestFlight. CI green on rerun; merged to main;
 TestFlight build kicked (frontend-only — backend deploy is a no-op rerun).
+
+---
+
+## 2026-07-02 — SHIPPED: #89 map-first hole view (owner "cut it")
+
+Owner feedback on v1.0.664 (screenshot with red outline): map much larger; hole data +
+hole-selection button overlaid statically on the map. Built 584fd01: satellite map IS
+the hole card (58vh clamped 380-640px); picker pill top-left + compact stats chip
+(NN · Par · yds · Hcp) top-right as blur-backed overlays; Zoom above the map's own
+distance strip; mock wind/elev tiles + duplicate F/C/B cards removed; HoleCard reverted
+to illustration-only (mapSlot plumbing removed) — renders only for anchor-less legacy
+rounds. Gesture split: map touches pan the map (pointer-capture guard checks
+data-overlay), overlay chips remain hole-swipe surface. Merged as #89 (CI green),
+TestFlight v1.0.667 (202607020013) uploaded.

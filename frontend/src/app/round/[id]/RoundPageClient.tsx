@@ -28,6 +28,7 @@ import { getRecentCourses } from "@/lib/golf-api";
 import { resolveMappedCourse } from "@/lib/map-bridge";
 import type { MappedCourseListItem } from "@/lib/map-bridge";
 import { roundCourseAnchor } from "@/lib/round-anchor";
+import { computeFCBDistances } from "@/lib/course/course-coordinates";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
@@ -233,6 +234,8 @@ export default function RoundPage() {
   // (owner request 2026-07-02); clamped so small phones keep the score UI
   // reachable and tablets don't get a wall of map.
   const [mapHeight, setMapHeight] = useState(430);
+  // Flick-on-map hole swipe tracking (single-touch start point + time).
+  const mapSwipeRef = useRef<{ x: number; y: number; t: number } | null>(null);
   useEffect(() => {
     const size = () =>
       setMapHeight(Math.max(380, Math.min(640, Math.round(window.innerHeight * 0.58))));
@@ -715,6 +718,19 @@ export default function RoundPage() {
   // ---------------------------------------------------------------------------
 
   const distance = Math.max(80, hole.yards - Math.round(hole.yards * 0.6));
+
+  // F/C/B for the tiles under the map: real from-tee distances when the course
+  // has verified coords for this hole; the illustration-derived estimate otherwise.
+  const holeCoordsForTiles = mapCoords.find((c) => c.holeNumber === currentHole) ?? null;
+  const fcbFromTee = holeCoordsForTiles?.tee
+    ? computeFCBDistances(holeCoordsForTiles.tee, holeCoordsForTiles)
+    : null;
+  const fcbTiles = [
+    { k: "Front", v: fcbFromTee?.front ?? distance - 12, color: "#a8553f" },
+    { k: "Center", v: fcbFromTee?.center ?? distance, color: T.ink },
+    { k: "Back", v: fcbFromTee?.back ?? distance + 14, color: "#5d7285" },
+  ];
+  const playsYards = Math.round((fcbFromTee?.center ?? distance) * 1.04);
   // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
   const shotPoint = shotPointForPath(hole.path);
 
@@ -1189,8 +1205,9 @@ export default function RoundPage() {
               {mappedCourse || roundAnchor ? (
                 /* Map-first hole view: the satellite map IS the card, with the
                    hole picker + hole stats as static overlays (owner request
-                   2026-07-02). Drags starting on the map pan the map; the
-                   overlay chips remain swipe surface for prev/next. */
+                   2026-07-02). Map touches pan the map — but a fast, clearly
+                   horizontal flick flips to the prev/next hole (the camera
+                   re-frames on the new hole, so any incidental pan resets). */
                 <div
                   style={{
                     position: "relative",
@@ -1200,10 +1217,29 @@ export default function RoundPage() {
                     boxShadow: "0 8px 24px rgba(26,42,26,0.06)",
                   }}
                   onPointerDownCapture={(e) => {
-                    // Only chips/overlays should start a hole swipe — let map
-                    // gestures through to the native layer untouched.
+                    // Keep the framer drag wrapper off map touches (it would
+                    // rubber-band the card while the native map pans); overlay
+                    // chips remain wrapper swipe surface.
                     const el = e.target as HTMLElement;
                     if (!el.closest("[data-overlay]")) e.stopPropagation();
+                  }}
+                  onTouchStart={(e) => {
+                    mapSwipeRef.current =
+                      e.touches.length === 1
+                        ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() }
+                        : null; // pinch → never a hole swipe
+                  }}
+                  onTouchEnd={(e) => {
+                    const s = mapSwipeRef.current;
+                    mapSwipeRef.current = null;
+                    if (!s || e.changedTouches.length !== 1) return;
+                    const dx = e.changedTouches[0].clientX - s.x;
+                    const dy = e.changedTouches[0].clientY - s.y;
+                    // Fast + far + decisively horizontal = hole swipe.
+                    if (Date.now() - s.t < 600 && Math.abs(dx) > 70 && Math.abs(dx) > 1.8 * Math.abs(dy)) {
+                      haptic("light");
+                      goHole(dx < 0 ? currentHole + 1 : currentHole - 1);
+                    }
                   }}
                 >
                   <InlineHoleDiagram
@@ -1281,7 +1317,9 @@ export default function RoundPage() {
                     <span style={{ color: T.pencil }}>Hcp {hole.hcp}</span>
                   </div>
 
-                  {/* Zoom — above the map's distance strip */}
+                  {/* Zoom — bottom-right corner of the MAP portion (the card
+                      continues below with the stats section, so anchor by the
+                      map's height rather than the card bottom). */}
                   <button
                     data-overlay
                     onClick={() => {
@@ -1290,7 +1328,7 @@ export default function RoundPage() {
                     aria-label="Expand map"
                     style={{
                       position: "absolute",
-                      bottom: 64,
+                      top: mapHeight - 40,
                       right: 10,
                       zIndex: 6,
                       padding: "6px 10px",
@@ -1314,6 +1352,67 @@ export default function RoundPage() {
                     </svg>
                     Zoom
                   </button>
+
+                  {/* Wind / Elev / Plays + F/C/B tiles — restored below the map
+                      (owner 2026-07-02). F/C/B uses real from-tee coordinates
+                      when the course has them. */}
+                  <div data-overlay style={{ background: T.paper, padding: `10px 14px 12px` }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr 1fr",
+                        padding: "8px 0",
+                        borderBottom: `1px solid ${T.hairline}`,
+                        marginBottom: 12,
+                      }}
+                    >
+                      <MapStat k="Wind" v="6mph" sub="R→L" />
+                      <MapStat k="Elev" v="+3ft" sub="uphill" />
+                      <MapStat k="Plays" v={`${playsYards}Y`} sub="adjusted" />
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {fcbTiles.map((d) => (
+                        <div
+                          key={d.k}
+                          style={{
+                            flex: 1,
+                            padding: "10px 10px 8px",
+                            borderRadius: 10,
+                            border: `1px solid ${T.hairline}`,
+                            textAlign: "center",
+                            position: "relative",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: d.color }} />
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: 1.2,
+                              color: T.pencil,
+                              textTransform: "uppercase",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: 99,
+                                background: d.color,
+                                border: d.k === "Center" ? `1px solid ${T.pencilSoft}` : "none",
+                              }}
+                            />
+                            {d.k}
+                          </div>
+                          <div style={{ fontFamily: T.serif, fontSize: 22, color: T.ink, fontVariantNumeric: "tabular-nums" }}>{d.v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <HoleCard
@@ -1695,6 +1794,16 @@ export default function RoundPage() {
           fallbackCenter={mapCenter ?? roundAnchor ?? undefined}
         />
       )}
+    </div>
+  );
+}
+
+function MapStat({ k, v, sub }: { k: string; v: string; sub: string }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>{k}</div>
+      <div style={{ fontFamily: T.serif, fontSize: 20, color: T.ink, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{v}</div>
+      <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 0.8, color: T.pencil }}>{sub}</div>
     </div>
   );
 }
