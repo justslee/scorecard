@@ -7,6 +7,9 @@
 import type { Course, HoleInfo, TeeOption } from './types';
 import type { CourseData, TeeSet, HoleData as PgHoleData } from './courses/types';
 import { fetchAPI, API_BASE as BACKEND_BASE, authHeaders } from './api';
+// Safe import: course-search-helpers only imports TYPES from this module,
+// so there is no runtime import cycle.
+import { matchesQueryPrefix, courseNameKey } from './course-search-helpers';
 
 const API_BASE = "https://golfapi.io/api/v1";
 // Absolute backend base so the static/native client (no same-origin proxy) can
@@ -128,8 +131,12 @@ export function composeCourseName(clubName: string, courseName: string): string 
 
 // ===== API Functions =====
 
-// Search for golf clubs by name or location
-export async function searchCourses(query: string): Promise<GolfClub[]> {
+// Search for golf clubs by name or location.
+// Pass `opts.signal` to cancel a stale in-flight search (new keystroke).
+export async function searchCourses(
+  query: string,
+  opts?: { signal?: AbortSignal }
+): Promise<GolfClub[]> {
   try {
     // Try proxy first (keeps API key server-side)
     const useProxy = typeof window !== "undefined";
@@ -139,6 +146,7 @@ export async function searchCourses(query: string): Promise<GolfClub[]> {
 
     const response = await fetch(url, {
       headers: useProxy ? await authHeaders() : getHeaders(),
+      signal: opts?.signal,
     });
 
     if (!response.ok) {
@@ -404,19 +412,80 @@ interface MappedCourseApiResponse {
   }>;
 }
 
-/** Unified search across GolfAPI, OSM, and local courses */
+/** Options for searchAllCourses. */
+export interface SearchAllCoursesOptions {
+  /** Cancels all in-flight source legs (new keystroke / unmount). */
+  signal?: AbortSignal;
+  /**
+   * Progressive-render callback: invoked after each source leg settles with
+   * the CUMULATIVE result list for this query. The list is APPEND-ONLY —
+   * rows already reported keep their position; later legs only add deduped,
+   * relevance-passing rows below them. A renderer can therefore apply every
+   * callback directly and results never reshuffle under the user.
+   */
+  onResults?: (results: CourseSearchResult[]) => void;
+}
+
+/**
+ * Unified search across our mapped courses (fast local leg), GolfAPI, and
+ * OSM/Mapbox. Legs run in parallel; each appends to a shared append-only
+ * list as it settles (see SearchAllCoursesOptions.onResults). Every leg's
+ * rows pass the client-side prefix-relevance gate (matchesQueryPrefix) so
+ * irrelevant geocoder towns never render, even against a stale backend.
+ * Resolves with the final merged list once all legs settle.
+ */
 export async function searchAllCourses(
   query: string,
-  _options?: { lat?: number; lng?: number }
+  options?: SearchAllCoursesOptions
 ): Promise<CourseSearchResult[]> {
-  const results: CourseSearchResult[] = [];
+  const { signal, onResults } = options ?? {};
 
-  // 1. Search GolfAPI
-  const golfApiPromise = searchCourses(query).then((clubs) => {
+  // Append-only merge: dedupe by normalized name against everything already
+  // appended; never remove or reorder rows a previous leg reported.
+  const merged: CourseSearchResult[] = [];
+  const seenNames = new Set<string>();
+
+  const appendLeg = (rows: CourseSearchResult[]) => {
+    if (signal?.aborted) return; // stale query — never surface its rows
+    let added = false;
+    for (const r of rows) {
+      if (!matchesQueryPrefix(r.name, query)) continue;
+      const key = courseNameKey(r.name);
+      if (seenNames.has(key)) continue;
+      seenNames.add(key);
+      merged.push(r);
+      added = true;
+    }
+    if (added) onResults?.([...merged]);
+  };
+
+  // 1. Our mapped courses (RDS/PostGIS via the backend) — the fast local leg;
+  //    settles first in practice, so these rows render immediately.
+  const mappedPromise = fetchAPI<MappedCourseApiResponse>(
+    `/api/courses/mapped?search=${encodeURIComponent(query)}`,
+    { signal }
+  )
+    .then((data) => {
+      appendLeg(
+        (data.courses || []).map((c) => ({
+          id: c.id,
+          name: c.name ?? '',
+          address: c.address,
+          center: c.location,
+          source: 'mapped' as const,
+          hasCoordinates: true,
+        }))
+      );
+    })
+    .catch(() => {});
+
+  // 2. Search GolfAPI (proxied)
+  const golfApiPromise = searchCourses(query, { signal }).then((clubs) => {
+    const rows: CourseSearchResult[] = [];
     for (const club of clubs) {
       if (club.courses && club.courses.length > 0) {
         for (const course of club.courses) {
-          results.push({
+          rows.push({
             id: `golfapi-${course.id}`,
             name: composeCourseName(club.name, course.name || club.name),
             clubName: club.name,
@@ -433,7 +502,7 @@ export async function searchAllCourses(
           });
         }
       } else {
-        results.push({
+        rows.push({
           id: `golfapi-club-${club.id}`,
           name: club.name,
           clubName: club.name,
@@ -449,57 +518,29 @@ export async function searchAllCourses(
         });
       }
     }
+    appendLeg(rows);
   }).catch(() => {});
 
-  // 2. Search OSM / Mapbox via our API
-  const osmPromise = fetchAPI<CourseSearchApiResponse>(`/api/courses/search?q=${encodeURIComponent(query)}`)
+  // 3. Search OSM / Mapbox via our API
+  const osmPromise = fetchAPI<CourseSearchApiResponse>(
+    `/api/courses/search?q=${encodeURIComponent(query)}`,
+    { signal }
+  )
     .then((data) => {
-      for (const c of data.courses || []) {
-        // Deduplicate against GolfAPI results by name proximity
-        const isDupe = results.some(
-          (r) => r.name.toLowerCase() === c.name?.toLowerCase()
-        );
-        if (!isDupe) {
-          results.push({
-            id: c.id,
-            name: c.name ?? '',
-            address: c.address,
-            center: c.center,
-            source: 'osm',
-          });
-        }
-      }
-    })
-    .catch(() => {});
-
-  // 3. Search our mapped courses (RDS/PostGIS via the backend)
-  const mappedPromise = fetchAPI<MappedCourseApiResponse>(`/api/courses/mapped?search=${encodeURIComponent(query)}`)
-    .then((data) => {
-      for (const c of data.courses || []) {
-        results.push({
+      appendLeg(
+        (data.courses || []).map((c) => ({
           id: c.id,
           name: c.name ?? '',
           address: c.address,
-          center: c.location,
-          source: 'mapped',
-          hasCoordinates: true,
-        });
-      }
+          center: c.center,
+          source: 'osm' as const,
+        }))
+      );
     })
     .catch(() => {});
 
-  await Promise.all([golfApiPromise, osmPromise, mappedPromise]);
-
-  // Sort: mapped first (they have full data), then GolfAPI with coords, then rest
-  results.sort((a, b) => {
-    if (a.source === 'mapped' && b.source !== 'mapped') return -1;
-    if (b.source === 'mapped' && a.source !== 'mapped') return 1;
-    if (a.hasCoordinates && !b.hasCoordinates) return -1;
-    if (b.hasCoordinates && !a.hasCoordinates) return 1;
-    return 0;
-  });
-
-  return results;
+  await Promise.all([mappedPromise, golfApiPromise, osmPromise]);
+  return merged;
 }
 
 /** Convert a GolfAPI course into the app's Course model */
