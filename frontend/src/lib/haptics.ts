@@ -1,6 +1,8 @@
 /**
  * Haptic feedback utilities for mobile
- * Uses Vibration API (Android) and falls back gracefully on iOS
+ * Native @capacitor/haptics on device (iOS WKWebView ignores navigator.vibrate,
+ * so the plugin is the only path that actually taps on iPhone); falls back to
+ * the Vibration API (Android web) and no-ops everywhere else.
  */
 
 type HapticPattern = 'light' | 'medium' | 'heavy' | 'success' | 'warning' | 'error' | 'celebration';
@@ -17,17 +19,38 @@ const patterns: Record<HapticPattern, number | number[]> = {
 };
 
 /**
- * Trigger haptic feedback
+ * Trigger haptic feedback. Fire-and-forget: never throws, never awaited.
  */
 export function haptic(pattern: HapticPattern = 'light'): void {
-  // Check if Vibration API is available
-  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-    try {
-      navigator.vibrate(patterns[pattern]);
-    } catch {
-      // Silently fail if vibration not supported
-    }
-  }
+  // Native path — the only one that works inside the iOS app shell.
+  import('@capacitor/haptics')
+    .then(({ Haptics, ImpactStyle, NotificationType }) => {
+      switch (pattern) {
+        case 'light':
+          return Haptics.impact({ style: ImpactStyle.Light });
+        case 'medium':
+          return Haptics.impact({ style: ImpactStyle.Medium });
+        case 'heavy':
+        case 'celebration':
+          return Haptics.impact({ style: ImpactStyle.Heavy });
+        case 'success':
+          return Haptics.notification({ type: NotificationType.Success });
+        case 'warning':
+          return Haptics.notification({ type: NotificationType.Warning });
+        case 'error':
+          return Haptics.notification({ type: NotificationType.Error });
+      }
+    })
+    .catch(() => {
+      // Plugin unavailable (plain web) — Vibration API fallback (Android).
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        try {
+          navigator.vibrate(patterns[pattern]);
+        } catch {
+          // Silently fail if vibration not supported
+        }
+      }
+    });
 }
 
 /**

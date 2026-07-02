@@ -28,6 +28,7 @@ import { getRecentCourses } from "@/lib/golf-api";
 import { resolveMappedCourse } from "@/lib/map-bridge";
 import type { MappedCourseListItem } from "@/lib/map-bridge";
 import { roundCourseAnchor } from "@/lib/round-anchor";
+import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
 import { useHoleCoordinates } from "@/lib/map/use-hole-coordinates";
@@ -1537,6 +1538,7 @@ export default function RoundPage() {
                     <button
                       key={h}
                       onClick={() => {
+                        haptic("light");
                         goHole(h);
                         setHolePickerOpen(false);
                       }}
