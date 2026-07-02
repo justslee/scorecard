@@ -115,8 +115,17 @@ function SizedHoleDiagram({
 // ── Public component ──────────────────────────────────────────────────────────
 
 interface InlineHoleDiagramProps {
-  /** UUID of the mapped course (from resolveMappedCourse). */
-  courseId: string;
+  /**
+   * UUID of the mapped course (from the round's anchor or resolveMappedCourse).
+   * Optional: when absent, `fallbackCenter` drives a course-centred satellite view.
+   */
+  courseId?: string;
+  /**
+   * Course centre from the round's anchor — the satellite fallback when the
+   * course has no mapped geometry (or the geometry fetch fails), so the round
+   * map never silently disappears.
+   */
+  fallbackCenter?: { lat: number; lng: number };
   /** 1-indexed current hole number; updates the diagram with no refetch. */
   currentHole: number;
   /** Fixed pixel height for the diagram container. Defaults to 260px. */
@@ -125,6 +134,7 @@ interface InlineHoleDiagramProps {
 
 export default function InlineHoleDiagram({
   courseId,
+  fallbackCenter,
   currentHole,
   height = 260,
 }: InlineHoleDiagramProps) {
@@ -146,7 +156,15 @@ export default function InlineHoleDiagram({
 
   // ── One-shot geometry + coordinate fetch ──────────────────────────────────
   useEffect(() => {
-    if (!courseId) return;
+    if (!courseId) {
+      // Anchor-only mode: no mapped geometry to fetch — render the satellite
+      // view centred on the round's stored course centre.
+      if (fallbackCenter) {
+        setCourseCenter(fallbackCenter);
+        setLoaded(true);
+      }
+      return;
+    }
 
     let cancelled = false;
 
@@ -175,15 +193,21 @@ export default function InlineHoleDiagram({
 
         setLoaded(true);
       } catch {
-        // Silent — diagram simply won't appear. Score UI is unaffected.
-        // This matches the "graceful absence" requirement.
+        // Geometry fetch failed. With an anchor centre we still show the
+        // satellite view (centre-only) — the round map should never silently
+        // disappear. Without one: graceful absence, score UI unaffected.
+        if (!cancelled && fallbackCenter) {
+          setCourseCenter(fallbackCenter);
+          setLoaded(true);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [courseId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId, fallbackCenter?.lat, fallbackCenter?.lng]);
 
   // ── GPS watcher ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -223,7 +247,7 @@ export default function InlineHoleDiagram({
         }}
       >
         <GoogleSatelliteMap
-          courseId={courseId}
+          courseId={courseId ?? ""}
           courseName=""
           holeCoordinates={hasHoleCoords ? allCoords : []}
           currentHole={currentHole}

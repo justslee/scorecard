@@ -363,3 +363,46 @@ class TestRoundOwnerPlayerId:
         r = await client.post("/api/rounds", json=payload)
         assert r.status_code == 200, f"create failed: {r.text}"
         assert r.json()["ownerPlayerId"] == _PLAYER_ID
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. ROUND COURSE ANCHOR — satellite map without name resolution
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestRoundCourseAnchor:
+    """The course anchor (courseLat/courseLng/mappedCourseId) captured at round
+    creation round-trips, so the round screen can render the satellite map
+    directly instead of the fragile by-name lookup (course-search-fix-plan)."""
+
+    async def test_anchor_round_trips(self, client):
+        set_auth(TEST_OWNER_ID)
+        payload = {
+            **_MINIMAL_ROUND,
+            "courseLat": 40.7452,
+            "courseLng": -73.4565,
+            "mappedCourseId": "9f2b7c1e-1111-5222-8333-444455556666",
+        }
+        r = await client.post("/api/rounds", json=payload)
+        assert r.status_code == 200, f"create failed: {r.text}"
+        body = r.json()
+        assert body["courseLat"] == 40.7452
+        assert body["courseLng"] == -73.4565
+        assert body["mappedCourseId"] == "9f2b7c1e-1111-5222-8333-444455556666"
+
+        # Survives a fresh fetch.
+        r2 = await client.get(f"/api/rounds/{body['id']}")
+        assert r2.status_code == 200
+        fetched = r2.json()
+        assert fetched["courseLat"] == 40.7452
+        assert fetched["courseLng"] == -73.4565
+        assert fetched["mappedCourseId"] == "9f2b7c1e-1111-5222-8333-444455556666"
+
+    async def test_anchor_is_optional_and_null_for_legacy_clients(self, client):
+        set_auth(TEST_OWNER_ID)
+        r = await client.post("/api/rounds", json=_MINIMAL_ROUND)
+        assert r.status_code == 200, f"create failed: {r.text}"
+        body = r.json()
+        assert body["courseLat"] is None
+        assert body["courseLng"] is None
+        assert body["mappedCourseId"] is None

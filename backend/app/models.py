@@ -126,6 +126,11 @@ class Round(BaseModel):
     id: str
     courseId: str
     courseName: str
+    # Course anchor (centre + mapped-course id) captured at creation so the round
+    # screen can render the satellite map directly. None on legacy rounds.
+    courseLat: Optional[float] = None
+    courseLng: Optional[float] = None
+    mappedCourseId: Optional[str] = None
     teeId: Optional[str] = None
     teeName: Optional[str] = None
     date: str
@@ -146,6 +151,9 @@ class Round(BaseModel):
 class RoundCreate(BaseModel):
     courseId: str
     courseName: str
+    courseLat: Optional[float] = None
+    courseLng: Optional[float] = None
+    mappedCourseId: Optional[str] = None
     teeId: Optional[str] = None
     teeName: Optional[str] = None
     players: list[Player]

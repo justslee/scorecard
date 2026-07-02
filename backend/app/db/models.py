@@ -12,7 +12,7 @@ Core scoring schema (Alembic revision 002_core_scoring / 005_core_scoring):
 from datetime import datetime, date
 from typing import Optional
 from sqlalchemy import (
-    BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, Text, func,
+    BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric, Text, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -294,6 +294,12 @@ class Round(Base):
     owner_player_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     course_id: Mapped[str] = mapped_column(Text, nullable=False)
     course_name: Mapped[str] = mapped_column(Text, nullable=False)
+    # Course anchor: geographic centre + mapped-course identity captured at round
+    # creation so the round screen renders the satellite map without the fragile
+    # by-name lookup. Nullable: legacy rounds fall back to name resolution.
+    course_lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    course_lng: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    mapped_course_id: Mapped[Optional[str]] = mapped_column(UUID(as_uuid=False), nullable=True)
     tee_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tee_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     date: Mapped[str] = mapped_column(Text, nullable=False)

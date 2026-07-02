@@ -246,6 +246,10 @@ export async function deletePlayer(id: string): Promise<void> {
 export interface RoundCreate {
   courseId: string;
   courseName: string;
+  /** Course anchor from the selected search result — see Round.courseLat/Lng. */
+  courseLat?: number;
+  courseLng?: number;
+  mappedCourseId?: string;
   teeId?: string;
   teeName?: string;
   /** Each player must include an id (generate with crypto.randomUUID() client-side). */

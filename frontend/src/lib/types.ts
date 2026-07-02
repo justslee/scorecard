@@ -181,6 +181,15 @@ export interface Round {
   id: string;
   courseId: string;
   courseName: string;
+  /**
+   * Course anchor captured at round creation: geographic centre + the mapped
+   * course's UUID (when the selection was an ingested/write-through course).
+   * The round screen renders the satellite map from these directly; absent on
+   * legacy rounds, which fall back to by-name resolution.
+   */
+  courseLat?: number;
+  courseLng?: number;
+  mappedCourseId?: string;
   teeId?: string;
   teeName?: string;
   date: string;
