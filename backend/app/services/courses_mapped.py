@@ -53,20 +53,44 @@ def _list_item(row: Any) -> dict:
 
 # ── List ──────────────────────────────────────────────────────────────────────
 async def list_courses(search: Optional[str] = None) -> list[dict]:
-    where = ""
-    params: dict[str, Any] = {}
-    if search:
-        where = "where name ilike :q or address ilike :q"
-        params["q"] = f"%{search}%"
+    """List courses, optionally filtered/ranked by a name/address search term.
 
-    sql = f"""
+    Without ``search``: most-recently-updated first (unchanged behavior — the
+    course editor's plain listing).
+
+    With ``search``: RANKED, not chronological — a prefix match on the course
+    name (``name ilike 'q%'``) beats a fuzzy trigram ``similarity()`` match,
+    which beats a substring/address hit; ties break by ``similarity()``
+    descending. Backed by the ``pg_trgm`` GIN index on ``courses.name``
+    (migration 011_courses_trgm_index) so this stays fast as the write-through
+    course index (external search hits persisted by /api/courses/search) grows.
+    """
+    if not search:
+        sql = """
+            select id::text as id, name, address,
+                   ST_X(location::geometry) as lng, ST_Y(location::geometry) as lat,
+                   updated_at
+            from public.courses
+            order by updated_at desc
+        """
+        async with async_session() as db:
+            rows = (await db.execute(text(sql))).mappings().all()
+        return [_list_item(r) for r in rows]
+
+    sql = """
         select id::text as id, name, address,
                ST_X(location::geometry) as lng, ST_Y(location::geometry) as lat,
-               updated_at
+               updated_at,
+               similarity(name, :q) as sim
         from public.courses
-        {where}
-        order by updated_at desc
+        where name ilike :prefix or name ilike :contains or address ilike :contains
+           or similarity(name, :q) > 0.2
+        order by
+          (name ilike :prefix) desc,
+          similarity(name, :q) desc,
+          updated_at desc
     """
+    params: dict[str, Any] = {"q": search, "prefix": f"{search}%", "contains": f"%{search}%"}
     async with async_session() as db:
         rows = (await db.execute(text(sql), params)).mappings().all()
     return [_list_item(r) for r in rows]
@@ -375,4 +399,37 @@ async def delete_course(course_id: str) -> None:
         await db.execute(
             text("delete from public.courses where id = :id"), {"id": course_id}
         )
+        await db.commit()
+
+
+# ── Write-through (local-first course-search index) ───────────────────────────
+async def write_through_courses(rows: list[dict]) -> None:
+    """Persist external search hits into ``public.courses`` so repeat searches
+    hit the local trigram index instead of re-calling OSM/Places/Mapbox.
+
+    ``rows`` are the pure ``course_finder.external_course_rows`` output — each
+    has a DETERMINISTIC id (same source hit always maps to the same row), so
+    ``ON CONFLICT (id) DO NOTHING`` is safe and idempotent: a name/address
+    correction from a fuller ingest elsewhere is never clobbered by a shallow
+    search-hit write-through. Geometry (tee_sets/holes) is intentionally left
+    empty — this only seeds identity + location for ranking; the course editor
+    /ingest pipeline fills in the rest.
+    """
+    if not rows:
+        return
+    async with async_session() as db:
+        for row in rows:
+            await db.execute(
+                text(
+                    """
+                    insert into public.courses (id, name, address, location)
+                    values (
+                        :id, :name, :address,
+                        ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+                    )
+                    on conflict (id) do nothing
+                    """
+                ),
+                row,
+            )
         await db.commit()

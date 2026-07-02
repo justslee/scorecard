@@ -13,7 +13,7 @@ const KEY = "looper_course_handoff";
 
 /**
  * Shape MUST remain compatible with SelectedCourse in round/new/page.tsx.
- * Keep these in sync: { id, name, clubName?, location?, holes?, par? }.
+ * Keep these in sync: { id, name, clubName?, location?, holes?, par?, source?, center? }.
  */
 export interface CourseHandoff {
   id: number | string;
@@ -22,6 +22,10 @@ export interface CourseHandoff {
   location?: string;
   holes?: number;
   par?: number;
+  /** "mapped" means id is a mapped-course UUID (see round-anchor.ts). */
+  source?: string;
+  /** Geographic centre — becomes the round's course anchor when present. */
+  center?: { lat: number; lng: number };
 }
 
 /** Write the course into sessionStorage for round/new to consume on mount. */

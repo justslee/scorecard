@@ -4,17 +4,23 @@
  * CourseSearch — yardage-book styled course-search bottom sheet.
  *
  * Empty state (no query): Favorites (user-starred) then Nearby (GPS, best-effort).
- * Active search: searchAllCourses() — mapped sources first, GolfAPI as fallback.
+ * Active search: a course-search session (course-search-session.ts) around
+ * searchAllCourses() — results stream in append-only per source leg, stale
+ * requests are aborted AND stale-guarded so rows never reshuffle under the user.
  * Star toggle on every result persists to course-favorites.ts (localStorage).
  *
  * Design: T.* tokens (T.paper / T.ink / T.serif / T.mono) and inline SVGs.
  * No Tailwind classes, no lucide-react, no zinc/emerald dark theme.
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { T } from "@/components/yardage/tokens";
-import { searchAllCourses, searchNearby, type CourseSearchResult } from "@/lib/golf-api";
+import { searchNearby, type CourseSearchResult } from "@/lib/golf-api";
+import {
+  createCourseSearchSession,
+  type CourseSearchSession,
+} from "@/lib/course-search-session";
 import { GPSWatcher } from "@/lib/gps";
 import {
   listFavorites,
@@ -182,9 +188,10 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
   // Favorites (empty-state mode) — refreshed on every star toggle
   const [favorites, setFavorites] = useState<FavoriteCourse[]>(() => listFavorites());
 
-  // Nearby (empty-state mode)
+  // Nearby (empty-state mode). Starts "loading" — the GPS effect below always
+  // kicks off a fetch unconditionally on mount, so there's no real "idle" moment.
   const [nearby, setNearby] = useState<NearbyResult[]>([]);
-  const [nearbyState, setNearbyState] = useState<"idle" | "loading" | "done" | "denied">("idle");
+  const [nearbyState, setNearbyState] = useState<"idle" | "loading" | "done" | "denied">("loading");
 
   // Track which result ids are starred so star state updates instantly
   const [starredIds, setStarredIds] = useState<Set<string>>(() => {
@@ -192,15 +199,21 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
     return new Set(favs.map((f) => f.id));
   });
 
-  // Abort controller ref for cancelling stale search requests
-  const abortRef = useRef<AbortController | null>(null);
+  // Course-search session — owns the AbortController + stale-query guard so
+  // results for a superseded query can never render (see course-search-session.ts).
+  const sessionRef = useRef<CourseSearchSession | null>(null);
+  if (sessionRef.current === null) {
+    sessionRef.current = createCourseSearchSession({
+      onResults: setSearchResults,
+      onError: setSearchError,
+      onSettled: () => setSearchLoading(false),
+    });
+  }
 
   // ---------------------------------------------------------------------------
   // One-shot GPS for nearby (on mount, best-effort)
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    setNearbyState("loading");
-
     GPSWatcher.getCurrentPosition().then(
       async (pos) => {
         try {
@@ -219,40 +232,50 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
     // One-shot promise — no cleanup needed
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Debounced search (250ms) with stale-request cancellation
-  // ---------------------------------------------------------------------------
-  const doSearch = useCallback(async (q: string) => {
-    if (q.length < 2) {
+  /**
+   * Query change handler — the event handler is where synchronous UI resets
+   * belong (not an effect body): mark the new query live immediately so any
+   * in-flight request for the previous query goes stale before the debounce
+   * even fires, and reset to a clean slate for a short/cleared query.
+   */
+  function handleQueryChange(next: string) {
+    setQuery(next);
+    const session = sessionRef.current!;
+    session.noteQuery(next);
+
+    if (next.length < 2) {
+      session.cancel();
       setSearchResults([]);
       setSearchError(null);
-      return;
-    }
-
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
-
-    setSearchLoading(true);
-    setSearchError(null);
-    try {
-      const results = await searchAllCourses(q);
-      setSearchResults(results);
-    } catch (err) {
-      if ((err as Error)?.name !== "AbortError") {
-        setSearchError("Search failed — check your connection.");
-      }
-    } finally {
       setSearchLoading(false);
+    } else {
+      setSearchLoading(true);
+      setSearchError(null);
     }
-  }, []);
+  }
 
+  // ---------------------------------------------------------------------------
+  // Debounced search (250ms) — only kicks off the actual network call; all
+  // synchronous state resets live in handleQueryChange above.
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    const timer = setTimeout(() => { void doSearch(query); }, 250);
+    if (query.length < 2) return;
+
+    const timer = setTimeout(() => {
+      sessionRef.current!.search(query);
+    }, 250);
+
     return () => {
       clearTimeout(timer);
-      abortRef.current?.abort();
     };
-  }, [query, doSearch]);
+  }, [query]);
+
+  // Abort any in-flight search on unmount.
+  useEffect(() => {
+    return () => {
+      sessionRef.current?.cancel();
+    };
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Star toggle helpers
@@ -596,7 +619,7 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
               type="text"
               placeholder="Course name or location…"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => handleQueryChange(e.target.value)}
               autoFocus
               style={{
                 width: "100%",

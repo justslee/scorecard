@@ -5152,3 +5152,181 @@ replacing the schematic) — to land with the owner's Claude Design layout.
 Also this session: security(search) — URL-encoded Mapbox query + auth on /search
 (paid Places). Places key saved (goes live on backend restart; verify config-status
 + a real search). Fable session pushed tee-time phase 1b-A to the same branch.
+
+---
+
+## 2026-07-01 — SHIPPED: #86 bundle merged to main (owner "ship it", in-session)
+
+Owner approved in-session. Merged PR #86 → main (16cf7de) with green checks; fresh
+integration/next fast-forwarded to main and pushed. Backend auto-deployed via SSM
+(run 28556050992, success) — alembic upgraded 009→010_tee_time_bookings on prod.
+Bundle contents: tee-time phase 1b (A–D) + Google Places course search + search auth +
+OSM name matching + map tap-to-target + WHS handicap + round-map interactive/fullscreen
+(ba2eaf9, landed by the loop session just before merge — flagged to owner post-merge).
+Board: Phase 1b card → Shipped. Provider default still mock: flip TEETIME_PROVIDER=affiliate
+once GOOGLE_PLACES_API_KEY is set (also needed for search half of the shipped work).
+
+---
+
+## 2026-07-01 — course-search race fix + append-only rendering (work item 2, frontend)
+
+Owner escalation: search results slow, reshuffle mid-read, show irrelevant towns
+("Bethpa" → Bethel Island/Bethanga). Implemented specs/course-search-fix-plan.md
+work item 2 (frontend half; a parallel builder did item 1, backend relevance/speed/
+local-first, in the same working tree — untouched here). Committed d20b289 to
+integration/next.
+
+- `frontend/src/lib/golf-api.ts` searchAllCourses(query, {signal, onResults}):
+  the AbortSignal was created in CourseSearch.tsx but never threaded through
+  (dead code) — now passed into all three legs (mapped, golfapi proxy incl. its
+  own fetch call, osm), restructured from Promise.all-then-sort into an
+  append-only merge (each leg calls onResults with the cumulative filtered/
+  deduped list as it settles; nothing already delivered is ever removed/reordered).
+- New `frontend/src/lib/course-search-session.ts`: owns the AbortController +
+  a stale-query guard (belt for abort-race browsers) so a superseded query's
+  results/errors can never reach the UI. Pure TS, independently unit-tested.
+- `frontend/src/components/CourseSearch.tsx`: wired to the session. Also fixed
+  2 new eslint-plugin-react-hooks `set-state-in-effect` errors that appeared
+  once the effect shape changed (pre-existing code was apparently under an
+  analyzer bailout that lifted after the refactor) — moved the query-change
+  reset into the input's onChange handler and made GPS-nearby state start
+  "loading" directly instead of setting it synchronously in an effect body.
+- `frontend/src/lib/course-search-helpers.ts`: added matchesQueryPrefix /
+  tokenizeCourseName / courseNameKey — mirrors the backend's
+  matches_query_prefix (stopwords golf/course/club/links/country/the stripped
+  from the query only; every query token must prefix-match a name token) as
+  defense in depth so towns never render even against a stale backend.
+
+Tests: +27 (helpers: prefix filter incl. Bethpage repro table; golf-api-search:
+append-only batches, dedupe, relevance filter, abort reaching every fetch leg;
+course-search-session: stale-guard under out-of-order resolution). Gates:
+tsc/lint clean, vitest 1292/1292 (was 1265), voice smoke 274/274, build green.
+SILENT (bug fix, not a new surface) — rides along in the bundle.
+
+NEXT (work item 3, needs both halves): persist courseLat/courseLng on Round,
+drive RoundPageClient's satellite map from the anchor instead of by-name
+resolution, and unify the Courses-tab select handler to route to course detail
+instead of bare /map/course. Touches resultToPayload/onSelectCourse callers in
+CourseSearch.tsx (unchanged by this item) plus round/new + RoundPageClient.
+
+## 2026-07-01 — course-search relevance + speed + local-first (work item 1, backend)
+
+Owner escalation ("asked many times"): "Bethpa" returning Bethel Island/Bethanga
+towns, "Bethpage Black" showing non-matches, search slow + no cache, no local DB
+consulted. Implemented specs/course-search-fix-plan.md work item 1 (backend half;
+the parallel frontend builder already landed item 2 in this same working tree,
+commit d20b289/2b24804 — untouched here). Committed d24acd3 to integration/next.
+
+- `backend/app/services/course_finder.py`: new pure helpers —
+  `matches_query_prefix(name, q)` (fold case/accents/apostrophes, drop golf
+  stopwords from the QUERY only, every remaining query token must PREFIX-match
+  some name token) + `rank_courses(courses, q, anchor=None)` (tiered stable sort:
+  exact normalized-name match > all-token-prefix > local/mapped source >
+  haversine distance to anchor > alpha) + write-through identity
+  (`deterministic_course_id`/`external_course_key`/`external_course_rows`/
+  `attach_stable_ids`, reusing osm_ingest's UUID v5 convention so a richer
+  ingest later lands on the same courses row).
+- `backend/app/routes/course_search.py`: /api/courses/search rewritten —
+  cache → LOCAL FIRST (courses_mapped, relevance-gated) → fan out only when
+  local has <3 passing hits (OSM-by-name + Google Places via
+  `asyncio.gather`, tight interactive budgets) → Mapbox fallback ONLY as a
+  location anchor for a name-filtered OSM search (the geocode place itself is
+  NEVER returned as a course — that was the town-name bug) → relevance gate
+  applied to every candidate from every source → rank → write-through new
+  external hits. `_list_local_courses`/`_write_through_courses` lazily import
+  `courses_mapped` (module-level import would require DATABASE_URL to even
+  collect this test file).
+- `backend/app/services/osm.py`: `search_golf_courses(..., interactive=True)`
+  — Overpass `[timeout:4]`, 5s client timeout, 0.5s retry backoff (vs. 2s
+  ingest-path default) for the live-search path only; ingest callers unaffected.
+- `backend/app/services/course_search_cache.py` (new): TTL cache for
+  /api/courses/search — 24h positive / 5min negative, injectable store, same
+  file-backed idiom as tee_times/search_cache.py.
+- `backend/app/services/courses_mapped.py`: `list_courses(search=...)` is now
+  RANKED (name-prefix boost then `similarity()` desc) instead of
+  `updated_at desc`; new `write_through_courses(rows)` — `ON CONFLICT (id) DO
+  NOTHING` insert into `courses` (id/name/address/location only, geometry
+  NULL — the course editor fills in holes later).
+- `backend/migrations/versions/0008_011_courses_trgm_index.py` (new head,
+  010_tee_time_bookings → 011_courses_trgm_index): `CREATE EXTENSION IF NOT
+  EXISTS pg_trgm` + GIN trigram index on `courses.name`. Verified via
+  `alembic history` (resolves cleanly) and `alembic ... --sql` (correct DDL).
+
+Tests: +40 new (Bethpage repro table incl. "bethpa"→Black/Red/Green only,
+"bethpage black"→exactly Black, towns-never-emitted incl. a real nearby OSM
+club that still fails the gate, ranking tiers, local-first short-circuit skips
+ALL external calls, cache hit skips everything, write-through idempotency) —
+all 8 pre-existing course-search contract tests (osm_name_filter, dedupe,
+no-key Places noop, Mapbox URL encoding) pass UNCHANGED. Gates: `ruff check .`
+clean, `pytest -q` 935 passed (was 895) / 51 skipped (integration tests need
+Postgres — run in CI, not locally, per policy). DB-backed paths
+(`courses_mapped.list_courses`/`write_through_courses`, the new migration) are
+exercised only by CI's Postgres-backed integration suite — not run locally.
+
+Deviations from the plan: (1) normalize_query/rank_courses' exact-tier are
+word-order-INVARIANT (sorted tokens) — "black bethpage" and "bethpage black"
+now share one cache entry and both correctly hit the exact tier, which the
+plan didn't specify but is consistent with the prefix gate already being
+order-independent. (2) The old unfiltered-nearby-OSM fallback radius (20000m)
+is now the same 8km facility-expansion radius as the Places branch, per the
+plan's explicit "8km facility expansion" language for the anchored path.
+
+Frontend mirror contract (already implemented by the parallel builder,
+`frontend/src/lib/course-search-helpers.ts`): `matchesQueryPrefix(name,
+query): boolean` — same semantics as `matches_query_prefix`. Confirms the two
+halves agree independently.
+
+NOT noticeable via TestFlight build number alone — same UI, but the owner's
+literal repro ("bethpa" showing towns) is fixed; recommend flagging this
+bundle for a quick manual retest of that exact search before "ship it" since
+it's the top escalation. Risk: LOW-MEDIUM — endpoint behavior changed
+(local-first + relevance gate can only narrow results, never widen beyond
+what previously matched) and a new additive migration; no new external
+dependency; no auth/data-handling change. Local-first path is untestable
+without Postgres locally — CI is the real gate for that half; recommend
+running `/security-review` + `/code-review` before this bundle ships per
+CLAUDE.md's "new endpoint/data-layer behavior" rule.
+
+NEXT (work item 3, needs both halves): persist courseLat/courseLng on Round,
+drive RoundPageClient's satellite map from the anchor, unify the Courses-tab
+select handler to route to course detail instead of bare /map/course.
+
+---
+
+## 2026-07-01 (owner session, Fable 5) — COURSE SEARCH OVERHAUL + yardage-book satellite
+
+Owner escalation ("asked many times"): search slow/janky/irrelevant ("Bethpa" → Bethel
+Island/Bethanga towns), results reshuffle mid-read, and the round screen showed the paper
+mock instead of the real map. Diagnosis (specs/course-search-fix-plan.md): 2-5 SERIAL
+external calls per keystroke w/ no cache; dead AbortController (stale-response races);
+Mapbox town-geocode fallback w/ no golf filter (prod has NO GOOGLE_PLACES_API_KEY —
+confirmed via config-status — so this fired constantly); round screen resolves course
+BY NAME, silently drops to paper on miss.
+
+Landed on integration/next:
+- d20b289 frontend search: signal actually threaded (abort works), stale-query guard
+  (course-search-session.ts), append-only progressive render (never reshuffles),
+  client prefix filter mirror. vitest 1292.
+- d24acd3 backend search: matches_query_prefix relevance gate on ALL sources (every
+  query token must prefix a name token — "bethpa" can't match "bethel"), tiered ranking,
+  Mapbox = anchor-only (towns never emitted), asyncio.gather + tight timeouts
+  (Overpass [timeout:4]/5s/1 retry @0.5s), 24h/5min TTL cache, pg_trgm GIN index
+  (migration 011) + ranked local-first + write-through of external hits into courses.
+  pytest 935.
+- 7c65439 + c937ab2 round anchor (item-3 builder hit usage limit w/ zero output;
+  eng-lead built it directly): rounds carry courseLat/Lng + mappedCourseId (migration
+  012, additive nullable; validated at the edge), round/new sends them from the search
+  selection, RoundPageClient drives inline + fullscreen satellite from the anchor
+  (by-name = legacy fallback only; paper only when no location at all).
+  InlineHoleDiagram: courseId optional + fallbackCenter center-only mode.
+  DEVIATION from plan item 3.3: courses-tab select routing UNCHANGED — the detail page
+  only supports GolfAPI courses; rerouting mapped/OSM there would break. Follow-up:
+  mapped-course detail support, then unify destinations.
+
+Gates (combined tree): ruff clean, pytest 935/53sk; tsc/lint clean, vitest 1300/1300,
+voice 274/274, build green. Security pass: anchor inputs validated (uuid regex +
+lat/lng bounds), write-through parameterized, cache paths fixed, endpoint auth
+unchanged/narrowed. Owner said "ship it" pre-authorized after finish.
+
+STILL OWNER: GOOGLE_PLACES_API_KEY in prod (config-status shows google_places:false) —
+search works without it now (no more towns) but coverage improves with it.

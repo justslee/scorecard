@@ -142,6 +142,10 @@ export async function authHeaders(): Promise<Record<string, string>> {
 
 /**
  * Make an authenticated API request.
+ *
+ * `options` is a standard RequestInit and is spread into fetch, so callers can
+ * cancel an in-flight request by passing an AbortSignal via `options.signal`
+ * (used by the course-search legs to drop stale keystrokes).
  */
 export async function fetchAPI<T = unknown>(
   path: string,
@@ -242,6 +246,10 @@ export async function deletePlayer(id: string): Promise<void> {
 export interface RoundCreate {
   courseId: string;
   courseName: string;
+  /** Course anchor from the selected search result — see Round.courseLat/Lng. */
+  courseLat?: number;
+  courseLng?: number;
+  mappedCourseId?: string;
   teeId?: string;
   teeName?: string;
   /** Each player must include an id (generate with crypto.randomUUID() client-side). */

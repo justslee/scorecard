@@ -17,6 +17,7 @@ import VoiceRoundSetupRealtime from "@/components/VoiceRoundSetupRealtime";
 import CourseSearch from "@/components/CourseSearch";
 import PlayerAutocomplete from "@/components/PlayerAutocomplete";
 import { takeCourseForRound } from "@/lib/course-handoff";
+import { anchorFromSelectedCourse } from "@/lib/round-anchor";
 
 // ---------------------------------------------------------------------------
 // Local types
@@ -47,8 +48,10 @@ interface SelectedCourse {
   location?: string;
   holes?: number; // hole count from GolfAPI (not HoleInfo[])
   par?: number;
-  /** Source from CourseSearch — ignored by round setup but accepted to satisfy the prop type. */
+  /** Source from CourseSearch — "mapped" means id is a mapped-course UUID. */
   source?: string;
+  /** Geographic centre from the search result — becomes the round's course anchor. */
+  center?: { lat: number; lng: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +325,9 @@ export default function RoundSetupPage() {
       const created = await createRound({
         courseId,
         courseName,
+        // Course anchor: lets the round screen render the satellite map directly
+        // instead of re-resolving the course by name (paper-drawing fallback bug).
+        ...anchorFromSelectedCourse(selectedCourse),
         teeName: teeLabel,
         players: deduped,
         ownerPlayerId,

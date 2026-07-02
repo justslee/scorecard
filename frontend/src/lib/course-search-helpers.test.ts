@@ -4,6 +4,9 @@ import {
   formatMiles,
   dedupeByName,
   mergeAndSortNearby,
+  matchesQueryPrefix,
+  tokenizeCourseName,
+  courseNameKey,
 } from "./course-search-helpers";
 import type { CourseSearchResult } from "./golf-api";
 
@@ -169,5 +172,102 @@ describe("mergeAndSortNearby", () => {
 
   it("handles empty array", () => {
     expect(mergeAndSortNearby([], USER.lat, USER.lng)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// tokenizeCourseName
+// ---------------------------------------------------------------------------
+
+describe("tokenizeCourseName", () => {
+  it("splits on punctuation and lowercases", () => {
+    expect(tokenizeCourseName("Bethpage State Park - Black Course")).toEqual([
+      "bethpage",
+      "state",
+      "park",
+      "black",
+      "course",
+    ]);
+  });
+
+  it("collapses repeated whitespace/punctuation", () => {
+    expect(tokenizeCourseName("Pebble  Beach,   Golf-Links")).toEqual([
+      "pebble",
+      "beach",
+      "golf",
+      "links",
+    ]);
+  });
+
+  it("returns empty array for empty/punctuation-only input", () => {
+    expect(tokenizeCourseName("")).toEqual([]);
+    expect(tokenizeCourseName("---")).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// matchesQueryPrefix — the owner's Bethpage repro cases
+// ---------------------------------------------------------------------------
+
+describe("matchesQueryPrefix", () => {
+  it('"bethpa" matches Bethpage courses', () => {
+    expect(matchesQueryPrefix("Bethpage Black", "bethpa")).toBe(true);
+    expect(matchesQueryPrefix("Bethpage Red", "bethpa")).toBe(true);
+    expect(matchesQueryPrefix("Bethpage Green", "bethpa")).toBe(true);
+  });
+
+  it('"bethpa" does NOT match unrelated towns (Bethel Island, Bethanga)', () => {
+    expect(matchesQueryPrefix("Bethel Island", "bethpa")).toBe(false);
+    expect(matchesQueryPrefix("Bethanga", "bethpa")).toBe(false);
+  });
+
+  it('"bethpage black" matches exactly "Bethpage State Park - Black Course" (punctuation/word split)', () => {
+    expect(matchesQueryPrefix("Bethpage State Park - Black Course", "bethpage black")).toBe(true);
+  });
+
+  it('"bethpage black" does NOT match "Bethpage Red" or "Bethpage Green"', () => {
+    expect(matchesQueryPrefix("Bethpage Red", "bethpage black")).toBe(false);
+    expect(matchesQueryPrefix("Bethpage Green", "bethpage black")).toBe(false);
+  });
+
+  it("every query token must prefix-match some name token (AND semantics)", () => {
+    expect(matchesQueryPrefix("Pebble Beach Golf Links", "pebble links")).toBe(true);
+    expect(matchesQueryPrefix("Pebble Beach Golf Links", "pebble zzz")).toBe(false);
+  });
+
+  it("is case-insensitive", () => {
+    expect(matchesQueryPrefix("BETHPAGE BLACK", "Bethpage")).toBe(true);
+  });
+
+  it("strips golf-stopwords from the query but not from the name", () => {
+    // "golf" is a stopword in the query — "golf cl" should still match "... Golf Club"
+    expect(matchesQueryPrefix("Riverside Golf Club", "golf cl")).toBe(true);
+    // An all-stopword query falls back to its literal tokens rather than
+    // matching everything.
+    expect(matchesQueryPrefix("Riverside Golf Club", "golf")).toBe(true);
+    expect(matchesQueryPrefix("Bethpage Black", "golf")).toBe(false);
+  });
+
+  it("empty query matches everything (no filter to apply yet)", () => {
+    expect(matchesQueryPrefix("Bethpage Black", "")).toBe(true);
+  });
+
+  it("prefix, not substring — a mid-word match does not count", () => {
+    // "ethpage" is a substring of "Bethpage" but not a prefix of any word.
+    expect(matchesQueryPrefix("Bethpage Black", "ethpage")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// courseNameKey
+// ---------------------------------------------------------------------------
+
+describe("courseNameKey", () => {
+  it("normalizes case and punctuation for dedupe comparison", () => {
+    expect(courseNameKey("Bethpage Black")).toBe(courseNameKey("bethpage, black!"));
+  });
+
+  it("distinguishes different courses", () => {
+    expect(courseNameKey("Bethpage Black")).not.toBe(courseNameKey("Bethpage Red"));
   });
 });

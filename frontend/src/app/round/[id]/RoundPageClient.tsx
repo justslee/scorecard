@@ -27,6 +27,7 @@ import { resolveCourseKey } from "@/lib/course-review-key";
 import { getRecentCourses } from "@/lib/golf-api";
 import { resolveMappedCourse } from "@/lib/map-bridge";
 import type { MappedCourseListItem } from "@/lib/map-bridge";
+import { roundCourseAnchor } from "@/lib/round-anchor";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
 import { useHoleCoordinates } from "@/lib/map/use-hole-coordinates";
@@ -395,11 +396,17 @@ export default function RoundPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round?.courseName, round?.id]);
 
-  // Resolve mapped course: query GET /api/courses/mapped?search=<courseName> once the
-  // round's courseName is known. When a confident name match is found, `mappedCourse`
-  // is set so the inline hole diagram can be shown. Silently hides on any error.
+  // Resolve mapped course. Preferred path: the round's stored anchor
+  // (mappedCourseId, captured at creation) — direct, no name lookup. Legacy
+  // fallback: query GET /api/courses/mapped?search=<courseName> and take a
+  // confident name match. Silently hides on any error.
   useEffect(() => {
+    const anchorId = round?.mappedCourseId;
     const courseName = round?.courseName?.trim();
+    if (anchorId) {
+      setMappedCourse({ id: anchorId, name: courseName ?? "" });
+      return;
+    }
     if (!courseName) return;
 
     let cancelled = false;
@@ -418,7 +425,11 @@ export default function RoundPage() {
     })();
 
     return () => { cancelled = true; };
-  }, [round?.courseName]);
+  }, [round?.courseName, round?.mappedCourseId]);
+
+  // Course anchor centre stored on the round at creation — drives the satellite
+  // map even when no mapped geometry exists (never drop to the paper mock).
+  const roundAnchor = roundCourseAnchor(round);
 
   const hole = HOLES[currentHole - 1] ?? HOLES[0];
   // Prefer round's par data (authoritative); fall back to illustration constant.
@@ -1196,15 +1207,18 @@ export default function RoundPage() {
             </motion.div>
           </AnimatePresence>
 
-          {/* Inline yardage-book hole map — appears when this course has mapped geometry.
-               Data is fetched once (on mappedCourse resolution) and cached inside
+          {/* Inline yardage-book hole map — mapped geometry when available,
+               otherwise a course-centred satellite view from the round's anchor,
+               so the real course map is always part of the yardage book. Data is
+               fetched once (on mappedCourse resolution) and cached inside
                InlineHoleDiagram; only the feature lookup changes as currentHole changes. */}
-          {mappedCourse && (
+          {(mappedCourse || roundAnchor) && (
             <div style={{ marginBottom: 14 }}>
               <SectionLabel>Hole {currentHole} map</SectionLabel>
               <div style={{ position: "relative" }}>
                 <InlineHoleDiagram
-                  courseId={mappedCourse.id}
+                  courseId={mappedCourse?.id}
+                  fallbackCenter={roundAnchor ?? undefined}
                   currentHole={currentHole}
                 />
                 {/* Blow it up — opens the fullscreen interactive map. */}
@@ -1474,10 +1488,11 @@ export default function RoundPage() {
       />
 
       {/* Fullscreen "blow it up" satellite map — full-screen interactive overlay,
-          framed on the current hole. Hole changes sync back to the round. */}
-      {mapZoom && mappedCourse && (
+          framed on the current hole. Hole changes sync back to the round. Renders
+          from mapped geometry when available, else the round's anchor centre. */}
+      {mapZoom && (mappedCourse || roundAnchor) && (
         <GoogleSatelliteMap
-          courseId={mappedCourse.id}
+          courseId={mappedCourse?.id ?? ""}
           courseName={round.courseName}
           holeCoordinates={mapCoords}
           currentHole={currentHole}
@@ -1485,7 +1500,7 @@ export default function RoundPage() {
           onClose={() => setMapZoom(false)}
           autoDetectHole={false}
           centerOnly={mapCoords.length === 0}
-          fallbackCenter={mapCenter ?? undefined}
+          fallbackCenter={mapCenter ?? roundAnchor ?? undefined}
         />
       )}
     </div>

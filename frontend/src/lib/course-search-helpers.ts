@@ -39,6 +39,67 @@ export function formatMiles(miles: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Prefix relevance filter
+// ---------------------------------------------------------------------------
+
+/**
+ * Filler words that carry no identity in a course name. Stripped from the
+ * QUERY before matching so "bethpage golf" still matches "Bethpage State Park".
+ * MUST stay in sync with the backend's `matches_query_prefix` stopword list
+ * (backend/app/services/course_finder.py) — the two filters mirror each other.
+ */
+const COURSE_QUERY_STOPWORDS = new Set([
+  "golf",
+  "course",
+  "club",
+  "links",
+  "country",
+  "the",
+]);
+
+/**
+ * Normalize a course name / query into comparable word tokens:
+ * lowercase, punctuation → word boundaries (unicode-aware), collapse spaces.
+ * "Bethpage State Park - Black Course" → ["bethpage","state","park","black","course"]
+ */
+export function tokenizeCourseName(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * Relevance gate: EVERY significant query token must prefix-match some word
+ * of the course name. Mirrors the backend's `matches_query_prefix` so towns
+ * from the geocoder ("Bethel Island", "Bethanga") never render for "bethpa",
+ * even against a stale backend.
+ *
+ * - Stopwords (golf/course/club/…) are stripped from the query only; name
+ *   words stay intact so "golf cl" can still prefix-match "… Golf Club".
+ * - An all-stopword query ("golf") falls back to its literal tokens.
+ * - An empty/punctuation-only query filters nothing (returns true).
+ */
+export function matchesQueryPrefix(name: string, query: string): boolean {
+  const nameTokens = tokenizeCourseName(name);
+  const rawQueryTokens = tokenizeCourseName(query);
+  let queryTokens = rawQueryTokens.filter((t) => !COURSE_QUERY_STOPWORDS.has(t));
+  if (queryTokens.length === 0) queryTokens = rawQueryTokens;
+  if (queryTokens.length === 0) return true;
+  return queryTokens.every((qt) => nameTokens.some((nt) => nt.startsWith(qt)));
+}
+
+/**
+ * Stable dedupe key for a course name: lowercase, punctuation-stripped,
+ * whitespace-collapsed. Keeps stopwords so "Bethpage Golf Club" and
+ * "Bethpage Country Club" remain distinct.
+ */
+export function courseNameKey(name: string): string {
+  return tokenizeCourseName(name).join(" ");
+}
+
+// ---------------------------------------------------------------------------
 // Deduplication
 // ---------------------------------------------------------------------------
 
