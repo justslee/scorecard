@@ -88,7 +88,11 @@ def _isolate_cache(monkeypatch, tmp_path) -> None:
 
 
 class TestBookingPersistence:
-    async def test_confirmed_booking_is_persisted(self, client):
+    async def test_confirmed_booking_is_persisted(self, client, monkeypatch):
+        # Pin the mock provider: this test asserts MOCK booking semantics
+        # (confirmed + mock confirmation number); the product default flipped
+        # to affiliate on 2026-07-02.
+        monkeypatch.setenv("TEETIME_PROVIDER", "mock")
         set_auth(TEST_OWNER_ID)
         r = await client.post(f"{BASE}/book", json={"slot": _MOCK_SLOT, "details": _DETAILS})
         assert r.status_code == 200, r.text
@@ -210,6 +214,9 @@ class TestEstimatedSlotSerialization:
         assert slot["courseName"] == "Presidio Golf Course"
 
     async def test_mock_slots_are_not_estimated(self, client, monkeypatch, tmp_path):
+        # Pin the mock provider (product default is affiliate since 2026-07-02);
+        # this test asserts the MOCK catalogue's slot shape.
+        monkeypatch.setenv("TEETIME_PROVIDER", "mock")
         _isolate_cache(monkeypatch, tmp_path)
         set_auth(TEST_OWNER_ID)
         r = await client.get(

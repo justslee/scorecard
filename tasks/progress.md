@@ -5501,3 +5501,11 @@ else verified (mint TTL/scope, ledger caps/roles, owner scoping, dual-write idem
 mic mute on reconnect). Gates combined tree: pytest 943/74sk, ruff clean, vitest 1343,
 voice 274, tsc/lint/build clean. Next: P3 (carries + polygon DECADE) ∥ P4 (learned
 distances) after ship; P5 persona studio.
+
+---
+
+## 2026-07-02 — OWNER: caddie P3 + P4 PAUSED
+
+After shipping P1+P2 (#91), owner paused P3 (hazard carries + polygon DECADE) and
+P4 (learned distances). Do NOT dispatch builders for them — the spec
+(specs/agentic-caddie-plan.md) stays the plan of record; resume only on owner say-so.

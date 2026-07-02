@@ -104,3 +104,27 @@ Dependencies: P1 first (session substrate); P3 ∥ P4 after P2; shot capture shi
 
 ## Cost & risk envelope
 Realtime audio ≈ $0.05–0.30/hole with hold-to-talk bursts; hard idle disconnect. Overpass/3DEP leave the hot path (ingest precompute). Un-mapped courses degrade honestly. Voice-logged distances are noisy → quality filters + shrinkage; GPS-marked shots sharpen the same pipeline. Persona prompt injection fenced. `CLAUDE.md` stale "no real DB" line gets fixed in P1.
+
+---
+
+## Addendum (proposed 2026-07-02, owner idea — not yet scheduled): Hole Strategy Guides
+
+Owner request: pre-generate rich caddie-perspective hole guides (like a frontier-LLM
+"Bethpage Black Hole 1 caddie guide") once per (course, hole), cache them, and let the
+live caddie compose guide + engine numbers + player profile into per-shot plans —
+no per-request frontier calls.
+
+Design intent (eng-lead assessment, owner has NOT green-lit build):
+- **Grounded generation**: LLM as WRITER not KNOWER — prompt = our hole geometry
+  (hazard polygons/carries, green slope, elevation, yardages) + web research where the
+  course is documented; cross-validate output against our polygons (strip/flag features
+  our geometry contradicts). Famous courses = rich sourced guides; unknown courses =
+  leaner geometry-derived strategy. Never cache hallucinations into the tool surface.
+- **Structured storage** (JSONB per hole, e.g. holes.strategy_guide): one_sentence_plan,
+  tee {target, by_profile[], danger_map}, approach {by_pin_zone, best_miss}, green_notes,
+  wind_elevation, common_mistakes[], caddie_script. Pin-zone advice parameterized so
+  runtime composes with today's pin.
+- **Runtime**: new get_hole_strategy tool; mouths compose guide + player profile
+  ("your miss is right → this is the 3-wood hole"). Zero marginal LLM cost for most asks.
+- **Fit**: sibling of paused P3 (same ingest precompute pipeline; polygons enable the
+  grounding/validation). One-time gen cost ~$0.10-0.30/hole.
