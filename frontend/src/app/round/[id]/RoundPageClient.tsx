@@ -229,6 +229,17 @@ export default function RoundPage() {
   const [caddieOpen, setCaddieOpen] = useState(false);
   // Grid modal for jumping between holes (replaces the old top chip strip).
   const [holePickerOpen, setHolePickerOpen] = useState(false);
+  // Map-first layout: the inline satellite map fills ~60% of the viewport
+  // (owner request 2026-07-02); clamped so small phones keep the score UI
+  // reachable and tablets don't get a wall of map.
+  const [mapHeight, setMapHeight] = useState(430);
+  useEffect(() => {
+    const size = () =>
+      setMapHeight(Math.max(380, Math.min(640, Math.round(window.innerHeight * 0.58))));
+    size();
+    window.addEventListener("resize", size);
+    return () => window.removeEventListener("resize", size);
+  }, []);
   const [scanOpen, setScanOpen] = useState(false);
   const [recapOpen, setRecapOpen] = useState(false);
   /** Conversation history — lifted here so close→score-entry→reopen retains the thread. */
@@ -1110,39 +1121,41 @@ export default function RoundPage() {
             </div>
           )}
 
-          {/* Hole picker — the chip strip moved into a grid modal (owner request
-              2026-07-01): a quiet pill shows the position; tap for the full grid.
-              Swiping the hole card still steps prev/next. */}
-          <div style={{ display: "flex", marginBottom: 12 }}>
-            <button
-              onClick={() => setHolePickerOpen(true)}
-              aria-label="Switch hole"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 7,
-                padding: "8px 14px",
-                borderRadius: 99,
-                border: `1px solid ${T.hairline}`,
-                background: "transparent",
-                color: T.ink,
-                fontFamily: T.mono,
-                fontSize: 11,
-                letterSpacing: 1.2,
-                textTransform: "uppercase",
-                cursor: "pointer",
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <rect x="3" y="3" width="7" height="7" rx="1.5" />
-                <rect x="14" y="3" width="7" height="7" rx="1.5" />
-                <rect x="3" y="14" width="7" height="7" rx="1.5" />
-                <rect x="14" y="14" width="7" height="7" rx="1.5" />
-              </svg>
-              Hole {currentHole} / {holeCount}
-            </button>
-          </div>
+          {/* Hole picker pill — overlaid on the map when the round has course
+              data (owner request 2026-07-02: maximize map space); standalone
+              row only for the mock fallback. */}
+          {!(mappedCourse || roundAnchor) && (
+            <div style={{ display: "flex", marginBottom: 12 }}>
+              <button
+                onClick={() => setHolePickerOpen(true)}
+                aria-label="Switch hole"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  padding: "8px 14px",
+                  borderRadius: 99,
+                  border: `1px solid ${T.hairline}`,
+                  background: "transparent",
+                  color: T.ink,
+                  fontFamily: T.mono,
+                  fontSize: 11,
+                  letterSpacing: 1.2,
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                  <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                  <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                  <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                </svg>
+                Hole {currentHole} / {holeCount}
+              </button>
+            </div>
+          )}
 
           {/* Hero hole card — swipe L/R */}
           <AnimatePresence mode="wait" custom={slideDir}>
@@ -1173,42 +1186,155 @@ export default function RoundPage() {
               }}
               style={{ marginBottom: 14, touchAction: "pan-y" }}
             >
-              <HoleCard
-                holeNumber={currentHole}
-                hole={hole}
-                distance={distance}
-                windMph={6}
-                windDir="R→L"
-                expanded={expanded}
-                onExpand={() => {
-                  if (!draggedRef.current) setExpanded(true);
-                }}
-                onCollapse={() => setExpanded(false)}
-                onZoom={() => {
-                  if (draggedRef.current) return;
-                  // With real course data the card's map expands to the
-                  // fullscreen interactive satellite; the mock falls back to
-                  // the old in-card expand.
-                  if (mappedCourse || roundAnchor) setMapZoom(true);
-                  else setExpanded(true);
-                }}
-                accent={accent}
-                density={density}
-                shotPoint={shotPoint}
-                // Real satellite hole map fills the card's map space (the
-                // abstract HoleIllustration mock renders only when the round
-                // has no course data at all).
-                mapSlot={
-                  mappedCourse || roundAnchor ? (
-                    <InlineHoleDiagram
-                      courseId={mappedCourse?.id}
-                      fallbackCenter={roundAnchor ?? undefined}
-                      currentHole={currentHole}
-                      height={300}
-                    />
-                  ) : undefined
-                }
-              />
+              {mappedCourse || roundAnchor ? (
+                /* Map-first hole view: the satellite map IS the card, with the
+                   hole picker + hole stats as static overlays (owner request
+                   2026-07-02). Drags starting on the map pan the map; the
+                   overlay chips remain swipe surface for prev/next. */
+                <div
+                  style={{
+                    position: "relative",
+                    borderRadius: 20,
+                    overflow: "hidden",
+                    border: `1px solid ${T.hairline}`,
+                    boxShadow: "0 8px 24px rgba(26,42,26,0.06)",
+                  }}
+                  onPointerDownCapture={(e) => {
+                    // Only chips/overlays should start a hole swipe — let map
+                    // gestures through to the native layer untouched.
+                    const el = e.target as HTMLElement;
+                    if (!el.closest("[data-overlay]")) e.stopPropagation();
+                  }}
+                >
+                  <InlineHoleDiagram
+                    courseId={mappedCourse?.id}
+                    fallbackCenter={roundAnchor ?? undefined}
+                    currentHole={currentHole}
+                    height={mapHeight}
+                  />
+
+                  {/* Hole picker — static overlay, top-left */}
+                  <button
+                    data-overlay
+                    onClick={() => setHolePickerOpen(true)}
+                    aria-label="Switch hole"
+                    style={{
+                      position: "absolute",
+                      top: 10,
+                      left: 10,
+                      zIndex: 6,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "7px 12px",
+                      borderRadius: 99,
+                      border: `1px solid ${T.hairline}`,
+                      background: `${T.paper}f0`,
+                      backdropFilter: "blur(6px)",
+                      color: T.ink,
+                      fontFamily: T.mono,
+                      fontSize: 10.5,
+                      letterSpacing: 1.2,
+                      textTransform: "uppercase",
+                      cursor: "pointer",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                    </svg>
+                    {currentHole} / {holeCount}
+                  </button>
+
+                  {/* Hole stats — static overlay, top-right, small mono */}
+                  <div
+                    data-overlay
+                    style={{
+                      position: "absolute",
+                      top: 10,
+                      right: 10,
+                      zIndex: 6,
+                      padding: "7px 12px",
+                      borderRadius: 99,
+                      border: `1px solid ${T.hairline}`,
+                      background: `${T.paper}f0`,
+                      backdropFilter: "blur(6px)",
+                      color: T.ink,
+                      fontFamily: T.mono,
+                      fontSize: 10.5,
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                      fontVariantNumeric: "tabular-nums",
+                      display: "flex",
+                      alignItems: "baseline",
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{ fontFamily: T.serif, fontSize: 15, letterSpacing: -0.3, textTransform: "none" }}>
+                      {String(currentHole).padStart(2, "0")}
+                    </span>
+                    <span>Par {holePar}</span>
+                    <span>{hole.yards}y</span>
+                    <span style={{ color: T.pencil }}>Hcp {hole.hcp}</span>
+                  </div>
+
+                  {/* Zoom — above the map's distance strip */}
+                  <button
+                    data-overlay
+                    onClick={() => {
+                      if (!draggedRef.current) setMapZoom(true);
+                    }}
+                    aria-label="Expand map"
+                    style={{
+                      position: "absolute",
+                      bottom: 64,
+                      right: 10,
+                      zIndex: 6,
+                      padding: "6px 10px",
+                      borderRadius: 99,
+                      background: "rgba(26,42,26,0.85)",
+                      color: T.paper,
+                      fontFamily: T.mono,
+                      fontSize: 9,
+                      letterSpacing: 1.2,
+                      textTransform: "uppercase",
+                      border: "none",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                      backdropFilter: "blur(4px)",
+                    }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+                      <path d="M1 4V1h3M9 4V1H6M1 6v3h3M9 6v3H6" />
+                    </svg>
+                    Zoom
+                  </button>
+                </div>
+              ) : (
+                <HoleCard
+                  holeNumber={currentHole}
+                  hole={hole}
+                  distance={distance}
+                  windMph={6}
+                  windDir="R→L"
+                  expanded={expanded}
+                  onExpand={() => {
+                    if (!draggedRef.current) setExpanded(true);
+                  }}
+                  onCollapse={() => setExpanded(false)}
+                  onZoom={() => {
+                    if (!draggedRef.current) setExpanded(true);
+                  }}
+                  accent={accent}
+                  density={density}
+                  shotPoint={shotPoint}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
 
