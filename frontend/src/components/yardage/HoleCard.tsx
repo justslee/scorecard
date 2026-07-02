@@ -18,6 +18,7 @@ export default function HoleCard({
   onZoom,
   accent,
   density,
+  mapSlot,
 }: {
   holeNumber: number;
   hole: HoleSpec;
@@ -31,6 +32,12 @@ export default function HoleCard({
   onZoom: () => void;
   accent: string;
   density: "spacious" | "dense";
+  /**
+   * Real course map (satellite) filling the card's map space. When present it
+   * replaces the abstract HoleIllustration mock entirely (owner request
+   * 2026-07-01); the Zoom pill opens the fullscreen map via onZoom.
+   */
+  mapSlot?: React.ReactNode;
 }) {
   const pad = density === "dense" ? 14 : 18;
   return (
@@ -67,7 +74,46 @@ export default function HoleCard({
         </div>
       </div>
 
-      {/* Illustration */}
+      {/* Real hole map — fills the card's map space when course data exists. */}
+      {mapSlot ? (
+        <div
+          style={{ position: "relative", padding: `6px ${pad}px 0` }}
+          // Drags that start on the map pan the map, not the hole-swipe wrapper.
+          onPointerDownCapture={(e) => e.stopPropagation()}
+          onTouchStartCapture={(e) => e.stopPropagation()}
+        >
+          {mapSlot}
+          <button
+            onClick={onZoom}
+            aria-label="Expand map"
+            style={{
+              position: "absolute",
+              bottom: 8,
+              right: pad + 8,
+              padding: "6px 10px",
+              borderRadius: 99,
+              background: "rgba(26,42,26,0.85)",
+              color: T.paper,
+              fontFamily: T.mono,
+              fontSize: 9,
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              backdropFilter: "blur(4px)",
+              zIndex: 5,
+            }}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+              <path d="M1 4V1h3M9 4V1H6M1 6v3h3M9 6v3H6" />
+            </svg>
+            Zoom
+          </button>
+        </div>
+      ) : (
       <div style={{ position: "relative", padding: `6px ${pad}px 0`, display: "flex", justifyContent: "center" }}>
         <motion.div
           layout
@@ -135,6 +181,7 @@ export default function HoleCard({
           )}
         </motion.div>
       </div>
+      )}
 
       {/* Expanded: caddy strip */}
       <AnimatePresence initial={false}>

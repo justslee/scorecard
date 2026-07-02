@@ -1185,48 +1185,32 @@ export default function RoundPage() {
                 }}
                 onCollapse={() => setExpanded(false)}
                 onZoom={() => {
-                  if (!draggedRef.current) setExpanded(true);
+                  if (draggedRef.current) return;
+                  // With real course data the card's map expands to the
+                  // fullscreen interactive satellite; the mock falls back to
+                  // the old in-card expand.
+                  if (mappedCourse || roundAnchor) setMapZoom(true);
+                  else setExpanded(true);
                 }}
                 accent={accent}
                 density={density}
                 shotPoint={shotPoint}
+                // Real satellite hole map fills the card's map space (the
+                // abstract HoleIllustration mock renders only when the round
+                // has no course data at all).
+                mapSlot={
+                  mappedCourse || roundAnchor ? (
+                    <InlineHoleDiagram
+                      courseId={mappedCourse?.id}
+                      fallbackCenter={roundAnchor ?? undefined}
+                      currentHole={currentHole}
+                      height={300}
+                    />
+                  ) : undefined
+                }
               />
             </motion.div>
           </AnimatePresence>
-
-          {/* Inline yardage-book hole map — mapped geometry when available,
-               otherwise a course-centred satellite view from the round's anchor,
-               so the real course map is always part of the yardage book. Data is
-               fetched once (on mappedCourse resolution) and cached inside
-               InlineHoleDiagram; only the feature lookup changes as currentHole changes. */}
-          {(mappedCourse || roundAnchor) && (
-            <div style={{ marginBottom: 14 }}>
-              <SectionLabel>Hole {currentHole} map</SectionLabel>
-              <div style={{ position: "relative" }}>
-                <InlineHoleDiagram
-                  courseId={mappedCourse?.id}
-                  fallbackCenter={roundAnchor ?? undefined}
-                  currentHole={currentHole}
-                />
-                {/* Blow it up — opens the fullscreen interactive map. */}
-                <button
-                  onClick={() => setMapZoom(true)}
-                  aria-label="Expand map to fullscreen"
-                  style={{
-                    position: "absolute", top: 8, right: 8, zIndex: 5,
-                    width: 34, height: 34, borderRadius: 8,
-                    border: `1px solid ${T.hairline}`, background: `${T.paper}f2`,
-                    backdropFilter: "blur(4px)", display: "flex",
-                    alignItems: "center", justifyContent: "center", cursor: "pointer",
-                  }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={T.ink} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Stakes ticker */}
           <div style={{ marginBottom: 14 }}>
