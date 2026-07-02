@@ -10,6 +10,7 @@ import type {
   VoiceCaddieMessage,
 } from './types';
 import { fetchAPI } from '../api';
+import { saveLastRecommendation } from './hole-intel-cache';
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   return fetchAPI<T>(`/api${path}`, {
@@ -217,7 +218,75 @@ export async function sessionRecommend(params: {
   par?: number;
   yards?: number;
 }): Promise<CaddieRecommendation> {
-  return post('/caddie/session/recommend', params);
+  const rec = await post<CaddieRecommendation>('/caddie/session/recommend', params);
+  // Refresh the offline bundle's "last call" (tier-3 card) — fire-and-forget,
+  // covers both mouths (voice tool + text sheet) in one place.
+  saveLastRecommendation(params.round_id, {
+    holeNumber: params.hole_number,
+    club: rec.club,
+    targetYards: rec.target_yards,
+    aim: rec.aim_point?.description ?? '',
+    missSide: rec.miss_side?.preferred ?? '',
+  }).catch(() => {});
+  return rec;
+}
+
+// ── Session tool reads (Realtime tool surface v1) ──
+
+export interface SessionConditions {
+  round_id: string;
+  hole_number: number;
+  weather: WeatherConditions | null;
+  plays_like: {
+    yards: number;
+    effective_yards: number;
+    plays_like_delta: number;
+    elevation_change_ft: number;
+  } | null;
+}
+
+/** Deterministic read backing the `get_conditions` voice tool. */
+export async function getSessionConditions(
+  roundId: string,
+  holeNumber?: number,
+): Promise<SessionConditions> {
+  const qs = holeNumber != null ? `?hole_number=${holeNumber}` : '';
+  return get<SessionConditions>(
+    `/caddie/session/${encodeURIComponent(roundId)}/conditions${qs}`,
+  );
+}
+
+export interface SessionPlayerProfile {
+  round_id: string;
+  handicap: number | null;
+  club_distances: Record<string, number>;
+  tendencies: {
+    miss_direction: string | null;
+    miss_short_pct: number | null;
+    three_putts_per_round: number | null;
+    par5_bogey_rate: number | null;
+  } | null;
+  rounds_analyzed: number;
+}
+
+/** Player numbers backing the `get_player_profile` voice tool. */
+export async function getSessionPlayerProfile(roundId: string): Promise<SessionPlayerProfile> {
+  return get<SessionPlayerProfile>(
+    `/caddie/session/${encodeURIComponent(roundId)}/player-profile`,
+  );
+}
+
+/**
+ * Append a Realtime voice turn (pair) to the round's shared caddie_messages
+ * ledger, so the text mouth (/session/voice) shares one conversation history.
+ */
+export async function appendSessionMessage(params: {
+  round_id: string;
+  user_content?: string;
+  assistant_content?: string;
+  hole_number?: number;
+}): Promise<{ status: string; appended: number }> {
+  return post('/caddie/session/message', params);
 }
 
 export async function sessionVoice(params: {

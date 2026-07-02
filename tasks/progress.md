@@ -3,6 +3,60 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-02 — agentic caddie P2: real voice — hold-to-talk orb (NOTICEABLE — integration/next, DONE)
+
+The round screen's voice orb is now the REAL caddie (`specs/agentic-caddie-plan.md`
+P2), replacing the scripted prototype demo. Press-and-hold the orb (or the sheet's
+mic) → live OpenAI Realtime burst in the selected persona's voice; release → the
+caddie answers aloud. Connection stays warm for follow-ups, auto-disconnects after
+90s idle. Silent degradation ladder: realtime voice → CaddieSheet (Deepgram+Claude
+text) → offline card from an IndexedDB HoleIntelBundle.
+
+### What changed
+- `RoundPageClient.tsx` — scripted conversation beats DELETED; orb + VoiceSheet
+  wired to `useVoiceCaddie` (hold-to-talk); tier-3 `OfflineCaddieCard` (NEW);
+  HoleIntelBundle cached at session start (round yardages floor, hazards +
+  plays-like enrichment when course intel lands)
+- `hooks/useVoiceCaddie.ts` (NEW) — burst lifecycle, 3s mint deadline, silent
+  downgrades, mic muted whenever not held, ledger persistence of finished turns
+- `lib/caddie/transport.ts` (NEW) — PURE degradation-ladder reducer + status→
+  VoiceState / messages→turns mappers (side effects injected; fully unit-tested)
+- `lib/caddie/hole-intel-cache.ts` (NEW) — IndexedDB bundle (SSR/error-silent)
+- `lib/voice/realtime.ts` — dispatchTool gains get_conditions /
+  get_player_profile / get_carries STUB (available:false until P3); onMinted
+  event; 90s `IdleTimer` (NEW lib/voice/idle-timer.ts); hard cap ONE concurrent
+  Realtime connection
+- Backend: `realtime_relay.py` DEFAULT_TOOLS → 6-tool surface v1;
+  `voice_prompts.py` enforces "never state a yardage, club distance, or carry
+  you did not get from a tool"; `routes/caddie.py` NEW GET
+  /session/{id}/conditions + /session/{id}/player-profile (deterministic tool
+  reads) + POST /session/message (shared ledger append, owner-scoped, roles
+  fixed by field name, 4k char cap). In-round mint (round_id ownership check,
+  persona voice_id + live-session instructions) already existed — verified +
+  tested.
+- Tests: pytest +8 pure (`test_realtime_tools.py` — mint payload/voice/tools,
+  ownership 404) +11 integration (`test_caddie_session_message.py` — ledger
+  append/validation/ownership, conditions honesty, player-profile); vitest +30
+  (transport ladder, idle timer, tool-dispatch parity incl. record_shot →
+  /session/shot dual-write path)
+
+### Gate results (all green)
+- backend: `ruff` clean; `pytest` 943 passed / 74 skipped (integration DB tests
+  run in CI)
+- frontend: `tsc` clean; `eslint` clean; `vitest` 1343/1343 (was 1313);
+  voice smoke 274/274; `next build` succeeds
+
+### For P3/P4
+- get_carries stub lives in `lib/voice/realtime.ts` dispatchTool — P3 swaps it
+  for a real endpoint call; the tool schema (hole_number required) is already
+  minted.
+- get_player_profile returns session (entered) club distances — P4 blends
+  learned distances into the same payload.
+- Offline bundle lastRecommendation refreshes via `sessionRecommend()` in
+  `lib/caddie/api.ts` (both mouths).
+- Security review needed (new mint surface): /session/message input handling,
+  the two new session GET endpoints, mint round-ownership path.
+
 ## 2026-07-01 — tee-time phase 1b item C: hold-to-talk voice prefs (NOTICEABLE — integration/next, DONE)
 
 Voice slice of the tee-time booking epic (`specs/tee-time-booking-phase1b.md`,

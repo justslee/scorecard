@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { HOLES } from "@/components/yardage/HoleIllustration";
 import HoleCard from "@/components/yardage/HoleCard";
-import { VoiceOrb, VoiceSheet, VoiceState, VoiceTurn } from "@/components/yardage/Voice";
+import { VoiceOrb, VoiceSheet } from "@/components/yardage/Voice";
 import { PlayerPanel, StakesTicker, SeedPlayer } from "@/components/yardage/Scorecard";
 import ScoreSheet from "@/components/yardage/ScoreSheet";
 import LeaderboardSheet from "@/components/yardage/LeaderboardSheet";
@@ -25,6 +25,13 @@ import {
   fetchCourseIntel,
   fetchWeather,
 } from "@/lib/caddie/api";
+import { useVoiceCaddie } from "@/hooks/useVoiceCaddie";
+import OfflineCaddieCard from "@/components/OfflineCaddieCard";
+import {
+  saveHoleIntelBundle,
+  loadHoleIntelBundle,
+  type HoleIntelBundle,
+} from "@/lib/caddie/hole-intel-cache";
 import ScanSheet from "@/components/ScanSheet";
 import RoundRecap from "@/components/RoundRecap";
 import type { VoiceCaddieMessage } from "@/lib/caddie/types";
@@ -263,9 +270,9 @@ export default function RoundPage() {
   /** Conversation history — lifted here so close→score-entry→reopen retains the thread. */
   const [caddieHistory, setCaddieHistory] = useState<VoiceCaddieMessage[]>([]);
   const [slideDir, setSlideDir] = useState(0);
-  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
-  const [turns, setTurns] = useState<VoiceTurn[]>([]);
-  const [turnIdx, setTurnIdx] = useState(0);
+  // Tier-3 (offline) caddie surface: static card from the IndexedDB bundle.
+  const [offlineCardOpen, setOfflineCardOpen] = useState(false);
+  const [offlineBundle, setOfflineBundle] = useState<HoleIntelBundle | null>(null);
   const draggedRef = useRef(false);
 
   /**
@@ -521,9 +528,25 @@ export default function RoundPage() {
     courseIntelSentRef.current = true;
     const anchor = roundCourseAnchor(round);
     (async () => {
+      // Tier-3 floor: cache the round's own yardages so the offline card works
+      // even if the intel fetch below never lands (dead cell from the car).
+      const baseHoles = round.holes.map((h, i) => ({
+        holeNumber: i + 1,
+        par: h.par,
+        yards: h.yards ?? 0,
+        hazards: [] as { type: string; side: string; distance_from_green: number }[],
+      }));
+      saveHoleIntelBundle({
+        roundId,
+        courseName: round.courseName,
+        savedAt: Date.now(),
+        holes: baseHoles,
+        lastRecommendation: null,
+      }).catch(() => {});
+
       try {
         if (mapCoords.length > 0) {
-          await fetchCourseIntel(
+          const intel = await fetchCourseIntel(
             mapCoords.map((c) => ({
               holeNumber: c.holeNumber,
               green: c.green,
@@ -538,6 +561,31 @@ export default function RoundPage() {
             anchor?.lng,
             roundId,
           );
+          // Enrich the offline bundle with hazards + plays-like yardages.
+          const byHole = new Map(
+            (intel.holes ?? [])
+              .filter((h) => h && typeof h.hole_number === "number")
+              .map((h) => [h.hole_number, h]),
+          );
+          saveHoleIntelBundle({
+            roundId,
+            courseName: round.courseName,
+            savedAt: Date.now(),
+            holes: baseHoles.map((b) => {
+              const hi = byHole.get(b.holeNumber);
+              if (!hi) return b;
+              return {
+                ...b,
+                effectiveYards: hi.effective_yards || undefined,
+                hazards: (hi.hazards ?? []).map((hz) => ({
+                  type: hz.type,
+                  side: hz.side,
+                  distance_from_green: hz.distance_from_green,
+                })),
+              };
+            }),
+            lastRecommendation: null,
+          }).catch(() => {});
         } else if (anchor) {
           await fetchWeather(anchor.lat, anchor.lng, roundId);
         }
@@ -551,86 +599,44 @@ export default function RoundPage() {
   // Prefer round's par data (authoritative); fall back to illustration constant.
   const holePar = round?.holes[currentHole - 1]?.par ?? hole.par;
 
-  // Scripted conversation beats — identical to the prototype
-  const script = useMemo(
-    () => [
-      {
-        user: "What should I hit from here?",
-        caddy: `155 to the pin, 6 off the right. I'd trust an easy ${hole.par === 3 ? "7-iron" : "8-iron"}. Stay below the flag — above the hole is a two-putt minimum.`,
-      },
-      {
-        user: "How about a smooth 9?",
-        caddy: `You'd need to flush it. Your stock 9 is 148 — with the crosswind you'd come up short and right. Stick with the 8, commit to it.`,
-      },
-      {
-        user: "Alright. Mark me down for a four on eight when we finish.",
-        caddy: `Got it — four for you on eight, saved. Nice swing, let's go.`,
-      },
-    ],
-    [hole.par]
-  );
+  // -------------------------------------------------------------------------
+  // Live voice caddie (agentic caddie P2) — hold-to-talk realtime burst.
+  // Replaces the scripted prototype demo. The transport ladder degrades
+  // silently: realtime voice → CaddieSheet (text) → offline card.
+  // -------------------------------------------------------------------------
+  const voice = useVoiceCaddie({
+    roundId,
+    personaId,
+    enabled: caddieSessionActive && !isLocalRound,
+    currentHole,
+    onDegradeToText: () => {
+      setVoiceOpen(false);
+      setCaddieOpen(true);
+    },
+    onOffline: () => {
+      setVoiceOpen(false);
+      setOfflineCardOpen(true);
+    },
+  });
 
+  /** Orb / mic press: hold-to-talk. Opens whichever surface the ladder picks. */
+  const handleVoicePress = () => {
+    const surface = voice.press();
+    if (surface === "voice") setVoiceOpen(true);
+  };
+  const handleVoiceRelease = () => voice.release();
+
+  // Load the cached bundle when the offline card opens (round data is the floor).
   useEffect(() => {
-    if (!voiceOpen) {
-      setTurns([]);
-      setTurnIdx(0);
-      setVoiceState("idle");
-      return;
-    }
+    if (!offlineCardOpen) return;
     let cancelled = false;
-    const runBeat = (idx: number) => {
-      if (cancelled || idx >= script.length) {
-        setVoiceState("idle");
-        return;
-      }
-      const beat = script[idx];
-      setVoiceState("listening");
-      setTurns((prev) => [...prev, { role: "user", text: "" }]);
-
-      let i = 0;
-      const typer = setInterval(() => {
-        if (cancelled) {
-          clearInterval(typer);
-          return;
-        }
-        i += 1;
-        setTurns((prev) => {
-          const next = [...prev];
-          next[next.length - 1] = { role: "user", text: beat.user.slice(0, i) };
-          return next;
-        });
-        if (i >= beat.user.length) {
-          clearInterval(typer);
-          setVoiceState("thinking");
-          setTimeout(() => {
-            if (cancelled) return;
-            setTurns((prev) => [...prev, { role: "caddy", text: beat.caddy }]);
-            setVoiceState("speaking");
-            const speakMs = Math.max(2200, beat.caddy.length * 32);
-            setTimeout(() => {
-              if (cancelled) return;
-              setTurnIdx(idx + 1);
-              setTimeout(() => runBeat(idx + 1), 500);
-            }, speakMs);
-          }, 750);
-        }
-      }, 45);
-    };
-    runBeat(0);
+    loadHoleIntelBundle(roundId).then((b) => {
+      if (!cancelled) setOfflineBundle(b);
+    });
     return () => {
       cancelled = true;
     };
-  }, [voiceOpen, script]);
-
-  const handleMicTap = () => {
-    if (voiceState === "speaking" || voiceState === "listening") {
-      setVoiceState("idle");
-      return;
-    }
-    if (turnIdx < script.length) {
-      // Re-enter the effect flow: the useEffect re-runs on voiceOpen change
-    }
-  };
+  }, [offlineCardOpen, roundId]);
 
   const goHole = (n: number) => {
     if (n < 1 || n > holeCount) return;
@@ -807,6 +813,8 @@ export default function RoundPage() {
       setRound(updated);
       localSaveRound(updated);
     } finally {
+      // Round is over — drop any live voice burst immediately (cost control).
+      voice.stop();
       // End the caddie session — triggers cross-round memory summarization +
       // learning aggregation server-side. Fire-and-forget; never blocks recap.
       if (caddieSessionActive) {
@@ -993,7 +1001,12 @@ export default function RoundPage() {
               minWidth: 0,
             }}
           >
-            <VoiceOrb state={voiceState} accent={accent} onTap={() => setVoiceOpen(true)} />
+            <VoiceOrb
+              state={voice.voiceState}
+              accent={accent}
+              onPressStart={handleVoicePress}
+              onPressEnd={handleVoiceRelease}
+            />
             <div style={{ lineHeight: 1.1, minWidth: 0, flex: 1 }}>
               <div
                 style={{
@@ -1725,12 +1738,29 @@ export default function RoundPage() {
 
       <VoiceSheet
         open={voiceOpen}
-        onClose={() => setVoiceOpen(false)}
+        onClose={() => {
+          // Mic off on close; the connection stays warm for a follow-up and
+          // the 90s idle timer disconnects it if none comes.
+          voice.release();
+          setVoiceOpen(false);
+        }}
         accent={accent}
         caddy={caddy}
-        voiceState={voiceState}
-        turns={turns}
-        onMicTap={handleMicTap}
+        voiceState={voice.voiceState}
+        turns={voice.turns}
+        onMicDown={handleVoicePress}
+        onMicUp={handleVoiceRelease}
+      />
+
+      {/* Tier-3 offline caddie: static card from the cached HoleIntelBundle. */}
+      <OfflineCaddieCard
+        open={offlineCardOpen}
+        onClose={() => setOfflineCardOpen(false)}
+        holeNumber={currentHole}
+        par={holePar}
+        yards={round.holes[currentHole - 1]?.yards ?? hole.yards}
+        intel={offlineBundle?.holes.find((h) => h.holeNumber === currentHole) ?? null}
+        lastRecommendation={offlineBundle?.lastRecommendation ?? null}
       />
 
       <ScoreSheet

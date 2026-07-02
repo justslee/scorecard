@@ -262,6 +262,136 @@ async def record_shot(request: RecordShotRequest, user_id: str = Depends(current
     return {"status": "recorded", "total_shots": len(session.shot_history) + 1}
 
 
+# ── Session-derived tool endpoints (Realtime tool surface v1) ──
+
+
+@router.get("/session/{round_id}/conditions")
+async def get_session_conditions(
+    round_id: str,
+    hole_number: Optional[int] = None,
+    user_id: str = Depends(current_user_id),
+):
+    """Deterministic conditions read for the `get_conditions` voice tool.
+
+    Weather comes from the session cache (Open-Meteo, refreshed by course-intel);
+    the plays-like delta is the elevation-adjusted effective yardage already
+    computed into hole_intel. Honest by design: holes without cached intel
+    return plays_like=None rather than a guess — the model is instructed to
+    never invent numbers a tool didn't return.
+    """
+    session = await get_owned_session(round_id, user_id)
+    hn = hole_number or session.current_hole
+    intel = session.hole_intel.get(hn)
+    plays_like = None
+    if intel is not None and intel.effective_yards:
+        plays_like = {
+            "yards": intel.yards,
+            "effective_yards": intel.effective_yards,
+            "plays_like_delta": intel.effective_yards - intel.yards,
+            "elevation_change_ft": intel.elevation_change_ft,
+        }
+    return {
+        "round_id": round_id,
+        "hole_number": hn,
+        "weather": session.weather.model_dump() if session.weather else None,
+        "plays_like": plays_like,
+    }
+
+
+@router.get("/session/{round_id}/player-profile")
+async def get_session_player_profile(
+    round_id: str,
+    user_id: str = Depends(current_user_id),
+):
+    """Player numbers for the `get_player_profile` voice tool.
+
+    Effective club distances are the session's (entered) distances for now —
+    P4 blends in learned distances. Tendencies come from player_profiles.
+    """
+    session = await get_owned_session(round_id, user_id)
+    profile = await memory_mod.get_player_profile(user_id)
+    handicap = session.handicap
+    if handicap is None and profile is not None and profile.handicap is not None:
+        handicap = float(profile.handicap)
+    tendencies = None
+    if profile is not None:
+        tendencies = {
+            "miss_direction": profile.miss_direction,
+            "miss_short_pct": float(profile.miss_short_pct) if profile.miss_short_pct is not None else None,
+            "three_putts_per_round": (
+                float(profile.three_putts_per_round) if profile.three_putts_per_round is not None else None
+            ),
+            "par5_bogey_rate": float(profile.par5_bogey_rate) if profile.par5_bogey_rate is not None else None,
+        }
+    return {
+        "round_id": round_id,
+        "handicap": handicap,
+        "club_distances": {
+            CLUB_DISPLAY_NAMES.get(k, k): v for k, v in session.club_distances.items() if v
+        },
+        "tendencies": tendencies,
+        "rounds_analyzed": profile.rounds_analyzed if profile else 0,
+    }
+
+
+# ── Shared conversation ledger append (voice mouth → caddie_messages) ──
+
+
+_MESSAGE_MAX_CHARS = 4000
+
+
+class AppendSessionMessageRequest(BaseModel):
+    """A voice turn (pair) to append to the round's shared message ledger.
+
+    Roles are fixed by field name — the client cannot write arbitrary roles
+    (e.g. 'system') into the history that later renders into LLM prompts.
+    """
+    round_id: str
+    user_content: Optional[str] = None
+    assistant_content: Optional[str] = None
+    hole_number: Optional[int] = None
+
+
+@router.post("/session/message")
+async def append_session_message(
+    request: AppendSessionMessageRequest,
+    user_id: str = Depends(current_user_id),
+):
+    """Append a Realtime voice turn to caddie_messages so the text mouth
+    (/session/voice, Claude) shares one conversation history with the orb.
+
+    Caller must own the round. A full pair appends atomically (either both
+    rows or neither); a lone side (e.g. the caddie greeted first) appends one.
+    """
+    user_text = (request.user_content or "").strip()
+    assistant_text = (request.assistant_content or "").strip()
+    if not user_text and not assistant_text:
+        raise HTTPException(422, "At least one of user_content / assistant_content is required")
+    if len(user_text) > _MESSAGE_MAX_CHARS or len(assistant_text) > _MESSAGE_MAX_CHARS:
+        raise HTTPException(422, f"Message content exceeds {_MESSAGE_MAX_CHARS} characters")
+
+    await get_owned_session(request.round_id, user_id)
+
+    if user_text and assistant_text:
+        await sessions.append_message_pair(
+            request.round_id,
+            user_content=user_text,
+            assistant_content=assistant_text,
+            hole_number=request.hole_number,
+        )
+        appended = 2
+    else:
+        await sessions.append_message(
+            request.round_id,
+            role="user" if user_text else "assistant",
+            content=user_text or assistant_text,
+            hole_number=request.hole_number,
+        )
+        appended = 1
+
+    return {"status": "recorded", "appended": appended}
+
+
 # ── Session-aware recommendation ──
 
 

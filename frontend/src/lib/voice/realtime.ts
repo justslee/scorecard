@@ -17,9 +17,12 @@ import {
   recordShot,
   sessionRecommend,
   getSessionStatus,
+  getSessionConditions,
+  getSessionPlayerProfile,
   type RealtimeSessionToken,
 } from '@/lib/caddie/api';
 import { MessageOrderTracker } from '@/lib/voice/realtime-ordering';
+import { IdleTimer, REALTIME_IDLE_DISCONNECT_MS } from '@/lib/voice/idle-timer';
 
 // ── Public types ─────────────────────────────────────────────────────────
 
@@ -50,6 +53,9 @@ export interface RealtimeCaddieEvents {
   onMessage?: (msg: RealtimeMessage) => void;
   onToolCall?: (name: string, args: unknown) => void;
   onError?: (err: Error) => void;
+  /** Fired once the ephemeral client_secret has been minted — the transport
+   *  ladder uses this to cancel its 3s mint deadline (see lib/caddie/transport.ts). */
+  onMinted?: () => void;
 }
 
 export interface RealtimeCaddieOptions {
@@ -62,7 +68,9 @@ export interface RealtimeCaddieOptions {
 
 // ── Tool dispatch ────────────────────────────────────────────────────────
 
-async function dispatchTool(
+/** Exported for tests — verifies each tool hits the same session endpoint the
+ *  text sheet uses (e.g. record_shot → POST /caddie/session/shot dual-write). */
+export async function dispatchTool(
   name: string,
   args: Record<string, unknown>,
   ctx: { roundId: string },
@@ -76,6 +84,8 @@ async function dispatchTool(
       });
     }
     case 'record_shot': {
+      // Same endpoint as the sheet's shot logging — dual-writes the session
+      // history AND the durable shots table (feeds post-round learning).
       return await recordShot({
         round_id: ctx.roundId,
         hole_number: Number(args.hole_number),
@@ -86,6 +96,24 @@ async function dispatchTool(
     }
     case 'get_session_status': {
       return await getSessionStatus(ctx.roundId);
+    }
+    case 'get_conditions': {
+      return await getSessionConditions(
+        ctx.roundId,
+        args.hole_number != null ? Number(args.hole_number) : undefined,
+      );
+    }
+    case 'get_player_profile': {
+      return await getSessionPlayerProfile(ctx.roundId);
+    }
+    case 'get_carries': {
+      // P2 STUB — real per-(hole, tee) carries land in P3 (ingest-precomputed
+      // PostGIS intersections). The instructions require the persona to say
+      // carries aren't available here, never to invent a number.
+      return {
+        available: false,
+        reason: 'Carry distances are not mapped for this course yet.',
+      };
     }
     case 'set_round_setup': {
       // Handled entirely on the client: the component builds + creates the round
@@ -103,6 +131,10 @@ async function dispatchTool(
 // the model in the minted session, so the browser POSTs the SDP offer to /calls.)
 const REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 
+// Hard cap: ONE live Realtime connection per app, ever (cost + the iOS
+// double-audio failure mode). Starting a new client stops any previous one.
+let activeRealtimeClient: RealtimeCaddieClient | null = null;
+
 export class RealtimeCaddieClient {
   private pc: RTCPeerConnection | null = null;
   private dc: RTCDataChannel | null = null;
@@ -116,6 +148,9 @@ export class RealtimeCaddieClient {
   // Hands out stable conversation-order keys so the user's turn renders before
   // the reply it triggered, despite the transcript event arriving last.
   private order = new MessageOrderTracker();
+  // Cost control: disconnect after 90s with no conversation activity. The
+  // connection is an ephemeral burst — a later press simply reconnects.
+  private idle = new IdleTimer(() => this.stop(), REALTIME_IDLE_DISCONNECT_MS);
 
   constructor(opts: RealtimeCaddieOptions, events: RealtimeCaddieEvents = {}) {
     this.opts = opts;
@@ -124,6 +159,14 @@ export class RealtimeCaddieClient {
 
   async start(): Promise<void> {
     if (this.pc) return;
+    // Enforce the one-connection cap BEFORE any resources are acquired.
+    if (activeRealtimeClient && activeRealtimeClient !== this) {
+      activeRealtimeClient.stop();
+    }
+    // Module-level singleton registry, not a `self = this` alias — the cap
+    // must outlive any one instance (round orb vs setup flow).
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    activeRealtimeClient = this;
     this.setStatus('connecting');
     try {
       this.token =
@@ -133,12 +176,15 @@ export class RealtimeCaddieClient {
               round_id: this.opts.roundId ?? '',
               personality_id: this.opts.personalityId,
             });
+      this.events.onMinted?.();
 
       this.pc = new RTCPeerConnection();
       this.pc.onconnectionstatechange = () => {
         const state = this.pc?.connectionState;
-        if (state === 'connected') this.setStatus('connected');
-        else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+        if (state === 'connected') {
+          this.idle.touch(); // arm the 90s idle disconnect from first connect
+          this.setStatus('connected');
+        } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
           this.setStatus('closed');
         }
       };
@@ -204,6 +250,7 @@ export class RealtimeCaddieClient {
 
   /** Send a typed text message (alternative to voice input). */
   sendText(text: string): void {
+    this.idle.touch();
     const open = this.dc?.readyState === 'open';
     if (open) {
       this.dc!.send(JSON.stringify({
@@ -232,6 +279,8 @@ export class RealtimeCaddieClient {
 
   /** Toggle mic mute (audio still flows from server, but server VAD won't pick up the user). */
   setMuted(muted: boolean): void {
+    // Unmuting = the player is (about to be) talking — that's activity.
+    if (!muted) this.idle.touch();
     this.localStream?.getAudioTracks().forEach((t) => { t.enabled = !muted; });
   }
 
@@ -260,6 +309,8 @@ export class RealtimeCaddieClient {
   // ── Internals ─────────────────────────────────────────────────────────
 
   private cleanup() {
+    this.idle.cancel();
+    if (activeRealtimeClient === this) activeRealtimeClient = null;
     try { this.dc?.close(); } catch {}
     try { this.pc?.close(); } catch {}
     this.localStream?.getTracks().forEach((t) => t.stop());
@@ -283,6 +334,9 @@ export class RealtimeCaddieClient {
   private handleEvent(raw: string) {
     let evt: { type: string; [k: string]: unknown };
     try { evt = JSON.parse(raw); } catch { return; }
+
+    // Any conversation event counts as activity for the idle disconnect.
+    this.idle.touch();
 
     switch (evt.type) {
       case 'response.created': {
