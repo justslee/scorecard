@@ -28,6 +28,7 @@ import { getRecentCourses } from "@/lib/golf-api";
 import { resolveMappedCourse } from "@/lib/map-bridge";
 import type { MappedCourseListItem } from "@/lib/map-bridge";
 import { roundCourseAnchor } from "@/lib/round-anchor";
+import { computeFCBDistances } from "@/lib/course/course-coordinates";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
@@ -715,6 +716,19 @@ export default function RoundPage() {
   // ---------------------------------------------------------------------------
 
   const distance = Math.max(80, hole.yards - Math.round(hole.yards * 0.6));
+
+  // F/C/B for the tiles under the map: real from-tee distances when the course
+  // has verified coords for this hole; the illustration-derived estimate otherwise.
+  const holeCoordsForTiles = mapCoords.find((c) => c.holeNumber === currentHole) ?? null;
+  const fcbFromTee = holeCoordsForTiles?.tee
+    ? computeFCBDistances(holeCoordsForTiles.tee, holeCoordsForTiles)
+    : null;
+  const fcbTiles = [
+    { k: "Front", v: fcbFromTee?.front ?? distance - 12, color: "#a8553f" },
+    { k: "Center", v: fcbFromTee?.center ?? distance, color: T.ink },
+    { k: "Back", v: fcbFromTee?.back ?? distance + 14, color: "#5d7285" },
+  ];
+  const playsYards = Math.round((fcbFromTee?.center ?? distance) * 1.04);
   // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
   const shotPoint = shotPointForPath(hole.path);
 
@@ -1314,6 +1328,67 @@ export default function RoundPage() {
                     </svg>
                     Zoom
                   </button>
+
+                  {/* Wind / Elev / Plays + F/C/B tiles — restored below the map
+                      (owner 2026-07-02). F/C/B uses real from-tee coordinates
+                      when the course has them. */}
+                  <div data-overlay style={{ background: T.paper, padding: `10px 14px 12px` }}>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr 1fr",
+                        padding: "8px 0",
+                        borderBottom: `1px solid ${T.hairline}`,
+                        marginBottom: 12,
+                      }}
+                    >
+                      <MapStat k="Wind" v="6mph" sub="R→L" />
+                      <MapStat k="Elev" v="+3ft" sub="uphill" />
+                      <MapStat k="Plays" v={`${playsYards}Y`} sub="adjusted" />
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {fcbTiles.map((d) => (
+                        <div
+                          key={d.k}
+                          style={{
+                            flex: 1,
+                            padding: "10px 10px 8px",
+                            borderRadius: 10,
+                            border: `1px solid ${T.hairline}`,
+                            textAlign: "center",
+                            position: "relative",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: d.color }} />
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: 1.2,
+                              color: T.pencil,
+                              textTransform: "uppercase",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: 99,
+                                background: d.color,
+                                border: d.k === "Center" ? `1px solid ${T.pencilSoft}` : "none",
+                              }}
+                            />
+                            {d.k}
+                          </div>
+                          <div style={{ fontFamily: T.serif, fontSize: 22, color: T.ink, fontVariantNumeric: "tabular-nums" }}>{d.v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <HoleCard
@@ -1695,6 +1770,16 @@ export default function RoundPage() {
           fallbackCenter={mapCenter ?? roundAnchor ?? undefined}
         />
       )}
+    </div>
+  );
+}
+
+function MapStat({ k, v, sub }: { k: string; v: string; sub: string }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" }}>{k}</div>
+      <div style={{ fontFamily: T.serif, fontSize: 20, color: T.ink, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}>{v}</div>
+      <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 0.8, color: T.pencil }}>{sub}</div>
     </div>
   );
 }
