@@ -5509,3 +5509,23 @@ distances) after ship; P5 persona studio.
 After shipping P1+P2 (#91), owner paused P3 (hazard carries + polygon DECADE) and
 P4 (learned distances). Do NOT dispatch builders for them — the spec
 (specs/agentic-caddie-plan.md) stays the plan of record; resume only on owner say-so.
+
+---
+
+## 2026-07-02 — SHIPPED: #92 tee-time real courses by default (Places key live)
+
+Owner added the Places key (initially as GOOGLE_PLACES_KEY in looper/client; moved by
+owner to GOOGLE_PLACES_API_KEY in looper/prod after eng-lead found the name+secret
+mismatch — note: the app reads looper/prod at boot, key names must match env vars
+exactly). Backend restarted via deploy rerun → config-status google_places:true.
+Flipped TEETIME_PROVIDER default mock→affiliate (real nearby courses, honest handoff)
+with a never-empty mock-fallback (labeled) when the real search finds nothing; +5 unit
+tests; 2 integration tests pinned to TEETIME_PROVIDER=mock (they assert mock semantics
+and had relied on the old default — assertions unchanged). Merged #92, deployed.
+Backend-only: existing TestFlight build v1.0.680 now shows REAL courses on tee-time +
+course search gains the Places leg.
+
+⚠ INCIDENT (eng-lead error, owner notified in-session): a failed put-secret-value
+attempt echoed the FULL looper/prod payload (DB password + Anthropic/OpenAI/Deepgram/
+GolfAPI/Mapbox keys) into the session transcript. Recommended rotation (esp. RDS
+password + paid API keys). Owner aware; rotation pending owner action.
