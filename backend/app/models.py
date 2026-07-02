@@ -151,9 +151,14 @@ class Round(BaseModel):
 class RoundCreate(BaseModel):
     courseId: str
     courseName: str
-    courseLat: Optional[float] = None
-    courseLng: Optional[float] = None
-    mappedCourseId: Optional[str] = None
+    courseLat: Optional[float] = Field(default=None, ge=-90, le=90)
+    courseLng: Optional[float] = Field(default=None, ge=-180, le=180)
+    # Must be a UUID: this lands in a Postgres UUID column — validate at the
+    # edge (422) instead of erroring in the DB layer (500).
+    mappedCourseId: Optional[str] = Field(
+        default=None,
+        pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+    )
     teeId: Optional[str] = None
     teeName: Optional[str] = None
     players: list[Player]
