@@ -5330,3 +5330,16 @@ unchanged/narrowed. Owner said "ship it" pre-authorized after finish.
 
 STILL OWNER: GOOGLE_PLACES_API_KEY in prod (config-status shows google_places:false) —
 search works without it now (no more towns) but coverage improves with it.
+
+---
+
+## 2026-07-01 — SHIPPED: #87 course search overhaul (owner "ship it", pre-authorized)
+
+Merged PR #87 → main (09246bd) with all checks green (frontend/backend/E2E). Backend
+deployed via SSM; alembic ran 010→011_courses_trgm_index→012_round_course_anchor on
+prod (verified in deploy log). Board card 3911c525…ac4c → Shipped. TestFlight build
+kicked via ship.sh. Item-3 note: the voice-agent-era builder for this item died on
+usage limits with zero output; eng-lead implemented directly (anchor plumbing,
+InlineHoleDiagram fallbackCenter mode, edge validation). Live-prod "bethpa" repro not
+probed directly (owner-auth'd endpoint); covered by CI Postgres integration tests —
+owner should confirm on the new TestFlight build.
