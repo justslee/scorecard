@@ -450,7 +450,14 @@ async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(cur
 
     session = await get_owned_session(request.round_id, user_id)
 
-    personality = await load_personality(request.personality_id)
+    # Visibility gate: never load another user's private persona prompt —
+    # invisible/unknown ids fall back to classic (calm, not a 404 mid-round).
+    persona_id = (
+        request.personality_id
+        if await personality_visible(request.personality_id, user_id)
+        else "classic"
+    )
+    personality = await load_personality(persona_id)
     # Bump current_hole atomically (no read-modify-write of the whole row).
     await sessions.set_current_hole(request.round_id, request.hole_number)
     session.current_hole = request.hole_number
@@ -848,7 +855,13 @@ async def voice_caddie(
     if not api_key:
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
 
-    personality = await load_personality(request.personality_id)
+    # Same visibility gate as session_voice — private personas stay private.
+    persona_id = (
+        request.personality_id
+        if await personality_visible(request.personality_id, user_id)
+        else "classic"
+    )
+    personality = await load_personality(persona_id)
 
     context_parts = [
         f"Current hole: #{request.hole_number}, Par {request.par}, {request.yards} yards",
