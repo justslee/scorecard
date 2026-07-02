@@ -5343,3 +5343,31 @@ usage limits with zero output; eng-lead implemented directly (anchor plumbing,
 InlineHoleDiagram fallbackCenter mode, edge validation). Live-prod "bethpa" repro not
 probed directly (owner-auth'd endpoint); covered by CI Postgres integration tests —
 owner should confirm on the new TestFlight build.
+
+---
+
+## 2026-07-01/02 — SHIPPED: #88 yardage book + round setup polish (owner live session)
+
+Owner iterated live with screenshots; eng-lead built directly (builders were hitting
+usage limits). Bundle (merged as #88 after sim verification):
+- 392f182 caddie demo card OUT of the round page (Ask Caddie → CaddieSheet = the one
+  real voice caddie path); hole chip strip → "Hole N/M" pill + grid modal (b/w played
+  shading, haptic on jump).
+- d3ec79e multi-add players: one roster sheet, tap saved players to add/remove several,
+  inline new-name input; single-row editor unchanged for rename/this-is-me.
+- 5119e72 format picker MULTI-SELECT with per-format stakes (chips + custom $), border
+  renders immediately, no auto-close, "No stakes" exclusive; createRound emits one Game
+  per format. NATIVE HAPTICS: @capacitor/haptics via lib/haptics.ts — discovery:
+  navigator.vibrate is ignored in iOS WKWebView, so every existing haptic call was
+  silent on device; all sites now work.
+- b0ecf76 hole card renders the REAL satellite hole map in place of the mock
+  HoleIllustration (Zoom pill → fullscreen); duplicate lower map section removed;
+  pointer-capture stops map pans from triggering hole swipes. Mock only renders for
+  anchor-less legacy rounds.
+- Lockfile: npm 11 pruned optional deps on the haptics install → CI npm ci red →
+  fixed IN PLACE with npx npm@10 install --package-lock-only (standing lesson held).
+
+Verification: full frontend gates (vitest 1300, voice 274, build) + iOS SIM check per
+SIMTEST.md (Debug build w/ haptics pod, healthy boot, authdiag loaded=true, no page
+errors, sign-in screenshot) BEFORE TestFlight. CI green on rerun; merged to main;
+TestFlight build kicked (frontend-only — backend deploy is a no-op rerun).
