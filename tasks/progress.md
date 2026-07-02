@@ -5290,3 +5290,43 @@ CLAUDE.md's "new endpoint/data-layer behavior" rule.
 NEXT (work item 3, needs both halves): persist courseLat/courseLng on Round,
 drive RoundPageClient's satellite map from the anchor, unify the Courses-tab
 select handler to route to course detail instead of bare /map/course.
+
+---
+
+## 2026-07-01 (owner session, Fable 5) — COURSE SEARCH OVERHAUL + yardage-book satellite
+
+Owner escalation ("asked many times"): search slow/janky/irrelevant ("Bethpa" → Bethel
+Island/Bethanga towns), results reshuffle mid-read, and the round screen showed the paper
+mock instead of the real map. Diagnosis (specs/course-search-fix-plan.md): 2-5 SERIAL
+external calls per keystroke w/ no cache; dead AbortController (stale-response races);
+Mapbox town-geocode fallback w/ no golf filter (prod has NO GOOGLE_PLACES_API_KEY —
+confirmed via config-status — so this fired constantly); round screen resolves course
+BY NAME, silently drops to paper on miss.
+
+Landed on integration/next:
+- d20b289 frontend search: signal actually threaded (abort works), stale-query guard
+  (course-search-session.ts), append-only progressive render (never reshuffles),
+  client prefix filter mirror. vitest 1292.
+- d24acd3 backend search: matches_query_prefix relevance gate on ALL sources (every
+  query token must prefix a name token — "bethpa" can't match "bethel"), tiered ranking,
+  Mapbox = anchor-only (towns never emitted), asyncio.gather + tight timeouts
+  (Overpass [timeout:4]/5s/1 retry @0.5s), 24h/5min TTL cache, pg_trgm GIN index
+  (migration 011) + ranked local-first + write-through of external hits into courses.
+  pytest 935.
+- 7c65439 + c937ab2 round anchor (item-3 builder hit usage limit w/ zero output;
+  eng-lead built it directly): rounds carry courseLat/Lng + mappedCourseId (migration
+  012, additive nullable; validated at the edge), round/new sends them from the search
+  selection, RoundPageClient drives inline + fullscreen satellite from the anchor
+  (by-name = legacy fallback only; paper only when no location at all).
+  InlineHoleDiagram: courseId optional + fallbackCenter center-only mode.
+  DEVIATION from plan item 3.3: courses-tab select routing UNCHANGED — the detail page
+  only supports GolfAPI courses; rerouting mapped/OSM there would break. Follow-up:
+  mapped-course detail support, then unify destinations.
+
+Gates (combined tree): ruff clean, pytest 935/53sk; tsc/lint clean, vitest 1300/1300,
+voice 274/274, build green. Security pass: anchor inputs validated (uuid regex +
+lat/lng bounds), write-through parameterized, cache paths fixed, endpoint auth
+unchanged/narrowed. Owner said "ship it" pre-authorized after finish.
+
+STILL OWNER: GOOGLE_PLACES_API_KEY in prod (config-status shows google_places:false) —
+search works without it now (no more towns) but coverage improves with it.
