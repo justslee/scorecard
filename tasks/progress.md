@@ -5385,3 +5385,18 @@ to illustration-only (mapSlot plumbing removed) — renders only for anchor-less
 rounds. Gesture split: map touches pan the map (pointer-capture guard checks
 data-overlay), overlay chips remain hole-swipe surface. Merged as #89 (CI green),
 TestFlight v1.0.667 (202607020013) uploaded.
+
+---
+
+## 2026-07-02 — SHIPPED: #90 map-first polish round 2 (owner "ship it")
+
+Three refinements on v1.0.667 feedback: 8a0116a wind/elev/plays + F/C/B tiles restored
+INSIDE the map card below the satellite (F/C/B now real from-tee via
+computeFCBDistances when coords exist; wind/elev remain known placeholders);
+169771f flick-on-map hole swipe (fast/horizontal single-touch → goHole + haptic;
+slow drags/taps/pinches stay map gestures — disableTouch() rejected since it kills
+tap-to-measure); 9c2efff inline map's dark F/C/B strip removed as redundant (fullscreen
+panel unchanged; Zoom re-anchored by mapHeight since the card continues below).
+NOTE for later: the strip was the inline view's only LIVE player-distance/GPS readout —
+candidate follow-up: tiles switch from-tee → from-you when on-hole.
+Merged as #90, TestFlight cut.
