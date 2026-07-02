@@ -4,9 +4,15 @@
  * CaddieSheet — lean, voice-first AI caddie overlay reachable from the in-round screen.
  *
  * GPS-free. No mapbox, no shot-tracking, no PinMarkControl.
- * Uses only two backend paths:
- *   • POST /caddie/voice  — voice question → conversational caddie answer (talkToCaddie)
- *   • POST /caddie/recommend — distance+hole → club + strategy (fetchRecommendation)
+ *
+ * Backend paths — session-first, stateless fallback:
+ *   • POST /caddie/session/voice + /caddie/session/recommend — when the round
+ *     has an active caddie session (started by RoundPageClient on mount), the
+ *     sheet gets the rich server-side context: effective yards, hazards, green
+ *     slope, weather, cross-round memories, and the full round conversation.
+ *   • POST /caddie/voice + /caddie/recommend — legacy/offline rounds (no
+ *     session), or any session call that fails, fall back to the stateless
+ *     path with locally-built context. The sheet always answers.
  *
  * Design: yardage-book aesthetic only — T.* tokens, PAPER_NOISE, Instrument Serif,
  * inline SVGs. Mirrors VoiceRoundSetup recording UX (VoiceRecorder + transcribeBlob
@@ -27,10 +33,20 @@ import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import type { Caddy } from "@/components/yardage/tokens";
 import { Waveform } from "@/components/yardage/Voice";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
-import { talkToCaddie, fetchRecommendation } from "@/lib/caddie/api";
+import {
+  talkToCaddie,
+  fetchRecommendation,
+  sessionVoice,
+  sessionRecommend,
+} from "@/lib/caddie/api";
 import { getGolferProfile } from "@/lib/storage";
+import { buildClubMap } from "@/lib/caddie/clubs";
 import { shouldDismissSheetDrag, useBodyScrollLock } from "@/lib/sheet";
-import type { CaddieRecommendation, VoiceCaddieMessage } from "@/lib/caddie/types";
+import type {
+  CaddieRecommendation,
+  VoiceCaddieMessage,
+  CaddiePersonalityInfo,
+} from "@/lib/caddie/types";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -47,6 +63,19 @@ export interface CaddieSheetProps {
   /** Conversation history — owned by parent so it persists across close/reopen. */
   convHistory: VoiceCaddieMessage[];
   onUpdateConvHistory: (history: VoiceCaddieMessage[]) => void;
+  /** The active round id — keys the session endpoints. */
+  roundId: string;
+  /**
+   * True when RoundPageClient successfully started a caddie session for this
+   * round. False (legacy/offline/local rounds) keeps the sheet on the
+   * stateless /caddie/voice + /caddie/recommend path it used before.
+   */
+  sessionActive: boolean;
+  /** Real backend persona id (classic/strategist/hype/professor/custom-…). */
+  personaId: string;
+  /** Personas visible to the user — drives the header picker. */
+  personas: CaddiePersonalityInfo[];
+  onSelectPersona: (id: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,38 +126,6 @@ type Phase =
 type Mode = "voice" | "tap";
 
 // ---------------------------------------------------------------------------
-// Club distance mapping helper
-// ---------------------------------------------------------------------------
-
-function buildClubMap(): Record<string, number> {
-  const profile = getGolferProfile();
-  const clubMap: Record<string, number> = {};
-  if (!profile?.clubDistances) return clubMap;
-  const cd = profile.clubDistances;
-  const mapping: Array<[keyof typeof cd, string]> = [
-    ["driver", "driver"],
-    ["threeWood", "3w"],
-    ["fiveWood", "5w"],
-    ["hybrid", "hy"],
-    ["fourIron", "4i"],
-    ["fiveIron", "5i"],
-    ["sixIron", "6i"],
-    ["sevenIron", "7i"],
-    ["eightIron", "8i"],
-    ["nineIron", "9i"],
-    ["pitchingWedge", "pw"],
-    ["gapWedge", "gw"],
-    ["sandWedge", "sw"],
-    ["lobWedge", "lw"],
-  ];
-  for (const [ts, api] of mapping) {
-    const v = cd[ts];
-    if (v !== undefined) clubMap[api] = v;
-  }
-  return clubMap;
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -142,6 +139,11 @@ export default function CaddieSheet({
   holeYards,
   convHistory,
   onUpdateConvHistory,
+  roundId,
+  sessionActive,
+  personaId,
+  personas,
+  onSelectPersona,
 }: CaddieSheetProps) {
   // Controls the swipe-down-to-dismiss drag, started from the grab handle only.
   const dragControls = useDragControls();
@@ -166,6 +168,8 @@ export default function CaddieSheet({
   // Shared
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(true);
+  // Compact persona list toggled from the header identifier row.
+  const [personaPickerOpen, setPersonaPickerOpen] = useState(false);
 
   const recorderRef = useRef<VoiceRecorder | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -198,6 +202,7 @@ export default function CaddieSheet({
       setRecommendation(null);
       setError(null);
       setMode("voice");
+      setPersonaPickerOpen(false);
     }
     return () => {
       recorderRef.current?.cancel();
@@ -232,21 +237,27 @@ export default function CaddieSheet({
   // ── Voice path ───────────────────────────────────────────────────────────
 
   /**
-   * Ask the caddie with a question. Reads convHistory from the ref (#1) so
-   * it is always current regardless of when this closure was captured.
-   * onUpdateConvHistory is stable (parent useState setter), so deps are safe.
+   * Ask the caddie with a question. Session-first: the round session carries
+   * the rich context (hole intel, weather, memories, whole-round conversation)
+   * server-side. Any session failure — or no session at all — falls back to
+   * the stateless path with locally-built context, so the sheet always answers.
+   *
+   * Reads convHistory from the ref (#1) so it is always current regardless of
+   * when this closure was captured. onUpdateConvHistory is stable (parent
+   * useState setter), so deps are safe.
    */
   const askCaddie = useCallback(
     async (question: string) => {
       setIsThinking(true);
       setError(null);
       const currentHistory = convHistoryRef.current;
-      const profile = getGolferProfile();
-      const clubMap = buildClubMap();
-      try {
+
+      const askStateless = async (): Promise<string> => {
+        const profile = getGolferProfile();
+        const clubMap = buildClubMap();
         const res = await talkToCaddie({
           transcript: question,
-          personality_id: caddy.id,
+          personality_id: personaId,
           hole_number: holeNumber,
           par: holePar,
           yards: holeYards,
@@ -254,16 +265,37 @@ export default function CaddieSheet({
           handicap: profile?.handicap ?? undefined,
           conversation_history: currentHistory,
         });
+        return res.response;
+      };
+
+      try {
+        let responseText: string;
+        if (sessionActive && roundId) {
+          try {
+            const res = await sessionVoice({
+              round_id: roundId,
+              transcript: question,
+              personality_id: personaId,
+              hole_number: holeNumber,
+            });
+            responseText = res.response;
+          } catch {
+            // Session expired/unreachable — silent downgrade, keep answering.
+            responseText = await askStateless();
+          }
+        } else {
+          responseText = await askStateless();
+        }
         const newHistory: VoiceCaddieMessage[] = [
           ...currentHistory,
           { role: "user", content: question },
-          { role: "assistant", content: res.response },
+          { role: "assistant", content: responseText },
         ];
         // Update the ref immediately so the next turn sees the latest history
         // even before React re-renders.
         convHistoryRef.current = newHistory;
         onUpdateConvHistory(newHistory);
-        setVoiceAnswer(res.response);
+        setVoiceAnswer(responseText);
       } catch (err) {
         setError(
           err instanceof Error
@@ -276,7 +308,7 @@ export default function CaddieSheet({
         setIsThinking(false);
       }
     },
-    [caddy.id, holeNumber, holePar, holeYards, onUpdateConvHistory]
+    [personaId, sessionActive, roundId, holeNumber, holePar, holeYards, onUpdateConvHistory]
     // convHistory intentionally absent — read from convHistoryRef.current (#1)
   );
 
@@ -397,10 +429,13 @@ export default function CaddieSheet({
     setError(null);
     setRecommendation(null);
     setIsRecThinking(true);
-    const profile = getGolferProfile();
-    const clubMap = buildClubMap();
-    try {
-      const rec = await fetchRecommendation({
+
+    // Stateless fallback — locally-built context (legacy/offline rounds, or a
+    // session call that failed).
+    const recStateless = async (): Promise<CaddieRecommendation> => {
+      const profile = getGolferProfile();
+      const clubMap = buildClubMap();
+      return fetchRecommendation({
         hole_number: holeNumber,
         distance_yards: dist,
         par: holePar,
@@ -408,6 +443,27 @@ export default function CaddieSheet({
         club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
         handicap: profile?.handicap ?? undefined,
       });
+    };
+
+    try {
+      let rec: CaddieRecommendation;
+      if (sessionActive && roundId) {
+        try {
+          // Session path — server already holds clubs, handicap, hole intel,
+          // weather, and personal stats from /session/start + course-intel.
+          rec = await sessionRecommend({
+            round_id: roundId,
+            hole_number: holeNumber,
+            distance_yards: dist,
+            par: holePar,
+            yards: holeYards,
+          });
+        } catch {
+          rec = await recStateless();
+        }
+      } else {
+        rec = await recStateless();
+      }
       setRecommendation(rec);
     } catch (err) {
       setError(
@@ -420,7 +476,7 @@ export default function CaddieSheet({
     } finally {
       setIsRecThinking(false);
     }
-  }, [holeNumber, holePar, holeYards, distanceInput]);
+  }, [holeNumber, holePar, holeYards, distanceInput, sessionActive, roundId]);
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -524,13 +580,21 @@ export default function CaddieSheet({
             }}
           >
             <div>
-              {/* Caddie identifier */}
-              <div
+              {/* Caddie identifier — tap to switch persona (quiet picker) */}
+              <button
+                onClick={() => setPersonaPickerOpen((v) => !v)}
+                aria-label="Change caddie persona"
+                aria-expanded={personaPickerOpen}
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 7,
                   marginBottom: 3,
+                  border: "none",
+                  background: "transparent",
+                  padding: 0,
+                  cursor: "pointer",
+                  minHeight: 28,
                 }}
               >
                 {/* Caddie initial medallion */}
@@ -563,7 +627,24 @@ export default function CaddieSheet({
                 >
                   {caddy.name} &middot; On the bag
                 </div>
-              </div>
+                {/* Chevron — hints the persona list */}
+                <svg
+                  width="8"
+                  height="8"
+                  viewBox="0 0 8 8"
+                  fill="none"
+                  stroke={T.pencilSoft}
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  style={{
+                    transform: personaPickerOpen ? "rotate(180deg)" : "none",
+                    transition: "transform 0.18s",
+                    flexShrink: 0,
+                  }}
+                >
+                  <path d="M1.5 3l2.5 2.5L6.5 3" />
+                </svg>
+              </button>
 
               {/* Title */}
               <div
@@ -625,6 +706,95 @@ export default function CaddieSheet({
               <CloseIcon />
             </button>
           </div>
+
+          {/* Persona picker — compact list under the header, yardage-book quiet */}
+          <AnimatePresence>
+            {personaPickerOpen && personas.length > 0 && (
+              <motion.div
+                key="persona-picker"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+                style={{
+                  overflow: "hidden",
+                  borderBottom: `1px solid ${T.hairline}`,
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ maxHeight: 200, overflowY: "auto", padding: "8px 20px 10px" }}>
+                  {personas.map((p) => {
+                    const selected = p.id === personaId;
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          onSelectPersona(p.id);
+                          setPersonaPickerOpen(false);
+                        }}
+                        aria-label={`Choose ${p.name}`}
+                        style={{
+                          display: "flex",
+                          alignItems: "baseline",
+                          gap: 8,
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "10px 2px",
+                          border: "none",
+                          borderBottom: `1px solid ${T.hairline}`,
+                          background: "transparent",
+                          cursor: "pointer",
+                          minHeight: 44,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontFamily: T.serif,
+                            fontStyle: "italic",
+                            fontSize: 15,
+                            color: selected ? accent : T.ink,
+                            letterSpacing: -0.2,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {p.name}
+                        </span>
+                        <span
+                          style={{
+                            fontFamily: T.mono,
+                            fontSize: 8.5,
+                            letterSpacing: 0.6,
+                            color: T.pencilSoft,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                        >
+                          {p.description}
+                        </span>
+                        {selected && (
+                          <span
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 8,
+                              letterSpacing: 1.2,
+                              color: accent,
+                              textTransform: "uppercase",
+                              flexShrink: 0,
+                            }}
+                          >
+                            On the bag
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Mode toggle — 44pt tap target (#3) */}
           <div

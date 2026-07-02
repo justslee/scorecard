@@ -123,7 +123,8 @@ async def _db():
                 text(
                     "TRUNCATE TABLE scores, games, round_players, player_groups,"
                     " rounds, course_reviews, players, golfer_profiles, tournaments,"
-                    " tee_time_bookings"
+                    " tee_time_bookings, caddie_sessions, caddie_messages, shots,"
+                    " player_profiles"
                     " RESTART IDENTITY CASCADE"
                 )
             )

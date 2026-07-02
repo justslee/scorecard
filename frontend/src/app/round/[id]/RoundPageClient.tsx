@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { T, PAPER_NOISE, DEFAULT_ACCENT, CADDIES, Caddy } from "@/components/yardage/tokens";
+import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { HOLES } from "@/components/yardage/HoleIllustration";
 import HoleCard from "@/components/yardage/HoleCard";
 import { VoiceOrb, VoiceSheet, VoiceState, VoiceTurn } from "@/components/yardage/Voice";
@@ -11,8 +11,20 @@ import { PlayerPanel, StakesTicker, SeedPlayer } from "@/components/yardage/Scor
 import ScoreSheet from "@/components/yardage/ScoreSheet";
 import LeaderboardSheet from "@/components/yardage/LeaderboardSheet";
 import { Round, Score } from "@/lib/types";
-import { getRound as localGetRound, saveRound as localSaveRound } from "@/lib/storage";
+import {
+  getRound as localGetRound,
+  saveRound as localSaveRound,
+  getGolferProfile,
+} from "@/lib/storage";
 import CaddieSheet from "@/components/CaddieSheet";
+import { useCaddiePersona } from "@/lib/caddie/persona";
+import { buildClubMap } from "@/lib/caddie/clubs";
+import {
+  startSession as startCaddieSession,
+  endSession as endCaddieSession,
+  fetchCourseIntel,
+  fetchWeather,
+} from "@/lib/caddie/api";
 import ScanSheet from "@/components/ScanSheet";
 import RoundRecap from "@/components/RoundRecap";
 import type { VoiceCaddieMessage } from "@/lib/caddie/types";
@@ -172,7 +184,10 @@ export default function RoundPage() {
   const roundId = searchParams.get("id") ?? (params.id as string);
   const accent = DEFAULT_ACCENT;
   const density: "dense" | "spacious" = "dense";
-  const caddy: Caddy = CADDIES.find((c) => c.id === "steve") ?? CADDIES[0];
+  // Real backend persona (classic/strategist/hype/professor/custom) — replaces
+  // the cosmetic CADDIES list whose ids didn't exist server-side and silently
+  // fell back to 'classic' in every caddie prompt.
+  const { caddy, personaId, personas, selectPersona } = useCaddiePersona();
 
   const [round, setRound] = useState<Round | null>(null);
   const [loading, setLoading] = useState(true);
@@ -261,7 +276,22 @@ export default function RoundPage() {
   const [mappedCourse, setMappedCourse] = useState<MappedCourseListItem | null>(null);
   // Shared per-hole coordinates for the fullscreen blow-up map (the inline map
   // fetches its own; this feeds the big overlay framed on the current hole).
-  const { allCoords: mapCoords, courseCenter: mapCenter } = useHoleCoordinates(mappedCourse?.id ?? null);
+  const {
+    allCoords: mapCoords,
+    courseCenter: mapCenter,
+    loaded: mapCoordsLoaded,
+  } = useHoleCoordinates(mappedCourse?.id ?? null);
+
+  /**
+   * Caddie session — the durable round brain (Postgres). Started once per
+   * mount for ONLINE rounds; the sheet then uses the rich /session endpoints.
+   * Legacy/local/offline rounds (or a failed start) leave this false and the
+   * sheet stays on its stateless fallback path.
+   */
+  const [caddieSessionActive, setCaddieSessionActive] = useState(false);
+  const caddieSessionStartedRef = useRef(false);
+  // Course intel is fired once per mount, after the session exists.
+  const courseIntelSentRef = useRef(false);
 
   // ---------------------------------------------------------------------------
   // Load round: try API → fall back to localStorage on 404 / network error.
@@ -447,6 +477,75 @@ export default function RoundPage() {
   // Course anchor centre stored on the round at creation — drives the satellite
   // map even when no mapped geometry exists (never drop to the paper mock).
   const roundAnchor = roundCourseAnchor(round);
+
+  // ---------------------------------------------------------------------------
+  // Caddie session lifecycle (agentic caddie P1)
+  // ---------------------------------------------------------------------------
+
+  // Start the round's caddie session once for ONLINE, in-progress rounds.
+  // Hydrates the server session with the player's clubs + handicap so
+  // /session/recommend + /session/voice have personal context from turn one.
+  useEffect(() => {
+    if (!round || isLocalRound || round.status === "completed") return;
+    if (caddieSessionStartedRef.current) return;
+    caddieSessionStartedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const clubMap = buildClubMap();
+        await startCaddieSession({
+          round_id: roundId,
+          course_id: round.mappedCourseId ?? round.courseId,
+          club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
+          handicap: getGolferProfile()?.handicap ?? undefined,
+        });
+        if (!cancelled) setCaddieSessionActive(true);
+      } catch {
+        // Silent — the caddie sheet falls back to its stateless path.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [round, isLocalRound, roundId]);
+
+  // Fire-and-forget course intelligence once the session exists. Uses the
+  // round's stored anchor (mappedCourseId hole coords + courseLat/courseLng)
+  // when present; anchor-only rounds still get session weather. The sheet
+  // works before (and without) any of this landing — it only adds context.
+  useEffect(() => {
+    if (!caddieSessionActive || courseIntelSentRef.current || !round) return;
+    // With a mapped course, wait for its hole coordinates to resolve; rounds
+    // without one go straight to the weather-only path.
+    if (mappedCourse && !mapCoordsLoaded) return;
+    courseIntelSentRef.current = true;
+    const anchor = roundCourseAnchor(round);
+    (async () => {
+      try {
+        if (mapCoords.length > 0) {
+          await fetchCourseIntel(
+            mapCoords.map((c) => ({
+              holeNumber: c.holeNumber,
+              green: c.green,
+              tee: c.tee,
+              front: c.front,
+              back: c.back,
+              par: round.holes[c.holeNumber - 1]?.par,
+              yards: round.holes[c.holeNumber - 1]?.yards,
+              handicap: round.holes[c.holeNumber - 1]?.handicap,
+            })),
+            anchor?.lat,
+            anchor?.lng,
+            roundId,
+          );
+        } else if (anchor) {
+          await fetchWeather(anchor.lat, anchor.lng, roundId);
+        }
+      } catch {
+        // Silent — recommendations degrade gracefully without intel.
+      }
+    })();
+  }, [caddieSessionActive, mapCoordsLoaded, mapCoords, mappedCourse, round, roundId]);
 
   const hole = HOLES[currentHole - 1] ?? HOLES[0];
   // Prefer round's par data (authoritative); fall back to illustration constant.
@@ -708,6 +807,12 @@ export default function RoundPage() {
       setRound(updated);
       localSaveRound(updated);
     } finally {
+      // End the caddie session — triggers cross-round memory summarization +
+      // learning aggregation server-side. Fire-and-forget; never blocks recap.
+      if (caddieSessionActive) {
+        endCaddieSession(id).catch(() => {});
+        setCaddieSessionActive(false);
+      }
       // Show recap; the recap's Done button routes home.
       setRecapOpen(true);
     }
@@ -1648,6 +1753,11 @@ export default function RoundPage() {
         holeYards={round.holes[currentHole - 1]?.yards ?? hole.yards}
         convHistory={caddieHistory}
         onUpdateConvHistory={setCaddieHistory}
+        roundId={roundId}
+        sessionActive={caddieSessionActive && !isLocalRound}
+        personaId={personaId}
+        personas={personas}
+        onSelectPersona={selectPersona}
       />
 
       {/* key forces a fresh unmount+remount on each open, resetting all state */}

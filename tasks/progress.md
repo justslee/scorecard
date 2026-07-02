@@ -5400,3 +5400,26 @@ panel unchanged; Zoom re-anchored by mapHeight since the card continues below).
 NOTE for later: the strip was the inline view's only LIVE player-distance/GPS readout —
 candidate follow-up: tiles switch from-tee → from-you when on-hole.
 Merged as #90, TestFlight cut.
+
+---
+
+## 2026-07-02 — IN BUNDLE: agentic caddie P1 — wire the existing brain (builder)
+
+Spec: specs/agentic-caddie-plan.md, phase P1 only. The live in-round CaddieSheet now
+runs session-first: RoundPageClient starts the Postgres caddie session on mount for
+online rounds (clubs + handicap hydrated), fires course-intel once (mapped hole coords
++ courseLat/courseLng anchor; weather-only for anchor-only rounds), and ends the
+session on finish (memory summarization + learning aggregation fire). Sheet calls
+/caddie/session/voice + /session/recommend with silent stateless fallback (legacy/
+offline/local rounds keep working). Persona fix: cosmetic CADDIES "steve" replaced by
+real backend personas via new useCaddiePersona (GET /caddie/personalities + profile
+preference, localStorage offline fallback) + a quiet picker in the sheet header.
+Backend: /session/shot now dual-writes durable Shot rows (voice-logged shots feed
+learning from day one) with a 30s identical-shot retry guard; new GET/PUT
+/api/caddie/profile (preferred_personality_id upsert, persona validated via
+personality_visible). Silent: CLAUDE.md "no real DB" line fixed; fetchWeather client
+fixed to query params (was silently 422ing). Gates: ruff clean; pytest 935 passed /
+63 skipped (10 new DB-backed integration tests skip locally, run in CI); tsc + lint
+clean; vitest 1313 (13 new); voice smoke 274; build OK. Noticeable on TestFlight
+(persona picker + real session context). P2 (realtime orb) builds on
+caddieSessionActive + personaId now available in RoundPageClient.

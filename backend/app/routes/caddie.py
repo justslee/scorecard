@@ -18,13 +18,20 @@ from app.caddie.types import (
 from app.caddie.aim_point import generate_recommendation
 from app.caddie.player_stats import analyze_player_stats
 from app.caddie.course_intel import build_hole_intelligence, build_weather_conditions
+from sqlalchemy import select, func as sqlfunc
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from app.caddie.personalities import (
     load_personality,
     list_personalities,
     create_personality,
+    personality_visible,
+    DEFAULT_PERSONALITY_ID,
 )
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.session import sessions, ShotRecord, get_owned_session
+from app.db.engine import async_session
+from app.db.models import PlayerProfile, Shot
 from app.caddie import memory as memory_mod
 from app.caddie import learning as learning_mod
 from app.caddie.types import PlayerStatistics, PlayerTendencies
@@ -180,14 +187,43 @@ async def get_session_status(round_id: str, user_id: str = Depends(current_user_
     }
 
 
+# A byte-identical shot arriving this soon after the previous one is treated
+# as a client retry (network flake / duplicate tap), not a second real shot.
+_SHOT_RETRY_WINDOW_SECONDS = 30.0
+
+
 @router.post("/session/shot")
 async def record_shot(request: RecordShotRequest, user_id: str = Depends(current_user_id)):
-    """Record a shot to the round session history. Caller must own the round.
+    """Record a shot to the session history AND the durable `shots` table.
 
-    Uses an atomic JSONB append (`shot_history || :payload`) so concurrent
-    /session/shot and /session/recommend calls cannot lose-update each other.
+    Caller must own the round. The session JSONB history feeds the in-round
+    conversation context (atomic `shot_history || :payload` append, so
+    concurrent /session/shot and /session/recommend calls cannot lose-update
+    each other); the durable Shot row feeds post-round learning
+    (learning.recompute_player_aggregates) so voice-logged shots count from
+    day one. Lat/lng are unknown on the voice path — left null.
+
+    Idempotence: an identical (hole, club, distance, result) shot within
+    _SHOT_RETRY_WINDOW_SECONDS of the last recorded one is a retry — neither
+    store is written twice.
     """
     session = await get_owned_session(request.round_id, user_id)
+
+    last = session.shot_history[-1] if session.shot_history else None
+    if (
+        last is not None
+        and last.hole_number == request.hole_number
+        and last.club == request.club
+        and last.distance_yards == request.distance_yards
+        and last.result == request.result
+        and (time.time() - last.timestamp) < _SHOT_RETRY_WINDOW_SECONDS
+    ):
+        return {
+            "status": "recorded",
+            "total_shots": len(session.shot_history),
+            "duplicate": True,
+        }
+
     shot = ShotRecord(
         hole_number=request.hole_number,
         club=request.club,
@@ -196,6 +232,33 @@ async def record_shot(request: RecordShotRequest, user_id: str = Depends(current
         timestamp=time.time(),
     )
     await sessions.append_shot(request.round_id, shot)
+
+    # Durable dual-write. shot_number is assigned server-side as the next
+    # index for (round_id, hole_number) — same contract as POST /api/shots.
+    # Best-effort: the analytics write must never break in-round voice logging.
+    try:
+        async with async_session() as db:
+            next_n = await db.execute(
+                select(sqlfunc.coalesce(sqlfunc.max(Shot.shot_number), 0) + 1)
+                .where(
+                    Shot.round_id == request.round_id,
+                    Shot.hole_number == request.hole_number,
+                )
+            )
+            db.add(Shot(
+                round_id=request.round_id,
+                user_id=user_id,
+                hole_number=request.hole_number,
+                shot_number=int(next_n.scalar_one()),
+                distance_yards=request.distance_yards,
+                club=request.club,
+                result=request.result,
+            ))
+            await db.commit()
+    except Exception:
+        # Session history still has the shot; learning just misses this one.
+        pass
+
     return {"status": "recorded", "total_shots": len(session.shot_history) + 1}
 
 
@@ -443,6 +506,76 @@ async def create_persona(
         "is_public": False,
         "author_user_id": user_id,
     }
+
+
+# ── Player profile (what the caddie knows about you) ──
+
+
+class CaddieProfileResponse(BaseModel):
+    """Read-only surface of player_profiles. Learned club distances land in P4."""
+    handicap: Optional[float] = None
+    preferred_personality_id: str = DEFAULT_PERSONALITY_ID
+    rounds_analyzed: int = 0
+    miss_direction: Optional[str] = None
+    miss_short_pct: Optional[float] = None
+    three_putts_per_round: Optional[float] = None
+    par5_bogey_rate: Optional[float] = None
+
+
+class CaddieProfileUpdate(BaseModel):
+    """The only writable field for now — persona preference."""
+    preferred_personality_id: str
+
+
+def _profile_response(profile: Optional[PlayerProfile]) -> CaddieProfileResponse:
+    if profile is None:
+        return CaddieProfileResponse()
+    return CaddieProfileResponse(
+        handicap=float(profile.handicap) if profile.handicap is not None else None,
+        preferred_personality_id=profile.preferred_personality_id or DEFAULT_PERSONALITY_ID,
+        rounds_analyzed=profile.rounds_analyzed or 0,
+        miss_direction=profile.miss_direction,
+        miss_short_pct=float(profile.miss_short_pct) if profile.miss_short_pct is not None else None,
+        three_putts_per_round=(
+            float(profile.three_putts_per_round) if profile.three_putts_per_round is not None else None
+        ),
+        par5_bogey_rate=float(profile.par5_bogey_rate) if profile.par5_bogey_rate is not None else None,
+    )
+
+
+@router.get("/profile", response_model=CaddieProfileResponse)
+async def get_caddie_profile(user_id: str = Depends(current_user_id)):
+    """What the caddie knows about the calling player. Defaults when no row yet."""
+    profile = await memory_mod.get_player_profile(user_id)
+    return _profile_response(profile)
+
+
+@router.put("/profile", response_model=CaddieProfileResponse)
+async def update_caddie_profile(
+    request: CaddieProfileUpdate,
+    user_id: str = Depends(current_user_id),
+):
+    """Persist the player's preferred caddie persona (owner-scoped upsert).
+
+    404s on personas that don't exist or aren't visible to the caller, so a
+    typo can't silently fall back to 'classic' at prompt-build time.
+    """
+    if not await personality_visible(request.preferred_personality_id, user_id):
+        raise HTTPException(404, "Persona not found")
+
+    async with async_session() as db:
+        stmt = pg_insert(PlayerProfile).values(
+            user_id=user_id,
+            preferred_personality_id=request.preferred_personality_id,
+        ).on_conflict_do_update(
+            index_elements=["user_id"],
+            set_={"preferred_personality_id": request.preferred_personality_id},
+        )
+        await db.execute(stmt)
+        await db.commit()
+
+    profile = await memory_mod.get_player_profile(user_id)
+    return _profile_response(profile)
 
 
 @router.post("/weather")

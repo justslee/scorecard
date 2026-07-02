@@ -177,6 +177,22 @@ async def load_personality(personality_id: str) -> CaddiePersonality:
     return PERSONALITIES.get(personality_id, PERSONALITIES[DEFAULT_PERSONALITY_ID])
 
 
+async def personality_visible(persona_id: str, user_id: Optional[str] = None) -> bool:
+    """True when the persona exists AND the caller may use it.
+
+    Built-ins are always usable; DB personas must be public or authored by the
+    caller. Used by PUT /caddie/profile to validate preferred_personality_id
+    (load_personality silently falls back to 'classic', which would hide typos).
+    """
+    if persona_id in PERSONALITIES:
+        return True
+    async with async_session() as db:
+        row = await db.get(CaddiePersonaRow, persona_id)
+    if row is None:
+        return False
+    return bool(row.is_public or (user_id and row.author_user_id == user_id))
+
+
 async def list_personalities(user_id: Optional[str] = None) -> list[dict]:
     """List personas visible to the caller. DB-first; falls back to seeds."""
     async with async_session() as db:

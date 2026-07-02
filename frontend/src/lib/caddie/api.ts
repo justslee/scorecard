@@ -46,8 +46,21 @@ export async function createPersona(input: CreatePersonaInput): Promise<CaddiePe
 
 // ── Weather ──
 
-export async function fetchWeather(lat: number, lng: number): Promise<WeatherConditions> {
-  return post<WeatherConditions>('/caddie/weather', { lat, lng });
+/**
+ * Backend takes lat/lng/round_id as QUERY params (scalar FastAPI args), not a
+ * JSON body — the old body-post 422'd silently. Passing roundId caches the
+ * weather into the round's caddie session for /session/recommend + voice.
+ */
+export async function fetchWeather(
+  lat: number,
+  lng: number,
+  roundId?: string,
+): Promise<WeatherConditions> {
+  const qs = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+  if (roundId) qs.set('round_id', roundId);
+  return fetchAPI<WeatherConditions>(`/api/caddie/weather?${qs.toString()}`, {
+    method: 'POST',
+  });
 }
 
 // ── Course Intelligence ──
@@ -71,8 +84,12 @@ export async function fetchCourseIntel(
   }>,
   courseLat?: number,
   courseLng?: number,
+  /** When set, the backend caches the intel + weather into the round's caddie
+   *  session (round_id is a query param server-side). */
+  roundId?: string,
 ): Promise<CourseIntelResult> {
-  return post<CourseIntelResult>('/caddie/course-intel', {
+  const qs = roundId ? `?round_id=${encodeURIComponent(roundId)}` : '';
+  return post<CourseIntelResult>(`/caddie/course-intel${qs}`, {
     hole_coordinates: holeCoordinates,
     course_lat: courseLat,
     course_lng: courseLng,
@@ -131,6 +148,25 @@ export interface CaddieProfile {
   handicap: number | null;
   preferred_personality_id: string | null;
   rounds_analyzed: number;
+  miss_direction?: string | null;
+  miss_short_pct?: number | null;
+  three_putts_per_round?: number | null;
+  par5_bogey_rate?: number | null;
+}
+
+/** What the caddie knows about the calling player (player_profiles surface). */
+export async function getCaddieProfile(): Promise<CaddieProfile> {
+  return get<CaddieProfile>('/caddie/profile');
+}
+
+/** Persist the preferred persona (the only writable profile field for now). */
+export async function updateCaddieProfile(
+  preferredPersonalityId: string,
+): Promise<CaddieProfile> {
+  return fetchAPI<CaddieProfile>('/api/caddie/profile', {
+    method: 'PUT',
+    body: JSON.stringify({ preferred_personality_id: preferredPersonalityId }),
+  });
 }
 
 export interface SessionStatus {
