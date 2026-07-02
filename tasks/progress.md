@@ -5477,3 +5477,27 @@ fixed to query params (was silently 422ing). Gates: ruff clean; pytest 935 passe
 clean; vitest 1313 (13 new); voice smoke 274; build OK. Noticeable on TestFlight
 (persona picker + real session context). P2 (realtime orb) builds on
 caddieSessionActive + personaId now available in RoundPageClient.
+
+---
+
+## 2026-07-02 — AGENTIC CADDIE P1+P2 built (owner's main-focus epic, plan-mode approved)
+
+Owner approved specs/agentic-caddie-plan.md ("one brain, two mouths"; diagram in specs/).
+Board epic card 3911c525…8bf5. Built by Fable 5 builders:
+- f6b6806 P1: CaddieSheet → SESSION endpoints (hole intel/weather/memories/thread) w/
+  stateless fallback; session lifecycle on round mount/finish; persona fix + quiet picker
+  (kills "steve"→classic); /session/shot dual-writes durable Shot rows (voice shots feed
+  learning.py from day one); GET/PUT /api/caddie/profile. CLAUDE.md stale-DB line fixed.
+- bb10107 P2: scripted VoiceOrb demo DELETED — hold-to-talk gpt-realtime orb (press=unmute,
+  release=reply aloud, warm connection, 90s idle cutoff, one-connection cap); tool surface
+  v1 (get_recommendation/record_shot/get_conditions/get_player_profile/get_carries-stub/
+  session_status) + fabrication ban in instructions; POST /session/message shared ledger;
+  degradation ladder transport.ts (realtime→CaddieSheet→OfflineCaddieCard from IndexedDB
+  HoleIntelBundle).
+- 59bfbaf + e7f0075 security: persona visibility gate on ALL THREE load paths (P1 review
+  note + P2 review finding — the mint returned private persona prompts verbatim).
+Reviews: P1 security review CLEAN; P2 review 1 should-fix (fixed, e7f0075), everything
+else verified (mint TTL/scope, ledger caps/roles, owner scoping, dual-write idempotence,
+mic mute on reconnect). Gates combined tree: pytest 943/74sk, ruff clean, vitest 1343,
+voice 274, tsc/lint/build clean. Next: P3 (carries + polygon DECADE) ∥ P4 (learned
+distances) after ship; P5 persona studio.
