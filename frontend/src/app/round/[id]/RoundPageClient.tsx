@@ -234,6 +234,8 @@ export default function RoundPage() {
   // (owner request 2026-07-02); clamped so small phones keep the score UI
   // reachable and tablets don't get a wall of map.
   const [mapHeight, setMapHeight] = useState(430);
+  // Flick-on-map hole swipe tracking (single-touch start point + time).
+  const mapSwipeRef = useRef<{ x: number; y: number; t: number } | null>(null);
   useEffect(() => {
     const size = () =>
       setMapHeight(Math.max(380, Math.min(640, Math.round(window.innerHeight * 0.58))));
@@ -1203,8 +1205,9 @@ export default function RoundPage() {
               {mappedCourse || roundAnchor ? (
                 /* Map-first hole view: the satellite map IS the card, with the
                    hole picker + hole stats as static overlays (owner request
-                   2026-07-02). Drags starting on the map pan the map; the
-                   overlay chips remain swipe surface for prev/next. */
+                   2026-07-02). Map touches pan the map — but a fast, clearly
+                   horizontal flick flips to the prev/next hole (the camera
+                   re-frames on the new hole, so any incidental pan resets). */
                 <div
                   style={{
                     position: "relative",
@@ -1214,10 +1217,29 @@ export default function RoundPage() {
                     boxShadow: "0 8px 24px rgba(26,42,26,0.06)",
                   }}
                   onPointerDownCapture={(e) => {
-                    // Only chips/overlays should start a hole swipe — let map
-                    // gestures through to the native layer untouched.
+                    // Keep the framer drag wrapper off map touches (it would
+                    // rubber-band the card while the native map pans); overlay
+                    // chips remain wrapper swipe surface.
                     const el = e.target as HTMLElement;
                     if (!el.closest("[data-overlay]")) e.stopPropagation();
+                  }}
+                  onTouchStart={(e) => {
+                    mapSwipeRef.current =
+                      e.touches.length === 1
+                        ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() }
+                        : null; // pinch → never a hole swipe
+                  }}
+                  onTouchEnd={(e) => {
+                    const s = mapSwipeRef.current;
+                    mapSwipeRef.current = null;
+                    if (!s || e.changedTouches.length !== 1) return;
+                    const dx = e.changedTouches[0].clientX - s.x;
+                    const dy = e.changedTouches[0].clientY - s.y;
+                    // Fast + far + decisively horizontal = hole swipe.
+                    if (Date.now() - s.t < 600 && Math.abs(dx) > 70 && Math.abs(dx) > 1.8 * Math.abs(dy)) {
+                      haptic("light");
+                      goHole(dx < 0 ? currentHole + 1 : currentHole - 1);
+                    }
                   }}
                 >
                   <InlineHoleDiagram
