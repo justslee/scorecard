@@ -7,9 +7,25 @@ import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { Waveform } from "@/components/yardage/Voice";
 import { searchTeeTimes, bookTeeTime } from "@/lib/teetime/client";
 import type { TeeTimeSlot, TeeTimeQuery, BookingResult } from "@/lib/teetime/types";
-import { fetchNearbyCourseOptions, type CourseOption } from "@/lib/teetime/courses";
+import {
+  fetchNearbyCourseOptions,
+  mergeCourseOptions,
+  addCourseOption,
+  courseOptionFromSelection,
+  radiusMetersForMiles,
+  loadStateAfterLocate,
+  loadStateAfterFetch,
+  emptyCoursesNote,
+  type CourseOption,
+  type CourseLoadState,
+} from "@/lib/teetime/courses";
 import { buildTeeTimeQueries } from "@/lib/teetime/query";
 import { readLastKnownArea, acquireArea } from "@/lib/teetime/location";
+import CourseSearch, { type CourseSelectPayload } from "@/components/CourseSearch";
+import { isFavorite } from "@/lib/course-favorites";
+import { getPlayers, getGolferProfileAsync } from "@/lib/api";
+import { getSavedPlayers } from "@/lib/storage";
+import type { SavedPlayer } from "@/lib/types";
 import { buildTeeTimeICS, icsFilename, downloadICS } from "@/lib/teetime/ics";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { parseTeeTimePrefs, hasTeeTimeSignal } from "@/lib/voice/parseTeeTimePrefs";
@@ -37,7 +53,8 @@ interface TimeWindow {
 interface GroupMember {
   id: string;
   name: string;
-  hdcp: number;
+  /** Handicap — null when unknown (never a made-up number). */
+  hdcp: number | null;
   init: string;
   confirmed: boolean;
   self: boolean;
@@ -51,25 +68,32 @@ const DEFAULT_WINDOWS: TimeWindow[] = [
   { id: "sun-am", label: "Sunday",   sub: "early",  start: "07:00", end: "10:00", selected: true  },
 ];
 
-/** Offline/dev fallback only — replaced by real nearby courses once located. */
-const DEFAULT_COURSES: CourseOption[] = [
-  { id: "presidio",       name: "Presidio",         muni: "SF",          distance: 4.1,  favorite: true,  selected: true  },
-  { id: "harding",        name: "Harding Park",     muni: "SF",          distance: 6.8,  favorite: true,  selected: true  },
-  { id: "lincoln",        name: "Lincoln Park",     muni: "SF",          distance: 5.2,  favorite: true,  selected: true  },
-  { id: "sharp",          name: "Sharp Park",       muni: "Pacifica",    distance: 12.4, favorite: false, selected: false },
-  { id: "crystal-springs",name: "Crystal Springs",  muni: "San Bruno",   distance: 16.7, favorite: false, selected: false },
-  { id: "bethpage-black", name: "Bethpage Black",   muni: "Farmingdale", distance: 31.2, favorite: false, selected: false },
-];
+const DEFAULT_MAX_MILES = 15;
 
-/** Local roster — real cross-account invites are gated on multi-user (Phase 4). */
-const LOCAL_ROSTER: GroupMember[] = [
-  { id: "jack",  name: "Jack H.",  hdcp: 11.4, init: "JH", confirmed: false, self: false },
-  { id: "sonja", name: "Sonja L.", hdcp: 14.8, init: "SL", confirmed: false, self: false },
-  { id: "mike",  name: "Mike D.",  hdcp: 6.1,  init: "MD", confirmed: false, self: false },
-  { id: "kate",  name: "Kate R.",  hdcp: 19.2, init: "KR", confirmed: false, self: false },
-];
+/**
+ * The golfer's own chip. Handicap and initials fill in from the real golfer
+ * profile once it loads — until then they're honestly unknown, never fake.
+ */
+const SELF_MEMBER: GroupMember = { id: "me", name: "You", hdcp: null, init: "ME", confirmed: true, self: true };
 
-const SELF_MEMBER: GroupMember = { id: "me", name: "You", hdcp: 8.2, init: "JL", confirmed: true, self: true };
+/** "Jack Harrington" → "JH" — avatar initials from a real name. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return (parts.map((p) => p[0]).join("").slice(0, 2) || "?").toUpperCase();
+}
+
+/** A saved playing partner (GET /api/players) → an invitable group member. */
+function savedPlayerToMember(p: SavedPlayer): GroupMember {
+  const name = p.nickname || p.name;
+  return {
+    id: p.id,
+    name,
+    hdcp: p.handicap ?? null,
+    init: initialsOf(name),
+    confirmed: false,
+    self: false,
+  };
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -80,33 +104,89 @@ export default function TeeTimePage() {
 
   // Prefs state — lifted so confirmed can read them.
   const [windows, setWindows] = useState<TimeWindow[]>(DEFAULT_WINDOWS);
-  const [courses, setCourses] = useState<CourseOption[]>(DEFAULT_COURSES);
-  const [maxMiles, setMaxMiles] = useState(15);
+  // Courses start EMPTY — never a fake list. Real nearby courses + real
+  // favorites load in; until then the page says what's happening honestly.
+  const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [courseLoad, setCourseLoad] = useState<CourseLoadState>("locating");
+  const [maxMiles, setMaxMiles] = useState(DEFAULT_MAX_MILES);
   const [group, setGroup] = useState<GroupMember[]>([SELF_MEMBER]);
   // Price ceiling — only voice sets this today ("under eighty dollars").
   const [maxPriceUsd, setMaxPriceUsd] = useState<number | null>(null);
 
+  // The golfer's real profile fills in the self chip (handicap, initials) and
+  // names the booking. No profile → the chip stays honestly blank.
+  const [profileName, setProfileName] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getGolferProfileAsync()
+      .then((profile) => {
+        if (cancelled || !profile) return;
+        setProfileName(profile.name);
+        setGroup((g) => g.map((m) => m.self
+          ? { ...m, hdcp: profile.handicap, init: profile.name ? initialsOf(profile.name) : m.init }
+          : m));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Invitable roster = the golfer's real saved playing partners
+  // (GET /api/players, local-storage fallback like round setup).
+  const [roster, setRoster] = useState<GroupMember[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    getPlayers()
+      .then((ps) => { if (!cancelled) setRoster(ps.map(savedPlayerToMember)); })
+      .catch(() => { if (!cancelled) setRoster(getSavedPlayers().map(savedPlayerToMember)); });
+    return () => { cancelled = true; };
+  }, []);
+
   // Golfer location ("lat,lng") — last-known immediately, fresh fix when granted.
   // Search never blocks on this: it fires with whatever is available.
   const [area, setArea] = useState<string | null>(() => readLastKnownArea());
-  const coursesEdited = useRef(false);
-  const setCoursesTracked = (cs: CourseOption[]) => { coursesEdited.current = true; setCourses(cs); };
 
-  // Locate the golfer (non-blocking) and swap the fallback course list for
-  // real nearby courses. If the golfer already toggled a course, leave their
-  // list alone; on any failure the offline/dev fallback stays.
+  // Locate the golfer (non-blocking). The nearby fetch below fires as soon as
+  // ANY area is known (last-known first, fresh fix when it lands). No fix and
+  // no last-known → honest "unlocated" state, never fake data.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const fresh = await acquireArea();
-      if (cancelled || !fresh) return;
-      setArea(fresh);
-      const [lat, lng] = fresh.split(",").map(Number);
-      const nearby = await fetchNearbyCourseOptions(lat, lng);
-      if (!cancelled && nearby.length > 0 && !coursesEdited.current) setCourses(nearby);
+      if (cancelled) return;
+      if (fresh) setArea(fresh);
+      else setCourseLoad((l) => (l === "locating" ? loadStateAfterLocate(readLastKnownArea()) : l));
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Fetch radius follows the "Max drive" slider, debounced so dragging doesn't
+  // spam the backend.
+  const [radiusM, setRadiusM] = useState(() => radiusMetersForMiles(DEFAULT_MAX_MILES));
+  useEffect(() => {
+    const t = setTimeout(() => setRadiusM(radiusMetersForMiles(maxMiles)), 500);
+    return () => clearTimeout(t);
+  }, [maxMiles]);
+
+  // Fetch nearby courses whenever the area changes or the radius grows past
+  // what we've already covered. Fresh results MERGE into the list — the
+  // golfer's toggles and hand-added courses are never clobbered.
+  const lastFetched = useRef<{ area: string; radius: number } | null>(null);
+  useEffect(() => {
+    if (!area) return;
+    const last = lastFetched.current;
+    if (last && last.area === area && radiusM <= last.radius) return;
+    let cancelled = false;
+    (async () => {
+      setCourseLoad((l) => (l === "done" ? l : "loading"));
+      const [lat, lng] = area.split(",").map(Number);
+      const { options, failed } = await fetchNearbyCourseOptions(lat, lng, radiusM);
+      if (cancelled) return;
+      lastFetched.current = { area, radius: radiusM };
+      setCourses((prev) => mergeCourseOptions(prev, options));
+      setCourseLoad(loadStateAfterFetch(failed, options.length));
+    })();
+    return () => { cancelled = true; };
+  }, [area, radiusM]);
 
   // Results.
   const [slots, setSlots] = useState<TeeTimeSlot[]>([]);
@@ -121,11 +201,14 @@ export default function TeeTimePage() {
         windows={windows}
         setWindows={setWindows}
         courses={courses}
-        setCourses={setCoursesTracked}
+        setCourses={setCourses}
+        courseLoad={courseLoad}
+        area={area}
         maxMiles={maxMiles}
         setMaxMiles={setMaxMiles}
         group={group}
         setGroup={setGroup}
+        roster={roster}
         setMaxPriceUsd={setMaxPriceUsd}
         onBack={() => router.push("/")}
         onDispatch={() => setPhase("searching")}
@@ -143,6 +226,7 @@ export default function TeeTimePage() {
         group={group}
         maxPriceUsd={maxPriceUsd}
         area={area}
+        bookerName={profileName}
         onBack={() => setPhase("prefs")}
         onFound={(allSlots, best, result) => {
           setSlots(allSlots);
@@ -175,10 +259,16 @@ interface PrefsProps {
   setWindows: (ws: TimeWindow[]) => void;
   courses: CourseOption[];
   setCourses: (cs: CourseOption[]) => void;
+  /** Where the course list is in its load cycle — drives the honest empty copy. */
+  courseLoad: CourseLoadState;
+  /** Golfer location "lat,lng" — used for honest distances on added courses. */
+  area: string | null;
   maxMiles: number;
   setMaxMiles: (m: number) => void;
   group: GroupMember[];
   setGroup: (g: GroupMember[]) => void;
+  /** Real saved playing partners — the invite list. Empty when none saved. */
+  roster: GroupMember[];
   setMaxPriceUsd: (p: number | null) => void;
   onBack: () => void;
   onDispatch: () => void;
@@ -188,11 +278,30 @@ interface PrefsProps {
 type TalkState = "idle" | "listening" | "thinking";
 
 function Prefs({
-  accent, windows, setWindows, courses, setCourses,
-  maxMiles, setMaxMiles, group, setGroup, setMaxPriceUsd,
+  accent, windows, setWindows, courses, setCourses, courseLoad, area,
+  maxMiles, setMaxMiles, group, setGroup, roster, setMaxPriceUsd,
   onBack, onDispatch,
 }: PrefsProps) {
   const [showRoster, setShowRoster] = useState(false);
+  const [showCourseSearch, setShowCourseSearch] = useState(false);
+
+  /** "+ Add course" pick — appended with an honest distance, de-duped by name. */
+  const addCourse = (payload: CourseSelectPayload) => {
+    let origin: { lat: number; lng: number } | null = null;
+    if (area) {
+      const [lat, lng] = area.split(",").map(Number);
+      origin = { lat, lng };
+    }
+    const option = courseOptionFromSelection({
+      id: payload.id,
+      name: payload.name,
+      location: payload.location,
+      center: payload.center,
+      favorite: isFavorite(String(payload.id)),
+    }, origin);
+    setCourses(addCourseOption(courses, option));
+    setShowCourseSearch(false);
+  };
 
   // ── Voice ("Hold to talk") ──
   // Same capture path as the rest of the app: VoiceRecorder (MediaRecorder)
@@ -220,7 +329,8 @@ function Prefs({
 
   const applyParsed = useCallback((parsed: TeeTimePrefsParseResultValidated) => {
     if (!hasTeeTimeSignal(parsed)) {
-      say("Didn’t quite get that — try “Saturday morning at Presidio”, or fill it in below.");
+      const example = courses[0] ? `“Saturday morning at ${courses[0].name}”` : "“Saturday morning, early”";
+      say(`Didn’t quite get that — try ${example}, or fill it in below.`);
       return;
     }
 
@@ -232,7 +342,7 @@ function Prefs({
       setCourses(next);
       // Widen the drive radius when a named course sits beyond it — the golfer
       // asked for that course; silently filtering it out would be dishonest.
-      const farthest = Math.max(0, ...next.filter((c) => c.selected).map((c) => c.distance));
+      const farthest = Math.max(0, ...next.filter((c) => c.selected && c.distance != null).map((c) => c.distance ?? 0));
       if (parsed.courseNames.length > 0 && farthest > maxMiles) {
         setMaxMiles(Math.min(50, Math.ceil(farthest)));
       }
@@ -462,7 +572,7 @@ function Prefs({
               <div style={{ padding: "10px 14px 6px", fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" as const }}>
                 Your roster
               </div>
-              {LOCAL_ROSTER.filter((r) => !group.find((g) => g.id === r.id)).map((r, i) => (
+              {roster.filter((r) => !group.find((g) => g.id === r.id)).map((r, i) => (
                 <button
                   key={r.id}
                   onClick={() => addFromRoster(r)}
@@ -490,12 +600,19 @@ function Prefs({
                   </div>
                   <div>
                     <div style={{ fontFamily: T.serif, fontSize: 14, color: T.ink, letterSpacing: -0.1 }}>{r.name}</div>
-                    <div style={{ fontFamily: T.mono, fontSize: 8, color: T.pencilSoft, letterSpacing: 1, textTransform: "uppercase" as const, marginTop: 1 }}>hdcp {r.hdcp}</div>
+                    {r.hdcp != null && (
+                      <div style={{ fontFamily: T.mono, fontSize: 8, color: T.pencilSoft, letterSpacing: 1, textTransform: "uppercase" as const, marginTop: 1 }}>hdcp {r.hdcp}</div>
+                    )}
                   </div>
                   <div style={{ fontFamily: T.mono, fontSize: 9, color: accent, letterSpacing: 1, textTransform: "uppercase" as const }}>Add</div>
                 </button>
               ))}
-              {LOCAL_ROSTER.every((r) => group.find((g) => g.id === r.id)) && (
+              {roster.length === 0 && (
+                <div style={{ padding: "10px 14px 12px", fontFamily: T.serif, fontStyle: "italic", fontSize: 13, color: T.pencil }}>
+                  No saved partners yet &mdash; add players to a round and they&rsquo;ll show up here.
+                </div>
+              )}
+              {roster.length > 0 && roster.every((r) => group.find((g) => g.id === r.id)) && (
                 <div style={{ padding: "10px 14px 12px", fontFamily: T.serif, fontStyle: "italic", fontSize: 13, color: T.pencil }}>
                   Everyone&rsquo;s already in.
                 </div>
@@ -514,7 +631,7 @@ function Prefs({
       </Section>
 
       {/* ── Where ── */}
-      <Section kicker="Where" title="Courses" aside={<Kicker>{selectedCount} of {courses.length}</Kicker>}>
+      <Section kicker="Where" title="Courses" aside={courses.length > 0 ? <Kicker>{selectedCount} of {courses.length}</Kicker> : undefined}>
         <div style={{ padding: "6px 2px 14px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
             <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500 }}>
@@ -535,6 +652,12 @@ function Prefs({
         </div>
 
         <div>
+          {courses.length === 0 && (
+            <div style={{ padding: "2px 0 12px", fontFamily: T.serif, fontStyle: "italic", fontSize: 14, color: T.pencil, letterSpacing: -0.1 }}>
+              {emptyCoursesNote(courseLoad, maxMiles)}
+            </div>
+          )}
+
           {courses.some((c) => c.favorite) && (
             <>
               <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 4 }}>
@@ -556,6 +679,28 @@ function Prefs({
               ))}
             </>
           )}
+
+          <button
+            onClick={() => setShowCourseSearch(true)}
+            style={{
+              marginTop: courses.length > 0 ? 8 : 0,
+              width: "100%",
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: `1px dashed ${T.hairline}`,
+              background: "transparent",
+              cursor: "pointer",
+              textAlign: "left" as const,
+              fontFamily: T.mono,
+              fontSize: 9.5,
+              letterSpacing: 1.3,
+              color: T.pencilSoft,
+              textTransform: "uppercase" as const,
+              fontWeight: 500,
+            }}
+          >
+            + Add course
+          </button>
         </div>
       </Section>
 
@@ -599,6 +744,16 @@ function Prefs({
           Takes a minute or two. I&rsquo;ll ping you the moment I&rsquo;ve got one.
         </div>
       </div>
+
+      {/* ── Add-course search (same sheet as round setup) ── */}
+      <AnimatePresence>
+        {showCourseSearch && (
+          <CourseSearch
+            onSelectCourse={addCourse}
+            onClose={() => setShowCourseSearch(false)}
+          />
+        )}
+      </AnimatePresence>
     </PaperShell>
   );
 }
@@ -621,18 +776,22 @@ interface SearchingProps {
   maxPriceUsd: number | null;
   /** Golfer location as "lat,lng" — null when unknown (search runs without it). */
   area: string | null;
+  /** The golfer's real profile name — null when no profile exists yet. */
+  bookerName: string | null;
   onBack: () => void;
   onFound: (slots: TeeTimeSlot[], chosen: TeeTimeSlot, result: BookingResult) => void;
 }
 
-function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, area, onBack, onFound }: SearchingProps) {
+function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, area, bookerName, onBack, onFound }: SearchingProps) {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [log, setLog] = useState<LogLine[]>([]);
   const [error, setError] = useState<string | null>(null);
   const done = useRef(false);
 
   const selectedWindows  = windows.filter((w) => w.selected);
-  const selectedCourses  = courses.filter((c) => c.selected && c.distance <= maxMiles);
+  // Unknown-distance courses (hand-added, no center) are the golfer's explicit
+  // picks — never silently dropped by the radius filter.
+  const selectedCourses  = courses.filter((c) => c.selected && (c.distance == null || c.distance <= maxMiles));
   const partySize        = Math.max(1, group.length);
 
   // One query per selected window, each on its OWN day's next date.
@@ -704,7 +863,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
 
       let result: BookingResult;
       try {
-        result = await bookTeeTime(best, { name: "Owner", partySize });
+        result = await bookTeeTime(best, { name: bookerName ?? "Guest", partySize });
       } catch {
         result = { status: "pending", message: "Booking request sent — check back shortly." };
       }
@@ -755,7 +914,12 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
       </div>
 
       <div style={{ padding: "4px 22px 10px" }}>
-        <Radar accent={accent} pins={(selectedCourses.length > 0 ? selectedCourses : courses.filter((c) => c.distance <= maxMiles)).map((c) => ({ name: c.name, distance: c.distance }))} />
+        <Radar
+          accent={accent}
+          pins={(selectedCourses.length > 0 ? selectedCourses : courses.filter((c) => c.distance != null && c.distance <= maxMiles))
+            .filter((c) => c.distance != null)
+            .map((c) => ({ name: c.name, distance: c.distance ?? 0 }))}
+        />
       </div>
 
       <Section kicker="Live log" title="Dispatches" aside={<Kicker>· live</Kicker>}>
@@ -1008,7 +1172,7 @@ function Confirmed({ accent, slot, bookingResult, group, onBack }: ConfirmedProp
               <div>
                 <div style={{ fontFamily: T.serif, fontStyle: p.self ? "italic" : "normal", fontSize: 15, color: T.ink, letterSpacing: -0.15, lineHeight: 1.1 }}>{p.name}</div>
                 <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1.1, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500, marginTop: 2 }}>
-                  {p.confirmed ? "Confirmed" : "Invited"} · hdcp {p.hdcp}
+                  {p.confirmed ? "Confirmed" : "Invited"}{p.hdcp != null ? ` · hdcp ${p.hdcp}` : ""}
                 </div>
               </div>
               <svg width="10" height="10" viewBox="0 0 10 10">
@@ -1163,7 +1327,9 @@ function GroupChip({ p, accent }: { p: GroupMember; accent: string }) {
       </div>
       <div>
         <div style={{ fontFamily: T.serif, fontStyle: p.self ? "italic" : "normal", fontSize: 13, color: T.ink, letterSpacing: -0.1, lineHeight: 1 }}>{p.name}</div>
-        <div style={{ fontFamily: T.mono, fontSize: 7.5, letterSpacing: 0.8, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500, marginTop: 1 }}>hdcp {p.hdcp}</div>
+        {p.hdcp != null && (
+          <div style={{ fontFamily: T.mono, fontSize: 7.5, letterSpacing: 0.8, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500, marginTop: 1 }}>hdcp {p.hdcp}</div>
+        )}
       </div>
     </div>
   );
@@ -1191,7 +1357,7 @@ function CourseRow({ c, accent, onToggle, first }: { c: CourseOption; accent: st
         )}
       </div>
       <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase" as const, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
-        {c.distance}mi{c.muni ? ` · ${c.muni}` : ""}
+        {[c.distance != null ? `${c.distance}mi` : null, c.muni || null].filter(Boolean).join(" · ")}
       </div>
     </button>
   );

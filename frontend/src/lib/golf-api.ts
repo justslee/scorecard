@@ -770,13 +770,29 @@ export async function importGolfApiCourse(
   return course;
 }
 
-/** Search courses by GPS proximity via multiple sources */
-export async function searchNearby(
+/** Nearby search results plus per-leg health, so callers can tell
+ *  "no courses within the radius" from "couldn't reach course search". */
+export interface NearbySearchOutcome {
+  results: CourseSearchResult[];
+  /** True when the mapped-courses (RDS/PostGIS) leg answered. */
+  mappedOk: boolean;
+  /** True when the OSM leg answered. */
+  osmOk: boolean;
+}
+
+/**
+ * Search courses by GPS proximity via multiple sources, reporting leg health.
+ * The two legs fail independently (allSettled semantics) — one leg down never
+ * empties the other's results.
+ */
+export async function searchNearbyDetailed(
   lat: number,
   lng: number,
   radiusMeters = 25000
-): Promise<CourseSearchResult[]> {
+): Promise<NearbySearchOutcome> {
   const results: CourseSearchResult[] = [];
+  let mappedOk = true;
+  let osmOk = true;
 
   // 1. Search our mapped courses (RDS/PostGIS) via the backend.
   const mappedPromise = fetchAPI<MappedCourseApiResponse>(
@@ -794,7 +810,7 @@ export async function searchNearby(
         });
       }
     })
-    .catch(() => {});
+    .catch(() => { mappedOk = false; });
 
   // 2. Search OSM nearby via the backend (honors lat/lng, returns geometry centers).
   const osmPromise = fetchAPI<CourseSearchApiResponse>(
@@ -816,9 +832,18 @@ export async function searchNearby(
         }
       }
     })
-    .catch(() => {});
+    .catch(() => { osmOk = false; });
 
   await Promise.all([mappedPromise, osmPromise]);
 
-  return results;
+  return { results, mappedOk, osmOk };
+}
+
+/** Search courses by GPS proximity via multiple sources */
+export async function searchNearby(
+  lat: number,
+  lng: number,
+  radiusMeters = 25000
+): Promise<CourseSearchResult[]> {
+  return (await searchNearbyDetailed(lat, lng, radiusMeters)).results;
 }

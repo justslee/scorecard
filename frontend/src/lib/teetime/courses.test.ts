@@ -1,10 +1,35 @@
 /**
- * Unit tests for the nearby-course → prefs CourseOption mapping.
+ * Unit tests for the nearby-course → prefs CourseOption mapping, the
+ * radius/merge/add helpers, and the honest load-state machine.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// fetchNearbyCourseOptions dynamically imports golf-api; mock it so the
+// wrapper tests run without the real network client.
+vi.mock("@/lib/golf-api", () => ({
+  searchNearbyDetailed: vi.fn(),
+}));
+
 import type { CourseSearchResult } from "@/lib/golf-api";
-import { toCourseOptions, muniFromAddress, haversineMiles, MAX_COURSE_OPTIONS } from "./courses";
+import { searchNearbyDetailed } from "@/lib/golf-api";
+import {
+  toCourseOptions,
+  muniFromAddress,
+  haversineMiles,
+  MAX_COURSE_OPTIONS,
+  radiusMetersForMiles,
+  MIN_RADIUS_METERS,
+  MAX_RADIUS_METERS,
+  mergeCourseOptions,
+  addCourseOption,
+  courseOptionFromSelection,
+  loadStateAfterLocate,
+  loadStateAfterFetch,
+  emptyCoursesNote,
+  fetchNearbyCourseOptions,
+  type CourseOption,
+} from "./courses";
 
 // Golfer in central SF.
 const ORIGIN = { lat: 37.7749, lng: -122.4194 };
@@ -45,7 +70,7 @@ describe("toCourseOptions", () => {
     );
     expect(options.map((o) => o.id)).toEqual(["near", "far"]);
     expect(options[0].distance).toBeGreaterThan(0);
-    expect(options[0].distance).toBeLessThan(options[1].distance);
+    expect(options[0].distance).toBeLessThan(options[1].distance ?? 0);
   });
 
   it("skips results without a name or center", () => {
@@ -97,5 +122,172 @@ describe("toCourseOptions", () => {
     expect(bravo.favorite).toBe(true);
     expect(bravo.selected).toBe(true);
     expect(options.filter((o) => o.selected)).toHaveLength(1);
+  });
+
+  it("includes a real favorite beyond the results with an honest distance", () => {
+    // Golfer in SF; favorite is Bethpage Black in NY (~2500 mi) with a stored center.
+    const options = toCourseOptions(
+      [result({ id: "near", name: "Near Course" })],
+      ORIGIN,
+      [{ id: "fav-far", name: "Bethpage Black", center: { lat: 40.745, lng: -73.456 } }],
+    );
+    const fav = options.find((o) => o.id === "fav-far")!;
+    expect(fav.favorite).toBe(true);
+    expect(fav.selected).toBe(true);
+    expect(fav.distance).toBeGreaterThan(2000);
+    // The nearby course is still listed (and pre-selected as nearest).
+    expect(options.find((o) => o.id === "near")!.selected).toBe(true);
+  });
+
+  it("omits out-of-results favorites without a stored center (never a fake distance)", () => {
+    const options = toCourseOptions(
+      [result({ id: "near", name: "Near Course" })],
+      ORIGIN,
+      [{ id: "fav-nowhere", name: "Mystery Club" }],
+    );
+    expect(options.find((o) => o.id === "fav-nowhere")).toBeUndefined();
+  });
+
+  it("does not duplicate a favorite that's already in the results", () => {
+    const options = toCourseOptions(
+      [result({ id: "b", name: "Bravo Golf Club", center: { lat: 37.8, lng: -122.5 } })],
+      ORIGIN,
+      [{ id: "b", name: "Bravo Golf Club", center: { lat: 37.8, lng: -122.5 } }],
+    );
+    expect(options.filter((o) => o.name === "Bravo Golf Club")).toHaveLength(1);
+  });
+});
+
+describe("radiusMetersForMiles", () => {
+  it("derives meters from the Max drive slider", () => {
+    expect(radiusMetersForMiles(25)).toBe(25 * 1609);
+    expect(radiusMetersForMiles(42)).toBe(42 * 1609);
+  });
+
+  it("clamps to the ceiling (~80km) and the floor", () => {
+    expect(radiusMetersForMiles(50)).toBe(MAX_RADIUS_METERS);   // 80450 → 80000
+    expect(radiusMetersForMiles(500)).toBe(MAX_RADIUS_METERS);
+    expect(radiusMetersForMiles(0)).toBe(MIN_RADIUS_METERS);
+    expect(radiusMetersForMiles(1)).toBe(MIN_RADIUS_METERS);
+  });
+});
+
+// Shared fixtures for the merge/add tests.
+function option(overrides: Partial<CourseOption> & { id: string; name: string }): CourseOption {
+  return { muni: "", distance: 5, favorite: false, selected: false, ...overrides };
+}
+
+describe("mergeCourseOptions", () => {
+  it("returns incoming untouched (with its pre-selects) when the list is empty", () => {
+    const incoming = [option({ id: "a", name: "Alpha", selected: true })];
+    expect(mergeCourseOptions([], incoming)).toBe(incoming);
+  });
+
+  it("preserves existing rows (order + selection) and appends only new courses", () => {
+    const existing = [
+      option({ id: "a", name: "Alpha", selected: true }),
+      option({ id: "b", name: "Bravo", selected: false }),
+    ];
+    const merged = mergeCourseOptions(existing, [
+      option({ id: "a2", name: "Alpha", selected: false }),         // dupe by name — dropped
+      option({ id: "c", name: "Charlie", selected: true }),          // new — appended, unselected
+      option({ id: "f", name: "Fav Club", favorite: true }),         // new favorite — appended selected
+    ]);
+    expect(merged.map((o) => o.id)).toEqual(["a", "b", "c", "f"]);
+    expect(merged[0].selected).toBe(true);   // user's toggle survives
+    expect(merged[2].selected).toBe(false);  // appended non-favorite arrives unselected
+    expect(merged[3].selected).toBe(true);   // appended favorite arrives selected
+  });
+
+  it("returns the same array when nothing new arrives (no pointless re-render)", () => {
+    const existing = [option({ id: "a", name: "Alpha" })];
+    expect(mergeCourseOptions(existing, [option({ id: "a", name: "Alpha" })])).toBe(existing);
+  });
+});
+
+describe("addCourseOption / courseOptionFromSelection", () => {
+  it("shapes a picked course with an honest distance when center + origin exist", () => {
+    const o = courseOptionFromSelection(
+      { id: 42, name: "Bethpage Black", location: "Farmingdale, NY", center: { lat: 40.745, lng: -73.456 } },
+      { lat: 40.75, lng: -73.6 },
+    );
+    expect(o.id).toBe("42");
+    expect(o.muni).toBe("Farmingdale");
+    expect(o.selected).toBe(true);
+    expect(o.distance).toBeGreaterThan(5);
+    expect(o.distance).toBeLessThan(15);
+  });
+
+  it("leaves distance unknown (null) when the center or origin is missing", () => {
+    expect(courseOptionFromSelection({ id: "x", name: "No Center" }, { lat: 40, lng: -73 }).distance).toBeNull();
+    expect(courseOptionFromSelection({ id: "x", name: "No Origin", center: { lat: 40, lng: -73 } }, null).distance).toBeNull();
+  });
+
+  it("appends a new course selected", () => {
+    const next = addCourseOption([option({ id: "a", name: "Alpha" })], option({ id: "b", name: "Bravo" }));
+    expect(next.map((o) => o.id)).toEqual(["a", "b"]);
+    expect(next[1].selected).toBe(true);
+  });
+
+  it("de-dupes by normalized name — picking a listed course just selects it", () => {
+    const existing = [option({ id: "a", name: "Bethpage Black", selected: false })];
+    const next = addCourseOption(existing, option({ id: "other-id", name: "  bethpage black " }));
+    expect(next).toHaveLength(1);
+    expect(next[0].id).toBe("a");
+    expect(next[0].selected).toBe(true);
+  });
+});
+
+describe("course-list load state machine", () => {
+  it("locating → loading when any area is known, unlocated when none", () => {
+    expect(loadStateAfterLocate("40.75,-73.5")).toBe("loading");
+    expect(loadStateAfterLocate(null)).toBe("unlocated");
+  });
+
+  it("loading → failed only when all legs failed AND nothing came back", () => {
+    expect(loadStateAfterFetch(true, 0)).toBe("failed");
+    expect(loadStateAfterFetch(true, 2)).toBe("done");
+    expect(loadStateAfterFetch(false, 0)).toBe("done");
+    expect(loadStateAfterFetch(false, 5)).toBe("done");
+  });
+
+  it("empty-list copy is honest for every state — never fake data", () => {
+    expect(emptyCoursesNote("locating", 25)).toMatch(/finding/i);
+    expect(emptyCoursesNote("loading", 25)).toMatch(/finding/i);
+    expect(emptyCoursesNote("done", 25)).toContain("within 25 miles");
+    expect(emptyCoursesNote("failed", 25)).toMatch(/couldn.t reach/i);
+    expect(emptyCoursesNote("unlocated", 25)).toMatch(/turn on location/i);
+  });
+});
+
+describe("fetchNearbyCourseOptions", () => {
+  const mockSearch = vi.mocked(searchNearbyDetailed);
+
+  beforeEach(() => {
+    mockSearch.mockReset();
+  });
+
+  it("maps results and reports failed:false while any leg is healthy", async () => {
+    mockSearch.mockResolvedValue({
+      results: [{ id: "osm-1", name: "Bethpage Black", source: "osm", center: { lat: 40.745, lng: -73.456 } }],
+      mappedOk: false,
+      osmOk: true,
+    });
+    const out = await fetchNearbyCourseOptions(40.75, -73.5, 40000);
+    expect(out.failed).toBe(false);
+    expect(out.options.map((o) => o.name)).toEqual(["Bethpage Black"]);
+    expect(mockSearch).toHaveBeenCalledWith(40.75, -73.5, 40000);
+  });
+
+  it("reports failed:true when every leg is down", async () => {
+    mockSearch.mockResolvedValue({ results: [], mappedOk: false, osmOk: false });
+    const out = await fetchNearbyCourseOptions(40.75, -73.5, 40000);
+    expect(out).toEqual({ options: [], failed: true });
+  });
+
+  it("never throws — an unexpected error comes back as failed:true", async () => {
+    mockSearch.mockRejectedValue(new Error("boom"));
+    const out = await fetchNearbyCourseOptions(40.75, -73.5, 40000);
+    expect(out).toEqual({ options: [], failed: true });
   });
 });

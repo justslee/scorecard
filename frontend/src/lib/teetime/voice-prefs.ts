@@ -27,7 +27,8 @@ export interface VoicePrefWindow {
 export interface VoicePrefMember {
   id: string;
   name: string;
-  hdcp: number;
+  /** Handicap — null when unknown (guest placeholders never get a fake one). */
+  hdcp: number | null;
   init: string;
   confirmed: boolean;
   self: boolean;
@@ -126,7 +127,7 @@ export function applyPartySize(
   const guests: VoicePrefMember[] = Array.from({ length: guestsNeeded }, (_, i) => ({
     id: `guest-${i + 1}`,
     name: `Guest ${i + 1}`,
-    hdcp: 0,
+    hdcp: null,
     init: "+1",
     confirmed: false,
     self: false,

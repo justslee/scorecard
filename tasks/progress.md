@@ -3,6 +3,42 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-02 — tee-time: honest course list + real group (NOTICEABLE — integration/next, DONE)
+
+Owner bug (NY, on device): the tee-time screen showed the hardcoded SF demo list
+(Presidio/Harding/Lincoln fake ★ favorites + "Bethpage Black 31.2mi") because the
+page seeded `DEFAULT_COURSES` and only replaced it when GPS + nearby fetch both
+succeeded with >0 results. Owner directive mid-build: "get rid of hardcoded
+lists" — plural — so the fake roster/self-handicap went too.
+
+### What changed
+- `app/tee-time/page.tsx` — DEFAULT_COURSES DELETED; courses start `[]` with an
+  honest load state machine (locating → loading → done | failed | unlocated) and
+  calm empty copy; nearby fetch radius follows the Max drive slider (debounced,
+  refetch only when radius grows / area changes); fresh results MERGE (toggles +
+  added courses never clobbered); "+ Add course" dashed row opens the existing
+  CourseSearch sheet (dedupe by name, honest distance from payload center, null
+  when unknown — shown blank, never invented); LOCAL_ROSTER + SELF_MEMBER (fake
+  "JL hdcp 8.2" + 4 fake invitees) DELETED — self chip fills from the real golfer
+  profile (blank hdcp when unknown), invite roster = real saved players
+  (GET /api/players, storage fallback), honest empty-roster copy; booking name =
+  profile name (was hardcoded "Owner")
+- `lib/teetime/courses.ts` — CourseOption.distance now `number | null`;
+  radiusMetersForMiles (5–80km clamp), mergeCourseOptions, addCourseOption,
+  courseOptionFromSelection, load-state helpers + emptyCoursesNote;
+  toCourseOptions appends real favorites beyond the results with honest stored-
+  center distance (no center → omitted); fetchNearbyCourseOptions never throws —
+  returns `{ options, failed }`
+- `lib/golf-api.ts` — new `searchNearbyDetailed` (per-leg health: mapped + OSM
+  legs fail independently; both-down is distinguishable from "no courses");
+  `searchNearby` delegates
+- `lib/teetime/voice-prefs.ts` — VoicePrefMember.hdcp nullable; guest
+  placeholders get hdcp null (was fake 0)
+- Tests: vitest 1343 → 1365 (+22: radius clamp, leg resilience, merge/add/dedupe,
+  favorites-beyond-radius, load-state transitions, never-throw wrapper)
+
+Gates: tsc clean · eslint clean · vitest 1365/1365 · voice smoke 274/274 · build ✓
+
 ## 2026-07-02 — agentic caddie P2: real voice — hold-to-talk orb (NOTICEABLE — integration/next, DONE)
 
 The round screen's voice orb is now the REAL caddie (`specs/agentic-caddie-plan.md`
