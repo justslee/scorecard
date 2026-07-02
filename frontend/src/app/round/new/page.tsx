@@ -123,7 +123,10 @@ export default function RoundSetupPage() {
   // Populated once on mount; used in handleVoiceSetup to fuzzy-match the course
   // name returned by the realtime tool call against known courses.
   const [knownCourseNames, setKnownCourseNames] = useState<string[]>([]);
-  const [playerPickerIndex, setPlayerPickerIndex] = useState(0);
+  // Which group row the player sheet edits; null = multi-add mode ("+ Add"),
+  // where several people can be added without the sheet closing.
+  const [playerPickerIndex, setPlayerPickerIndex] = useState<number | null>(0);
+  const [multiAddName, setMultiAddName] = useState("");
   // Which player row is the owner ("you"). Defaults to the first; the owner can
   // re-assign it in the player editor. Drives ownerPlayerId on the round so the
   // owner's own scores power home/profile stats even when not first-listed.
@@ -778,12 +781,10 @@ export default function RoundSetupPage() {
                 </div>
                 <button
                   onClick={() => {
-                    const newIdx = players.length;
-                    setPlayers((prev) => [
-                      ...prev,
-                      { id: `custom-player-${prev.length}`, name: "", handicap: undefined },
-                    ]);
-                    setPlayerPickerIndex(newIdx);
+                    // Multi-add mode: one sheet, several people (owner request
+                    // 2026-07-01 — no more one-by-one).
+                    setPlayerPickerIndex(null);
+                    setMultiAddName("");
                     setPicker("player");
                   }}
                   style={{
@@ -1242,8 +1243,213 @@ export default function RoundSetupPage() {
                 />
               )}
 
+              {/* Multi-add player sheet — tap saved players to add/remove several
+                  in one visit; type to add anyone new. Stays open until Done. */}
+              {picker === "player" && playerPickerIndex === null && (
+                <div style={{ padding: "4px 22px 0", flex: 1, overflow: "auto" }}>
+                  <div style={{ marginBottom: 14 }}>
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: 1.5,
+                        color: T.pencil,
+                        textTransform: "uppercase",
+                        marginBottom: 2,
+                      }}
+                    >
+                      Group · {players.filter((p) => p.name.trim() !== "").length}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 22,
+                        color: T.ink,
+                        letterSpacing: -0.3,
+                      }}
+                    >
+                      Add players.
+                    </div>
+                  </div>
+
+                  {/* New name — add anyone not in the saved list, stays open */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                    <input
+                      value={multiAddName}
+                      onChange={(e) => setMultiAddName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && multiAddName.trim() !== "") {
+                          const name = multiAddName.trim();
+                          setPlayers((prev) => [
+                            ...prev,
+                            { id: `custom-player-${prev.length}`, name, handicap: undefined },
+                          ]);
+                          setMultiAddName("");
+                        }
+                      }}
+                      placeholder="New player name"
+                      style={{
+                        flex: 1,
+                        padding: "11px 14px",
+                        borderRadius: 99,
+                        border: `1px solid ${T.hairline}`,
+                        background: "transparent",
+                        color: T.ink,
+                        fontFamily: T.sans,
+                        fontSize: 14,
+                        outline: "none",
+                      }}
+                    />
+                    <button
+                      onClick={() => {
+                        const name = multiAddName.trim();
+                        if (name === "") return;
+                        setPlayers((prev) => [
+                          ...prev,
+                          { id: `custom-player-${prev.length}`, name, handicap: undefined },
+                        ]);
+                        setMultiAddName("");
+                      }}
+                      style={{
+                        flexShrink: 0,
+                        padding: "0 18px",
+                        borderRadius: 99,
+                        border: `1px solid ${multiAddName.trim() ? accent : T.hairline}`,
+                        background: "transparent",
+                        color: multiAddName.trim() ? accent : T.pencilSoft,
+                        fontFamily: T.mono,
+                        fontSize: 10,
+                        letterSpacing: 1.2,
+                        textTransform: "uppercase",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {/* Saved players — tap to add, tap again to remove; sheet stays open */}
+                  {savedPlayers.map((sp) => {
+                    const inGroup = players.some((p) => p.id === sp.id);
+                    return (
+                      <button
+                        key={sp.id}
+                        onClick={() => {
+                          if (inGroup) {
+                            const idx = players.findIndex((p) => p.id === sp.id);
+                            if (idx === ownerIndex) return; // never remove "you" here
+                            setPlayers((prev) => prev.filter((p) => p.id !== sp.id));
+                            setOwnerIndex((prev) => (idx < prev ? prev - 1 : prev));
+                          } else {
+                            setPlayers((prev) => [
+                              ...prev,
+                              { id: sp.id, name: sp.name, handicap: sp.handicap },
+                            ]);
+                          }
+                        }}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "10px 0",
+                          borderTop: `1px dashed ${T.hairline}`,
+                          background: "transparent",
+                          borderLeft: "none",
+                          borderRight: "none",
+                          borderBottom: "none",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 99,
+                            background: inGroup ? T.ink : T.hairline,
+                            color: inGroup ? T.paper : T.pencilSoft,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontFamily: T.serif,
+                            fontStyle: "italic",
+                            fontSize: 13,
+                            flexShrink: 0,
+                            transition: "background 0.25s",
+                          }}
+                        >
+                          {sp.name[0]?.toUpperCase() ?? "?"}
+                        </div>
+                        <div
+                          style={{
+                            flex: 1,
+                            fontFamily: T.sans,
+                            fontSize: 14,
+                            color: T.ink,
+                            fontWeight: 500,
+                            letterSpacing: -0.1,
+                          }}
+                        >
+                          {sp.name}
+                        </div>
+                        {sp.handicap !== undefined && (
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: 1.2,
+                              color: T.pencilSoft,
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            hcp {sp.handicap}
+                          </div>
+                        )}
+                        <div
+                          style={{
+                            fontFamily: T.serif,
+                            fontStyle: "italic",
+                            fontSize: 13,
+                            color: inGroup ? accent : T.pencilSoft,
+                            flexShrink: 0,
+                            width: 44,
+                            textAlign: "right",
+                          }}
+                        >
+                          {inGroup ? "✓ added" : "add"}
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {/* Done */}
+                  <button
+                    onClick={() => setPicker(null)}
+                    style={{
+                      marginTop: 16,
+                      marginBottom: 20,
+                      width: "100%",
+                      padding: "14px",
+                      borderRadius: 99,
+                      border: "none",
+                      background: accent,
+                      color: T.paper,
+                      fontFamily: T.sans,
+                      fontSize: 14,
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      letterSpacing: -0.1,
+                    }}
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+
               {/* Player picker — light paper sheet hosting light-themed PlayerAutocomplete */}
-              {picker === "player" && (
+              {picker === "player" && playerPickerIndex !== null && (
                 <div style={{ padding: "4px 22px 0", flex: 1, overflow: "auto" }}>
                   {/* Header */}
                   <div style={{ marginBottom: 14 }}>
