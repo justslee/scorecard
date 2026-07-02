@@ -5152,3 +5152,16 @@ replacing the schematic) — to land with the owner's Claude Design layout.
 Also this session: security(search) — URL-encoded Mapbox query + auth on /search
 (paid Places). Places key saved (goes live on backend restart; verify config-status
 + a real search). Fable session pushed tee-time phase 1b-A to the same branch.
+
+---
+
+## 2026-07-01 — SHIPPED: #86 bundle merged to main (owner "ship it", in-session)
+
+Owner approved in-session. Merged PR #86 → main (16cf7de) with green checks; fresh
+integration/next fast-forwarded to main and pushed. Backend auto-deployed via SSM
+(run 28556050992, success) — alembic upgraded 009→010_tee_time_bookings on prod.
+Bundle contents: tee-time phase 1b (A–D) + Google Places course search + search auth +
+OSM name matching + map tap-to-target + WHS handicap + round-map interactive/fullscreen
+(ba2eaf9, landed by the loop session just before merge — flagged to owner post-merge).
+Board: Phase 1b card → Shipped. Provider default still mock: flip TEETIME_PROVIDER=affiliate
+once GOOGLE_PLACES_API_KEY is set (also needed for search half of the shipped work).
