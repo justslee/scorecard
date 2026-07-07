@@ -47,6 +47,8 @@ import { getRecentCourses } from "@/lib/golf-api";
 import { resolveMappedCourse } from "@/lib/map-bridge";
 import type { MappedCourseListItem } from "@/lib/map-bridge";
 import { roundCourseAnchor } from "@/lib/round-anchor";
+import type { WeatherConditions } from "@/lib/caddie/types";
+import { bearingDeg, relativeWind, playsLikeYards, compassFrom } from "@/lib/map/wind";
 import { computeFCBDistances } from "@/lib/course/course-coordinates";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
@@ -485,6 +487,21 @@ export default function RoundPage() {
   // map even when no mapped geometry exists (never drop to the paper mock).
   const roundAnchor = roundCourseAnchor(round);
 
+  // Real weather for the wind tiles (owner 2026-07-07: they were hardcoded).
+  // One fetch per round mount; null = honest "no data" tiles, never fake.
+  const [weather, setWeather] = useState<WeatherConditions | null>(null);
+  const weatherAnchor = roundAnchor;
+  const weatherLat = weatherAnchor?.lat;
+  const weatherLng = weatherAnchor?.lng;
+  useEffect(() => {
+    if (weatherLat == null || weatherLng == null) return;
+    let cancelled = false;
+    fetchWeather(weatherLat, weatherLng)
+      .then((w) => { if (!cancelled) setWeather(w); })
+      .catch(() => { /* tiles stay honest "—" */ });
+    return () => { cancelled = true; };
+  }, [weatherLat, weatherLng]);
+
   // Tee-marker color source for the map(s) below. "" (not null) when the round
   // exists but has no stored tee name — that still draws a marker (neutral
   // ink/graphite, an honest "we don't know the color") on hd.tee. null is
@@ -886,7 +903,30 @@ export default function RoundPage() {
     { k: "Center", v: fcbFromTee?.center ?? distance, color: T.ink },
     { k: "Back", v: fcbFromTee?.back ?? distance + 14, color: "#5d7285" },
   ];
-  const playsYards = Math.round((fcbFromTee?.center ?? distance) * 1.04);
+  // Per-hole relative wind: same weather, different bearing per hole.
+  const holeBearing = holeCoordsForTiles?.tee && holeCoordsForTiles?.green
+    ? bearingDeg(holeCoordsForTiles.tee, holeCoordsForTiles.green)
+    : null;
+  const holeWind = weather && holeBearing != null
+    ? relativeWind(weather.wind_direction, holeBearing, weather.wind_speed_mph)
+    : null;
+  const windTile = weather
+    ? {
+        v: `${Math.round(weather.wind_speed_mph)}mph`,
+        // With no hole bearing (no coords) the honest label is the compass
+        // source, not a made-up relative direction.
+        sub: holeWind ? holeWind.label : `from ${compassFrom(weather.wind_direction)}`,
+      }
+    : { v: "—", sub: "no data" };
+  const gustTile = weather
+    ? { v: `${Math.round(weather.wind_gusts_mph)}mph`, sub: "gusts" }
+    : { v: "—", sub: "gusts" };
+  // Plays-like: wind-adjusted when the along-hole component is known;
+  // otherwise the plain from-tee distance, honestly labeled.
+  const playsBase = fcbFromTee?.center ?? distance;
+  const playsTile = holeWind
+    ? { v: `${playsLikeYards(playsBase, holeWind.headMph)}Y`, sub: "wind-adj" }
+    : { v: `${Math.round(playsBase)}Y`, sub: "from tee" };
   // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
   const shotPoint = shotPointForPath(hole.path);
 
@@ -1578,9 +1618,9 @@ export default function RoundPage() {
                         marginBottom: 12,
                       }}
                     >
-                      <MapStat k="Wind" v="6mph" sub="R→L" />
-                      <MapStat k="Elev" v="+3ft" sub="uphill" />
-                      <MapStat k="Plays" v={`${playsYards}Y`} sub="adjusted" />
+                      <MapStat k="Wind" v={windTile.v} sub={windTile.sub} />
+                      <MapStat k="Gust" v={gustTile.v} sub={gustTile.sub} />
+                      <MapStat k="Plays" v={playsTile.v} sub={playsTile.sub} />
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       {fcbTiles.map((d) => (
@@ -1661,8 +1701,8 @@ export default function RoundPage() {
                   holeNumber={currentHole}
                   hole={hole}
                   distance={distance}
-                  windMph={6}
-                  windDir="R→L"
+                  windMph={weather ? Math.round(weather.wind_speed_mph) : 0}
+                  windDir={holeWind ? holeWind.label : weather ? `from ${compassFrom(weather.wind_direction)}` : "—"}
                   expanded={expanded}
                   onExpand={() => {
                     if (!draggedRef.current) setExpanded(true);

@@ -23,17 +23,43 @@
 
 import { fetchAPI } from '../api';
 
+import { PcmCapture } from './pcm-capture';
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 // wss URL for Deepgram streaming. Query params mirror the one-shot transcribe
 // call so model + formatting are consistent across both paths.
-const DEEPGRAM_WS_URL =
+const DEEPGRAM_WS_BASE =
   'wss://api.deepgram.com/v1/listen' +
   '?model=nova-3' +
   '&smart_format=true' +
   '&punctuate=true' +
   '&interim_results=true' +
   '&language=en-US';
+
+/** Containerized (webm/opus via MediaRecorder) lets Deepgram auto-detect;
+ *  the raw-PCM path must declare its encoding explicitly. */
+function wsUrlFor(transport: 'webm' | 'pcm'): string {
+  return transport === 'pcm'
+    ? DEEPGRAM_WS_BASE + '&encoding=linear16&sample_rate=16000&channels=1'
+    : DEEPGRAM_WS_BASE;
+}
+
+/** webm/opus MediaRecorder is the efficient path (Chrome/Android); anything
+ *  else (iOS WKWebView records mp4/AAC, which the live socket can't reliably
+ *  decode — and a second MediaRecorder on one stream is flaky there anyway)
+ *  streams raw PCM tapped via WebAudio. */
+function pickTransport(): 'webm' | 'pcm' | null {
+  if (
+    typeof MediaRecorder !== 'undefined' &&
+    typeof MediaRecorder.isTypeSupported === 'function' &&
+    MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+  ) {
+    return 'webm';
+  }
+  if (PcmCapture.isSupported()) return 'pcm';
+  return null;
+}
 
 // How often to slice MediaRecorder chunks and ship them over the WS (ms).
 const TIMESLICE_MS = 250;
@@ -121,6 +147,7 @@ export class DeepgramLiveTranscriber {
   private events: DeepgramLiveEvents;
   private ws: WebSocket | null = null;
   private recorder: MediaRecorder | null = null;
+  private pcm: PcmCapture | null = null;
   // Running accumulation of is_final segments so interim display shows the
   // full sentence so far, not just the current partial.
   private accumulatedFinals = '';
@@ -135,9 +162,7 @@ export class DeepgramLiveTranscriber {
    * Static so callers can feature-detect before instantiating.
    */
   static isSupported(): boolean {
-    return (
-      typeof WebSocket !== 'undefined' && typeof MediaRecorder !== 'undefined'
-    );
+    return typeof WebSocket !== 'undefined' && pickTransport() !== null;
   }
 
   /**
@@ -161,14 +186,34 @@ export class DeepgramLiveTranscriber {
       { method: 'POST' },
     );
 
+    const transport = pickTransport();
+    if (!transport) throw new Error('No live-audio transport available');
+
     // Open the WebSocket. Deepgram browser auth uses the 'token' subprotocol
     // because browsers cannot set an Authorization header on a WebSocket.
-    const ws = new WebSocket(DEEPGRAM_WS_URL, ['token', token]);
+    const ws = new WebSocket(wsUrlFor(transport), ['token', token]);
     this.ws = ws;
 
     return new Promise<void>((resolve, reject) => {
       ws.onopen = () => {
-        // WS open — start chunking mic audio into it.
+        if (transport === 'pcm') {
+          // Raw linear16 tapped via WebAudio (see pickTransport rationale).
+          const pcm = new PcmCapture();
+          this.pcm = pcm;
+          pcm
+            .start(stream, (chunk) => {
+              if (this.ws?.readyState === WebSocket.OPEN) {
+                this.ws.send(chunk.buffer);
+              }
+            })
+            .then(resolve)
+            .catch((err) => {
+              this.events.onError?.(err instanceof Error ? err : new Error(String(err)));
+              reject(err instanceof Error ? err : new Error(String(err)));
+            });
+          return;
+        }
+        // webm/opus — chunk mic audio via MediaRecorder.
         const mimeType = pickMimeType();
         const recorder = new MediaRecorder(
           stream,
@@ -222,6 +267,8 @@ export class DeepgramLiveTranscriber {
     if (this.recorder && this.recorder.state !== 'inactive') {
       try { this.recorder.stop(); } catch { /* ignore */ }
     }
+    try { this.pcm?.stop(); } catch { /* ignore */ }
+    this.pcm = null;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         this.ws.send(JSON.stringify({ type: 'CloseStream' }));
