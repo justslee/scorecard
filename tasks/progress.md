@@ -6421,3 +6421,38 @@ Self-review: pure presentational, signature + 3 call sites unchanged — SHIP.
 
 Bundle now = SILENT-only (this restyle) → NO owner ping; rides along until the next
 noticeable change. Bundle PR opened integration/next → main as the rolling record.
+
+---
+
+## 2026-07-07 — Bundle cycle (loop cycle 3): Looper orb bundle 2 — round-page identity (NOTICEABLE)
+
+Step 0: no pending owner approvals (board latest = #102 Shipped; cycle 2 polled threads
+empty; no new feedback). Sync: main == integration/next, clean.
+
+PICKED (owner-approved, from specs/looper-orb-plan.md "Out of scope (bundle 2)"): restyle
+the round page's "Ask Caddie" pill to the Looper identity (ink-orb + serif-L), same
+tap-summons semantics; round page has no tab bar so placement stays. NOTICEABLE.
+
+PLAN (opus Plan agent) → specs/looper-orb-bundle2-plan.md: swap ONLY the pill medallion
+to the LooperOrb language (T.ink bg, hairline border, trimmed inset highlight, serif-italic
+"L"); keep onClick (voice.stop()+setCaddieOpen) → round-scoped CaddieSheet; NO looper-bus,
+NO long-press (avoid racing realtime.ts warm-path mic invariants); persona stays surfaced in
+CaddieSheet header. Label decision flagged for designer.
+
+BUILT (builder, ec49d09): pure presentational restyle + aria-label; +progress log 3d17471.
+Gates green.
+
+REVIEW (parallel): Reviewer SHIP (faithful, no correctness/a11y/compression regressions,
+no voice/mic/bus touched). QA PASS — lint / tsc / build (19 routes) / voice smoke 274/274 /
+FloatingTabBar 4/4. Designer PASS on the orb visual + one BLOCKING label call: the pill opens
+the persona-branded CaddieSheet ("Classic · On the bag"), so "Ask Looper" overpromises →
+revert label to "Ask caddie", keep the ink-orb medallion.
+
+ITERATE: applied the designer label revert directly (two-string change on an already-approved
+label; eng-lead re-ran gates — lint/tsc/build/voice 274/274 green) → 6baa1c9 pushed.
+
+BUNDLE #103 now NOTICEABLE (this orb identity + silent map ErrorScreen restyle + backlog
+hygiene). PR #103 body updated with checklist + status. Board card created in Needs Review
+(Bundle #103: Looper orb — bundle 2). No push notification (per cycle rule — owner replies
+in-session or on the board). Awaiting owner "ship it" → release-manager builds TestFlight
+from integration/next, then merges → main + cuts fresh integration/next.
