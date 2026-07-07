@@ -38,6 +38,19 @@ Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded
 changes (`fetchedAt` is client-side receipt time only, per plan §4) — `ruff` not required.
 Silent — no new UI/chrome, rides the bundle.
 
+ENG-LEAD CLOSE (loop cycle 10): reviewer verdict SHIP (no-clobber/timer-leak/stale-closure/
+round-gating invariants all traced and hold; deterministic tests would fail if the bugs were
+reintroduced); QA PASS (independently re-ran full vitest 1602/1602 TWICE, no cross-file
+fake-timer leak). Two non-blocking reviewer nits logged in backlog under wind-periodic-refresh
+(chief: completed-round hole-nav/foreground still refetches weather — fold the round-active
+guard in next time RoundPageClient is touched; benign, event-driven, not a loop). Committed
+96cb16e; backlog cleanup 2326b94. Opened the fresh rolling **bundle PR #107** (integration/next
+→ main), first item, SILENT-only; CI 1 pass / 1 pending / 0 fail. Board card "Bundle #107"
+created in In Progress (NOT Needs Review — no noticeable change, no approval requested). NO push
+notification (silent-only bundle, per standing rule). Also handled Step 0: no owner feedback on
+either #106 card; moved the stale #106 "Needs Review" test card → Shipped so future cycles don't
+misread it as a pending approval. Bundle #107 now accumulates until a noticeable item lands.
+
 ## 2026-07-07 — caddie-conversational-loop follow-up: designer-caught answer-wipe bug (SILENT fix, integration/next, DONE)
 
 Designer review of `eded238` found ONE blocking UX bug (everything else — reviewer verdict SHIP,
