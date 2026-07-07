@@ -419,7 +419,7 @@ export default function ScoreSheet({
       );
       setVoicePhase("error");
     }
-  }, []);
+  }, [players]);
 
   const stopAndParse = useCallback(async () => {
     const recorder = recorderRef.current;
