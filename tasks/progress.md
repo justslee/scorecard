@@ -3,6 +3,57 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-06 — course-search v2, Work Item B: full-screen Google-Maps-style search (NOTICEABLE — integration/next, DONE)
+
+`specs/course-search-v2-plan.md` Work Item B (frontend). Owner escalation: the
+old bottom sheet (`maxHeight: "90vh"`) resized/jumped as results streamed in
+and as the iOS keyboard opened. Work Item A (backend: Places-primary search +
+`legHealth` + cache-poisoning fix) is a separate parallel builder — not
+included here; the two are contract-frozen via `searchAllCourses`'s
+unchanged signature + append-only `onResults`.
+
+### What changed
+- `components/CourseSearch.tsx` — full rewrite. `position: fixed; inset: 0;
+  height: 100dvh` — the outer frame is NEVER bound to content or result
+  count; only the inner scroll region grows. Fixed top bar: back chevron
+  (`onClose`) + autoFocus input + optional mic (`onVoiceSearch?: () => void`,
+  hidden/no-op when the caller doesn't pass it — round/new wires it to the
+  existing Realtime voice-setup panel; courses tab / tee-time leave it
+  unwired per plan). Idle state: Favorites → Recent (`getRecentCourses`, new
+  to this surface) → Nearby, deduped against each other by `courseNameKey`
+  so a favorite never echoes under Recent/Nearby. Typed results replace idle
+  sections as one stable append-only list (unchanged contract). One
+  consolidated `CourseRow` idiom replaces the old `ResultRow`/`FavoriteRow`
+  split (serif 17 title, mono 8.5 uppercase subline, dashed hairline, star,
+  chevron, minHeight 44). Dropped the footer attribution for a per-row
+  `sourceLabel` tag. Loading = pulsing dot in the bar only, zero layout
+  shift. `CourseSearchProps`/`CourseSelectPayload`/`resultToPayload` kept
+  exactly — all 3 callers (courses/page.tsx, round/new/page.tsx,
+  tee-time/page.tsx) work unchanged.
+- `lib/course-search-helpers.ts` — new `dedupeIdleSections` (cross-section
+  dedupe by courseNameKey) and `buildRowSubline` / `resultSourceLabel` (the
+  one subline/tag idiom every CourseRow uses).
+- `app/round/new/page.tsx` — passes `onVoiceSearch` → closes the search
+  sheet and opens the existing `VoiceRoundSetupRealtime` panel.
+- Minor incidental fix folded into the row consolidation: `favoriteToPayload`
+  now carries `center` (previously silently dropped, losing the map-view
+  center for favorited non-mapped courses).
+- Tests: `course-search-helpers.test.ts` +19; new `CourseSearch.test.tsx`
+  (RTL, `@testing-library/react` already a devDependency) locks in the fixed
+  outer-frame geometry before/after a 40-row append-only batch, confirms
+  only the inner scroll region scrolls, and covers mic show/hide + back
+  chevron.
+
+Gates: tsc clean · eslint clean · vitest 60 files / 1393 tests green · voice
+smoke 274/274 · `next build` green.
+
+Note for eng-lead: `frontend/src/lib/golf-api.ts` had unrelated in-progress
+changes from the parallel Work Item A builder sharing this same working
+tree while this item was built — left untouched/unstaged, not part of this
+commit. Bundle-worthy alongside A: together they fix both owner complaints
+(search can't find Pebble Beach + resize jank) — hold for a joint approval
+ping once A lands.
+
 ## 2026-07-02 — tee-time: honest course list + real group (NOTICEABLE — integration/next, DONE)
 
 Owner bug (NY, on device): the tee-time screen showed the hardcoded SF demo list
