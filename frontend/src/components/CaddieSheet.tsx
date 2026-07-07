@@ -642,15 +642,26 @@ export default function CaddieSheet({
     setError(null);
     setTranscript("");
     setInterimTranscript("");
-    setVoiceAnswer(null);
+    // Whether THIS listen cycle was auto-armed by the loop (vs. a manual
+    // tap) — read BEFORE deciding whether to clear the previous answer (see
+    // below), and once more here so it carries through the whole cycle
+    // (dead-air timer below, empty-streak accounting in stopListening). The
+    // ref itself stays true until stopListening/dead-air-expiry/an error
+    // resets it, so it is stable to read again there.
+    const loopArmed = armedByLoopRef.current;
+    if (!loopArmed) {
+      // Manual "tap the mic" (fresh question or "Ask follow-up") — clear the
+      // previous answer immediately, same as today.
+      //
+      // A loop-driven auto re-arm leaves `voiceAnswer` alone: the golfer just
+      // heard it spoken a moment ago, and swallowing it here would blank the
+      // screen the instant the mic reopens (designer-caught regression —
+      // VoiceBody below keeps rendering it, layered under the waveform,
+      // until a NEW answer actually starts streaming in).
+      setVoiceAnswer(null);
+    }
     liveTranscriptRef.current = "";
     liveFailedRef.current = false;
-    // Whether THIS listen cycle was auto-armed by the loop (vs. a manual
-    // tap) — read once here and carried through the whole cycle (dead-air
-    // timer below, empty-streak accounting in stopListening). The ref itself
-    // stays true until stopListening/dead-air-expiry/an error resets it, so
-    // it is stable to read again there.
-    const loopArmed = armedByLoopRef.current;
     const gen = openGenRef.current;
     let recorder: VoiceRecorder | null = null;
     try {
@@ -680,6 +691,11 @@ export default function CaddieSheet({
           setInterimTranscript("");
           setIsListening(false);
           setLoopDroppedOut(true);
+          // This listen produced no turn — the persisted answer (kept on
+          // screen through the "listening" phase above) has nothing left to
+          // stay attached to, so drop it too and go fully idle, exactly as
+          // before this listen started.
+          setVoiceAnswer(null);
         }, DEAD_AIR_MS);
       }
 
@@ -771,6 +787,11 @@ export default function CaddieSheet({
       if (emptyStreakRef.current >= MAX_EMPTY_STREAK) {
         setLoopDroppedOut(true);
       }
+      // This listen produced no new turn — same as the dead-air path above,
+      // drop the persisted answer and settle back to plain idle rather than
+      // leave a stale answer sitting under a mic that isn't actually about
+      // to say anything new.
+      setVoiceAnswer(null);
     };
     // Snapshot BEFORE stopping the stream — the best-so-far live transcript.
     const snapshot = liveTranscriptRef.current;
@@ -1434,6 +1455,13 @@ export default function CaddieSheet({
                   ? "Tap to stop"
                   : phase === "idle" || phase === "error"
                   ? "Tap to speak"
+                  : phase === "answered" && ttsEnabled && !loopDroppedOut
+                  ? // Hands-free is armed and will re-listen on its own the
+                    // moment playback ends (§3.3 grace window) — "Tap to ask
+                    // again" would read as an instruction the golfer doesn't
+                    // need to follow; a tap here still works, it just barges
+                    // in early.
+                    "Tap to interrupt"
                   : "Tap to ask again"}
               </div>
             </div>
@@ -1441,6 +1469,52 @@ export default function CaddieSheet({
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-component: ListeningIndicator (waveform + "Hearing…"/interim text) —
+// shared by the bare "voice-listening" state and the loop-armed re-listen
+// that renders underneath a still-persisting answer (see VoiceBody below).
+// ---------------------------------------------------------------------------
+
+function ListeningIndicator({
+  accent,
+  interimTranscript,
+  compact,
+}: {
+  accent: string;
+  interimTranscript: string;
+  /** Tighter spacing/size when nested under a persisting answer card rather
+   *  than standing alone as the whole turn. */
+  compact?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: compact ? 8 : 12,
+        paddingTop: compact ? 4 : 8,
+      }}
+    >
+      <Waveform accent={accent} playing bars={compact ? 16 : 22} height={compact ? 16 : 20} />
+      {/* Both "Hearing…" and interim text use same serif-italic style (#8) */}
+      <div
+        style={{
+          fontFamily: T.serif,
+          fontStyle: "italic",
+          fontSize: compact ? 13 : 15,
+          color: T.inkSoft,
+          textAlign: "center",
+          lineHeight: 1.4,
+          letterSpacing: -0.1,
+        }}
+      >
+        {interimTranscript ? `“${interimTranscript}”` : "Hearing…"}
+      </div>
+    </div>
   );
 }
 
@@ -1534,7 +1608,14 @@ function VoiceBody({
 
       {/* Current / most recent turn */}
       <AnimatePresence mode="wait">
-        {phase === "answered" && voiceAnswer ? (
+        {(phase === "answered" || phase === "listening") && voiceAnswer ? (
+          // Loop-armed re-listen with a persisted answer (see startListening's
+          // loopArmed guard) renders here too — same "voice-answer" key as the
+          // plain "answered" case, so AnimatePresence's mode="wait" never
+          // treats the mic reopening as a key change and hard-swaps the just
+          // -spoken answer out for the waveform (designer-caught regression:
+          // the answer used to vanish ~400-500ms after the caddie finished
+          // speaking, the instant the loop reopened the mic).
           <motion.div
             key="voice-answer"
             initial={{ opacity: 0, y: 8 }}
@@ -1594,10 +1675,14 @@ function VoiceBody({
             </div>
 
             {/* Follow-up / clear — unmounted until the reply has FINISHED
-                streaming (not merely started). Mounting these mid-stream let
-                a tap blank `voiceAnswer` out from under the still-growing
-                text, and caused the row to reflow underneath it. */}
-            {!isStreaming && (
+                streaming (not merely started), AND unmounted again once the
+                loop reopens the mic (phase "listening"): a new turn is
+                already in flight at that point, so the CTAs would be dead
+                weight sitting on top of a card that's about to be replaced.
+                The listening indicator below takes their place. Mounting
+                mid-stream let a tap blank `voiceAnswer` out from under the
+                still-growing text, and caused the row to reflow underneath it. */}
+            {!isStreaming && phase !== "listening" && (
               <div
                 style={{
                   display: "flex",
@@ -1645,39 +1730,29 @@ function VoiceBody({
                 )}
               </div>
             )}
+
+            {/* Loop re-armed the mic while this answer is still on screen —
+                show the listening waveform underneath it rather than hard
+                -swapping the whole card away (see the mode="wait" comment
+                above). */}
+            {phase === "listening" && (
+              <div style={{ marginTop: 14 }}>
+                <ListeningIndicator accent={accent} interimTranscript={interimTranscript} compact />
+              </div>
+            )}
           </motion.div>
         ) : phase === "listening" ? (
+          // No persisted answer (fresh question, or a manual "ask again" that
+          // already cleared it — see startListening) — the bare waveform is
+          // the whole turn, same as before.
           <motion.div
             key="voice-listening"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16 }}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 12,
-              paddingTop: 8,
-            }}
           >
-            <Waveform accent={accent} playing bars={22} height={20} />
-            {/* Both "Hearing…" and interim text use same serif-italic 15px style (#8) */}
-            <div
-              style={{
-                fontFamily: T.serif,
-                fontStyle: "italic",
-                fontSize: 15,
-                color: T.inkSoft,
-                textAlign: "center",
-                lineHeight: 1.4,
-                letterSpacing: -0.1,
-              }}
-            >
-              {interimTranscript
-                ? `“${interimTranscript}”`
-                : "Hearing…"}
-            </div>
+            <ListeningIndicator accent={accent} interimTranscript={interimTranscript} />
           </motion.div>
         ) : phase === "transcribing" ? (
           <motion.div

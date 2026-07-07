@@ -3,6 +3,46 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — caddie-conversational-loop follow-up: designer-caught answer-wipe bug (SILENT fix, integration/next, DONE)
+
+Designer review of `eded238` found ONE blocking UX bug (everything else — reviewer verdict SHIP,
+gates green — was confirmed correct): the loop's auto re-arm wiped the caddie's just-spoken
+answer off screen ~400-500ms after it finished speaking. Root cause: `startListening` did an
+unconditional `setVoiceAnswer(null)` at its top — which now ALSO ran on the loop's auto re-arm,
+not just a manual tap — and `VoiceBody`'s `AnimatePresence mode="wait"` treated the mic reopening
+(phase ranks `listening` above `answered`) as a key change, hard-swapping the answer card out for
+the waveform. Corollary: during the ~400-500ms grace window before the mic actually reopened, the
+mic label still read "Tap to ask again" — the exact instruction the owner asked removed — while
+the loop was silently counting down to listen.
+
+Fix (minimal, no new chrome, no new toggle):
+- `startListening`: reads `armedByLoopRef.current` BEFORE deciding whether to clear
+  `voiceAnswer` — a manual tap clears it immediately (unchanged); a loop-driven auto re-arm
+  leaves it alone.
+- `VoiceBody`: the "voice-answer" card's key now covers `phase === "answered" || phase ===
+  "listening"` (when `voiceAnswer` is set) instead of only `"answered"` — so `mode="wait"` never
+  swaps it away on a loop re-arm. A `ListeningIndicator` (extracted, shared with the bare
+  no-answer listening state) renders underneath the persisting card while listening; the
+  follow-up/clear CTAs unmount during that phase (a new turn is already in flight) instead of
+  staying live — designer nice-to-have, done.
+- Two loop-armed-listen-concludes-with-nothing paths (`registerLoopEmpty`, the dead-air timeout)
+  now explicitly clear `voiceAnswer` — without this, an abandoned/failed re-listen would leave a
+  permanent "ghost" answer + a masked-error risk (the phase ordering ranks `voiceAnswer` above
+  `error`). Reverts to the original "Tap to speak" idle exactly as before this fix once a listen
+  produces no new turn.
+- Mic label: added a `phase === "answered" && ttsEnabled && !loopDroppedOut` branch → "Tap to
+  interrupt" (a tap still works — it barges in early) instead of "Tap to ask again" whenever a
+  loop re-arm is imminent or in its grace window.
+
+Tests: +6 deterministic cases in `CaddieSheet.handsfree.test.tsx` (opening-reco first-turn
+persistence, later-turn persistence + CTA hide, manual-tap-still-clears, no-contradictory-label-
+during-grace, abandoned-listen-reverts-to-idle) — all hand-driven fake timers, same discipline as
+the existing 8. Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded,
+`voice-tests/runner.ts --smoke` → 274/274, targeted vitest (handsfree + session + useSheetTTS) →
+44/44, full `npm run test` → **1590/1590 pass, 74/74 files**. Committed to `integration/next` and
+pushed. Silent — same feature as `eded238`, no new user-visible surface, rides the bundle
+(the parent commit was already flagged noticeable).
+
 ## 2026-07-07 — caddie-conversational-loop: hands-free Ask Caddie (NOTICEABLE — integration/next, DONE)
 
 Implemented `specs/caddie-conversational-loop-plan.md` on the existing Deepgram-dictation +

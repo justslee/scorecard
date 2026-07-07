@@ -527,4 +527,128 @@ describe("CaddieSheet — hands-free conversational loop (specs/caddie-conversat
     await flush();
     expect(liveState.instances).toHaveLength(4);
   });
+
+  // ── Designer follow-up: the auto re-arm must not wipe the just-spoken
+  // answer off screen (specs/caddie-conversational-loop-plan.md §3.3/§3.7
+  // amendment). ──
+
+  it("(9) persists the opening auto-reco answer across the loop's auto re-arm (first turn)", async () => {
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) =>
+      emitTokensSync(opts, ["Smooth 7-iron, 143 to the flag."]),
+    );
+    const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 143 });
+    renderSheet({ resolveOpeningShot, convHistory: [] });
+    await flush();
+
+    expect(screen.getByText(/Smooth 7-iron, 143 to the flag\./)).toBeTruthy();
+    expect(ttsState.speakSpy).toHaveBeenCalledTimes(1);
+
+    // The loop re-arms the mic after playback ends.
+    firePlaybackEnd();
+    await act(async () => {
+      vi.advanceTimersByTime(REARM_GRACE_MS);
+    });
+    await flush();
+
+    expect(screen.getByLabelText("Stop recording")).toBeTruthy(); // mic reopened
+    // The answer the golfer just heard is STILL on screen — this is the bug:
+    // it used to vanish the instant the mic reopened.
+    expect(screen.getByText(/Smooth 7-iron, 143 to the flag\./)).toBeTruthy();
+  });
+
+  it("(10) persists a LATER turn's answer across the loop's auto re-arm, and hides the follow-up/clear CTAs while listening", async () => {
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Turn one."]));
+    renderSheet();
+    await speakAndStop("what club?");
+    expect(screen.getByText("Turn one.")).toBeTruthy();
+
+    firePlaybackEnd();
+    await act(async () => {
+      vi.advanceTimersByTime(REARM_GRACE_MS);
+    });
+    await flush();
+    expect(liveState.instances).toHaveLength(2);
+
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Turn two."]));
+    act(() => liveState.instances[1].events.onFinal?.("what now?"));
+    act(() => liveState.instances[1].events.onUtteranceEnd?.());
+    await flush();
+    expect(screen.getByText("Turn two.")).toBeTruthy();
+
+    // Loop re-arms a THIRD time — turn two's answer must survive it.
+    firePlaybackEnd();
+    await act(async () => {
+      vi.advanceTimersByTime(REARM_GRACE_MS);
+    });
+    await flush();
+
+    expect(screen.getByLabelText("Stop recording")).toBeTruthy();
+    expect(screen.getByText("Turn two.")).toBeTruthy(); // the assertion this bug broke
+    // The follow-up/clear CTAs sit on the now-persisting answer card — they
+    // must not stay live while a new turn is already in flight.
+    expect(screen.queryByText("Ask follow-up")).toBeNull();
+  });
+
+  it("(11) a MANUAL mic tap still clears the persisted answer immediately (no loop-armed carryover)", async () => {
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Turn one."]));
+    renderSheet();
+    await speakAndStop("what club?");
+    expect(screen.getByText("Turn one.")).toBeTruthy();
+
+    // The golfer taps the mic themselves — NOT the loop's playback-end
+    // re-arm — while the answer is still showing.
+    fireEvent.click(screen.getByLabelText("Start recording"));
+    await flush();
+
+    expect(screen.getByLabelText("Stop recording")).toBeTruthy(); // listening
+    expect(screen.queryByText("Turn one.")).toBeNull(); // manual tap clears it, unlike a loop re-arm
+  });
+
+  it("(12) the mic label is never the contradictory 'Tap to ask again' during the auto re-arm grace window", async () => {
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Turn one."]));
+    renderSheet();
+    await speakAndStop("what club?");
+    expect(screen.getByText("Turn one.")).toBeTruthy();
+
+    firePlaybackEnd(); // grace timer pending — mic not reopened yet
+    await flush();
+
+    // Hands-free is armed and about to reopen the mic on its own; telling
+    // the golfer to "tap to ask again" here would be the exact contradiction
+    // the owner asked to remove.
+    expect(screen.queryByText("Tap to ask again")).toBeNull();
+    expect(screen.getByText("Tap to interrupt")).toBeTruthy();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REARM_GRACE_MS);
+    });
+    await flush();
+    expect(screen.getByLabelText("Stop recording")).toBeTruthy(); // now actually listening
+  });
+
+  it("(13) a loop-armed listen that ends with nothing said drops the persisted answer and settles to plain idle", async () => {
+    // Guards the empty-streak/dead-air abandonment path against the fix
+    // above: once a re-armed listen concludes WITHOUT a new turn, the stale
+    // answer must not linger forever — it reverts to the same calm idle as
+    // before this change, rather than a permanent "Tap to interrupt" ghost.
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Turn one."]));
+    renderSheet();
+    await speakAndStop("what club?");
+    expect(screen.getByText("Turn one.")).toBeTruthy();
+
+    firePlaybackEnd();
+    await act(async () => {
+      vi.advanceTimersByTime(REARM_GRACE_MS);
+    });
+    await flush();
+    expect(screen.getByText("Turn one.")).toBeTruthy(); // still there while listening
+
+    // This re-armed listen ends empty (ambient noise, nothing usable).
+    act(() => liveState.instances[1].events.onUtteranceEnd?.());
+    await flush();
+
+    expect(screen.getByText("Tap to speak")).toBeTruthy(); // plain idle, no ghost answer
+    expect(screen.queryByText("Turn one.")).toBeNull();
+    expect(screen.queryByText(/No speech detected/)).toBeNull(); // still calm, not an error
+  });
 });
