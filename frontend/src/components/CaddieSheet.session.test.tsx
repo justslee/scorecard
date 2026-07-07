@@ -218,6 +218,20 @@ function deferredStream() {
 }
 
 /**
+ * A promise the TEST resolves by hand — used to hold `resolveOpeningShot`'s
+ * GPS fix pending so a test can interleave a user action (mic tap / a normal
+ * askCaddie turn) INTO the multi-second gap before the auto opening turn's
+ * continuation runs.
+ */
+function deferredValue<T>() {
+  let resolveFn!: (value: T) => void;
+  const promise = new Promise<T>((resolve) => {
+    resolveFn = resolve;
+  });
+  return { promise, resolve: resolveFn };
+}
+
+/**
  * Drives the LIVE dictation path (not blob transcription) so `isTranscribing`
  * never flips true. `stopListening`'s blob branch only clears
  * `isTranscribing` in a `finally` that runs AFTER `askCaddie` fully settles —
@@ -258,8 +272,10 @@ const REC: CaddieRecommendation = {
   aggressiveness: "moderate",
 };
 
-function renderSheet(overrides: Partial<React.ComponentProps<typeof CaddieSheet>> = {}) {
-  const props: React.ComponentProps<typeof CaddieSheet> = {
+function buildProps(
+  overrides: Partial<React.ComponentProps<typeof CaddieSheet>> = {},
+): React.ComponentProps<typeof CaddieSheet> {
+  return {
     open: true,
     onClose: vi.fn(),
     caddy: { id: "strategist", name: "The Strategist", initial: "S", tag: "Numbers first" },
@@ -301,6 +317,10 @@ function renderSheet(overrides: Partial<React.ComponentProps<typeof CaddieSheet>
     onSelectPersona: vi.fn(),
     ...overrides,
   };
+}
+
+function renderSheet(overrides: Partial<React.ComponentProps<typeof CaddieSheet>> = {}) {
+  const props = buildProps(overrides);
   render(<CaddieSheet {...props} />);
   return props;
 }
@@ -601,5 +621,200 @@ describe("CaddieSheet — persona picker", () => {
     fireEvent.click(await screen.findByLabelText("Choose The Hype Man"));
 
     expect(props.onSelectPersona).toHaveBeenCalledWith("hype");
+  });
+});
+
+describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-shot-reco-plan.md)", () => {
+  it("(a) fires exactly once on fresh open: embeds distance, streams, updates history, speaks once, and (e) completes the same lifecycle as a normal reply", async () => {
+    const stream = deferredStream();
+    sessionVoiceStreamMock.mockImplementationOnce(stream.mockImpl);
+    const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 147 });
+    const props = renderSheet({ resolveOpeningShot });
+
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+    expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
+    expect(sessionVoiceStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        round_id: "round-123",
+        personality_id: "strategist",
+        hole_number: 3,
+        transcript: expect.stringContaining("147"),
+      }),
+      expect.objectContaining({ onToken: expect.any(Function) }),
+    );
+    const [payload] = sessionVoiceStreamMock.mock.calls[0];
+    expect((payload as { transcript: string }).transcript).toContain("What should I hit or do on this next shot");
+    expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
+    expect(talkToCaddieMock).not.toHaveBeenCalled();
+
+    act(() => {
+      stream.pushToken("Smooth 8-iron. ");
+      stream.pushToken("Center of the green.");
+      stream.resolve("Smooth 8-iron. Center of the green.");
+    });
+
+    expect(await screen.findByText("Smooth 8-iron. Center of the green.")).toBeTruthy();
+    expect(props.onUpdateConvHistory).toHaveBeenCalledWith([
+      { role: "user", content: expect.stringContaining("147") },
+      { role: "assistant", content: "Smooth 8-iron. Center of the green." },
+    ]);
+    expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
+    expect(ttsSpeakSpy).toHaveBeenCalledWith("Smooth 8-iron. Center of the green.", "strategist");
+
+    // (e) same completion lifecycle as a normal reply: follow-up mounts, mic re-arms.
+    expect(await screen.findByText("Ask follow-up")).toBeTruthy();
+    expect(await screen.findByLabelText("Start recording")).toBeTruthy();
+  });
+
+  it("(b) does not fire with no active session — sheet opens idle", async () => {
+    const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 147 });
+    renderSheet({ sessionActive: false, resolveOpeningShot });
+
+    // Guard is synchronous (no GPS awaited) — assert immediately.
+    expect(resolveOpeningShot).not.toHaveBeenCalled();
+    expect(sessionVoiceStreamMock).not.toHaveBeenCalled();
+    expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
+    expect(talkToCaddieMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/Ask anything/)).toBeTruthy();
+  });
+
+  it("(b2) does not fire with no GPS fix, and is not retried", async () => {
+    const resolveOpeningShot = vi.fn().mockResolvedValue(null);
+    renderSheet({ resolveOpeningShot });
+
+    await waitFor(() => expect(resolveOpeningShot).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sessionVoiceStreamMock).not.toHaveBeenCalled();
+    expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
+    expect(talkToCaddieMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/Ask anything/)).toBeTruthy();
+
+    // Advance further ticks — no retry-spam.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
+  });
+
+  it("(c-i) does not re-fire on a re-render after the opening turn resolved", async () => {
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Smooth 7."]));
+    const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 130 });
+    const props = buildProps({ resolveOpeningShot });
+    const { rerender } = render(<CaddieSheet {...props} />);
+
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Smooth 7.")).toBeTruthy();
+
+    rerender(<CaddieSheet {...props} accent="#000000" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1);
+    expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
+  });
+
+  it("(c-ii) does not auto-fire when reopened onto an existing conversation", async () => {
+    const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 150 });
+    renderSheet({
+      resolveOpeningShot,
+      convHistory: [
+        { role: "user", content: "what club from here?" },
+        { role: "assistant", content: "Easy 7." },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(resolveOpeningShot).not.toHaveBeenCalled();
+    expect(sessionVoiceStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("(c2) fires exactly once under React.StrictMode double-effect invoke", async () => {
+    const stream = deferredStream();
+    sessionVoiceStreamMock.mockImplementationOnce(stream.mockImpl);
+    const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 120 });
+    const props = buildProps({ resolveOpeningShot });
+
+    render(
+      <React.StrictMode>
+        <CaddieSheet {...props} />
+      </React.StrictMode>,
+    );
+
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+    act(() => {
+      stream.pushToken("Smooth 6.");
+      stream.resolve("Smooth 6.");
+    });
+    expect(await screen.findByText("Smooth 6.")).toBeTruthy();
+    expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("(d) a suppressError failure yields no TTS and no error bubble — sheet reverts to idle", async () => {
+    sessionVoiceStreamMock.mockRejectedValueOnce(new Error("network gone"));
+    const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 165 });
+    renderSheet({ resolveOpeningShot });
+
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+    // Idle prompt only renders when `error` is null (phase computation) — this
+    // proves the failure was swallowed, not merely that SOME state settled.
+    expect(await screen.findByText(/Ask anything/)).toBeTruthy();
+    expect(screen.queryByText("network gone")).toBeNull();
+    expect(ttsSpeakSpy).not.toHaveBeenCalled();
+  });
+
+  it("(f) does not stomp a user turn started while the GPS fix is still pending", async () => {
+    // GPS fix stays pending until the test resolves it by hand — this is the
+    // multi-second real-world gap a golfer can tap the mic and ask their own
+    // question inside.
+    const gps = deferredValue<{ distanceYards: number } | null>();
+    const resolveOpeningShot = vi.fn(() => gps.promise);
+    const userStream = deferredStream();
+    sessionVoiceStreamMock.mockImplementationOnce(userStream.mockImpl);
+    renderSheet({ resolveOpeningShot });
+
+    await waitFor(() => expect(resolveOpeningShot).toHaveBeenCalledTimes(1));
+
+    // The golfer asks their own question WHILE the GPS fix is still pending.
+    await speakAndStop("what's the wind?");
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+    expect(sessionVoiceStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({ transcript: "what's the wind?" }),
+      expect.objectContaining({ onToken: expect.any(Function) }),
+    );
+
+    // NOW the GPS fix resolves — the auto opening turn must NOT fire a
+    // second askCaddie call, must NOT abort the user's in-flight stream, and
+    // must NOT overwrite their transcript with the canned question.
+    act(() => {
+      gps.resolve({ distanceYards: 147 });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1); // no second (auto) call
+    expect(screen.queryByText(/yards from the pin/)).toBeNull(); // auto question never shown
+    expect(screen.getByText("what's the wind?", { exact: false })).toBeTruthy(); // user's transcript intact
+
+    // The user's own turn is untouched by the abort and completes normally.
+    act(() => {
+      userStream.pushToken("Helping, 8mph.");
+      userStream.resolve("Helping, 8mph.");
+    });
+    expect(await screen.findByText("Helping, 8mph.")).toBeTruthy();
+    expect(await screen.findByText("Ask follow-up")).toBeTruthy();
+    expect(await screen.findByLabelText("Start recording")).toBeTruthy();
+    expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
+    expect(ttsSpeakSpy).toHaveBeenCalledWith("Helping, 8mph.", "strategist");
   });
 });

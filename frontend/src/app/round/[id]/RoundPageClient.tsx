@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
@@ -55,6 +55,8 @@ import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
 import { useHoleCoordinates } from "@/lib/map/use-hole-coordinates";
 import { fetchAPI } from "@/lib/api";
+import { GPSWatcher } from "@/lib/gps";
+import { haversineYards } from "@/lib/map/google-map-helpers";
 
 // Player accent colors (yardage-book palette — warm ink tones)
 const PLAYER_COLORS = ["#1a2a1a", "#6b3a1a", "#3a3a6a", "#6a3a3a", "#2a5a3a", "#5a2a5a"];
@@ -62,6 +64,29 @@ const PLAYER_COLORS = ["#1a2a1a", "#6b3a1a", "#3a3a6a", "#6a3a3a", "#2a5a3a", "#
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Races `promise` against a timer that resolves `null` after `ms` — used to
+ * cap the one-shot GPS fix for the caddie's auto opening shot recommendation
+ * (specs/caddie-auto-shot-reco-plan.md) so a hanging fix falls back fast
+ * (GPSWatcher.getCurrentPosition's own 15s timeout is too long for an
+ * on-open experience).
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      }
+    );
+  });
+}
 
 /** Build a per-player score array: { [playerId]: (number|null)[] } indexed hole 0…holeCount-1. */
 function buildScoreMap(
@@ -929,6 +954,27 @@ export default function RoundPage() {
   // F/C/B for the tiles under the map: real from-tee distances when the course
   // has verified coords for this hole; the illustration-derived estimate otherwise.
   const holeCoordsForTiles = mapCoords.find((c) => c.holeNumber === currentHole) ?? null;
+
+  // Auto opening shot recommendation (specs/caddie-auto-shot-reco-plan.md):
+  // resolves the golfer's live GPS distance-to-pin for the Ask Caddie
+  // sheet's opening turn. Returns null (honest, never fabricated) on any
+  // missing green coords / GPS fix / implausible distance — the sheet then
+  // opens idle exactly as today.
+  const greenForHole = holeCoordsForTiles?.green ?? null; // {lat,lng} | null
+  const resolveOpeningShot = useCallback(async () => {
+    if (!greenForHole) return null; // no green coords → honest null
+    try {
+      const pos = await withTimeout(GPSWatcher.getCurrentPosition(), 6000);
+      if (!pos) return null;
+      const d = haversineYards(pos, greenForHole);
+      if (!Number.isFinite(d) || d < 1 || d > 800) return null; // implausible → null
+      return { distanceYards: d };
+    } catch {
+      return null; // no fix / denied / timeout → honest null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [greenForHole?.lat, greenForHole?.lng]);
+
   const fcbFromTee = holeCoordsForTiles?.tee
     ? computeFCBDistances(holeCoordsForTiles.tee, holeCoordsForTiles)
     : null;
@@ -2006,6 +2052,7 @@ export default function RoundPage() {
         personaId={personaId}
         personas={personas}
         onSelectPersona={selectPersona}
+        resolveOpeningShot={caddieSessionActive && !isLocalRound ? resolveOpeningShot : undefined}
       />
 
       {/* key forces a fresh unmount+remount on each open, resetting all state */}

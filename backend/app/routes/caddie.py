@@ -1018,6 +1018,9 @@ async def get_course_intel(
             holes.append(intel.model_dump())
             hole_intel_map[intel.hole_number] = intel
         except Exception as e:
+            # Visible, never silent: a per-hole failure hides ALL intel for
+            # that hole (the all-zero-elevation incident, 2026-07-07).
+            log.exception("course-intel failed for hole %s", hc.get("holeNumber"))
             holes.append({"hole_number": hc.get("holeNumber", 0), "error": str(e)})
 
     # Cache everything in session — only when caller owns the round.

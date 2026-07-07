@@ -87,6 +87,10 @@ export interface CaddieSheetProps {
   /** Personas visible to the user — drives the header picker. */
   personas: CaddiePersonalityInfo[];
   onSelectPersona: (id: string) => void;
+  /** Resolves the golfer's live distance-to-pin (yards) for the auto opening
+   *  turn, or null when there is no GPS fix / no green coords / it times out.
+   *  Parent owns GPS + course coords; the sheet stays GPS-free. */
+  resolveOpeningShot?: () => Promise<{ distanceYards: number } | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +158,13 @@ type Phase =
 
 type Mode = "voice" | "tap";
 
+// Conversational hands-free loop (specs/caddie-conversational-loop-plan.md §3.2).
+// Hands-free is IMPLICIT — armed whenever the sheet is open, mode is "voice",
+// and the persisted speaker pref (ttsEnabled) is on. No new toggle.
+const REARM_GRACE_MS = 400; // §3.3 echo guard — wait past playback end before opening the mic
+const DEAD_AIR_MS = 6000; // §3.4 — armed but silent too long → drop out
+const MAX_EMPTY_STREAK = 2; // §3.4 — consecutive empty/failed loop-armed listens → drop out
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -173,6 +184,7 @@ export default function CaddieSheet({
   personaId,
   personas,
   onSelectPersona,
+  resolveOpeningShot,
 }: CaddieSheetProps) {
   // Controls the swipe-down-to-dismiss drag, started from the grab handle only.
   const dragControls = useDragControls();
@@ -215,7 +227,72 @@ export default function CaddieSheet({
   useEffect(() => {
     setTtsEnabled(getSheetTtsEnabled());
   }, []);
-  const tts = useSheetTTS();
+  // Ref mirror so handlePlaybackEnd (below) reads the latest pref without a
+  // stale closure — mirrors the convHistoryRef pattern.
+  const ttsEnabledRef = useRef(ttsEnabled);
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
+
+  // Hands-free conversational loop (specs/caddie-conversational-loop-plan.md
+  // §3.2) — implicit, armed whenever the sheet is open, mode is "voice", and
+  // the speaker pref above is on. No new toggle.
+  // True once the loop has calmly exited (dead air / empty-streak) — blocks
+  // further auto re-arm until the golfer manually taps the mic again.
+  const [loopDroppedOut, setLoopDroppedOut] = useState(false);
+  const loopDroppedOutRef = useRef(false);
+  useEffect(() => {
+    loopDroppedOutRef.current = loopDroppedOut;
+  }, [loopDroppedOut]);
+  const graceTimerRef = useRef<number | null>(null); // post-playback re-arm timer (§3.3)
+  const deadAirTimerRef = useRef<number | null>(null); // "armed but silent" timer (§3.4)
+  const emptyStreakRef = useRef(0); // consecutive empty/failed auto-listens (§3.4)
+  // True from just before the loop calls startListening until that listen
+  // cycle ends — distinguishes an auto re-arm (which should run the dead-air
+  // timer + count toward the empty-streak) from a manual tap (which should not).
+  const armedByLoopRef = useRef(false);
+  // Ref indirection so handlePlaybackEnd (defined here, before startListening
+  // exists) can trigger it — mirrors the existing autoStopRef pattern below.
+  const startListeningRef = useRef<() => void>(() => {});
+
+  /**
+   * Fires when TTS playback finishes NATURALLY (`ended`, never `pause` — see
+   * useSheetTTS.ts split). Guarded per plan §3.3: only schedules a re-arm
+   * when the sheet is genuinely idle and hands-free is armed. Grace delay
+   * lets the audio element fully release before `getUserMedia` runs (§3.5 —
+   * never overlap playback release and mic acquisition).
+   *
+   * Deviation from the plan's literal guard list: `streamAbortRef.current` is
+   * NOT checked here. `streamAbortRef` is set once per askCaddie call and
+   * (by existing, pre-this-plan design) only ever cleared to null on sheet
+   * close/unmount — never after a turn settles — so gating on its mere
+   * presence would block every re-arm after the very first turn, permanently.
+   * `isThinking`/`isStreaming` already express "a turn is in flight" (the
+   * same pair `showMic` already gates the mic's reappearance on), so they are
+   * the correct, sufficient in-flight signal.
+   */
+  const handlePlaybackEnd = useCallback(() => {
+    if (
+      !open ||
+      mode !== "voice" ||
+      !ttsEnabledRef.current ||
+      loopDroppedOutRef.current ||
+      isListening ||
+      isTranscribing ||
+      isThinking ||
+      isStreaming
+    ) {
+      return;
+    }
+    if (graceTimerRef.current) window.clearTimeout(graceTimerRef.current);
+    graceTimerRef.current = window.setTimeout(() => {
+      graceTimerRef.current = null;
+      armedByLoopRef.current = true; // this arm came from the loop — see startListening
+      startListeningRef.current();
+    }, REARM_GRACE_MS);
+  }, [open, mode, isListening, isTranscribing, isThinking, isStreaming]);
+
+  const tts = useSheetTTS({ onPlaybackEnd: handlePlaybackEnd });
 
   // Streaming caddie reply (specs/voice-streaming-replies-plan.md). One
   // AbortController per in-flight ask — a new question or a sheet close
@@ -249,6 +326,29 @@ export default function CaddieSheet({
     convHistoryRef.current = convHistory;
   }, [convHistory]);
 
+  /**
+   * Ref mirror of `resolveOpeningShot` — mirrors the `convHistoryRef` pattern
+   * so the auto-fire effect (below) need not list it as a dep.
+   */
+  const resolveOpeningShotRef = useRef<CaddieSheetProps["resolveOpeningShot"]>(resolveOpeningShot);
+  useEffect(() => {
+    resolveOpeningShotRef.current = resolveOpeningShot;
+  }, [resolveOpeningShot]);
+
+  // Fire-once-on-open flag for the auto opening shot recommendation — set
+  // synchronously BEFORE the first await so React strict-mode's double-invoke
+  // fires the network turn at most once. Reset only on close (never in a
+  // cleanup that runs on a strict-mode remount).
+  const openingFiredRef = useRef(false);
+  // Dedicated generation counter for the opening-turn async gap — bumped ONLY
+  // by the auto-fire effect's own close branch (below), never by the
+  // pre-existing `openGenRef` bump above (which re-runs on every effect
+  // commit, including React strict-mode's synthetic unmount→remount of that
+  // OTHER effect during initial mount). Sharing `openGenRef` here would let
+  // that harmless dev-only double-invoke look like a real close/reopen and
+  // silently swallow the awaited GPS fix.
+  const openingGenRef = useRef(0);
+
   // Cleanup on close. History intentionally NOT cleared here — it is owned
   // by the parent so closing to enter a score then reopening continues the
   // thread (#9).
@@ -277,6 +377,19 @@ export default function CaddieSheet({
       setError(null);
       setMode("voice");
       setPersonaPickerOpen(false);
+      // Hands-free loop (specs/caddie-conversational-loop-plan.md §3.7) — a
+      // closed sheet exits the loop cleanly, no dangling timers.
+      if (graceTimerRef.current) {
+        window.clearTimeout(graceTimerRef.current);
+        graceTimerRef.current = null;
+      }
+      if (deadAirTimerRef.current) {
+        window.clearTimeout(deadAirTimerRef.current);
+        deadAirTimerRef.current = null;
+      }
+      armedByLoopRef.current = false;
+      emptyStreakRef.current = 0;
+      setLoopDroppedOut(false);
     }
     return () => {
       recorderRef.current?.cancel();
@@ -284,6 +397,15 @@ export default function CaddieSheet({
       liveRef.current = null;
       streamAbortRef.current?.abort();
       streamAbortRef.current = null;
+      // Belt-and-braces, like the recorder/live teardown above.
+      if (graceTimerRef.current) {
+        window.clearTimeout(graceTimerRef.current);
+        graceTimerRef.current = null;
+      }
+      if (deadAirTimerRef.current) {
+        window.clearTimeout(deadAirTimerRef.current);
+        deadAirTimerRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -341,7 +463,7 @@ export default function CaddieSheet({
    * useState setter), so deps are safe.
    */
   const askCaddie = useCallback(
-    async (question: string) => {
+    async (question: string, opts?: { suppressError?: boolean }) => {
       // A new question supersedes whatever the previous one was still doing.
       streamAbortRef.current?.abort();
       const controller = new AbortController();
@@ -450,9 +572,16 @@ export default function CaddieSheet({
         // truncated caddie reply can be actively misleading (cut mid-club or
         // mid-aim), and the server persisted nothing for this turn either.
         setVoiceAnswer(null);
-        setError(
-          humanizeVoiceError(err instanceof Error ? err.message : undefined, "Caddie unavailable — try again.")
-        );
+        if (opts?.suppressError) {
+          // The unprompted auto opening turn failed — the golfer asked
+          // nothing yet, so stay honestly idle rather than surface an error
+          // bubble over a turn they never initiated (specs/caddie-auto-shot-reco-plan.md §4).
+          setError(null);
+        } else {
+          setError(
+            humanizeVoiceError(err instanceof Error ? err.message : undefined, "Caddie unavailable — try again.")
+          );
+        }
       } finally {
         if (!isStale()) {
           setIsThinking(false);
@@ -467,11 +596,70 @@ export default function CaddieSheet({
     // depending on the full object would recreate askCaddie every render.
   );
 
+  /**
+   * Auto opening shot recommendation (specs/caddie-auto-shot-reco-plan.md).
+   * On a fresh sheet-open during an active session, resolve the golfer's live
+   * GPS distance-to-pin (owned by the parent) and fire the SAME `askCaddie`
+   * path with a default question embedding it — no typing/speaking required.
+   * Every fallback branch (no session, no GPS fix, no green coords,
+   * implausible distance, call failure) leaves the sheet in its existing
+   * idle state — never a fabricated recommendation.
+   */
+  useEffect(() => {
+    if (!open) {
+      openingFiredRef.current = false; // reset only on close
+      openingGenRef.current++; // invalidate any opening-turn async still awaiting GPS
+      return;
+    }
+    if (openingFiredRef.current) return; // already fired this open (guards
+    // re-render AND strict-mode double effect)
+    if (!sessionActive || !roundId) return; // no session → open exactly as today
+    if (!resolveOpeningShotRef.current) return; // parent opted out → idle
+    if (convHistory.length > 0) return; // reopened onto an existing thread → no auto-fire
+    if (voiceAnswer || isThinking || isListening) return; // never fire over an in-flight/answered turn
+
+    openingFiredRef.current = true; // set BEFORE any await → strict-mode-safe
+    const gen = openingGenRef.current; // dedicated gen — see openingGenRef comment above
+    void (async () => {
+      const shot = await resolveOpeningShotRef.current!();
+      if (openingGenRef.current !== gen) return; // sheet closed/reopened while awaiting GPS
+      // The GPS fix can take up to 6s — re-check the sheet is still PRISTINE
+      // idle (via refs, never stale closed-over state) before stomping over
+      // whatever the golfer did in the meantime. Without this, a user turn
+      // that starts and even finishes DURING the await gets silently aborted
+      // and its transcript overwritten by the canned opening question
+      // (specs/caddie-auto-shot-reco-plan.md deviation — reviewer-caught).
+      if (streamAbortRef.current || recorderRef.current || convHistoryRef.current.length > 0) return;
+      if (!shot) return; // no GPS fix → stay idle (open as today)
+      const q = `I'm about ${shot.distanceYards} yards from the pin. What should I hit or do on this next shot?`;
+      setTranscript(q); // existing state → shows in the user bubble (transparency)
+      await askCaddie(q, { suppressError: true }); // identical streaming path; honest-idle on failure
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sessionActive, roundId, convHistory.length]);
+
   const startListening = useCallback(async () => {
     setError(null);
     setTranscript("");
     setInterimTranscript("");
-    setVoiceAnswer(null);
+    // Whether THIS listen cycle was auto-armed by the loop (vs. a manual
+    // tap) — read BEFORE deciding whether to clear the previous answer (see
+    // below), and once more here so it carries through the whole cycle
+    // (dead-air timer below, empty-streak accounting in stopListening). The
+    // ref itself stays true until stopListening/dead-air-expiry/an error
+    // resets it, so it is stable to read again there.
+    const loopArmed = armedByLoopRef.current;
+    if (!loopArmed) {
+      // Manual "tap the mic" (fresh question or "Ask follow-up") — clear the
+      // previous answer immediately, same as today.
+      //
+      // A loop-driven auto re-arm leaves `voiceAnswer` alone: the golfer just
+      // heard it spoken a moment ago, and swallowing it here would blank the
+      // screen the instant the mic reopens (designer-caught regression —
+      // VoiceBody below keeps rendering it, layered under the waveform,
+      // until a NEW answer actually starts streaming in).
+      setVoiceAnswer(null);
+    }
     liveTranscriptRef.current = "";
     liveFailedRef.current = false;
     const gen = openGenRef.current;
@@ -481,10 +669,35 @@ export default function CaddieSheet({
       await recorder.start();
       if (openGenRef.current !== gen) {
         recorder.cancel(); // sheet closed while the mic was being acquired
+        armedByLoopRef.current = false;
         return;
       }
       recorderRef.current = recorder;
       setIsListening(true);
+
+      if (loopArmed) {
+        // Auto-armed by the hands-free loop (§3.4) — start the dead-air
+        // timer. UtteranceEnd never fires on pure silence, so without this a
+        // silent golfer would leave the mic open forever; expiry drops the
+        // loop out calmly (no error) back to the idle "Tap to speak" state.
+        if (deadAirTimerRef.current) window.clearTimeout(deadAirTimerRef.current);
+        deadAirTimerRef.current = window.setTimeout(() => {
+          deadAirTimerRef.current = null;
+          armedByLoopRef.current = false;
+          recorderRef.current?.cancel();
+          recorderRef.current = null;
+          liveRef.current?.stop();
+          liveRef.current = null;
+          setInterimTranscript("");
+          setIsListening(false);
+          setLoopDroppedOut(true);
+          // This listen produced no turn — the persisted answer (kept on
+          // screen through the "listening" phase above) has nothing left to
+          // stay attached to, so drop it too and go fully idle, exactly as
+          // before this listen started.
+          setVoiceAnswer(null);
+        }, DEAD_AIR_MS);
+      }
 
       // Live dictation: stream the SAME mic stream to Deepgram so the words
       // appear as the golfer speaks, and the live final becomes the message
@@ -496,6 +709,11 @@ export default function CaddieSheet({
           const live = new DeepgramLiveTranscriber(
             {
               onInterim: (t) => {
+                // Speech detected — cancel dead air, let UtteranceEnd finish the turn.
+                if (deadAirTimerRef.current) {
+                  window.clearTimeout(deadAirTimerRef.current);
+                  deadAirTimerRef.current = null;
+                }
                 if (openGenRef.current !== gen) return;
                 liveTranscriptRef.current = t;
                 setInterimTranscript(t);
@@ -532,6 +750,7 @@ export default function CaddieSheet({
         liveFailedRef.current = true;
       }
     } catch (err) {
+      armedByLoopRef.current = false; // failed to open — never left dangling for the next attempt
       setError(
         err instanceof Error && err.name === "NotAllowedError"
           ? "Microphone access denied."
@@ -550,6 +769,30 @@ export default function CaddieSheet({
     const recorder = recorderRef.current;
     if (!recorder) return;
     const gen = openGenRef.current;
+    // This listen cycle is ending — consume the loop-armed flag now (before
+    // any await) so a manual tap racing in can't be mistaken for this cycle,
+    // and clear the dead-air timer (§3.4 — "whenever listening stops").
+    const loopArmed = armedByLoopRef.current;
+    armedByLoopRef.current = false;
+    if (deadAirTimerRef.current) {
+      window.clearTimeout(deadAirTimerRef.current);
+      deadAirTimerRef.current = null;
+    }
+    // Empty-streak counter (§3.4) — belt-and-braces for ambient noise that
+    // trips UtteranceEnd but yields nothing usable. Only counts loop-armed
+    // listens; a manual tap ending empty keeps today's exact behavior.
+    const registerLoopEmpty = () => {
+      if (!loopArmed) return;
+      emptyStreakRef.current += 1;
+      if (emptyStreakRef.current >= MAX_EMPTY_STREAK) {
+        setLoopDroppedOut(true);
+      }
+      // This listen produced no new turn — same as the dead-air path above,
+      // drop the persisted answer and settle back to plain idle rather than
+      // leave a stale answer sitting under a mic that isn't actually about
+      // to say anything new.
+      setVoiceAnswer(null);
+    };
     // Snapshot BEFORE stopping the stream — the best-so-far live transcript.
     const snapshot = liveTranscriptRef.current;
     liveRef.current?.stop();
@@ -574,14 +817,23 @@ export default function CaddieSheet({
         finalText = result.transcript;
       }
       if (isEmptyTranscript(finalText)) {
-        setError("No speech detected. Tap the mic to try again.");
+        // Loop-armed: calm — no error, just count toward the streak and let
+        // the sheet settle back to its normal idle mic block (plan §3.4).
+        // Manual tap: unchanged today's-exact error copy.
+        if (loopArmed) {
+          registerLoopEmpty();
+        } else {
+          setError("No speech detected. Tap the mic to try again.");
+        }
         return;
       }
       if (openGenRef.current !== gen) return;
+      emptyStreakRef.current = 0; // a real turn is starting — reset the streak
       setTranscript(finalText);
       // Auto-call caddie with the finalized transcript
       await askCaddie(finalText);
     } catch (err) {
+      registerLoopEmpty();
       if (openGenRef.current === gen) {
         setError(
           humanizeVoiceError(err instanceof Error ? err.message : undefined, "Lost that one — tap the mic and try again.")
@@ -594,11 +846,27 @@ export default function CaddieSheet({
   }, [askCaddie]);
 
   autoStopRef.current = () => void stopListening();
+  startListeningRef.current = () => void startListening(); // hands-free loop indirection (§3.3)
 
   const handleMicTap = () => {
     // Bless the <audio> element in the SAME gesture as dictation start — must
     // run synchronously, before any async work below (§3 iOS unlock wiring).
     tts.unlock();
+    // Barge-in (§3.6) — tapping the mic while the caddie is still talking (or
+    // a re-arm is about to fire) interrupts cleanly: cancel any pending auto
+    // re-arm first, stop playback if it's speaking (fires `pause`, not
+    // `ended` — no re-arm from the interruption), and clear the loop's
+    // drop-out/streak state since the golfer just re-engaged.
+    if (graceTimerRef.current) {
+      window.clearTimeout(graceTimerRef.current);
+      graceTimerRef.current = null;
+    }
+    if (tts.isSpeaking) {
+      tts.stop();
+    }
+    armedByLoopRef.current = false;
+    emptyStreakRef.current = 0;
+    setLoopDroppedOut(false);
     if (isListening) {
       stopListening();
     } else if (!isTranscribing && !isThinking) {
@@ -1187,6 +1455,13 @@ export default function CaddieSheet({
                   ? "Tap to stop"
                   : phase === "idle" || phase === "error"
                   ? "Tap to speak"
+                  : phase === "answered" && ttsEnabled && !loopDroppedOut
+                  ? // Hands-free is armed and will re-listen on its own the
+                    // moment playback ends (§3.3 grace window) — "Tap to ask
+                    // again" would read as an instruction the golfer doesn't
+                    // need to follow; a tap here still works, it just barges
+                    // in early.
+                    "Tap to interrupt"
                   : "Tap to ask again"}
               </div>
             </div>
@@ -1194,6 +1469,52 @@ export default function CaddieSheet({
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-component: ListeningIndicator (waveform + "Hearing…"/interim text) —
+// shared by the bare "voice-listening" state and the loop-armed re-listen
+// that renders underneath a still-persisting answer (see VoiceBody below).
+// ---------------------------------------------------------------------------
+
+function ListeningIndicator({
+  accent,
+  interimTranscript,
+  compact,
+}: {
+  accent: string;
+  interimTranscript: string;
+  /** Tighter spacing/size when nested under a persisting answer card rather
+   *  than standing alone as the whole turn. */
+  compact?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: compact ? 8 : 12,
+        paddingTop: compact ? 4 : 8,
+      }}
+    >
+      <Waveform accent={accent} playing bars={compact ? 16 : 22} height={compact ? 16 : 20} />
+      {/* Both "Hearing…" and interim text use same serif-italic style (#8) */}
+      <div
+        style={{
+          fontFamily: T.serif,
+          fontStyle: "italic",
+          fontSize: compact ? 13 : 15,
+          color: T.inkSoft,
+          textAlign: "center",
+          lineHeight: 1.4,
+          letterSpacing: -0.1,
+        }}
+      >
+        {interimTranscript ? `“${interimTranscript}”` : "Hearing…"}
+      </div>
+    </div>
   );
 }
 
@@ -1287,7 +1608,14 @@ function VoiceBody({
 
       {/* Current / most recent turn */}
       <AnimatePresence mode="wait">
-        {phase === "answered" && voiceAnswer ? (
+        {(phase === "answered" || phase === "listening") && voiceAnswer ? (
+          // Loop-armed re-listen with a persisted answer (see startListening's
+          // loopArmed guard) renders here too — same "voice-answer" key as the
+          // plain "answered" case, so AnimatePresence's mode="wait" never
+          // treats the mic reopening as a key change and hard-swaps the just
+          // -spoken answer out for the waveform (designer-caught regression:
+          // the answer used to vanish ~400-500ms after the caddie finished
+          // speaking, the instant the loop reopened the mic).
           <motion.div
             key="voice-answer"
             initial={{ opacity: 0, y: 8 }}
@@ -1347,10 +1675,14 @@ function VoiceBody({
             </div>
 
             {/* Follow-up / clear — unmounted until the reply has FINISHED
-                streaming (not merely started). Mounting these mid-stream let
-                a tap blank `voiceAnswer` out from under the still-growing
-                text, and caused the row to reflow underneath it. */}
-            {!isStreaming && (
+                streaming (not merely started), AND unmounted again once the
+                loop reopens the mic (phase "listening"): a new turn is
+                already in flight at that point, so the CTAs would be dead
+                weight sitting on top of a card that's about to be replaced.
+                The listening indicator below takes their place. Mounting
+                mid-stream let a tap blank `voiceAnswer` out from under the
+                still-growing text, and caused the row to reflow underneath it. */}
+            {!isStreaming && phase !== "listening" && (
               <div
                 style={{
                   display: "flex",
@@ -1398,39 +1730,29 @@ function VoiceBody({
                 )}
               </div>
             )}
+
+            {/* Loop re-armed the mic while this answer is still on screen —
+                show the listening waveform underneath it rather than hard
+                -swapping the whole card away (see the mode="wait" comment
+                above). */}
+            {phase === "listening" && (
+              <div style={{ marginTop: 14 }}>
+                <ListeningIndicator accent={accent} interimTranscript={interimTranscript} compact />
+              </div>
+            )}
           </motion.div>
         ) : phase === "listening" ? (
+          // No persisted answer (fresh question, or a manual "ask again" that
+          // already cleared it — see startListening) — the bare waveform is
+          // the whole turn, same as before.
           <motion.div
             key="voice-listening"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16 }}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 12,
-              paddingTop: 8,
-            }}
           >
-            <Waveform accent={accent} playing bars={22} height={20} />
-            {/* Both "Hearing…" and interim text use same serif-italic 15px style (#8) */}
-            <div
-              style={{
-                fontFamily: T.serif,
-                fontStyle: "italic",
-                fontSize: 15,
-                color: T.inkSoft,
-                textAlign: "center",
-                lineHeight: 1.4,
-                letterSpacing: -0.1,
-              }}
-            >
-              {interimTranscript
-                ? `“${interimTranscript}”`
-                : "Hearing…"}
-            </div>
+            <ListeningIndicator accent={accent} interimTranscript={interimTranscript} />
           </motion.div>
         ) : phase === "transcribing" ? (
           <motion.div

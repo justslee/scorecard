@@ -30,22 +30,33 @@ export interface SheetTTS {
   isSpeaking: boolean;
 }
 
-function createAudioEl(onEndedOrPaused: () => void): HTMLAudioElement {
+function createAudioEl(onEnded: () => void, onPaused: () => void): HTMLAudioElement {
   const el = document.createElement("audio");
   el.setAttribute("playsinline", ""); // inline playback on iOS WKWebView
   el.style.display = "none";
-  el.addEventListener("ended", onEndedOrPaused);
-  el.addEventListener("pause", onEndedOrPaused);
+  // Split, per the conversational-loop plan (specs/caddie-conversational-loop-plan.md
+  // §3.3): `ended` = natural completion — the ONLY signal that should ever
+  // re-arm hands-free listening. `pause` = stop()/a new speak()/barge-in —
+  // must never re-arm (double-arm would otherwise be possible).
+  el.addEventListener("ended", onEnded);
+  el.addEventListener("pause", onPaused);
   document.body.appendChild(el);
   return el;
 }
 
-export function useSheetTTS(): SheetTTS {
+export function useSheetTTS(opts?: { onPlaybackEnd?: () => void }): SheetTTS {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const unlockedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  // Ref-mirrored so the DOM listener (attached once, at element creation)
+  // always calls the LATEST callback identity without recreating the audio
+  // element every render (mirrors the convHistoryRef pattern elsewhere).
+  const onPlaybackEndRef = useRef(opts?.onPlaybackEnd);
+  useEffect(() => {
+    onPlaybackEndRef.current = opts?.onPlaybackEnd;
+  }, [opts?.onPlaybackEnd]);
 
   const releaseObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -54,7 +65,11 @@ export function useSheetTTS(): SheetTTS {
     }
   }, []);
 
-  const onEndedOrPaused = useCallback(() => setIsSpeaking(false), []);
+  const onEnded = useCallback(() => {
+    setIsSpeaking(false);
+    onPlaybackEndRef.current?.();
+  }, []);
+  const onPaused = useCallback(() => setIsSpeaking(false), []);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -75,7 +90,7 @@ export function useSheetTTS(): SheetTTS {
   const unlock = useCallback(() => {
     if (typeof window === "undefined") return;
     if (!audioElRef.current) {
-      audioElRef.current = createAudioEl(onEndedOrPaused);
+      audioElRef.current = createAudioEl(onEnded, onPaused);
     }
     if (unlockedRef.current) return;
     unlockedRef.current = true;
@@ -94,7 +109,7 @@ export function useSheetTTS(): SheetTTS {
     } catch {
       /* best effort — never block the caller's gesture handler */
     }
-  }, [onEndedOrPaused]);
+  }, [onEnded, onPaused]);
 
   const speak = useCallback(
     (text: string, personaId: string) => {
@@ -128,7 +143,7 @@ export function useSheetTTS(): SheetTTS {
           if (!audioElRef.current) {
             // unlock() wasn't called first — create the element anyway; if
             // it isn't blessed, play() below simply rejects (swallowed).
-            audioElRef.current = createAudioEl(onEndedOrPaused);
+            audioElRef.current = createAudioEl(onEnded, onPaused);
           }
           audioElRef.current.src = url;
           setIsSpeaking(true);
@@ -142,7 +157,7 @@ export function useSheetTTS(): SheetTTS {
         }
       })();
     },
-    [onEndedOrPaused, releaseObjectUrl],
+    [onEnded, onPaused, releaseObjectUrl],
   );
 
   // Unmount cleanup — mirrors realtime.ts's teardown of its audio sink.

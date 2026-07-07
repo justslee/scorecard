@@ -3,6 +3,151 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — caddie-conversational-loop follow-up: designer-caught answer-wipe bug (SILENT fix, integration/next, DONE)
+
+Designer review of `eded238` found ONE blocking UX bug (everything else — reviewer verdict SHIP,
+gates green — was confirmed correct): the loop's auto re-arm wiped the caddie's just-spoken
+answer off screen ~400-500ms after it finished speaking. Root cause: `startListening` did an
+unconditional `setVoiceAnswer(null)` at its top — which now ALSO ran on the loop's auto re-arm,
+not just a manual tap — and `VoiceBody`'s `AnimatePresence mode="wait"` treated the mic reopening
+(phase ranks `listening` above `answered`) as a key change, hard-swapping the answer card out for
+the waveform. Corollary: during the ~400-500ms grace window before the mic actually reopened, the
+mic label still read "Tap to ask again" — the exact instruction the owner asked removed — while
+the loop was silently counting down to listen.
+
+Fix (minimal, no new chrome, no new toggle):
+- `startListening`: reads `armedByLoopRef.current` BEFORE deciding whether to clear
+  `voiceAnswer` — a manual tap clears it immediately (unchanged); a loop-driven auto re-arm
+  leaves it alone.
+- `VoiceBody`: the "voice-answer" card's key now covers `phase === "answered" || phase ===
+  "listening"` (when `voiceAnswer` is set) instead of only `"answered"` — so `mode="wait"` never
+  swaps it away on a loop re-arm. A `ListeningIndicator` (extracted, shared with the bare
+  no-answer listening state) renders underneath the persisting card while listening; the
+  follow-up/clear CTAs unmount during that phase (a new turn is already in flight) instead of
+  staying live — designer nice-to-have, done.
+- Two loop-armed-listen-concludes-with-nothing paths (`registerLoopEmpty`, the dead-air timeout)
+  now explicitly clear `voiceAnswer` — without this, an abandoned/failed re-listen would leave a
+  permanent "ghost" answer + a masked-error risk (the phase ordering ranks `voiceAnswer` above
+  `error`). Reverts to the original "Tap to speak" idle exactly as before this fix once a listen
+  produces no new turn.
+- Mic label: added a `phase === "answered" && ttsEnabled && !loopDroppedOut` branch → "Tap to
+  interrupt" (a tap still works — it barges in early) instead of "Tap to ask again" whenever a
+  loop re-arm is imminent or in its grace window.
+
+Tests: +6 deterministic cases in `CaddieSheet.handsfree.test.tsx` (opening-reco first-turn
+persistence, later-turn persistence + CTA hide, manual-tap-still-clears, no-contradictory-label-
+during-grace, abandoned-listen-reverts-to-idle) — all hand-driven fake timers, same discipline as
+the existing 8. Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded,
+`voice-tests/runner.ts --smoke` → 274/274, targeted vitest (handsfree + session + useSheetTTS) →
+44/44, full `npm run test` → **1590/1590 pass, 74/74 files**. Committed to `integration/next` and
+pushed. Silent — same feature as `eded238`, no new user-visible surface, rides the bundle
+(the parent commit was already flagged noticeable).
+
+## 2026-07-07 — caddie-conversational-loop: hands-free Ask Caddie (NOTICEABLE — integration/next, DONE)
+
+Implemented `specs/caddie-conversational-loop-plan.md` on the existing Deepgram-dictation +
+`useSheetTTS` path (no Realtime routing, per the plan's transport decision). After the caddie
+**speaks** a reply, the sheet now automatically re-arms the mic — the golfer talks, pauses, and
+the caddie proceeds, no tap-per-turn. Hands-free is IMPLICIT: armed whenever the sheet is open,
+mode is "voice", and the persisted speaker toggle (`ttsEnabled`) is on — no new UI. Composes
+with the just-shipped auto opening reco with zero special-casing (its playback-end re-arms like
+any other turn).
+
+- `useSheetTTS.ts`: added optional `useSheetTTS(opts?: { onPlaybackEnd?: () => void })`, still
+  callable with no args. Split the audio element's listeners — `ended` → `setIsSpeaking(false)` +
+  `onPlaybackEndRef.current?.()`; `pause` → `setIsSpeaking(false)` only — so `stop()`/a new
+  `speak()`/barge-in can never trigger a re-arm.
+- `CaddieSheet.tsx`: `REARM_GRACE_MS=400` (echo/iOS-route guard past playback end),
+  `DEAD_AIR_MS=6000` (armed-but-silent drop-out — UtteranceEnd never fires on pure silence),
+  `MAX_EMPTY_STREAK=2` (belt-and-braces for ambient noise). `handlePlaybackEnd` guards on
+  `open && mode==="voice" && ttsEnabledRef.current && !loopDroppedOutRef.current && !isListening
+  && !isTranscribing && !isThinking && !isStreaming`, then a grace timer → `startListening`.
+  `armedByLoopRef` distinguishes an auto re-arm (runs the dead-air timer, counts toward the
+  empty-streak) from a manual tap (doesn't). Barge-in (tap mic while speaking) clears the grace
+  timer, stops playback (fires `pause`, not `ended` — no re-arm from the interruption), and
+  resets drop-out/streak. Drop-out UI is the existing calm idle "Tap to speak" block — no error,
+  no red. Sheet-close/unmount clears both timers, resets streak, clears drop-out.
+
+**Deviation from the plan (minimal, sound — flagged per instructions):** the plan's
+`handlePlaybackEnd` guard listed `!streamAbortRef.current` as one of the conditions. Read
+literally this breaks the feature entirely: `streamAbortRef` is set once per `askCaddie` call and
+(pre-existing design, unrelated to this plan) is only ever cleared to `null` on sheet close/
+unmount — never after a turn settles — so gating on its mere presence would block every re-arm
+after the very first turn, permanently, in production. Dropped that one condition; `isThinking`/
+`isStreaming` already fully express "a turn is in flight" (the same pair `showMic` already gates
+the mic's reappearance on), so they are sufficient. Caught by the new deterministic test 8 (happy
+multi-turn loop) failing on the very first re-arm attempt before the fix.
+
+Tests: new dedicated `CaddieSheet.handsfree.test.tsx` (10 cases, owns `vi.useFakeTimers()`,
+scoped + `afterEach(() => { vi.runOnlyPendingTimers(); vi.useRealTimers(); })` so no stub leaks —
+playback-end re-arm, grace-delay boundary, speaker-off no-op, dead-air drop-out (+ interim
+cancels it), empty-streak drop-out, barge-in, sheet-close cleanup (2 sub-cases), happy multi-turn
+loop with streak reset); extended `useSheetTTS.test.ts` (+2: `ended` fires `onPlaybackEnd`,
+`pause` does not). `CaddieSheet.session.test.tsx` stayed green unmodified (its TTS mock ignores
+the new optional arg). Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build`
+succeeded, `voice-tests/runner.ts --smoke` → 274/274, targeted vitest (handsfree + session +
+useSheetTTS) → 39/39, full `npm run test` → **1585/1585 pass, 74/74 files** (no cross-file
+fake-timer leak). Committed to `integration/next` and pushed. Noticeable — the Ask Caddie sheet
+now converses hands-free once the speaker is on; device-verify the playback→record iOS audio-
+session switch on TestFlight per the plan (only fully testable on a real device).
+
+## 2026-07-07 — caddie-auto-shot-reco follow-up: fixed a review-caught race (SILENT fix, integration/next, DONE)
+
+eng-lead's review of `e5a9526` found ONE blocking correctness bug (idempotency, honest-
+fallback, TTS gating, and the `openingGenRef` deviation were all confirmed correct): the
+in-flight guard (`voiceAnswer || isThinking || isListening`) only ran synchronously at
+effect-open time, BEFORE the up-to-6s GPS await. If the golfer tapped the mic and asked their
+own question DURING that wait, the GPS continuation would still fire — aborting the user's
+in-flight stream via `streamAbortRef` and overwriting their transcript with the canned
+opening question. Reachable on the single most common path (fresh open, empty history).
+
+Fix (`e8141d7`): re-check pristine-idle state via REFS (`streamAbortRef`, `recorderRef`,
+`convHistoryRef`) immediately after the gen check, before touching transcript/askCaddie — bail
+silently if any turn is in flight, recording, or already completed. Added case (f) to
+`CaddieSheet.session.test.tsx`: a hand-controlled deferred holds the GPS fix pending while the
+golfer's own turn starts and streams, then the GPS resolves — asserts no second
+`sessionVoiceStream` call, the auto question never renders, and the user's turn completes
+untouched (answer, history, TTS, follow-up, mic re-arm). Gates all green: `npm run lint`
+clean, `npx tsc --noEmit` clean, `npm run build` succeeded, `voice-tests/runner.ts --smoke` →
+274/274, `vitest run CaddieSheet.session.test.tsx` → 22/22, full `vitest run` → 1573/1573.
+Pushed to `integration/next`. Silent fix (bug never shipped past review) — rides the bundle.
+
+## 2026-07-07 — caddie-auto-shot-reco: Ask Caddie auto-fires opening shot rec on open (NOTICEABLE — integration/next, DONE)
+
+Implemented `specs/caddie-auto-shot-reco-plan.md` verbatim (one deviation, noted below).
+When the Ask Caddie sheet opens during an ACTIVE session round, it now auto-fires the
+caddie's opening turn instead of opening blank: `RoundPageClient` resolves the golfer's live
+GPS distance-to-pin (`GPSWatcher.getCurrentPosition` + `haversineYards` against
+`holeCoordsForTiles.green`, 6s timeout via a new `withTimeout` helper, 1–800yd plausibility
+gate) and passes it to `CaddieSheet` as a `resolveOpeningShot` prop. The sheet embeds the
+distance in the default question — *"I'm about N yards from the pin. What should I hit or do
+on this next shot?"* — and calls the SAME existing `askCaddie()` path, so it streams, speaks
+(TTS pref-gated as always), and appends to history exactly like a normal reply. No new
+endpoint/transport; backend untouched. Honest-idle fallback on every failure mode (no
+session, no GPS fix, no green coords, implausible distance, call failure) — never a
+fabricated reco; a new `askCaddie(question, { suppressError })` opt swallows only the error
+bubble for this one unprompted turn. Fires exactly once per open, strict-mode-safe (fired-ref
+set synchronously before the first await).
+
+**Deviation from plan (minor, sound):** the async-gap staleness check for the awaited GPS fix
+uses a NEW dedicated `openingGenRef` instead of reusing the existing `openGenRef`. The
+pre-existing "cleanup on close" effect bumps `openGenRef` unconditionally on every effect
+commit — including React Strict Mode's dev-only synthetic unmount→remount of that *other*
+effect during initial mount — which made the shared-ref version silently swallow the GPS
+await under StrictMode (`next dev` only; not the static-export production build, but caught
+by the plan's own required strict-mode test, case c2). `openingGenRef` is bumped only by this
+effect's own close branch, so unrelated effects can't trip it.
+
+Tests: 7 new deterministic cases added to `CaddieSheet.session.test.tsx` (fires-once-with-
+distance-and-question / no-session / no-GPS-fix-not-retried / no-refire-on-rerender /
+no-refire-on-existing-thread / StrictMode-double-effect-exactly-once / suppressError-honest-
+idle-no-TTS-no-error-bubble), reusing the suite's existing synchronous mocks — no real
+timers/rAF. Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded,
+`voice-tests/runner.ts --smoke` → 274/274 pass, `vitest run CaddieSheet.session.test.tsx` →
+21/21 pass, full `vitest run` → 1572/1572 pass. Committed to `integration/next` at `e5a9526`
+and pushed. Noticeable (Ask Caddie sheet auto-speaks an opening shot rec instead of opening
+blank) — rides the rolling bundle toward the next approval ask, no standalone ping.
+
 ## 2026-07-07 — looper-brain-parity: off-course orb grounded in memory + handicap (NOTICEABLE-SUBTLE — integration/next, DONE)
 
 Implemented `specs/looper-brain-parity-plan.md` verbatim. `_build_voice_prompt` in
@@ -6719,3 +6864,59 @@ bundle 2" already Shipped (only body text stale — left as-is).
 
 NO owner ping: bundle remains SILENT-only (progress + retro docs/backlog). Accumulates until a
 noticeable item lands. integration/next @ b5c6b71 pushed; no open PR (correct — nothing to ship).
+
+---
+
+## 2026-07-07 — SHIPPED: #105 legacy-round caddie fix + Looper brain parity
+
+Owner "yes deploy". Merge 06b7b73 → main; deploy verified BY headSha
+(06b7b73, success) + health ok. TestFlight v1.0.778 (build 202607071629).
+- Legacy slug course-ids no longer crash session start (owner's live round:
+  name-resolved to the mapped UUID → full intel restored: elev/wind/hazards).
+- Weather tiles: per-hole tee fallback anchor for legacy rounds.
+- Looper orb off-course chat grounded in player memory + handicap (cycle 7).
+- Logging: app INFO now reaches the journal (voicetel visible).
+OWNER DIRECTION queued as top P1s: caddie-conversational-loop +
+caddie-auto-shot-reco (specs to be planned next cycles).
+integration/next resynced. Ten ships today.
+
+---
+
+## 2026-07-07 — LANDED on bundle #106: caddie hands-free conversational loop (loop cycle 9)
+
+Step 0: no owner feedback anywhere (PR #106 comments empty; board #105 card thread empty;
+no #106 card existed yet). Bundle #106 (auto shot reco + intel resilience) stays AWAITING the
+owner's "ship it" — NOT merged. Sync: integration/next == origin, clean; main already merged.
+
+PICKED (top ready, owner's remaining big ask): caddie-conversational-loop (p1, MAJOR/noticeable).
+
+PLAN (opus): specs/caddie-conversational-loop-plan.md. Decision: stay on the EXISTING Deepgram
+dictation + useSheetTTS path (re-arm on TTS playback END + grace), NOT route through Realtime —
+keeps the untouchable realtime warm-path mic invariants intact. Hands-free is IMPLICIT (the
+persisted speaker toggle IS the switch; no new UI/mode — NORTHSTAR minimal chrome).
+
+BUILT (eded238): onPlaybackEnd only on native `ended` (never pause), 400ms echo grace, 6s
+dead-air + empty-streak calm drop-out, tap-to-interrupt barge-in, full close/unmount cleanup;
+17 deterministic scheduler-controlled tests. Builder flagged one deviation: dropped
+`!streamAbortRef.current` from the re-arm guard (that ref only nulls on close, so keeping it
+would permanently block re-arm after turn 1).
+
+REVIEW: Reviewer SHIP — verified the deviation is correct + necessary (isThinking/isStreaming
+fully cover in-flight; no race), no leak/double-arm, invariants preserved, tests non-vacuous.
+QA (eng-lead ran): tsc/lint clean, voice smoke 274/274, build + full vitest 1590/1590.
+Designer: one BLOCKING issue — auto re-arm wiped the just-spoken answer off screen ~0.5s after
+the caddie finished (worst on the opening reco, no scrollback fallback) + contradictory
+"Tap to ask again" label in the grace window.
+
+ITERATE (83fcccb): answer now PERSISTS through the re-arm/listening phase (shared
+AnimatePresence key + ListeningIndicator underneath); manual tap still clears; CTAs unmount
+during listening; abandoned re-listens clear the ghost (also fixed a latent masked-error risk);
+mic label -> "Tap to interrupt". Designer re-review PASS. Gates re-green (1590/1590).
+
+BUNDLE: PR #106 checklist updated (added the loop as noticeable + a ship note that it landed
+after the current TestFlight -> release-manager should cut a fresh build at "ship it"). Board
+card "Bundle #106" created in Needs Review (was missing). backlog: caddie-conversational-loop
+-> done-on-bundle. CI green (2 pass / 0 fail; 1 pending E2E advisory).
+
+NO push notification (per this cycle's standing rule + owner mid-testing on-course). Bundle #106
+remains AWAITING owner "ship it"; the loop rides it. integration/next @ 83fcccb pushed.
