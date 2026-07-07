@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pickDictationTranscript, isEmptyTranscript } from "./dictation";
+import { pickDictationTranscript, isEmptyTranscript, humanizeVoiceError } from "./dictation";
 
 describe("pickDictationTranscript", () => {
   it("uses the live transcript when present and live did not fail", () => {
@@ -30,5 +30,29 @@ describe("isEmptyTranscript", () => {
     expect(isEmptyTranscript("")).toBe(true);
     expect(isEmptyTranscript("   ")).toBe(true);
     expect(isEmptyTranscript("driver")).toBe(false);
+  });
+});
+
+describe("humanizeVoiceError", () => {
+  const FALLBACK = "Caddie unavailable — try again.";
+
+  it("passes short human sentences through", () => {
+    expect(humanizeVoiceError("Microphone access denied.", FALLBACK)).toBe(
+      "Microphone access denied."
+    );
+  });
+
+  it("replaces raw JSON bodies (the owner's screenshot case)", () => {
+    expect(humanizeVoiceError('{"detail": "list index out of range"}', FALLBACK)).toBe(FALLBACK);
+  });
+
+  it("replaces python-exception-looking text and empty messages", () => {
+    expect(humanizeVoiceError("IndexError: list index out of range", FALLBACK)).toBe(FALLBACK);
+    expect(humanizeVoiceError(undefined, FALLBACK)).toBe(FALLBACK);
+    expect(humanizeVoiceError("   ", FALLBACK)).toBe(FALLBACK);
+  });
+
+  it("replaces overlong dumps", () => {
+    expect(humanizeVoiceError("x".repeat(200), FALLBACK)).toBe(FALLBACK);
   });
 });

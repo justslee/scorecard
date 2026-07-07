@@ -34,7 +34,7 @@ import type { Caddy } from "@/components/yardage/tokens";
 import { Waveform, PulseDot } from "@/components/yardage/Voice";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
-import { pickDictationTranscript, isEmptyTranscript } from "@/lib/caddie/dictation";
+import { pickDictationTranscript, isEmptyTranscript, humanizeVoiceError } from "@/lib/caddie/dictation";
 import {
   talkToCaddie,
   fetchRecommendation,
@@ -312,11 +312,7 @@ export default function CaddieSheet({
         setVoiceAnswer(responseText);
       } catch (err) {
         setError(
-          err instanceof Error
-            ? err.message.length > 80
-              ? "Caddie unavailable — check connection."
-              : err.message
-            : "Caddie unavailable."
+          humanizeVoiceError(err instanceof Error ? err.message : undefined, "Caddie unavailable — try again.")
         );
       } finally {
         setIsThinking(false);
@@ -434,7 +430,9 @@ export default function CaddieSheet({
       await askCaddie(finalText);
     } catch (err) {
       if (openGenRef.current === gen) {
-        setError(err instanceof Error ? err.message : "Transcription failed.");
+        setError(
+          humanizeVoiceError(err instanceof Error ? err.message : undefined, "Lost that one — tap the mic and try again.")
+        );
       }
     } finally {
       recorderRef.current = null;
@@ -506,11 +504,7 @@ export default function CaddieSheet({
       setRecommendation(rec);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message.length > 80
-            ? "Caddie unavailable — check connection."
-            : err.message
-          : "Caddie unavailable."
+        humanizeVoiceError(err instanceof Error ? err.message : undefined, "Caddie unavailable — try again.")
       );
     } finally {
       setIsRecThinking(false);

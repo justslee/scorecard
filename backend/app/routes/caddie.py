@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 import anthropic
+import logging
 import os
 import time
 from typing import Optional
@@ -39,6 +40,25 @@ from app.caddie.types import PlayerStatistics, PlayerTendencies
 from app.services.osm import fetch_course_features
 from app.services import courses_mapped
 from app.services.clerk_auth import current_user_id, optional_user_id
+
+log = logging.getLogger("looper.caddie")
+
+# The calm, in-character line the golfer sees when a caddie path fails for
+# any reason. Internals go to the log (traceback), NEVER to the client.
+_CADDIE_ERROR_DETAIL = "The caddie lost that one — give it another go."
+
+
+def _first_text(message) -> str:
+    """The first text block of a Claude response, or '' when the model
+    returned no text (rare but real — empty content was crashing session_voice
+    with an IndexError that leaked 'list index out of range' to the sheet)."""
+    for block in getattr(message, "content", None) or []:
+        text = getattr(block, "text", None)
+        if text:
+            return text
+    return ""
+
+
 
 router = APIRouter(prefix="/api/caddie", tags=["caddie"])
 
@@ -565,7 +585,7 @@ or known tendencies when relevant.
             system=system_prompt,
             messages=messages,
         )
-        response_text = message.content[0].text
+        response_text = _first_text(message) or "Say that once more? I want to get this right."
 
         # Atomic dual append — either both turns persist or neither, so the
         # round's conversation history can't wedge into a user-without-assistant
@@ -580,8 +600,11 @@ or known tendencies when relevant.
         return VoiceCaddieResponse(response=response_text)
     except anthropic.AuthenticationError:
         raise HTTPException(401, "Invalid API key")
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("session_voice failed")  # traceback to the journal
+        raise HTTPException(500, _CADDIE_ERROR_DETAIL)
 
 
 # ── Original stateless endpoints (still available) ──
@@ -971,9 +994,12 @@ but keep it golf-focused. Never break character.
             system=system_prompt,
             messages=messages,
         )
-        response_text = message.content[0].text
+        response_text = _first_text(message) or "Say that once more? I want to get this right."
         return VoiceCaddieResponse(response=response_text)
     except anthropic.AuthenticationError:
         raise HTTPException(401, "Invalid API key")
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("voice_caddie failed")
+        raise HTTPException(500, _CADDIE_ERROR_DETAIL)
