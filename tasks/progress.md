@@ -5960,3 +5960,26 @@ background/airplane teardown, no phantom transcript on silence) is still needed 
 plan's own gate list; flagging for `/code-review` + `/security-review` before this bundle
 ships (mint/WebRTC lifecycle change) and the `designer` pass (confirm "Connecting…" still
 reads the same, just rarer).
+
+---
+
+## 2026-07-06 (late) — preload + tee-time rework reviewed, fixed, bundled (owner session, Fable 5)
+
+Review pass on a221564 (caddie preload) + cca67ef (tee-time prefs rework):
+- Reviewer + /security-review: PASS (mint path unchanged, persona gate intact, no
+  secret in legHealth... n/a here; mic-withhold invariant verified on every path).
+  1 MEDIUM + 4 low findings — ALL fixed in aa22ac8 (junk-filter kept favorites +
+  placed all-generic names; shrink/regrow watermark; opened-gate on tool calls;
+  warmStartedRef reset; voice window id uniquify).
+- Designer: tee-time pass-with-polish (fixed: sunlight contrast pencilSoft->pencil
+  on unselected cards, 44pt date-chip target). Preload BLOCKER reproduced live:
+  teardown() recursion on failing warm connect (stop() sync-refires closed) —
+  fixed + 2 regression tests. Deferred nice-to-haves: card density breathing room,
+  delete undo-toast, chip weekday redundancy, drag-track discoverability (watch
+  on-device feedback).
+Gates combined: tsc/lint clean, vitest 1467/1467, voice 274/274, build green,
+backend 961 + ruff clean. REMAINING RISK (flagged to owner): drag gesture +
+haptics + preload device behaviors unverified on real WKWebView (sim is
+auth-gated headless) — owner's TestFlight pass is the last gate.
+Bundle PR opened: preload + tee-time rework + transcription language pin (en) +
+specs/backlog. Next cycle (owner-directed): caddie-hazard-grounding, tee-marker-on-map.
