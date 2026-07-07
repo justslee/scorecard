@@ -3,6 +3,42 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — caddie-auto-shot-reco: Ask Caddie auto-fires opening shot rec on open (NOTICEABLE — integration/next, DONE)
+
+Implemented `specs/caddie-auto-shot-reco-plan.md` verbatim (one deviation, noted below).
+When the Ask Caddie sheet opens during an ACTIVE session round, it now auto-fires the
+caddie's opening turn instead of opening blank: `RoundPageClient` resolves the golfer's live
+GPS distance-to-pin (`GPSWatcher.getCurrentPosition` + `haversineYards` against
+`holeCoordsForTiles.green`, 6s timeout via a new `withTimeout` helper, 1–800yd plausibility
+gate) and passes it to `CaddieSheet` as a `resolveOpeningShot` prop. The sheet embeds the
+distance in the default question — *"I'm about N yards from the pin. What should I hit or do
+on this next shot?"* — and calls the SAME existing `askCaddie()` path, so it streams, speaks
+(TTS pref-gated as always), and appends to history exactly like a normal reply. No new
+endpoint/transport; backend untouched. Honest-idle fallback on every failure mode (no
+session, no GPS fix, no green coords, implausible distance, call failure) — never a
+fabricated reco; a new `askCaddie(question, { suppressError })` opt swallows only the error
+bubble for this one unprompted turn. Fires exactly once per open, strict-mode-safe (fired-ref
+set synchronously before the first await).
+
+**Deviation from plan (minor, sound):** the async-gap staleness check for the awaited GPS fix
+uses a NEW dedicated `openingGenRef` instead of reusing the existing `openGenRef`. The
+pre-existing "cleanup on close" effect bumps `openGenRef` unconditionally on every effect
+commit — including React Strict Mode's dev-only synthetic unmount→remount of that *other*
+effect during initial mount — which made the shared-ref version silently swallow the GPS
+await under StrictMode (`next dev` only; not the static-export production build, but caught
+by the plan's own required strict-mode test, case c2). `openingGenRef` is bumped only by this
+effect's own close branch, so unrelated effects can't trip it.
+
+Tests: 7 new deterministic cases added to `CaddieSheet.session.test.tsx` (fires-once-with-
+distance-and-question / no-session / no-GPS-fix-not-retried / no-refire-on-rerender /
+no-refire-on-existing-thread / StrictMode-double-effect-exactly-once / suppressError-honest-
+idle-no-TTS-no-error-bubble), reusing the suite's existing synchronous mocks — no real
+timers/rAF. Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded,
+`voice-tests/runner.ts --smoke` → 274/274 pass, `vitest run CaddieSheet.session.test.tsx` →
+21/21 pass, full `vitest run` → 1572/1572 pass. Committed to `integration/next` at `e5a9526`
+and pushed. Noticeable (Ask Caddie sheet auto-speaks an opening shot rec instead of opening
+blank) — rides the rolling bundle toward the next approval ask, no standalone ping.
+
 ## 2026-07-07 — looper-brain-parity: off-course orb grounded in memory + handicap (NOTICEABLE-SUBTLE — integration/next, DONE)
 
 Implemented `specs/looper-brain-parity-plan.md` verbatim. `_build_voice_prompt` in
