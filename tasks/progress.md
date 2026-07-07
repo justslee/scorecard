@@ -6591,3 +6591,19 @@ restyle (silent) + round-page Ask Caddie pill in the Looper ink-orb identity
 (noticeable — closes looper-orb bundle 2's identity half). Backlog de-staled
 in cycle 2 (4 shipped items re-tagged). integration/next resynced; hourly
 loop continues.
+
+---
+
+## 2026-07-07 — SHIPPED: #104 streamed replies + voice timeouts (loop cycles 4-5)
+
+Owner "ship it". Merge 69285d4 → main; backend deploy verified BY SHA
+(69285d4, success) + health ok — streaming endpoints live. TestFlight
+v1.0.767 (build 202607071534). Ship had three compounding snags, all
+recovered + memorialized (ship-gate-verification memory, rule 3): piped
+ship.sh masked a wrong-cwd failure twice; gh run list returned a stale
+deploy run (now matched by headSha); cycle 5's builder process resurrected
+and committed the deterministic stream tests (0b0d67e) mid-recovery.
+CI also caught a REAL streaming race the review missed (flush-after-
+completion double-render) — fixed (56df95f) + deterministic test suite.
+Voice audit P1+P2 core COMPLETE. integration/next merged with main
+(e172dd7) and pushed.
