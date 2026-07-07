@@ -654,10 +654,37 @@ export default function RoundPage() {
     };
   }, [offlineCardOpen, roundId]);
 
+  // ── Page-turn hole transition (owner 2026-07-07): the persistent map killed
+  // the per-hole reload, but a bare camera move read as "the map shifted", not
+  // "a new hole". A paper panel now wipes across the card in the swipe
+  // direction; the hole (and an instant camera CUT beneath it) changes while
+  // covered; the panel sweeps off revealing the new hole — a page of the book.
+  const [pageTurn, setPageTurn] = useState<{ dir: 1 | -1; hole: number; id: number } | null>(null);
+  const pageTurnSeqRef = useRef(0);
+  const pageTurnHoleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (pageTurnHoleTimerRef.current) clearTimeout(pageTurnHoleTimerRef.current);
+  }, []);
+  // Full cover is reached at times[1] of the wipe keyframes (30% of 600ms);
+  // the hole cut fires just after, safely under the paper.
+  const PAGE_TURN_COVER_MS = 200;
+
   const goHole = (n: number) => {
     if (n < 1 || n > holeCount) return;
-    setSlideDir(n > currentHole ? 1 : -1);
-    setCurrentHole(n);
+    const dir: 1 | -1 = n > currentHole ? 1 : -1;
+    setSlideDir(dir);
+    if (mappedCourse || roundAnchor) {
+      // Map card: wipe first, change the hole under the cover.
+      if (pageTurnHoleTimerRef.current) clearTimeout(pageTurnHoleTimerRef.current);
+      setPageTurn({ dir, hole: n, id: ++pageTurnSeqRef.current });
+      pageTurnHoleTimerRef.current = setTimeout(() => {
+        pageTurnHoleTimerRef.current = null;
+        setCurrentHole(n);
+      }, PAGE_TURN_COVER_MS);
+    } else {
+      // Paper fallback keeps its keyed slide — change immediately.
+      setCurrentHole(n);
+    }
   };
 
   // ---------------------------------------------------------------------------
@@ -1367,7 +1394,72 @@ export default function RoundPage() {
                 currentHole={currentHole}
                 height={mapHeight}
                 teeMarker={teeMarker}
+                cameraTransition="cut"
               />
+
+              {/* Page-turn wipe — sweeps across in the swipe direction, the
+                  hole cuts underneath (goHole's timer), then reveals. Enters
+                  from the side you're heading toward, like pulling a page. */}
+              <AnimatePresence>
+                {pageTurn && (
+                  <motion.div
+                    key={pageTurn.id}
+                    initial={{ x: pageTurn.dir > 0 ? "104%" : "-104%" }}
+                    animate={{
+                      x: [
+                        pageTurn.dir > 0 ? "104%" : "-104%",
+                        "0%",
+                        "0%",
+                        pageTurn.dir > 0 ? "-104%" : "104%",
+                      ],
+                    }}
+                    transition={{ duration: 0.6, times: [0, 0.3, 0.55, 1], ease: "easeInOut" }}
+                    onAnimationComplete={() => {
+                      // Only clear if a newer turn hasn't replaced this one.
+                      setPageTurn((pt) => (pt && pt.id === pageTurn.id ? null : pt));
+                    }}
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      zIndex: 7,
+                      pointerEvents: "none",
+                      background: `${PAPER_NOISE}, ${T.paper}`,
+                      backgroundBlendMode: "multiply",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 2,
+                      boxShadow: "0 0 22px rgba(26,42,26,0.18)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontFamily: T.mono,
+                        fontSize: 9,
+                        letterSpacing: 1.8,
+                        color: T.pencilSoft,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Hole
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 56,
+                        lineHeight: 1,
+                        color: T.ink,
+                        opacity: 0.85,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {pageTurn.hole}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Hole picker — static overlay, top-left */}
                   <button
