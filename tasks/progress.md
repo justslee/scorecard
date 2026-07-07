@@ -6342,3 +6342,15 @@ voice-telemetry done (all shipped in #100, files+tests verified — were stale "
 PR #102 opened (integration/next → main). Two owner decisions surfaced in the PR:
 default-ON vs OFF, and whether tee-time's Looper sheet should read its call transcript aloud.
 Next: CI green → release-manager builds TestFlight → owner "ship it".
+
+---
+
+## 2026-07-07 — SHIPPED: #102 spoken caddie replies (loop cycle 1)
+
+The FIRST autonomous loop cycle end-to-end: eng-lead planned/built/reviewed
+voice-tts-sheet-replies (opt-in TTS, persona-matched, tap-to-silence; /speak
+proxy hardened in review; 44pt toggle from designer pass). Owner "ship it" →
+merge 0c89ffd, backend deploy success + health ok, TestFlight v1.0.750
+(build 202607071230). P1 voice queue COMPLETE (keyterms, auto-send,
+telemetry, TTS). integration/next resynced; hourly loop (job a48ad37b, :17)
+continues on the next board/backlog item.
