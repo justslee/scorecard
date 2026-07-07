@@ -7011,3 +7011,29 @@ TestFlight v1.0.789 (build 202607071830). The bundle that answers the owner's
   '+0ft' fix) + garbage-hazard validation + per-hole failure logging (the
   remaining thrower will name itself on the owner's next round open).
 Eleven ships today. integration/next resynced; loop continues hourly.
+
+## 2026-07-07 — fix-course-intel-none-yards follow-up: guard None-yards in aim_point/recommend (SILENT, integration/next, DONE)
+
+Adversarial eng-lead review of `8529820` found a regression the plan's audit missed: now that
+`HoleIntelligence.yards` is `Optional[int]`, `build_hole_intelligence` successfully caches
+`yards=None` for no-yardage rounds (previously it threw, so the cache stayed empty) —
+`app/caddie/aim_point.py:286` then did `distance_yards >= hole.yards * 0.85` unguarded, so
+`/session/recommend` (and the stateless `/caddie/recommend` path, now that the frontend type
+permits `yards: null` too) would 500 asking for a club rec on exactly the rounds this fix
+targets — trading a broken Elev tile for a crash on club recommendation.
+
+- `backend/app/caddie/aim_point.py:288` — `is_tee_shot = hole.yards is not None and
+  distance_yards >= hole.yards * 0.85`; unknown yardage falls back to the conservative
+  (approach-shot) bias instead of crashing.
+- `backend/app/routes/caddie.py:562` — session voice-context line no longer interpolates
+  literal "None yards (effective: None)" into the LLM prompt; yardage clause conditional on
+  `hole_intel.yards is not None`, "Par N" always present (non-blocking honesty nit, folded in).
+- `backend/tests/test_aim_point.py`: added `test_none_yards_never_throws` (non-DB, no network) —
+  `generate_recommendation` with a `yards=None` `HoleIntelligence` returns cleanly.
+
+Gates: `ruff check .` clean; `uv run pytest tests/test_aim_point.py tests/test_course_intel_resilience.py
+tests/test_decade_advice.py tests/test_reasoning_priority.py tests/test_competition_legal.py
+tests/test_slope_advice.py tests/test_shot_line_advice.py` → 213/213 passed, no DB required;
+`npm run lint` clean; `npx tsc --noEmit` clean; `npm run build` succeeded; `voice-tests/runner.ts
+--smoke` → 274/274. Committed `33d780b` to `integration/next`, pushed. Silent — backend-only
+crash-prevention fix, rides the bundle with 8529820.
