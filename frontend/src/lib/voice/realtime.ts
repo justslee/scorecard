@@ -175,6 +175,12 @@ export class RealtimeCaddieClient {
   // connection is an ephemeral burst — a later press simply reconnects.
   private idle = new IdleTimer(() => this.stop(), REALTIME_IDLE_DISCONNECT_MS);
 
+  // The in-flight start() — attachMic() must await it so an adoption that
+  // happens mid-mint (takeWarm returns WARMING clients) never runs against a
+  // half-built connection (null micTransceiver → mic silently never attached
+  // → "won't listen": the v1.0.710 regression).
+  private startPromise: Promise<void> | null = null;
+
   constructor(opts: RealtimeCaddieOptions, events: RealtimeCaddieEvents = {}) {
     this.opts = opts;
     this.events = events;
@@ -182,6 +188,16 @@ export class RealtimeCaddieClient {
   }
 
   async start(): Promise<void> {
+    if (this.pc) return;
+    if (!this.startPromise) {
+      this.startPromise = this.startInner().finally(() => {
+        this.startPromise = null;
+      });
+    }
+    return this.startPromise;
+  }
+
+  private async startInner(): Promise<void> {
     if (this.pc) return;
     // Enforce the one-connection cap BEFORE any resources are acquired.
     if (activeRealtimeClient && activeRealtimeClient !== this) {
@@ -348,6 +364,13 @@ export class RealtimeCaddieClient {
   async attachMic(): Promise<void> {
     if (this.opened) return;
     try {
+      // A WARMING client can be adopted mid-start() (mint in flight, pc and
+      // micTransceiver not built yet). Wait for it — otherwise the track
+      // below would never be attached and the model would hear NOTHING while
+      // the UI reads connected (the v1.0.710 "won't listen" regression).
+      const inFlight = this.startPromise;
+      if (inFlight) await inFlight;
+
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -356,9 +379,12 @@ export class RealtimeCaddieClient {
         },
       });
       const track = this.localStream.getAudioTracks()[0];
-      if (track && this.micTransceiver) {
-        await this.micTransceiver.sender.replaceTrack(track);
+      if (!track || !this.micTransceiver) {
+        // Never "succeed" without a live mic path — a silent skip here is a
+        // dead sheet that looks connected.
+        throw new Error('attachMic: no mic track or negotiated transceiver');
       }
+      await this.micTransceiver.sender.replaceTrack(track);
       this.opened = true;
       this.setOutputMuted(false);
       this.idle.touch();
