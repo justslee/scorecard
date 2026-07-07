@@ -6321,3 +6321,24 @@ failures, local build green). Fix #101 (cdf5eb7) merged with an explicit
 fail-count==0 gate. PROCESS RULES (also in agent memory): (1) merge gates check
 `gh pr checks --json bucket` fail counts, never piped output; (2) `npm ci` before
 trusting local gates after any lockfile change.
+
+---
+
+## 2026-07-07 — Bundle #102 (open): voice-tts-sheet-replies
+
+Fresh `integration/next` cut after #101. Picked P1 `voice-tts-sheet-replies` (noticeable).
+Plan (opus) → `specs/voice-tts-sheet-replies-plan.md`; builder → a08140d. Opt-in,
+persona-matched TTS of caddie sheet replies via new owner-gated `POST /api/voice/speak`
+(OpenAI `gpt-4o-mini-tts`); shared `useSheetTTS` hook reuses realtime.ts's iOS unlock;
+default OFF; quiet hairline speaker toggle in CaddieSheet + LooperSheet(Shell). Every TTS
+failure is swallowed so the silent-text reply always renders.
+- Reviewer: SHIP (adversarial + manual security/code review). Applied review note #1 —
+  hardened `/speak` upstream errors to a generic 502, never mirror the OpenAI body (71ec0df).
+- Designer: PASS. Applied the one nit — bumped the toggle to a 44pt on-course hit area (e18e347).
+- Gates (eng-lead-verified): fe lint/tsc/build clean, voice smoke 274/274, hook 5/5;
+  be ruff clean, /speak tests 6/6. CI on PR #102.
+Backlog hygiene: marked voice-keyterm-boosting / voice-auto-send-endpointing /
+voice-telemetry done (all shipped in #100, files+tests verified — were stale "ready").
+PR #102 opened (integration/next → main). Two owner decisions surfaced in the PR:
+default-ON vs OFF, and whether tee-time's Looper sheet should read its call transcript aloud.
+Next: CI green → release-manager builds TestFlight → owner "ship it".
