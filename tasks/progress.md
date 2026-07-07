@@ -5769,3 +5769,40 @@ Open follow-ups: /map/course ErrorScreen restyle (backlog); prod Places key
 "Places API (New)" enablement UNVERIFIED (probe blocked) — legHealth in the
 response now surfaces it: hit /api/courses/search?q=pebble+beach and check
 legHealth[0] once deployed.
+
+---
+
+## 2026-07-06 — SHIPPED: #94 course search v2 (Places-primary + full-screen search)
+
+Owner approved directly in-session ("ship it", 2026-07-06). Merged PR #94 → main as
+**1792d3281e4fb766fd355d028465ed1756416311** ("Merge integration/next: course search v2 —
+Places-primary + full-screen search (#94)"), a merge commit (not squash/rebase) — the only
+push to `main` in this run.
+
+**Backend deploy:** this bundle DOES touch backend (`backend/app/routes/course_search.py`,
+`services/course_finder.py`, `services/course_search_cache.py`; no new Alembic migration).
+The standing `Deploy backend (SSM)` GitHub Action auto-triggered on the merge push (run
+28836206269) — `git pull --ff-only` d233dd6→1792d32, `uv sync`, `alembic upgrade head`
+(no-op, no new revision), `systemctl restart scorecard-api`, on-box
+`curl localhost:8000/health` → `{"status":"ok"}`. Verified externally post-deploy:
+- `GET https://api.looperapp.org/health` → `{"status":"ok"}` (200)
+- `GET https://api.looperapp.org/api/config-status` →
+  `{"deepgram":true,"openai":true,"anthropic":true,"mapbox":true,"golfapi":true,"google_places":true}` (200)
+
+**TestFlight:** frontend changed substantially (full-screen search UI + lib collapse), so
+cut a fresh native build via `ops/ios/ship.sh` — **v1.0.701 (build 202607062201)**. Upload
+succeeded (xcodebuild export log, ~90s archive+upload), then polled the App Store Connect
+API (`GET /v1/builds?filter[app]=…&filter[version]=202607062201`, JWT signed ES256 with the
+ASC key via `uv run python` + PyJWT/httpx from the backend venv — no dedicated poll script
+exists yet, built one ad hoc at
+`/private/tmp/.../scratchpad/poll_build.py`) — **VALID** after ~5 polls (~100s). Live for
+TestFlight Internal.
+
+**Board:** no existing card for this bundle → created directly in Shipped:
+"Bundle #94: course search v2 — Places-primary + full-screen search"
+(https://app.notion.com/p/3961c52592e081878962da3f041cde26), PR link + full checklist +
+build number + how-to-test (owner escalation callback: Pebble Beach now found; search
+screen no longer resizes).
+
+**integration/next:** fast-forwarded 3b24d2f→1792d32 (== new main) and pushed — synced and
+ready to keep rolling; branch not deleted.
