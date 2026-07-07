@@ -6371,3 +6371,32 @@ merge 0c89ffd, backend deploy success + health ok, TestFlight v1.0.750
 (build 202607071230). P1 voice queue COMPLETE (keyterms, auto-send,
 telemetry, TTS). integration/next resynced; hourly loop (job a48ad37b, :17)
 continues on the next board/backlog item.
+
+---
+
+## 2026-07-07 — Bundle cycle (loop cycle 2): map ErrorScreen restyle + backlog hygiene
+
+Step 0: no pending owner approvals (polled #102/v1.0.750, orb #98, voice #99 card
+threads — all empty). Bundle empty; main == integration/next at abc0498.
+
+BACKLOG HYGIENE (major finding): the "ready" p2/p3 items were already shipped to main
+and just mis-tagged — corrected in backlog.json:
+- caddie-hazard-grounding → done-shipped-main (c3ffc3e; hazards.py + 32 tests, both mouths)
+- persistent-hole-map + tee-marker-on-map → done-shipped-main (9d597a9; persistent map,
+  createCameraQueue, teeColorFor + generated tee-marker PNGs)
+- course-elevation-ingestion → superseded (real USGS 3DEP/EPQS ingest lives in
+  services/elevation.py + fetch_elevation_cached; Elev tile reads real data).
+This nearly caused a rebuild of shipped code — future cycles: verify implementation
+state before picking, the backlog statuses drifted.
+
+BUILT: map-viewer-error-screen-restyle (p6, minor, SILENT — error-state-only visual).
+Plan specs/map-viewer-error-screen-restyle-plan.md → builder 8998b3f. Restyled the
+/map/course ErrorScreen from generic (Lucide AlertCircle + sans + plain link) to the
+on-brand yardage-book not-found pattern (serif-italic headline, mono uppercase caption,
+hairline pill button, paper-noise bg) — a faithful copy of the already-approved
+CourseDetailClient not-found state (no separate designer pass needed for a pixel copy).
+Gates green: tsc clean, lint clean, build ✓ (19 routes), voice smoke 274/274.
+Self-review: pure presentational, signature + 3 call sites unchanged — SHIP.
+
+Bundle now = SILENT-only (this restyle) → NO owner ping; rides along until the next
+noticeable change. Bundle PR opened integration/next → main as the rolling record.
