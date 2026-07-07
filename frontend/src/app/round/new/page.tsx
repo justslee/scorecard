@@ -1624,6 +1624,12 @@ export default function RoundSetupPage() {
               setShowCourseSearch(false);
             }}
             onClose={() => setShowCourseSearch(false)}
+            onVoiceSearch={() => {
+              // Realtime voice setup already resolves a course by name —
+              // hand off to it instead of building a separate voice-search path.
+              setShowCourseSearch(false);
+              setShowVoiceSetup(true);
+            }}
           />
         )}
       </AnimatePresence>

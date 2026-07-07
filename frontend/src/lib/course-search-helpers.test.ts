@@ -7,6 +7,9 @@ import {
   matchesQueryPrefix,
   tokenizeCourseName,
   courseNameKey,
+  dedupeIdleSections,
+  buildRowSubline,
+  resultSourceLabel,
 } from "./course-search-helpers";
 import type { CourseSearchResult } from "./golf-api";
 
@@ -269,5 +272,113 @@ describe("courseNameKey", () => {
 
   it("distinguishes different courses", () => {
     expect(courseNameKey("Bethpage Black")).not.toBe(courseNameKey("Bethpage Red"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dedupeIdleSections — Favorites / Recent / Nearby cross-section dedupe
+// ---------------------------------------------------------------------------
+
+describe("dedupeIdleSections", () => {
+  it("drops a Recent entry already present as a Favorite (by name)", () => {
+    const favorites = [{ name: "Bethpage Black" }];
+    const recent = [{ name: "bethpage, black!" }, { name: "Pebble Beach" }];
+    const nearby: { name: string }[] = [];
+    const result = dedupeIdleSections(favorites, recent, nearby);
+    expect(result.recent.map((r) => r.name)).toEqual(["Pebble Beach"]);
+  });
+
+  it("drops a Nearby entry already present as a Favorite or Recent", () => {
+    const favorites = [{ name: "Bethpage Black" }];
+    const recent = [{ name: "Pebble Beach" }];
+    const nearby = [
+      { name: "Bethpage Black" }, // dupes a favorite
+      { name: "pebble beach" }, // dupes recent (case-insensitive)
+      { name: "Torrey Pines" }, // unique — survives
+    ];
+    const result = dedupeIdleSections(favorites, recent, nearby);
+    expect(result.nearby.map((n) => n.name)).toEqual(["Torrey Pines"]);
+  });
+
+  it("always returns favorites in full, untouched", () => {
+    const favorites = [{ name: "Bethpage Black" }, { name: "Bethpage Black" }];
+    const result = dedupeIdleSections(favorites, [], []);
+    expect(result.favorites).toHaveLength(2);
+  });
+
+  it("handles all-empty input", () => {
+    const result = dedupeIdleSections([], [], []);
+    expect(result).toEqual({ favorites: [], recent: [], nearby: [] });
+  });
+
+  it("no overlap — everything passes through unchanged", () => {
+    const favorites = [{ name: "A" }];
+    const recent = [{ name: "B" }];
+    const nearby = [{ name: "C" }];
+    const result = dedupeIdleSections(favorites, recent, nearby);
+    expect(result.recent).toEqual(recent);
+    expect(result.nearby).toEqual(nearby);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildRowSubline — one consolidated subline idiom for every CourseRow
+// ---------------------------------------------------------------------------
+
+describe("buildRowSubline", () => {
+  it("prefers city/state when present", () => {
+    expect(
+      buildRowSubline({ name: "Bethpage Black", clubName: "Bethpage State Park", city: "Farmingdale", state: "NY" })
+    ).toBe("Farmingdale, NY");
+  });
+
+  it("falls back to clubName when there's no city/state and it differs from the name", () => {
+    expect(buildRowSubline({ name: "Bethpage Black", clubName: "Bethpage State Park" })).toBe(
+      "Bethpage State Park"
+    );
+  });
+
+  it("omits clubName when it equals the name (no redundant echo)", () => {
+    expect(buildRowSubline({ name: "Pebble Beach", clubName: "Pebble Beach" })).toBe("");
+  });
+
+  it("appends distance and source label, in order, joined by middot", () => {
+    expect(
+      buildRowSubline({
+        name: "Bethpage Black",
+        city: "Farmingdale",
+        state: "NY",
+        distanceMi: 2.3,
+        sourceLabel: "MAPPED",
+      })
+    ).toBe("Farmingdale, NY · 2.3 mi · MAPPED");
+  });
+
+  it("distance-only (no location, no clubName distinct from name)", () => {
+    expect(buildRowSubline({ name: "X", distanceMi: 0.4 })).toBe("0.4 mi");
+  });
+
+  it("returns empty string when nothing applies", () => {
+    expect(buildRowSubline({})).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resultSourceLabel
+// ---------------------------------------------------------------------------
+
+describe("resultSourceLabel", () => {
+  it("prefers the real backend sourceLabel when present", () => {
+    expect(resultSourceLabel({ source: "google_places", sourceLabel: "Google" })).toBe("Google");
+  });
+
+  it("falls back to 'mapped' for mapped-source rows with no explicit label", () => {
+    expect(resultSourceLabel({ source: "mapped" })).toBe("mapped");
+  });
+
+  it("returns undefined for other sources with no explicit label", () => {
+    expect(resultSourceLabel({ source: "osm" })).toBeUndefined();
+    expect(resultSourceLabel({ source: "golfapi" })).toBeUndefined();
+    expect(resultSourceLabel({})).toBeUndefined();
   });
 });

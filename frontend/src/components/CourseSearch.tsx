@@ -1,13 +1,27 @@
 "use client";
 
 /**
- * CourseSearch — yardage-book styled course-search bottom sheet.
+ * CourseSearch — full-screen, Google-Maps-style course-search surface in the
+ * yardage-book theme.
  *
- * Empty state (no query): Favorites (user-starred) then Nearby (GPS, best-effort).
- * Active search: a course-search session (course-search-session.ts) around
- * searchAllCourses() — results stream in append-only per source leg, stale
- * requests are aborted AND stale-guarded so rows never reshuffle under the user.
- * Star toggle on every result persists to course-favorites.ts (localStorage).
+ * Structural fix (owner escalation, 2026-07-06): the previous bottom sheet
+ * used `maxHeight: "90vh"` + flex content that grew/shrank with results and
+ * the iOS keyboard viewport — on Capacitor, the keyboard shrinking the visual
+ * viewport recomputed `90vh` and the sheet jumped. This surface is instead a
+ * FIXED `position: fixed; inset: 0` frame at `100dvh`, never bound to content
+ * or result count: only the inner scroll region grows, the outer frame never
+ * does. The keyboard overlays the bottom of the scroll region instead.
+ *
+ * Idle (no query) stable sections, Google-Maps order: Favorites
+ * (course-favorites.ts), Recent (getRecentCourses()), Nearby (searchNearby +
+ * mergeAndSortNearby) — deduped against each other by courseNameKey so a
+ * favorite never echoes under Recent/Nearby (course-search-helpers.ts).
+ * Typed results replace the idle sections as ONE stable append-only list,
+ * driven by a course-search session (course-search-session.ts) around
+ * searchAllCourses() — rows never reshuffle under the user.
+ *
+ * One consolidated CourseRow idiom renders every section. Loading is a
+ * subtle pulsing dot in the search bar — never a layout shift.
  *
  * Design: T.* tokens (T.paper / T.ink / T.serif / T.mono) and inline SVGs.
  * No Tailwind classes, no lucide-react, no zinc/emerald dark theme.
@@ -15,8 +29,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { T } from "@/components/yardage/tokens";
-import { searchNearby, type CourseSearchResult } from "@/lib/golf-api";
+import { T, PAPER_NOISE } from "@/components/yardage/tokens";
+import { searchNearby, getRecentCourses, type CourseSearchResult, type RecentCourse } from "@/lib/golf-api";
 import {
   createCourseSearchSession,
   type CourseSearchSession,
@@ -28,7 +42,13 @@ import {
   removeFavorite,
   type FavoriteCourse,
 } from "@/lib/course-favorites";
-import { mergeAndSortNearby, formatMiles, type NearbyResult } from "@/lib/course-search-helpers";
+import {
+  mergeAndSortNearby,
+  dedupeIdleSections,
+  buildRowSubline,
+  resultSourceLabel,
+  type NearbyResult,
+} from "@/lib/course-search-helpers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,6 +75,13 @@ export interface CourseSelectPayload {
 interface CourseSearchProps {
   onSelectCourse: (course: CourseSelectPayload) => void;
   onClose: () => void;
+  /**
+   * Optional mic affordance handler. When absent, the mic button is hidden
+   * (no dead tap targets). round/new wires this to its existing Realtime
+   * voice-setup panel; courses tab / tee-time have no wiring yet (planned
+   * follow-up — see specs/course-search-v2-plan.md B3).
+   */
+  onVoiceSearch?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,19 +97,20 @@ function SearchIcon() {
   );
 }
 
-function MapPinIcon() {
+function ChevronLeftIcon() {
   return (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-      <circle cx="12" cy="10" r="3" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 18l-6-6 6-6" />
     </svg>
   );
 }
 
-function CloseIcon() {
+function MicIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M2 2l10 10M12 2L2 12" />
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10a7 7 0 0 0 14 0" />
+      <path d="M12 19v3" />
     </svg>
   );
 }
@@ -104,7 +132,7 @@ function StarIcon({ filled }: { filled: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Payload mappers
 // ---------------------------------------------------------------------------
 
 /** Map a CourseSearchResult to the onSelectCourse payload. */
@@ -132,6 +160,19 @@ function favoriteToPayload(f: FavoriteCourse): CourseSelectPayload {
     clubName: f.clubName ?? f.name,
     clubId: f.golfApiClubId ?? f.id,
     source: f.source,
+    center: f.center,
+  };
+}
+
+/** Map a RecentCourse to the onSelectCourse payload. */
+function recentToPayload(r: RecentCourse): CourseSelectPayload {
+  return {
+    id: r.id,
+    name: r.name,
+    clubName: r.clubName ?? r.name,
+    clubId: r.id,
+    source: r.source,
+    center: r.center,
   };
 }
 
@@ -144,6 +185,17 @@ function resultToFavorite(r: CourseSearchResult): Omit<FavoriteCourse, "favorite
     center: r.center,
     source: r.source,
     golfApiClubId: r.golfApiClubId != null ? String(r.golfApiClubId) : undefined,
+  };
+}
+
+/** Build a FavoriteCourse from a RecentCourse (source defaults to "local" — recent rows may predate the source field). */
+function recentToFavorite(r: RecentCourse): Omit<FavoriteCourse, "favoritedAt"> {
+  return {
+    id: String(r.id),
+    name: r.name,
+    clubName: r.clubName,
+    center: r.center,
+    source: (r.source as FavoriteCourse["source"]) ?? "local",
   };
 }
 
@@ -160,7 +212,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        padding: "12px 22px 4px",
+        padding: "14px 22px 4px",
         fontFamily: T.mono,
         fontSize: 9,
         letterSpacing: 1.6,
@@ -174,10 +226,102 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 // ---------------------------------------------------------------------------
+// CourseRow — one consolidated row idiom for every section
+// ---------------------------------------------------------------------------
+
+function CourseRow({
+  title,
+  subline,
+  starred,
+  onStar,
+  onSelect,
+}: {
+  title: string;
+  subline?: string;
+  starred?: boolean;
+  onStar?: (e: React.MouseEvent) => void;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      style={{
+        width: "100%",
+        padding: "13px 22px",
+        background: "transparent",
+        border: "none",
+        borderTop: `1px dashed ${T.hairline}`,
+        cursor: "pointer",
+        textAlign: "left",
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        alignItems: "center",
+        gap: 10,
+        minHeight: 44,
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: T.serif,
+            fontSize: 17,
+            color: T.ink,
+            letterSpacing: -0.2,
+            marginBottom: subline ? 2 : 0,
+            lineHeight: 1.2,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {title}
+        </div>
+        {subline && (
+          <div
+            style={{
+              fontFamily: T.mono,
+              fontSize: 8.5,
+              letterSpacing: 1.1,
+              color: T.pencilSoft,
+              textTransform: "uppercase",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {subline}
+          </div>
+        )}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+        {onStar && (
+          <button
+            onClick={onStar}
+            aria-label={starred ? "Remove from favorites" : "Add to favorites"}
+            style={{
+              padding: 4,
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              opacity: starred ? 1 : 0.4,
+            }}
+          >
+            <StarIcon filled={!!starred} />
+          </button>
+        )}
+        <div style={{ fontFamily: T.mono, fontSize: 13, color: T.pencil }}>{"›"}</div>
+      </div>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchProps) {
+export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch }: CourseSearchProps) {
   const [query, setQuery] = useState("");
 
   // Search results (query mode)
@@ -185,11 +329,14 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  // Favorites (empty-state mode) — refreshed on every star toggle
+  // Favorites (idle-state) — refreshed on every star toggle
   const [favorites, setFavorites] = useState<FavoriteCourse[]>(() => listFavorites());
 
-  // Nearby (empty-state mode). Starts "loading" — the GPS effect below always
-  // kicks off a fetch unconditionally on mount, so there's no real "idle" moment.
+  // Recent (idle-state) — synchronous localStorage read, SSR-safe (see golf-api.ts).
+  const [recent] = useState<RecentCourse[]>(() => getRecentCourses());
+
+  // Nearby (idle-state). Starts "loading" — the GPS effect below always kicks
+  // off a fetch unconditionally on mount, so there's no real "idle" moment.
   const [nearby, setNearby] = useState<NearbyResult[]>([]);
   const [nearbyState, setNearbyState] = useState<"idle" | "loading" | "done" | "denied">("loading");
 
@@ -281,25 +428,34 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
   // Star toggle helpers
   // ---------------------------------------------------------------------------
 
+  function applyFavoritesUpdate(updated: FavoriteCourse[]) {
+    setFavorites(updated);
+    setStarredIds(new Set(updated.map((f) => f.id)));
+  }
+
   function toggleResultStar(r: CourseSearchResult, e: React.MouseEvent) {
     e.stopPropagation();
     const favId = resultFavId(r);
     if (starredIds.has(favId)) {
-      const updated = removeFavorite(favId);
-      setFavorites(updated);
-      setStarredIds(new Set(updated.map((f) => f.id)));
+      applyFavoritesUpdate(removeFavorite(favId));
     } else {
-      const updated = addFavorite(resultToFavorite(r));
-      setFavorites(updated);
-      setStarredIds(new Set(updated.map((f) => f.id)));
+      applyFavoritesUpdate(addFavorite(resultToFavorite(r)));
+    }
+  }
+
+  function toggleRecentStar(r: RecentCourse, e: React.MouseEvent) {
+    e.stopPropagation();
+    const favId = String(r.id);
+    if (starredIds.has(favId)) {
+      applyFavoritesUpdate(removeFavorite(favId));
+    } else {
+      applyFavoritesUpdate(addFavorite(recentToFavorite(r)));
     }
   }
 
   function removeFavoriteStar(f: FavoriteCourse, e: React.MouseEvent) {
     e.stopPropagation();
-    const updated = removeFavorite(f.id);
-    setFavorites(updated);
-    setStarredIds(new Set(updated.map((fav) => fav.id)));
+    applyFavoritesUpdate(removeFavorite(f.id));
   }
 
   // ---------------------------------------------------------------------------
@@ -308,179 +464,8 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
   const isEmptyState = query.length < 2;
   const hasNoResults = !searchLoading && searchResults.length === 0 && query.length >= 2;
 
-  // ---------------------------------------------------------------------------
-  // Row renderers — defined as inner functions to access state
-  // ---------------------------------------------------------------------------
-
-  function ResultRow({
-    r,
-    distanceMi,
-  }: {
-    r: CourseSearchResult;
-    distanceMi?: number;
-  }) {
-    const favId = resultFavId(r);
-    const starred = starredIds.has(favId);
-    const sub = [r.city, r.state].filter(Boolean).join(", ");
-    const isMapped = r.source === "mapped";
-
-    return (
-      <button
-        onClick={() => onSelectCourse(resultToPayload(r))}
-        style={{
-          width: "100%",
-          padding: "13px 22px",
-          background: "transparent",
-          border: "none",
-          borderTop: `1px dashed ${T.hairline}`,
-          cursor: "pointer",
-          textAlign: "left",
-          display: "grid",
-          gridTemplateColumns: "1fr auto",
-          alignItems: "center",
-          gap: 10,
-          minHeight: 58,
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontFamily: T.serif,
-              fontSize: 17,
-              color: T.ink,
-              letterSpacing: -0.2,
-              marginBottom: 2,
-              lineHeight: 1.2,
-            }}
-          >
-            {r.name}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontFamily: T.mono,
-              fontSize: 9,
-              letterSpacing: 1.1,
-              color: T.pencilSoft,
-              textTransform: "uppercase",
-              flexWrap: "wrap",
-            }}
-          >
-            {sub && (
-              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                <MapPinIcon />
-                {sub}
-              </span>
-            )}
-            {distanceMi !== undefined && (
-              <span style={{ color: T.pencil }}>{formatMiles(distanceMi)}</span>
-            )}
-            {isMapped && (
-              <span
-                style={{
-                  border: `1px solid ${T.hairline}`,
-                  borderRadius: 3,
-                  padding: "1px 4px",
-                  fontSize: 7.5,
-                  letterSpacing: 1.2,
-                  color: T.pencilSoft,
-                  lineHeight: 1.5,
-                }}
-              >
-                mapped
-              </span>
-            )}
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <button
-            onClick={(e) => toggleResultStar(r, e)}
-            aria-label={starred ? "Remove from favorites" : "Add to favorites"}
-            style={{
-              padding: 4,
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              opacity: starred ? 1 : 0.4,
-            }}
-          >
-            <StarIcon filled={starred} />
-          </button>
-          <div style={{ fontFamily: T.mono, fontSize: 13, color: T.pencil }}>{"›"}</div>
-        </div>
-      </button>
-    );
-  }
-
-  function FavoriteRow({ f }: { f: FavoriteCourse }) {
-    return (
-      <button
-        onClick={() => onSelectCourse(favoriteToPayload(f))}
-        style={{
-          width: "100%",
-          padding: "13px 22px",
-          background: "transparent",
-          border: "none",
-          borderTop: `1px dashed ${T.hairline}`,
-          cursor: "pointer",
-          textAlign: "left",
-          display: "grid",
-          gridTemplateColumns: "1fr auto",
-          alignItems: "center",
-          gap: 10,
-          minHeight: 58,
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontFamily: T.serif,
-              fontSize: 17,
-              color: T.ink,
-              letterSpacing: -0.2,
-              marginBottom: 2,
-            }}
-          >
-            {f.name}
-          </div>
-          {f.clubName && f.clubName !== f.name && (
-            <div
-              style={{
-                fontFamily: T.mono,
-                fontSize: 9,
-                letterSpacing: 1.1,
-                color: T.pencilSoft,
-                textTransform: "uppercase",
-              }}
-            >
-              {f.clubName}
-            </div>
-          )}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <button
-            onClick={(e) => removeFavoriteStar(f, e)}
-            aria-label="Remove from favorites"
-            style={{
-              padding: 4,
-              background: "transparent",
-              border: "none",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            <StarIcon filled={true} />
-          </button>
-          <div style={{ fontFamily: T.mono, fontSize: 13, color: T.pencil }}>{"›"}</div>
-        </div>
-      </button>
-    );
-  }
+  // Idle sections never echo the same course twice across Favorites/Recent/Nearby.
+  const idle = dedupeIdleSections(favorites, recent, nearby);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -488,119 +473,63 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
 
   return (
     <AnimatePresence>
-      {/* Backdrop */}
       <motion.div
-        key="cs-backdrop"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.18 }}
-        onClick={onClose}
+        key="cs-surface"
+        data-testid="course-search-surface"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 10 }}
+        transition={{ duration: 0.2, ease: T.ease }}
         style={{
           position: "fixed",
           inset: 0,
-          background: "rgba(0,0,0,0.35)",
-          zIndex: 50,
-        }}
-      />
-
-      {/* Bottom sheet */}
-      <motion.div
-        key="cs-sheet"
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
-        transition={T.springSoft}
-        style={{
-          position: "fixed",
+          top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          zIndex: 51,
-          background: T.paper,
-          borderRadius: "20px 20px 0 0",
-          maxHeight: "90vh",
+          // Fixed to the visual viewport height — NEVER bound to content or
+          // result count (this is the structural fix for the resize jank).
+          height: "100dvh",
+          zIndex: 50,
           display: "flex",
           flexDirection: "column",
-          boxShadow: "0 -20px 50px rgba(26,42,26,0.2)",
-          maxWidth: 420,
-          margin: "0 auto",
+          background: `${PAPER_NOISE}, ${T.paper}`,
+          backgroundBlendMode: "multiply",
           overflow: "hidden",
         }}
       >
-        {/* Drag handle */}
+        {/* Fixed top search bar */}
         <div
           style={{
-            width: 40,
-            height: 4,
-            borderRadius: 99,
-            background: T.hairline,
-            margin: "12px auto 0",
             flexShrink: 0,
-          }}
-        />
-
-        {/* Header */}
-        <div
-          style={{
-            padding: "14px 22px 12px",
             display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+            padding: "max(14px, env(safe-area-inset-top)) 14px 12px",
             borderBottom: `1px solid ${T.hairline}`,
-            flexShrink: 0,
           }}
         >
-          <div>
-            <div
-              style={{
-                fontFamily: T.mono,
-                fontSize: 9,
-                letterSpacing: 1.6,
-                color: T.pencil,
-                textTransform: "uppercase",
-                marginBottom: 2,
-              }}
-            >
-              Course &middot; Search
-            </div>
-            <div
-              style={{
-                fontFamily: T.serif,
-                fontStyle: "italic",
-                fontSize: 22,
-                color: T.ink,
-                letterSpacing: -0.4,
-                lineHeight: 1.05,
-              }}
-            >
-              Find a course
-            </div>
-          </div>
           <button
             onClick={onClose}
+            aria-label="Back"
             style={{
-              width: 36,
-              height: 36,
+              width: 40,
+              height: 40,
+              flexShrink: 0,
               borderRadius: 99,
-              border: `1px solid ${T.hairline}`,
+              border: "none",
               background: "transparent",
-              color: T.pencil,
+              color: T.ink,
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              flexShrink: 0,
             }}
-            aria-label="Close"
           >
-            <CloseIcon />
+            <ChevronLeftIcon />
           </button>
-        </div>
 
-        {/* Search input */}
-        <div style={{ padding: "12px 22px 0", flexShrink: 0 }}>
-          <div style={{ position: "relative" }}>
+          <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
             <div
               style={{
                 position: "absolute",
@@ -623,7 +552,7 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
               autoFocus
               style={{
                 width: "100%",
-                padding: "11px 14px 11px 38px",
+                padding: "11px 34px 11px 38px",
                 borderRadius: 12,
                 border: `1px solid ${T.hairline}`,
                 background: T.paperDeep,
@@ -636,6 +565,7 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
                 WebkitAppearance: "none",
               }}
             />
+            {/* Subtle inline loading — pulsing dot, never a layout shift. */}
             {searchLoading && (
               <div
                 style={{
@@ -658,12 +588,35 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
               </div>
             )}
           </div>
+
+          {onVoiceSearch && (
+            <button
+              onClick={onVoiceSearch}
+              aria-label="Voice search"
+              style={{
+                width: 40,
+                height: 40,
+                flexShrink: 0,
+                borderRadius: 99,
+                border: `1px solid ${T.hairline}`,
+                background: "transparent",
+                color: T.pencil,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <MicIcon />
+            </button>
+          )}
         </div>
 
         {/* Error */}
         {searchError && (
           <div
             style={{
+              flexShrink: 0,
               margin: "10px 22px 0",
               padding: "10px 14px",
               borderRadius: 10,
@@ -680,28 +633,52 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
           </div>
         )}
 
-        {/* Scrollable content */}
+        {/* Scrollable content — the ONLY region that grows with results.
+            The outer frame above never resizes, regardless of row count. */}
         <div
+          data-testid="course-search-scroll-region"
           style={{
             flex: 1,
             overflowY: "auto",
-            padding: "8px 0 max(24px, env(safe-area-inset-bottom))",
+            WebkitOverflowScrolling: "touch",
+            padding: "4px 0 max(24px, env(safe-area-inset-bottom))",
           }}
         >
           {isEmptyState ? (
-            /* ── Empty state ── */
+            /* ── Idle sections: Favorites, Recent, Nearby ── */
             <>
-              {/* Favorites */}
-              {favorites.length > 0 && (
+              {idle.favorites.length > 0 && (
                 <>
                   <SectionLabel>Favorites</SectionLabel>
-                  {favorites.map((f) => (
-                    <FavoriteRow key={f.id} f={f} />
+                  {idle.favorites.map((f) => (
+                    <CourseRow
+                      key={`fav-${f.id}`}
+                      title={f.name}
+                      subline={buildRowSubline({ name: f.name, clubName: f.clubName })}
+                      starred={true}
+                      onStar={(e) => removeFavoriteStar(f, e)}
+                      onSelect={() => onSelectCourse(favoriteToPayload(f))}
+                    />
                   ))}
                 </>
               )}
 
-              {/* Nearby */}
+              {idle.recent.length > 0 && (
+                <>
+                  <SectionLabel>Recent</SectionLabel>
+                  {idle.recent.map((r) => (
+                    <CourseRow
+                      key={`recent-${r.id}`}
+                      title={r.name}
+                      subline={buildRowSubline({ name: r.name, clubName: r.clubName })}
+                      starred={starredIds.has(String(r.id))}
+                      onStar={(e) => toggleRecentStar(r, e)}
+                      onSelect={() => onSelectCourse(recentToPayload(r))}
+                    />
+                  ))}
+                </>
+              )}
+
               {nearbyState === "loading" && (
                 <div style={{ padding: "16px 22px" }}>
                   <motion.div
@@ -720,17 +697,30 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
                 </div>
               )}
 
-              {nearbyState === "done" && nearby.length > 0 && (
+              {nearbyState === "done" && idle.nearby.length > 0 && (
                 <>
                   <SectionLabel>Nearby</SectionLabel>
-                  {nearby.map((r) => (
-                    <ResultRow key={r.id} r={r} distanceMi={r.distanceMi} />
+                  {idle.nearby.map((r) => (
+                    <CourseRow
+                      key={r.id}
+                      title={r.name}
+                      subline={buildRowSubline({
+                        name: r.name,
+                        city: r.city,
+                        state: r.state,
+                        distanceMi: r.distanceMi,
+                        sourceLabel: resultSourceLabel(r),
+                      })}
+                      starred={starredIds.has(resultFavId(r))}
+                      onStar={(e) => toggleResultStar(r, e)}
+                      onSelect={() => onSelectCourse(resultToPayload(r))}
+                    />
                   ))}
                 </>
               )}
 
-              {/* Quiet hint when location denied and nothing else to show */}
-              {nearbyState === "denied" && favorites.length === 0 && (
+              {/* Quiet hint when there's nothing else to show */}
+              {nearbyState === "denied" && idle.favorites.length === 0 && idle.recent.length === 0 && (
                 <div style={{ padding: "24px 22px" }}>
                   <div
                     style={{
@@ -747,8 +737,8 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
                 </div>
               )}
 
-              {nearbyState === "denied" && favorites.length > 0 && (
-                <div style={{ padding: "10px 22px 0" }}>
+              {nearbyState === "denied" && (idle.favorites.length > 0 || idle.recent.length > 0) && (
+                <div style={{ padding: "14px 22px 0" }}>
                   <div
                     style={{
                       fontFamily: T.mono,
@@ -763,26 +753,27 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
                 </div>
               )}
 
-              {/* Idle default */}
-              {nearbyState === "idle" && favorites.length === 0 && (
-                <div style={{ padding: "24px 22px" }}>
-                  <div
-                    style={{
-                      fontFamily: T.serif,
-                      fontStyle: "italic",
-                      fontSize: 16,
-                      color: T.pencilSoft,
-                      lineHeight: 1.5,
-                      letterSpacing: -0.2,
-                    }}
-                  >
-                    Type to search by name or location.
+              {nearbyState === "idle" &&
+                idle.favorites.length === 0 &&
+                idle.recent.length === 0 && (
+                  <div style={{ padding: "24px 22px" }}>
+                    <div
+                      style={{
+                        fontFamily: T.serif,
+                        fontStyle: "italic",
+                        fontSize: 16,
+                        color: T.pencilSoft,
+                        lineHeight: 1.5,
+                        letterSpacing: -0.2,
+                      }}
+                    >
+                      Type to search by name or location.
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
             </>
           ) : (
-            /* ── Search results ── */
+            /* ── Typed results: one stable, append-only list ── */
             <>
               {hasNoResults && (
                 <div style={{ padding: "32px 22px", textAlign: "center" }}>
@@ -812,27 +803,22 @@ export default function CourseSearch({ onSelectCourse, onClose }: CourseSearchPr
               )}
 
               {searchResults.map((r) => (
-                <ResultRow key={r.id} r={r} />
+                <CourseRow
+                  key={r.id}
+                  title={r.name}
+                  subline={buildRowSubline({
+                    name: r.name,
+                    city: r.city,
+                    state: r.state,
+                    sourceLabel: resultSourceLabel(r),
+                  })}
+                  starred={starredIds.has(resultFavId(r))}
+                  onStar={(e) => toggleResultStar(r, e)}
+                  onSelect={() => onSelectCourse(resultToPayload(r))}
+                />
               ))}
             </>
           )}
-        </div>
-
-        {/* Footer — neutral source attribution, GolfAPI no longer the headline */}
-        <div
-          style={{
-            padding: "8px 22px 10px",
-            borderTop: `1px solid ${T.hairline}`,
-            fontFamily: T.mono,
-            fontSize: 8.5,
-            letterSpacing: 1.2,
-            color: T.pencilSoft,
-            textTransform: "uppercase",
-            textAlign: "center",
-            flexShrink: 0,
-          }}
-        >
-          Course data &mdash; Mapped &middot; Community &middot; OpenStreetMap
         </div>
       </motion.div>
     </AnimatePresence>
