@@ -3,6 +3,41 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — wind-periodic-refresh: keep the wind tile fresh through a round (SILENT, integration/next, DONE)
+
+Implemented `specs/wind-periodic-refresh-plan.md`. One Open-Meteo grid-cell reading was
+persisting for a whole 4+ hour round — quietly re-fetches it now instead of faking anything
+new: still one reading for the whole course, still zero per-hole speed synthesis, per-hole
+DIRECTION math (`relativeWind`, `lib/map/wind.ts`) untouched.
+
+- New `frontend/src/lib/map/weather-freshness.ts`: pure `isWeatherStale(fetchedAt, now,
+  thresholdMs)` (`WEATHER_STALE_MS`=20min, `WEATHER_REFRESH_INTERVAL_MS`=25min) +
+  `WeatherRefreshScheduler` (mirrors `lib/voice/idle-timer.ts`'s `IdleTimer`, bare
+  `setInterval`/`clearInterval`). Plan called for `window.setInterval` — deviated: this
+  tsconfig's `@types/node` makes `window.setInterval`'s return type `NodeJS.Timeout`, not
+  `number` (`ReturnType<typeof window.setInterval>` failed `tsc`). `setInterval`/`clearInterval`
+  aren't the `requestAnimationFrame` cross-file-polyfill-leak case from lessons.md (that's an
+  ad-hoc jsdom RAF patch); they're real Node/jsdom globals `vi.useFakeTimers()` swaps cleanly,
+  so bare (matching `IdleTimer`'s actual working pattern) is both correct and precedented.
+- New `frontend/src/lib/map/weather-freshness.test.ts`: pure predicate tests + deterministic
+  `vi.useFakeTimers()`/`advanceTimersByTime` scheduler tests (start/stop/no-double-arm/custom
+  interval/isArmed) — 23 tests total with `wind.test.ts`.
+- `frontend/src/app/round/[id]/RoundPageClient.tsx`: added client-side `weatherFetchedAt`
+  state; one `applyWeather` writer that all 3 existing `setWeather` call sites now route
+  through (retry ladder success, course-intel `intel.weather`, course-intel anchor-only path)
+  so the timestamp can never drift from the reading; idempotent `refreshWeather`
+  (`refreshInFlightRef` coalesces overlapping triggers, `catch` is a no-op — never clobbers a
+  good reading or the honest `—`); a ~25-min periodic effect gated on the round being active
+  (`round.status !== 'completed'`); a hole-change effect (`prevHoleRef`) that refreshes only
+  when `isWeatherStale`; a `visibilitychange` foreground catch-up (native suspends JS intervals
+  backgrounded). All new effects clean up their timer/listener.
+
+Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded,
+`voice-tests/runner.ts --smoke` → 274/274, `vitest run weather-freshness.test.ts wind.test.ts`
+→ 23/23, full `npm run test` → 1602/1602 (75/75 files). No backend files touched, no shared-type
+changes (`fetchedAt` is client-side receipt time only, per plan §4) — `ruff` not required.
+Silent — no new UI/chrome, rides the bundle.
+
 ## 2026-07-07 — caddie-conversational-loop follow-up: designer-caught answer-wipe bug (SILENT fix, integration/next, DONE)
 
 Designer review of `eded238` found ONE blocking UX bug (everything else — reviewer verdict SHIP,
