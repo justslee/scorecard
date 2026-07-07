@@ -6,7 +6,7 @@
 // blob fallback — the same decision helpers as CaddieSheet). Each Looper
 // context owns its brain; this hook owns the microphone.
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
 import { pickDictationTranscript, isEmptyTranscript } from "@/lib/caddie/dictation";
@@ -46,7 +46,9 @@ export function useLooperDictation(options?: LooperDictationOptions): LooperDict
   const [micError, setMicError] = useState<string | null>(null);
 
   const optionsRef = useRef(options);
-  optionsRef.current = options;
+  useEffect(() => {
+    optionsRef.current = options;
+  });
   const utteranceFiredRef = useRef(false);
   const recorderRef = useRef<VoiceRecorder | null>(null);
   const liveRef = useRef<DeepgramLiveTranscriber | null>(null);
