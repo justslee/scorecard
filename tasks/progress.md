@@ -38,6 +38,33 @@ Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded
 changes (`fetchedAt` is client-side receipt time only, per plan §4) — `ruff` not required.
 Silent — no new UI/chrome, rides the bundle.
 
+## 2026-07-07 — fix-course-intel-none-yards: honest empty state instead of the "+0ft on every hole" crash (NOTICEABLE, integration/next, DONE)
+
+Implemented `specs/fix-course-intel-none-yards-plan.md` exactly. Root cause: `build_hole_intelligence`
+did `yards + round(elevation_change / 3)` where `yards` could be `None` — a stored round with no
+yardage sends `{yards: null}`, and `dict.get(key, default)` in `routes/caddie.py` only substitutes on
+an *absent* key, not a present `null`, so every hole crashed and the per-hole `except` silently
+discarded the hole's whole intel (elevation included) — the incident #106's logging was added to name.
+par/handicap had the same latent crash via pydantic's required `int` fields.
+
+- `backend/app/caddie/types.py`: `HoleIntelligence.yards`/`effective_yards` → `Optional[int] = None`.
+- `backend/app/caddie/course_intel.py`: widened `par`/`yards`/`handicap_rating` params to
+  `Optional[int]`; added central coalescing (par/handicap → defaults 4/9 when not a real int, bool
+  excluded; yards → honest `None` when not numeric, else `int(round(yards))`); line 55
+  `effective_yards = None if yards is None else yards + round(elevation_change / 3)`.
+- `backend/app/routes/caddie.py:1004-1006`: `hc.get("par")`/`hc.get("yards")`/`hc.get("handicap")` —
+  dropped the misleading defaults so absent-key and null-value converge on one path.
+- `frontend/src/lib/caddie/types.ts`: `yards`/`effective_yards` → `number | null` to mirror; existing
+  consumers already null-tolerant (`?? 0`, `|| undefined`), verified no new tsc break.
+- Added `test_none_inputs_never_throw_and_stay_honest` to `backend/tests/test_course_intel_resilience.py`
+  (non-DB, no network — no tee/green skips elevation fetch).
+
+Gates: `ruff check .` clean; `uv run pytest tests/test_course_intel_resilience.py` → 2/2 passed, no
+DB required; `npm run lint` clean; `npx tsc --noEmit` clean; `npm run build` succeeded;
+`voice-tests/runner.ts --smoke` → 274/274. Committed `8529820` to `integration/next`, pushed.
+Noticeable — restores the dead Elev / "plays like" tile on rounds with no stored yardage instead of
+silently zeroing it.
+
 ENG-LEAD CLOSE (loop cycle 10): reviewer verdict SHIP (no-clobber/timer-leak/stale-closure/
 round-gating invariants all traced and hold; deterministic tests would fail if the bugs were
 reintroduced); QA PASS (independently re-ran full vitest 1602/1602 TWICE, no cross-file
