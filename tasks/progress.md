@@ -3,6 +3,47 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — client timeouts + single retry on caddie voice reply calls (SILENT — integration/next, DONE)
+
+`specs/voice-reply-timeouts-plan.md` (audit P2 #7, "bulletproofing the voice agent"). The three
+caddie voice REPLY calls could hang forever on flaky on-course networks because `fetchAPI` has no
+timeout. Added a contained `postWithTimeout<T>` helper (exported for tests) to
+`frontend/src/lib/caddie/api.ts` with per-attempt timeout + transient-only retry, and routed:
+- `talkToCaddie` (`/caddie/voice`, terminal call, no downstream fallback) — 10s timeout, 1 retry,
+  500ms backoff.
+- `sessionVoice` (`/caddie/session/voice`, CaddieSheet already falls back to `talkToCaddie` on
+  failure) — 8s timeout, no retry (fail fast into the existing fallback).
+- `speakCaddieReply` (`/api/voice/speak` TTS, best-effort/non-fatal) — inline 10s timeout that
+  COMPOSES the caller's existing overlap/stop `AbortSignal` rather than clobbering it (no
+  normalization — `useSheetTTS` logs raw `err.name` for telemetry).
+
+Retry classification (locked): only our timeout firing (`timedOut` closure flag, not
+`err.name` sniffing) or `err instanceof TypeError` (network drop) is transient → exhausted
+transient throws a calm `CALM_REPLY_ERROR` string that passes `humanizeVoiceError` unchanged.
+HTTP errors and external caller aborts propagate verbatim (no retry — a returned HTTP response is
+deterministic; retrying risks double-generation since the LLM turn already ran server-side).
+`fetchAPI` (`src/lib/api.ts`) deliberately stays timeout-free — it also backs multipart
+uploads/course-search/CRUD, where a global timeout would break long requests.
+Untouched per plan: `CaddieSheet.tsx`, `LooperSheet.tsx`, `useSheetTTS.ts`, `dictation.ts`,
+`types.ts`, `models.py`, `voice/realtime.ts` (realtime warm-path mic invariants — different pipeline).
+
+- New `frontend/src/lib/caddie/api.timeout.test.ts` — 9 tests: resolves normally + no leaked
+  timer, timeout→calm (no `AbortError`/`signal is aborted` leak), retry-once-then-succeed on
+  `TypeError`, no-retry-on-HTTP-error (verbatim rethrow), timer cleanup on both success/error
+  paths, external-abort composition (propagates as-is, not CALM, not retried), the
+  `humanizeVoiceError` invariant guard, and `speakCaddieReply`'s timeout + already-aborted-signal
+  composition. All 9 pass.
+- Gates green: `npm run lint` (clean), `npx tsc --noEmit` (clean), `npm run build` (success),
+  `voice-tests --smoke` (274/274 pass), `vitest run api.timeout.test.ts
+  CaddieSheet.session.test.tsx dictation.test.ts` (28/28 pass — session test mocks the whole api
+  module so the helper isn't exercised there, as expected; dictation.ts untouched).
+- No dependency added; no `package-lock.json` change. No `/security-review` needed (pure
+  client-side robustness change, no new endpoint/auth/data-handling).
+- Classified **silent** (no user-visible UI/behavior change on the happy path — only changes
+  bounded-vs-infinite failure behavior on flaky networks) — rides in the current
+  `integration/next` bundle, no owner ping needed on its own.
+- Commit `2329fb7` on `integration/next`, pushed.
+
 ## 2026-07-07 — round-page Ask Caddie pill adopts the Looper ink-orb identity (NOTICEABLE — integration/next, DONE)
 
 `specs/looper-orb-bundle2-plan.md` (bundle 2 of the Looper orb rollout). Restyles the round
