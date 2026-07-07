@@ -559,7 +559,12 @@ async def _build_session_voice_prompt(
 
     hole_intel = session.hole_intel.get(request.hole_number)
     if hole_intel:
-        context_parts.append(f"Par {hole_intel.par}, {hole_intel.yards} yards (effective: {hole_intel.effective_yards})")
+        if hole_intel.yards is not None:
+            context_parts.append(
+                f"Par {hole_intel.par}, {hole_intel.yards} yards (effective: {hole_intel.effective_yards})"
+            )
+        else:
+            context_parts.append(f"Par {hole_intel.par}")
         if hole_intel.hazards:
             hazards_line = format_hazards_line(request.hole_number, hole_intel.hazards)
             if hazards_line:

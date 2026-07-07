@@ -282,8 +282,10 @@ def generate_recommendation(
         )
 
     # Select club
-    # DECADE bias: conservative for approach shots, moderate for tee shots
-    is_tee_shot = distance_yards >= hole.yards * 0.85  # roughly tee shot distance
+    # DECADE bias: conservative for approach shots, moderate for tee shots.
+    # hole.yards is None when yardage is unknown (no fake fallback) — treat
+    # as an approach shot (conservative) rather than crashing on None * 0.85.
+    is_tee_shot = hole.yards is not None and distance_yards >= hole.yards * 0.85
     bias = "moderate" if is_tee_shot else "conservative"
     club, club_dist = select_club(adjusted_yards, clubs, bias=bias)
 
