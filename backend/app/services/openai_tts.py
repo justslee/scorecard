@@ -7,11 +7,14 @@ and the Realtime orb already speaks in those voices, so this makes the sheet
 caddie sound identical to the orb caddie for the same persona.
 """
 
+import logging
 import os
 from typing import Optional
 import httpx
 from fastapi import HTTPException
 
+
+log = logging.getLogger(__name__)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
@@ -51,6 +54,9 @@ async def synthesize_speech(text: str, voice_id: Optional[str]) -> bytes:
         resp = await client.post(_SPEECH_URL, headers=headers, json=payload)
 
     if resp.status_code >= 400:
-        raise HTTPException(resp.status_code, f"OpenAI TTS error: {resp.text}")
+        # Log the upstream detail server-side; never mirror the raw OpenAI error
+        # body/status to the client (prior secret-echo/str(e)-leak incident).
+        log.error("OpenAI TTS upstream error %s: %s", resp.status_code, resp.text)
+        raise HTTPException(502, "TTS unavailable")
 
     return resp.content

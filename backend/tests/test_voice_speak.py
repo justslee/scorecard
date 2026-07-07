@@ -130,7 +130,10 @@ async def test_upstream_error_raises_http_exception(monkeypatch):
 
     with pytest.raises(HTTPException) as exc_info:
         await openai_tts.synthesize_speech("Hello", "sage")
-    assert exc_info.value.status_code == 401
+    # Upstream errors are mapped to a generic 502 and the raw OpenAI body is
+    # NEVER mirrored to the client (prior secret-echo/str(e)-leak incident).
+    assert exc_info.value.status_code == 502
+    assert "invalid api key" not in str(exc_info.value.detail)
 
 
 # ── POST /api/voice/speak (route level) ────────────────────────────────────
