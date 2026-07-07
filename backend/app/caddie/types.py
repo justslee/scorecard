@@ -62,6 +62,10 @@ class Hazard(BaseModel):
     penalty_severity: str = "moderate"  # mild | moderate | severe | death
     lat: Optional[float] = None
     lng: Optional[float] = None
+    # Tee→green line math (app/caddie/hazards.py) — additive, defaulted so
+    # older cached HoleIntelligence JSONB still validates.
+    carry_yards: int = 0  # yards from the tee along the tee→green line
+    line_side: str = "center"  # left | right | center, relative to tee→green travel
 
 
 # ── Green Slope ──

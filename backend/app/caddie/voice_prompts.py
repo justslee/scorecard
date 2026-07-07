@@ -12,6 +12,7 @@ from typing import Optional
 from app.caddie.types import CaddiePersonality
 from app.caddie.session import RoundSession
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
+from app.caddie.hazards import HAZARD_GROUNDING_RULE, format_hazards_line
 from app.db.models import CaddieMemory
 
 
@@ -46,7 +47,7 @@ def build_realtime_instructions(
     if situation_block:
         parts.append("# Current situation\n" + situation_block)
 
-    parts.append("# Behavior\n" + _BASE_BEHAVIOR.strip())
+    parts.append("# Behavior\n" + _BASE_BEHAVIOR.strip() + "\n" + HAZARD_GROUNDING_RULE)
 
     return "\n\n".join(parts)
 
@@ -80,6 +81,11 @@ def _situation_block(session: Optional[RoundSession]) -> str:
             f"Weather: {w.temperature_f:.0f}°F, wind {w.wind_speed_mph:.0f}mph from {w.wind_direction}°"
         )
     lines.append(f"Current hole: #{session.current_hole}")
+    intel = session.hole_intel.get(session.current_hole)
+    if intel and intel.hazards:
+        hazards_line = format_hazards_line(session.current_hole, intel.hazards)
+        if hazards_line:
+            lines.append(hazards_line)
     return "\n".join(lines)
 
 

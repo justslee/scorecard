@@ -18,6 +18,7 @@ from app.caddie.types import (
 from app.caddie.aim_point import generate_recommendation
 from app.caddie.player_stats import analyze_player_stats
 from app.caddie.course_intel import build_hole_intelligence, build_weather_conditions
+from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -36,6 +37,7 @@ from app.caddie import memory as memory_mod
 from app.caddie import learning as learning_mod
 from app.caddie.types import PlayerStatistics, PlayerTendencies
 from app.services.osm import fetch_course_features
+from app.services import courses_mapped
 from app.services.clerk_auth import current_user_id, optional_user_id
 
 router = APIRouter(prefix="/api/caddie", tags=["caddie"])
@@ -290,11 +292,23 @@ async def get_session_conditions(
             "plays_like_delta": intel.effective_yards - intel.yards,
             "elevation_change_ft": intel.elevation_change_ft,
         }
+
+    # Real bunker/water hazards for the hole, honest by design: empty (not
+    # invented) when the hole has none mapped. HAZARD_GROUNDING_RULE tells the
+    # model never to name a hazard absent from this list.
+    hazards_payload: list[dict] = []
+    hazards_line = None
+    if intel is not None and intel.hazards:
+        hazards_payload = [h.model_dump() for h in intel.hazards]
+        hazards_line = format_hazards_line(hn, intel.hazards)
+
     return {
         "round_id": round_id,
         "hole_number": hn,
         "weather": session.weather.model_dump() if session.weather else None,
         "plays_like": plays_like,
+        "hazards": hazards_payload,
+        "hazards_line": hazards_line,
     }
 
 
@@ -476,8 +490,9 @@ async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(cur
     if hole_intel:
         context_parts.append(f"Par {hole_intel.par}, {hole_intel.yards} yards (effective: {hole_intel.effective_yards})")
         if hole_intel.hazards:
-            hazard_strs = [f"{h.type} {h.side}" for h in hole_intel.hazards[:4]]
-            context_parts.append(f"Hazards: {', '.join(hazard_strs)}")
+            hazards_line = format_hazards_line(request.hole_number, hole_intel.hazards)
+            if hazards_line:
+                context_parts.append(hazards_line)
         if hole_intel.green_slope:
             context_parts.append(f"Green slope: {hole_intel.green_slope.description}")
 
@@ -536,7 +551,9 @@ Keep your response concise and in-character. If they ask about club selection, a
 use the context above to give specific, actionable advice. If they're just chatting, be personable
 but keep it golf-focused. Never break character.
 You have memory of the entire round conversation and prior rounds. Reference earlier holes/shots
-or known tendencies when relevant."""
+or known tendencies when relevant.
+
+{HAZARD_GROUNDING_RULE}"""
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
@@ -767,6 +784,24 @@ async def get_course_intel(
     except Exception:
         pass
 
+    # Resolve the owned session once (used both for the stored-course hazard
+    # lookup below and the cache write at the end).
+    owned_session = None
+    if round_id and user_id:
+        candidate = await sessions.get(round_id)
+        if candidate and candidate.user_id == user_id:
+            owned_session = candidate
+
+    # Curated per-hole bunker/water geometry from our own PostGIS store, keyed
+    # by hole number, when this round is mapped to a stored course. REPLACES
+    # (never merges with) the fuzzy Overpass-derived hazards below — curated
+    # data must not be polluted by Overpass strays (owner escalation 2026-07-06).
+    stored_holes_by_number: dict[int, dict] = {}
+    if owned_session is not None and owned_session.course_id:
+        stored_course = await courses_mapped.get_course(owned_session.course_id)
+        if stored_course:
+            stored_holes_by_number = {h["number"]: h for h in stored_course.get("holes", [])}
+
     holes: list[dict] = []
     hole_intel_map: dict[int, HoleIntelligence] = {}
     for hc in request.hole_coordinates:
@@ -778,16 +813,23 @@ async def get_course_intel(
                 handicap_rating=hc.get("handicap", 9),
                 osm_features=osm_features,
             )
+            stored_hole = stored_holes_by_number.get(intel.hole_number)
+            if stored_hole is not None:
+                stored_features = stored_hole.get("features")
+                if stored_features and stored_features.get("features"):
+                    intel.hazards = extract_hole_hazards(
+                        stored_features,
+                        tee=hc.get("tee"),
+                        green=hc.get("green"),
+                    )
             holes.append(intel.model_dump())
             hole_intel_map[intel.hole_number] = intel
         except Exception as e:
             holes.append({"hole_number": hc.get("holeNumber", 0), "error": str(e)})
 
     # Cache everything in session — only when caller owns the round.
-    if round_id and user_id:
-        session = await sessions.get(round_id)
-        if session and session.user_id == user_id:
-            await sessions.set_hole_intel(round_id, hole_intel_map, weather=weather)
+    if owned_session is not None:
+        await sessions.set_hole_intel(round_id, hole_intel_map, weather=weather)
 
     return {
         "weather": weather.model_dump(),
@@ -911,7 +953,9 @@ async def voice_caddie(
 You are caddying for this golfer right now, on the course. Respond to their question or comment.
 Keep your response concise and in-character. If they ask about club selection, aim, or strategy,
 use the context above to give specific, actionable advice. If they're just chatting, be personable
-but keep it golf-focused. Never break character."""
+but keep it golf-focused. Never break character.
+
+{HAZARD_GROUNDING_RULE}"""
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
