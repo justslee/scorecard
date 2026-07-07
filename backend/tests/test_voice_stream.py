@@ -1,0 +1,377 @@
+"""Tests for the caddie voice SSE streaming twins
+(specs/voice-streaming-replies-plan.md) — no network, no Postgres.
+
+Covers (plan §7.1, backend):
+  - `_sse_reply` emits `event: token` per delta + one `event: done`.
+  - Session flavor persists the COMPLETE assembled text via
+    `sessions.append_message_pair`; stateless flavor never persists.
+  - A mid-stream exception yields exactly one `event: error` carrying
+    `_CADDIE_ERROR_DETAIL` (never `str(e)`/traceback) and does NOT persist.
+  - An empty `text_stream` persists + sends the "Say that once more?"
+    fallback (mirrors the non-streaming `_first_text(...) or "..."` guard).
+  - Route-level gates run BEFORE the stream: missing ANTHROPIC_API_KEY -> a
+    normal JSON 500, and a non-visible persona downgrades to classic —
+    exercised via `_build_session_voice_prompt` / `_build_voice_prompt`
+    directly (mocked `get_owned_session` / `personality_visible`, no DB).
+"""
+
+import os
+
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://stub:stub@localhost/stub")
+
+import json
+
+import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+
+from app.caddie.session import RoundSession
+from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
+from app.routes import caddie as caddie_routes
+from app.services.clerk_auth import current_user_id
+
+
+# ── Fakes for anthropic.AsyncAnthropic ──────────────────────────────────────
+
+
+class _FakeAsyncStream:
+    """Async context manager mimicking AsyncMessageStreamManager."""
+
+    def __init__(self, tokens: list[str], exc: Exception | None = None):
+        self._tokens = tokens
+        self._exc = exc
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def _gen(self):
+        for t in self._tokens:
+            yield t
+        if self._exc is not None:
+            raise self._exc
+
+    @property
+    def text_stream(self):
+        return self._gen()
+
+
+class _FakeMessages:
+    def __init__(self, tokens: list[str], exc: Exception | None = None):
+        self._tokens = tokens
+        self._exc = exc
+        self.captured_kwargs: dict | None = None
+
+    def stream(self, **kwargs):
+        self.captured_kwargs = kwargs
+        return _FakeAsyncStream(self._tokens, self._exc)
+
+
+class _FakeAsyncAnthropic:
+    """Stand-in for anthropic.AsyncAnthropic — captures the last instance's
+    `.messages` so tests can assert on captured_kwargs."""
+
+    last_messages: "_FakeMessages | None" = None
+
+    def __init__(self, api_key=None):
+        self.api_key = api_key
+        self.messages = _FakeMessages(_FakeAsyncAnthropic._tokens, _FakeAsyncAnthropic._exc)
+        _FakeAsyncAnthropic.last_messages = self.messages
+
+    # Test hook: configure the class before constructing the route.
+    _tokens: list[str] = []
+    _exc: Exception | None = None
+
+
+def _make_fake_anthropic(tokens: list[str], exc: Exception | None = None):
+    _FakeAsyncAnthropic._tokens = tokens
+    _FakeAsyncAnthropic._exc = exc
+    return _FakeAsyncAnthropic
+
+
+async def _collect(agen) -> list[str]:
+    return [chunk async for chunk in agen]
+
+
+def _parse_sse(frames: list[str]) -> list[tuple[str, object]]:
+    """Parse `event: X\\ndata: Y\\n\\n` frames into (event, decoded-json-data)."""
+    parsed = []
+    for frame in frames:
+        lines = frame.strip("\n").split("\n")
+        event = lines[0].removeprefix("event: ")
+        data_line = lines[1].removeprefix("data: ")
+        parsed.append((event, json.loads(data_line)))
+    return parsed
+
+
+# ── _sse_reply (unit) ───────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_sse_reply_emits_token_per_delta_then_done(monkeypatch):
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _make_fake_anthropic(["Easy ", "7-iron."]))
+
+    frames = await _collect(
+        caddie_routes._sse_reply(
+            "fake-key", "system prompt", [{"role": "user", "content": "what club?"}],
+            log_context="test",
+        )
+    )
+    events = _parse_sse(frames)
+    assert events == [("token", "Easy "), ("token", "7-iron."), ("done", {})]
+
+
+@pytest.mark.asyncio
+async def test_sse_reply_uses_identical_model_params(monkeypatch):
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _make_fake_anthropic(["hi"]))
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+
+    await _collect(
+        caddie_routes._sse_reply("fake-key", "sys", [{"role": "user", "content": "x"}], log_context="test")
+    )
+    kwargs = _FakeAsyncAnthropic.last_messages.captured_kwargs
+    assert kwargs["model"] == "claude-sonnet-4-5-20250929"
+    assert kwargs["max_tokens"] == 300
+    assert kwargs["temperature"] == 0.7
+    assert kwargs["system"] == "sys"
+
+
+@pytest.mark.asyncio
+async def test_sse_reply_session_flavor_persists_complete_text(monkeypatch):
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _make_fake_anthropic(["Take the ", "8-iron."]))
+    captured = {}
+
+    async def _fake_append_message_pair(round_id, user_content, assistant_content, hole_number=None):
+        captured["round_id"] = round_id
+        captured["user_content"] = user_content
+        captured["assistant_content"] = assistant_content
+        captured["hole_number"] = hole_number
+
+    monkeypatch.setattr(caddie_routes.sessions, "append_message_pair", _fake_append_message_pair)
+
+    frames = await _collect(
+        caddie_routes._sse_reply(
+            "fake-key", "sys", [{"role": "user", "content": "what club?"}],
+            log_context="test", round_id="round-1", transcript="what club?", hole_number=5,
+        )
+    )
+    events = _parse_sse(frames)
+    assert events[-1] == ("done", {})
+    assert captured["round_id"] == "round-1"
+    assert captured["user_content"] == "what club?"
+    assert captured["assistant_content"] == "Take the 8-iron."  # COMPLETE assembled text
+    assert captured["hole_number"] == 5
+
+
+@pytest.mark.asyncio
+async def test_sse_reply_stateless_flavor_never_persists(monkeypatch):
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _make_fake_anthropic(["Nice shot."]))
+    append_spy_called = False
+
+    async def _fake_append_message_pair(*args, **kwargs):
+        nonlocal append_spy_called
+        append_spy_called = True
+
+    monkeypatch.setattr(caddie_routes.sessions, "append_message_pair", _fake_append_message_pair)
+
+    frames = await _collect(
+        caddie_routes._sse_reply("fake-key", "sys", [{"role": "user", "content": "hi"}], log_context="test")
+    )
+    events = _parse_sse(frames)
+    assert events == [("token", "Nice shot."), ("done", {})]
+    assert append_spy_called is False
+
+
+@pytest.mark.asyncio
+async def test_sse_reply_mid_stream_error_yields_single_calm_error_and_never_persists(monkeypatch):
+    boom = RuntimeError("some internal traceback detail — never leak this")
+    monkeypatch.setattr(
+        caddie_routes.anthropic, "AsyncAnthropic", _make_fake_anthropic(["Partial "], exc=boom)
+    )
+    append_spy_called = False
+
+    async def _fake_append_message_pair(*args, **kwargs):
+        nonlocal append_spy_called
+        append_spy_called = True
+
+    monkeypatch.setattr(caddie_routes.sessions, "append_message_pair", _fake_append_message_pair)
+
+    frames = await _collect(
+        caddie_routes._sse_reply(
+            "fake-key", "sys", [{"role": "user", "content": "hi"}],
+            log_context="test", round_id="round-1", transcript="hi", hole_number=1,
+        )
+    )
+    events = _parse_sse(frames)
+    # One token made it out before the exception, then exactly one error frame — no `done`.
+    assert events == [("token", "Partial "), ("error", caddie_routes._CADDIE_ERROR_DETAIL)]
+    assert "traceback" not in events[-1][1].lower()
+    assert "runtimeerror" not in events[-1][1].lower()
+    assert append_spy_called is False
+
+
+def _make_auth_error() -> Exception:
+    """anthropic.AuthenticationError needs a real httpx.Response to construct
+    in this SDK version — build the minimal one rather than hand-wave the signature."""
+    import httpx
+    import anthropic
+
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx.Response(401, request=request, json={"error": {"message": "bad key"}})
+    return anthropic.AuthenticationError("bad key", response=response, body=None)
+
+
+@pytest.mark.asyncio
+async def test_sse_reply_auth_error_yields_calm_error(monkeypatch):
+    monkeypatch.setattr(
+        caddie_routes.anthropic, "AsyncAnthropic", _make_fake_anthropic([], exc=_make_auth_error())
+    )
+
+    frames = await _collect(
+        caddie_routes._sse_reply("bad-key", "sys", [{"role": "user", "content": "hi"}], log_context="test")
+    )
+    events = _parse_sse(frames)
+    assert events == [("error", caddie_routes._CADDIE_ERROR_DETAIL)]
+
+
+@pytest.mark.asyncio
+async def test_sse_reply_empty_stream_persists_and_sends_fallback(monkeypatch):
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _make_fake_anthropic([]))
+    captured = {}
+
+    async def _fake_append_message_pair(round_id, user_content, assistant_content, hole_number=None):
+        captured["assistant_content"] = assistant_content
+
+    monkeypatch.setattr(caddie_routes.sessions, "append_message_pair", _fake_append_message_pair)
+
+    frames = await _collect(
+        caddie_routes._sse_reply(
+            "fake-key", "sys", [{"role": "user", "content": "..."}],
+            log_context="test", round_id="round-1", transcript="...", hole_number=1,
+        )
+    )
+    events = _parse_sse(frames)
+    assert events == [("done", {})]  # no token frames at all
+    assert captured["assistant_content"] == "Say that once more? I want to get this right."
+
+
+# ── Route-level gates run before any streaming (no DB) ──────────────────────
+
+
+def _make_client() -> TestClient:
+    app = FastAPI()
+    app.include_router(caddie_routes.router)
+    app.dependency_overrides[current_user_id] = lambda: "test-user"
+    return TestClient(app)
+
+
+def test_session_voice_stream_500s_before_streaming_when_api_key_missing(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    client = _make_client()
+    res = client.post(
+        "/api/caddie/session/voice/stream",
+        json={"round_id": "round-1", "transcript": "hi", "personality_id": "classic", "hole_number": 1},
+    )
+    assert res.status_code == 500
+    assert res.headers["content-type"].startswith("application/json")
+
+
+def test_voice_stream_500s_before_streaming_when_api_key_missing(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    client = _make_client()
+    res = client.post(
+        "/api/caddie/voice/stream",
+        json={"transcript": "hi", "personality_id": "classic", "hole_number": 1},
+    )
+    assert res.status_code == 500
+    assert res.headers["content-type"].startswith("application/json")
+
+
+def test_session_voice_stream_404s_before_streaming_when_round_not_owned(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+
+    async def _fake_get_owned_session(round_id, user_id):
+        raise HTTPException(404, "Round not found")
+
+    monkeypatch.setattr(caddie_routes, "get_owned_session", _fake_get_owned_session)
+    client = _make_client()
+    res = client.post(
+        "/api/caddie/session/voice/stream",
+        json={"round_id": "round-1", "transcript": "hi", "personality_id": "classic", "hole_number": 1},
+    )
+    assert res.status_code == 404
+
+
+# ── Gate-level: persona downgrade to classic (mocked, no DB) ────────────────
+
+
+@pytest.mark.asyncio
+async def test_build_voice_prompt_downgrades_invisible_persona_to_classic(monkeypatch):
+    async def _fake_personality_visible(persona_id, user_id=None):
+        return False  # every persona is "invisible" to this caller
+
+    loaded_ids = []
+
+    async def _fake_load_personality(persona_id):
+        loaded_ids.append(persona_id)
+        return CaddiePersonality(
+            id=persona_id, name="Classic", description="", avatar="🏌️",
+            system_prompt="Classic system prompt.",
+        )
+
+    monkeypatch.setattr(caddie_routes, "personality_visible", _fake_personality_visible)
+    monkeypatch.setattr(caddie_routes, "load_personality", _fake_load_personality)
+
+    request = VoiceCaddieRequest(transcript="hi", personality_id="someone-elses-custom-persona", hole_number=1)
+    system_prompt, messages, persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
+
+    assert persona_id == "classic"
+    assert loaded_ids == ["classic"]
+    assert "Classic system prompt." in system_prompt
+    assert messages[-1] == {"role": "user", "content": "hi"}
+
+
+@pytest.mark.asyncio
+async def test_build_session_voice_prompt_downgrades_invisible_persona_to_classic(monkeypatch):
+    session = RoundSession(round_id="round-1", user_id="user-1", current_hole=1)
+
+    async def _fake_get_owned_session(round_id, user_id):
+        return session
+
+    async def _fake_personality_visible(persona_id, user_id=None):
+        return False
+
+    loaded_ids = []
+
+    async def _fake_load_personality(persona_id):
+        loaded_ids.append(persona_id)
+        return CaddiePersonality(
+            id=persona_id, name="Classic", description="", avatar="🏌️",
+            system_prompt="Classic system prompt.",
+        )
+
+    async def _noop_set_current_hole(round_id, hole_number):
+        return None
+
+    async def _fake_get_top_memories(user_id):
+        return []
+
+    monkeypatch.setattr(caddie_routes, "get_owned_session", _fake_get_owned_session)
+    monkeypatch.setattr(caddie_routes, "personality_visible", _fake_personality_visible)
+    monkeypatch.setattr(caddie_routes, "load_personality", _fake_load_personality)
+    monkeypatch.setattr(caddie_routes.sessions, "set_current_hole", _noop_set_current_hole)
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_top_memories", _fake_get_top_memories)
+
+    request = caddie_routes.SessionVoiceRequest(
+        round_id="round-1", transcript="what club?", personality_id="someone-elses-custom-persona",
+        hole_number=4,
+    )
+    system_prompt, messages, persona_id = await caddie_routes._build_session_voice_prompt(request, "user-1")
+
+    assert persona_id == "classic"
+    assert loaded_ids == ["classic"]
+    assert "Classic system prompt." in system_prompt
+    assert "Current hole: #4" in system_prompt
+    assert messages[-1] == {"role": "user", "content": "what club?"}

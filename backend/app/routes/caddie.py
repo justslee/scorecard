@@ -1,11 +1,13 @@
 """Caddie API routes - recommendation, course intelligence, voice, personalities, sessions."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 import anthropic
+import json
 import logging
 import os
 import time
-from typing import Optional
+from typing import AsyncIterator, Optional
 from pydantic import BaseModel
 
 from app.caddie.types import (
@@ -472,16 +474,18 @@ async def session_recommend(request: SessionRecommendRequest, user_id: str = Dep
 # ── Session-aware voice ──
 
 
-@router.post("/session/voice", response_model=VoiceCaddieResponse)
-async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(current_user_id)):
-    """Voice caddie using session state — remembers entire round conversation.
+async def _build_session_voice_prompt(
+    request: SessionVoiceRequest, user_id: str,
+) -> tuple[str, list[dict], str]:
+    """Assemble the session-aware system prompt + messages for /session/voice
+    AND its streaming twin — the one place this context logic lives, so the
+    two mouths can't drift (audit #6). Runs ownership + persona-visibility
+    gates and all session-state reads; the caller does the ANTHROPIC_API_KEY
+    check separately (before this, so a missing key never touches DB reads).
 
-    Caller must own the round.
+    Caller must own the round (enforced here via get_owned_session — 404s).
+    Returns (system_prompt, messages, persona_id).
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
-
     session = await get_owned_session(request.round_id, user_id)
 
     # Visibility gate: never load another user's private persona prompt —
@@ -575,6 +579,21 @@ or known tendencies when relevant.
 
 {HAZARD_GROUNDING_RULE}"""
 
+    return system_prompt, messages, persona_id
+
+
+@router.post("/session/voice", response_model=VoiceCaddieResponse)
+async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(current_user_id)):
+    """Voice caddie using session state — remembers entire round conversation.
+
+    Caller must own the round.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
+
+    system_prompt, messages, _persona_id = await _build_session_voice_prompt(request, user_id)
+
     try:
         client = anthropic.Anthropic(api_key=api_key)
         model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
@@ -605,6 +624,110 @@ or known tendencies when relevant.
     except Exception:
         log.exception("session_voice failed")  # traceback to the journal
         raise HTTPException(500, _CADDIE_ERROR_DETAIL)
+
+
+# ── Shared SSE generator (session + stateless streaming twins) ──
+
+
+async def _sse_reply(
+    api_key: str,
+    system_prompt: str,
+    messages: list[dict],
+    *,
+    log_context: str,
+    round_id: Optional[str] = None,
+    transcript: Optional[str] = None,
+    hole_number: Optional[int] = None,
+) -> AsyncIterator[str]:
+    """Stream a Claude reply as SSE frames — the async twin of the
+    `client.messages.create(...)` call in session_voice/voice_caddie, with
+    IDENTICAL params (model, max_tokens, temperature). Runs only AFTER the
+    caller has done all auth/gate/prompt-assembly work and committed the
+    200 OK + streaming headers, so nothing here can turn into a JSON error
+    response — failures become `event: error` frames instead.
+
+    Framing (internal contract, not a shared model — see
+    specs/voice-streaming-replies-plan.md §1):
+        event: token\\ndata: <json-encoded delta>\\n\\n   # zero or more
+        event: done\\ndata: {}\\n\\n                       # exactly one on success
+        event: error\\ndata: <calm copy>\\n\\n              # exactly one on failure
+
+    Persistence (session flavor only, round_id is not None): the FULL
+    assembled text is persisted exactly once, at the very end, gated on
+    `completed`. A client disconnect or a mid-stream Anthropic error means
+    `completed` never flips True, so nothing persists — an abandoned or
+    truncated turn is dropped from history entirely rather than wedging a
+    partial reply into the round's conversation ledger.
+    """
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+    parts: list[str] = []
+    completed = False
+    try:
+        async with client.messages.stream(
+            model=model,
+            max_tokens=300,
+            temperature=0.7,
+            system=system_prompt,
+            messages=messages,
+        ) as stream:
+            async for text in stream.text_stream:
+                if text:
+                    parts.append(text)
+                    yield f"event: token\ndata: {json.dumps(text)}\n\n"
+        completed = True
+    except anthropic.AuthenticationError:
+        log.exception(f"{log_context} auth failed")
+        yield f"event: error\ndata: {json.dumps(_CADDIE_ERROR_DETAIL)}\n\n"
+        return
+    except Exception:
+        log.exception(f"{log_context} failed")  # traceback to the journal, never to the client
+        yield f"event: error\ndata: {json.dumps(_CADDIE_ERROR_DETAIL)}\n\n"
+        return
+
+    # Empty-content guard preserved — mirrors `_first_text(...) or "Say that
+    # once more?"` in the non-streaming twins.
+    full = "".join(parts) or "Say that once more? I want to get this right."
+    if round_id is not None and completed:
+        # Atomic dual append — either both turns persist or neither.
+        await sessions.append_message_pair(
+            round_id,
+            user_content=transcript,
+            assistant_content=full,
+            hole_number=hole_number,
+        )
+    yield "event: done\ndata: {}\n\n"
+
+
+@router.post("/session/voice/stream")
+async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depends(current_user_id)):
+    """Streaming twin of /session/voice — same auth/gates/prompt assembly,
+    a token-by-token SSE reply instead of one JSON blob (specs/voice-streaming-replies-plan.md).
+
+    ALL gate + context work (ownership, persona visibility, prompt assembly)
+    runs here, BEFORE the StreamingResponse is constructed — so any failure
+    (missing API key, round not owned, etc.) is still a normal JSON
+    HTTPException with headers not yet sent, identical to /session/voice.
+    Only the Anthropic call itself runs inside the generator, after 200 OK.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
+
+    system_prompt, messages, _persona_id = await _build_session_voice_prompt(request, user_id)
+
+    return StreamingResponse(
+        _sse_reply(
+            api_key,
+            system_prompt,
+            messages,
+            log_context="session_voice_stream",
+            round_id=request.round_id,
+            transcript=request.transcript,
+            hole_number=request.hole_number,
+        ),
+        media_type="text/event-stream",
+    )
 
 
 # ── Original stateless endpoints (still available) ──
@@ -908,18 +1031,15 @@ async def compute_player_stats(
     return stats.model_dump()
 
 
-@router.post("/voice", response_model=VoiceCaddieResponse)
-async def voice_caddie(
-    request: VoiceCaddieRequest,
-    user_id: str = Depends(current_user_id),
-):
-    """Stateless voice caddie (use /session/voice for session-aware).
-
-    Auth required — Anthropic spend is metered against our project keys."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
-
+async def _build_voice_prompt(
+    request: VoiceCaddieRequest, user_id: str,
+) -> tuple[str, list[dict], str]:
+    """Assemble the stateless system prompt + messages for /voice AND its
+    streaming twin — mirrors _build_session_voice_prompt so the two mouths
+    stay identical (audit #6). Runs the persona-visibility gate; the caller
+    does the ANTHROPIC_API_KEY check separately. Returns
+    (system_prompt, messages, persona_id).
+    """
     # Same visibility gate as session_voice — private personas stay private.
     persona_id = (
         request.personality_id
@@ -984,6 +1104,23 @@ but keep it golf-focused. Never break character.
 
 {HAZARD_GROUNDING_RULE}"""
 
+    return system_prompt, messages, persona_id
+
+
+@router.post("/voice", response_model=VoiceCaddieResponse)
+async def voice_caddie(
+    request: VoiceCaddieRequest,
+    user_id: str = Depends(current_user_id),
+):
+    """Stateless voice caddie (use /session/voice for session-aware).
+
+    Auth required — Anthropic spend is metered against our project keys."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
+
+    system_prompt, messages, _persona_id = await _build_voice_prompt(request, user_id)
+
     try:
         client = anthropic.Anthropic(api_key=api_key)
         model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
@@ -1003,3 +1140,25 @@ but keep it golf-focused. Never break character.
     except Exception:
         log.exception("voice_caddie failed")
         raise HTTPException(500, _CADDIE_ERROR_DETAIL)
+
+
+@router.post("/voice/stream")
+async def voice_caddie_stream(
+    request: VoiceCaddieRequest,
+    user_id: str = Depends(current_user_id),
+):
+    """Streaming twin of /voice (stateless) — same gate + prompt assembly,
+    a token-by-token SSE reply instead of one JSON blob
+    (specs/voice-streaming-replies-plan.md). No round_id, so nothing is
+    persisted — the stateless path has never kept server-side history.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
+
+    system_prompt, messages, _persona_id = await _build_voice_prompt(request, user_id)
+
+    return StreamingResponse(
+        _sse_reply(api_key, system_prompt, messages, log_context="voice_caddie_stream"),
+        media_type="text/event-stream",
+    )

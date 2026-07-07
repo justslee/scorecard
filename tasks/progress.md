@@ -3,6 +3,130 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — caddie text replies STREAM into the sheets (NOTICEABLE — integration/next, DONE)
+
+`specs/voice-streaming-replies-plan.md` (audit P2 #5, biggest perceived-latency win). The
+golfer now sees the caddie's text reply begin rendering in <1s instead of waiting for the
+full Claude turn. Text-only — TTS unchanged (still speaks once, on `done`); the realtime
+orb (`voice/realtime.ts`) untouched; the JSON endpoints (`/session/voice`, `/voice`,
+`VoiceCaddieResponse`) stay byte-for-byte the same fallback contract.
+
+**Backend** (`backend/app/routes/caddie.py`): extracted the prompt/context assembly shared
+by the JSON endpoints and their new streaming twins into `_build_session_voice_prompt` /
+`_build_voice_prompt` (no copy-paste drift between the two mouths). Added two additive SSE
+endpoints, `POST /caddie/session/voice/stream` and `POST /caddie/voice/stream`
+(`StreamingResponse`, `text/event-stream`). ALL auth/ownership/persona gates + prompt
+assembly run BEFORE the stream is constructed, so gate failures are still normal JSON
+errors. The shared `_sse_reply` generator uses `anthropic.AsyncAnthropic` with model params
+identical to the non-streaming call; emits `event: token`/`done`/`error` frames; persists
+the session turn exactly once via `append_message_pair`, gated on `completed` (nothing
+persists on disconnect or mid-stream error); never leaks `str(e)`/traceback in an error
+frame (`_CADDIE_ERROR_DETAIL` only, `log.exception` to the journal).
+
+**Frontend** (`frontend/src/lib/caddie/api.ts`): new `streamCaddieReply` (fetch +
+`getReader()`, hand-parsed SSE — `EventSource` can't carry the auth header/JSON body) with
+a timeout model distinct from `postWithTimeout`: a first-token fail-fast timeout throws
+`BeforeFirstByteError` (fallback-eligible), a per-token idle timeout is TERMINAL once a
+token has rendered (no whole-body timeout — a live stream can run long). Feature-detects
+`res.body.getReader` with a full-body non-progressive fallback for WKWebView variance. New
+`sessionVoiceStream`/`talkToCaddieStream` thin wrappers; `sessionVoice`/`talkToCaddie`/
+`postWithTimeout` untouched (final fallback). New shared `frontend/src/lib/caddie/
+stream-buffer.ts` (`useStreamBuffer`) — an rAF-coalesced token buffer (~1 flush/frame, calm
+even fill not per-token flicker); scoped to `window.requestAnimationFrame` specifically
+(not the bare global) so a different test file's `vi.useFakeTimers()` polyfill can't leak a
+dead rAF stub across files — falls back to a timer where real rAF is unavailable.
+`CaddieSheet.tsx` gets a streaming-first 3-tier ladder (session-stream → stateless-stream →
+stateless JSON), advancing only on `BeforeFirstByteError`; once a token renders, any
+failure is terminal (discard partial, calm error, never fall through — would
+double-render/double-speak). `LooperSheet.tsx` gets a 2-tier ladder via a new optional
+`streamingTurn` prop on `LooperSheetShell` (additive — tee-time's own shell instance omits
+it, unaffected). Both commit conv history / fire `tts.speak` exactly once, on the full text
+only, after the stream resolves.
+
+**Tests**: `backend/tests/test_voice_stream.py` (12 tests, no Postgres — monkeypatched
+`AsyncAnthropic`, mocked `get_owned_session`/`personality_visible`/`append_message_pair`):
+token/done emission, exact model params, session-flavor persists COMPLETE text,
+stateless-flavor never persists, mid-stream exception → single calm error frame + no
+persist, auth-error → calm error, empty stream → persists the "Say that once more?"
+fallback, route-level gates (missing key → 500 JSON before streaming, 404 before
+streaming, persona downgrade). `frontend/src/lib/caddie/api.stream.test.ts` (10 tests):
+token accumulation, first-token timeout → `BeforeFirstByteError`, idle timeout → terminal
+(and a live stream past the idle window does NOT time out), mid-stream error (message =
+SSE calm copy, never `str(e)`), external abort propagates as-is pre/post-token, non-2xx →
+`BeforeFirstByteError`, getReader-absent buffered fallback (onToken never called). Extended
+`CaddieSheet.session.test.tsx` (+8 tests) for the 3-tier ladder, progressive render, and
+`tts.speak` called exactly once with the full text.
+
+**Flaky-test note (fixed, not a product bug)**: the full `vitest run` intermittently hung
+one of the new CaddieSheet streaming tests — traced to `vi.useFakeTimers()` in an unrelated
+Node-environment test file (`api.stream.test.ts`/`api.timeout.test.ts`) installing a
+`requestAnimationFrame` polyfill onto `globalThis` that can outlive `vi.useRealTimers()`
+within the same worker; a bare-identifier `typeof requestAnimationFrame` check in a LATER
+jsdom test file would then find a dead stub. Fixed by scoping `stream-buffer.ts`'s check to
+`window.requestAnimationFrame` specifically, plus removing unnecessary real-timer delays
+from test mocks (`emitTokensSync` alongside the one dedicated `emitTokensProgressively`
+test). 10/10 full-suite runs green after the fix.
+
+Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` success,
+`voice-tests --smoke` 274/274, `npx vitest run` 1558/1558 (72 files) — 10 consecutive
+green full-suite runs. Backend: `ruff check .` clean, new + adjacent voice test files
+23–52 passed locally (no Postgres touched; DB-backed ownership tests run in CI).
+
+Deviation from plan: none functionally — the `_sse_reply` generator takes `api_key` as an
+explicit parameter (plan's pseudocode implied a closure) for testability; the stream-buffer
+rAF-fallback's `window`-scoping (vs. the plan's implied bare-identifier check) was an
+implementation detail added to fix the cross-file test flake above, not a behavior change.
+
+Classified **NOTICEABLE** — the owner can watch the caddie's reply stream in on
+TestFlight instead of the old "spinner then whole answer" behavior. Commit `e3a0169` on
+`integration/next`, pushed.
+
+## 2026-07-07 — client timeouts + single retry on caddie voice reply calls (SILENT — integration/next, DONE)
+
+`specs/voice-reply-timeouts-plan.md` (audit P2 #7, "bulletproofing the voice agent"). The three
+caddie voice REPLY calls could hang forever on flaky on-course networks because `fetchAPI` has no
+timeout. Added a contained `postWithTimeout<T>` helper (exported for tests) to
+`frontend/src/lib/caddie/api.ts` with per-attempt timeout + transient-only retry, and routed:
+- `talkToCaddie` (`/caddie/voice`, terminal call, no downstream fallback) — 10s timeout, 1 retry,
+  500ms backoff.
+- `sessionVoice` (`/caddie/session/voice`, CaddieSheet already falls back to `talkToCaddie` on
+  failure) — 8s timeout, no retry (fail fast into the existing fallback).
+- `speakCaddieReply` (`/api/voice/speak` TTS, best-effort/non-fatal) — inline 10s timeout that
+  COMPOSES the caller's existing overlap/stop `AbortSignal` rather than clobbering it (no
+  normalization — `useSheetTTS` logs raw `err.name` for telemetry).
+
+Retry classification (locked): only our timeout firing (`timedOut` closure flag, not
+`err.name` sniffing) or `err instanceof TypeError` (network drop) is transient → exhausted
+transient throws a calm `CALM_REPLY_ERROR` string that passes `humanizeVoiceError` unchanged.
+HTTP errors and external caller aborts propagate verbatim (no retry — a returned HTTP response is
+deterministic; retrying risks double-generation since the LLM turn already ran server-side).
+`fetchAPI` (`src/lib/api.ts`) deliberately stays timeout-free — it also backs multipart
+uploads/course-search/CRUD, where a global timeout would break long requests.
+Untouched per plan: `CaddieSheet.tsx`, `LooperSheet.tsx`, `useSheetTTS.ts`, `dictation.ts`,
+`types.ts`, `models.py`, `voice/realtime.ts` (realtime warm-path mic invariants — different pipeline).
+
+- New `frontend/src/lib/caddie/api.timeout.test.ts` — 9 tests: resolves normally + no leaked
+  timer, timeout→calm (no `AbortError`/`signal is aborted` leak), retry-once-then-succeed on
+  `TypeError`, no-retry-on-HTTP-error (verbatim rethrow), timer cleanup on both success/error
+  paths, external-abort composition (propagates as-is, not CALM, not retried), the
+  `humanizeVoiceError` invariant guard, and `speakCaddieReply`'s timeout + already-aborted-signal
+  composition. All 9 pass.
+- Gates green: `npm run lint` (clean), `npx tsc --noEmit` (clean), `npm run build` (success),
+  `voice-tests --smoke` (274/274 pass), `vitest run api.timeout.test.ts
+  CaddieSheet.session.test.tsx dictation.test.ts` (28/28 pass — session test mocks the whole api
+  module so the helper isn't exercised there, as expected; dictation.ts untouched).
+- No dependency added; no `package-lock.json` change. No `/security-review` needed (pure
+  client-side robustness change, no new endpoint/auth/data-handling).
+- Classified **silent** (no user-visible UI/behavior change on the happy path — only changes
+  bounded-vs-infinite failure behavior on flaky networks) — rides in the current
+  `integration/next` bundle, no owner ping needed on its own.
+- Commit `2329fb7` on `integration/next`, pushed.
+- eng-lead (cycle 4): reviewed the diff against the plan (logic + 9 tests faithful, scope clean);
+  no separate reviewer/designer/security-review (silent, additive, well-tested, no UI/endpoints).
+  Opened the FRESH rolling bundle PR **#104** (`integration/next` → `main`) — bundle is
+  **silent-only so far → NOT awaiting owner approval**; accumulates until a noticeable item lands.
+  Also corrected the stale #103 board card (Needs Review → Shipped, v1.0.759).
+
 ## 2026-07-07 — round-page Ask Caddie pill adopts the Looper ink-orb identity (NOTICEABLE — integration/next, DONE)
 
 `specs/looper-orb-bundle2-plan.md` (bundle 2 of the Looper orb rollout). Restyles the round
@@ -6456,3 +6580,14 @@ hygiene). PR #103 body updated with checklist + status. Board card created in Ne
 (Bundle #103: Looper orb — bundle 2). No push notification (per cycle rule — owner replies
 in-session or on the board). Awaiting owner "ship it" → release-manager builds TestFlight
 from integration/next, then merges → main + cuts fresh integration/next.
+
+---
+
+## 2026-07-07 — SHIPPED: #103 Looper identity on the round pill + map error restyle (loop cycles 2-3)
+
+Owner "ship it". Merge 1070f18 → main (frontend-only). TestFlight v1.0.759
+(build 202607071309). Bundle built by loop cycles 2-3: map-viewer ErrorScreen
+restyle (silent) + round-page Ask Caddie pill in the Looper ink-orb identity
+(noticeable — closes looper-orb bundle 2's identity half). Backlog de-staled
+in cycle 2 (4 shipped items re-tagged). integration/next resynced; hourly
+loop continues.

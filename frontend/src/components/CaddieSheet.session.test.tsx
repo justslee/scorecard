@@ -9,17 +9,58 @@
 // component with the backend + mic mocked.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, act, configure } from "@testing-library/react";
+
+// The streaming ladder's progressive render relies on a REAL setTimeout
+// fallback (jsdom has no requestAnimationFrame — see lib/caddie/stream-buffer.ts).
+// Under a full parallel `vitest run` (many jsdom environments contending for
+// CPU), that real timer can legitimately take longer than testing-library's
+// default 1000ms polling window to fire — a false-negative flake, not a logic
+// bug (these tests pass reliably in isolation). Widen the window generously;
+// this doesn't mask a real failure, it just gives slow CI/parallel runs headroom.
+configure({ asyncUtilTimeout: 5000 });
+vi.setConfig({ testTimeout: 10000 });
 
 // ── Mocks ──
+//
+// BeforeFirstByteError must be a REAL class (not vi.fn()) — CaddieSheet's
+// ladder does `instanceof BeforeFirstByteError` checks against the SAME
+// mocked module, so the class identity must match exactly. vi.hoisted() so
+// both the (hoisted) vi.mock factory below AND test bodies can construct it.
+const { MockBeforeFirstByteError } = vi.hoisted(() => {
+  class MockBeforeFirstByteError extends Error {
+    constructor(message = "No reply yet — trying another way.") {
+      super(message);
+      this.name = "BeforeFirstByteError";
+    }
+  }
+  return { MockBeforeFirstByteError };
+});
 vi.mock("@/lib/caddie/api", () => ({
-  sessionVoice: vi.fn(),
   sessionRecommend: vi.fn(),
   talkToCaddie: vi.fn(),
   fetchRecommendation: vi.fn(),
+  sessionVoiceStream: vi.fn(),
+  talkToCaddieStream: vi.fn(),
+  BeforeFirstByteError: MockBeforeFirstByteError,
 }));
 vi.mock("@/lib/storage", () => ({ getGolferProfile: vi.fn(() => null) }));
 vi.mock("@/lib/caddie/clubs", () => ({ buildClubMap: vi.fn(() => ({})) }));
+
+// useSheetTTS — spied directly so "tts.speak called exactly once with the
+// full text" is a clean assertion, independent of the localStorage-gated
+// mute pref (default OFF) and the real speakCaddieReply fetch.
+const ttsSpeakSpy = vi.fn();
+const ttsUnlockSpy = vi.fn();
+const ttsStopSpy = vi.fn();
+vi.mock("@/hooks/useSheetTTS", () => ({
+  useSheetTTS: () => ({
+    unlock: ttsUnlockSpy,
+    speak: ttsSpeakSpy,
+    stop: ttsStopSpy,
+    isSpeaking: false,
+  }),
+}));
 
 const startSpy = vi.fn().mockResolvedValue(undefined);
 const stopSpy = vi.fn();
@@ -70,19 +111,56 @@ vi.mock("@/lib/voice/deepgram-live", () => ({
 
 import CaddieSheet from "./CaddieSheet";
 import {
-  sessionVoice,
   sessionRecommend,
   talkToCaddie,
   fetchRecommendation,
+  sessionVoiceStream,
+  talkToCaddieStream,
 } from "@/lib/caddie/api";
 import { transcribeBlob } from "@/lib/voice/deepgram";
 import type { CaddieRecommendation } from "@/lib/caddie/types";
 
-const sessionVoiceMock = vi.mocked(sessionVoice);
 const sessionRecommendMock = vi.mocked(sessionRecommend);
 const talkToCaddieMock = vi.mocked(talkToCaddie);
 const fetchRecommendationMock = vi.mocked(fetchRecommendation);
 const transcribeMock = vi.mocked(transcribeBlob);
+const sessionVoiceStreamMock = vi.mocked(sessionVoiceStream);
+const talkToCaddieStreamMock = vi.mocked(talkToCaddieStream);
+
+/** Emits `tokens` progressively (a real tick between each, so tests can
+ *  observe the rAF-coalesced partial render before the full text lands) and
+ *  resolves with the joined string. `onToken` lives at `opts.onToken` on
+ *  both streaming wrappers' second argument. Reserved for the ONE test that
+ *  actually asserts an intermediate render — every other streaming-mock use
+ *  should prefer `emitTokensSync` below, which has no real-timer dependency
+ *  and so isn't sensitive to scheduling delays under a loaded, parallel
+ *  `vitest run` (CaddieSheet's own rAF-fallback flush, exercised for real,
+ *  is dependency enough). */
+async function emitTokensProgressively(
+  opts: { onToken: (delta: string) => void },
+  tokens: string[],
+): Promise<string> {
+  let full = "";
+  for (const t of tokens) {
+    await new Promise((r) => setTimeout(r, 0));
+    opts.onToken(t);
+    full += t;
+  }
+  return full;
+}
+
+/** Emits `tokens` synchronously (no artificial macrotask delay between them —
+ *  `async` only for the Promise<string> return shape, no `await` inside) and
+ *  resolves with the joined string — the low-flake default for streaming
+ *  mocks that only need the FINAL text, not an observed intermediate one. */
+async function emitTokensSync(opts: { onToken: (delta: string) => void }, tokens: string[]): Promise<string> {
+  let full = "";
+  for (const t of tokens) {
+    opts.onToken(t);
+    full += t;
+  }
+  return full;
+}
 
 const REC: CaddieRecommendation = {
   club: "7-iron",
@@ -200,35 +278,63 @@ describe("CaddieSheet — session-first recommendation", () => {
   });
 });
 
-describe("CaddieSheet — session voice path carries the real persona id", () => {
-  it("sends the transcript to /session/voice with personality_id + round_id", async () => {
+describe("CaddieSheet — streaming ladder (specs/voice-streaming-replies-plan.md)", () => {
+  it("tier 1: streams the reply from /session/voice/stream, renders progressively, updates history, speaks once", async () => {
     transcribeMock.mockResolvedValueOnce({ transcript: "what club from here?" } as never);
-    sessionVoiceMock.mockResolvedValueOnce({ response: "Easy 7. Center of the green." });
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) =>
+      emitTokensProgressively(opts, ["Easy 7. ", "Center of the green."]),
+    );
     const props = renderSheet();
 
     fireEvent.click(screen.getByLabelText("Start recording"));
     fireEvent.click(await screen.findByLabelText("Stop recording"));
 
-    await waitFor(() => expect(sessionVoiceMock).toHaveBeenCalledTimes(1));
-    expect(sessionVoiceMock).toHaveBeenCalledWith({
-      round_id: "round-123",
-      transcript: "what club from here?",
-      personality_id: "strategist",
-      hole_number: 3,
-    });
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+    expect(sessionVoiceStreamMock).toHaveBeenCalledWith(
+      { round_id: "round-123", transcript: "what club from here?", personality_id: "strategist", hole_number: 3 },
+      expect.objectContaining({ onToken: expect.any(Function) }),
+    );
+    expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
     expect(talkToCaddieMock).not.toHaveBeenCalled();
+
+    // Progressive: the first chunk renders before the second one lands.
+    expect(await screen.findByText(/Easy 7\./)).toBeTruthy();
     expect(await screen.findByText("Easy 7. Center of the green.")).toBeTruthy();
-    // Local display history still updates (server owns the canonical ledger).
+
+    // History updates with the FULL text only, once the stream resolves.
     expect(props.onUpdateConvHistory).toHaveBeenCalledWith([
       { role: "user", content: "what club from here?" },
       { role: "assistant", content: "Easy 7. Center of the green." },
     ]);
+    // TTS fires exactly once, with the complete text.
+    expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
+    expect(ttsSpeakSpy).toHaveBeenCalledWith("Easy 7. Center of the green.", "strategist");
   });
 
-  it("falls back to stateless /caddie/voice when the session call fails", async () => {
+  it("tier 1 -> tier 2: a pre-first-token session failure falls back to /caddie/voice/stream (still streaming)", async () => {
     transcribeMock.mockResolvedValueOnce({ transcript: "lay up or go?" } as never);
-    sessionVoiceMock.mockRejectedValueOnce(new Error("404"));
-    talkToCaddieMock.mockResolvedValueOnce({ response: "Lay up to 95." });
+    sessionVoiceStreamMock.mockRejectedValueOnce(new MockBeforeFirstByteError());
+    talkToCaddieStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Lay up to 95."]));
+    renderSheet();
+
+    fireEvent.click(screen.getByLabelText("Start recording"));
+    fireEvent.click(await screen.findByLabelText("Stop recording"));
+
+    await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
+    expect(talkToCaddieStreamMock).toHaveBeenCalledWith(
+      expect.objectContaining({ transcript: "lay up or go?", personality_id: "strategist", hole_number: 3 }),
+      expect.objectContaining({ onToken: expect.any(Function) }),
+    );
+    expect(talkToCaddieMock).not.toHaveBeenCalled(); // tier 2 succeeded — tier 3 never runs
+    expect(await screen.findByText("Lay up to 95.")).toBeTruthy();
+    expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("tier 1 -> tier 2 -> tier 3: both streaming tiers fail pre-first-token, lands on the non-streaming fallback", async () => {
+    transcribeMock.mockResolvedValueOnce({ transcript: "what now?" } as never);
+    sessionVoiceStreamMock.mockRejectedValueOnce(new MockBeforeFirstByteError());
+    talkToCaddieStreamMock.mockRejectedValueOnce(new MockBeforeFirstByteError());
+    talkToCaddieMock.mockResolvedValueOnce({ response: "Take the 8-iron." });
     renderSheet();
 
     fireEvent.click(screen.getByLabelText("Start recording"));
@@ -236,19 +342,53 @@ describe("CaddieSheet — session voice path carries the real persona id", () =>
 
     await waitFor(() => expect(talkToCaddieMock).toHaveBeenCalledTimes(1));
     expect(talkToCaddieMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        transcript: "lay up or go?",
-        personality_id: "strategist", // real backend id, never "steve"
-        hole_number: 3,
-      }),
+      expect.objectContaining({ transcript: "what now?", personality_id: "strategist", hole_number: 3 }),
     );
-    expect(await screen.findByText("Lay up to 95.")).toBeTruthy();
+    expect(await screen.findByText("Take the 8-iron.")).toBeTruthy();
+    expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
+    expect(ttsSpeakSpy).toHaveBeenCalledWith("Take the 8-iron.", "strategist");
+  });
+
+  it("a POST-first-token failure is TERMINAL — no fallback, partial discarded, calm error shown, TTS never fires", async () => {
+    transcribeMock.mockResolvedValueOnce({ transcript: "what club?" } as never);
+    sessionVoiceStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Partial reply "); // a token already rendered...
+      throw new Error("mid-stream failure — not a BeforeFirstByteError");
+    });
+    renderSheet();
+
+    fireEvent.click(screen.getByLabelText("Start recording"));
+    fireEvent.click(await screen.findByLabelText("Stop recording"));
+
+    // Never falls through to a lower tier once a token has rendered.
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+    expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
+    expect(talkToCaddieMock).not.toHaveBeenCalled();
+
+    // humanizeVoiceError passes short, human-looking messages through as-is
+    // (only raw/machine-looking text falls back to the generic calm copy).
+    expect(await screen.findByText("mid-stream failure — not a BeforeFirstByteError")).toBeTruthy();
+    expect(screen.queryByText(/Partial reply/)).toBeNull(); // discarded, not left on screen
+    expect(ttsSpeakSpy).not.toHaveBeenCalled(); // gated on `done` — never fires on a terminal failure
+  });
+
+  it("skips tier 1 entirely when there is no session (legacy/offline rounds)", async () => {
+    transcribeMock.mockResolvedValueOnce({ transcript: "what club?" } as never);
+    talkToCaddieStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Smooth 6."]));
+    renderSheet({ sessionActive: false });
+
+    fireEvent.click(screen.getByLabelText("Start recording"));
+    fireEvent.click(await screen.findByLabelText("Stop recording"));
+
+    await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
+    expect(sessionVoiceStreamMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Smooth 6.")).toBeTruthy();
   });
 });
 
 describe("CaddieSheet — live dictation (specs/caddie-live-dictation-plan.md)", () => {
   it("shows live words while speaking and sends the LIVE transcript — no blob upload, no Transcribing", async () => {
-    sessionVoiceMock.mockResolvedValueOnce({ response: "Smooth 8-iron." });
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Smooth 8-iron."]));
     renderSheet();
 
     fireEvent.click(screen.getByLabelText("Start recording"));
@@ -264,9 +404,10 @@ describe("CaddieSheet — live dictation (specs/caddie-live-dictation-plan.md)",
 
     fireEvent.click(screen.getByLabelText("Stop recording"));
 
-    await waitFor(() => expect(sessionVoiceMock).toHaveBeenCalledTimes(1));
-    expect(sessionVoiceMock).toHaveBeenCalledWith(
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+    expect(sessionVoiceStreamMock).toHaveBeenCalledWith(
       expect.objectContaining({ transcript: "what club from 150" }),
+      expect.objectContaining({ onToken: expect.any(Function) }),
     );
     // The whole point: no batch transcription, no "Transcribing…" dead state.
     expect(transcribeMock).not.toHaveBeenCalled();
@@ -278,22 +419,23 @@ describe("CaddieSheet — live dictation (specs/caddie-live-dictation-plan.md)",
   it("falls back to the blob upload when the live socket fails to start", async () => {
     liveState.startError = new Error("ws down");
     transcribeMock.mockResolvedValueOnce({ transcript: "lay up or go?" } as never);
-    sessionVoiceMock.mockResolvedValueOnce({ response: "Lay up to 95." });
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Lay up to 95."]));
     renderSheet();
 
     fireEvent.click(screen.getByLabelText("Start recording"));
     fireEvent.click(await screen.findByLabelText("Stop recording"));
 
-    await waitFor(() => expect(sessionVoiceMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
     expect(transcribeMock).toHaveBeenCalledTimes(1);
-    expect(sessionVoiceMock).toHaveBeenCalledWith(
+    expect(sessionVoiceStreamMock).toHaveBeenCalledWith(
       expect.objectContaining({ transcript: "lay up or go?" }),
+      expect.objectContaining({ onToken: expect.any(Function) }),
     );
   });
 
   it("falls back when live errored mid-utterance even with partial text", async () => {
     transcribeMock.mockResolvedValueOnce({ transcript: "full sentence from blob" } as never);
-    sessionVoiceMock.mockResolvedValueOnce({ response: "Got it." });
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Got it."]));
     renderSheet();
 
     fireEvent.click(screen.getByLabelText("Start recording"));
@@ -306,10 +448,11 @@ describe("CaddieSheet — live dictation (specs/caddie-live-dictation-plan.md)",
 
     fireEvent.click(screen.getByLabelText("Stop recording"));
 
-    await waitFor(() => expect(sessionVoiceMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
     expect(transcribeMock).toHaveBeenCalledTimes(1); // authoritative fallback
-    expect(sessionVoiceMock).toHaveBeenCalledWith(
+    expect(sessionVoiceStreamMock).toHaveBeenCalledWith(
       expect.objectContaining({ transcript: "full sentence from blob" }),
+      expect.objectContaining({ onToken: expect.any(Function) }),
     );
   });
 
@@ -323,7 +466,7 @@ describe("CaddieSheet — live dictation (specs/caddie-live-dictation-plan.md)",
     expect(
       await screen.findByText("No speech detected. Tap the mic to try again."),
     ).toBeTruthy();
-    expect(sessionVoiceMock).not.toHaveBeenCalled();
+    expect(sessionVoiceStreamMock).not.toHaveBeenCalled();
   });
 });
 
