@@ -6667,3 +6667,33 @@ CI also caught a REAL streaming race the review missed (flush-after-
 completion double-render) — fixed (56df95f) + deterministic test suite.
 Voice audit P1+P2 core COMPLETE. integration/next merged with main
 (e172dd7) and pushed.
+
+---
+
+## 2026-07-07 — RETRO cycle (loop cycle 6): rough-patch retrospective + board hygiene (SILENT)
+
+Step 0: no pending owner approvals. #103 (v1.0.759) and #104 (v1.0.767) both Shipped;
+comment threads empty — no owner feedback on v1.0.750/759/767. Sync: main == integration/next
+base (69285d4); bundle empty (only silent progress/retro commits ahead of main). Clean tree.
+
+PICKED: dispatched the `retro` agent (protocol: warranted "after a rough patch" — today = 9
+ships + 3 process incidents not yet distilled into lessons.md). Chosen over a manufactured
+marginal feature (own lesson: don't feed the loop with dormant work).
+
+RETRO OUTPUT (commit b5c6b71, pushed to integration/next):
+- lessons.md: 3 new reusable rules — (1) CI catches async/ordering races review misses →
+  cover streaming/timer code with DETERMINISTIC scheduler-controlled tests, not "review harder";
+  (2) ship.sh must never be piped, must `set -o pipefail` + assert cwd + absolute paths;
+  (3) verify a deploy/CI run by matching headSha, never `--limit 1` recency.
+- backlog.json: fixed 2 mis-tagged shipped items (map-viewer-error-screen-restyle → #103;
+  voice-tts-sheet-replies → #102); noted voice-agent-audit P1+P2 core COMPLETE; seeded 3
+  NORTHSTAR-grounded candidates (caddie-persona-tts-voices, caddie-hole-strategy-guides,
+  looper-brain-parity). Valid JSON, 127 items, no dup ids.
+
+BOARD HYGIENE (eng-lead): flagged by retro — flipped stale duplicate card "Bundle #104:
+voice reply timeouts + retry" from In Progress → Shipped (work shipped in v1.0.767; canonical
+record is the "streamed caddie replies + voice timeouts" Shipped card). Card "#103 Looper orb
+bundle 2" already Shipped (only body text stale — left as-is).
+
+NO owner ping: bundle remains SILENT-only (progress + retro docs/backlog). Accumulates until a
+noticeable item lands. integration/next @ b5c6b71 pushed; no open PR (correct — nothing to ship).
