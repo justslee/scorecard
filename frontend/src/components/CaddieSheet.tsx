@@ -188,6 +188,14 @@ export default function CaddieSheet({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [voiceAnswer, setVoiceAnswer] = useState<string | null>(null);
+  // True from the FIRST streamed token until the ladder resolves (success or
+  // terminal failure) — distinct from `isThinking` (true for the whole turn,
+  // including the pre-first-token wait). Gates the follow-up/clear CTAs and
+  // the mic re-arm so they don't mount/become tappable while the reply is
+  // still typing in (a tap on "Ask follow-up" mid-stream would blank
+  // `voiceAnswer` out from under the still-pushing buffer — a visible
+  // restart-from-blank bug the designer flagged).
+  const [isStreaming, setIsStreaming] = useState(false);
 
   // Tap mode state
   const [distanceInput, setDistanceInput] = useState("");
@@ -262,6 +270,7 @@ export default function CaddieSheet({
       setIsTranscribing(false);
       setIsThinking(false);
       setVoiceAnswer(null);
+      setIsStreaming(false);
       setDistanceInput("");
       setIsRecThinking(false);
       setRecommendation(null);
@@ -346,8 +355,12 @@ export default function CaddieSheet({
       setIsThinking(true);
       setError(null);
       setVoiceAnswer(null);
+      setIsStreaming(false); // flips true on the FIRST token — see onToken below
       const currentHistory = convHistoryRef.current;
-      const onToken = (delta: string) => answerBuffer.push(delta);
+      const onToken = (delta: string) => {
+        setIsStreaming(true); // no-op re-render after the first call (same value)
+        answerBuffer.push(delta);
+      };
 
       const askStatelessNonStream = async (): Promise<string> => {
         const profile = getGolferProfile();
@@ -423,6 +436,11 @@ export default function CaddieSheet({
         // even before React re-renders.
         convHistoryRef.current = newHistory;
         onUpdateConvHistory(newHistory);
+        // Drop any still-pending coalesced chunk FIRST: a flush scheduled for
+        // the next animation frame would otherwise land AFTER this overwrite
+        // and append the tail a second time ("Smooth 6.Smooth 6." — the race
+        // CI's slower frame timing exposed).
+        answerBuffer.cancel();
         setVoiceAnswer(responseText); // authoritative full text — overwrites any partial coalesced render
         tts.speak(responseText, personaId); // fires exactly once, on completion
       } catch (err) {
@@ -436,7 +454,10 @@ export default function CaddieSheet({
           humanizeVoiceError(err instanceof Error ? err.message : undefined, "Caddie unavailable — try again.")
         );
       } finally {
-        if (!isStale()) setIsThinking(false);
+        if (!isStale()) {
+          setIsThinking(false);
+          setIsStreaming(false); // reply complete (or terminally failed) — safe to re-arm controls
+        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -650,7 +671,9 @@ export default function CaddieSheet({
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  const showMic = mode === "voice" && phase !== "transcribing" && phase !== "thinking";
+  // `!isStreaming` — the mic doesn't re-arm until the reply has FINISHED
+  // typing in, not merely started (designer: premature-affordance drift).
+  const showMic = mode === "voice" && phase !== "transcribing" && phase !== "thinking" && !isStreaming;
 
   return (
     <AnimatePresence>
@@ -1059,6 +1082,8 @@ export default function CaddieSheet({
           </div>
 
           {/* Scrollable body — mic is NOT in here for voice mode (#2) */}
+          {/* TODO(audit): stick to bottom as the streaming answer grows past the
+              viewport (unless the user scrolled up) — follow-up, not this cycle. */}
           <div
             style={{
               flex: 1,
@@ -1074,6 +1099,7 @@ export default function CaddieSheet({
                 interimTranscript={interimTranscript}
                 transcript={transcript}
                 voiceAnswer={voiceAnswer}
+                isStreaming={isStreaming}
                 convHistory={convHistory}
                 error={error}
                 accent={accent}
@@ -1181,6 +1207,10 @@ interface VoiceBodyProps {
   interimTranscript: string;
   transcript: string;
   voiceAnswer: string | null;
+  /** True while a reply is still streaming in (first token → completion) —
+   *  the follow-up/clear CTAs stay unmounted until it flips false, so they
+   *  never fire mid-stream and blank out a still-growing answer. */
+  isStreaming: boolean;
   convHistory: VoiceCaddieMessage[];
   error: string | null;
   accent: string;
@@ -1195,6 +1225,7 @@ function VoiceBody({
   interimTranscript,
   transcript,
   voiceAnswer,
+  isStreaming,
   convHistory,
   error,
   accent,
@@ -1315,53 +1346,58 @@ function VoiceBody({
               </div>
             </div>
 
-            {/* Follow-up / clear */}
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                marginTop: 14,
-              }}
-            >
-              <button
-                onClick={onFollowUp}
+            {/* Follow-up / clear — unmounted until the reply has FINISHED
+                streaming (not merely started). Mounting these mid-stream let
+                a tap blank `voiceAnswer` out from under the still-growing
+                text, and caused the row to reflow underneath it. */}
+            {!isStreaming && (
+              <div
                 style={{
-                  flex: 1,
-                  padding: "11px 0",
-                  borderRadius: 99,
-                  border: `1px solid ${T.hairline}`,
-                  background: "transparent",
-                  color: T.ink,
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 14,
-                  cursor: "pointer",
-                  lineHeight: 1,
+                  display: "flex",
+                  gap: 8,
+                  marginTop: 14,
                 }}
               >
-                Ask follow-up
-              </button>
-              {convHistory.length > 2 && (
                 <button
-                  onClick={onClear}
+                  onClick={onFollowUp}
                   style={{
-                    padding: "11px 14px",
+                    flex: 1,
+                    padding: "11px 0",
                     borderRadius: 99,
                     border: `1px solid ${T.hairline}`,
                     background: "transparent",
-                    color: T.pencil,
-                    fontFamily: T.mono,
-                    fontSize: 9,
-                    letterSpacing: 1.2,
-                    textTransform: "uppercase",
+                    color: T.ink,
+                    fontFamily: T.serif,
+                    fontStyle: "italic",
+                    fontSize: 14,
                     cursor: "pointer",
                     lineHeight: 1,
                   }}
                 >
-                  Clear
+                  Ask follow-up
                 </button>
-              )}
-            </div>
+                {convHistory.length > 2 && (
+                  <button
+                    onClick={onClear}
+                    style={{
+                      padding: "11px 14px",
+                      borderRadius: 99,
+                      border: `1px solid ${T.hairline}`,
+                      background: "transparent",
+                      color: T.pencil,
+                      fontFamily: T.mono,
+                      fontSize: 9,
+                      letterSpacing: 1.2,
+                      textTransform: "uppercase",
+                      cursor: "pointer",
+                      lineHeight: 1,
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
           </motion.div>
         ) : phase === "listening" ? (
           <motion.div
