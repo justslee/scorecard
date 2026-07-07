@@ -490,16 +490,34 @@ export default function RoundPage() {
   // Real weather for the wind tiles (owner 2026-07-07: they were hardcoded).
   // One fetch per round mount; null = honest "no data" tiles, never fake.
   const [weather, setWeather] = useState<WeatherConditions | null>(null);
+  // Real per-hole elevation deltas + elevation-adjusted yards (USGS, computed
+  // server-side in course-intel — the owner wants the Elev tile back, honest).
+  const [intelByHole, setIntelByHole] = useState<Map<number, { elevFt: number; effectiveYards: number }>>(
+    () => new Map()
+  );
   const weatherAnchor = roundAnchor;
   const weatherLat = weatherAnchor?.lat;
   const weatherLng = weatherAnchor?.lng;
   useEffect(() => {
     if (weatherLat == null || weatherLng == null) return;
     let cancelled = false;
-    fetchWeather(weatherLat, weatherLng)
-      .then((w) => { if (!cancelled) setWeather(w); })
-      .catch(() => { /* tiles stay honest "—" */ });
-    return () => { cancelled = true; };
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // Retry with backoff: the first attempt can race Clerk auth on a cold
+    // app start (401 → owner saw permanent "no data" tiles on v1.0.739).
+    const DELAYS = [0, 3_000, 10_000, 30_000];
+    const attempt = (i: number) => {
+      fetchWeather(weatherLat, weatherLng)
+        .then((w) => { if (!cancelled) setWeather(w); })
+        .catch(() => {
+          if (cancelled || i + 1 >= DELAYS.length) return; // tiles stay honest "—"
+          timer = setTimeout(() => attempt(i + 1), DELAYS[i + 1]);
+        });
+    };
+    attempt(0);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [weatherLat, weatherLng]);
 
   // Tee-marker color source for the map(s) below. "" (not null) when the round
@@ -584,6 +602,17 @@ export default function RoundPage() {
             anchor?.lng,
             roundId,
           );
+          if (intel.weather) setWeather(intel.weather);
+          setIntelByHole(
+            new Map(
+              (intel.holes ?? [])
+                .filter((h) => h && typeof h.hole_number === "number")
+                .map((h) => [
+                  h.hole_number,
+                  { elevFt: h.elevation_change_ft ?? 0, effectiveYards: h.effective_yards ?? 0 },
+                ])
+            )
+          );
           // Enrich the offline bundle with hazards + plays-like yardages.
           const byHole = new Map(
             (intel.holes ?? [])
@@ -610,7 +639,8 @@ export default function RoundPage() {
             lastRecommendation: null,
           }).catch(() => {});
         } else if (anchor) {
-          await fetchWeather(anchor.lat, anchor.lng, roundId);
+          const w = await fetchWeather(anchor.lat, anchor.lng, roundId);
+          setWeather(w);
         }
       } catch {
         // Silent — recommendations degrade gracefully without intel.
@@ -918,14 +948,25 @@ export default function RoundPage() {
         sub: holeWind ? holeWind.label : `from ${compassFrom(weather.wind_direction)}`,
       }
     : { v: "—", sub: "no data" };
-  const gustTile = weather
-    ? { v: `${Math.round(weather.wind_gusts_mph)}mph`, sub: "gusts" }
-    : { v: "—", sub: "gusts" };
-  // Plays-like: wind-adjusted when the along-hole component is known;
-  // otherwise the plain from-tee distance, honestly labeled.
-  const playsBase = fcbFromTee?.center ?? distance;
+  // Elev tile — REAL per-hole USGS delta from course-intel (owner wants it
+  // back; never the old hardcoded '+3ft'). "—" until intel lands.
+  const holeIntel = intelByHole.get(currentHole) ?? null;
+  const elevTile = holeIntel
+    ? {
+        v: `${holeIntel.elevFt >= 0 ? "+" : ""}${Math.round(holeIntel.elevFt)}ft`,
+        sub: Math.abs(holeIntel.elevFt) < 3 ? "level" : holeIntel.elevFt > 0 ? "uphill" : "downhill",
+      }
+    : { v: "—", sub: "elev" };
+  // Plays-like: elevation-adjusted yards from intel when known, then wind on
+  // top; every label states exactly what was adjusted.
+  const playsBase = holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance);
   const playsTile = holeWind
-    ? { v: `${playsLikeYards(playsBase, holeWind.headMph)}Y`, sub: "wind-adj" }
+    ? {
+        v: `${playsLikeYards(playsBase, holeWind.headMph)}Y`,
+        sub: holeIntel ? "adjusted" : "wind-adj",
+      }
+    : holeIntel
+    ? { v: `${Math.round(playsBase)}Y`, sub: "elev-adj" }
     : { v: `${Math.round(playsBase)}Y`, sub: "from tee" };
   // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
   const shotPoint = shotPointForPath(hole.path);
@@ -1619,7 +1660,7 @@ export default function RoundPage() {
                       }}
                     >
                       <MapStat k="Wind" v={windTile.v} sub={windTile.sub} />
-                      <MapStat k="Gust" v={gustTile.v} sub={gustTile.sub} />
+                      <MapStat k="Elev" v={elevTile.v} sub={elevTile.sub} />
                       <MapStat k="Plays" v={playsTile.v} sub={playsTile.sub} />
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>

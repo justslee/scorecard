@@ -381,9 +381,10 @@ export default function HomePage() {
           </button>
 
           {/* Secondary row — Partners lives here now (its tab-bar slot became
-              the Looper orb, specs/looper-orb-plan.md) */}
+              the Looper orb). Two tiles only: the small "New round" duplicated
+              the hero card above and squeezed Partners off-screen on 390px
+              (owner screenshot 2026-07-07). */}
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <QuickAction icon="round" label="New round" sub="Solo or with friends" onClick={() => router.push("/round/new")} />
             <QuickAction
               icon="tournament"
               label="Tournament"
@@ -1044,6 +1045,7 @@ function QuickAction({ icon, label, sub, accent, onClick }: { icon: "round" | "t
       onClick={onClick}
       style={{
         flex: 1,
+        minWidth: 0, // never let min-content width push the page past the viewport
         padding: "12px 12px",
         borderRadius: 12,
         cursor: "pointer",

@@ -14,6 +14,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import { PulseDot } from "@/components/yardage/Voice";
 import { useLooperDictation } from "@/hooks/useLooperDictation";
+import { buildKeyterms } from "@/lib/voice/keyterms";
 import { talkToCaddie } from "@/lib/caddie/api";
 import { onLooperOpen } from "@/lib/looper-bus";
 import { useBodyScrollLock } from "@/lib/sheet";
@@ -284,7 +285,14 @@ export default function LooperSheet() {
   const [thinking, setThinking] = useState(false);
   const [turns, setTurns] = useState<LooperTurn[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const dictation = useLooperDictation();
+  // Auto-send: Deepgram's end-of-speech triggers the same path as tapping
+  // the mic to send (ref indirection — the handler is defined below).
+  const micTapRef = useRef<() => void>(() => {});
+  const dictation = useLooperDictation({
+    surface: "looper-general",
+    getKeyterms: () => buildKeyterms(),
+    onUtteranceEnd: () => micTapRef.current(),
+  });
   const openGenRef = useRef(0);
   const turnsRef = useRef<LooperTurn[]>([]);
   useEffect(() => {
@@ -356,6 +364,8 @@ export default function LooperSheet() {
       if (openGenRef.current === gen) setThinking(false);
     }
   }, [dictation]);
+
+  micTapRef.current = () => void handleMicTap();
 
   const phase: LooperPhase = dictation.listening ? "listening" : thinking ? "thinking" : "idle";
 

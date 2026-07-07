@@ -24,6 +24,7 @@
 import { fetchAPI } from '../api';
 
 import { PcmCapture } from './pcm-capture';
+import { keytermQuery } from './keyterms';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -35,14 +36,20 @@ const DEEPGRAM_WS_BASE =
   '&smart_format=true' +
   '&punctuate=true' +
   '&interim_results=true' +
+  // End-of-speech signal (fires after this much trailing silence) — powers
+  // auto-send in the sheets (specs/voice-agent-audit.md P1.3).
+  '&utterance_end_ms=1200' +
   '&language=en-US';
 
 /** Containerized (webm/opus via MediaRecorder) lets Deepgram auto-detect;
  *  the raw-PCM path must declare its encoding explicitly. */
-function wsUrlFor(transport: 'webm' | 'pcm'): string {
-  return transport === 'pcm'
-    ? DEEPGRAM_WS_BASE + '&encoding=linear16&sample_rate=16000&channels=1'
-    : DEEPGRAM_WS_BASE;
+function wsUrlFor(transport: 'webm' | 'pcm', keyterms: readonly string[]): string {
+  const base =
+    transport === 'pcm'
+      ? DEEPGRAM_WS_BASE + '&encoding=linear16&sample_rate=16000&channels=1'
+      : DEEPGRAM_WS_BASE;
+  // nova-3 keyterm prompting — bias toward golf/context vocabulary.
+  return base + keytermQuery(keyterms);
 }
 
 /** webm/opus MediaRecorder is the efficient path (Chrome/Android); anything
@@ -69,6 +76,9 @@ const TIMESLICE_MS = 250;
 export interface DeepgramLiveEvents {
   /** Fires frequently while the user speaks with the running accumulated text. */
   onInterim?: (text: string) => void;
+  /** Deepgram detected end-of-speech (~1.2s of trailing silence). Only fires
+   *  when SOMETHING was heard — silence alone never triggers it here. */
+  onUtteranceEnd?: () => void;
   /** Fires when Deepgram finalises a speech segment (is_final = true). */
   onFinal?: (text: string) => void;
   /** Fires on token-fetch or WebSocket error; the final path is unaffected. */
@@ -153,8 +163,11 @@ export class DeepgramLiveTranscriber {
   private accumulatedFinals = '';
   private latestInterim = '';
 
-  constructor(events: DeepgramLiveEvents) {
+  private keyterms: readonly string[];
+
+  constructor(events: DeepgramLiveEvents, opts?: { keyterms?: readonly string[] }) {
     this.events = events;
+    this.keyterms = opts?.keyterms ?? [];
   }
 
   /**
@@ -191,7 +204,7 @@ export class DeepgramLiveTranscriber {
 
     // Open the WebSocket. Deepgram browser auth uses the 'token' subprotocol
     // because browsers cannot set an Authorization header on a WebSocket.
-    const ws = new WebSocket(wsUrlFor(transport), ['token', token]);
+    const ws = new WebSocket(wsUrlFor(transport, this.keyterms), ['token', token]);
     this.ws = ws;
 
     return new Promise<void>((resolve, reject) => {
@@ -284,6 +297,19 @@ export class DeepgramLiveTranscriber {
   // ── Private ───────────────────────────────────────────────────────────────
 
   private handleMessage(raw: string): void {
+    // UtteranceEnd frames have no channel/alternatives — check them first.
+    try {
+      const frame = JSON.parse(raw) as { type?: string };
+      if (frame && frame.type === 'UtteranceEnd') {
+        // Guard: never auto-send silence — only fire when words were heard.
+        if (this.accumulatedFinals || this.latestInterim) {
+          this.events.onUtteranceEnd?.();
+        }
+        return;
+      }
+    } catch {
+      /* fall through to the transcript parser */
+    }
     const parsed = parseDeepgramLiveMessage(raw);
     if (!parsed) return;
 

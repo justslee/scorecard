@@ -1,11 +1,12 @@
 """Voice parsing API routes."""
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Form
 from pydantic import BaseModel
 import anthropic
 import logging
 import os
 import json
+from typing import Optional
 import re
 
 from app.services.deepgram import transcribe_audio, grant_live_token
@@ -42,6 +43,7 @@ _MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10MB cap — plenty for a 2 minute voice 
 @router.post("/transcribe")
 async def transcribe(
     audio: UploadFile = File(...),
+    keyterms: Optional[str] = Form(None),
     user_id: str = Depends(current_user_id),
 ):
     """Transcribe a one-shot recording (e.g. round setup, score entry) via Deepgram Nova-3.
@@ -60,7 +62,20 @@ async def transcribe(
     if len(body) > _MAX_AUDIO_BYTES:
         raise HTTPException(413, f"Audio too large ({len(body)} bytes)")
 
-    return await transcribe_audio(body, content_type=audio.content_type or "audio/webm")
+    # nova-3 keyterm prompting: JSON array of context/golf vocabulary from the
+    # client (player names, course names, club terms). Malformed → ignored.
+    terms: list[str] = []
+    if keyterms:
+        try:
+            parsed = json.loads(keyterms)
+            if isinstance(parsed, list):
+                terms = [str(t)[:80] for t in parsed if str(t).strip()][:50]
+        except (ValueError, TypeError):
+            terms = []
+
+    return await transcribe_audio(
+        body, content_type=audio.content_type or "audio/webm", keyterms=terms or None
+    )
 
 
 class VoiceScoreRequest(BaseModel):
@@ -157,3 +172,41 @@ Use the exact player names from the list above in your response."""
     except Exception:
         logging.getLogger("looper.voice").exception("parse_voice_scores failed")
         raise HTTPException(status_code=500, detail="Couldn't parse that — try saying the scores again.")
+
+# ── Voice telemetry (specs/voice-agent-audit.md P1.4) ────────────────────────
+# The iOS live-dictation fallback shipped broken for days because we had zero
+# visibility — the OWNER found it. Clients now report transport/fallback/
+# latency events; structured log lines make fallback rates greppable
+# (journalctl -u scorecard-api | grep voicetel).
+
+_tel_log = logging.getLogger("looper.voicetel")
+
+
+class VoiceTelemetryEvent(BaseModel):
+    surface: str
+    event: str
+    detail: Optional[str] = None
+    ms: Optional[int] = None
+
+
+class VoiceTelemetryBatch(BaseModel):
+    events: list[VoiceTelemetryEvent]
+
+
+@router.post("/telemetry")
+async def voice_telemetry(
+    batch: VoiceTelemetryBatch,
+    user_id: str = Depends(current_user_id),
+):
+    """Fire-and-forget client voice events → structured logs. Capped + clamped;
+    never fails the client (a telemetry error must not break dictation)."""
+    for e in batch.events[:40]:
+        _tel_log.info(
+            "voicetel surface=%s event=%s detail=%s ms=%s user=%s",
+            e.surface[:40],
+            e.event[:40],
+            (e.detail or "")[:120],
+            e.ms if e.ms is not None else "",
+            user_id[:12],
+        )
+    return {"ok": True}

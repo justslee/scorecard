@@ -7,6 +7,7 @@ import { Waveform } from "./Voice";
 import type { SeedPlayer } from "./Scorecard";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
+import { buildKeyterms } from "@/lib/voice/keyterms";
 import { parseVoiceScoresLocally } from "@/lib/voice/parseVoiceScores";
 import { missingScoreNote } from "@/lib/voice/confirm-guidance";
 import { fetchAPI } from "@/lib/api";
@@ -388,13 +389,18 @@ export default function ScoreSheet({
       const stream = recorder.getStream();
       if (stream && DeepgramLiveTranscriber.isSupported()) {
         try {
-          const live = new DeepgramLiveTranscriber({
-            onInterim: (t) => {
-              // Guard against stale gen — sheet may have closed or reopened.
-              if (openGenRef.current === gen) setInterimTranscript(t);
+          const live = new DeepgramLiveTranscriber(
+            {
+              onInterim: (t) => {
+                // Guard against stale gen — sheet may have closed or reopened.
+                if (openGenRef.current === gen) setInterimTranscript(t);
+              },
+              onError: () => { /* silent — one-shot Deepgram path is authoritative */ },
             },
-            onError: () => { /* silent — one-shot Deepgram path is authoritative */ },
-          });
+            // Player names are THE confusable words in score dictation.
+            // No auto-send here on purpose: golfers pause between players.
+            { keyterms: buildKeyterms(players.map((p) => p.name)) },
+          );
           liveRef.current = live;
           await live.start(stream);
         } catch {
@@ -432,7 +438,7 @@ export default function ScoreSheet({
       recorderRef.current = null;
       if (openGenRef.current !== gen) return; // sheet closed during stop
 
-      const transcribeResult = await transcribeBlob(blob);
+      const transcribeResult = await transcribeBlob(blob, { keyterms: buildKeyterms(players.map((p) => p.name)) });
       if (openGenRef.current !== gen) return; // sheet closed during transcription
 
       const transcript = transcribeResult.transcript.trim();

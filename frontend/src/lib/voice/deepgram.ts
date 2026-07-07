@@ -109,8 +109,16 @@ export class VoiceRecorder {
 }
 
 /** POST a recorded audio blob to the backend transcribe endpoint. */
-export async function transcribeBlob(blob: Blob): Promise<TranscribeResult> {
+export async function transcribeBlob(
+  blob: Blob,
+  opts?: { keyterms?: readonly string[] },
+): Promise<TranscribeResult> {
   const form = new FormData();
+  // nova-3 keyterm prompting (specs/voice-agent-audit.md P1.1) — the backend
+  // forwards these to Deepgram as repeated keyterm params.
+  if (opts?.keyterms?.length) {
+    form.append('keyterms', JSON.stringify(opts.keyterms.slice(0, 50)));
+  }
   const ext = blob.type.includes('mp4') ? 'mp4'
     : blob.type.includes('ogg') ? 'ogg'
     : 'webm';

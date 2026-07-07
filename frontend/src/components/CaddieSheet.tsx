@@ -35,6 +35,7 @@ import { Waveform, PulseDot } from "@/components/yardage/Voice";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
 import { pickDictationTranscript, isEmptyTranscript, humanizeVoiceError } from "@/lib/caddie/dictation";
+import { buildKeyterms } from "@/lib/voice/keyterms";
 import {
   talkToCaddie,
   fetchRecommendation,
@@ -182,6 +183,8 @@ export default function CaddieSheet({
   // Bumped on every open/close so stale async (a late interim, a late
   // transcription) from a previous sheet lifetime is dropped.
   const openGenRef = useRef(0);
+  // Auto-send indirection: UtteranceEnd fires stopListening (defined later).
+  const autoStopRef = useRef<() => void>(() => {});
 
   /**
    * Ref mirror of convHistory prop. askCaddie reads from this ref so it
@@ -348,21 +351,29 @@ export default function CaddieSheet({
       const stream = recorder.getStream();
       if (stream && DeepgramLiveTranscriber.isSupported()) {
         try {
-          const live = new DeepgramLiveTranscriber({
-            onInterim: (t) => {
-              if (openGenRef.current !== gen) return;
-              liveTranscriptRef.current = t;
-              setInterimTranscript(t);
+          const live = new DeepgramLiveTranscriber(
+            {
+              onInterim: (t) => {
+                if (openGenRef.current !== gen) return;
+                liveTranscriptRef.current = t;
+                setInterimTranscript(t);
+              },
+              onFinal: (t) => {
+                if (openGenRef.current !== gen) return;
+                liveTranscriptRef.current = t;
+              },
+              onUtteranceEnd: () => {
+                // Auto-send: end-of-speech = the golfer finished the question.
+                if (openGenRef.current !== gen) return;
+                autoStopRef.current();
+              },
+              onError: () => {
+                // Non-fatal mid-utterance — the blob fallback covers it.
+                liveFailedRef.current = true;
+              },
             },
-            onFinal: (t) => {
-              if (openGenRef.current !== gen) return;
-              liveTranscriptRef.current = t;
-            },
-            onError: () => {
-              // Non-fatal mid-utterance — the blob fallback covers it.
-              liveFailedRef.current = true;
-            },
-          });
+            { keyterms: buildKeyterms() },
+          );
           await live.start(stream);
           if (openGenRef.current !== gen) {
             live.stop();
@@ -416,7 +427,7 @@ export default function CaddieSheet({
         // record→upload path, where a brief "Transcribing…" is honest.
         setIsTranscribing(true);
         const blob = await recorder.stop();
-        const result = await transcribeBlob(blob);
+        const result = await transcribeBlob(blob, { keyterms: buildKeyterms() });
         if (openGenRef.current !== gen) return;
         finalText = result.transcript;
       }
@@ -439,6 +450,8 @@ export default function CaddieSheet({
       setIsTranscribing(false);
     }
   }, [askCaddie]);
+
+  autoStopRef.current = () => void stopListening();
 
   const handleMicTap = () => {
     if (isListening) {

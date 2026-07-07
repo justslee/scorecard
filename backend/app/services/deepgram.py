@@ -28,6 +28,7 @@ async def transcribe_audio(
     *,
     language: str = "en-US",
     keywords: Optional[list[str]] = None,
+    keyterms: Optional[list[str]] = None,
 ) -> dict:
     """Send audio bytes to Deepgram Nova-3 and return {transcript, confidence, duration}.
 
@@ -44,6 +45,10 @@ async def transcribe_audio(
     }
     if keywords:
         params["keywords"] = keywords
+    if keyterms:
+        # nova-3 keyterm prompting (repeated param) — context vocabulary from
+        # the client: player names, course names, golf terms.
+        params["keyterm"] = keyterms
 
     headers = {
         "Authorization": f"Token {DEEPGRAM_API_KEY}",
