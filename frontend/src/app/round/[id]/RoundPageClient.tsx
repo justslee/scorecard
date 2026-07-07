@@ -1867,7 +1867,7 @@ export default function RoundPage() {
         >
           {/* Ask Caddie — ghost pill (#11: flexShrink:1 so it compresses on 320px) */}
           <motion.button
-            aria-label="Ask Looper"
+            aria-label="Ask caddie"
             onClick={() => {
               // One mic at a time: stop any live/warm orb session before the
               // sheet's dictation path opens its own stream (the degrade path
@@ -1915,7 +1915,7 @@ export default function RoundPage() {
             >
               L
             </span>
-            <span style={{ fontFamily: T.serif, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Ask Looper</span>
+            <span style={{ fontFamily: T.serif, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Ask caddie</span>
           </motion.button>
 
           {/* Enter Score — solid pill */}
