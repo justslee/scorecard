@@ -210,6 +210,35 @@ class TestLocalFirstShortCircuit:
         written_names = [r["name"] for r in write_through_calls[0]]
         assert written_names == ["Bethpage Red Course"]
 
+    async def test_golfapi_is_a_fallback_leg_only_when_places_is_empty(self, monkeypatch):
+        """GolfAPI's 45-calls/month budget is shared with per-course golf-data
+        fetches and each distinct typed prefix is a fresh discovery cache key,
+        so the leg runs ONLY when Places found nothing."""
+
+        async def fake_local(q):
+            return []
+
+        async def fake_places_empty(q):
+            return []
+
+        async def fake_golfapi(q):
+            return [{"id": "golfapi-9", "name": "Pebble Beach Golf Links", "address": None,
+                     "center": {"lat": 36.57, "lng": -121.95}, "source": "golfapi"}]
+
+        monkeypatch.setattr(course_search, "_list_local_courses", fake_local)
+        monkeypatch.setattr(course_search, "_search_google_places", fake_places_empty)
+        monkeypatch.setattr(course_search, "_search_golfapi", fake_golfapi)
+        monkeypatch.setattr(course_search, "search_golf_courses", _never_called("search_golf_courses"))
+        monkeypatch.setattr(course_search, "_search_mapbox", _never_called("_search_mapbox"))
+        monkeypatch.setattr(course_search, "_write_through_courses", lambda rows: _noop())
+
+        result = await course_search.search_courses(q="pebble beach", _user_id="test-user")
+
+        assert [c["name"] for c in result["courses"]] == ["Pebble Beach Golf Links"]
+        health_by_source = {h["source"]: h for h in result["legHealth"]}
+        assert health_by_source["golfapi"]["outcome"] == "ok"
+        assert health_by_source["golfapi"]["count"] == 1
+
 
 class TestTownsNeverEmitted:
     async def test_mapbox_geocode_hit_never_returned_as_a_course(self, monkeypatch):
@@ -461,8 +490,9 @@ class TestLegHealth:
         assert health_by_source["google_places"]["outcome"] == "ok"
         assert health_by_source["google_places"]["count"] == 1
         assert isinstance(health_by_source["google_places"]["ms"], int)
-        assert health_by_source["golfapi"]["outcome"] == "empty"
-        assert health_by_source["golfapi"]["count"] == 0
+        # GolfAPI is a metered fallback — NOT attempted (and so absent from
+        # legHealth) when Places already found something.
+        assert "golfapi" not in health_by_source
 
     async def test_leg_raising_is_outcome_error_and_logs_warning(self, monkeypatch, caplog):
         async def fake_local(q):

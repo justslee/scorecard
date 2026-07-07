@@ -272,12 +272,19 @@ async def search_courses(
         _search_cache.set(cache_key, ranked)
         return {"courses": ranked, "query": q, "legHealth": []}
 
-    # 2. FAN OUT — Places (primary) + internal GolfAPI leg, concurrently.
-    (places, places_health), (golfapi, golfapi_health) = await asyncio.gather(
-        _run_leg("google_places", _search_google_places(q)),
-        _run_leg("golfapi", _search_golfapi(q)),
-    )
-    leg_health: list[dict] = [places_health, golfapi_health]
+    # 2. FAN OUT — Places is the PRIMARY external text search.
+    places, places_health = await _run_leg("google_places", _search_google_places(q))
+    leg_health: list[dict] = [places_health]
+
+    # GolfAPI is a METERED fallback, not a parallel leg: its 45-calls/MONTH
+    # budget is shared with the per-course golf-data fetches, and every
+    # distinct typed prefix ("pe", "peb", …) is a fresh discovery cache key —
+    # running it on every fan-out would burn the month's quota on keystrokes.
+    # Attempt it only when Places found nothing (coverage backstop).
+    golfapi: list[dict] = []
+    if not places:
+        golfapi, golfapi_health = await _run_leg("golfapi", _search_golfapi(q))
+        leg_health.append(golfapi_health)
 
     combined = _dedupe_by_name(local_passing + places + golfapi)
     anchor: Optional[dict] = places[0]["center"] if places else None

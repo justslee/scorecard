@@ -242,14 +242,24 @@ function CourseRow({
   onStar?: (e: React.MouseEvent) => void;
   onSelect: () => void;
 }) {
+  // The row is a div[role=button] (NOT a <button>) so the star toggle inside
+  // it can be a real <button> — interactive-in-interactive is invalid HTML and
+  // breaks iOS hit-testing / VoiceOver.
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
       style={{
         width: "100%",
         padding: "13px 22px",
         background: "transparent",
-        border: "none",
         borderTop: `1px dashed ${T.hairline}`,
         cursor: "pointer",
         textAlign: "left",
@@ -264,7 +274,7 @@ function CourseRow({
         <div
           style={{
             fontFamily: T.serif,
-            fontSize: 17,
+            fontSize: 16,
             color: T.ink,
             letterSpacing: -0.2,
             marginBottom: subline ? 2 : 0,
@@ -293,27 +303,32 @@ function CourseRow({
           </div>
         )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
         {onStar && (
           <button
-            onClick={onStar}
+            onClick={(e) => {
+              e.stopPropagation();
+              onStar(e);
+            }}
             aria-label={starred ? "Remove from favorites" : "Add to favorites"}
             style={{
-              padding: 4,
+              width: 34,
+              height: 34,
               background: "transparent",
               border: "none",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
+              justifyContent: "center",
               opacity: starred ? 1 : 0.4,
             }}
           >
             <StarIcon filled={!!starred} />
           </button>
         )}
-        <div style={{ fontFamily: T.mono, fontSize: 13, color: T.pencil }}>{"›"}</div>
+        <div style={{ fontFamily: T.mono, fontSize: 10, color: T.pencil }}>{"›"}</div>
       </div>
-    </button>
+    </div>
   );
 }
 
