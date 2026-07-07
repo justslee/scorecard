@@ -6168,3 +6168,17 @@ Final gates: backend 986/ruff clean; frontend tsc/lint clean, vitest 1494/1494,
 voice 274/274, build green.
 Bundle: regression fix (won't-listen) + hazard grounding + persistent map/tee marker +
 live dictation — ALL owner escalations from 2026-07-06.
+
+---
+
+## 2026-07-07 — SHIPPED: #96 voice fix + grounded caddie + persistent map + live dictation
+
+Owner "ship it" (in-session). Eng-lead ran the ship directly (release-manager agent
+skipped — budget). Merge ce85c1d → main (the only push to main). Backend deploy
+auto-fired on the merge (run 28868468478, success); health OK, config-status all true
+— hazard grounding + the English transcription pin are live on prod. TestFlight
+v1.0.726 (build 202607070907) uploaded, processing on Apple's side. Board card:
+https://app.notion.com/p/3961c52592e081b99491e6f3cf9190ba (Shipped).
+integration/next fast-forwarded to ce85c1d, pushed, kept for the next cycle.
+Owner test list: setup voice hears you; no per-hole map loader; tee marker; live
+dictation; caddie cites only real hazards on mapped holes.
