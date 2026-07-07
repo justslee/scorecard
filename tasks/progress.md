@@ -5995,7 +5995,7 @@ only push to `main` in this run.
 
 **Backend deploy:** this bundle DOES touch backend (`backend/app/services/realtime_relay.py`;
 no new Alembic migration). The standing `Deploy backend (SSM)` GitHub Action auto-triggered on
-the merge push (run 28838977850) — `git pull --ff-only` 1792d32→5ab17c1, `uv sync`,
+the merge push (run 28838977856) — `git pull --ff-only` 1792d32→5ab17c1, `uv sync`,
 `alembic upgrade head` (no-op, no new revision), `systemctl restart scorecard-api`, on-box
 `curl localhost:8000/health` → `{"status":"ok"}`. Verified externally post-deploy:
 - `GET https://api.looperapp.org/health` → `{"status":"ok"}` (200)
