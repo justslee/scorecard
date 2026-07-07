@@ -3,6 +3,28 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — looper-brain-parity: off-course orb grounded in memory + handicap (NOTICEABLE-SUBTLE — integration/next, DONE)
+
+Implemented `specs/looper-brain-parity-plan.md` verbatim. `_build_voice_prompt` in
+`backend/app/routes/caddie.py` (the stateless path behind `/caddie/voice` and
+`/caddie/voice/stream`) now fetches the caller's cross-round memory
+(`memory_mod.get_top_memories`) + profile/handicap (`memory_mod.get_player_profile`) and
+splices a `--- PLAYER MEMORY ---` block + a `Player handicap:` line into the system prompt,
+mirroring `_build_session_voice_prompt`'s idioms exactly. Applies to both the off-course
+Looper orb AND the on-course stateless fallback (CaddieSheet tier-2/3), since both share this
+one function — previously that fallback silently lost personalization. Both DB reads sit
+behind a defensive `try/except` (this path runs outside the route-level try, so an unguarded
+DB hiccup would previously have surfaced as a raw 500 mid-reply); empty/no-memory/no-profile
+users get a prompt byte-identical to before (no `"Handicap: None"` garbage). No schema
+change — `VoiceCaddieRequest`/`VoiceCaddieResponse`, `types.ts`, `models.py` untouched.
+Added 3 unit tests to `backend/tests/test_voice_stream.py` (memory+profile present / both
+absent / fetcher raises), monkeypatching `caddie_routes.memory_mod` — no live Postgres.
+`ruff check .` clean; `pytest tests/test_voice_stream.py -q` → 15 passed (12 existing + 3
+new). No frontend change, so frontend gates weren't run (not impacted). Committed to
+`integration/next` at `4948cf6` and pushed. Classification per plan §6: noticeable-subtle
+(off-course spoken answers become personalized, no UI delta) — rides the rolling bundle, no
+standalone approval ping.
+
 ## 2026-07-07 — RETRO (post-milestone: 9 ships, 3 process incidents) — SILENT, integration/next, DONE
 
 Distilled the day's three incidents into reusable rules in `tasks/lessons.md` (new
