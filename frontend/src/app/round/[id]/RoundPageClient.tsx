@@ -1694,7 +1694,13 @@ export default function RoundPage() {
         >
           {/* Ask Caddie — ghost pill (#11: flexShrink:1 so it compresses on 320px) */}
           <motion.button
-            onClick={() => setCaddieOpen(true)}
+            onClick={() => {
+              // One mic at a time: stop any live/warm orb session before the
+              // sheet's dictation path opens its own stream (the degrade path
+              // already does this; the manual open must too).
+              voice.stop();
+              setCaddieOpen(true);
+            }}
             whileTap={{ scale: 0.97 }}
             style={{
               padding: "14px 18px",
