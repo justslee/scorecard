@@ -3,6 +3,30 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — RETRO (post-milestone: 9 ships, 3 process incidents) — SILENT, integration/next, DONE
+
+Distilled the day's three incidents into reusable rules in `tasks/lessons.md` (new
+"Session lessons (2026-07-07)" block) — did NOT duplicate the HARD PROCESS RULES already in
+agent memory; added what was missing:
+1. **review-vs-CI gap** (#104 streaming double-render, 56df95f): CI catches async/ordering
+   races review misses → cover streaming/timer/async with DETERMINISTIC tests (control the
+   scheduler; mock rAF/framer-motion; hand-controlled `deferredStream()`; window-scoped rAF
+   checks; a flaky test is a product race — bisect, don't retry-until-green).
+2. **ship.sh must not be piped** (#104 wrong-cwd masked twice): run deploy scripts un-piped,
+   `set -euo pipefail`, assert cwd, absolute paths.
+3. **verify deploy/CI by headSha, not recency** (#104 stale `gh run list`): match the run for
+   the shipped SHA; confirm deployed artifact SHA == merged SHA (same class as #100's piped
+   `gh pr checks` swallow → gate on structured fields, never scraped output).
+
+Backlog grooming (`backlog.json`): corrected two mis-tagged shipped items —
+`map-viewer-error-screen-restyle` (in-progress → done-shipped-main, #103 v1.0.759) and
+`voice-tts-sheet-replies` (awaiting-ship-it → done-shipped-main, #102 v1.0.750). Updated the
+top `note` to record that the **voice-agent-audit P1+P2 core is COMPLETE** (keyterms/auto-send/
+telemetry #100, TTS #102, streamed replies + reply-timeouts #104); remaining voice items are
+refinement/device-verify, not core. Seeded 3 NORTHSTAR-grounded next candidates (needs-spec):
+`caddie-persona-tts-voices`, `caddie-hole-strategy-guides`, `looper-brain-parity`. JSON
+validated (127 items, no dup ids). Silent (docs/backlog only) — rides the bundle, no ping.
+
 ## 2026-07-07 — post-merge follow-up: streaming-ladder test flake fully fixed (SILENT — integration/next, DONE)
 
 PR #104 (streamed caddie replies + voice timeouts) was merged to `main` at commit `56df95f`

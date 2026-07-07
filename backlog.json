@@ -1,6 +1,6 @@
 {
   "updated": "2026-07-07",
-  "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle). | 2026-07-07 hygiene: p2/p3 readies (hazard-grounding, persistent-map, tee-marker) were already shipped to main — statuses corrected; course-elevation superseded by real USGS elevation.py. Building map-viewer-error-screen-restyle (p6).",
+  "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle). | 2026-07-07 hygiene: p2/p3 readies (hazard-grounding, persistent-map, tee-marker) were already shipped to main — statuses corrected; course-elevation superseded by real USGS elevation.py. | 2026-07-07 retro hygiene: VOICE AGENT AUDIT P1+P2 CORE IS COMPLETE — keyterms/auto-send/telemetry (#100), TTS sheet replies (#102, v1.0.750), streamed replies + voice-reply timeouts (#104, v1.0.767) all shipped to main. map-viewer-error-screen-restyle shipped in #103 (was mis-tagged in-progress) and voice-tts-sheet-replies shipped in #102 (was mis-tagged 'awaiting ship-it') — both corrected to done-shipped-main. Remaining voice work is refinement/device-verify (voice-agentic-setup, voice-live-transcription, voice-language-onboarding, voice-per-player-tees), not core audit. Seeded 3 next candidates (caddie-persona-tts-voices, caddie-hole-strategy-guides, looper-brain-parity) grounded in NORTHSTAR + memory.",
   "items": [
     {
       "id": "db-core-schema",
@@ -1456,7 +1456,8 @@
       "type": "minor",
       "priority": 6,
       "risk": "low",
-      "status": "in-progress",
+      "status": "done-shipped-main",
+      "done_note": "Shipped in bundle #103 (commit 8998b3f; TestFlight v1.0.759, 2026-07-07). ErrorScreen restyled to the yardage-book not-found pattern — serif-italic headline, mono-uppercase caption, hairline pill Back, paper-noise bg; AlertCircle dropped; signature + 3 call sites unchanged. Was mis-tagged in-progress after it already shipped.",
       "depends_on": [],
       "why": "Designer review of ff2b043: the map viewer's ErrorScreen (frontend/src/app/map/course/page.tsx ~159-210) is generic/off-brand (sans body, Lucide AlertCircle, plain text link) next to the on-brand detail-page not-found state (serif-italic headline, mono caption, pill button). The unified detail landing now funnels more traffic through /map/course, so a golfer on patchy course wifi is one tap from a jarring screen. Match the detail page's not-found pattern.",
       "spec": "specs/map-viewer-error-screen-restyle-plan.md"
@@ -1522,7 +1523,8 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "in bundle (integration/next e18e347; reviewer SHIP + designer PASS; awaiting owner ship-it)",
+      "status": "done-shipped-main",
+      "done_note": "SHIPPED in bundle #102 (merge 0c89ffd; TestFlight v1.0.750, build 202607071230, 2026-07-07). Opt-in, persona-matched TTS of caddie sheet replies via owner-gated POST /api/voice/speak (gpt-4o-mini-tts); shared useSheetTTS hook reuses realtime iOS unlock; default OFF; 44pt speaker toggle; every TTS failure swallowed so silent text always renders. Reviewer SHIP + designer PASS folded. Owner shipped it. Two owner decisions from the PR remain open elsewhere: default-ON vs OFF, and whether tee-time's Looper sheet reads its call transcript aloud.",
       "depends_on": [],
       "why": "Voice audit P1.2: the caddie only talks in the realtime orb; sheet answers are silent text. TTS playback (Aura/OpenAI via backend proxy), persona-aware, tap-to-silence. Biggest UX gap vs the 'constant assistant' premise.",
       "spec": "specs/voice-agent-audit.md"
@@ -1559,6 +1561,39 @@
       "depends_on": [],
       "why": "The Elev tile was a hardcoded fake (+3ft on every hole) and is now replaced by real Gusts. To bring an HONEST Elev tile + real plays-like model back: fetch elevation profiles (e.g. Google Elevation/open DEM) for mapped courses at ingest, store per-hole tee/green deltas.",
       "spec": "specs/voice-agent-audit.md"
+    },
+    {
+      "id": "caddie-persona-tts-voices",
+      "title": "Distinct persona TTS voices (each caddie persona has its own spoken voice)",
+      "type": "major",
+      "priority": 4,
+      "risk": "low",
+      "status": "needs-spec",
+      "depends_on": [],
+      "why": "Seeded 2026-07-07 (retro). Now that opt-in TTS sheet replies shipped (voice-tts-sheet-replies, #102) with ONE default voice, the natural next step toward the 'personal caddie' Northstar is mapping each persona to a distinct gpt-4o-mini-tts voice + delivery so 'Classic on the bag' and a brasher persona actually SOUND different. Small, additive to the existing /api/voice/speak proxy + useSheetTTS (persona already threaded). Keep it calm/voice-first; owner may want to pick/preview a voice per persona. Candidate — needs a short spec + owner nod on which personas/voices.",
+      "spec": ""
+    },
+    {
+      "id": "caddie-hole-strategy-guides",
+      "title": "Cached per-hole caddie strategy guides (LLM writer grounded in our geometry + web)",
+      "type": "major",
+      "priority": 5,
+      "risk": "medium",
+      "status": "needs-spec",
+      "depends_on": [],
+      "why": "Seeded 2026-07-07 (retro); owner idea in memory (caddie-hole-strategy-guides). Precompute a short, calm per-hole strategy note (how to play it) at course-ingest time, written by an LLM GROUNDED in our real hole geometry + hazards + public web beta — NEVER hallucinated hazards (honors the no-fake-data rule) — cached per hole, then personalized at runtime with the player profile (bag/dispersion). Surfaces in the caddie sheet / yardage book. Larger, multi-iteration; owner had it at P3/P4 paused, surfacing as a candidate now that the voice-audit core is done. Needs a spec covering grounding sources, caching, and the honest-empty fallback where geometry is thin.",
+      "spec": ""
+    },
+    {
+      "id": "looper-brain-parity",
+      "title": "Looper brain-parity across surfaces (the orb answers/acts on whatever page you're on)",
+      "type": "major",
+      "priority": 6,
+      "risk": "medium",
+      "status": "needs-spec",
+      "depends_on": [],
+      "why": "Seeded 2026-07-07 (retro); owner direction ('page powers' / brain-parity). Today the Looper orb + round caddie are separate mouths with different context. Give the single Looper assistant the SAME brain everywhere — on the home/profile/course pages it should answer and act with the current page's context (recent rounds, this course, the round in progress), not just on the round screen. Voice-first, calm, minimal chrome per NORTHSTAR. Needs a spec: unify the context/tooling behind the sheets, define per-surface capabilities, avoid racing realtime.ts warm-path mic invariants. Candidate — scope before building.",
+      "spec": ""
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style — rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm — not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home · Partners · Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
