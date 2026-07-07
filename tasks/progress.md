@@ -6254,3 +6254,17 @@ Owner test: dictate to the caddie — words should appear LIVE on device now;
 wind/gust tiles change hole to hole; no raw JSON errors ever.
 P1 voice queue ready on backlog: keyterm boosting, TTS sheet replies,
 auto-send endpointing, voice telemetry.
+
+---
+
+## 2026-07-07 — INCIDENT + FIX: #100 merged over a failed frontend gate
+
+The #100 ship pipeline piped `gh pr checks` through head (exit code swallowed) and
+local gates ran on node_modules older than the lockfile (install --package-lock-only
+does not install) — CI's stricter hooks-lint (react-hooks/refs +
+preserve-manual-memoization, from the keyterms work) failed while local lint passed.
+Main was red for ~10 min; the shipped v1.0.742 artifact itself was fine (lint-only
+failures, local build green). Fix #101 (cdf5eb7) merged with an explicit
+fail-count==0 gate. PROCESS RULES (also in agent memory): (1) merge gates check
+`gh pr checks --json bucket` fail counts, never piped output; (2) `npm ci` before
+trusting local gates after any lockfile change.
