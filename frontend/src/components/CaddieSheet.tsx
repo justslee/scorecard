@@ -529,6 +529,13 @@ export default function CaddieSheet({
     void (async () => {
       const shot = await resolveOpeningShotRef.current!();
       if (openingGenRef.current !== gen) return; // sheet closed/reopened while awaiting GPS
+      // The GPS fix can take up to 6s — re-check the sheet is still PRISTINE
+      // idle (via refs, never stale closed-over state) before stomping over
+      // whatever the golfer did in the meantime. Without this, a user turn
+      // that starts and even finishes DURING the await gets silently aborted
+      // and its transcript overwritten by the canned opening question
+      // (specs/caddie-auto-shot-reco-plan.md deviation — reviewer-caught).
+      if (streamAbortRef.current || recorderRef.current || convHistoryRef.current.length > 0) return;
       if (!shot) return; // no GPS fix → stay idle (open as today)
       const q = `I'm about ${shot.distanceYards} yards from the pin. What should I hit or do on this next shot?`;
       setTranscript(q); // existing state → shows in the user bubble (transparency)
