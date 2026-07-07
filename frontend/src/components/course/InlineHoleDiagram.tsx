@@ -136,6 +136,8 @@ interface InlineHoleDiagramProps {
    * Has no effect on the paper HoleDiagram fallback below (no tee marker there).
    */
   teeMarker?: string | null;
+  /** Camera behavior on hole change — see GoogleSatelliteMapProps.cameraTransition. */
+  cameraTransition?: "pan" | "cut";
 }
 
 export default function InlineHoleDiagram({
@@ -144,6 +146,7 @@ export default function InlineHoleDiagram({
   currentHole,
   height = 260,
   teeMarker = null,
+  cameraTransition = "pan",
 }: InlineHoleDiagramProps) {
   // Indexed course data — built once from the fetched CourseData.
   const [holeIndex, setHoleIndex] = useState<Map<number, HoleData>>(new Map());
@@ -269,6 +272,7 @@ export default function InlineHoleDiagram({
           fallbackCenter={courseCenter ?? undefined}
           onFallback={() => setGoogleMapFailed(true)}
           teeMarker={teeMarker}
+          cameraTransition={cameraTransition}
         />
       </div>
     );

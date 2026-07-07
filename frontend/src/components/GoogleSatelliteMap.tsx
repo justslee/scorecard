@@ -144,6 +144,13 @@ export interface GoogleSatelliteMapProps {
    *   • null / omitted (no round context, e.g. /map/course) → NO marker at all.
    */
   teeMarker?: string | null;
+  /**
+   * How the camera moves on a hole change. "pan" (default) animates the
+   * flight; "cut" repositions instantly — used by the inline round map whose
+   * hole changes happen UNDER the page-turn wipe, so the golfer sees a new
+   * hole appear rather than the map sliding.
+   */
+  cameraTransition?: "pan" | "cut";
 }
 
 // ── Yardage-book distance stat (matches the app's paper/ink theme) ────────────
@@ -202,7 +209,12 @@ export default function GoogleSatelliteMap({
   onFallback,
   onSwitchToPaper,
   teeMarker = null,
+  cameraTransition = "pan",
 }: GoogleSatelliteMapProps) {
+  // Ref mirror so fitCameraToHole (stable identity, closed over by the camera
+  // queue) reads the current value without re-creating.
+  const cameraTransitionRef = useRef(cameraTransition);
+  cameraTransitionRef.current = cameraTransition;
   const mapContainerRef = useRef<HTMLElement | null>(null);
   const googleMapRef    = useRef<GoogleMap | null>(null);
   const mapReadyRef     = useRef(false);
@@ -393,7 +405,17 @@ export default function GoogleSatelliteMap({
     const m = googleMapRef.current;
     if (!m || !mapReadyRef.current) return;
     const { coordinate, zoom, bearing } = cameraForHole(hd);
-    await m.setCamera({ coordinate, zoom, bearing, animate: true, animationDuration: 600 }).catch(() => {});
+    // "cut" repositions instantly — the inline map's hole changes happen
+    // UNDER the page-turn wipe, so a visible pan would break the
+    // new-page-of-the-book illusion.
+    const cut = cameraTransitionRef.current === "cut";
+    await m
+      .setCamera(
+        cut
+          ? { coordinate, zoom, bearing, animate: false }
+          : { coordinate, zoom, bearing, animate: true, animationDuration: 600 }
+      )
+      .catch(() => {});
   }, []);
 
   // ── Camera queue — coalescing serializer for rapid hole swipes (A2) ────────
