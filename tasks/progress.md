@@ -3,6 +3,54 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — caddie-conversational-loop: hands-free Ask Caddie (NOTICEABLE — integration/next, DONE)
+
+Implemented `specs/caddie-conversational-loop-plan.md` on the existing Deepgram-dictation +
+`useSheetTTS` path (no Realtime routing, per the plan's transport decision). After the caddie
+**speaks** a reply, the sheet now automatically re-arms the mic — the golfer talks, pauses, and
+the caddie proceeds, no tap-per-turn. Hands-free is IMPLICIT: armed whenever the sheet is open,
+mode is "voice", and the persisted speaker toggle (`ttsEnabled`) is on — no new UI. Composes
+with the just-shipped auto opening reco with zero special-casing (its playback-end re-arms like
+any other turn).
+
+- `useSheetTTS.ts`: added optional `useSheetTTS(opts?: { onPlaybackEnd?: () => void })`, still
+  callable with no args. Split the audio element's listeners — `ended` → `setIsSpeaking(false)` +
+  `onPlaybackEndRef.current?.()`; `pause` → `setIsSpeaking(false)` only — so `stop()`/a new
+  `speak()`/barge-in can never trigger a re-arm.
+- `CaddieSheet.tsx`: `REARM_GRACE_MS=400` (echo/iOS-route guard past playback end),
+  `DEAD_AIR_MS=6000` (armed-but-silent drop-out — UtteranceEnd never fires on pure silence),
+  `MAX_EMPTY_STREAK=2` (belt-and-braces for ambient noise). `handlePlaybackEnd` guards on
+  `open && mode==="voice" && ttsEnabledRef.current && !loopDroppedOutRef.current && !isListening
+  && !isTranscribing && !isThinking && !isStreaming`, then a grace timer → `startListening`.
+  `armedByLoopRef` distinguishes an auto re-arm (runs the dead-air timer, counts toward the
+  empty-streak) from a manual tap (doesn't). Barge-in (tap mic while speaking) clears the grace
+  timer, stops playback (fires `pause`, not `ended` — no re-arm from the interruption), and
+  resets drop-out/streak. Drop-out UI is the existing calm idle "Tap to speak" block — no error,
+  no red. Sheet-close/unmount clears both timers, resets streak, clears drop-out.
+
+**Deviation from the plan (minimal, sound — flagged per instructions):** the plan's
+`handlePlaybackEnd` guard listed `!streamAbortRef.current` as one of the conditions. Read
+literally this breaks the feature entirely: `streamAbortRef` is set once per `askCaddie` call and
+(pre-existing design, unrelated to this plan) is only ever cleared to `null` on sheet close/
+unmount — never after a turn settles — so gating on its mere presence would block every re-arm
+after the very first turn, permanently, in production. Dropped that one condition; `isThinking`/
+`isStreaming` already fully express "a turn is in flight" (the same pair `showMic` already gates
+the mic's reappearance on), so they are sufficient. Caught by the new deterministic test 8 (happy
+multi-turn loop) failing on the very first re-arm attempt before the fix.
+
+Tests: new dedicated `CaddieSheet.handsfree.test.tsx` (10 cases, owns `vi.useFakeTimers()`,
+scoped + `afterEach(() => { vi.runOnlyPendingTimers(); vi.useRealTimers(); })` so no stub leaks —
+playback-end re-arm, grace-delay boundary, speaker-off no-op, dead-air drop-out (+ interim
+cancels it), empty-streak drop-out, barge-in, sheet-close cleanup (2 sub-cases), happy multi-turn
+loop with streak reset); extended `useSheetTTS.test.ts` (+2: `ended` fires `onPlaybackEnd`,
+`pause` does not). `CaddieSheet.session.test.tsx` stayed green unmodified (its TTS mock ignores
+the new optional arg). Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build`
+succeeded, `voice-tests/runner.ts --smoke` → 274/274, targeted vitest (handsfree + session +
+useSheetTTS) → 39/39, full `npm run test` → **1585/1585 pass, 74/74 files** (no cross-file
+fake-timer leak). Committed to `integration/next` and pushed. Noticeable — the Ask Caddie sheet
+now converses hands-free once the speaker is on; device-verify the playback→record iOS audio-
+session switch on TestFlight per the plan (only fully testable on a real device).
+
 ## 2026-07-07 — caddie-auto-shot-reco follow-up: fixed a review-caught race (SILENT fix, integration/next, DONE)
 
 eng-lead's review of `e5a9526` found ONE blocking correctness bug (idempotency, honest-

@@ -129,4 +129,46 @@ describe("useSheetTTS", () => {
     );
     expect(result.current.isSpeaking).toBe(false);
   });
+
+  // specs/caddie-conversational-loop-plan.md §3.3 — `onPlaybackEnd` is the
+  // single signal the hands-free loop re-arms on. It MUST fire only on the
+  // audio element's native `ended` event, never on `pause` (stop() / a new
+  // speak() / barge-in) — a double-arm from re-firing on `pause` would make
+  // the loop uncontrollable.
+  it("onPlaybackEnd fires on the audio element's native 'ended' event", async () => {
+    speakCaddieReplyMock.mockResolvedValue(makeBlob());
+    const onPlaybackEnd = vi.fn();
+    const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+    act(() => result.current.unlock());
+    act(() => result.current.speak("Nice drive.", "classic"));
+    await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+
+    const el = document.querySelector("audio")!;
+    act(() => el.dispatchEvent(new Event("ended")));
+
+    expect(onPlaybackEnd).toHaveBeenCalledTimes(1);
+    expect(result.current.isSpeaking).toBe(false);
+  });
+
+  it("onPlaybackEnd does NOT fire on a dispatched 'pause' event (stop() / barge-in)", async () => {
+    speakCaddieReplyMock.mockResolvedValue(makeBlob());
+    const onPlaybackEnd = vi.fn();
+    const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+    act(() => result.current.unlock());
+    act(() => result.current.speak("Nice drive.", "classic"));
+    await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+
+    const el = document.querySelector("audio")!;
+    act(() => el.dispatchEvent(new Event("pause")));
+
+    expect(onPlaybackEnd).not.toHaveBeenCalled();
+    expect(result.current.isSpeaking).toBe(false);
+
+    // stop() itself pauses the element — also must not fire onPlaybackEnd.
+    act(() => result.current.stop());
+    act(() => el.dispatchEvent(new Event("pause")));
+    expect(onPlaybackEnd).not.toHaveBeenCalled();
+  });
 });

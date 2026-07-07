@@ -158,6 +158,13 @@ type Phase =
 
 type Mode = "voice" | "tap";
 
+// Conversational hands-free loop (specs/caddie-conversational-loop-plan.md §3.2).
+// Hands-free is IMPLICIT — armed whenever the sheet is open, mode is "voice",
+// and the persisted speaker pref (ttsEnabled) is on. No new toggle.
+const REARM_GRACE_MS = 400; // §3.3 echo guard — wait past playback end before opening the mic
+const DEAD_AIR_MS = 6000; // §3.4 — armed but silent too long → drop out
+const MAX_EMPTY_STREAK = 2; // §3.4 — consecutive empty/failed loop-armed listens → drop out
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -220,7 +227,72 @@ export default function CaddieSheet({
   useEffect(() => {
     setTtsEnabled(getSheetTtsEnabled());
   }, []);
-  const tts = useSheetTTS();
+  // Ref mirror so handlePlaybackEnd (below) reads the latest pref without a
+  // stale closure — mirrors the convHistoryRef pattern.
+  const ttsEnabledRef = useRef(ttsEnabled);
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
+
+  // Hands-free conversational loop (specs/caddie-conversational-loop-plan.md
+  // §3.2) — implicit, armed whenever the sheet is open, mode is "voice", and
+  // the speaker pref above is on. No new toggle.
+  // True once the loop has calmly exited (dead air / empty-streak) — blocks
+  // further auto re-arm until the golfer manually taps the mic again.
+  const [loopDroppedOut, setLoopDroppedOut] = useState(false);
+  const loopDroppedOutRef = useRef(false);
+  useEffect(() => {
+    loopDroppedOutRef.current = loopDroppedOut;
+  }, [loopDroppedOut]);
+  const graceTimerRef = useRef<number | null>(null); // post-playback re-arm timer (§3.3)
+  const deadAirTimerRef = useRef<number | null>(null); // "armed but silent" timer (§3.4)
+  const emptyStreakRef = useRef(0); // consecutive empty/failed auto-listens (§3.4)
+  // True from just before the loop calls startListening until that listen
+  // cycle ends — distinguishes an auto re-arm (which should run the dead-air
+  // timer + count toward the empty-streak) from a manual tap (which should not).
+  const armedByLoopRef = useRef(false);
+  // Ref indirection so handlePlaybackEnd (defined here, before startListening
+  // exists) can trigger it — mirrors the existing autoStopRef pattern below.
+  const startListeningRef = useRef<() => void>(() => {});
+
+  /**
+   * Fires when TTS playback finishes NATURALLY (`ended`, never `pause` — see
+   * useSheetTTS.ts split). Guarded per plan §3.3: only schedules a re-arm
+   * when the sheet is genuinely idle and hands-free is armed. Grace delay
+   * lets the audio element fully release before `getUserMedia` runs (§3.5 —
+   * never overlap playback release and mic acquisition).
+   *
+   * Deviation from the plan's literal guard list: `streamAbortRef.current` is
+   * NOT checked here. `streamAbortRef` is set once per askCaddie call and
+   * (by existing, pre-this-plan design) only ever cleared to null on sheet
+   * close/unmount — never after a turn settles — so gating on its mere
+   * presence would block every re-arm after the very first turn, permanently.
+   * `isThinking`/`isStreaming` already express "a turn is in flight" (the
+   * same pair `showMic` already gates the mic's reappearance on), so they are
+   * the correct, sufficient in-flight signal.
+   */
+  const handlePlaybackEnd = useCallback(() => {
+    if (
+      !open ||
+      mode !== "voice" ||
+      !ttsEnabledRef.current ||
+      loopDroppedOutRef.current ||
+      isListening ||
+      isTranscribing ||
+      isThinking ||
+      isStreaming
+    ) {
+      return;
+    }
+    if (graceTimerRef.current) window.clearTimeout(graceTimerRef.current);
+    graceTimerRef.current = window.setTimeout(() => {
+      graceTimerRef.current = null;
+      armedByLoopRef.current = true; // this arm came from the loop — see startListening
+      startListeningRef.current();
+    }, REARM_GRACE_MS);
+  }, [open, mode, isListening, isTranscribing, isThinking, isStreaming]);
+
+  const tts = useSheetTTS({ onPlaybackEnd: handlePlaybackEnd });
 
   // Streaming caddie reply (specs/voice-streaming-replies-plan.md). One
   // AbortController per in-flight ask — a new question or a sheet close
@@ -305,6 +377,19 @@ export default function CaddieSheet({
       setError(null);
       setMode("voice");
       setPersonaPickerOpen(false);
+      // Hands-free loop (specs/caddie-conversational-loop-plan.md §3.7) — a
+      // closed sheet exits the loop cleanly, no dangling timers.
+      if (graceTimerRef.current) {
+        window.clearTimeout(graceTimerRef.current);
+        graceTimerRef.current = null;
+      }
+      if (deadAirTimerRef.current) {
+        window.clearTimeout(deadAirTimerRef.current);
+        deadAirTimerRef.current = null;
+      }
+      armedByLoopRef.current = false;
+      emptyStreakRef.current = 0;
+      setLoopDroppedOut(false);
     }
     return () => {
       recorderRef.current?.cancel();
@@ -312,6 +397,15 @@ export default function CaddieSheet({
       liveRef.current = null;
       streamAbortRef.current?.abort();
       streamAbortRef.current = null;
+      // Belt-and-braces, like the recorder/live teardown above.
+      if (graceTimerRef.current) {
+        window.clearTimeout(graceTimerRef.current);
+        graceTimerRef.current = null;
+      }
+      if (deadAirTimerRef.current) {
+        window.clearTimeout(deadAirTimerRef.current);
+        deadAirTimerRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -551,6 +645,12 @@ export default function CaddieSheet({
     setVoiceAnswer(null);
     liveTranscriptRef.current = "";
     liveFailedRef.current = false;
+    // Whether THIS listen cycle was auto-armed by the loop (vs. a manual
+    // tap) — read once here and carried through the whole cycle (dead-air
+    // timer below, empty-streak accounting in stopListening). The ref itself
+    // stays true until stopListening/dead-air-expiry/an error resets it, so
+    // it is stable to read again there.
+    const loopArmed = armedByLoopRef.current;
     const gen = openGenRef.current;
     let recorder: VoiceRecorder | null = null;
     try {
@@ -558,10 +658,30 @@ export default function CaddieSheet({
       await recorder.start();
       if (openGenRef.current !== gen) {
         recorder.cancel(); // sheet closed while the mic was being acquired
+        armedByLoopRef.current = false;
         return;
       }
       recorderRef.current = recorder;
       setIsListening(true);
+
+      if (loopArmed) {
+        // Auto-armed by the hands-free loop (§3.4) — start the dead-air
+        // timer. UtteranceEnd never fires on pure silence, so without this a
+        // silent golfer would leave the mic open forever; expiry drops the
+        // loop out calmly (no error) back to the idle "Tap to speak" state.
+        if (deadAirTimerRef.current) window.clearTimeout(deadAirTimerRef.current);
+        deadAirTimerRef.current = window.setTimeout(() => {
+          deadAirTimerRef.current = null;
+          armedByLoopRef.current = false;
+          recorderRef.current?.cancel();
+          recorderRef.current = null;
+          liveRef.current?.stop();
+          liveRef.current = null;
+          setInterimTranscript("");
+          setIsListening(false);
+          setLoopDroppedOut(true);
+        }, DEAD_AIR_MS);
+      }
 
       // Live dictation: stream the SAME mic stream to Deepgram so the words
       // appear as the golfer speaks, and the live final becomes the message
@@ -573,6 +693,11 @@ export default function CaddieSheet({
           const live = new DeepgramLiveTranscriber(
             {
               onInterim: (t) => {
+                // Speech detected — cancel dead air, let UtteranceEnd finish the turn.
+                if (deadAirTimerRef.current) {
+                  window.clearTimeout(deadAirTimerRef.current);
+                  deadAirTimerRef.current = null;
+                }
                 if (openGenRef.current !== gen) return;
                 liveTranscriptRef.current = t;
                 setInterimTranscript(t);
@@ -609,6 +734,7 @@ export default function CaddieSheet({
         liveFailedRef.current = true;
       }
     } catch (err) {
+      armedByLoopRef.current = false; // failed to open — never left dangling for the next attempt
       setError(
         err instanceof Error && err.name === "NotAllowedError"
           ? "Microphone access denied."
@@ -627,6 +753,25 @@ export default function CaddieSheet({
     const recorder = recorderRef.current;
     if (!recorder) return;
     const gen = openGenRef.current;
+    // This listen cycle is ending — consume the loop-armed flag now (before
+    // any await) so a manual tap racing in can't be mistaken for this cycle,
+    // and clear the dead-air timer (§3.4 — "whenever listening stops").
+    const loopArmed = armedByLoopRef.current;
+    armedByLoopRef.current = false;
+    if (deadAirTimerRef.current) {
+      window.clearTimeout(deadAirTimerRef.current);
+      deadAirTimerRef.current = null;
+    }
+    // Empty-streak counter (§3.4) — belt-and-braces for ambient noise that
+    // trips UtteranceEnd but yields nothing usable. Only counts loop-armed
+    // listens; a manual tap ending empty keeps today's exact behavior.
+    const registerLoopEmpty = () => {
+      if (!loopArmed) return;
+      emptyStreakRef.current += 1;
+      if (emptyStreakRef.current >= MAX_EMPTY_STREAK) {
+        setLoopDroppedOut(true);
+      }
+    };
     // Snapshot BEFORE stopping the stream — the best-so-far live transcript.
     const snapshot = liveTranscriptRef.current;
     liveRef.current?.stop();
@@ -651,14 +796,23 @@ export default function CaddieSheet({
         finalText = result.transcript;
       }
       if (isEmptyTranscript(finalText)) {
-        setError("No speech detected. Tap the mic to try again.");
+        // Loop-armed: calm — no error, just count toward the streak and let
+        // the sheet settle back to its normal idle mic block (plan §3.4).
+        // Manual tap: unchanged today's-exact error copy.
+        if (loopArmed) {
+          registerLoopEmpty();
+        } else {
+          setError("No speech detected. Tap the mic to try again.");
+        }
         return;
       }
       if (openGenRef.current !== gen) return;
+      emptyStreakRef.current = 0; // a real turn is starting — reset the streak
       setTranscript(finalText);
       // Auto-call caddie with the finalized transcript
       await askCaddie(finalText);
     } catch (err) {
+      registerLoopEmpty();
       if (openGenRef.current === gen) {
         setError(
           humanizeVoiceError(err instanceof Error ? err.message : undefined, "Lost that one — tap the mic and try again.")
@@ -671,11 +825,27 @@ export default function CaddieSheet({
   }, [askCaddie]);
 
   autoStopRef.current = () => void stopListening();
+  startListeningRef.current = () => void startListening(); // hands-free loop indirection (§3.3)
 
   const handleMicTap = () => {
     // Bless the <audio> element in the SAME gesture as dictation start — must
     // run synchronously, before any async work below (§3 iOS unlock wiring).
     tts.unlock();
+    // Barge-in (§3.6) — tapping the mic while the caddie is still talking (or
+    // a re-arm is about to fire) interrupts cleanly: cancel any pending auto
+    // re-arm first, stop playback if it's speaking (fires `pause`, not
+    // `ended` — no re-arm from the interruption), and clear the loop's
+    // drop-out/streak state since the golfer just re-engaged.
+    if (graceTimerRef.current) {
+      window.clearTimeout(graceTimerRef.current);
+      graceTimerRef.current = null;
+    }
+    if (tts.isSpeaking) {
+      tts.stop();
+    }
+    armedByLoopRef.current = false;
+    emptyStreakRef.current = 0;
+    setLoopDroppedOut(false);
     if (isListening) {
       stopListening();
     } else if (!isTranscribing && !isThinking) {
