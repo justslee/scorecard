@@ -1617,6 +1617,17 @@
       "depends_on": [],
       "why": "Owner 2026-07-07: 'assume the default will be \"What should I hit or do on this next shot\" \u2014 takes where you are on the hole and gives a brief recommendation already there when I open Ask Caddie. Then follow-ups fully conversational.' Uses GPS position + hole intel via the existing /session/recommend; render as the caddie's opening turn (streamed + spoken per prefs).",
       "spec": ""
+    },
+    {
+      "id": "wind-periodic-refresh",
+      "title": "Wind refreshes during the round (stale after ~20 min)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Owner 2026-07-07: one wind reading for a 4+ hour round. Source granularity is honest (one Open-Meteo grid cell covers the course; per-hole SPEED differences exist in no data source \u2014 never fake them), but STALENESS is fixable: quietly refetch weather every ~20-30 min or on hole change when the reading is >20 min old; tiles update in place. Direction-per-hole-bearing already works.",
+      "spec": ""
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
