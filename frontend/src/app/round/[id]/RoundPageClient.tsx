@@ -1867,6 +1867,7 @@ export default function RoundPage() {
         >
           {/* Ask Caddie — ghost pill (#11: flexShrink:1 so it compresses on 320px) */}
           <motion.button
+            aria-label="Ask caddie"
             onClick={() => {
               // One mic at a time: stop any live/warm orb session before the
               // sheet's dictation path opens its own stream (the degrade path
@@ -1893,13 +1894,15 @@ export default function RoundPage() {
               minWidth: 0,
             }}
           >
-            {/* Caddie initial medallion (#5: T.paper not "#fff") */}
+            {/* Looper ink-orb medallion — matches LooperOrb identity (FloatingTabBar.tsx) at pill scale */}
             <span
               style={{
                 width: 20,
                 height: 20,
                 borderRadius: "50%",
-                background: accent,
+                background: T.ink,
+                border: `1px solid ${T.hairline}`,
+                boxShadow: "0 1px 4px rgba(26,42,26,0.20), 0 1px 0 rgba(255,255,255,0.25) inset",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1910,7 +1913,7 @@ export default function RoundPage() {
                 flexShrink: 0,
               }}
             >
-              {caddy.initial}
+              L
             </span>
             <span style={{ fontFamily: T.serif, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Ask caddie</span>
           </motion.button>

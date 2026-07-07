@@ -3,6 +3,44 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — round-page Ask Caddie pill adopts the Looper ink-orb identity (NOTICEABLE — integration/next, DONE)
+
+`specs/looper-orb-bundle2-plan.md` (bundle 2 of the Looper orb rollout). Restyles the round
+page's "Ask Caddie" ghost-pill medallion (`RoundPageClient.tsx` ~1869-1916) from the accent
+persona-initial chip to the same ink-orb + serif-italic "L" identity as `LooperOrb`
+(`FloatingTabBar.tsx`): `background: T.ink`, `border: 1px solid T.hairline`, raised inset
+highlight (`0 1px 4px rgba(26,42,26,0.20), 0 1px 0 rgba(255,255,255,0.25) inset`), glyph "L".
+Label changed "Ask caddie" -> "Ask Looper"; explicit `aria-label="Ask Looper"` added to the
+button. Semantics fully unchanged: `onClick` still `voice.stop(); setCaddieOpen(true);` (opens
+the round-scoped, persona-aware CaddieSheet); persona initial stays visible in the CaddieSheet
+header medallion, so no persona-identity regression. No `looper-bus`/`openLooper` wiring, no
+long-press-to-listen added (round page keeps its own voice architecture) — pure presentational
+swap per the plan's locked design decisions.
+- Gates green: `npm run lint` (clean), `npx tsc --noEmit` (clean), `npm run build` (success),
+  `voice-tests --smoke` (274/274 pass, unaffected — no mic path touched),
+  `vitest run FloatingTabBar.test.tsx` (4/4 pass — identity source untouched).
+- No `/security-review` needed (pure CSS/JSX, no endpoint/auth/dependency change).
+- Classified **noticeable** (visible identity/label change on the round page's caddie-launch
+  pill) — rides in the current `integration/next` bundle toward owner approval.
+- Commit `ec49d09` on `integration/next`, pushed.
+
+## 2026-07-07 — /map/course ErrorScreen restyle to yardage-book not-found pattern (SILENT — integration/next, DONE)
+
+`specs/map-viewer-error-screen-restyle-plan.md`. Designer review flagged the map viewer's
+`ErrorScreen` (Lucide `AlertCircle`, `T.sans` body, plain text link) as off-brand vs. the
+on-brand not-found state on the course detail page. Pure presentational restyle of
+`ErrorScreen({ message, onBack })` in `frontend/src/app/map/course/page.tsx` (~159-219) to
+mirror `CourseDetailClient.tsx`'s not-found block exactly: serif-italic `message` headline,
+mono-uppercase static caption ("Check your connection and try again."), hairline pill "Back"
+button, `PAPER_NOISE` + `T.paper` background with `multiply` blend. Dropped the now-unused
+`AlertCircle` import (`ChevronLeft`/`ChevronRight`/`Loader2`/`Layers` remain used elsewhere in
+the file); `ErrorScreen` signature and all three call sites unchanged (data-fetch/GPS/map logic
+untouched). Classified silent (styling-only, no new user-visible capability) per the plan.
+- Gates green: `tsc --noEmit` (clean), `npm run lint` (clean), `npm run build` (success),
+  `voice-tests --smoke` (274/274, unaffected).
+- No backend/security-review needed (pure CSS/JSX, no new endpoint/auth/dep).
+- Commit `8998b3f` on `integration/next`, pushed.
+
 ## 2026-07-07 — spoken caddie replies in the sheets (NOTICEABLE, opt-in — integration/next, DONE)
 
 `specs/voice-tts-sheet-replies-plan.md`. CaddieSheet/LooperSheet replies were silent text —
@@ -6342,3 +6380,79 @@ voice-telemetry done (all shipped in #100, files+tests verified — were stale "
 PR #102 opened (integration/next → main). Two owner decisions surfaced in the PR:
 default-ON vs OFF, and whether tee-time's Looper sheet should read its call transcript aloud.
 Next: CI green → release-manager builds TestFlight → owner "ship it".
+
+---
+
+## 2026-07-07 — SHIPPED: #102 spoken caddie replies (loop cycle 1)
+
+The FIRST autonomous loop cycle end-to-end: eng-lead planned/built/reviewed
+voice-tts-sheet-replies (opt-in TTS, persona-matched, tap-to-silence; /speak
+proxy hardened in review; 44pt toggle from designer pass). Owner "ship it" →
+merge 0c89ffd, backend deploy success + health ok, TestFlight v1.0.750
+(build 202607071230). P1 voice queue COMPLETE (keyterms, auto-send,
+telemetry, TTS). integration/next resynced; hourly loop (job a48ad37b, :17)
+continues on the next board/backlog item.
+
+---
+
+## 2026-07-07 — Bundle cycle (loop cycle 2): map ErrorScreen restyle + backlog hygiene
+
+Step 0: no pending owner approvals (polled #102/v1.0.750, orb #98, voice #99 card
+threads — all empty). Bundle empty; main == integration/next at abc0498.
+
+BACKLOG HYGIENE (major finding): the "ready" p2/p3 items were already shipped to main
+and just mis-tagged — corrected in backlog.json:
+- caddie-hazard-grounding → done-shipped-main (c3ffc3e; hazards.py + 32 tests, both mouths)
+- persistent-hole-map + tee-marker-on-map → done-shipped-main (9d597a9; persistent map,
+  createCameraQueue, teeColorFor + generated tee-marker PNGs)
+- course-elevation-ingestion → superseded (real USGS 3DEP/EPQS ingest lives in
+  services/elevation.py + fetch_elevation_cached; Elev tile reads real data).
+This nearly caused a rebuild of shipped code — future cycles: verify implementation
+state before picking, the backlog statuses drifted.
+
+BUILT: map-viewer-error-screen-restyle (p6, minor, SILENT — error-state-only visual).
+Plan specs/map-viewer-error-screen-restyle-plan.md → builder 8998b3f. Restyled the
+/map/course ErrorScreen from generic (Lucide AlertCircle + sans + plain link) to the
+on-brand yardage-book not-found pattern (serif-italic headline, mono uppercase caption,
+hairline pill button, paper-noise bg) — a faithful copy of the already-approved
+CourseDetailClient not-found state (no separate designer pass needed for a pixel copy).
+Gates green: tsc clean, lint clean, build ✓ (19 routes), voice smoke 274/274.
+Self-review: pure presentational, signature + 3 call sites unchanged — SHIP.
+
+Bundle now = SILENT-only (this restyle) → NO owner ping; rides along until the next
+noticeable change. Bundle PR opened integration/next → main as the rolling record.
+
+---
+
+## 2026-07-07 — Bundle cycle (loop cycle 3): Looper orb bundle 2 — round-page identity (NOTICEABLE)
+
+Step 0: no pending owner approvals (board latest = #102 Shipped; cycle 2 polled threads
+empty; no new feedback). Sync: main == integration/next, clean.
+
+PICKED (owner-approved, from specs/looper-orb-plan.md "Out of scope (bundle 2)"): restyle
+the round page's "Ask Caddie" pill to the Looper identity (ink-orb + serif-L), same
+tap-summons semantics; round page has no tab bar so placement stays. NOTICEABLE.
+
+PLAN (opus Plan agent) → specs/looper-orb-bundle2-plan.md: swap ONLY the pill medallion
+to the LooperOrb language (T.ink bg, hairline border, trimmed inset highlight, serif-italic
+"L"); keep onClick (voice.stop()+setCaddieOpen) → round-scoped CaddieSheet; NO looper-bus,
+NO long-press (avoid racing realtime.ts warm-path mic invariants); persona stays surfaced in
+CaddieSheet header. Label decision flagged for designer.
+
+BUILT (builder, ec49d09): pure presentational restyle + aria-label; +progress log 3d17471.
+Gates green.
+
+REVIEW (parallel): Reviewer SHIP (faithful, no correctness/a11y/compression regressions,
+no voice/mic/bus touched). QA PASS — lint / tsc / build (19 routes) / voice smoke 274/274 /
+FloatingTabBar 4/4. Designer PASS on the orb visual + one BLOCKING label call: the pill opens
+the persona-branded CaddieSheet ("Classic · On the bag"), so "Ask Looper" overpromises →
+revert label to "Ask caddie", keep the ink-orb medallion.
+
+ITERATE: applied the designer label revert directly (two-string change on an already-approved
+label; eng-lead re-ran gates — lint/tsc/build/voice 274/274 green) → 6baa1c9 pushed.
+
+BUNDLE #103 now NOTICEABLE (this orb identity + silent map ErrorScreen restyle + backlog
+hygiene). PR #103 body updated with checklist + status. Board card created in Needs Review
+(Bundle #103: Looper orb — bundle 2). No push notification (per cycle rule — owner replies
+in-session or on the board). Awaiting owner "ship it" → release-manager builds TestFlight
+from integration/next, then merges → main + cuts fresh integration/next.
