@@ -5598,3 +5598,28 @@ subsequent runs green; CI re-gates), voice smoke 274/274, build green, ruff clea
 Bundle PR #93 opened (integration/next → main): tee-time honest course list (ad0d65d,
 noticeable) + unified detail landing (noticeable) + haptics rider (silent). Owner is
 in-session — approval requested directly, no push notification needed.
+
+---
+
+## 2026-07-06 — SHIPPED: #93 unified course-detail landing + honest tee-time list
+
+Owner approved directly in-session (no email/push loop needed — already in the session).
+Merged PR #93 → main as **cf2d4aa** ("Merge integration/next: unified course-detail
+landing + honest tee-time list (#93)"). Pre-merge check (against the correct base,
+`origin/main` — local `main` ref was stale and pointed at old #85; re-pointed it to
+`origin/main` before diffing): confirmed zero `backend/` changes in this bundle
+(frontend + iOS only) → **no backend deploy** needed, existing API deployment untouched.
+
+**TestFlight:** SPM manifest changed (haptics rider), so cut a fresh native build via
+`ops/ios/ship.sh` — **v1.0.691 (build 202607062035)**, uploaded and confirmed **VALID**
+via the App Store Connect API (`/v1/builds` polled by version, ~3 polls / ~90s to
+ingest+process). Live for the "Looper Team" internal TestFlight group.
+
+**Board:** no existing card for this bundle (searched; the #87 "Course search overhaul"
+card's FOLLOW-UPS note referenced this work but was already Shipped/closed for #87) →
+created a new card directly in Shipped: "Bundle #93: unified course-detail landing +
+honest tee-time course list" (https://app.notion.com/p/3961c52592e081eda0f7e03123cc6b24),
+PR link + full checklist + build number.
+
+**integration/next:** fast-forwarded to cf2d4aa (== new main) and pushed — synced and
+ready to keep rolling; branch not deleted.
