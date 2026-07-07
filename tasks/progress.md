@@ -3,6 +3,123 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-06 — course-search v2, Work Item A: backend search that finds Pebble Beach (NOTICEABLE — integration/next, DONE)
+
+`specs/course-search-v2-plan.md` Work Item A (backend + frontend lib). Owner
+escalation: search couldn't find "Pebble Beach" at all. Verified root cause:
+the un-anchored global OSM name-search leg was a planet-wide Overpass regex
+with no location filter — it always timed out (~11s, 0 results, live-verified
+2 attempts) and never contributed a result, while adding ~11s of latency to
+every cold query. Landed alongside Work Item B (full-screen search UI,
+already on `integration/next` — commits 16ff625/8b21f90); together these fix
+both owner complaints (can't find Pebble Beach + resize jank) — bundle-worthy
+for a joint approval ping.
+
+### What changed
+- `backend/app/routes/course_search.py` — killed the un-anchored OSM leg
+  entirely; OSM now runs ONLY anchored (around a Google Places/Mapbox
+  center), and even then only as **non-blocking** enrichment via FastAPI
+  `BackgroundTasks` (`_enrich_and_write_through`) so a slow/unreliable
+  Overpass mirror never adds interactive latency — facility siblings
+  (Bethpage Black/Red/Green) fill in for the *next* identical search instead.
+  Google Places is now the primary external leg; added a new internal
+  GolfAPI leg (`_search_golfapi`) that reuses `services/golfapi_cache.py`'s
+  cache-first, budget-guarded client (0 calls on cache hit / no key) —
+  Places + GolfAPI run concurrently via a new `_run_leg` timing/health
+  wrapper. Added `legHealth` (per-leg outcome/count/ms) to the `/search`
+  response — owner-testable on staging: `GET /api/courses/search?q=pebble
+  beach` and inspect `legHealth`.
+- Cache-poisoning fix: an empty result is negative-cached (5min) ONLY when
+  every attempted external leg was genuinely `ok`/`empty`; a leg
+  error/timeout is never cached, so one bad moment can't wedge a real course
+  out of the cache for 5 minutes. Policy documented in
+  `course_search_cache.py` (store stays a dumb TTL map; the route decides).
+- `course_finder.search_google_places` gets an additive `raise_on_error` flag
+  (default `False` — existing callers, incl. tee-time's
+  `AffiliateLinkProvider`, unaffected) + logs on HTTP failure, so a prod
+  key-not-enabled 403 is now visible in logs instead of a silent `[]`.
+- `frontend/src/lib/golf-api.ts` — collapsed `searchAllCourses`'s 3-leg
+  client fan-out (mapped + GolfAPI proxy + OSM) into ONE call to
+  `/api/courses/search` (backend now owns the whole pipeline). Public
+  signature, append-only `onResults`, client-side prefix gate + dedupe (as
+  defense in depth) all unchanged. Populates a per-row `sourceLabel`
+  (MAPPED/GOOGLE/GOLFAPI/OSM). Adds an 8s internal timeout via
+  `AbortSignal.any` (with a manual-relay fallback for older runtimes)
+  combined with the caller's signal, so a wedged backend can't hang search
+  past the next keystroke.
+- Deviation from the plan's literal pseudocode (noted, minimal/sound): when
+  the Mapbox-fallback path already ran the anchored OSM search inline
+  (nothing else matched), the background step just persists those hits
+  instead of re-running the same anchored OSM query a second time in the
+  background — avoids a redundant duplicate Overpass call; write-through
+  completeness is unchanged.
+
+### Tests
+- `test_course_search.py`: 48 → 59 (Pebble Beach repro table mirroring the
+  Bethpage one, cache-poisoning fix, `legHealth` incl. `caplog` on a raising
+  leg, non-blocking-enrichment scheduling, `_search_golfapi` mapping). All
+  frozen tests listed in the plan (A6) untouched/still passing.
+- Backend full suite: 959 passed / 74 skipped (DB-gated integration tests —
+  no local Postgres on this machine; CI's Postgres service covers those).
+- Frontend: `golf-api-search.test.ts` rewritten for the single-leg contract;
+  `course-search-session.test.ts` / `course-search-helpers.test.ts`
+  untouched and still green. Full vitest 60 files / 1395 tests · tsc clean ·
+  eslint clean · voice-tests smoke 274/274.
+
+Does not touch `CourseSearch.tsx` or `course-search-helpers.ts` (Work Item B
+owns those, already landed).
+
+## 2026-07-06 — course-search v2, Work Item B: full-screen Google-Maps-style search (NOTICEABLE — integration/next, DONE)
+
+`specs/course-search-v2-plan.md` Work Item B (frontend). Owner escalation: the
+old bottom sheet (`maxHeight: "90vh"`) resized/jumped as results streamed in
+and as the iOS keyboard opened. Work Item A (backend: Places-primary search +
+`legHealth` + cache-poisoning fix) is a separate parallel builder — not
+included here; the two are contract-frozen via `searchAllCourses`'s
+unchanged signature + append-only `onResults`.
+
+### What changed
+- `components/CourseSearch.tsx` — full rewrite. `position: fixed; inset: 0;
+  height: 100dvh` — the outer frame is NEVER bound to content or result
+  count; only the inner scroll region grows. Fixed top bar: back chevron
+  (`onClose`) + autoFocus input + optional mic (`onVoiceSearch?: () => void`,
+  hidden/no-op when the caller doesn't pass it — round/new wires it to the
+  existing Realtime voice-setup panel; courses tab / tee-time leave it
+  unwired per plan). Idle state: Favorites → Recent (`getRecentCourses`, new
+  to this surface) → Nearby, deduped against each other by `courseNameKey`
+  so a favorite never echoes under Recent/Nearby. Typed results replace idle
+  sections as one stable append-only list (unchanged contract). One
+  consolidated `CourseRow` idiom replaces the old `ResultRow`/`FavoriteRow`
+  split (serif 17 title, mono 8.5 uppercase subline, dashed hairline, star,
+  chevron, minHeight 44). Dropped the footer attribution for a per-row
+  `sourceLabel` tag. Loading = pulsing dot in the bar only, zero layout
+  shift. `CourseSearchProps`/`CourseSelectPayload`/`resultToPayload` kept
+  exactly — all 3 callers (courses/page.tsx, round/new/page.tsx,
+  tee-time/page.tsx) work unchanged.
+- `lib/course-search-helpers.ts` — new `dedupeIdleSections` (cross-section
+  dedupe by courseNameKey) and `buildRowSubline` / `resultSourceLabel` (the
+  one subline/tag idiom every CourseRow uses).
+- `app/round/new/page.tsx` — passes `onVoiceSearch` → closes the search
+  sheet and opens the existing `VoiceRoundSetupRealtime` panel.
+- Minor incidental fix folded into the row consolidation: `favoriteToPayload`
+  now carries `center` (previously silently dropped, losing the map-view
+  center for favorited non-mapped courses).
+- Tests: `course-search-helpers.test.ts` +19; new `CourseSearch.test.tsx`
+  (RTL, `@testing-library/react` already a devDependency) locks in the fixed
+  outer-frame geometry before/after a 40-row append-only batch, confirms
+  only the inner scroll region scrolls, and covers mic show/hide + back
+  chevron.
+
+Gates: tsc clean · eslint clean · vitest 60 files / 1393 tests green · voice
+smoke 274/274 · `next build` green.
+
+Note for eng-lead: `frontend/src/lib/golf-api.ts` had unrelated in-progress
+changes from the parallel Work Item A builder sharing this same working
+tree while this item was built — left untouched/unstaged, not part of this
+commit. Bundle-worthy alongside A: together they fix both owner complaints
+(search can't find Pebble Beach + resize jank) — hold for a joint approval
+ping once A lands.
+
 ## 2026-07-02 — tee-time: honest course list + real group (NOTICEABLE — integration/next, DONE)
 
 Owner bug (NY, on device): the tee-time screen showed the hardcoded SF demo list
@@ -5598,3 +5715,57 @@ subsequent runs green; CI re-gates), voice smoke 274/274, build green, ruff clea
 Bundle PR #93 opened (integration/next → main): tee-time honest course list (ad0d65d,
 noticeable) + unified detail landing (noticeable) + haptics rider (silent). Owner is
 in-session — approval requested directly, no push notification needed.
+
+---
+
+## 2026-07-06 — SHIPPED: #93 unified course-detail landing + honest tee-time list
+
+Owner approved directly in-session (no email/push loop needed — already in the session).
+Merged PR #93 → main as **cf2d4aa** ("Merge integration/next: unified course-detail
+landing + honest tee-time list (#93)"). Pre-merge check (against the correct base,
+`origin/main` — local `main` ref was stale and pointed at old #85; re-pointed it to
+`origin/main` before diffing): confirmed zero `backend/` changes in this bundle
+(frontend + iOS only) → **no backend deploy** needed, existing API deployment untouched.
+
+**TestFlight:** SPM manifest changed (haptics rider), so cut a fresh native build via
+`ops/ios/ship.sh` — **v1.0.691 (build 202607062035)**, uploaded and confirmed **VALID**
+via the App Store Connect API (`/v1/builds` polled by version, ~3 polls / ~90s to
+ingest+process). Live for the "Looper Team" internal TestFlight group.
+
+**Board:** no existing card for this bundle (searched; the #87 "Course search overhaul"
+card's FOLLOW-UPS note referenced this work but was already Shipped/closed for #87) →
+created a new card directly in Shipped: "Bundle #93: unified course-detail landing +
+honest tee-time course list" (https://app.notion.com/p/3961c52592e081eda0f7e03123cc6b24),
+PR link + full checklist + build number.
+
+**integration/next:** fast-forwarded to cf2d4aa (== new main) and pushed — synced and
+ready to keep rolling; branch not deleted.
+
+---
+
+## 2026-07-06 — course search v2 reviewed + bundle PR (owner session, Fable 5)
+
+Both v2 builders landed (see entries above); eng-lead review pass on the combined tree:
+- Security review (reviewer agent, /security-review): NO findings — legHealth.detail
+  traced on every raising leg (status codes only, keys travel in headers, mapbox
+  swallows), auth unchanged, no injection/XSS.
+- Designer (Playwright on dev, iPhone-13 viewport): pass-with-polish; VERIFIED the
+  no-layout-shift fix (surface bbox identical across idle/loading/results). One
+  blocker: star <button> nested in row <button> (invalid HTML, hydration warnings,
+  iOS hit-testing) — FIXED in 67138a1 (row -> div[role=button], star 34px target,
+  title 16 / chevron 10 idiom match).
+- Eng-lead caught what the reviews missed: the parallel GolfAPI leg would burn the
+  45-calls/MONTH budget on typed prefixes (each distinct prefix = fresh discovery
+  cache key; budget shared with per-course golf-data fetches). FIXED in 67138a1:
+  GolfAPI is now a fallback leg (only when Places is empty); legHealth omits it
+  when skipped; +1 route test.
+Combined gates: backend 960 passed/74 skipped + ruff clean; frontend tsc/lint clean,
+vitest 1395/1395, voice 274/274, build green.
+
+Bundle: search v2 (backend Places-primary + full-screen UI) — NOTICEABLE, awaiting
+owner approval (in-session). Owner test: type "Pebble Beach" (results ~1-4s, no
+resize), "Bethpa" (only Bethpage), start round from a search pick.
+Open follow-ups: /map/course ErrorScreen restyle (backlog); prod Places key
+"Places API (New)" enablement UNVERIFIED (probe blocked) — legHealth in the
+response now surfaces it: hit /api/courses/search?q=pebble+beach and check
+legHealth[0] once deployed.

@@ -166,3 +166,96 @@ export function mergeAndSortNearby(
 
   return dedupeByName(sorted);
 }
+
+// ---------------------------------------------------------------------------
+// Idle-section dedupe (Favorites / Recent / Nearby) — Google-Maps-style
+// search surface shows the three as separate lists; a course already
+// pinned as a Favorite shouldn't also echo under Recent or Nearby.
+// ---------------------------------------------------------------------------
+
+export interface IdleSections<F, R, N> {
+  favorites: F[];
+  recent: R[];
+  nearby: N[];
+}
+
+/**
+ * Dedupe the three idle-state sections against each other by courseNameKey,
+ * in priority order Favorites > Recent > Nearby. Favorites are always
+ * returned in full (top priority, never dropped); a name already claimed by
+ * Favorites is skipped in Recent, and a name already claimed by either is
+ * skipped in Nearby.
+ */
+export function dedupeIdleSections<
+  F extends { name: string },
+  R extends { name: string },
+  N extends { name: string },
+>(favorites: F[], recent: R[], nearby: N[]): IdleSections<F, R, N> {
+  const seen = new Set<string>();
+  for (const f of favorites) seen.add(courseNameKey(f.name));
+
+  const dedupedRecent: R[] = [];
+  for (const r of recent) {
+    const key = courseNameKey(r.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    dedupedRecent.push(r);
+  }
+
+  const dedupedNearby: N[] = [];
+  for (const n of nearby) {
+    const key = courseNameKey(n.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    dedupedNearby.push(n);
+  }
+
+  return { favorites, recent: dedupedRecent, nearby: dedupedNearby };
+}
+
+// ---------------------------------------------------------------------------
+// Row view-model — one consolidated subline idiom for every CourseRow, no
+// matter which section (Favorites / Recent / Nearby / typed results) it
+// renders in. Composes "City, State · 2.3 mi · SOURCE" from whichever parts
+// are available, skipping any that don't apply — never an empty separator.
+// ---------------------------------------------------------------------------
+
+export interface RowSublineParts {
+  /** Course/property name — compared against clubName to avoid an echo. */
+  name?: string;
+  clubName?: string;
+  city?: string;
+  state?: string;
+  distanceMi?: number;
+  sourceLabel?: string;
+}
+
+/**
+ * Compose the single mono subline shown under every CourseRow's title.
+ * Falls back to clubName when there's no city/state (Favorite/Recent/GolfAPI
+ * rows often only carry a club name, not a geocoded location).
+ */
+export function buildRowSubline(parts: RowSublineParts): string {
+  const bits: string[] = [];
+  const location = [parts.city, parts.state].filter(Boolean).join(", ");
+  if (location) {
+    bits.push(location);
+  } else if (parts.clubName && parts.clubName !== parts.name) {
+    bits.push(parts.clubName);
+  }
+  if (parts.distanceMi !== undefined) bits.push(formatMiles(parts.distanceMi));
+  if (parts.sourceLabel) bits.push(parts.sourceLabel);
+  return bits.join(" · ");
+}
+
+/**
+ * Best-effort source tag for a search-result row: the real per-row label
+ * from the backend (`sourceLabel`, added alongside `google_places` support)
+ * when present, else a legacy fallback so mapped courses still show a tag
+ * before that backend change lands.
+ */
+export function resultSourceLabel(r: { source?: string; sourceLabel?: string }): string | undefined {
+  if (r.sourceLabel) return r.sourceLabel;
+  if (r.source === "mapped") return "mapped";
+  return undefined;
+}

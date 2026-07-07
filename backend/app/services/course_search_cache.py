@@ -8,8 +8,20 @@ under backend/data/ so it survives restarts), and fakes in tests.
 
 Course names don't churn day to day, so positive hits get a generous 24h TTL
 (unlike the 15min tee-time availability cache — freshness matters much less
-here). Empty results get a short 5min negative TTL so a transient external
-outage doesn't wedge a real course out of the cache for a day.
+here). Empty results get a short 5min negative TTL — but ONLY for a genuine
+no-match; that decision is NOT made here.
+
+Cache policy lives at the CALL SITE (routes/course_search.py), not in this
+store: the store is a dumb TTL map — whatever the route hands `.set()`, it
+caches (positive → 24h, empty → 5min). The route is the one that knows
+whether every attempted external leg (Google Places / GolfAPI / Mapbox / the
+anchored OSM fallback) came back "ok"/"empty" versus errored or timed out
+(see `_run_leg` / `LegHealth` in routes/course_search.py). An empty result
+caused by a masked leg failure must NEVER be cached — the route simply
+doesn't call `.set()` in that case, so the next identical search retries the
+externals instead of being poisoned by a transient outage for 5 minutes
+(course-search-v2 A2; previously this store negative-cached ANY empty result,
+regardless of cause — that was the bug).
 """
 
 from __future__ import annotations
