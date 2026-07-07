@@ -64,6 +64,15 @@ export interface RealtimeCaddieOptions {
   personalityId: string;
   /** 'caddie' (default) = in-round caddie; 'setup' = round-less voice round setup. */
   mode?: 'caddie' | 'setup';
+  /**
+   * Preload mode (lib/voice/warm-session.ts): mint + connect WITHOUT ever
+   * calling getUserMedia. start() adds a track-less audio transceiver instead
+   * of a mic track, and output stays muted. Nothing is "open" until a caller
+   * invokes attachMic() — until then getUserMedia is never called, no audio
+   * frame is transmitted, and transcript/assistant events are dropped. This is
+   * the structural guarantee the forbidden mic-live warm shortcut lacked.
+   */
+  withholdMic?: boolean;
 }
 
 // ── Tool dispatch ────────────────────────────────────────────────────────
@@ -143,6 +152,20 @@ export class RealtimeCaddieClient {
   private token: RealtimeSessionToken | null = null;
   private events: RealtimeCaddieEvents;
   private opts: RealtimeCaddieOptions;
+  // Most recent status pushed to `events.onStatus` — lets an adopting surface
+  // (warm-session.ts takeWarm()) repaint the CURRENT state immediately via
+  // emitCurrentStatus() instead of waiting for the next status change.
+  private currentStatus: RealtimeStatus = 'idle';
+  // True once the mic is live (attachMic() has run, or withholdMic was never
+  // set). While false: no getUserMedia has been called, no audio frame has
+  // been sent, and handleEvent() drops transcript/assistant-transcript events
+  // — the structural guarantee that a warm/preloaded session cannot leak a
+  // phantom transcript before the user actually opens the mic.
+  private opened: boolean;
+  // The audio transceiver used to attach the mic without renegotiation once
+  // withholdMic warming is adopted (see attachMic()). Set for BOTH paths (for
+  // symmetry) even though only the withheld path needs the later replaceTrack.
+  private micTransceiver: RTCRtpTransceiver | null = null;
   // Live partial text by role+response_id to coalesce streamed deltas.
   private partials: Map<string, RealtimeMessage> = new Map();
   // Hands out stable conversation-order keys so the user's turn renders before
@@ -155,6 +178,7 @@ export class RealtimeCaddieClient {
   constructor(opts: RealtimeCaddieOptions, events: RealtimeCaddieEvents = {}) {
     this.opts = opts;
     this.events = events;
+    this.opened = !opts.withholdMic;
   }
 
   async start(): Promise<void> {
@@ -210,17 +234,33 @@ export class RealtimeCaddieClient {
         }
       };
 
-      // Mic — echo cancellation is ESSENTIAL: without it the phone speaker's
-      // caddie audio is picked up by the mic, transcribed as the user's turn, and
-      // the model replies to its own echo (garbled, out-of-order conversation).
-      this.localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      this.localStream.getTracks().forEach((t) => this.pc!.addTrack(t, this.localStream!));
+      if (this.opts.withholdMic) {
+        // Preload path: add the audio m-line with NO track and skip
+        // getUserMedia entirely — the iOS mic-permission dialog cannot fire
+        // and zero audio frames are transmitted. attachMic() later calls
+        // replaceTrack() on this SAME transceiver, so opening the mic needs
+        // no renegotiation (no second createOffer/setLocalDescription).
+        this.micTransceiver = this.pc.addTransceiver('audio', { direction: 'sendrecv' });
+        this.setOutputMuted(true); // caddie stays silent until the sheet actually opens
+      } else {
+        // Mic — echo cancellation is ESSENTIAL: without it the phone speaker's
+        // caddie audio is picked up by the mic, transcribed as the user's turn, and
+        // the model replies to its own echo (garbled, out-of-order conversation).
+        this.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        const senders = this.localStream
+          .getTracks()
+          .map((t) => this.pc!.addTrack(t, this.localStream!));
+        // Set for symmetry with the withheld path (unused today, but keeps
+        // attachMic()'s replaceTrack() valid if ever called on a hot client).
+        this.micTransceiver =
+          this.pc.getTransceivers().find((tr) => tr.sender === senders[0]) ?? null;
+      }
 
       // Events
       this.dc = this.pc.createDataChannel('oai-events');
@@ -296,6 +336,54 @@ export class RealtimeCaddieClient {
     return this.pc !== null;
   }
 
+  /**
+   * Open the mic on a warm (withheld) session: acquire it now (THE ONLY
+   * getUserMedia call for this client), attach it to the pre-negotiated audio
+   * transceiver with replaceTrack() (no renegotiation), unmute output, and lift
+   * the transcript gate. No-op if the mic is already open. Rejection (e.g.
+   * permission denied) mirrors start()'s failure path — error status, onError,
+   * cleanup, rethrow — so an adopting surface's EXISTING error handling (setup
+   * sheet's error UI / orb's CONNECT_FAILED degrade) just works unchanged.
+   */
+  async attachMic(): Promise<void> {
+    if (this.opened) return;
+    try {
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      const track = this.localStream.getAudioTracks()[0];
+      if (track && this.micTransceiver) {
+        await this.micTransceiver.sender.replaceTrack(track);
+      }
+      this.opened = true;
+      this.setOutputMuted(false);
+      this.idle.touch();
+    } catch (err) {
+      this.setStatus('error');
+      this.events.onError?.(err instanceof Error ? err : new Error(String(err)));
+      this.cleanup();
+      throw err;
+    }
+  }
+
+  /** Rebind event handlers — used when an adopting surface takes over a warm
+   *  client that the manager created with its own (minimal) handlers. */
+  setEvents(events: RealtimeCaddieEvents): void {
+    this.events = events;
+  }
+
+  /** Re-emit the current status to whichever handler is bound RIGHT NOW — lets
+   *  an adopting surface paint "Ready — go ahead" immediately after setEvents()
+   *  instead of waiting for the next status transition (which may never come
+   *  again if the connection is already settled). */
+  emitCurrentStatus(): void {
+    this.events.onStatus?.(this.currentStatus);
+  }
+
   isMuted(): boolean {
     const tracks = this.localStream?.getAudioTracks() ?? [];
     return tracks.length > 0 && tracks.every((t) => !t.enabled);
@@ -328,6 +416,7 @@ export class RealtimeCaddieClient {
   }
 
   private setStatus(status: RealtimeStatus) {
+    this.currentStatus = status;
     this.events.onStatus?.(status);
   }
 
@@ -348,6 +437,9 @@ export class RealtimeCaddieClient {
       }
       case 'response.audio_transcript.delta':
       case 'response.output_audio_transcript.delta': {
+        // Belt for the withheld-mic warm path: even with output muted, drop
+        // any pre-open greeting delta rather than surface it once opened.
+        if (!this.opened) break;
         const id = String(evt.response_id || evt.item_id || 'assistant-current');
         const delta = String(evt.delta || '');
         const existing =
@@ -363,6 +455,7 @@ export class RealtimeCaddieClient {
       case 'response.output_audio_transcript.done':
       case 'response.output_text.done':
       case 'response.done': {
+        if (!this.opened) break; // dropped while withheld — see delta case above
         const id = String(evt.response_id || evt.item_id || 'assistant-current');
         const existing = this.partials.get(id);
         if (existing) {
@@ -374,6 +467,10 @@ export class RealtimeCaddieClient {
         break;
       }
       case 'conversation.item.input_audio_transcription.completed': {
+        // THE invariant this guards: with the mic withheld, no audio is ever
+        // sent, so this should never fire pre-open — but drop it anyway
+        // rather than trust that alone (belt-and-braces, see the plan).
+        if (!this.opened) break;
         const itemId = evt.item_id ? String(evt.item_id) : undefined;
         const id = itemId ?? `user-${Date.now()}`;
         const text = String(evt.transcript || '');
@@ -402,6 +499,10 @@ export class RealtimeCaddieClient {
         break;
       }
       case 'response.function_call_arguments.done': {
+        // Same pre-open gate as the transcript events: a not-yet-adopted warm
+        // session must never dispatch tools (defense in depth — no audio can
+        // reach the model pre-open, so nothing should arrive here anyway).
+        if (!this.opened) break;
         void this.runTool(evt);
         break;
       }

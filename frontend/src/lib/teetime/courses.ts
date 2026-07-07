@@ -11,6 +11,7 @@
  */
 
 import type { CourseSearchResult } from "@/lib/golf-api";
+import { hasIdentifyingTokens } from "@/lib/course-search-helpers";
 
 /** A course row in the tee-time prefs UI. */
 export interface CourseOption {
@@ -93,14 +94,22 @@ export function toCourseOptions(
   for (const r of results) {
     if (!r.name || !r.center) continue;
     const nameKey = r.name.toLowerCase();
+    const favorite = favIds.has(r.id) || favNames.has(nameKey);
+    const muni = muniFromAddress(r.address) || r.city || "";
+    // Junk rows: an all-generic name ("Golf Course") identifies nothing —
+    // skip it UNLESS something else identifies it: the golfer favorited it,
+    // or it carries a place ("Golf Course · Tenafly" is honest). Legit
+    // all-generic names ("The Country Club", Brookline) keep their address,
+    // so they survive; bare identity-free OSM ways don't.
+    if (!hasIdentifyingTokens(r.name) && !favorite && !muni) continue;
     if (seen.has(nameKey)) continue;
     seen.add(nameKey);
     options.push({
       id: r.id,
       name: r.name,
-      muni: muniFromAddress(r.address) || r.city || "",
+      muni,
       distance: round1(haversineMiles(origin.lat, origin.lng, r.center.lat, r.center.lng)),
-      favorite: favIds.has(r.id) || favNames.has(nameKey),
+      favorite,
       selected: false,
     });
   }
@@ -138,16 +147,42 @@ export function toCourseOptions(
  * Merge freshly fetched nearby options into the golfer's current list without
  * clobbering it: existing rows keep their order and selection (toggles and
  * hand-added courses survive a refetch), new courses are appended. Appended
- * courses arrive unselected unless they're a favorite.
+ * courses arrive pre-selected when they're a favorite — UNLESS the golfer has
+ * already touched the list (toggled or hand-added a course), in which case
+ * the first-load convenience never re-applies and every addition arrives
+ * unselected, honoring whatever the golfer has already decided.
  */
-export function mergeCourseOptions(existing: CourseOption[], incoming: CourseOption[]): CourseOption[] {
+export function mergeCourseOptions(
+  existing: CourseOption[],
+  incoming: CourseOption[],
+  opts: { touched?: boolean } = {},
+): CourseOption[] {
   if (existing.length === 0) return incoming;
   const present = new Set<string>();
   for (const o of existing) { present.add(o.id); present.add(o.name.toLowerCase()); }
   const additions = incoming
     .filter((o) => !present.has(o.id) && !present.has(o.name.toLowerCase()))
-    .map((o) => ({ ...o, selected: o.favorite }));
+    .map((o) => ({ ...o, selected: opts.touched ? false : o.favorite }));
   return additions.length > 0 ? [...existing, ...additions] : existing;
+}
+
+/**
+ * Merge `incoming` into `existing` (see mergeCourseOptions), then prune rows
+ * that no longer fit the drive radius: `distance != null && distance >
+ * maxMiles` rows are dropped UNLESS they're hand-added (distance null,
+ * always kept), favorited, or the golfer's own selection — a voice-widened
+ * or hand-picked far course is never silently dropped. Passing `existing`
+ * for both `existing` and `incoming` re-prunes in place (the golfer shrank
+ * "Max drive" — no new fetch needed, just a re-filter of what's already on
+ * the list).
+ */
+export function reconcileCourseOptions(
+  existing: CourseOption[],
+  incoming: CourseOption[],
+  opts: { maxMiles: number; touched?: boolean },
+): CourseOption[] {
+  const merged = mergeCourseOptions(existing, incoming, { touched: opts.touched });
+  return merged.filter((o) => !(o.distance != null && o.distance > opts.maxMiles && !o.selected && !o.favorite));
 }
 
 /** What the add-course sheet hands back (subset of CourseSelectPayload). */
@@ -259,4 +294,72 @@ export async function fetchNearbyCourseOptions(
   } catch {
     return { options: [], failed: true };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Race-hardened fetch session — mirrors course-search-session's
+// AbortController + live-target-equality pattern so a mid-flight area/radius
+// change (two locate fixes landing back to back) can never apply a STALE
+// result over a newer one. Selections/order are separately protected by
+// mergeCourseOptions' append-only merge.
+// ---------------------------------------------------------------------------
+
+/** The golfer's area + fetch radius — identifies one in-flight fetch. */
+export interface CourseFetchTarget {
+  area: string;
+  radius: number;
+}
+
+function fetchTargetKey(t: CourseFetchTarget): string {
+  return `${t.area}@${t.radius}`;
+}
+
+/** Injectable fetch function (fetchNearbyCourseOptions in production; a fake in tests). */
+export type NearbyFetchFn = (lat: number, lng: number, radiusMeters: number) => Promise<NearbyCourseOptionsResult>;
+
+export interface CourseFetchSessionCallbacks {
+  /** Fires ONLY while `target` is still the live one — a superseded (older)
+   *  fetch's result is silently dropped, never applied. */
+  onResult: (result: NearbyCourseOptionsResult, target: CourseFetchTarget) => void;
+}
+
+export interface CourseFetchSession {
+  /** Fetch nearby courses for `target`; supersedes any in-flight fetch. */
+  fetch(target: CourseFetchTarget, lat: number, lng: number): void;
+  /** Abort in-flight work (component unmount). */
+  cancel(): void;
+}
+
+/**
+ * Race-hardened nearby-course fetch session. `lastFetched`-style guards in
+ * the page only compared against the LAST-SETTLED fetch, written post-await —
+ * they can't stop a fetch for an OLDER target from landing after a NEWER one
+ * if they happen to resolve out of order. This session tracks the live
+ * target explicitly so a stale result is dropped no matter the arrival order.
+ */
+export function createCourseFetchSession(
+  callbacks: CourseFetchSessionCallbacks,
+  fetchFn: NearbyFetchFn = fetchNearbyCourseOptions,
+): CourseFetchSession {
+  let liveKey = "";
+  let controller: AbortController | null = null;
+
+  return {
+    fetch(target, lat, lng) {
+      controller?.abort();
+      const key = fetchTargetKey(target);
+      liveKey = key;
+      const c = new AbortController();
+      controller = c;
+      const isLive = () => liveKey === key && !c.signal.aborted;
+
+      fetchFn(lat, lng, target.radius)
+        .then((result) => { if (isLive()) callbacks.onResult(result, target); })
+        .catch(() => { /* fetchNearbyCourseOptions never throws — belt only */ });
+    },
+    cancel() {
+      controller?.abort();
+      controller = null;
+    },
+  };
 }

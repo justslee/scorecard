@@ -58,6 +58,20 @@ describe('transportReducer — degradation ladder', () => {
     expect(s.phase).toBe('connecting');
   });
 
+  it('a second PRESS while phase is already connecting (e.g. adopting a warm client) is a no-op — no re-mint', () => {
+    const connecting = run([{ type: 'PRESS' }, { type: 'MINT_OK' }]);
+    expect(connecting.phase).toBe('connecting');
+    const pressedAgain = transportReducer(connecting, { type: 'PRESS' });
+    expect(pressedAgain).toEqual(connecting); // unchanged — same object shape, no fresh minting phase
+    expect(pressedAgain.tier).toBe('realtime');
+  });
+
+  it('a second PRESS while phase is already minting (warm() dispatched first) is also a no-op', () => {
+    const minting = run([{ type: 'PRESS' }]);
+    expect(minting.phase).toBe('minting');
+    expect(transportReducer(minting, { type: 'PRESS' })).toEqual(minting);
+  });
+
   it('going offline drops straight to tier 3 from any tier', () => {
     expect(run([{ type: 'WENT_OFFLINE' }]).tier).toBe('offline');
     const fromText = run([{ type: 'PRESS' }, { type: 'MINT_TIMEOUT' }, { type: 'WENT_OFFLINE' }]);

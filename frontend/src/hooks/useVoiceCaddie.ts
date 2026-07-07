@@ -23,6 +23,7 @@ import {
   type RealtimeMessage,
   type RealtimeStatus,
 } from '@/lib/voice/realtime';
+import { warmSession } from '@/lib/voice/warm-session';
 import { sortByOrder } from '@/lib/voice/realtime-ordering';
 import { appendSessionMessage } from '@/lib/caddie/api';
 import {
@@ -53,6 +54,10 @@ export interface UseVoiceCaddieResult {
   voiceState: VoiceState;
   turns: VoiceTurn[];
   tier: TransportTier;
+  /** Preload a mic-withheld Realtime session so the next press is instant.
+   *  Call once when the caddie session becomes available — NOT on every
+   *  render (see RoundPageClient's one-shot effect). */
+  warm: () => void;
   /** Press the orb/mic. Returns which surface the press opened. */
   press: () => 'voice' | 'text' | 'offline';
   /** Release the mic — mutes input; the model replies aloud. */
@@ -72,6 +77,10 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
   const mintDeadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const everConnectedRef = useRef(false);
   const degradedRef = useRef(false);
+  // Guards warm() so a re-render (or the effect firing more than once) never
+  // stacks a second warm attempt; reset once the warm client closes/errors so
+  // a later warm() can try again.
+  const warmStartedRef = useRef(false);
   // Ledger bookkeeping: message ids already persisted to caddie_messages.
   const persistedIdsRef = useRef<Set<string>>(new Set());
   // Live copies for use inside client callbacks without re-creating the client
@@ -93,6 +102,8 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
     clientRef.current?.stop();
     clientRef.current = null;
     everConnectedRef.current = false;
+    warmStartedRef.current = false;
+    warmSession.teardown(); // no-op if nothing warm/consumed
     setStatus('idle');
   }, [clearMintDeadline]);
 
@@ -117,6 +128,40 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
     });
   }, []);
 
+  /** Shared connection-status handling for BOTH a cold burst's client and an
+   *  adopted warm client — one ladder, one place it's driven from. */
+  const handleConnectionStatus = useCallback(
+    (s: RealtimeStatus) => {
+      setStatus(s);
+      if (s === 'connected' && !everConnectedRef.current) {
+        everConnectedRef.current = true;
+        dispatch({ type: 'CONNECTED' });
+        // Apply the CURRENT hold state — the player may have released
+        // (or never released) while the connection was being set up.
+        clientRef.current?.setMuted(!heldRef.current);
+      }
+      if (s === 'closed') {
+        if (everConnectedRef.current) {
+          // Clean close (90s idle disconnect) — tier stays healthy.
+          dispatch({ type: 'DISCONNECTED' });
+          clientRef.current = null;
+          everConnectedRef.current = false;
+          // Allow a fresh warm() so the NEXT press is also instant, not just
+          // the first press of the session (review finding).
+          warmStartedRef.current = false;
+        } else {
+          // Tier-1 failure condition #2: ICE/SDP failed before going live.
+          degradeToText('CONNECT_FAILED');
+        }
+      }
+      if (s === 'error') {
+        if (!everConnectedRef.current) degradeToText('CONNECT_FAILED');
+        else degradeToText('REALTIME_ERROR');
+      }
+    },
+    [degradeToText],
+  );
+
   const startBurst = useCallback(() => {
     if (clientRef.current) return;
     degradedRef.current = false;
@@ -135,31 +180,7 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
           clearMintDeadline();
           dispatch({ type: 'MINT_OK' });
         },
-        onStatus: (s) => {
-          setStatus(s);
-          if (s === 'connected' && !everConnectedRef.current) {
-            everConnectedRef.current = true;
-            dispatch({ type: 'CONNECTED' });
-            // Apply the CURRENT hold state — the player may have released
-            // (or never released) while the connection was being set up.
-            clientRef.current?.setMuted(!heldRef.current);
-          }
-          if (s === 'closed') {
-            if (everConnectedRef.current) {
-              // Clean close (90s idle disconnect) — tier stays healthy.
-              dispatch({ type: 'DISCONNECTED' });
-              clientRef.current = null;
-              everConnectedRef.current = false;
-            } else {
-              // Tier-1 failure condition #2: ICE/SDP failed before going live.
-              degradeToText('CONNECT_FAILED');
-            }
-          }
-          if (s === 'error') {
-            if (!everConnectedRef.current) degradeToText('CONNECT_FAILED');
-            else degradeToText('REALTIME_ERROR');
-          }
-        },
+        onStatus: handleConnectionStatus,
         onMessage: upsertMessage,
       },
     );
@@ -169,7 +190,54 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
       degradeToText('CONNECT_FAILED');
     });
     // Mic live from the first frame of the hold (tracks start enabled).
-  }, [clearMintDeadline, degradeToText, upsertMessage]);
+  }, [clearMintDeadline, degradeToText, handleConnectionStatus, upsertMessage]);
+
+  /** Preload a mic-withheld Realtime session (lib/voice/warm-session.ts) so a
+   *  later press() can adopt it instead of cold-minting. Dispatches the SAME
+   *  PRESS→MINT_OK→CONNECTED events a cold burst would — off the warm
+   *  client's OBSERVED status — so transportReducer's phase tracks reality
+   *  even though nothing has been pressed yet. No mic is ever attached here. */
+  const warm = useCallback(() => {
+    if (clientRef.current || warmStartedRef.current) return;
+    warmStartedRef.current = true;
+    dispatch({ type: 'PRESS' });
+    warmSession.warm(
+      { kind: 'caddie', roundId: optsRef.current.roundId, personalityId: optsRef.current.personaId },
+      {
+        onMinted: () => dispatch({ type: 'MINT_OK' }),
+        onStatus: (s) => {
+          if (s === 'connected') dispatch({ type: 'CONNECTED' });
+          else if (s === 'closed' || s === 'error') {
+            warmStartedRef.current = false; // allow a later warm() to retry
+            dispatch({ type: 'DISCONNECTED' });
+          }
+        },
+      },
+    );
+  }, []);
+
+  /** Adopt a warm client at press-time: rebind handlers, repaint the current
+   *  status, then open the mic — the ONLY getUserMedia call in this path. */
+  const adoptWarmClient = useCallback(
+    (client: RealtimeCaddieClient) => {
+      degradedRef.current = false;
+      dispatch({ type: 'PRESS' });
+      dispatch({ type: 'MINT_OK' }); // already minted during warm — advance the ladder to match
+      clientRef.current = client;
+      client.setEvents({ onStatus: handleConnectionStatus, onMessage: upsertMessage });
+      client.emitCurrentStatus(); // paint the CURRENT state (often already connected)
+      client
+        .attachMic()
+        .then(() => {
+          client.setMuted(!heldRef.current);
+        })
+        .catch(() => {
+          // attachMic() already pushed status 'error' through the handler
+          // above, which routes to degradeToText via handleConnectionStatus.
+        });
+    },
+    [handleConnectionStatus, upsertMessage],
+  );
 
   const press = useCallback((): 'voice' | 'text' | 'offline' => {
     // Fully offline → tier 3 immediately (no point minting).
@@ -194,10 +262,19 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
     if (clientRef.current) {
       clientRef.current.setMuted(false); // warm connection — just open the mic
     } else {
-      startBurst();
+      const warmClient = warmSession.takeWarm({
+        kind: 'caddie',
+        roundId: optsRef.current.roundId,
+        personalityId: optsRef.current.personaId,
+      });
+      if (warmClient) {
+        adoptWarmClient(warmClient);
+      } else {
+        startBurst();
+      }
     }
     return 'voice';
-  }, [startBurst, transport.tier]);
+  }, [adoptWarmClient, startBurst, transport.tier]);
 
   const release = useCallback(() => {
     heldRef.current = false;
@@ -266,11 +343,13 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
     };
   }, [teardownClient]);
 
-  // Disconnect when leaving the round screen.
+  // Disconnect when leaving the round screen — also tears down an un-adopted
+  // warm session rather than leaving a billed zombie connection behind.
   useEffect(() => {
     return () => {
       clientRef.current?.stop();
       clientRef.current = null;
+      warmSession.teardown();
     };
   }, []);
 
@@ -278,6 +357,7 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
     voiceState: mapStatusToVoiceState(status, held),
     turns: messagesToTurns(messages),
     tier: transport.tier,
+    warm,
     press,
     release,
     stop,

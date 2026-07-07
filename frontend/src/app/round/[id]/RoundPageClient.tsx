@@ -619,6 +619,16 @@ export default function RoundPage() {
     },
   });
 
+  // Preload the caddie's Realtime session as soon as it's available — by the
+  // time the golfer actually presses the orb, the connection is usually
+  // already warm (the mic stays withheld until that real press). Fires once,
+  // on the transition to available; useVoiceCaddie.warm() is itself
+  // idempotent so re-firing this effect is harmless. See lib/voice/warm-session.ts.
+  const { warm: warmVoice } = voice;
+  useEffect(() => {
+    if (caddieSessionActive && !isLocalRound) warmVoice();
+  }, [caddieSessionActive, isLocalRound, warmVoice]);
+
   /** Orb / mic press: hold-to-talk. Opens whichever surface the ladder picks. */
   const handleVoicePress = () => {
     const surface = voice.press();

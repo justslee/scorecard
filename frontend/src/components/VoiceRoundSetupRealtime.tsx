@@ -10,6 +10,10 @@
  * `set_round_setup` tool; we map that to the round form via onSetupRound and the
  * golfer confirms with "Tee off".
  *
+ * start() adopts a warm (mic-withheld) session from lib/voice/warm-session.ts
+ * when the mic button's first-interaction trigger already preloaded one, so
+ * "Connecting…" becomes rare — see specs/caddie-preload-plan.md.
+ *
  * The WebRTC voice path can only be exercised on a real device — this component
  * is structured to fail calm (clear error + retry) rather than dead-end.
  */
@@ -22,6 +26,7 @@ import {
   type RealtimeMessage,
   type RealtimeStatus,
 } from "@/lib/voice/realtime";
+import { warmSession } from "@/lib/voice/warm-session";
 import { sortByOrder } from "@/lib/voice/realtime-ordering";
 import { shouldDismissSheetDrag, useBodyScrollLock } from "@/lib/sheet";
 
@@ -128,17 +133,33 @@ export default function VoiceRoundSetupRealtime({
   const start = useCallback(async () => {
     if (clientRef.current) return;
     setError(null);
-    const client = new RealtimeCaddieClient(
-      { mode: "setup", personalityId: "classic" },
-      {
-        onStatus: (s) => mountedRef.current && setStatus(s),
-        onMessage: (m) => mountedRef.current && upsert(m),
-        onToolCall: (name, rawArgs) => {
-          if (name === "set_round_setup") handleSetRoundSetup(rawArgs as SetRoundSetupArgs);
-        },
-        onError: (e) => mountedRef.current && setError(e.message),
+    const events = {
+      onStatus: (s: RealtimeStatus) => mountedRef.current && setStatus(s),
+      onMessage: (m: RealtimeMessage) => mountedRef.current && upsert(m),
+      onToolCall: (name: string, rawArgs: unknown) => {
+        if (name === "set_round_setup") handleSetRoundSetup(rawArgs as SetRoundSetupArgs);
       },
-    );
+      onError: (e: Error) => mountedRef.current && setError(e.message),
+    };
+
+    // Adopt a warm (mic-withheld) session if the setup-trigger preload
+    // (round/new/page.tsx) already minted + connected one — this is the path
+    // that makes "Connecting…" rare. attachMic() is the ONE place this client
+    // ever calls getUserMedia; it happens here, on the user's own open.
+    const warmClient = warmSession.takeWarm({ kind: "setup", personalityId: "classic" });
+    if (warmClient) {
+      clientRef.current = warmClient;
+      warmClient.setEvents(events);
+      warmClient.emitCurrentStatus(); // paint the current state immediately
+      try {
+        await warmClient.attachMic();
+      } catch {
+        clientRef.current = null;
+      }
+      return;
+    }
+
+    const client = new RealtimeCaddieClient({ mode: "setup", personalityId: "classic" }, events);
     clientRef.current = client;
     try {
       await client.start();
@@ -147,10 +168,13 @@ export default function VoiceRoundSetupRealtime({
     }
   }, [upsert, handleSetRoundSetup]);
 
-  // Connect on open; tear the session down on unmount. The component is mounted
-  // ONLY while the sheet is open (parent gates it on showVoiceSetup), so the live
-  // Realtime session never runs in the background — a warm/preloaded session let
-  // whisper-1 hallucinate phantom transcripts on silence before the user spoke.
+  // Connect on open (adopting a warm session if round/new/page.tsx already
+  // preloaded one — see lib/voice/warm-session.ts); tear the session down on
+  // unmount. The sheet may now be PRE-WARMED in the background before it
+  // opens, but the mic is structurally withheld until attachMic() runs here at
+  // open — no getUserMedia, no track, transcripts dropped — so a warm session
+  // can never hallucinate a phantom transcript from live silence (the
+  // previously-reverted mic-live shortcut this design replaces).
   // start() is deferred a tick so it doesn't setState synchronously in the effect.
   useEffect(() => {
     mountedRef.current = true;

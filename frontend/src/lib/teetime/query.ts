@@ -8,8 +8,13 @@ import { dateForWindowLabel, nextDateForWeekday } from "./dates";
 
 /** The slice of prefs state the Searching phase turns into provider queries. */
 export interface QueryPrefs {
-  /** Selected time windows (already filtered to `selected`). */
-  windows: Array<{ label: string; start: string; end: string }>;
+  /**
+   * Selected time windows (already filtered to `selected`). `date` is the
+   * real ISO date the window carries (set by the calendar picker, a preset,
+   * or voice) — when present it's used VERBATIM; `label` is display-only and
+   * only drives the date as a fallback for older callers.
+   */
+  windows: Array<{ label: string; start: string; end: string; date?: string }>;
   /** Selected course ids (already filtered to within the drive radius). */
   courseIds: string[];
   partySize: number;
@@ -47,7 +52,7 @@ export function buildTeeTimeQueries(prefs: QueryPrefs, from: Date = new Date()):
   }
 
   return prefs.windows.map((w) => ({
-    date: dateForWindowLabel(w.label, from),
+    date: w.date ?? dateForWindowLabel(w.label, from),
     timeWindowStart: w.start,
     timeWindowEnd: w.end,
     ...base,

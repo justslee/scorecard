@@ -205,7 +205,12 @@ def build_session_payload(
                     # Server-side noise suppression applied before VAD and the model.
                     # Reduces false-positive VAD triggers from background noise.
                     "noise_reduction": {"type": "near_field"},
-                    "transcription": {"model": transcribe_model},
+                    # language pinned to English: without it the transcriber
+                    # auto-detects per utterance and short/ambient audio lands on
+                    # the wrong language (owner repro: a reply chip in Korean).
+                    # Owner direction 2026-07-06: default English; a per-user
+                    # language setting comes later with onboarding.
+                    "transcription": {"model": transcribe_model, "language": "en"},
                     "turn_detection": turn_detection,
                 },
                 "output": {"voice": voice_id or OPENAI_REALTIME_DEFAULT_VOICE},

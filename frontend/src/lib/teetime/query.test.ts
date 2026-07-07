@@ -68,6 +68,24 @@ describe("buildTeeTimeQueries", () => {
     expect("courseIds" in q).toBe(false);
   });
 
+  it("uses a window's own real date VERBATIM when present, ignoring its label", () => {
+    const [q] = buildTeeTimeQueries({
+      ...BASE,
+      // Label says "Saturday" but the golfer picked a specific Wednesday via
+      // the calendar — the real date must win, never re-derived from label.
+      windows: [{ label: "Saturday", start: "06:30", end: "09:30", date: "2026-07-15" }],
+    }, WED);
+    expect(q.date).toBe("2026-07-15");
+  });
+
+  it("falls back to the label-derived date when a window carries none (older callers)", () => {
+    const [q] = buildTeeTimeQueries({
+      ...BASE,
+      windows: [{ label: "Sunday", start: "07:00", end: "10:00" }],
+    }, WED);
+    expect(q.date).toBe("2026-07-05");
+  });
+
   it("no windows selected → single broad Saturday-morning query", () => {
     const queries = buildTeeTimeQueries({ ...BASE, windows: [], area: "sf" }, WED);
     expect(queries).toHaveLength(1);

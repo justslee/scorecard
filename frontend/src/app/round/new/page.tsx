@@ -14,6 +14,7 @@ import { fuzzyBestMatch } from "@/lib/voice/utils";
 import { listFavorites } from "@/lib/course-favorites";
 import { getRecentCourses } from "@/lib/golf-api";
 import VoiceRoundSetupRealtime from "@/components/VoiceRoundSetupRealtime";
+import { warmSession } from "@/lib/voice/warm-session";
 import CourseSearch from "@/components/CourseSearch";
 import PlayerAutocomplete from "@/components/PlayerAutocomplete";
 import { takeCourseForRound } from "@/lib/course-handoff";
@@ -183,6 +184,36 @@ export default function RoundSetupPage() {
   useEffect(() => {
     const c = takeCourseForRound();
     if (c) setSelectedCourse(c);
+  }, []);
+
+  // Preload the voice setup session on the golfer's FIRST touch of the page —
+  // NOT on bare mount (that would bill a connection for someone who never
+  // opens the mic sheet, e.g. a bouncer). By the time they actually tap the
+  // mic button, the session is usually already warm — "Connecting…" becomes
+  // rare instead of the default. See lib/voice/warm-session.ts.
+  useEffect(() => {
+    let fired = false;
+    const trigger = () => {
+      if (fired) return;
+      fired = true;
+      warmSession.warm({ kind: "setup", personalityId: "classic" });
+    };
+    const addOpts: AddEventListenerOptions = { once: true, passive: true };
+    window.addEventListener("pointerdown", trigger, addOpts);
+    window.addEventListener("keydown", trigger, addOpts);
+    window.addEventListener("focusin", trigger, addOpts);
+    return () => {
+      // `once` means the browser already removes these after the first fire —
+      // this cleanup only matters for the unmount-before-any-interaction case.
+      // `capture` (the only field removeEventListener matches on) defaults to
+      // false either way, so no options object is needed here.
+      window.removeEventListener("pointerdown", trigger);
+      window.removeEventListener("keydown", trigger);
+      window.removeEventListener("focusin", trigger);
+      // Leaving the page without ever opening the sheet — don't leave a warm
+      // (never-adopted) session running in the background.
+      warmSession.teardown();
+    };
   }, []);
 
   // --- Voice setup callback ---
@@ -1055,6 +1086,10 @@ export default function RoundSetupPage() {
           >
             <button
               onClick={() => setShowVoiceSetup(true)}
+              // Belt alongside the page-wide first-interaction listener above —
+              // guarantees the mic's own tap always at least attempts a warm
+              // preload even if some other trigger got swallowed.
+              onPointerDown={() => warmSession.warm({ kind: "setup", personalityId: "classic" })}
               style={{
                 position: "relative",
                 width: 56,
@@ -1602,9 +1637,13 @@ export default function RoundSetupPage() {
       </AnimatePresence>
 
       {/* ── Voice setup overlay (Realtime conversational caddie) ──
-           Mounted ONLY while open so the live Realtime session never runs in the
-           background (a preloaded/warm session let whisper-1 hallucinate phantom
-           transcripts on silence before the golfer spoke). */}
+           The sheet itself mounts ONLY while open, but a session may already be
+           pre-WARMED in the background (see the first-interaction trigger above)
+           before that happens. That warm session's mic is structurally withheld
+           — no getUserMedia, no track, transcript events dropped — until
+           VoiceRoundSetupRealtime's start() calls attachMic() right here at
+           open, so it can never hallucinate a phantom transcript from live
+           silence the way the previously-reverted mic-live shortcut did. */}
       <AnimatePresence>
         {showVoiceSetup && (
           <VoiceRoundSetupRealtime

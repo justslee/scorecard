@@ -3,6 +3,69 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-06 — tee-time prefs rework: real dates, slide-to-edit windows, checklist fixes (NOTICEABLE — integration/next, DONE)
+
+`specs/tee-time-prefs-rework-plan.md`, both work items (one builder — same file overlap). Owner
+escalation: "the check list is buggy"; "+ Add another window" stamped identical un-editable
+cards; wants a date choice; wants to slide-edit existing windows.
+
+### Work item 1 — real dates + slide-to-edit
+- `lib/teetime/dates.ts`: `TimeWindow` now carries a real ISO `date` (source of truth for
+  WHEN); `defaultWindows(from)` factory replaces the `DEFAULT_WINDOWS` module constant
+  (`useState(() => defaultWindows())`); new `nextDefaultWindow(existing, from)` picks the
+  first free Sat/Sun slot template so a second "+ Add another window" is a DIFFERENT
+  editable window, never a duplicate stamp; new `weekdayName(weekday)`.
+- NEW `lib/teetime/window-slider.ts` (+22 unit tests) — all drag math (hhmmToMin/minToHhmm,
+  frac↔min snapping, `pickHandle` start/end/band disambiguation with edge bias, `applyDrag`
+  clamped to 1h–6h, no midnight cross) as pure functions, no DOM.
+- NEW `app/tee-time/WindowCard.tsx` replaces the static `WindowChip` — owns the pointer
+  handlers for the track (a taller ~24pt drag strip at the card bottom), the date chip
+  (opens `MiniCalendar`), and a quiet 44×44pt-hit-box `×` delete (guarded: never drops the
+  last window). **Tap vs drag:** pointerdown on the track picks a handle via `pickHandle`;
+  pointerup below a 6px movement threshold = a TAP → toggles the card (same as tapping
+  anywhere else on it); at/above threshold = a real drag, already live-applied via
+  `applyDrag` on every `pointermove` (haptic fires only when the computed value actually
+  changes — i.e. on each 30-min snap crossing). `setPointerCapture` + `touchAction: none` +
+  `stopPropagation` on the track keep it from fighting the card's own tap-to-toggle or the
+  page's scroll.
+- NEW `components/yardage/MiniCalendar.tsx` — dependency-free month grid (mono weekday
+  headers, serif day numerals, T.ink/T.hairline tokens, accent ring on selected day, past
+  days disabled) — no native `<input type="date">`, no picker dependency.
+- `lib/teetime/query.ts` / `voice-prefs.ts`: `date` threads through `buildTeeTimeQueries`
+  (used verbatim, falls back to label-derived date for older callers) and
+  `applyParsedWindows` (voice-added windows stamped with the real ISO date for their spoken
+  day; matched windows keep their existing date).
+
+### Work item 2 — course checklist fixes (2a–2f)
+- **2a** abort-hardened refetch: new `createCourseFetchSession` in `courses.ts` (mirrors
+  `course-search-session`'s AbortController + live-target-equality pattern) — a stale
+  fetch can never land over a newer one, race-tested.
+- **2b** touched-guard: `mergeCourseOptions` gains `{touched}` — once the golfer toggles or
+  hand-adds a course, the nearest-3/favorites auto-pre-selection never re-applies to later
+  merges.
+- **2c** kicker: "Where" section now reads "{n} selected" (was "{n} of {count}", which read
+  as a bug once favorites-beyond-cap exceeded the count).
+- **2d** junk-row filter: `toCourseOptions` rejects results with no identifying token after
+  stripping golf-generic words, via a new `hasIdentifyingTokens` in
+  `course-search-helpers.ts` (reuses `tokenizeCourseName`) — "Golf Course" filtered,
+  "Presidio Golf Course" kept.
+- **2e** new `reconcileCourseOptions(existing, incoming, {maxMiles, touched})` — prunes rows
+  beyond the current drive radius UNLESS hand-added/favorited/selected; wired to a dedicated
+  effect on `maxMiles` so a radius SHRINK re-filters immediately (no fetch needed) and a
+  voice-widened far course still survives a later shrink back.
+- **2f** tap targets: `CourseRow` padding 10px→13px, checkbox 16px→21px; WindowCard's date
+  chip/delete reviewed to the same standard.
+
+### Gates
+`tsc --noEmit` clean · `npm run lint` clean · `npx vitest run` 63 files / 1465 tests pass
+(22 new in `window-slider.test.ts`, plus new cases in `courses/query/voice-prefs.test.ts`) ·
+`voice-tests/runner.ts --smoke` 274/274 pass · `npm run build` succeeds.
+**Not run:** the `ios/SIMTEST.md` live WKWebView drag check — `/tee-time` sits behind Clerk
+AuthGate, and per SIMTEST.md itself sign-in can't be completed headless without real
+credentials, so a real-device pointer-capture/haptics pass on the drag gesture is still
+outstanding (relying on the window-slider unit tests for the math; the gesture wiring itself
+wants a real-device or authenticated-sim pass before it's fully proven).
+
 ## 2026-07-06 — course-search v2, Work Item A: backend search that finds Pebble Beach (NOTICEABLE — integration/next, DONE)
 
 `specs/course-search-v2-plan.md` Work Item A (backend + frontend lib). Owner
@@ -5769,3 +5832,154 @@ Open follow-ups: /map/course ErrorScreen restyle (backlog); prod Places key
 "Places API (New)" enablement UNVERIFIED (probe blocked) — legHealth in the
 response now surfaces it: hit /api/courses/search?q=pebble+beach and check
 legHealth[0] once deployed.
+
+---
+
+## 2026-07-06 — SHIPPED: #94 course search v2 (Places-primary + full-screen search)
+
+Owner approved directly in-session ("ship it", 2026-07-06). Merged PR #94 → main as
+**1792d3281e4fb766fd355d028465ed1756416311** ("Merge integration/next: course search v2 —
+Places-primary + full-screen search (#94)"), a merge commit (not squash/rebase) — the only
+push to `main` in this run.
+
+**Backend deploy:** this bundle DOES touch backend (`backend/app/routes/course_search.py`,
+`services/course_finder.py`, `services/course_search_cache.py`; no new Alembic migration).
+The standing `Deploy backend (SSM)` GitHub Action auto-triggered on the merge push (run
+28836206269) — `git pull --ff-only` d233dd6→1792d32, `uv sync`, `alembic upgrade head`
+(no-op, no new revision), `systemctl restart scorecard-api`, on-box
+`curl localhost:8000/health` → `{"status":"ok"}`. Verified externally post-deploy:
+- `GET https://api.looperapp.org/health` → `{"status":"ok"}` (200)
+- `GET https://api.looperapp.org/api/config-status` →
+  `{"deepgram":true,"openai":true,"anthropic":true,"mapbox":true,"golfapi":true,"google_places":true}` (200)
+
+**TestFlight:** frontend changed substantially (full-screen search UI + lib collapse), so
+cut a fresh native build via `ops/ios/ship.sh` — **v1.0.701 (build 202607062201)**. Upload
+succeeded (xcodebuild export log, ~90s archive+upload), then polled the App Store Connect
+API (`GET /v1/builds?filter[app]=…&filter[version]=202607062201`, JWT signed ES256 with the
+ASC key via `uv run python` + PyJWT/httpx from the backend venv — no dedicated poll script
+exists yet, built one ad hoc at
+`/private/tmp/.../scratchpad/poll_build.py`) — **VALID** after ~5 polls (~100s). Live for
+TestFlight Internal.
+
+**Board:** no existing card for this bundle → created directly in Shipped:
+"Bundle #94: course search v2 — Places-primary + full-screen search"
+(https://app.notion.com/p/3961c52592e081878962da3f041cde26), PR link + full checklist +
+build number + how-to-test (owner escalation callback: Pebble Beach now found; search
+screen no longer resizes).
+
+**integration/next:** fast-forwarded 3b24d2f→1792d32 (== new main) and pushed — synced and
+ready to keep rolling; branch not deleted.
+
+## 2026-07-06 — Caddie connect preload: mic-withheld warm session (NOTICEABLE — integration/next, DONE)
+
+`specs/caddie-preload-plan.md`, implemented in full. Owner escalation: "some kind of
+preload is what we should do" for caddie connect latency. Target: <500ms to "Ready — go
+ahead" on a warmed open; a rare "Connecting…" otherwise. FORBIDDEN constraint honored: the
+previously-reverted mic-live warm shortcut (whisper-1 hallucinating phantom transcripts on
+silence) is now made STRUCTURALLY impossible, not just unlikely.
+
+### What changed
+- `frontend/src/lib/voice/realtime.ts` — new `withholdMic?: boolean` option.
+  `start()` with `withholdMic` NEVER calls `getUserMedia`; instead adds a track-less audio
+  transceiver (`addTransceiver('audio', {direction:'sendrecv'})`) and mutes output. New
+  `attachMic()` is the ONLY place that ever calls `getUserMedia` for a withheld client —
+  it `replaceTrack()`s onto the pre-negotiated transceiver (no renegotiation, no second
+  `setLocalDescription`), unmutes output, and flips `opened = true`. `handleEvent()` drops
+  (early-returns on) the user-transcript-completed event and all assistant
+  delta/done transcript events while `!opened` — belt behind the structural guarantee.
+  Added `setEvents()` (rebind handlers on adoption) and `emitCurrentStatus()` (repaint
+  immediately after adoption).
+- `frontend/src/lib/voice/warm-session.ts` (NEW) — the one shared warm-lifecycle manager
+  (`WarmSessionManager` class + `warmSession` singleton), states
+  DORMANT→WARMING→WARM→CONSUMED. `warm(intent, observer?)` mints+connects a
+  `withholdMic: true` client (idempotent per intent, no-ops offline/hidden, ~3s connect
+  deadline reusing `MINT_DEADLINE_MS`). `takeWarm(intent)` hands the client to a caller
+  (WARM or still-WARMING) and moves to CONSUMED — one authoritative timer, no racing
+  teardown (the client's own 90s `IdleTimer` closing is what the manager observes to reset
+  to DORMANT). `teardown()`/`handleOffline()`/`handleHidden()` for offline/backgrounded/
+  unmount/intent-switch. Timers, online/hidden checks, and the client factory are all
+  injectable (mirrors `IdleTimer`'s pattern) for pure unit testing.
+- `frontend/src/components/VoiceRoundSetupRealtime.tsx` — `start()` now tries
+  `warmSession.takeWarm({kind:'setup',...})` first (setEvents → emitCurrentStatus →
+  `attachMic()`) before falling back to the cold `RealtimeCaddieClient` path. Refreshed the
+  two stale "warm session would hallucinate" comments to describe the new (safe) invariant.
+- `frontend/src/app/round/new/page.tsx` — one-shot first-interaction trigger
+  (pointerdown/keydown/focusin on `window`) fires `warmSession.warm({kind:'setup',...})`;
+  belt `onPointerDown` on the mic button itself; page-unmount cleanup tears down an
+  un-adopted warm session.
+- `frontend/src/hooks/useVoiceCaddie.ts` — new `warm()` (idempotent, dispatches
+  PRESS→MINT_OK→CONNECTED off the warm client's observed status so `transportReducer`
+  tracks phase even pre-press); `press()` now tries `warmSession.takeWarm({kind:'caddie',
+  roundId, personalityId})` before `startBurst()` — adopts via the SAME
+  `handleConnectionStatus` handler a cold burst uses (extracted, reused, not duplicated).
+  Teardown paths (`teardownClient`, unmount) also `warmSession.teardown()`.
+- `frontend/src/app/round/[id]/RoundPageClient.tsx` — one `useEffect` calls
+  `voice.warm()` when `caddieSessionActive && !isLocalRound` first turns true.
+
+### The no-audio-before-open invariant
+Enforced two ways: (1) structurally — a withheld client's `start()` never touches
+`getUserMedia`/`addTrack` for a mic; the only mic acquisition is in `attachMic()`, called
+exclusively by the adopting surface at the user's real open. (2) belt — `handleEvent()`
+early-returns on the transcript-producing event types while `!opened`, so even a
+theoretical stray event can't reach `onMessage`. Proven by
+`frontend/src/lib/voice/realtime-warm.test.ts`: `drops a user-transcript event that
+arrives BEFORE attachMic() — onMessage never fires` and a matching assistant-transcript
+test (both mock RTCPeerConnection/mediaDevices — jsdom has neither) — the load-bearing
+regression the plan called for.
+
+### Deviations from the plan (both implementation-level, not behavioral)
+1. `warm()`/`WarmObserver` weren't fully specified as a wire format — added
+   `onMinted`/`onStatus` observer callbacks to `warmSession.warm()` so `useVoiceCaddie` can
+   drive `transportReducer` (PRESS→MINT_OK→CONNECTED) from the warm client's progress
+   without taking ownership of it (ownership only transfers via `takeWarm()`).
+2. `WarmSessionManager`'s constructor takes a single `deps` object (`schedule`, `cancel`,
+   `isOnline`, `isHidden`, `createClient`) rather than positional args, since there are
+   five independent injectables (tests use a fake client factory per the plan's
+   instruction, plus injected online/hidden checks so offline/hidden teardown tests don't
+   need real DOM globals).
+
+### Tests / gates
+- New: `frontend/src/lib/voice/warm-session.test.ts` (26 tests — state transitions,
+  idempotent warm, intent switch teardown, idle-no-adoption→DORMANT, takeWarm
+  matching/mismatch, offline/hidden teardown, connect-deadline→DORMANT).
+- New: `frontend/src/lib/voice/realtime-warm.test.ts` (13 tests — no-getUserMedia +
+  track-less transceiver on withheld start; output muted→unmuted; attachMic single
+  getUserMedia + replaceTrack with no second `setLocalDescription`; attachMic idempotent;
+  THE phantom-transcript regression x2; setEvents/emitCurrentStatus adoption).
+- Extended: `frontend/src/lib/caddie/transport.test.ts` (+2 — PRESS while
+  connecting/minting is a no-op, no re-mint).
+- `cd frontend && npx tsc --noEmit` — clean. `npm run lint` — clean (0 errors/warnings).
+  `npx vitest run` — 1451/1451 passed (63 files; pre-existing unrelated
+  `lib/teetime/window-slider.test.ts` files are the PARALLEL agent's in-flight work in
+  `frontend/src/lib/teetime/**` — untouched, not staged). `npx tsx voice-tests/runner.ts
+  --smoke` — 274/274 pass. `npm run build` — compiles clean, all routes prerender.
+
+Risk: touches the Realtime WebRTC connect/lifecycle path used by both the setup sheet and
+the in-round orb — real-device verification (mic dialog timing, warmed-open latency,
+background/airplane teardown, no phantom transcript on silence) is still needed per the
+plan's own gate list; flagging for `/code-review` + `/security-review` before this bundle
+ships (mint/WebRTC lifecycle change) and the `designer` pass (confirm "Connecting…" still
+reads the same, just rarer).
+
+---
+
+## 2026-07-06 (late) — preload + tee-time rework reviewed, fixed, bundled (owner session, Fable 5)
+
+Review pass on a221564 (caddie preload) + cca67ef (tee-time prefs rework):
+- Reviewer + /security-review: PASS (mint path unchanged, persona gate intact, no
+  secret in legHealth... n/a here; mic-withhold invariant verified on every path).
+  1 MEDIUM + 4 low findings — ALL fixed in aa22ac8 (junk-filter kept favorites +
+  placed all-generic names; shrink/regrow watermark; opened-gate on tool calls;
+  warmStartedRef reset; voice window id uniquify).
+- Designer: tee-time pass-with-polish (fixed: sunlight contrast pencilSoft->pencil
+  on unselected cards, 44pt date-chip target). Preload BLOCKER reproduced live:
+  teardown() recursion on failing warm connect (stop() sync-refires closed) —
+  fixed + 2 regression tests. Deferred nice-to-haves: card density breathing room,
+  delete undo-toast, chip weekday redundancy, drag-track discoverability (watch
+  on-device feedback).
+Gates combined: tsc/lint clean, vitest 1467/1467, voice 274/274, build green,
+backend 961 + ruff clean. REMAINING RISK (flagged to owner): drag gesture +
+haptics + preload device behaviors unverified on real WKWebView (sim is
+auth-gated headless) — owner's TestFlight pass is the last gate.
+Bundle PR opened: preload + tee-time rework + transcription language pin (en) +
+specs/backlog. Next cycle (owner-directed): caddie-hazard-grounding, tee-marker-on-map.
