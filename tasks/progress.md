@@ -6209,3 +6209,14 @@ courses orb opens search already dictating into the query. +7 tests.
 Gates: tsc/lint, vitest 1501/1501, voice 274/274, build, backend 986 + ruff — green.
 NOT yet done: designer pass (budget) — owner sees it on TestFlight; bundle 2 =
 round-page identity + Home/Partners/Profile page powers.
+
+---
+
+## 2026-07-07 — SHIPPED: #98 the Looper orb (bundle 1)
+
+Owner "ship it". Merge 4711fa4 → main; backend deploy success + health ok
+(off-course chat context live). TestFlight v1.0.734 (build 202607071034)
+uploaded. integration/next fast-forwarded + pushed. Owner test: the center
+orb on every tab (tap → sheet, hold → listening); tee-time bar gone, voice
+via orb; courses orb dictates into search; general chat on Home/Profile.
+Bundle 2 queued: round-page Looper identity, page powers, designer polish.
