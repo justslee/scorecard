@@ -6920,3 +6920,19 @@ card "Bundle #106" created in Needs Review (was missing). backlog: caddie-conver
 
 NO push notification (per this cycle's standing rule + owner mid-testing on-course). Bundle #106
 remains AWAITING owner "ship it"; the loop rides it. integration/next @ 83fcccb pushed.
+
+---
+
+## 2026-07-07 — SHIPPED: #106 the conversational caddie + intel resilience
+
+Owner "ship it". Merge 5056d05 → main; deploy verified by headSha + health ok.
+TestFlight v1.0.789 (build 202607071830). The bundle that answers the owner's
+3:55pm direction end-to-end, built by loop cycles 8-9 same-day:
+- Auto shot reco on Ask Caddie open (GPS → streamed/spoken opening turn;
+  review caught the GPS-await race).
+- Hands-free conversational loop (speak → listen → speak; 400ms echo grace,
+  dead-air dropout, tap-to-interrupt; designer caught the answer-wipe).
+- Intel resilience: hazard classification can never sink hole intel (the
+  '+0ft' fix) + garbage-hazard validation + per-hole failure logging (the
+  remaining thrower will name itself on the owner's next round open).
+Eleven ships today. integration/next resynced; loop continues hourly.
