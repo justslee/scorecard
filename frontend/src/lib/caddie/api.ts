@@ -295,7 +295,9 @@ export async function sessionVoice(params: {
   personality_id: string;
   hole_number: number;
 }): Promise<{ response: string }> {
-  return post('/caddie/session/voice', params);
+  return postWithTimeout('/caddie/session/voice', params, {
+    timeoutMs: SESSION_VOICE_TIMEOUT_MS, // retries defaults to 0 → fail fast into the component's talkToCaddie fallback
+  });
 }
 
 // ── Daily pin sheets (PR #6) ──
@@ -415,6 +417,73 @@ export async function startSetupSession(params: {
 
 // ── Voice Caddie ──
 
+// Voice REPLY calls can otherwise hang forever on flaky on-course networks
+// (specs/voice-agent-audit.md #7). These budgets are generous because each hits
+// an LLM (GPT reply generation is usually 1–4 s; long history / cold start can
+// push higher), so they fire only on a genuine hang, never on a slow-but-live call.
+const VOICE_REPLY_TIMEOUT_MS = 10_000;      // terminal /caddie/voice, per attempt
+const VOICE_REPLY_RETRIES = 1;              // terminal call gets ONE transient retry
+const VOICE_REPLY_RETRY_BACKOFF_MS = 500;   // brief pause so the retry doesn't hit the same dead air
+const SESSION_VOICE_TIMEOUT_MS = 8_000;     // session-first call — fail fast into the stateless fallback
+const SPEAK_TIMEOUT_MS = 10_000;            // best-effort TTS
+
+// Calm, human degradation for an exhausted-transient voice reply. Deliberately
+// short and free of machine markers so humanizeVoiceError() (dictation.ts) passes
+// it through AS-IS, and it never leaks "AbortError"/"signal is aborted".
+const CALM_REPLY_ERROR = "Couldn't reach your caddie — give that another try.";
+
+interface VoiceTimeoutOpts {
+  timeoutMs: number;
+  retries?: number;   // default 0
+  backoffMs?: number; // default 0
+  signal?: AbortSignal; // optional external signal to COMPOSE with the timeout
+}
+
+/** POST a voice reply with a per-attempt timeout and optional transient retry.
+ *  Contained to the voice reply path — do NOT generalise this into fetchAPI.
+ *  Exported for api.timeout.test.ts. */
+export async function postWithTimeout<T>(
+  path: string,
+  body: unknown,
+  { timeoutMs, retries = 0, backoffMs = 0, signal }: VoiceTimeoutOpts,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    let timedOut = false;
+    // Compose an external caller signal WITHOUT clobbering our timeout controller.
+    // (AbortSignal.any is avoided for older-WKWebView portability.)
+    const onExternalAbort = () => controller.abort(signal!.reason);
+    if (signal) {
+      if (signal.aborted) controller.abort(signal.reason);
+      else signal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    try {
+      return await fetchAPI<T>(`/api${path}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      lastErr = err;
+      // Caller cancelled (external), not our timeout → propagate as-is, never retry/normalize.
+      if (signal?.aborted && !timedOut) throw err;
+      const transient = timedOut || err instanceof TypeError;
+      if (transient && attempt < retries) {
+        if (backoffMs) await new Promise((r) => setTimeout(r, backoffMs));
+        continue; // retry
+      }
+      if (transient) throw new Error(CALM_REPLY_ERROR); // exhausted transient → calm
+      throw err; // HTTP / other → let humanizeVoiceError judge the raw message
+    } finally {
+      clearTimeout(timer); // cleared on EVERY path: success, throw, retry-continue
+      if (signal) signal.removeEventListener('abort', onExternalAbort);
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(CALM_REPLY_ERROR); // unreachable; satisfies TS
+}
+
 export async function talkToCaddie(params: {
   transcript: string;
   personality_id: string;
@@ -431,7 +500,7 @@ export async function talkToCaddie(params: {
   current_recommendation?: CaddieRecommendation;
   conversation_history?: VoiceCaddieMessage[];
 }): Promise<{ response: string; follow_up?: string }> {
-  return post('/caddie/voice', {
+  return postWithTimeout('/caddie/voice', {
     transcript: params.transcript,
     personality_id: params.personality_id,
     hole_number: params.hole_number,
@@ -444,6 +513,10 @@ export async function talkToCaddie(params: {
     handicap: params.handicap,
     current_recommendation: params.current_recommendation,
     conversation_history: params.conversation_history || [],
+  }, {
+    timeoutMs: VOICE_REPLY_TIMEOUT_MS,
+    retries: VOICE_REPLY_RETRIES,
+    backoffMs: VOICE_REPLY_RETRY_BACKOFF_MS,
   });
 }
 
@@ -458,14 +531,26 @@ export async function speakCaddieReply(
   personalityId: string,
   signal?: AbortSignal,
 ): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/api/voice/speak`, {
-    method: 'POST',
-    headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, personality_id: personalityId }),
-    signal,
-  });
-  if (!res.ok) {
-    throw new Error(`Speak failed (${res.status}): ${await res.text()}`);
+  const controller = new AbortController();
+  const onExternalAbort = () => controller.abort(signal!.reason);
+  if (signal) {
+    if (signal.aborted) controller.abort(signal.reason);
+    else signal.addEventListener('abort', onExternalAbort, { once: true });
   }
-  return res.blob();
+  const timer = setTimeout(() => controller.abort(), SPEAK_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}/api/voice/speak`, {
+      method: 'POST',
+      headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, personality_id: personalityId }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`Speak failed (${res.status}): ${await res.text()}`);
+    }
+    return await res.blob();
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onExternalAbort);
+  }
 }
