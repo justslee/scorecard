@@ -45,6 +45,8 @@ import {
 import { getGolferProfile } from "@/lib/storage";
 import { buildClubMap } from "@/lib/caddie/clubs";
 import { shouldDismissSheetDrag, useBodyScrollLock } from "@/lib/sheet";
+import { useSheetTTS } from "@/hooks/useSheetTTS";
+import { getSheetTtsEnabled, setSheetTtsEnabled } from "@/lib/voice/tts-pref";
 import type {
   CaddieRecommendation,
   VoiceCaddieMessage,
@@ -112,6 +114,24 @@ function FlagIcon() {
   );
 }
 
+/** Quiet speaker glyph — tap-to-silence / mute-toggle affordance (§3). Two
+ *  visual states: filled + waves (speaking or enabled), crossed-out (muted). */
+function SpeakerIcon({ muted, size = 13, stroke = "currentColor" }: { muted: boolean; size?: number; stroke?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 15 15" fill="none" stroke={stroke} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 5.5h2.3L8 2.7v9.6L4.3 9.5H2z" fill={stroke} fillOpacity={0.18} />
+      {muted ? (
+        <path d="M10 5l3.2 5M13.2 5L10 10" />
+      ) : (
+        <>
+          <path d="M10.3 5.2a3 3 0 0 1 0 4.6" />
+          <path d="M12 3.7a5.4 5.4 0 0 1 0 7.6" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -174,6 +194,15 @@ export default function CaddieSheet({
   // Compact persona list toggled from the header identifier row.
   const [personaPickerOpen, setPersonaPickerOpen] = useState(false);
 
+  // Spoken caddie replies (specs/voice-tts-sheet-replies-plan.md) — opt-in,
+  // default off. Reads the persisted pref lazily so SSR/first-paint stays
+  // deterministic; the toggle flips both this state and localStorage.
+  const [ttsEnabled, setTtsEnabled] = useState(false);
+  useEffect(() => {
+    setTtsEnabled(getSheetTtsEnabled());
+  }, []);
+  const tts = useSheetTTS();
+
   const recorderRef = useRef<VoiceRecorder | null>(null);
   // Live dictation (specs/caddie-live-dictation-plan.md): the streaming
   // transcript is authoritative — the recorded blob is only the fallback.
@@ -207,6 +236,7 @@ export default function CaddieSheet({
       liveRef.current = null;
       liveTranscriptRef.current = "";
       liveFailedRef.current = false;
+      tts.stop(); // sheet close mid-playback (§7 edge case)
       setIsListening(false);
       setInterimTranscript("");
       setTranscript("");
@@ -225,6 +255,7 @@ export default function CaddieSheet({
       liveRef.current?.stop();
       liveRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
@@ -313,6 +344,7 @@ export default function CaddieSheet({
         convHistoryRef.current = newHistory;
         onUpdateConvHistory(newHistory);
         setVoiceAnswer(responseText);
+        tts.speak(responseText, personaId);
       } catch (err) {
         setError(
           humanizeVoiceError(err instanceof Error ? err.message : undefined, "Caddie unavailable — try again.")
@@ -321,8 +353,11 @@ export default function CaddieSheet({
         setIsThinking(false);
       }
     },
-    [personaId, sessionActive, roundId, holeNumber, holePar, holeYards, onUpdateConvHistory]
-    // convHistory intentionally absent — read from convHistoryRef.current (#1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [personaId, sessionActive, roundId, holeNumber, holePar, holeYards, onUpdateConvHistory, tts.speak]
+    // convHistory intentionally absent — read from convHistoryRef.current (#1).
+    // tts.speak (not the whole `tts` object) — the hook memoizes it stably, so
+    // depending on the full object would recreate askCaddie every render.
   );
 
   const startListening = useCallback(async () => {
@@ -454,6 +489,9 @@ export default function CaddieSheet({
   autoStopRef.current = () => void stopListening();
 
   const handleMicTap = () => {
+    // Bless the <audio> element in the SAME gesture as dictation start — must
+    // run synchronously, before any async work below (§3 iOS unlock wiring).
+    tts.unlock();
     if (isListening) {
       stopListening();
     } else if (!isTranscribing && !isThinking) {
@@ -626,71 +664,127 @@ export default function CaddieSheet({
             }}
           >
             <div>
-              {/* Caddie identifier — tap to switch persona (quiet picker) */}
-              <button
-                onClick={() => setPersonaPickerOpen((v) => !v)}
-                aria-label="Change caddie persona"
-                aria-expanded={personaPickerOpen}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 7,
-                  marginBottom: 3,
-                  border: "none",
-                  background: "transparent",
-                  padding: 0,
-                  cursor: "pointer",
-                  minHeight: 28,
-                }}
-              >
-                {/* Caddie initial medallion */}
-                <div
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                {/* Caddie identifier — tap to switch persona (quiet picker) */}
+                <button
+                  onClick={() => setPersonaPickerOpen((v) => !v)}
+                  aria-label="Change caddie persona"
+                  aria-expanded={personaPickerOpen}
                   style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: "50%",
-                    background: accent,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    border: "none",
+                    background: "transparent",
+                    padding: 0,
+                    cursor: "pointer",
+                    minHeight: 28,
+                  }}
+                >
+                  {/* Caddie initial medallion */}
+                  <div
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      background: accent,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontFamily: T.serif,
+                      fontStyle: "italic",
+                      fontSize: 11,
+                      color: T.paper, // #5 — cream not white
+                      flexShrink: 0,
+                    }}
+                  >
+                    {caddy.initial}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 9,
+                      letterSpacing: 1.5,
+                      color: T.pencil,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {caddy.name} &middot; On the bag
+                  </div>
+                  {/* Chevron — hints the persona list */}
+                  <svg
+                    width="8"
+                    height="8"
+                    viewBox="0 0 8 8"
+                    fill="none"
+                    stroke={T.pencilSoft}
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                    style={{
+                      transform: personaPickerOpen ? "rotate(180deg)" : "none",
+                      transition: "transform 0.18s",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <path d="M1.5 3l2.5 2.5L6.5 3" />
+                  </svg>
+                </button>
+
+                {/* Spoken replies toggle — quiet, minor control (§3). Idle tap
+                    flips the mute pref; a tap while speaking silences it. */}
+                <button
+                  onClick={() => {
+                    tts.unlock(); // also a user gesture — blesses playback for the next reply
+                    if (tts.isSpeaking) {
+                      tts.stop();
+                    } else {
+                      const next = !ttsEnabled;
+                      setTtsEnabled(next);
+                      setSheetTtsEnabled(next);
+                    }
+                  }}
+                  aria-label={
+                    tts.isSpeaking
+                      ? "Silence caddie voice"
+                      : ttsEnabled
+                      ? "Turn off spoken replies"
+                      : "Turn on spoken replies"
+                  }
+                  aria-pressed={ttsEnabled}
+                  style={{
+                    // 44×44 hit area for on-course glove use (the app's own
+                    // ≥44pt standard); negative margin keeps the visual footprint
+                    // at the 22px circle so the header row layout is unchanged.
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontFamily: T.serif,
-                    fontStyle: "italic",
-                    fontSize: 11,
-                    color: T.paper, // #5 — cream not white
+                    width: 44,
+                    height: 44,
+                    margin: -11,
+                    border: "none",
+                    background: "transparent",
+                    padding: 0,
+                    cursor: "pointer",
                     flexShrink: 0,
                   }}
                 >
-                  {caddy.initial}
-                </div>
-                <div
-                  style={{
-                    fontFamily: T.mono,
-                    fontSize: 9,
-                    letterSpacing: 1.5,
-                    color: T.pencil,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {caddy.name} &middot; On the bag
-                </div>
-                {/* Chevron — hints the persona list */}
-                <svg
-                  width="8"
-                  height="8"
-                  viewBox="0 0 8 8"
-                  fill="none"
-                  stroke={T.pencilSoft}
-                  strokeWidth="1.4"
-                  strokeLinecap="round"
-                  style={{
-                    transform: personaPickerOpen ? "rotate(180deg)" : "none",
-                    transition: "transform 0.18s",
-                    flexShrink: 0,
-                  }}
-                >
-                  <path d="M1.5 3l2.5 2.5L6.5 3" />
-                </svg>
-              </button>
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      border: `1px solid ${T.hairline}`,
+                      background: tts.isSpeaking ? `${accent}1f` : "transparent",
+                      color: tts.isSpeaking ? accent : ttsEnabled ? T.pencil : T.pencilSoft,
+                    }}
+                  >
+                    <SpeakerIcon muted={!ttsEnabled && !tts.isSpeaking} size={11} />
+                  </span>
+                </button>
+              </div>
 
               {/* Title */}
               <div

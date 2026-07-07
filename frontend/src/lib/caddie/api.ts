@@ -9,7 +9,7 @@ import type {
   CaddiePersonalityInfo,
   VoiceCaddieMessage,
 } from './types';
-import { fetchAPI } from '../api';
+import { API_BASE, authHeaders, fetchAPI } from '../api';
 import { saveLastRecommendation } from './hole-intel-cache';
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -445,4 +445,27 @@ export async function talkToCaddie(params: {
     current_recommendation: params.current_recommendation,
     conversation_history: params.conversation_history || [],
   });
+}
+
+/**
+ * Synthesize a completed caddie reply to speech (specs/voice-tts-sheet-replies).
+ * fetchAPI only speaks JSON, so this uses a direct fetch + authHeaders() —
+ * same pattern as transcribeBlob() in lib/voice/deepgram.ts — and returns the
+ * raw mp3 Blob for the caller to play through an <audio> element.
+ */
+export async function speakCaddieReply(
+  text: string,
+  personalityId: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/api/voice/speak`, {
+    method: 'POST',
+    headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, personality_id: personalityId }),
+    signal,
+  });
+  if (!res.ok) {
+    throw new Error(`Speak failed (${res.status}): ${await res.text()}`);
+  }
+  return res.blob();
 }

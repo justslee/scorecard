@@ -14,14 +14,34 @@ import { AnimatePresence, motion } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import { PulseDot } from "@/components/yardage/Voice";
 import { useLooperDictation } from "@/hooks/useLooperDictation";
+import { useSheetTTS } from "@/hooks/useSheetTTS";
 import { buildKeyterms } from "@/lib/voice/keyterms";
 import { talkToCaddie } from "@/lib/caddie/api";
 import { onLooperOpen } from "@/lib/looper-bus";
 import { useBodyScrollLock } from "@/lib/sheet";
 import { haptic } from "@/lib/haptics";
+import { getSheetTtsEnabled, setSheetTtsEnabled } from "@/lib/voice/tts-pref";
 
 export type LooperTurn = { role: "user" | "looper"; text: string };
 export type LooperPhase = "idle" | "listening" | "thinking";
+
+/** Quiet speaker glyph — mirrors CaddieSheet's SpeakerIcon (no shared export;
+ *  small enough to duplicate rather than couple the two sheet surfaces). */
+function SpeakerIcon({ muted, size = 13 }: { muted: boolean; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 5.5h2.3L8 2.7v9.6L4.3 9.5H2z" fill="currentColor" fillOpacity={0.18} />
+      {muted ? (
+        <path d="M10 5l3.2 5M13.2 5L10 10" />
+      ) : (
+        <>
+          <path d="M10.3 5.2a3 3 0 0 1 0 4.6" />
+          <path d="M12 3.7a5.4 5.4 0 0 1 0 7.6" />
+        </>
+      )}
+    </svg>
+  );
+}
 
 // ── The shared sheet surface ─────────────────────────────────────────────────
 
@@ -47,6 +67,48 @@ export function LooperSheetShell({
   onMicTap: () => void;
 }) {
   useBodyScrollLock(open);
+
+  // Spoken caddie replies (specs/voice-tts-sheet-replies-plan.md) — self-
+  // contained here so every context that reuses this shell (general Looper,
+  // tee-time) inherits both the control and the playback without each host
+  // wiring its own tts call. Default off (opt-in), quiet by design.
+  const tts = useSheetTTS();
+  const [ttsEnabled, setTtsEnabled] = useState(false);
+  useEffect(() => {
+    setTtsEnabled(getSheetTtsEnabled());
+  }, []);
+
+  // Speak only a NEWLY completed "looper" turn added while the sheet is open
+  // — never replay existing history on reopen. wasOpenRef re-baselines the
+  // watermark each time the sheet transitions closed → open.
+  const lastSpokenIndexRef = useRef(-1);
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      wasOpenRef.current = false;
+      return;
+    }
+    if (!wasOpenRef.current) {
+      wasOpenRef.current = true;
+      lastSpokenIndexRef.current = turns.length - 1;
+      return;
+    }
+    const lastIdx = turns.length - 1;
+    if (lastIdx <= lastSpokenIndexRef.current) return;
+    lastSpokenIndexRef.current = lastIdx;
+    const last = turns[lastIdx];
+    if (last && last.role === "looper" && last.text) {
+      tts.speak(last.text, "classic");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, turns]);
+
+  // Sheet close mid-playback (§7 edge case).
+  useEffect(() => {
+    if (!open) tts.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -90,16 +152,72 @@ export function LooperSheetShell({
               }}
             >
               <div>
-                <div
-                  style={{
-                    fontFamily: T.mono,
-                    fontSize: 9,
-                    letterSpacing: 1.8,
-                    color: T.pencil,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  Looper
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 9,
+                      letterSpacing: 1.8,
+                      color: T.pencil,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Looper
+                  </div>
+                  {/* Spoken replies toggle — quiet, minor control (§3). Idle
+                      tap flips the mute pref; a tap while speaking silences it. */}
+                  <button
+                    onClick={() => {
+                      tts.unlock(); // also a user gesture — blesses playback for the next reply
+                      if (tts.isSpeaking) {
+                        tts.stop();
+                      } else {
+                        const next = !ttsEnabled;
+                        setTtsEnabled(next);
+                        setSheetTtsEnabled(next);
+                      }
+                    }}
+                    aria-label={
+                      tts.isSpeaking
+                        ? "Silence Looper's voice"
+                        : ttsEnabled
+                        ? "Turn off spoken replies"
+                        : "Turn on spoken replies"
+                    }
+                    aria-pressed={ttsEnabled}
+                    style={{
+                      // 44×44 hit area for on-course glove use (the app's own
+                      // ≥44pt standard); negative margin keeps the 20px visual
+                      // footprint so the header row layout is unchanged.
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 44,
+                      height: 44,
+                      margin: -12,
+                      border: "none",
+                      background: "transparent",
+                      padding: 0,
+                      cursor: "pointer",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 20,
+                        height: 20,
+                        borderRadius: "50%",
+                        border: `1px solid ${T.hairline}`,
+                        background: tts.isSpeaking ? `${T.ink}14` : "transparent",
+                        color: tts.isSpeaking ? T.ink : ttsEnabled ? T.pencil : T.pencilSoft,
+                      }}
+                    >
+                      <SpeakerIcon muted={!ttsEnabled && !tts.isSpeaking} size={10} />
+                    </span>
+                  </button>
                 </div>
                 <div
                   style={{
@@ -235,6 +353,9 @@ export function LooperSheetShell({
             >
               <button
                 onClick={() => {
+                  // Bless the <audio> element in the SAME gesture as dictation
+                  // start — must run synchronously (§3 iOS unlock wiring).
+                  tts.unlock();
                   haptic("light");
                   onMicTap();
                 }}

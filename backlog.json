@@ -1511,7 +1511,7 @@
       "type": "minor",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "done (shipped in bundle #100, commit 82d8d8b; keyterms.ts + tests live)",
       "depends_on": [],
       "why": "Voice audit P1.1 (specs/voice-agent-audit.md): nova-3 keyterm prompting on live+batch calls \u2014 bias STT with player names, course names, golf terms. Cheapest accuracy win; SOTA agents always send domain vocabulary.",
       "spec": "specs/voice-agent-audit.md"
@@ -1522,7 +1522,7 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "in bundle (integration/next e18e347; reviewer SHIP + designer PASS; awaiting owner ship-it)",
       "depends_on": [],
       "why": "Voice audit P1.2: the caddie only talks in the realtime orb; sheet answers are silent text. TTS playback (Aura/OpenAI via backend proxy), persona-aware, tap-to-silence. Biggest UX gap vs the 'constant assistant' premise.",
       "spec": "specs/voice-agent-audit.md"
@@ -1533,7 +1533,7 @@
       "type": "major",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done (shipped in bundle #100, commit 82d8d8b; UtteranceEnd auto-send in deepgram-live.ts)",
       "depends_on": [],
       "why": "Voice audit P1.3: one tap \u2192 speak \u2192 it sends itself after ~1.2s silence (Deepgram endpointing events already on the socket). Tap-to-send stays as manual override.",
       "spec": "specs/voice-agent-audit.md"
@@ -1544,7 +1544,7 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done (shipped in bundle #100, commit 82d8d8b; telemetry.ts + /voice telemetry route)",
       "depends_on": [],
       "why": "Voice audit P1.4: zero visibility today \u2014 the OWNER discovered the iOS live-dictation fallback. Structured client events (transport, live-vs-fallback, latency, error class) logged to the backend.",
       "spec": "specs/voice-agent-audit.md"
