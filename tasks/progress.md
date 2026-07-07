@@ -6719,3 +6719,18 @@ bundle 2" already Shipped (only body text stale — left as-is).
 
 NO owner ping: bundle remains SILENT-only (progress + retro docs/backlog). Accumulates until a
 noticeable item lands. integration/next @ b5c6b71 pushed; no open PR (correct — nothing to ship).
+
+---
+
+## 2026-07-07 — SHIPPED: #105 legacy-round caddie fix + Looper brain parity
+
+Owner "yes deploy". Merge 06b7b73 → main; deploy verified BY headSha
+(06b7b73, success) + health ok. TestFlight v1.0.778 (build 202607071629).
+- Legacy slug course-ids no longer crash session start (owner's live round:
+  name-resolved to the mapped UUID → full intel restored: elev/wind/hazards).
+- Weather tiles: per-hole tee fallback anchor for legacy rounds.
+- Looper orb off-course chat grounded in player memory + handicap (cycle 7).
+- Logging: app INFO now reaches the journal (voicetel visible).
+OWNER DIRECTION queued as top P1s: caddie-conversational-loop +
+caddie-auto-shot-reco (specs to be planned next cycles).
+integration/next resynced. Ten ships today.
