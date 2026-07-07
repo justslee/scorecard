@@ -520,6 +520,287 @@ export async function talkToCaddie(params: {
   });
 }
 
+// ── Voice Caddie — Streaming (specs/voice-streaming-replies-plan.md) ──
+//
+// Streams the caddie's TEXT reply so the golfer sees words begin rendering
+// in <1s instead of waiting for the full Claude turn. TTS is UNCHANGED — the
+// caddie still speaks once, after the full text lands.
+//
+// Transport: fetch() + ReadableStream.getReader() (NOT EventSource — our
+// endpoints are authenticated POSTs with a JSON body, which EventSource
+// can't send). SSE framing (server contract, not a shared model):
+//   event: token\ndata: <json-encoded delta>\n\n     # zero or more
+//   event: done\ndata: {}\n\n                          # exactly one on success
+//   event: error\ndata: <json-encoded calm copy>\n\n   # exactly one on failure
+
+// First-token fail-fast budget — mirrors SESSION_VOICE_TIMEOUT_MS's intent so
+// a dead stream falls back to the next ladder tier quickly.
+const STREAM_FIRST_TOKEN_TIMEOUT_MS = 8_000;
+// Once a first token has arrived, only dead air this long is a failure — a
+// stream that's actively emitting tokens can legitimately run well past this.
+// No whole-body timeout: a live stream that keeps emitting tokens for 30s
+// completes normally.
+const STREAM_IDLE_TIMEOUT_MS = 10_000;
+
+/**
+ * Thrown when no `token` (nor `done`/`error`) arrived before the first-token
+ * timeout, or the connection/HTTP call failed before any token landed. The
+ * ONLY error class a caller may treat as fallback-eligible (advance to the
+ * next ladder tier) — see CaddieSheet's 3-tier ladder. Any failure AFTER a
+ * first token is terminal: falling back post-token would double-render /
+ * double-speak on top of text already on screen.
+ */
+export class BeforeFirstByteError extends Error {
+  constructor(message = "No reply yet — trying another way.") {
+    super(message);
+    this.name = "BeforeFirstByteError";
+  }
+}
+
+/** Internal marker for a mid-stream `error` SSE event (or idle timeout) that
+ *  arrived AFTER the first token — terminal, not fallback-eligible. Unwrapped
+ *  to a plain Error before it reaches the caller so `instanceof
+ *  BeforeFirstByteError` is the only branch point callers need. */
+class _StreamTerminalError extends Error {}
+
+interface ParsedFrame {
+  event: string;
+  data: string;
+}
+
+function parseSSEFrame(raw: string): ParsedFrame | null {
+  let event = "";
+  let data = "";
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("event: ")) event = line.slice(7);
+    else if (line.startsWith("data: ")) data = line.slice(6);
+  }
+  return event ? { event, data } : null;
+}
+
+interface StreamCaddieReplyOpts {
+  /** Called once per token delta, in order, as it arrives. Never called for
+   *  the non-progressive (getReader-absent) fallback path. */
+  onToken: (delta: string) => void;
+  firstTokenTimeoutMs: number;
+  idleTimeoutMs: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * POST an SSE caddie reply, delivering tokens progressively via `onToken`,
+ * and resolve with the FULL accumulated text once `event: done` arrives.
+ * Same auth path as speakCaddieReply (bypasses fetchAPI, which only speaks
+ * JSON). See the timeout model + BeforeFirstByteError doc above — this is a
+ * DIFFERENT model from postWithTimeout (no whole-body timeout; a stream
+ * legitimately runs long while emitting tokens the whole time).
+ */
+export async function streamCaddieReply(
+  path: string,
+  body: unknown,
+  { onToken, firstTokenTimeoutMs, idleTimeoutMs, signal }: StreamCaddieReplyOpts,
+): Promise<string> {
+  const controller = new AbortController();
+  const onExternalAbort = () => controller.abort(signal!.reason);
+  if (signal) {
+    if (signal.aborted) controller.abort(signal.reason);
+    else signal.addEventListener("abort", onExternalAbort, { once: true });
+  }
+
+  let sawFirstToken = false;
+  let timedOutPreToken = false;
+  let timedOutIdle = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const clearTimer = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+  const armFirstTokenTimer = () => {
+    clearTimer();
+    timer = setTimeout(() => {
+      timedOutPreToken = true;
+      controller.abort();
+    }, firstTokenTimeoutMs);
+  };
+  const armIdleTimer = () => {
+    clearTimer();
+    timer = setTimeout(() => {
+      timedOutIdle = true;
+      controller.abort();
+    }, idleTimeoutMs);
+  };
+
+  armFirstTokenTimer();
+
+  try {
+    const res = await fetch(`${API_BASE}/api${path}`, {
+      method: "POST",
+      headers: {
+        ...(await authHeaders()),
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      // Never a real SSE body on a non-2xx — always pre-first-token.
+      const text = await res.text().catch(() => "");
+      throw new BeforeFirstByteError(text || `Stream failed (${res.status})`);
+    }
+
+    // WKWebView safety net: platform buffered the whole body (or getReader
+    // isn't implemented). Read it whole and parse every frame at once —
+    // correct, just non-progressive. onToken is deliberately NOT called
+    // here; the caller applies the resolved full text directly.
+    if (!res.body || typeof res.body.getReader !== "function") {
+      const raw = await res.text();
+      let accumulated = "";
+      let resolved = false;
+      for (const chunk of raw.split("\n\n")) {
+        const frame = parseSSEFrame(chunk);
+        if (!frame) continue;
+        if (frame.event === "token") {
+          accumulated += JSON.parse(frame.data) as string;
+        } else if (frame.event === "error") {
+          const calm = JSON.parse(frame.data) as string;
+          throw accumulated ? new _StreamTerminalError(calm) : new BeforeFirstByteError(calm);
+        } else if (frame.event === "done") {
+          resolved = true;
+        }
+      }
+      clearTimer();
+      if (!resolved) {
+        throw accumulated
+          ? new _StreamTerminalError(CALM_REPLY_ERROR)
+          : new BeforeFirstByteError();
+      }
+      return accumulated;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let accumulated = "";
+    let resolved = false;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+        const raw = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const frame = parseSSEFrame(raw);
+        if (!frame) continue;
+
+        if (frame.event === "token") {
+          const delta = JSON.parse(frame.data) as string;
+          accumulated += delta;
+          if (!sawFirstToken) {
+            sawFirstToken = true;
+            armIdleTimer();
+          } else {
+            armIdleTimer(); // reset on every token — dead air only, never a slow-but-live stream
+          }
+          onToken(delta);
+        } else if (frame.event === "error") {
+          const calm = JSON.parse(frame.data) as string;
+          throw sawFirstToken ? new _StreamTerminalError(calm) : new BeforeFirstByteError(calm);
+        } else if (frame.event === "done") {
+          resolved = true;
+          clearTimer();
+          break;
+        }
+      }
+      if (resolved) break;
+    }
+
+    clearTimer();
+    if (!resolved) {
+      // Connection closed without a `done` frame — treat like any other
+      // stream failure, classified by whether a token had already landed.
+      throw sawFirstToken
+        ? new _StreamTerminalError(CALM_REPLY_ERROR)
+        : new BeforeFirstByteError();
+    }
+    return accumulated;
+  } catch (err) {
+    clearTimer();
+    if (err instanceof BeforeFirstByteError) throw err;
+    if (err instanceof _StreamTerminalError) throw new Error(err.message); // unwrap: terminal, calm text preserved
+    // Caller cancelled (external), not our timeout → propagate as-is, never normalize/fallback.
+    if (signal?.aborted && !timedOutPreToken && !timedOutIdle) throw err;
+    if (timedOutPreToken) throw new BeforeFirstByteError();
+    if (timedOutIdle) throw new Error(CALM_REPLY_ERROR);
+    if (!sawFirstToken) throw new BeforeFirstByteError(err instanceof Error ? err.message : undefined);
+    throw new Error(CALM_REPLY_ERROR);
+  } finally {
+    clearTimer();
+    if (signal) signal.removeEventListener("abort", onExternalAbort);
+  }
+}
+
+/** Streaming twin of sessionVoice — 3-tier CaddieSheet ladder, tier 1. */
+export async function sessionVoiceStream(
+  params: { round_id: string; transcript: string; personality_id: string; hole_number: number },
+  opts: { onToken: (delta: string) => void; signal?: AbortSignal },
+): Promise<string> {
+  return streamCaddieReply("/caddie/session/voice/stream", params, {
+    onToken: opts.onToken,
+    signal: opts.signal,
+    firstTokenTimeoutMs: STREAM_FIRST_TOKEN_TIMEOUT_MS,
+    idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+  });
+}
+
+/** Streaming twin of talkToCaddie (stateless) — CaddieSheet tier 2, LooperSheet tier 1. */
+export async function talkToCaddieStream(
+  params: {
+    transcript: string;
+    personality_id: string;
+    hole_number: number | null;
+    par?: number;
+    yards?: number;
+    distance_yards?: number;
+    wind_speed_mph?: number;
+    wind_direction?: number;
+    club_distances?: Record<string, number>;
+    handicap?: number;
+    current_recommendation?: CaddieRecommendation;
+    conversation_history?: VoiceCaddieMessage[];
+  },
+  opts: { onToken: (delta: string) => void; signal?: AbortSignal },
+): Promise<string> {
+  return streamCaddieReply(
+    "/caddie/voice/stream",
+    {
+      transcript: params.transcript,
+      personality_id: params.personality_id,
+      hole_number: params.hole_number,
+      par: params.par,
+      yards: params.yards,
+      distance_yards: params.distance_yards,
+      wind_speed_mph: params.wind_speed_mph || 0,
+      wind_direction: params.wind_direction || 0,
+      club_distances: params.club_distances || {},
+      handicap: params.handicap,
+      current_recommendation: params.current_recommendation,
+      conversation_history: params.conversation_history || [],
+    },
+    {
+      onToken: opts.onToken,
+      signal: opts.signal,
+      firstTokenTimeoutMs: STREAM_FIRST_TOKEN_TIMEOUT_MS,
+      idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
+    },
+  );
+}
+
 /**
  * Synthesize a completed caddie reply to speech (specs/voice-tts-sheet-replies).
  * fetchAPI only speaks JSON, so this uses a direct fetch + authHeaders() —

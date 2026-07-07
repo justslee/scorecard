@@ -5,14 +5,17 @@
  *
  * GPS-free. No mapbox, no shot-tracking, no PinMarkControl.
  *
- * Backend paths — session-first, stateless fallback:
- *   • POST /caddie/session/voice + /caddie/session/recommend — when the round
- *     has an active caddie session (started by RoundPageClient on mount), the
- *     sheet gets the rich server-side context: effective yards, hazards, green
- *     slope, weather, cross-round memories, and the full round conversation.
- *   • POST /caddie/voice + /caddie/recommend — legacy/offline rounds (no
- *     session), or any session call that fails, fall back to the stateless
- *     path with locally-built context. The sheet always answers.
+ * Backend paths — session-first, stateless fallback, streaming-first
+ * (specs/voice-streaming-replies-plan.md):
+ *   • Voice: a 3-tier ladder — POST /caddie/session/voice/stream (SSE, rich
+ *     session context: effective yards, hazards, green slope, weather,
+ *     cross-round memories, full round conversation) → POST /caddie/voice/stream
+ *     (SSE, locally-built context) → POST /caddie/voice (JSON, existing
+ *     calm-copy + 1-retry path). Each tier advances only when NO token has
+ *     arrived yet (BeforeFirstByteError); once text is rendering, a failure
+ *     is terminal — never falls through mid-reply. The sheet always answers.
+ *   • Recommend (tap mode, unchanged): POST /caddie/session/recommend, falling
+ *     back to POST /caddie/recommend.
  *
  * Design: yardage-book aesthetic only — T.* tokens, PAPER_NOISE, Instrument Serif,
  * inline SVGs. Mirrors VoiceRoundSetup recording UX (VoiceRecorder + transcribeBlob
@@ -39,12 +42,15 @@ import { buildKeyterms } from "@/lib/voice/keyterms";
 import {
   talkToCaddie,
   fetchRecommendation,
-  sessionVoice,
   sessionRecommend,
+  sessionVoiceStream,
+  talkToCaddieStream,
+  BeforeFirstByteError,
 } from "@/lib/caddie/api";
 import { getGolferProfile } from "@/lib/storage";
 import { buildClubMap } from "@/lib/caddie/clubs";
 import { shouldDismissSheetDrag, useBodyScrollLock } from "@/lib/sheet";
+import { useStreamBuffer } from "@/lib/caddie/stream-buffer";
 import { useSheetTTS } from "@/hooks/useSheetTTS";
 import { getSheetTtsEnabled, setSheetTtsEnabled } from "@/lib/voice/tts-pref";
 import type {
@@ -203,6 +209,16 @@ export default function CaddieSheet({
   }, []);
   const tts = useSheetTTS();
 
+  // Streaming caddie reply (specs/voice-streaming-replies-plan.md). One
+  // AbortController per in-flight ask — a new question or a sheet close
+  // aborts whatever is still streaming; `isStale()` inside askCaddie compares
+  // against the CURRENT ref value so a superseded call's settle is a silent
+  // no-op rather than an error flash over the newer turn.
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const answerBuffer = useStreamBuffer((chunk) => {
+    setVoiceAnswer((prev) => (prev ?? "") + chunk);
+  });
+
   const recorderRef = useRef<VoiceRecorder | null>(null);
   // Live dictation (specs/caddie-live-dictation-plan.md): the streaming
   // transcript is authoritative — the recorded blob is only the fallback.
@@ -237,6 +253,9 @@ export default function CaddieSheet({
       liveTranscriptRef.current = "";
       liveFailedRef.current = false;
       tts.stop(); // sheet close mid-playback (§7 edge case)
+      streamAbortRef.current?.abort(); // close mid-stream — never persisted server-side either
+      streamAbortRef.current = null;
+      answerBuffer.cancel();
       setIsListening(false);
       setInterimTranscript("");
       setTranscript("");
@@ -254,6 +273,8 @@ export default function CaddieSheet({
       recorderRef.current?.cancel();
       liveRef.current?.stop();
       liveRef.current = null;
+      streamAbortRef.current?.abort();
+      streamAbortRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -264,12 +285,22 @@ export default function CaddieSheet({
     }
   }, []);
 
-  // Derive display phase from state
+  // Derive display phase from state.
+  //
+  // `voiceAnswer` is checked BEFORE `isThinking` so a streaming reply
+  // (specs/voice-streaming-replies-plan.md) renders progressively into the
+  // "answered" bubble the moment the first coalesced chunk lands, instead of
+  // staying pinned on the "thinking…" pulse until the whole turn completes —
+  // isThinking stays true for the WHOLE turn (it only flips false once the
+  // ladder fully resolves), so without this ordering the answer would be
+  // built up invisibly behind the spinner.
   const phase: Phase =
     isListening
       ? "listening"
       : isTranscribing
       ? "transcribing"
+      : voiceAnswer
+      ? "answered"
       : isThinking
       ? "thinking"
       : isRecThinking
@@ -278,17 +309,23 @@ export default function CaddieSheet({
       ? "error"
       : recommendation
       ? "recommended"
-      : voiceAnswer
-      ? "answered"
       : "idle";
 
   // ── Voice path ───────────────────────────────────────────────────────────
 
   /**
-   * Ask the caddie with a question. Session-first: the round session carries
-   * the rich context (hole intel, weather, memories, whole-round conversation)
-   * server-side. Any session failure — or no session at all — falls back to
-   * the stateless path with locally-built context, so the sheet always answers.
+   * Ask the caddie with a question — streaming-first, 3-tier ladder
+   * (specs/voice-streaming-replies-plan.md):
+   *   1. session-stream    sessionVoiceStream  — rich session context, live
+   *   2. stateless-stream  talkToCaddieStream  — locally-built context, live
+   *   3. stateless         talkToCaddie        — existing calm-copy + 1-retry
+   *
+   * Each tier only advances to the next on a `BeforeFirstByteError` (no
+   * first token arrived yet — pre-first-byte, fallback-eligible). The moment
+   * a first token renders, any further failure on that tier is TERMINAL: it
+   * surfaces a calm error and discards the partial rather than falling
+   * through to a lower tier, which would double-render/double-speak on top
+   * of text already on screen (plan §5, §Risks 1).
    *
    * Reads convHistory from the ref (#1) so it is always current regardless of
    * when this closure was captured. onUpdateConvHistory is stable (parent
@@ -296,11 +333,23 @@ export default function CaddieSheet({
    */
   const askCaddie = useCallback(
     async (question: string) => {
+      // A new question supersedes whatever the previous one was still doing.
+      streamAbortRef.current?.abort();
+      const controller = new AbortController();
+      streamAbortRef.current = controller;
+      answerBuffer.cancel();
+      // True once a NEWER ask (or a sheet close) has taken over — this call's
+      // eventual settle is then a silent no-op, never an error flash over
+      // whatever the newer call is doing.
+      const isStale = () => streamAbortRef.current !== controller;
+
       setIsThinking(true);
       setError(null);
+      setVoiceAnswer(null);
       const currentHistory = convHistoryRef.current;
+      const onToken = (delta: string) => answerBuffer.push(delta);
 
-      const askStateless = async (): Promise<string> => {
+      const askStatelessNonStream = async (): Promise<string> => {
         const profile = getGolferProfile();
         const clubMap = buildClubMap();
         const res = await talkToCaddie({
@@ -316,24 +365,55 @@ export default function CaddieSheet({
         return res.response;
       };
 
+      const askStatelessStream = async (): Promise<string> => {
+        const profile = getGolferProfile();
+        const clubMap = buildClubMap();
+        return talkToCaddieStream(
+          {
+            transcript: question,
+            personality_id: personaId,
+            hole_number: holeNumber,
+            par: holePar,
+            yards: holeYards,
+            club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
+            handicap: profile?.handicap ?? undefined,
+            conversation_history: currentHistory,
+          },
+          { onToken, signal: controller.signal },
+        );
+      };
+
       try {
         let responseText: string;
         if (sessionActive && roundId) {
           try {
-            const res = await sessionVoice({
-              round_id: roundId,
-              transcript: question,
-              personality_id: personaId,
-              hole_number: holeNumber,
-            });
-            responseText = res.response;
-          } catch {
-            // Session expired/unreachable — silent downgrade, keep answering.
-            responseText = await askStateless();
+            responseText = await sessionVoiceStream(
+              { round_id: roundId, transcript: question, personality_id: personaId, hole_number: holeNumber },
+              { onToken, signal: controller.signal },
+            );
+          } catch (err) {
+            if (!(err instanceof BeforeFirstByteError)) throw err; // terminal — a token already rendered
+            answerBuffer.cancel();
+            try {
+              responseText = await askStatelessStream();
+            } catch (err2) {
+              if (!(err2 instanceof BeforeFirstByteError)) throw err2;
+              answerBuffer.cancel();
+              responseText = await askStatelessNonStream();
+            }
           }
         } else {
-          responseText = await askStateless();
+          try {
+            responseText = await askStatelessStream();
+          } catch (err) {
+            if (!(err instanceof BeforeFirstByteError)) throw err;
+            answerBuffer.cancel();
+            responseText = await askStatelessNonStream();
+          }
         }
+        if (isStale()) return;
+        answerBuffer.flush(); // final coalesce before the authoritative set (plan §4.3)
+
         const newHistory: VoiceCaddieMessage[] = [
           ...currentHistory,
           { role: "user", content: question },
@@ -343,18 +423,24 @@ export default function CaddieSheet({
         // even before React re-renders.
         convHistoryRef.current = newHistory;
         onUpdateConvHistory(newHistory);
-        setVoiceAnswer(responseText);
-        tts.speak(responseText, personaId);
+        setVoiceAnswer(responseText); // authoritative full text — overwrites any partial coalesced render
+        tts.speak(responseText, personaId); // fires exactly once, on completion
       } catch (err) {
+        if (isStale()) return; // superseded (new question / sheet close) — not a real failure
+        answerBuffer.cancel();
+        // Discard the partial rather than keep it on screen (plan §5): a
+        // truncated caddie reply can be actively misleading (cut mid-club or
+        // mid-aim), and the server persisted nothing for this turn either.
+        setVoiceAnswer(null);
         setError(
           humanizeVoiceError(err instanceof Error ? err.message : undefined, "Caddie unavailable — try again.")
         );
       } finally {
-        setIsThinking(false);
+        if (!isStale()) setIsThinking(false);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [personaId, sessionActive, roundId, holeNumber, holePar, holeYards, onUpdateConvHistory, tts.speak]
+    [personaId, sessionActive, roundId, holeNumber, holePar, holeYards, onUpdateConvHistory, tts.speak, answerBuffer]
     // convHistory intentionally absent — read from convHistoryRef.current (#1).
     // tts.speak (not the whole `tts` object) — the hook memoizes it stably, so
     // depending on the full object would recreate askCaddie every render.
