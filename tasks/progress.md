@@ -43,6 +43,11 @@ Untouched per plan: `CaddieSheet.tsx`, `LooperSheet.tsx`, `useSheetTTS.ts`, `dic
   bounded-vs-infinite failure behavior on flaky networks) — rides in the current
   `integration/next` bundle, no owner ping needed on its own.
 - Commit `2329fb7` on `integration/next`, pushed.
+- eng-lead (cycle 4): reviewed the diff against the plan (logic + 9 tests faithful, scope clean);
+  no separate reviewer/designer/security-review (silent, additive, well-tested, no UI/endpoints).
+  Opened the FRESH rolling bundle PR **#104** (`integration/next` → `main`) — bundle is
+  **silent-only so far → NOT awaiting owner approval**; accumulates until a noticeable item lands.
+  Also corrected the stale #103 board card (Needs Review → Shipped, v1.0.759).
 
 ## 2026-07-07 — round-page Ask Caddie pill adopts the Looper ink-orb identity (NOTICEABLE — integration/next, DONE)
 
