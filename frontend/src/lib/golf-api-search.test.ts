@@ -1,10 +1,9 @@
 /**
- * Unit tests for searchAllCourses() — the race-fix + append-only rendering +
- * client-side relevance filter (course-search-fix-plan.md, work item 2).
- *
- * Stubs `global.fetch` so these run offline/deterministically. `searchCourses`
- * (the GolfAPI leg) runs in node (no `window`), so it hits API_BASE directly
- * with the same stubbed fetch — no live network, no Clerk auth needed.
+ * Unit tests for searchAllCourses() — course-search-v2 Work Item A: the old
+ * 3-leg client fan-out (mapped + GolfAPI proxy + OSM) is collapsed into ONE
+ * call to the backend's /api/courses/search (which now owns the full
+ * pipeline: local DB → Google Places → internal GolfAPI leg → anchored OSM
+ * fallback). Stubs `global.fetch` so these run offline/deterministically.
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
@@ -14,55 +13,79 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Build a fake fetch keyed by URL substring, with per-call latency so legs settle out of order. */
+/** Build a fake fetch for /api/courses/search, with optional latency/status. */
 function makeFakeFetch(opts: {
-  mapped?: unknown;
-  osm?: unknown;
-  golfapi?: unknown;
-  delays?: { mapped?: number; osm?: number; golfapi?: number };
+  body?: unknown;
+  delayMs?: number;
+  ok?: boolean;
+  status?: number;
 }) {
-  const delays = opts.delays ?? {};
+  const { body = { courses: [] }, delayMs = 0, ok = true, status = 200 } = opts;
   return vi.fn((url: string, init?: RequestInit) => {
     const signal = init?.signal;
-    const respond = (body: unknown, delayMs = 0) =>
-      new Promise<Response>((resolve, reject) => {
-        const t = setTimeout(() => {
-          if (signal?.aborted) {
-            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
-            return;
-          }
-          resolve({
-            ok: true,
-            status: 200,
-            json: () => Promise.resolve(body),
-          } as Response);
-        }, delayMs);
-        signal?.addEventListener("abort", () => {
-          clearTimeout(t);
-          reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
-        });
+    return new Promise<Response>((resolve, reject) => {
+      const t = setTimeout(() => {
+        if (signal?.aborted) {
+          reject(Object.assign(new Error("aborted"), { name: signal.reason?.name || "AbortError" }));
+          return;
+        }
+        resolve({
+          ok,
+          status,
+          text: () => Promise.resolve(JSON.stringify(body)),
+          json: () => Promise.resolve(body),
+        } as Response);
+      }, delayMs);
+      signal?.addEventListener("abort", () => {
+        clearTimeout(t);
+        reject(Object.assign(new Error("aborted"), { name: signal.reason?.name || "AbortError" }));
       });
-
-    if (typeof url === "string" && url.includes("/api/courses/mapped")) {
-      return respond(opts.mapped ?? { courses: [] }, delays.mapped ?? 0);
-    }
-    if (typeof url === "string" && url.includes("/api/courses/search")) {
-      return respond(opts.osm ?? { courses: [] }, delays.osm ?? 0);
-    }
-    // GolfAPI leg (either the proxy or golfapi.io directly, depending on `window`)
-    return respond(opts.golfapi ?? { clubs: [] }, delays.golfapi ?? 0);
+    });
   });
 }
 
-describe("searchAllCourses — append-only progressive rendering", () => {
-  it("delivers cumulative, never-shrinking batches as legs settle out of order", async () => {
+describe("searchAllCourses — single unified backend leg", () => {
+  it("hits exactly ONE endpoint: /api/courses/search", async () => {
+    const fetchMock = makeFakeFetch({
+      body: { courses: [{ id: "1", name: "Bethpage Black", center: { lat: 1, lng: 2 }, source: "local" }] },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await searchAllCourses("bethpage");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toContain("/api/courses/search");
+    expect(url).not.toContain("/api/courses/mapped");
+  });
+
+  it("maps courses + populates a per-row sourceLabel", async () => {
     vi.stubGlobal(
       "fetch",
       makeFakeFetch({
-        mapped: { courses: [{ id: "m1", name: "Bethpage Black", location: { lat: 1, lng: 2 } }] },
-        osm: { courses: [{ id: "o1", name: "Bethpage Red", center: { lat: 1, lng: 2 } }] },
-        golfapi: { clubs: [] },
-        delays: { mapped: 5, osm: 30, golfapi: 15 },
+        body: {
+          courses: [
+            { id: "1", name: "Bethpage Black", center: { lat: 1, lng: 2 }, source: "local" },
+            { id: "gplaces-2", name: "Bethpage Red", center: { lat: 1, lng: 2 }, source: "google_places" },
+            { id: "golfapi-3", name: "Bethpage Green", center: { lat: 1, lng: 2 }, source: "golfapi" },
+          ],
+        },
+      })
+    );
+
+    const results = await searchAllCourses("bethpage");
+
+    const bySource = Object.fromEntries(results.map((r) => [r.source, r]));
+    expect(bySource.local.sourceLabel).toBe("MAPPED");
+    expect(bySource.google_places.sourceLabel).toBe("GOOGLE");
+    expect(bySource.golfapi.sourceLabel).toBe("GOLFAPI");
+  });
+
+  it("delivers the batch via onResults (append-only, single batch)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      makeFakeFetch({
+        body: { courses: [{ id: "1", name: "Bethpage Black", center: { lat: 1, lng: 2 }, source: "local" }] },
       })
     );
 
@@ -71,89 +94,52 @@ describe("searchAllCourses — append-only progressive rendering", () => {
       onResults: (rows) => batches.push(rows),
     });
 
-    // Every recorded batch must be a superset (append-only prefix) of the previous one.
-    for (let i = 1; i < batches.length; i++) {
-      const prevNames = batches[i - 1].map((r) => r.name);
-      const curNames = batches[i].map((r) => r.name);
-      expect(curNames.slice(0, prevNames.length)).toEqual(prevNames);
-    }
-
-    const finalNames = final.map((r) => r.name).sort();
-    expect(finalNames).toEqual(["Bethpage Black", "Bethpage Red"]);
-    // Fast mapped leg must have produced the FIRST batch.
+    expect(batches).toHaveLength(1);
     expect(batches[0].map((r) => r.name)).toEqual(["Bethpage Black"]);
+    expect(final.map((r) => r.name)).toEqual(["Bethpage Black"]);
   });
 
-  it("never removes or reorders already-delivered rows for the same query", async () => {
+  it("filters rows through the client-side prefix-relevance gate", async () => {
     vi.stubGlobal(
       "fetch",
       makeFakeFetch({
-        mapped: {
+        body: {
+          // Simulates a stale/unfiltered backend leaking a geocoder town —
+          // must be dropped client-side even though the backend returned it.
           courses: [
-            { id: "m1", name: "Bethpage Black", location: { lat: 1, lng: 2 } },
-            { id: "m2", name: "Bethpage Green", location: { lat: 1, lng: 2 } },
+            { id: "1", name: "Bethpage Black", center: { lat: 1, lng: 2 }, source: "local" },
+            { id: "2", name: "Bethel Island", center: { lat: 1, lng: 2 }, source: "osm" },
           ],
         },
-        osm: { courses: [{ id: "o1", name: "Bethpage Red", center: { lat: 1, lng: 2 } }] },
-        delays: { mapped: 0, osm: 20 },
       })
     );
 
-    const batches: string[][] = [];
-    await searchAllCourses("bethpage", {
-      onResults: (rows) => batches.push(rows.map((r) => r.name)),
-    });
-
-    expect(batches[0]).toEqual(["Bethpage Black", "Bethpage Green"]);
-    expect(batches[batches.length - 1]).toEqual([
-      "Bethpage Black",
-      "Bethpage Green",
-      "Bethpage Red",
-    ]);
-  });
-
-  it("filters every leg's rows through the client-side prefix-relevance gate", async () => {
-    vi.stubGlobal(
-      "fetch",
-      makeFakeFetch({
-        mapped: {
-          courses: [
-            { id: "m1", name: "Bethpage Black", location: { lat: 1, lng: 2 } },
-          ],
-        },
-        // Simulates a stale/unfiltered backend leaking a geocoder town — must be
-        // dropped client-side even though the backend returned it.
-        osm: { courses: [{ id: "o1", name: "Bethel Island", center: { lat: 1, lng: 2 } }] },
-      })
-    );
-
-    const results = await searchAllCourses("bethpa", {});
+    const results = await searchAllCourses("bethpa");
     expect(results.map((r) => r.name)).toEqual(["Bethpage Black"]);
   });
 
-  it("dedupes across legs by normalized name (mapped wins as it settles first)", async () => {
+  it("dedupes by normalized name, keeping the first occurrence", async () => {
     vi.stubGlobal(
       "fetch",
       makeFakeFetch({
-        mapped: { courses: [{ id: "m1", name: "Bethpage Black", location: { lat: 1, lng: 2 } }] },
-        osm: { courses: [{ id: "o1", name: "bethpage, black!", center: { lat: 1, lng: 2 } }] },
-        delays: { mapped: 0, osm: 10 },
+        body: {
+          courses: [
+            { id: "1", name: "Bethpage Black", center: { lat: 1, lng: 2 }, source: "local" },
+            { id: "2", name: "bethpage, black!", center: { lat: 1, lng: 2 }, source: "google_places" },
+          ],
+        },
       })
     );
 
-    const results = await searchAllCourses("bethpage black", {});
+    const results = await searchAllCourses("bethpage black");
     expect(results).toHaveLength(1);
-    expect(results[0].source).toBe("mapped");
+    expect(results[0].source).toBe("local");
   });
-});
 
-describe("searchAllCourses — abort reaches every fetch leg", () => {
-  it("threads the AbortSignal into the mapped, osm, and golfapi fetch calls", async () => {
+  it("threads the caller's AbortSignal into the fetch call", async () => {
     const fetchMock = makeFakeFetch({
-      mapped: { courses: [{ id: "m1", name: "Bethpage Black" }] },
-      osm: { courses: [{ id: "o1", name: "Bethpage Red" }] },
-      golfapi: { clubs: [] },
-      delays: { mapped: 20, osm: 20, golfapi: 20 },
+      body: { courses: [{ id: "1", name: "Bethpage Black" }] },
+      delayMs: 20,
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -167,13 +153,16 @@ describe("searchAllCourses — abort reaches every fetch leg", () => {
     controller.abort();
     const results = await resultPromise;
 
-    // Every fetch call received a signal.
-    for (const call of fetchMock.mock.calls) {
-      const init = call[1] as RequestInit | undefined;
-      expect(init?.signal).toBeInstanceOf(AbortSignal);
-    }
-    // Aborted request must never deliver rows.
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal);
+    // Aborted request must never deliver rows, and the search resolves
+    // (never rejects) with whatever was already appended (nothing here).
     expect(onResults).not.toHaveBeenCalled();
     expect(results).toEqual([]);
+  });
+
+  it("resolves (not rejects) on a network/HTTP failure", async () => {
+    vi.stubGlobal("fetch", makeFakeFetch({ ok: false, status: 500 }));
+    await expect(searchAllCourses("bethpage")).resolves.toEqual([]);
   });
 });

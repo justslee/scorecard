@@ -8,6 +8,7 @@ its tests are unchanged.
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
@@ -15,6 +16,8 @@ import unicodedata
 from urllib.parse import quote
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 MAPBOX_TOKEN = os.getenv("NEXT_PUBLIC_MAPBOX_TOKEN", os.getenv("MAPBOX_TOKEN", ""))
 # Server-side Google Places key (NOT the iOS-SDK bundle-restricted key — that
@@ -182,7 +185,8 @@ def external_course_rows(hits: list[dict]) -> list[dict]:
 
 
 async def search_google_places(
-    query: str, *, api_key: str | None = None, timeout_s: float = 8.0
+    query: str, *, api_key: str | None = None, timeout_s: float = 8.0,
+    raise_on_error: bool = False,
 ) -> list[dict]:
     """Robust text search for a golf course by name via Google Places API (New).
 
@@ -191,7 +195,18 @@ async def search_google_places(
     the key is absent, so search still works without it.
 
     ``api_key`` overrides the module-level key (the route passes its own global
-    so tests can monkeypatch it there)."""
+    so tests can monkeypatch it there).
+
+    Any HTTP failure or non-success status is logged at WARNING (with the HTTP
+    status when available) so a misconfigured/disabled key doesn't fail
+    silently — course-search-v2 diagnosis: this used to swallow errors with NO
+    logging, so a prod 403 SERVICE_DISABLED was invisible.
+
+    ``raise_on_error``: when True, re-raises instead of swallowing after
+    logging, so a caller with its own leg-health/observability wrapper (see
+    routes/course_search.py `_run_leg`) can distinguish "error" from a genuine
+    empty match. Defaults to False so existing callers (this module's own
+    default behavior, tee_times/affiliate.py) are unaffected."""
     key = api_key if api_key is not None else GOOGLE_PLACES_API_KEY
     if not key:
         return []
@@ -209,6 +224,12 @@ async def search_google_places(
         try:
             resp = await client.post(url, headers=headers, json=body)
             if not resp.is_success:
+                log.warning(
+                    "search_google_places: HTTP %d for query=%r body=%s",
+                    resp.status_code, query, resp.text[:300],
+                )
+                if raise_on_error:
+                    raise RuntimeError(f"google places status={resp.status_code}")
                 return []
             data = resp.json()
             out: list[dict] = []
@@ -228,6 +249,9 @@ async def search_google_places(
                 })
             return out
         except Exception:
+            if raise_on_error:
+                raise
+            log.warning("search_google_places: request failed for query=%r", query, exc_info=True)
             return []
 
 

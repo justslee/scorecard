@@ -405,14 +405,67 @@ export interface CourseSearchResult {
   hasCoordinates?: boolean;
 }
 
-/** Shape returned by the backend OSM/Mapbox course-search endpoints. */
+/** Shape returned by the backend /api/courses/search (and /api/courses/nearby)
+ *  endpoints. `source`/`legHealth` are additive (backend course-search-v2) —
+ *  older callers of this type (searchNearbyDetailed's OSM leg) just ignore them. */
 interface CourseSearchApiResponse {
   courses?: Array<{
     id: string;
     name?: string;
     address?: string;
     center?: { lat: number; lng: number };
+    source?: string;
   }>;
+  query?: string;
+  searchedNear?: string;
+  /** Per-leg outcome/timing (observability only — not consumed by the UI yet). */
+  legHealth?: Array<{ source: string; outcome: string; count: number; ms: number; detail?: string }>;
+}
+
+/** Short, uppercase per-row source tag shown in the search UI (course-search-helpers'
+ *  resultSourceLabel reads this first, before its own legacy fallback). */
+const SOURCE_LABELS: Partial<Record<CourseSearchResult['source'], string>> = {
+  local: 'MAPPED',
+  mapped: 'MAPPED',
+  google_places: 'GOOGLE',
+  golfapi: 'GOLFAPI',
+  osm: 'OSM',
+};
+
+function sourceLabelFor(source: string): string {
+  return SOURCE_LABELS[source as CourseSearchResult['source']] ?? source.toUpperCase();
+}
+
+/** Known values of CourseSearchResult['source'] the backend can emit from
+ *  /api/courses/search; anything else falls back to 'local' rather than
+ *  widening the union at the type level. */
+const KNOWN_SOURCES = new Set<CourseSearchResult['source']>([
+  'golfapi', 'osm', 'mapped', 'local', 'google_places',
+]);
+
+function normalizeSource(source: string | undefined): CourseSearchResult['source'] {
+  return source && KNOWN_SOURCES.has(source as CourseSearchResult['source'])
+    ? (source as CourseSearchResult['source'])
+    : 'local';
+}
+
+/**
+ * Combine two AbortSignals into one that aborts when EITHER does, preserving
+ * whichever `.reason` fired first (AbortError vs TimeoutError) so callers can
+ * still distinguish "caller cancelled" from "we gave up waiting".
+ * Falls back to a manual relay when `AbortSignal.any` isn't available.
+ */
+function combineSignals(a?: AbortSignal, b?: AbortSignal): AbortSignal | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([a, b]);
+  const controller = new AbortController();
+  const relay = (s: AbortSignal) => () => { if (!controller.signal.aborted) controller.abort(s.reason); };
+  if (a.aborted) controller.abort(a.reason);
+  else a.addEventListener('abort', relay(a), { once: true });
+  if (b.aborted) controller.abort(b.reason);
+  else b.addEventListener('abort', relay(b), { once: true });
+  return controller.signal;
 }
 
 /** Shape returned by the backend mapped-course endpoints (/api/courses/mapped). */
@@ -440,12 +493,20 @@ export interface SearchAllCoursesOptions {
 }
 
 /**
- * Unified search across our mapped courses (fast local leg), GolfAPI, and
- * OSM/Mapbox. Legs run in parallel; each appends to a shared append-only
- * list as it settles (see SearchAllCoursesOptions.onResults). Every leg's
- * rows pass the client-side prefix-relevance gate (matchesQueryPrefix) so
- * irrelevant geocoder towns never render, even against a stale backend.
- * Resolves with the final merged list once all legs settle.
+ * Unified search — ONE call to the backend's /api/courses/search, which owns
+ * the full pipeline (our DB → Google Places → internal GolfAPI leg → anchored
+ * OSM fallback; course-search-v2). Replaces the old 3-leg client fan-out
+ * (mapped + GolfAPI proxy + OSM) that settled at different times and janked
+ * the results list; the backend now does that work server-side.
+ *
+ * Still filters every row through the client-side prefix-relevance gate
+ * (matchesQueryPrefix) and dedupes by name as defense in depth against a
+ * stale/misbehaving backend, and still reports via the append-only
+ * `onResults` callback so callers never see rows reorder or disappear.
+ *
+ * Combines the caller's `signal` (new keystroke / unmount) with an internal
+ * 8s timeout (`AbortSignal.timeout`) so a wedged backend can't hang the
+ * search until the next keystroke happens to arrive.
  */
 export async function searchAllCourses(
   query: string,
@@ -453,8 +514,9 @@ export async function searchAllCourses(
 ): Promise<CourseSearchResult[]> {
   const { signal, onResults } = options ?? {};
 
-  // Append-only merge: dedupe by normalized name against everything already
-  // appended; never remove or reorder rows a previous leg reported.
+  // Append-only merge: dedupe by normalized name. Kept even with a single
+  // leg since the backend itself can return name-duplicates (e.g. a local
+  // row and a not-yet-write-through'd external hit for the same course).
   const merged: CourseSearchResult[] = [];
   const seenNames = new Set<string>();
 
@@ -472,87 +534,31 @@ export async function searchAllCourses(
     if (added) onResults?.([...merged]);
   };
 
-  // 1. Our mapped courses (RDS/PostGIS via the backend) — the fast local leg;
-  //    settles first in practice, so these rows render immediately.
-  const mappedPromise = fetchAPI<MappedCourseApiResponse>(
-    `/api/courses/mapped?search=${encodeURIComponent(query)}`,
-    { signal }
-  )
-    .then((data) => {
-      appendLeg(
-        (data.courses || []).map((c) => ({
-          id: c.id,
-          name: c.name ?? '',
-          address: c.address,
-          center: c.location,
-          source: 'mapped' as const,
-          hasCoordinates: true,
-        }))
-      );
-    })
-    .catch(() => {});
+  const combinedSignal = combineSignals(signal, AbortSignal.timeout(8000));
 
-  // 2. Search GolfAPI (proxied)
-  const golfApiPromise = searchCourses(query, { signal }).then((clubs) => {
-    const rows: CourseSearchResult[] = [];
-    for (const club of clubs) {
-      if (club.courses && club.courses.length > 0) {
-        for (const course of club.courses) {
-          rows.push({
-            id: `golfapi-${course.id}`,
-            name: composeCourseName(club.name, course.name || club.name),
-            clubName: club.name,
-            address: club.address,
-            city: club.city,
-            state: club.state,
-            center: club.latitude && club.longitude
-              ? { lat: club.latitude, lng: club.longitude }
-              : undefined,
-            source: 'golfapi',
-            golfApiClubId: club.id,
-            golfApiCourseId: course.id,
-            hasCoordinates: (course.hasGPS ?? 0) > 0,
-          });
-        }
-      } else {
-        rows.push({
-          id: `golfapi-club-${club.id}`,
-          name: club.name,
-          clubName: club.name,
-          address: club.address,
-          city: club.city,
-          state: club.state,
-          center: club.latitude && club.longitude
-            ? { lat: club.latitude, lng: club.longitude }
-            : undefined,
-          source: 'golfapi',
-          golfApiClubId: club.id,
-          courseCount: club.courses?.length,
-        });
-      }
-    }
-    appendLeg(rows);
-  }).catch(() => {});
+  try {
+    const data = await fetchAPI<CourseSearchApiResponse>(
+      `/api/courses/search?q=${encodeURIComponent(query)}`,
+      { signal: combinedSignal }
+    );
+    appendLeg(
+      (data.courses || []).map((c) => ({
+        id: c.id,
+        name: c.name ?? '',
+        address: c.address,
+        center: c.center,
+        source: normalizeSource(c.source),
+        sourceLabel: sourceLabelFor(c.source ?? 'local'),
+      }))
+    );
+  } catch {
+    // Aborted (stale query / unmount / our own 8s timeout) or a network
+    // failure — either way, resolve with whatever was already appended
+    // (nothing, on a single-leg miss) rather than rejecting; matches the
+    // prior multi-leg contract where one leg's failure never failed the
+    // whole search.
+  }
 
-  // 3. Search OSM / Mapbox via our API
-  const osmPromise = fetchAPI<CourseSearchApiResponse>(
-    `/api/courses/search?q=${encodeURIComponent(query)}`,
-    { signal }
-  )
-    .then((data) => {
-      appendLeg(
-        (data.courses || []).map((c) => ({
-          id: c.id,
-          name: c.name ?? '',
-          address: c.address,
-          center: c.center,
-          source: 'osm' as const,
-        }))
-      );
-    })
-    .catch(() => {});
-
-  await Promise.all([mappedPromise, golfApiPromise, osmPromise]);
   return merged;
 }
 
