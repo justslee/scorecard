@@ -6143,3 +6143,28 @@ auth surface). Noticeable on TestFlight only insofar as the realtime/text caddie
 now say "I don't have hazard data for this hole" style generic language instead of
 inventing a bunker/water feature on holes without curated geometry — a correctness fix,
 not a new UI surface.
+
+---
+
+## 2026-07-07 — cycle 2 assembled after the spend-limit stop (owner session)
+
+Spend limit killed both builders mid-flight (2026-07-06 ~23:50). Recovery:
+- Map builder had COMMITTED (9d597a9) before dying; its progress entry was finished and
+  committed (0af770d). Its npm-11 lockfile pruning re-broke CI-determinism — fixed in
+  place with npx npm@10 per the standing rule (0889d4c).
+- Dictation builder died before starting — eng-lead implemented specs/
+  caddie-live-dictation-plan.md directly (b5b919f): live Deepgram dictation in the
+  CaddieSheet voice tab, live final = the message (no Transcribing dead state on the
+  happy path), PulseDot thinking idiom, openGen stale-async guard, +9 tests.
+- Self-review pass (agent fan-out skipped — budget): map diff verified (queue closes
+  over refs, ready-gate inside run, resume listener cleanup, marker ready-gated +
+  id-tracked, 9-hole nav fix, assets present); hazards diff verified (replace-not-
+  merge, owner-scoped session resolution, rule on all three prompt paths). Deferred
+  one-mic exclusivity fixed: manual Ask Caddie open now stops the orb first.
+- NOT done this cycle (honest): designer review of the tee marker + dictation UI
+  (follow existing idioms; owner sees them on TestFlight) and the on-device drag/
+  no-loader visual checks (sim is auth-gated) — owner's build pass is the last gate.
+Final gates: backend 986/ruff clean; frontend tsc/lint clean, vitest 1494/1494,
+voice 274/274, build green.
+Bundle: regression fix (won't-listen) + hazard grounding + persistent map/tee marker +
+live dictation — ALL owner escalations from 2026-07-06.
