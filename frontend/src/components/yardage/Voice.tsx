@@ -79,6 +79,31 @@ export function VoiceOrb({
   );
 }
 
+/** The calm "thinking" pulse — the VoiceOrb idiom extracted so other voice
+ *  surfaces (CaddieSheet) reuse the exact animation instead of duplicating it. */
+export function PulseDot({ accent }: { accent: string }) {
+  return (
+    <span
+      style={{
+        position: "relative",
+        display: "inline-flex",
+        width: 22,
+        height: 22,
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      <motion.span
+        animate={{ scale: [1, 1.4, 1], opacity: [0.2, 0.35, 0.2] }}
+        transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        style={{ position: "absolute", width: 22, height: 22, borderRadius: 99, background: accent }}
+      />
+      <span style={{ position: "relative", width: 8, height: 8, borderRadius: 99, background: accent }} />
+    </span>
+  );
+}
+
 export function Waveform({ bars = 28, accent, playing = true, height = 22 }: { bars?: number; accent: string; playing?: boolean; height?: number }) {
   return (
     <div style={{ display: "flex", gap: 2.5, alignItems: "center", height }}>

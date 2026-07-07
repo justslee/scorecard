@@ -9,7 +9,7 @@
 // component with the backend + mic mocked.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 
 // ── Mocks ──
 vi.mock("@/lib/caddie/api", () => ({
@@ -32,8 +32,40 @@ vi.mock("@/lib/voice/deepgram", () => ({
     start = startSpy;
     stop = stopSpy;
     cancel = cancelSpy;
+    getStream = vi.fn(() => ({}) as MediaStream);
   },
   transcribeBlob: vi.fn(),
+}));
+
+// Live dictation (specs/caddie-live-dictation-plan.md): a controllable fake
+// so tests can fire onInterim/onFinal and force start() failures.
+const liveState = vi.hoisted(() => ({
+  instances: [] as Array<{
+    events: {
+      onInterim?: (t: string) => void;
+      onFinal?: (t: string) => void;
+      onError?: (e: Error) => void;
+    };
+    stop: ReturnType<typeof vi.fn>;
+  }>,
+  supported: true,
+  startError: null as Error | null,
+}));
+vi.mock("@/lib/voice/deepgram-live", () => ({
+  DeepgramLiveTranscriber: class {
+    events: (typeof liveState.instances)[number]["events"];
+    stop = vi.fn();
+    constructor(events: (typeof liveState.instances)[number]["events"]) {
+      this.events = events;
+      liveState.instances.push(this);
+    }
+    static isSupported() {
+      return liveState.supported;
+    }
+    async start() {
+      if (liveState.startError) throw liveState.startError;
+    }
+  },
 }));
 
 import CaddieSheet from "./CaddieSheet";
@@ -122,6 +154,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   startSpy.mockResolvedValue(undefined);
   stopSpy.mockResolvedValue(new Blob());
+  liveState.instances.length = 0;
+  liveState.supported = true;
+  liveState.startError = null;
 });
 
 describe("CaddieSheet — session-first recommendation", () => {
@@ -208,6 +243,87 @@ describe("CaddieSheet — session voice path carries the real persona id", () =>
       }),
     );
     expect(await screen.findByText("Lay up to 95.")).toBeTruthy();
+  });
+});
+
+describe("CaddieSheet — live dictation (specs/caddie-live-dictation-plan.md)", () => {
+  it("shows live words while speaking and sends the LIVE transcript — no blob upload, no Transcribing", async () => {
+    sessionVoiceMock.mockResolvedValueOnce({ response: "Smooth 8-iron." });
+    renderSheet();
+
+    fireEvent.click(screen.getByLabelText("Start recording"));
+    await waitFor(() => expect(liveState.instances).toHaveLength(1));
+    const live = liveState.instances[0];
+
+    act(() => live.events.onInterim?.("what club"));
+    expect(await screen.findByText("“what club”")).toBeTruthy();
+    act(() => {
+      live.events.onInterim?.("what club from 150");
+      live.events.onFinal?.("what club from 150");
+    });
+
+    fireEvent.click(screen.getByLabelText("Stop recording"));
+
+    await waitFor(() => expect(sessionVoiceMock).toHaveBeenCalledTimes(1));
+    expect(sessionVoiceMock).toHaveBeenCalledWith(
+      expect.objectContaining({ transcript: "what club from 150" }),
+    );
+    // The whole point: no batch transcription, no "Transcribing…" dead state.
+    expect(transcribeMock).not.toHaveBeenCalled();
+    expect(screen.queryByText("Transcribing…")).toBeNull();
+    expect(cancelSpy).toHaveBeenCalled(); // mic released on the live path too
+    expect(await screen.findByText("Smooth 8-iron.")).toBeTruthy();
+  });
+
+  it("falls back to the blob upload when the live socket fails to start", async () => {
+    liveState.startError = new Error("ws down");
+    transcribeMock.mockResolvedValueOnce({ transcript: "lay up or go?" } as never);
+    sessionVoiceMock.mockResolvedValueOnce({ response: "Lay up to 95." });
+    renderSheet();
+
+    fireEvent.click(screen.getByLabelText("Start recording"));
+    fireEvent.click(await screen.findByLabelText("Stop recording"));
+
+    await waitFor(() => expect(sessionVoiceMock).toHaveBeenCalledTimes(1));
+    expect(transcribeMock).toHaveBeenCalledTimes(1);
+    expect(sessionVoiceMock).toHaveBeenCalledWith(
+      expect.objectContaining({ transcript: "lay up or go?" }),
+    );
+  });
+
+  it("falls back when live errored mid-utterance even with partial text", async () => {
+    transcribeMock.mockResolvedValueOnce({ transcript: "full sentence from blob" } as never);
+    sessionVoiceMock.mockResolvedValueOnce({ response: "Got it." });
+    renderSheet();
+
+    fireEvent.click(screen.getByLabelText("Start recording"));
+    await waitFor(() => expect(liveState.instances).toHaveLength(1));
+    const live = liveState.instances[0];
+    act(() => {
+      live.events.onInterim?.("full sen"); // partial before the socket died
+      live.events.onError?.(new Error("ws dropped"));
+    });
+
+    fireEvent.click(screen.getByLabelText("Stop recording"));
+
+    await waitFor(() => expect(sessionVoiceMock).toHaveBeenCalledTimes(1));
+    expect(transcribeMock).toHaveBeenCalledTimes(1); // authoritative fallback
+    expect(sessionVoiceMock).toHaveBeenCalledWith(
+      expect.objectContaining({ transcript: "full sentence from blob" }),
+    );
+  });
+
+  it("shows the no-speech error when live heard nothing and the blob is empty too", async () => {
+    transcribeMock.mockResolvedValueOnce({ transcript: "  " } as never);
+    renderSheet();
+
+    fireEvent.click(screen.getByLabelText("Start recording"));
+    fireEvent.click(await screen.findByLabelText("Stop recording"));
+
+    expect(
+      await screen.findByText("No speech detected. Tap the mic to try again."),
+    ).toBeTruthy();
+    expect(sessionVoiceMock).not.toHaveBeenCalled();
   });
 });
 
