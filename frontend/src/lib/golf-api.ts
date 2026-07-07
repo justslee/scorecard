@@ -396,7 +396,9 @@ export interface CourseSearchResult {
   city?: string;
   state?: string;
   center?: { lat: number; lng: number };
-  source: 'golfapi' | 'osm' | 'mapped' | 'local';
+  source: 'golfapi' | 'osm' | 'mapped' | 'local' | 'google_places';
+  /** Short display tag for the result row (e.g. "MAPPED"); optional, UI-only. */
+  sourceLabel?: string;
   golfApiClubId?: number | string;
   golfApiCourseId?: number | string;
   courseCount?: number;

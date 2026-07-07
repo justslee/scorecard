@@ -24,7 +24,7 @@ export interface FavoriteCourse {
   /** Geo center — used to show distance in the favorites list. */
   center?: { lat: number; lng: number };
   /** Source tag so the selection path knows how to route. */
-  source: "mapped" | "osm" | "golfapi" | "local";
+  source: "mapped" | "osm" | "golfapi" | "local" | "google_places";
   /** GolfAPI club id — needed to build the course detail URL for golfapi results. */
   golfApiClubId?: string;
   /** ISO timestamp of when the course was favorited. */
