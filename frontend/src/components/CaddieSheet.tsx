@@ -752,20 +752,37 @@ export default function CaddieSheet({
                   }
                   aria-pressed={ttsEnabled}
                   style={{
+                    // 44×44 hit area for on-course glove use (the app's own
+                    // ≥44pt standard); negative margin keeps the visual footprint
+                    // at the 22px circle so the header row layout is unchanged.
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    width: 22,
-                    height: 22,
-                    borderRadius: "50%",
-                    border: `1px solid ${T.hairline}`,
-                    background: tts.isSpeaking ? `${accent}1f` : "transparent",
-                    color: tts.isSpeaking ? accent : ttsEnabled ? T.pencil : T.pencilSoft,
+                    width: 44,
+                    height: 44,
+                    margin: -11,
+                    border: "none",
+                    background: "transparent",
+                    padding: 0,
                     cursor: "pointer",
                     flexShrink: 0,
                   }}
                 >
-                  <SpeakerIcon muted={!ttsEnabled && !tts.isSpeaking} size={11} />
+                  <span
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      border: `1px solid ${T.hairline}`,
+                      background: tts.isSpeaking ? `${accent}1f` : "transparent",
+                      color: tts.isSpeaking ? accent : ttsEnabled ? T.pencil : T.pencilSoft,
+                    }}
+                  >
+                    <SpeakerIcon muted={!ttsEnabled && !tts.isSpeaking} size={11} />
+                  </span>
                 </button>
               </div>
 

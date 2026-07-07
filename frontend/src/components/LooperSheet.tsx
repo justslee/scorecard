@@ -186,20 +186,37 @@ export function LooperSheetShell({
                     }
                     aria-pressed={ttsEnabled}
                     style={{
+                      // 44×44 hit area for on-course glove use (the app's own
+                      // ≥44pt standard); negative margin keeps the 20px visual
+                      // footprint so the header row layout is unchanged.
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      width: 20,
-                      height: 20,
-                      borderRadius: "50%",
-                      border: `1px solid ${T.hairline}`,
-                      background: tts.isSpeaking ? `${T.ink}14` : "transparent",
-                      color: tts.isSpeaking ? T.ink : ttsEnabled ? T.pencil : T.pencilSoft,
+                      width: 44,
+                      height: 44,
+                      margin: -12,
+                      border: "none",
+                      background: "transparent",
+                      padding: 0,
                       cursor: "pointer",
                       flexShrink: 0,
                     }}
                   >
-                    <SpeakerIcon muted={!ttsEnabled && !tts.isSpeaking} size={10} />
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 20,
+                        height: 20,
+                        borderRadius: "50%",
+                        border: `1px solid ${T.hairline}`,
+                        background: tts.isSpeaking ? `${T.ink}14` : "transparent",
+                        color: tts.isSpeaking ? T.ink : ttsEnabled ? T.pencil : T.pencilSoft,
+                      }}
+                    >
+                      <SpeakerIcon muted={!ttsEnabled && !tts.isSpeaking} size={10} />
+                    </span>
                   </button>
                 </div>
                 <div
