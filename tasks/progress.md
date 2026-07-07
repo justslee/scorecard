@@ -3,6 +3,27 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — round-page Ask Caddie pill adopts the Looper ink-orb identity (NOTICEABLE — integration/next, DONE)
+
+`specs/looper-orb-bundle2-plan.md` (bundle 2 of the Looper orb rollout). Restyles the round
+page's "Ask Caddie" ghost-pill medallion (`RoundPageClient.tsx` ~1869-1916) from the accent
+persona-initial chip to the same ink-orb + serif-italic "L" identity as `LooperOrb`
+(`FloatingTabBar.tsx`): `background: T.ink`, `border: 1px solid T.hairline`, raised inset
+highlight (`0 1px 4px rgba(26,42,26,0.20), 0 1px 0 rgba(255,255,255,0.25) inset`), glyph "L".
+Label changed "Ask caddie" -> "Ask Looper"; explicit `aria-label="Ask Looper"` added to the
+button. Semantics fully unchanged: `onClick` still `voice.stop(); setCaddieOpen(true);` (opens
+the round-scoped, persona-aware CaddieSheet); persona initial stays visible in the CaddieSheet
+header medallion, so no persona-identity regression. No `looper-bus`/`openLooper` wiring, no
+long-press-to-listen added (round page keeps its own voice architecture) — pure presentational
+swap per the plan's locked design decisions.
+- Gates green: `npm run lint` (clean), `npx tsc --noEmit` (clean), `npm run build` (success),
+  `voice-tests --smoke` (274/274 pass, unaffected — no mic path touched),
+  `vitest run FloatingTabBar.test.tsx` (4/4 pass — identity source untouched).
+- No `/security-review` needed (pure CSS/JSX, no endpoint/auth/dependency change).
+- Classified **noticeable** (visible identity/label change on the round page's caddie-launch
+  pill) — rides in the current `integration/next` bundle toward owner approval.
+- Commit `ec49d09` on `integration/next`, pushed.
+
 ## 2026-07-07 — /map/course ErrorScreen restyle to yardage-book not-found pattern (SILENT — integration/next, DONE)
 
 `specs/map-viewer-error-screen-restyle-plan.md`. Designer review flagged the map viewer's
