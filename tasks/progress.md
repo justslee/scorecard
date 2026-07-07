@@ -6209,3 +6209,36 @@ courses orb opens search already dictating into the query. +7 tests.
 Gates: tsc/lint, vitest 1501/1501, voice 274/274, build, backend 986 + ruff — green.
 NOT yet done: designer pass (budget) — owner sees it on TestFlight; bundle 2 =
 round-page identity + Home/Partners/Profile page powers.
+
+---
+
+## 2026-07-07 — SHIPPED: #98 the Looper orb (bundle 1)
+
+Owner "ship it". Merge 4711fa4 → main; backend deploy success + health ok
+(off-course chat context live). TestFlight v1.0.734 (build 202607071034)
+uploaded. integration/next fast-forwarded + pushed. Owner test: the center
+orb on every tab (tap → sheet, hold → listening); tee-time bar gone, voice
+via orb; courses orb dictates into search; general chat on Home/Profile.
+Bundle 2 queued: round-page Looper identity, page powers, designer polish.
+
+---
+
+## 2026-07-07 — VOICE BULLETPROOFING P0 (owner: "our most important thing")
+
+Owner escalations (in-round, v1.0.734): raw '{"detail": "list index out of range"}' in the
+CaddieSheet; live dictation still falling back to "Transcribing…"; wind/elev tiles frozen.
+All three root-caused + fixed (f49ba62 + 73f5c98):
+1. Error hygiene: catch-alls leaked str(e) with NO logged traceback. Now log.exception +
+   calm in-character detail; _first_text guards empty Claude content (the likely IndexError);
+   frontend humanizeVoiceError never renders machine text. +9 tests.
+2. iOS live dictation: WKWebView MediaRecorder = audio/mp4 (Deepgram live can't decode) +
+   dual-MediaRecorder-on-one-stream flakiness. New transport split: webm/opus where
+   supported; WebAudio PCM tap (AudioWorklet/ScriptProcessor → linear16@16k) elsewhere.
+   pcm-capture pure helpers tested (+7). DEVICE VERIFICATION = owner's next build.
+3. Wind/elev tiles were HARDCODED (no-fake-data violation): real weather fetch + per-hole
+   relative wind from true hole bearings (tested: same weather reads differently per hole);
+   Gust replaces Elev (no elevation data — DEM ingestion backlogged); plays-like wind-adj.
+Audit delivered: specs/voice-agent-audit.md — P1 queue: keyterm boosting, TTS sheet
+replies, auto-send endpointing, voice telemetry (all on backlog.json).
+Gates: backend 991 + ruff clean; frontend tsc/lint clean, vitest 1523/1523, voice 274/274,
+build green.

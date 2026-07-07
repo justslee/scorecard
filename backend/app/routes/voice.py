@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 import anthropic
+import logging
 import os
 import json
 import re
@@ -151,6 +152,8 @@ Use the exact player names from the list above in your response."""
         )
     except anthropic.AuthenticationError:
         raise HTTPException(status_code=401, detail="Invalid API key")
-    except Exception as e:
-        print(f"Voice parse error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logging.getLogger("looper.voice").exception("parse_voice_scores failed")
+        raise HTTPException(status_code=500, detail="Couldn't parse that — try saying the scores again.")

@@ -30,3 +30,21 @@ export function pickDictationTranscript(
 export function isEmptyTranscript(t: string): boolean {
   return t.trim().length === 0;
 }
+
+/**
+ * Human-safe error line: backend failures can surface as raw JSON bodies
+ * (e.g. '{"detail": "list index out of range"}' — the owner saw exactly that
+ * in the sheet). Pass anything that LOOKS machine-made through to a calm
+ * fallback; keep short human sentences as-is.
+ */
+export function humanizeVoiceError(message: string | undefined, fallback: string): string {
+  const m = (message ?? "").trim();
+  if (!m) return fallback;
+  const looksRaw =
+    m.startsWith("{") ||
+    m.startsWith("[") ||
+    m.includes('"detail"') ||
+    /index out of range|traceback|exception|typeerror|keyerror/i.test(m) ||
+    m.length > 90;
+  return looksRaw ? fallback : m;
+}
