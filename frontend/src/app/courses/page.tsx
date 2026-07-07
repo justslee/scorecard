@@ -391,7 +391,11 @@ export default function CoursesHubPage() {
           </div>
 
           <button
-            onClick={() => router.push(`/map/course?id=${BETHPAGE_BLACK_MAP_ID}`)}
+            onClick={() =>
+              router.push(
+                courseDetailHref({ id: BETHPAGE_BLACK_MAP_ID, source: "mapped" })
+              )
+            }
             style={{
               width: "100%",
               display: "flex",
@@ -430,7 +434,7 @@ export default function CoursesHubPage() {
                   marginTop: 2,
                 }}
               >
-                Hole map
+                Mapped course
               </div>
             </div>
             <div
@@ -446,7 +450,11 @@ export default function CoursesHubPage() {
           </button>
 
           <button
-            onClick={() => router.push(`/map/course?id=${BETHPAGE_RED_MAP_ID}`)}
+            onClick={() =>
+              router.push(
+                courseDetailHref({ id: BETHPAGE_RED_MAP_ID, source: "mapped" })
+              )
+            }
             style={{
               width: "100%",
               display: "flex",
@@ -485,7 +493,7 @@ export default function CoursesHubPage() {
                   marginTop: 2,
                 }}
               >
-                Hole map
+                Mapped course
               </div>
             </div>
             <div
