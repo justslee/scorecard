@@ -53,4 +53,33 @@ describe('mapRecentCourses', () => {
     expect(items[1].id).toBe('2');
     expect(items[1].subtitle).toBe('');
   });
+
+  it('routes a mapped recent row to the mapped detail mode', () => {
+    const rows = [
+      {
+        id: '2b8caab5-2c55-5752-8cda-336c3a396dac',
+        name: 'Bethpage Black',
+        clubName: 'Bethpage Black',
+        source: 'mapped',
+      },
+    ];
+    const items = mapRecentCourses(rows);
+    expect(items[0].href).toContain('src=mapped');
+    expect(items[0].href).toContain('/courses/');
+  });
+
+  it('routes a centre-carrying OSM recent row with its display params', () => {
+    const rows = [
+      {
+        id: 'osm-5',
+        name: 'Eisenhower Red',
+        clubName: 'Eisenhower Red',
+        source: 'osm',
+        center: { lat: 40.74, lng: -73.42 },
+      },
+    ];
+    const items = mapRecentCourses(rows);
+    expect(items[0].href).toContain('src=osm');
+    expect(items[0].href).toContain('lat=40.74');
+  });
 });

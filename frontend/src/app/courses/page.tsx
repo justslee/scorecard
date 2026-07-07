@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import { getRecentCourses, searchNearby, type CourseSearchResult } from "@/lib/golf-api";
 import { mapRecentCourses, type RecentCourseItem } from "@/lib/course-list";
-import { courseHref } from "@/lib/course-url";
+import { courseDetailHref } from "@/lib/course-url";
 import CourseSearch from "@/components/CourseSearch";
 
 // Mapped courses ingested into the PostGIS store via ingest_osm_course.py.
@@ -271,9 +271,14 @@ export default function CoursesHubPage() {
                   key={r.id}
                   onClick={() =>
                     router.push(
-                      courseHref({
-                        courseId: r.golfApiCourseId ?? r.id,
+                      courseDetailHref({
+                        id: r.source === "golfapi" ? r.golfApiCourseId ?? r.id : r.id,
                         clubId: r.golfApiClubId,
+                        source: r.source,
+                        name: r.name,
+                        location:
+                          [r.city, r.state].filter(Boolean).join(", ") || undefined,
+                        center: r.center,
                       })
                     )
                   }
@@ -386,7 +391,11 @@ export default function CoursesHubPage() {
           </div>
 
           <button
-            onClick={() => router.push(`/map/course?id=${BETHPAGE_BLACK_MAP_ID}`)}
+            onClick={() =>
+              router.push(
+                courseDetailHref({ id: BETHPAGE_BLACK_MAP_ID, source: "mapped" })
+              )
+            }
             style={{
               width: "100%",
               display: "flex",
@@ -425,7 +434,7 @@ export default function CoursesHubPage() {
                   marginTop: 2,
                 }}
               >
-                Hole map
+                Mapped course
               </div>
             </div>
             <div
@@ -441,7 +450,11 @@ export default function CoursesHubPage() {
           </button>
 
           <button
-            onClick={() => router.push(`/map/course?id=${BETHPAGE_RED_MAP_ID}`)}
+            onClick={() =>
+              router.push(
+                courseDetailHref({ id: BETHPAGE_RED_MAP_ID, source: "mapped" })
+              )
+            }
             style={{
               width: "100%",
               display: "flex",
@@ -480,7 +493,7 @@ export default function CoursesHubPage() {
                   marginTop: 2,
                 }}
               >
-                Hole map
+                Mapped course
               </div>
             </div>
             <div
@@ -503,24 +516,19 @@ export default function CoursesHubPage() {
           onClose={() => setShowSearch(false)}
           onSelectCourse={(c) => {
             setShowSearch(false);
-            if (c.source === "mapped") {
-              // Full hole-by-hole map (ingested course with OSM geometry)
-              router.push(`/map/course?id=${encodeURIComponent(String(c.id))}`);
-            } else if (c.center) {
-              // Non-ingested course with known location → satellite/vector map
-              // centred on lat/lng (GPS + tap-to-measure work everywhere; no hole data yet)
-              const qs = new URLSearchParams({
+            // Unified landing: EVERY selection goes to the course detail page
+            // (start-round handoff lives there); /map/course is reached from
+            // detail as a viewer, never as the landing.
+            router.push(
+              courseDetailHref({
+                id: c.id,
+                clubId: c.clubId,
+                source: c.source,
                 name: c.name,
-                lat:  String(c.center.lat),
-                lng:  String(c.center.lng),
-              });
-              // Include id for display even if not yet ingested
-              if (c.id) qs.set("id", String(c.id));
-              router.push(`/map/course?${qs.toString()}`);
-            } else {
-              // Fallback: GolfAPI detail page (no location available)
-              router.push(courseHref({ courseId: c.id, clubId: c.clubId }));
-            }
+                location: c.location,
+                center: c.center,
+              })
+            );
           }}
         />
       )}

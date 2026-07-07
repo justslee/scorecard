@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-29",
+  "updated": "2026-07-06",
   "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle).",
   "items": [
     {
@@ -1449,6 +1449,17 @@
         "hole-diagram-base"
       ],
       "shipped": "Built 7c2b15f (2026-06-29). Inverse projection (unprojectPoint, round-trip<1e-7); tap-to-measure (from-tee/to-pin); GPS on-hole overlay (you dot + live distances when on-hole, graceful when remote \u2014 fixes 50531). 57 new tests, 580 vitest green. | SHIPPED PR #71 -> main 6b667fd (2026-06-29)."
+    },
+    {
+      "id": "map-viewer-error-screen-restyle",
+      "title": "Restyle /map/course ErrorScreen to the yardage-book pattern",
+      "type": "minor",
+      "priority": 6,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Designer review of ff2b043: the map viewer's ErrorScreen (frontend/src/app/map/course/page.tsx ~159-210) is generic/off-brand (sans body, Lucide AlertCircle, plain text link) next to the on-brand detail-page not-found state (serif-italic headline, mono caption, pill button). The unified detail landing now funnels more traffic through /map/course, so a golfer on patchy course wifi is one tap from a jarring screen. Match the detail page's not-found pattern.",
+      "spec": "specs/course-search-fix-plan.md"
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."

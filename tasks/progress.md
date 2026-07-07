@@ -3,6 +3,42 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-02 — tee-time: honest course list + real group (NOTICEABLE — integration/next, DONE)
+
+Owner bug (NY, on device): the tee-time screen showed the hardcoded SF demo list
+(Presidio/Harding/Lincoln fake ★ favorites + "Bethpage Black 31.2mi") because the
+page seeded `DEFAULT_COURSES` and only replaced it when GPS + nearby fetch both
+succeeded with >0 results. Owner directive mid-build: "get rid of hardcoded
+lists" — plural — so the fake roster/self-handicap went too.
+
+### What changed
+- `app/tee-time/page.tsx` — DEFAULT_COURSES DELETED; courses start `[]` with an
+  honest load state machine (locating → loading → done | failed | unlocated) and
+  calm empty copy; nearby fetch radius follows the Max drive slider (debounced,
+  refetch only when radius grows / area changes); fresh results MERGE (toggles +
+  added courses never clobbered); "+ Add course" dashed row opens the existing
+  CourseSearch sheet (dedupe by name, honest distance from payload center, null
+  when unknown — shown blank, never invented); LOCAL_ROSTER + SELF_MEMBER (fake
+  "JL hdcp 8.2" + 4 fake invitees) DELETED — self chip fills from the real golfer
+  profile (blank hdcp when unknown), invite roster = real saved players
+  (GET /api/players, storage fallback), honest empty-roster copy; booking name =
+  profile name (was hardcoded "Owner")
+- `lib/teetime/courses.ts` — CourseOption.distance now `number | null`;
+  radiusMetersForMiles (5–80km clamp), mergeCourseOptions, addCourseOption,
+  courseOptionFromSelection, load-state helpers + emptyCoursesNote;
+  toCourseOptions appends real favorites beyond the results with honest stored-
+  center distance (no center → omitted); fetchNearbyCourseOptions never throws —
+  returns `{ options, failed }`
+- `lib/golf-api.ts` — new `searchNearbyDetailed` (per-leg health: mapped + OSM
+  legs fail independently; both-down is distinguishable from "no courses");
+  `searchNearby` delegates
+- `lib/teetime/voice-prefs.ts` — VoicePrefMember.hdcp nullable; guest
+  placeholders get hdcp null (was fake 0)
+- Tests: vitest 1343 → 1365 (+22: radius clamp, leg resilience, merge/add/dedupe,
+  favorites-beyond-radius, load-state transitions, never-throw wrapper)
+
+Gates: tsc clean · eslint clean · vitest 1365/1365 · voice smoke 274/274 · build ✓
+
 ## 2026-07-02 — agentic caddie P2: real voice — hold-to-talk orb (NOTICEABLE — integration/next, DONE)
 
 The round screen's voice orb is now the REAL caddie (`specs/agentic-caddie-plan.md`
@@ -5509,3 +5545,56 @@ distances) after ship; P5 persona studio.
 After shipping P1+P2 (#91), owner paused P3 (hazard carries + polygon DECADE) and
 P4 (learned distances). Do NOT dispatch builders for them — the spec
 (specs/agentic-caddie-plan.md) stays the plan of record; resume only on owner say-so.
+
+---
+
+## 2026-07-02 — SHIPPED: #92 tee-time real courses by default (Places key live)
+
+Owner added the Places key (initially as GOOGLE_PLACES_KEY in looper/client; moved by
+owner to GOOGLE_PLACES_API_KEY in looper/prod after eng-lead found the name+secret
+mismatch — note: the app reads looper/prod at boot, key names must match env vars
+exactly). Backend restarted via deploy rerun → config-status google_places:true.
+Flipped TEETIME_PROVIDER default mock→affiliate (real nearby courses, honest handoff)
+with a never-empty mock-fallback (labeled) when the real search finds nothing; +5 unit
+tests; 2 integration tests pinned to TEETIME_PROVIDER=mock (they assert mock semantics
+and had relied on the old default — assertions unchanged). Merged #92, deployed.
+Backend-only: existing TestFlight build v1.0.680 now shows REAL courses on tee-time +
+course search gains the Places leg.
+
+⚠ INCIDENT (eng-lead error, owner notified in-session): a failed put-secret-value
+attempt echoed the FULL looper/prod payload (DB password + Anthropic/OpenAI/Deepgram/
+GolfAPI/Mapbox keys) into the session transcript. Recommended rotation (esp. RDS
+password + paid API keys). Owner aware; rotation pending owner action.
+
+---
+
+## 2026-07-06 — course routing unified (item 3.3 follow-up) + bundle PR #93 (owner session, Fable 5)
+
+Resumed the usage-limit-killed checklist. Items 1+2 (backend/frontend search) and the
+satellite-in-yardage-book half of item 3 had already shipped (#87/#88); what remained was
+the DEFERRED tail of item 3.3 (unified routing — blocked then because /courses/[id] only
+spoke GolfAPI) + review/QA/ship. Landed on integration/next:
+- 0628b2d ios: CapacitorHaptics registered in CapApp-SPM (uncommitted cap-sync rider
+  from #88 found dirty in the tree — fresh checkouts would silently lose haptics). SILENT.
+- ff2b043 courses: one detail landing for every search source. courseDetailHref() in
+  course-url.ts maps any selection → /courses/view (mapped → src=mapped, fetches
+  /api/courses/mapped/{id} for par/holes/tee-sets; centre-carrying osm/local → display
+  params in URL, no backend row needed; golfapi unchanged). /map/course = viewer reached
+  FROM detail (quiet Hole map / Satellite map row), never a landing. Start-a-round from
+  detail stashes source+center → round carries the anchor → satellite yardage book.
+  Recents persist source/center (old rows fall back to the golfapi path). +11 tests.
+- 576e5a1 courses: hub "Course maps (beta)" Bethpage rows routed through
+  courseDetailHref too — designer review BLOCKER (they reproduced the exact
+  inconsistency one screen below the fix). NOTICEABLE (with ff2b043).
+
+Review: adversarial reviewer CLEAN (verified load-effect races, not-found gate, URL-param
+XSS, malformed lat/lng, legacy-recents compat, golfapi regression). Designer: passes after
+the blocker fix; non-blocker filed to backlog.json (map-viewer-error-screen-restyle: the
+/map/course ErrorScreen is off-brand and now gets more traffic). QA: Bethpage repro —
+backend course-search suite 48/48 (bethpa → Bethpage only), frontend mirror in vitest.
+Gates: tsc/lint clean, vitest 1374/1374 (one unreproducible flake on a single run — 3
+subsequent runs green; CI re-gates), voice smoke 274/274, build green, ruff clean.
+
+Bundle PR #93 opened (integration/next → main): tee-time honest course list (ad0d65d,
+noticeable) + unified detail landing (noticeable) + haptics rider (silent). Owner is
+in-session — approval requested directly, no push notification needed.

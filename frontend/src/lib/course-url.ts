@@ -24,3 +24,40 @@ export function courseHref(
     ? `${base}&clubId=${encodeURIComponent(String(args.clubId))}`
     : base;
 }
+
+/**
+ * Detail-page URL for ANY course search selection (the unified landing).
+ *
+ * Every source lands on /courses/view — the page with the start-round handoff —
+ * never on the bare /map/course viewer (that stays reachable FROM detail):
+ * - golfapi          → ?id&clubId (detail fetches the GolfAPI proxy, unchanged)
+ * - mapped           → ?id&src=mapped (detail fetches /api/courses/mapped/{id})
+ * - anything else w/ a centre → ?id&src&name&lat&lng(&loc) — no backend row is
+ *   guaranteed for these (client-side OSM leg), so the params carry the display
+ *   data and the detail page renders without a fetch.
+ */
+export function courseDetailHref(selection: {
+  id: number | string;
+  clubId?: number | string;
+  source?: string;
+  name?: string;
+  location?: string;
+  center?: { lat: number; lng: number };
+}): string {
+  const { id, clubId, source, name, location, center } = selection;
+  if (source === "mapped") {
+    return `/courses/${COURSE_VIEW_SEGMENT}?id=${encodeURIComponent(String(id))}&src=mapped`;
+  }
+  if (source && source !== "golfapi" && center) {
+    const qs = new URLSearchParams({
+      id: String(id),
+      src: source,
+      name: name ?? "",
+      lat: String(center.lat),
+      lng: String(center.lng),
+    });
+    if (location) qs.set("loc", location);
+    return `/courses/${COURSE_VIEW_SEGMENT}?${qs.toString()}`;
+  }
+  return courseHref({ courseId: id, clubId });
+}
