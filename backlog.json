@@ -1590,10 +1590,11 @@
       "type": "major",
       "priority": 6,
       "risk": "medium",
-      "status": "needs-spec",
+      "status": "done",
       "depends_on": [],
       "why": "Seeded 2026-07-07 (retro); owner direction ('page powers' / brain-parity). Today the Looper orb + round caddie are separate mouths with different context. Give the single Looper assistant the SAME brain everywhere — on the home/profile/course pages it should answer and act with the current page's context (recent rounds, this course, the round in progress), not just on the round screen. Voice-first, calm, minimal chrome per NORTHSTAR. Needs a spec: unify the context/tooling behind the sheets, define per-surface capabilities, avoid racing realtime.ts warm-path mic invariants. Candidate — scope before building.",
-      "spec": ""
+      "spec": "specs/looper-brain-parity-plan.md",
+      "done_note": "SMALLEST-SLICE shipped to integration/next (bundle PR #105, commit 4948cf6). Backend _build_voice_prompt now grounds the off-course Looper orb (and the on-course CaddieSheet stateless fallback) in the player cross-round memory + handicap, mirroring _build_session_voice_prompt — the orb is personal everywhere, no UI delta. Defensive try/except degrades to prior behavior for new/empty users; no schema change. Reviewer SHIP (no IDOR/PII, provably cannot 500 the unguarded voice path); ruff clean; 15/15 voice_stream tests (3 new: grounded / clean-empty / fetcher-raises-degrades). OUT OF SCOPE / follow-ups (not built): orb round-course awareness + realtime-pipeline reroute (large lift, collides with warm-path mic invariants); optional frontend tweak to send real handicap + preferred persona off-course. Classification: noticeable-subtle, awaiting owner ship-it on the bundle."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style — rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm — not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home · Partners · Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
