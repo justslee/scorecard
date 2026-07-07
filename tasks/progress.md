@@ -5806,3 +5806,94 @@ screen no longer resizes).
 
 **integration/next:** fast-forwarded 3b24d2f→1792d32 (== new main) and pushed — synced and
 ready to keep rolling; branch not deleted.
+
+## 2026-07-06 — Caddie connect preload: mic-withheld warm session (NOTICEABLE — integration/next, DONE)
+
+`specs/caddie-preload-plan.md`, implemented in full. Owner escalation: "some kind of
+preload is what we should do" for caddie connect latency. Target: <500ms to "Ready — go
+ahead" on a warmed open; a rare "Connecting…" otherwise. FORBIDDEN constraint honored: the
+previously-reverted mic-live warm shortcut (whisper-1 hallucinating phantom transcripts on
+silence) is now made STRUCTURALLY impossible, not just unlikely.
+
+### What changed
+- `frontend/src/lib/voice/realtime.ts` — new `withholdMic?: boolean` option.
+  `start()` with `withholdMic` NEVER calls `getUserMedia`; instead adds a track-less audio
+  transceiver (`addTransceiver('audio', {direction:'sendrecv'})`) and mutes output. New
+  `attachMic()` is the ONLY place that ever calls `getUserMedia` for a withheld client —
+  it `replaceTrack()`s onto the pre-negotiated transceiver (no renegotiation, no second
+  `setLocalDescription`), unmutes output, and flips `opened = true`. `handleEvent()` drops
+  (early-returns on) the user-transcript-completed event and all assistant
+  delta/done transcript events while `!opened` — belt behind the structural guarantee.
+  Added `setEvents()` (rebind handlers on adoption) and `emitCurrentStatus()` (repaint
+  immediately after adoption).
+- `frontend/src/lib/voice/warm-session.ts` (NEW) — the one shared warm-lifecycle manager
+  (`WarmSessionManager` class + `warmSession` singleton), states
+  DORMANT→WARMING→WARM→CONSUMED. `warm(intent, observer?)` mints+connects a
+  `withholdMic: true` client (idempotent per intent, no-ops offline/hidden, ~3s connect
+  deadline reusing `MINT_DEADLINE_MS`). `takeWarm(intent)` hands the client to a caller
+  (WARM or still-WARMING) and moves to CONSUMED — one authoritative timer, no racing
+  teardown (the client's own 90s `IdleTimer` closing is what the manager observes to reset
+  to DORMANT). `teardown()`/`handleOffline()`/`handleHidden()` for offline/backgrounded/
+  unmount/intent-switch. Timers, online/hidden checks, and the client factory are all
+  injectable (mirrors `IdleTimer`'s pattern) for pure unit testing.
+- `frontend/src/components/VoiceRoundSetupRealtime.tsx` — `start()` now tries
+  `warmSession.takeWarm({kind:'setup',...})` first (setEvents → emitCurrentStatus →
+  `attachMic()`) before falling back to the cold `RealtimeCaddieClient` path. Refreshed the
+  two stale "warm session would hallucinate" comments to describe the new (safe) invariant.
+- `frontend/src/app/round/new/page.tsx` — one-shot first-interaction trigger
+  (pointerdown/keydown/focusin on `window`) fires `warmSession.warm({kind:'setup',...})`;
+  belt `onPointerDown` on the mic button itself; page-unmount cleanup tears down an
+  un-adopted warm session.
+- `frontend/src/hooks/useVoiceCaddie.ts` — new `warm()` (idempotent, dispatches
+  PRESS→MINT_OK→CONNECTED off the warm client's observed status so `transportReducer`
+  tracks phase even pre-press); `press()` now tries `warmSession.takeWarm({kind:'caddie',
+  roundId, personalityId})` before `startBurst()` — adopts via the SAME
+  `handleConnectionStatus` handler a cold burst uses (extracted, reused, not duplicated).
+  Teardown paths (`teardownClient`, unmount) also `warmSession.teardown()`.
+- `frontend/src/app/round/[id]/RoundPageClient.tsx` — one `useEffect` calls
+  `voice.warm()` when `caddieSessionActive && !isLocalRound` first turns true.
+
+### The no-audio-before-open invariant
+Enforced two ways: (1) structurally — a withheld client's `start()` never touches
+`getUserMedia`/`addTrack` for a mic; the only mic acquisition is in `attachMic()`, called
+exclusively by the adopting surface at the user's real open. (2) belt — `handleEvent()`
+early-returns on the transcript-producing event types while `!opened`, so even a
+theoretical stray event can't reach `onMessage`. Proven by
+`frontend/src/lib/voice/realtime-warm.test.ts`: `drops a user-transcript event that
+arrives BEFORE attachMic() — onMessage never fires` and a matching assistant-transcript
+test (both mock RTCPeerConnection/mediaDevices — jsdom has neither) — the load-bearing
+regression the plan called for.
+
+### Deviations from the plan (both implementation-level, not behavioral)
+1. `warm()`/`WarmObserver` weren't fully specified as a wire format — added
+   `onMinted`/`onStatus` observer callbacks to `warmSession.warm()` so `useVoiceCaddie` can
+   drive `transportReducer` (PRESS→MINT_OK→CONNECTED) from the warm client's progress
+   without taking ownership of it (ownership only transfers via `takeWarm()`).
+2. `WarmSessionManager`'s constructor takes a single `deps` object (`schedule`, `cancel`,
+   `isOnline`, `isHidden`, `createClient`) rather than positional args, since there are
+   five independent injectables (tests use a fake client factory per the plan's
+   instruction, plus injected online/hidden checks so offline/hidden teardown tests don't
+   need real DOM globals).
+
+### Tests / gates
+- New: `frontend/src/lib/voice/warm-session.test.ts` (26 tests — state transitions,
+  idempotent warm, intent switch teardown, idle-no-adoption→DORMANT, takeWarm
+  matching/mismatch, offline/hidden teardown, connect-deadline→DORMANT).
+- New: `frontend/src/lib/voice/realtime-warm.test.ts` (13 tests — no-getUserMedia +
+  track-less transceiver on withheld start; output muted→unmuted; attachMic single
+  getUserMedia + replaceTrack with no second `setLocalDescription`; attachMic idempotent;
+  THE phantom-transcript regression x2; setEvents/emitCurrentStatus adoption).
+- Extended: `frontend/src/lib/caddie/transport.test.ts` (+2 — PRESS while
+  connecting/minting is a no-op, no re-mint).
+- `cd frontend && npx tsc --noEmit` — clean. `npm run lint` — clean (0 errors/warnings).
+  `npx vitest run` — 1451/1451 passed (63 files; pre-existing unrelated
+  `lib/teetime/window-slider.test.ts` files are the PARALLEL agent's in-flight work in
+  `frontend/src/lib/teetime/**` — untouched, not staged). `npx tsx voice-tests/runner.ts
+  --smoke` — 274/274 pass. `npm run build` — compiles clean, all routes prerender.
+
+Risk: touches the Realtime WebRTC connect/lifecycle path used by both the setup sheet and
+the in-round orb — real-device verification (mic dialog timing, warmed-open latency,
+background/airplane teardown, no phantom transcript on silence) is still needed per the
+plan's own gate list; flagging for `/code-review` + `/security-review` before this bundle
+ships (mint/WebRTC lifecycle change) and the `designer` pass (confirm "Connecting…" still
+reads the same, just rarer).
