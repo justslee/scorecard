@@ -5983,3 +5983,38 @@ haptics + preload device behaviors unverified on real WKWebView (sim is
 auth-gated headless) — owner's TestFlight pass is the last gate.
 Bundle PR opened: preload + tee-time rework + transcription language pin (en) +
 specs/backlog. Next cycle (owner-directed): caddie-hazard-grounding, tee-marker-on-map.
+
+---
+
+## 2026-07-07 — SHIPPED: #95 caddie instant-connect + tee-time rework + English transcription
+
+Owner approved directly in-session ("ship it", 2026-07-06). Merged PR #95 → main as
+**5ab17c199c3093465fd15673de68ca5a6fafbb2c** ("Merge integration/next: caddie instant-connect
++ tee-time rework + English transcription (#95)"), a merge commit (not squash/rebase) — the
+only push to `main` in this run.
+
+**Backend deploy:** this bundle DOES touch backend (`backend/app/services/realtime_relay.py`;
+no new Alembic migration). The standing `Deploy backend (SSM)` GitHub Action auto-triggered on
+the merge push (run 28838977850) — `git pull --ff-only` 1792d32→5ab17c1, `uv sync`,
+`alembic upgrade head` (no-op, no new revision), `systemctl restart scorecard-api`, on-box
+`curl localhost:8000/health` → `{"status":"ok"}`. Verified externally post-deploy:
+- `GET https://api.looperapp.org/health` → `{"status":"ok"}` (200)
+- `GET https://api.looperapp.org/api/config-status` →
+  `{"deepgram":true,"openai":true,"anthropic":true,"mapbox":true,"golfapi":true,"google_places":true}` (200)
+
+**TestFlight:** frontend changed substantially (preload + tee-time UI), so cut a fresh native
+build via `ops/ios/ship.sh` — **v1.0.710 (build 202607062317)**. Upload succeeded
+(xcodebuild export log, ~90s archive+upload), then polled the App Store Connect API
+(`GET /v1/builds?filter[app]=…&filter[version]=202607062317`, JWT signed ES256 with the ASC
+key via `uv run python` + PyJWT/httpx from the backend venv, reusing the ad hoc poller at
+`/private/tmp/.../scratchpad/poll_build.py`) — **VALID** after 6 polls (~120s). Live for
+TestFlight Internal (Looper Team group).
+
+**Board:** no existing card for this bundle → created directly in Shipped:
+"Bundle #95: caddie instant-connect + tee-time windows/checklist rework + English
+transcription" (https://app.notion.com/p/3961c52592e0811aa953c6f7a3877cfb), PR link + full
+checklist + build number + owner-test list (preload speed, English-only, window drag/calendar,
+checklist stability).
+
+**integration/next:** fast-forwarded 7498c3f→5ab17c1 (== new main) and pushed — synced and
+ready to keep rolling; branch not deleted.
