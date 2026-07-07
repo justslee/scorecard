@@ -24,7 +24,7 @@
 
 import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Loader2, AlertCircle, Layers } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Layers } from "lucide-react";
 import type { CourseData, HoleData } from "@/lib/courses/types";
 import { fetchMappedCourse, mappedCourseToCoordinates } from "@/lib/courses/mapped-course-api";
 import { parseHoleParam } from "@/lib/map-bridge";
@@ -60,7 +60,7 @@ import {
 } from "@/lib/course/course-coordinates";
 import type { CourseCoordinates } from "@/lib/golf-api";
 import { GPSWatcher, type Position } from "@/lib/gps";
-import { T } from "@/components/yardage/tokens";
+import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -168,42 +168,58 @@ function ErrorScreen({
       style={{
         position: "fixed",
         inset: 0,
-        background: T.paper,
+        background: `${PAPER_NOISE}, ${T.paper}`,
+        backgroundBlendMode: "multiply",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: 16,
-        padding: "0 24px",
+        padding: "40px 22px",
+        textAlign: "center",
       }}
     >
-      <AlertCircle style={{ color: T.errorInk, width: 36, height: 36 }} />
-      <p
+      <div
         style={{
-          color: T.ink,
-          fontFamily: T.sans,
-          fontSize: 14,
-          textAlign: "center",
+          fontFamily: T.serif,
+          fontStyle: "italic",
+          fontSize: 22,
+          letterSpacing: -0.3,
+          color: T.pencil,
+          lineHeight: 1.3,
         }}
       >
         {message}
-      </p>
+      </div>
+      <div
+        style={{
+          fontFamily: T.mono,
+          fontSize: 9,
+          letterSpacing: 1.3,
+          color: T.pencilSoft,
+          textTransform: "uppercase" as const,
+          marginTop: 8,
+        }}
+      >
+        Check your connection and try again.
+      </div>
       <button
         onClick={onBack}
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 4,
-          color: T.pencil,
-          fontFamily: T.sans,
-          fontSize: 13,
-          background: "none",
-          border: "none",
+          marginTop: 24,
+          padding: "11px 24px",
+          borderRadius: 99,
+          border: `1px solid ${T.hairline}`,
+          background: "transparent",
+          color: T.ink,
+          fontFamily: T.mono,
+          fontSize: 10,
+          letterSpacing: 1.3,
+          textTransform: "uppercase" as const,
+          minHeight: 44,
           cursor: "pointer",
         }}
       >
-        <ChevronLeft size={15} />
-        Go back
+        Back
       </button>
     </div>
   );
