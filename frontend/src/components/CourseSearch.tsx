@@ -49,6 +49,7 @@ import {
   resultSourceLabel,
   type NearbyResult,
 } from "@/lib/course-search-helpers";
+import { useLooperDictation } from "@/hooks/useLooperDictation";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -76,12 +77,20 @@ interface CourseSearchProps {
   onSelectCourse: (course: CourseSelectPayload) => void;
   onClose: () => void;
   /**
-   * Optional mic affordance handler. When absent, the mic button is hidden
-   * (no dead tap targets). round/new wires this to its existing Realtime
-   * voice-setup panel; courses tab / tee-time have no wiring yet (planned
-   * follow-up — see specs/course-search-v2-plan.md B3).
+   * Optional mic affordance handler. When absent (and voiceSearch is off),
+   * the mic button is hidden (no dead tap targets). round/new wires this to
+   * its existing Realtime voice-setup panel.
    */
   onVoiceSearch?: () => void;
+  /**
+   * Built-in voice search (specs/looper-orb-plan.md, courses context): the
+   * mic dictates INTO the query input via live transcription — interim words
+   * type themselves and the debounced search fires as usual. Takes precedence
+   * over onVoiceSearch when both are set.
+   */
+  voiceSearch?: boolean;
+  /** Start dictating immediately on mount (orb long-press / courses summon). */
+  autoVoice?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +345,7 @@ function CourseRow({
 // Component
 // ---------------------------------------------------------------------------
 
-export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch }: CourseSearchProps) {
+export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, voiceSearch = false, autoVoice = false }: CourseSearchProps) {
   const [query, setQuery] = useState("");
 
   // Search results (query mode)
@@ -360,6 +369,41 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch }:
     const favs = listFavorites();
     return new Set(favs.map((f) => f.id));
   });
+
+  // Built-in voice search (voiceSearch prop): live dictation types into the
+  // query — interim words update the input (debounced search fires as usual),
+  // tap-stop finalizes. Same shared mic machinery as the Looper sheets.
+  const dictation = useLooperDictation();
+  const dictationRef = useRef(dictation);
+  dictationRef.current = dictation;
+  const handleVoiceToggle = async () => {
+    if (dictation.listening) {
+      const finalText = await dictation.stopAndResolve();
+      if (finalText) handleQueryChange(finalText);
+      return;
+    }
+    await dictation.start();
+  };
+  // Interim words type themselves into the search box.
+  useEffect(() => {
+    if (voiceSearch && dictation.listening && dictation.interim) {
+      handleQueryChange(dictation.interim);
+    }
+    // handleQueryChange is a stable function declaration in this component.
+     
+  }, [voiceSearch, dictation.listening, dictation.interim]);
+  // Auto-start on mount when summoned by voice; always release on unmount.
+  useEffect(() => {
+    if (voiceSearch && autoVoice) {
+      const t = setTimeout(() => void dictationRef.current.start(), 80);
+      return () => {
+        clearTimeout(t);
+        dictationRef.current.cancel();
+      };
+    }
+    return () => dictationRef.current.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Course-search session — owns the AbortController + stale-query guard so
   // results for a superseded query can never render (see course-search-session.ts).
@@ -604,18 +648,18 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch }:
             )}
           </div>
 
-          {onVoiceSearch && (
+          {(voiceSearch || onVoiceSearch) && (
             <button
-              onClick={onVoiceSearch}
-              aria-label="Voice search"
+              onClick={voiceSearch ? () => void handleVoiceToggle() : onVoiceSearch}
+              aria-label={voiceSearch && dictation.listening ? "Stop dictating" : "Voice search"}
               style={{
                 width: 40,
                 height: 40,
                 flexShrink: 0,
                 borderRadius: 99,
-                border: `1px solid ${T.hairline}`,
-                background: "transparent",
-                color: T.pencil,
+                border: `1px solid ${voiceSearch && dictation.listening ? T.ink : T.hairline}`,
+                background: voiceSearch && dictation.listening ? T.ink : "transparent",
+                color: voiceSearch && dictation.listening ? T.paper : T.pencil,
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",

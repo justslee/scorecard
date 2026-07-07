@@ -6182,3 +6182,30 @@ https://app.notion.com/p/3961c52592e081b99491e6f3cf9190ba (Shipped).
 integration/next fast-forwarded to ce85c1d, pushed, kept for the next cycle.
 Owner test list: setup voice hears you; no per-hole map loader; tee marker; live
 dictation; caddie cites only real hazards on mapped holes.
+
+---
+
+## 2026-07-07 — SHIPPED: #97 page-turn hole transition
+
+Owner "ship it" (in-session, same-day feel feedback on v1.0.726). Merge 4385192 →
+main; frontend-only (backend deploy rerun is a no-op). TestFlight v1.0.729
+(build 202607070934) uploaded. integration/next fast-forwarded + pushed.
+Owner test: swipe holes — paper page wipes across, new hole appears beneath;
+timing (600ms wipe / cut at 200ms) may want a nudge after a real-thumb pass.
+
+---
+
+## 2026-07-07 — Looper orb bundle 1 built (owner-approved design, eng-lead direct)
+
+Owner: standardize Looper invocation ("the premise of this app is having this constant
+assistant caddie"); disliked tee-time's HOLD TO TALK bar. Design run by owner
+(AskUserQuestion): center orb in the tab island / tap→sheet + long-press→listen /
+tee-times+courses first. Built directly (dd11321, specs/looper-orb-plan.md):
+tab island gets the raised center orb (Partners → Home QuickAction card);
+shared useLooperDictation hook + LooperSheetShell; general context = stateless
+caddie chat w/ hole_number null (backend: optional hole context — never invents a
+hole off-course); tee-time bar REMOVED, sheet feeds the unchanged intent pipeline;
+courses orb opens search already dictating into the query. +7 tests.
+Gates: tsc/lint, vitest 1501/1501, voice 274/274, build, backend 986 + ruff — green.
+NOT yet done: designer pass (budget) — owner sees it on TestFlight; bundle 2 =
+round-page identity + Home/Partners/Profile page powers.

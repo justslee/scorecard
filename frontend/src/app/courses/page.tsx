@@ -8,6 +8,7 @@ import { getRecentCourses, searchNearby, type CourseSearchResult } from "@/lib/g
 import { mapRecentCourses, type RecentCourseItem } from "@/lib/course-list";
 import { courseDetailHref } from "@/lib/course-url";
 import CourseSearch from "@/components/CourseSearch";
+import { onLooperOpen } from "@/lib/looper-bus";
 
 // Mapped courses ingested into the PostGIS store via ingest_osm_course.py.
 // UUIDs are deterministic: _deterministic_uuid(<course-key>) in osm_ingest.py.
@@ -26,6 +27,16 @@ export default function CoursesHubPage() {
   const router = useRouter();
 
   const [showSearch, setShowSearch] = useState(false);
+  // The Looper orb on this tab summons voice course search: the full-screen
+  // search opens already dictating into the query (specs/looper-orb-plan.md).
+  const [voiceSummoned, setVoiceSummoned] = useState(false);
+  useEffect(() => {
+    return onLooperOpen((detail) => {
+      if (detail.context !== "courses") return;
+      setVoiceSummoned(true);
+      setShowSearch(true);
+    });
+  }, []);
   // Lazy initializer: getRecentCourses() is synchronous (localStorage) and already
   // SSR-safe (guards typeof window). Avoids calling setState in a synchronous effect.
   const [recent] = useState<RecentCourseItem[]>(() =>
@@ -513,7 +524,9 @@ export default function CoursesHubPage() {
       {/* ── CourseSearch overlay ── */}
       {showSearch && (
         <CourseSearch
-          onClose={() => setShowSearch(false)}
+          voiceSearch
+          autoVoice={voiceSummoned}
+          onClose={() => { setShowSearch(false); setVoiceSummoned(false); }}
           onSelectCourse={(c) => {
             setShowSearch(false);
             // Unified landing: EVERY selection goes to the course detail page

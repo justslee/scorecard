@@ -380,7 +380,8 @@ export default function HomePage() {
             </svg>
           </button>
 
-          {/* Secondary row */}
+          {/* Secondary row — Partners lives here now (its tab-bar slot became
+              the Looper orb, specs/looper-orb-plan.md) */}
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <QuickAction icon="round" label="New round" sub="Solo or with friends" onClick={() => router.push("/round/new")} />
             <QuickAction
@@ -390,6 +391,7 @@ export default function HomePage() {
               accent={accent}
               onClick={handleTournamentTap}
             />
+            <QuickAction icon="partners" label="Partners" sub="Your regulars" onClick={() => router.push("/players")} />
           </div>
 
           {/* Dispatch looper */}
@@ -1034,8 +1036,9 @@ export default function HomePage() {
   );
 }
 
-function QuickAction({ icon, label, sub, accent, onClick }: { icon: "round" | "tournament"; label: string; sub: string; accent?: string; onClick?: () => void }) {
+function QuickAction({ icon, label, sub, accent, onClick }: { icon: "round" | "tournament" | "partners"; label: string; sub: string; accent?: string; onClick?: () => void }) {
   const isTournament = icon === "tournament";
+  const isPartners = icon === "partners";
   return (
     <button
       onClick={onClick}
@@ -1069,6 +1072,13 @@ function QuickAction({ icon, label, sub, accent, onClick }: { icon: "round" | "t
           {isTournament ? (
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4">
               <path d="M3 2h6v3a3 3 0 0 1-6 0V2zM4 8h4v2H4z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : isPartners ? (
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4">
+              <circle cx="4.5" cy="4" r="2" />
+              <path d="M1 10.5v-1a3 3 0 0 1 3-3h1a3 3 0 0 1 3 3v1" strokeLinecap="round" />
+              <circle cx="8.8" cy="4.4" r="1.6" />
+              <path d="M11 10.5v-.8a2.6 2.6 0 0 0-1.8-2.5" strokeLinecap="round" />
             </svg>
           ) : (
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4">

@@ -222,7 +222,9 @@ class RecommendationRequest(BaseModel):
 class VoiceCaddieRequest(BaseModel):
     transcript: str
     personality_id: str = "classic"
-    hole_number: int = 1
+    # None = OFF-COURSE general chat (the Looper orb outside a round) — the
+    # handler omits the hole-context line entirely rather than inventing one.
+    hole_number: Optional[int] = 1
     par: int = 4
     yards: int = 400
     distance_yards: Optional[int] = None
