@@ -6879,3 +6879,44 @@ Owner "yes deploy". Merge 06b7b73 → main; deploy verified BY headSha
 OWNER DIRECTION queued as top P1s: caddie-conversational-loop +
 caddie-auto-shot-reco (specs to be planned next cycles).
 integration/next resynced. Ten ships today.
+
+---
+
+## 2026-07-07 — LANDED on bundle #106: caddie hands-free conversational loop (loop cycle 9)
+
+Step 0: no owner feedback anywhere (PR #106 comments empty; board #105 card thread empty;
+no #106 card existed yet). Bundle #106 (auto shot reco + intel resilience) stays AWAITING the
+owner's "ship it" — NOT merged. Sync: integration/next == origin, clean; main already merged.
+
+PICKED (top ready, owner's remaining big ask): caddie-conversational-loop (p1, MAJOR/noticeable).
+
+PLAN (opus): specs/caddie-conversational-loop-plan.md. Decision: stay on the EXISTING Deepgram
+dictation + useSheetTTS path (re-arm on TTS playback END + grace), NOT route through Realtime —
+keeps the untouchable realtime warm-path mic invariants intact. Hands-free is IMPLICIT (the
+persisted speaker toggle IS the switch; no new UI/mode — NORTHSTAR minimal chrome).
+
+BUILT (eded238): onPlaybackEnd only on native `ended` (never pause), 400ms echo grace, 6s
+dead-air + empty-streak calm drop-out, tap-to-interrupt barge-in, full close/unmount cleanup;
+17 deterministic scheduler-controlled tests. Builder flagged one deviation: dropped
+`!streamAbortRef.current` from the re-arm guard (that ref only nulls on close, so keeping it
+would permanently block re-arm after turn 1).
+
+REVIEW: Reviewer SHIP — verified the deviation is correct + necessary (isThinking/isStreaming
+fully cover in-flight; no race), no leak/double-arm, invariants preserved, tests non-vacuous.
+QA (eng-lead ran): tsc/lint clean, voice smoke 274/274, build + full vitest 1590/1590.
+Designer: one BLOCKING issue — auto re-arm wiped the just-spoken answer off screen ~0.5s after
+the caddie finished (worst on the opening reco, no scrollback fallback) + contradictory
+"Tap to ask again" label in the grace window.
+
+ITERATE (83fcccb): answer now PERSISTS through the re-arm/listening phase (shared
+AnimatePresence key + ListeningIndicator underneath); manual tap still clears; CTAs unmount
+during listening; abandoned re-listens clear the ghost (also fixed a latent masked-error risk);
+mic label -> "Tap to interrupt". Designer re-review PASS. Gates re-green (1590/1590).
+
+BUNDLE: PR #106 checklist updated (added the loop as noticeable + a ship note that it landed
+after the current TestFlight -> release-manager should cut a fresh build at "ship it"). Board
+card "Bundle #106" created in Needs Review (was missing). backlog: caddie-conversational-loop
+-> done-on-bundle. CI green (2 pass / 0 fail; 1 pending E2E advisory).
+
+NO push notification (per this cycle's standing rule + owner mid-testing on-course). Bundle #106
+remains AWAITING owner "ship it"; the loop rides it. integration/next @ 83fcccb pushed.
