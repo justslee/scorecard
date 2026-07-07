@@ -303,6 +303,52 @@ describe('RealtimeCaddieClient — withholdMic preload', () => {
     });
   });
 
+  describe('silent placeholder track — the v1.0.739 "still deaf" fix', () => {
+    class FakeAudioContext {
+      static instances: FakeAudioContext[] = [];
+      closed = false;
+      constructor() {
+        FakeAudioContext.instances.push(this);
+      }
+      createMediaStreamDestination() {
+        const track = fakeTrack();
+        return { stream: { getAudioTracks: () => [track], getTracks: () => [track] } };
+      }
+      close = vi.fn(async () => {
+        this.closed = true;
+      });
+    }
+
+    it('warms with a SILENT synthesized track via addTrack (not a track-less transceiver), still no getUserMedia', async () => {
+      vi.stubGlobal('AudioContext', FakeAudioContext);
+      const client = new RealtimeCaddieClient(
+        { mode: 'setup', personalityId: 'classic', withholdMic: true },
+        {},
+      );
+      await client.start();
+      expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+      expect(lastPc!.addTrack).toHaveBeenCalledTimes(1); // the silent placeholder
+      expect(lastPc!.addTransceiver).not.toHaveBeenCalled();
+    });
+
+    it('attachMic REPLACES the placeholder (WebKit-safe path) and retires it', async () => {
+      vi.stubGlobal('AudioContext', FakeAudioContext);
+      const client = new RealtimeCaddieClient(
+        { mode: 'setup', personalityId: 'classic', withholdMic: true },
+        {},
+      );
+      await client.start();
+      const sender = lastPc!.transceivers[0].sender;
+      const placeholder = sender.track;
+      expect(placeholder).not.toBeNull();
+      await client.attachMic();
+      expect(sender.replaceTrack).toHaveBeenCalledTimes(1);
+      expect(sender.track).not.toBe(placeholder); // real mic in
+      expect((placeholder as unknown as { stop: ReturnType<typeof vi.fn> }).stop).toHaveBeenCalled();
+      expect(FakeAudioContext.instances.at(-1)!.close).toHaveBeenCalled();
+    });
+  });
+
   describe('attachMic during an in-flight start() — the v1.0.710 "won\'t listen" regression', () => {
     it('waits for start() to finish and ATTACHES the track (never a silent skip)', async () => {
       // Make the mint hang until we release it, so attachMic() races start().

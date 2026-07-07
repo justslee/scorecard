@@ -163,6 +163,8 @@ export class RealtimeCaddieClient {
   // phantom transcript before the user actually opens the mic.
   private opened: boolean;
   // The audio transceiver used to attach the mic without renegotiation once
+  // Silent-placeholder AudioContext for the warm path (closed on cleanup).
+  private silentCtx: AudioContext | null = null;
   // withholdMic warming is adopted (see attachMic()). Set for BOTH paths (for
   // symmetry) even though only the withheld path needs the later replaceTrack.
   private micTransceiver: RTCRtpTransceiver | null = null;
@@ -251,12 +253,26 @@ export class RealtimeCaddieClient {
       };
 
       if (this.opts.withholdMic) {
-        // Preload path: add the audio m-line with NO track and skip
-        // getUserMedia entirely — the iOS mic-permission dialog cannot fire
-        // and zero audio frames are transmitted. attachMic() later calls
-        // replaceTrack() on this SAME transceiver, so opening the mic needs
-        // no renegotiation (no second createOffer/setLocalDescription).
-        this.micTransceiver = this.pc.addTransceiver('audio', { direction: 'sendrecv' });
+        // Preload path: negotiate the audio m-line with a SILENT SYNTHESIZED
+        // track (an unconnected AudioContext destination — no getUserMedia,
+        // so the iOS mic-permission dialog cannot fire, and the track carries
+        // pure silence). attachMic() later replaceTrack()s the real mic in.
+        // Why not a track-less transceiver: WebKit doesn't reliably TRANSMIT
+        // after replaceTrack on a sender that never had a track (the
+        // v1.0.739 'setup voice still deaf' report) — replacing an EXISTING
+        // track is the well-supported path everywhere.
+        try {
+          this.silentCtx = new AudioContext();
+          const dest = this.silentCtx.createMediaStreamDestination();
+          const silentTrack = dest.stream.getAudioTracks()[0];
+          const sender = this.pc.addTrack(silentTrack, dest.stream);
+          this.micTransceiver =
+            this.pc.getTransceivers().find((t) => t.sender === sender) ?? null;
+        } catch {
+          // No AudioContext (ancient webview) — fall back to the track-less
+          // m-line; attachMic still works on standards-compliant engines.
+          this.micTransceiver = this.pc.addTransceiver('audio', { direction: 'sendrecv' });
+        }
         this.setOutputMuted(true); // caddie stays silent until the sheet actually opens
       } else {
         // Mic — echo cancellation is ESSENTIAL: without it the phone speaker's
@@ -384,7 +400,13 @@ export class RealtimeCaddieClient {
         // dead sheet that looks connected.
         throw new Error('attachMic: no mic track or negotiated transceiver');
       }
+      const placeholder = this.micTransceiver.sender.track;
       await this.micTransceiver.sender.replaceTrack(track);
+      // Retire the silent placeholder + its context — the real mic owns the
+      // sender now.
+      try { placeholder?.stop(); } catch { /* gone */ }
+      void this.silentCtx?.close().catch(() => {});
+      this.silentCtx = null;
       this.opened = true;
       this.setOutputMuted(false);
       this.idle.touch();
@@ -424,6 +446,8 @@ export class RealtimeCaddieClient {
 
   private cleanup() {
     this.idle.cancel();
+    void this.silentCtx?.close().catch(() => {});
+    this.silentCtx = null;
     if (activeRealtimeClient === this) activeRealtimeClient = null;
     try { this.dc?.close(); } catch {}
     try { this.pc?.close(); } catch {}

@@ -50,6 +50,7 @@ import {
   type NearbyResult,
 } from "@/lib/course-search-helpers";
 import { useLooperDictation } from "@/hooks/useLooperDictation";
+import { buildKeyterms } from "@/lib/voice/keyterms";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -373,7 +374,18 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
   // Built-in voice search (voiceSearch prop): live dictation types into the
   // query — interim words update the input (debounced search fires as usual),
   // tap-stop finalizes. Same shared mic machinery as the Looper sheets.
-  const dictation = useLooperDictation();
+  const voiceToggleRef = useRef<() => void>(() => {});
+  const dictation = useLooperDictation({
+    surface: "course-search",
+    // Bias STT toward course names the golfer is likely to say.
+    getKeyterms: () =>
+      buildKeyterms(
+        favorites.map((f) => f.name),
+        recent.map((r) => String(r.name)),
+        nearby.map((n) => n.name),
+      ),
+    onUtteranceEnd: () => voiceToggleRef.current(),
+  });
   const dictationRef = useRef(dictation);
   dictationRef.current = dictation;
   const handleVoiceToggle = async () => {
@@ -384,6 +396,7 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
     }
     await dictation.start();
   };
+  voiceToggleRef.current = () => void handleVoiceToggle();
   // Interim words type themselves into the search box.
   useEffect(() => {
     if (voiceSearch && dictation.listening && dictation.interim) {

@@ -6242,3 +6242,15 @@ Audit delivered: specs/voice-agent-audit.md — P1 queue: keyterm boosting, TTS 
 replies, auto-send endpointing, voice telemetry (all on backlog.json).
 Gates: backend 991 + ruff clean; frontend tsc/lint clean, vitest 1523/1523, voice 274/274,
 build green.
+
+---
+
+## 2026-07-07 — SHIPPED: #99 voice bulletproofing P0
+
+Owner "ship it". Merge 82d8d8b → main; backend deploy success + health ok (the
+error-hygiene fix protects the CURRENT build immediately). TestFlight v1.0.739
+(build 202607071110) uploaded. integration/next fast-forwarded + pushed.
+Owner test: dictate to the caddie — words should appear LIVE on device now;
+wind/gust tiles change hole to hole; no raw JSON errors ever.
+P1 voice queue ready on backlog: keyterm boosting, TTS sheet replies,
+auto-send endpointing, voice telemetry.

@@ -39,6 +39,7 @@ import WindowCard from "./WindowCard";
 import { LooperSheetShell } from "@/components/LooperSheet";
 import { useLooperDictation } from "@/hooks/useLooperDictation";
 import { onLooperOpen } from "@/lib/looper-bus";
+import { buildKeyterms } from "@/lib/voice/keyterms";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -405,7 +406,13 @@ function Prefs({
   // ── The Looper sheet (summoned by the tab-island orb) ────────────────────
   const [looperOpen, setLooperOpen] = useState(false);
   const [looperThinking, setLooperThinking] = useState(false);
-  const dictation = useLooperDictation();
+  const looperMicRef = useRef<() => void>(() => {});
+  const dictation = useLooperDictation({
+    surface: "tee-time",
+    // Bias STT toward the course names on screen — "Bethpage" beats "bath page".
+    getKeyterms: () => buildKeyterms(courses.map((c) => c.name)),
+    onUtteranceEnd: () => looperMicRef.current(),
+  });
   const dictationRef = useRef(dictation);
   dictationRef.current = dictation;
 
@@ -452,6 +459,7 @@ function Prefs({
       setLooperThinking(false);
     }
   }, [dictation, courses, applyParsed, say]);
+  looperMicRef.current = () => void handleLooperMic();
 
   const toggleWin = (id: string) => setWindows(windows.map((w) => (w.id === id ? { ...w, selected: !w.selected } : w)));
   const toggleCourse = (id: string) => {

@@ -10,6 +10,7 @@ import { useCallback, useRef, useState } from "react";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
 import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
 import { pickDictationTranscript, isEmptyTranscript } from "@/lib/caddie/dictation";
+import { voiceEvent } from "@/lib/voice/telemetry";
 
 export interface LooperDictation {
   listening: boolean;
@@ -29,11 +30,24 @@ export interface LooperDictation {
   micError: string | null;
 }
 
-export function useLooperDictation(): LooperDictation {
+export interface LooperDictationOptions {
+  /** Telemetry label for this consumer (e.g. "looper-general", "tee-time"). */
+  surface?: string;
+  /** Context vocabulary resolved at start() time (players, courses, golf terms). */
+  getKeyterms?: () => readonly string[];
+  /** Deepgram heard end-of-speech with words on the wire — callers auto-send.
+   *  Fires at most once per listening session. */
+  onUtteranceEnd?: () => void;
+}
+
+export function useLooperDictation(options?: LooperDictationOptions): LooperDictation {
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState("");
   const [micError, setMicError] = useState<string | null>(null);
 
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  const utteranceFiredRef = useRef(false);
   const recorderRef = useRef<VoiceRecorder | null>(null);
   const liveRef = useRef<DeepgramLiveTranscriber | null>(null);
   const liveTranscriptRef = useRef("");
@@ -56,6 +70,7 @@ export function useLooperDictation(): LooperDictation {
     setInterim("");
     liveTranscriptRef.current = "";
     liveFailedRef.current = false;
+    utteranceFiredRef.current = false;
     const gen = ++genRef.current;
     try {
       const recorder = new VoiceRecorder();
@@ -69,35 +84,49 @@ export function useLooperDictation(): LooperDictation {
       const stream = recorder.getStream();
       if (stream && DeepgramLiveTranscriber.isSupported()) {
         try {
-          const live = new DeepgramLiveTranscriber({
-            onInterim: (t) => {
-              if (genRef.current !== gen) return;
-              liveTranscriptRef.current = t;
-              setInterim(t);
+          const live = new DeepgramLiveTranscriber(
+            {
+              onInterim: (t) => {
+                if (genRef.current !== gen) return;
+                liveTranscriptRef.current = t;
+                setInterim(t);
+              },
+              onFinal: (t) => {
+                if (genRef.current !== gen) return;
+                liveTranscriptRef.current = t;
+              },
+              onUtteranceEnd: () => {
+                if (genRef.current !== gen || utteranceFiredRef.current) return;
+                utteranceFiredRef.current = true;
+                optionsRef.current?.onUtteranceEnd?.();
+              },
+              onError: () => {
+                liveFailedRef.current = true;
+              },
             },
-            onFinal: (t) => {
-              if (genRef.current !== gen) return;
-              liveTranscriptRef.current = t;
-            },
-            onError: () => {
-              liveFailedRef.current = true;
-            },
-          });
+            { keyterms: optionsRef.current?.getKeyterms?.() ?? [] },
+          );
           await live.start(stream);
           if (genRef.current !== gen) {
             live.stop();
             return;
           }
           liveRef.current = live;
+          voiceEvent(optionsRef.current?.surface ?? "dictation", "live_start_ok");
         } catch {
           liveFailedRef.current = true;
           liveRef.current = null;
+          voiceEvent(optionsRef.current?.surface ?? "dictation", "live_start_failed");
         }
       } else {
         liveFailedRef.current = true; // unsupported → blob fallback on stop
+        voiceEvent(optionsRef.current?.surface ?? "dictation", "live_unsupported");
       }
     } catch (err) {
       setListening(false);
+      voiceEvent(optionsRef.current?.surface ?? "dictation", "mic_error", {
+        detail: err instanceof Error ? err.name : "unknown",
+      });
       setMicError(
         err instanceof Error && err.name === "NotAllowedError"
           ? "Microphone access denied."
@@ -109,6 +138,7 @@ export function useLooperDictation(): LooperDictation {
   const stopAndResolve = useCallback(async (): Promise<string | null> => {
     const recorder = recorderRef.current;
     if (!recorder) return null;
+    const startedAt = performance.now();
     const gen = genRef.current;
     const snapshot = liveTranscriptRef.current;
     liveRef.current?.stop();
@@ -122,11 +152,19 @@ export function useLooperDictation(): LooperDictation {
       if (pick.source === "live") {
         recorder.cancel(); // mic released; the words are already resolved
         finalText = pick.transcript;
+        voiceEvent(optionsRef.current?.surface ?? "dictation", "resolved_live", {
+          ms: Math.round(performance.now() - startedAt),
+        });
       } else {
         const blob = await recorder.stop();
-        const result = await transcribeBlob(blob);
+        const result = await transcribeBlob(blob, {
+          keyterms: optionsRef.current?.getKeyterms?.(),
+        });
         if (genRef.current !== gen) return null;
         finalText = result.transcript;
+        voiceEvent(optionsRef.current?.surface ?? "dictation", "resolved_fallback", {
+          ms: Math.round(performance.now() - startedAt),
+        });
       }
       return isEmptyTranscript(finalText) ? null : finalText;
     } catch {
