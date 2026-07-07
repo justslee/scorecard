@@ -905,9 +905,13 @@ async def voice_caddie(
     )
     personality = await load_personality(persona_id)
 
-    context_parts = [
-        f"Current hole: #{request.hole_number}, Par {request.par}, {request.yards} yards",
-    ]
+    # hole_number None = off-course general chat (the Looper orb outside a
+    # round): no hole context line — the caddie must not pretend to be on one.
+    context_parts = (
+        [f"Current hole: #{request.hole_number}, Par {request.par}, {request.yards} yards"]
+        if request.hole_number is not None
+        else ["Off-course chat — the player is not currently on a hole."]
+    )
     if request.distance_yards:
         context_parts.append(f"Distance to pin: {request.distance_yards} yards")
     if request.wind_speed_mph > 0:

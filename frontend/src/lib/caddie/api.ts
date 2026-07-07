@@ -418,9 +418,11 @@ export async function startSetupSession(params: {
 export async function talkToCaddie(params: {
   transcript: string;
   personality_id: string;
-  hole_number: number;
-  par: number;
-  yards: number;
+  /** null = off-course general chat (the Looper orb outside a round) — the
+   *  backend then omits the hole-context line instead of inventing one. */
+  hole_number: number | null;
+  par?: number;
+  yards?: number;
   distance_yards?: number;
   wind_speed_mph?: number;
   wind_direction?: number;
