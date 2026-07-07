@@ -16,8 +16,9 @@ os.environ.setdefault("LOOPER_SECRETS_DISABLED", "1")
 import pytest  # noqa: E402
 
 from app.caddie.session import RoundSession  # noqa: E402
-from app.caddie.types import CaddiePersonality  # noqa: E402
-from app.caddie.voice_prompts import build_realtime_instructions  # noqa: E402
+from app.caddie.types import CaddiePersonality, Hazard, HoleIntelligence  # noqa: E402
+from app.caddie.hazards import HAZARD_GROUNDING_RULE  # noqa: E402
+from app.caddie.voice_prompts import build_realtime_instructions, _situation_block  # noqa: E402
 from app.services.realtime_relay import DEFAULT_TOOLS, build_session_payload  # noqa: E402
 import app.routes.realtime as realtime_routes  # noqa: E402
 
@@ -89,6 +90,60 @@ def test_instructions_include_persona_and_situation():
     assert "Speak in odds and numbers." in text  # persona realtime_instructions
     assert "Current hole: #7" in text  # live session situation block
     assert "Handicap: 12.4" in text
+
+
+# ── Hazard grounding: never invent a bunker/water feature ────────────────────
+
+
+def test_instructions_include_hazard_grounding_rule():
+    """Owner escalation 2026-07-06 fix: the shared rule reaches the Realtime
+    instructions verbatim (no wording drift from a duplicated string)."""
+    text = build_realtime_instructions(_persona())
+    assert HAZARD_GROUNDING_RULE in text
+
+
+def test_situation_block_includes_the_exact_compact_hazards_line():
+    """Seeded hole_intel hazards render via the shared format_hazards_line —
+    the model sees the compact line, not a hand-rolled string."""
+    session = RoundSession(
+        round_id="r1",
+        user_id="u1",
+        current_hole=4,
+        hole_intel={
+            4: HoleIntelligence(
+                hole_number=4,
+                par=4,
+                yards=400,
+                hazards=[
+                    Hazard(type="bunker", side="left", carry_yards=245, line_side="left"),
+                    Hazard(type="water", side="right", carry_yards=190, line_side="right"),
+                    Hazard(type="water", side="right", carry_yards=230, line_side="right"),
+                ],
+            )
+        },
+    )
+    text = build_realtime_instructions(_persona(), session=session)
+    assert "Hole 4 hazards: bunker L 245y, water R 190-230y" in text
+
+
+def test_situation_block_no_hazard_hole_has_directive_but_no_fabricated_feature():
+    """A hole with no hazard data still gets the grounding directive in the
+    full instructions, but the situation block itself must not mention any
+    specific hazard feature (checked in isolation — the directive text alone
+    legitimately mentions 'bunker'/'water' as illustrative examples)."""
+    session = RoundSession(
+        round_id="r1",
+        user_id="u1",
+        current_hole=5,
+        hole_intel={5: HoleIntelligence(hole_number=5, par=4, yards=410, hazards=[])},
+    )
+    full_text = build_realtime_instructions(_persona(), session=session)
+    assert HAZARD_GROUNDING_RULE in full_text
+
+    block = _situation_block(session)
+    assert "hazards:" not in block.lower()
+    assert "bunker" not in block.lower()
+    assert "water" not in block.lower()
 
 
 # ── Route handler: round-scoped mint uses persona voice + tools ──────────────

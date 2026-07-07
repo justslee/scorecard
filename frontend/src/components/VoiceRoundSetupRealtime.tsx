@@ -153,10 +153,17 @@ export default function VoiceRoundSetupRealtime({
       warmClient.emitCurrentStatus(); // paint the current state immediately
       try {
         await warmClient.attachMic();
+        return;
       } catch {
+        // Warm adoption failed (half-built warm client, transient WebRTC
+        // hiccup, …) — fall through to a fresh COLD start instead of leaving
+        // a dead sheet that looks connected but can't hear (the v1.0.710
+        // regression). A genuine mic-permission denial will fail the cold
+        // path too and surface through its normal error UI.
         clientRef.current = null;
+        if (!mountedRef.current) return;
+        setError(null);
       }
-      return;
     }
 
     const client = new RealtimeCaddieClient({ mode: "setup", personalityId: "classic" }, events);

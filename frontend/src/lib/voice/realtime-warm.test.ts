@@ -302,4 +302,52 @@ describe('RealtimeCaddieClient — withholdMic preload', () => {
       expect(onStatus).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('attachMic during an in-flight start() — the v1.0.710 "won\'t listen" regression', () => {
+    it('waits for start() to finish and ATTACHES the track (never a silent skip)', async () => {
+      // Make the mint hang until we release it, so attachMic() races start().
+      const api = await import('@/lib/caddie/api');
+      type Token = Awaited<ReturnType<typeof api.startSetupSession>>;
+      let releaseMint!: (v: Token) => void;
+      vi.mocked(api.startSetupSession).mockReturnValueOnce(
+        new Promise<Token>((res) => { releaseMint = res; }),
+      );
+
+      const client = new RealtimeCaddieClient(
+        { mode: 'setup', personalityId: 'classic', withholdMic: true },
+        {},
+      );
+      const startP = client.start(); // mint pending — pc/transceiver NOT built yet
+
+      // Adoption happens NOW (mic-button tap was itself the warm trigger).
+      const attachP = client.attachMic();
+
+      // Release the mint; start() builds the pc + track-less transceiver.
+      releaseMint({ client_secret: 'secret-setup' } as Token);
+      await startP;
+      await attachP;
+
+      const tr = lastPc!.transceivers[0];
+      expect(tr.sender.replaceTrack).toHaveBeenCalledTimes(1);
+      expect(tr.sender.track).not.toBeNull();
+      // Gate lifted: a transcript event now reaches onMessage.
+      const onMessage = vi.fn();
+      client.setEvents({ onMessage });
+      lastPc!.dataChannel!.emit({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'i1',
+        transcript: 'blue tees today',
+      });
+      expect(onMessage).toHaveBeenCalled();
+    });
+
+    it('THROWS when no transceiver exists after start (never a connected-looking dead mic)', async () => {
+      const client = new RealtimeCaddieClient(
+        { mode: 'setup', personalityId: 'classic', withholdMic: true },
+        { onError: vi.fn() },
+      );
+      // No start() at all — worst case: nothing was ever built.
+      await expect(client.attachMic()).rejects.toThrow(/no mic track or negotiated transceiver/);
+    });
+  });
 });

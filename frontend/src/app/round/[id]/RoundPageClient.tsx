@@ -485,6 +485,12 @@ export default function RoundPage() {
   // map even when no mapped geometry exists (never drop to the paper mock).
   const roundAnchor = roundCourseAnchor(round);
 
+  // Tee-marker color source for the map(s) below. "" (not null) when the round
+  // exists but has no stored tee name — that still draws a marker (neutral
+  // ink/graphite, an honest "we don't know the color") on hd.tee. null is
+  // reserved for genuinely no-round contexts (see GoogleSatelliteMapProps.teeMarker).
+  const teeMarker = round?.teeName ?? "";
+
   // ---------------------------------------------------------------------------
   // Caddie session lifecycle (agentic caddie P1)
   // ---------------------------------------------------------------------------
@@ -1301,83 +1307,69 @@ export default function RoundPage() {
             </div>
           )}
 
-          {/* Hero hole card — swipe L/R */}
-          <AnimatePresence mode="wait" custom={slideDir}>
-            <motion.div
-              key={currentHole}
-              custom={slideDir}
-              variants={{
-                enter: (d: number) => ({ opacity: 0, x: d > 0 ? 30 : -30 }),
-                center: { opacity: 1, x: 0 },
-                exit: (d: number) => ({ opacity: 0, x: d > 0 ? -30 : 30 }),
+          {/* Hero hole card — swipe L/R.
+              Map branch (mappedCourse || roundAnchor): a PERSISTENT, un-keyed
+              container mounted ONCE per round — the native Google map is
+              created once and hole changes pan its camera (GoogleSatelliteMap
+              already does this internally). Previously this branch lived
+              INSIDE the keyed `motion.div key={currentHole}` below, so every
+              hole swipe destroyed + recreated the native map, showing
+              "Loading map…" on every hole (owner 2026-07-06). The paper
+              fallback (mock round, no course data) keeps its keyed slide
+              transition — it's a cheap SVG, remounting is fine. */}
+          {mappedCourse || roundAnchor ? (
+            /* Map-first hole view: the satellite map IS the card, with the
+               hole picker + hole stats as static overlays (owner request
+               2026-07-02). Map touches pan the map — but a fast, clearly
+               horizontal flick flips to the prev/next hole (the camera
+               re-frames on the new hole, so any incidental pan resets).
+               Overlay chrome below re-reads currentHole on every render —
+               no keyed transition needed since this container never remounts. */
+            <div
+              style={{
+                position: "relative",
+                borderRadius: 20,
+                overflow: "hidden",
+                border: `1px solid ${T.hairline}`,
+                boxShadow: "0 8px 24px rgba(26,42,26,0.06)",
+                marginBottom: 14,
+                touchAction: "pan-y",
               }}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{ duration: 0.3, ease: T.ease }}
-              drag="x"
-              dragConstraints={{ left: 0, right: 0 }}
-              dragElastic={0.25}
-              onDragStart={() => {
-                draggedRef.current = true;
+              onPointerDownCapture={(e) => {
+                // Keep the framer drag wrapper off map touches (it would
+                // rubber-band the card while the native map pans); overlay
+                // chips remain wrapper swipe surface.
+                const el = e.target as HTMLElement;
+                if (!el.closest("[data-overlay]")) e.stopPropagation();
               }}
-              onDragEnd={(_e, info) => {
-                if (info.offset.x < -60 && info.velocity.x < 0) goHole(currentHole + 1);
-                else if (info.offset.x > 60 && info.velocity.x > 0) goHole(currentHole - 1);
-                setTimeout(() => {
-                  draggedRef.current = false;
-                }, 350);
+              onTouchStart={(e) => {
+                mapSwipeRef.current =
+                  e.touches.length === 1
+                    ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() }
+                    : null; // pinch → never a hole swipe
               }}
-              style={{ marginBottom: 14, touchAction: "pan-y" }}
+              onTouchEnd={(e) => {
+                const s = mapSwipeRef.current;
+                mapSwipeRef.current = null;
+                if (!s || e.changedTouches.length !== 1) return;
+                const dx = e.changedTouches[0].clientX - s.x;
+                const dy = e.changedTouches[0].clientY - s.y;
+                // Fast + far + decisively horizontal = hole swipe.
+                if (Date.now() - s.t < 600 && Math.abs(dx) > 70 && Math.abs(dx) > 1.8 * Math.abs(dy)) {
+                  haptic("light");
+                  goHole(dx < 0 ? currentHole + 1 : currentHole - 1);
+                }
+              }}
             >
-              {mappedCourse || roundAnchor ? (
-                /* Map-first hole view: the satellite map IS the card, with the
-                   hole picker + hole stats as static overlays (owner request
-                   2026-07-02). Map touches pan the map — but a fast, clearly
-                   horizontal flick flips to the prev/next hole (the camera
-                   re-frames on the new hole, so any incidental pan resets). */
-                <div
-                  style={{
-                    position: "relative",
-                    borderRadius: 20,
-                    overflow: "hidden",
-                    border: `1px solid ${T.hairline}`,
-                    boxShadow: "0 8px 24px rgba(26,42,26,0.06)",
-                  }}
-                  onPointerDownCapture={(e) => {
-                    // Keep the framer drag wrapper off map touches (it would
-                    // rubber-band the card while the native map pans); overlay
-                    // chips remain wrapper swipe surface.
-                    const el = e.target as HTMLElement;
-                    if (!el.closest("[data-overlay]")) e.stopPropagation();
-                  }}
-                  onTouchStart={(e) => {
-                    mapSwipeRef.current =
-                      e.touches.length === 1
-                        ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() }
-                        : null; // pinch → never a hole swipe
-                  }}
-                  onTouchEnd={(e) => {
-                    const s = mapSwipeRef.current;
-                    mapSwipeRef.current = null;
-                    if (!s || e.changedTouches.length !== 1) return;
-                    const dx = e.changedTouches[0].clientX - s.x;
-                    const dy = e.changedTouches[0].clientY - s.y;
-                    // Fast + far + decisively horizontal = hole swipe.
-                    if (Date.now() - s.t < 600 && Math.abs(dx) > 70 && Math.abs(dx) > 1.8 * Math.abs(dy)) {
-                      haptic("light");
-                      goHole(dx < 0 ? currentHole + 1 : currentHole - 1);
-                    }
-                  }}
-                >
-                  <InlineHoleDiagram
-                    courseId={mappedCourse?.id}
-                    fallbackCenter={roundAnchor ?? undefined}
-                    currentHole={currentHole}
-                    height={mapHeight}
-                  />
+              <InlineHoleDiagram
+                courseId={mappedCourse?.id}
+                fallbackCenter={roundAnchor ?? undefined}
+                currentHole={currentHole}
+                height={mapHeight}
+                teeMarker={teeMarker}
+              />
 
-                  {/* Hole picker — static overlay, top-left */}
+              {/* Hole picker — static overlay, top-left */}
                   <button
                     data-overlay
                     onClick={() => setHolePickerOpen(true)}
@@ -1542,7 +1534,37 @@ export default function RoundPage() {
                     </div>
                   </div>
                 </div>
-              ) : (
+          ) : (
+            /* Mock/no-course fallback: cheap SVG-ish card, keeps its keyed
+               slide transition — remounting this on every hole is fine. */
+            <AnimatePresence mode="wait" custom={slideDir}>
+              <motion.div
+                key={currentHole}
+                custom={slideDir}
+                variants={{
+                  enter: (d: number) => ({ opacity: 0, x: d > 0 ? 30 : -30 }),
+                  center: { opacity: 1, x: 0 },
+                  exit: (d: number) => ({ opacity: 0, x: d > 0 ? -30 : 30 }),
+                }}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: 0.3, ease: T.ease }}
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.25}
+                onDragStart={() => {
+                  draggedRef.current = true;
+                }}
+                onDragEnd={(_e, info) => {
+                  if (info.offset.x < -60 && info.velocity.x < 0) goHole(currentHole + 1);
+                  else if (info.offset.x > 60 && info.velocity.x > 0) goHole(currentHole - 1);
+                  setTimeout(() => {
+                    draggedRef.current = false;
+                  }, 350);
+                }}
+                style={{ marginBottom: 14, touchAction: "pan-y" }}
+              >
                 <HoleCard
                   holeNumber={currentHole}
                   hole={hole}
@@ -1561,9 +1583,9 @@ export default function RoundPage() {
                   density={density}
                   shotPoint={shotPoint}
                 />
-              )}
-            </motion.div>
-          </AnimatePresence>
+              </motion.div>
+            </AnimatePresence>
+          )}
 
           {/* Stakes ticker */}
           <div style={{ marginBottom: 14 }}>
@@ -1672,7 +1694,13 @@ export default function RoundPage() {
         >
           {/* Ask Caddie — ghost pill (#11: flexShrink:1 so it compresses on 320px) */}
           <motion.button
-            onClick={() => setCaddieOpen(true)}
+            onClick={() => {
+              // One mic at a time: stop any live/warm orb session before the
+              // sheet's dictation path opens its own stream (the degrade path
+              // already does this; the manual open must too).
+              voice.stop();
+              setCaddieOpen(true);
+            }}
             whileTap={{ scale: 0.97 }}
             style={{
               padding: "14px 18px",
@@ -1942,6 +1970,7 @@ export default function RoundPage() {
           autoDetectHole={false}
           centerOnly={mapCoords.length === 0}
           fallbackCenter={mapCenter ?? roundAnchor ?? undefined}
+          teeMarker={teeMarker}
         />
       )}
     </div>

@@ -31,8 +31,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, useDragControls } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import type { Caddy } from "@/components/yardage/tokens";
-import { Waveform } from "@/components/yardage/Voice";
+import { Waveform, PulseDot } from "@/components/yardage/Voice";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
+import { DeepgramLiveTranscriber } from "@/lib/voice/deepgram-live";
+import { pickDictationTranscript, isEmptyTranscript } from "@/lib/caddie/dictation";
 import {
   talkToCaddie,
   fetchRecommendation,
@@ -172,7 +174,14 @@ export default function CaddieSheet({
   const [personaPickerOpen, setPersonaPickerOpen] = useState(false);
 
   const recorderRef = useRef<VoiceRecorder | null>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  // Live dictation (specs/caddie-live-dictation-plan.md): the streaming
+  // transcript is authoritative — the recorded blob is only the fallback.
+  const liveRef = useRef<DeepgramLiveTranscriber | null>(null);
+  const liveTranscriptRef = useRef("");
+  const liveFailedRef = useRef(false);
+  // Bumped on every open/close so stale async (a late interim, a late
+  // transcription) from a previous sheet lifetime is dropped.
+  const openGenRef = useRef(0);
 
   /**
    * Ref mirror of convHistory prop. askCaddie reads from this ref so it
@@ -188,9 +197,13 @@ export default function CaddieSheet({
   // by the parent so closing to enter a score then reopening continues the
   // thread (#9).
   useEffect(() => {
+    openGenRef.current++; // invalidate any in-flight async from the previous lifetime
     if (!open) {
       recorderRef.current?.cancel();
-      recognitionRef.current?.abort();
+      liveRef.current?.stop();
+      liveRef.current = null;
+      liveTranscriptRef.current = "";
+      liveFailedRef.current = false;
       setIsListening(false);
       setInterimTranscript("");
       setTranscript("");
@@ -206,7 +219,8 @@ export default function CaddieSheet({
     }
     return () => {
       recorderRef.current?.cancel();
-      recognitionRef.current?.abort();
+      liveRef.current?.stop();
+      liveRef.current = null;
     };
   }, [open]);
 
@@ -317,50 +331,56 @@ export default function CaddieSheet({
     setTranscript("");
     setInterimTranscript("");
     setVoiceAnswer(null);
+    liveTranscriptRef.current = "";
+    liveFailedRef.current = false;
+    const gen = openGenRef.current;
     let recorder: VoiceRecorder | null = null;
     try {
       recorder = new VoiceRecorder();
       await recorder.start();
+      if (openGenRef.current !== gen) {
+        recorder.cancel(); // sheet closed while the mic was being acquired
+        return;
+      }
       recorderRef.current = recorder;
       setIsListening(true);
 
-      // Best-effort Web Speech API for live interim display.
-      // Deepgram (transcribeBlob) is authoritative for final transcript.
-      const SpeechRecognitionCtor =
-        (typeof window !== "undefined" &&
-          (window.SpeechRecognition ?? window.webkitSpeechRecognition)) ||
-        null;
-      if (SpeechRecognitionCtor) {
-        // If recognition.start() throws after the recorder started, cancel
-        // the recorder so the mic doesn't stay hot (#12).
+      // Live dictation: stream the SAME mic stream to Deepgram so the words
+      // appear as the golfer speaks, and the live final becomes the message
+      // (no post-stop "Transcribing…"). The recorder keeps running for the
+      // whole utterance so the blob fallback always exists.
+      const stream = recorder.getStream();
+      if (stream && DeepgramLiveTranscriber.isSupported()) {
         try {
-          const recognition = new SpeechRecognitionCtor();
-          recognition.continuous = true;
-          recognition.interimResults = true;
-          recognition.lang = "en-US";
-          recognition.onresult = (event: SpeechRecognitionEvent) => {
-            let interim = "";
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              interim += event.results[i][0].transcript;
-            }
-            setInterimTranscript(interim);
-          };
-          recognition.onerror = () => {
-            /* Deepgram is authoritative — interim errors are non-fatal */
-          };
-          recognition.onend = () => {
-            /* no-op; abort() is called explicitly on stop */
-          };
-          recognition.start();
-          recognitionRef.current = recognition;
+          const live = new DeepgramLiveTranscriber({
+            onInterim: (t) => {
+              if (openGenRef.current !== gen) return;
+              liveTranscriptRef.current = t;
+              setInterimTranscript(t);
+            },
+            onFinal: (t) => {
+              if (openGenRef.current !== gen) return;
+              liveTranscriptRef.current = t;
+            },
+            onError: () => {
+              // Non-fatal mid-utterance — the blob fallback covers it.
+              liveFailedRef.current = true;
+            },
+          });
+          await live.start(stream);
+          if (openGenRef.current !== gen) {
+            live.stop();
+            return;
+          }
+          liveRef.current = live;
         } catch {
-          // Recognition failed to start — cancel the recorder so the mic stream
-          // is released and we don't leave the mic open (#12).
-          recorder.cancel();
-          recorderRef.current = null;
-          setIsListening(false);
-          throw new Error("Failed to start voice recognition.");
+          // Token/socket failure — dictate via the blob fallback instead.
+          liveFailedRef.current = true;
+          liveRef.current = null;
         }
+      } else {
+        // Older WKWebView without MediaRecorder streaming — fallback path.
+        liveFailedRef.current = true;
       }
     } catch (err) {
       setError(
@@ -380,23 +400,42 @@ export default function CaddieSheet({
   const stopListening = useCallback(async () => {
     const recorder = recorderRef.current;
     if (!recorder) return;
-    recognitionRef.current?.abort();
-    recognitionRef.current = null;
+    const gen = openGenRef.current;
+    // Snapshot BEFORE stopping the stream — the best-so-far live transcript.
+    const snapshot = liveTranscriptRef.current;
+    liveRef.current?.stop();
+    liveRef.current = null;
     setInterimTranscript("");
     setIsListening(false);
-    setIsTranscribing(true);
     try {
-      const blob = await recorder.stop();
-      const result = await transcribeBlob(blob);
-      if (!result.transcript.trim()) {
+      const pick = pickDictationTranscript(snapshot, liveFailedRef.current);
+      let finalText: string;
+      if (pick.source === "live") {
+        // The words are already on screen — straight to thinking, no
+        // "Transcribing…" dead state, no audio upload.
+        recorder.cancel(); // release the mic; the blob isn't needed
+        finalText = pick.transcript;
+      } else {
+        // Fallback (live unsupported / failed / heard nothing): today's
+        // record→upload path, where a brief "Transcribing…" is honest.
+        setIsTranscribing(true);
+        const blob = await recorder.stop();
+        const result = await transcribeBlob(blob);
+        if (openGenRef.current !== gen) return;
+        finalText = result.transcript;
+      }
+      if (isEmptyTranscript(finalText)) {
         setError("No speech detected. Tap the mic to try again.");
         return;
       }
-      setTranscript(result.transcript);
-      // Auto-call caddie after transcription
-      await askCaddie(result.transcript);
+      if (openGenRef.current !== gen) return;
+      setTranscript(finalText);
+      // Auto-call caddie with the finalized transcript
+      await askCaddie(finalText);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Transcription failed.");
+      if (openGenRef.current === gen) {
+        setError(err instanceof Error ? err.message : "Transcription failed.");
+      }
     } finally {
       recorderRef.current = null;
       setIsTranscribing(false);
@@ -1202,9 +1241,12 @@ function VoiceBody({
                 &ldquo;{transcript}&rdquo;
               </div>
             )}
-            <StatusNote>
-              {caddy.name} is thinking…
-            </StatusNote>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <PulseDot accent={accent} />
+              <StatusNote>
+                {caddy.name} is thinking…
+              </StatusNote>
+            </div>
           </motion.div>
         ) : phase === "error" ? (
           <motion.div

@@ -42,6 +42,12 @@ import {
   ArrowUp,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+// @capacitor/app is a plain plugin registration (no HTMLElement reference at
+// module scope, unlike @capacitor/google-maps) — safe to import at the top
+// level; its web fallback uses document.visibilitychange, so this also works
+// in the plain browser dev server.
+import { App } from "@capacitor/app";
+import type { PluginListenerHandle } from "@capacitor/core";
 import {
   GPSWatcher,
   calculateDistance,
@@ -56,6 +62,10 @@ import {
   cameraFraming,
   movedBeyondYards,
   tapTargetDistances,
+  createCameraQueue,
+  teeColorFor,
+  teeMarkerIconUrl,
+  type CameraQueue,
   type TapTarget,
 } from "@/lib/map/google-map-helpers";
 import { fetchWeather } from "@/lib/caddie/api";
@@ -126,6 +136,14 @@ export interface GoogleSatelliteMapProps {
    * Has no effect in inline mode (parent manages the toggle there).
    */
   onSwitchToPaper?: () => void;
+  /**
+   * The round's chosen tee-box name (e.g. "Black", "Gold/Combo"), used to
+   * color the tee marker via `teeColorFor`. Tri-state, deliberately:
+   *   • a non-empty string → colored marker for that tee.
+   *   • "" (round exists, tee unset — legacy round) → neutral marker, honest.
+   *   • null / omitted (no round context, e.g. /map/course) → NO marker at all.
+   */
+  teeMarker?: string | null;
 }
 
 // ── Yardage-book distance stat (matches the app's paper/ink theme) ────────────
@@ -183,6 +201,7 @@ export default function GoogleSatelliteMap({
   centerOnly = false,
   onFallback,
   onSwitchToPaper,
+  teeMarker = null,
 }: GoogleSatelliteMapProps) {
   const mapContainerRef = useRef<HTMLElement | null>(null);
   const googleMapRef    = useRef<GoogleMap | null>(null);
@@ -326,16 +345,39 @@ export default function GoogleSatelliteMap({
   }, []);
 
   /**
-   * Per-hole overlays are intentionally EMPTY: the map stays clean satellite
-   * (no tee→green line, no rings, no pins). Distance lines are drawn only when
-   * the golfer taps a target point (see the tap handler → tee→point + point→green).
-   * Kept as a no-op so the hole-change / GPS effects can call it uniformly.
+   * Per-hole overlays: the map stays clean satellite (no tee→green line, no
+   * distance rings, no pins) EXCEPT for a single colored tee marker at the
+   * round's chosen tee box (owner 2026-07-06). Distance lines are drawn only
+   * when the golfer taps a target point (see the tap handler → tee→point +
+   * point→green).
    */
-  const addHoleOverlays = useCallback(async (_hd: CourseCoordinates, _gpsOnHole: boolean, _pos: Position | null) => {
-    holeMarkerIdsRef.current   = [];
+  const addHoleOverlays = useCallback(async (hd: CourseCoordinates, _gpsOnHole: boolean, _pos: Position | null) => {
+    const m = googleMapRef.current;
+    const markerIds: string[] = [];
+
+    // teeMarker === null means "no round context" (e.g. /map/course) → never
+    // draw a marker there. A non-null teeMarker (even "" for a legacy round
+    // with no stored tee name) means a round IS active — draw a marker, honest
+    // neutral color when the tee name is unknown (see teeColorFor).
+    if (m && mapReadyRef.current && teeMarker !== null && hd.tee) {
+      const { slug } = teeColorFor(teeMarker);
+      const id = await m
+        .addMarker({
+          coordinate: { lat: hd.tee.lat, lng: hd.tee.lng },
+          iconUrl: teeMarkerIconUrl(slug),
+          iconSize: { width: 30, height: 30 },
+          iconAnchor: { x: 15, y: 15 }, // centered — a dot, not a pin
+          isFlat: true,
+          zIndex: 5,
+        })
+        .catch(() => null);
+      if (id) markerIds.push(id);
+    }
+
+    holeMarkerIdsRef.current   = markerIds;
     holeCircleIdsRef.current   = [];
     holePolylineIdsRef.current = [];
-  }, []);
+  }, [teeMarker]);
 
   /**
    * Frame the camera on the current hole's tee→green corridor.
@@ -353,6 +395,34 @@ export default function GoogleSatelliteMap({
     const { coordinate, zoom, bearing } = cameraForHole(hd);
     await m.setCamera({ coordinate, zoom, bearing, animate: true, animationDuration: 600 }).catch(() => {});
   }, []);
+
+  // ── Camera queue — coalescing serializer for rapid hole swipes (A2) ────────
+  // Mirror the latest overlay callbacks into a ref so the queue's `run` closure
+  // (created once, below) always calls the current versions without needing to
+  // be re-created when e.g. `addHoleOverlays` changes identity (teeMarker dep).
+  const overlayFnsRef = useRef({ clearHoleOverlays, fitCameraToHole, addHoleOverlays });
+  useEffect(() => {
+    overlayFnsRef.current = { clearHoleOverlays, fitCameraToHole, addHoleOverlays };
+  });
+
+  // Created once (useRef initial-value idiom, matches mapIdRef above) — `run`
+  // only closes over refs, so re-evaluating the initializer on later renders
+  // and discarding it is harmless.
+  const cameraQueueRef = useRef<CameraQueue<CourseCoordinates>>(
+    createCameraQueue<CourseCoordinates>(async (hd) => {
+      // Belt+braces readiness gate: the queue itself is DOM/plugin-agnostic and
+      // doesn't know about map readiness. A request that lands before
+      // onMapReady (or after the map is torn down) no-ops here rather than
+      // risking the native SIGTRAP (nil GMSMapView force-unwrap). The
+      // appStateChange listener below re-requests the current hole once the
+      // app resumes to the foreground and the map IS ready.
+      if (!googleMapRef.current || !mapReadyRef.current) return;
+      const gpsOnHole = positionRef.current ? isGpsOnHole(positionRef.current, hd) : false;
+      await overlayFnsRef.current.clearHoleOverlays();
+      await overlayFnsRef.current.fitCameraToHole(hd);
+      await overlayFnsRef.current.addHoleOverlays(hd, gpsOnHole, positionRef.current);
+    })
+  );
 
   // ── Map initialisation ─────────────────────────────────────────────────────
 
@@ -583,6 +653,9 @@ export default function GoogleSatelliteMap({
   }, []);
 
   // ── Hole change → re-frame camera + re-draw overlays ──────────────────────
+  // Goes through the camera queue (A2) so a rapid multi-hole swipe coalesces
+  // into a single trailing camera move instead of racing several un-serialized
+  // clear→frame→overlay async chains.
 
   useEffect(() => {
     currentHoleRef.current = currentHoleData;
@@ -590,16 +663,9 @@ export default function GoogleSatelliteMap({
     clearTapMarker();
     setTapTarget(null);
 
-    if (!googleMapRef.current || !mapReadyRef.current || !currentHoleData || centerOnly) return;
+    if (!currentHoleData || centerOnly) return;
 
-    const hd = currentHoleData;
-    const gpsOnHole = position ? isGpsOnHole(position, hd) : false;
-
-    (async () => {
-      await clearHoleOverlays();
-      await fitCameraToHole(hd);
-      await addHoleOverlays(hd, gpsOnHole, position);
-    })();
+    cameraQueueRef.current.request(currentHoleData);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentHoleData]);
 
@@ -689,6 +755,32 @@ export default function GoogleSatelliteMap({
     return () => { gpsWatcherRef.current?.stop(); };
   }, [handlePositionUpdate, handleGpsError]);
 
+  // ── Background / foreground → re-assert camera framing on resume ─────────
+  // GMSMapView pauses rendering while backgrounded; iOS can also silently
+  // reset its camera on some resumes. Rather than destroy/recreate the map
+  // (which would reintroduce the "Loading map…" spinner on every app switch —
+  // the exact regression this feature fixes for hole swipes), just re-request
+  // the current hole's framing through the SAME serialized queue once the app
+  // is active again and the map is confirmed ready.
+  useEffect(() => {
+    let handle: PluginListenerHandle | null = null;
+    let cancelled = false;
+    App.addListener("appStateChange", ({ isActive }) => {
+      if (!isActive) return; // backgrounding — never destroy/recreate here
+      if (!mapReadyRef.current) return; // not ready yet — nothing to re-frame
+      if (centerOnly) return; // no per-hole framing in center-only mode
+      const hd = currentHoleRef.current;
+      if (hd) cameraQueueRef.current.request(hd);
+    }).then((h) => {
+      if (cancelled) { h.remove(); return; }
+      handle = h;
+    });
+    return () => {
+      cancelled = true;
+      handle?.remove();
+    };
+  }, [centerOnly]);
+
   // ── Map control helpers ────────────────────────────────────────────────────
 
   const centerOnUser = useCallback(async () => {
@@ -706,8 +798,12 @@ export default function GoogleSatelliteMap({
     await fitCameraToHole(currentHoleData);
   }, [currentHoleData, fitCameraToHole]);
 
+  // Bounds from the actual loaded hole count, NOT a hardcoded 18 — a 9-hole
+  // course (or a partial hole set) must not offer a dead "next" past its
+  // last hole.
+  const lastHole = holeCoordinates.length;
   const prevHole = useCallback(() => { if (currentHole > 1) onHoleChange(currentHole - 1); }, [currentHole, onHoleChange]);
-  const nextHole = useCallback(() => { if (currentHole < 18) onHoleChange(currentHole + 1); }, [currentHole, onHoleChange]);
+  const nextHole = useCallback(() => { if (currentHole < lastHole) onHoleChange(currentHole + 1); }, [currentHole, lastHole, onHoleChange]);
 
   // ── Bearing label (for reference; not displayed) ──────────────────────────
   // Used to derive a user-meaningful compass direction for the GPS status strip.
@@ -912,9 +1008,9 @@ export default function GoogleSatelliteMap({
             </div>
             <button
               onClick={nextHole}
-              disabled={currentHole >= 18}
+              disabled={currentHole >= lastHole}
               aria-label="Next hole"
-              style={{ ...MAP_PILL_BTN, opacity: currentHole >= 18 ? 0.35 : 1 }}
+              style={{ ...MAP_PILL_BTN, opacity: currentHole >= lastHole ? 0.35 : 1 }}
             >
               <ChevronRight size={18} style={{ color: T.ink }} />
             </button>

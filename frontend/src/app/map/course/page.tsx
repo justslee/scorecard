@@ -718,6 +718,7 @@ function MappedCourseMapInner() {
         centerOnly={true}
         onFallback={() => setGoogleMapFailed(true)}
         onSwitchToPaper={() => chooseMapView("holediagram")}
+        teeMarker={null}
       />
     );
   }
@@ -756,6 +757,7 @@ function MappedCourseMapInner() {
         onClose={handleBack}
         onFallback={() => setGoogleMapFailed(true)}
         onSwitchToPaper={() => chooseMapView("holediagram")}
+        teeMarker={null}
       />
     );
   }

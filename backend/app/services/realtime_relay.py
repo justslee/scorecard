@@ -94,8 +94,10 @@ DEFAULT_TOOLS: list[dict] = [
         "name": "get_conditions",
         "description": (
             "Current weather (wind, temperature) plus how the hole plays — the "
-            "plays-like yardage delta from elevation. Always call this before "
-            "discussing wind, temperature, or effective distance."
+            "plays-like yardage delta from elevation. Also returns the hole's real "
+            "bunker/water hazards (empty list if none are mapped). Always call this "
+            "before discussing wind, temperature, effective distance, or any hazard — "
+            "never name a hazard, or a yardage to one, that isn't in the returned list."
         ),
         "parameters": {
             "type": "object",
