@@ -1,5 +1,6 @@
 """Course intelligence engine - builds per-hole analysis from data sources."""
 
+import logging
 import math
 from typing import Optional
 from app.caddie.types import (
@@ -14,6 +15,9 @@ from app.services.weather import (
     compute_air_density_factor,
     estimate_conditions,
 )
+
+log = logging.getLogger("looper.course_intel")
+
 
 
 async def build_hole_intelligence(
@@ -62,44 +66,18 @@ async def build_hole_intelligence(
                 description=slope_result["description"],
             )
 
-    # Classify hazards from OSM features
+    # Classify hazards from OSM features. DEFENSIVE: a single malformed OSM
+    # feature must never destroy the whole hole's intel — the computed
+    # elevation/effective yards above are more valuable than the hazard list
+    # (owner's 2026-07-07 round: a hazard-block exception per hole surfaced
+    # as elevation '0ft' on every tile because the route's per-hole catch
+    # discarded everything).
     hazards: list[Hazard] = []
-    if osm_features and green:
-        # Process bunkers
-        for bunker in osm_features.get("bunkers", []):
-            center = bunker.get("center", {})
-            if not center:
-                continue
-            dist = _distance_yards(center, green)
-            side = _classify_side(center, green, tee)
-            severity = "moderate" if dist < 10 else "mild"
-            hazards.append(Hazard(
-                type="bunker",
-                side=side,
-                distance_from_green=round(dist),
-                penalty_severity=severity,
-                lat=center.get("lat"),
-                lng=center.get("lng"),
-            ))
-
-        # Process water
-        for water in osm_features.get("water", []):
-            center = water.get("center", {})
-            if not center:
-                continue
-            dist = _distance_yards(center, green)
-            if dist > 100:
-                continue  # too far to be relevant
-            side = _classify_side(center, green, tee)
-            hazards.append(Hazard(
-                type="water",
-                side=side,
-                distance_from_green=round(dist),
-                penalty_severity="death",
-                lat=center.get("lat"),
-                lng=center.get("lng"),
-            ))
-
+    try:
+        hazards = _classify_osm_hazards(osm_features, green, tee)
+    except Exception:  # noqa: BLE001 — hazards are best-effort by design
+        log.warning("hazard classification failed; continuing without", exc_info=True)
+        hazards = []
     return HoleIntelligence(
         hole_number=hole_number,
         par=par,
@@ -110,6 +88,58 @@ async def build_hole_intelligence(
         green_slope=green_slope_data,
         hazards=hazards,
     )
+
+
+def _classify_osm_hazards(osm_features, green, tee) -> list[Hazard]:
+    """Bunker/water hazards from raw OSM features, classified vs the green.
+    Callers wrap this — one malformed feature must never sink a hole's intel."""
+    hazards: list[Hazard] = []
+    if not osm_features or not green:
+        return hazards
+
+    def _valid(pt) -> bool:
+        # Malformed OSM centers must be SKIPPED, not classified: missing keys
+        # once produced a 'bunker at 9,429,088 yards' via .get() defaults.
+        return (
+            isinstance(pt, dict)
+            and isinstance(pt.get("lat"), (int, float))
+            and isinstance(pt.get("lng"), (int, float))
+        )
+
+    # Process bunkers
+    for bunker in osm_features.get("bunkers", []):
+        center = bunker.get("center", {})
+        if not _valid(center):
+            continue
+        dist = _distance_yards(center, green)
+        side = _classify_side(center, green, tee)
+        severity = "moderate" if dist < 10 else "mild"
+        hazards.append(Hazard(
+            type="bunker",
+            side=side,
+            distance_from_green=round(dist),
+            penalty_severity=severity,
+            lat=center.get("lat"),
+            lng=center.get("lng"),
+        ))
+    # Process water
+    for water in osm_features.get("water", []):
+        center = water.get("center", {})
+        if not _valid(center):
+            continue
+        dist = _distance_yards(center, green)
+        if dist > 100:
+            continue  # too far to be relevant
+        side = _classify_side(center, green, tee)
+        hazards.append(Hazard(
+            type="water",
+            side=side,
+            distance_from_green=round(dist),
+            penalty_severity="death",
+            lat=center.get("lat"),
+            lng=center.get("lng"),
+        ))
+    return hazards
 
 
 async def build_weather_conditions(
