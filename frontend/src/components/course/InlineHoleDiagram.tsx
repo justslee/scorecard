@@ -130,6 +130,12 @@ interface InlineHoleDiagramProps {
   currentHole: number;
   /** Fixed pixel height for the diagram container. Defaults to 260px. */
   height?: number;
+  /**
+   * The round's chosen tee-box name — colors the Google satellite map's tee
+   * marker (see GoogleSatelliteMapProps.teeMarker for the null/"" distinction).
+   * Has no effect on the paper HoleDiagram fallback below (no tee marker there).
+   */
+  teeMarker?: string | null;
 }
 
 export default function InlineHoleDiagram({
@@ -137,6 +143,7 @@ export default function InlineHoleDiagram({
   fallbackCenter,
   currentHole,
   height = 260,
+  teeMarker = null,
 }: InlineHoleDiagramProps) {
   // Indexed course data — built once from the fetched CourseData.
   const [holeIndex, setHoleIndex] = useState<Map<number, HoleData>>(new Map());
@@ -261,6 +268,7 @@ export default function InlineHoleDiagram({
           centerOnly={!hasHoleCoords}
           fallbackCenter={courseCenter ?? undefined}
           onFallback={() => setGoogleMapFailed(true)}
+          teeMarker={teeMarker}
         />
       </div>
     );

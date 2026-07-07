@@ -25,7 +25,21 @@ import {
   cameraFraming,
   movedBeyondYards,
   tapTargetDistances,
+  createCameraQueue,
+  teeColorFor,
+  teeMarkerIconUrl,
 } from './google-map-helpers';
+
+/** Flush pending microtasks so queued `.then()` chains settle in tests. */
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+/** A controllable "deferred" promise — lets a test decide exactly when an
+ *  in-flight `run()` call resolves, so coalescing can be observed mid-flight. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((res) => { resolve = res; });
+  return { promise, resolve };
+}
 
 // ── yardsToMeters ─────────────────────────────────────────────────────────────
 
@@ -575,5 +589,171 @@ describe('tapTargetDistances — carry + distance-to-green for a tapped point', 
   it('fromGps is false when flagged but no origin', () => {
     const t = tapTargetDistances(tap, green, null, true, dist);
     expect(t.fromGps).toBe(false);
+  });
+});
+
+// ── createCameraQueue (rapid-swipe coalescing serializer) ─────────────────────
+
+describe('createCameraQueue — coalescing serializer for rapid hole changes', () => {
+  it('starts the first request immediately (synchronously)', () => {
+    const calls: number[] = [];
+    const queue = createCameraQueue<number>(async (t) => { calls.push(t); });
+    queue.request(1);
+    expect(calls).toEqual([1]);
+  });
+
+  it('keeps only one run in flight — a second request while running is held, not started', async () => {
+    const calls: number[] = [];
+    let callCount = 0;
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<number>(async (t) => {
+      callCount += 1;
+      calls.push(t);
+      if (t === 1) await d1.promise;
+    });
+
+    queue.request(1);
+    expect(callCount).toBe(1); // run(1) started
+
+    queue.request(2); // held — must NOT start a second run while 1 is in flight
+    expect(callCount).toBe(1);
+
+    d1.resolve();
+    await flush();
+    expect(callCount).toBe(2);
+    expect(calls).toEqual([1, 2]); // ordering preserved: 1 then 2
+  });
+
+  it('coalesces a rapid 1→2→3→4 swipe into a single trailing run on 4', async () => {
+    const calls: number[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<number>(async (t) => {
+      calls.push(t);
+      if (t === 1) await d1.promise;
+    });
+
+    queue.request(1); // starts immediately
+    queue.request(2); // coalesced — overwritten by 3
+    queue.request(3); // coalesced — overwritten by 4
+    queue.request(4); // the only pending target once 1 resolves
+
+    expect(calls).toEqual([1]); // 2 and 3 never ran
+
+    d1.resolve();
+    await flush();
+
+    // Exactly two native camera moves total: the in-flight one (1) and a
+    // single trailing move on the newest target (4). 2 and 3 are skipped
+    // entirely — never their own camera move.
+    expect(calls).toEqual([1, 4]);
+  });
+
+  it('a not-ready no-op run does not block a later request from flushing normally', async () => {
+    const applied: number[] = [];
+    let ready = false;
+    const queue = createCameraQueue<number>(async (t) => {
+      if (!ready) return; // simulates the caller's mapReadyRef gate no-op
+      applied.push(t);
+    });
+
+    queue.request(1);
+    await flush();
+    expect(applied).toEqual([]); // not ready — no-op, but the queue did not jam
+
+    ready = true;
+    queue.request(2);
+    await flush();
+    expect(applied).toEqual([2]); // flushes normally once ready
+  });
+
+  it('goes idle after a run resolves with nothing pending — the next request runs fresh', async () => {
+    const calls: number[] = [];
+    const queue = createCameraQueue<number>(async (t) => { calls.push(t); });
+
+    queue.request(1);
+    await flush();
+    expect(calls).toEqual([1]);
+
+    queue.request(2);
+    await flush();
+    expect(calls).toEqual([1, 2]);
+  });
+
+  it('swallows a rejected run so a stuck native call cannot wedge the queue', async () => {
+    const calls: number[] = [];
+    const queue = createCameraQueue<number>(async (t) => {
+      calls.push(t);
+      if (t === 1) throw new Error('native call failed');
+    });
+
+    queue.request(1);
+    await flush();
+    queue.request(2);
+    await flush();
+
+    expect(calls).toEqual([1, 2]); // 2 still runs despite 1 rejecting
+  });
+});
+
+// ── teeColorFor / teeMarkerIconUrl (colored tee marker) ───────────────────────
+
+describe('teeColorFor — tee-name → canonical marker colour', () => {
+  it('maps the canonical color words (case-insensitive)', () => {
+    expect(teeColorFor('Black').slug).toBe('black');
+    expect(teeColorFor('BLUE').slug).toBe('blue');
+    expect(teeColorFor('white').slug).toBe('white');
+    expect(teeColorFor('Gold').slug).toBe('gold');
+    expect(teeColorFor('red').slug).toBe('red');
+    expect(teeColorFor('Green').slug).toBe('green');
+  });
+
+  it('matches a substring within a longer tee name', () => {
+    expect(teeColorFor('Black Tees').slug).toBe('black');
+    expect(teeColorFor('Championship (Black)').slug).toBe('black');
+    expect(teeColorFor('Forward / Red').slug).toBe('red');
+  });
+
+  it('is whitespace-insensitive', () => {
+    expect(teeColorFor('   Blue   ').slug).toBe('blue');
+  });
+
+  it('folds "yellow" onto gold (no separate asset)', () => {
+    expect(teeColorFor('Yellow').slug).toBe('gold');
+  });
+
+  it('folds silver/gray/grey onto white (no separate asset)', () => {
+    expect(teeColorFor('Silver').slug).toBe('white');
+    expect(teeColorFor('Gray').slug).toBe('white');
+    expect(teeColorFor('Grey').slug).toBe('white');
+  });
+
+  it('folds combo/orange onto gold (no separate asset)', () => {
+    expect(teeColorFor('Combo').slug).toBe('gold');
+    expect(teeColorFor('Orange').slug).toBe('gold');
+  });
+
+  it('returns the neutral ink/graphite marker for an absent tee name', () => {
+    expect(teeColorFor(undefined).slug).toBe('neutral');
+    expect(teeColorFor(null).slug).toBe('neutral');
+    expect(teeColorFor('').slug).toBe('neutral');
+    expect(teeColorFor('   ').slug).toBe('neutral');
+  });
+
+  it('returns the neutral marker for an unrecognised tee name (honest, not a guess)', () => {
+    expect(teeColorFor('Members').slug).toBe('neutral');
+    expect(teeColorFor('Tips').slug).toBe('neutral');
+  });
+
+  it('every slug has a 6-digit hex rgb', () => {
+    for (const name of ['black', 'blue', 'white', 'gold', 'red', 'green', 'unknown']) {
+      expect(teeColorFor(name).rgb).toMatch(/^#[0-9a-f]{6}$/i);
+    }
+  });
+});
+
+describe('teeMarkerIconUrl — bundled marker asset path', () => {
+  it('builds the relative asset path for each canonical slug', () => {
+    expect(teeMarkerIconUrl('black')).toBe('assets/tee-marker-black.png');
+    expect(teeMarkerIconUrl('neutral')).toBe('assets/tee-marker-neutral.png');
   });
 });
