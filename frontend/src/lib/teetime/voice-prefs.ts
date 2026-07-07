@@ -85,8 +85,10 @@ export function applyParsedWindows(
     if (match) {
       match.selected = true;
     } else {
+      // Suffix keeps ids unique if the same day+period is spoken twice in
+      // one utterance (duplicate React keys otherwise).
       additions.push({
-        id: `voice-${p.day}-${p.period ?? "day"}`,
+        id: `voice-${p.day}-${p.period ?? "day"}-${additions.length}`,
         label: capitalize(p.day),
         sub: p.period ?? "any time",
         start: times?.start ?? "07:00",

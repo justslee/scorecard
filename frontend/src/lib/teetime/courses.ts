@@ -93,19 +93,23 @@ export function toCourseOptions(
   const options: CourseOption[] = [];
   for (const r of results) {
     if (!r.name || !r.center) continue;
-    // Junk rows: a name with nothing left after stripping golf-generic
-    // words ("Golf Course") isn't identifying anything — skip it. A real
-    // name like "Presidio Golf Course" keeps "presidio" and survives.
-    if (!hasIdentifyingTokens(r.name)) continue;
     const nameKey = r.name.toLowerCase();
+    const favorite = favIds.has(r.id) || favNames.has(nameKey);
+    const muni = muniFromAddress(r.address) || r.city || "";
+    // Junk rows: an all-generic name ("Golf Course") identifies nothing —
+    // skip it UNLESS something else identifies it: the golfer favorited it,
+    // or it carries a place ("Golf Course · Tenafly" is honest). Legit
+    // all-generic names ("The Country Club", Brookline) keep their address,
+    // so they survive; bare identity-free OSM ways don't.
+    if (!hasIdentifyingTokens(r.name) && !favorite && !muni) continue;
     if (seen.has(nameKey)) continue;
     seen.add(nameKey);
     options.push({
       id: r.id,
       name: r.name,
-      muni: muniFromAddress(r.address) || r.city || "",
+      muni,
       distance: round1(haversineMiles(origin.lat, origin.lng, r.center.lat, r.center.lng)),
-      favorite: favIds.has(r.id) || favNames.has(nameKey),
+      favorite,
       selected: false,
     });
   }

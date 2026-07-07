@@ -214,9 +214,17 @@ export default function TeeTimePage() {
   // radius only re-fetches on GROWTH) — reconcile the list against the new
   // ceiling immediately so a shrink is honest without waiting on a network
   // round-trip. Selected/favorited/hand-added rows are never pruned.
+  // Lower the fetched-radius watermark alongside the prune, so growing BACK
+  // to a previously-covered radius refetches and the pruned rows return
+  // (review finding: shrink 15→5→15 used to leave the list thinned).
   useEffect(() => {
     (() => {
       setCourses((cs) => (cs.length > 0 ? reconcileCourseOptions(cs, cs, { maxMiles }) : cs));
+      const shrunk = radiusMetersForMiles(maxMiles);
+      const last = lastFetched.current;
+      if (last && shrunk < last.radius) {
+        lastFetched.current = { ...last, radius: shrunk };
+      }
     })();
   }, [maxMiles]);
 

@@ -499,6 +499,10 @@ export class RealtimeCaddieClient {
         break;
       }
       case 'response.function_call_arguments.done': {
+        // Same pre-open gate as the transcript events: a not-yet-adopted warm
+        // session must never dispatch tools (defense in depth — no audio can
+        // reach the model pre-open, so nothing should arrive here anyway).
+        if (!this.opened) break;
         void this.runTool(evt);
         break;
       }

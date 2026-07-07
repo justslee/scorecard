@@ -56,7 +56,7 @@ describe("applyParsedWindows", () => {
 
   it("creates a window when nothing on the list fits", () => {
     const next = applyParsedWindows(WINDOWS, [{ day: "friday", period: "twilight" }]);
-    const added = next.find((w) => w.id === "voice-friday-twilight");
+    const added = next.find((w) => w.id.startsWith("voice-friday-twilight"));
     expect(added).toMatchObject({ label: "Friday", start: "16:00", end: "19:00", selected: true });
     expect(next.filter((w) => w.selected)).toHaveLength(1);
   });
@@ -67,7 +67,7 @@ describe("applyParsedWindows", () => {
 
   it("stamps a new window with the real ISO date for its spoken day (fixed `from`)", () => {
     const next = applyParsedWindows(WINDOWS, [{ day: "friday", period: "twilight" }], WED);
-    expect(next.find((w) => w.id === "voice-friday-twilight")?.date).toBe("2026-07-03");
+    expect(next.find((w) => w.id.startsWith("voice-friday-twilight"))?.date).toBe("2026-07-03");
   });
 
   it("a matched window keeps its EXISTING date — the spoken day selected it, didn't move it", () => {

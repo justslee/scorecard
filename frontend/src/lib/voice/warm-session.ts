@@ -170,11 +170,17 @@ export class WarmSessionManager {
    *  client has already been consumed or nothing is warming. */
   teardown(): void {
     this.cancelDeadline();
-    this.client?.stop();
+    // Detach + go DORMANT BEFORE stop(): stop() can fire onStatus('closed')
+    // SYNCHRONOUSLY, which re-enters onClientStatus → teardown(). With the
+    // state already cleared that re-entry no-ops instead of recursing
+    // (designer-review crash: a failing warm connect on /round/new blew the
+    // call stack on the first tap).
+    const client = this.client;
     this.client = null;
     this.intent = null;
     this.observer = null;
     this.state = 'dormant';
+    client?.stop();
   }
 
   /** Browser went offline mid-warm — never hold a billed zombie connection. */

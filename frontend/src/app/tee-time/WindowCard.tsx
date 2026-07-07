@@ -73,7 +73,9 @@ export default function WindowCard({ win, accent, onToggle, onEdit, onPickDate, 
   const endMin = hhmmToMin(win.end);
   const selected = win.selected;
   const fg = selected ? T.paper : T.ink;
-  const fgSoft = selected ? "rgba(244,241,234,0.6)" : T.pencilSoft;
+  // T.pencil (not pencilSoft) on unselected paper: pencilSoft measures ~2.9:1
+  // against T.paper — illegible in sunlight (designer review, WCAG AA).
+  const fgSoft = selected ? "rgba(244,241,234,0.6)" : T.pencil;
 
   const fracFromClientX = (clientX: number, rectLeft: number, rectWidth: number) =>
     rectWidth > 0 ? (clientX - rectLeft) / rectWidth : 0;
@@ -154,7 +156,11 @@ export default function WindowCard({ win, accent, onToggle, onEdit, onPickDate, 
                 fontWeight: 600,
                 color: fgSoft,
                 textTransform: "uppercase" as const,
-                padding: "6px 4px",
+                // Generous padding + negative margin: ~44pt hit target (the
+                // chip is the ONLY way to the date picker) without shifting
+                // the visual layout (designer review).
+                padding: "14px 10px",
+                margin: "-8px -6px",
                 cursor: "pointer",
                 whiteSpace: "nowrap" as const,
               }}

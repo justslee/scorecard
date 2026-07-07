@@ -146,6 +146,9 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
           dispatch({ type: 'DISCONNECTED' });
           clientRef.current = null;
           everConnectedRef.current = false;
+          // Allow a fresh warm() so the NEXT press is also instant, not just
+          // the first press of the session (review finding).
+          warmStartedRef.current = false;
         } else {
           // Tier-1 failure condition #2: ICE/SDP failed before going live.
           degradeToText('CONNECT_FAILED');

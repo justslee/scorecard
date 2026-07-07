@@ -273,4 +273,34 @@ describe('WarmSessionManager — teardown()', () => {
     manager.teardown();
     expect(clients[0].stop).not.toHaveBeenCalled();
   });
+
+  it('does NOT recurse when stop() synchronously re-fires onStatus("closed") — the real client does this', () => {
+    // Designer-review crash: teardown() → client.stop() → onStatus('closed')
+    // → onClientStatus → teardown() → … blew the call stack on any failing
+    // warm connect. State must flip to DORMANT before stop() so the
+    // re-entrant call no-ops.
+    const { manager, clients } = makeManager();
+    manager.warm(SETUP);
+    const client = clients[0];
+    client.stop.mockImplementation(() => {
+      client.emitStatus('closed'); // synchronous, like the real cleanup()
+    });
+    expect(() => manager.teardown()).not.toThrow();
+    expect(client.stop).toHaveBeenCalledTimes(1);
+    expect(manager.getState()).toBe('dormant');
+  });
+
+  it('does NOT recurse when a mid-warm failure status triggers teardown and stop() re-fires "closed"', () => {
+    const { manager, clients } = makeManager();
+    manager.warm(SETUP);
+    const client = clients[0];
+    client.stop.mockImplementation(() => {
+      client.emitStatus('closed');
+    });
+    // A failing warm connect surfaces as onStatus('error') → onClientStatus
+    // → teardown() → stop() → synchronous 'closed' → must no-op.
+    expect(() => client.emitStatus('error')).not.toThrow();
+    expect(client.stop).toHaveBeenCalledTimes(1);
+    expect(manager.getState()).toBe('dormant');
+  });
 });
