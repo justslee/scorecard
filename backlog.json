@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-06",
+  "updated": "2026-07-07",
   "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle).",
   "items": [
     {
@@ -1504,6 +1504,61 @@
       "depends_on": [],
       "why": "Owner 2026-07-06 (screenshot, hole 4): the satellite map shows 'Loading map\u2026' on every hole swipe because the native map remounts per hole. Fix: ONE persistent @capacitor/google-maps instance mounted for the whole round; hole swipes move the camera to the next hole's bounds (near-instant, tiles cached); pre-warm adjacent holes' tiles when idle. NOT 18 map instances (memory). Respect the onMapReady crash lesson: every native call gated on map readiness; a long-lived instance reduces create/destroy churn. Pairs with tee-marker-on-map (same component).",
       "spec": ""
+    },
+    {
+      "id": "voice-keyterm-boosting",
+      "title": "Deepgram keyterm boosting (players, courses, golf vocab)",
+      "type": "minor",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Voice audit P1.1 (specs/voice-agent-audit.md): nova-3 keyterm prompting on live+batch calls \u2014 bias STT with player names, course names, golf terms. Cheapest accuracy win; SOTA agents always send domain vocabulary.",
+      "spec": "specs/voice-agent-audit.md"
+    },
+    {
+      "id": "voice-tts-sheet-replies",
+      "title": "Spoken caddie replies in the sheets (TTS + tap-to-silence)",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Voice audit P1.2: the caddie only talks in the realtime orb; sheet answers are silent text. TTS playback (Aura/OpenAI via backend proxy), persona-aware, tap-to-silence. Biggest UX gap vs the 'constant assistant' premise.",
+      "spec": "specs/voice-agent-audit.md"
+    },
+    {
+      "id": "voice-auto-send-endpointing",
+      "title": "Auto-send on end-of-speech (UtteranceEnd)",
+      "type": "major",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Voice audit P1.3: one tap \u2192 speak \u2192 it sends itself after ~1.2s silence (Deepgram endpointing events already on the socket). Tap-to-send stays as manual override.",
+      "spec": "specs/voice-agent-audit.md"
+    },
+    {
+      "id": "voice-telemetry",
+      "title": "Voice telemetry \u2014 transport/fallback/latency events",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Voice audit P1.4: zero visibility today \u2014 the OWNER discovered the iOS live-dictation fallback. Structured client events (transport, live-vs-fallback, latency, error class) logged to the backend.",
+      "spec": "specs/voice-agent-audit.md"
+    },
+    {
+      "id": "course-elevation-ingestion",
+      "title": "Real per-hole elevation (DEM at course-ingest time)",
+      "type": "minor",
+      "priority": 5,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "The Elev tile was a hardcoded fake (+3ft on every hole) and is now replaced by real Gusts. To bring an HONEST Elev tile + real plays-like model back: fetch elevation profiles (e.g. Google Elevation/open DEM) for mapped courses at ingest, store per-hole tee/green deltas.",
+      "spec": "specs/voice-agent-audit.md"
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
