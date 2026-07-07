@@ -3,6 +3,27 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — caddie-auto-shot-reco follow-up: fixed a review-caught race (SILENT fix, integration/next, DONE)
+
+eng-lead's review of `e5a9526` found ONE blocking correctness bug (idempotency, honest-
+fallback, TTS gating, and the `openingGenRef` deviation were all confirmed correct): the
+in-flight guard (`voiceAnswer || isThinking || isListening`) only ran synchronously at
+effect-open time, BEFORE the up-to-6s GPS await. If the golfer tapped the mic and asked their
+own question DURING that wait, the GPS continuation would still fire — aborting the user's
+in-flight stream via `streamAbortRef` and overwriting their transcript with the canned
+opening question. Reachable on the single most common path (fresh open, empty history).
+
+Fix (`e8141d7`): re-check pristine-idle state via REFS (`streamAbortRef`, `recorderRef`,
+`convHistoryRef`) immediately after the gen check, before touching transcript/askCaddie — bail
+silently if any turn is in flight, recording, or already completed. Added case (f) to
+`CaddieSheet.session.test.tsx`: a hand-controlled deferred holds the GPS fix pending while the
+golfer's own turn starts and streams, then the GPS resolves — asserts no second
+`sessionVoiceStream` call, the auto question never renders, and the user's turn completes
+untouched (answer, history, TTS, follow-up, mic re-arm). Gates all green: `npm run lint`
+clean, `npx tsc --noEmit` clean, `npm run build` succeeded, `voice-tests/runner.ts --smoke` →
+274/274, `vitest run CaddieSheet.session.test.tsx` → 22/22, full `vitest run` → 1573/1573.
+Pushed to `integration/next`. Silent fix (bug never shipped past review) — rides the bundle.
+
 ## 2026-07-07 — caddie-auto-shot-reco: Ask Caddie auto-fires opening shot rec on open (NOTICEABLE — integration/next, DONE)
 
 Implemented `specs/caddie-auto-shot-reco-plan.md` verbatim (one deviation, noted below).
