@@ -8,8 +8,8 @@ import { Waveform } from "@/components/yardage/Voice";
 import { searchTeeTimes, bookTeeTime } from "@/lib/teetime/client";
 import type { TeeTimeSlot, TeeTimeQuery, BookingResult } from "@/lib/teetime/types";
 import {
-  fetchNearbyCourseOptions,
-  mergeCourseOptions,
+  reconcileCourseOptions,
+  createCourseFetchSession,
   addCourseOption,
   courseOptionFromSelection,
   radiusMetersForMiles,
@@ -21,6 +21,7 @@ import {
 } from "@/lib/teetime/courses";
 import { buildTeeTimeQueries } from "@/lib/teetime/query";
 import { readLastKnownArea, acquireArea } from "@/lib/teetime/location";
+import { defaultWindows, nextDefaultWindow, weekdayFromLabel, weekdayName } from "@/lib/teetime/dates";
 import CourseSearch, { type CourseSelectPayload } from "@/components/CourseSearch";
 import { isFavorite } from "@/lib/course-favorites";
 import { getPlayers, getGolferProfileAsync } from "@/lib/api";
@@ -36,6 +37,7 @@ import {
   applyPartySize,
   teeTimeAckLine,
 } from "@/lib/teetime/voice-prefs";
+import WindowCard from "./WindowCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,6 +49,9 @@ interface TimeWindow {
   sub: string;
   start: string;
   end: string;
+  /** Real ISO date (YYYY-MM-DD) — the source of truth for WHEN this window
+   *  searches. `label`/`sub` are display-only. */
+  date: string;
   selected: boolean;
 }
 
@@ -61,12 +66,6 @@ interface GroupMember {
 }
 
 // ─── Static defaults ──────────────────────────────────────────────────────────
-
-const DEFAULT_WINDOWS: TimeWindow[] = [
-  { id: "sat-am", label: "Saturday", sub: "early",  start: "06:30", end: "09:30", selected: true  },
-  { id: "sat-pm", label: "Saturday", sub: "midday", start: "11:00", end: "14:00", selected: false },
-  { id: "sun-am", label: "Sunday",   sub: "early",  start: "07:00", end: "10:00", selected: true  },
-];
 
 const DEFAULT_MAX_MILES = 15;
 
@@ -103,12 +102,19 @@ export default function TeeTimePage() {
   const [phase, setPhase] = useState<Phase>("prefs");
 
   // Prefs state — lifted so confirmed can read them.
-  const [windows, setWindows] = useState<TimeWindow[]>(DEFAULT_WINDOWS);
+  const [windows, setWindows] = useState<TimeWindow[]>(() => defaultWindows());
   // Courses start EMPTY — never a fake list. Real nearby courses + real
   // favorites load in; until then the page says what's happening honestly.
   const [courses, setCourses] = useState<CourseOption[]>([]);
   const [courseLoad, setCourseLoad] = useState<CourseLoadState>("locating");
   const [maxMiles, setMaxMiles] = useState(DEFAULT_MAX_MILES);
+  // Latest maxMiles, readable from the long-lived fetch session's callback
+  // (which must never close over a stale render's value).
+  const maxMilesRef = useRef(maxMiles);
+  useEffect(() => { maxMilesRef.current = maxMiles; }, [maxMiles]);
+  // Once the golfer touches the course list (toggles or hand-adds a course),
+  // the first-load auto-pre-selection (nearest-3 / favorites) never re-applies.
+  const coursesTouchedRef = useRef(false);
   const [group, setGroup] = useState<GroupMember[]>([SELF_MEMBER]);
   // Price ceiling — only voice sets this today ("under eighty dollars").
   const [maxPriceUsd, setMaxPriceUsd] = useState<number | null>(null);
@@ -168,25 +174,51 @@ export default function TeeTimePage() {
   }, [maxMiles]);
 
   // Fetch nearby courses whenever the area changes or the radius grows past
-  // what we've already covered. Fresh results MERGE into the list — the
-  // golfer's toggles and hand-added courses are never clobbered.
+  // what we've already covered. The session is abort-hardened (mirrors
+  // course-search-session's pattern): if two fetches are ever in flight back
+  // to back, a stale (older) one's result can never land over a newer one's.
+  // Fresh results reconcile into the list — new courses append (golfer's
+  // toggles and hand-added courses are never clobbered), and rows beyond the
+  // CURRENT drive radius that the golfer never selected/favorited are pruned.
   const lastFetched = useRef<{ area: string; radius: number } | null>(null);
+  // Built once, in an effect (never during render) — its callback reads the
+  // refs above fresh on every call, however late it lands.
+  const fetchSession = useRef<ReturnType<typeof createCourseFetchSession> | null>(null);
+  useEffect(() => {
+    const session = createCourseFetchSession({
+      onResult: (result, target) => {
+        lastFetched.current = target;
+        setCourses((prev) => reconcileCourseOptions(prev, result.options, {
+          maxMiles: maxMilesRef.current,
+          touched: coursesTouchedRef.current,
+        }));
+        setCourseLoad(loadStateAfterFetch(result.failed, result.options.length));
+      },
+    });
+    fetchSession.current = session;
+    return () => { session.cancel(); fetchSession.current = null; };
+  }, []);
+
   useEffect(() => {
     if (!area) return;
     const last = lastFetched.current;
     if (last && last.area === area && radiusM <= last.radius) return;
-    let cancelled = false;
-    (async () => {
+    (() => {
       setCourseLoad((l) => (l === "done" ? l : "loading"));
       const [lat, lng] = area.split(",").map(Number);
-      const { options, failed } = await fetchNearbyCourseOptions(lat, lng, radiusM);
-      if (cancelled) return;
-      lastFetched.current = { area, radius: radiusM };
-      setCourses((prev) => mergeCourseOptions(prev, options));
-      setCourseLoad(loadStateAfterFetch(failed, options.length));
+      fetchSession.current?.fetch({ area, radius: radiusM }, lat, lng);
     })();
-    return () => { cancelled = true; };
   }, [area, radiusM]);
+
+  // The golfer can shrink "Max drive" without a new fetch ever firing (the
+  // radius only re-fetches on GROWTH) — reconcile the list against the new
+  // ceiling immediately so a shrink is honest without waiting on a network
+  // round-trip. Selected/favorited/hand-added rows are never pruned.
+  useEffect(() => {
+    (() => {
+      setCourses((cs) => (cs.length > 0 ? reconcileCourseOptions(cs, cs, { maxMiles }) : cs));
+    })();
+  }, [maxMiles]);
 
   // Results.
   const [slots, setSlots] = useState<TeeTimeSlot[]>([]);
@@ -210,6 +242,7 @@ export default function TeeTimePage() {
         setGroup={setGroup}
         roster={roster}
         setMaxPriceUsd={setMaxPriceUsd}
+        coursesTouchedRef={coursesTouchedRef}
         onBack={() => router.push("/")}
         onDispatch={() => setPhase("searching")}
       />
@@ -270,6 +303,9 @@ interface PrefsProps {
   /** Real saved playing partners — the invite list. Empty when none saved. */
   roster: GroupMember[];
   setMaxPriceUsd: (p: number | null) => void;
+  /** Flips true the first time the golfer touches the course list — gates
+   *  the auto-pre-selection convenience from re-applying after that. */
+  coursesTouchedRef: React.MutableRefObject<boolean>;
   onBack: () => void;
   onDispatch: () => void;
 }
@@ -280,13 +316,14 @@ type TalkState = "idle" | "listening" | "thinking";
 function Prefs({
   accent, windows, setWindows, courses, setCourses, courseLoad, area,
   maxMiles, setMaxMiles, group, setGroup, roster, setMaxPriceUsd,
-  onBack, onDispatch,
+  coursesTouchedRef, onBack, onDispatch,
 }: PrefsProps) {
   const [showRoster, setShowRoster] = useState(false);
   const [showCourseSearch, setShowCourseSearch] = useState(false);
 
   /** "+ Add course" pick — appended with an honest distance, de-duped by name. */
   const addCourse = (payload: CourseSelectPayload) => {
+    coursesTouchedRef.current = true;
     let origin: { lat: number; lng: number } | null = null;
     if (area) {
       const [lat, lng] = area.split(",").map(Number);
@@ -419,18 +456,46 @@ function Prefs({
     }
   }, [talkState, courses, applyParsed, say]);
 
-  const toggleWin    = (id: string) => setWindows(windows.map((w) => (w.id === id ? { ...w, selected: !w.selected } : w)));
-  const toggleCourse = (id: string) => setCourses(courses.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c)));
+  const toggleWin = (id: string) => setWindows(windows.map((w) => (w.id === id ? { ...w, selected: !w.selected } : w)));
+  const toggleCourse = (id: string) => {
+    coursesTouchedRef.current = true;
+    setCourses(courses.map((c) => (c.id === id ? { ...c, selected: !c.selected } : c)));
+  };
 
-  /** "Add another window" — appends a new 3-hour window at 08:00–11:00 by default. */
+  /** Slide-to-edit — dragging a window's track (a preset or a custom one)
+   *  keeps its label ("Saturday") but flips `sub` to "custom" so the card
+   *  reads honestly as adjusted rather than the original preset time. */
+  const editWindow = (id: string, start: string, end: string) =>
+    setWindows(windows.map((w) => (w.id === id ? { ...w, start, end, sub: "custom" } : w)));
+
+  /** Calendar date pick — updates the real date; if the picked day's weekday
+   *  differs from the window's label, the label follows the picked weekday
+   *  (a Saturday window moved to a Wednesday now reads "Wednesday"). */
+  const pickWindowDate = (id: string, iso: string) =>
+    setWindows(windows.map((w) => {
+      if (w.id !== id) return w;
+      const pickedWeekday = new Date(`${iso}T12:00:00`).getDay();
+      const sameWeekday = weekdayFromLabel(w.label) === pickedWeekday;
+      return sameWeekday ? { ...w, date: iso } : { ...w, date: iso, label: weekdayName(pickedWeekday), sub: "custom" };
+    }));
+
+  /** Quiet delete — never drops the last window. */
+  const deleteWindow = (id: string) => {
+    if (windows.length <= 1) return;
+    setWindows(windows.filter((w) => w.id !== id));
+  };
+
+  /** "Add another window" — a real, DIFFERENT editable window every time
+   *  (never a duplicate stamp of the last one added). */
   const addWindow = () => {
-    const id = `custom-${Date.now()}`;
+    const slot = nextDefaultWindow(windows);
     setWindows([...windows, {
-      id,
-      label: "Custom",
-      sub: "window",
-      start: "08:00",
-      end: "11:00",
+      id: `custom-${Date.now()}`,
+      label: slot.label,
+      sub: slot.sub,
+      start: slot.start,
+      end: slot.end,
+      date: slot.date,
       selected: true,
     }]);
   };
@@ -503,7 +568,15 @@ function Prefs({
       <Section kicker="When" title="Windows" aside={<Kicker>{winCount} selected</Kicker>}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {windows.map((w) => (
-            <WindowChip key={w.id} win={w} accent={accent} onToggle={() => toggleWin(w.id)} />
+            <WindowCard
+              key={w.id}
+              win={w}
+              accent={accent}
+              onToggle={() => toggleWin(w.id)}
+              onEdit={(start, end) => editWindow(w.id, start, end)}
+              onPickDate={(date) => pickWindowDate(w.id, date)}
+              onDelete={() => deleteWindow(w.id)}
+            />
           ))}
           <button
             onClick={addWindow}
@@ -631,7 +704,7 @@ function Prefs({
       </Section>
 
       {/* ── Where ── */}
-      <Section kicker="Where" title="Courses" aside={courses.length > 0 ? <Kicker>{selectedCount} of {courses.length}</Kicker> : undefined}>
+      <Section kicker="Where" title="Courses" aside={courses.length > 0 ? <Kicker>{selectedCount} selected</Kicker> : undefined}>
         <div style={{ padding: "6px 2px 14px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
             <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500 }}>
@@ -796,7 +869,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
 
   // One query per selected window, each on its OWN day's next date.
   const queries: TeeTimeQuery[] = buildTeeTimeQueries({
-    windows: selectedWindows.map((w) => ({ label: w.label, start: w.start, end: w.end })),
+    windows: selectedWindows.map((w) => ({ label: w.label, start: w.start, end: w.end, date: w.date })),
     courseIds: selectedCourses.map((c) => c.id),
     partySize,
     maxDistanceMiles: maxMiles,
@@ -1288,37 +1361,6 @@ function Transcript({ accent, lines }: { accent: string; lines: Array<{ who: "lo
   );
 }
 
-function WindowChip({ win, accent, onToggle }: { win: TimeWindow; accent: string; onToggle: () => void }) {
-  const startH = parseInt(win.start.slice(0, 2));
-  const endH   = parseInt(win.end.slice(0, 2));
-  return (
-    <button
-      onClick={onToggle}
-      style={{ textAlign: "left" as const, padding: "10px 12px", borderRadius: 10, background: win.selected ? T.ink : T.paper, color: win.selected ? T.paper : T.ink, border: `1px solid ${win.selected ? T.ink : T.hairline}`, cursor: "pointer", width: "100%" }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 16, letterSpacing: -0.2 }}>{win.label}</div>
-        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.2, color: win.selected ? "rgba(244,241,234,0.6)" : T.pencilSoft, textTransform: "uppercase" as const }}>
-          {win.sub}
-        </div>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-        <div style={{ fontFamily: T.mono, fontSize: 11, letterSpacing: 0.5, fontVariantNumeric: "tabular-nums", color: win.selected ? T.paper : T.ink }}>
-          {win.start} → {win.end}
-        </div>
-      </div>
-      <div style={{ position: "relative", height: 14, marginTop: 6 }}>
-        <div style={{ position: "absolute", left: 0, right: 0, top: 6, height: 1, background: win.selected ? "rgba(244,241,234,0.25)" : T.hairline }} />
-        {[6, 9, 12, 15, 18, 21].map((h) => {
-          const pct = ((h - 6) / 15) * 100;
-          return <div key={h} style={{ position: "absolute", left: `${pct}%`, top: 2, width: 1, height: 9, background: win.selected ? "rgba(244,241,234,0.28)" : T.hairline }} />;
-        })}
-        <div style={{ position: "absolute", left: `${((startH - 6) / 15) * 100}%`, width: `${((endH - startH) / 15) * 100}%`, top: 4, height: 5, borderRadius: 1, background: win.selected ? accent : T.ink }} />
-      </div>
-    </button>
-  );
-}
-
 function GroupChip({ p, accent }: { p: GroupMember; accent: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px 6px 6px", borderRadius: 99, background: p.self ? `${accent}14` : T.paperDeep, border: `1px solid ${p.self ? accent : T.hairline}` }}>
@@ -1339,11 +1381,11 @@ function CourseRow({ c, accent, onToggle, first }: { c: CourseOption; accent: st
   return (
     <button
       onClick={onToggle}
-      style={{ display: "grid", gridTemplateColumns: "22px 1fr auto", gap: 10, alignItems: "center", padding: "10px 0", width: "100%", border: "none", background: "transparent", cursor: "pointer", textAlign: "left" as const, borderTop: first ? "none" : `1px dashed ${T.hairlineSoft}` }}
+      style={{ display: "grid", gridTemplateColumns: "26px 1fr auto", gap: 10, alignItems: "center", padding: "13px 2px", width: "100%", border: "none", background: "transparent", cursor: "pointer", textAlign: "left" as const, borderTop: first ? "none" : `1px dashed ${T.hairlineSoft}` }}
     >
-      <div style={{ width: 16, height: 16, borderRadius: 3, border: `1.5px solid ${c.selected ? T.ink : T.hairline}`, background: c.selected ? T.ink : T.paper, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 21, height: 21, borderRadius: 4, border: `1.5px solid ${c.selected ? T.ink : T.hairline}`, background: c.selected ? T.ink : T.paper, display: "flex", alignItems: "center", justifyContent: "center" }}>
         {c.selected && (
-          <svg width="9" height="9" viewBox="0 0 10 10">
+          <svg width="11" height="11" viewBox="0 0 10 10">
             <path d="M2 5 L4 7 L8 3" stroke={T.paper} strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}

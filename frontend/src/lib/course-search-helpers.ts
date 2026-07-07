@@ -99,6 +99,16 @@ export function courseNameKey(name: string): string {
   return tokenizeCourseName(name).join(" ");
 }
 
+/**
+ * True when the name has at least one token left after golf-generic words
+ * are stripped — filters junk rows like a bare "Golf Course" that names
+ * nothing, while keeping "Presidio Golf Course" (has "presidio"). Reuses the
+ * same stopword list as the query-side prefix filter above.
+ */
+export function hasIdentifyingTokens(name: string): boolean {
+  return tokenizeCourseName(name).some((t) => !COURSE_QUERY_STOPWORDS.has(t));
+}
+
 // ---------------------------------------------------------------------------
 // Deduplication
 // ---------------------------------------------------------------------------

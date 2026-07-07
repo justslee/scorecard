@@ -22,12 +22,14 @@ import {
   MIN_RADIUS_METERS,
   MAX_RADIUS_METERS,
   mergeCourseOptions,
+  reconcileCourseOptions,
   addCourseOption,
   courseOptionFromSelection,
   loadStateAfterLocate,
   loadStateAfterFetch,
   emptyCoursesNote,
   fetchNearbyCourseOptions,
+  createCourseFetchSession,
   type CourseOption,
 } from "./courses";
 
@@ -83,6 +85,17 @@ describe("toCourseOptions", () => {
       ORIGIN,
     );
     expect(options.map((o) => o.id)).toEqual(["ok"]);
+  });
+
+  it("rejects a junk row whose name carries no identifying token", () => {
+    const options = toCourseOptions(
+      [
+        result({ id: "junk", name: "Golf Course" }),          // all-stopword — filtered
+        result({ id: "real", name: "Presidio Golf Course" }), // "presidio" survives — kept
+      ],
+      ORIGIN,
+    );
+    expect(options.map((o) => o.id)).toEqual(["real"]);
   });
 
   it("de-duplicates by name and caps the list", () => {
@@ -202,6 +215,104 @@ describe("mergeCourseOptions", () => {
   it("returns the same array when nothing new arrives (no pointless re-render)", () => {
     const existing = [option({ id: "a", name: "Alpha" })];
     expect(mergeCourseOptions(existing, [option({ id: "a", name: "Alpha" })])).toBe(existing);
+  });
+
+  it("touched-guard: once the golfer has touched the list, additions NEVER auto-select — even favorites", () => {
+    const existing = [option({ id: "a", name: "Alpha", selected: true })];
+    const merged = mergeCourseOptions(
+      existing,
+      [option({ id: "f", name: "Fav Club", favorite: true })],
+      { touched: true },
+    );
+    expect(merged.find((o) => o.id === "f")?.selected).toBe(false);
+  });
+});
+
+describe("reconcileCourseOptions", () => {
+  it("drops a far, unselected, non-favorite row when the radius shrinks", () => {
+    const existing = [
+      option({ id: "near", name: "Near", distance: 5 }),
+      option({ id: "far", name: "Far", distance: 20 }),
+    ];
+    const next = reconcileCourseOptions(existing, existing, { maxMiles: 10 });
+    expect(next.map((o) => o.id)).toEqual(["near"]);
+  });
+
+  it("keeps a far row the golfer explicitly selected", () => {
+    const existing = [option({ id: "far", name: "Far", distance: 20, selected: true })];
+    const next = reconcileCourseOptions(existing, existing, { maxMiles: 10 });
+    expect(next.map((o) => o.id)).toEqual(["far"]);
+  });
+
+  it("keeps a far favorited row", () => {
+    const existing = [option({ id: "far", name: "Far", distance: 20, favorite: true })];
+    const next = reconcileCourseOptions(existing, existing, { maxMiles: 10 });
+    expect(next.map((o) => o.id)).toEqual(["far"]);
+  });
+
+  it("keeps a hand-added row (distance null) regardless of the radius", () => {
+    const existing = [option({ id: "hand", name: "Hand-added", distance: null })];
+    const next = reconcileCourseOptions(existing, existing, { maxMiles: 1 });
+    expect(next.map((o) => o.id)).toEqual(["hand"]);
+  });
+
+  it("a voice-widened far course (selected, beyond the OLD radius) survives a later shrink back", () => {
+    // Simulates: voice names a far course → selected + radius widened to reach
+    // it → golfer later drags "Max drive" back down. The named course must
+    // still be there — never silently dropped.
+    const existing = [option({ id: "far", name: "Far Course", distance: 30, selected: true })];
+    const next = reconcileCourseOptions(existing, existing, { maxMiles: 15 });
+    expect(next.map((o) => o.id)).toEqual(["far"]);
+  });
+});
+
+describe("createCourseFetchSession", () => {
+  it("applies the result for the live target", async () => {
+    const seen: string[] = [];
+    const session = createCourseFetchSession(
+      { onResult: (_r, target) => seen.push(target.area) },
+      async () => ({ options: [], failed: false }),
+    );
+    session.fetch({ area: "a", radius: 1000 }, 1, 1);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(seen).toEqual(["a"]);
+  });
+
+  it("drops a STALE result that resolves after a newer fetch superseded it", async () => {
+    // Two fetches start back to back; the FIRST (older) resolves SECOND —
+    // its result must never land over the newer one's.
+    const seen: string[] = [];
+    let resolveFirst!: (r: { options: never[]; failed: boolean }) => void;
+    const fetchFn = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise((r) => { resolveFirst = r; }))
+      .mockImplementationOnce(async () => ({ options: [], failed: false }));
+
+    const session = createCourseFetchSession(
+      { onResult: (_r, target) => seen.push(target.area) },
+      fetchFn,
+    );
+    session.fetch({ area: "old", radius: 1000 }, 1, 1);
+    session.fetch({ area: "new", radius: 1000 }, 2, 2); // supersedes "old"
+    await new Promise((r) => setTimeout(r, 0)); // let the "new" fetch settle first
+    resolveFirst({ options: [], failed: false }); // the stale "old" fetch settles late
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(seen).toEqual(["new"]); // "old" never applied
+  });
+
+  it("cancel() drops any still-in-flight result", async () => {
+    const seen: string[] = [];
+    let resolve!: (r: { options: never[]; failed: boolean }) => void;
+    const session = createCourseFetchSession(
+      { onResult: (_r, target) => seen.push(target.area) },
+      () => new Promise((r) => { resolve = r; }),
+    );
+    session.fetch({ area: "a", radius: 1000 }, 1, 1);
+    session.cancel();
+    resolve({ options: [], failed: false });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(seen).toEqual([]);
   });
 });
 

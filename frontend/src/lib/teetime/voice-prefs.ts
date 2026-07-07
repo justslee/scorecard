@@ -11,7 +11,7 @@ import type {
   TeeTimePrefsParseResultValidated,
 } from "@/lib/voice/schemas";
 import type { TeeTimeDay, TeeTimePeriod } from "@/lib/voice/parseTeeTimePrefs";
-import { weekdayFromLabel } from "./dates";
+import { weekdayFromLabel, nextDateForWeekday } from "./dates";
 import type { CourseOption } from "./courses";
 
 /** Structurally identical to the page's TimeWindow / GroupMember shapes. */
@@ -21,6 +21,8 @@ export interface VoicePrefWindow {
   sub: string;
   start: string;
   end: string;
+  /** Real ISO date the window searches — the source of truth for WHEN. */
+  date: string;
   selected: boolean;
 }
 
@@ -57,13 +59,16 @@ function capitalize(s: string): string {
 
 /**
  * Apply spoken windows to the prefs list. The utterance is the source of
- * truth for WHEN: matching existing windows are selected, everything else is
- * deselected, and a window is created when nothing on the list fits
- * ("Friday twilight"). No spoken windows → the list is returned untouched.
+ * truth for WHEN: matching existing windows are selected (keeping their
+ * existing date — the spoken day matched them, it didn't move them), a
+ * window is created when nothing on the list fits ("Friday twilight") and
+ * stamped with the next real date for that spoken day, and everything else
+ * is deselected. No spoken windows → the list is returned untouched.
  */
 export function applyParsedWindows(
   existing: VoicePrefWindow[],
   parsed: Array<{ day: TeeTimeDay; period: TeeTimePeriod | null }>,
+  from: Date = new Date(),
 ): VoicePrefWindow[] {
   if (parsed.length === 0) return existing;
 
@@ -86,6 +91,7 @@ export function applyParsedWindows(
         sub: p.period ?? "any time",
         start: times?.start ?? "07:00",
         end: times?.end ?? "17:00",
+        date: nextDateForWeekday(DAY_INDEX[p.day], from),
         selected: true,
       });
     }

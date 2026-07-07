@@ -16,10 +16,13 @@ import type { CourseOption } from "./courses";
 import { TeeTimePrefsParseResultSchema } from "@/lib/voice/schemas";
 
 const WINDOWS: VoicePrefWindow[] = [
-  { id: "sat-am", label: "Saturday", sub: "early",  start: "06:30", end: "09:30", selected: true  },
-  { id: "sat-pm", label: "Saturday", sub: "midday", start: "11:00", end: "14:00", selected: false },
-  { id: "sun-am", label: "Sunday",   sub: "early",  start: "07:00", end: "10:00", selected: true  },
+  { id: "sat-am", label: "Saturday", sub: "early",  start: "06:30", end: "09:30", date: "2026-07-04", selected: true  },
+  { id: "sat-pm", label: "Saturday", sub: "midday", start: "11:00", end: "14:00", date: "2026-07-04", selected: false },
+  { id: "sun-am", label: "Sunday",   sub: "early",  start: "07:00", end: "10:00", date: "2026-07-05", selected: true  },
 ];
+
+// Wed Jul 1 2026 → next Sat = 07-04, next Sun = 07-05, next Fri = 07-03.
+const WED = new Date(2026, 6, 1, 10, 0);
 
 const COURSES: CourseOption[] = [
   { id: "presidio", name: "Presidio Golf Course", muni: "SF", distance: 4.1,  favorite: true,  selected: true  },
@@ -60,6 +63,16 @@ describe("applyParsedWindows", () => {
 
   it("leaves the list untouched when nothing was spoken", () => {
     expect(applyParsedWindows(WINDOWS, [])).toBe(WINDOWS);
+  });
+
+  it("stamps a new window with the real ISO date for its spoken day (fixed `from`)", () => {
+    const next = applyParsedWindows(WINDOWS, [{ day: "friday", period: "twilight" }], WED);
+    expect(next.find((w) => w.id === "voice-friday-twilight")?.date).toBe("2026-07-03");
+  });
+
+  it("a matched window keeps its EXISTING date — the spoken day selected it, didn't move it", () => {
+    const next = applyParsedWindows(WINDOWS, [{ day: "sunday", period: "early" }], WED);
+    expect(next.find((w) => w.id === "sun-am")?.date).toBe("2026-07-05");
   });
 });
 

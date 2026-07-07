@@ -3,6 +3,69 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-06 — tee-time prefs rework: real dates, slide-to-edit windows, checklist fixes (NOTICEABLE — integration/next, DONE)
+
+`specs/tee-time-prefs-rework-plan.md`, both work items (one builder — same file overlap). Owner
+escalation: "the check list is buggy"; "+ Add another window" stamped identical un-editable
+cards; wants a date choice; wants to slide-edit existing windows.
+
+### Work item 1 — real dates + slide-to-edit
+- `lib/teetime/dates.ts`: `TimeWindow` now carries a real ISO `date` (source of truth for
+  WHEN); `defaultWindows(from)` factory replaces the `DEFAULT_WINDOWS` module constant
+  (`useState(() => defaultWindows())`); new `nextDefaultWindow(existing, from)` picks the
+  first free Sat/Sun slot template so a second "+ Add another window" is a DIFFERENT
+  editable window, never a duplicate stamp; new `weekdayName(weekday)`.
+- NEW `lib/teetime/window-slider.ts` (+22 unit tests) — all drag math (hhmmToMin/minToHhmm,
+  frac↔min snapping, `pickHandle` start/end/band disambiguation with edge bias, `applyDrag`
+  clamped to 1h–6h, no midnight cross) as pure functions, no DOM.
+- NEW `app/tee-time/WindowCard.tsx` replaces the static `WindowChip` — owns the pointer
+  handlers for the track (a taller ~24pt drag strip at the card bottom), the date chip
+  (opens `MiniCalendar`), and a quiet 44×44pt-hit-box `×` delete (guarded: never drops the
+  last window). **Tap vs drag:** pointerdown on the track picks a handle via `pickHandle`;
+  pointerup below a 6px movement threshold = a TAP → toggles the card (same as tapping
+  anywhere else on it); at/above threshold = a real drag, already live-applied via
+  `applyDrag` on every `pointermove` (haptic fires only when the computed value actually
+  changes — i.e. on each 30-min snap crossing). `setPointerCapture` + `touchAction: none` +
+  `stopPropagation` on the track keep it from fighting the card's own tap-to-toggle or the
+  page's scroll.
+- NEW `components/yardage/MiniCalendar.tsx` — dependency-free month grid (mono weekday
+  headers, serif day numerals, T.ink/T.hairline tokens, accent ring on selected day, past
+  days disabled) — no native `<input type="date">`, no picker dependency.
+- `lib/teetime/query.ts` / `voice-prefs.ts`: `date` threads through `buildTeeTimeQueries`
+  (used verbatim, falls back to label-derived date for older callers) and
+  `applyParsedWindows` (voice-added windows stamped with the real ISO date for their spoken
+  day; matched windows keep their existing date).
+
+### Work item 2 — course checklist fixes (2a–2f)
+- **2a** abort-hardened refetch: new `createCourseFetchSession` in `courses.ts` (mirrors
+  `course-search-session`'s AbortController + live-target-equality pattern) — a stale
+  fetch can never land over a newer one, race-tested.
+- **2b** touched-guard: `mergeCourseOptions` gains `{touched}` — once the golfer toggles or
+  hand-adds a course, the nearest-3/favorites auto-pre-selection never re-applies to later
+  merges.
+- **2c** kicker: "Where" section now reads "{n} selected" (was "{n} of {count}", which read
+  as a bug once favorites-beyond-cap exceeded the count).
+- **2d** junk-row filter: `toCourseOptions` rejects results with no identifying token after
+  stripping golf-generic words, via a new `hasIdentifyingTokens` in
+  `course-search-helpers.ts` (reuses `tokenizeCourseName`) — "Golf Course" filtered,
+  "Presidio Golf Course" kept.
+- **2e** new `reconcileCourseOptions(existing, incoming, {maxMiles, touched})` — prunes rows
+  beyond the current drive radius UNLESS hand-added/favorited/selected; wired to a dedicated
+  effect on `maxMiles` so a radius SHRINK re-filters immediately (no fetch needed) and a
+  voice-widened far course still survives a later shrink back.
+- **2f** tap targets: `CourseRow` padding 10px→13px, checkbox 16px→21px; WindowCard's date
+  chip/delete reviewed to the same standard.
+
+### Gates
+`tsc --noEmit` clean · `npm run lint` clean · `npx vitest run` 63 files / 1465 tests pass
+(22 new in `window-slider.test.ts`, plus new cases in `courses/query/voice-prefs.test.ts`) ·
+`voice-tests/runner.ts --smoke` 274/274 pass · `npm run build` succeeds.
+**Not run:** the `ios/SIMTEST.md` live WKWebView drag check — `/tee-time` sits behind Clerk
+AuthGate, and per SIMTEST.md itself sign-in can't be completed headless without real
+credentials, so a real-device pointer-capture/haptics pass on the drag gesture is still
+outstanding (relying on the window-slider unit tests for the math; the gesture wiring itself
+wants a real-device or authenticated-sim pass before it's fully proven).
+
 ## 2026-07-06 — course-search v2, Work Item A: backend search that finds Pebble Beach (NOTICEABLE — integration/next, DONE)
 
 `specs/course-search-v2-plan.md` Work Item A (backend + frontend lib). Owner
