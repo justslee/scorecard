@@ -1048,6 +1048,21 @@ async def _build_voice_prompt(
     )
     personality = await load_personality(persona_id)
 
+    # Personal grounding — mirror _build_session_voice_prompt so the orb's
+    # off-course answers (and the stateless in-round fallback) carry the same
+    # cross-round memory + handicap the session caddie has. Defensive: a DB
+    # hiccup here must never break the voice reply — degrade to no grounding.
+    memories_block = ""
+    profile = None
+    try:
+        memories = await memory_mod.get_top_memories(user_id)
+        memories_block = memory_mod.render_memories_for_prompt(memories)
+        profile = await memory_mod.get_player_profile(user_id)
+    except Exception:
+        log.exception("voice grounding fetch failed; continuing without it")
+        memories_block = ""
+        profile = None
+
     # hole_number None = off-course general chat (the Looper orb outside a
     # round): no hole context line — the caddie must not pretend to be on one.
     context_parts = (
@@ -1059,8 +1074,11 @@ async def _build_voice_prompt(
         context_parts.append(f"Distance to pin: {request.distance_yards} yards")
     if request.wind_speed_mph > 0:
         context_parts.append(f"Wind: {request.wind_speed_mph} mph from {request.wind_direction}°")
-    if request.handicap is not None:
-        context_parts.append(f"Player handicap: {request.handicap}")
+    effective_handicap = request.handicap
+    if effective_handicap is None and profile is not None and profile.handicap is not None:
+        effective_handicap = float(profile.handicap)
+    if effective_handicap is not None:
+        context_parts.append(f"Player handicap: {effective_handicap}")
 
     if request.club_distances:
         clubs_str = ", ".join(
@@ -1091,8 +1109,9 @@ async def _build_voice_prompt(
         })
     messages.append({"role": "user", "content": request.transcript})
 
+    memory_section = f"\n--- PLAYER MEMORY ---\n{memories_block}\n" if memories_block else ""
     system_prompt = f"""{personality.system_prompt}
-
+{memory_section}
 --- CURRENT SITUATION ---
 {context}
 

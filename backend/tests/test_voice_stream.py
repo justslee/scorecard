@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 
 from app.caddie.session import RoundSession
 from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
+from app.db.models import CaddieMemory, PlayerProfile
 from app.routes import caddie as caddie_routes
 from app.services.clerk_auth import current_user_id
 
@@ -375,3 +376,90 @@ async def test_build_session_voice_prompt_downgrades_invisible_persona_to_classi
     assert "Classic system prompt." in system_prompt
     assert "Current hole: #4" in system_prompt
     assert messages[-1] == {"role": "user", "content": "what club?"}
+
+
+# ── Gate-level: _build_voice_prompt personal grounding (brain parity) ──────
+# specs/looper-brain-parity-plan.md — the off-course orb (and the stateless
+# in-round fallback) must carry the same cross-round memory + handicap the
+# session caddie has, and must degrade gracefully (never break the reply)
+# when the DB reads fail.
+
+
+async def _fake_personality_visible_always(persona_id, user_id=None):
+    return True
+
+
+async def _fake_load_personality_classic(persona_id):
+    return CaddiePersonality(
+        id=persona_id, name="Classic", description="", avatar="🏌️",
+        system_prompt="Classic system prompt.",
+    )
+
+
+def _patch_persona(monkeypatch):
+    monkeypatch.setattr(caddie_routes, "personality_visible", _fake_personality_visible_always)
+    monkeypatch.setattr(caddie_routes, "load_personality", _fake_load_personality_classic)
+
+
+@pytest.mark.asyncio
+async def test_build_voice_prompt_grounds_in_memory_and_profile_handicap(monkeypatch):
+    _patch_persona(monkeypatch)
+
+    async def _fake_get_top_memories(user_id):
+        return [CaddieMemory(user_id=user_id, kind="tendency", summary="misses approaches short")]
+
+    async def _fake_get_player_profile(user_id):
+        return PlayerProfile(user_id=user_id, handicap=12)
+
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_top_memories", _fake_get_top_memories)
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_player_profile", _fake_get_player_profile)
+
+    request = VoiceCaddieRequest(transcript="how do I play this hole?", personality_id="classic", hole_number=None)
+    system_prompt, _messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
+
+    expected_bullet = caddie_routes.memory_mod.render_memories_for_prompt(
+        [CaddieMemory(user_id="user-1", kind="tendency", summary="misses approaches short")]
+    )
+    assert "--- PLAYER MEMORY ---" in system_prompt
+    assert expected_bullet in system_prompt
+    assert "Player handicap: 12" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_build_voice_prompt_no_memory_no_profile_stays_clean(monkeypatch):
+    _patch_persona(monkeypatch)
+
+    async def _fake_get_top_memories(user_id):
+        return []
+
+    async def _fake_get_player_profile(user_id):
+        return None
+
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_top_memories", _fake_get_top_memories)
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_player_profile", _fake_get_player_profile)
+
+    request = VoiceCaddieRequest(transcript="hi", personality_id="classic", hole_number=None)
+    system_prompt, _messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
+
+    assert "Classic system prompt." in system_prompt
+    assert system_prompt.rstrip().endswith(caddie_routes.HAZARD_GROUNDING_RULE)
+    assert "--- PLAYER MEMORY ---" not in system_prompt
+    assert "handicap" not in system_prompt.lower()
+
+
+@pytest.mark.asyncio
+async def test_build_voice_prompt_degrades_when_memory_fetch_raises(monkeypatch):
+    _patch_persona(monkeypatch)
+
+    async def _raising_get_top_memories(user_id):
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_top_memories", _raising_get_top_memories)
+
+    request = VoiceCaddieRequest(transcript="hi", personality_id="classic", hole_number=None)
+    system_prompt, messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
+
+    assert "Classic system prompt." in system_prompt
+    assert system_prompt.rstrip().endswith(caddie_routes.HAZARD_GROUNDING_RULE)
+    assert "--- PLAYER MEMORY ---" not in system_prompt
+    assert messages[-1] == {"role": "user", "content": "hi"}
