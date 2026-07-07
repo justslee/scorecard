@@ -3,6 +3,72 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-06 — course-search v2, Work Item A: backend search that finds Pebble Beach (NOTICEABLE — integration/next, DONE)
+
+`specs/course-search-v2-plan.md` Work Item A (backend + frontend lib). Owner
+escalation: search couldn't find "Pebble Beach" at all. Verified root cause:
+the un-anchored global OSM name-search leg was a planet-wide Overpass regex
+with no location filter — it always timed out (~11s, 0 results, live-verified
+2 attempts) and never contributed a result, while adding ~11s of latency to
+every cold query. Landed alongside Work Item B (full-screen search UI,
+already on `integration/next` — commits 16ff625/8b21f90); together these fix
+both owner complaints (can't find Pebble Beach + resize jank) — bundle-worthy
+for a joint approval ping.
+
+### What changed
+- `backend/app/routes/course_search.py` — killed the un-anchored OSM leg
+  entirely; OSM now runs ONLY anchored (around a Google Places/Mapbox
+  center), and even then only as **non-blocking** enrichment via FastAPI
+  `BackgroundTasks` (`_enrich_and_write_through`) so a slow/unreliable
+  Overpass mirror never adds interactive latency — facility siblings
+  (Bethpage Black/Red/Green) fill in for the *next* identical search instead.
+  Google Places is now the primary external leg; added a new internal
+  GolfAPI leg (`_search_golfapi`) that reuses `services/golfapi_cache.py`'s
+  cache-first, budget-guarded client (0 calls on cache hit / no key) —
+  Places + GolfAPI run concurrently via a new `_run_leg` timing/health
+  wrapper. Added `legHealth` (per-leg outcome/count/ms) to the `/search`
+  response — owner-testable on staging: `GET /api/courses/search?q=pebble
+  beach` and inspect `legHealth`.
+- Cache-poisoning fix: an empty result is negative-cached (5min) ONLY when
+  every attempted external leg was genuinely `ok`/`empty`; a leg
+  error/timeout is never cached, so one bad moment can't wedge a real course
+  out of the cache for 5 minutes. Policy documented in
+  `course_search_cache.py` (store stays a dumb TTL map; the route decides).
+- `course_finder.search_google_places` gets an additive `raise_on_error` flag
+  (default `False` — existing callers, incl. tee-time's
+  `AffiliateLinkProvider`, unaffected) + logs on HTTP failure, so a prod
+  key-not-enabled 403 is now visible in logs instead of a silent `[]`.
+- `frontend/src/lib/golf-api.ts` — collapsed `searchAllCourses`'s 3-leg
+  client fan-out (mapped + GolfAPI proxy + OSM) into ONE call to
+  `/api/courses/search` (backend now owns the whole pipeline). Public
+  signature, append-only `onResults`, client-side prefix gate + dedupe (as
+  defense in depth) all unchanged. Populates a per-row `sourceLabel`
+  (MAPPED/GOOGLE/GOLFAPI/OSM). Adds an 8s internal timeout via
+  `AbortSignal.any` (with a manual-relay fallback for older runtimes)
+  combined with the caller's signal, so a wedged backend can't hang search
+  past the next keystroke.
+- Deviation from the plan's literal pseudocode (noted, minimal/sound): when
+  the Mapbox-fallback path already ran the anchored OSM search inline
+  (nothing else matched), the background step just persists those hits
+  instead of re-running the same anchored OSM query a second time in the
+  background — avoids a redundant duplicate Overpass call; write-through
+  completeness is unchanged.
+
+### Tests
+- `test_course_search.py`: 48 → 59 (Pebble Beach repro table mirroring the
+  Bethpage one, cache-poisoning fix, `legHealth` incl. `caplog` on a raising
+  leg, non-blocking-enrichment scheduling, `_search_golfapi` mapping). All
+  frozen tests listed in the plan (A6) untouched/still passing.
+- Backend full suite: 959 passed / 74 skipped (DB-gated integration tests —
+  no local Postgres on this machine; CI's Postgres service covers those).
+- Frontend: `golf-api-search.test.ts` rewritten for the single-leg contract;
+  `course-search-session.test.ts` / `course-search-helpers.test.ts`
+  untouched and still green. Full vitest 60 files / 1395 tests · tsc clean ·
+  eslint clean · voice-tests smoke 274/274.
+
+Does not touch `CourseSearch.tsx` or `course-search-helpers.ts` (Work Item B
+owns those, already landed).
+
 ## 2026-07-06 — course-search v2, Work Item B: full-screen Google-Maps-style search (NOTICEABLE — integration/next, DONE)
 
 `specs/course-search-v2-plan.md` Work Item B (frontend). Owner escalation: the
