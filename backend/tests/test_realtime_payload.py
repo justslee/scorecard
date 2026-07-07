@@ -44,6 +44,14 @@ def test_transcription_model_override():
     assert model == "whisper-1"
 
 
+def test_transcription_language_pinned_to_english():
+    """Transcription language is pinned to 'en' — auto-detect mis-fires on short
+    utterances (owner repro: a reply transcribed in Korean). A per-user language
+    setting arrives with onboarding later; until then English is the default."""
+    payload = build_session_payload("sys", None)
+    assert payload["session"]["audio"]["input"]["transcription"]["language"] == "en"
+
+
 def test_output_modalities_is_audio_only():
     """output_modalities must be exactly ['audio'] — GA rejects ['audio', 'text']."""
     payload = build_session_payload("sys", None)

@@ -1460,6 +1460,17 @@
       "depends_on": [],
       "why": "Designer review of ff2b043: the map viewer's ErrorScreen (frontend/src/app/map/course/page.tsx ~159-210) is generic/off-brand (sans body, Lucide AlertCircle, plain text link) next to the on-brand detail-page not-found state (serif-italic headline, mono caption, pill button). The unified detail landing now funnels more traffic through /map/course, so a golfer on patchy course wifi is one tap from a jarring screen. Match the detail page's not-found pattern.",
       "spec": "specs/course-search-fix-plan.md"
+    },
+    {
+      "id": "voice-language-onboarding",
+      "title": "Per-user voice language setting (onboarding + profile)",
+      "type": "major",
+      "priority": 7,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Owner 2026-07-06: caddie transcribed him in Korean (auto-detect). Transcription is now PINNED to English (realtime_relay.py) as the default; when onboarding exists, add a language picker (profile-stored, feeds the transcription language + instructions) instead of the hardcode.",
+      "spec": ""
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
