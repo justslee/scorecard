@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import {
@@ -12,7 +12,8 @@ import {
   type GolfClub,
   type Tee,
 } from "@/lib/golf-api";
-import { stashCourseForRound } from "@/lib/course-handoff";
+import { fetchMappedCourse, type CourseData } from "@/lib/courses/mapped-course-api";
+import { stashCourseForRound, type CourseHandoff } from "@/lib/course-handoff";
 import { getCourseReviews } from "@/lib/api";
 import type { CourseReview } from "@/lib/types";
 
@@ -25,9 +26,27 @@ export default function CourseDetailClient() {
   const sp = useSearchParams();
   const courseId = sp.get("id");
   const clubId = sp.get("clubId");
+  // Unified landing (see lib/course-url.ts courseDetailHref): src=mapped loads
+  // the PostGIS store; any other src renders from the carried params (name/lat/
+  // lng/loc) because non-ingested search results have no backend row to fetch.
+  const src = sp.get("src");
+  const nameParam = sp.get("name");
+  const locParam = sp.get("loc");
+  const paramCenter = useMemo(() => {
+    const latRaw = sp.get("lat");
+    const lngRaw = sp.get("lng");
+    if (!latRaw || !lngRaw) return null;
+    const lat = Number(latRaw);
+    const lng = Number(lngRaw);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  }, [sp]);
+
+  const isMapped = src === "mapped";
+  const isCenterOnly = !isMapped && !!src && src !== "golfapi" && !!paramCenter;
 
   const [course, setCourse] = useState<GolfCourse | null>(null);
   const [club, setClub] = useState<GolfClub | null>(null);
+  const [mapped, setMapped] = useState<CourseData | null>(null);
   const [loading, setLoading] = useState(true);
   const [reviews, setReviews] = useState<CourseReview[]>([]);
 
@@ -42,15 +61,31 @@ export default function CourseDetailClient() {
     async function load() {
       setLoading(true);
       try {
-        const [courseData, clubData, reviewData] = await Promise.all([
-          getCourseDetails(courseId!),
-          clubId ? getClubDetails(clubId) : Promise.resolve(null),
-          getCourseReviews(courseId!).catch(() => [] as CourseReview[]), // silent fail → empty
-        ]);
-        if (!cancelled) {
-          setCourse(courseData);
-          setClub(clubData);
-          setReviews(reviewData);
+        const reviewsP = getCourseReviews(courseId!).catch(() => [] as CourseReview[]); // silent fail → empty
+        if (isMapped) {
+          const [mappedData, reviewData] = await Promise.all([
+            fetchMappedCourse(courseId!).catch(() => null),
+            reviewsP,
+          ]);
+          if (!cancelled) {
+            setMapped(mappedData);
+            setReviews(reviewData);
+          }
+        } else if (isCenterOnly) {
+          // No backend row guaranteed — the params carry the display data.
+          const reviewData = await reviewsP;
+          if (!cancelled) setReviews(reviewData);
+        } else {
+          const [courseData, clubData, reviewData] = await Promise.all([
+            getCourseDetails(courseId!),
+            clubId ? getClubDetails(clubId) : Promise.resolve(null),
+            reviewsP,
+          ]);
+          if (!cancelled) {
+            setCourse(courseData);
+            setClub(clubData);
+            setReviews(reviewData);
+          }
         }
       } catch {
         // getCourseDetails / getClubDetails already swallow errors and return null.
@@ -58,6 +93,7 @@ export default function CourseDetailClient() {
         if (!cancelled) {
           setCourse(null);
           setClub(null);
+          setMapped(null);
           setReviews([]);
         }
       } finally {
@@ -67,13 +103,66 @@ export default function CourseDetailClient() {
 
     load();
     return () => { cancelled = true; };
-  }, [courseId, clubId]);
+  }, [courseId, clubId, isMapped, isCenterOnly]);
 
   // ── Derived display values ────────────────────────────────────────────────
 
-  const name = composeCourseName(club?.name ?? "", course?.name ?? club?.name ?? "");
-  const location = [club?.city, club?.state, club?.country].filter(Boolean).join(", ");
-  const tees: Tee[] = course?.tees ?? [];
+  const mappedPar = mapped ? mapped.holes.reduce((s, h) => s + (h.par || 0), 0) : 0;
+  const name = isMapped
+    ? mapped?.name ?? ""
+    : isCenterOnly
+    ? nameParam ?? ""
+    : composeCourseName(club?.name ?? "", course?.name ?? club?.name ?? "");
+  const location = isMapped
+    ? mapped?.address ?? ""
+    : isCenterOnly
+    ? locParam ?? ""
+    : [club?.city, club?.state, club?.country].filter(Boolean).join(", ");
+  // One display shape for both tee sources (GolfAPI tees / mapped tee sets).
+  const tees: Tee[] = isMapped
+    ? (mapped?.teeSets ?? []).map((ts) => {
+        const total = (mapped?.holes ?? []).reduce(
+          (s, h) => s + (h.yardages?.[ts.name] ?? 0),
+          0
+        );
+        return {
+          id: ts.name,
+          name: ts.name,
+          color: ts.color,
+          totalYards: total > 0 ? total : undefined,
+        };
+      })
+    : isCenterOnly
+    ? []
+    : course?.tees ?? [];
+
+  const displayPar = isMapped ? mappedPar || undefined : course?.par;
+  const displayHoles = isMapped ? mapped?.holes.length || undefined : course?.holes;
+
+  // The /map/course viewer stays reachable FROM detail (it's a viewer, not a
+  // landing). Mapped courses open by id (hole geometry) with the centre as a
+  // graceful fallback for write-through rows that have no holes yet.
+  const mapHref = useMemo(() => {
+    if (isMapped && mapped) {
+      const qs = new URLSearchParams({ id: mapped.id });
+      if (mapped.location) {
+        qs.set("name", mapped.name);
+        qs.set("lat", String(mapped.location.lat));
+        qs.set("lng", String(mapped.location.lng));
+      }
+      return `/map/course?${qs.toString()}`;
+    }
+    if (isCenterOnly && paramCenter) {
+      const qs = new URLSearchParams({
+        name: nameParam ?? "",
+        lat: String(paramCenter.lat),
+        lng: String(paramCenter.lng),
+      });
+      if (courseId) qs.set("id", courseId);
+      return `/map/course?${qs.toString()}`;
+    }
+    return null;
+  }, [isMapped, mapped, isCenterOnly, paramCenter, nameParam, courseId]);
 
   // ── Loading state ─────────────────────────────────────────────────────────
 
@@ -101,7 +190,8 @@ export default function CourseDetailClient() {
 
   // ── Not-found state ───────────────────────────────────────────────────────
 
-  if (!course && !club) {
+  const notFound = isMapped ? !mapped : isCenterOnly ? false : !course && !club;
+  if (notFound) {
     return (
       <div
         style={{
@@ -168,18 +258,29 @@ export default function CourseDetailClient() {
   // ── "Start a round here" handler ─────────────────────────────────────────
 
   function handleStartRound() {
-    const handoff = {
+    // source + center make the round carry the course anchor (round-anchor.ts)
+    // so the yardage book renders the satellite map, not the paper fallback.
+    const center = isMapped
+      ? mapped?.location ?? undefined
+      : isCenterOnly
+      ? paramCenter ?? undefined
+      : undefined;
+    const handoff: CourseHandoff = {
       id: courseId ?? String(club?.id ?? ""),
       name,
       clubName: club?.name,
       location: location || undefined,
-      holes: course?.holes,
-      par: course?.par,
+      holes: isMapped ? mapped?.holes.length || undefined : course?.holes,
+      par: isMapped ? mappedPar || undefined : course?.par,
+      source: src ?? undefined,
+      center,
     };
     saveRecentCourse({
       id: courseId ?? String(club?.id ?? ""),
       name,
       clubName: club?.name ?? name,
+      source: src ?? undefined,
+      center,
     });
     stashCourseForRound(handoff);
     router.push("/round/new");
@@ -277,15 +378,16 @@ export default function CourseDetailClient() {
           )}
 
           {/* Par / Holes mini-stats */}
-          {(course?.par || course?.holes) && (
+          {(displayPar || displayHoles) && (
             <div style={{ display: "flex", gap: 18, marginTop: 12 }}>
-              {course.par && <MiniStat k="Par" v={course.par} />}
-              {course.holes && <MiniStat k="Holes" v={course.holes} />}
+              {displayPar ? <MiniStat k="Par" v={displayPar} /> : null}
+              {displayHoles ? <MiniStat k="Holes" v={displayHoles} /> : null}
             </div>
           )}
         </div>
 
-        {/* ── Tees section ── */}
+        {/* ── Tees section (hidden for centre-only courses — nothing to show) ── */}
+        {!isCenterOnly && (
         <div style={{ padding: "18px 22px 10px" }}>
           <div
             style={{
@@ -368,6 +470,68 @@ export default function CourseDetailClient() {
             </div>
           )}
         </div>
+        )}
+
+        {/* ── Map affordance — the /map/course viewer, reachable from detail ── */}
+        {mapHref && (
+          <div style={{ padding: "0 22px" }}>
+            <button
+              onClick={() => router.push(mapHref)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "11px 0",
+                background: "transparent",
+                border: "none",
+                borderTop: `1px dashed ${T.hairline}`,
+                cursor: "pointer",
+                textAlign: "left",
+                minHeight: 44,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontFamily: T.serif,
+                    fontSize: 16,
+                    color: T.ink,
+                    letterSpacing: -0.2,
+                  }}
+                >
+                  {isMapped && (mapped?.holes.length ?? 0) > 0
+                    ? "Hole map"
+                    : "Satellite map"}
+                </div>
+                <div
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 8.5,
+                    letterSpacing: 1.1,
+                    color: T.pencilSoft,
+                    textTransform: "uppercase",
+                    marginTop: 2,
+                  }}
+                >
+                  {isMapped && (mapped?.holes.length ?? 0) > 0
+                    ? "Hole-by-hole yardages"
+                    : "GPS + tap to measure"}
+                </div>
+              </div>
+              <div
+                style={{
+                  fontFamily: T.mono,
+                  fontSize: 10,
+                  color: T.pencil,
+                  flexShrink: 0,
+                }}
+              >
+                {"›"}
+              </div>
+            </button>
+          </div>
+        )}
 
         {/* ── Reviews section — only rendered when there is at least one review ── */}
         {reviews.length > 0 && (

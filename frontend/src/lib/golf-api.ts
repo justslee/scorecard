@@ -357,8 +357,19 @@ function getCachedSearchResults(query: string): GolfClub[] {
   return data;
 }
 
-// Save recent courses for quick access
-export function saveRecentCourse(course: { id: number | string; name: string; clubName: string }) {
+// Save recent courses for quick access.
+// source/center are optional (older stored rows lack them) — they let the
+// /courses hub route non-GolfAPI recents back to the right detail mode
+// (see lib/course-url.ts courseDetailHref).
+export interface RecentCourse {
+  id: number | string;
+  name: string;
+  clubName: string;
+  source?: string;
+  center?: { lat: number; lng: number };
+}
+
+export function saveRecentCourse(course: RecentCourse) {
   if (typeof window === "undefined") return;
 
   const recent = getRecentCourses();
@@ -368,7 +379,7 @@ export function saveRecentCourse(course: { id: number | string; name: string; cl
   localStorage.setItem(`${CACHE_PREFIX}recent_courses`, JSON.stringify(updated));
 }
 
-export function getRecentCourses(): Array<{ id: number | string; name: string; clubName: string }> {
+export function getRecentCourses(): RecentCourse[] {
   if (typeof window === "undefined") return [];
   const cached = localStorage.getItem(`${CACHE_PREFIX}recent_courses`);
   return cached ? JSON.parse(cached) : [];
