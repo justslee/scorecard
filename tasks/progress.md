@@ -6456,3 +6456,14 @@ hygiene). PR #103 body updated with checklist + status. Board card created in Ne
 (Bundle #103: Looper orb — bundle 2). No push notification (per cycle rule — owner replies
 in-session or on the board). Awaiting owner "ship it" → release-manager builds TestFlight
 from integration/next, then merges → main + cuts fresh integration/next.
+
+---
+
+## 2026-07-07 — SHIPPED: #103 Looper identity on the round pill + map error restyle (loop cycles 2-3)
+
+Owner "ship it". Merge 1070f18 → main (frontend-only). TestFlight v1.0.759
+(build 202607071309). Bundle built by loop cycles 2-3: map-viewer ErrorScreen
+restyle (silent) + round-page Ask Caddie pill in the Looper ink-orb identity
+(noticeable — closes looper-orb bundle 2's identity half). Backlog de-staled
+in cycle 2 (4 shipped items re-tagged). integration/next resynced; hourly
+loop continues.
