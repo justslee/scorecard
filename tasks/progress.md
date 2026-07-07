@@ -6018,3 +6018,60 @@ checklist stability).
 
 **integration/next:** fast-forwarded 7498c3f→5ab17c1 (== new main) and pushed — synced and
 ready to keep rolling; branch not deleted.
+
+---
+
+## 2026-07-06 (later) — caddie-hazard-grounding implemented (builder, Fable 5)
+
+Implemented `specs/caddie-hazard-grounding-plan.md` in full — backend-only, one commit
+(c3ffc3e) on `integration/next` (not pushed; not a PR yet — bundle owner's call).
+
+**What:** new `backend/app/caddie/hazards.py` — pure extraction of real bunker/water
+hazards from the curated per-hole PostGIS FeatureCollection (never Overpass), tee→green
+line math (left = positive cross product of the tee→green unit vector with the hazard
+vector, pinned in `test_left_is_positive_cross_convention`; carry yards rounded to
+nearest 5; 10y lateral deadband → "center"), `format_hazards_line` (e.g.
+`"Hole 4 hazards: bunker L 245y, water R 190-230y"`, empty hazards → `""`), and
+`HAZARD_GROUNDING_RULE` (shared directive: never name a hazard/distance absent from the
+data; speak generally when none is given).
+
+**Wired into both mouths:** `/course-intel` REPLACES `intel.hazards` with the stored
+geometry's real hazards when the round is mapped to a stored course (unmapped holes
+unchanged); Realtime orb situation block + `get_conditions` response (+ `hazards_line`)
++ instructions + the `get_conditions` tool description all carry real hazard data /
+the grounding rule; `session_voice` and the legacy stateless `/voice` both use the same
+formatter + rule text (no drift). `Hazard` gained `carry_yards`/`line_side` — additive,
+defaulted, no migration.
+
+**Frontend:** read-only verification only (no edits) — confirmed `dispatchTool` in
+`lib/voice/realtime.ts` forwards the raw `get_conditions` JSON via `JSON.stringify(output)`
+regardless of the narrower frontend `SessionConditions`/`Hazard` TS types (a cast, not a
+literal validation), so the new fields reach the model with zero frontend change needed.
+
+**Tests:** 32 new backend unit tests, all pure/offline (test_hazards.py: 22 cases —
+cross-product convention, deadband, tee/green fallback chain [polygon → hole LineString
+→ args], missing-tee/green → `[]`, beyond-green carry, rounding, range-merge, cap;
+test_realtime_tools.py: 3 new — instructions carry the rule, situation block renders the
+exact compact line from seeded hole_intel, no-hazard hole gets the directive with zero
+fabricated feature names in the situation block itself).
+
+**Gates:** `ruff check .` clean; `uv run pytest -q` → 986 passed, 74 skipped (Postgres
+integration tests — CI's job, no local Postgres touched per constraint). No frontend
+gates run (no frontend file touched).
+
+Staged only my own files (types.py, voice_prompts.py, routes/caddie.py,
+realtime_relay.py, hazards.py, test_hazards.py, test_realtime_tools.py) — left the
+parallel builder's in-flight `frontend/**` (map/GoogleSatelliteMap/Package.swift/assets)
+untouched and unstaged.
+
+Deviation from plan (noted, minimal): combined `get_course_intel`'s two separate
+`sessions.get(round_id)` lookups (one for the stored-hazard lookup, one for the cache
+write) into a single `owned_session` resolution — pure refactor, same ownership
+semantics, one fewer DB round-trip.
+
+Risk: silent (backend-only, additive schema field, no new endpoint/dependency;
+`/security-review` not triggered per plan — server-derived from our own PostGIS, no new
+auth surface). Noticeable on TestFlight only insofar as the realtime/text caddie should
+now say "I don't have hazard data for this hole" style generic language instead of
+inventing a bunker/water feature on holes without curated geometry — a correctness fix,
+not a new UI surface.
