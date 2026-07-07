@@ -9,6 +9,12 @@ from dotenv import load_dotenv
 from app.services.clerk_auth import require_owner
 from app.services.secrets import load_secrets_into_env
 
+import logging
+
+# App loggers (looper.*) default to the root WARNING level under uvicorn, so
+# INFO telemetry/diagnostic lines never reached the journal (voicetel events
+# were arriving but invisible). Configure once, idempotently.
+logging.basicConfig(level=logging.INFO)
 load_dotenv()
 # Pull prod API keys (Deepgram/OpenAI/Anthropic/…) from AWS Secrets Manager into
 # the env BEFORE routes import (they read os.getenv at import time). No-op locally

@@ -495,7 +495,10 @@ export default function RoundPage() {
   const [intelByHole, setIntelByHole] = useState<Map<number, { elevFt: number; effectiveYards: number }>>(
     () => new Map()
   );
-  const weatherAnchor = roundAnchor;
+  // Legacy rounds have no stored anchor — fall back to the first available
+  // hole tee coordinate so the wind tiles aren't permanently "no data".
+  const fallbackTee = mapCoords.find((c) => c.tee)?.tee ?? null;
+  const weatherAnchor = roundAnchor ?? fallbackTee;
   const weatherLat = weatherAnchor?.lat;
   const weatherLng = weatherAnchor?.lng;
   useEffect(() => {
@@ -544,6 +547,7 @@ export default function RoundPage() {
         await startCaddieSession({
           round_id: roundId,
           course_id: round.mappedCourseId ?? round.courseId,
+          course_name: round.courseName || undefined, // legacy slug-id rescue
           club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
           handicap: getGolferProfile()?.handicap ?? undefined,
         });

@@ -46,3 +46,23 @@ def test_error_detail_is_a_calm_sentence_not_an_exception():
     assert "index" not in _CADDIE_ERROR_DETAIL.lower()
     assert "error" not in _CADDIE_ERROR_DETAIL.lower()
     assert _CADDIE_ERROR_DETAIL.endswith(".")
+
+
+# ── Legacy course-id rescue (owner's 2026-07-07 round: slug id crashed every
+# session start → no intel/hazards/elev/weather for the whole round) ──
+
+from app.routes.caddie import _safe_course_uuid  # noqa: E402
+
+
+def test_safe_course_uuid_accepts_uuids():
+    assert (
+        _safe_course_uuid("2b8caab5-2c55-5752-8cda-336c3a396dac")
+        == "2b8caab5-2c55-5752-8cda-336c3a396dac"
+    )
+
+
+def test_safe_course_uuid_rejects_legacy_slugs_and_junk():
+    assert _safe_course_uuid("bethpage-black") is None
+    assert _safe_course_uuid("") is None
+    assert _safe_course_uuid(None) is None
+    assert _safe_course_uuid(123) is None

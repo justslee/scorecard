@@ -8,20 +8,72 @@
 // offline rounds) or a session call fails. These tests drive the real
 // component with the backend + mic mocked.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup, act, configure } from "@testing-library/react";
-
-// The streaming ladder's progressive render relies on a REAL setTimeout
-// fallback (jsdom has no requestAnimationFrame — see lib/caddie/stream-buffer.ts).
-// Under a full parallel `vitest run` (many jsdom environments contending for
-// CPU), that real timer can legitimately take longer than testing-library's
-// default 1000ms polling window to fire — a false-negative flake, not a logic
-// bug (these tests pass reliably in isolation). Widen the window generously;
-// this doesn't mask a real failure, it just gives slow CI/parallel runs headroom.
-configure({ asyncUtilTimeout: 5000 });
-vi.setConfig({ testTimeout: 10000 });
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
+import * as React from "react";
 
 // ── Mocks ──
+//
+// framer-motion — CaddieSheet wraps EVERY phase transition in
+// `AnimatePresence mode="wait"` (VoiceBody's "answered" bubble sits behind
+// one). Real framer-motion animations depend on requestAnimationFrame,
+// which jsdom doesn't implement; `mode="wait"` specifically DEFERS mounting
+// new content until the previous keyed element's exit animation resolves —
+// under jsdom's rAF gap that resolution can be inconsistent, which was
+// bleeding into these tests as an unrelated source of flakiness (content
+// never appearing within the poll window, independent of any app-state
+// bug). Strip animation entirely: render children immediately, no timing
+// dependency left at all.
+vi.mock("framer-motion", () => {
+  const passthroughTags = new Set([
+    "div", "button", "span", "svg", "path", "circle", "rect", "img", "a", "input",
+  ]);
+  const motion = new Proxy(
+    {},
+    {
+      get: (_target, tag: string) => {
+        if (!passthroughTags.has(tag)) return undefined;
+        const Passthrough = React.forwardRef((props: Record<string, unknown>, ref: React.Ref<unknown>) => {
+          const {
+            initial: _initial,
+            animate: _animate,
+            exit: _exit,
+            transition: _transition,
+            whileTap: _whileTap,
+            drag: _drag,
+            dragListener: _dragListener,
+            dragControls: _dragControls,
+            dragConstraints: _dragConstraints,
+            dragElastic: _dragElastic,
+            onDragEnd: _onDragEnd,
+            layout: _layout,
+            ...rest
+          } = props;
+          return React.createElement(tag, { ...rest, ref });
+        });
+        Passthrough.displayName = `motion.${tag}`;
+        return Passthrough;
+      },
+    },
+  );
+  return {
+    motion,
+    AnimatePresence: ({ children }: { children?: React.ReactNode }) =>
+      React.createElement(React.Fragment, null, children),
+    useDragControls: () => ({ start: () => {} }),
+  };
+});
+
+// `@/lib/caddie/stream-buffer` is mocked to a SYNCHRONOUS stand-in (push
+// delivers immediately, no scheduled frame at all). The real hook coalesces
+// via `window.requestAnimationFrame`/a timer fallback — exercised for real,
+// deterministically, under fake timers in `stream-buffer.test.ts`. Driving
+// CaddieSheet's ladder tests through the REAL scheduler was flaky under a
+// full parallel `vitest run`: a real setTimeout/rAF-fallback flush can
+// legitimately lose the race against CPU contention across ~70 concurrent
+// jsdom suites, and widening testing-library's poll window just masked it
+// intermittently rather than fixing it. Removing the real timer from this
+// file's critical path removes the race outright.
 //
 // BeforeFirstByteError must be a REAL class (not vi.fn()) — CaddieSheet's
 // ladder does `instanceof BeforeFirstByteError` checks against the SAME
@@ -46,6 +98,13 @@ vi.mock("@/lib/caddie/api", () => ({
 }));
 vi.mock("@/lib/storage", () => ({ getGolferProfile: vi.fn(() => null) }));
 vi.mock("@/lib/caddie/clubs", () => ({ buildClubMap: vi.fn(() => ({})) }));
+vi.mock("@/lib/caddie/stream-buffer", () => ({
+  useStreamBuffer: (onFlush: (chunk: string) => void) => ({
+    push: (delta: string) => onFlush(delta), // synchronous — no scheduled frame, no real timer
+    flush: () => {},
+    cancel: () => {},
+  }),
+}));
 
 // useSheetTTS — spied directly so "tts.speak called exactly once with the
 // full text" is a clean assertion, independent of the localStorage-gated
@@ -127,32 +186,57 @@ const transcribeMock = vi.mocked(transcribeBlob);
 const sessionVoiceStreamMock = vi.mocked(sessionVoiceStream);
 const talkToCaddieStreamMock = vi.mocked(talkToCaddieStream);
 
-/** Emits `tokens` progressively (a real tick between each, so tests can
- *  observe the rAF-coalesced partial render before the full text lands) and
- *  resolves with the joined string. `onToken` lives at `opts.onToken` on
- *  both streaming wrappers' second argument. Reserved for the ONE test that
- *  actually asserts an intermediate render — every other streaming-mock use
- *  should prefer `emitTokensSync` below, which has no real-timer dependency
- *  and so isn't sensitive to scheduling delays under a loaded, parallel
- *  `vitest run` (CaddieSheet's own rAF-fallback flush, exercised for real,
- *  is dependency enough). */
-async function emitTokensProgressively(
-  opts: { onToken: (delta: string) => void },
-  tokens: string[],
-): Promise<string> {
-  let full = "";
-  for (const t of tokens) {
-    await new Promise((r) => setTimeout(r, 0));
-    opts.onToken(t);
-    full += t;
-  }
-  return full;
+/**
+ * A hand-controlled streaming mock: `mockImpl` is the `mockImplementationOnce`
+ * body (captures `onToken`, returns a promise that only settles when the
+ * TEST calls `resolve`/`reject`). `pushToken` calls the captured `onToken`
+ * directly, from the test body, wrapped in `act()` by the caller — so the
+ * test dictates EXACTLY when each token lands and gets a real render commit
+ * to inspect in between, with zero dependency on any timer OR even a
+ * microtask race (a bare `await Promise.resolve()` drains eagerly enough
+ * that the whole mock can resolve before `findByText` ever gets to inspect
+ * an intermediate state — this sidesteps that entirely). Use for any test
+ * that needs to observe genuine mid-stream UI, not just the final text.
+ */
+function deferredStream() {
+  let resolveFn!: (value: string) => void;
+  let rejectFn!: (err: unknown) => void;
+  let onTokenFn: ((delta: string) => void) | null = null;
+  const promise = new Promise<string>((resolve, reject) => {
+    resolveFn = resolve;
+    rejectFn = reject;
+  });
+  return {
+    mockImpl: (_params: unknown, opts: { onToken: (delta: string) => void }) => {
+      onTokenFn = opts.onToken;
+      return promise;
+    },
+    pushToken: (delta: string) => onTokenFn?.(delta),
+    resolve: (full: string) => resolveFn(full),
+    reject: (err: unknown) => rejectFn(err),
+  };
 }
 
-/** Emits `tokens` synchronously (no artificial macrotask delay between them —
- *  `async` only for the Promise<string> return shape, no `await` inside) and
- *  resolves with the joined string — the low-flake default for streaming
- *  mocks that only need the FINAL text, not an observed intermediate one. */
+/**
+ * Drives the LIVE dictation path (not blob transcription) so `isTranscribing`
+ * never flips true. `stopListening`'s blob branch only clears
+ * `isTranscribing` in a `finally` that runs AFTER `askCaddie` fully settles —
+ * for a test that holds a stream open (or observes any state before the
+ * turn resolves), that masks the phase this describe block is testing
+ * behind a stale "Transcribing…" for the whole turn. The live path never
+ * sets it in the first place, sidestepping the whole class of issue.
+ */
+async function speakAndStop(transcript: string) {
+  fireEvent.click(screen.getByLabelText("Start recording"));
+  await waitFor(() => expect(liveState.instances).toHaveLength(1));
+  act(() => liveState.instances[liveState.instances.length - 1].events.onFinal?.(transcript));
+  fireEvent.click(screen.getByLabelText("Stop recording"));
+}
+
+/** Emits `tokens` synchronously (no yield of any kind between them —
+ *  `async` only for the Promise<string> return shape) and resolves with the
+ *  joined string — the default for streaming mocks that only need the FINAL
+ *  text, not an observed intermediate one. */
 async function emitTokensSync(opts: { onToken: (delta: string) => void }, tokens: string[]): Promise<string> {
   let full = "";
   for (const t of tokens) {
@@ -237,6 +321,22 @@ beforeEach(() => {
   liveState.startError = null;
 });
 
+// A settled mock promise's continuation (the `askCaddie` code after `await
+// sessionVoiceStream(...)`) resolves OUTSIDE of any React "discrete event" —
+// React's scheduler is free to defer that commit. If a test's `it()` returns
+// before that work is fully flushed, the NEXT test's `beforeEach` cleanup()
+// unmounts while it's still pending, which can bleed timing into the next
+// test — repeat the drain a few ticks and unmount HERE (not just in the
+// next test's beforeEach) so nothing crosses a test boundary still pending.
+afterEach(async () => {
+  for (let i = 0; i < 5; i++) {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+  cleanup();
+});
+
 describe("CaddieSheet — session-first recommendation", () => {
   it("uses /session/recommend with the round id when a session is active", async () => {
     sessionRecommendMock.mockResolvedValueOnce(REC);
@@ -280,14 +380,11 @@ describe("CaddieSheet — session-first recommendation", () => {
 
 describe("CaddieSheet — streaming ladder (specs/voice-streaming-replies-plan.md)", () => {
   it("tier 1: streams the reply from /session/voice/stream, renders progressively, updates history, speaks once", async () => {
-    transcribeMock.mockResolvedValueOnce({ transcript: "what club from here?" } as never);
-    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) =>
-      emitTokensProgressively(opts, ["Easy 7. ", "Center of the green."]),
-    );
+    const stream = deferredStream();
+    sessionVoiceStreamMock.mockImplementationOnce(stream.mockImpl);
     const props = renderSheet();
 
-    fireEvent.click(screen.getByLabelText("Start recording"));
-    fireEvent.click(await screen.findByLabelText("Stop recording"));
+    await speakAndStop("what club from here?");
 
     await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
     expect(sessionVoiceStreamMock).toHaveBeenCalledWith(
@@ -297,8 +394,16 @@ describe("CaddieSheet — streaming ladder (specs/voice-streaming-replies-plan.m
     expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
     expect(talkToCaddieMock).not.toHaveBeenCalled();
 
-    // Progressive: the first chunk renders before the second one lands.
-    expect(await screen.findByText(/Easy 7\./)).toBeTruthy();
+    // Progressive: the first chunk renders BEFORE the second one lands —
+    // test-driven, not timer-driven, so there's no race to observe it.
+    act(() => stream.pushToken("Easy 7. "));
+    expect(await screen.findByText("Easy 7.", { exact: false })).toBeTruthy();
+    expect(screen.queryByText("Easy 7. Center of the green.")).toBeNull(); // not yet — second chunk hasn't landed
+
+    act(() => {
+      stream.pushToken("Center of the green.");
+      stream.resolve("Easy 7. Center of the green.");
+    });
     expect(await screen.findByText("Easy 7. Center of the green.")).toBeTruthy();
 
     // History updates with the FULL text only, once the stream resolves.
@@ -311,14 +416,38 @@ describe("CaddieSheet — streaming ladder (specs/voice-streaming-replies-plan.m
     expect(ttsSpeakSpy).toHaveBeenCalledWith("Easy 7. Center of the green.", "strategist");
   });
 
+  it("does NOT mount the follow-up/clear CTAs or re-arm the mic mid-stream — only once the reply is complete", async () => {
+    const stream = deferredStream();
+    sessionVoiceStreamMock.mockImplementationOnce(stream.mockImpl);
+    renderSheet();
+
+    await speakAndStop("what club?");
+
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+
+    // Mid-stream: the first chunk is on screen, but the reply isn't done yet.
+    act(() => stream.pushToken("Take the "));
+    expect(await screen.findByText("Take the", { exact: false })).toBeTruthy();
+    expect(screen.queryByText("Ask follow-up")).toBeNull();
+    expect(screen.queryByLabelText("Start recording")).toBeNull(); // mic not re-armed
+    expect(screen.queryByLabelText("Stop recording")).toBeNull();
+
+    // Once the stream completes, the CTAs mount and the mic re-arms.
+    act(() => {
+      stream.pushToken("8-iron.");
+      stream.resolve("Take the 8-iron.");
+    });
+    expect(await screen.findByText("Take the 8-iron.")).toBeTruthy();
+    expect(await screen.findByText("Ask follow-up")).toBeTruthy();
+    expect(await screen.findByLabelText("Start recording")).toBeTruthy();
+  });
+
   it("tier 1 -> tier 2: a pre-first-token session failure falls back to /caddie/voice/stream (still streaming)", async () => {
-    transcribeMock.mockResolvedValueOnce({ transcript: "lay up or go?" } as never);
     sessionVoiceStreamMock.mockRejectedValueOnce(new MockBeforeFirstByteError());
     talkToCaddieStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Lay up to 95."]));
     renderSheet();
 
-    fireEvent.click(screen.getByLabelText("Start recording"));
-    fireEvent.click(await screen.findByLabelText("Stop recording"));
+    await speakAndStop("lay up or go?");
 
     await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
     expect(talkToCaddieStreamMock).toHaveBeenCalledWith(
@@ -331,14 +460,12 @@ describe("CaddieSheet — streaming ladder (specs/voice-streaming-replies-plan.m
   });
 
   it("tier 1 -> tier 2 -> tier 3: both streaming tiers fail pre-first-token, lands on the non-streaming fallback", async () => {
-    transcribeMock.mockResolvedValueOnce({ transcript: "what now?" } as never);
     sessionVoiceStreamMock.mockRejectedValueOnce(new MockBeforeFirstByteError());
     talkToCaddieStreamMock.mockRejectedValueOnce(new MockBeforeFirstByteError());
     talkToCaddieMock.mockResolvedValueOnce({ response: "Take the 8-iron." });
     renderSheet();
 
-    fireEvent.click(screen.getByLabelText("Start recording"));
-    fireEvent.click(await screen.findByLabelText("Stop recording"));
+    await speakAndStop("what now?");
 
     await waitFor(() => expect(talkToCaddieMock).toHaveBeenCalledTimes(1));
     expect(talkToCaddieMock).toHaveBeenCalledWith(
@@ -350,15 +477,13 @@ describe("CaddieSheet — streaming ladder (specs/voice-streaming-replies-plan.m
   });
 
   it("a POST-first-token failure is TERMINAL — no fallback, partial discarded, calm error shown, TTS never fires", async () => {
-    transcribeMock.mockResolvedValueOnce({ transcript: "what club?" } as never);
     sessionVoiceStreamMock.mockImplementationOnce(async (_params, opts) => {
       opts.onToken("Partial reply "); // a token already rendered...
       throw new Error("mid-stream failure — not a BeforeFirstByteError");
     });
     renderSheet();
 
-    fireEvent.click(screen.getByLabelText("Start recording"));
-    fireEvent.click(await screen.findByLabelText("Stop recording"));
+    await speakAndStop("what club?");
 
     // Never falls through to a lower tier once a token has rendered.
     await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
@@ -373,12 +498,10 @@ describe("CaddieSheet — streaming ladder (specs/voice-streaming-replies-plan.m
   });
 
   it("skips tier 1 entirely when there is no session (legacy/offline rounds)", async () => {
-    transcribeMock.mockResolvedValueOnce({ transcript: "what club?" } as never);
     talkToCaddieStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Smooth 6."]));
     renderSheet({ sessionActive: false });
 
-    fireEvent.click(screen.getByLabelText("Start recording"));
-    fireEvent.click(await screen.findByLabelText("Stop recording"));
+    await speakAndStop("what club?");
 
     await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
     expect(sessionVoiceStreamMock).not.toHaveBeenCalled();

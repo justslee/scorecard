@@ -3,6 +3,88 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — looper-brain-parity: off-course orb grounded in memory + handicap (NOTICEABLE-SUBTLE — integration/next, DONE)
+
+Implemented `specs/looper-brain-parity-plan.md` verbatim. `_build_voice_prompt` in
+`backend/app/routes/caddie.py` (the stateless path behind `/caddie/voice` and
+`/caddie/voice/stream`) now fetches the caller's cross-round memory
+(`memory_mod.get_top_memories`) + profile/handicap (`memory_mod.get_player_profile`) and
+splices a `--- PLAYER MEMORY ---` block + a `Player handicap:` line into the system prompt,
+mirroring `_build_session_voice_prompt`'s idioms exactly. Applies to both the off-course
+Looper orb AND the on-course stateless fallback (CaddieSheet tier-2/3), since both share this
+one function — previously that fallback silently lost personalization. Both DB reads sit
+behind a defensive `try/except` (this path runs outside the route-level try, so an unguarded
+DB hiccup would previously have surfaced as a raw 500 mid-reply); empty/no-memory/no-profile
+users get a prompt byte-identical to before (no `"Handicap: None"` garbage). No schema
+change — `VoiceCaddieRequest`/`VoiceCaddieResponse`, `types.ts`, `models.py` untouched.
+Added 3 unit tests to `backend/tests/test_voice_stream.py` (memory+profile present / both
+absent / fetcher raises), monkeypatching `caddie_routes.memory_mod` — no live Postgres.
+`ruff check .` clean; `pytest tests/test_voice_stream.py -q` → 15 passed (12 existing + 3
+new). No frontend change, so frontend gates weren't run (not impacted). Committed to
+`integration/next` at `4948cf6` and pushed. Classification per plan §6: noticeable-subtle
+(off-course spoken answers become personalized, no UI delta) — rides the rolling bundle, no
+standalone approval ping.
+
+## 2026-07-07 — RETRO (post-milestone: 9 ships, 3 process incidents) — SILENT, integration/next, DONE
+
+Distilled the day's three incidents into reusable rules in `tasks/lessons.md` (new
+"Session lessons (2026-07-07)" block) — did NOT duplicate the HARD PROCESS RULES already in
+agent memory; added what was missing:
+1. **review-vs-CI gap** (#104 streaming double-render, 56df95f): CI catches async/ordering
+   races review misses → cover streaming/timer/async with DETERMINISTIC tests (control the
+   scheduler; mock rAF/framer-motion; hand-controlled `deferredStream()`; window-scoped rAF
+   checks; a flaky test is a product race — bisect, don't retry-until-green).
+2. **ship.sh must not be piped** (#104 wrong-cwd masked twice): run deploy scripts un-piped,
+   `set -euo pipefail`, assert cwd, absolute paths.
+3. **verify deploy/CI by headSha, not recency** (#104 stale `gh run list`): match the run for
+   the shipped SHA; confirm deployed artifact SHA == merged SHA (same class as #100's piped
+   `gh pr checks` swallow → gate on structured fields, never scraped output).
+
+Backlog grooming (`backlog.json`): corrected two mis-tagged shipped items —
+`map-viewer-error-screen-restyle` (in-progress → done-shipped-main, #103 v1.0.759) and
+`voice-tts-sheet-replies` (awaiting-ship-it → done-shipped-main, #102 v1.0.750). Updated the
+top `note` to record that the **voice-agent-audit P1+P2 core is COMPLETE** (keyterms/auto-send/
+telemetry #100, TTS #102, streamed replies + reply-timeouts #104); remaining voice items are
+refinement/device-verify, not core. Seeded 3 NORTHSTAR-grounded next candidates (needs-spec):
+`caddie-persona-tts-voices`, `caddie-hole-strategy-guides`, `looper-brain-parity`. JSON
+validated (127 items, no dup ids). Silent (docs/backlog only) — rides the bundle, no ping.
+
+## 2026-07-07 — post-merge follow-up: streaming-ladder test flake fully fixed (SILENT — integration/next, DONE)
+
+PR #104 (streamed caddie replies + voice timeouts) was merged to `main` at commit `56df95f`
+(review-caught blocker fix: cancel the pending coalesced flush before the authoritative
+`setVoiceAnswer` — the "Smooth 6.Smooth 6." double-append race — plus the `isStreaming`
+CTA-gating fix, both already covered in the prior entry below). A follow-up commit,
+`0b0d67e`, landed on the fresh `integration/next` immediately after (too late for that PR,
+carries into the next bundle) to kill a REMAINING, separate source of full-suite CI flake
+in `CaddieSheet.session.test.tsx` that persisted even with the production race fixed:
+- `@/lib/caddie/stream-buffer`'s real hook coalesces via `window.requestAnimationFrame` /
+  a `setTimeout` fallback (jsdom has none) — driving the streaming-ladder tests through
+  that REAL scheduler could lose the race under full parallel `vitest run` CPU contention.
+  Mocked to a synchronous stand-in for this file; the real coalescing behavior now has its
+  own dedicated, deterministic test under fake timers: `frontend/src/lib/caddie/stream-buffer.test.ts`.
+- framer-motion's `AnimatePresence mode="wait"` (wraps every phase transition, including
+  the streamed-answer bubble) also depends on rAF under the hood — its exit-then-mount
+  timing was inconsistent under jsdom, independent of any app bug. Mocked framer-motion to
+  a passthrough (no animation) for this file.
+- Replaced ad-hoc `setTimeout`-based token emission with a hand-controlled `deferredStream()`
+  helper (test dictates exactly when each token/resolution lands); switched blob-transcription
+  tests in the streaming ladder to the live-dictation path (`isTranscribing` never sets, so
+  it can't mask the phase under test while a stream is held open); widened the `afterEach`
+  flush to drain a few ticks + unmount before the next test's `beforeEach`.
+
+Verified 45 consecutive full `npx vitest run` runs (1565/1565), 0 failures, after the fix —
+vs. reproducible ~10-25% flake rate before it (isolated to this ONE file; confirmed via
+bisection that neither the underlying production code nor any other test file was at fault).
+Gates: `npm run lint`, `npx tsc --noEmit`, `npm run build`, `voice-tests --smoke` (274/274),
+backend `ruff check .` + `pytest tests/test_voice_stream.py` (12/12) all green.
+
+**Process note for the team:** the eng-lead merged PR #104 at `56df95f` (that SHA's CI was
+green) essentially concurrently with this follow-up commit landing — `0b0d67e` missed that
+merge window and is NOT yet in `main`, but it IS on the fresh `integration/next` (merged
+forward via `e172dd7`) for the next bundle. No functional/production code changed in this
+follow-up — test-file-only, silent.
+
 ## 2026-07-07 — caddie text replies STREAM into the sheets (NOTICEABLE — integration/next, DONE)
 
 `specs/voice-streaming-replies-plan.md` (audit P2 #5, biggest perceived-latency win). The
@@ -6591,3 +6673,49 @@ restyle (silent) + round-page Ask Caddie pill in the Looper ink-orb identity
 (noticeable — closes looper-orb bundle 2's identity half). Backlog de-staled
 in cycle 2 (4 shipped items re-tagged). integration/next resynced; hourly
 loop continues.
+
+---
+
+## 2026-07-07 — SHIPPED: #104 streamed replies + voice timeouts (loop cycles 4-5)
+
+Owner "ship it". Merge 69285d4 → main; backend deploy verified BY SHA
+(69285d4, success) + health ok — streaming endpoints live. TestFlight
+v1.0.767 (build 202607071534). Ship had three compounding snags, all
+recovered + memorialized (ship-gate-verification memory, rule 3): piped
+ship.sh masked a wrong-cwd failure twice; gh run list returned a stale
+deploy run (now matched by headSha); cycle 5's builder process resurrected
+and committed the deterministic stream tests (0b0d67e) mid-recovery.
+CI also caught a REAL streaming race the review missed (flush-after-
+completion double-render) — fixed (56df95f) + deterministic test suite.
+Voice audit P1+P2 core COMPLETE. integration/next merged with main
+(e172dd7) and pushed.
+
+---
+
+## 2026-07-07 — RETRO cycle (loop cycle 6): rough-patch retrospective + board hygiene (SILENT)
+
+Step 0: no pending owner approvals. #103 (v1.0.759) and #104 (v1.0.767) both Shipped;
+comment threads empty — no owner feedback on v1.0.750/759/767. Sync: main == integration/next
+base (69285d4); bundle empty (only silent progress/retro commits ahead of main). Clean tree.
+
+PICKED: dispatched the `retro` agent (protocol: warranted "after a rough patch" — today = 9
+ships + 3 process incidents not yet distilled into lessons.md). Chosen over a manufactured
+marginal feature (own lesson: don't feed the loop with dormant work).
+
+RETRO OUTPUT (commit b5c6b71, pushed to integration/next):
+- lessons.md: 3 new reusable rules — (1) CI catches async/ordering races review misses →
+  cover streaming/timer code with DETERMINISTIC scheduler-controlled tests, not "review harder";
+  (2) ship.sh must never be piped, must `set -o pipefail` + assert cwd + absolute paths;
+  (3) verify a deploy/CI run by matching headSha, never `--limit 1` recency.
+- backlog.json: fixed 2 mis-tagged shipped items (map-viewer-error-screen-restyle → #103;
+  voice-tts-sheet-replies → #102); noted voice-agent-audit P1+P2 core COMPLETE; seeded 3
+  NORTHSTAR-grounded candidates (caddie-persona-tts-voices, caddie-hole-strategy-guides,
+  looper-brain-parity). Valid JSON, 127 items, no dup ids.
+
+BOARD HYGIENE (eng-lead): flagged by retro — flipped stale duplicate card "Bundle #104:
+voice reply timeouts + retry" from In Progress → Shipped (work shipped in v1.0.767; canonical
+record is the "streamed caddie replies + voice timeouts" Shipped card). Card "#103 Looper orb
+bundle 2" already Shipped (only body text stale — left as-is).
+
+NO owner ping: bundle remains SILENT-only (progress + retro docs/backlog). Accumulates until a
+noticeable item lands. integration/next @ b5c6b71 pushed; no open PR (correct — nothing to ship).
