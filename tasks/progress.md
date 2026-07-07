@@ -3,6 +3,23 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — /map/course ErrorScreen restyle to yardage-book not-found pattern (SILENT — integration/next, DONE)
+
+`specs/map-viewer-error-screen-restyle-plan.md`. Designer review flagged the map viewer's
+`ErrorScreen` (Lucide `AlertCircle`, `T.sans` body, plain text link) as off-brand vs. the
+on-brand not-found state on the course detail page. Pure presentational restyle of
+`ErrorScreen({ message, onBack })` in `frontend/src/app/map/course/page.tsx` (~159-219) to
+mirror `CourseDetailClient.tsx`'s not-found block exactly: serif-italic `message` headline,
+mono-uppercase static caption ("Check your connection and try again."), hairline pill "Back"
+button, `PAPER_NOISE` + `T.paper` background with `multiply` blend. Dropped the now-unused
+`AlertCircle` import (`ChevronLeft`/`ChevronRight`/`Loader2`/`Layers` remain used elsewhere in
+the file); `ErrorScreen` signature and all three call sites unchanged (data-fetch/GPS/map logic
+untouched). Classified silent (styling-only, no new user-visible capability) per the plan.
+- Gates green: `tsc --noEmit` (clean), `npm run lint` (clean), `npm run build` (success),
+  `voice-tests --smoke` (274/274, unaffected).
+- No backend/security-review needed (pure CSS/JSX, no new endpoint/auth/dep).
+- Commit `8998b3f` on `integration/next`, pushed.
+
 ## 2026-07-07 — spoken caddie replies in the sheets (NOTICEABLE, opt-in — integration/next, DONE)
 
 `specs/voice-tts-sheet-replies-plan.md`. CaddieSheet/LooperSheet replies were silent text —
