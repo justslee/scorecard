@@ -187,6 +187,9 @@ export interface SessionStatus {
 export async function startSession(params: {
   round_id: string;
   course_id?: string;
+  /** Course display name — lets the backend resolve legacy slug ids to a
+   *  mapped-course UUID by name (legacy rounds crashed session start). */
+  course_name?: string;
   club_distances?: Record<string, number>;
   handicap?: number;
 }): Promise<SessionStatus> {
