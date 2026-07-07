@@ -3,6 +3,59 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — spoken caddie replies in the sheets (NOTICEABLE, opt-in — integration/next, DONE)
+
+`specs/voice-tts-sheet-replies-plan.md`. CaddieSheet/LooperSheet replies were silent text —
+unreadable on-course in sunlight. Adds opt-in TTS playback of a completed reply, persona-matched
+to the SAME voice the Realtime orb uses, tap-to-silence, iOS-safe, and strictly additive (any
+TTS failure is swallowed — the reply text always renders).
+
+- **Backend:** `app/services/openai_tts.py` (new) — `synthesize_speech(text, voice_id)`, mirrors
+  `services/deepgram.py`'s structure (module-level `OPENAI_API_KEY` guard → 500, httpx POST to
+  OpenAI `/v1/audio/speech`, model `gpt-4o-mini-tts`, `voice_id or "sage"`, mp3, clamps input to
+  4096 chars, `HTTPException` on ≥400). `app/routes/voice.py`: new `POST /speak`
+  (`SpeakRequest{text, personality_id="classic"}`) resolves the persona via the SAME
+  `load_personality` the orb uses, then returns `Response(media_type="audio/mpeg")` —
+  `Depends(current_user_id)` auth, matching `/transcribe`.
+- **Frontend:** `hooks/useSheetTTS.ts` (new) — single shared `HTMLAudioElement`, iOS
+  bless-play-then-pause unlock pattern copied from `lib/voice/realtime.ts`'s remote-audio sink;
+  `speak()` no-ops when muted/empty, aborts any in-flight fetch + stops current playback before
+  starting the next (structurally impossible to double-voice), swallows every failure
+  (autoplay-blocked / offline / TTS error) via try/catch + `voiceEvent("sheet-tts", ...)`
+  telemetry — never throws into the caller. `lib/voice/tts-pref.ts` (new) — localStorage
+  `looper.sheetTtsEnabled`, **default OFF** (opt-in; NORTHSTAR quiet-app mandate — flagged for
+  owner in the plan, built default-off, can flip on request). `lib/caddie/api.ts`:
+  `speakCaddieReply(text, personaId, signal)` — direct `fetch` + `authHeaders()` (fetchAPI is
+  JSON-only), returns the mp3 `Blob`.
+- Wired into `CaddieSheet.tsx` (`tts.unlock()` synchronously at the top of `handleMicTap`;
+  `tts.speak(responseText, personaId)` right where `setVoiceAnswer` is set in `askCaddie`; a
+  quiet hairline speaker-toggle in the header row next to the persona identifier — idle tap
+  flips the mute pref, a tap while speaking silences) and `LooperSheet.tsx`'s `LooperSheetShell`.
+- **Deviation from the plan (noted per the workflow rule):** the plan's §3 named an explicit
+  `tts.speak()` call site inside the *default* `LooperSheet` host's `handleMicTap`. Instead I
+  put the tts hook + speak-trigger + header toggle INSIDE the shared `LooperSheetShell` itself,
+  driven by a `turns`-watching effect (speaks only a newly-appended `role: "looper"` turn added
+  while the sheet is open — never replays history on reopen). Reason: `LooperSheetShell` is also
+  reused by `app/tee-time/page.tsx` (its own host, not in the plan's touched-file list); the
+  plan's §3 placement note explicitly says tee-time "inherits" the header control since it reuses
+  the shell. A per-host explicit call site would have left tee-time's toggle inert (visible but
+  non-functional) or required touching `tee-time/page.tsx` (out of the plan's file list to keep
+  scope contained). Centralizing in the shell gives both the general Looper sheet and tee-time
+  real, working speech with no `tee-time/page.tsx` change. Functionally equivalent outcome; call
+  site moved, not the feature.
+- Tests: `backend/tests/test_voice_speak.py` (6, non-DB — mocked httpx + `load_personality`):
+  persona→voice_id resolution, length clamp, default-voice fallback, missing-key→500,
+  upstream-error passthrough, `media_type == audio/mpeg`. `frontend/src/hooks/useSheetTTS.test.ts`
+  (5, jsdom, stubs `HTMLMediaElement.prototype.play/pause` + `URL.createObjectURL`): muted no-op,
+  empty-text no-op, unlock idempotent, second `speak()` aborts the first (stale resolve doesn't
+  resurrect playback), rejected `play()` doesn't throw.
+- Gates green: `npm run lint` (0 warnings after an exhaustive-deps fix), `tsc --noEmit`,
+  `npm run build`, `voice-tests --smoke` (274/274), full `vitest run` (70 files / 1536 tests,
+  incl. the two new suites), backend `ruff check .`, `pytest tests/test_voice_speak.py` (6/6).
+- Not run locally (per policy): backend DB-integration tests — no local Postgres; CI's backend
+  gate covers those. `/speak` is a fresh endpoint + new outbound OpenAI dependency — flagging for
+  `/security-review` / `/code-review` per CLAUDE.md's "new endpoint" rule before the bundle ships.
+
 ## 2026-07-06 — persistent round map + colored tee marker (NOTICEABLE — integration/next, DONE)
 
 `specs/persistent-map-tee-marker-plan.md`. Owner (screenshots): "Loading map…" on every hole

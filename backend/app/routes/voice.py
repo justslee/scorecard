@@ -1,6 +1,6 @@
 """Voice parsing API routes."""
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Form
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, Form
 from pydantic import BaseModel
 import anthropic
 import logging
@@ -10,7 +10,9 @@ from typing import Optional
 import re
 
 from app.services.deepgram import transcribe_audio, grant_live_token
+from app.services.openai_tts import synthesize_speech
 from app.services.clerk_auth import current_user_id
+from app.caddie.personalities import load_personality
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
 
@@ -76,6 +78,27 @@ async def transcribe(
     return await transcribe_audio(
         body, content_type=audio.content_type or "audio/webm", keyterms=terms or None
     )
+
+
+# ── Spoken caddie replies for the sheets (specs/voice-tts-sheet-replies) ──
+
+
+class SpeakRequest(BaseModel):
+    text: str
+    personality_id: str = "classic"
+
+
+@router.post("/speak")
+async def speak(req: SpeakRequest, user_id: str = Depends(current_user_id)):
+    """Synthesize a completed caddie reply to speech (mp3), persona-matched.
+
+    Resolves the SAME persona the Realtime orb uses (load_personality) so the
+    sheet voice always matches the orb voice for a given persona, including
+    custom DB personas. Auth required — the OpenAI key stays server-side.
+    """
+    persona = await load_personality(req.personality_id)
+    audio = await synthesize_speech(req.text, persona.voice_id)
+    return Response(content=audio, media_type="audio/mpeg")
 
 
 class VoiceScoreRequest(BaseModel):
