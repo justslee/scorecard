@@ -3,6 +3,42 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — post-merge follow-up: streaming-ladder test flake fully fixed (SILENT — integration/next, DONE)
+
+PR #104 (streamed caddie replies + voice timeouts) was merged to `main` at commit `56df95f`
+(review-caught blocker fix: cancel the pending coalesced flush before the authoritative
+`setVoiceAnswer` — the "Smooth 6.Smooth 6." double-append race — plus the `isStreaming`
+CTA-gating fix, both already covered in the prior entry below). A follow-up commit,
+`0b0d67e`, landed on the fresh `integration/next` immediately after (too late for that PR,
+carries into the next bundle) to kill a REMAINING, separate source of full-suite CI flake
+in `CaddieSheet.session.test.tsx` that persisted even with the production race fixed:
+- `@/lib/caddie/stream-buffer`'s real hook coalesces via `window.requestAnimationFrame` /
+  a `setTimeout` fallback (jsdom has none) — driving the streaming-ladder tests through
+  that REAL scheduler could lose the race under full parallel `vitest run` CPU contention.
+  Mocked to a synchronous stand-in for this file; the real coalescing behavior now has its
+  own dedicated, deterministic test under fake timers: `frontend/src/lib/caddie/stream-buffer.test.ts`.
+- framer-motion's `AnimatePresence mode="wait"` (wraps every phase transition, including
+  the streamed-answer bubble) also depends on rAF under the hood — its exit-then-mount
+  timing was inconsistent under jsdom, independent of any app bug. Mocked framer-motion to
+  a passthrough (no animation) for this file.
+- Replaced ad-hoc `setTimeout`-based token emission with a hand-controlled `deferredStream()`
+  helper (test dictates exactly when each token/resolution lands); switched blob-transcription
+  tests in the streaming ladder to the live-dictation path (`isTranscribing` never sets, so
+  it can't mask the phase under test while a stream is held open); widened the `afterEach`
+  flush to drain a few ticks + unmount before the next test's `beforeEach`.
+
+Verified 45 consecutive full `npx vitest run` runs (1565/1565), 0 failures, after the fix —
+vs. reproducible ~10-25% flake rate before it (isolated to this ONE file; confirmed via
+bisection that neither the underlying production code nor any other test file was at fault).
+Gates: `npm run lint`, `npx tsc --noEmit`, `npm run build`, `voice-tests --smoke` (274/274),
+backend `ruff check .` + `pytest tests/test_voice_stream.py` (12/12) all green.
+
+**Process note for the team:** the eng-lead merged PR #104 at `56df95f` (that SHA's CI was
+green) essentially concurrently with this follow-up commit landing — `0b0d67e` missed that
+merge window and is NOT yet in `main`, but it IS on the fresh `integration/next` (merged
+forward via `e172dd7`) for the next bundle. No functional/production code changed in this
+follow-up — test-file-only, silent.
+
 ## 2026-07-07 — caddie text replies STREAM into the sheets (NOTICEABLE — integration/next, DONE)
 
 `specs/voice-streaming-replies-plan.md` (audit P2 #5, biggest perceived-latency win). The
