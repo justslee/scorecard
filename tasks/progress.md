@@ -5740,3 +5740,32 @@ PR link + full checklist + build number.
 
 **integration/next:** fast-forwarded to cf2d4aa (== new main) and pushed — synced and
 ready to keep rolling; branch not deleted.
+
+---
+
+## 2026-07-06 — course search v2 reviewed + bundle PR (owner session, Fable 5)
+
+Both v2 builders landed (see entries above); eng-lead review pass on the combined tree:
+- Security review (reviewer agent, /security-review): NO findings — legHealth.detail
+  traced on every raising leg (status codes only, keys travel in headers, mapbox
+  swallows), auth unchanged, no injection/XSS.
+- Designer (Playwright on dev, iPhone-13 viewport): pass-with-polish; VERIFIED the
+  no-layout-shift fix (surface bbox identical across idle/loading/results). One
+  blocker: star <button> nested in row <button> (invalid HTML, hydration warnings,
+  iOS hit-testing) — FIXED in 67138a1 (row -> div[role=button], star 34px target,
+  title 16 / chevron 10 idiom match).
+- Eng-lead caught what the reviews missed: the parallel GolfAPI leg would burn the
+  45-calls/MONTH budget on typed prefixes (each distinct prefix = fresh discovery
+  cache key; budget shared with per-course golf-data fetches). FIXED in 67138a1:
+  GolfAPI is now a fallback leg (only when Places is empty); legHealth omits it
+  when skipped; +1 route test.
+Combined gates: backend 960 passed/74 skipped + ruff clean; frontend tsc/lint clean,
+vitest 1395/1395, voice 274/274, build green.
+
+Bundle: search v2 (backend Places-primary + full-screen UI) — NOTICEABLE, awaiting
+owner approval (in-session). Owner test: type "Pebble Beach" (results ~1-4s, no
+resize), "Bethpa" (only Bethpage), start round from a search pick.
+Open follow-ups: /map/course ErrorScreen restyle (backlog); prod Places key
+"Places API (New)" enablement UNVERIFIED (probe blocked) — legHealth in the
+response now surfaces it: hit /api/courses/search?q=pebble+beach and check
+legHealth[0] once deployed.
