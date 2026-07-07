@@ -5565,3 +5565,36 @@ course search gains the Places leg.
 attempt echoed the FULL looper/prod payload (DB password + Anthropic/OpenAI/Deepgram/
 GolfAPI/Mapbox keys) into the session transcript. Recommended rotation (esp. RDS
 password + paid API keys). Owner aware; rotation pending owner action.
+
+---
+
+## 2026-07-06 — course routing unified (item 3.3 follow-up) + bundle PR #93 (owner session, Fable 5)
+
+Resumed the usage-limit-killed checklist. Items 1+2 (backend/frontend search) and the
+satellite-in-yardage-book half of item 3 had already shipped (#87/#88); what remained was
+the DEFERRED tail of item 3.3 (unified routing — blocked then because /courses/[id] only
+spoke GolfAPI) + review/QA/ship. Landed on integration/next:
+- 0628b2d ios: CapacitorHaptics registered in CapApp-SPM (uncommitted cap-sync rider
+  from #88 found dirty in the tree — fresh checkouts would silently lose haptics). SILENT.
+- ff2b043 courses: one detail landing for every search source. courseDetailHref() in
+  course-url.ts maps any selection → /courses/view (mapped → src=mapped, fetches
+  /api/courses/mapped/{id} for par/holes/tee-sets; centre-carrying osm/local → display
+  params in URL, no backend row needed; golfapi unchanged). /map/course = viewer reached
+  FROM detail (quiet Hole map / Satellite map row), never a landing. Start-a-round from
+  detail stashes source+center → round carries the anchor → satellite yardage book.
+  Recents persist source/center (old rows fall back to the golfapi path). +11 tests.
+- 576e5a1 courses: hub "Course maps (beta)" Bethpage rows routed through
+  courseDetailHref too — designer review BLOCKER (they reproduced the exact
+  inconsistency one screen below the fix). NOTICEABLE (with ff2b043).
+
+Review: adversarial reviewer CLEAN (verified load-effect races, not-found gate, URL-param
+XSS, malformed lat/lng, legacy-recents compat, golfapi regression). Designer: passes after
+the blocker fix; non-blocker filed to backlog.json (map-viewer-error-screen-restyle: the
+/map/course ErrorScreen is off-brand and now gets more traffic). QA: Bethpage repro —
+backend course-search suite 48/48 (bethpa → Bethpage only), frontend mirror in vitest.
+Gates: tsc/lint clean, vitest 1374/1374 (one unreproducible flake on a single run — 3
+subsequent runs green; CI re-gates), voice smoke 274/274, build green, ruff clean.
+
+Bundle PR #93 opened (integration/next → main): tee-time honest course list (ad0d65d,
+noticeable) + unified detail landing (noticeable) + haptics rider (silent). Owner is
+in-session — approval requested directly, no push notification needed.
