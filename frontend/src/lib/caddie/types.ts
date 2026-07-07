@@ -67,10 +67,10 @@ export interface Hazard {
 export interface HoleIntelligence {
   hole_number: number;
   par: number;
-  yards: number;
+  yards: number | null;
   handicap_rating: number;
   elevation_change_ft: number;
-  effective_yards: number;
+  effective_yards: number | null;
   green_slope?: GreenSlope;
   hazards: Hazard[];
   pin_traffic_light: 'green' | 'yellow' | 'red';

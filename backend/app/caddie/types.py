@@ -93,10 +93,10 @@ class HolePlayerHistory(BaseModel):
 class HoleIntelligence(BaseModel):
     hole_number: int
     par: int
-    yards: int
+    yards: Optional[int] = None
     handicap_rating: int = 9
     elevation_change_ft: float = 0.0
-    effective_yards: int = 0  # adjusted for elevation
+    effective_yards: Optional[int] = None  # adjusted for elevation; None = yardage unknown
     green_slope: Optional[GreenSlope] = None
     green_depth_yards: Optional[float] = None
     green_width_yards: Optional[float] = None

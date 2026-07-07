@@ -42,3 +42,22 @@ async def test_malformed_osm_features_keep_elevation(monkeypatch):
     assert intel.elevation_change_ft == pytest.approx(29.4, abs=0.1)
     assert intel.effective_yards == 422
     assert intel.hazards == []  # dropped defensively, never fatal
+
+
+@pytest.mark.asyncio
+async def test_none_inputs_never_throw_and_stay_honest():
+    """Null yards/par/handicap from the route (stored round had no yardage)
+    must not crash. yards unknown → effective_yards stays None (no fabricated
+    400); par/handicap coalesce to display defaults. No tee/green ⇒ zero
+    network calls, elevation stays 0.0."""
+    intel = await course_intel.build_hole_intelligence(
+        hole_coords={"holeNumber": 1},
+        yards=None,
+        par=None,
+        handicap_rating=None,
+    )
+    assert intel.yards is None
+    assert intel.effective_yards is None
+    assert intel.par == 4
+    assert intel.handicap_rating == 9
+    assert intel.elevation_change_ft == 0.0

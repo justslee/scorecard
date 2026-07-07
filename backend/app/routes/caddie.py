@@ -1001,9 +1001,9 @@ async def get_course_intel(
         try:
             intel = await build_hole_intelligence(
                 hole_coords=hc,
-                par=hc.get("par", 4),
-                yards=hc.get("yards", 400),
-                handicap_rating=hc.get("handicap", 9),
+                par=hc.get("par"),
+                yards=hc.get("yards"),
+                handicap_rating=hc.get("handicap"),
                 osm_features=osm_features,
             )
             stored_hole = stored_holes_by_number.get(intel.hole_number)
