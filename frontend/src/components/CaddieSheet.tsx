@@ -87,6 +87,10 @@ export interface CaddieSheetProps {
   /** Personas visible to the user — drives the header picker. */
   personas: CaddiePersonalityInfo[];
   onSelectPersona: (id: string) => void;
+  /** Resolves the golfer's live distance-to-pin (yards) for the auto opening
+   *  turn, or null when there is no GPS fix / no green coords / it times out.
+   *  Parent owns GPS + course coords; the sheet stays GPS-free. */
+  resolveOpeningShot?: () => Promise<{ distanceYards: number } | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +177,7 @@ export default function CaddieSheet({
   personaId,
   personas,
   onSelectPersona,
+  resolveOpeningShot,
 }: CaddieSheetProps) {
   // Controls the swipe-down-to-dismiss drag, started from the grab handle only.
   const dragControls = useDragControls();
@@ -248,6 +253,29 @@ export default function CaddieSheet({
   useEffect(() => {
     convHistoryRef.current = convHistory;
   }, [convHistory]);
+
+  /**
+   * Ref mirror of `resolveOpeningShot` — mirrors the `convHistoryRef` pattern
+   * so the auto-fire effect (below) need not list it as a dep.
+   */
+  const resolveOpeningShotRef = useRef<CaddieSheetProps["resolveOpeningShot"]>(resolveOpeningShot);
+  useEffect(() => {
+    resolveOpeningShotRef.current = resolveOpeningShot;
+  }, [resolveOpeningShot]);
+
+  // Fire-once-on-open flag for the auto opening shot recommendation — set
+  // synchronously BEFORE the first await so React strict-mode's double-invoke
+  // fires the network turn at most once. Reset only on close (never in a
+  // cleanup that runs on a strict-mode remount).
+  const openingFiredRef = useRef(false);
+  // Dedicated generation counter for the opening-turn async gap — bumped ONLY
+  // by the auto-fire effect's own close branch (below), never by the
+  // pre-existing `openGenRef` bump above (which re-runs on every effect
+  // commit, including React strict-mode's synthetic unmount→remount of that
+  // OTHER effect during initial mount). Sharing `openGenRef` here would let
+  // that harmless dev-only double-invoke look like a real close/reopen and
+  // silently swallow the awaited GPS fix.
+  const openingGenRef = useRef(0);
 
   // Cleanup on close. History intentionally NOT cleared here — it is owned
   // by the parent so closing to enter a score then reopening continues the
@@ -341,7 +369,7 @@ export default function CaddieSheet({
    * useState setter), so deps are safe.
    */
   const askCaddie = useCallback(
-    async (question: string) => {
+    async (question: string, opts?: { suppressError?: boolean }) => {
       // A new question supersedes whatever the previous one was still doing.
       streamAbortRef.current?.abort();
       const controller = new AbortController();
@@ -450,9 +478,16 @@ export default function CaddieSheet({
         // truncated caddie reply can be actively misleading (cut mid-club or
         // mid-aim), and the server persisted nothing for this turn either.
         setVoiceAnswer(null);
-        setError(
-          humanizeVoiceError(err instanceof Error ? err.message : undefined, "Caddie unavailable — try again.")
-        );
+        if (opts?.suppressError) {
+          // The unprompted auto opening turn failed — the golfer asked
+          // nothing yet, so stay honestly idle rather than surface an error
+          // bubble over a turn they never initiated (specs/caddie-auto-shot-reco-plan.md §4).
+          setError(null);
+        } else {
+          setError(
+            humanizeVoiceError(err instanceof Error ? err.message : undefined, "Caddie unavailable — try again.")
+          );
+        }
       } finally {
         if (!isStale()) {
           setIsThinking(false);
@@ -466,6 +501,41 @@ export default function CaddieSheet({
     // tts.speak (not the whole `tts` object) — the hook memoizes it stably, so
     // depending on the full object would recreate askCaddie every render.
   );
+
+  /**
+   * Auto opening shot recommendation (specs/caddie-auto-shot-reco-plan.md).
+   * On a fresh sheet-open during an active session, resolve the golfer's live
+   * GPS distance-to-pin (owned by the parent) and fire the SAME `askCaddie`
+   * path with a default question embedding it — no typing/speaking required.
+   * Every fallback branch (no session, no GPS fix, no green coords,
+   * implausible distance, call failure) leaves the sheet in its existing
+   * idle state — never a fabricated recommendation.
+   */
+  useEffect(() => {
+    if (!open) {
+      openingFiredRef.current = false; // reset only on close
+      openingGenRef.current++; // invalidate any opening-turn async still awaiting GPS
+      return;
+    }
+    if (openingFiredRef.current) return; // already fired this open (guards
+    // re-render AND strict-mode double effect)
+    if (!sessionActive || !roundId) return; // no session → open exactly as today
+    if (!resolveOpeningShotRef.current) return; // parent opted out → idle
+    if (convHistory.length > 0) return; // reopened onto an existing thread → no auto-fire
+    if (voiceAnswer || isThinking || isListening) return; // never fire over an in-flight/answered turn
+
+    openingFiredRef.current = true; // set BEFORE any await → strict-mode-safe
+    const gen = openingGenRef.current; // dedicated gen — see openingGenRef comment above
+    void (async () => {
+      const shot = await resolveOpeningShotRef.current!();
+      if (openingGenRef.current !== gen) return; // sheet closed/reopened while awaiting GPS
+      if (!shot) return; // no GPS fix → stay idle (open as today)
+      const q = `I'm about ${shot.distanceYards} yards from the pin. What should I hit or do on this next shot?`;
+      setTranscript(q); // existing state → shows in the user bubble (transparency)
+      await askCaddie(q, { suppressError: true }); // identical streaming path; honest-idle on failure
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sessionActive, roundId, convHistory.length]);
 
   const startListening = useCallback(async () => {
     setError(null);
