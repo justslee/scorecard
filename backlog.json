@@ -1471,6 +1471,28 @@
       "depends_on": [],
       "why": "Owner 2026-07-06: caddie transcribed him in Korean (auto-detect). Transcription is now PINNED to English (realtime_relay.py) as the default; when onboarding exists, add a language picker (profile-stored, feeds the transcription language + instructions) instead of the hardcode.",
       "spec": ""
+    },
+    {
+      "id": "tee-marker-on-map",
+      "title": "Colored tee marker on the tee box for the round's chosen tee",
+      "type": "major",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Owner 2026-07-06 (screenshot, Bethpage hole 3): put a clean/modern colored tee marker on the actual tee box for the tee chosen at round start, to indicate where they hit from. Feasible today: Round carries teeId/teeName (types.ts), GolfAPI holeData has a per-hole tee coord, mapped courses have tee polygons (centroids via mapped-course-api). Render in the round satellite map (inline + fullscreen), tinted to the chosen tee color; F/C/B + plays-like already compute from-tee. Respect NORTHSTAR (clean, quiet marker, not a gaudy pin).",
+      "spec": ""
+    },
+    {
+      "id": "caddie-hazard-grounding",
+      "title": "Ground the caddie in real hazard geometry \u2014 stop invented hazards",
+      "type": "major",
+      "priority": 2,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Owner 2026-07-06: caddie said '260 to the left bunker' on a hole with NO left bunker. The instructions' fabrication ban is insufficient without data. Lean fix (NOT the paused P3 carries/DECADE epic): (1) for mapped courses, include the hole's real bunker/water features (centroids + tee-relative yardages, computed like mappedCourseToCoordinates hazards) in the session hole-intel on BOTH caddie paths (CaddieSheet session + realtime orb tool surface get_conditions/get_recommendation); (2) harden instructions: only cite hazards/distances present in provided data; when no hazard data exists, speak generically, never a specific feature+number; (3) regression: caddie eval/test that a no-hazard-data hole never yields a specific hazard claim. Related memory: caddie-hole-strategy-guides (grounded guides idea, paused).",
+      "spec": ""
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
