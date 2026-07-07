@@ -1626,10 +1626,11 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle",
+      "landed": "integration/next @ 96cb16e (loop cycle 10, 2026-07-07) — silent; reviewer SHIP, QA 1602/1602. Follow-up nit (non-blocking): hole-change + visibility refresh are gated only on staleness, not round-active, so a COMPLETED round still refetches weather on hole-nav/foreground — fold the round.status!=='completed' guard in next time RoundPageClient is touched.",
       "depends_on": [],
       "why": "Owner 2026-07-07: one wind reading for a 4+ hour round. Source granularity is honest (one Open-Meteo grid cell covers the course; per-hole SPEED differences exist in no data source — never fake them), but STALENESS is fixable: quietly refetch weather every ~20-30 min or on hole change when the reading is >20 min old; tiles update in place. Direction-per-hole-bearing already works.",
-      "spec": ""
+      "spec": "specs/wind-periodic-refresh-plan.md"
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style — rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm — not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home · Partners · Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
