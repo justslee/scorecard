@@ -1705,10 +1705,12 @@
       "type": "silent",
       "priority": 3,
       "risk": "low",
-      "status": "needs-spec",
+      "status": "done-on-bundle",
+      "done_commit": "3a8f3d7",
+      "done_note": "Cycle 23 (2026-07-08): CI Postgres service -> postgis/postgis:16-3.4; conftest _ensure_schema now bootstraps the raw-SQL course-mapping schema (001_course_mapping_schema.sql run verbatim via asyncpg simple-query protocol, is_file-guarded) + 5 tables added to per-test TRUNCATE; new tests/integration/test_courses_mapped_db.py with 7 DB-backed tests (write-back->get_course round-trip, JSONB merge preserves other keys, 4 no-op-returns-False paths, precompute backfill idempotency via real _precompute_course_elevations seam). VERIFIED IN CI: the 7 tests RUN (not skip) and PASS against PostGIS -- backend gate 1161 passed (up from 1080 local-skip); frontend gate green; reviewer SHIP (no blocking, all assertions matched to real code). Rides bundle PR #111 (silent). Only ci.yml + conftest.py + new test file touched; no app/deploy/migration edits.",
       "depends_on": [],
       "why": "Surfaced 2026-07-08 building course-intel-static-persistence: the plan's 3 DB-backed integration tests (write-back round-trip, precompute backfill, targeted-UPDATE merge/no-op) could NOT be written because CI's postgres:16 service has no PostGIS extension and tests/integration/conftest.py only runs Base.metadata.create_all (never creates the raw-SQL courses/tee_sets/holes/hole_features/hole_yardages tables from supabase/migrations/001_course_mapping_schema.sql, guarded). No test in the repo exercises courses_mapped against a live DB today. Fix: swap CI's postgres service to postgis/postgis:16-3.4 + add a course-mapping schema-bootstrap fixture to conftest, then land tests (b) write-back->get_course round-trip, (d) session precompute backfill, (e) update_green_feature_properties merge-preserves-other-keys + no-op-returns-False-when-green-absent. Until then, the targeted JSONB UPDATE + merge-non-clobber + precompute round-trip are verified by inspection only.",
-      "spec": ""
+      "spec": "specs/ci-postgis-course-mapping-tests-plan.md"
     },
     {
       "id": "harden-elevation-writeback-holenumber",
