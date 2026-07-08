@@ -10,6 +10,14 @@
  * reply text is always rendered by the caller regardless of what TTS does —
  * every failure path here is swallowed (autoplay blocked, offline, TTS
  * error) and reported via lib/voice/telemetry.ts, never thrown at the caller.
+ *
+ * Sentence-level pipelining (specs/caddie-realtime-conversation-plan.md
+ * §6.5.4, Slice A2): internally this is a single ordered PLAY QUEUE, always
+ * played back-to-back on the SAME persistent element. `speak()` is sugar for
+ * "one chunk, whole turn" (unchanged observable behavior — every existing
+ * caller/test keeps working); `beginStream()`/`enqueue()`/`endStream()` let a
+ * caller feed the queue sentence-by-sentence as an SSE reply streams in, so
+ * the first sentence can start playing while the rest is still arriving.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -30,11 +38,27 @@ export interface SheetTTS {
   /** Bless the audio element for autoplay — call SYNCHRONOUSLY inside a user
    *  gesture (mic tap, speaker-toggle tap). Idempotent. */
   unlock(): void;
-  /** Speak a completed reply. No-op if the mute pref is off or text is empty.
-   *  Aborts any in-flight fetch/playback first — a single element makes
-   *  double-voice structurally impossible. Never throws. */
+  /** Speak a completed reply as ONE chunk — the whole turn. No-op if the
+   *  mute pref is off or text is empty. Clears any in-flight/queued chunks
+   *  first — a single element makes double-voice structurally impossible.
+   *  Never throws. */
   speak(text: string, personaId: string): void;
-  /** Silence current playback (tap-to-silence / sheet close / unmount). */
+  /** Mark the start of a NEW streamed turn — clears any leftover
+   *  queued/playing chunks from a previous (now superseded) turn and resets
+   *  the once-per-turn `onSpeakStart`/`onPlaybackEnd` guards. Call once,
+   *  before the first `enqueue()` of a turn. Safe to call even if nothing
+   *  needs clearing. */
+  beginStream(): void;
+  /** Append one sentence-sized chunk to the current turn's play queue —
+   *  synthesizes it and, if nothing is currently playing, starts it as soon
+   *  as it's ready. Subsequent chunks play back-to-back on the same element.
+   *  No-op if the mute pref is off or text is empty. */
+  enqueue(text: string, personaId: string): void;
+  /** Mark the current turn's text as fully sent — once the queue then
+   *  drains (the last chunk's natural `ended`), `onPlaybackEnd` fires. */
+  endStream(): void;
+  /** Silence current playback and clear the whole queue (tap-to-silence /
+   *  sheet close / unmount / barge-in). Never re-arms hands-free. */
   stop(): void;
   isSpeaking: boolean;
 }
@@ -43,9 +67,19 @@ export interface UseSheetTTSOptions {
   onPlaybackEnd?: () => void;
   /** Fires once when a REAL reply's audio actually begins playing (play()
    *  resolved) — never for the silent prime clip in unlock(), never for an
-   *  aborted/superseded speak() (specs/caddie-realtime-telemetry-plan.md
-   *  §1.5). Pure signal only — this hook emits no telemetry itself. */
+   *  aborted/superseded chunk (specs/caddie-realtime-telemetry-plan.md
+   *  §1.5). On the queued path this fires on the FIRST chunk of the turn
+   *  only. Pure signal only — this hook emits no telemetry itself. */
   onSpeakStart?: () => void;
+}
+
+interface QueueItem {
+  id: number;
+  text: string;
+  personaId: string;
+  controller: AbortController;
+  blobUrl: string | null;
+  status: "loading" | "ready" | "playing" | "error";
 }
 
 function createAudioEl(onEnded: () => void, onPaused: () => void): HTMLAudioElement {
@@ -66,14 +100,29 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const unlockedRef = useRef(false);
-  const abortRef = useRef<AbortController | null>(null);
   const objectUrlRef = useRef<string | null>(null);
-  // True only while a REAL reply is playing (set right before speak()'s
-  // .play(), cleared by stop() / a new speak() / onEnded). Guards the `ended`
+
+  // The ordered play queue for the CURRENT turn, and per-turn bookkeeping.
+  const queueRef = useRef<QueueItem[]>([]);
+  const nextIdRef = useRef(0);
+  const playingIdRef = useRef<number | null>(null);
+  // True once the caller has told us the current turn's text is fully sent
+  // (via endStream(), or immediately for a single-shot speak()) — the queue
+  // draining to empty only ends the turn (fires onPlaybackEnd) once this is
+  // also true, so a mid-stream gap (waiting on the next sentence) never
+  // re-arms hands-free early.
+  const streamEndedRef = useRef(false);
+  // Guards onPlaybackEnd firing more than once for the same turn.
+  const turnEndedFiredRef = useRef(false);
+  // Guards onSpeakStart firing more than once per turn (fires on chunk 1 only).
+  const turnFirstAudioFiredRef = useRef(false);
+  // True only while a REAL chunk is playing (set right before a chunk's
+  // .play(), cleared by stop()/a new turn/onEnded). Guards the `ended`
   // re-arm against the silent prime clip in unlock() — the prime clip's
   // native `ended` must be inert, never re-arming the hands-free loop
   // (specs/fix-ios-tts-playback-plan.md Part B).
   const playingRealRef = useRef(false);
+
   // Ref-mirrored so the DOM listener (attached once, at element creation)
   // always calls the LATEST callback identity without recreating the audio
   // element every render (mirrors the convHistoryRef pattern elsewhere).
@@ -94,20 +143,24 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
     }
   }, []);
 
-  const onEnded = useCallback(() => {
-    setIsSpeaking(false);
-    // Only a real reply's natural completion re-arms the hands-free loop —
-    // the silent prime clip in unlock() can also fire `ended`, and must not.
-    if (playingRealRef.current) {
-      playingRealRef.current = false;
-      onPlaybackEndRef.current?.();
+  // Aborts every in-flight/queued chunk, stops playback, and resets to idle —
+  // the shared primitive behind stop()/speak()/beginStream(). Does NOT touch
+  // streamEndedRef/turnEndedFiredRef/turnFirstAudioFiredRef; callers set
+  // those explicitly since "clear the queue" and "what turn are we starting"
+  // are different concerns.
+  const clearAllInternal = useCallback(() => {
+    for (const item of queueRef.current) {
+      item.controller.abort();
+      if (item.blobUrl && item.blobUrl !== objectUrlRef.current) {
+        try {
+          URL.revokeObjectURL(item.blobUrl);
+        } catch {
+          /* best effort */
+        }
+      }
     }
-  }, []);
-  const onPaused = useCallback(() => setIsSpeaking(false), []);
-
-  const stop = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    queueRef.current = [];
+    playingIdRef.current = null;
     playingRealRef.current = false;
     const el = audioElRef.current;
     if (el) {
@@ -122,6 +175,138 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
     setIsSpeaking(false);
   }, [releaseObjectUrl]);
 
+  // Forward-declared via a ref so playItem/maybeAdvance (defined with useCallback,
+  // referencing each other) can call one another without a definition-order
+  // problem — both are stable (empty deps) so this is set once.
+  const maybeAdvanceRef = useRef<() => void>(() => {});
+
+  const onEnded = useCallback(() => {
+    setIsSpeaking(false);
+    // Only a real chunk's natural completion advances the queue / re-arms
+    // the hands-free loop — the silent prime clip in unlock() can also fire
+    // `ended`, and must not.
+    if (!playingRealRef.current) return;
+    playingRealRef.current = false;
+    const finishedId = playingIdRef.current;
+    playingIdRef.current = null;
+    if (finishedId != null && queueRef.current[0]?.id === finishedId) {
+      queueRef.current.shift();
+    }
+    releaseObjectUrl();
+    maybeAdvanceRef.current();
+  }, [releaseObjectUrl]);
+  const onPaused = useCallback(() => setIsSpeaking(false), []);
+
+  const playItem = useCallback(
+    (item: QueueItem) => {
+      playingIdRef.current = item.id;
+      item.status = "playing";
+      releaseObjectUrl();
+      objectUrlRef.current = item.blobUrl;
+      if (!audioElRef.current) {
+        audioElRef.current = createAudioEl(onEnded, onPaused);
+      }
+      audioElRef.current.src = item.blobUrl!;
+      setIsSpeaking(true);
+      playingRealRef.current = true;
+      const controller = item.controller;
+      void (async () => {
+        try {
+          await audioElRef.current!.play();
+          if (controller.signal.aborted || playingIdRef.current !== item.id) return; // superseded mid-await
+          if (!turnFirstAudioFiredRef.current) {
+            turnFirstAudioFiredRef.current = true;
+            onSpeakStartRef.current?.();
+          }
+        } catch (err) {
+          if (controller.signal.aborted) return; // expected — superseded
+          setIsSpeaking(false);
+          voiceEvent("sheet-tts", "speak_failed", {
+            detail: err instanceof Error ? err.name : "unknown",
+          });
+          // A failed play() ends this turn silently — mirrors the
+          // non-queued path's existing behavior: a TTS failure never
+          // re-arms hands-free, and any remaining queued chunks are
+          // dropped rather than risking more failed play() calls.
+          playingIdRef.current = null;
+          playingRealRef.current = false;
+          clearAllInternal();
+          turnEndedFiredRef.current = true; // suppress any late finalize
+        }
+      })();
+    },
+    [clearAllInternal, onEnded, onPaused, releaseObjectUrl],
+  );
+
+  const maybeAdvance = useCallback(() => {
+    if (playingIdRef.current != null) return; // already playing something
+    while (queueRef.current.length > 0) {
+      const head = queueRef.current[0];
+      if (head.status === "error") {
+        queueRef.current.shift();
+        continue;
+      }
+      if (head.status === "loading") return; // wait — retried when it resolves
+      playItem(head);
+      return;
+    }
+    // Queue is empty. Only a genuinely complete turn (endStream() already
+    // called, or a single-shot speak()) fires onPlaybackEnd — a mid-stream
+    // gap (more sentences still coming) stays quiet.
+    if (streamEndedRef.current && !turnEndedFiredRef.current) {
+      turnEndedFiredRef.current = true;
+      onPlaybackEndRef.current?.();
+    }
+  }, [playItem]);
+  // Ref-mirrored (not assigned during render) so onEnded/enqueueInternal —
+  // defined above maybeAdvance to avoid a circular useCallback dependency —
+  // always call the latest identity via an effect, matching the
+  // onPlaybackEndRef/onSpeakStartRef pattern above.
+  useEffect(() => {
+    maybeAdvanceRef.current = maybeAdvance;
+  }, [maybeAdvance]);
+
+  const enqueueInternal = useCallback(
+    (text: string, personaId: string) => {
+      const controller = new AbortController();
+      const item: QueueItem = {
+        id: ++nextIdRef.current,
+        text,
+        personaId,
+        controller,
+        blobUrl: null,
+        status: "loading",
+      };
+      queueRef.current.push(item);
+      void (async () => {
+        try {
+          const blob = await speakCaddieReply(text, personaId, controller.signal);
+          if (controller.signal.aborted) return;
+          item.blobUrl = URL.createObjectURL(blob);
+          item.status = "ready";
+          maybeAdvanceRef.current();
+        } catch (err) {
+          if (controller.signal.aborted) return; // expected — superseded
+          item.status = "error";
+          voiceEvent("sheet-tts", "speak_failed", {
+            detail: err instanceof Error ? err.name : "unknown",
+          });
+          maybeAdvanceRef.current();
+        }
+      })();
+      maybeAdvanceRef.current();
+    },
+    [],
+  );
+
+  const stop = useCallback(() => {
+    clearAllInternal();
+    // Suppress any late finalize from an already-aborted item's promise
+    // settling — this turn is over, and it must never re-arm hands-free.
+    streamEndedRef.current = true;
+    turnEndedFiredRef.current = true;
+  }, [clearAllInternal]);
+
   const unlock = useCallback(() => {
     if (typeof window === "undefined") return;
     if (!audioElRef.current) {
@@ -132,11 +317,11 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
     // Prime with a REAL, decodable source (a short silent mp3 data-URI) —
     // not just an empty-src element — so WebKit sees a genuine
     // gesture-activated media load. Bless-play-then-pause inside the gesture
-    // so the later programmatic .play() in speak() is reliably allowed under
-    // WKWebView autoplay rules (mirrors the realtime.ts remote-audio-sink
-    // pattern). playingRealRef stays false through this dance — the prime
-    // clip's `ended`/`pause` must never re-arm the hands-free loop (guarded
-    // in onEnded above).
+    // so the later programmatic .play() in speak()/enqueue() is reliably
+    // allowed under WKWebView autoplay rules (mirrors the realtime.ts
+    // remote-audio-sink pattern). playingRealRef stays false through this
+    // dance — the prime clip's `ended`/`pause` must never re-arm the
+    // hands-free loop (guarded in onEnded above).
     try {
       audioElRef.current.src = SILENT_MP3_DATA_URI;
       const p = audioElRef.current.play();
@@ -162,59 +347,44 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
     (text: string, personaId: string) => {
       const trimmed = (text || "").trim();
       if (!trimmed || !getSheetTtsEnabled()) return;
-
-      // Overlap handling: a new reply cancels an outstanding fetch and stops
-      // whatever is currently playing before starting the new one.
-      abortRef.current?.abort();
-      playingRealRef.current = false;
-      const el = audioElRef.current;
-      if (el) {
-        try {
-          el.pause();
-          el.currentTime = 0;
-        } catch {
-          /* best effort */
-        }
-      }
-      releaseObjectUrl();
-      setIsSpeaking(false);
-
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      void (async () => {
-        try {
-          const blob = await speakCaddieReply(trimmed, personaId, controller.signal);
-          if (controller.signal.aborted) return;
-          const url = URL.createObjectURL(blob);
-          objectUrlRef.current = url;
-          if (!audioElRef.current) {
-            // unlock() wasn't called first — create the element anyway; if
-            // it isn't blessed, play() below simply rejects (swallowed).
-            audioElRef.current = createAudioEl(onEnded, onPaused);
-          }
-          audioElRef.current.src = url;
-          setIsSpeaking(true);
-          playingRealRef.current = true;
-          await audioElRef.current.play();
-          if (controller.signal.aborted) return; // a newer speak() superseded this one mid-play()
-          onSpeakStartRef.current?.();
-        } catch (err) {
-          if (controller.signal.aborted) return; // expected — a newer speak() took over
-          setIsSpeaking(false);
-          voiceEvent("sheet-tts", "speak_failed", {
-            detail: err instanceof Error ? err.name : "unknown",
-          });
-        }
-      })();
+      // A single chunk IS the whole turn — clear any previous turn's
+      // leftovers first (overlap handling: a single element makes
+      // double-voice structurally impossible).
+      clearAllInternal();
+      turnFirstAudioFiredRef.current = false;
+      turnEndedFiredRef.current = false;
+      streamEndedRef.current = true;
+      enqueueInternal(trimmed, personaId);
     },
-    [onEnded, onPaused, releaseObjectUrl],
+    [clearAllInternal, enqueueInternal],
   );
+
+  const beginStream = useCallback(() => {
+    clearAllInternal();
+    turnFirstAudioFiredRef.current = false;
+    turnEndedFiredRef.current = false;
+    streamEndedRef.current = false;
+  }, [clearAllInternal]);
+
+  const enqueue = useCallback(
+    (text: string, personaId: string) => {
+      const trimmed = (text || "").trim();
+      if (!trimmed || !getSheetTtsEnabled()) return;
+      enqueueInternal(trimmed, personaId);
+    },
+    [enqueueInternal],
+  );
+
+  const endStream = useCallback(() => {
+    streamEndedRef.current = true;
+    maybeAdvanceRef.current();
+  }, []);
 
   // Unmount cleanup — mirrors realtime.ts's teardown of its audio sink.
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      for (const item of queueRef.current) item.controller.abort();
+      queueRef.current = [];
       releaseObjectUrl();
       const el = audioElRef.current;
       if (el) {
@@ -229,5 +399,5 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
     };
   }, [releaseObjectUrl]);
 
-  return { unlock, speak, stop, isSpeaking };
+  return { unlock, speak, beginStream, enqueue, endStream, stop, isSpeaking };
 }

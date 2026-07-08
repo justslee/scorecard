@@ -320,4 +320,197 @@ describe("useSheetTTS", () => {
       );
     });
   });
+
+  // Sentence-level TTS pipelining (specs/caddie-realtime-conversation-plan.md
+  // §6.5.4, Slice A2) — the queued mode: beginStream()/enqueue()/endStream().
+  // These prove the 6 hard invariants from the plan.
+  describe("queued streaming mode (beginStream/enqueue/endStream)", () => {
+    it("plays N chunks sequentially, back-to-back, on the SAME element", async () => {
+      speakCaddieReplyMock.mockResolvedValue(makeBlob());
+      const { result } = renderHook(() => useSheetTTS());
+
+      act(() => result.current.unlock());
+      const playCallsAfterUnlock = playSpy.mock.calls.length;
+
+      act(() => result.current.beginStream());
+      act(() => result.current.enqueue("One.", "classic"));
+      await waitFor(() => expect(playSpy.mock.calls.length).toBe(playCallsAfterUnlock + 1));
+
+      act(() => result.current.enqueue("Two.", "classic"));
+      act(() => result.current.enqueue("Three.", "classic"));
+      act(() => result.current.endStream());
+
+      expect(document.querySelectorAll("audio").length).toBe(1); // one persistent element throughout
+
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("ended"))); // chunk 1 done
+      await waitFor(() => expect(playSpy.mock.calls.length).toBe(playCallsAfterUnlock + 2));
+
+      act(() => el.dispatchEvent(new Event("ended"))); // chunk 2 done
+      await waitFor(() => expect(playSpy.mock.calls.length).toBe(playCallsAfterUnlock + 3));
+
+      expect(speakCaddieReplyMock).toHaveBeenNthCalledWith(1, "One.", "classic", expect.anything());
+      expect(speakCaddieReplyMock).toHaveBeenNthCalledWith(2, "Two.", "classic", expect.anything());
+      expect(speakCaddieReplyMock).toHaveBeenNthCalledWith(3, "Three.", "classic", expect.anything());
+    });
+
+    it("onSpeakStart fires exactly once, on chunk 1 — never again for chunks 2/3", async () => {
+      speakCaddieReplyMock.mockResolvedValue(makeBlob());
+      const onSpeakStart = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onSpeakStart }));
+
+      act(() => result.current.unlock());
+      expect(onSpeakStart).not.toHaveBeenCalled();
+
+      act(() => result.current.beginStream());
+      act(() => result.current.enqueue("One.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+      expect(onSpeakStart).toHaveBeenCalledTimes(1);
+
+      act(() => result.current.enqueue("Two.", "classic"));
+      act(() => result.current.endStream());
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("ended"))); // chunk 1 -> chunk 2
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+
+      expect(onSpeakStart).toHaveBeenCalledTimes(1); // still just once
+    });
+
+    it("onPlaybackEnd fires exactly once, only after the LAST chunk's ended — never between chunks", async () => {
+      speakCaddieReplyMock.mockResolvedValue(makeBlob());
+      const onPlaybackEnd = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+      act(() => result.current.unlock());
+      act(() => result.current.beginStream());
+      act(() => result.current.enqueue("One.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+
+      act(() => result.current.enqueue("Two.", "classic"));
+      act(() => result.current.endStream()); // text is complete, but chunk 1 is still playing
+
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("ended"))); // chunk 1 done — chunk 2 still queued
+      expect(onPlaybackEnd).not.toHaveBeenCalled(); // must NOT fire between chunks
+
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true)); // chunk 2 now playing
+      act(() => el.dispatchEvent(new Event("ended"))); // chunk 2 (the last) done
+
+      expect(onPlaybackEnd).toHaveBeenCalledTimes(1);
+    });
+
+    it("onPlaybackEnd waits for endStream() even if the queue drains first (a gap between chunks)", async () => {
+      speakCaddieReplyMock.mockResolvedValue(makeBlob());
+      const onPlaybackEnd = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+      act(() => result.current.unlock());
+      act(() => result.current.beginStream());
+      act(() => result.current.enqueue("One.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("ended"))); // queue now empty — but stream not marked ended yet
+      expect(onPlaybackEnd).not.toHaveBeenCalled();
+      expect(result.current.isSpeaking).toBe(false);
+
+      // The rest of the reply arrives late.
+      act(() => result.current.enqueue("Two.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+      act(() => result.current.endStream());
+      act(() => el.dispatchEvent(new Event("ended")));
+
+      expect(onPlaybackEnd).toHaveBeenCalledTimes(1);
+    });
+
+    it("stop() mid-queue clears everything and never re-arms (no onPlaybackEnd)", async () => {
+      speakCaddieReplyMock.mockResolvedValue(makeBlob());
+      const onPlaybackEnd = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+      act(() => result.current.unlock());
+      act(() => result.current.beginStream());
+      act(() => result.current.enqueue("One.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+      act(() => result.current.enqueue("Two.", "classic"));
+
+      act(() => result.current.stop());
+      expect(result.current.isSpeaking).toBe(false);
+
+      // A stray 'ended'/'pause' after stop() must not resurrect the turn.
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("ended")));
+      act(() => el.dispatchEvent(new Event("pause")));
+      expect(onPlaybackEnd).not.toHaveBeenCalled();
+
+      // endStream() called late (a straggler from the aborted turn) must
+      // also stay inert.
+      act(() => result.current.endStream());
+      expect(onPlaybackEnd).not.toHaveBeenCalled();
+    });
+
+    it("a barge-in speak() mid-queue clears the pending queue + aborts in-flight synths — no double-speak, no re-arm", async () => {
+      let resolveSecond: (b: Blob) => void = () => {};
+      const secondPromise = new Promise<Blob>((resolve) => {
+        resolveSecond = resolve;
+      });
+      speakCaddieReplyMock.mockResolvedValueOnce(makeBlob()); // "One."
+      speakCaddieReplyMock.mockImplementationOnce(() => secondPromise); // "Two." — stays pending
+      speakCaddieReplyMock.mockResolvedValueOnce(makeBlob()); // the barge-in reply
+      const onPlaybackEnd = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+      act(() => result.current.unlock());
+      act(() => result.current.beginStream());
+      act(() => result.current.enqueue("One.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+      act(() => result.current.enqueue("Two.", "classic")); // synth kicked off, stays pending
+      await waitFor(() => expect(speakCaddieReplyMock).toHaveBeenCalledTimes(2));
+      const secondSignal = speakCaddieReplyMock.mock.calls[1][2] as AbortSignal;
+      expect(secondSignal.aborted).toBe(false);
+
+      // Barge-in: a fresh whole-reply speak() interrupts mid-queue.
+      act(() => result.current.speak("New question answer.", "classic"));
+      expect(secondSignal.aborted).toBe(true); // the pending "Two." synth was aborted
+
+      await waitFor(() => expect(speakCaddieReplyMock).toHaveBeenCalledTimes(3));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+
+      // The stale "Two." resolving late must never play or fire anything.
+      resolveSecond(makeBlob());
+      await new Promise((r) => setTimeout(r, 0));
+      expect(speakCaddieReplyMock).toHaveBeenNthCalledWith(3, "New question answer.", "classic", expect.anything());
+
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("ended")));
+      expect(onPlaybackEnd).toHaveBeenCalledTimes(1); // fires once, for the NEW (barge-in) turn only
+    });
+
+    it("no double-speak: the full text is spoken exactly once across chunks (no drop, no duplicate)", async () => {
+      speakCaddieReplyMock.mockResolvedValue(makeBlob());
+      const { result } = renderHook(() => useSheetTTS());
+
+      act(() => result.current.unlock());
+      act(() => result.current.beginStream());
+      act(() => result.current.enqueue("Smooth 7-iron.", "classic"));
+      act(() => result.current.enqueue("Aim left of the flag.", "classic"));
+      act(() => result.current.endStream());
+
+      await waitFor(() => expect(speakCaddieReplyMock).toHaveBeenCalledTimes(2));
+      const spoken = speakCaddieReplyMock.mock.calls.map((c) => c[0]).join(" ");
+      expect(spoken).toBe("Smooth 7-iron. Aim left of the flag.");
+    });
+
+    it("enqueue()/speak() are no-ops when the mute pref is off — nothing synthesized, no queue built", () => {
+      enabledState.value = false;
+      const { result } = renderHook(() => useSheetTTS());
+
+      act(() => result.current.beginStream());
+      act(() => result.current.enqueue("One.", "classic"));
+      act(() => result.current.endStream());
+
+      expect(speakCaddieReplyMock).not.toHaveBeenCalled();
+      expect(result.current.isSpeaking).toBe(false);
+    });
+  });
 });

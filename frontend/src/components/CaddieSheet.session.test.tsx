@@ -109,13 +109,27 @@ vi.mock("@/lib/caddie/stream-buffer", () => ({
 // useSheetTTS — spied directly so "tts.speak called exactly once with the
 // full text" is a clean assertion, independent of the localStorage-gated
 // mute pref (default OFF) and the real speakCaddieReply fetch.
+//
+// beginStream/enqueue/endStream are the sentence-pipelining queue API
+// (specs/caddie-realtime-conversation-plan.md §6.5.4, Slice A2) — every
+// reply in THIS file is short enough to stay under CaddieSheet's
+// MIN_TTS_CHUNK_CHARS merge threshold, so nothing is ever pipelined
+// mid-stream and completion always falls back to the plain tts.speak() call
+// these assertions check — exactly the old, pre-A2 behavior. Stubbed here
+// only so the component doesn't crash calling them.
 const ttsSpeakSpy = vi.fn();
 const ttsUnlockSpy = vi.fn();
 const ttsStopSpy = vi.fn();
+const ttsBeginStreamSpy = vi.fn();
+const ttsEnqueueSpy = vi.fn();
+const ttsEndStreamSpy = vi.fn();
 vi.mock("@/hooks/useSheetTTS", () => ({
   useSheetTTS: () => ({
     unlock: ttsUnlockSpy,
     speak: ttsSpeakSpy,
+    beginStream: ttsBeginStreamSpy,
+    enqueue: ttsEnqueueSpy,
+    endStream: ttsEndStreamSpy,
     stop: ttsStopSpy,
     isSpeaking: false,
   }),
@@ -431,9 +445,13 @@ describe("CaddieSheet — streaming ladder (specs/voice-streaming-replies-plan.m
       { role: "user", content: "what club from here?" },
       { role: "assistant", content: "Easy 7. Center of the green." },
     ]);
-    // TTS fires exactly once, with the complete text.
+    // TTS fires exactly once, with the complete text. "Easy 7. " completes a
+    // sentence boundary mid-stream, but it's under MIN_TTS_CHUNK_CHARS so it
+    // merges with the rest rather than pipelining as its own chunk — the
+    // exact old single-call behavior (specs/caddie-realtime-conversation-plan.md §6.5.4).
     expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
     expect(ttsSpeakSpy).toHaveBeenCalledWith("Easy 7. Center of the green.", "strategist");
+    expect(ttsEnqueueSpy).not.toHaveBeenCalled();
   });
 
   it("does NOT mount the follow-up/clear CTAs or re-arm the mic mid-stream — only once the reply is complete", async () => {
@@ -660,6 +678,7 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
     ]);
     expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
     expect(ttsSpeakSpy).toHaveBeenCalledWith("Smooth 8-iron. Center of the green.", "strategist");
+    expect(ttsEnqueueSpy).not.toHaveBeenCalled(); // "Smooth 8-iron." (14 chars) merges rather than pipelines
 
     // (e) same completion lifecycle as a normal reply: follow-up mounts, mic re-arms.
     expect(await screen.findByText("Ask follow-up")).toBeTruthy();

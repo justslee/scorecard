@@ -107,6 +107,14 @@ vi.mock("@/lib/voice/tts-pref", () => ({
 // `fireSpeakStart()`. `isSpeaking` is a plain field the test can flip
 // directly, read fresh on every render (a `rerender()` is needed to observe
 // a change, exactly like a real state update would).
+//
+// beginStream/enqueue/endStream are the sentence-pipelining queue API
+// (specs/caddie-realtime-conversation-plan.md §6.5.4, Slice A2) — every
+// scripted reply in THIS file is a single short token with no trailing
+// whitespace, so it never crosses a mid-stream sentence boundary; completion
+// always falls back to the plain speak() call these assertions check —
+// exactly the old, pre-A2 behavior. Stubbed here only so the component
+// doesn't crash calling them.
 const ttsState = vi.hoisted(() => ({
   isSpeaking: false,
   onPlaybackEnd: null as null | (() => void),
@@ -114,6 +122,9 @@ const ttsState = vi.hoisted(() => ({
   speakSpy: vi.fn(),
   unlockSpy: vi.fn(),
   stopSpy: vi.fn(),
+  beginStreamSpy: vi.fn(),
+  enqueueSpy: vi.fn(),
+  endStreamSpy: vi.fn(),
 }));
 vi.mock("@/hooks/useSheetTTS", () => ({
   useSheetTTS: (opts?: { onPlaybackEnd?: () => void; onSpeakStart?: () => void }) => {
@@ -122,6 +133,9 @@ vi.mock("@/hooks/useSheetTTS", () => ({
     return {
       unlock: ttsState.unlockSpy,
       speak: ttsState.speakSpy,
+      beginStream: ttsState.beginStreamSpy,
+      enqueue: ttsState.enqueueSpy,
+      endStream: ttsState.endStreamSpy,
       stop: ttsState.stopSpy,
       isSpeaking: ttsState.isSpeaking,
     };
