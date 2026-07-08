@@ -3,6 +3,51 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — builder: caddie-llm-rate-limiting (backend, SILENT, integration/next, DONE)
+
+Implemented `specs/caddie-llm-rate-limiting-plan.md` exactly (audit item E, grade F —
+zero per-user rate/spend limits on paid LLM endpoints). No DB migration, as designed.
+
+- NEW `backend/app/services/rate_limit.py` — two-tier per-user limiter:
+  `SlidingWindowLimiter` (in-process deque, injectable clock, RPM=30/60s default,
+  memory-hygiene `sweep()` + `MAX_TRACKED_USERS` soft cap) + `FileDailyBudgetStore`
+  (JSON file at `backend/data/caddie_rate_limit.json`, modeled line-for-line on
+  `FileBudgetStore` in `golfapi_cache.py`, UTC-day rollover via injectable `now`,
+  daily requests=1500 / est-tokens=4,000,000 defaults) + `CaddieRateLimiter`
+  (`from_env()` for the module singleton; explicit-arg constructor for tests; fail-OPEN
+  on any internal error, logs loudly at `looper.ratelimit`; owner multiplier via
+  `OWNER_CLERK_USER_ID`) + `caddie_rate_limited_user` dependency (`Depends(current_user_id)`
+  → enforce → returns user id, drop-in for `Depends(current_user_id)`).
+- Wired `Depends(caddie_rate_limited_user)` onto the 14 endpoints named in plan §3:
+  `caddie.py` (`session_voice`, `session_voice_stream`, `voice_caddie`,
+  `voice_caddie_stream`, `session_recommend`, `get_recommendation`, `get_course_intel`),
+  `realtime.py` (`start_realtime_session`, `start_setup_session`), `voice.py` (`speak`,
+  `parse_voice_scores` — newly per-user-bound), `voice_advanced.py` (`parse_round_setup`,
+  `parse_scorecard`, `parse_voice_transcript` — newly per-user-bound). Cheap/free
+  endpoints (`session/start`, `weather`, `personalities`, `transcribe`, `live-token`, etc.)
+  left untouched per plan §3.
+- NEW `backend/tests/test_rate_limit.py` — 19 deterministic offline tests (injectable
+  clock/`now`/stores, `tmp_path` file round-trip, no `time.sleep`, no DB, no network)
+  covering all 10 plan §9 cases (RPM boundary, sliding-window recovery incl. partial
+  expiry, 429 shape + Retry-After, per-user isolation, daily cap + UTC rollover + file
+  persistence, est-token cap, fail-open, kill-switch, memory eviction + soft-cap sweep,
+  owner multiplier).
+- **Deviation (noted, not built around):** could not add the 6 env vars to
+  `backend/.env.example` (plan step 4) — `guard.sh` hard-blocks any Edit/Write on
+  `*.env.*` paths including `.env.example`, and CLAUDE.md's do-not-touch list says
+  `**/.env*`. Skipped rather than bypassed; `CaddieRateLimiter.from_env()`'s defaults
+  already match the plan's table (documented in the module docstring), so this is a
+  documentation-only gap — a human (or the guard's owner) should add the 6 lines to
+  `.env.example` directly. gitignore needed no change: `backend/data/` is already fully
+  ignored, so the runtime `caddie_rate_limit.json` counter is covered.
+
+Gates: `ruff check .` clean; `pytest tests/test_rate_limit.py -q` 19/19 green;
+full `pytest -q` 1220 passed, 82 skipped (pre-existing DB-dependent skips, no
+Postgres locally, unchanged by this item) — no regressions from the dependency swaps.
+Committed to `integration/next` (456cfef) and pushed. **Classification: SILENT**
+(no shared-type change, no success-path wire-shape change — only a new 429 status
+already calmed by the existing `humanizeVoiceError` frontend fallback per plan §5).
+
 ## 2026-07-08 — eng-lead cycle 29: caddie prompt-caching + LLM timeouts/retries → bundle PR #115 (SILENT, DONE)
 
 Step 0: board clean — no Needs Review cards awaiting action, no owner feedback on
