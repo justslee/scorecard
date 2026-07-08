@@ -559,7 +559,12 @@ async def _build_session_voice_prompt(
 
     hole_intel = session.hole_intel.get(request.hole_number)
     if hole_intel:
-        context_parts.append(f"Par {hole_intel.par}, {hole_intel.yards} yards (effective: {hole_intel.effective_yards})")
+        if hole_intel.yards is not None:
+            context_parts.append(
+                f"Par {hole_intel.par}, {hole_intel.yards} yards (effective: {hole_intel.effective_yards})"
+            )
+        else:
+            context_parts.append(f"Par {hole_intel.par}")
         if hole_intel.hazards:
             hazards_line = format_hazards_line(request.hole_number, hole_intel.hazards)
             if hazards_line:
@@ -1001,9 +1006,9 @@ async def get_course_intel(
         try:
             intel = await build_hole_intelligence(
                 hole_coords=hc,
-                par=hc.get("par", 4),
-                yards=hc.get("yards", 400),
-                handicap_rating=hc.get("handicap", 9),
+                par=hc.get("par"),
+                yards=hc.get("yards"),
+                handicap_rating=hc.get("handicap"),
                 osm_features=osm_features,
             )
             stored_hole = stored_holes_by_number.get(intel.hole_number)

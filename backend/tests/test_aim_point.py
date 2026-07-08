@@ -277,6 +277,16 @@ class TestGenerateRecommendation:
         rec_haz = generate_recommendation(haz_hole, 150, self._standard_bag(), handicap=15)
         assert rec_haz.confidence > rec_no.confidence
 
+    def test_none_yards_never_throws(self):
+        """hole.yards can be None (unknown yardage, honest — no fake 400).
+        line 286's is_tee_shot check must not crash on None * 0.85; falls
+        back to the conservative (approach-shot) bias."""
+        hole = HoleIntelligence(hole_number=1, par=4, yards=None, hazards=[])
+        rec = generate_recommendation(hole, 150, self._standard_bag(), handicap=15)
+        assert isinstance(rec, CaddieRecommendation)
+        assert isinstance(rec.club, str)
+        assert len(rec.club) > 0
+
     def test_player_stats_with_history_adds_reasoning(self):
         from app.caddie.types import HolePlayerHistory
         hole = HoleIntelligence(

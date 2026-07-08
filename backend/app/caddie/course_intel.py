@@ -22,9 +22,9 @@ log = logging.getLogger("looper.course_intel")
 
 async def build_hole_intelligence(
     hole_coords: dict,
-    par: int = 4,
-    yards: int = 400,
-    handicap_rating: int = 9,
+    par: Optional[int] = 4,
+    yards: Optional[int] = 400,
+    handicap_rating: Optional[int] = 9,
     osm_features: Optional[dict] = None,
 ) -> HoleIntelligence:
     """Build intelligence for a single hole from coordinates + data sources.
@@ -43,6 +43,22 @@ async def build_hole_intelligence(
     green = hole_coords.get("green", {})
     tee = hole_coords.get("tee")
 
+    # The route passes raw request values, which may be null (stored round
+    # with no yardage). Coalesce display-only ints to defaults; keep yards
+    # HONEST — unknown yardage must not become a fabricated 400 (owner: no
+    # fake-data fallbacks). bool excluded (bool is an int subclass).
+    par = par if isinstance(par, int) and not isinstance(par, bool) else 4
+    handicap_rating = (
+        handicap_rating
+        if isinstance(handicap_rating, int) and not isinstance(handicap_rating, bool)
+        else 9
+    )
+    yards = (
+        int(round(yards))
+        if isinstance(yards, (int, float)) and not isinstance(yards, bool)
+        else None
+    )
+
     # Fetch elevations for tee and green
     elevation_change = 0.0
     if tee and green:
@@ -52,7 +68,7 @@ async def build_hole_intelligence(
             elevation_change = green_elev - tee_elev  # positive = uphill
 
     # Effective distance adjusted for elevation
-    effective_yards = yards + round(elevation_change / 3)
+    effective_yards = None if yards is None else yards + round(elevation_change / 3)
 
     # Green slope
     green_slope_data = None

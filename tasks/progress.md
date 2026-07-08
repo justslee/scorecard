@@ -3,6 +3,81 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — wind-periodic-refresh: keep the wind tile fresh through a round (SILENT, integration/next, DONE)
+
+Implemented `specs/wind-periodic-refresh-plan.md`. One Open-Meteo grid-cell reading was
+persisting for a whole 4+ hour round — quietly re-fetches it now instead of faking anything
+new: still one reading for the whole course, still zero per-hole speed synthesis, per-hole
+DIRECTION math (`relativeWind`, `lib/map/wind.ts`) untouched.
+
+- New `frontend/src/lib/map/weather-freshness.ts`: pure `isWeatherStale(fetchedAt, now,
+  thresholdMs)` (`WEATHER_STALE_MS`=20min, `WEATHER_REFRESH_INTERVAL_MS`=25min) +
+  `WeatherRefreshScheduler` (mirrors `lib/voice/idle-timer.ts`'s `IdleTimer`, bare
+  `setInterval`/`clearInterval`). Plan called for `window.setInterval` — deviated: this
+  tsconfig's `@types/node` makes `window.setInterval`'s return type `NodeJS.Timeout`, not
+  `number` (`ReturnType<typeof window.setInterval>` failed `tsc`). `setInterval`/`clearInterval`
+  aren't the `requestAnimationFrame` cross-file-polyfill-leak case from lessons.md (that's an
+  ad-hoc jsdom RAF patch); they're real Node/jsdom globals `vi.useFakeTimers()` swaps cleanly,
+  so bare (matching `IdleTimer`'s actual working pattern) is both correct and precedented.
+- New `frontend/src/lib/map/weather-freshness.test.ts`: pure predicate tests + deterministic
+  `vi.useFakeTimers()`/`advanceTimersByTime` scheduler tests (start/stop/no-double-arm/custom
+  interval/isArmed) — 23 tests total with `wind.test.ts`.
+- `frontend/src/app/round/[id]/RoundPageClient.tsx`: added client-side `weatherFetchedAt`
+  state; one `applyWeather` writer that all 3 existing `setWeather` call sites now route
+  through (retry ladder success, course-intel `intel.weather`, course-intel anchor-only path)
+  so the timestamp can never drift from the reading; idempotent `refreshWeather`
+  (`refreshInFlightRef` coalesces overlapping triggers, `catch` is a no-op — never clobbers a
+  good reading or the honest `—`); a ~25-min periodic effect gated on the round being active
+  (`round.status !== 'completed'`); a hole-change effect (`prevHoleRef`) that refreshes only
+  when `isWeatherStale`; a `visibilitychange` foreground catch-up (native suspends JS intervals
+  backgrounded). All new effects clean up their timer/listener.
+
+Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded,
+`voice-tests/runner.ts --smoke` → 274/274, `vitest run weather-freshness.test.ts wind.test.ts`
+→ 23/23, full `npm run test` → 1602/1602 (75/75 files). No backend files touched, no shared-type
+changes (`fetchedAt` is client-side receipt time only, per plan §4) — `ruff` not required.
+Silent — no new UI/chrome, rides the bundle.
+
+## 2026-07-07 — fix-course-intel-none-yards: honest empty state instead of the "+0ft on every hole" crash (NOTICEABLE, integration/next, DONE)
+
+Implemented `specs/fix-course-intel-none-yards-plan.md` exactly. Root cause: `build_hole_intelligence`
+did `yards + round(elevation_change / 3)` where `yards` could be `None` — a stored round with no
+yardage sends `{yards: null}`, and `dict.get(key, default)` in `routes/caddie.py` only substitutes on
+an *absent* key, not a present `null`, so every hole crashed and the per-hole `except` silently
+discarded the hole's whole intel (elevation included) — the incident #106's logging was added to name.
+par/handicap had the same latent crash via pydantic's required `int` fields.
+
+- `backend/app/caddie/types.py`: `HoleIntelligence.yards`/`effective_yards` → `Optional[int] = None`.
+- `backend/app/caddie/course_intel.py`: widened `par`/`yards`/`handicap_rating` params to
+  `Optional[int]`; added central coalescing (par/handicap → defaults 4/9 when not a real int, bool
+  excluded; yards → honest `None` when not numeric, else `int(round(yards))`); line 55
+  `effective_yards = None if yards is None else yards + round(elevation_change / 3)`.
+- `backend/app/routes/caddie.py:1004-1006`: `hc.get("par")`/`hc.get("yards")`/`hc.get("handicap")` —
+  dropped the misleading defaults so absent-key and null-value converge on one path.
+- `frontend/src/lib/caddie/types.ts`: `yards`/`effective_yards` → `number | null` to mirror; existing
+  consumers already null-tolerant (`?? 0`, `|| undefined`), verified no new tsc break.
+- Added `test_none_inputs_never_throw_and_stay_honest` to `backend/tests/test_course_intel_resilience.py`
+  (non-DB, no network — no tee/green skips elevation fetch).
+
+Gates: `ruff check .` clean; `uv run pytest tests/test_course_intel_resilience.py` → 2/2 passed, no
+DB required; `npm run lint` clean; `npx tsc --noEmit` clean; `npm run build` succeeded;
+`voice-tests/runner.ts --smoke` → 274/274. Committed `8529820` to `integration/next`, pushed.
+Noticeable — restores the dead Elev / "plays like" tile on rounds with no stored yardage instead of
+silently zeroing it.
+
+ENG-LEAD CLOSE (loop cycle 10): reviewer verdict SHIP (no-clobber/timer-leak/stale-closure/
+round-gating invariants all traced and hold; deterministic tests would fail if the bugs were
+reintroduced); QA PASS (independently re-ran full vitest 1602/1602 TWICE, no cross-file
+fake-timer leak). Two non-blocking reviewer nits logged in backlog under wind-periodic-refresh
+(chief: completed-round hole-nav/foreground still refetches weather — fold the round-active
+guard in next time RoundPageClient is touched; benign, event-driven, not a loop). Committed
+96cb16e; backlog cleanup 2326b94. Opened the fresh rolling **bundle PR #107** (integration/next
+→ main), first item, SILENT-only; CI 1 pass / 1 pending / 0 fail. Board card "Bundle #107"
+created in In Progress (NOT Needs Review — no noticeable change, no approval requested). NO push
+notification (silent-only bundle, per standing rule). Also handled Step 0: no owner feedback on
+either #106 card; moved the stale #106 "Needs Review" test card → Shipped so future cycles don't
+misread it as a pending approval. Bundle #107 now accumulates until a noticeable item lands.
+
 ## 2026-07-07 — caddie-conversational-loop follow-up: designer-caught answer-wipe bug (SILENT fix, integration/next, DONE)
 
 Designer review of `eded238` found ONE blocking UX bug (everything else — reviewer verdict SHIP,
@@ -6920,3 +6995,45 @@ card "Bundle #106" created in Needs Review (was missing). backlog: caddie-conver
 
 NO push notification (per this cycle's standing rule + owner mid-testing on-course). Bundle #106
 remains AWAITING owner "ship it"; the loop rides it. integration/next @ 83fcccb pushed.
+
+---
+
+## 2026-07-07 — SHIPPED: #106 the conversational caddie + intel resilience
+
+Owner "ship it". Merge 5056d05 → main; deploy verified by headSha + health ok.
+TestFlight v1.0.789 (build 202607071830). The bundle that answers the owner's
+3:55pm direction end-to-end, built by loop cycles 8-9 same-day:
+- Auto shot reco on Ask Caddie open (GPS → streamed/spoken opening turn;
+  review caught the GPS-await race).
+- Hands-free conversational loop (speak → listen → speak; 400ms echo grace,
+  dead-air dropout, tap-to-interrupt; designer caught the answer-wipe).
+- Intel resilience: hazard classification can never sink hole intel (the
+  '+0ft' fix) + garbage-hazard validation + per-hole failure logging (the
+  remaining thrower will name itself on the owner's next round open).
+Eleven ships today. integration/next resynced; loop continues hourly.
+
+## 2026-07-07 — fix-course-intel-none-yards follow-up: guard None-yards in aim_point/recommend (SILENT, integration/next, DONE)
+
+Adversarial eng-lead review of `8529820` found a regression the plan's audit missed: now that
+`HoleIntelligence.yards` is `Optional[int]`, `build_hole_intelligence` successfully caches
+`yards=None` for no-yardage rounds (previously it threw, so the cache stayed empty) —
+`app/caddie/aim_point.py:286` then did `distance_yards >= hole.yards * 0.85` unguarded, so
+`/session/recommend` (and the stateless `/caddie/recommend` path, now that the frontend type
+permits `yards: null` too) would 500 asking for a club rec on exactly the rounds this fix
+targets — trading a broken Elev tile for a crash on club recommendation.
+
+- `backend/app/caddie/aim_point.py:288` — `is_tee_shot = hole.yards is not None and
+  distance_yards >= hole.yards * 0.85`; unknown yardage falls back to the conservative
+  (approach-shot) bias instead of crashing.
+- `backend/app/routes/caddie.py:562` — session voice-context line no longer interpolates
+  literal "None yards (effective: None)" into the LLM prompt; yardage clause conditional on
+  `hole_intel.yards is not None`, "Par N" always present (non-blocking honesty nit, folded in).
+- `backend/tests/test_aim_point.py`: added `test_none_yards_never_throws` (non-DB, no network) —
+  `generate_recommendation` with a `yards=None` `HoleIntelligence` returns cleanly.
+
+Gates: `ruff check .` clean; `uv run pytest tests/test_aim_point.py tests/test_course_intel_resilience.py
+tests/test_decade_advice.py tests/test_reasoning_priority.py tests/test_competition_legal.py
+tests/test_slope_advice.py tests/test_shot_line_advice.py` → 213/213 passed, no DB required;
+`npm run lint` clean; `npx tsc --noEmit` clean; `npm run build` succeeded; `voice-tests/runner.ts
+--smoke` → 274/274. Committed `33d780b` to `integration/next`, pushed. Silent — backend-only
+crash-prevention fix, rides the bundle with 8529820.

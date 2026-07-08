@@ -49,6 +49,7 @@ import type { MappedCourseListItem } from "@/lib/map-bridge";
 import { roundCourseAnchor } from "@/lib/round-anchor";
 import type { WeatherConditions } from "@/lib/caddie/types";
 import { bearingDeg, relativeWind, playsLikeYards, compassFrom } from "@/lib/map/wind";
+import { isWeatherStale, WeatherRefreshScheduler } from "@/lib/map/weather-freshness";
 import { computeFCBDistances } from "@/lib/course/course-coordinates";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
@@ -515,6 +516,18 @@ export default function RoundPage() {
   // Real weather for the wind tiles (owner 2026-07-07: they were hardcoded).
   // One fetch per round mount; null = honest "no data" tiles, never fake.
   const [weather, setWeather] = useState<WeatherConditions | null>(null);
+  // Client receipt time of the current `weather` reading — when it was
+  // actually fetched, not when the round started (owner 2026-07-07: one
+  // reading was persisting stale for a whole 4+ hour round). Client-side
+  // only: the backend always fetches fresh on /weather (no server timestamp
+  // to trust more than our own receipt time — see specs/wind-periodic-refresh-plan.md §4).
+  const [weatherFetchedAt, setWeatherFetchedAt] = useState<number | null>(null);
+  // ALL weather writes route through this — the single writer guarantees
+  // `weatherFetchedAt` can never drift out of sync with `weather`.
+  const applyWeather = useCallback((w: WeatherConditions) => {
+    setWeather(w);
+    setWeatherFetchedAt(Date.now());
+  }, []);
   // Real per-hole elevation deltas + elevation-adjusted yards (USGS, computed
   // server-side in course-intel — the owner wants the Elev tile back, honest).
   const [intelByHole, setIntelByHole] = useState<Map<number, { elevFt: number; effectiveYards: number }>>(
@@ -535,7 +548,7 @@ export default function RoundPage() {
     const DELAYS = [0, 3_000, 10_000, 30_000];
     const attempt = (i: number) => {
       fetchWeather(weatherLat, weatherLng)
-        .then((w) => { if (!cancelled) setWeather(w); })
+        .then((w) => { if (!cancelled) applyWeather(w); })
         .catch(() => {
           if (cancelled || i + 1 >= DELAYS.length) return; // tiles stay honest "—"
           timer = setTimeout(() => attempt(i + 1), DELAYS[i + 1]);
@@ -546,7 +559,76 @@ export default function RoundPage() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [weatherLat, weatherLng]);
+  }, [weatherLat, weatherLng, applyWeather]);
+
+  // Periodic + on-demand weather refresh (owner 2026-07-07: one reading was
+  // persisting stale for a whole round). Only ever replaces the single
+  // shared grid-cell reading + its receipt time — per-hole wind DIRECTION
+  // math (relativeWind, above) is unchanged; no per-hole speed is ever
+  // synthesized. A failed refresh is a silent no-op: the prior good reading
+  // (or the honest "—" if none was ever acquired) survives untouched.
+  const refreshInFlightRef = useRef(false);
+  const refreshWeather = useCallback(async () => {
+    if (weatherLat == null || weatherLng == null) return;
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    try {
+      const w = await fetchWeather(weatherLat, weatherLng, roundId);
+      applyWeather(w);
+    } catch {
+      // Keep the prior good reading (or honest "—") — never clobber.
+    } finally {
+      refreshInFlightRef.current = false;
+    }
+  }, [weatherLat, weatherLng, roundId, applyWeather]);
+
+  // Mirrors the latest weather/weatherFetchedAt so the hole-change effect
+  // below (keyed only on `currentHole`) reads current values instead of a
+  // stale mount-time closure.
+  const weatherLatestRef = useRef({ weather, weatherFetchedAt });
+  useEffect(() => {
+    weatherLatestRef.current = { weather, weatherFetchedAt };
+  }, [weather, weatherFetchedAt]);
+
+  // ~25-min periodic refresh, only while the round is active — no polling
+  // for a finished or not-yet-loaded round. Keyed on `round?.status` (not
+  // `round` itself) so unrelated round updates (e.g. new scores) don't tear
+  // down and rebuild the interval.
+  useEffect(() => {
+    if (weatherLat == null || weatherLng == null) return;
+    if (!round || round.status === "completed") return;
+    const sched = new WeatherRefreshScheduler(() => { void refreshWeather(); });
+    sched.start();
+    return () => sched.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weatherLat, weatherLng, roundId, round?.status, refreshWeather]);
+
+  // Hole-change refresh, gated on staleness (>20 min) — fires only on an
+  // actual hole change, never on mount (prevHoleRef starts at currentHole).
+  const prevHoleRef = useRef(currentHole);
+  useEffect(() => {
+    if (prevHoleRef.current === currentHole) return;
+    prevHoleRef.current = currentHole;
+    const { weather: w, weatherFetchedAt: fetchedAt } = weatherLatestRef.current;
+    if (w != null && isWeatherStale(fetchedAt, Date.now())) {
+      void refreshWeather();
+    }
+  }, [currentHole, refreshWeather]);
+
+  // Background/foreground catch-up: native (Capacitor/iOS) suspends JS
+  // interval timers while backgrounded, so a round resumed mid-play after a
+  // while would otherwise show a stale reading until the next interval tick.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const { weather: w, weatherFetchedAt: fetchedAt } = weatherLatestRef.current;
+      if (w != null && isWeatherStale(fetchedAt, Date.now())) {
+        void refreshWeather();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshWeather]);
 
   // Tee-marker color source for the map(s) below. "" (not null) when the round
   // exists but has no stored tee name — that still draws a marker (neutral
@@ -631,7 +713,7 @@ export default function RoundPage() {
             anchor?.lng,
             roundId,
           );
-          if (intel.weather) setWeather(intel.weather);
+          if (intel.weather) applyWeather(intel.weather);
           setIntelByHole(
             new Map(
               (intel.holes ?? [])
@@ -669,13 +751,13 @@ export default function RoundPage() {
           }).catch(() => {});
         } else if (anchor) {
           const w = await fetchWeather(anchor.lat, anchor.lng, roundId);
-          setWeather(w);
+          applyWeather(w);
         }
       } catch {
         // Silent — recommendations degrade gracefully without intel.
       }
     })();
-  }, [caddieSessionActive, mapCoordsLoaded, mapCoords, mappedCourse, round, roundId]);
+  }, [caddieSessionActive, mapCoordsLoaded, mapCoords, mappedCourse, round, roundId, applyWeather]);
 
   const hole = HOLES[currentHole - 1] ?? HOLES[0];
   // Prefer round's par data (authoritative); fall back to illustration constant.
