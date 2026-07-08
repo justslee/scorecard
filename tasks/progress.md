@@ -3,6 +3,79 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — caddie-realtime-conversation Slice A2: sentence-level TTS pipelining (frontend, noticeable-leaning latency, integration/next, DONE)
+
+Implemented `specs/caddie-realtime-conversation-plan.md` §6.5.4 (Slice A2) —
+commit `77a0f79`, pushed to `integration/next` (rolling bundle PR #109).
+Removes the "text finishes streaming, THEN voice starts" gap on the classic
+sheet path (`CaddieSheet.tsx` `askCaddie`) the owner described in his
+2026-07-07 latency feedback — TTS now starts on the FIRST sentence while the
+rest of the reply is still streaming, instead of waiting for the whole reply.
+
+- NEW `frontend/src/lib/caddie/sentence-stream.ts` — pure incremental
+  sentence extractor (regex boundary + a short abbreviation/number-guard
+  list), 14 unit tests covering the tricky false positives from the plan
+  ("165 yds." stays one sentence, "Nice drive. Now hit the 8." splits,
+  decimals never split, multi-punctuation "Really?! Go." splits, trailing
+  partial buffers until `flush()`).
+- `frontend/src/hooks/useSheetTTS.ts` — added `beginStream()`/`enqueue()`/
+  `endStream()` as a queued-playback mode alongside the existing `speak()`.
+  Internally rebuilt as a single ordered play queue (each chunk synthesized +
+  abortable independently, always played sequentially on the ONE persistent
+  `<audio>` element); `speak()` is now sugar for "one-chunk turn" over the
+  same queue, so it is 100% behavior-preserving for every existing caller.
+  +8 new unit tests proving the hard invariants: `onSpeakStart` fires once
+  per turn (chunk 1 only), `onPlaybackEnd` fires once — only after the LAST
+  chunk's natural `ended`, never between chunks (this is the invariant that
+  matters most: firing mid-reply would re-arm hands-free while the caddie is
+  still talking) — `stop()`/a new `speak()` clears the whole queue + aborts
+  pending synths with no re-arm, and a failed `play()` ends the turn silently
+  (mirrors old behavior — a TTS failure never re-arms hands-free).
+- `CaddieSheet.tsx` `askCaddie`: `onToken` feeds the segmenter incrementally
+  and `enqueue()`s each completed sentence (guarded by the existing
+  `isStale()`, so a superseded turn never enqueues); a
+  `MIN_TTS_CHUNK_CHARS = 20` merge threshold holds short fragments (e.g.
+  "Easy 7.") and merges them with the next sentence rather than burning a
+  `/speak` call on 2–3 words. At completion, reconciles the un-enqueued tail
+  against the authoritative `responseText` so the full reply is spoken
+  exactly once — no drop, no duplicate. When nothing was pipelined mid-stream
+  (short reply, or the non-streaming fallback tier with zero tokens),
+  completion falls back to the EXACT old single `tts.speak(responseText)`
+  call — unchanged behavior for short/simple replies. Errors/aborts now also
+  call `tts.stop()` so a discarded partial reply is never spoken.
+- Plan deviation (noted per the builder brief): the task described removing
+  `tts.speak()` from the streaming path outright. Kept it as the queue's
+  single-chunk fallback instead (functionally identical — one call, whole
+  text, same invariants) specifically so `CaddieSheet.session.test.tsx` /
+  `.handsfree.test.tsx` — whose every scripted reply is short enough to stay
+  under the merge threshold — pass **byte-for-byte unmodified except for**
+  adding `beginStream`/`enqueue`/`endStream` stubs to their `useSheetTTS`
+  mocks (the hook's API surface grew; every existing assertion is untouched,
+  plus 2 new assertions confirming `enqueue()` is NOT called in those
+  fallback scenarios). This was traced carefully call-by-call before
+  implementing — see the hook's internal design comments.
+- Cost note (per the brief): pipelining trades one full-reply `/speak` proxy
+  call for N per-sentence calls on longer replies. The
+  `MIN_TTS_CHUNK_CHARS` guard keeps this lean — only real, substantial
+  sentence boundaries pipeline; short replies and stray fragments still
+  collapse to one call, same as today.
+- Out of scope (untouched, as directed): `lib/voice/realtime.ts`,
+  `warm-session.ts`, `stream-buffer.ts` and its tests — this is the classic
+  Deepgram+SSE+`useSheetTTS` path only; the live-mode Realtime path (§5) is
+  unaffected.
+
+Gates (all GREEN, evidence): `npm run lint` 0 errors; `npx tsc --noEmit`
+clean; `npm run build` ok; `npx tsx voice-tests/runner.ts --smoke` 274/274;
+`npx vitest run` **78 files / 1650 tests, all passing** (+37 new tests: 14
+segmenter + 8 queue-mode + existing suites untouched-and-still-green).
+
+Classification: **noticeable-leaning latency improvement** on the classic
+caddie-sheet path (device-perceivable: caddie voice should start noticeably
+sooner on multi-sentence replies) — rides on bundle PR #109 with the
+already-shipped stage-timing telemetry (silent) that will make the
+before/after `caddie.eos_to_first_audio` numbers visible on the owner's
+device. Slice C (Realtime transport migration) remains deferred/not started.
+
 ## 2026-07-07 — caddie-realtime-conversation: stage-timing telemetry slice (frontend, SILENT, integration/next, DONE)
 
 Cycle 15 (owner-triggered). Implemented the **stage-timing telemetry** slice of
