@@ -8011,3 +8011,31 @@ grounding validator, budget-capped Bethpage-first backfill, mandatory
 Owner decision: raise the cap again at claude.ai/settings/usage, or the
 loop resumes on billing reset. Main session stays available for approvals
 + light work.
+
+---
+
+## 2026-07-08 — caddie-realtime Slice E — idle suspend/resume UX + telemetry (silent, on integration/next)
+
+Bundle #112 merged to main (hole strategy guides engine) while a fresh
+opus plan (specs/caddie-realtime-slice-e-plan.md) landed directly on
+`main` — synced `integration/next` to `main` (ff) + cherry-picked the
+plan commit before starting, then implemented it.
+
+Turned the dishonest 90s idle dead-end (Slice D's `if (isCleanIdle)
+return;` left `liveState` stuck at "live" over a dead socket, no resume
+path) into an honest, visible "suspended" state with a user-triggered
+`resume()`. Frontend-only: `useCaddieLiveSession.ts` (new `"suspended"`
+state, `suspend()`/`doResume()`, resume RESETS Slice D's
+reconnect-budget so a post-resume drop still gets its own auto-reconnect,
+`live_suspend`/`live_resume` telemetry) + `CaddieSheet.tsx` (`LiveFooter`
+paused branch: calm "Paused — tap to resume", no mute shown). Six new
+deterministic vitest cases; zero edits to realtime.ts/warm-session.ts/
+realtime-ordering.ts/transport.ts/idle-timer.ts (confirmed via
+`git diff --name-only`). All gates green: lint, tsc, build, voice-tests
+smoke (274/274), full vitest (1695/1695 incl. new Slice E + all pinning
+suites unmodified), backend ruff (no backend change). Commit 40af2dd on
+`integration/next`, pushed.
+
+Silent (UX polish behind the already-default-ON live mode + telemetry
+only) — rides along in the next bundle; no owner ping needed for this
+item alone.
