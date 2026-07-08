@@ -605,6 +605,87 @@ class TestSearchGolfapiMapping:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# /api/courses/nearby — search-speed-and-golfapi-verify (latency half): the
+# route calls the module's own `search_golf_courses` name directly (imported
+# at module top), so tests monkeypatch `course_search.search_golf_courses`
+# rather than `app.services.osm.search_golf_courses`. The nearby cache is a
+# SEPARATE instance (`course_search._nearby_cache`) from `_search_cache`
+# (`/search`'s cache) — swapped for a `FakeCacheStore` here too so tests never
+# touch the real disk-backed file.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNearbyCourses:
+    async def test_hits_are_cached_and_requested_on_the_interactive_budget(self, monkeypatch):
+        nearby_cache = FakeCacheStore()
+        monkeypatch.setattr(course_search, "_nearby_cache", nearby_cache)
+
+        calls = []
+
+        async def fake_search_golf_courses(**kwargs):
+            calls.append(kwargs)
+            return [{"osm_id": "way/1", "name": "Bethpage Black", "source": "osm"}]
+
+        monkeypatch.setattr(course_search, "search_golf_courses", fake_search_golf_courses)
+
+        result = await course_search.nearby_courses(lat=40.7442, lng=-73.4593, radiusMeters=25000)
+
+        assert result == {"courses": [{"osm_id": "way/1", "name": "Bethpage Black", "source": "osm"}]}
+        # Interactive budget requested — this is the latency fix (win b).
+        assert len(calls) == 1
+        assert calls[0]["interactive"] is True
+        assert calls[0]["lat"] == 40.7442
+        assert calls[0]["lng"] == -73.4593
+        assert calls[0]["radius_m"] == 25000
+        # Positive result is cached.
+        assert len(nearby_cache.set_calls) == 1
+        cached_key, cached_val = nearby_cache.set_calls[0]
+        assert cached_val == [{"osm_id": "way/1", "name": "Bethpage Black", "source": "osm"}]
+        assert cached_key == course_search._nearby_cache_key(40.7442, -73.4593, 25000)
+
+    async def test_empty_result_is_never_cached(self, monkeypatch):
+        nearby_cache = FakeCacheStore()
+        monkeypatch.setattr(course_search, "_nearby_cache", nearby_cache)
+
+        async def fake_search_golf_courses(**kwargs):
+            return []
+
+        monkeypatch.setattr(course_search, "search_golf_courses", fake_search_golf_courses)
+
+        result = await course_search.nearby_courses(lat=40.7442, lng=-73.4593, radiusMeters=25000)
+
+        assert result == {"courses": []}
+        # Honesty law: [] is indistinguishable from a masked timeout/error at
+        # this seam, so nearby is positive-only — never negative-cached.
+        assert nearby_cache.set_calls == []
+
+    async def test_warmed_cache_short_circuits_the_osm_call(self, monkeypatch):
+        nearby_cache = FakeCacheStore()
+        key = course_search._nearby_cache_key(40.7442, -73.4593, 25000)
+        cached_courses = [{"osm_id": "way/9", "name": "Cached Course", "source": "osm"}]
+        nearby_cache.data[key] = cached_courses
+        monkeypatch.setattr(course_search, "_nearby_cache", nearby_cache)
+        monkeypatch.setattr(course_search, "search_golf_courses", _never_called("search_golf_courses"))
+
+        result = await course_search.nearby_courses(lat=40.7442, lng=-73.4593, radiusMeters=25000)
+
+        assert result == {"courses": cached_courses}
+
+    async def test_default_radius_is_used_in_the_cache_key_when_omitted(self, monkeypatch):
+        nearby_cache = FakeCacheStore()
+        monkeypatch.setattr(course_search, "_nearby_cache", nearby_cache)
+
+        async def fake_search_golf_courses(**kwargs):
+            return [{"osm_id": "way/1", "name": "Bethpage Black", "source": "osm"}]
+
+        monkeypatch.setattr(course_search, "search_golf_courses", fake_search_golf_courses)
+
+        await course_search.nearby_courses(lat=40.7442, lng=-73.4593, radiusMeters=None)
+
+        cached_key, _ = nearby_cache.set_calls[0]
+        assert cached_key == course_search._nearby_cache_key(40.7442, -73.4593, 50000)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Places junk-venue filter (search-places-junk-filter): golf_course type
 # immunity, hard-drop of unambiguous non-course venues (pro shops, gift
 # shops, lodging), downrank of name-only "ambiguous" venues.

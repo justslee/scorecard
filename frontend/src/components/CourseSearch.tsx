@@ -13,8 +13,12 @@
  * does. The keyboard overlays the bottom of the scroll region instead.
  *
  * Idle (no query) stable sections, Google-Maps order: Favorites
- * (course-favorites.ts), Recent (getRecentCourses()), Nearby (searchNearby +
- * mergeAndSortNearby) — deduped against each other by courseNameKey so a
+ * (course-favorites.ts), Recent (getRecentCourses()), Nearby — two-phase
+ * progressive render (search-speed-and-golfapi-verify-plan.md): the mapped
+ * (RDS/PostGIS) leg is fast and seeds the list the instant it lands
+ * (mergeAndSortNearby); the slower OSM leg appends below it without
+ * reshuffling what's already shown (appendNearby), via searchNearbyDetailed's
+ * per-leg `onLeg` callback — deduped against each other by courseNameKey so a
  * favorite never echoes under Recent/Nearby (course-search-helpers.ts).
  * Typed results replace the idle sections as ONE stable append-only list,
  * driven by a course-search session (course-search-session.ts) around
@@ -30,7 +34,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
-import { searchNearby, getRecentCourses, type CourseSearchResult, type RecentCourse } from "@/lib/golf-api";
+import { searchNearbyDetailed, getRecentCourses, type CourseSearchResult, type RecentCourse } from "@/lib/golf-api";
 import {
   createCourseSearchSession,
   type CourseSearchSession,
@@ -44,6 +48,7 @@ import {
 } from "@/lib/course-favorites";
 import {
   mergeAndSortNearby,
+  appendNearby,
   dedupeIdleSections,
   buildRowSubline,
   resultSourceLabel,
@@ -364,6 +369,9 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
   // off a fetch unconditionally on mount, so there's no real "idle" moment.
   const [nearby, setNearby] = useState<NearbyResult[]>([]);
   const [nearbyState, setNearbyState] = useState<"idle" | "loading" | "done" | "denied">("loading");
+  // Honest error line (recommended, not required): true only when BOTH legs
+  // failed and nothing ever rendered — never set on a genuine empty area.
+  const [nearbyError, setNearbyError] = useState(false);
 
   // Track which result ids are starred so star state updates instantly
   const [starredIds, setStarredIds] = useState<Set<string>>(() => {
@@ -430,16 +438,33 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
   }
 
   // ---------------------------------------------------------------------------
-  // One-shot GPS for nearby (on mount, best-effort)
+  // One-shot GPS for nearby (on mount, best-effort) — two-phase progressive
+  // render: the fast mapped leg seeds the list the instant it lands; the
+  // slower OSM leg appends below it WITHOUT reshuffling (owner's no-reshuffle
+  // law) — see search-speed-and-golfapi-verify-plan.md.
   // ---------------------------------------------------------------------------
   useEffect(() => {
     GPSWatcher.getCurrentPosition().then(
       async (pos) => {
+        let anyRowRendered = false;
+        let outcome: Awaited<ReturnType<typeof searchNearbyDetailed>> | null = null;
         try {
-          const raw = await searchNearby(pos.lat, pos.lng);
-          setNearby(mergeAndSortNearby(raw, pos.lat, pos.lng));
+          outcome = await searchNearbyDetailed(pos.lat, pos.lng, 25000, ({ results }) => {
+            if (results.length) anyRowRendered = true;
+            setNearby((prev) =>
+              prev.length === 0
+                ? mergeAndSortNearby(results, pos.lat, pos.lng)
+                : appendNearby(prev, results, pos.lat, pos.lng)
+            );
+          });
         } catch {
-          // best-effort — nearby stays empty on error
+          // best-effort — nearby stays whatever it already has
+        }
+        // Honest error line: ONLY when both legs genuinely errored/timed out
+        // AND nothing was ever rendered — never for a real, empty area (that
+        // has ok:true, an empty leg is not a failure).
+        if (!anyRowRendered && outcome && !outcome.mappedOk && !outcome.osmOk) {
+          setNearbyError(true);
         }
         setNearbyState("done");
       },
@@ -751,7 +776,11 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
                 </>
               )}
 
-              {nearbyState === "loading" && (
+              {/* Progressive: the mapped leg lands first (~100-300ms) and rows
+                  show immediately; the pulse is only shown while we're still
+                  finding the FIRST result — once anything is on screen, new
+                  (OSM) rows just quietly append below it (no layout jump). */}
+              {nearbyState === "loading" && nearby.length === 0 && (
                 <div style={{ padding: "16px 22px" }}>
                   <motion.div
                     animate={{ opacity: [0.3, 0.7, 0.3] }}
@@ -769,7 +798,7 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
                 </div>
               )}
 
-              {nearbyState === "done" && idle.nearby.length > 0 && (
+              {idle.nearby.length > 0 && (
                 <>
                   <SectionLabel>Nearby</SectionLabel>
                   {idle.nearby.map((r) => (
@@ -789,6 +818,26 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
                     />
                   ))}
                 </>
+              )}
+
+              {/* Honest error line (never a silent empty): only when BOTH
+                  legs genuinely failed and nothing ever rendered — a real,
+                  empty area never sets this (see the GPS effect above). One
+                  calm mono line, no retry button. */}
+              {nearbyState === "done" && nearbyError && idle.nearby.length === 0 && (
+                <div style={{ padding: "14px 22px 0" }}>
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 8.5,
+                      letterSpacing: 1.1,
+                      color: T.pencilSoft,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Couldn&rsquo;t load nearby courses
+                  </div>
+                </div>
               )}
 
               {/* Quiet hint when there's nothing else to show */}

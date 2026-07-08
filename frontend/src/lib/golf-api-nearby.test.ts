@@ -12,7 +12,7 @@ vi.mock("@/lib/api", () => ({
   authHeaders: vi.fn(async () => ({})),
 }));
 
-import { searchNearbyDetailed } from "@/lib/golf-api";
+import { searchNearbyDetailed, type NearbyLegUpdate } from "@/lib/golf-api";
 import { fetchAPI } from "@/lib/api";
 
 const mockFetchAPI = vi.mocked(fetchAPI);
@@ -73,5 +73,56 @@ describe("searchNearbyDetailed", () => {
     for (const p of paths) {
       expect(p).toContain("radiusMeters=67578");
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // onLeg — progressive per-leg callback (search-speed-and-golfapi-verify-plan.md)
+  // -------------------------------------------------------------------------
+
+  describe("onLeg callback", () => {
+    it("fires once per leg with that leg's own results and ok:true when both legs succeed", async () => {
+      mockFetchAPI.mockImplementation(async (path: string) => {
+        if (path.startsWith(MAPPED)) {
+          return { courses: [{ id: "m-1", name: "Eisenhower Red", location: { lat: 40.74, lng: -73.44 } }] };
+        }
+        return { courses: [{ id: "osm-1", name: "Bethpage Black", center: { lat: 40.745, lng: -73.456 } }] };
+      });
+
+      const updates: NearbyLegUpdate[] = [];
+      const out = await searchNearbyDetailed(40.75, -73.5, 40000, (u) => updates.push(u));
+
+      expect(updates).toHaveLength(2);
+      const byLeg = new Map(updates.map((u) => [u.leg, u]));
+      expect(byLeg.get("mapped")?.ok).toBe(true);
+      expect(byLeg.get("mapped")?.results.map((r) => r.id)).toEqual(["m-1"]);
+      expect(byLeg.get("osm")?.ok).toBe(true);
+      expect(byLeg.get("osm")?.results.map((r) => r.id)).toEqual(["osm-1"]);
+
+      // Aggregate return is unchanged (back-compat) — order/contents intact.
+      expect(out.mappedOk).toBe(true);
+      expect(out.osmOk).toBe(true);
+      expect(out.results.map((r) => r.id).sort()).toEqual(["m-1", "osm-1"]);
+    });
+
+    it("a down leg fires ok:false with an empty results array", async () => {
+      mockFetchAPI.mockImplementation(async (path: string) => {
+        if (path.startsWith(MAPPED)) throw new Error("mapped leg down");
+        return { courses: [{ id: "osm-1", name: "Bethpage Black", center: { lat: 40.745, lng: -73.456 } }] };
+      });
+
+      const updates: NearbyLegUpdate[] = [];
+      await searchNearbyDetailed(40.75, -73.5, 40000, (u) => updates.push(u));
+
+      const byLeg = new Map(updates.map((u) => [u.leg, u]));
+      expect(byLeg.get("mapped")?.ok).toBe(false);
+      expect(byLeg.get("mapped")?.results).toEqual([]);
+      expect(byLeg.get("osm")?.ok).toBe(true);
+    });
+
+    it("omitting onLeg does not throw and the aggregate return is unchanged", async () => {
+      mockFetchAPI.mockResolvedValue({ courses: [] });
+      const out = await searchNearbyDetailed(40.75, -73.5, 25000);
+      expect(out).toEqual({ results: [], mappedOk: true, osmOk: true });
+    });
   });
 });

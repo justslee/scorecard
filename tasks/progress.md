@@ -3,6 +3,33 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — eng-lead cycle 28: caddie-excellence AUDIT (owner-directed, docs/backlog, SILENT, DONE)
+
+Owner directive (2026-07-09): "run a review/research to determine improvements …
+eventually scalable but also amazingly good … should feel like a real caddie is
+replaceable." Audit-only cycle (no features built), same shape as the voice-agent
+audit. Three parallel workstreams: (1) domain research — what elite real caddies
+do; (2) SOTA research — production LLM-agent practice, verified vs Anthropic +
+OpenAI docs; (3) file-and-line code audit of the whole caddie stack, letter-graded.
+
+Deliverable: `specs/caddie-excellence-audit.md` — scored gap table (A–H), a
+prioritized P1/P2/P3 queue (each item: what/why/cost/dependency), and an "AMAZING
+vs merely good" section framing the real-caddie-replaceable bar.
+
+Scorecard: A providers B · B caching **F** · C tool-parity **D** · D memory C ·
+E rate-limiting **F** · F resilience/scale C · G advice-eval **D** · H grounding B.
+
+Seeded 5 P1 cards into `backlog.json` (status: ready): caddie-prompt-caching-text-path
+(minor), caddie-llm-rate-limiting (minor), caddie-llm-timeouts-retries (minor),
+caddie-tool-loop-parity (major/noticeable — needs opus plan), caddie-advice-eval-harness
+(minor). The "amazing" tier (dispersion-aware MEASURED targets, pre-round briefing,
+post-round debrief that writes memories, talk/quiet state machine, frustration reads)
+stays flagged as flagship epics — mostly gated on the phase-2 shot-tracking data spine.
+
+Step 0: board clean — no cards in Needs Review, no open bundle PR (last shipped
+#113, TestFlight v1.0.879). Docs+backlog only, so silent: committed to
+integration/next, no PR, no owner ping.
+
 ## 2026-07-08 — eng-lead cycle 27: course-search Places junk-venue filter (backend, SILENT, integration/next, DONE)
 
 Owner-observed relevance bug, now timely (Pebble Beach just went live in prod):
@@ -8218,3 +8245,76 @@ Silent (backend relevance/ranking plumbing, no client-facing shape change —
 `venue_penalty` is an internal ranking hint, not added to types.ts/models.py
 per the plan) — rides along in the next bundle; no owner ping for this item
 alone.
+
+---
+
+## 2026-07-09 — SHIPPED: #113 course-smart caddie polish
+
+Owner "ship it". Merge a2e0436 → main; deploy verified by headSha + health
+ok. TestFlight v1.0.879 (build 202607081706).
+- Reach-aware caddie (local knowledge filtered through the player's real
+  distances), live-mode idle guard, boundary-polygon ingest (37 tests),
+  search junk filter (word-boundary; Spanish Bay false positive caught).
+- Server-side data live: BOTH courses 18/18 guides (Bethpage retry cached
+  holes 5+10; Pebble 18/18 first pass).
+Seventeen ships this run.
+NEXT (owner priority, queued p1): search-speed-and-golfapi-verify —
+latency half unblocked (fewer results, geo-indexed, cached areas);
+universe-verify half BLOCKED on the GolfAPI key fix (401) + docs-verified
+call count before any spend.
+
+---
+
+## 2026-07-09 — search-speed-and-golfapi-verify: LATENCY HALF implemented
+
+Implemented `specs/search-speed-and-golfapi-verify-plan.md` exactly (universe/
+verify half stays BLOCKED/untouched; no `courses.location` GIST migration —
+note-and-defer per plan win 5, that column is `sa.Text` cast per-query, not a
+typed geography column, so a plain GIST index doesn't apply).
+
+Backend (`backend/app/routes/course_search.py`): `/api/courses/nearby` now
+calls `search_golf_courses(interactive=True)` (server ~12s worst case → ~5.5s)
+and gets a new positive-only quantized geo-cell cache (`_nearby_cache`,
+distinct `data/nearby_search_cache.json` file, `NEARBY_CELL_DECIMALS=2` →
+~1.1km cells, `_nearby_cache_key(lat,lng,radius_m)`). Never negative-cached
+(honesty law — `[]` is indistinguishable from a masked timeout at this seam).
+
+Frontend: `searchNearbyDetailed` (`golf-api.ts`) gained an optional 4th
+`onLeg?: (u: NearbyLegUpdate) => void` param firing per-leg results as they
+land; aggregate `Promise.all` return unchanged (back-compat for
+`teetime/courses.ts` and `courses/page.tsx`'s `searchNearby` wrapper). New
+`appendNearby()` pure helper (`course-search-helpers.ts`) appends newly-
+arrived rows below what's already shown WITHOUT reshuffling (owner's
+no-reshuffle law — load-bearing test asserts this); `mergeAndSortNearby` and
+`appendNearby` both cap at `NEARBY_LIMIT=12`. `CourseSearch.tsx`'s GPS effect
+now drives two-phase render: first leg seeds via `mergeAndSortNearby`, later
+legs `appendNearby`; loading pulse shows only while `nearby.length === 0`;
+added the plan's recommended honest one-line "Couldn't load nearby courses"
+state (mono, no retry) for the rare both-legs-genuinely-failed-and-nothing-
+rendered case — never fires for a real empty area.
+
+Tests: new `backend/tests/test_nearby_cache_key.py` (quantization: same
+cell/different cell/radius-participates/deterministic); extended
+`test_course_search.py` with `TestNearbyCourses` (hit→cached+interactive
+requested, `[]`→nothing cached, warmed cache→OSM fn never called, default
+radius in key). Extended `course-search-helpers.test.ts` (`appendNearby`
+no-reshuffle/dedupe-by-courseNameKey/sort-new-only/cap/custom-limit,
+`mergeAndSortNearby` cap) and `golf-api-nearby.test.ts` (`onLeg` fires per
+leg with correct payload, down leg → `ok:false` `[]`, omitting `onLeg`
+leaves the aggregate return unchanged).
+
+Gates (all green, evidence captured): `npm run lint` clean; `tsc --noEmit`
+clean; `npm run build` succeeded (19/19 pages); `voice-tests --smoke`
+274/274 pass; `vitest run course-search-helpers.test.ts golf-api-nearby.
+test.ts` 61/61 pass; `ruff check .` clean; backend pytest (test_course_search
++ test_course_search_cache + test_osm_fetch_hardening + test_nearby_cache_
+key) 80/80 pass. No local Postgres used; DB-backed `/api/courses/mapped/
+nearby` SQL path is unchanged by this plan and covered by CI.
+
+Commit da6ad38 on `integration/next` ("nearby search: interactive OSM budget
++ cache + two-phase progressive render"), pushed to origin/integration/next.
+
+Noticeable (user-visible on TestFlight — Nearby-courses section in course
+search opens meaningfully faster, especially on a repeat visit to the same
+area; mapped rows now appear near-instantly instead of waiting on the OSM
+leg) — should ride in the next approval-bundle email, not silent.
