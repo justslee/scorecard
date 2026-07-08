@@ -15,6 +15,21 @@ because it runs on the **OpenAI Realtime** session (server-side VAD, native
 barge-in). Direction: route the in-round conversation through the same Realtime
 engine the setup flow and the round-page orb already use.
 
+## Owner feedback (2026-07-07, testing v1.0.808) — LATENCY IS THE TOP METRIC
+> "Caddie does speak but there is a long pause between when I speak,
+> transcribing, the text coming out, and then the voice actually projecting."
+
+This report **confirms the migration priority** and reframes it: the win is not
+only hands-free VAD (no taps), it is **end-to-end latency**. The single most
+important success metric for this whole item is now:
+
+> **≤ ~1.5–2.0 s from the owner's end-of-speech to the caddie's VOICE starting.**
+
+Everything below is designed against that budget. See **§6.5** for the
+stage-by-stage latency accounting (current pipeline vs Realtime speech-to-speech),
+the **interim-mitigation build/skip decision**, and the **stage-timing telemetry**
+that makes the budget visible on the owner's phone.
+
 ---
 
 ## 1. Approach & architecture decision
@@ -262,6 +277,89 @@ e.g. `caddie-live-mode` pref, default off until device-verified, then flip defau
   exists — do not add a second racing countdown).
 - Warm preloads are already torn down on offline/backgrounded (`warm-session.ts`),
   so no billed zombie connections.
+
+---
+
+## 6.5 Latency — the top success metric (owner feedback 2026-07-07)
+
+**Budget: ≤ ~1.5–2.0 s from end-of-speech to the caddie's VOICE starting.**
+
+### 6.5.1 Why the current sheet path feels slow — stage-by-stage
+The owner's chain ("speak → transcribing → text → then voice") maps to this
+sequential pipeline in the classic sheet path. Numbers are estimates to be
+replaced by the real telemetry from §6.5.3 — the *shape* (serial, TTS-after-text)
+is the point:
+
+| Stage | Mechanism | Est. |
+|---|---|---|
+| End-of-speech detection | Deepgram `utterance_end_ms=1200` (`deepgram-live.ts:41`) — fires only after **1.2 s** of trailing silence | ~1200 ms |
+| Transcript finalize | final `is_final`/`speech_final` frame after UtteranceEnd | ~100–300 ms |
+| Request → first token | POST `/caddie/session/voice/stream` SSE, first-token fail-fast | ~400–900 ms |
+| **Stream to completion** | the reply **finishes streaming as text** before TTS is asked to speak (owner sees "text coming out … then voice") | ~700–1500 ms |
+| TTS synthesis | `/caddie/voice/tts` synth of the **whole** reply | ~400–800 ms |
+| Blob download + decode | CapacitorHttp native blob fetch (the #108 fix) | ~150–400 ms |
+| Audio element play start | primed persistent `<audio>` (#108) | ~50 ms |
+| **TOTAL end-of-speech → voice** | serial sum | **~3.0–5.0 s** |
+
+Two structural costs dominate and are exactly what the owner feels:
+1. the **1.2 s** fixed VAD tail before anything starts, and
+2. **TTS waits for the full text stream** — synth can't begin until the reply is
+   complete, so voice always trails the visible text by a full synth+download.
+
+### 6.5.2 Why Realtime speech-to-speech collapses it
+`gpt-realtime` is **speech-in / speech-out** on one socket with **server VAD**:
+- end-of-speech is detected server-side (tunable, typically ~500–800 ms, no fixed
+  1.2 s client tail),
+- there is **no STT→text→TTS round trip** — the model emits **audio directly**,
+  streamed, so first audio arrives with the first tokens (no "wait for full text
+  then synthesize"),
+- native barge-in.
+Expected end-of-speech → first audio: **~0.8–1.5 s**, inside budget. This is the
+core justification for Slice C — the migration is a **latency** fix as much as a
+hands-free one.
+
+### 6.5.3 Stage-timing telemetry (make the budget visible on his phone)
+Extend the existing `voiceEvent(surface, event, {ms})` bus (`lib/voice/telemetry.ts`)
+with caddie-turn stage markers so we can SEE the budget on a real device:
+- `caddie.eos_to_transcript` — UtteranceEnd → final transcript (ms)
+- `caddie.transcript_to_first_token` — request send → first SSE token (ms)
+- `caddie.first_token_to_first_audio` — first token → audio actually playing (ms)
+- `caddie.eos_to_first_audio` — **the headline budget number** (ms)
+- In Realtime (live) mode, the equivalents driven off Realtime events:
+  `input_audio_buffer.speech_stopped` → first `response.audio.delta` playing.
+
+**iOS flush caveat (must-fix or the events are useless):** telemetry batches and
+flushes on `visibilitychange:hidden` / timer (`telemetry.ts`), and the known iOS
+"voicetel flush-drop" card means a batch can die when the app backgrounds. So the
+**headline `eos_to_first_audio` event must flush immediately** at turn end
+(call `flushVoiceEvents()` right after emitting it, `keepalive:true` is already
+set) rather than waiting for the 8 s timer — otherwise the one number we care
+about is the one most likely dropped. Verify the timing survives a background.
+
+### 6.5.4 Interim mitigation: sentence-level TTS pipelining — BUILD (conditional), lean
+**Decision: BUILD it as a small stopgap slice (A2) IF Slice C (Realtime transport)
+will not land device-verified within ~2 cycles — but keep it LEAN.**
+
+Reasoning (weighed honestly, both ways):
+- **For throwaway risk:** once live Realtime mode ships, its own audio path is used
+  and this TTS pipelining is bypassed in the happy path — so on the *live* path it
+  is throwaway.
+- **Against throwaway (why it still earns its keep):** the classic sheet path is
+  **not** deleted — §4 keeps it as the **permanent honest-degradation fallback**
+  (dead zones, offline, mint failures, non-live devices). Latency work on it is
+  **durable**, not thrown away. And the owner's pain is **acute now**, while Slice C
+  is necessarily multi-cycle (device-verify + flag rollout).
+- **The fix is cheap and targeted:** today TTS waits for the full stream (§6.5.1
+  row 4+5). Pipeline it: as the SSE stream crosses the **first sentence boundary**,
+  synthesize+play sentence 1 while the rest streams, then queue subsequent
+  sentences. This removes the "full-stream wait + full-reply synth" from the
+  critical path, cutting ~1–2 s off first-voice on the classic path. Reuse
+  `useStreamBuffer` (already sentence-aware) + `useSheetTTS` (add a small play
+  queue). No new endpoint.
+- **Guardrail against gold-plating:** cap the effort — sentence-1 pipelining +
+  queue only; do NOT build fancy prosody stitching. If Slice C is imminent
+  (next cycle), **SKIP A2** and put the energy into C. The eng-lead makes the
+  call at slice time based on C's device-verification timeline.
 
 ---
 

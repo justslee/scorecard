@@ -13,13 +13,16 @@
       "why": "Owner 2026-07-08 (explicit direction, twice): 'the caddie still requires me to click before and after I'm talking instead of following the start round model where it detects for me.' Root: the sheet's Deepgram live path keeps failing on his iPhone -> fallback recorder has no VAD -> manual taps. DIRECTION: route the in-round Ask Caddie conversation through the OpenAI Realtime session (server VAD, same as setup; a warm session already exists for the round page orb). Sheet becomes the live transcript/answer view; the auto opening reco becomes the first spoken turn (compose with caddie-opening-reco-from-tee); barge-in native. NEEDS A FULL OPUS PLAN: session/tool grounding parity (hazards, memory, profile via session context), warm-path invariants (pinning tests untouchable), cost per round, fallback to the sheet path when Realtime can't connect, exit/mute affordances. Supersedes further Deepgram-sheet conversational patches.",
       "spec": "specs/caddie-realtime-conversation-plan.md",
       "slices": {
-        "A": "Backend grounding parity for the Realtime mint (conversation history, green slope, last rec, recent shots) — guarded, schema-stable; improves the live orb today. SHIPPABLE, no transport, no invariants.",
+        "A": "DONE (34c1222): Backend grounding parity for the Realtime mint (conversation history, green slope, last rec, recent shots) — guarded, byte-identical when absent; improves the live orb today. Reviewer CLEAN + QA PASS.",
         "B": "Live-mode transcript-view shell in CaddieSheet behind caddie-live-mode flag (default off), mocked client in tests. Additive UI.",
         "C": "HIGH RISK transport migration: adopt warm caddie Realtime session + continuous listen + opening turn via sendText + mute/close/barge-in. Flag-gated; device-verify before default flip.",
         "D": "In-sheet honest-degradation ladder (mint-timeout/connect-fail/mic-deny/offline -> classic tap-to-talk) + calm indicator.",
-        "E": "Cost/idle polish, telemetry, flag default flip after owner device sign-off."
+        "E": "Cost/idle polish, telemetry, flag default flip after owner device sign-off.",
+        "A2": "CONDITIONAL/LEAN interim: sentence-level TTS pipelining on the CLASSIC sheet path (synth+play sentence 1 while rest streams) — cuts ~1-2s off first-voice. BUILD only if Slice C wont land device-verified within ~2 cycles; durable (classic path is the permanent fallback), not throwaway. SKIP if C imminent. See plan 6.5.4.",
+        "telemetry": "Stage-timing voicetel events (eos_to_transcript, transcript_to_first_token, first_token_to_first_audio, eos_to_first_audio headline) so the budget is visible on-device. Headline event must flush immediately (iOS voicetel flush-drop). See plan 6.5.3."
       },
-      "classification": "noticeable (Slice C is the owner-visible hands-free change; A/B are enablers, A improves the live caddie today)"
+      "classification": "noticeable (Slice C is the owner-visible hands-free change; A/B are enablers, A improves the live caddie today)",
+      "top_metric": "END-TO-END LATENCY: <=~1.5-2.0s from end-of-speech to caddie VOICE start (owner 2026-07-07: long pause between speaking, transcript, text, then voice). See plan 6.5."
     },
     {
       "id": "db-core-schema",

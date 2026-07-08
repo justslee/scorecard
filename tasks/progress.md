@@ -50,6 +50,31 @@ needed. Slice C (the actual tap-to-talk → continuous-listen transport migratio
 asked for) is NOT done — it's the high-risk slice, explicitly deferred per the plan's own
 recommendation, to be planned/device-verified separately.
 
+**Eng-lead review (this cycle):** reviewer CLEAN (guards prove byte-identical when
+absent; attribute-safe against the real models; HAZARD_GROUNDING_RULE intact; owned-session
+gated, no injection surface — one non-blocking nit that a test name oversells a
+near-tautological assertion, real coverage exists elsewhere, not worth a round-trip). QA
+PASS (ruff clean; 1034 passed / 74 DB-skipped; grounding 17/17; frontend lint/tsc/voice
+274/274). Classified **SILENT** for the ship gate — no distinct owner-testable surface, so
+it rides the bundle; no owner ping.
+
+**Plan updated mid-cycle with owner latency feedback (2026-07-07, testing v1.0.808):**
+"long pause between when I speak, transcribing, the text coming out, and then the voice."
+Folded into `specs/caddie-realtime-conversation-plan.md` as a FIRST-CLASS requirement:
+§6.5 — **end-to-end latency is now the top success metric (≤~1.5-2.0s end-of-speech →
+voice)**, with a stage-by-stage table (current classic path ~3-5s: 1.2s Deepgram VAD tail +
+TTS-waits-for-full-text) vs Realtime speech-to-speech (~0.8-1.5s, no STT→text→TTS trip);
+§6.5.3 stage-timing voicetel telemetry (headline `eos_to_first_audio` must flush immediately
+to survive the iOS voicetel flush-drop); §6.5.4 interim-mitigation decision — BUILD a LEAN
+sentence-level TTS pipelining stopgap (slice A2) ONLY IF Slice C won't land device-verified
+within ~2 cycles (durable: the classic path is the permanent honest-degradation fallback,
+so not throwaway), else SKIP. Backlog updated with the latency metric + A2/telemetry slices.
+
+**Next cycle:** Slice C is a device-verified-behind-a-flag migration (multi-cycle) — do NOT
+rush it into a bundle the owner can't test on-device. Decide A2 (interim TTS pipelining) vs
+straight-to-C based on C's timeline; the queued `caddie-opening-reco-from-tee` composes with
+C's opening-turn seam.
+
 ## 2026-07-07 — fix-ios-tts-playback: caddie TTS on-device fix (P0, NOTICEABLE, integration/next, DONE)
 
 Implemented `specs/fix-ios-tts-playback-plan.md` exactly (commit `35c4103`). Owner's iPhone was
