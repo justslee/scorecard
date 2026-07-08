@@ -20,6 +20,8 @@ Two entry points:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import logging
 import os
 from typing import Any, Optional
@@ -84,14 +86,33 @@ async def _precompute_course_guides(course_id: str) -> None:
                 # No green feature -> nothing to persist a guide INTO; researching
                 # would re-spend on every trigger forever (reviewer finding #4).
                 continue
-            if green_props is not None and green_props.get("strategy_guide") is not None:
+            if green_props.get("strategy_guide") is not None:
                 continue  # already cached forever -- idempotent skip
+            if green_props.get("strategy_guide_attempted_at") is not None:
+                # Negative cache (security-review blocking finding): a hole
+                # whose research failed or whose guide was validator-rejected
+                # must NOT re-spend on every session start forever. The
+                # plan's staleness policy is a MANUAL re-research trigger
+                # (clear this marker) — courses change rarely.
+                continue
 
             hazards = extract_hole_hazards(h.get("features"), tee=h.get("tee"), green=h.get("green"))
             par = h.get("par") or 4
             yards = _primary_yards(h.get("yardages") or {})
             elevation_change_ft = (green_props or {}).get("delta_ft")
             green_slope = (green_props or {}).get("green_slope")
+
+            try:
+                await courses_mapped.update_green_feature_properties(
+                    course_id, hole_number,
+                    {"strategy_guide_attempted_at": datetime.now(timezone.utc).isoformat()},
+                )
+            except Exception:
+                log.warning(
+                    "guide attempt-marker write failed course=%s hole=%s", course_id, hole_number,
+                    exc_info=True,
+                )
+                continue  # can't mark -> don't spend (runaway protection first)
 
             try:
                 guide = await research_hole_guide(

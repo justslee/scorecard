@@ -105,7 +105,12 @@ async def test_research_failure_writes_nothing_and_never_raises(monkeypatch):
 
     await course_guides._precompute_course_guides("course-1")  # must not raise
 
-    write.assert_not_called()
+    # New contract (security review): the attempt MARKER is written first
+    # (negative cache — failed holes never re-spend per session), but no
+    # guide/placeholder is ever written.
+    assert write.await_count == 1
+    marker_patch = write.await_args_list[0].args[2]
+    assert set(marker_patch.keys()) == {"strategy_guide_attempted_at"}
 
 
 @pytest.mark.asyncio
@@ -123,7 +128,10 @@ async def test_validation_rejection_writes_nothing(monkeypatch):
 
     await course_guides._precompute_course_guides("course-1")
 
-    write.assert_not_called()
+    # Marker only — a rejected guide is never persisted (omit, no placeholder).
+    assert write.await_count == 1
+    marker_patch = write.await_args_list[0].args[2]
+    assert set(marker_patch.keys()) == {"strategy_guide_attempted_at"}
 
 
 @pytest.mark.asyncio
@@ -158,7 +166,10 @@ async def test_accepted_guide_is_written_with_exact_patch_shape(monkeypatch):
 
     await course_guides._precompute_course_guides("course-1")
 
-    write.assert_awaited_once_with("course-1", 1, {"strategy_guide": guide.model_dump()})
+    # Marker first (runaway protection), then the exact guide patch.
+    assert write.await_count == 2
+    assert set(write.await_args_list[0].args[2].keys()) == {"strategy_guide_attempted_at"}
+    assert write.await_args_list[1].args == ("course-1", 1, {"strategy_guide": guide.model_dump()})
 
 
 @pytest.mark.asyncio
@@ -200,3 +211,26 @@ async def test_backfill_is_capped_by_max_courses_even_with_a_longer_allowlist(mo
     await course_guides.run_guide_backfill()
 
     precompute.assert_awaited_once_with("course-a")
+
+
+@pytest.mark.asyncio
+async def test_attempted_hole_is_never_re_researched(monkeypatch):
+    """Negative cache (security-review blocking finding): a hole with an
+    attempt marker must not re-spend research on later triggers."""
+    hole = _hole(1)
+    hole["features"]["features"][0]["properties"]["strategy_guide_attempted_at"] = (
+        "2026-07-09T00:00:00+00:00"
+    )
+    monkeypatch.setattr(
+        course_guides.courses_mapped, "get_course",
+        AsyncMock(return_value=_course([hole])),
+    )
+    research = AsyncMock(side_effect=AssertionError("must not re-research an attempted hole"))
+    monkeypatch.setattr(course_guides, "research_hole_guide", research)
+    write = AsyncMock()
+    monkeypatch.setattr(course_guides.courses_mapped, "update_green_feature_properties", write)
+
+    await course_guides._precompute_course_guides("course-1")
+
+    research.assert_not_called()
+    write.assert_not_called()

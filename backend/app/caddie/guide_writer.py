@@ -170,7 +170,9 @@ be empty if you found nothing useful).
 """
 
 _MAX_CONTINUATIONS = 5
-_WRITER_MAX_TOKENS = 1200
+# 4000: adaptive thinking counts against max_tokens on Sonnet 5 — 1200 risked
+# frequent cap-hits (parse fail -> drop -> re-research pressure).
+_WRITER_MAX_TOKENS = 4000
 
 
 class _WriterOutput(BaseModel):
@@ -368,6 +370,18 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
         for canonical_type, pattern in _HAZARD_PATTERNS.items():
             if canonical_type not in allowed_types and pattern.search(lowered):
                 return None
+
+    # Defense-in-depth (security review): researched text is DATA — a field
+    # that reads like an instruction, meta-prompt, or link is not golf advice.
+    # Hazard grounding alone wouldn't catch "ignore previous instructions".
+    injection_pattern = re.compile(
+        r"(?:\bignore\b|\binstructions?\b|\byou are\b|\bsystem prompt\b|"
+        r"https?://|\bwww\.|<[a-z/!]|\bdisregard\b)",
+        re.IGNORECASE,
+    )
+    for field_text in text_fields:
+        if injection_pattern.search(field_text or ""):
+            return None
 
     if not guide.play_line.strip():
         return None
