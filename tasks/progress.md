@@ -3,6 +3,46 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — fix-ios-tts-playback: caddie TTS on-device fix (P0, NOTICEABLE, integration/next, DONE)
+
+Implemented `specs/fix-ios-tts-playback-plan.md` exactly (commit `35c4103`). Owner's iPhone was
+getting `NotSupportedError` on every spoken caddie reply, which also silently stalled the
+hands-free loop (only re-arms on the audio element's `ended`).
+
+- **Part A (the real fix)** — `frontend/src/lib/caddie/api.ts` `speakCaddieReply` now
+  platform-branches: native (`Capacitor.isNativePlatform()`) bypasses the patched-`fetch` binary
+  path entirely and calls `CapacitorHttp.request({..., responseType:'blob', readTimeout/
+  connectTimeout: SPEAK_TIMEOUT_MS})` directly, reconstructing the mp3 via the already-tested
+  `dataUrlToBlob` (`@/lib/scan-helpers`) so bytes + `Blob.type` are both correct. Web keeps
+  `fetch` but always re-types via `arrayBuffer()` instead of `res.blob()`.
+- **Part B (hardening)** — `frontend/src/hooks/useSheetTTS.ts`: `unlock()` now primes the shared
+  audio element with a real silent-mp3 data URI (module-level `SILENT_MP3_DATA_URI`) before the
+  bless play/pause, instead of blessing an empty-`src` element. New `playingRealRef` guards the
+  `ended` re-arm so the prime clip can never spuriously fire `onPlaybackEnd` — only set true right
+  before `speak()`'s real `.play()`. `unlock()` failures now emit distinct `prime_failed`
+  telemetry (vs `speak_failed`).
+- Tests: new `frontend/src/lib/caddie/api.speak.test.ts` (web typed-blob, native base64→blob
+  asserting `responseType:'blob'`, native error path); extended
+  `frontend/src/hooks/useSheetTTS.test.ts` (prime src, element reuse, barge-in/re-arm invariants,
+  prime-`ended`-is-inert, `prime_failed` telemetry). `CaddieSheet.handsfree.test.tsx` /
+  `CaddieSheet.session.test.tsx` re-verified green, untouched.
+- **Deviation (noted, minimal):** the plan's test (f) used `new DOMException(...)` to force
+  `unlock()`'s `play()` rejection; jsdom's `DOMException` isn't `instanceof Error` (a documented
+  jsdom gap — real WebKit's is, which is why prod telemetry already showed the real
+  `NotSupportedError` name), so it would've reported `detail: "unknown"` under test instead of the
+  plan's asserted `"NotAllowedError"`. Used a plain `Error` with `.name` set instead — same code
+  path, deterministic in jsdom, matches how the pre-existing `speak_failed` test in this same file
+  already worked around the identical quirk (`expect.any(Object)`).
+- Backend untouched (no ruff/DB/migration needed).
+
+Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded,
+`voice-tests/runner.ts --smoke` → 274/274, `vitest run useSheetTTS.test.ts api.speak.test.ts
+CaddieSheet.handsfree.test.tsx CaddieSheet.session.test.tsx` → 54/54 (4/4 files). Pushed to
+`integration/next` (`35c4103`). **Noticeable** — the caddie's spoken replies (and the hands-free
+loop's re-arm) should now work on TestFlight; worth a device/TestFlight confirm per the plan's
+post-merge check (`voicetel surface=sheet-tts` should show `speak` succeeding, no
+`speak_failed`/`NotSupportedError`).
+
 ## 2026-07-07 — wind-periodic-refresh: keep the wind tile fresh through a round (SILENT, integration/next, DONE)
 
 Implemented `specs/wind-periodic-refresh-plan.md`. One Open-Meteo grid-cell reading was
