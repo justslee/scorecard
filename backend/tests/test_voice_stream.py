@@ -35,6 +35,22 @@ from app.services.clerk_auth import current_user_id
 # ── Fakes for anthropic.AsyncAnthropic ──────────────────────────────────────
 
 
+class _FakeMessageUsage:
+    """Minimal stand-in for the Anthropic `usage` object on a final message."""
+
+    def __init__(self, cache_read=0, cache_creation=0, input_tokens=0, output_tokens=0):
+        self.cache_read_input_tokens = cache_read
+        self.cache_creation_input_tokens = cache_creation
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+
+class _FakeFinalMessage:
+    def __init__(self, text: str, usage: _FakeMessageUsage):
+        self.content = [type("Block", (), {"text": text})()]
+        self.usage = usage
+
+
 class _FakeAsyncStream:
     """Async context manager mimicking AsyncMessageStreamManager."""
 
@@ -58,6 +74,11 @@ class _FakeAsyncStream:
     def text_stream(self):
         return self._gen()
 
+    async def get_final_message(self):
+        """Final aggregated message + usage — the caching plan's usage-log
+        hook (specs/caddie-prompt-caching-text-path-plan.md §4)."""
+        return _FakeFinalMessage("".join(self._tokens), _FakeMessageUsage())
+
 
 class _FakeMessages:
     def __init__(self, tokens: list[str], exc: Exception | None = None):
@@ -76,14 +97,18 @@ class _FakeAsyncAnthropic:
 
     last_messages: "_FakeMessages | None" = None
 
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, timeout=None, max_retries=None):
         self.api_key = api_key
+        self.timeout = timeout
+        self.max_retries = max_retries
         self.messages = _FakeMessages(_FakeAsyncAnthropic._tokens, _FakeAsyncAnthropic._exc)
         _FakeAsyncAnthropic.last_messages = self.messages
+        _FakeAsyncAnthropic.last_instance = self
 
     # Test hook: configure the class before constructing the route.
     _tokens: list[str] = []
     _exc: Exception | None = None
+    last_instance: "_FakeAsyncAnthropic | None" = None
 
 
 def _make_fake_anthropic(tokens: list[str], exc: Exception | None = None):
@@ -94,6 +119,14 @@ def _make_fake_anthropic(tokens: list[str], exc: Exception | None = None):
 
 async def _collect(agen) -> list[str]:
     return [chunk async for chunk in agen]
+
+
+def _flat_system(system: list[dict]) -> str:
+    """Flatten the two-block prompt-cache `system` list back to one string
+    for substring assertions — the builders now return
+    `[stable_block, volatile_block]` (specs/caddie-prompt-caching-text-path-plan.md)
+    instead of a single string."""
+    return "\n".join(block["text"] for block in system)
 
 
 def _parse_sse(frames: list[str]) -> list[tuple[str, object]]:
@@ -137,6 +170,21 @@ async def test_sse_reply_uses_identical_model_params(monkeypatch):
     assert kwargs["max_tokens"] == 300
     assert kwargs["temperature"] == 0.7
     assert kwargs["system"] == "sys"
+
+
+@pytest.mark.asyncio
+async def test_sse_reply_constructs_client_with_timeout_and_retries(monkeypatch):
+    """specs/caddie-prompt-caching-text-path-plan.md §3 (folded
+    caddie-llm-timeouts-retries item) — bounded timeout + one SDK-native
+    retry on the async client used by every streaming reply."""
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _make_fake_anthropic(["hi"]))
+
+    await _collect(
+        caddie_routes._sse_reply("fake-key", "sys", [{"role": "user", "content": "x"}], log_context="test")
+    )
+    instance = _FakeAsyncAnthropic.last_instance
+    assert instance.timeout == caddie_routes._CADDIE_TIMEOUT_S
+    assert instance.max_retries == caddie_routes._CADDIE_MAX_RETRIES
 
 
 @pytest.mark.asyncio
@@ -326,11 +374,11 @@ async def test_build_voice_prompt_downgrades_invisible_persona_to_classic(monkey
     monkeypatch.setattr(caddie_routes, "load_personality", _fake_load_personality)
 
     request = VoiceCaddieRequest(transcript="hi", personality_id="someone-elses-custom-persona", hole_number=1)
-    system_prompt, messages, persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
+    system, messages, persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
 
     assert persona_id == "classic"
     assert loaded_ids == ["classic"]
-    assert "Classic system prompt." in system_prompt
+    assert "Classic system prompt." in _flat_system(system)
     assert messages[-1] == {"role": "user", "content": "hi"}
 
 
@@ -369,12 +417,12 @@ async def test_build_session_voice_prompt_downgrades_invisible_persona_to_classi
         round_id="round-1", transcript="what club?", personality_id="someone-elses-custom-persona",
         hole_number=4,
     )
-    system_prompt, messages, persona_id = await caddie_routes._build_session_voice_prompt(request, "user-1")
+    system, messages, persona_id = await caddie_routes._build_session_voice_prompt(request, "user-1")
 
     assert persona_id == "classic"
     assert loaded_ids == ["classic"]
-    assert "Classic system prompt." in system_prompt
-    assert "Current hole: #4" in system_prompt
+    assert "Classic system prompt." in _flat_system(system)
+    assert "Current hole: #4" in _flat_system(system)
     assert messages[-1] == {"role": "user", "content": "what club?"}
 
 
@@ -427,9 +475,9 @@ async def test_build_session_voice_prompt_includes_guide_line_when_present(monke
     request = caddie_routes.SessionVoiceRequest(
         round_id="round-1", transcript="what club?", personality_id="classic", hole_number=7,
     )
-    system_prompt, _, _ = await caddie_routes._build_session_voice_prompt(request, "user-1")
+    system, _, _ = await caddie_routes._build_session_voice_prompt(request, "user-1")
 
-    assert "Local knowledge: Favor the left side off the tee." in system_prompt
+    assert "Local knowledge: Favor the left side off the tee." in _flat_system(system)
 
 
 @pytest.mark.asyncio
@@ -455,9 +503,9 @@ async def test_build_session_voice_prompt_omits_guide_line_when_absent(monkeypat
     request = caddie_routes.SessionVoiceRequest(
         round_id="round-1", transcript="what club?", personality_id="classic", hole_number=7,
     )
-    system_prompt, _, _ = await caddie_routes._build_session_voice_prompt(request, "user-1")
+    system, _, _ = await caddie_routes._build_session_voice_prompt(request, "user-1")
 
-    assert "Local knowledge:" not in system_prompt
+    assert "Local knowledge:" not in _flat_system(system)
 
 
 # ── Gate-level: _build_voice_prompt personal grounding (brain parity) ──────
@@ -497,14 +545,15 @@ async def test_build_voice_prompt_grounds_in_memory_and_profile_handicap(monkeyp
     monkeypatch.setattr(caddie_routes.memory_mod, "get_player_profile", _fake_get_player_profile)
 
     request = VoiceCaddieRequest(transcript="how do I play this hole?", personality_id="classic", hole_number=None)
-    system_prompt, _messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
+    system, _messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
 
     expected_bullet = caddie_routes.memory_mod.render_memories_for_prompt(
         [CaddieMemory(user_id="user-1", kind="tendency", summary="misses approaches short")]
     )
-    assert "--- PLAYER MEMORY ---" in system_prompt
-    assert expected_bullet in system_prompt
-    assert "Player handicap: 12" in system_prompt
+    flat = _flat_system(system)
+    assert "--- PLAYER MEMORY ---" in flat
+    assert expected_bullet in flat
+    assert "Player handicap: 12" in flat
 
 
 @pytest.mark.asyncio
@@ -521,12 +570,16 @@ async def test_build_voice_prompt_no_memory_no_profile_stays_clean(monkeypatch):
     monkeypatch.setattr(caddie_routes.memory_mod, "get_player_profile", _fake_get_player_profile)
 
     request = VoiceCaddieRequest(transcript="hi", personality_id="classic", hole_number=None)
-    system_prompt, _messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
+    system, _messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
 
-    assert "Classic system prompt." in system_prompt
-    assert system_prompt.rstrip().endswith(caddie_routes.HAZARD_GROUNDING_RULE)
-    assert "--- PLAYER MEMORY ---" not in system_prompt
-    assert "handicap" not in system_prompt.lower()
+    flat = _flat_system(system)
+    assert "Classic system prompt." in flat
+    # HAZARD_GROUNDING_RULE closes the STABLE block (system[0]), which now
+    # carries the cache breakpoint — the volatile CURRENT SITUATION block
+    # (system[1]) renders after it.
+    assert system[0]["text"].rstrip().endswith(caddie_routes.HAZARD_GROUNDING_RULE)
+    assert "--- PLAYER MEMORY ---" not in flat
+    assert "handicap" not in flat.lower()
 
 
 @pytest.mark.asyncio
@@ -539,9 +592,10 @@ async def test_build_voice_prompt_degrades_when_memory_fetch_raises(monkeypatch)
     monkeypatch.setattr(caddie_routes.memory_mod, "get_top_memories", _raising_get_top_memories)
 
     request = VoiceCaddieRequest(transcript="hi", personality_id="classic", hole_number=None)
-    system_prompt, messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
+    system, messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
 
-    assert "Classic system prompt." in system_prompt
-    assert system_prompt.rstrip().endswith(caddie_routes.HAZARD_GROUNDING_RULE)
-    assert "--- PLAYER MEMORY ---" not in system_prompt
+    flat = _flat_system(system)
+    assert "Classic system prompt." in flat
+    assert system[0]["text"].rstrip().endswith(caddie_routes.HAZARD_GROUNDING_RULE)
+    assert "--- PLAYER MEMORY ---" not in flat
     assert messages[-1] == {"role": "user", "content": "hi"}

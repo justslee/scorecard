@@ -53,6 +53,33 @@ log = logging.getLogger("looper.caddie")
 # any reason. Internals go to the log (traceback), NEVER to the client.
 _CADDIE_ERROR_DETAIL = "The caddie lost that one — give it another go."
 
+# Bounded client timeout + one SDK-native retry on transient errors
+# (408/409/429/5xx/connection) — worst-case wall clock ≈ timeout × (retries+1)
+# ≈ 50s, a big improvement over the ~10-min SDK default that was starving the
+# single worker on a stalled upstream call.
+_CADDIE_TIMEOUT_S = 25.0
+_CADDIE_MAX_RETRIES = 1
+
+
+def _log_caddie_usage(usage, *, context: str, persona_id: Optional[str]) -> None:
+    """One structured line proving prompt-cache engagement (or an honest
+    below-floor no-op) — cache_read/cache_creation vs plain input tokens.
+    Logging must never break a reply, so this never raises."""
+    try:
+        log.info(
+            "caddie_usage",
+            extra={
+                "caddie_context": context,
+                "persona_id": persona_id,
+                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
+                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+                "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+            },
+        )
+    except Exception:  # noqa: BLE001 — logging must never break a reply
+        log.debug("caddie_usage log failed", exc_info=True)
+
 
 def _safe_course_uuid(value) -> str | None:
     """The caddie_sessions.course_id column is a UUID — legacy rounds carry
@@ -652,7 +679,7 @@ async def session_recommend(request: SessionRecommendRequest, user_id: str = Dep
 
 async def _build_session_voice_prompt(
     request: SessionVoiceRequest, user_id: str,
-) -> tuple[str, list[dict], str]:
+) -> tuple[list[dict], list[dict], str]:
     """Assemble the session-aware system prompt + messages for /session/voice
     AND its streaming twin — the one place this context logic lives, so the
     two mouths can't drift (audit #6). Runs ownership + persona-visibility
@@ -660,7 +687,13 @@ async def _build_session_voice_prompt(
     check separately (before this, so a missing key never touches DB reads).
 
     Caller must own the round (enforced here via get_owned_session — 404s).
-    Returns (system_prompt, messages, persona_id).
+    Returns (system_blocks, messages, persona_id). `system_blocks` is a
+    two-block Anthropic `system` content list — a STABLE, per-round-stable
+    prefix (persona + memory + instructions + hazard rule) carrying a prompt-
+    cache breakpoint, followed by the VOLATILE per-hole CURRENT SITUATION
+    block with no breakpoint (specs/caddie-prompt-caching-text-path-plan.md).
+    Conversation history renders after both, in `messages` — not cached by
+    this item, by design (see plan §1).
     """
     session = await get_owned_session(request.round_id, user_id)
 
@@ -752,18 +785,17 @@ async def _build_session_voice_prompt(
         messages.append({"role": msg.role, "content": msg.content})
     messages.append({"role": "user", "content": request.transcript})
 
+    # BLOCK 0 — STABLE (persona + memory + instructions + hazard rule):
+    # per-round-stable, carries the prompt-cache breakpoint.
     memory_section = f"\n--- PLAYER MEMORY ---\n{memories_block}\n" if memories_block else ""
-    system_prompt = f"""{personality.system_prompt}
+    stable_text = f"""{personality.system_prompt}
 {memory_section}
---- CURRENT SITUATION ---
-{context}
-
 --- INSTRUCTIONS ---
 You are caddying for this golfer right now, on the course. Respond to their question or comment.
 Your reply is SPOKEN ALOUD on the course: keep it to 2-3 short sentences max unless they ask for
 more detail. Plain speech only — never use markdown, asterisks, bullet lists, headings, or emoji.
 One clear recommendation beats a pep talk. If they ask about club selection, aim, or strategy,
-use the context above to give specific, actionable advice — and when the hole context shows an
+use the CURRENT SITUATION section to give specific, actionable advice — and when the hole context shows an
 uphill/downhill change or a plays-like distance, factor it in and SAY it briefly ("plays more
 like 195 with the climb"). Any "Local knowledge" line is written for golfers in general — filter
 it through THIS player's real distances before repeating it: a hazard beyond their reach off the
@@ -775,7 +807,15 @@ or known tendencies when relevant.
 
 {HAZARD_GROUNDING_RULE}"""
 
-    return system_prompt, messages, persona_id
+    # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
+    volatile_text = f"--- CURRENT SITUATION ---\n{context}"
+
+    system_blocks: list[dict] = [
+        {"type": "text", "text": stable_text, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": volatile_text},
+    ]
+
+    return system_blocks, messages, persona_id
 
 
 @router.post("/session/voice", response_model=VoiceCaddieResponse)
@@ -788,18 +828,21 @@ async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(cur
     if not api_key:
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
 
-    system_prompt, messages, _persona_id = await _build_session_voice_prompt(request, user_id)
+    system_blocks, messages, persona_id = await _build_session_voice_prompt(request, user_id)
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(
+            api_key=api_key, timeout=_CADDIE_TIMEOUT_S, max_retries=_CADDIE_MAX_RETRIES,
+        )
         model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
         message = client.messages.create(
             model=model,
             max_tokens=300,
             temperature=0.7,
-            system=system_prompt,
+            system=system_blocks,
             messages=messages,
         )
+        _log_caddie_usage(message.usage, context="session_voice", persona_id=persona_id)
         response_text = _first_text(message) or "Say that once more? I want to get this right."
 
         # Atomic dual append — either both turns persist or neither, so the
@@ -827,13 +870,14 @@ async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(cur
 
 async def _sse_reply(
     api_key: str,
-    system_prompt: str,
+    system: list[dict],
     messages: list[dict],
     *,
     log_context: str,
     round_id: Optional[str] = None,
     transcript: Optional[str] = None,
     hole_number: Optional[int] = None,
+    persona_id: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """Stream a Claude reply as SSE frames — the async twin of the
     `client.messages.create(...)` call in session_voice/voice_caddie, with
@@ -841,6 +885,10 @@ async def _sse_reply(
     caller has done all auth/gate/prompt-assembly work and committed the
     200 OK + streaming headers, so nothing here can turn into a JSON error
     response — failures become `event: error` frames instead.
+
+    `system` accepts either a bare string or the two-block prompt-cache list
+    built by `_build_session_voice_prompt` / `_build_voice_prompt` — the SDK
+    forwards both forms unchanged.
 
     Framing (internal contract, not a shared model — see
     specs/voice-streaming-replies-plan.md §1):
@@ -855,7 +903,9 @@ async def _sse_reply(
     truncated turn is dropped from history entirely rather than wedging a
     partial reply into the round's conversation ledger.
     """
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = anthropic.AsyncAnthropic(
+        api_key=api_key, timeout=_CADDIE_TIMEOUT_S, max_retries=_CADDIE_MAX_RETRIES,
+    )
     model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
     parts: list[str] = []
     completed = False
@@ -864,13 +914,20 @@ async def _sse_reply(
             model=model,
             max_tokens=300,
             temperature=0.7,
-            system=system_prompt,
+            system=system,
             messages=messages,
         ) as stream:
             async for text in stream.text_stream:
                 if text:
                     parts.append(text)
                     yield f"event: token\ndata: {json.dumps(text)}\n\n"
+            # Guarded: a stream that can't produce a final message must never
+            # turn a SUCCESSFUL reply into an `event: error`.
+            try:
+                final_message = await stream.get_final_message()
+                _log_caddie_usage(final_message.usage, context=log_context, persona_id=persona_id)
+            except Exception:  # noqa: BLE001
+                log.debug(f"{log_context} usage logging failed", exc_info=True)
         completed = True
     except anthropic.AuthenticationError:
         log.exception(f"{log_context} auth failed")
@@ -910,17 +967,18 @@ async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depe
     if not api_key:
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
 
-    system_prompt, messages, _persona_id = await _build_session_voice_prompt(request, user_id)
+    system_blocks, messages, persona_id = await _build_session_voice_prompt(request, user_id)
 
     return StreamingResponse(
         _sse_reply(
             api_key,
-            system_prompt,
+            system_blocks,
             messages,
             log_context="session_voice_stream",
             round_id=request.round_id,
             transcript=request.transcript,
             hole_number=request.hole_number,
+            persona_id=persona_id,
         ),
         media_type="text/event-stream",
     )
@@ -1239,12 +1297,13 @@ async def compute_player_stats(
 
 async def _build_voice_prompt(
     request: VoiceCaddieRequest, user_id: str,
-) -> tuple[str, list[dict], str]:
+) -> tuple[list[dict], list[dict], str]:
     """Assemble the stateless system prompt + messages for /voice AND its
     streaming twin — mirrors _build_session_voice_prompt so the two mouths
     stay identical (audit #6). Runs the persona-visibility gate; the caller
     does the ANTHROPIC_API_KEY check separately. Returns
-    (system_prompt, messages, persona_id).
+    (system_blocks, messages, persona_id) — see _build_session_voice_prompt
+    for the two-block prompt-cache shape.
     """
     # Same visibility gate as session_voice — private personas stay private.
     persona_id = (
@@ -1315,18 +1374,17 @@ async def _build_voice_prompt(
         })
     messages.append({"role": "user", "content": request.transcript})
 
+    # BLOCK 0 — STABLE (persona + memory + instructions + hazard rule):
+    # per-round-stable, carries the prompt-cache breakpoint.
     memory_section = f"\n--- PLAYER MEMORY ---\n{memories_block}\n" if memories_block else ""
-    system_prompt = f"""{personality.system_prompt}
+    stable_text = f"""{personality.system_prompt}
 {memory_section}
---- CURRENT SITUATION ---
-{context}
-
 --- INSTRUCTIONS ---
 You are caddying for this golfer right now, on the course. Respond to their question or comment.
 Your reply is SPOKEN ALOUD on the course: keep it to 2-3 short sentences max unless they ask for
 more detail. Plain speech only — never use markdown, asterisks, bullet lists, headings, or emoji.
 One clear recommendation beats a pep talk. If they ask about club selection, aim, or strategy,
-use the context above to give specific, actionable advice — and when the hole context shows an
+use the CURRENT SITUATION section to give specific, actionable advice — and when the hole context shows an
 uphill/downhill change or a plays-like distance, factor it in and SAY it briefly ("plays more
 like 195 with the climb"). Any "Local knowledge" line is written for golfers in general — filter
 it through THIS player's real distances before repeating it: a hazard beyond their reach off the
@@ -1336,7 +1394,15 @@ golf-focused. Never break character.
 
 {HAZARD_GROUNDING_RULE}"""
 
-    return system_prompt, messages, persona_id
+    # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
+    volatile_text = f"--- CURRENT SITUATION ---\n{context}"
+
+    system_blocks: list[dict] = [
+        {"type": "text", "text": stable_text, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": volatile_text},
+    ]
+
+    return system_blocks, messages, persona_id
 
 
 @router.post("/voice", response_model=VoiceCaddieResponse)
@@ -1351,18 +1417,21 @@ async def voice_caddie(
     if not api_key:
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
 
-    system_prompt, messages, _persona_id = await _build_voice_prompt(request, user_id)
+    system_blocks, messages, persona_id = await _build_voice_prompt(request, user_id)
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(
+            api_key=api_key, timeout=_CADDIE_TIMEOUT_S, max_retries=_CADDIE_MAX_RETRIES,
+        )
         model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
         message = client.messages.create(
             model=model,
             max_tokens=300,
             temperature=0.7,
-            system=system_prompt,
+            system=system_blocks,
             messages=messages,
         )
+        _log_caddie_usage(message.usage, context="voice_caddie", persona_id=persona_id)
         response_text = _first_text(message) or "Say that once more? I want to get this right."
         return VoiceCaddieResponse(response=response_text)
     except anthropic.AuthenticationError:
@@ -1388,9 +1457,12 @@ async def voice_caddie_stream(
     if not api_key:
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
 
-    system_prompt, messages, _persona_id = await _build_voice_prompt(request, user_id)
+    system_blocks, messages, persona_id = await _build_voice_prompt(request, user_id)
 
     return StreamingResponse(
-        _sse_reply(api_key, system_prompt, messages, log_context="voice_caddie_stream"),
+        _sse_reply(
+            api_key, system_blocks, messages,
+            log_context="voice_caddie_stream", persona_id=persona_id,
+        ),
         media_type="text/event-stream",
     )
