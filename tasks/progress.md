@@ -54,6 +54,28 @@ run locally (no local Postgres) — CI covers them. Committed `a4e8d35` on
 `integration/next`, pushed. **NOTICEABLE** — the live caddie visibly stops
 answering the wrong hole; worth flagging in the next approval bundle.
 
+## 2026-07-08 — builder: caddie-stale-hole-live observability follow-up (SILENT, integration/next, DONE)
+
+Reviewer-flagged gap on the P0 fix (`a4e8d35`): `sendContext()`'s `role:"system"`
+`conversation.item.create` shape is unverified against a live OpenAI Realtime GA
+connection; if the server rejects it, it surfaced as a data-channel `error` event
+that previously no-op'd with zero telemetry — no way to tell from a TestFlight
+round whether the re-anchor was accepted or rejected.
+
+Added a breadcrumb ONLY in `handleEvent`'s `'error'` case
+(`frontend/src/lib/voice/realtime.ts`): `voiceEvent("caddie", "realtime_dc_error",
+{ detail: "type=... code=... message=..." })`, same helper/pattern as the existing
+`opening_shot` breadcrumb. Control flow unchanged — no teardown, no `role:"user"`
+fallback (deferred until we have real rejection data to decide it from). No
+secrets/PII logged.
+
+Gates: frontend lint clean, `tsc --noEmit` clean, `CaddieSheet.realtime.test.tsx`
+28/28 (no test change needed — that suite mocks `RealtimeCaddieClient` entirely,
+so it doesn't exercise `handleEvent`'s `error` case), `realtime-warm.test.ts` +
+`realtime-dispatch.test.ts` + `realtime-ordering.test.ts` 30/30, voice-tests
+--smoke 274/274. Committed `0d61f01` on `integration/next`, pushed. **SILENT** —
+telemetry-only, nothing user-visible.
+
 ## eng-lead cycle 30 — caddie-llm-rate-limiting → bundle PR #115 (SILENT, DONE)
 
 Picked excellence-audit P1 area-E (grade F): zero per-user ceilings on paid LLM
