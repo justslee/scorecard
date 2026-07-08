@@ -71,7 +71,7 @@ jobs:
     # suite now runs 138 + 13 = 151 tests green in CI (verified on PR #53).
     services:
       postgres:
-        image: postgres:16
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: scorecard_test

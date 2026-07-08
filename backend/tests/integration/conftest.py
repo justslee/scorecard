@@ -19,6 +19,7 @@ Architecture notes:
 import os
 import re
 import socket
+from pathlib import Path
 
 # ── MUST come before any app import ──────────────────────────────────────────
 # CI sets DATABASE_URL explicitly; local default points to a test Postgres.
@@ -95,6 +96,21 @@ async def _ensure_schema(engine) -> None:
                 END $$;
             """)
         )
+
+        # course-mapping tables (courses/tee_sets/holes/hole_yardages/hole_features)
+        # are NOT ORM/Base tables — they come from raw SQL in migration 001. Run the
+        # real migration file verbatim so the test schema never drifts from prod.
+        mig = (
+            Path(__file__).resolve().parents[2]
+            / "supabase" / "migrations" / "001_course_mapping_schema.sql"
+        )
+        if not mig.is_file():
+            raise RuntimeError(f"course-mapping migration not found: {mig}")
+        sql_script = mig.read_text()
+        # asyncpg's simple-query protocol runs a whole multi-statement / dollar-quoted
+        # script; text()/prepared-statement path would choke on it.
+        raw = await conn.get_raw_connection()
+        await raw.driver_connection.execute(sql_script)
     _schema_ready = True
 
 
@@ -124,7 +140,8 @@ async def _db():
                     "TRUNCATE TABLE scores, games, round_players, player_groups,"
                     " rounds, course_reviews, players, golfer_profiles, tournaments,"
                     " tee_time_bookings, caddie_sessions, caddie_messages, shots,"
-                    " player_profiles"
+                    " player_profiles,"
+                    " hole_features, hole_yardages, holes, tee_sets, courses"
                     " RESTART IDENTITY CASCADE"
                 )
             )
