@@ -29,11 +29,11 @@
       "type": "major",
       "priority": 2,
       "risk": "high",
-      "status": "blocked",
+      "status": "tabled",
       "depends_on": [
         "owner-acquires-rayban-meta"
       ],
-      "why": "OWNER 2026-07-09 thesis, researched (specs/glasses-shot-tracking-research.md): continuous-vision tracking INFEASIBLE (60-90min battery, 1-min clip caps, thermal shutoffs) but TRIGGERED-CLIP design is plausible \u2014 IMU/impact-audio trigger -> 5-10s 720p clip via Meta Wearables DAT (dev preview; 12MP cam + 5-mic + speakers accessible to OUR phone app) -> on-phone swing/ball classification, fused with GPS displacement. ~5-7 min total camera/round = inside battery. Replaces vocal confirmation with VISUAL \u2014 the owner's objection to phone-only sensing dissolves. Putts = first sensor with a real chance, but trigger reliability unproven. SHIPPING gated on Meta opening publishing (their 2026 date); PROTOTYPING possible now. STEP 0 ($0, today): owner pairs Ray-Ban Metas as BT audio with the live caddie \u2014 phone-free conversation works without any code. Spike = diagnostic-only, measure trigger precision/recall + battery on owner rounds before any UX."
+      "why": "OWNER TABLED 2026-07-09 (revisit on his word; research preserved in specs/glasses-shot-tracking-research.md). OWNER 2026-07-09 thesis, researched (specs/glasses-shot-tracking-research.md): continuous-vision tracking INFEASIBLE (60-90min battery, 1-min clip caps, thermal shutoffs) but TRIGGERED-CLIP design is plausible \u2014 IMU/impact-audio trigger -> 5-10s 720p clip via Meta Wearables DAT (dev preview; 12MP cam + 5-mic + speakers accessible to OUR phone app) -> on-phone swing/ball classification, fused with GPS displacement. ~5-7 min total camera/round = inside battery. Replaces vocal confirmation with VISUAL \u2014 the owner's objection to phone-only sensing dissolves. Putts = first sensor with a real chance, but trigger reliability unproven. SHIPPING gated on Meta opening publishing (their 2026 date); PROTOTYPING possible now. STEP 0 ($0, today): owner pairs Ray-Ban Metas as BT audio with the live caddie \u2014 phone-free conversation works without any code. Spike = diagnostic-only, measure trigger precision/recall + battery on owner rounds before any UX."
     },
     {
       "id": "caddie-llm-rate-limiting",
