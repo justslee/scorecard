@@ -267,3 +267,48 @@ async def test_research_hole_guide_raises_when_api_key_missing_never_fabricates(
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
         await research_hole_guide(7, 4, 410, None, None, [])
+
+
+# ── Reviewer-caught validator hardening (2026-07-09): synonym fail-open +
+# substring over-rejection (see the adversarial review in tasks/progress.md) ──
+
+def _bare_guide(**kw):
+    from app.caddie.types import HoleStrategyGuide
+    d = dict(play_line="aim center", miss_side="", green_notes="", common_mistakes=[])
+    d.update(kw)
+    return HoleStrategyGuide(**d)
+
+
+def test_validator_rejects_synonym_hazards_on_clean_holes():
+    """ditch/beach/burn/marsh/H2O previously sailed through the 14-word list."""
+    from app.caddie.guide_writer import validate_guide
+
+    for text in [
+        "a ditch crosses at 220",
+        "aim away from the beach left",
+        "a burn runs down the right",
+        "marsh right, h2o left",
+        "the waste area guards the lay-up",
+        "river left of the green",
+    ]:
+        assert validate_guide(_bare_guide(miss_side=text), []) is None, text
+
+
+def test_validator_word_boundaries_do_not_over_reject():
+    """'ob' in 'problem', 'stakes' in 'mistakes', 'sand' in 'thousand'."""
+    from app.caddie.guide_writer import validate_guide
+
+    g = _bare_guide(
+        play_line="probably favor center-left",
+        miss_side="the problem is long",
+        common_mistakes=["common mistakes here", "a thousand thoughts"],
+    )
+    assert validate_guide(g, []) is not None
+
+
+def test_validator_still_allows_mapped_hazard_mentions():
+    from app.caddie.guide_writer import validate_guide
+    from app.caddie.types import Hazard
+
+    wz = [Hazard(type="water", side="right", distance_from_green=20, penalty_severity="death")]
+    assert validate_guide(_bare_guide(miss_side="avoid the water right"), wz) is not None

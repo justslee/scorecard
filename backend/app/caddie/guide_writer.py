@@ -29,6 +29,7 @@ course-mapping/ingest time (primary) and cold-course `/session/start`
 """
 
 from __future__ import annotations
+import re
 
 import logging
 import os
@@ -297,21 +298,37 @@ async def research_hole_guide(
 # free-text field; a match whose canonical type is NOT in the hole's actual
 # hazard-type set means the guide asserts something our geometry doesn't
 # contain -> reject the WHOLE guide (never a per-field scrub).
+# Reviewer-caught fail-OPEN (2026-07-09): the original 14-word list let
+# synonym hazards ("a ditch crosses at 220", "the beach left", links "burn")
+# through unvalidated. Broad synonym coverage per type; matching is
+# word-boundary regex (see _HAZARD_PATTERNS) so "ob" can't hit "problem",
+# "stakes" can't hit "mistakes", "sand" can't hit "thousand".
 _HAZARD_KEYWORD_TO_TYPE: dict[str, str] = {
-    "water": "water",
-    "lake": "water",
-    "pond": "water",
-    "creek": "water",
-    "stream": "water",
-    "hazard (penalty)": "water",
-    "drink": "water",
-    "bunker": "bunker",
-    "sand trap": "bunker",
-    "trap": "bunker",
-    "sand": "bunker",
-    "ob": "ob",
-    "out of bounds": "ob",
-    "stakes": "ob",
+    # water
+    "water": "water", "lake": "water", "pond": "water", "creek": "water",
+    "stream": "water", "hazard (penalty)": "water", "drink": "water",
+    "ditch": "water", "burn": "water", "brook": "water", "river": "water",
+    "canal": "water", "lagoon": "water", "marsh": "water", "wetland": "water",
+    "bog": "water", "reservoir": "water", "bay": "water", "h2o": "water",
+    "swale (wet)": "water", "penalty area": "water",
+    # bunker
+    "bunker": "bunker", "sand trap": "bunker", "trap": "bunker",
+    "sand": "bunker", "beach": "bunker", "waste area": "bunker",
+    "waste bunker": "bunker", "pot bunker": "bunker",
+    # out of bounds
+    "ob": "ob", "o.b.": "ob", "out of bounds": "ob", "stakes": "ob",
+    "boundary fence": "ob",
+}
+
+# Compiled once: word-boundary alternation per canonical type. Multi-word
+# keywords keep internal spaces; "." in "o.b." is escaped.
+_HAZARD_PATTERNS: dict[str, "re.Pattern[str]"] = {
+    _t: re.compile(
+        r"\b(?:" + "|".join(
+            re.escape(k) for k, t in _HAZARD_KEYWORD_TO_TYPE.items() if t == _t
+        ) + r")\b"
+    )
+    for _t in {t for t in _HAZARD_KEYWORD_TO_TYPE.values()}
 }
 
 _MAX_FIELD_CHARS = 240
@@ -348,8 +365,8 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
     text_fields = [guide.play_line, guide.miss_side, guide.green_notes, *guide.common_mistakes]
     for field_text in text_fields:
         lowered = (field_text or "").lower()
-        for keyword, canonical_type in _HAZARD_KEYWORD_TO_TYPE.items():
-            if keyword in lowered and canonical_type not in allowed_types:
+        for canonical_type, pattern in _HAZARD_PATTERNS.items():
+            if canonical_type not in allowed_types and pattern.search(lowered):
                 return None
 
     if not guide.play_line.strip():

@@ -80,10 +80,14 @@ async def _precompute_course_guides(course_id: str) -> None:
                 continue
 
             green_props = _green_properties(h)
+            if green_props is None:
+                # No green feature -> nothing to persist a guide INTO; researching
+                # would re-spend on every trigger forever (reviewer finding #4).
+                continue
             if green_props is not None and green_props.get("strategy_guide") is not None:
                 continue  # already cached forever -- idempotent skip
 
-            hazards = extract_hole_hazards(h.get("features"))
+            hazards = extract_hole_hazards(h.get("features"), tee=h.get("tee"), green=h.get("green"))
             par = h.get("par") or 4
             yards = _primary_yards(h.get("yardages") or {})
             elevation_change_ft = (green_props or {}).get("delta_ft")
