@@ -3,6 +3,43 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — caddie-realtime Slice E follow-up: honest-state fix in empty-transcript hint (frontend, SILENT, integration/next, DONE)
+
+Fixed the reviewer/designer-flagged honesty gap in Slice E: when live Ask
+Caddie idles 90s with an empty transcript (no speech, no GPS opening shot),
+the footer correctly showed "Paused — tap to resume" but `LiveVoiceBody`'s
+empty-state center still rendered "Go ahead — {name} is listening." — two
+contradicting claims on screen, keyed on stale `RealtimeStatus` instead of
+`liveState`. No-fake-data / honest-states violation.
+
+- `frontend/src/components/CaddieSheet.tsx` — threaded
+  `paused={live.liveState === "suspended"}` into `LiveVoiceBody` (mirrors the
+  same expression already used for `LiveFooter`). Empty-transcript branch now
+  splits on `paused`: when true, renders "Paused — tap resume below to keep
+  talking." (mono/pencilSoft, matching the footer's calm register) instead of
+  the listening claim; the non-paused branch is byte-for-byte unchanged.
+- `frontend/src/components/CaddieSheet.realtime.test.tsx` — new regression
+  test in the Slice E describe block: open live -> connected -> idle timeout
+  with zero messages and no `resolveOpeningShot` -> asserts the footer
+  "Paused — tap to resume" renders AND `queryByText(/is listening/i)` is null.
+- Zero edits to realtime.ts / warm-session.ts / realtime-ordering.ts /
+  transport.ts / idle-timer.ts / useCaddieLiveSession.ts — pure
+  CaddieSheet.tsx render + test change, per the eng-lead's constraint.
+
+Gates: `npm run lint` clean, `tsc --noEmit` clean, `next build` succeeds,
+voice-tests smoke 274/274, `CaddieSheet.realtime.test.tsx` 23/23 passed, full
+`vitest run` 82 files / 1696 tests passed.
+
+Landed as part of commit `3413848` on `integration/next` — a concurrent
+process/session committed to the shared branch between this session's
+`git add` and `git commit` and folded these two staged files into its own
+(unrelated) commit "caddie: filter local knowledge through the player's
+reach." The diff content is verified correct and intact (`git show 3413848
+-- frontend/src/components/CaddieSheet.tsx frontend/src/components/CaddieSheet.realtime.test.tsx`)
+but the commit message/authorship does not describe this fix — flagging so
+eng-lead is aware two agents wrote to `integration/next`'s working tree at
+the same time (a coordination gap, not a code issue).
+
 ## 2026-07-08 — caddie-hole-strategy-guides Slice 1 (backend + shared types, SILENT, integration/next, DONE)
 
 Implemented Slice 1 ONLY of `specs/caddie-hole-strategy-guides-plan.md` (§12):
