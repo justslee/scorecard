@@ -7586,3 +7586,20 @@ STATE AT PAUSE:
 
 RESUME: next session (after limit reset or owner raises the cap) — retry
 cycle 18 with the findings above; then continue the queue.
+
+---
+
+## 2026-07-09 — SHIPPED: #109 faster caddie voice + from-tee reco + instant elevation
+
+Owner "ship it". Merge 450befc → main; deploy verified by headSha + health ok.
+TestFlight v1.0.836 (build 202607080618). NOTICEABLE ×3: A2 sentence-level
+TTS pipelining (voice starts on the first sentence), from-the-tee opening
+reco (works at home + pre-GPS first tee), instant elevation (static
+persistence, computed once per course). Silent riders: stage-timing
+telemetry, Realtime grounding parity (Slice A), iOS voicetel flush fix,
+elevation write-back hole-number hardening, spend-limit checkpoint.
+Fourteen ships this run. Survived a monthly-spend-limit pause with a clean
+checkpoint+resume mid-bundle.
+NEXT: Slice C — the Realtime transport migration (flag-gated, owner
+on-device verification) on a fresh bundle; ci-postgis-course-mapping-tests
+as the routine filler.
