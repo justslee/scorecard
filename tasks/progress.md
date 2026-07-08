@@ -7050,3 +7050,21 @@ aim_point/recommend guards, clean prompts, regression tests), and the
 elevation/wind tiles read true via the deploy alone. Wind now refreshes
 every ~20-30 min + on stale hole change. Twelve ships this run.
 integration/next resynced; loop continues.
+
+## 2026-07-08 — cycle 12: don't refetch weather on a completed round (SILENT, integration/next, DONE)
+
+Step 0 clean: #107 shipped (v1.0.799), no open PRs, no Needs-Review cards, no owner
+comments on the recently-shipped bundle cards. Bundle was empty.
+
+Picked the cycle-10 review nit. The periodic wind refresh already tears down for a
+finished round, but the two ON-DEMAND triggers — hole change (`RoundPageClient` ~l.609)
+and app foreground/visibility (~l.621) — had no round-active guard, so paging through or
+reopening a COMPLETED round fired a live `/weather` call and could paint "now" wind onto a
+round played earlier. Folded the gate into a pure `shouldRefreshOnDemand(roundActive,
+weather, fetchedAt, now)` predicate in `lib/map/weather-freshness.ts`; both effects read a
+fresh `roundActive` from the weather mirror ref (no stale closure). Dropped the now-unused
+`isWeatherStale` import from the component.
+
+Gates: vitest weather-freshness 17/17 (+5 new deterministic cases), lint clean, tsc clean,
+next build ok, voice smoke 274/274. Committed 8ec8672 → integration/next; opened the fresh
+rolling bundle PR #108 (silent-only — no owner ping). Rides until a noticeable item lands.
