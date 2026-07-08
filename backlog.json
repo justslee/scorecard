@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-08",
+  "updated": "2026-07-07",
   "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle). | 2026-07-07 hygiene: p2/p3 readies (hazard-grounding, persistent-map, tee-marker) were already shipped to main \u2014 statuses corrected; course-elevation superseded by real USGS elevation.py. | 2026-07-07 retro hygiene: VOICE AGENT AUDIT P1+P2 CORE IS COMPLETE \u2014 keyterms/auto-send/telemetry (#100), TTS sheet replies (#102, v1.0.750), streamed replies + voice-reply timeouts (#104, v1.0.767) all shipped to main. map-viewer-error-screen-restyle shipped in #103 (was mis-tagged in-progress) and voice-tts-sheet-replies shipped in #102 (was mis-tagged 'awaiting ship-it') \u2014 both corrected to done-shipped-main. Remaining voice work is refinement/device-verify (voice-agentic-setup, voice-live-transcription, voice-language-onboarding, voice-per-player-tees), not core audit. Seeded 3 next candidates (caddie-persona-tts-voices, caddie-hole-strategy-guides, looper-brain-parity) grounded in NORTHSTAR + memory.",
   "items": [
     {
@@ -1649,7 +1649,7 @@
       "type": "noticeable",
       "priority": 0,
       "risk": "medium",
-      "status": "in-progress",
+      "status": "done-shipped-integration-next (35c4103; bundle #108; SHIP verdict; awaiting owner ship-it)",
       "depends_on": [],
       "why": "Prod telemetry from owner's live session: voicetel surface=sheet-tts event=speak_failed detail=NotSupportedError. Caddie spoken replies don't play on his iPhone (Capacitor WKWebView). Also silently breaks the hands-free conversational loop, which re-arms listening only on the audio element's `ended` event. Leading cause: CapacitorHttp-patched fetch corrupts/mistypes the binary mp3 blob; secondary: gesture-unlock bless-plays an element with no src. Fix with persistent-primed-audio + correct-typed blob, add unlock-failure telemetry + deterministic tests.",
       "spec": "specs/fix-ios-tts-playback-plan.md"

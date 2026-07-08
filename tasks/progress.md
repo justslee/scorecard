@@ -43,6 +43,45 @@ loop's re-arm) should now work on TestFlight; worth a device/TestFlight confirm 
 post-merge check (`voicetel surface=sheet-tts` should show `speak` succeeding, no
 `speak_failed`/`NotSupportedError`).
 
+### eng-lead cycle 13 wrap-up (owner-directed: "main thing I want to focus on is the caddie")
+- Plan authored on opus (`specs/fix-ios-tts-playback-plan.md`) — correctly ruled OUT the gesture
+  hypotheses (those throw `NotAllowedError`, not the observed `NotSupportedError`) and pinned the
+  real cause on the CapacitorHttp binary round-trip / untyped Blob, with primed-audio + telemetry
+  as composable hardening.
+- Builder stalled a few times before committing (needed nudges to clean a stray
+  `frontend/src/__scratch__/` and commit) — landed `35c4103` clean, scratch removed.
+- eng-lead re-verified gates locally: lint clean · tsc clean · voice smoke 274/274 · the 4 vitest
+  suites 54/54 (incl. handsfree+session re-arm/barge-in invariants). **PR #108 CI all green**:
+  Frontend gates pass · Backend gate pass · E2E smoke advisory pass.
+- `reviewer` (adversarial correctness + security, incl. /security-review + /code-review):
+  **SHIP**, no blocking issues. Traced every `playingRealRef` re-arm path (prime clip inert; real
+  reply re-arms exactly once; stop/overlap/barge-in/unmount never re-arm); confirmed native path
+  keeps `authHeaders()`, never feeds the base64 error body to the player, and that the dropped
+  `AbortSignal` is compensated by the caller's post-await aborted guard. Two harmless NON-BLOCKING
+  notes (both "not required to ship"): (1) the real-`play()` catch could also clear
+  `playingRealRef` for tidiness (harmless — a failed play produces no `ended`); (2) empty native
+  `resp.data` degrades to a swallowed `speak_failed`, no crash. Left as-is per cost discipline; not
+  worth a churn commit.
+- No designer (zero UI change — audio plumbing + telemetry only).
+- PR #108 checklist updated → **bundle is now NOTICEABLE** (caddie voice + hands-free re-arm start
+  working on the owner's iPhone). Per the directive the owner is active in-session, so NO push
+  notification and no TestFlight/release-manager dispatch this cycle — the bundle **awaits his
+  in-session "ship it"** (or feedback). On ship-it, next cycle's step 0 hands #108 to
+  release-manager (`integration/next` → `main`) and cuts a fresh bundle.
+
+**Telemetry-volume note (per directive):** voicetel volume is near-blind — ~1 event in 4h of the
+owner's live session. `lib/voice/telemetry.ts` flushes on an 8s timer / 12-event batch /
+`visibilitychange`→hidden with a `keepalive` fetch; on iOS WKWebView `pagehide` is more reliable
+than `visibilitychange`, and the CapacitorHttp-patched fetch may not honor `keepalive` when the
+webview suspends → queued events likely die on background/kill. NOT fixed this cycle; filed as
+targeted backlog card `fix-ios-voicetel-flush-dropped` (needs-spec). This matters because our
+on-device visibility into whether the TTS fix worked depends on that flush path.
+
+Also queued (p1-ready, NOT built this cycle) per owner's other two asks:
+`caddie-opening-reco-from-tee` (FROM-THE-TEE fallback reco when GPS absent/implausible >800y) and
+`course-intel-static-persistence` (compute elevation/green-slope once per course, persist on the
+mapped course record).
+
 ## 2026-07-07 — wind-periodic-refresh: keep the wind tile fresh through a round (SILENT, integration/next, DONE)
 
 Implemented `specs/wind-periodic-refresh-plan.md`. One Open-Meteo grid-cell reading was
