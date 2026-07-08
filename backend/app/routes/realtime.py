@@ -45,6 +45,13 @@ router = APIRouter(prefix="/api/realtime", tags=["realtime"])
 class StartRealtimeSessionRequest(BaseModel):
     round_id: str
     personality_id: str = "classic"
+    # Defense-in-depth (specs/caddie-stale-hole-live-plan.md §3.8): the hole
+    # the client believes it is on at mint time, so the minted instructions'
+    # situation block is also right from the first turn. Optional/
+    # back-compatible; the client-side sendContext() re-anchor remains the
+    # load-bearing fix (it also covers a warm-pool session minted before the
+    # hole was known, which this field cannot).
+    current_hole: int | None = None
 
 
 class StartRealtimeSessionResponse(BaseModel):
@@ -104,6 +111,14 @@ async def start_realtime_session(
     AND must own that round (verified by get_owned_session).
     """
     session = await get_owned_session(request.round_id, user_id)
+
+    # Defense-in-depth (specs/caddie-stale-hole-live-plan.md §3.8): if the
+    # client tells us the current hole, trust it for THIS mint's instructions
+    # — in-memory only, set before build_realtime_instructions; deliberately
+    # NOT persisted (no DB write here) to avoid clobbering a concurrent
+    # /session/shot append.
+    if request.current_hole is not None:
+        session.current_hole = request.current_hole
 
     # Visibility gate (matches session_voice / talk_to_caddie): never render
     # another user's private persona prompt into the returned instructions.

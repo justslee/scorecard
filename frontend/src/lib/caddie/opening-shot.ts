@@ -33,6 +33,12 @@ export function resolveOpeningShotDistance(
   }
 
   // Tee fallback — GPS absent/denied/timeout OR implausible.
+  // NOTE (specs/caddie-stale-hole-live-plan.md §3.9, diagnosis only — do not
+  // "fix" here): an owner report of "231 yards" on a 178y-carded par 3 traced
+  // to THIS branch being correct — the tee->green haversine for that hole's
+  // ingested tee coordinate really is ~231y, i.e. a mislocated/back-tee OSM
+  // coordinate, not a mislabeled branch. Follow-up: audit that hole's
+  // ingested tee coordinate against the course card. Not fixed this cycle.
   if (tee) {
     const d = haversineYards(tee, green);
     if (Number.isFinite(d) && d >= 1 && d <= 800) {

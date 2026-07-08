@@ -1150,13 +1150,20 @@ export default function RoundPage() {
   const playsBase = fcbLive
     ? fcbLive.center // live rangefinder wins: plays-like from where they stand
     : holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance);
+  // specs/caddie-stale-hole-live-plan.md §3.10 — honest sub label: only claim
+  // an elevation adjustment when playsBase actually came from holeIntel's
+  // elevation-adjusted yards (the fcbLive branch above uses the raw live
+  // rangefinder distance, no elevation term), and say so when it's "from
+  // you" rather than the tee card.
   const playsTile = holeWind
     ? {
         v: `${playsLikeYards(playsBase, holeWind.headMph)}Y`,
-        sub: holeIntel ? "adjusted" : "wind-adj",
+        sub: fcbLive ? "wind from you" : holeIntel ? "adjusted" : "wind-adj",
       }
-    : holeIntel
+    : holeIntel && !fcbLive
     ? { v: `${Math.round(playsBase)}Y`, sub: "elev-adj" }
+    : fcbLive
+    ? { v: `${Math.round(playsBase)}Y`, sub: "from you" }
     : { v: `${Math.round(playsBase)}Y`, sub: "from tee" };
   // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
   const shotPoint = shotPointForPath(hole.path);
@@ -1853,6 +1860,26 @@ export default function RoundPage() {
                       <MapStat k="Elev" v={elevTile.v} sub={elevTile.sub} />
                       <MapStat k="Plays" v={playsTile.v} sub={playsTile.sub} />
                     </div>
+                    {/* F/C/B source caption — moved ABOVE the tile row
+                        (specs/caddie-stale-hole-live-plan.md §3.10): the
+                        floating Ask-caddie/Enter-score pill bar occludes the
+                        bottom of this card, so a caption below the tiles was
+                        invisible. Up here, under the stat divider, the pill
+                        bar never reaches it. Same tokens, quiet
+                        right-aligned micro-label. */}
+                    <div
+                      style={{
+                        marginBottom: 8,
+                        textAlign: "right",
+                        fontFamily: T.mono,
+                        fontSize: 8.5,
+                        letterSpacing: 1.2,
+                        textTransform: "uppercase",
+                        color: fcbSource === "you" ? DEFAULT_ACCENT : T.pencilSoft,
+                      }}
+                    >
+                      {fcbSource === "you" ? "● from where you stand" : "from the tee"}
+                    </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       {fcbTiles.map((d) => (
                         <div
@@ -1894,19 +1921,6 @@ export default function RoundPage() {
                           <div style={{ fontFamily: T.serif, fontSize: 22, color: T.ink, fontVariantNumeric: "tabular-nums" }}>{d.v}</div>
                         </div>
                       ))}
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 6,
-                        textAlign: "center",
-                        fontFamily: T.mono,
-                        fontSize: 8.5,
-                        letterSpacing: 1.2,
-                        textTransform: "uppercase",
-                        color: fcbSource === "you" ? DEFAULT_ACCENT : T.pencilSoft,
-                      }}
-                    >
-                      {fcbSource === "you" ? "● from where you stand" : "from the tee"}
                     </div>
                   </div>
                 </div>

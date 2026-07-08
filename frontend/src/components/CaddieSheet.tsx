@@ -235,6 +235,11 @@ export default function CaddieSheet({
     active: wantLive && navigator.onLine,
     roundId,
     personaId,
+    // specs/caddie-stale-hole-live-plan.md §3.7 — so the live session can
+    // silently re-anchor to the correct hole on connect and on hole change.
+    holeNumber,
+    holePar,
+    holeYards,
     resolveOpeningShot,
   });
   // Eligible for live AND hasn't fallen back this activation — gates both
