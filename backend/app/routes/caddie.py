@@ -22,6 +22,7 @@ from app.caddie.aim_point import generate_recommendation
 from app.caddie.player_stats import analyze_player_stats
 from app.caddie.course_intel import build_hole_intelligence, build_weather_conditions
 from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
+from app.caddie.guide_writer import format_guide_line
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -92,6 +93,19 @@ def _green_persisted_elevation(stored_hole: Optional[dict]) -> Optional[dict]:
         props = f.get("properties") or {}
         if props.get("featureType") == "green" and props.get("tee_elevation_ft") is not None:
             return props  # full props dict; build_hole_intelligence reads only elevation keys
+    return None
+
+
+def _green_persisted_guide(stored_hole: Optional[dict]) -> Optional[dict]:
+    """Pull the green feature's persisted `strategy_guide` dict from a stored
+    hole (as returned by `courses_mapped.get_course`), or None when absent."""
+    if not stored_hole:
+        return None
+    feats = (stored_hole.get("features") or {}).get("features") or []
+    for f in feats:
+        props = f.get("properties") or {}
+        if props.get("featureType") == "green" and props.get("strategy_guide") is not None:
+            return props.get("strategy_guide")
     return None
 
 
@@ -683,6 +697,9 @@ async def _build_session_voice_prompt(
             hazards_line = format_hazards_line(request.hole_number, hole_intel.hazards)
             if hazards_line:
                 context_parts.append(hazards_line)
+        guide_line = format_guide_line(hole_intel.strategy_guide)
+        if guide_line:
+            context_parts.append(guide_line)
         if hole_intel.green_slope:
             context_parts.append(f"Green slope: {hole_intel.green_slope.description}")
 
@@ -1124,6 +1141,7 @@ async def get_course_intel(
         try:
             stored_hole = stored_holes_by_number.get(hc.get("holeNumber"))
             persisted_elev = _green_persisted_elevation(stored_hole)
+            persisted_guide = _green_persisted_guide(stored_hole)
 
             intel = await build_hole_intelligence(
                 hole_coords=hc,
@@ -1133,6 +1151,7 @@ async def get_course_intel(
                 osm_features=osm_features,
                 persisted_elevation=persisted_elev,
                 course_id=owned_session.course_id if owned_session else None,
+                persisted_guide=persisted_guide,
             )
             stored_hole = stored_holes_by_number.get(intel.hole_number)
             if stored_hole is not None:

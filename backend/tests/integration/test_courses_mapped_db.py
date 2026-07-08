@@ -92,6 +92,56 @@ class TestWriteBackRoundTrip:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# caddie-hole-strategy-guides Slice 1 — strategy_guide write-back round-trip
+# (mirrors the elevation round-trip above; verifies the `||` merge preserves
+# pre-existing keys — featureType + an elevation key — rather than clobbering
+# them, same contract elevation already relies on).
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestStrategyGuideRoundTrip:
+    async def test_strategy_guide_round_trips_and_preserves_existing_keys(self):
+        from app.services import courses_mapped
+
+        cid = str(uuid.uuid4())
+        await courses_mapped.upsert_course(
+            _seed_course(
+                cid,
+                green_geometry=_green_point(),
+                green_props={"existing": 1, "tee_elevation_ft": 90.0},
+            )
+        )
+
+        guide = {
+            "play_line": "Favor the left side off the tee.",
+            "miss_side": "Bail out short-right.",
+            "green_notes": "Green runs back-to-front.",
+            "common_mistakes": ["Overclubbing the approach"],
+            "sources": ["https://example.com/hole-1"],
+            "generated_at": "2026-07-08T00:00:00Z",
+            "model": "claude-sonnet-5",
+            "schema_version": 1,
+        }
+        ok = await courses_mapped.update_green_feature_properties(
+            cid, 1, {"strategy_guide": guide}
+        )
+        assert ok is True
+
+        course = await courses_mapped.get_course(cid)
+        assert course is not None
+        feats = course["holes"][0]["features"]["features"]
+        green = _find_green(feats)
+
+        # The guide blob round-trips through get_course untouched.
+        assert green["properties"]["strategy_guide"] == guide
+
+        # Pre-existing keys SURVIVE the || merge — never clobbered.
+        assert green["properties"]["existing"] == 1
+        assert green["properties"]["tee_elevation_ft"] == 90.0
+        assert green["properties"]["featureType"] == "green"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # (e) merge preserves other keys + no-op returns False
 # ─────────────────────────────────────────────────────────────────────────────
 

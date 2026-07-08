@@ -7,6 +7,7 @@ from app.caddie.types import (
     HoleIntelligence,
     Hazard,
     GreenSlope,
+    HoleStrategyGuide,
     WeatherConditions,
 )
 from app.services.elevation import (
@@ -33,6 +34,7 @@ async def build_hole_intelligence(
     osm_features: Optional[dict] = None,
     persisted_elevation: Optional[dict] = None,
     course_id: Optional[str] = None,
+    persisted_guide: Optional[dict] = None,
 ) -> HoleIntelligence:
     """Build intelligence for a single hole from coordinates + data sources.
 
@@ -52,6 +54,11 @@ async def build_hole_intelligence(
             compute with real tee AND green elevations is written back into
             the stored green feature via a targeted JSONB merge — best-effort,
             never sinks the response.
+        persisted_guide: The stored green feature's `properties.strategy_guide`
+            dict, when present — read-through only in Slice 1 (no writer runs
+            yet, so this is normally None). Best-effort parsed into a
+            `HoleStrategyGuide`; a missing/malformed blob NEVER raises and
+            simply yields `strategy_guide=None` ([[no-fake-data-fallbacks]]).
 
     Returns:
         HoleIntelligence with elevation, hazards, green slope, etc.
@@ -174,6 +181,22 @@ async def build_hole_intelligence(
     except Exception:  # noqa: BLE001 — hazards are best-effort by design
         log.warning("hazard classification failed; continuing without", exc_info=True)
         hazards = []
+
+    # Strategy guide — read-through only (Slice 1: no writer runs yet, so this
+    # is normally None). Best-effort parse: a missing/malformed blob must
+    # never sink the rest of the hole's intel (same defensive style as
+    # persisted_elevation above).
+    strategy_guide: Optional[HoleStrategyGuide] = None
+    if persisted_guide is not None:
+        try:
+            strategy_guide = HoleStrategyGuide(**persisted_guide)
+        except Exception:  # noqa: BLE001 — a malformed/partial blob -> honest None
+            log.warning(
+                "strategy_guide parse failed for hole %s; continuing without",
+                hole_number, exc_info=True,
+            )
+            strategy_guide = None
+
     return HoleIntelligence(
         hole_number=hole_number,
         par=par,
@@ -183,6 +206,7 @@ async def build_hole_intelligence(
         effective_yards=effective_yards,
         green_slope=green_slope_data,
         hazards=hazards,
+        strategy_guide=strategy_guide,
     )
 
 

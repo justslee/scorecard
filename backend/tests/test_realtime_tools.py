@@ -16,7 +16,12 @@ os.environ.setdefault("LOOPER_SECRETS_DISABLED", "1")
 import pytest  # noqa: E402
 
 from app.caddie.session import RoundSession  # noqa: E402
-from app.caddie.types import CaddiePersonality, Hazard, HoleIntelligence  # noqa: E402
+from app.caddie.types import (  # noqa: E402
+    CaddiePersonality,
+    Hazard,
+    HoleIntelligence,
+    HoleStrategyGuide,
+)
 from app.caddie.hazards import HAZARD_GROUNDING_RULE  # noqa: E402
 from app.caddie.voice_prompts import build_realtime_instructions, _situation_block  # noqa: E402
 from app.services.realtime_relay import DEFAULT_TOOLS, build_session_payload  # noqa: E402
@@ -144,6 +149,47 @@ def test_situation_block_no_hazard_hole_has_directive_but_no_fabricated_feature(
     assert "hazards:" not in block.lower()
     assert "bunker" not in block.lower()
     assert "water" not in block.lower()
+
+
+# ── Strategy guide: both-mouth injection (caddie-hole-strategy-guides Slice 1) ──
+
+
+def test_situation_block_includes_the_guide_line_when_present():
+    """A seeded strategy_guide reaches the realtime situation block via the
+    shared format_guide_line renderer, labeled as reference data."""
+    session = RoundSession(
+        round_id="r1",
+        user_id="u1",
+        current_hole=7,
+        hole_intel={
+            7: HoleIntelligence(
+                hole_number=7,
+                par=4,
+                yards=410,
+                strategy_guide=HoleStrategyGuide(
+                    play_line="Favor the left side off the tee.",
+                    miss_side="Bail out short-right.",
+                ),
+            )
+        },
+    )
+    block = _situation_block(session)
+    assert "Local knowledge: Favor the left side off the tee." in block
+    text = build_realtime_instructions(_persona(), session=session)
+    assert "Local knowledge: Favor the left side off the tee." in text
+
+
+def test_situation_block_omits_the_guide_line_when_absent():
+    """No guide (the Slice 1 default — no writer runs yet) -> the line is
+    simply omitted, never a placeholder ([[no-fake-data-fallbacks]])."""
+    session = RoundSession(
+        round_id="r1",
+        user_id="u1",
+        current_hole=7,
+        hole_intel={7: HoleIntelligence(hole_number=7, par=4, yards=410, strategy_guide=None)},
+    )
+    block = _situation_block(session)
+    assert "Local knowledge:" not in block
 
 
 # ── Route handler: round-scoped mint uses persona voice + tools ──────────────

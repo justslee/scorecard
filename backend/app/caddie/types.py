@@ -1,6 +1,6 @@
 """Caddie system Pydantic models."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
@@ -90,6 +90,23 @@ class HolePlayerHistory(BaseModel):
     bogey_rate: float = 0.0
 
 
+class HoleStrategyGuide(BaseModel):
+    """Compact per-hole strategy guide, researched offline (see guide_writer.py)
+    and cached FOREVER in the green feature's JSONB `properties.strategy_guide`
+    (specs/caddie-hole-strategy-guides-plan.md §5). ALL fields defaulted so an
+    older/partial cached blob still validates — a missing guide is simply None
+    ([[no-fake-data-fallbacks]]: never a placeholder)."""
+
+    play_line: str = ""  # 1 sentence: where to aim / start the tee shot or approach
+    miss_side: str = ""  # 1 sentence: best miss + where NOT to miss
+    green_notes: str = ""  # 1 sentence: green shape / break / pin-zone tendency
+    common_mistakes: list[str] = Field(default_factory=list)  # 0-3 short items
+    sources: list[str] = Field(default_factory=list)  # web URLs used (provenance; may be empty)
+    generated_at: str = ""  # ISO 8601 timestamp of the write
+    model: str = ""  # model id that wrote it (e.g. "claude-sonnet-5")
+    schema_version: int = 1  # bump on shape change -> staleness re-research trigger
+
+
 class HoleIntelligence(BaseModel):
     hole_number: int
     par: int
@@ -107,6 +124,11 @@ class HoleIntelligence(BaseModel):
     # start (index 0) to target (index -1).  Populated lazily by the route
     # handler via sample_shot_line(); None = no along-line profile available.
     shot_line_profile_ft: Optional[list[float]] = None
+    # Persisted per-hole strategy guide (green feature JSONB, read-through via
+    # build_hole_intelligence's `persisted_guide`); additive + defaulted so
+    # cached session hole_intel JSONB predating this field still validates.
+    # None = no guide cached yet (honest omission, never a placeholder).
+    strategy_guide: Optional[HoleStrategyGuide] = None
 
 
 # ── Weather ──

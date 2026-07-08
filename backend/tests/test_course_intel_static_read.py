@@ -316,3 +316,96 @@ async def test_update_green_feature_returns_false_on_invalid_hole_number(monkeyp
 
     assert result is False
     session_factory.assert_not_called()  # early return — no DB session, no SQL
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# caddie-hole-strategy-guides Slice 1 — `persisted_guide` read-through
+#
+# No writer runs yet in Slice 1, so `persisted_guide` is normally None; these
+# tests seed it directly to exercise the read-through contract end-to-end
+# ahead of any writer landing.
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_persisted_guide_populates_strategy_guide(monkeypatch):
+    monkeypatch.setattr(course_intel, "fetch_elevation_cached", _fail)
+    monkeypatch.setattr(course_intel, "compute_green_slope", _fail)
+
+    seeded_guide = {
+        "play_line": "Favor the left side off the tee.",
+        "miss_side": "Bail out short-right.",
+        "green_notes": "Green runs back-to-front.",
+        "common_mistakes": ["Overclubbing the approach"],
+        "sources": ["https://example.com/hole-7"],
+        "generated_at": "2026-07-08T00:00:00Z",
+        "model": "claude-sonnet-5",
+        "schema_version": 1,
+    }
+    persisted_elevation = {"tee_elevation_ft": 90.0, "green_elevation_ft": 100.0}
+
+    intel = await course_intel.build_hole_intelligence(
+        hole_coords={
+            "holeNumber": 7,
+            "tee": {"lat": 40.70, "lng": -73.45},
+            "green": {"lat": 40.71, "lng": -73.46},
+        },
+        par=4,
+        yards=410,
+        persisted_elevation=persisted_elevation,
+        persisted_guide=seeded_guide,
+    )
+
+    assert intel.strategy_guide is not None
+    assert intel.strategy_guide.play_line == "Favor the left side off the tee."
+    assert intel.strategy_guide.common_mistakes == ["Overclubbing the approach"]
+    assert intel.strategy_guide.schema_version == 1
+
+
+@pytest.mark.asyncio
+async def test_persisted_guide_none_yields_strategy_guide_none(monkeypatch):
+    monkeypatch.setattr(course_intel, "fetch_elevation_cached", _fail)
+    monkeypatch.setattr(course_intel, "compute_green_slope", _fail)
+
+    intel = await course_intel.build_hole_intelligence(
+        hole_coords={
+            "holeNumber": 8,
+            "tee": {"lat": 40.70, "lng": -73.45},
+            "green": {"lat": 40.71, "lng": -73.46},
+        },
+        par=4,
+        yards=410,
+        persisted_elevation={"tee_elevation_ft": 90.0, "green_elevation_ft": 100.0},
+        persisted_guide=None,
+    )
+
+    assert intel.strategy_guide is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        {"schema_version": "oops"},  # wrong type for an int field
+        "not-a-dict",
+        123,
+        ["also", "not", "a", "dict"],
+    ],
+)
+async def test_persisted_guide_malformed_never_raises_yields_none(monkeypatch, malformed):
+    monkeypatch.setattr(course_intel, "fetch_elevation_cached", _fail)
+    monkeypatch.setattr(course_intel, "compute_green_slope", _fail)
+
+    intel = await course_intel.build_hole_intelligence(
+        hole_coords={
+            "holeNumber": 9,
+            "tee": {"lat": 40.70, "lng": -73.45},
+            "green": {"lat": 40.71, "lng": -73.46},
+        },
+        par=4,
+        yards=410,
+        persisted_elevation={"tee_elevation_ft": 90.0, "green_elevation_ft": 100.0},
+        persisted_guide=malformed,
+    )
+
+    assert intel.strategy_guide is None

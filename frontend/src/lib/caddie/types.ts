@@ -64,6 +64,22 @@ export interface Hazard {
   lng?: number;
 }
 
+// Compact per-hole strategy guide, researched offline and cached in the green
+// feature's JSONB `properties.strategy_guide` — mirrors
+// `backend/app/caddie/types.py::HoleStrategyGuide` exactly. Optional-safe:
+// absent (no writer has run yet, or the course predates this feature) simply
+// omits the field, never a placeholder.
+export interface HoleStrategyGuide {
+  play_line: string;
+  miss_side: string;
+  green_notes: string;
+  common_mistakes: string[];
+  sources: string[];
+  generated_at: string;
+  model: string;
+  schema_version: number;
+}
+
 export interface HoleIntelligence {
   hole_number: number;
   par: number;
@@ -82,6 +98,7 @@ export interface HoleIntelligence {
     birdie_rate: number;
     bogey_rate: number;
   };
+  strategy_guide?: HoleStrategyGuide;
 }
 
 export interface CaddiePersonalityInfo {
