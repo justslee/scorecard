@@ -7037,3 +7037,16 @@ tests/test_slope_advice.py tests/test_shot_line_advice.py` → 213/213 passed, n
 `npm run lint` clean; `npx tsc --noEmit` clean; `npm run build` succeeded; `voice-tests/runner.ts
 --smoke` → 274/274. Committed `33d780b` to `integration/next`, pushed. Silent — backend-only
 crash-prevention fix, rides the bundle with 8529820.
+
+---
+
+## 2026-07-08 — SHIPPED: #107 the real +0ft fix + wind refresh
+
+Owner "ship it". Merge 1271254 → main; deploy verified by headSha + health ok.
+TestFlight v1.0.799 (build 202607072013). The '+0ft' saga CLOSED end-to-end:
+#106's per-hole logging named the thrower (None-yards crashed every hole's
+intel), the overnight loop root-caused + fixed it (honest empty state,
+aim_point/recommend guards, clean prompts, regression tests), and the
+elevation/wind tiles read true via the deploy alone. Wind now refreshes
+every ~20-30 min + on stale hole change. Twelve ships this run.
+integration/next resynced; loop continues.
