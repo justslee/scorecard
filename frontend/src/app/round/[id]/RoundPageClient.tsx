@@ -51,6 +51,7 @@ import type { WeatherConditions } from "@/lib/caddie/types";
 import { bearingDeg, relativeWind, playsLikeYards, compassFrom } from "@/lib/map/wind";
 import { shouldRefreshOnDemand, WeatherRefreshScheduler } from "@/lib/map/weather-freshness";
 import { computeFCBDistances } from "@/lib/course/course-coordinates";
+import { yardsDistance } from "@/lib/course/hole-projection";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
@@ -1079,13 +1080,46 @@ export default function RoundPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [greenForHole?.lat, greenForHole?.lng, teeForHole?.lat, teeForHole?.lng]);
 
+  // ── Live rangefinder (owner ask): while the round is active, watch GPS and
+  // show front/center/back from WHERE THE GOLFER STANDS, updating as they
+  // walk. From-tee numbers are the honest fallback (no fix / off-hole).
+  const [playerPos, setPlayerPos] = useState<{ lat: number; lng: number } | null>(null);
+  const playerPosRef = useRef(playerPos);
+  playerPosRef.current = playerPos;
+  useEffect(() => {
+    if (!roundActive || !mappedCourse) return;
+    const watcher = new GPSWatcher(
+      (pos) => {
+        const prev = playerPosRef.current;
+        // Re-render only on meaningful movement (~3yd) — GPS jitter isn't a walk.
+        if (prev && yardsDistance(prev, pos) < 3) return;
+        setPlayerPos({ lat: pos.lat, lng: pos.lng });
+      },
+      () => setPlayerPos(null), // denied/unavailable → honest from-tee tiles
+    );
+    watcher.start();
+    return () => watcher.stop();
+  }, [roundActive, mappedCourse]);
+
   const fcbFromTee = holeCoordsForTiles?.tee
     ? computeFCBDistances(holeCoordsForTiles.tee, holeCoordsForTiles)
     : null;
+  // Plausibility: on/near this hole = within 800y of the green and not on top
+  // of it. Anything else (home testing, wrong hole selected) reads from tee.
+  const posOnHole =
+    playerPos && holeCoordsForTiles?.green
+      ? (() => {
+          const d = yardsDistance(playerPos, holeCoordsForTiles.green);
+          return d >= 5 && d <= 800;
+        })()
+      : false;
+  const fcbLive = posOnHole && playerPos ? computeFCBDistances(playerPos, holeCoordsForTiles!) : null;
+  const fcb = fcbLive ?? fcbFromTee;
+  const fcbSource: "you" | "tee" = fcbLive ? "you" : "tee";
   const fcbTiles = [
-    { k: "Front", v: fcbFromTee?.front ?? distance - 12, color: "#a8553f" },
-    { k: "Center", v: fcbFromTee?.center ?? distance, color: T.ink },
-    { k: "Back", v: fcbFromTee?.back ?? distance + 14, color: "#5d7285" },
+    { k: "Front", v: fcb?.front ?? distance - 12, color: "#a8553f" },
+    { k: "Center", v: fcb?.center ?? distance, color: T.ink },
+    { k: "Back", v: fcb?.back ?? distance + 14, color: "#5d7285" },
   ];
   // Per-hole relative wind: same weather, different bearing per hole.
   const holeBearing = holeCoordsForTiles?.tee && holeCoordsForTiles?.green
@@ -1113,7 +1147,9 @@ export default function RoundPage() {
     : { v: "—", sub: "elev" };
   // Plays-like: elevation-adjusted yards from intel when known, then wind on
   // top; every label states exactly what was adjusted.
-  const playsBase = holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance);
+  const playsBase = fcbLive
+    ? fcbLive.center // live rangefinder wins: plays-like from where they stand
+    : holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance);
   const playsTile = holeWind
     ? {
         v: `${playsLikeYards(playsBase, holeWind.headMph)}Y`,
@@ -1858,6 +1894,19 @@ export default function RoundPage() {
                           <div style={{ fontFamily: T.serif, fontSize: 22, color: T.ink, fontVariantNumeric: "tabular-nums" }}>{d.v}</div>
                         </div>
                       ))}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        textAlign: "center",
+                        fontFamily: T.mono,
+                        fontSize: 8.5,
+                        letterSpacing: 1.2,
+                        textTransform: "uppercase",
+                        color: fcbSource === "you" ? DEFAULT_ACCENT : T.pencilSoft,
+                      }}
+                    >
+                      {fcbSource === "you" ? "● from where you stand" : "from the tee"}
                     </div>
                   </div>
                 </div>

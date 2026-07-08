@@ -216,7 +216,9 @@ def build_session_payload(
                     "transcription": {"model": transcribe_model, "language": "en"},
                     "turn_detection": turn_detection,
                 },
-                "output": {"voice": voice_id or OPENAI_REALTIME_DEFAULT_VOICE},
+                # speed: brisk on-course delivery (owner ask); realtime
+                # supports 0.25-1.5, default 1.0.
+                "output": {"voice": voice_id or OPENAI_REALTIME_DEFAULT_VOICE, "speed": 1.15},
             },
             "tools": tools if tools is not None else DEFAULT_TOOLS,
             "tool_choice": "auto",
