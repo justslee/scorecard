@@ -3,6 +3,44 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — fix-ios-voicetel-flush-dropped: immediate flush on iOS failure events + pagehide (frontend, silent, integration/next, DONE)
+
+Implemented `specs/fix-ios-voicetel-flush-dropped-plan.md` verbatim (Option A) —
+commit `1c65b49`, pushed to `integration/next`. Voice telemetry was near-blind on
+iOS (WKWebView suspends before the 8s batch timer / 12-event count trigger
+fires), dropping the highest-signal events (mic_error, speak_failed, etc.).
+No auth change, no new unauthenticated surface — everything still rides the
+existing Clerk-authenticated `fetch(keepalive)`.
+
+- `frontend/src/lib/voice/telemetry.ts`: `voiceEvent()` gains an optional
+  `flush?: boolean` control flag — when set, the event queues then the WHOLE
+  queue flushes immediately (ride-alongs included); the flag is never part of
+  the queued/POSTed event object. Added a `window` `pagehide` listener
+  alongside the existing `document` `visibilitychange` listener (both flush
+  via the same authenticated path).
+- `frontend/src/hooks/useLooperDictation.ts`: `flush: true` on `mic_error`,
+  `live_start_failed`, `live_unsupported`, `resolved_fallback` (success paths
+  stay batched).
+- `frontend/src/hooks/useSheetTTS.ts`: `flush: true` on both `speak_failed`
+  sites and `prime_failed`.
+- NEW `frontend/src/lib/voice/telemetry.test.ts` (jsdom, 10 deterministic
+  cases — fake timers paired with `vi.useRealTimers()`, module imported once):
+  batch-timer flush, count trigger, failure event immediate flush, immediate
+  flush drains ride-alongs in order, `flush` flag never leaks into the
+  payload, `pagehide` flush, `visibilitychange`→hidden flush (preserved),
+  auth header/content-type/URL/keepalive preserved, fetch-rejection and
+  authHeaders-rejection both swallowed without wedging the queue.
+- `frontend/src/hooks/useSheetTTS.test.ts`: updated the one exact-object
+  `prime_failed` matcher to include `flush: true` (only pre-existing test
+  edit required per plan).
+
+Gates green: `npm run lint`, `npx tsc --noEmit`, `npm run build`,
+`voice-tests/runner.ts --smoke` (274/274), and
+`vitest run telemetry.test.ts caddie-turn-timing.test.ts
+CaddieSheet.handsfree.test.tsx useSheetTTS.test.ts` (59/59 passed). No backend
+file touched, so `ruff` not required (not run). Silent, telemetry-only —
+no app-visible surface change; rides bundle PR #109.
+
 ## 2026-07-08 — course-intel-static-persistence: persist per-hole elevation, skip USGS on repeat opens (backend, silent, integration/next, DONE)
 
 Implemented `specs/course-intel-static-persistence-plan.md` verbatim — commit
