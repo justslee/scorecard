@@ -58,6 +58,7 @@ import { useHoleCoordinates } from "@/lib/map/use-hole-coordinates";
 import { fetchAPI } from "@/lib/api";
 import { GPSWatcher } from "@/lib/gps";
 import { resolveOpeningShotDistance } from "@/lib/caddie/opening-shot";
+import { setCaddieLiveMode } from "@/lib/voice/live-mode-pref";
 
 // Player accent colors (yardage-book palette — warm ink tones)
 const PLAYER_COLORS = ["#1a2a1a", "#6b3a1a", "#3a3a6a", "#6a3a3a", "#2a5a3a", "#5a2a5a"];
@@ -218,6 +219,22 @@ export default function RoundPage() {
   // /round/<id> deep link. See lib/round-url.ts.
   const roundId = searchParams.get("id") ?? (params.id as string);
   const accent = DEFAULT_ACCENT;
+
+  /**
+   * One-shot `?liveMode=1` / `?liveMode=0` → persists the caddie live-mode
+   * (Realtime transport) pref to localStorage (specs/caddie-realtime-slice-c1-plan.md
+   * §2). No shipped UI toggle in stage 1 — the owner opens
+   * `…/round/<id>?liveMode=1` once on-device to turn it on; the pref then
+   * sticks for every later open via `getCaddieLiveMode()` in CaddieSheet.
+   * Reads the param once on mount only — never re-fires on a later
+   * navigation within the same mounted page.
+   */
+  useEffect(() => {
+    const v = searchParams.get("liveMode");
+    if (v === "1" || v === "0") setCaddieLiveMode(v === "1");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const density: "dense" | "spacious" = "dense";
   // Real backend persona (classic/strategist/hype/professor/custom) — replaces
   // the cosmetic CADDIES list whose ids didn't exist server-side and silently
