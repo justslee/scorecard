@@ -8318,3 +8318,17 @@ Noticeable (user-visible on TestFlight — Nearby-courses section in course
 search opens meaningfully faster, especially on a repeat visit to the same
 area; mapped rows now appear near-instantly instead of waiting on the OSM
 leg) — should ride in the next approval-bundle email, not silent.
+
+---
+
+## 2026-07-09 — SHIPPED: #114 nearby search speed
+
+Owner "ship it". Merge 5d20ec7 → main; deploy verified by headSha + health
+ok. TestFlight v1.0.888 (build 202607081830). Two-phase progressive nearby
+render (instant local paint, no-reshuffle appends), geo-cell cache
+(positive-only), interactive OSM budget. Double-reviewed SHIP. Riders:
+caddie-excellence audit + glasses research (docs). Glasses/shot-tracking
+TABLED by owner (research preserved). Eighteen ships this run.
+NEXT: excellence-audit P1s — prompt caching (cost), rate limiting,
+LLM timeouts, tool-loop parity (opus plan), advice eval harness.
+GolfAPI-universe half still blocked on the 401 key fix.
