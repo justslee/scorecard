@@ -3,6 +3,40 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — builder: caddie-prompt-caching-text-path + caddie-llm-timeouts-retries (backend, SILENT, integration/next, DONE)
+
+Implemented the approved opus plan (`specs/caddie-prompt-caching-text-path-plan.md`)
+exactly, folding in the `caddie-llm-timeouts-retries` item as planned. Both P1
+items seeded by the caddie-excellence audit (cycle 27).
+
+- `backend/app/routes/caddie.py` — `_build_session_voice_prompt` and
+  `_build_voice_prompt` now return `system` as a two-block Anthropic content
+  list: BLOCK 0 (persona + memory + instructions + hazard rule) carries
+  `cache_control: {"type": "ephemeral"}`; BLOCK 1 (`--- CURRENT SITUATION ---`)
+  has none. Pure reordering + the one required pointer reword ("use the
+  context above" -> "use the CURRENT SITUATION section") — brain content
+  unchanged. Threaded `list[dict]` through all 5 consumers + `_sse_reply`
+  (renamed `system_prompt: str` -> `system: list[dict]`, added `persona_id`).
+  Added `_CADDIE_TIMEOUT_S = 25.0` / `_CADDIE_MAX_RETRIES = 1` on all three
+  Anthropic client constructors (was ~10-min SDK default, could starve the
+  worker). Added `_log_caddie_usage()` — logs cache_read/cache_creation/
+  input/output tokens after every sync `create()` and from
+  `stream.get_final_message()` in `_sse_reply`, guarded so logging failure
+  never turns a successful reply into an error.
+- New `backend/tests/test_caddie_caching.py` (list/breakpoint shape,
+  stable-before-volatile ordering, brain-regression content guard vs. a
+  frozen copy of the old single-string template, sync + stream usage-logging,
+  system list reaching the SDK, timeout/retry constructor args). Extended
+  `backend/tests/test_voice_stream.py` fakes (`get_final_message`,
+  constructor kwargs) and updated pre-existing builder-content assertions for
+  the new list return shape — no test deleted or weakened.
+- Gates: `ruff check .` clean; full non-DB suite 1201/1201 (was 1180 before
+  +21 new/extended). Backend-only, no shared-shape change (types.ts/models.py
+  untouched). DB-backed integration tests run in CI (no local Postgres).
+- Commit b7bd75d on `integration/next`, pushed. Silent (no client-visible
+  shape change — same model, same spoken behavior) — rides along in the
+  current bundle, no owner ping.
+
 ## 2026-07-08 — eng-lead cycle 28: caddie-excellence AUDIT (owner-directed, docs/backlog, SILENT, DONE)
 
 Owner directive (2026-07-09): "run a review/research to determine improvements …
