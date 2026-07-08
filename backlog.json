@@ -8,7 +8,7 @@
       "type": "major",
       "priority": 1,
       "risk": "high",
-      "status": "in-progress (opus plan landed; slicing A->E)",
+      "status": "in-progress (Slice A grounding + stage-timing telemetry shipped to integration/next; A2 TTS-pipelining next, then Slice C transport migration deferred/device-verified)",
       "depends_on": [],
       "why": "Owner 2026-07-08 (explicit direction, twice): 'the caddie still requires me to click before and after I'm talking instead of following the start round model where it detects for me.' Root: the sheet's Deepgram live path keeps failing on his iPhone -> fallback recorder has no VAD -> manual taps. DIRECTION: route the in-round Ask Caddie conversation through the OpenAI Realtime session (server VAD, same as setup; a warm session already exists for the round page orb). Sheet becomes the live transcript/answer view; the auto opening reco becomes the first spoken turn (compose with caddie-opening-reco-from-tee); barge-in native. NEEDS A FULL OPUS PLAN: session/tool grounding parity (hazards, memory, profile via session context), warm-path invariants (pinning tests untouchable), cost per round, fallback to the sheet path when Realtime can't connect, exit/mute affordances. Supersedes further Deepgram-sheet conversational patches.",
       "spec": "specs/caddie-realtime-conversation-plan.md",
