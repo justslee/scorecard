@@ -1693,10 +1693,11 @@
    "type": "silent",
    "priority": 2,
    "risk": "low",
-   "status": "needs-spec",
+   "status": "done-on-bundle",
    "depends_on": [],
    "why": "Observed 2026-07-08: voicetel volume is near-blind (~1 event in 4h of a live session). lib/voice/telemetry.ts flushes on an 8s timer / 12-event batch / visibilitychange->hidden with keepalive fetch. On iOS WKWebView (Capacitor), pagehide is more reliable than visibilitychange, and the CapacitorHttp-patched fetch may not honor keepalive when the webview suspends -> queued events die on background/kill before the timer fires. Add a pagehide/freeze listener + verify keepalive actually ships (or use sendBeacon / a smaller batch / immediate flush for rare high-signal events). Don't fix while we're mid-TTS fix; targeted follow-up.",
-   "spec": ""
+   "resolution": "Cycle 19 (1c65b49, rides PR #109). Option A — smallest secure design, no new/unauth surface: added a `flush?:boolean` flag to voiceEvent() that immediately drains the WHOLE queue, wired it on all failure events (mic_error/live_start_failed/live_unsupported/resolved_fallback/speak_failed/prime_failed) so they ship while foregrounded; added a window pagehide listener alongside visibilitychange. Authenticated fetch(keepalive) + Clerk Bearer preserved; sendBeacon/token-in-body rejected (attack surface). Reviewer CLEAN + security-reviewed (auth preserved, no PII, flag never in payload); 10 deterministic jsdom tests. Unblocks device-side latency verification.",
+   "spec": "specs/fix-ios-voicetel-flush-dropped-plan.md"
   },
   {
    "id": "ci-postgis-course-mapping-tests",
