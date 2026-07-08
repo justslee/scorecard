@@ -7675,3 +7675,17 @@ checkpoint+resume mid-bundle.
 NEXT: Slice C — the Realtime transport migration (flag-gated, owner
 on-device verification) on a fresh bundle; ci-postgis-course-mapping-tests
 as the routine filler.
+
+---
+
+## 2026-07-09 — SHIPPED: #110 Slice C1 — flag-gated Realtime live mode
+
+Owner "ship it". Merge ac9bec0 → main (frontend-only). TestFlight v1.0.840
+(build 202607080715). The hands-free Realtime caddie exists behind
+`?liveMode=1` (localStorage-persisted; `?liveMode=0` reverts). Double-
+reviewed (both independently found only the offline dead-sheet bug, fixed
++ regression-tested pre-merge). Fifteen ships this run.
+AWAITING: owner on-device verification of live mode → drives Slices D/E
+(reconnect-after-drop, idle policy, polish → default-ON decision).
+Non-blocking notes logged: in-flight start() resurrection (shared with orb
+path), post-drop frozen transcript (deferred by plan).
