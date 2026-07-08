@@ -55,10 +55,12 @@ async def build_hole_intelligence(
             the stored green feature via a targeted JSONB merge — best-effort,
             never sinks the response.
         persisted_guide: The stored green feature's `properties.strategy_guide`
-            dict, when present — read-through only in Slice 1 (no writer runs
-            yet, so this is normally None). Best-effort parsed into a
-            `HoleStrategyGuide`; a missing/malformed blob NEVER raises and
-            simply yields `strategy_guide=None` ([[no-fake-data-fallbacks]]).
+            dict, when present — written once by the offline research writer
+            (`app.caddie.guide_writer.research_hole_guide` + `validate_guide`)
+            and cached forever; a cold/never-researched hole simply has none.
+            Best-effort parsed into a `HoleStrategyGuide`; a missing/malformed
+            blob NEVER raises and simply yields `strategy_guide=None`
+            ([[no-fake-data-fallbacks]]).
 
     Returns:
         HoleIntelligence with elevation, hazards, green slope, etc.
@@ -182,10 +184,10 @@ async def build_hole_intelligence(
         log.warning("hazard classification failed; continuing without", exc_info=True)
         hazards = []
 
-    # Strategy guide — read-through only (Slice 1: no writer runs yet, so this
-    # is normally None). Best-effort parse: a missing/malformed blob must
-    # never sink the rest of the hole's intel (same defensive style as
-    # persisted_elevation above).
+    # Strategy guide — read-through of the offline-researched, grounding-
+    # validated blob cached forever in the green feature's JSONB. Best-effort
+    # parse: a missing/malformed blob must never sink the rest of the hole's
+    # intel (same defensive style as persisted_elevation above).
     strategy_guide: Optional[HoleStrategyGuide] = None
     if persisted_guide is not None:
         try:

@@ -9,8 +9,8 @@ local knowledge — never as an instruction. No guide -> "" (the caller omits
 the line entirely, same convention as `hazards.format_hazards_line`;
 [[no-fake-data-fallbacks]]).
 
-Slice 2 (this module, added here) is the research/writer + validation, a
-standalone offline-testable unit — NOT wired into any route yet:
+Slice 2 (this module) is the research/writer + validation, a standalone
+offline-testable unit:
   - `build_ground_truth_block` — plain-text authoritative geometry block (§4a).
   - `WRITER_SYSTEM` — the writer's system prompt (WRITER-not-knower framing,
     §4b-4d), embedding `hazards.HAZARD_GROUNDING_RULE` verbatim.
@@ -23,7 +23,9 @@ standalone offline-testable unit — NOT wired into any route yet:
     doesn't contain, or on structural failure. This is BOTH a correctness
     control and the primary anti-prompt-injection control on researched text.
 
-Slice 3 wires the BackgroundTasks precompute (`app.services.course_guides`).
+Slice 3 wires the BackgroundTasks precompute (`app.services.course_guides`) at
+course-mapping/ingest time (primary) and cold-course `/session/start`
+(fallback) — see that module for the job + the guarded, env-gated backfill.
 """
 
 from __future__ import annotations
