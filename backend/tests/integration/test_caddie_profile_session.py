@@ -205,7 +205,7 @@ class TestCourseIntelAnchor:
             weather_calls.append((lat, lng))
             return WeatherConditions(temperature_f=61.0, wind_speed_mph=9.0)
 
-        async def fake_intel(*, hole_coords, par, yards, handicap_rating, osm_features):
+        async def fake_intel(*, hole_coords, par, yards, handicap_rating, osm_features, **kwargs):
             return HoleIntelligence(
                 hole_number=hole_coords.get("holeNumber", 0),
                 par=par,
