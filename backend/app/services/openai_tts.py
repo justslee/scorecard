@@ -22,6 +22,9 @@ _SPEECH_URL = "https://api.openai.com/v1/audio/speech"
 # OpenAI's input limit is 4096 chars; sheet replies are 1-3 sentences, so this
 # is purely a cost/abuse cap — never expected to bind in normal use.
 _MAX_INPUT_CHARS = 4096
+# Slightly brisk delivery (owner: "make the caddie talk faster") — 1.15 keeps
+# natural prosody; 1.0 read as sluggish on-course.
+_SPEECH_SPEED = 1.15
 _DEFAULT_VOICE = "sage"
 
 
@@ -48,6 +51,7 @@ async def synthesize_speech(text: str, voice_id: Optional[str]) -> bytes:
         "voice": voice_id or _DEFAULT_VOICE,
         "input": clamped,
         "response_format": "mp3",
+        "speed": _SPEECH_SPEED,
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:

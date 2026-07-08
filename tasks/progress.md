@@ -3,6 +3,111 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — ci-postgis-course-mapping-tests (backend infra/tests, SILENT, integration/next, DONE)
+
+Implemented `specs/ci-postgis-course-mapping-tests-plan.md` exactly. Three files
+touched, per the plan's editable-surface list — no `app/**`, `deploy/**`, or
+`backend/supabase/migrations/**` edits, no new deps:
+
+- `.github/workflows/ci.yml` — `required-backend` job's `services.postgres`
+  image swapped `postgres:16` → `postgis/postgis:16-3.4` (one line).
+- `backend/tests/integration/conftest.py` — added `from pathlib import Path`;
+  `_ensure_schema` now runs `backend/supabase/migrations/001_course_mapping_schema.sql`
+  verbatim (asyncpg simple-query protocol via `conn.get_raw_connection().driver_connection.execute(...)`,
+  guarded by `mig.is_file()`) after the existing `scores_round_player_hole_uq`
+  block, inside the same `engine.begin()` transaction; the `_db` fixture's
+  per-test TRUNCATE list now also clears `hole_features, hole_yardages, holes,
+  tee_sets, courses`.
+- `backend/tests/integration/test_courses_mapped_db.py` (NEW) — 7 DB-backed
+  tests against `app/services/courses_mapped.py` (previously zero live-DB
+  coverage): write-back → `get_course` round-trip; merge preserves other keys;
+  4 no-op-returns-False cases (absent green feature, nonexistent hole number,
+  hole number 0, empty patch); and the real precompute backfill seam
+  (`app.routes.caddie._precompute_course_elevations`) with
+  `sample_course_elevations` monkeypatched to a deterministic stub but
+  `get_course`/`update_green_feature_properties` left real — verifies the
+  write-back field mapping (`net_change_ft`→`delta_ft`, `green_slope` omitted
+  when `None`) and idempotency (sampler not called on the 2nd run once
+  `tee_elevation_ft` is persisted).
+
+No deviations from the plan — confirmed `_precompute_course_elevations`,
+`sample_course_elevations(synth_holes, target_course_name)`, the synth-hole
+`properties.ref` key, `_green_persisted_elevation`, and `_elevation_patch`'s
+field mapping in `app/routes/caddie.py` / `app/services/courses_mapped.py`
+against the plan before writing test (d); all matched exactly.
+
+Gates green (no local Postgres — DB tests verified as SKIPPED, not run):
+`cd backend && ruff check .` clean; `uv run pytest tests/integration/test_courses_mapped_db.py -v`
+→ 7 SKIPPED (no errors on collection/import); `uv run pytest -k "not integration" -q`
+→ 1080 passed, 81 deselected; full `uv run pytest -q` → 1080 passed, 81 skipped.
+Real DB verification is the CI `required-backend` gate (postgis service) on
+the pushed commit — pending.
+
+Commit `3a8f3d7` pushed to `integration/next`, riding bundle PR #111 as silent
+infra/test work (no user-facing surface).
+
+## 2026-07-08 — caddie-realtime-slice-d: live-session resilience (frontend, SILENT — flag default OFF, integration/next, DONE)
+
+Implemented `specs/caddie-realtime-slice-d-plan.md` exactly — closes the two
+reviewer-logged gaps in the flag-gated (`looper.caddieLiveMode`, still default
+OFF) live caddie mode from Slice C1. **Zero edits** to `realtime.ts` /
+`warm-session.ts` / `realtime-ordering.ts`; `useVoiceCaddie.ts` untouched
+(plan §5 verified it has no resurrection seam).
+
+- `frontend/src/hooks/useCaddieLiveSession.ts` — bounded reconnect state
+  machine (plan §2/§3). New refs: `reconnectUsedRef`, `reconnectingRef`,
+  `reconnectedRef`, `reconnectDeadlineRef`, `lastActivityAtRef`,
+  `orderOffsetRef`/`maxOrderRef`, `mutedRef`. Post-connected `closed`/`error`
+  now classifies clean-idle (rest — no reconnect/fallback) vs. an unexpected
+  drop (ONE quiet cold-mint `startReconnect()`, reusing `MINT_DEADLINE_MS` as
+  the reconnect budget) via a hook-local activity-mirror clock compared
+  against `REALTIME_IDLE_DISCONNECT_MS - IDLE_MARGIN_MS` (imported
+  read-only from `idle-timer.ts`). `startReconnect()` detaches the dead
+  client's handlers (`setEvents({})`) before `stop()`, cold-mints a fresh
+  `RealtimeCaddieClient`, and re-applies `mutedRef` after `attachMic()`.
+  Cross-client transcript ordering fixed by offsetting every post-reconnect
+  message by `maxOrderRef + 1` in `upsert` (the new client's own
+  `MessageOrderTracker` restarts near 0). Gap 2 (resurrection): every
+  `await` in both the warm and cold branches of the activation effect (plus
+  the new reconnect branch) now also checks `fellBackRef.current`, not just
+  `cancelled` — a fallback that fires while `start()`/`attachMic()` is still
+  pending can no longer have its continuation revive the dead client.
+- `frontend/src/components/CaddieSheet.tsx` — fallback continuity (plan §4).
+  A one-shot effect seeds `convHistory` from `live.messages` the moment
+  `showFallbackIndicator` flips true (guarded by `seededFallbackRef`, only
+  when `convHistory` is still empty), so the classic tap-to-talk body renders
+  the preserved live conversation instead of going blank. `liveTranscriptSeenRef`
+  suppresses the classic auto-opening-turn effect so a fallback after a
+  mid-round drop never re-greets. Both refs reset when `wantLive` goes false.
+  Flag-off path is untouched — all of this sits behind `wantLive`.
+- `frontend/src/components/CaddieSheet.realtime.test.tsx` — 4 new
+  deterministic tests (plan §8): drop→reconnect SUCCESS (transcript
+  preserved + correctly ordered across the two clients, no re-greet, no
+  fallback label), drop→reconnect FAIL→classic fallback (mic usable,
+  "Tap-to-talk mode" shown, pre-drop transcript preserved via the
+  `convHistory` seed — verified with a small controlled-render harness since
+  the file's existing `onUpdateConvHistory` spy doesn't loop state back),
+  fallback-during-pending-start (Gap 2 — no `attachMic` resurrection, no
+  second mint; required extending the file's `FakeRealtimeCaddieClient` with
+  a `pendingStartImpls` queue so a test can hand the next-constructed
+  instance a manually-controlled deferred `start()`), and clean-idle-close
+  (no reconnect, no fallback, transcript stays visible). `sortByOrder` stays
+  real throughout.
+
+No deviations from the plan otherwise. Gates green: `npm run lint` (0
+errors), `npx tsc --noEmit` (clean), `npm run build` (compiled + all routes
+generated), `npx tsx voice-tests/runner.ts --smoke` (274/274), `npx vitest
+run` (81 files / 1686 tests, all green), pinning set
+`realtime-warm.test.ts warm-session.test.ts realtime-dispatch.test.ts
+transport.test.ts CaddieSheet.handsfree.test.tsx CaddieSheet.session.test.tsx`
+green and **unmodified** (104/104), `cd backend && ruff check .` clean
+(no backend change this slice).
+
+Risk: low — flag still defaults OFF, so shipped behavior for every current
+user is byte-identical to today; the new reconnect/fallback-continuity code
+paths are only reachable once the owner has opted into live mode. Not
+noticeable on TestFlight as-is.
+
 ## 2026-07-08 — caddie-realtime-slice-c1: live-mode Realtime transport in Ask Caddie sheet (frontend, SILENT — flag default OFF, integration/next, DONE)
 
 Implemented `specs/caddie-realtime-slice-c1-plan.md` (stage 1 of Slice C,
@@ -7675,3 +7780,17 @@ checkpoint+resume mid-bundle.
 NEXT: Slice C — the Realtime transport migration (flag-gated, owner
 on-device verification) on a fresh bundle; ci-postgis-course-mapping-tests
 as the routine filler.
+
+---
+
+## 2026-07-09 — SHIPPED: #110 Slice C1 — flag-gated Realtime live mode
+
+Owner "ship it". Merge ac9bec0 → main (frontend-only). TestFlight v1.0.840
+(build 202607080715). The hands-free Realtime caddie exists behind
+`?liveMode=1` (localStorage-persisted; `?liveMode=0` reverts). Double-
+reviewed (both independently found only the offline dead-sheet bug, fixed
++ regression-tested pre-merge). Fifteen ships this run.
+AWAITING: owner on-device verification of live mode → drives Slices D/E
+(reconnect-after-drop, idle policy, polish → default-ON decision).
+Non-blocking notes logged: in-flight start() resurrection (shared with orb
+path), post-drop frozen transcript (deferred by plan).

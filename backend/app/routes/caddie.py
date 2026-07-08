@@ -669,9 +669,14 @@ async def _build_session_voice_prompt(
     hole_intel = session.hole_intel.get(request.hole_number)
     if hole_intel:
         if hole_intel.yards is not None:
-            context_parts.append(
-                f"Par {hole_intel.par}, {hole_intel.yards} yards (effective: {hole_intel.effective_yards})"
-            )
+            line = f"Par {hole_intel.par}, {hole_intel.yards} yards (effective: {hole_intel.effective_yards})"
+            # Spell the elevation out so the caddie factors uphill/downhill
+            # into advice (owner ask) — a bare 'effective' number gets ignored.
+            elev = hole_intel.elevation_change_ft
+            if elev and abs(elev) >= 5:
+                direction = "uphill" if elev > 0 else "downhill"
+                line += f" — plays {direction} {abs(round(elev))}ft, treat it as {hole_intel.effective_yards}"
+            context_parts.append(line)
         else:
             context_parts.append(f"Par {hole_intel.par}")
         if hole_intel.hazards:
@@ -732,9 +737,13 @@ async def _build_session_voice_prompt(
 
 --- INSTRUCTIONS ---
 You are caddying for this golfer right now, on the course. Respond to their question or comment.
-Keep your response concise and in-character. If they ask about club selection, aim, or strategy,
-use the context above to give specific, actionable advice. If they're just chatting, be personable
-but keep it golf-focused. Never break character.
+Your reply is SPOKEN ALOUD on the course: keep it to 2-3 short sentences max unless they ask for
+more detail. Plain speech only — never use markdown, asterisks, bullet lists, headings, or emoji.
+One clear recommendation beats a pep talk. If they ask about club selection, aim, or strategy,
+use the context above to give specific, actionable advice — and when the hole context shows an
+uphill/downhill change or a plays-like distance, factor it in and SAY it briefly ("plays more
+like 195 with the climb"). If they're just chatting, be personable but keep it golf-focused.
+Never break character.
 You have memory of the entire round conversation and prior rounds. Reference earlier holes/shots
 or known tendencies when relevant.
 
@@ -1286,9 +1295,13 @@ async def _build_voice_prompt(
 
 --- INSTRUCTIONS ---
 You are caddying for this golfer right now, on the course. Respond to their question or comment.
-Keep your response concise and in-character. If they ask about club selection, aim, or strategy,
-use the context above to give specific, actionable advice. If they're just chatting, be personable
-but keep it golf-focused. Never break character.
+Your reply is SPOKEN ALOUD on the course: keep it to 2-3 short sentences max unless they ask for
+more detail. Plain speech only — never use markdown, asterisks, bullet lists, headings, or emoji.
+One clear recommendation beats a pep talk. If they ask about club selection, aim, or strategy,
+use the context above to give specific, actionable advice — and when the hole context shows an
+uphill/downhill change or a plays-like distance, factor it in and SAY it briefly ("plays more
+like 195 with the climb"). If they're just chatting, be personable but keep it golf-focused.
+Never break character.
 
 {HAZARD_GROUNDING_RULE}"""
 
