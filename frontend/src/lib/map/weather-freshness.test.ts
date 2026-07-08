@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   isWeatherStale,
+  shouldRefreshOnDemand,
   WeatherRefreshScheduler,
   WEATHER_STALE_MS,
   WEATHER_REFRESH_INTERVAL_MS,
@@ -36,6 +37,38 @@ describe("isWeatherStale", () => {
     const now = 1_000_000;
     expect(isWeatherStale(now - 5_000, now, 10_000)).toBe(false);
     expect(isWeatherStale(now - 10_000, now, 10_000)).toBe(true);
+  });
+});
+
+describe("shouldRefreshOnDemand", () => {
+  const now = 1_000_000;
+  const stale = now - WEATHER_STALE_MS; // exactly at threshold → stale
+  const fresh = now - 1; // 1ms old → fresh
+  const someWeather = { windSpeed: 5 };
+
+  it("completed/loading round (inactive) never refetches, even when stale", () => {
+    expect(shouldRefreshOnDemand(false, someWeather, stale, now)).toBe(false);
+    expect(shouldRefreshOnDemand(false, someWeather, null, now)).toBe(false);
+  });
+
+  it("active round with an existing STALE reading refreshes", () => {
+    expect(shouldRefreshOnDemand(true, someWeather, stale, now)).toBe(true);
+  });
+
+  it("active round with a FRESH reading does not refresh", () => {
+    expect(shouldRefreshOnDemand(true, someWeather, fresh, now)).toBe(false);
+  });
+
+  it("never conjures a first reading out of turn (weather == null → no)", () => {
+    // null fetchedAt is 'stale', but with no reading yet an on-demand trigger
+    // must stay silent — the initial fetch effect owns first acquisition.
+    expect(shouldRefreshOnDemand(true, null, null, now)).toBe(false);
+    expect(shouldRefreshOnDemand(true, null, stale, now)).toBe(false);
+  });
+
+  it("respects a custom staleness threshold", () => {
+    expect(shouldRefreshOnDemand(true, someWeather, now - 5_000, now, 10_000)).toBe(false);
+    expect(shouldRefreshOnDemand(true, someWeather, now - 10_000, now, 10_000)).toBe(true);
   });
 });
 

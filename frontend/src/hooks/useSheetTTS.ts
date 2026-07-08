@@ -17,6 +17,15 @@ import { speakCaddieReply } from "@/lib/caddie/api";
 import { getSheetTtsEnabled } from "@/lib/voice/tts-pref";
 import { voiceEvent } from "@/lib/voice/telemetry";
 
+// A short, known-good, silent mp3 encoded as a data URI — used to prime the
+// persistent audio element with a REAL decodable source inside the unlocking
+// gesture (specs/fix-ios-tts-playback-plan.md Part B). A genuine
+// gesture-activated media load makes the later programmatic speak() .play()
+// reliably allowed under WKWebView autoplay rules, rather than blessing an
+// element with no `src` at all.
+const SILENT_MP3_DATA_URI =
+  "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0VAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV";
+
 export interface SheetTTS {
   /** Bless the audio element for autoplay — call SYNCHRONOUSLY inside a user
    *  gesture (mic tap, speaker-toggle tap). Idempotent. */
@@ -50,6 +59,12 @@ export function useSheetTTS(opts?: { onPlaybackEnd?: () => void }): SheetTTS {
   const unlockedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  // True only while a REAL reply is playing (set right before speak()'s
+  // .play(), cleared by stop() / a new speak() / onEnded). Guards the `ended`
+  // re-arm against the silent prime clip in unlock() — the prime clip's
+  // native `ended` must be inert, never re-arming the hands-free loop
+  // (specs/fix-ios-tts-playback-plan.md Part B).
+  const playingRealRef = useRef(false);
   // Ref-mirrored so the DOM listener (attached once, at element creation)
   // always calls the LATEST callback identity without recreating the audio
   // element every render (mirrors the convHistoryRef pattern elsewhere).
@@ -67,13 +82,19 @@ export function useSheetTTS(opts?: { onPlaybackEnd?: () => void }): SheetTTS {
 
   const onEnded = useCallback(() => {
     setIsSpeaking(false);
-    onPlaybackEndRef.current?.();
+    // Only a real reply's natural completion re-arms the hands-free loop —
+    // the silent prime clip in unlock() can also fire `ended`, and must not.
+    if (playingRealRef.current) {
+      playingRealRef.current = false;
+      onPlaybackEndRef.current?.();
+    }
   }, []);
   const onPaused = useCallback(() => setIsSpeaking(false), []);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
+    playingRealRef.current = false;
     const el = audioElRef.current;
     if (el) {
       try {
@@ -94,20 +115,32 @@ export function useSheetTTS(opts?: { onPlaybackEnd?: () => void }): SheetTTS {
     }
     if (unlockedRef.current) return;
     unlockedRef.current = true;
-    // Bless-play-then-pause inside the gesture so a later programmatic
-    // .play() is allowed under WKWebView autoplay rules (mirrors the
-    // realtime.ts remote-audio-sink pattern).
+    // Prime with a REAL, decodable source (a short silent mp3 data-URI) —
+    // not just an empty-src element — so WebKit sees a genuine
+    // gesture-activated media load. Bless-play-then-pause inside the gesture
+    // so the later programmatic .play() in speak() is reliably allowed under
+    // WKWebView autoplay rules (mirrors the realtime.ts remote-audio-sink
+    // pattern). playingRealRef stays false through this dance — the prime
+    // clip's `ended`/`pause` must never re-arm the hands-free loop (guarded
+    // in onEnded above).
     try {
+      audioElRef.current.src = SILENT_MP3_DATA_URI;
       const p = audioElRef.current.play();
       if (p && typeof p.then === "function") {
-        p.then(() => audioElRef.current?.pause()).catch(() => {
-          /* autoplay blocked before unlock — a real gesture-driven speak() still works */
+        p.then(() => audioElRef.current?.pause()).catch((err) => {
+          // autoplay blocked before unlock — a real gesture-driven speak() still works
+          voiceEvent("sheet-tts", "prime_failed", {
+            detail: err instanceof Error ? err.name : "unknown",
+          });
         });
       } else {
         audioElRef.current.pause();
       }
-    } catch {
-      /* best effort — never block the caller's gesture handler */
+    } catch (err) {
+      // never block the caller's gesture handler
+      voiceEvent("sheet-tts", "prime_failed", {
+        detail: err instanceof Error ? err.name : "unknown",
+      });
     }
   }, [onEnded, onPaused]);
 
@@ -119,6 +152,7 @@ export function useSheetTTS(opts?: { onPlaybackEnd?: () => void }): SheetTTS {
       // Overlap handling: a new reply cancels an outstanding fetch and stops
       // whatever is currently playing before starting the new one.
       abortRef.current?.abort();
+      playingRealRef.current = false;
       const el = audioElRef.current;
       if (el) {
         try {
@@ -147,6 +181,7 @@ export function useSheetTTS(opts?: { onPlaybackEnd?: () => void }): SheetTTS {
           }
           audioElRef.current.src = url;
           setIsSpeaking(true);
+          playingRealRef.current = true;
           await audioElRef.current.play();
         } catch (err) {
           if (controller.signal.aborted) return; // expected — a newer speak() took over

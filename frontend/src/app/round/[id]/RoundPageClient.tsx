@@ -49,7 +49,7 @@ import type { MappedCourseListItem } from "@/lib/map-bridge";
 import { roundCourseAnchor } from "@/lib/round-anchor";
 import type { WeatherConditions } from "@/lib/caddie/types";
 import { bearingDeg, relativeWind, playsLikeYards, compassFrom } from "@/lib/map/wind";
-import { isWeatherStale, WeatherRefreshScheduler } from "@/lib/map/weather-freshness";
+import { shouldRefreshOnDemand, WeatherRefreshScheduler } from "@/lib/map/weather-freshness";
 import { computeFCBDistances } from "@/lib/course/course-coordinates";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
@@ -582,13 +582,19 @@ export default function RoundPage() {
     }
   }, [weatherLat, weatherLng, roundId, applyWeather]);
 
-  // Mirrors the latest weather/weatherFetchedAt so the hole-change effect
-  // below (keyed only on `currentHole`) reads current values instead of a
-  // stale mount-time closure.
-  const weatherLatestRef = useRef({ weather, weatherFetchedAt });
+  // Round is "active" (being played) — not finished, not still loading. The
+  // periodic scheduler below is torn down when this goes false; the on-demand
+  // triggers (hole change / foreground) live for the page's whole lifetime, so
+  // they read this flag from the mirror ref to stay off for a completed round.
+  const roundActive = round != null && round.status !== "completed";
+
+  // Mirrors the latest weather/weatherFetchedAt (+ active flag) so the
+  // on-demand effects below (keyed only on `currentHole` / a DOM listener)
+  // read current values instead of a stale mount-time closure.
+  const weatherLatestRef = useRef({ weather, weatherFetchedAt, roundActive });
   useEffect(() => {
-    weatherLatestRef.current = { weather, weatherFetchedAt };
-  }, [weather, weatherFetchedAt]);
+    weatherLatestRef.current = { weather, weatherFetchedAt, roundActive };
+  }, [weather, weatherFetchedAt, roundActive]);
 
   // ~25-min periodic refresh, only while the round is active — no polling
   // for a finished or not-yet-loaded round. Keyed on `round?.status` (not
@@ -609,8 +615,8 @@ export default function RoundPage() {
   useEffect(() => {
     if (prevHoleRef.current === currentHole) return;
     prevHoleRef.current = currentHole;
-    const { weather: w, weatherFetchedAt: fetchedAt } = weatherLatestRef.current;
-    if (w != null && isWeatherStale(fetchedAt, Date.now())) {
+    const { weather: w, weatherFetchedAt: fetchedAt, roundActive: active } = weatherLatestRef.current;
+    if (shouldRefreshOnDemand(active, w, fetchedAt, Date.now())) {
       void refreshWeather();
     }
   }, [currentHole, refreshWeather]);
@@ -621,8 +627,8 @@ export default function RoundPage() {
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
-      const { weather: w, weatherFetchedAt: fetchedAt } = weatherLatestRef.current;
-      if (w != null && isWeatherStale(fetchedAt, Date.now())) {
+      const { weather: w, weatherFetchedAt: fetchedAt, roundActive: active } = weatherLatestRef.current;
+      if (shouldRefreshOnDemand(active, w, fetchedAt, Date.now())) {
         void refreshWeather();
       }
     };
