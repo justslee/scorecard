@@ -32,6 +32,28 @@ export function isWeatherStale(
   return now - fetchedAt >= thresholdMs;
 }
 
+/**
+ * Should an ON-DEMAND refresh (hole change or app foreground) fire? Unlike the
+ * periodic scheduler — which is torn down for a finished round — these triggers
+ * live for the page's whole lifetime, so they must gate on `roundActive`
+ * themselves: a COMPLETED round is being reviewed, not played, and must never
+ * refetch live weather (a wasted backend/weather-API call that would also paint
+ * "now" wind onto a round played earlier). We also never conjure a first
+ * reading out of turn (`weather == null` → no) — on-demand refresh only renews
+ * an existing reading that has gone stale.
+ */
+export function shouldRefreshOnDemand(
+  roundActive: boolean,
+  weather: unknown | null,
+  fetchedAt: number | null,
+  now: number,
+  thresholdMs: number = WEATHER_STALE_MS
+): boolean {
+  if (!roundActive) return false;
+  if (weather == null) return false;
+  return isWeatherStale(fetchedAt, now, thresholdMs);
+}
+
 // Mirrors `lib/voice/idle-timer.ts`'s `IdleTimer` class: bare `setInterval`/
 // `clearInterval` (not `window.setInterval`, which this repo's tsconfig
 // types as `NodeJS.Timeout` via @types/node's ambient `Window` overload,
