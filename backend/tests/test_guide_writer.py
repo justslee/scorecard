@@ -312,3 +312,50 @@ def test_validator_still_allows_mapped_hazard_mentions():
 
     wz = [Hazard(type="water", side="right", distance_from_green=20, penalty_severity="death")]
     assert validate_guide(_bare_guide(miss_side="avoid the water right"), wz) is not None
+
+
+# ── Success-path shape test (reviewer finding: the live writer path had zero
+# coverage — an SDK-surface mismatch would spend tokens and silently cache
+# nothing). Drives research_hole_guide through a fake client whose response
+# object exposes exactly the attributes the code reads. ──
+
+@pytest.mark.asyncio
+async def test_research_success_path_reads_the_sdk_surface(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.caddie import guide_writer
+    from app.caddie.types import HoleStrategyGuide
+
+    parsed = HoleStrategyGuide(play_line="Favor center-left off the tee.")
+    fake_result = SimpleNamespace(
+        parsed_output=parsed,
+        stop_reason="end_turn",
+        content=[],
+        usage=SimpleNamespace(
+            input_tokens=1000,
+            output_tokens=300,
+            server_tool_use=SimpleNamespace(web_search_requests=2),
+        ),
+    )
+
+    class FakeMessages:
+        async def parse(self, **kwargs):
+            # The exact params the code must send (verified against current
+            # docs by the security review): model, max_tokens, output_format,
+            # tools incl. web_search, thinking adaptive.
+            assert kwargs.get("output_format") is HoleStrategyGuide
+            assert any(
+                t.get("type", "").startswith("web_search") for t in kwargs.get("tools", [])
+            )
+            assert kwargs.get("thinking", {}).get("type") == "adaptive"
+            return fake_result
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.messages = FakeMessages()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(guide_writer.anthropic, "AsyncAnthropic", FakeClient)
+
+    guide = await guide_writer.research_hole_guide(1, 4, 412, None, 29.4, [])
+    assert guide.play_line == "Favor center-left off the tee."
