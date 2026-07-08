@@ -500,6 +500,107 @@ out geom;
     return results[:25]
 
 
+def _parse_boundary_geometry(el: dict) -> Optional[dict]:
+    """Parse an Overpass ``way`` or ``relation`` element into a GeoJSON boundary.
+
+    - ``way``      → ``Polygon`` (single outer ring), via :func:`_parse_way_to_polygon`.
+    - ``relation`` → ``MultiPolygon`` built from every ``role: "outer"`` member
+      that carries geometry (multi-course facilities sometimes map each
+      sub-course's boundary as one outer ring within a shared relation).
+      Inner rings (holes in the polygon) are intentionally ignored — course
+      boundaries are used only as a coarse hole-selection filter here, not
+      for precise area calculations.
+
+    Returns ``None`` if the element has no usable ring geometry.
+    """
+    el_type = el.get("type")
+
+    if el_type == "way":
+        return _parse_way_to_polygon(el.get("geometry", []))
+
+    if el_type == "relation":
+        outers = [
+            m for m in el.get("members", [])
+            if m.get("role") == "outer" and m.get("geometry")
+        ]
+        polys: list[list[list[list[float]]]] = []
+        for m in outers:
+            ring = [[p["lon"], p["lat"]] for p in m["geometry"]]
+            if len(ring) < 4:
+                continue
+            if ring[0] != ring[-1]:
+                ring.append(ring[0])
+            polys.append([ring])
+        if polys:
+            return {"type": "MultiPolygon", "coordinates": polys}
+        return None
+
+    return None
+
+
+async def fetch_golf_course_boundaries(
+    lat: float,
+    lng: float,
+    radius_m: int = 3000,
+) -> list[dict]:
+    """Fetch NAMED ``leisure=golf_course`` boundary polygons within *radius_m*.
+
+    Used by the ingest script's ``--boundary-name`` hole-selection path for
+    multi-course facilities where individual ``golf=hole`` ways carry no
+    ``golf:course:name`` tag (e.g. Pebble Beach: Pebble Beach Golf Links +
+    Spyglass Hill + The Links at Spanish Bay + Peter Hay share one Overpass
+    neighbourhood with 79 untagged hole ways). The named course-boundary
+    polygon lets the ingest pipeline select holes geographically instead.
+
+    Always an **anchored** ``(around:radius_m,lat,lng)`` Overpass query — never
+    an unanchored planet-wide query.  Handles both OSM element shapes:
+
+    - ``way``      → simple closed-ring boundary → GeoJSON ``Polygon``.
+    - ``relation`` → multipolygon boundary (outer ring(s) only) → GeoJSON
+      ``MultiPolygon``.
+
+    Args:
+        lat, lng: Search centre (decimal degrees).
+        radius_m: Search radius in metres (default 3000).
+
+    Returns:
+        List of ``{"osm_id": str, "name": str, "boundary": <GeoJSON dict>}``.
+        Elements with no ``name`` tag or no usable ring geometry are skipped.
+        Empty list on Overpass failure.
+    """
+    query = f"""
+[out:json][timeout:30];
+(
+  way["leisure"="golf_course"](around:{radius_m},{lat},{lng});
+  relation["leisure"="golf_course"](around:{radius_m},{lat},{lng});
+);
+out geom;
+"""
+    async with httpx.AsyncClient(timeout=30) as client:
+        data = await _post_with_retry(client, query, log_tag="fetch_golf_course_boundaries")
+    if data is None:
+        return []
+
+    results: list[dict] = []
+    for el in data.get("elements", []):
+        tags = el.get("tags", {})
+        if tags.get("leisure") != "golf_course":
+            continue
+        name = tags.get("name")
+        if not name:
+            continue
+        boundary = _parse_boundary_geometry(el)
+        if boundary is None:
+            continue
+        results.append({
+            "osm_id": f"{el['type']}/{el['id']}",
+            "name": name,
+            "boundary": boundary,
+        })
+
+    return results
+
+
 async def fetch_course_features(
     lat: float,
     lng: float,

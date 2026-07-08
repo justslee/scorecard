@@ -3,6 +3,132 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — eng-lead cycle 27: course-search Places junk-venue filter (backend, SILENT, integration/next, DONE)
+
+Owner-observed relevance bug, now timely (Pebble Beach just went live in prod):
+searching a famous course name surfaced near-junk Places rows ("Pebble Beach
+Pro Shop", gift shops, restaurant/grill, golf academies, lodges). Plan (opus)
+-> builder -> reviewer + qa, all on `integration/next` (no PR opened this cycle
+per session-owner instruction — the bundle stays open for the Pebble guides
+backfill to verify first).
+
+- `backend/app/services/course_finder.py` — new pure `classify_place_venue`
+  (golf_course-type immunity checked FIRST -> never drops/penalizes a real
+  course; hard-drop ONLY when primaryType is an unambiguous non-golf venue AND
+  golf_course absent; name heuristics DOWNRANK-only). Extended the Places
+  FieldMask with `places.types,places.primaryType`; drop `non_course` rows +
+  tag additive `venue_penalty` in `search_google_places`; `venue_penalty` added
+  as the lowest-priority tie-break in `rank_courses` (after exact/prefix/local,
+  so prefix-first relevance + tiering untouched). Commit cdf87bc.
+- Reviewer nit (acted on directly, f988d6e): name heuristics were raw
+  substrings, so "spa" matched "Spanish Bay" (a real Pebble Beach course),
+  "grill"->"Grille", "lodge"->"Lodgepole". Switched to word-boundary regex
+  matching + regression test. Removes the false positive entirely.
+- Gates: ruff clean; `test_course_search.py` 42/42; full non-DB suite
+  1180/1180. Backend-only, no wire-shape/shared-type change; DB integration
+  tests run in CI (no local Postgres).
+
+Silent (better search results are subtle, no client-facing shape change) —
+rides along in the current bundle; no owner ping for this item.
+
+## 2026-07-08 — osm-ingest: boundary-polygon hole selection + Pebble Beach live on prod (backend, NOTICEABLE, integration/next, DONE)
+
+Extended the OSM course-ingest to handle multi-course venues where `golf=hole`
+ways carry NO `golf:course:name` tag at all (Bethpage's tag filter can't work
+there) — Pebble Beach has 79 untagged hole ways spanning Pebble Beach Golf
+Links/Course + Spyglass Hill + The Hay mixed. Added an alternative: fetch a
+NAMED `leisure=golf_course` boundary polygon (way or relation) and select hole
+LineStrings geographically (>=50% of a hole's vertices inside the polygon),
+then tag them with `course_name` so the existing par/handicap merge,
+cross-course polygon rejection, and elevation sampling all work unmodified.
+
+- `backend/app/services/osm.py` — `fetch_golf_course_boundaries(lat, lng,
+  radius_m)`: anchored Overpass query, handles both `way` (Polygon) and
+  `relation` (MultiPolygon) boundary shapes via new `_parse_boundary_geometry`.
+- `backend/app/services/osm_ingest.py` — `_point_in_boundary`,
+  `apply_boundary_hole_selection`, `match_boundary_by_name`: pure geometry,
+  reuses `course_spatial`'s ray-casting `_point_in_ring` (no new dependency).
+- `backend/scripts/ingest_osm_course.py` — new `--boundary-name` flag;
+  `--target-course` tag filter wins if both are given; logs available
+  boundary names on a name-match miss.
+- `backend/tests/test_osm_boundary_selection.py` — 37 new deterministic tests
+  (way vs relation parsing, point-in-polygon incl. MultiPolygon, hole
+  selection inside/outside/straddling at the 50% threshold, name matching).
+  Full backend suite: 1164 passed, 82 skipped (DB-integration, no local PG),
+  ruff clean. Commit `97a5339` on `integration/next`.
+
+**Ran on prod** via SSM (instance `i-0826ae70df62d9fe8`), overlay-copied to
+`/tmp/ingestrun` (never touched the deployed tree — box tracks `main`; sourced
+the exact `integration/next` files via `git show origin/integration/next:...`,
+sha256-verified byte-identical to local before running):
+- Dry-run first: found 5 named boundaries at the venue (`Cypress Point Golf
+  Course`, `Spyglass Hill Golf Course`, `The Hay`, `Pebble Beach Golf Course`,
+  `Poppy Hills Golf Course`) — note the real OSM name is **"Pebble Beach Golf
+  Course"**, not "Golf Links"; 18/79 holes correctly selected, elevations for
+  18/18, ~20.8 features/hole (comparable density to Bethpage).
+- Hit one real bug during the real-run attempt: `DATABASE_URL` wasn't in the
+  `sudo -u ubuntu` env passthrough, so `load_secrets_into_env()` silently
+  back-filled it from AWS Secrets Manager (a different, non-SSL value) instead
+  of the systemd `.env` — asyncpg auth error, **no write occurred** (failed
+  before the DB call completed). Fixed by explicitly passing `DATABASE_URL`
+  through the sudo prefix (not just `ASYNC_DATABASE_URL`, which the code
+  doesn't actually read — `app/db/engine.py` reads `DATABASE_URL`; the
+  script's docstring is stale on this point).
+- Real run: **Course UUID `f8d6b570-f54e-56d8-890c-000e85a42c95`**, "Pebble
+  Beach Golf Links", 18 holes, 374 total polygon features, all 18 pars match
+  the real Pebble Beach scorecard (4,5,4,4,3,5,3,4,4,4,4,3,4,5,4,4,3,5).
+  Verified via the deployed `get_course()` app code (not raw SQL): 18/18 holes
+  have `tee_elevation_ft`/`green_elevation_ft` embedded in their green
+  feature's properties. `/tmp/ingestrun` (contained a copy of `.env`) deleted
+  from the box after verification.
+- Did **not** run the hole-guides backfill — reserved for the session owner
+  per the dispatch instructions.
+
+Classified **noticeable**: Pebble Beach is now a real, fully-mapped course in
+prod (yardage book + caddie features) rather than absent/mock — the owner can
+open it in the app and see it. Deviation from the plan worth flagging: the
+plan described "the two changed files" for the overlay copy; the actual diff
+touched three files (`osm.py`, `osm_ingest.py`, `ingest_osm_course.py`) since
+this codebase already splits I/O (`osm.py`) from pure assembly logic
+(`osm_ingest.py`) — all three were copied to the overlay and sha256-verified.
+
+## 2026-07-08 — caddie-realtime Slice E follow-up: honest-state fix in empty-transcript hint (frontend, SILENT, integration/next, DONE)
+
+Fixed the reviewer/designer-flagged honesty gap in Slice E: when live Ask
+Caddie idles 90s with an empty transcript (no speech, no GPS opening shot),
+the footer correctly showed "Paused — tap to resume" but `LiveVoiceBody`'s
+empty-state center still rendered "Go ahead — {name} is listening." — two
+contradicting claims on screen, keyed on stale `RealtimeStatus` instead of
+`liveState`. No-fake-data / honest-states violation.
+
+- `frontend/src/components/CaddieSheet.tsx` — threaded
+  `paused={live.liveState === "suspended"}` into `LiveVoiceBody` (mirrors the
+  same expression already used for `LiveFooter`). Empty-transcript branch now
+  splits on `paused`: when true, renders "Paused — tap resume below to keep
+  talking." (mono/pencilSoft, matching the footer's calm register) instead of
+  the listening claim; the non-paused branch is byte-for-byte unchanged.
+- `frontend/src/components/CaddieSheet.realtime.test.tsx` — new regression
+  test in the Slice E describe block: open live -> connected -> idle timeout
+  with zero messages and no `resolveOpeningShot` -> asserts the footer
+  "Paused — tap to resume" renders AND `queryByText(/is listening/i)` is null.
+- Zero edits to realtime.ts / warm-session.ts / realtime-ordering.ts /
+  transport.ts / idle-timer.ts / useCaddieLiveSession.ts — pure
+  CaddieSheet.tsx render + test change, per the eng-lead's constraint.
+
+Gates: `npm run lint` clean, `tsc --noEmit` clean, `next build` succeeds,
+voice-tests smoke 274/274, `CaddieSheet.realtime.test.tsx` 23/23 passed, full
+`vitest run` 82 files / 1696 tests passed.
+
+Landed as part of commit `3413848` on `integration/next` — a concurrent
+process/session committed to the shared branch between this session's
+`git add` and `git commit` and folded these two staged files into its own
+(unrelated) commit "caddie: filter local knowledge through the player's
+reach." The diff content is verified correct and intact (`git show 3413848
+-- frontend/src/components/CaddieSheet.tsx frontend/src/components/CaddieSheet.realtime.test.tsx`)
+but the commit message/authorship does not describe this fix — flagging so
+eng-lead is aware two agents wrote to `integration/next`'s working tree at
+the same time (a coordination gap, not a code issue).
+
 ## 2026-07-08 — caddie-hole-strategy-guides Slice 1 (backend + shared types, SILENT, integration/next, DONE)
 
 Implemented Slice 1 ONLY of `specs/caddie-hole-strategy-guides-plan.md` (§12):
@@ -8011,3 +8137,84 @@ grounding validator, budget-capped Bethpage-first backfill, mandatory
 Owner decision: raise the cap again at claude.ai/settings/usage, or the
 loop resumes on billing reset. Main session stays available for approvals
 + light work.
+
+---
+
+## 2026-07-08 — caddie-realtime Slice E — idle suspend/resume UX + telemetry (silent, on integration/next)
+
+Bundle #112 merged to main (hole strategy guides engine) while a fresh
+opus plan (specs/caddie-realtime-slice-e-plan.md) landed directly on
+`main` — synced `integration/next` to `main` (ff) + cherry-picked the
+plan commit before starting, then implemented it.
+
+Turned the dishonest 90s idle dead-end (Slice D's `if (isCleanIdle)
+return;` left `liveState` stuck at "live" over a dead socket, no resume
+path) into an honest, visible "suspended" state with a user-triggered
+`resume()`. Frontend-only: `useCaddieLiveSession.ts` (new `"suspended"`
+state, `suspend()`/`doResume()`, resume RESETS Slice D's
+reconnect-budget so a post-resume drop still gets its own auto-reconnect,
+`live_suspend`/`live_resume` telemetry) + `CaddieSheet.tsx` (`LiveFooter`
+paused branch: calm "Paused — tap to resume", no mute shown). Six new
+deterministic vitest cases; zero edits to realtime.ts/warm-session.ts/
+realtime-ordering.ts/transport.ts/idle-timer.ts (confirmed via
+`git diff --name-only`). All gates green: lint, tsc, build, voice-tests
+smoke (274/274), full vitest (1695/1695 incl. new Slice E + all pinning
+suites unmodified), backend ruff (no backend change). Commit 40af2dd on
+`integration/next`, pushed.
+
+Silent (UX polish behind the already-default-ON live mode + telemetry
+only) — rides along in the next bundle; no owner ping needed for this
+item alone.
+
+---
+
+## 2026-07-08 — course search: filter/downrank junk Places venues (silent, on integration/next)
+
+Implemented specs/search-places-junk-filter-plan.md exactly (backend-only).
+Google Places leg of course search was surfacing near-junk non-course rows
+for famous courses ("Pebble Beach Pro Shop", gift shops, "The Lodge at
+Pebble Beach") now that Pebble Beach is live in prod.
+
+`backend/app/services/course_finder.py`: new pure `classify_place_venue(name,
+types, primary_type) -> "course" | "non_course" | "ambiguous"` plus three
+module-level constant sets (`_GOLF_COURSE_TYPES`, `_NON_COURSE_PRIMARY_TYPES`,
+`_NON_COURSE_NAME_SUBSTRINGS`). golf_course-in-types immunity checked FIRST
+(never dropped/penalized regardless of name/primaryType); hard-drop only when
+primaryType is an unambiguous non-golf venue (store/restaurant/lodging/etc)
+AND golf_course absent; name-substring heuristics ("pro shop", "academy",
+"lodge", ...) only DOWNRANK, never drop. `search_google_places`'s FieldMask
+now also requests `places.types,places.primaryType`; `non_course` rows are
+`continue`d (dropped at the source); kept rows get an additive
+`venue_penalty: 1 if ambiguous else 0` (existing emitted fields unchanged,
+types/primaryType NOT emitted). `rank_courses`'s sort key gained
+`venue_penalty` as the new LOWEST-priority tie-break, positioned after
+exact/prefix/local and before dist/alpha — prefix-first relevance and tiering
+untouched; local/osm/golfapi rows default to 0 and are unaffected.
+
+Tests added to `backend/tests/test_course_search.py`: `TestClassifyPlaceVenue`
+(8 cases: golf_course immunity over junk name, store-primaryType pro-shop
+drop, gift-shop drop, academy->ambiguous, lodge with lodging primaryType->
+drop vs benign primaryType->ambiguous, clean loosely-typed course->course,
+whitespace/case normalization, missing types/primaryType->course);
+`TestSearchGooglePlacesVenueFilter` (mocks `httpx.AsyncClient` at the same
+seam `test_osm_boundary_selection.py` uses: hard-drop + zero-penalty case,
+ambiguous-kept + penalty + rank_courses ordering case, FieldMask assertion
+for `places.types`/`places.primaryType`); `TestRankCoursesVenuePenalty`
+(local > clean external > ambiguous external tier ordering; exact-match still
+leads regardless of penalty; venue_penalty defaults to 0 when unset).
+
+Gates: `ruff check .` — All checks passed. `pytest tests/test_course_search.py
+-q` — 41 passed (up from 30). Full non-DB backend suite (`pytest tests/ -q
+--ignore=tests/integration`) — 1179 passed, nothing else broke. No frontend
+change (frontend gates out of scope). DB integration tests not run locally
+(no local Postgres) — pure/plumbing change fully covered by the offline unit
+tests above; CI backend gate covers DB-backed paths.
+
+Commit cdf87bc on `integration/next` ("course-search: filter/downrank
+non-course Places venues (pro shops, grills, lodges)"), pushed to
+origin/integration/next.
+
+Silent (backend relevance/ranking plumbing, no client-facing shape change —
+`venue_penalty` is an internal ranking hint, not added to types.ts/models.py
+per the plan) — rides along in the next bundle; no owner ping for this item
+alone.

@@ -85,8 +85,11 @@ vi.mock("@/lib/caddie/stream-buffer", () => ({
     cancel: () => {},
   }),
 }));
+// Hoisted so Slice E tests can assert the live_suspend/live_resume markers
+// (specs/caddie-realtime-slice-e-plan.md §9).
+const voiceEventSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/voice/telemetry", () => ({
-  voiceEvent: vi.fn(),
+  voiceEvent: voiceEventSpy,
   flushVoiceEvents: vi.fn(),
 }));
 vi.mock("@/lib/voice/deepgram", () => ({
@@ -282,6 +285,7 @@ beforeEach(() => {
   ttsBeginStreamSpy.mockClear();
   ttsEnqueueSpy.mockClear();
   ttsEndStreamSpy.mockClear();
+  voiceEventSpy.mockClear();
 });
 
 afterEach(() => {
@@ -653,5 +657,292 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     expect(screen.getByText("What club from 150?")).toBeTruthy();
     expect(screen.getByText("Smooth 7-iron.")).toBeTruthy();
     expect(first.sendText).toHaveBeenCalledTimes(1); // not re-fired
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice E — idle suspend/resume UX + telemetry
+// (specs/caddie-realtime-slice-e-plan.md §9). Deterministic only —
+// `sortByOrder` stays real; `voiceEventSpy` is the hoisted telemetry mock.
+// ---------------------------------------------------------------------------
+
+describe("CaddieSheet live mode — Slice E idle suspend/resume", () => {
+  it("idle -> suspend sets the visible paused state and keeps messages", async () => {
+    vi.useFakeTimers();
+    renderSheet();
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+
+    act(() => {
+      first.emitMessage({ id: "old-1", role: "user", text: "What club from 150?", partial: false, order: 1 });
+      first.emitMessage({ id: "old-2", role: "assistant", text: "Smooth 7-iron.", partial: false, order: 2 });
+    });
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => first.emitStatus("closed"));
+    await flush();
+
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(1); // no reconnect mint
+    expect(screen.getByLabelText("Resume listening")).toBeTruthy();
+    expect(screen.getByText("Paused — tap to resume")).toBeTruthy();
+    expect(screen.queryByLabelText("Mute")).toBeNull();
+    expect(screen.queryByText("Tap-to-talk mode")).toBeNull();
+    expect(screen.getByText("What club from 150?")).toBeTruthy();
+    expect(screen.getByText("Smooth 7-iron.")).toBeTruthy();
+    expect(voiceEventSpy).toHaveBeenCalledWith("caddie", "live_suspend", { flush: true });
+  });
+
+  it("suspend -> resume -> live, no re-greet, order offset applied", async () => {
+    vi.useFakeTimers();
+    const resolveOpeningShot = vi.fn(async () => ({ distanceYards: 150 }));
+    renderSheet({ resolveOpeningShot });
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+
+    act(() => {
+      first.emitMessage({ id: "old-1", role: "user", text: "What club from 150?", partial: false, order: 1 });
+      first.emitMessage({ id: "old-2", role: "assistant", text: "Smooth 7-iron.", partial: false, order: 2 });
+    });
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => first.emitStatus("closed"));
+    await flush();
+
+    act(() => fireEvent.click(screen.getByLabelText("Resume listening")));
+    await flush();
+
+    const instances = realtimeMock.FakeRealtimeCaddieClient.instances;
+    expect(instances).toHaveLength(2);
+    const second = instances[1];
+    expect(second.start).toHaveBeenCalledTimes(1);
+    expect(second.attachMic).toHaveBeenCalledTimes(1);
+    expect(second.sendText).not.toHaveBeenCalled(); // no re-greet
+    expect(resolveOpeningShot).toHaveBeenCalledTimes(1); // still just the one opening turn
+    expect(voiceEventSpy).toHaveBeenCalledWith("caddie", "live_resume");
+
+    act(() => second.emitStatus("connected"));
+    await flush();
+    act(() => {
+      second.emitMessage({ id: "new-1", role: "user", text: "What about the wind?", partial: false, order: 1 });
+      second.emitMessage({ id: "new-2", role: "assistant", text: "Take one more club.", partial: false, order: 2 });
+    });
+    await flush();
+
+    const bubbles = screen.getAllByText(
+      /What club from 150\?|Smooth 7-iron\.|What about the wind\?|Take one more club\./,
+    );
+    expect(bubbles.map((el) => el.textContent)).toEqual([
+      "What club from 150?",
+      "Smooth 7-iron.",
+      "What about the wind?",
+      "Take one more club.",
+    ]);
+
+    expect(screen.getByLabelText("Mute")).toBeTruthy(); // back to the live footer
+    expect(screen.queryByText("Paused — tap to resume")).toBeNull();
+  });
+
+  it("resume does not double-attach mic (double-tap guard)", async () => {
+    vi.useFakeTimers();
+    renderSheet();
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => first.emitStatus("closed"));
+    await flush();
+
+    const resumeBtn = screen.getByLabelText("Resume listening");
+    act(() => {
+      fireEvent.click(resumeBtn);
+      fireEvent.click(resumeBtn);
+    });
+    await flush();
+
+    const instances = realtimeMock.FakeRealtimeCaddieClient.instances;
+    expect(instances).toHaveLength(2); // not 3
+    expect(instances[1].attachMic).toHaveBeenCalledTimes(1);
+  });
+
+  it("suspend -> resume -> suspend-again cycle", async () => {
+    vi.useFakeTimers();
+    renderSheet();
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+    act(() => {
+      first.emitMessage({ id: "old-1", role: "user", text: "What club from 150?", partial: false, order: 1 });
+      first.emitMessage({ id: "old-2", role: "assistant", text: "Smooth 7-iron.", partial: false, order: 2 });
+    });
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => first.emitStatus("closed"));
+    await flush();
+
+    act(() => fireEvent.click(screen.getByLabelText("Resume listening")));
+    await flush();
+
+    const second = realtimeMock.FakeRealtimeCaddieClient.instances[1];
+    act(() => second.emitStatus("connected"));
+    await flush();
+    act(() => {
+      second.emitMessage({ id: "new-1", role: "user", text: "What about the wind?", partial: false, order: 1 });
+    });
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => second.emitStatus("closed"));
+    await flush();
+
+    expect(screen.getByLabelText("Resume listening")).toBeTruthy();
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(2); // second suspend mints nothing
+    expect(second.setEvents).toHaveBeenCalledWith({});
+    expect(screen.getByText("What club from 150?")).toBeTruthy();
+    expect(screen.getByText("Smooth 7-iron.")).toBeTruthy();
+    expect(screen.getByText("What about the wind?")).toBeTruthy();
+    expect(screen.queryByText("Tap-to-talk mode")).toBeNull();
+  });
+
+  it("resume FAILURE falls back to classic, preserving the pre-suspend transcript", async () => {
+    vi.useFakeTimers();
+    const resolveOpeningShot = vi.fn(async () => ({ distanceYards: 150 }));
+    renderControlledSheet({ resolveOpeningShot });
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+
+    act(() => {
+      first.emitMessage({ id: "old-1", role: "user", text: "What club from 150?", partial: false, order: 1 });
+      first.emitMessage({ id: "old-2", role: "assistant", text: "Smooth 7-iron.", partial: false, order: 2 });
+      first.emitMessage({ id: "old-3", role: "user", text: "And with the wind?", partial: false, order: 3 });
+      first.emitMessage({ id: "old-4", role: "assistant", text: "Take one more club.", partial: false, order: 4 });
+    });
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => first.emitStatus("closed"));
+    await flush();
+
+    act(() => fireEvent.click(screen.getByLabelText("Resume listening")));
+    await flush();
+
+    const second = realtimeMock.FakeRealtimeCaddieClient.instances[1];
+    act(() => second.emitStatus("closed")); // the resumed client itself fails
+    await flush();
+
+    expect(screen.getByLabelText("Start recording")).toBeTruthy();
+    expect(screen.getByText("Tap-to-talk mode")).toBeTruthy();
+    expect(screen.getByText("What club from 150?")).toBeTruthy();
+    expect(screen.getByText("Smooth 7-iron.")).toBeTruthy();
+    expect(resolveOpeningShot).toHaveBeenCalledTimes(1); // no re-greet
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(2); // no third mint
+  });
+
+  it("a real drop AFTER a resume still gets its own auto-reconnect (budget not stolen)", async () => {
+    vi.useFakeTimers();
+    renderSheet();
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+
+    // Idle-suspend, then resume.
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => first.emitStatus("closed"));
+    await flush();
+    act(() => fireEvent.click(screen.getByLabelText("Resume listening")));
+    await flush();
+
+    const second = realtimeMock.FakeRealtimeCaddieClient.instances[1];
+    act(() => second.emitStatus("connected"));
+    await flush();
+
+    // Real drop shortly after activity (tiny elapsed -> classified as a
+    // drop, not idle) -> the resumed burst gets its OWN auto-reconnect,
+    // because doResume() reset reconnectUsedRef.
+    act(() => second.emitStatus("closed"));
+    await flush();
+
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(3); // the auto-reconnect
+    expect(screen.queryByText("Tap-to-talk mode")).toBeNull();
+
+    // Definitive variant: a real drop consumes the FIRST burst's budget,
+    // succeeds, then idle-suspend -> resume -> a SECOND real drop still
+    // gets its own auto-reconnect (the reset composes across bursts).
+    const third = realtimeMock.FakeRealtimeCaddieClient.instances[2];
+    act(() => third.emitStatus("connected"));
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => third.emitStatus("closed")); // idle-suspend again
+    await flush();
+    act(() => fireEvent.click(screen.getByLabelText("Resume listening")));
+    await flush();
+
+    const fourth = realtimeMock.FakeRealtimeCaddieClient.instances[3];
+    act(() => fourth.emitStatus("connected"));
+    await flush();
+    act(() => fourth.emitStatus("closed")); // a second real drop, its own budget
+    await flush();
+
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(5);
+    expect(screen.queryByText("Tap-to-talk mode")).toBeNull();
+  });
+
+  it("empty-transcript idle -> suspend: footer says paused, empty-state does NOT claim the caddy is listening", async () => {
+    // No resolveOpeningShot passed (default undefined) -> no opening turn is
+    // ever sent (honest idle, §786 in CaddieSheet.tsx), so the transcript
+    // stays empty the whole time. Regression for the empty-state hint that
+    // used to stay keyed on stale `status` and kept claiming "is listening"
+    // even after the footer had already flipped to "Paused — tap to resume".
+    vi.useFakeTimers();
+    renderSheet();
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => first.emitStatus("closed"));
+    await flush();
+
+    expect(screen.getByText("Paused — tap to resume")).toBeTruthy();
+    expect(screen.queryByText(/is listening/i)).toBeNull();
   });
 });

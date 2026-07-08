@@ -118,9 +118,75 @@ def rank_courses(
             dist = _haversine_m(anchor["lat"], anchor["lng"], center["lat"], center["lng"])
         else:
             dist = math.inf
-        return (exact, prefix, local, dist, _fold(name))
+        venue_penalty = c.get("venue_penalty") or 0
+        return (exact, prefix, local, venue_penalty, dist, _fold(name))
 
     return sorted(courses, key=key)
+
+
+# ── Places venue classifier (pure, unit-tested) ───────────────────────────────
+# Positive signal: a Places "types" entry that confirms a real golf course.
+_GOLF_COURSE_TYPES: frozenset[str] = frozenset({"golf_course"})
+
+# primaryType / types values that mark a clearly non-golf venue. When the
+# PRIMARY type is one of these AND golf_course is absent from types, the row
+# is an unambiguous non-course venue -> hard-drop.
+_NON_COURSE_PRIMARY_TYPES: frozenset[str] = frozenset({
+    "store", "clothing_store", "shopping_mall", "gift_shop",
+    "restaurant", "cafe", "coffee_shop", "bar", "meal_takeaway",
+    "meal_delivery", "food",
+    "lodging", "hotel", "resort_hotel", "motel", "bed_and_breakfast",
+    "spa", "wellness_center",
+})
+
+# Softer name heuristics: WORD-anchored phrases that SUGGEST a non-course venue.
+# Used only to DOWNRANK (never to drop), and only when golf_course is NOT in
+# types. Matched on word boundaries (not raw substrings) so a real course name
+# can't collide with a fragment: "spa" must NOT fire on "Spanish Bay" (a real
+# Pebble Beach course), "grill" not on "Grille", "lodge" not on "Lodgepole".
+_NON_COURSE_NAME_PHRASES: tuple[str, ...] = (
+    "pro shop", "gift shop", "grill", "restaurant", "academy",
+    "lodge", "spa", "cafe",
+)
+_NON_COURSE_NAME_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(p) for p in _NON_COURSE_NAME_PHRASES) + r")\b"
+)
+
+
+def classify_place_venue(name: str, types, primary_type) -> str:
+    """Classify a Google Places result into a venue class for course search.
+
+    Returns one of:
+      "course"      -- golf_course present in types (never dropped, never penalized)
+      "non_course"  -- unambiguous non-golf venue -> caller should HARD-DROP
+      "ambiguous"   -- name heuristic suggests non-course but types don't
+                       confirm -> caller should DOWNRANK, never drop
+
+    Pure: no I/O, deterministic. `types` is the place's types list (may be None
+    / empty for non-Places sources); `primary_type` is places.primaryType (may
+    be None). Name/type matching is case- and whitespace-normalized."""
+    type_set = {t.strip().lower() for t in (types or [])}
+    pt = (primary_type or "").strip().lower()
+    folded_name = " ".join(_fold(name or "").split())
+
+    # golf_course immunity — checked FIRST, so a place typed as a golf course
+    # is never dropped or penalized no matter its name or primaryType.
+    if _GOLF_COURSE_TYPES & type_set:
+        return "course"
+
+    # Unambiguous non-course (hard-drop): primaryType is Google's single best
+    # classification; when it is a store/restaurant/lodging/etc. and
+    # golf_course is absent, it is not a course.
+    if pt in _NON_COURSE_PRIMARY_TYPES:
+        return "non_course"
+
+    # Ambiguous (downrank): name says "Pro Shop"/"Grill"/"Academy"/"Lodge" but
+    # the types didn't confirm a non-course primaryType. Word-boundary matched
+    # so a fragment inside a real course name ("Spanish", "Grille") can't fire.
+    if _NON_COURSE_NAME_RE.search(folded_name):
+        return "ambiguous"
+
+    return "course"
 
 
 # ── Write-through identity (deterministic UUIDs, pure) ────────────────────────
@@ -216,7 +282,8 @@ async def search_google_places(
         "X-Goog-Api-Key": key,
         "X-Goog-FieldMask": (
             "places.id,places.displayName,places.formattedAddress,"
-            "places.location,places.websiteUri,places.rating"
+            "places.location,places.websiteUri,places.rating,"
+            "places.types,places.primaryType"
         ),
     }
     body = {"textQuery": query, "includedType": "golf_course", "maxResultCount": 10}
@@ -238,14 +305,19 @@ async def search_google_places(
                 lat, lng = loc.get("latitude"), loc.get("longitude")
                 if lat is None or lng is None:
                     continue
+                name = (p.get("displayName") or {}).get("text") or query
+                cls = classify_place_venue(name, p.get("types"), p.get("primaryType"))
+                if cls == "non_course":
+                    continue
                 out.append({
                     "id": f"gplaces-{p.get('id')}",
-                    "name": (p.get("displayName") or {}).get("text") or query,
+                    "name": name,
                     "address": p.get("formattedAddress"),
                     "center": {"lat": lat, "lng": lng},
                     "website": p.get("websiteUri"),
                     "rating": p.get("rating"),
                     "source": "google_places",
+                    "venue_penalty": 1 if cls == "ambiguous" else 0,
                 })
             return out
         except Exception:

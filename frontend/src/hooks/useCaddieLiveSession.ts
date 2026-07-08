@@ -33,6 +33,16 @@
  * quiet cold-mint reconnect, preserving `messages`/`openedTurnRef`; a second
  * drop, the reconnect's own failure, or its deadline falls to the classic
  * tap-to-talk path). See §2/§3 of the plan for the full state machine.
+ *
+ * Slice E — idle suspend/resume (specs/caddie-realtime-slice-e-plan.md): a
+ * clean-idle close used to be a dishonest dead-end (`liveState` stayed
+ * `"live"` with a dead socket, no resume path). It now transitions to a
+ * visible `"suspended"` state (transcript preserved) with a user-triggered
+ * `resume()` that cold-mints a fresh client and continues the SAME
+ * conversation (no re-greet, cross-client order offset applied) — reusing
+ * Slice D's reconnecting sub-phase verbatim. `resume()` does NOT consume
+ * Slice D's one-reconnect-per-activation budget; it RESETS it, so a real
+ * drop after a resume still gets its own auto-reconnect (§3.4 of the plan).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -47,8 +57,9 @@ import { sortByOrder } from "@/lib/voice/realtime-ordering";
 import { MINT_DEADLINE_MS } from "@/lib/caddie/transport";
 import { REALTIME_IDLE_DISCONNECT_MS } from "@/lib/voice/idle-timer";
 import { buildOpeningTurnText, type OpeningShot } from "@/lib/caddie/opening-turn";
+import { voiceEvent } from "@/lib/voice/telemetry";
 
-export type CaddieLiveState = "connecting" | "live" | "fallback";
+export type CaddieLiveState = "connecting" | "live" | "suspended" | "fallback";
 
 /** Margin subtracted from REALTIME_IDLE_DISCONNECT_MS to absorb same-tick
  *  clock skew between this hook's activity mirror and realtime.ts's own
@@ -73,6 +84,9 @@ export interface UseCaddieLiveSessionResult {
   status: RealtimeStatus;
   muted: boolean;
   toggleMute: () => void;
+  /** User-triggered resume from `liveState === "suspended"` — cold-mints a
+   *  fresh client and continues the same conversation (no re-greet). */
+  resume: () => void;
   /** Tear the live client down (e.g. on sheet close). */
   stop: () => void;
 }
@@ -119,6 +133,15 @@ export function useCaddieLiveSession({
   /** Mirror of `muted` so a reconnect's fresh client can re-apply it. */
   const mutedRef = useRef(false);
 
+  // ── Slice E idle suspend/resume refs ───────────────────────────────────
+  /** Mirror of `liveState==='suspended'` for use inside `onStatus`/callbacks
+   *  (plan §2.2). Reset on (re)activation like the others. */
+  const suspendedRef = useRef(false);
+  /** The activation effect's `doResume()` closure (needs `events`/
+   *  `cancelled`/`roundId`/`personaId`) — the returned stable `resume()`
+   *  calls through this. Cleared in effect cleanup (plan §2.2/§3.3). */
+  const resumeImplRef = useRef<(() => void) | null>(null);
+
   const resolveOpeningShotRef = useRef(resolveOpeningShot);
   useEffect(() => {
     resolveOpeningShotRef.current = resolveOpeningShot;
@@ -155,6 +178,24 @@ export function useCaddieLiveSession({
     if (mountedRef.current) setLiveState("fallback");
     clientRef.current?.stop();
     clientRef.current = null;
+  }, [clearMintDeadline, clearReconnectDeadline]);
+
+  /** Clean-idle transition (plan §3.2): the socket is ALREADY fully stopped
+   *  (realtime.ts's own IdleTimer already called stop()/cleanup()), so this
+   *  detaches the dead client's handlers and surfaces a visible, calm
+   *  "suspended" state instead of leaving `liveState` dishonestly at "live"
+   *  with a dead client. `messages`/`openedTurnRef`/`everConnectedRef` are
+   *  all left intact — resume continues the same conversation. */
+  const suspend = useCallback(() => {
+    suspendedRef.current = true;
+    reconnectingRef.current = false; // defensive; clean-idle can't be mid-reconnect
+    clearMintDeadline();
+    clearReconnectDeadline();
+    const dead = clientRef.current;
+    dead?.setEvents({}); // public seam — stop any late event re-entering onStatus
+    clientRef.current = null; // socket already stopped by realtime.ts's IdleTimer
+    if (mountedRef.current) setLiveState("suspended");
+    voiceEvent("caddie", "live_suspend", { flush: true });
   }, [clearMintDeadline, clearReconnectDeadline]);
 
   const upsert = useCallback((m: RealtimeMessage) => {
@@ -210,6 +251,7 @@ export function useCaddieLiveSession({
       maxOrderRef.current = 0;
       lastActivityAtRef.current = 0;
       mutedRef.current = false;
+      suspendedRef.current = false;
       clearMintDeadline();
       clearReconnectDeadline();
       clientRef.current?.stop();
@@ -233,6 +275,7 @@ export function useCaddieLiveSession({
     maxOrderRef.current = 0;
     lastActivityAtRef.current = 0;
     mutedRef.current = false;
+    suspendedRef.current = false;
     setLiveState("connecting");
     setStatus("idle");
     setMessages([]);
@@ -287,7 +330,10 @@ export function useCaddieLiveSession({
           const isCleanIdle =
             s === "closed" &&
             Date.now() - lastActivityAtRef.current >= REALTIME_IDLE_DISCONNECT_MS - IDLE_MARGIN_MS;
-          if (isCleanIdle) return; // rest calmly — no reconnect, no fallback
+          if (isCleanIdle) {
+            suspend();
+            return; // visible "suspended" state — see suspend() above
+          }
           if (reconnectUsedRef.current) {
             fallBack();
           } else {
@@ -335,6 +381,51 @@ export function useCaddieLiveSession({
         }
       })();
     };
+
+    /** User-triggered resume from `suspended` (plan §3.3). Mirrors
+     *  `startReconnect()` with three deliberate differences: it is
+     *  user-triggered (not from an idle/drop signal), it transitions FROM
+     *  suspended, and it does NOT set `reconnectUsedRef` — it RESETS it, so
+     *  a real drop after a resume still gets its own auto-reconnect (§3.4:
+     *  the budget bounds a silent flapping loop within one automatic burst;
+     *  a human tap delineates a new burst, so there is no loop to bound
+     *  across it). Reuses the SAME reconnecting sub-phase as
+     *  startReconnect() — the fresh client's connected/closed/error are
+     *  handled by the existing `if (reconnectingRef.current)` branch above. */
+    const doResume = () => {
+      if (!suspendedRef.current) return; // only from suspended
+      if (reconnectingRef.current) return; // guard double-tap re-entrancy
+      suspendedRef.current = false;
+      reconnectUsedRef.current = false; // resumed burst gets its OWN one-shot budget
+      reconnectingRef.current = true;
+      reconnectedRef.current = true;
+      orderOffsetRef.current = maxOrderRef.current + 1; // resumed turns sort strictly after
+      if (mountedRef.current) {
+        setLiveState("live"); // continuity — status flickers connecting -> ready
+        setStatus("connecting"); // immediate honest feedback on the tap, no "Ended" flash
+      }
+      voiceEvent("caddie", "live_resume");
+      reconnectDeadlineRef.current = setTimeout(() => {
+        reconnectDeadlineRef.current = null;
+        if (!cancelled && !fellBackRef.current) fallBack();
+      }, MINT_DEADLINE_MS);
+      // Always cold — the warm pool is already consumed mid-round (same as reconnect).
+      const client = new RealtimeCaddieClient({ roundId, personalityId: personaId }, events);
+      clientRef.current = client;
+      void (async () => {
+        try {
+          await client.start();
+          if (cancelled || fellBackRef.current) return;
+          await client.attachMic();
+          if (cancelled || fellBackRef.current) return;
+          micReadyRef.current = true;
+          if (mutedRef.current) client.setMuted(true);
+        } catch {
+          if (!cancelled && !fellBackRef.current) fallBack();
+        }
+      })();
+    };
+    resumeImplRef.current = doResume;
 
     mintDeadlineRef.current = setTimeout(() => {
       mintDeadlineRef.current = null;
@@ -390,6 +481,7 @@ export function useCaddieLiveSession({
       clearReconnectDeadline();
       clientRef.current?.stop();
       clientRef.current = null;
+      resumeImplRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, roundId, personaId]);
@@ -401,6 +493,10 @@ export function useCaddieLiveSession({
     clientRef.current?.setMuted(next);
     setMuted(next);
   }, [muted]);
+
+  const resume = useCallback(() => {
+    resumeImplRef.current?.();
+  }, []);
 
   const stop = useCallback(() => {
     clearMintDeadline();
@@ -416,6 +512,7 @@ export function useCaddieLiveSession({
     status,
     muted,
     toggleMute,
+    resume,
     stop,
   };
 }

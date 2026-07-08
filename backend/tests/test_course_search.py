@@ -3,11 +3,13 @@ OSM name-filter construction + course-search-v2 (Places/GolfAPI fan-out,
 non-blocking OSM enrichment, leg-health observability, cache-poisoning fix)."""
 
 import logging
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import BackgroundTasks
 
 from app.routes import course_search
+from app.services import course_finder
 from app.services.osm import osm_name_filter
 
 # Captured BEFORE any test's autouse fixture monkeypatches
@@ -600,3 +602,218 @@ class TestSearchGolfapiMapping:
 
     async def test_returns_empty_for_blank_query(self, monkeypatch):
         assert await _real_search_golfapi("   ") == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Places junk-venue filter (search-places-junk-filter): golf_course type
+# immunity, hard-drop of unambiguous non-course venues (pro shops, gift
+# shops, lodging), downrank of name-only "ambiguous" venues.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestClassifyPlaceVenue:
+    def test_golf_course_type_is_immune_even_with_junk_name(self):
+        # golf_course immunity is checked FIRST — a junky name never overrides it.
+        assert course_finder.classify_place_venue(
+            "Pebble Beach Pro Shop", ["golf_course", "point_of_interest"], "golf_course",
+        ) == "course"
+
+    def test_pro_shop_with_store_primary_type_is_hard_dropped(self):
+        assert course_finder.classify_place_venue(
+            "Pebble Beach Pro Shop", ["store", "point_of_interest"], "store",
+        ) == "non_course"
+
+    def test_standalone_gift_shop_is_hard_dropped(self):
+        assert course_finder.classify_place_venue(
+            "The Golf Gift Shop", ["gift_shop", "store"], "gift_shop",
+        ) == "non_course"
+
+    def test_academy_with_benign_primary_type_is_ambiguous(self):
+        assert course_finder.classify_place_venue(
+            "Pebble Beach Golf Academy", ["point_of_interest", "establishment"],
+            "point_of_interest",
+        ) == "ambiguous"
+
+    def test_lodge_with_lodging_primary_type_is_hard_dropped(self):
+        assert course_finder.classify_place_venue(
+            "The Lodge at Pebble Beach", ["lodging", "point_of_interest"], "lodging",
+        ) == "non_course"
+
+    def test_lodge_with_benign_primary_type_is_ambiguous(self):
+        assert course_finder.classify_place_venue(
+            "The Lodge at Pebble Beach", ["point_of_interest", "establishment"],
+            "point_of_interest",
+        ) == "ambiguous"
+
+    def test_clean_course_name_with_no_golf_course_type_still_classified_course(self):
+        # Real course typed loosely by Google (no golf_course, no non-course
+        # primaryType, no junk name substring) -> default to "course".
+        assert course_finder.classify_place_venue(
+            "Bethpage Black Course", ["point_of_interest", "establishment"],
+            "point_of_interest",
+        ) == "course"
+
+    def test_whitespace_and_case_normalized_before_name_substring_check(self):
+        assert course_finder.classify_place_venue(
+            "PEBBLE BEACH PRO   SHOP", ["point_of_interest"], "point_of_interest",
+        ) == "ambiguous"
+
+    def test_missing_types_and_primary_type_default_to_course(self):
+        assert course_finder.classify_place_venue("Some Club", None, None) == "course"
+
+    def test_name_heuristics_are_word_anchored_not_substrings(self):
+        # A real course name that merely CONTAINS a heuristic fragment must not
+        # be downranked — the phrases match on word boundaries, not substrings.
+        # "Spanish Bay" (a real Pebble Beach course) contains "spa"; "Grille"
+        # contains "grill"; "Lodgepole" contains "lodge". None should fire.
+        for real_name in (
+            "The Links at Spanish Bay",   # contains "spa"
+            "The Grille Golf Club",       # contains "grill"
+            "Lodgepole Pines Golf Club",  # contains "lodge"
+        ):
+            assert course_finder.classify_place_venue(
+                real_name, ["point_of_interest", "establishment"], "point_of_interest",
+            ) == "course", real_name
+        # The whole-word forms still fire (downrank), confirming the guard
+        # didn't over-correct.
+        assert course_finder.classify_place_venue(
+            "Clubhouse Grill", ["point_of_interest"], "point_of_interest",
+        ) == "ambiguous"
+
+
+class _PlacesResp:
+    """Minimal stand-in for httpx.Response, matching the seam used by the
+    existing httpx.AsyncClient mocks in tests/test_osm_boundary_selection.py."""
+
+    def __init__(self, data: dict) -> None:
+        self.status_code = 200
+        self.is_success = True
+        self.text = ""
+        self._data = data
+
+    def json(self) -> dict:
+        return self._data
+
+
+def _mock_places_client(data: dict):
+    """Return (mock_ctor_patch, mock_client) — mock_client.post captures the
+    request so tests can assert on headers/body; the response is `data`."""
+    mock_client = AsyncMock()
+    mock_client.post.return_value = _PlacesResp(data)
+    return mock_client
+
+
+class TestSearchGooglePlacesVenueFilter:
+    async def test_hard_drops_junk_and_keeps_real_course_unpenalized(self):
+        data = {
+            "places": [
+                {
+                    "id": "abc123", "displayName": {"text": "Pebble Beach Golf Links"},
+                    "formattedAddress": "1700 17 Mile Dr, Pebble Beach, CA",
+                    "location": {"latitude": 36.5725, "longitude": -121.9486},
+                    "types": ["golf_course", "point_of_interest"],
+                    "primaryType": "golf_course",
+                },
+                {
+                    "id": "def456", "displayName": {"text": "Pebble Beach Pro Shop"},
+                    "formattedAddress": "1700 17 Mile Dr, Pebble Beach, CA",
+                    "location": {"latitude": 36.5726, "longitude": -121.9487},
+                    "types": ["store", "point_of_interest"],
+                    "primaryType": "store",
+                },
+                {
+                    "id": "ghi789", "displayName": {"text": "The Gift Shop"},
+                    "formattedAddress": "1700 17 Mile Dr, Pebble Beach, CA",
+                    "location": {"latitude": 36.5724, "longitude": -121.9485},
+                    "types": ["gift_shop", "store"],
+                    "primaryType": "gift_shop",
+                },
+            ],
+        }
+        mock_client = _mock_places_client(data)
+        with patch("httpx.AsyncClient") as mock_ctor:
+            mock_ctor.return_value.__aenter__.return_value = mock_client
+            out = await course_finder.search_google_places("pebble beach", api_key="test-key")
+
+        assert [c["name"] for c in out] == ["Pebble Beach Golf Links"]
+        assert out[0]["venue_penalty"] == 0
+
+    async def test_ambiguous_academy_kept_and_penalized_real_course_sorts_first(self):
+        data = {
+            "places": [
+                {
+                    "id": "abc123", "displayName": {"text": "Pebble Beach Golf Links"},
+                    "formattedAddress": "1700 17 Mile Dr, Pebble Beach, CA",
+                    "location": {"latitude": 36.5725, "longitude": -121.9486},
+                    "types": ["golf_course", "point_of_interest"],
+                    "primaryType": "golf_course",
+                },
+                {
+                    "id": "def456", "displayName": {"text": "Pebble Beach Golf Academy"},
+                    "formattedAddress": "1700 17 Mile Dr, Pebble Beach, CA",
+                    "location": {"latitude": 36.5726, "longitude": -121.9487},
+                    "types": ["point_of_interest", "establishment"],
+                    "primaryType": "point_of_interest",
+                },
+            ],
+        }
+        mock_client = _mock_places_client(data)
+        with patch("httpx.AsyncClient") as mock_ctor:
+            mock_ctor.return_value.__aenter__.return_value = mock_client
+            out = await course_finder.search_google_places("pebble beach", api_key="test-key")
+
+        assert [c["name"] for c in out] == ["Pebble Beach Golf Links", "Pebble Beach Golf Academy"]
+        by_name = {c["name"]: c for c in out}
+        assert by_name["Pebble Beach Golf Links"]["venue_penalty"] == 0
+        assert by_name["Pebble Beach Golf Academy"]["venue_penalty"] == 1
+
+        ranked = course_finder.rank_courses(out, "pebble beach")
+        assert [c["name"] for c in ranked] == ["Pebble Beach Golf Links", "Pebble Beach Golf Academy"]
+
+    async def test_field_mask_requests_types_and_primary_type(self):
+        data = {"places": []}
+        mock_client = _mock_places_client(data)
+        with patch("httpx.AsyncClient") as mock_ctor:
+            mock_ctor.return_value.__aenter__.return_value = mock_client
+            await course_finder.search_google_places("pebble beach", api_key="test-key")
+
+        _, kwargs = mock_client.post.call_args
+        field_mask = kwargs["headers"]["X-Goog-FieldMask"]
+        assert "places.types" in field_mask
+        assert "places.primaryType" in field_mask
+
+
+class TestRankCoursesVenuePenalty:
+    def test_local_first_clean_external_second_ambiguous_external_last(self):
+        # None of these three names reduce to an EXACT significant-token match
+        # against "pebble beach" (each carries an extra non-stopword token), so
+        # the tier is decided by local-source, then venue_penalty.
+        courses = [
+            {"name": "Pebble Beach Golf Academy", "source": "google_places",
+             "venue_penalty": 1, "center": None},
+            {"name": "Pebble Beach Executive Course", "source": "local", "center": None},
+            {"name": "Pebble Beach Public Course", "source": "google_places",
+             "venue_penalty": 0, "center": None},
+        ]
+        ranked = course_finder.rank_courses(courses, "pebble beach")
+        assert [c["name"] for c in ranked] == [
+            "Pebble Beach Executive Course", "Pebble Beach Public Course", "Pebble Beach Golf Academy",
+        ]
+
+    def test_exact_match_still_leads_regardless_of_penalty(self):
+        # An exact-name match with a penalty still outranks a non-exact,
+        # unpenalized hit — exact/prefix/local always dominate the penalty.
+        courses = [
+            {"name": "Pebble Beach Golf Links Nearby Course", "source": "google_places",
+             "venue_penalty": 0, "center": None},
+            {"name": "Pebble Beach", "source": "google_places",
+             "venue_penalty": 1, "center": None},
+        ]
+        ranked = course_finder.rank_courses(courses, "pebble beach")
+        assert ranked[0]["name"] == "Pebble Beach"
+
+    def test_venue_penalty_defaults_to_zero_when_unset(self):
+        courses = [
+            {"name": "Bethpage Black Course", "source": "osm", "center": None},
+        ]
+        ranked = course_finder.rank_courses(courses, "bethpage black")
+        assert ranked[0]["name"] == "Bethpage Black Course"

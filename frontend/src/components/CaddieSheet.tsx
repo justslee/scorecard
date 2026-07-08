@@ -1547,7 +1547,12 @@ export default function CaddieSheet({
           >
             {mode === "voice" ? (
               liveActive ? (
-                <LiveVoiceBody messages={live.messages} status={live.status} caddy={caddy} />
+                <LiveVoiceBody
+                  messages={live.messages}
+                  status={live.status}
+                  caddy={caddy}
+                  paused={live.liveState === "suspended"}
+                />
               ) : (
                 <VoiceBody
                   phase={phase}
@@ -1596,7 +1601,13 @@ export default function CaddieSheet({
            * the existing mic button. Mirrors Voice.tsx:239-298 vmic pattern.
            */}
           {mode === "voice" && liveActive ? (
-            <LiveFooter status={live.status} muted={live.muted} onToggleMute={live.toggleMute} />
+            <LiveFooter
+              status={live.status}
+              muted={live.muted}
+              onToggleMute={live.toggleMute}
+              paused={live.liveState === "suspended"}
+              onResume={live.resume}
+            />
           ) : (
             showMic && (
             <div
@@ -1691,14 +1702,38 @@ function LiveVoiceBody({
   messages,
   status,
   caddy,
+  paused,
 }: {
   messages: RealtimeMessage[];
   status: RealtimeStatus;
   caddy: Caddy;
+  /** True when `liveState === "suspended"` (Slice E) — the socket already
+   *  idled out. The footer owns the "Paused — tap to resume" claim; this
+   *  empty-state hint must not contradict it by claiming the caddy is
+   *  actively listening (no-fake-data / honest-states). */
+  paused: boolean;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {messages.length === 0 && (
+      {messages.length === 0 && paused && (
+        // Paused (Slice E, follow-up) — the footer already claims "Paused —
+        // tap to resume"; this hint must agree with it, not contradict it
+        // with a fake "is listening" claim (no-fake-data / honest-states).
+        <div
+          style={{
+            fontFamily: T.mono,
+            fontSize: 9,
+            letterSpacing: 1.2,
+            color: T.pencilSoft,
+            textAlign: "center",
+            textTransform: "uppercase",
+            lineHeight: 1.5,
+          }}
+        >
+          Paused — tap resume below to keep talking.
+        </div>
+      )}
+      {messages.length === 0 && !paused && (
         <div
           style={{
             fontFamily: T.serif,
@@ -1763,11 +1798,68 @@ function LiveFooter({
   status,
   muted,
   onToggleMute,
+  paused,
+  onResume,
 }: {
   status: RealtimeStatus;
   muted: boolean;
   onToggleMute: () => void;
+  /** True when `liveState === "suspended"` (Slice E) — the socket is
+   *  already stopped by the 90s idle cutoff; render a calm paused affordance
+   *  instead of the stale/dead status + mute controls. */
+  paused: boolean;
+  onResume: () => void;
 }) {
+  if (paused) {
+    // Honest, calm suspended state — NOT an error (T.pencil, not
+    // T.warningInk/an alarm color) and no mute toggle (meaningless on a
+    // stopped socket). The mic button becomes the resume affordance.
+    return (
+      <div
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 20px 18px",
+          borderTop: `1px solid ${T.hairline}`,
+        }}
+      >
+        <div
+          style={{
+            flex: 1,
+            fontFamily: T.mono,
+            fontSize: 9,
+            letterSpacing: 1.3,
+            color: T.pencil,
+            textTransform: "uppercase",
+          }}
+        >
+          Paused — tap to resume
+        </div>
+        <button
+          onClick={onResume}
+          aria-label="Resume listening"
+          style={{
+            minWidth: 44,
+            minHeight: 44,
+            borderRadius: 99,
+            border: `1px solid ${T.hairline}`,
+            background: "transparent",
+            color: T.ink,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <LiveMicIcon stroke={T.ink} />
+        </button>
+      </div>
+    );
+  }
+
   // The setup flow's blue "listening" accent (owner: "I do like the blue
   // listening" ) — live and unmuted reads as actively listening.
   const listening = !muted && (status === "connected" || status === "listening");
