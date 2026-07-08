@@ -7384,3 +7384,29 @@ Riders: completed-round weather guard. Thirteen ships.
 NEXT (owner directive): caddie-realtime-conversation opus plan — Ask Caddie
 on the Realtime engine, hands-free like setup. Then reco-from-tee + static
 intel persistence + the iOS voicetel flush fix.
+
+## 2026-07-09 — cycle 17: caddie-opening-reco-from-tee (NOTICEABLE, integration/next, DONE)
+
+Step 0 clean: PR #109 OPEN/CLEAN, CI green on 71b104e, no owner comments (overnight),
+no approval to process. integration/next synced (0 behind main).
+
+Picked p1 caddie-opening-reco-from-tee. Opus plan (specs/caddie-opening-reco-from-tee-plan.md)
+factored the logic into a pure DOM/GPS-free helper. Builder (5c9b6db) added
+`frontend/src/lib/caddie/opening-shot.ts` — `resolveOpeningShotDistance(gps,tee,green)`:
+plausible GPS wins; implausible/absent GPS FALLS THROUGH to tee→green (fromTee:true);
+honest null when no green or no usable tee. CaddieSheet phrases the tee fallback honestly
+("I'm on the tee, about N yards to the pin. What should I hit off the tee?"); the
+openingGenRef/pristine-idle guards stayed byte-for-byte. 6 helper unit tests + 3 phrasing
+tests (incl. GPS-path `not.stringContaining("on the tee")` regression lock + null-idle).
+
+Review pass: reviewer CLEAN (no blocking; no security surface — pure client helper, no
+security-review needed), qa PASS (lint/tsc/build/voice 274/274/vitest 1660/1660/ruff),
+designer APPROVE-WITH-NIT. Folded two non-blocking nits in c2b27de: designer's "yards"
+unit-consistency on the tee sentence, and reviewer's restored `if(!greenForHole) return null`
+early guard (skips a pointless 6s geolocation wait when the hole has no green). Re-ran gates:
+lint/tsc clean, affected vitest 45/45, build ok, voice 274/274.
+
+NOTICEABLE — rides bundle PR #109 (already awaiting the owner's "ship it"; checklist updated).
+Per standing rule: NO push notification (overnight); the item accumulates on the bundle and
+merges with the owner's single approval. backlog 0ecbf49. One item this cycle (backend-heavy
+course-intel-static-persistence stays queued for next cycle). Head c2b27de.
