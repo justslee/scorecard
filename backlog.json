@@ -13,16 +13,6 @@
       "why": "OWNER 2026-07-09: (a) nearby search takes a long time \u2014 reduce results shown and/or make the geo search more efficient (geo-indexed query, cached area results, smaller page); (b) use the GolfAPI to fetch the course universe ONCE ('I believe this is just one API call \u2014 do not spend a lot of calls') and use it as a VERIFY step so junk rows like 'Golf Course' or 'Pebble Beach 9th Hole' never surface. CONSTRAINTS: the GolfAPI key currently 401s (owner must fix the account first \u2014 BLOCKED for the universe half until then); the plan MUST verify the exact call count for a universe dump from GolfAPI docs BEFORE any call is spent (pagination risk; hard budget cap 45/mo); store the universe permanently (one-time cost); verify layer = fuzzy-match Places/OSM results against the canonical list, downrank non-matches (never hard-drop mapped/known-good courses). The latency half (a) is UNBLOCKED \u2014 build now."
     },
     {
-      "id": "passive-shot-detection-spike",
-      "title": "Feasibility spike: passive shot detection (IMU+mic+GPS fusion, diagnostic-only)",
-      "type": "major",
-      "priority": 1,
-      "risk": "high",
-      "status": "ready",
-      "depends_on": [],
-      "why": "OWNER 2026-07-09 (feasibility question, scrutiny requested + given): mic+GPS alone CANNOT auto-score (putts invisible to both sensors ~40% of strokes; dwell ambiguity; partner-impact confusion; 95%/shot -> ~77%/hole correctness). BUT full swings ARE detectable (pocket IMU rotation signature -> gated 3s mic window for impact confirmation; Arccos's original phone-only approach validated this subset) and full shots are exactly what the phase-2 dispersion spine needs. ARCHITECTURE DECIDED: detection DRAFTS, the voice caddie CONFIRMS at hole-end ('I had you at 5 - drive, approach, chip, two putts?') \u2014 sensing becomes recorded truth via one word; NEVER silent auto-scoring (no-fake-data). THIS CARD = SPIKE ONLY: instrument IMU-triggered swing candidates + impact classification + GPS shot-location tagging behind a diagnostics screen (no scorecard effect), voicetel-style telemetry of candidates/confidence, run on the owner's real rounds, measure per-shot precision/recall before ANY UX. iOS constraints: foreground-session sensing only (no background mic), battery budget measured. Apple Watch = future reliability jump, out of scope. Needs opus plan (sensor pipeline, on-device classification, telemetry shape)."
-    },
-    {
       "id": "caddie-prompt-caching-text-path",
       "title": "Prompt caching on the Claude text-caddie path",
       "type": "minor",
