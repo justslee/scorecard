@@ -1716,7 +1716,9 @@
    "type": "silent",
    "priority": 6,
    "risk": "low",
-   "status": "needs-spec",
+   "status": "done-on-bundle",
+   "done_commit": "9c5e338",
+   "done_note": "Cycle 20 (2026-07-08): write-back key now a validated int in 1..36 (_valid_hole_number in courses_mapped.py), fully decoupled from the display hole_number; absent/malformed/out-of-range holeNumber skips the persist (logs debug, never raises) instead of defaulting to hole 1; defense-in-depth guard short-circuits before SQL/session. Folded in the _feature_center continue-past-malformed fix. Reviewer SHIP (no blocking), QA green (100/100 non-DB + 40 item tests, voice smoke 274/274). Rides bundle PR #109. DB round-trip left to CI Postgres gate.",
    "depends_on": [],
    "why": "Reviewer nit (2026-07-08, commit 0200576): course_intel.py build_hole_intelligence uses hole_number = hole_coords.get('holeNumber', 1); on a live compute with course_id set this write-back would persist THIS hole's elevation onto hole 1's green if a request ever omits holeNumber (and the persisted-read lookup keys by None -> miss). Edge-only (frontend always sends holeNumber) so non-blocking, but a data-integrity risk: gate the write-back on hole_coords.get('holeNumber') is not None (skip persist rather than default to 1). Also minor: _feature_center should 'continue' past a malformed first same-type feature instead of returning None.",
    "spec": ""
