@@ -7794,3 +7794,18 @@ AWAITING: owner on-device verification of live mode → drives Slices D/E
 (reconnect-after-drop, idle policy, polish → default-ON decision).
 Non-blocking notes logged: in-flight start() resurrection (shared with orb
 path), post-drop frozen transcript (deferred by plan).
+
+---
+
+## 2026-07-09 — SHIPPED: #111 THE LIVE CADDIE BY DEFAULT (+ rangefinder + faster voice)
+
+Owner "yes" ship. Merge 9520bb5 → main; deploy verified by headSha + health
+ok. TestFlight v1.0.850 (build 202607080902). The biggest bundle of the run
+— owner's direct-frustration cycle turned into: live mode DEFAULT ON (no
+flag, no taps, no Transcribing), live GPS rangefinder F/C/B tiles ("from
+where you stand"), 1.15x voice both paths, brevity+elevation prompts,
+markdown-leak strip, Slice D resilience, PostGIS CI (backend suite 1161).
+Sixteen ships this run.
+NEXT EPIC (owner-directed, design confirmed): caddie-hole-strategy-guides —
+opus plan first; preemptive per-hole research at mapping time, cached
+forever, never re-queried; phase 2 stats gated on significance.
