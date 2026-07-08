@@ -245,6 +245,7 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
           setIsSpeaking(false);
           voiceEvent("sheet-tts", "speak_failed", {
             detail: err instanceof Error ? err.name : "unknown",
+            flush: true,
           });
           // Unified failure rule: ANY chunk failure (synth OR play) ends the
           // turn immediately — no re-arm, no further chunks. This item never
@@ -306,6 +307,7 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
           if (controller.signal.aborted) return; // expected — superseded
           voiceEvent("sheet-tts", "speak_failed", {
             detail: err instanceof Error ? err.name : "unknown",
+            flush: true,
           });
           // Unified failure rule: ANY chunk failure (synth OR play) ends the
           // turn immediately — no re-arm, no further chunks. Unlike a play()
@@ -356,6 +358,7 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
           // autoplay blocked before unlock — a real gesture-driven speak() still works
           voiceEvent("sheet-tts", "prime_failed", {
             detail: err instanceof Error ? err.name : "unknown",
+            flush: true,
           });
         });
       } else {

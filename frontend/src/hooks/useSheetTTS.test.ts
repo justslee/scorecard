@@ -316,6 +316,7 @@ describe("useSheetTTS", () => {
       await waitFor(() =>
         expect(voiceEventMock).toHaveBeenCalledWith("sheet-tts", "prime_failed", {
           detail: "NotAllowedError",
+          flush: true,
         }),
       );
     });
