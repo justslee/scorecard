@@ -3,6 +3,78 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — caddie-realtime-slice-c1: live-mode Realtime transport in Ask Caddie sheet (frontend, SILENT — flag default OFF, integration/next, DONE)
+
+Implemented `specs/caddie-realtime-slice-c1-plan.md` (stage 1 of Slice C,
+folding in Slice B's shell — parent contract `specs/caddie-realtime-conversation-plan.md`).
+Adds a live-mode Realtime (WebRTC, server VAD, no tap-to-talk) path to the
+in-round Ask Caddie sheet behind a NEW pref `looper.caddieLiveMode`, default
+OFF — **silent rider, zero user-visible change** until the owner flips it.
+
+- NEW `frontend/src/lib/voice/live-mode-pref.ts` — `getCaddieLiveMode()` /
+  `setCaddieLiveMode()`, mirrors `tts-pref.ts` exactly. Default OFF.
+- NEW `frontend/src/hooks/useCaddieLiveSession.ts` — Realtime lifecycle: a
+  THIRD consumer of the existing warm-pool seams (`warmSession.takeWarm` →
+  `setEvents`/`emitCurrentStatus`/`attachMic`, or cold `new
+  RealtimeCaddieClient({roundId, personalityId})` → `start()` → `attachMic()`
+  — the latter call is a no-op on an already-open client, called uniformly so
+  "mic ready" means the same thing on both branches). Fires the opening turn
+  once via the existing `sendText` seam (never a new realtime.ts method).
+  Honest fallback (`fellBack`) on mint-timeout (`MINT_DEADLINE_MS`=3s),
+  connect-fail/error before ever connecting, or a mic-permission denial.
+- NEW `frontend/src/lib/caddie/opening-turn.ts` — `buildOpeningTurnText(shot)`
+  extracted from CaddieSheet's inline template so the classic auto-opening
+  effect and the live hook speak/type byte-identical text (plan §1.3 "keep it
+  in one place"). Minor deviation from the plan's literal file list (which
+  described this only as part of the CaddieSheet.tsx edit): it needed its own
+  module to avoid a CaddieSheet↔hook circular import — noted here per the
+  "minimal sound adjustment" guidance.
+- `frontend/src/components/CaddieSheet.tsx` — `wantLive = open &&
+  sessionActive && getCaddieLiveMode()`; when eligible, swaps the Voice-tab
+  body for `<LiveVoiceBody>` (bubbles restyled from
+  `VoiceRoundSetupRealtime`, already `sortByOrder`'d) and the mic footer for
+  `<LiveFooter>` (status line + mute toggle, no tap-to-start/stop — server
+  VAD runs it). Classic auto-opening-turn effect and the hands-free-loop
+  re-arm (`handlePlaybackEnd`) both early-return while live is active — no
+  double opening turn, no double mic. Live mode never calls
+  `tts.speak`/`beginStream`/`enqueue` — the Realtime client owns its own
+  audio sink (kept separate from the #108 iOS classic-path TTS fix).
+  Fallback renders the classic mic plus a quiet mono "Tap-to-talk mode"
+  line — never a dead sheet. `onClose` (backdrop/drag/X) now stops the live
+  client before the parent flips `open` false.
+- `frontend/src/app/round/[id]/RoundPageClient.tsx` — one-shot
+  `?liveMode=1`/`?liveMode=0` → `setCaddieLiveMode()` persistence effect
+  only (no other wiring touched, per plan §5).
+- NEW `frontend/src/components/CaddieSheet.realtime.test.tsx` — the 8
+  deterministic assertions from plan §7 (adopt-warm, cold-mint, opening
+  turn incl. honest-idle, transcript order via the REAL `sortByOrder`, mute,
+  3 fallback cases, flag-OFF silent-rider, no-TTS-in-live), 11 tests, all
+  green.
+
+**Zero edits** to `realtime.ts` / `warm-session.ts` / `realtime-ordering.ts` /
+`lib/caddie/transport.ts` (verified via `git diff --name-only`) — this slice
+only consumes their existing public seams, exactly as planned.
+
+**How the owner flips it on-device (stage 1, no shipped UI toggle):** open
+`…/round/<id>?liveMode=1` once on his iPhone to turn it on (`?liveMode=0` to
+turn off); the pref then persists in localStorage for every later sheet
+open. Console fallback on a tethered debug build:
+`localStorage.setItem('looper.caddieLiveMode','1')`.
+
+Gates green: `npm run lint` (0 errors), `npx tsc --noEmit` (clean), `npm run
+build` (compiled + all routes generated), `npx tsx voice-tests/runner.ts
+--smoke` (274/274), `npx vitest run` (81 files / 1681 tests, all green,
+including the new file), pinning set
+`realtime-warm.test.ts warm-session.test.ts realtime-dispatch.test.ts
+CaddieSheet.handsfree.test.tsx CaddieSheet.session.test.tsx` green and
+**unmodified** (confirmed via `git status`).
+
+Risk: low — flag defaults OFF, so the shipped behavior for every current
+user is byte-identical to today; the new code paths are only reachable once
+the owner explicitly opts in via the URL param on his own device. Device
+(real WebRTC/VAD) verification is still owner-only, per the parent plan's
+"Device-only verification" risk note — CI stays deterministic-mock.
+
 ## 2026-07-08 — harden-elevation-writeback-holenumber: validate the write-back key (backend, silent, integration/next, DONE)
 
 Implemented `specs/harden-elevation-writeback-holenumber-plan.md` — commit
@@ -7586,3 +7658,20 @@ STATE AT PAUSE:
 
 RESUME: next session (after limit reset or owner raises the cap) — retry
 cycle 18 with the findings above; then continue the queue.
+
+---
+
+## 2026-07-09 — SHIPPED: #109 faster caddie voice + from-tee reco + instant elevation
+
+Owner "ship it". Merge 450befc → main; deploy verified by headSha + health ok.
+TestFlight v1.0.836 (build 202607080618). NOTICEABLE ×3: A2 sentence-level
+TTS pipelining (voice starts on the first sentence), from-the-tee opening
+reco (works at home + pre-GPS first tee), instant elevation (static
+persistence, computed once per course). Silent riders: stage-timing
+telemetry, Realtime grounding parity (Slice A), iOS voicetel flush fix,
+elevation write-back hole-number hardening, spend-limit checkpoint.
+Fourteen ships this run. Survived a monthly-spend-limit pause with a clean
+checkpoint+resume mid-bundle.
+NEXT: Slice C — the Realtime transport migration (flag-gated, owner
+on-device verification) on a fresh bundle; ci-postgis-course-mapping-tests
+as the routine filler.

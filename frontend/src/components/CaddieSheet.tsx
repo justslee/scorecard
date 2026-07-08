@@ -55,6 +55,10 @@ import { createSentenceStream } from "@/lib/caddie/sentence-stream";
 import { useSheetTTS } from "@/hooks/useSheetTTS";
 import { getSheetTtsEnabled, setSheetTtsEnabled } from "@/lib/voice/tts-pref";
 import { createCaddieTurnTimer } from "@/lib/voice/caddie-turn-timing";
+import { getCaddieLiveMode } from "@/lib/voice/live-mode-pref";
+import { useCaddieLiveSession } from "@/hooks/useCaddieLiveSession";
+import { buildOpeningTurnText } from "@/lib/caddie/opening-turn";
+import type { RealtimeMessage, RealtimeStatus } from "@/lib/voice/realtime";
 import type {
   CaddieRecommendation,
   VoiceCaddieMessage,
@@ -175,6 +179,18 @@ const MAX_EMPTY_STREAK = 2; // §3.4 — consecutive empty/failed loop-armed lis
 // alone — real caddie replies' opening clauses comfortably clear it.
 const MIN_TTS_CHUNK_CHARS = 20;
 
+// Live-mode (Realtime) status → calm copy (specs/caddie-realtime-slice-c1-plan.md
+// §5). Mirrors VoiceRoundSetupRealtime's STATUS_LABEL.
+const LIVE_STATUS_LABEL: Record<RealtimeStatus, string> = {
+  idle: "Connecting…",
+  connecting: "Connecting…",
+  connected: "Ready — go ahead",
+  listening: "Listening…",
+  speaking: "Caddie speaking…",
+  closed: "Ended",
+  error: "Couldn't connect",
+};
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -202,6 +218,35 @@ export default function CaddieSheet({
   // through to scroll the background (esp. iOS WKWebView rubber-banding).
   useBodyScrollLock(open);
   const [mode, setMode] = useState<Mode>("voice");
+
+  // Live mode (Realtime transport) — behind `looper.caddieLiveMode`, default
+  // OFF (specs/caddie-realtime-slice-c1-plan.md). `sessionActive` already
+  // folds in `!isLocalRound` (RoundPageClient.tsx), so no extra prop is
+  // needed here. Fully offline at open skips the mint entirely (§9 edge case).
+  const wantLive = open && sessionActive && getCaddieLiveMode();
+  const live = useCaddieLiveSession({
+    active: wantLive && navigator.onLine,
+    roundId,
+    personaId,
+    resolveOpeningShot,
+  });
+  // Eligible for live AND hasn't fallen back this activation — gates both
+  // the render swap and the classic effects below. MUST also require
+  // navigator.onLine: offline-at-open means the hook never activates and
+  // never sets fellBack, so without this the sheet renders a dead
+  // "Connecting…" body with the classic path gated off (reviewer-caught,
+  // spec §9 never-dead).
+  const liveActive = wantLive && navigator.onLine && !live.fellBack;
+  // Live was attempted but degraded (mint-timeout / connect-fail / mic-deny)
+  // — render the classic voice UI plus a calm, honest mode label.
+  const showFallbackIndicator = wantLive && live.fellBack;
+  // Ref mirror so callbacks defined before `live` exists (handlePlaybackEnd,
+  // below) can read the current value without being recreated on every
+  // liveActive flip — mirrors the ttsEnabledRef/loopDroppedOutRef pattern.
+  const liveActiveRef = useRef(liveActive);
+  useEffect(() => {
+    liveActiveRef.current = liveActive;
+  }, [liveActive]);
 
   // Voice mode state
   const [isListening, setIsListening] = useState(false);
@@ -285,6 +330,7 @@ export default function CaddieSheet({
     if (
       !open ||
       mode !== "voice" ||
+      liveActiveRef.current || // live mode owns its own audio — never re-arm the classic loop
       !ttsEnabledRef.current ||
       loopDroppedOutRef.current ||
       isListening ||
@@ -685,6 +731,11 @@ export default function CaddieSheet({
       openingGenRef.current++; // invalidate any opening-turn async still awaiting GPS
       return;
     }
+    // Live mode owns the opening turn itself (spoken, via sendText — see
+    // useCaddieLiveSession) — the classic text auto-fire must not ALSO run,
+    // or the golfer gets a double opening turn and a phantom text mic
+    // (specs/caddie-realtime-slice-c1-plan.md §4/§9).
+    if (liveActive) return;
     if (openingFiredRef.current) return; // already fired this open (guards
     // re-render AND strict-mode double effect)
     if (!sessionActive || !roundId) return; // no session → open exactly as today
@@ -705,14 +756,12 @@ export default function CaddieSheet({
       // (specs/caddie-auto-shot-reco-plan.md deviation — reviewer-caught).
       if (streamAbortRef.current || recorderRef.current || convHistoryRef.current.length > 0) return;
       if (!shot) return; // no GPS fix → stay idle (open as today)
-      const q = shot.fromTee
-        ? `I'm on the tee, about ${shot.distanceYards} yards to the pin. What should I hit off the tee?`
-        : `I'm about ${shot.distanceYards} yards from the pin. What should I hit or do on this next shot?`;
+      const q = buildOpeningTurnText(shot);
       setTranscript(q); // existing state → shows in the user bubble (transparency)
       await askCaddie(q, { suppressError: true }); // identical streaming path; honest-idle on failure
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sessionActive, roundId, convHistory.length]);
+  }, [open, sessionActive, roundId, convHistory.length, liveActive]);
 
   const startListening = useCallback(async () => {
     setError(null);
@@ -1026,6 +1075,15 @@ export default function CaddieSheet({
   // typing in, not merely started (designer: premature-affordance drift).
   const showMic = mode === "voice" && phase !== "transcribing" && phase !== "thinking" && !isStreaming;
 
+  // Stop the live client BEFORE the parent flips `open` false — cuts the mic
+  // instantly rather than waiting a render cycle for `wantLive`/`active` to
+  // go false and the hook's own cleanup to run.
+  const handleClose = useCallback(() => {
+    live.stop();
+    onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClose, live.stop]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -1035,7 +1093,7 @@ export default function CaddieSheet({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          onClick={onClose}
+          onClick={handleClose}
           style={{
             position: "fixed",
             inset: 0,
@@ -1066,7 +1124,7 @@ export default function CaddieSheet({
           dragConstraints={{ top: 0, bottom: 0 }}
           dragElastic={{ top: 0, bottom: 0.6 }}
           onDragEnd={(_e, info) => {
-            if (shouldDismissSheetDrag(info.offset.y, info.velocity.y)) onClose();
+            if (shouldDismissSheetDrag(info.offset.y, info.velocity.y)) handleClose();
           }}
           style={{
             position: "fixed",
@@ -1286,7 +1344,7 @@ export default function CaddieSheet({
 
             {/* Close button — 44×44 (#4) */}
             <button
-              onClick={onClose}
+              onClick={handleClose}
               aria-label="Close caddie sheet"
               style={{
                 minWidth: 44,
@@ -1444,25 +1502,29 @@ export default function CaddieSheet({
             }}
           >
             {mode === "voice" ? (
-              <VoiceBody
-                phase={phase}
-                isSupported={isSupported}
-                interimTranscript={interimTranscript}
-                transcript={transcript}
-                voiceAnswer={voiceAnswer}
-                isStreaming={isStreaming}
-                convHistory={convHistory}
-                error={error}
-                accent={accent}
-                caddy={caddy}
-                onFollowUp={handleFollowUp}
-                onClear={() => {
-                  onUpdateConvHistory([]);
-                  setVoiceAnswer(null);
-                  setTranscript("");
-                  setError(null);
-                }}
-              />
+              liveActive ? (
+                <LiveVoiceBody messages={live.messages} status={live.status} caddy={caddy} />
+              ) : (
+                <VoiceBody
+                  phase={phase}
+                  isSupported={isSupported}
+                  interimTranscript={interimTranscript}
+                  transcript={transcript}
+                  voiceAnswer={voiceAnswer}
+                  isStreaming={isStreaming}
+                  convHistory={convHistory}
+                  error={error}
+                  accent={accent}
+                  caddy={caddy}
+                  onFollowUp={handleFollowUp}
+                  onClear={() => {
+                    onUpdateConvHistory([]);
+                    setVoiceAnswer(null);
+                    setTranscript("");
+                    setError(null);
+                  }}
+                />
+              )
             ) : (
               <TapBody
                 phase={phase}
@@ -1483,11 +1545,16 @@ export default function CaddieSheet({
           </div>
 
           {/*
-           * Mic button — non-scrolling bottom block (#2).
-           * Rendered OUTSIDE the scroll area so it stays fixed as
-           * conversation history grows. Mirrors Voice.tsx:239-298 vmic pattern.
+           * Footer — non-scrolling bottom block (#2), rendered OUTSIDE the
+           * scroll area so it stays fixed as conversation history/transcript
+           * grows. Live mode swaps in a status line + mute toggle (no
+           * tap-to-start/stop mic — server VAD runs it); classic mode keeps
+           * the existing mic button. Mirrors Voice.tsx:239-298 vmic pattern.
            */}
-          {showMic && (
+          {mode === "voice" && liveActive ? (
+            <LiveFooter status={live.status} muted={live.muted} onToggleMute={live.toggleMute} />
+          ) : (
+            showMic && (
             <div
               style={{
                 flexShrink: 0,
@@ -1499,6 +1566,19 @@ export default function CaddieSheet({
                 borderTop: `1px solid ${T.hairline}`,
               }}
             >
+              {showFallbackIndicator && (
+                <div
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 9,
+                    letterSpacing: 1.2,
+                    color: T.pencilSoft,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  Tap-to-talk mode
+                </div>
+              )}
               <motion.button
                 onClick={handleMicTap}
                 whileTap={{ scale: 0.93 }}
@@ -1548,10 +1628,145 @@ export default function CaddieSheet({
                   : "Tap to ask again"}
               </div>
             </div>
+            )
           )}
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-component: LiveVoiceBody — live-mode (Realtime) transcript, restyled
+// from VoiceRoundSetupRealtime's bubble list into CaddieSheet chrome
+// (specs/caddie-realtime-slice-c1-plan.md §4/§5). Messages arrive already
+// sortByOrder'd from useCaddieLiveSession — render as-is.
+// ---------------------------------------------------------------------------
+
+function LiveVoiceBody({
+  messages,
+  status,
+  caddy,
+}: {
+  messages: RealtimeMessage[];
+  status: RealtimeStatus;
+  caddy: Caddy;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {messages.length === 0 && (
+        <div
+          style={{
+            fontFamily: T.serif,
+            fontStyle: "italic",
+            fontSize: 14,
+            color: T.pencilSoft,
+            textAlign: "center",
+            lineHeight: 1.5,
+          }}
+        >
+          {status === "connecting" || status === "idle"
+            ? `Connecting to ${caddy.name}…`
+            : `Go ahead — ${caddy.name} is listening.`}
+        </div>
+      )}
+      {messages.map((m) => (
+        <div
+          key={m.id}
+          style={{
+            alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+            maxWidth: "85%",
+            padding: "10px 14px",
+            borderRadius: 14,
+            background: m.role === "user" ? T.ink : T.paperDeep,
+            border: m.role === "user" ? "none" : `1px solid ${T.hairline}`,
+            color: m.role === "user" ? T.paper : T.ink,
+            fontFamily: T.serif,
+            fontStyle: m.role === "user" ? "normal" : "italic",
+            fontSize: 15,
+            lineHeight: 1.4,
+            letterSpacing: -0.1,
+            opacity: m.partial ? 0.7 : 1,
+          }}
+        >
+          {m.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Mic glyph with an optional muted slash — mirrors VoiceRoundSetupRealtime's
+ *  local MicIcon (duplicated here rather than shared/exported, matching this
+ *  file's existing pattern of small, file-local icon helpers). */
+function LiveMicIcon({ size = 20, stroke = "currentColor", muted = false }: { size?: number; stroke?: string; muted?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round">
+      <rect x="9" y="3" width="6" height="12" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0" />
+      <path d="M12 18v3" />
+      {muted && <line x1="4" y1="3" x2="20" y2="21" />}
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-component: LiveFooter — live-mode footer: status line + mute toggle.
+// No tap-to-start/stop mic in live mode — server VAD runs it (§5).
+// ---------------------------------------------------------------------------
+
+function LiveFooter({
+  status,
+  muted,
+  onToggleMute,
+}: {
+  status: RealtimeStatus;
+  muted: boolean;
+  onToggleMute: () => void;
+}) {
+  return (
+    <div
+      style={{
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "14px 20px 18px",
+        borderTop: `1px solid ${T.hairline}`,
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          fontFamily: T.mono,
+          fontSize: 9,
+          letterSpacing: 1.3,
+          color: status === "error" ? T.warningInk : T.pencil,
+          textTransform: "uppercase",
+        }}
+      >
+        {LIVE_STATUS_LABEL[status]}
+      </div>
+      <button
+        onClick={onToggleMute}
+        aria-label={muted ? "Unmute" : "Mute"}
+        style={{
+          minWidth: 44,
+          minHeight: 44,
+          borderRadius: 99,
+          border: `1px solid ${muted ? T.warningInk : T.hairline}`,
+          background: muted ? `${T.warningInk}14` : "transparent",
+          color: muted ? T.warningInk : T.ink,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+        }}
+      >
+        <LiveMicIcon muted={muted} stroke={muted ? T.warningInk : T.ink} />
+      </button>
+    </div>
   );
 }
 
