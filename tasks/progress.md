@@ -7147,3 +7147,17 @@ fresh `roundActive` from the weather mirror ref (no stale closure). Dropped the 
 Gates: vitest weather-freshness 17/17 (+5 new deterministic cases), lint clean, tsc clean,
 next build ok, voice smoke 274/274. Committed 8ec8672 → integration/next; opened the fresh
 rolling bundle PR #108 (silent-only — no owner ping). Rides until a noticeable item lands.
+
+---
+
+## 2026-07-08 — SHIPPED: #108 iOS caddie voice fix + weather guard
+
+Owner "ship it". Merge 38ed64f → main (frontend-only). TestFlight v1.0.808
+(build 202607072128). P0: CapacitorHttp's patched fetch was corrupting the
+TTS mp3 blobs → NotSupportedError on every spoken reply on the owner's
+iPhone → hands-free loop never re-armed. Fixed via native CapacitorHttp
+blob fetch + primed persistent audio element + prime_failed telemetry.
+Riders: completed-round weather guard. Thirteen ships.
+NEXT (owner directive): caddie-realtime-conversation opus plan — Ask Caddie
+on the Realtime engine, hands-free like setup. Then reco-from-tee + static
+intel persistence + the iOS voicetel flush fix.
