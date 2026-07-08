@@ -3,6 +3,70 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — course-intel-static-persistence: persist per-hole elevation, skip USGS on repeat opens (backend, silent, integration/next, DONE)
+
+Implemented `specs/course-intel-static-persistence-plan.md` verbatim — commit
+`0200576`, pushed to `integration/next`. course-intel now reads persisted
+tee/green elevation + green slope from the stored green feature's JSONB
+`properties` (`courses_mapped`) before hitting USGS/3DEP: a cache hit (both
+`tee_elevation_ft`/`green_elevation_ft` present) issues ZERO network calls.
+A genuine live compute that produces real tee AND green elevations is
+best-effort written back via a NEW targeted `update_green_feature_properties`
+(single-feature JSONB `||` merge — never `upsert_course`, so it can't race
+or clobber curated hazard data mid-round). `/session/start` now fires a
+`BackgroundTasks` job (`_precompute_course_elevations`) that samples every
+hole still missing persisted elevation (2 batched 3DEP calls), so the
+second time the owner opens intel on a course, elevation is instant.
+
+- `backend/app/services/courses_mapped.py`: `update_green_feature_properties`
+  (targeted UPDATE, no-op-safe, returns bool) + `_elevation_patch` (maps a
+  `compute_hole_elevation_profile` result to the persisted shape,
+  `net_change_ft -> delta_ft`, omits `green_slope` when None).
+- `backend/app/caddie/course_intel.py`: `build_hole_intelligence` gains
+  optional `persisted_elevation`/`course_id`; read-first branch (persisted
+  hit -> zero calls) else unchanged live compute + best-effort write-back,
+  guarded so it NEVER persists a fabricated 0/None (absent stays absent).
+- `backend/app/routes/caddie.py`: `get_course_intel` feeds the green
+  feature's persisted props from the stored course it already reads (no
+  second `get_course`) via a new `_green_persisted_elevation` helper;
+  `start_session` gets a `BackgroundTasks` param and schedules the
+  precompute job; added `_feature_center` (reuses `_ring_centroid`) +
+  `_precompute_course_elevations` (idempotent — skips already-persisted
+  holes, resilient — never raises/fails the request, never `upsert_course`).
+- Tests: `backend/tests/test_course_intel_static_read.py` (NEW, non-DB) —
+  cache-hit skips `fetch_elevation_cached`/`compute_green_slope`/
+  `fetch_3dep_samples` entirely; delta_ft-absent fallback; absent-vs-zero
+  (partial live compute never calls `update_green_feature_properties`);
+  `_elevation_patch` omit/include green_slope. `backend/tests/test_precompute_elevation.py`
+  (NEW, non-DB) — `_feature_center` Point/Polygon/absent; precompute skips
+  holes missing tee-or-green and holes already persisted (idempotent),
+  zero-sample early return when nothing is computable, resilient to
+  `get_course` raising.
+- **Deviation from plan (flagged for eng-lead, not improvised around):**
+  the plan's DB-backed integration tests (b) `test_course_intel_write_back.py`,
+  (d)-DB-half `test_session_precompute.py`, and (e) `test_green_feature_update.py`
+  were NOT added. Discovered while implementing: CI's Postgres service
+  (`postgres:16`, vanilla, `.github/workflows/ci.yml`) has no PostGIS
+  extension, and `tests/integration/conftest.py`'s schema setup only runs
+  `Base.metadata.create_all` (ORM models) — it never bootstraps the
+  raw-SQL-only `courses`/`tee_sets`/`holes`/`hole_features`/`hole_yardages`
+  tables from `backend/supabase/migrations/001_course_mapping_schema.sql`
+  (guarded, not touched). This is pre-existing: no test in the repo
+  exercises `courses_mapped` against a live DB today. Adding these three
+  files as specified would either error at schema creation in CI (no
+  PostGIS) or require changing the shared CI Postgres service image —
+  out of scope for this backend-only plan. Recommend a follow-up infra
+  item: swap CI's postgres service to a PostGIS-enabled image (e.g.
+  `postgis/postgis:16-3.4`) and add a schema-bootstrap fixture for the
+  course-mapping tables to `tests/integration/conftest.py`.
+- Gates: `ruff check .` clean; `pytest tests/ --ignore=tests/integration -q`
+  → 1045 passed (incl. the 2 new files, 42 tests covering this change);
+  frontend `tsc --noEmit` clean (no frontend change); `voice-tests/runner.ts
+  --smoke` → 274/274 pass. DB-backed integration tests NOT run locally
+  (no Postgres on this machine) — see deviation note above re: CI coverage.
+- Silent (backend-only, no user-visible change) — rides along in the
+  `integration/next` bundle.
+
 ## 2026-07-07 — caddie-opening-reco-from-tee: honest from-the-tee fallback for the auto opening reco (frontend, noticeable, integration/next, DONE)
 
 Implemented `specs/caddie-opening-reco-from-tee-plan.md` exactly — commit
