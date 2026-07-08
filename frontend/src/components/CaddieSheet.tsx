@@ -32,7 +32,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, useDragControls } from "framer-motion";
-import { T, PAPER_NOISE } from "@/components/yardage/tokens";
+import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import type { Caddy } from "@/components/yardage/tokens";
 import { Waveform, PulseDot } from "@/components/yardage/Voice";
 import { VoiceRecorder, transcribeBlob } from "@/lib/voice/deepgram";
@@ -181,6 +181,13 @@ const MIN_TTS_CHUNK_CHARS = 20;
 
 // Live-mode (Realtime) status → calm copy (specs/caddie-realtime-slice-c1-plan.md
 // §5). Mirrors VoiceRoundSetupRealtime's STATUS_LABEL.
+/** The models are instructed to emit plain speech, but a stray **bold** or
+ * emoji still leaks (owner screenshot: "**Rip the driver, my friend!**").
+ * Spoken text must read like speech — strip markers defensively. */
+function stripSpokenMarkdown(text: string): string {
+  return text.replace(/\*\*/g, "").replace(/(^|\n)#+\s*/g, "$1");
+}
+
 const LIVE_STATUS_LABEL: Record<RealtimeStatus, string> = {
   idle: "Connecting…",
   connecting: "Connecting…",
@@ -686,7 +693,7 @@ export default function CaddieSheet({
         // and append the tail a second time ("Smooth 6.Smooth 6." — the race
         // CI's slower frame timing exposed).
         answerBuffer.cancel();
-        setVoiceAnswer(responseText); // authoritative full text — overwrites any partial coalesced render
+        setVoiceAnswer(stripSpokenMarkdown(responseText)); // authoritative full text — overwrites any partial coalesced render
 
         // Reconcile against the authoritative responseText: enqueue only the
         // not-yet-enqueued remainder, so the full text is spoken exactly
@@ -1761,6 +1768,9 @@ function LiveFooter({
   muted: boolean;
   onToggleMute: () => void;
 }) {
+  // The setup flow's blue "listening" accent (owner: "I do like the blue
+  // listening" ) — live and unmuted reads as actively listening.
+  const listening = !muted && (status === "connected" || status === "listening");
   return (
     <div
       style={{
@@ -1778,7 +1788,7 @@ function LiveFooter({
           fontFamily: T.mono,
           fontSize: 9,
           letterSpacing: 1.3,
-          color: status === "error" ? T.warningInk : T.pencil,
+          color: status === "error" ? T.warningInk : listening ? DEFAULT_ACCENT : T.pencil,
           textTransform: "uppercase",
         }}
       >
@@ -1791,9 +1801,9 @@ function LiveFooter({
           minWidth: 44,
           minHeight: 44,
           borderRadius: 99,
-          border: `1px solid ${muted ? T.warningInk : T.hairline}`,
-          background: muted ? `${T.warningInk}14` : "transparent",
-          color: muted ? T.warningInk : T.ink,
+          border: `1px solid ${muted ? T.warningInk : listening ? DEFAULT_ACCENT : T.hairline}`,
+          background: muted ? `${T.warningInk}14` : listening ? `${DEFAULT_ACCENT}14` : "transparent",
+          color: muted ? T.warningInk : listening ? DEFAULT_ACCENT : T.ink,
           cursor: "pointer",
           display: "flex",
           alignItems: "center",
@@ -1801,7 +1811,7 @@ function LiveFooter({
           flexShrink: 0,
         }}
       >
-        <LiveMicIcon muted={muted} stroke={muted ? T.warningInk : T.ink} />
+        <LiveMicIcon muted={muted} stroke={muted ? T.warningInk : listening ? DEFAULT_ACCENT : T.ink} />
       </button>
     </div>
   );
