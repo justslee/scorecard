@@ -2,6 +2,7 @@
 // absolute-base client (Clerk Bearer + NEXT_PUBLIC_API_URL). No relative "/api"
 // proxy, so it works in the static native build and passes the owner gate.
 
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type {
   CaddieRecommendation,
   WeatherConditions,
@@ -11,6 +12,7 @@ import type {
 } from './types';
 import { API_BASE, authHeaders, fetchAPI } from '../api';
 import { saveLastRecommendation } from './hole-intel-cache';
+import { dataUrlToBlob } from '../scan-helpers';
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   return fetchAPI<T>(`/api${path}`, {
@@ -805,16 +807,59 @@ export async function talkToCaddieStream(
 }
 
 /**
- * Synthesize a completed caddie reply to speech (specs/voice-tts-sheet-replies).
- * fetchAPI only speaks JSON, so this uses a direct fetch + authHeaders() —
- * same pattern as transcribeBlob() in lib/voice/deepgram.ts — and returns the
- * raw mp3 Blob for the caller to play through an <audio> element.
+ * Synthesize a completed caddie reply to speech (specs/voice-tts-sheet-replies,
+ * specs/fix-ios-tts-playback-plan.md). fetchAPI only speaks JSON, so this uses
+ * a direct call + authHeaders() — same auth pattern as transcribeBlob() in
+ * lib/voice/deepgram.ts — and returns the raw mp3 Blob for the caller to play
+ * through an <audio> element.
+ *
+ * Platform-branched (specs/fix-ios-tts-playback-plan.md Part A): on native
+ * iOS, `capacitor.config.ts` has `CapacitorHttp.enabled = true`, which patches
+ * `window.fetch` to route through native NSURLSession. This is the app's only
+ * receive-binary fetch through that path, and the patched-fetch
+ * `.blob()`/`.arrayBuffer()` reconstruction of a native binary response is
+ * known-flaky (corrupt bytes and/or an untyped Blob) — `URL.createObjectURL`
+ * on that Blob yields a resource WKWebView's <audio> element can't decode,
+ * surfacing as `play()` rejecting with `NotSupportedError`. So on native we
+ * bypass the patched fetch entirely and call the native HTTP plugin directly,
+ * decoding its base64 response ourselves with the already-tested
+ * `dataUrlToBlob` helper (guarantees correct bytes AND an explicit
+ * `Blob.type`). On web we keep `fetch`, but still always re-type the body via
+ * `arrayBuffer()` instead of `res.blob()` so `createObjectURL` is
+ * deterministic even if a proxy/browser hands back an untyped blob.
+ *
+ * Note: `CapacitorHttp.request` has no `AbortSignal` support, so on native we
+ * lose true mid-flight cancellation — `readTimeout`/`connectTimeout` replace
+ * the manual `SPEAK_TIMEOUT_MS` timer for that branch. Overlap/barge-in
+ * correctness is still fully preserved because the caller (useSheetTTS)
+ * guards the result with `if (controller.signal.aborted) return` AFTER the
+ * await — a superseded native response is discarded, never played. The web
+ * branch keeps the existing AbortController/external-abort wiring unchanged.
  */
 export async function speakCaddieReply(
   text: string,
   personalityId: string,
   signal?: AbortSignal,
 ): Promise<Blob> {
+  if (Capacitor.isNativePlatform()) {
+    const resp = await CapacitorHttp.request({
+      method: 'POST',
+      url: `${API_BASE}/api/voice/speak`,
+      headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+      data: { text, personality_id: personalityId },
+      responseType: 'blob',
+      readTimeout: SPEAK_TIMEOUT_MS,
+      connectTimeout: SPEAK_TIMEOUT_MS,
+    });
+    if (resp.status < 200 || resp.status >= 300) {
+      // On error resp.data is base64 of the error body — never feed it to the player.
+      throw new Error(`Speak failed (${resp.status})`);
+    }
+    // With responseType: 'blob' on native, resp.data is a base64 string.
+    // Reconstruct with an explicit type so createObjectURL is deterministic.
+    return dataUrlToBlob(`data:audio/mpeg;base64,${resp.data}`);
+  }
+
   const controller = new AbortController();
   const onExternalAbort = () => controller.abort(signal!.reason);
   if (signal) {
@@ -832,7 +877,8 @@ export async function speakCaddieReply(
     if (!res.ok) {
       throw new Error(`Speak failed (${res.status}): ${await res.text()}`);
     }
-    return await res.blob();
+    const buf = await res.arrayBuffer();
+    return new Blob([buf], { type: 'audio/mpeg' });
   } finally {
     clearTimeout(timer);
     if (signal) signal.removeEventListener('abort', onExternalAbort);

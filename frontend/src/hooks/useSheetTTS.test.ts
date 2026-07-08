@@ -171,4 +171,105 @@ describe("useSheetTTS", () => {
     act(() => el.dispatchEvent(new Event("pause")));
     expect(onPlaybackEnd).not.toHaveBeenCalled();
   });
+
+  // specs/fix-ios-tts-playback-plan.md Part B — prime the shared element with
+  // a REAL decodable silent source inside the gesture, and make sure that
+  // prime clip can never spuriously re-arm the hands-free loop.
+  describe("gesture-unlock priming (fix-ios-tts-playback-plan)", () => {
+    it("(b) unlock() synchronously sets a non-empty silent-audio src on the element", () => {
+      const { result } = renderHook(() => useSheetTTS());
+
+      act(() => result.current.unlock());
+
+      const src = document.querySelector("audio")!.getAttribute("src");
+      expect(src).toBeTruthy();
+      expect(src).toMatch(/^data:audio/);
+    });
+
+    it("(c) unlock() then speak() reuses the SAME element (count stays 1) and plays the blob URL src", async () => {
+      speakCaddieReplyMock.mockResolvedValue(makeBlob());
+      const { result } = renderHook(() => useSheetTTS());
+
+      act(() => result.current.unlock());
+      expect(document.querySelectorAll("audio").length).toBe(1);
+
+      act(() => result.current.speak("Nice drive.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+
+      expect(document.querySelectorAll("audio").length).toBe(1);
+      const el = document.querySelector("audio")!;
+      expect(el.getAttribute("src")).toBe("blob:mock-url");
+      expect(playSpy).toHaveBeenCalled();
+    });
+
+    it("(d) a new speak() while speaking, stop(), and a dispatched 'pause' all leave onPlaybackEnd uncalled", async () => {
+      speakCaddieReplyMock.mockResolvedValue(makeBlob());
+      const onPlaybackEnd = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+      act(() => result.current.unlock());
+      act(() => result.current.speak("First reply.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+
+      // Barge-in: a new speak() pauses the currently-playing element first.
+      act(() => result.current.speak("Second reply.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+      expect(onPlaybackEnd).not.toHaveBeenCalled();
+
+      act(() => result.current.stop());
+      expect(onPlaybackEnd).not.toHaveBeenCalled();
+
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("pause")));
+      expect(onPlaybackEnd).not.toHaveBeenCalled();
+    });
+
+    it("(e) a natural 'ended' after a real speak() still calls onPlaybackEnd exactly once", async () => {
+      speakCaddieReplyMock.mockResolvedValue(makeBlob());
+      const onPlaybackEnd = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+      act(() => result.current.unlock());
+      act(() => result.current.speak("Nice drive.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("ended")));
+
+      expect(onPlaybackEnd).toHaveBeenCalledTimes(1);
+    });
+
+    it("(e-guard) a dispatched 'ended' from priming only (unlock, no speak) does NOT call onPlaybackEnd", () => {
+      const onPlaybackEnd = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+      act(() => result.current.unlock());
+
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("ended")));
+
+      expect(onPlaybackEnd).not.toHaveBeenCalled();
+    });
+
+    it("(f) a rejected prime play() emits voiceEvent('sheet-tts', 'prime_failed', {detail})", async () => {
+      // NOT `new DOMException(...)`: jsdom's DOMException fails `instanceof
+      // Error` (a documented jsdom gap — real WebKit's does not, which is why
+      // prod telemetry correctly showed `detail=NotSupportedError`), so the
+      // `err instanceof Error ? err.name : "unknown"` guard would report
+      // "unknown" here under jsdom. A plain Error with `.name` set exercises
+      // the same code path deterministically in this test environment.
+      const rejection = new Error("x");
+      rejection.name = "NotAllowedError";
+      playSpy.mockRejectedValue(rejection);
+      const { result } = renderHook(() => useSheetTTS());
+
+      act(() => result.current.unlock());
+
+      await waitFor(() =>
+        expect(voiceEventMock).toHaveBeenCalledWith("sheet-tts", "prime_failed", {
+          detail: "NotAllowedError",
+        }),
+      );
+    });
+  });
 });
