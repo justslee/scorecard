@@ -3,6 +3,38 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## eng-lead cycle 31 — P0 live-caddie STALE-HOLE fix → bundle PR #115 (NOTICEABLE, awaiting ship-it)
+
+Owner-reported P0 with a session-verified diagnosis: the live (Realtime) caddie
+answered from a STALE hole (briefed hole 1 while on Bethpage hole 3) because
+`build_realtime_instructions` bakes the hole in at MINT time (warm pool mints at
+round open) and never refreshed on a hole change.
+
+- **Plan (opus):** `specs/caddie-stale-hole-live-plan.md`. Chose an out-of-band
+  `conversation.item.create` (`role:"system"`, NO `response.create` — silent
+  re-anchor) over `session.update`, verified against current Realtime docs
+  (session.update is next-response-only + would force the client to reconstruct
+  the full server-composed instruction string it doesn't hold).
+- **Build (a4e8d35):** `sendContext()` seam + `buildHoleContextText`; hole props
+  threaded through `useCaddieLiveSession`; connect-time anchor on every `connected`
+  transition (covers cold mint / warm adoption / reconnect / resume) + a
+  `holeNumber`-keyed effect firing exactly once per change (guarded by
+  `anchoredHoleRef`, no double-refresh); defense-in-depth `current_hole` into the
+  mint request (in-memory, no DB write, back-compat). Point-3 (from-tee 231y) =
+  course-data tee-coord follow-up, NOTED not fixed. Point-4 F/C/B source caption
+  relocated above the tiles (was occluded by the pill bar) + honest PLAYS sub.
+- **Observability follow-up (0d61f01, silent):** `voiceEvent("caddie",
+  "realtime_dc_error",…)` breadcrumb so a rejected `role:"system"` item is
+  diagnosable on a real round (the shape is unverified against live GA; fails safe).
+- **Reviews:** reviewer **SOUND** (exactly-once/lifecycle/silent invariants traced
+  + tested; pinning tests byte-preserved; security clean); qa **PASS** (fresh gates:
+  lint·tsc·build·voice 274/274·vitest 77/77 incl. 6 new lifecycle assertions·ruff);
+  designer **APPROVE** (occlusion fixed, tokens untouched, honest sub).
+- **Bundle:** PR #115 retitled + checklisted (1 noticeable + 4 silent). Notion card
+  #115 → **Needs Review** with TestFlight test steps + the GA-verification caveat.
+  Owner active in-session → **no push**; awaiting "ship it". Release-manager to cut
+  the TestFlight build once CI is green.
+
 ## 2026-07-08 — builder: caddie-stale-hole-live (frontend+backend, NOTICEABLE, integration/next, DONE)
 
 Implemented `specs/caddie-stale-hole-live-plan.md` exactly (P0, owner-reported: the
