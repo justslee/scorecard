@@ -3,6 +3,42 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — caddie-opening-reco-from-tee: honest from-the-tee fallback for the auto opening reco (frontend, noticeable, integration/next, DONE)
+
+Implemented `specs/caddie-opening-reco-from-tee-plan.md` exactly — commit
+`5c9b6db`, pushed to `integration/next`. When the auto opening caddie
+recommendation can't get a live GPS fix (absent/denied/timeout) OR the fix is
+implausible (>800y from the green), it now falls back to a from-the-tee
+recommendation instead of staying idle — phrased honestly ("I'm on the tee,
+about 365 to the pin. What should I hit off the tee?"), never claiming a
+position the player isn't at. Covers home testing and the first tee before
+GPS lock. All existing honest-null cases preserved (no green -> null; no GPS
+& no tee -> null).
+
+- NEW `frontend/src/lib/caddie/opening-shot.ts` — pure, DOM/GPS-free helper
+  `resolveOpeningShotDistance(gps, tee, green)` with the exact branch order
+  from the plan: no green -> null; plausible GPS wins; implausible GPS FALLS
+  THROUGH to the tee fallback (the core new behavior — was the bug); usable
+  tee -> `{ fromTee: true }`; else -> null. Same `1..800y` bounds on both
+  paths. 6 unit tests (`opening-shot.test.ts`) cover every branch incl. the
+  implausible-GPS-falls-through case.
+- `RoundPageClient.tsx`: `resolveOpeningShot` keeps the async GPS acquisition
+  + `withTimeout` in place, now delegates the distance math to the new
+  helper (added `teeForHole` alongside `greenForHole`).
+- `CaddieSheet.tsx`: prop type widened to
+  `{ distanceYards: number; fromTee?: boolean } | null`; only the `const q`
+  question-string line branches on `shot.fromTee` for tee wording. The
+  `openingGenRef`/`openingFiredRef`/pristine-idle guard block was left
+  byte-for-byte untouched per the plan.
+- `CaddieSheet.session.test.tsx`: added a tee-phrasing test, a regression
+  lock that the GPS path never says "on the tee", and a null-path assertion
+  that idle never shows tee phrasing either.
+- No deviation from the plan. No shared-type/DTO changes (`types.ts`,
+  `models.py` untouched, confirmed — this shape is a local UI contract only).
+- Gates: `npm run lint` clean, `tsc --noEmit` clean, `npm run build` green,
+  `voice-tests/runner.ts --smoke` 274/274 pass, full `vitest run` 1660/1660
+  pass (incl. new + touched tests).
+
 ## 2026-07-07 — caddie-realtime-conversation Slice A2: sentence-level TTS pipelining (frontend, noticeable-leaning latency, integration/next, DONE)
 
 Implemented `specs/caddie-realtime-conversation-plan.md` §6.5.4 (Slice A2) —
