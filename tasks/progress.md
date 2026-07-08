@@ -3,6 +3,71 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — caddie-hole-strategy-guides Slice 1 (backend + shared types, SILENT, integration/next, DONE)
+
+Implemented Slice 1 ONLY of `specs/caddie-hole-strategy-guides-plan.md` (§12):
+storage shape + read-through + both-mouth injection, WITHOUT the research
+writer. The guide is ALWAYS absent at runtime after this slice (no writer runs
+yet) — every hole context simply omits the line, never a placeholder
+([[no-fake-data-fallbacks]]). De-risks the shared-types sync and the
+both-mouth injection contract ahead of Slice 2 (writer + grounding validation)
+and Slice 3 (BackgroundTasks precompute), neither built here.
+
+- `backend/app/caddie/types.py` — new `HoleStrategyGuide(BaseModel)` (all
+  fields defaulted: `play_line`, `miss_side`, `green_notes` = "";
+  `common_mistakes`/`sources` = `Field(default_factory=list)`;
+  `generated_at`/`model` = ""; `schema_version` = 1); added
+  `strategy_guide: Optional[HoleStrategyGuide] = None` to `HoleIntelligence`.
+- `backend/app/caddie/guide_writer.py` (NEW) — Slice 1 contains ONLY
+  `format_guide_line(guide) -> str`: compact single-line "Local knowledge: …"
+  renderer composing non-empty `play_line`/`miss_side`/`green_notes`/up-to-3
+  `common_mistakes`; returns `""` for `None`/degenerate (mirrors
+  `hazards.format_hazards_line`'s empty-string convention). Dependency-light
+  (only imports `HoleStrategyGuide`) to avoid a cycle with `voice_prompts.py`.
+  Slice 2 will add the writer/validation to this same module.
+- `backend/app/caddie/course_intel.py` — `build_hole_intelligence(...)` gains
+  `persisted_guide: Optional[dict] = None`; best-effort parses it into
+  `HoleStrategyGuide` (try/except, never raises — malformed/non-dict blob ->
+  `strategy_guide=None`), same defensive style as `persisted_elevation`.
+- `backend/app/routes/caddie.py` — new `_green_persisted_guide(stored_hole)`
+  helper next to `_green_persisted_elevation`; `get_course_intel` passes
+  `persisted_guide=_green_persisted_guide(stored_hole)` into
+  `build_hole_intelligence`; `_build_session_voice_prompt` appends
+  `format_guide_line(hole_intel.strategy_guide)` right after the hazards line
+  when non-empty.
+- `backend/app/caddie/voice_prompts.py` — `_situation_block` appends
+  `format_guide_line(intel.strategy_guide)` right after the hazards line when
+  non-empty (realtime mouth). No circular import (verified: both modules
+  import cleanly together).
+- `frontend/src/lib/caddie/types.ts` — matching `HoleStrategyGuide` interface
+  + `strategy_guide?: HoleStrategyGuide` on `HoleIntelligence`, field-for-field
+  identical to the Pydantic model, all optional-safe.
+- Tests: `backend/tests/test_guide_writer.py` (NEW, 7 tests) —
+  `format_guide_line` populated/None/empty/whitespace-only/capped-at-3/
+  scaffolding-has-no-imperative-language/degenerate-empty-lists; read-through
+  tests added to `test_course_intel_static_read.py` (persisted_guide
+  populates/None/4 malformed shapes never raise); both-mouth injection tests
+  added to `test_realtime_tools.py` (`_situation_block`/
+  `build_realtime_instructions`) and `test_voice_stream.py`
+  (`_build_session_voice_prompt`) — present when seeded, ABSENT (no
+  placeholder) when `strategy_guide=None`; DB round-trip test added to
+  `test_courses_mapped_db.py::TestStrategyGuideRoundTrip` (write via
+  `update_green_feature_properties`, read via `get_course`, asserts the blob
+  round-trips AND pre-existing keys — `existing`, `tee_elevation_ft`,
+  `featureType` — survive the `||` merge). CI-only, self-skips locally
+  (confirmed: 8/8 collected, all SKIPPED, no local Postgres/docker used).
+
+Gates green: `ruff check .` clean; offline pytest (guide_writer +
+course_intel_static_read + realtime_tools + voice_stream + hazards +
+realtime_grounding) → 122 passed; full offline suite (`--ignore=tests/integration`)
+→ 1097 passed; `tests/integration` → 82 skipped (no failures); frontend
+`npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeds,
+`npx tsx voice-tests/runner.ts --smoke` → 274/274 pass.
+
+Commit `1efa798` on `integration/next`, pushed. Silent (guide is never
+populated in this slice — zero user-visible behavior change). No PR opened
+per instructions (rides the existing rolling bundle PR).
+
 ## 2026-07-08 — ci-postgis-course-mapping-tests (backend infra/tests, SILENT, integration/next, DONE)
 
 Implemented `specs/ci-postgis-course-mapping-tests-plan.md` exactly. Three files
