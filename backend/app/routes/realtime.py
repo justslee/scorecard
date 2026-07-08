@@ -18,7 +18,7 @@ from app.caddie.voice_prompts import build_realtime_instructions
 from app.caddie.setup_voice import SETUP_TOOLS, build_setup_instructions
 from app.caddie import memory as memory_mod
 from app.services.realtime_relay import mint_ephemeral_session, DEFAULT_TOOLS
-from app.services.clerk_auth import current_user_id
+from app.services.rate_limit import caddie_rate_limited_user
 
 
 def _client_secret_from_mint(mint: dict) -> tuple[str, int]:
@@ -64,7 +64,7 @@ class SetupSessionRequest(BaseModel):
 @router.post("/setup-session", response_model=StartRealtimeSessionResponse)
 async def start_setup_session(
     request: SetupSessionRequest,
-    user_id: str = Depends(current_user_id),
+    user_id: str = Depends(caddie_rate_limited_user),
 ):
     """Mint a Realtime session for CONVERSATIONAL ROUND SETUP (no round yet).
 
@@ -96,7 +96,7 @@ async def start_setup_session(
 @router.post("/session", response_model=StartRealtimeSessionResponse)
 async def start_realtime_session(
     request: StartRealtimeSessionRequest,
-    user_id: str = Depends(current_user_id),
+    user_id: str = Depends(caddie_rate_limited_user),
 ):
     """Mint an ephemeral OpenAI Realtime session for the given round.
 

@@ -12,6 +12,7 @@ import re
 from app.services.deepgram import transcribe_audio, grant_live_token
 from app.services.openai_tts import synthesize_speech
 from app.services.clerk_auth import current_user_id
+from app.services.rate_limit import caddie_rate_limited_user
 from app.caddie.personalities import load_personality
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
@@ -89,7 +90,7 @@ class SpeakRequest(BaseModel):
 
 
 @router.post("/speak")
-async def speak(req: SpeakRequest, user_id: str = Depends(current_user_id)):
+async def speak(req: SpeakRequest, user_id: str = Depends(caddie_rate_limited_user)):
     """Synthesize a completed caddie reply to speech (mp3), persona-matched.
 
     Resolves the SAME persona the Realtime orb uses (load_personality) so the
@@ -132,7 +133,9 @@ def _derive_confidence(scores: dict[str, int], player_names: list[str]) -> float
 
 
 @router.post("/parse-scores", response_model=VoiceScoreResponse)
-async def parse_voice_scores(request: VoiceScoreRequest):
+async def parse_voice_scores(
+    request: VoiceScoreRequest, user_id: str = Depends(caddie_rate_limited_user)
+):
     """Parse voice transcript to extract golf scores using Claude."""
 
     api_key = os.getenv("ANTHROPIC_API_KEY")

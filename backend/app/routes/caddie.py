@@ -46,6 +46,7 @@ from app.services.course_guides import _precompute_course_guides
 from app.services.elevation import sample_course_elevations
 from app.services.course_spatial import _ring_centroid
 from app.services.clerk_auth import current_user_id, optional_user_id
+from app.services.rate_limit import caddie_rate_limited_user
 
 log = logging.getLogger("looper.caddie")
 
@@ -635,7 +636,7 @@ async def append_session_message(
 
 
 @router.post("/session/recommend")
-async def session_recommend(request: SessionRecommendRequest, user_id: str = Depends(current_user_id)):
+async def session_recommend(request: SessionRecommendRequest, user_id: str = Depends(caddie_rate_limited_user)):
     """Get a recommendation using cached session state (weather, intel, stats, history).
 
     Caller must own the round.
@@ -819,7 +820,7 @@ or known tendencies when relevant.
 
 
 @router.post("/session/voice", response_model=VoiceCaddieResponse)
-async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(current_user_id)):
+async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(caddie_rate_limited_user)):
     """Voice caddie using session state — remembers entire round conversation.
 
     Caller must own the round.
@@ -953,7 +954,7 @@ async def _sse_reply(
 
 
 @router.post("/session/voice/stream")
-async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depends(current_user_id)):
+async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depends(caddie_rate_limited_user)):
     """Streaming twin of /session/voice — same auth/gates/prompt assembly,
     a token-by-token SSE reply instead of one JSON blob (specs/voice-streaming-replies-plan.md).
 
@@ -1160,7 +1161,7 @@ async def get_weather(
 async def get_course_intel(
     request: CourseIntelRequest,
     round_id: Optional[str] = None,
-    user_id: str = Depends(current_user_id),
+    user_id: str = Depends(caddie_rate_limited_user),
 ):
     """Build course intelligence. Caches in session only if caller owns the round.
 
@@ -1251,7 +1252,7 @@ async def get_course_intel(
 @router.post("/recommend")
 async def get_recommendation(
     request: RecommendationRequest,
-    user_id: str = Depends(current_user_id),
+    user_id: str = Depends(caddie_rate_limited_user),
 ):
     """Stateless recommendation (use /session/recommend for session-aware).
 
@@ -1408,7 +1409,7 @@ golf-focused. Never break character.
 @router.post("/voice", response_model=VoiceCaddieResponse)
 async def voice_caddie(
     request: VoiceCaddieRequest,
-    user_id: str = Depends(current_user_id),
+    user_id: str = Depends(caddie_rate_limited_user),
 ):
     """Stateless voice caddie (use /session/voice for session-aware).
 
@@ -1446,7 +1447,7 @@ async def voice_caddie(
 @router.post("/voice/stream")
 async def voice_caddie_stream(
     request: VoiceCaddieRequest,
-    user_id: str = Depends(current_user_id),
+    user_id: str = Depends(caddie_rate_limited_user),
 ):
     """Streaming twin of /voice (stateless) — same gate + prompt assembly,
     a token-by-token SSE reply instead of one JSON blob

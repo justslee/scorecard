@@ -1,12 +1,14 @@
 """Advanced voice parsing routes (migrated from Next.js /api/parse-voice*)."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import anthropic
 import os
 import json
 import re
 from typing import Optional
+
+from app.services.rate_limit import caddie_rate_limited_user
 
 router = APIRouter(prefix="/api/voice", tags=["voice"])
 
@@ -226,7 +228,9 @@ def _finalize_round_setup(
 
 
 @router.post("/parse-round-setup", response_model=RoundSetupResponse)
-async def parse_round_setup(request: RoundSetupRequest):
+async def parse_round_setup(
+    request: RoundSetupRequest, user_id: str = Depends(caddie_rate_limited_user)
+):
     """Parse a voice transcript into a round setup, conversationally.
 
     Merges this turn over any `current` state and returns `missing` /
@@ -324,7 +328,9 @@ class ScorecardResponse(BaseModel):
 
 
 @router.post("/parse-scorecard", response_model=ScorecardResponse)
-async def parse_scorecard(request: ScorecardRequest):
+async def parse_scorecard(
+    request: ScorecardRequest, user_id: str = Depends(caddie_rate_limited_user)
+):
     """OCR a golf scorecard photo into per-player hole scores.
 
     Server-side only: the Anthropic key never leaves the backend. Replaces the old
@@ -404,7 +410,9 @@ class VoiceTranscriptRequest(BaseModel):
 
 
 @router.post("/parse-transcript")
-async def parse_voice_transcript(request: VoiceTranscriptRequest):
+async def parse_voice_transcript(
+    request: VoiceTranscriptRequest, user_id: str = Depends(caddie_rate_limited_user)
+):
     """Parse comprehensive voice transcript for round data."""
     if not request.transcript:
         raise HTTPException(400, "No transcript provided")
