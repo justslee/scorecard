@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-09",
+  "updated": "2026-07-08 (caddie-excellence-audit: seeded 5 P1 caddie cards)",
   "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle). | 2026-07-07 hygiene: p2/p3 readies (hazard-grounding, persistent-map, tee-marker) were already shipped to main \u2014 statuses corrected; course-elevation superseded by real USGS elevation.py. | 2026-07-07 retro hygiene: VOICE AGENT AUDIT P1+P2 CORE IS COMPLETE \u2014 keyterms/auto-send/telemetry (#100), TTS sheet replies (#102, v1.0.750), streamed replies + voice-reply timeouts (#104, v1.0.767) all shipped to main. map-viewer-error-screen-restyle shipped in #103 (was mis-tagged in-progress) and voice-tts-sheet-replies shipped in #102 (was mis-tagged 'awaiting ship-it') \u2014 both corrected to done-shipped-main. Remaining voice work is refinement/device-verify (voice-agentic-setup, voice-live-transcription, voice-language-onboarding, voice-per-player-tees), not core audit. Seeded 3 next candidates (caddie-persona-tts-voices, caddie-hole-strategy-guides, looper-brain-parity) grounded in NORTHSTAR + memory.",
   "items": [
     {
@@ -11,6 +11,62 @@
       "status": "ready",
       "depends_on": [],
       "why": "OWNER 2026-07-09: (a) nearby search takes a long time \u2014 reduce results shown and/or make the geo search more efficient (geo-indexed query, cached area results, smaller page); (b) use the GolfAPI to fetch the course universe ONCE ('I believe this is just one API call \u2014 do not spend a lot of calls') and use it as a VERIFY step so junk rows like 'Golf Course' or 'Pebble Beach 9th Hole' never surface. CONSTRAINTS: the GolfAPI key currently 401s (owner must fix the account first \u2014 BLOCKED for the universe half until then); the plan MUST verify the exact call count for a universe dump from GolfAPI docs BEFORE any call is spent (pagination risk; hard budget cap 45/mo); store the universe permanently (one-time cost); verify layer = fuzzy-match Places/OSM results against the canonical list, downrank non-matches (never hard-drop mapped/known-good courses). The latency half (a) is UNBLOCKED \u2014 build now."
+    },
+    {
+      "id": "caddie-prompt-caching-text-path",
+      "title": "Prompt caching on the Claude text-caddie path",
+      "type": "minor",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "spec": "specs/caddie-excellence-audit.md",
+      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.1; area B = grade F). No prompt caching anywhere \u2014 the text caddie re-bills ~700-900 tokens of near-static system prefix (persona + _BASE_BEHAVIOR + HAZARD_GROUNDING_RULE + hole static geometry/hazards/guide) PLUS the full last-20-turn history on EVERY turn (_build_session_voice_prompt, routes/caddie.py:756-802). Restructure static->dynamic and set an Anthropic cache_control:{type:'ephemeral'} breakpoint after the per-round-stable prefix; render order tools->system->messages. SOTA: cache read ~0.1x input (up to 90% cheaper) + lower latency, break-even at 2 requests. Verify the pinned model's min-cacheable prefix (~1024-2048 tokens) \u2014 may need to co-locate more static content behind the breakpoint to clear the floor; confirm via usage.cache_read_input_tokens. Silent (cost/latency only, no wire-shape change). UNBLOCKED."
+    },
+    {
+      "id": "caddie-llm-rate-limiting",
+      "title": "Per-user rate limiting + spend cap on paid LLM endpoints",
+      "type": "minor",
+      "priority": 1,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "spec": "specs/caddie-excellence-audit.md",
+      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.2; area E = grade F). ZERO per-user rate/token/spend limits on the paid LLM endpoints \u2014 only guards are auth + a 4000-char input cap; an authed client can loop /voice/stream, /session/voice*, /realtime/session mint, /course-intel with no cost ceiling (the single biggest cost/scale risk, and it can drain the metered-overflow $50 cap). Add per-user RPM + TPM limits (enforce BOTH \u2014 request count alone misses one expensive prompt) and a hard monthly token/$ budget with 80/90% alerts; token-aware abuse flag (high-input/short-output = injection probing). Start single-box (in-process/Postgres counter); note Redis shared store is needed once we run >=2 workers (see caddie-multiworker, P2). Silent backend/infra. UNBLOCKED for single-box."
+    },
+    {
+      "id": "caddie-llm-timeouts-retries",
+      "title": "Timeouts + bounded retries on the Claude caddie calls",
+      "type": "minor",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "spec": "specs/caddie-excellence-audit.md",
+      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.3; area F). The Anthropic caddie calls pass no timeout/max_retries (routes/caddie.py:796,863,1359; memory.py:129) so they inherit the SDK ~10-min default \u2014 with --workers 1 a single hung call ties up the ONLY worker for minutes on-course (throughput cliff). Add explicit timeout (~20-30s) + bounded retries; degrade to calm in-character honest copy on exhaustion (matches the humanizeVoiceError / fail-to-honest-state rule). Contrast the already-bounded httpx timeouts (realtime mint 15s, TTS 30s). Cheap, high-value resilience. Silent. UNBLOCKED."
+    },
+    {
+      "id": "caddie-tool-loop-parity",
+      "title": "Tool-loop parity for the Claude text caddie (+ real get_carries)",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "spec": "specs/caddie-excellence-audit.md",
+      "classification": "noticeable (the sheet/fallback caddie can currently NOT fetch fresh numbers or act; parity makes it as capable as the orb \u2014 owner would feel smarter sheet answers)",
+      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.4; area C = grade D). The Realtime orb exposes 6 tools (one, get_carries, is a stub returning available:false); the classic Claude text path passes NO tools= at all (routes/caddie.py:781-822,1342-1374) \u2014 it can't fetch a recommendation, log a shot, or pull carries mid-turn, so the sheet/fallback brain is materially dumber than the orb. Give the Claude path the same tool schema (backing endpoints already exist: /session/recommend, /session/shot, /session/{id}/conditions, /session/{id}/player-profile) with a BOUNDED server-side tool loop (hard max-iteration + token-budget + no-progress stop \u2014 warning text alone does NOT stop a loop); implement get_carries for real (currently stubbed both ends, realtime.ts:118). Pairs with caddie-prompt-caching (don't mutate the tool set mid-round or it busts the cache). NEEDS AN OPUS PLAN. UNBLOCKED."
+    },
+    {
+      "id": "caddie-advice-eval-harness",
+      "title": "Caddie advice-quality eval harness (golden set + LLM-judge, CI gate)",
+      "type": "minor",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "spec": "specs/caddie-excellence-audit.md",
+      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.5; area G = grade D). No advice-QUALITY harness exists \u2014 caddie tests cover geometry/plumbing only, runtime LLM output has no automated quality gate, so 'good enough to replace a caddie' is unfalsifiable and every other caddie improvement is unmeasurable. Build a git-diffable golden JSONL (30-50 scenarios: hole geometry + player + question -> expected advice properties, incl. edge cases: dogleg, hazard carry, downhill lie, low-confidence parse). Two tiers per SOTA: deterministic assertions first (names a real club? sane yardage bounds? no hallucinated hazard? valid shape) + an LLM-JUDGE rubric ('grounded in the actual hole? accounts for stated lie/wind? appropriately concise?'); regression-gate in CI; de-bias the judge (judge with a DIFFERENT model than the one under test, randomize order, control for verbosity). Extends the existing offline voice-tests gate pattern. Silent. UNBLOCKED."
     },
     {
       "id": "caddie-realtime-conversation",

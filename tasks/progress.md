@@ -3,6 +3,33 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — eng-lead cycle 28: caddie-excellence AUDIT (owner-directed, docs/backlog, SILENT, DONE)
+
+Owner directive (2026-07-09): "run a review/research to determine improvements …
+eventually scalable but also amazingly good … should feel like a real caddie is
+replaceable." Audit-only cycle (no features built), same shape as the voice-agent
+audit. Three parallel workstreams: (1) domain research — what elite real caddies
+do; (2) SOTA research — production LLM-agent practice, verified vs Anthropic +
+OpenAI docs; (3) file-and-line code audit of the whole caddie stack, letter-graded.
+
+Deliverable: `specs/caddie-excellence-audit.md` — scored gap table (A–H), a
+prioritized P1/P2/P3 queue (each item: what/why/cost/dependency), and an "AMAZING
+vs merely good" section framing the real-caddie-replaceable bar.
+
+Scorecard: A providers B · B caching **F** · C tool-parity **D** · D memory C ·
+E rate-limiting **F** · F resilience/scale C · G advice-eval **D** · H grounding B.
+
+Seeded 5 P1 cards into `backlog.json` (status: ready): caddie-prompt-caching-text-path
+(minor), caddie-llm-rate-limiting (minor), caddie-llm-timeouts-retries (minor),
+caddie-tool-loop-parity (major/noticeable — needs opus plan), caddie-advice-eval-harness
+(minor). The "amazing" tier (dispersion-aware MEASURED targets, pre-round briefing,
+post-round debrief that writes memories, talk/quiet state machine, frustration reads)
+stays flagged as flagship epics — mostly gated on the phase-2 shot-tracking data spine.
+
+Step 0: board clean — no cards in Needs Review, no open bundle PR (last shipped
+#113, TestFlight v1.0.879). Docs+backlog only, so silent: committed to
+integration/next, no PR, no owner ping.
+
 ## 2026-07-08 — eng-lead cycle 27: course-search Places junk-venue filter (backend, SILENT, integration/next, DONE)
 
 Owner-observed relevance bug, now timely (Pebble Beach just went live in prod):
