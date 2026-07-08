@@ -3,6 +3,57 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — builder: caddie-stale-hole-live (frontend+backend, NOTICEABLE, integration/next, DONE)
+
+Implemented `specs/caddie-stale-hole-live-plan.md` exactly (P0, owner-reported: the
+live/Realtime caddie answered from a stale hole — on Bethpage hole 3 it opened with
+hole 1's briefing, because Realtime session instructions are baked at MINT time and
+never refresh on a hole change).
+
+- Load-bearing fix: `RealtimeCaddieClient.sendContext()` (`frontend/src/lib/voice/
+  realtime.ts`) — silent `conversation.item.create` (`role:"system"`, NO
+  `response.create`) that re-anchors the model to the current hole, per the plan's
+  primary mechanism. NOT verified against a live OpenAI Realtime connection this
+  cycle (voice-tests --smoke is deterministic/offline, no device available) — the
+  plan's pre-authorized `role:"user"` + `"[Course update]"` fallback is documented
+  but not needed/applied; a real device/staging check should confirm the GA model
+  accepts the system-role item before this ships to the owner.
+- `buildHoleContextText`/`HoleContext` (`frontend/src/lib/caddie/opening-turn.ts`,
+  new `opening-turn.test.ts`), threaded `holeNumber/holePar/holeYards` +
+  `anchoredHoleRef`/`holeContextRef` + `anchorHole()` into
+  `frontend/src/hooks/useCaddieLiveSession.ts`: called on every connect transition
+  (before the opening turn — corrects a warm-pool session minted at hole 1) and on
+  every hole-change effect while connected (exactly once per change, no
+  double-refresh). Forwarded from `frontend/src/components/CaddieSheet.tsx`.
+- Defense-in-depth (§3.8, additive): optional `current_hole` threaded through
+  `frontend/src/lib/caddie/api.ts` → `POST /realtime/session` →
+  `StartRealtimeSessionRequest` (`backend/app/routes/realtime.py`), sets
+  `session.current_hole` in-memory before `build_realtime_instructions` (no DB
+  write). Optional/back-compatible both sides — no `types.ts`/`models.py` change
+  needed (plan confirmed).
+- Point 3 diagnosis (§3.9, no logic change): the reported "231y on a 178y card" is
+  the tee-fallback branch being CORRECT — hole 3's ingested tee coordinate really is
+  ~231y from the green (course-data issue). Left a NOTE in `opening-shot.ts` and
+  added a cheap `opening_shot` telemetry breadcrumb; `opening-shot.test.ts` untouched.
+  Follow-up: audit Bethpage hole 3's ingested tee coordinate.
+- Point 4 UI (§3.10): moved the F/C/B source caption above the tile row in
+  `frontend/src/app/round/[id]/RoundPageClient.tsx` (the floating pill bar occluded
+  it below); tied the PLAYS tile sub to `fcbSource`. **Deviation from the plan's
+  literal wording**: used "from you"/"wind from you" instead of the plan's "elev
+  from you"/"wind+elev from you" — the fcbLive branch never actually applies
+  holeIntel's elevation term, so that label would fabricate an adjustment (kept the
+  plan's honest-labeling intent, not its exact copy).
+
+Gates all green: frontend lint, `tsc --noEmit`, `next build`, voice-tests --smoke
+(274/274), vitest across CaddieSheet.realtime/handsfree/session +
+opening-shot/opening-turn (5 files, 77/77 — extended CaddieSheet.realtime.test.tsx
+with `sendContext` on the fake client + 6 new assertions, added
+`test_in_round_mint_uses_request_current_hole_over_stored` to
+`test_realtime_tools.py`), backend `ruff check .` clean. Backend DB-backed tests not
+run locally (no local Postgres) — CI covers them. Committed `a4e8d35` on
+`integration/next`, pushed. **NOTICEABLE** — the live caddie visibly stops
+answering the wrong hole; worth flagging in the next approval bundle.
+
 ## eng-lead cycle 30 — caddie-llm-rate-limiting → bundle PR #115 (SILENT, DONE)
 
 Picked excellence-audit P1 area-E (grade F): zero per-user ceilings on paid LLM
