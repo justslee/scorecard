@@ -324,9 +324,8 @@ async def test_research_success_path_reads_the_sdk_surface(monkeypatch):
     from types import SimpleNamespace
 
     from app.caddie import guide_writer
-    from app.caddie.types import HoleStrategyGuide
 
-    parsed = HoleStrategyGuide(play_line="Favor center-left off the tee.")
+    parsed = guide_writer._WriterOutput(play_line="Favor center-left off the tee.")
     fake_result = SimpleNamespace(
         parsed_output=parsed,
         stop_reason="end_turn",
@@ -343,7 +342,7 @@ async def test_research_success_path_reads_the_sdk_surface(monkeypatch):
             # The exact params the code must send (verified against current
             # docs by the security review): model, max_tokens, output_format,
             # tools incl. web_search, thinking adaptive.
-            assert kwargs.get("output_format") is HoleStrategyGuide
+            assert kwargs.get("output_format") is guide_writer._WriterOutput
             assert any(
                 t.get("type", "").startswith("web_search") for t in kwargs.get("tools", [])
             )
