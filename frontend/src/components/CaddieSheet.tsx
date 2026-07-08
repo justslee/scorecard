@@ -706,7 +706,7 @@ export default function CaddieSheet({
       if (streamAbortRef.current || recorderRef.current || convHistoryRef.current.length > 0) return;
       if (!shot) return; // no GPS fix → stay idle (open as today)
       const q = shot.fromTee
-        ? `I'm on the tee, about ${shot.distanceYards} to the pin. What should I hit off the tee?`
+        ? `I'm on the tee, about ${shot.distanceYards} yards to the pin. What should I hit off the tee?`
         : `I'm about ${shot.distanceYards} yards from the pin. What should I hit or do on this next shot?`;
       setTranscript(q); // existing state → shows in the user bubble (transparency)
       await askCaddie(q, { suppressError: true }); // identical streaming path; honest-idle on failure

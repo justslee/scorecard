@@ -704,7 +704,7 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
     expect(transcript).not.toEqual(expect.stringContaining("yards from the pin"));
 
     // Transparency: the user bubble renders the same honest tee wording.
-    expect(await screen.findByText(/on the tee, about 365 to the pin/)).toBeTruthy();
+    expect(await screen.findByText(/on the tee, about 365 yards to the pin/)).toBeTruthy();
 
     act(() => {
       stream.pushToken("Smooth 3-wood off the tee.");

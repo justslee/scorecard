@@ -1051,6 +1051,7 @@ export default function RoundPage() {
   const greenForHole = holeCoordsForTiles?.green ?? null; // {lat,lng} | null
   const teeForHole = holeCoordsForTiles?.tee ?? null; // {lat,lng} | null
   const resolveOpeningShot = useCallback(async () => {
+    if (!greenForHole) return null; // no green coords → honest null; skip the GPS wait entirely
     let pos: { lat: number; lng: number } | null = null;
     try {
       pos = await withTimeout(GPSWatcher.getCurrentPosition(), 6000);
