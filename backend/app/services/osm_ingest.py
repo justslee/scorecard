@@ -13,9 +13,15 @@ No network, no database, no new dependencies.  The two exported symbols are:
 from __future__ import annotations
 
 import hashlib
+import math
 from typing import Any, Optional
 
-from app.services.course_spatial import build_course_feature_collection
+from app.services.course_spatial import (
+    _point_in_ring,
+    _ring_bbox,
+    _ring_centroid,
+    build_course_feature_collection,
+)
 
 # ── Default tee sets ──────────────────────────────────────────────────────────
 # Mirrors courses_mapped.DEFAULT_TEE_SETS so callers don't need to import it.
@@ -44,6 +50,157 @@ def _should_abort_empty(n_assembled_holes: int) -> bool:
         ``False`` → proceed; the course has at least one hole.
     """
     return n_assembled_holes == 0
+
+
+# ── Boundary-polygon hole selection ────────────────────────────────────────────
+#
+# Alternative to the ``golf:course:name`` tag filter (``fetch_course_geometry``'s
+# ``course_name`` arg) for multi-course facilities where individual hole ways
+# carry NO course-name tag at all — e.g. Pebble Beach: 79 ``golf=hole`` ways
+# spanning Pebble Beach Golf Links + Spyglass Hill + The Links at Spanish Bay +
+# Peter Hay, none tagged.  Instead, a NAMED ``leisure=golf_course`` boundary
+# polygon (fetched via ``osm.fetch_golf_course_boundaries``) is used to select
+# which hole LineStrings belong to the target course geographically.
+#
+# The selected holes are re-tagged with ``properties.course_name =
+# target_course_name`` so the *rest* of the pipeline — ``assemble_osm_course``'s
+# par/handicap merge, ``build_course_feature_collection``'s cross-course polygon
+# rejection, and ``elevation.sample_course_elevations`` — all keep working
+# unmodified via the existing tag-matching mechanism.  Holes NOT selected are
+# left untouched (course_name stays whatever it was, usually ``None`` at
+# untagged venues) so they remain available for nearest-hole distance
+# comparisons during cross-course polygon rejection — a stray green whose
+# nearest line is actually a neighbouring, non-selected hole is still excluded.
+
+def _point_in_boundary(lon: float, lat: float, boundary: dict) -> bool:
+    """Point-in-polygon test against a GeoJSON ``Polygon`` or ``MultiPolygon``.
+
+    Reuses the ray-casting :func:`~app.services.course_spatial._point_in_ring`
+    test.  For a ``MultiPolygon`` (OSM relation boundaries — e.g. a shared
+    multi-course facility mapped as one relation per sub-course) the point is
+    considered inside if it falls within ANY of the sub-polygons' outer rings.
+    Interior rings (polygon "holes") are intentionally ignored — course
+    boundaries are used only as a coarse hole-selection filter here.
+
+    Args:
+        lon, lat: Query point (decimal degrees).
+        boundary: GeoJSON ``Polygon`` or ``MultiPolygon`` dict (as returned by
+            ``osm.fetch_golf_course_boundaries``).
+
+    Returns:
+        ``True`` if the point falls inside any outer ring of *boundary*.
+    """
+    geom_type = boundary.get("type")
+    coords = boundary.get("coordinates") or []
+
+    if geom_type == "Polygon":
+        rings = [coords[0]] if coords and coords[0] else []
+    elif geom_type == "MultiPolygon":
+        rings = [poly[0] for poly in coords if poly and poly[0]]
+    else:
+        return False
+
+    for ring in rings:
+        if len(ring) < 4:
+            continue
+        _, clat = _ring_centroid(ring)
+        cos_lat = math.cos(math.radians(clat))
+        bbox = _ring_bbox(ring)
+        if _point_in_ring(lon, lat, ring, cos_lat, bbox):
+            return True
+    return False
+
+
+def _hole_inside_boundary(
+    coords: list[list[float]],
+    boundary: dict,
+    min_fraction: float,
+) -> bool:
+    """Return ``True`` if at least *min_fraction* of *coords* fall inside *boundary*."""
+    if not coords:
+        return False
+    n_inside = sum(1 for pt in coords if _point_in_boundary(pt[0], pt[1], boundary))
+    return (n_inside / len(coords)) >= min_fraction
+
+
+def apply_boundary_hole_selection(
+    holes: list[dict],
+    boundary: dict,
+    target_course_name: str,
+    min_fraction: float = 0.5,
+) -> list[dict]:
+    """Tag hole LineStrings that fall inside *boundary* with the target course name.
+
+    Args:
+        holes: GeoJSON hole Feature list (LineString geometry), e.g. the
+            ``"holes"`` key of ``fetch_course_geometry(...)``'s return value.
+            Should contain ALL courses' holes (unfiltered) so cross-course
+            polygon rejection downstream still has the full hole set to compare
+            against.
+        boundary: GeoJSON ``Polygon``/``MultiPolygon`` for the target course,
+            e.g. one entry's ``"boundary"`` from
+            ``osm.fetch_golf_course_boundaries``.
+        target_course_name: Value written to ``properties.course_name`` on
+            every selected hole — pass the same string as
+            ``assemble_osm_course``'s ``target_course_name`` argument so the
+            rest of the pipeline recognises these holes as the target course.
+        min_fraction: Minimum fraction (0.0–1.0) of a hole's LineString
+            vertices that must fall inside *boundary* to select it (default
+            0.5 — majority rule tolerates a tee box or green that pokes
+            slightly outside a hand-drawn OSM boundary, or a hole whose ways
+            are stitched from more than one OSM segment).
+
+    Returns:
+        A NEW list — same length and order as *holes*.  Selected hole dicts
+        are shallow-copied with a replaced ``properties`` dict (so the caller
+        never mutates *holes* in place); non-selected holes are the original
+        dict objects, unmodified.
+    """
+    result: list[dict] = []
+    for hole in holes:
+        coords = (hole.get("geometry") or {}).get("coordinates") or []
+        if _hole_inside_boundary(coords, boundary, min_fraction):
+            props = dict(hole.get("properties") or {})
+            props["course_name"] = target_course_name
+            tagged_hole = dict(hole)
+            tagged_hole["properties"] = props
+            result.append(tagged_hole)
+        else:
+            result.append(hole)
+    return result
+
+
+def match_boundary_by_name(boundaries: list[dict], query: str) -> Optional[dict]:
+    """Find the boundary dict whose ``name`` best matches *query* (case-insensitive).
+
+    Exact (case-insensitive) matches win over substring matches, so an exact
+    OSM name always beats an incidental partial hit.  Substring matching is
+    tried in both directions so a shorter query like ``"Pebble Beach"`` still
+    matches an OSM name of ``"Pebble Beach Golf Links"``, and vice versa.
+
+    Args:
+        boundaries: List of dicts as returned by
+            ``osm.fetch_golf_course_boundaries`` (each with a ``"name"`` key).
+        query: The ``--boundary-name`` CLI value to search for.
+
+    Returns:
+        The matching boundary dict, or ``None`` if *boundaries* is empty, or
+        no entry's name overlaps *query* at all.
+    """
+    q = query.strip().lower()
+    if not q:
+        return None
+
+    substring_match: Optional[dict] = None
+    for b in boundaries:
+        name = (b.get("name") or "").strip().lower()
+        if not name:
+            continue
+        if name == q:
+            return b
+        if substring_match is None and (q in name or name in q):
+            substring_match = b
+    return substring_match
 
 
 def _deterministic_uuid(key: str) -> str:

@@ -77,12 +77,14 @@ import sys
 # Make the backend package importable when run from the repo root or backend/.
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent))
 
-from app.services.osm import fetch_course_geometry  # noqa: E402
+from app.services.osm import fetch_course_geometry, fetch_golf_course_boundaries  # noqa: E402
 from app.services.osm_ingest import (  # noqa: E402
     _deterministic_uuid,
     _should_abort_empty,
+    apply_boundary_hole_selection,
     assemble_osm_course,
     embed_elevation_in_green_features,
+    match_boundary_by_name,
 )
 from app.services.elevation import sample_course_elevations  # noqa: E402
 from app.services.golfapi_cache import get_course_golf_data  # noqa: E402
@@ -111,13 +113,14 @@ async def _ingest(
     lat: float,
     lng: float,
     radius: int,
-    target_course_name: str,
+    target_course_name: str | None,
     course_key: str,
     course_name: str,
     address: str | None,
     dry_run: bool,
     golfapi_id: str,
     refresh_golfapi: bool,
+    boundary_name: str,
 ) -> None:
     course_id = _deterministic_uuid(course_key)
     location = {"lat": lat, "lng": lng}
@@ -127,7 +130,7 @@ async def _ingest(
         flush=True,
     )
     # Fetch ALL courses' holes (no course_name filter) so the spatial join can
-    # reject polygons that are physically closest to a non-Black hole.
+    # reject polygons that are physically closest to a non-target hole.
     geometry = await fetch_course_geometry(lat, lng, radius, course_name=None)
 
     n_holes = len(geometry.get("holes", []))
@@ -142,6 +145,55 @@ async def _ingest(
             "WARNING: no hole features returned.  Check lat/lng/radius or Overpass availability.",
             flush=True,
         )
+
+    # ── Boundary-polygon hole selection (alternative to the golf:course:name
+    #    tag filter) ─────────────────────────────────────────────────────────
+    #
+    # Precedence: an explicit --target-course tag filter always wins over
+    # --boundary-name if both are given (target_course_name is not None here
+    # only when --target-course was explicitly passed — see main()).  Used at
+    # venues like Pebble Beach where NO hole way carries a golf:course:name tag
+    # at all, so the tag filter can never select the right holes.
+    if boundary_name and target_course_name is None:
+        print(f"Fetching named golf-course boundaries (radius={radius} m) …", flush=True)
+        boundaries = await fetch_golf_course_boundaries(lat, lng, radius)
+        names = [b["name"] for b in boundaries]
+        print(f"Found {len(boundaries)} named boundary polygon(s): {names}", flush=True)
+
+        match = match_boundary_by_name(boundaries, boundary_name)
+        if match is None:
+            print(
+                f"ERROR: no boundary matched --boundary-name {boundary_name!r}.  "
+                f"Available names: {names}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        print(f"Matched boundary: {match['name']!r} ({match['osm_id']}) …", flush=True)
+        target_course_name = match["name"]
+        selected = apply_boundary_hole_selection(
+            geometry["holes"], match["boundary"], target_course_name=target_course_name,
+        )
+        n_selected = sum(
+            1 for h in selected
+            if (h.get("properties") or {}).get("course_name") == target_course_name
+        )
+        print(
+            f"Boundary-selected {n_selected} of {n_holes} hole LineStrings inside "
+            f"{target_course_name!r}.",
+            flush=True,
+        )
+        geometry["holes"] = selected
+    elif boundary_name and target_course_name is not None:
+        print(
+            f"NOTE: --target-course {target_course_name!r} given alongside "
+            f"--boundary-name {boundary_name!r} — tag filter wins; boundary "
+            "selection is skipped.",
+            flush=True,
+        )
+
+    if target_course_name is None:
+        target_course_name = _DEFAULT_TARGET_COURSE
 
     # I4: Sample 3DEP / EPQS elevations for every tee + green on the target course.
     # Uses a single batch HTTP round-trip via fetch_3dep_samples → compute_hole_elevation_profile.
@@ -299,8 +351,23 @@ def main() -> None:
     )
     parser.add_argument(
         "--target-course", dest="target_course",
-        default=_DEFAULT_TARGET_COURSE,
-        help=f"OSM golf:course:name to select (default '{_DEFAULT_TARGET_COURSE}')",
+        default=None,
+        help=(
+            f"OSM golf:course:name to select (default '{_DEFAULT_TARGET_COURSE}' "
+            "when neither this nor --boundary-name is given). Wins over "
+            "--boundary-name if both are passed."
+        ),
+    )
+    parser.add_argument(
+        "--boundary-name", dest="boundary_name",
+        default="",
+        help=(
+            "Alternative to --target-course for multi-course facilities where "
+            "hole ways carry no golf:course:name tag (e.g. Pebble Beach). "
+            "Matches a named leisure=golf_course boundary polygon (case-"
+            "insensitive substring) and selects hole LineStrings geographically "
+            "instead of by tag. Ignored if --target-course is also given."
+        ),
     )
     parser.add_argument(
         "--course-key", dest="course_key",
@@ -353,6 +420,7 @@ def main() -> None:
         dry_run=args.dry_run,
         golfapi_id=args.golfapi_id,
         refresh_golfapi=args.refresh_golfapi,
+        boundary_name=args.boundary_name,
     ))
 
 
