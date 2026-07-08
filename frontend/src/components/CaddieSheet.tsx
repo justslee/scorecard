@@ -231,8 +231,12 @@ export default function CaddieSheet({
     resolveOpeningShot,
   });
   // Eligible for live AND hasn't fallen back this activation — gates both
-  // the render swap and the classic effects below.
-  const liveActive = wantLive && !live.fellBack;
+  // the render swap and the classic effects below. MUST also require
+  // navigator.onLine: offline-at-open means the hook never activates and
+  // never sets fellBack, so without this the sheet renders a dead
+  // "Connecting…" body with the classic path gated off (reviewer-caught,
+  // spec §9 never-dead).
+  const liveActive = wantLive && navigator.onLine && !live.fellBack;
   // Live was attempted but degraded (mint-timeout / connect-fail / mic-deny)
   // — render the classic voice UI plus a calm, honest mode label.
   const showFallbackIndicator = wantLive && live.fellBack;
@@ -757,7 +761,7 @@ export default function CaddieSheet({
       await askCaddie(q, { suppressError: true }); // identical streaming path; honest-idle on failure
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sessionActive, roundId, convHistory.length]);
+  }, [open, sessionActive, roundId, convHistory.length, liveActive]);
 
   const startListening = useCallback(async () => {
     setError(null);

@@ -402,6 +402,25 @@ describe("CaddieSheet live mode — fallback (never a dead sheet)", () => {
   });
 });
 
+describe("CaddieSheet live mode — offline at open (spec §9)", () => {
+  it("renders the CLASSIC mic (never a dead 'Connecting…' body) when navigator.onLine is false at open", async () => {
+    const onLineSpy = vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(false);
+    try {
+      liveModeState.value = true;
+      renderSheet();
+      // The live hook must not activate and the sheet must show the classic
+      // tap-to-talk mic — reviewer-caught dead-sheet bug: liveActive omitted
+      // navigator.onLine, leaving LiveVoiceBody stuck on "Connecting…" with
+      // the classic path gated off.
+      expect(await screen.findByLabelText("Start recording")).toBeTruthy();
+      expect(screen.queryByText(/Connecting/)).toBeNull();
+      expect(warmSessionMock.takeWarm).not.toHaveBeenCalled();
+    } finally {
+      onLineSpy.mockRestore();
+    }
+  });
+});
+
 describe("CaddieSheet live mode — flag OFF (silent-rider invariant)", () => {
   it("never constructs a client or calls takeWarm; renders the classic UI", async () => {
     liveModeState.value = false;
