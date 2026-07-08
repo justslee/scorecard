@@ -154,10 +154,15 @@ const realtimeMock = vi.hoisted(() => {
   };
   class FakeRealtimeCaddieClient {
     static instances: FakeRealtimeCaddieClient[] = [];
+    // Slice D Gap-2 test support: queue a custom `start()` implementation
+    // (e.g. a manually-controlled deferred promise) for the NEXT constructed
+    // instance. Consumed (shifted) once per construction; defaults to the
+    // instantly-resolving stub when empty.
+    static pendingStartImpls: Array<() => Promise<void>> = [];
     opts: Record<string, unknown>;
     events: Events;
     currentStatus = "connecting";
-    start = vi.fn(async () => {});
+    start: ReturnType<typeof vi.fn>;
     attachMic = vi.fn(async () => {});
     setMuted = vi.fn();
     stop = vi.fn();
@@ -171,6 +176,8 @@ const realtimeMock = vi.hoisted(() => {
     constructor(opts: Record<string, unknown>, events: Events = {}) {
       this.opts = opts;
       this.events = events;
+      const impl = FakeRealtimeCaddieClient.pendingStartImpls.shift();
+      this.start = vi.fn(impl ?? (async () => {}));
       FakeRealtimeCaddieClient.instances.push(this);
     }
     emitStatus(s: string) {
@@ -198,7 +205,8 @@ vi.mock("@/lib/voice/warm-session", () => ({
 }));
 
 import CaddieSheet from "./CaddieSheet";
-import type { CaddiePersonalityInfo } from "@/lib/caddie/types";
+import type { CaddiePersonalityInfo, VoiceCaddieMessage } from "@/lib/caddie/types";
+import { REALTIME_IDLE_DISCONNECT_MS } from "@/lib/voice/idle-timer";
 
 type FakeClient = InstanceType<typeof realtimeMock.FakeRealtimeCaddieClient>;
 
@@ -234,6 +242,27 @@ function renderSheet(overrides: Partial<React.ComponentProps<typeof CaddieSheet>
   return { ...utils, props };
 }
 
+/**
+ * Like renderSheet, but `onUpdateConvHistory` actually feeds the updated
+ * history back into `convHistory` via a rerender — the real parent
+ * (RoundPageClient) lifts this state, but the plain `vi.fn()` spy used
+ * elsewhere in this file never loops it back, which is fine for
+ * call-args-only assertions but not for a test that needs the seeded
+ * fallback transcript to actually render.
+ */
+function renderControlledSheet(overrides: Partial<React.ComponentProps<typeof CaddieSheet>> = {}) {
+  const props = buildProps(overrides);
+  let rerenderFn: (ui: React.ReactElement) => void = () => {};
+  const onUpdateConvHistory = vi.fn((history: VoiceCaddieMessage[]) => {
+    props.convHistory = history;
+    rerenderFn(<CaddieSheet {...props} />);
+  });
+  props.onUpdateConvHistory = onUpdateConvHistory;
+  const utils = render(<CaddieSheet {...props} />);
+  rerenderFn = utils.rerender;
+  return { ...utils, props };
+}
+
 /** Drains pending microtasks (async continuations past a mocked `await`). */
 async function flush(times = 8) {
   for (let i = 0; i < times; i++) {
@@ -248,6 +277,7 @@ beforeEach(() => {
   warmSessionMock.takeWarm.mockReset();
   warmSessionMock.takeWarm.mockReturnValue(null);
   realtimeMock.FakeRealtimeCaddieClient.instances = [];
+  realtimeMock.FakeRealtimeCaddieClient.pendingStartImpls = [];
   ttsSpeakSpy.mockClear();
   ttsBeginStreamSpy.mockClear();
   ttsEnqueueSpy.mockClear();
@@ -450,5 +480,178 @@ describe("CaddieSheet live mode — no TTS in live", () => {
     expect(ttsSpeakSpy).not.toHaveBeenCalled();
     expect(ttsBeginStreamSpy).not.toHaveBeenCalled();
     expect(ttsEnqueueSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice D — post-connected resilience
+// (specs/caddie-realtime-slice-d-plan.md §8). Deterministic, real timers
+// unless noted — `sortByOrder` stays real throughout.
+// ---------------------------------------------------------------------------
+
+describe("CaddieSheet live mode — Slice D reconnect", () => {
+  it("drop -> reconnect SUCCESS: transcript preserved + ordered, no re-greet, no fallback label", async () => {
+    const resolveOpeningShot = vi.fn(async () => ({ distanceYards: 150 }));
+    renderSheet({ resolveOpeningShot });
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+    expect(first.sendText).toHaveBeenCalledTimes(1); // opening turn fired once
+
+    act(() => {
+      first.emitMessage({ id: "old-1", role: "user", text: "What club from 150?", partial: false, order: 1 });
+      first.emitMessage({ id: "old-2", role: "assistant", text: "Smooth 7-iron.", partial: false, order: 2 });
+    });
+    await flush();
+
+    // Unexpected drop shortly after activity (real timers, tiny elapsed) => reconnect.
+    act(() => first.emitStatus("closed"));
+    await flush();
+
+    const instances = realtimeMock.FakeRealtimeCaddieClient.instances;
+    expect(instances).toHaveLength(2); // exactly one cold-mint reconnect
+    const second = instances[1];
+    expect(second.start).toHaveBeenCalledTimes(1);
+    expect(second.attachMic).toHaveBeenCalledTimes(1);
+    // The dead client's handlers were detached before stop() — no re-entrancy.
+    expect(first.setEvents).toHaveBeenCalledWith({});
+    expect(first.stop).toHaveBeenCalled();
+
+    act(() => second.emitStatus("connected"));
+    await flush();
+    act(() => {
+      second.emitMessage({ id: "new-1", role: "user", text: "What about the wind?", partial: false, order: 1 });
+      second.emitMessage({ id: "new-2", role: "assistant", text: "Take one more club.", partial: false, order: 2 });
+    });
+    await flush();
+
+    // Cross-client ordering (§2.3): the reconnect client's own order (1,2)
+    // is offset so it sorts strictly AFTER the preserved pre-drop turns.
+    const bubbles = screen.getAllByText(
+      /What club from 150\?|Smooth 7-iron\.|What about the wind\?|Take one more club\./,
+    );
+    expect(bubbles.map((el) => el.textContent)).toEqual([
+      "What club from 150?",
+      "Smooth 7-iron.",
+      "What about the wind?",
+      "Take one more club.",
+    ]);
+
+    expect(first.sendText).toHaveBeenCalledTimes(1); // still just the one opening turn
+    expect(second.sendText).not.toHaveBeenCalled(); // no re-greet on the reconnect client
+    expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Tap-to-talk mode")).toBeNull();
+    expect(screen.getByLabelText("Mute")).toBeTruthy(); // still the live footer, not classic mic
+  });
+
+  it("drop -> reconnect FAIL -> classic fallback: mic usable, transcript preserved, no re-greet", async () => {
+    const resolveOpeningShot = vi.fn(async () => ({ distanceYards: 150 }));
+    renderControlledSheet({ resolveOpeningShot });
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+
+    // Two full turns pre-drop — enough for the classic VoiceBody's history
+    // list (which renders everything except the "current" last pair) to
+    // surface at least one preserved turn.
+    act(() => {
+      first.emitMessage({ id: "old-1", role: "user", text: "What club from 150?", partial: false, order: 1 });
+      first.emitMessage({ id: "old-2", role: "assistant", text: "Smooth 7-iron.", partial: false, order: 2 });
+      first.emitMessage({ id: "old-3", role: "user", text: "And with the wind?", partial: false, order: 3 });
+      first.emitMessage({ id: "old-4", role: "assistant", text: "Take one more club.", partial: false, order: 4 });
+    });
+    await flush();
+
+    act(() => first.emitStatus("closed")); // unexpected drop -> reconnect
+    await flush();
+
+    const second = realtimeMock.FakeRealtimeCaddieClient.instances[1];
+    act(() => second.emitStatus("closed")); // the reconnect itself fails
+    await flush();
+
+    expect(screen.getByLabelText("Start recording")).toBeTruthy();
+    expect(screen.getByText("Tap-to-talk mode")).toBeTruthy();
+    // The first preserved turn is on screen (VoiceBody's history bucket).
+    expect(screen.getByText("What club from 150?")).toBeTruthy();
+    expect(screen.getByText("Smooth 7-iron.")).toBeTruthy();
+    // No re-greet: the classic auto-open effect never fired a second GPS
+    // resolve/opening turn on top of the preserved conversation.
+    expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(2); // no third mint
+  });
+
+  it("fallback-during-pending-start (Gap 2): no resurrection, no second mint", async () => {
+    vi.useFakeTimers();
+    let resolveStart: () => void = () => {};
+    realtimeMock.FakeRealtimeCaddieClient.pendingStartImpls.push(
+      () => new Promise<void>((resolve) => { resolveStart = resolve; }),
+    );
+
+    renderSheet();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    expect(first.start).toHaveBeenCalledTimes(1);
+    expect(first.attachMic).not.toHaveBeenCalled();
+
+    // Mint deadline fires while start() is still pending -> classic fallback.
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(screen.getByLabelText("Start recording")).toBeTruthy();
+    expect(screen.getByText("Tap-to-talk mode")).toBeTruthy();
+
+    // The long-pending start() now resolves — Gap 2 guard must stop the
+    // continuation from resurrecting the dead client.
+    await act(async () => {
+      resolveStart();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(first.attachMic).not.toHaveBeenCalled(); // no resurrection
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(1); // no second mint
+    expect(screen.getByLabelText("Start recording")).toBeTruthy(); // still classic mic
+  });
+
+  it("clean idle close does NOT reconnect or fall back", async () => {
+    vi.useFakeTimers();
+    const resolveOpeningShot = vi.fn(async () => ({ distanceYards: 150 }));
+    renderSheet({ resolveOpeningShot });
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+    expect(first.sendText).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      first.emitMessage({ id: "old-1", role: "user", text: "What club from 150?", partial: false, order: 1 });
+      first.emitMessage({ id: "old-2", role: "assistant", text: "Smooth 7-iron.", partial: false, order: 2 });
+    });
+    await flush();
+
+    // Genuine silence for the full idle window — Date advances with the
+    // fake timer, so the hook's local activity mirror elapses the threshold.
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => first.emitStatus("closed"));
+    await flush();
+
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(1); // no reconnect mint
+    expect(screen.queryByText("Tap-to-talk mode")).toBeNull();
+    // The live transcript stays visible — resting, not fallen back.
+    expect(screen.getByText("What club from 150?")).toBeTruthy();
+    expect(screen.getByText("Smooth 7-iron.")).toBeTruthy();
+    expect(first.sendText).toHaveBeenCalledTimes(1); // not re-fired
   });
 });

@@ -3,6 +3,68 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — caddie-realtime-slice-d: live-session resilience (frontend, SILENT — flag default OFF, integration/next, DONE)
+
+Implemented `specs/caddie-realtime-slice-d-plan.md` exactly — closes the two
+reviewer-logged gaps in the flag-gated (`looper.caddieLiveMode`, still default
+OFF) live caddie mode from Slice C1. **Zero edits** to `realtime.ts` /
+`warm-session.ts` / `realtime-ordering.ts`; `useVoiceCaddie.ts` untouched
+(plan §5 verified it has no resurrection seam).
+
+- `frontend/src/hooks/useCaddieLiveSession.ts` — bounded reconnect state
+  machine (plan §2/§3). New refs: `reconnectUsedRef`, `reconnectingRef`,
+  `reconnectedRef`, `reconnectDeadlineRef`, `lastActivityAtRef`,
+  `orderOffsetRef`/`maxOrderRef`, `mutedRef`. Post-connected `closed`/`error`
+  now classifies clean-idle (rest — no reconnect/fallback) vs. an unexpected
+  drop (ONE quiet cold-mint `startReconnect()`, reusing `MINT_DEADLINE_MS` as
+  the reconnect budget) via a hook-local activity-mirror clock compared
+  against `REALTIME_IDLE_DISCONNECT_MS - IDLE_MARGIN_MS` (imported
+  read-only from `idle-timer.ts`). `startReconnect()` detaches the dead
+  client's handlers (`setEvents({})`) before `stop()`, cold-mints a fresh
+  `RealtimeCaddieClient`, and re-applies `mutedRef` after `attachMic()`.
+  Cross-client transcript ordering fixed by offsetting every post-reconnect
+  message by `maxOrderRef + 1` in `upsert` (the new client's own
+  `MessageOrderTracker` restarts near 0). Gap 2 (resurrection): every
+  `await` in both the warm and cold branches of the activation effect (plus
+  the new reconnect branch) now also checks `fellBackRef.current`, not just
+  `cancelled` — a fallback that fires while `start()`/`attachMic()` is still
+  pending can no longer have its continuation revive the dead client.
+- `frontend/src/components/CaddieSheet.tsx` — fallback continuity (plan §4).
+  A one-shot effect seeds `convHistory` from `live.messages` the moment
+  `showFallbackIndicator` flips true (guarded by `seededFallbackRef`, only
+  when `convHistory` is still empty), so the classic tap-to-talk body renders
+  the preserved live conversation instead of going blank. `liveTranscriptSeenRef`
+  suppresses the classic auto-opening-turn effect so a fallback after a
+  mid-round drop never re-greets. Both refs reset when `wantLive` goes false.
+  Flag-off path is untouched — all of this sits behind `wantLive`.
+- `frontend/src/components/CaddieSheet.realtime.test.tsx` — 4 new
+  deterministic tests (plan §8): drop→reconnect SUCCESS (transcript
+  preserved + correctly ordered across the two clients, no re-greet, no
+  fallback label), drop→reconnect FAIL→classic fallback (mic usable,
+  "Tap-to-talk mode" shown, pre-drop transcript preserved via the
+  `convHistory` seed — verified with a small controlled-render harness since
+  the file's existing `onUpdateConvHistory` spy doesn't loop state back),
+  fallback-during-pending-start (Gap 2 — no `attachMic` resurrection, no
+  second mint; required extending the file's `FakeRealtimeCaddieClient` with
+  a `pendingStartImpls` queue so a test can hand the next-constructed
+  instance a manually-controlled deferred `start()`), and clean-idle-close
+  (no reconnect, no fallback, transcript stays visible). `sortByOrder` stays
+  real throughout.
+
+No deviations from the plan otherwise. Gates green: `npm run lint` (0
+errors), `npx tsc --noEmit` (clean), `npm run build` (compiled + all routes
+generated), `npx tsx voice-tests/runner.ts --smoke` (274/274), `npx vitest
+run` (81 files / 1686 tests, all green), pinning set
+`realtime-warm.test.ts warm-session.test.ts realtime-dispatch.test.ts
+transport.test.ts CaddieSheet.handsfree.test.tsx CaddieSheet.session.test.tsx`
+green and **unmodified** (104/104), `cd backend && ruff check .` clean
+(no backend change this slice).
+
+Risk: low — flag still defaults OFF, so shipped behavior for every current
+user is byte-identical to today; the new reconnect/fallback-continuity code
+paths are only reachable once the owner has opted into live mode. Not
+noticeable on TestFlight as-is.
+
 ## 2026-07-08 — caddie-realtime-slice-c1: live-mode Realtime transport in Ask Caddie sheet (frontend, SILENT — flag default OFF, integration/next, DONE)
 
 Implemented `specs/caddie-realtime-slice-c1-plan.md` (stage 1 of Slice C,

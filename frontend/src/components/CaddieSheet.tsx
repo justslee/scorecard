@@ -248,6 +248,39 @@ export default function CaddieSheet({
     liveActiveRef.current = liveActive;
   }, [liveActive]);
 
+  // ── Slice D — fallback continuity (specs/caddie-realtime-slice-d-plan.md §4) ──
+  // The live hook never wipes `messages` on fallback (fallBack() preserves
+  // them), but classic VoiceBody renders from `convHistory`, not
+  // `live.messages` — so without this, the preserved live transcript is
+  // invisible the moment the sheet swaps to the classic tap-to-talk body.
+  // One-shot seed guarded so it fires exactly once per activation.
+  const seededFallbackRef = useRef(false);
+  // True whenever this activation has shown ANY live transcript — suppresses
+  // the classic auto-open effect below so a fallback after a mid-round drop
+  // never re-greets on top of the preserved conversation.
+  const liveTranscriptSeenRef = useRef(false);
+  useEffect(() => {
+    if (live.messages.length > 0) liveTranscriptSeenRef.current = true;
+  }, [live.messages.length]);
+  useEffect(() => {
+    if (!showFallbackIndicator) return;
+    if (seededFallbackRef.current) return;
+    if (live.messages.length === 0) return;
+    if (convHistory.length > 0) return; // already has history — no dup
+    seededFallbackRef.current = true;
+    const seeded: VoiceCaddieMessage[] = live.messages
+      .filter((m) => !m.partial && m.text.trim().length > 0)
+      .map((m) => ({ role: m.role, content: m.text }));
+    onUpdateConvHistory(seeded);
+  }, [showFallbackIndicator, live.messages, convHistory.length, onUpdateConvHistory]);
+  // Reset on sheet close / wantLive going false so the next activation starts clean.
+  useEffect(() => {
+    if (!wantLive) {
+      seededFallbackRef.current = false;
+      liveTranscriptSeenRef.current = false;
+    }
+  }, [wantLive]);
+
   // Voice mode state
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -736,6 +769,10 @@ export default function CaddieSheet({
     // or the golfer gets a double opening turn and a phantom text mic
     // (specs/caddie-realtime-slice-c1-plan.md §4/§9).
     if (liveActive) return;
+    // Fallback-after-live-drop (Slice D §4): never re-greet mid-round — the
+    // seeded convHistory (above) independently suppresses this too (belt and
+    // suspenders for the race before the seed effect runs).
+    if (liveTranscriptSeenRef.current) return;
     if (openingFiredRef.current) return; // already fired this open (guards
     // re-render AND strict-mode double effect)
     if (!sessionActive || !roundId) return; // no session → open exactly as today
