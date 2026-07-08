@@ -101,21 +101,24 @@ vi.mock("@/lib/voice/tts-pref", () => ({
   setSheetTtsEnabled: vi.fn(),
 }));
 
-// useSheetTTS — a CAPTURING mock: records the latest `onPlaybackEnd` the
-// component registered (mirrors the real hook's ref-mirror pattern) so tests
-// fire it by hand via `firePlaybackEnd()`. `isSpeaking` is a plain field the
-// test can flip directly, read fresh on every render (a `rerender()` is
-// needed to observe a change, exactly like a real state update would).
+// useSheetTTS — a CAPTURING mock: records the latest `onPlaybackEnd`/
+// `onSpeakStart` the component registered (mirrors the real hook's
+// ref-mirror pattern) so tests fire them by hand via `firePlaybackEnd()` /
+// `fireSpeakStart()`. `isSpeaking` is a plain field the test can flip
+// directly, read fresh on every render (a `rerender()` is needed to observe
+// a change, exactly like a real state update would).
 const ttsState = vi.hoisted(() => ({
   isSpeaking: false,
   onPlaybackEnd: null as null | (() => void),
+  onSpeakStart: null as null | (() => void),
   speakSpy: vi.fn(),
   unlockSpy: vi.fn(),
   stopSpy: vi.fn(),
 }));
 vi.mock("@/hooks/useSheetTTS", () => ({
-  useSheetTTS: (opts?: { onPlaybackEnd?: () => void }) => {
+  useSheetTTS: (opts?: { onPlaybackEnd?: () => void; onSpeakStart?: () => void }) => {
     ttsState.onPlaybackEnd = opts?.onPlaybackEnd ?? null;
+    ttsState.onSpeakStart = opts?.onSpeakStart ?? null;
     return {
       unlock: ttsState.unlockSpy,
       speak: ttsState.speakSpy,
@@ -123,6 +126,19 @@ vi.mock("@/hooks/useSheetTTS", () => ({
       isSpeaking: ttsState.isSpeaking,
     };
   },
+}));
+
+// Stage-timing telemetry (specs/caddie-realtime-telemetry-plan.md §5) — mock
+// the bus the timer emits/flushes through, so this suite can assert the four
+// `caddie-turn` markers land with plausible ms on a real (unmocked)
+// createCaddieTurnTimer, driven by a scripted `performance.now`.
+const telemetryState = vi.hoisted(() => ({
+  voiceEvent: vi.fn(),
+  flushVoiceEvents: vi.fn(),
+}));
+vi.mock("@/lib/voice/telemetry", () => ({
+  voiceEvent: (...args: unknown[]) => telemetryState.voiceEvent(...args),
+  flushVoiceEvents: (...args: unknown[]) => telemetryState.flushVoiceEvents(...args),
 }));
 
 const startSpy = vi.fn().mockResolvedValue(undefined);
@@ -229,6 +245,14 @@ function firePlaybackEnd() {
   });
 }
 
+/** Fires the captured `onSpeakStart` by hand — simulates a real speak()'s
+ *  play() resolving, without a real HTMLAudioElement. */
+function fireSpeakStart() {
+  act(() => {
+    ttsState.onSpeakStart?.();
+  });
+}
+
 /** Drains pending microtasks (async continuations past a mocked `await`)
  *  without ever touching a real timer — safe under `vi.useFakeTimers()`. */
 async function flush(times = 8) {
@@ -266,6 +290,9 @@ beforeEach(() => {
   enabledState.value = true;
   ttsState.isSpeaking = false;
   ttsState.onPlaybackEnd = null;
+  ttsState.onSpeakStart = null;
+  telemetryState.voiceEvent.mockReset();
+  telemetryState.flushVoiceEvents.mockReset();
   startSpy.mockResolvedValue(undefined);
   stopSpy.mockResolvedValue(new Blob());
   liveState.instances.length = 0;
@@ -650,5 +677,40 @@ describe("CaddieSheet — hands-free conversational loop (specs/caddie-conversat
     expect(screen.getByText("Tap to speak")).toBeTruthy(); // plain idle, no ghost answer
     expect(screen.queryByText("Turn one.")).toBeNull();
     expect(screen.queryByText(/No speech detected/)).toBeNull(); // still calm, not an error
+  });
+
+  // specs/caddie-realtime-telemetry-plan.md §5 — the classic-path wiring
+  // proof: a real (unmocked) createCaddieTurnTimer, driven end-to-end
+  // through a hands-free turn, with only the telemetry bus mocked and
+  // `performance.now` scripted for deterministic ms.
+  it("(14) emits the four caddie-turn stage-timing markers with plausible ms, and flushes exactly once at first audio", async () => {
+    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Turn one."]));
+
+    const nowSpy = vi.spyOn(performance, "now");
+    nowSpy
+      .mockReturnValueOnce(0) // markEos — top of stopListening
+      .mockReturnValueOnce(150) // markTranscript — finalText resolved
+      .mockReturnValueOnce(500) // markFirstToken — first streamed token
+      .mockReturnValue(1200); // markFirstAudio — TTS play() resolves (fireSpeakStart)
+
+    renderSheet();
+    await speakAndStop("what club?");
+    expect(screen.getByText("Turn one.")).toBeTruthy();
+
+    // Text legs (eos_to_transcript, transcript_to_first_token) are already in
+    // by the time the transcript+streamed reply have landed — first audio
+    // hasn't happened yet, so no flush yet.
+    expect(telemetryState.voiceEvent).toHaveBeenCalledWith("caddie-turn", "caddie.eos_to_transcript", { ms: 150 });
+    expect(telemetryState.voiceEvent).toHaveBeenCalledWith("caddie-turn", "caddie.transcript_to_first_token", { ms: 350 });
+    expect(telemetryState.flushVoiceEvents).not.toHaveBeenCalled();
+
+    fireSpeakStart(); // simulates the real speak()'s play() resolving
+
+    expect(telemetryState.voiceEvent).toHaveBeenCalledWith("caddie-turn", "caddie.first_token_to_first_audio", {
+      ms: 700,
+    });
+    expect(telemetryState.voiceEvent).toHaveBeenCalledWith("caddie-turn", "caddie.eos_to_first_audio", { ms: 1200 });
+    expect(telemetryState.voiceEvent).toHaveBeenCalledTimes(4);
+    expect(telemetryState.flushVoiceEvents).toHaveBeenCalledTimes(1); // flushed immediately at first audio
   });
 });

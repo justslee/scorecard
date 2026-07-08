@@ -53,6 +53,7 @@ import { shouldDismissSheetDrag, useBodyScrollLock } from "@/lib/sheet";
 import { useStreamBuffer } from "@/lib/caddie/stream-buffer";
 import { useSheetTTS } from "@/hooks/useSheetTTS";
 import { getSheetTtsEnabled, setSheetTtsEnabled } from "@/lib/voice/tts-pref";
+import { createCaddieTurnTimer } from "@/lib/voice/caddie-turn-timing";
 import type {
   CaddieRecommendation,
   VoiceCaddieMessage,
@@ -292,7 +293,12 @@ export default function CaddieSheet({
     }, REARM_GRACE_MS);
   }, [open, mode, isListening, isTranscribing, isThinking, isStreaming]);
 
-  const tts = useSheetTTS({ onPlaybackEnd: handlePlaybackEnd });
+  // Classic-path per-turn stage-timing telemetry (silent —
+  // specs/caddie-realtime-telemetry-plan.md). One instance per sheet
+  // instance, held in a ref so it persists across renders.
+  const turn = useRef(createCaddieTurnTimer({ surface: "caddie-turn" })).current;
+
+  const tts = useSheetTTS({ onPlaybackEnd: handlePlaybackEnd, onSpeakStart: () => turn.markFirstAudio() });
 
   // Streaming caddie reply (specs/voice-streaming-replies-plan.md). One
   // AbortController per in-flight ask — a new question or a sheet close
@@ -481,6 +487,7 @@ export default function CaddieSheet({
       const currentHistory = convHistoryRef.current;
       const onToken = (delta: string) => {
         setIsStreaming(true); // no-op re-render after the first call (same value)
+        turn.markFirstToken(); // idempotent — lands on the first token only
         answerBuffer.push(delta);
       };
 
@@ -768,6 +775,10 @@ export default function CaddieSheet({
   const stopListening = useCallback(async () => {
     const recorder = recorderRef.current;
     if (!recorder) return;
+    // Start of turn — honest end-of-speech instant for the classic VAD path
+    // (specs/caddie-realtime-telemetry-plan.md §1.4). Resets the timer's
+    // downstream marks for this new turn.
+    turn.markEos();
     const gen = openGenRef.current;
     // This listen cycle is ending — consume the loop-armed flag now (before
     // any await) so a manual tap racing in can't be mistaken for this cycle,
@@ -830,6 +841,7 @@ export default function CaddieSheet({
       if (openGenRef.current !== gen) return;
       emptyStreakRef.current = 0; // a real turn is starting — reset the streak
       setTranscript(finalText);
+      turn.markTranscript(); // brackets eos_to_transcript
       // Auto-call caddie with the finalized transcript
       await askCaddie(finalText);
     } catch (err) {
@@ -843,7 +855,9 @@ export default function CaddieSheet({
       recorderRef.current = null;
       setIsTranscribing(false);
     }
-  }, [askCaddie]);
+    // `turn` (a useRef .current) is stable for the component's lifetime — no
+    // eslint-disable needed, but listed for exhaustiveness.
+  }, [askCaddie, turn]);
 
   autoStopRef.current = () => void stopListening();
   startListeningRef.current = () => void startListening(); // hands-free loop indirection (§3.3)

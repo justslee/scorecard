@@ -39,6 +39,15 @@ export interface SheetTTS {
   isSpeaking: boolean;
 }
 
+export interface UseSheetTTSOptions {
+  onPlaybackEnd?: () => void;
+  /** Fires once when a REAL reply's audio actually begins playing (play()
+   *  resolved) — never for the silent prime clip in unlock(), never for an
+   *  aborted/superseded speak() (specs/caddie-realtime-telemetry-plan.md
+   *  §1.5). Pure signal only — this hook emits no telemetry itself. */
+  onSpeakStart?: () => void;
+}
+
 function createAudioEl(onEnded: () => void, onPaused: () => void): HTMLAudioElement {
   const el = document.createElement("audio");
   el.setAttribute("playsinline", ""); // inline playback on iOS WKWebView
@@ -53,7 +62,7 @@ function createAudioEl(onEnded: () => void, onPaused: () => void): HTMLAudioElem
   return el;
 }
 
-export function useSheetTTS(opts?: { onPlaybackEnd?: () => void }): SheetTTS {
+export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const unlockedRef = useRef(false);
@@ -72,6 +81,11 @@ export function useSheetTTS(opts?: { onPlaybackEnd?: () => void }): SheetTTS {
   useEffect(() => {
     onPlaybackEndRef.current = opts?.onPlaybackEnd;
   }, [opts?.onPlaybackEnd]);
+  // Same ref-mirror pattern for onSpeakStart (telemetry's markFirstAudio seam).
+  const onSpeakStartRef = useRef(opts?.onSpeakStart);
+  useEffect(() => {
+    onSpeakStartRef.current = opts?.onSpeakStart;
+  }, [opts?.onSpeakStart]);
 
   const releaseObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -183,6 +197,8 @@ export function useSheetTTS(opts?: { onPlaybackEnd?: () => void }): SheetTTS {
           setIsSpeaking(true);
           playingRealRef.current = true;
           await audioElRef.current.play();
+          if (controller.signal.aborted) return; // a newer speak() superseded this one mid-play()
+          onSpeakStartRef.current?.();
         } catch (err) {
           if (controller.signal.aborted) return; // expected — a newer speak() took over
           setIsSpeaking(false);

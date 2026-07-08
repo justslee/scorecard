@@ -251,6 +251,54 @@ describe("useSheetTTS", () => {
       expect(onPlaybackEnd).not.toHaveBeenCalled();
     });
 
+    it("(g) onSpeakStart fires exactly once after a real speak()'s play() resolves", async () => {
+      speakCaddieReplyMock.mockResolvedValue(makeBlob());
+      const onSpeakStart = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onSpeakStart }));
+
+      act(() => result.current.unlock());
+      expect(onSpeakStart).not.toHaveBeenCalled(); // the silent prime clip must not fire it
+
+      act(() => result.current.speak("Nice drive.", "classic"));
+      await waitFor(() => expect(result.current.isSpeaking).toBe(true));
+
+      expect(onSpeakStart).toHaveBeenCalledTimes(1);
+    });
+
+    it("(h) onSpeakStart does NOT fire for a superseded/aborted speak() — even if its play() resolves after the abort", async () => {
+      // The first speak()'s fetch resolves immediately (so it reaches play()),
+      // but its play() itself stays pending until the second speak() has
+      // already superseded (aborted) it — exercising the post-await aborted
+      // guard, not just the pre-play() stale-fetch guard.
+      speakCaddieReplyMock.mockResolvedValueOnce(makeBlob());
+      speakCaddieReplyMock.mockResolvedValueOnce(makeBlob());
+      let resolveFirstPlay: () => void = () => {};
+      const firstPlayPromise = new Promise<void>((resolve) => {
+        resolveFirstPlay = resolve;
+      });
+      const onSpeakStart = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onSpeakStart }));
+
+      act(() => result.current.unlock()); // consumes the default-resolved play() — not the once-pending one below
+      const playCallsAfterUnlock = playSpy.mock.calls.length;
+
+      // Make the NEXT play() call (the first speak()'s) stay pending until aborted.
+      playSpy.mockImplementationOnce(() => firstPlayPromise);
+      act(() => result.current.speak("First reply.", "classic"));
+      await waitFor(() => expect(playSpy.mock.calls.length).toBe(playCallsAfterUnlock + 1));
+      expect(onSpeakStart).not.toHaveBeenCalled(); // first speak's play() hasn't resolved yet
+
+      // Second speak() supersedes the first while its play() is still pending.
+      act(() => result.current.speak("Second reply.", "classic"));
+      await waitFor(() => expect(onSpeakStart).toHaveBeenCalledTimes(1)); // only the second's play() fires it
+
+      // The stale first play() resolving late must not fire a second,
+      // mismatched onSpeakStart.
+      resolveFirstPlay();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(onSpeakStart).toHaveBeenCalledTimes(1);
+    });
+
     it("(f) a rejected prime play() emits voiceEvent('sheet-tts', 'prime_failed', {detail})", async () => {
       // NOT `new DOMException(...)`: jsdom's DOMException fails `instanceof
       // Error` (a documented jsdom gap — real WebKit's does not, which is why
