@@ -8218,3 +8218,20 @@ Silent (backend relevance/ranking plumbing, no client-facing shape change —
 `venue_penalty` is an internal ranking hint, not added to types.ts/models.py
 per the plan) — rides along in the next bundle; no owner ping for this item
 alone.
+
+---
+
+## 2026-07-09 — SHIPPED: #113 course-smart caddie polish
+
+Owner "ship it". Merge a2e0436 → main; deploy verified by headSha + health
+ok. TestFlight v1.0.879 (build 202607081706).
+- Reach-aware caddie (local knowledge filtered through the player's real
+  distances), live-mode idle guard, boundary-polygon ingest (37 tests),
+  search junk filter (word-boundary; Spanish Bay false positive caught).
+- Server-side data live: BOTH courses 18/18 guides (Bethpage retry cached
+  holes 5+10; Pebble 18/18 first pass).
+Seventeen ships this run.
+NEXT (owner priority, queued p1): search-speed-and-golfapi-verify —
+latency half unblocked (fewer results, geo-indexed, cached areas);
+universe-verify half BLOCKED on the GolfAPI key fix (401) + docs-verified
+call count before any spend.
