@@ -1675,6 +1675,17 @@
       "depends_on": [],
       "why": "Owner ask (2026-07-08): elevation deltas + green slope are static per course. Compute once EVER per course, persist on the mapped course record (backend), serve instantly to course-intel. Kills the owner's 'elevation takes a while' wait. Backend-only (course record); no app-visible change beyond speed.",
       "spec": ""
+    },
+    {
+      "id": "fix-ios-voicetel-flush-dropped",
+      "title": "Voice telemetry events dropped on iOS (flush on suspend)",
+      "type": "silent",
+      "priority": 2,
+      "risk": "low",
+      "status": "needs-spec",
+      "depends_on": [],
+      "why": "Observed 2026-07-08: voicetel volume is near-blind (~1 event in 4h of a live session). lib/voice/telemetry.ts flushes on an 8s timer / 12-event batch / visibilitychange->hidden with keepalive fetch. On iOS WKWebView (Capacitor), pagehide is more reliable than visibilitychange, and the CapacitorHttp-patched fetch may not honor keepalive when the webview suspends -> queued events die on background/kill before the timer fires. Add a pagehide/freeze listener + verify keepalive actually ships (or use sendBeacon / a smaller batch / immediate flush for rare high-signal events). Don't fix while we're mid-TTS fix; targeted follow-up.",
+      "spec": ""
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
