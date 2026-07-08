@@ -16,10 +16,11 @@ Also provides:
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.services import courses_mapped as store
+from app.services.course_guides import _precompute_course_guides
 from app.services.golfapi_cache import FileCacheStore
 
 router = APIRouter(prefix="/api/courses/mapped", tags=["courses-mapped"])
@@ -64,10 +65,17 @@ async def nearby_mapped(
 
 
 @router.post("")
-async def create_mapped(body: CourseIn):
+async def create_mapped(body: CourseIn, background_tasks: BackgroundTasks = None):  # type: ignore[assignment]
     if not body.id or not body.name:
         raise HTTPException(400, "Missing id or name")
-    return {"course": await store.upsert_course(body.model_dump())}
+    course = await store.upsert_course(body.model_dump())
+    # PRIMARY strategy-guide precompute trigger — fires AFTER the response is
+    # sent, never blocks course creation. Best-effort + idempotent (see
+    # `_precompute_course_guides`); guides are cached before any user plays.
+    if course:
+        bg = background_tasks if background_tasks is not None else BackgroundTasks()
+        bg.add_task(_precompute_course_guides, course["id"])
+    return {"course": course}
 
 
 @router.get("/{course_id}/golf-coords")
@@ -95,10 +103,17 @@ async def get_mapped(course_id: str):
 
 
 @router.put("/{course_id}")
-async def put_mapped(course_id: str, body: CourseIn):
+async def put_mapped(course_id: str, body: CourseIn, background_tasks: BackgroundTasks = None):  # type: ignore[assignment]
     data = body.model_dump()
     data["id"] = course_id  # path id wins, mirroring the old route
-    return {"course": await store.upsert_course(data)}
+    course = await store.upsert_course(data)
+    # PRIMARY strategy-guide precompute trigger (re-map case). Idempotent —
+    # SKIPS holes that already have a guide, so a re-map of an already-guided
+    # course is a cheap all-skip pass with ZERO LLM calls.
+    if course:
+        bg = background_tasks if background_tasks is not None else BackgroundTasks()
+        bg.add_task(_precompute_course_guides, course["id"])
+    return {"course": course}
 
 
 @router.delete("/{course_id}")

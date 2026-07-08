@@ -26,7 +26,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.caddie.session import RoundSession
-from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
+from app.caddie.types import CaddiePersonality, HoleIntelligence, HoleStrategyGuide, VoiceCaddieRequest
 from app.db.models import CaddieMemory, PlayerProfile
 from app.routes import caddie as caddie_routes
 from app.services.clerk_auth import current_user_id
@@ -376,6 +376,88 @@ async def test_build_session_voice_prompt_downgrades_invisible_persona_to_classi
     assert "Classic system prompt." in system_prompt
     assert "Current hole: #4" in system_prompt
     assert messages[-1] == {"role": "user", "content": "what club?"}
+
+
+# ── Strategy guide: both-mouth injection (caddie-hole-strategy-guides Slice 1) ──
+
+
+async def _fake_load_classic_personality(persona_id):
+    return CaddiePersonality(
+        id=persona_id, name="Classic", description="", avatar="🏌️",
+        system_prompt="Classic system prompt.",
+    )
+
+
+async def _noop_set_current_hole(round_id, hole_number):
+    return None
+
+
+async def _no_memories(user_id):
+    return []
+
+
+@pytest.mark.asyncio
+async def test_build_session_voice_prompt_includes_guide_line_when_present(monkeypatch):
+    session = RoundSession(
+        round_id="round-1",
+        user_id="user-1",
+        current_hole=7,
+        hole_intel={
+            7: HoleIntelligence(
+                hole_number=7,
+                par=4,
+                yards=410,
+                strategy_guide=HoleStrategyGuide(
+                    play_line="Favor the left side off the tee.",
+                    miss_side="Bail out short-right.",
+                ),
+            )
+        },
+    )
+
+    async def _fake_get_owned_session(round_id, user_id):
+        return session
+
+    monkeypatch.setattr(caddie_routes, "get_owned_session", _fake_get_owned_session)
+    monkeypatch.setattr(caddie_routes, "personality_visible", _fake_personality_visible_always)
+    monkeypatch.setattr(caddie_routes, "load_personality", _fake_load_classic_personality)
+    monkeypatch.setattr(caddie_routes.sessions, "set_current_hole", _noop_set_current_hole)
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_top_memories", _no_memories)
+
+    request = caddie_routes.SessionVoiceRequest(
+        round_id="round-1", transcript="what club?", personality_id="classic", hole_number=7,
+    )
+    system_prompt, _, _ = await caddie_routes._build_session_voice_prompt(request, "user-1")
+
+    assert "Local knowledge: Favor the left side off the tee." in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_build_session_voice_prompt_omits_guide_line_when_absent(monkeypatch):
+    """No guide (the Slice 1 default) -> the line is simply omitted, never a
+    placeholder ([[no-fake-data-fallbacks]])."""
+    session = RoundSession(
+        round_id="round-1",
+        user_id="user-1",
+        current_hole=7,
+        hole_intel={7: HoleIntelligence(hole_number=7, par=4, yards=410, strategy_guide=None)},
+    )
+
+    async def _fake_get_owned_session(round_id, user_id):
+        return session
+
+    monkeypatch.setattr(caddie_routes, "get_owned_session", _fake_get_owned_session)
+    monkeypatch.setattr(caddie_routes, "personality_visible", _fake_personality_visible_always)
+    monkeypatch.setattr(caddie_routes, "load_personality", _fake_load_classic_personality)
+    monkeypatch.setattr(caddie_routes.sessions, "set_current_hole", _noop_set_current_hole)
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_top_memories", _no_memories)
+
+    request = caddie_routes.SessionVoiceRequest(
+        round_id="round-1", transcript="what club?", personality_id="classic", hole_number=7,
+    )
+    system_prompt, _, _ = await caddie_routes._build_session_voice_prompt(request, "user-1")
+
+    assert "Local knowledge:" not in system_prompt
 
 
 # ── Gate-level: _build_voice_prompt personal grounding (brain parity) ──────
