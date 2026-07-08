@@ -41,7 +41,7 @@
       "type": "minor",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "done-on-bundle (PR #115, silent; 456cfef; reviewer SOUND [security-angle double-checked] + qa PASS 19/19 + 1220 full). Two-tier per-user limiter (in-process sliding-window RPM + file-backed daily budget, no migration) on 14 paid endpoints; fail-OPEN; calm 429; loud log. Follow-ups noted: real usage.token accounting to replace the coarse est-token cap; conftest fixture to isolate the module singleton in tests; add CADDIE_RATE_* to .env.example (guard-blocked for the agent — human to add).",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
       "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.2; area E = grade F). ZERO per-user rate/token/spend limits on the paid LLM endpoints — only guards are auth + a 4000-char input cap; an authed client can loop /voice/stream, /session/voice*, /realtime/session mint, /course-intel with no cost ceiling (the single biggest cost/scale risk, and it can drain the metered-overflow $50 cap). Add per-user RPM + TPM limits (enforce BOTH — request count alone misses one expensive prompt) and a hard monthly token/$ budget with 80/90% alerts; token-aware abuse flag (high-input/short-output = injection probing). Start single-box (in-process/Postgres counter); note Redis shared store is needed once we run >=2 workers (see caddie-multiworker, P2). Silent backend/infra. UNBLOCKED for single-box."
