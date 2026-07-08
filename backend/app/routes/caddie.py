@@ -255,6 +255,7 @@ async def get_session_status(round_id: str, user_id: str = Depends(current_user_
         "shot_count": len(session.shot_history),
         "conversation_length": len(session.conversation_history),
         "last_recommendation": session.last_recommendation.model_dump() if session.last_recommendation else None,
+        "recent_shots": [s.model_dump() for s in session.shot_history[-5:]],
     }
 
 
@@ -371,6 +372,12 @@ async def get_session_conditions(
         hazards_payload = [h.model_dump() for h in intel.hazards]
         hazards_line = format_hazards_line(hn, intel.hazards)
 
+    # Honest by design, same discipline as hazards: no slope data mapped for
+    # this hole → None, never a guessed break.
+    green_slope = None
+    if intel is not None and intel.green_slope:
+        green_slope = {"description": intel.green_slope.description}
+
     return {
         "round_id": round_id,
         "hole_number": hn,
@@ -378,6 +385,7 @@ async def get_session_conditions(
         "plays_like": plays_like,
         "hazards": hazards_payload,
         "hazards_line": hazards_line,
+        "green_slope": green_slope,
     }
 
 

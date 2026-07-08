@@ -47,6 +47,10 @@ def build_realtime_instructions(
     if situation_block:
         parts.append("# Current situation\n" + situation_block)
 
+    history_block = _conversation_history_block(session)
+    if history_block:
+        parts.append("# Earlier this round (recent conversation)\n" + history_block)
+
     parts.append("# Behavior\n" + _BASE_BEHAVIOR.strip() + "\n" + HAZARD_GROUNDING_RULE)
 
     return "\n\n".join(parts)
@@ -82,10 +86,42 @@ def _situation_block(session: Optional[RoundSession]) -> str:
         )
     lines.append(f"Current hole: #{session.current_hole}")
     intel = session.hole_intel.get(session.current_hole)
-    if intel and intel.hazards:
-        hazards_line = format_hazards_line(session.current_hole, intel.hazards)
-        if hazards_line:
-            lines.append(hazards_line)
+    if intel:
+        if intel.hazards:
+            hazards_line = format_hazards_line(session.current_hole, intel.hazards)
+            if hazards_line:
+                lines.append(hazards_line)
+        if intel.green_slope:
+            lines.append(f"Green slope: {intel.green_slope.description}")
+    if session.last_recommendation:
+        rec = session.last_recommendation
+        lines.append(
+            f"Last recommendation: {rec.club} to {rec.target_yards}y, "
+            f"aim: {rec.aim_point.description}, miss: {rec.miss_side.preferred}"
+        )
+    recent_shots = session.shot_history[-5:]
+    if recent_shots:
+        shots_str = "; ".join(
+            f"Hole {s.hole_number}: {s.club} {s.distance_yards}y → {s.result or '?'}"
+            for s in recent_shots
+        )
+        lines.append(f"Recent shots: {shots_str}")
+    return "\n".join(lines)
+
+
+def _conversation_history_block(session: Optional[RoundSession]) -> str:
+    """Compact recent-history block for a fresh Realtime mint (last ~20 turns).
+
+    Mirrors _build_session_voice_prompt's `messages` hydration (routes/caddie.py)
+    so a new Realtime session isn't a stranger to what's already been discussed
+    this round — the biggest grounding gap vs the text session path.
+    """
+    if session is None or not session.conversation_history:
+        return ""
+    lines = []
+    for msg in session.conversation_history[-20:]:
+        speaker = "Player" if msg.role == "user" else "You"
+        lines.append(f"{speaker}: {msg.content}")
     return "\n".join(lines)
 
 
