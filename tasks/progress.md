@@ -3,6 +3,34 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — eng-lead cycle 27: course-search Places junk-venue filter (backend, SILENT, integration/next, DONE)
+
+Owner-observed relevance bug, now timely (Pebble Beach just went live in prod):
+searching a famous course name surfaced near-junk Places rows ("Pebble Beach
+Pro Shop", gift shops, restaurant/grill, golf academies, lodges). Plan (opus)
+-> builder -> reviewer + qa, all on `integration/next` (no PR opened this cycle
+per session-owner instruction — the bundle stays open for the Pebble guides
+backfill to verify first).
+
+- `backend/app/services/course_finder.py` — new pure `classify_place_venue`
+  (golf_course-type immunity checked FIRST -> never drops/penalizes a real
+  course; hard-drop ONLY when primaryType is an unambiguous non-golf venue AND
+  golf_course absent; name heuristics DOWNRANK-only). Extended the Places
+  FieldMask with `places.types,places.primaryType`; drop `non_course` rows +
+  tag additive `venue_penalty` in `search_google_places`; `venue_penalty` added
+  as the lowest-priority tie-break in `rank_courses` (after exact/prefix/local,
+  so prefix-first relevance + tiering untouched). Commit cdf87bc.
+- Reviewer nit (acted on directly, f988d6e): name heuristics were raw
+  substrings, so "spa" matched "Spanish Bay" (a real Pebble Beach course),
+  "grill"->"Grille", "lodge"->"Lodgepole". Switched to word-boundary regex
+  matching + regression test. Removes the false positive entirely.
+- Gates: ruff clean; `test_course_search.py` 42/42; full non-DB suite
+  1180/1180. Backend-only, no wire-shape/shared-type change; DB integration
+  tests run in CI (no local Postgres).
+
+Silent (better search results are subtle, no client-facing shape change) —
+rides along in the current bundle; no owner ping for this item.
+
 ## 2026-07-08 — osm-ingest: boundary-polygon hole selection + Pebble Beach live on prod (backend, NOTICEABLE, integration/next, DONE)
 
 Extended the OSM course-ingest to handle multi-course venues where `golf=hole`
