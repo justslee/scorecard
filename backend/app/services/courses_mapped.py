@@ -10,11 +10,20 @@ dependency is needed.
 """
 
 import json
+import logging
 from typing import Any, Optional
 
 from sqlalchemy import text
 
 from app.db.engine import async_session
+
+log = logging.getLogger("looper.courses_mapped")
+
+# Real hole numbers are 1..N; a single stored course record can legitimately
+# carry up to a 36-hole facility (two 18s / combined layouts). Used to reject
+# a non-hole-number write-back key (str/float/None/negative/0/huge/bool)
+# BEFORE it ever reaches SQL — see `_valid_hole_number`.
+_MAX_HOLE_NUMBER = 36
 
 DEFAULT_TEE_SETS = [
     {"name": "Black", "color": "#1a1a1a"},
@@ -393,6 +402,17 @@ async def upsert_course(course: dict) -> Optional[dict]:
     return await get_course(course_id)
 
 
+def _valid_hole_number(value: Any) -> bool:
+    """True when `value` is a real hole number (1..36), the ONE gate a
+    write-back key must clear before it reaches SQL. bool is an int
+    subclass — reject it explicitly (mirrors course_intel's idiom)."""
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 1 <= value <= _MAX_HOLE_NUMBER
+    )
+
+
 # ── Targeted per-feature update (static per-hole elevation persistence) ────────
 async def update_green_feature_properties(
     course_id: str,
@@ -408,6 +428,12 @@ async def update_green_feature_properties(
     raises on a missing target; only genuine DB/driver errors propagate to
     the caller's try/except.
     """
+    if not _valid_hole_number(hole_number):
+        log.debug(
+            "update_green_feature_properties: invalid hole_number %r (course %s)",
+            hole_number, course_id,
+        )
+        return False
     if not patch:
         return False
     async with async_session() as db:

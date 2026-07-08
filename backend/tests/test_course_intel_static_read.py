@@ -32,6 +32,8 @@ if not os.getenv("DATABASE_URL"):
         sys.modules.setdefault(_m, MagicMock())
 # ─────────────────────────────────────────────────────────────────────────────
 
+from unittest.mock import AsyncMock  # noqa: E402
+
 import pytest  # noqa: E402
 
 from app.caddie import course_intel  # noqa: E402
@@ -189,3 +191,128 @@ def test_elevation_patch_includes_green_slope_when_present():
     }
     patch = courses_mapped._elevation_patch(profile)
     assert patch["green_slope"] == slope
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# harden-elevation-writeback-holenumber — write-back key gating
+#
+# The write-back KEY must be a validated int in 1..36, never the display-only
+# `hole_number` (which safely defaults an absent/None holeNumber to 1). These
+# drive a genuine live compute (both elevation endpoints real) so the
+# write-back branch is actually reached, then assert whether
+# `update_green_feature_properties` fires.
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _mock_live_compute(monkeypatch):
+    """tee then green resolve to real, distinct elevations; no slope data —
+    isolates the write-back gate from unrelated elevation/slope computation."""
+    fetch = AsyncMock(side_effect=[90.0, 100.0])
+    slope = AsyncMock(return_value=None)
+    monkeypatch.setattr(course_intel, "fetch_elevation_cached", fetch)
+    monkeypatch.setattr(course_intel, "compute_green_slope", slope)
+
+
+def _hole_coords(hole_number_kwargs: dict) -> dict:
+    return {
+        **hole_number_kwargs,
+        "tee": {"lat": 40.70, "lng": -73.45},
+        "green": {"lat": 40.71, "lng": -73.46},
+    }
+
+
+@pytest.mark.asyncio
+async def test_writeback_skipped_when_holenumber_absent(monkeypatch):
+    _mock_live_compute(monkeypatch)
+    write_mock = AsyncMock(return_value=True)
+    monkeypatch.setattr(courses_mapped, "update_green_feature_properties", write_mock)
+
+    intel = await course_intel.build_hole_intelligence(
+        hole_coords=_hole_coords({}),  # no holeNumber key at all
+        yards=350,
+        persisted_elevation=None,
+        course_id="course-1",
+    )
+
+    write_mock.assert_not_called()
+    assert intel.hole_number == 1  # display default preserved, intel not dropped
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", ["3", 3.0, None, 0, -1, 9999, True, False])
+async def test_writeback_skipped_for_malformed_holenumber(monkeypatch, bad):
+    _mock_live_compute(monkeypatch)
+    write_mock = AsyncMock(return_value=True)
+    monkeypatch.setattr(courses_mapped, "update_green_feature_properties", write_mock)
+
+    intel = await course_intel.build_hole_intelligence(
+        hole_coords=_hole_coords({"holeNumber": bad}),
+        yards=350,
+        persisted_elevation=None,
+        course_id="course-1",
+    )
+
+    write_mock.assert_not_called()
+    assert intel.hole_number is not None  # display value still populated, intel not dropped
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("good", [1, 18, 36])
+async def test_writeback_proceeds_for_valid_holenumber(monkeypatch, good):
+    _mock_live_compute(monkeypatch)
+    write_mock = AsyncMock(return_value=True)
+    monkeypatch.setattr(courses_mapped, "update_green_feature_properties", write_mock)
+
+    intel = await course_intel.build_hole_intelligence(
+        hole_coords=_hole_coords({"holeNumber": good}),
+        yards=350,
+        persisted_elevation=None,
+        course_id="course-1",
+    )
+
+    write_mock.assert_awaited_once()
+    args = write_mock.await_args.args
+    assert args[0] == "course-1"
+    assert args[1] == good
+    patch = args[2]
+    assert patch["tee_elevation_ft"] == 90.0
+    assert patch["green_elevation_ft"] == 100.0
+    assert patch["delta_ft"] == 10.0
+    assert intel.hole_number == good
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# `courses_mapped._valid_hole_number` — the single source of truth for the bound
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.parametrize("value", [1, 2, 17, 18, 35, 36])
+def test_valid_hole_number_accepts_1_to_36(value):
+    assert courses_mapped._valid_hole_number(value) is True
+
+
+@pytest.mark.parametrize(
+    "value", ["3", 3.0, None, 0, -1, 9999, 37, True, False]
+)
+def test_valid_hole_number_rejects_malformed_and_out_of_range(value):
+    assert courses_mapped._valid_hole_number(value) is False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# `update_green_feature_properties` defense-in-depth — invalid key returns
+# False WITHOUT ever opening a DB session (no SQL executed).
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", ["3", 3.0, None, 0, -1, 9999, True, False])
+async def test_update_green_feature_returns_false_on_invalid_hole_number(monkeypatch, bad):
+    session_factory = MagicMock()
+    monkeypatch.setattr(courses_mapped, "async_session", session_factory)
+
+    result = await courses_mapped.update_green_feature_properties(
+        "course-1", bad, {"tee_elevation_ft": 1.0}
+    )
+
+    assert result is False
+    session_factory.assert_not_called()  # early return — no DB session, no SQL

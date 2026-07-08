@@ -96,7 +96,12 @@ def _green_persisted_elevation(stored_hole: Optional[dict]) -> Optional[dict]:
 
 
 def _feature_center(feats: list[dict], feature_type: str) -> Optional[tuple[float, float]]:
-    """(lng, lat) centre of the first feature of `feature_type`, or None."""
+    """(lng, lat) centre of the first WELL-FORMED feature of `feature_type`.
+
+    A malformed feature (missing/invalid geometry) must not blind the whole
+    hole: skip it and keep scanning later same-type features rather than
+    returning None on the first bad one.
+    """
     for f in feats:
         if (f.get("properties") or {}).get("featureType") != feature_type:
             continue
@@ -113,7 +118,7 @@ def _feature_center(feats: list[dict], feature_type: str) -> Optional[tuple[floa
                 lon, lat = _ring_centroid(coords[0][0])
                 return (lon, lat)
         except (TypeError, IndexError, KeyError):
-            return None
+            continue  # malformed feature — keep scanning remaining same-type features
     return None
 
 

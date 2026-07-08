@@ -57,6 +57,20 @@ async def build_hole_intelligence(
         HoleIntelligence with elevation, hazards, green slope, etc.
     """
     hole_number = hole_coords.get("holeNumber", 1)
+    # `.get(..., 1)` only defaults an ABSENT key — an explicit `holeNumber:
+    # null` still comes through as None here, which `HoleIntelligence.hole_number`
+    # (a required `int` field) cannot accept and would drop the whole hole's
+    # intel. Coalesce that one case so display is never dropped; every other
+    # malformed shape (str/float/bool/huge int) is already int-coercible by
+    # pydantic and passes through unchanged (write-back gating is separate,
+    # below, and unaffected by this).
+    if hole_number is None:
+        hole_number = 1
+    # RAW candidate for the write-back key — NO default. A defaulted "1" must
+    # never become the write-back destination for a request that genuinely
+    # omitted holeNumber (that would silently persist elevation onto stored
+    # hole 1). `hole_number` above stays display-only.
+    raw_hole_number = hole_coords.get("holeNumber")
     green = hole_coords.get("green", {})
     tee = hole_coords.get("tee")
 
@@ -121,19 +135,29 @@ async def build_hole_intelligence(
                 description=slope_result["description"],
             )
 
-        # WRITE-BACK — only on a genuine compute with BOTH real elevations.
+        # WRITE-BACK — only on a genuine compute with BOTH real elevations AND
+        # a validated write-back key (never the defaulted `hole_number` — a
+        # request with no/garbage holeNumber must not silently mis-write).
         # Never synthesize 0/None to fill a gap (the "+0ft" lesson): if either
         # endpoint is None, persist nothing (absent stays absent).
         if course_id and tee_elev is not None and green_elev is not None:
-            profile = compute_hole_elevation_profile(
-                tee_elev, green_elev, slope_result  # slope_result is the raw dict|None
-            )
-            try:
-                await courses_mapped.update_green_feature_properties(
-                    course_id, hole_number, courses_mapped._elevation_patch(profile)
+            if courses_mapped._valid_hole_number(raw_hole_number):
+                profile = compute_hole_elevation_profile(
+                    tee_elev, green_elev, slope_result  # slope_result is the raw dict|None
                 )
-            except Exception:  # noqa: BLE001 — persistence is best-effort; never sink intel
-                log.warning("elevation write-back failed for hole %s", hole_number, exc_info=True)
+                try:
+                    await courses_mapped.update_green_feature_properties(
+                        course_id, raw_hole_number, courses_mapped._elevation_patch(profile)
+                    )
+                except Exception:  # noqa: BLE001 — persistence is best-effort; never sink intel
+                    log.warning(
+                        "elevation write-back failed for hole %s", raw_hole_number, exc_info=True
+                    )
+            else:
+                log.debug(
+                    "skip elevation write-back: invalid holeNumber %r (course %s)",
+                    raw_hole_number, course_id,
+                )
 
     # Effective distance adjusted for elevation
     effective_yards = None if yards is None else yards + round(elevation_change / 3)
