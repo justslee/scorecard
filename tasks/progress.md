@@ -3,6 +3,48 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — caddie-realtime-conversation: stage-timing telemetry slice (frontend, SILENT, integration/next, DONE)
+
+Cycle 15 (owner-triggered). Implemented the **stage-timing telemetry** slice of
+`specs/caddie-realtime-conversation-plan.md` §6.5.3 (own contract:
+`specs/caddie-realtime-telemetry-plan.md`, opus-planned this cycle) — commit `6fcb40d`,
+pushed to `integration/next`. Makes the owner's latency pain ("long pause between speak →
+transcribe → text → voice", v1.0.808 feedback) **measurable on his real device** before
+we attack it. SILENT: telemetry events only, no UI, no behavior change.
+
+- NEW `frontend/src/lib/voice/caddie-turn-timing.ts` — `createCaddieTurnTimer` factory:
+  per-turn marks (`markEos/markTranscript/markFirstToken/markFirstAudio`), complete-legs-only
+  emission, sanity clamp (drop `<=0` / `>60000ms`), once-per-turn guards, `markEos()` as the
+  per-turn reset, injectable `now`/`emit`/`flush`, full try/catch swallow (can never throw
+  into audio/dictation). Monotonic `performance.now()`.
+- Classic sheet path (`CaddieSheet.tsx` + new `onSpeakStart` callback on `useSheetTTS.ts`):
+  emits `caddie.eos_to_transcript`, `caddie.transcript_to_first_token`,
+  `caddie.first_token_to_first_audio`, and the headline `caddie.eos_to_first_audio`.
+  `useSheetTTS` stays a pure audio hook (signals "audio started", emits no telemetry itself).
+- Realtime orb path (`useVoiceCaddie.ts`, CONSUMER-only via `handleConnectionStatus`
+  status-transition detection): `markEos` on `listening`→`connected` (= `speech_stopped`),
+  `markFirstAudio` on first `speaking`. **`realtime.ts` + `warm-session.ts` NOT touched** —
+  warm-path hard gate deliberately not tripped. Honest proxy caveat documented (first
+  `response.audio_transcript.delta` as "voice starting", the closest consumer-observable seam).
+- **iOS must-fix:** headline `caddie.eos_to_first_audio` calls `flushVoiceEvents()`
+  synchronously at turn end (keepalive already set) so the one number we care about survives
+  the known "voicetel flush-drop" background batch death.
+- No new endpoint / schema; rides the existing authed `POST /api/voice/telemetry` (surface/
+  event are free-form str on the backend — confirmed no backend change needed).
+
+Gates (all GREEN, evidence): `npm run lint` 0/0; `npx tsc --noEmit` clean; `npx vitest run`
+**1628 passed / 77 files** incl. new `caddie-turn-timing.test.ts` (8) + extended
+`useSheetTTS.test.ts` (+2) + extended `CaddieSheet.handsfree.test.tsx` (+1);
+`voice-tests/runner.ts --smoke` 274/274; `npm run build` ok. Backend unchanged (no backend gate).
+**CI on PR #109 @ 6fcb40d:** backend gate PASS, frontend gate PASS (E2E advisory settling).
+**Reviewer: CLEAN** — 7/7 invariants + security (no PII in payloads); one NON-BLOCKING
+cross-turn-skew note already anticipated by the plan (clamp backstop, self-correcting).
+
+Classification **SILENT** → bundle PR #109 stays open, accumulating; **not** requesting owner
+approval. NEXT latency slice = **A2 (sentence-level TTS pipelining)**, now measurable via
+these markers (plan §6.5.4 BUILD-conditional). Slice C (transport migration) still deferred
+(multi-cycle, flag-gated, device-verified — not started).
+
 ## 2026-07-07 — caddie-realtime-conversation Slice A: Realtime mint grounding parity (backend-only, silent-leaning, integration/next, DONE)
 
 Implemented **Slice A ONLY** of `specs/caddie-realtime-conversation-plan.md` (commit
