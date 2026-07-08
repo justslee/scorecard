@@ -7410,3 +7410,36 @@ NOTICEABLE — rides bundle PR #109 (already awaiting the owner's "ship it"; che
 Per standing rule: NO push notification (overnight); the item accumulates on the bundle and
 merges with the owner's single approval. backlog 0ecbf49. One item this cycle (backend-heavy
 course-intel-static-persistence stays queued for next cycle). Head c2b27de.
+
+---
+
+## 2026-07-09 — CHECKPOINT: monthly spend limit hit (loop paused)
+
+Cycle 18 (course-intel-static-persistence) terminated mid-plan on the
+MONTHLY spend cap ("raise at claude.ai/settings/usage"). Per policy
+(tasks/todo.md locked budget: subscription → ≤$50 overflow → hard-stop),
+the loop PAUSES here; no further cycles dispatched. Tree clean, nothing
+lost.
+
+STATE AT PAUSE:
+- Bundle PR #109 OPEN + CI GREEN on 59e87ee, 2 noticeable (A2 TTS
+  pipelining, from-tee opening reco) + 2 silent — AWAITING owner "ship it".
+- Cycle 18 findings to seed the retry (explored before dying):
+  * courses_mapped is NORMALIZED relational, not JSONB-blob; only
+    hole_features.properties is JSONB.
+  * PRECEDENT EXISTS: embed_elevation_in_green_features (osm_ingest.py)
+    already writes tee/green elevation + delta + slope into the green
+    feature's properties and round-trips via upsert_course/get_course —
+    no schema change needed.
+  * sample_course_elevations computes a whole course in ~2 batched 3DEP
+    calls (the right precompute path); session/start is the BackgroundTask
+    hook.
+  * CONCURRENCY RISK: upsert_course does destructive delete+reinsert of
+    all features — must not run on the hot read path; write-back needs a
+    targeted properties update, not a full upsert.
+- Remaining queue after this item: fix-ios-voicetel-flush-dropped,
+  Slice C transport migration (flag-gated), persona voices (owner taste),
+  strategy guides (owner-paused).
+
+RESUME: next session (after limit reset or owner raises the cap) — retry
+cycle 18 with the findings above; then continue the queue.
