@@ -3,6 +3,67 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — osm-ingest: boundary-polygon hole selection + Pebble Beach live on prod (backend, NOTICEABLE, integration/next, DONE)
+
+Extended the OSM course-ingest to handle multi-course venues where `golf=hole`
+ways carry NO `golf:course:name` tag at all (Bethpage's tag filter can't work
+there) — Pebble Beach has 79 untagged hole ways spanning Pebble Beach Golf
+Links/Course + Spyglass Hill + The Hay mixed. Added an alternative: fetch a
+NAMED `leisure=golf_course` boundary polygon (way or relation) and select hole
+LineStrings geographically (>=50% of a hole's vertices inside the polygon),
+then tag them with `course_name` so the existing par/handicap merge,
+cross-course polygon rejection, and elevation sampling all work unmodified.
+
+- `backend/app/services/osm.py` — `fetch_golf_course_boundaries(lat, lng,
+  radius_m)`: anchored Overpass query, handles both `way` (Polygon) and
+  `relation` (MultiPolygon) boundary shapes via new `_parse_boundary_geometry`.
+- `backend/app/services/osm_ingest.py` — `_point_in_boundary`,
+  `apply_boundary_hole_selection`, `match_boundary_by_name`: pure geometry,
+  reuses `course_spatial`'s ray-casting `_point_in_ring` (no new dependency).
+- `backend/scripts/ingest_osm_course.py` — new `--boundary-name` flag;
+  `--target-course` tag filter wins if both are given; logs available
+  boundary names on a name-match miss.
+- `backend/tests/test_osm_boundary_selection.py` — 37 new deterministic tests
+  (way vs relation parsing, point-in-polygon incl. MultiPolygon, hole
+  selection inside/outside/straddling at the 50% threshold, name matching).
+  Full backend suite: 1164 passed, 82 skipped (DB-integration, no local PG),
+  ruff clean. Commit `97a5339` on `integration/next`.
+
+**Ran on prod** via SSM (instance `i-0826ae70df62d9fe8`), overlay-copied to
+`/tmp/ingestrun` (never touched the deployed tree — box tracks `main`; sourced
+the exact `integration/next` files via `git show origin/integration/next:...`,
+sha256-verified byte-identical to local before running):
+- Dry-run first: found 5 named boundaries at the venue (`Cypress Point Golf
+  Course`, `Spyglass Hill Golf Course`, `The Hay`, `Pebble Beach Golf Course`,
+  `Poppy Hills Golf Course`) — note the real OSM name is **"Pebble Beach Golf
+  Course"**, not "Golf Links"; 18/79 holes correctly selected, elevations for
+  18/18, ~20.8 features/hole (comparable density to Bethpage).
+- Hit one real bug during the real-run attempt: `DATABASE_URL` wasn't in the
+  `sudo -u ubuntu` env passthrough, so `load_secrets_into_env()` silently
+  back-filled it from AWS Secrets Manager (a different, non-SSL value) instead
+  of the systemd `.env` — asyncpg auth error, **no write occurred** (failed
+  before the DB call completed). Fixed by explicitly passing `DATABASE_URL`
+  through the sudo prefix (not just `ASYNC_DATABASE_URL`, which the code
+  doesn't actually read — `app/db/engine.py` reads `DATABASE_URL`; the
+  script's docstring is stale on this point).
+- Real run: **Course UUID `f8d6b570-f54e-56d8-890c-000e85a42c95`**, "Pebble
+  Beach Golf Links", 18 holes, 374 total polygon features, all 18 pars match
+  the real Pebble Beach scorecard (4,5,4,4,3,5,3,4,4,4,4,3,4,5,4,4,3,5).
+  Verified via the deployed `get_course()` app code (not raw SQL): 18/18 holes
+  have `tee_elevation_ft`/`green_elevation_ft` embedded in their green
+  feature's properties. `/tmp/ingestrun` (contained a copy of `.env`) deleted
+  from the box after verification.
+- Did **not** run the hole-guides backfill — reserved for the session owner
+  per the dispatch instructions.
+
+Classified **noticeable**: Pebble Beach is now a real, fully-mapped course in
+prod (yardage book + caddie features) rather than absent/mock — the owner can
+open it in the app and see it. Deviation from the plan worth flagging: the
+plan described "the two changed files" for the overlay copy; the actual diff
+touched three files (`osm.py`, `osm_ingest.py`, `ingest_osm_course.py`) since
+this codebase already splits I/O (`osm.py`) from pure assembly logic
+(`osm_ingest.py`) — all three were copied to the overlay and sha256-verified.
+
 ## 2026-07-08 — caddie-realtime Slice E follow-up: honest-state fix in empty-transcript hint (frontend, SILENT, integration/next, DONE)
 
 Fixed the reviewer/designer-flagged honesty gap in Slice E: when live Ask
