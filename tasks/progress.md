@@ -3,6 +3,31 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — eng-lead cycle 29: caddie prompt-caching + LLM timeouts/retries → bundle PR #115 (SILENT, DONE)
+
+Step 0: board clean — no Needs Review cards awaiting action, no owner feedback on
+the #114 ship card. Bundle empty after #114 (TestFlight v1.0.888). Synced main →
+integration/next cleanly.
+
+Picked the cheapest-biggest-win P1 from the caddie-excellence audit:
+`caddie-prompt-caching-text-path` (SILENT, cost/infra) + folded `caddie-llm-timeouts-retries`.
+Opus Plan agent verified the Anthropic API shape via the claude-api skill (list-form
+`system` + `cache_control` ephemeral; Sonnet-4.5 min cacheable prefix = 1024 tokens;
+`usage.cache_read/creation_input_tokens`; constructor-level timeout/max_retries; SDK
+0.77.0 adequate, no bump) → `specs/caddie-prompt-caching-text-path-plan.md`. Builder
+implemented exactly (b7bd75d, e28b2db).
+
+Review team (item reviewed as it landed):
+- reviewer: SOUND — all 6 load-bearing invariants verified, incl. brain content
+  identical to main byte-for-byte (only the sanctioned pointer reword); cache
+  breakpoint on stable block only; streaming/persistence intact; no `/security-review`
+  warranted (no new endpoint/dep/auth/external-input surface).
+- qa: PASS (independent) — ruff clean, 29/29 targeted, 1201/1201 non-DB suite.
+
+Opened the rolling bundle **PR #115** (integration/next → main), CI pinned to head
+e28b2db (both gates running). **Noticeable count: 0** — silent bundle, accumulating;
+no owner ping, no TestFlight build. Board card added as the record.
+
 ## 2026-07-08 — builder: caddie-prompt-caching-text-path + caddie-llm-timeouts-retries (backend, SILENT, integration/next, DONE)
 
 Implemented the approved opus plan (`specs/caddie-prompt-caching-text-path-plan.md`)
