@@ -660,6 +660,25 @@ class TestClassifyPlaceVenue:
     def test_missing_types_and_primary_type_default_to_course(self):
         assert course_finder.classify_place_venue("Some Club", None, None) == "course"
 
+    def test_name_heuristics_are_word_anchored_not_substrings(self):
+        # A real course name that merely CONTAINS a heuristic fragment must not
+        # be downranked — the phrases match on word boundaries, not substrings.
+        # "Spanish Bay" (a real Pebble Beach course) contains "spa"; "Grille"
+        # contains "grill"; "Lodgepole" contains "lodge". None should fire.
+        for real_name in (
+            "The Links at Spanish Bay",   # contains "spa"
+            "The Grille Golf Club",       # contains "grill"
+            "Lodgepole Pines Golf Club",  # contains "lodge"
+        ):
+            assert course_finder.classify_place_venue(
+                real_name, ["point_of_interest", "establishment"], "point_of_interest",
+            ) == "course", real_name
+        # The whole-word forms still fire (downrank), confirming the guard
+        # didn't over-correct.
+        assert course_finder.classify_place_venue(
+            "Clubhouse Grill", ["point_of_interest"], "point_of_interest",
+        ) == "ambiguous"
+
 
 class _PlacesResp:
     """Minimal stand-in for httpx.Response, matching the seam used by the

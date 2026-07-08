@@ -139,11 +139,17 @@ _NON_COURSE_PRIMARY_TYPES: frozenset[str] = frozenset({
     "spa", "wellness_center",
 })
 
-# Softer name heuristics: substrings that SUGGEST a non-course venue. Used only
-# to DOWNRANK (never to drop), and only when golf_course is NOT in types.
-_NON_COURSE_NAME_SUBSTRINGS: tuple[str, ...] = (
+# Softer name heuristics: WORD-anchored phrases that SUGGEST a non-course venue.
+# Used only to DOWNRANK (never to drop), and only when golf_course is NOT in
+# types. Matched on word boundaries (not raw substrings) so a real course name
+# can't collide with a fragment: "spa" must NOT fire on "Spanish Bay" (a real
+# Pebble Beach course), "grill" not on "Grille", "lodge" not on "Lodgepole".
+_NON_COURSE_NAME_PHRASES: tuple[str, ...] = (
     "pro shop", "gift shop", "grill", "restaurant", "academy",
     "lodge", "spa", "cafe",
+)
+_NON_COURSE_NAME_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(p) for p in _NON_COURSE_NAME_PHRASES) + r")\b"
 )
 
 
@@ -175,8 +181,9 @@ def classify_place_venue(name: str, types, primary_type) -> str:
         return "non_course"
 
     # Ambiguous (downrank): name says "Pro Shop"/"Grill"/"Academy"/"Lodge" but
-    # the types didn't confirm a non-course primaryType.
-    if any(sub in folded_name for sub in _NON_COURSE_NAME_SUBSTRINGS):
+    # the types didn't confirm a non-course primaryType. Word-boundary matched
+    # so a fragment inside a real course name ("Spanish", "Grille") can't fire.
+    if _NON_COURSE_NAME_RE.search(folded_name):
         return "ambiguous"
 
     return "course"
