@@ -92,7 +92,7 @@ export interface CaddieSheetProps {
   /** Resolves the golfer's live distance-to-pin (yards) for the auto opening
    *  turn, or null when there is no GPS fix / no green coords / it times out.
    *  Parent owns GPS + course coords; the sheet stays GPS-free. */
-  resolveOpeningShot?: () => Promise<{ distanceYards: number } | null>;
+  resolveOpeningShot?: () => Promise<{ distanceYards: number; fromTee?: boolean } | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -705,7 +705,9 @@ export default function CaddieSheet({
       // (specs/caddie-auto-shot-reco-plan.md deviation — reviewer-caught).
       if (streamAbortRef.current || recorderRef.current || convHistoryRef.current.length > 0) return;
       if (!shot) return; // no GPS fix → stay idle (open as today)
-      const q = `I'm about ${shot.distanceYards} yards from the pin. What should I hit or do on this next shot?`;
+      const q = shot.fromTee
+        ? `I'm on the tee, about ${shot.distanceYards} to the pin. What should I hit off the tee?`
+        : `I'm about ${shot.distanceYards} yards from the pin. What should I hit or do on this next shot?`;
       setTranscript(q); // existing state → shows in the user bubble (transparency)
       await askCaddie(q, { suppressError: true }); // identical streaming path; honest-idle on failure
     })();

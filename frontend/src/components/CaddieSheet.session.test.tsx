@@ -662,6 +662,9 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
     );
     const [payload] = sessionVoiceStreamMock.mock.calls[0];
     expect((payload as { transcript: string }).transcript).toContain("What should I hit or do on this next shot");
+    // Regression lock (specs/caddie-opening-reco-from-tee-plan.md): the GPS
+    // path must never use the tee phrasing — that would fabricate a position.
+    expect((payload as { transcript: string }).transcript).not.toEqual(expect.stringContaining("on the tee"));
     expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
     expect(talkToCaddieMock).not.toHaveBeenCalled();
 
@@ -683,6 +686,31 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
     // (e) same completion lifecycle as a normal reply: follow-up mounts, mic re-arms.
     expect(await screen.findByText("Ask follow-up")).toBeTruthy();
     expect(await screen.findByLabelText("Start recording")).toBeTruthy();
+  });
+
+  it("(a-tee) fromTee:true resolves to the honest from-the-tee phrasing (specs/caddie-opening-reco-from-tee-plan.md)", async () => {
+    const stream = deferredStream();
+    sessionVoiceStreamMock.mockImplementationOnce(stream.mockImpl);
+    const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 365, fromTee: true });
+    renderSheet({ resolveOpeningShot });
+
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+    expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
+    const [payload] = sessionVoiceStreamMock.mock.calls[0];
+    const transcript = (payload as { transcript: string }).transcript;
+    expect(transcript).toContain("365");
+    expect(transcript).toContain("on the tee");
+    expect(transcript).toContain("off the tee");
+    expect(transcript).not.toEqual(expect.stringContaining("yards from the pin"));
+
+    // Transparency: the user bubble renders the same honest tee wording.
+    expect(await screen.findByText(/on the tee, about 365 to the pin/)).toBeTruthy();
+
+    act(() => {
+      stream.pushToken("Smooth 3-wood off the tee.");
+      stream.resolve("Smooth 3-wood off the tee.");
+    });
+    expect(await screen.findByText("Smooth 3-wood off the tee.")).toBeTruthy();
   });
 
   it("(b) does not fire with no active session — sheet opens idle", async () => {
@@ -709,6 +737,7 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
     expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
     expect(talkToCaddieMock).not.toHaveBeenCalled();
     expect(screen.getByText(/Ask anything/)).toBeTruthy();
+    expect(screen.queryByText(/on the tee/)).toBeNull(); // honest idle, no fabricated tee phrasing
 
     // Advance further ticks — no retry-spam.
     await act(async () => {

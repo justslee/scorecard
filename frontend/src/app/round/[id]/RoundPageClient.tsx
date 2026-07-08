@@ -57,7 +57,7 @@ import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
 import { useHoleCoordinates } from "@/lib/map/use-hole-coordinates";
 import { fetchAPI } from "@/lib/api";
 import { GPSWatcher } from "@/lib/gps";
-import { haversineYards } from "@/lib/map/google-map-helpers";
+import { resolveOpeningShotDistance } from "@/lib/caddie/opening-shot";
 
 // Player accent colors (yardage-book palette — warm ink tones)
 const PLAYER_COLORS = ["#1a2a1a", "#6b3a1a", "#3a3a6a", "#6a3a3a", "#2a5a3a", "#5a2a5a"];
@@ -1049,19 +1049,17 @@ export default function RoundPage() {
   // missing green coords / GPS fix / implausible distance — the sheet then
   // opens idle exactly as today.
   const greenForHole = holeCoordsForTiles?.green ?? null; // {lat,lng} | null
+  const teeForHole = holeCoordsForTiles?.tee ?? null; // {lat,lng} | null
   const resolveOpeningShot = useCallback(async () => {
-    if (!greenForHole) return null; // no green coords → honest null
+    let pos: { lat: number; lng: number } | null = null;
     try {
-      const pos = await withTimeout(GPSWatcher.getCurrentPosition(), 6000);
-      if (!pos) return null;
-      const d = haversineYards(pos, greenForHole);
-      if (!Number.isFinite(d) || d < 1 || d > 800) return null; // implausible → null
-      return { distanceYards: d };
+      pos = await withTimeout(GPSWatcher.getCurrentPosition(), 6000);
     } catch {
-      return null; // no fix / denied / timeout → honest null
+      pos = null; // denied / timeout / throw → null, helper attempts tee fallback
     }
+    return resolveOpeningShotDistance(pos, teeForHole, greenForHole);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [greenForHole?.lat, greenForHole?.lng]);
+  }, [greenForHole?.lat, greenForHole?.lng, teeForHole?.lat, teeForHole?.lng]);
 
   const fcbFromTee = holeCoordsForTiles?.tee
     ? computeFCBDistances(holeCoordsForTiles.tee, holeCoordsForTiles)
