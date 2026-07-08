@@ -921,4 +921,28 @@ describe("CaddieSheet live mode — Slice E idle suspend/resume", () => {
     expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(5);
     expect(screen.queryByText("Tap-to-talk mode")).toBeNull();
   });
+
+  it("empty-transcript idle -> suspend: footer says paused, empty-state does NOT claim the caddy is listening", async () => {
+    // No resolveOpeningShot passed (default undefined) -> no opening turn is
+    // ever sent (honest idle, §786 in CaddieSheet.tsx), so the transcript
+    // stays empty the whole time. Regression for the empty-state hint that
+    // used to stay keyed on stale `status` and kept claiming "is listening"
+    // even after the footer had already flipped to "Paused — tap to resume".
+    vi.useFakeTimers();
+    renderSheet();
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => first.emitStatus("closed"));
+    await flush();
+
+    expect(screen.getByText("Paused — tap to resume")).toBeTruthy();
+    expect(screen.queryByText(/is listening/i)).toBeNull();
+  });
 });

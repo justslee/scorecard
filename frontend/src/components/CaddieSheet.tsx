@@ -1547,7 +1547,12 @@ export default function CaddieSheet({
           >
             {mode === "voice" ? (
               liveActive ? (
-                <LiveVoiceBody messages={live.messages} status={live.status} caddy={caddy} />
+                <LiveVoiceBody
+                  messages={live.messages}
+                  status={live.status}
+                  caddy={caddy}
+                  paused={live.liveState === "suspended"}
+                />
               ) : (
                 <VoiceBody
                   phase={phase}
@@ -1697,14 +1702,38 @@ function LiveVoiceBody({
   messages,
   status,
   caddy,
+  paused,
 }: {
   messages: RealtimeMessage[];
   status: RealtimeStatus;
   caddy: Caddy;
+  /** True when `liveState === "suspended"` (Slice E) — the socket already
+   *  idled out. The footer owns the "Paused — tap to resume" claim; this
+   *  empty-state hint must not contradict it by claiming the caddy is
+   *  actively listening (no-fake-data / honest-states). */
+  paused: boolean;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {messages.length === 0 && (
+      {messages.length === 0 && paused && (
+        // Paused (Slice E, follow-up) — the footer already claims "Paused —
+        // tap to resume"; this hint must agree with it, not contradict it
+        // with a fake "is listening" claim (no-fake-data / honest-states).
+        <div
+          style={{
+            fontFamily: T.mono,
+            fontSize: 9,
+            letterSpacing: 1.2,
+            color: T.pencilSoft,
+            textAlign: "center",
+            textTransform: "uppercase",
+            lineHeight: 1.5,
+          }}
+        >
+          Paused — tap resume below to keep talking.
+        </div>
+      )}
+      {messages.length === 0 && !paused && (
         <div
           style={{
             fontFamily: T.serif,
