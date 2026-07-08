@@ -3,6 +3,49 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — ci-postgis-course-mapping-tests (backend infra/tests, SILENT, integration/next, DONE)
+
+Implemented `specs/ci-postgis-course-mapping-tests-plan.md` exactly. Three files
+touched, per the plan's editable-surface list — no `app/**`, `deploy/**`, or
+`backend/supabase/migrations/**` edits, no new deps:
+
+- `.github/workflows/ci.yml` — `required-backend` job's `services.postgres`
+  image swapped `postgres:16` → `postgis/postgis:16-3.4` (one line).
+- `backend/tests/integration/conftest.py` — added `from pathlib import Path`;
+  `_ensure_schema` now runs `backend/supabase/migrations/001_course_mapping_schema.sql`
+  verbatim (asyncpg simple-query protocol via `conn.get_raw_connection().driver_connection.execute(...)`,
+  guarded by `mig.is_file()`) after the existing `scores_round_player_hole_uq`
+  block, inside the same `engine.begin()` transaction; the `_db` fixture's
+  per-test TRUNCATE list now also clears `hole_features, hole_yardages, holes,
+  tee_sets, courses`.
+- `backend/tests/integration/test_courses_mapped_db.py` (NEW) — 7 DB-backed
+  tests against `app/services/courses_mapped.py` (previously zero live-DB
+  coverage): write-back → `get_course` round-trip; merge preserves other keys;
+  4 no-op-returns-False cases (absent green feature, nonexistent hole number,
+  hole number 0, empty patch); and the real precompute backfill seam
+  (`app.routes.caddie._precompute_course_elevations`) with
+  `sample_course_elevations` monkeypatched to a deterministic stub but
+  `get_course`/`update_green_feature_properties` left real — verifies the
+  write-back field mapping (`net_change_ft`→`delta_ft`, `green_slope` omitted
+  when `None`) and idempotency (sampler not called on the 2nd run once
+  `tee_elevation_ft` is persisted).
+
+No deviations from the plan — confirmed `_precompute_course_elevations`,
+`sample_course_elevations(synth_holes, target_course_name)`, the synth-hole
+`properties.ref` key, `_green_persisted_elevation`, and `_elevation_patch`'s
+field mapping in `app/routes/caddie.py` / `app/services/courses_mapped.py`
+against the plan before writing test (d); all matched exactly.
+
+Gates green (no local Postgres — DB tests verified as SKIPPED, not run):
+`cd backend && ruff check .` clean; `uv run pytest tests/integration/test_courses_mapped_db.py -v`
+→ 7 SKIPPED (no errors on collection/import); `uv run pytest -k "not integration" -q`
+→ 1080 passed, 81 deselected; full `uv run pytest -q` → 1080 passed, 81 skipped.
+Real DB verification is the CI `required-backend` gate (postgis service) on
+the pushed commit — pending.
+
+Commit `3a8f3d7` pushed to `integration/next`, riding bundle PR #111 as silent
+infra/test work (no user-facing surface).
+
 ## 2026-07-08 — caddie-realtime-slice-d: live-session resilience (frontend, SILENT — flag default OFF, integration/next, DONE)
 
 Implemented `specs/caddie-realtime-slice-d-plan.md` exactly — closes the two
