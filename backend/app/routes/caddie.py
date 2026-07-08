@@ -42,6 +42,7 @@ from app.caddie import learning as learning_mod
 from app.caddie.types import PlayerStatistics, PlayerTendencies
 from app.services.osm import fetch_course_features
 from app.services import courses_mapped
+from app.services.course_guides import _precompute_course_guides
 from app.services.elevation import sample_course_elevations
 from app.services.course_spatial import _ring_centroid
 from app.services.clerk_auth import current_user_id, optional_user_id
@@ -278,6 +279,11 @@ async def start_session(
     if course_id:
         bg = background_tasks if background_tasks is not None else BackgroundTasks()
         bg.add_task(_precompute_course_elevations, course_id)
+        # FALLBACK strategy-guide trigger — a cold course mapped before this
+        # feature existed still gets guides seeded on first play. Idempotent
+        # (skips any hole already guided), so on an already-guided course
+        # this is a cheap all-skip pass with ZERO LLM calls.
+        bg.add_task(_precompute_course_guides, course_id)
 
     if request.club_distances:
         session.club_distances = request.club_distances
