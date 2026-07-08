@@ -7874,3 +7874,22 @@ Sixteen ships this run.
 NEXT EPIC (owner-directed, design confirmed): caddie-hole-strategy-guides —
 opus plan first; preemptive per-hole research at mapping time, cached
 forever, never re-queried; phase 2 stats gated on significance.
+
+---
+
+## 2026-07-09 — CHECKPOINT #2: monthly spend limit hit again (loop paused)
+
+Cycle 25 (strategy-guides Slice 2: writer + grounding + backfill) killed
+mid-build. WIP committed runtime-inert (see WIP commit — Slice 1 read path
+still returns nothing, so nothing half-built can execute). Bundle PR #112
+remains OPEN and SILENT (plan + Slice 1 scaffolding, all gated green).
+Sixteen ships landed this run before the pause.
+
+RESUME (after cap raise or billing reset): finish Slice 2 from the WIP
+commit per the plan — model-id re-verification (claude-api skill),
+grounding validator, budget-capped Bethpage-first backfill, mandatory
+/security-review. Then Slice 3 (noticeable: course-smart caddie answers).
+
+Owner decision: raise the cap again at claude.ai/settings/usage, or the
+loop resumes on billing reset. Main session stays available for approvals
++ light work.
