@@ -24,6 +24,18 @@
       "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.1; area B = grade F). No prompt caching anywhere \u2014 the text caddie re-bills ~700-900 tokens of near-static system prefix (persona + _BASE_BEHAVIOR + HAZARD_GROUNDING_RULE + hole static geometry/hazards/guide) PLUS the full last-20-turn history on EVERY turn (_build_session_voice_prompt, routes/caddie.py:756-802). Restructure static->dynamic and set an Anthropic cache_control:{type:'ephemeral'} breakpoint after the per-round-stable prefix; render order tools->system->messages. SOTA: cache read ~0.1x input (up to 90% cheaper) + lower latency, break-even at 2 requests. Verify the pinned model's min-cacheable prefix (~1024-2048 tokens) \u2014 may need to co-locate more static content behind the breakpoint to clear the floor; confirm via usage.cache_read_input_tokens. Silent (cost/latency only, no wire-shape change). UNBLOCKED."
     },
     {
+      "id": "glasses-shot-tracking-spike",
+      "title": "Glasses spike: triggered-clip shot detection + phone-free caddie (Meta DAT)",
+      "type": "major",
+      "priority": 2,
+      "risk": "high",
+      "status": "blocked",
+      "depends_on": [
+        "owner-acquires-rayban-meta"
+      ],
+      "why": "OWNER 2026-07-09 thesis, researched (specs/glasses-shot-tracking-research.md): continuous-vision tracking INFEASIBLE (60-90min battery, 1-min clip caps, thermal shutoffs) but TRIGGERED-CLIP design is plausible \u2014 IMU/impact-audio trigger -> 5-10s 720p clip via Meta Wearables DAT (dev preview; 12MP cam + 5-mic + speakers accessible to OUR phone app) -> on-phone swing/ball classification, fused with GPS displacement. ~5-7 min total camera/round = inside battery. Replaces vocal confirmation with VISUAL \u2014 the owner's objection to phone-only sensing dissolves. Putts = first sensor with a real chance, but trigger reliability unproven. SHIPPING gated on Meta opening publishing (their 2026 date); PROTOTYPING possible now. STEP 0 ($0, today): owner pairs Ray-Ban Metas as BT audio with the live caddie \u2014 phone-free conversation works without any code. Spike = diagnostic-only, measure trigger precision/recall + battery on owner rounds before any UX."
+    },
+    {
       "id": "caddie-llm-rate-limiting",
       "title": "Per-user rate limiting + spend cap on paid LLM endpoints",
       "type": "minor",
