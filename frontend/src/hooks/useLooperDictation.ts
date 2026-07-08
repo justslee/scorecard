@@ -118,16 +118,17 @@ export function useLooperDictation(options?: LooperDictationOptions): LooperDict
         } catch {
           liveFailedRef.current = true;
           liveRef.current = null;
-          voiceEvent(optionsRef.current?.surface ?? "dictation", "live_start_failed");
+          voiceEvent(optionsRef.current?.surface ?? "dictation", "live_start_failed", { flush: true });
         }
       } else {
         liveFailedRef.current = true; // unsupported → blob fallback on stop
-        voiceEvent(optionsRef.current?.surface ?? "dictation", "live_unsupported");
+        voiceEvent(optionsRef.current?.surface ?? "dictation", "live_unsupported", { flush: true });
       }
     } catch (err) {
       setListening(false);
       voiceEvent(optionsRef.current?.surface ?? "dictation", "mic_error", {
         detail: err instanceof Error ? err.name : "unknown",
+        flush: true,
       });
       setMicError(
         err instanceof Error && err.name === "NotAllowedError"
@@ -166,6 +167,7 @@ export function useLooperDictation(options?: LooperDictationOptions): LooperDict
         finalText = result.transcript;
         voiceEvent(optionsRef.current?.surface ?? "dictation", "resolved_fallback", {
           ms: Math.round(performance.now() - startedAt),
+          flush: true,
         });
       }
       return isEmptyTranscript(finalText) ? null : finalText;

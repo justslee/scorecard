@@ -109,13 +109,27 @@ vi.mock("@/lib/caddie/stream-buffer", () => ({
 // useSheetTTS — spied directly so "tts.speak called exactly once with the
 // full text" is a clean assertion, independent of the localStorage-gated
 // mute pref (default OFF) and the real speakCaddieReply fetch.
+//
+// beginStream/enqueue/endStream are the sentence-pipelining queue API
+// (specs/caddie-realtime-conversation-plan.md §6.5.4, Slice A2) — every
+// reply in THIS file is short enough to stay under CaddieSheet's
+// MIN_TTS_CHUNK_CHARS merge threshold, so nothing is ever pipelined
+// mid-stream and completion always falls back to the plain tts.speak() call
+// these assertions check — exactly the old, pre-A2 behavior. Stubbed here
+// only so the component doesn't crash calling them.
 const ttsSpeakSpy = vi.fn();
 const ttsUnlockSpy = vi.fn();
 const ttsStopSpy = vi.fn();
+const ttsBeginStreamSpy = vi.fn();
+const ttsEnqueueSpy = vi.fn();
+const ttsEndStreamSpy = vi.fn();
 vi.mock("@/hooks/useSheetTTS", () => ({
   useSheetTTS: () => ({
     unlock: ttsUnlockSpy,
     speak: ttsSpeakSpy,
+    beginStream: ttsBeginStreamSpy,
+    enqueue: ttsEnqueueSpy,
+    endStream: ttsEndStreamSpy,
     stop: ttsStopSpy,
     isSpeaking: false,
   }),
@@ -431,9 +445,13 @@ describe("CaddieSheet — streaming ladder (specs/voice-streaming-replies-plan.m
       { role: "user", content: "what club from here?" },
       { role: "assistant", content: "Easy 7. Center of the green." },
     ]);
-    // TTS fires exactly once, with the complete text.
+    // TTS fires exactly once, with the complete text. "Easy 7. " completes a
+    // sentence boundary mid-stream, but it's under MIN_TTS_CHUNK_CHARS so it
+    // merges with the rest rather than pipelining as its own chunk — the
+    // exact old single-call behavior (specs/caddie-realtime-conversation-plan.md §6.5.4).
     expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
     expect(ttsSpeakSpy).toHaveBeenCalledWith("Easy 7. Center of the green.", "strategist");
+    expect(ttsEnqueueSpy).not.toHaveBeenCalled();
   });
 
   it("does NOT mount the follow-up/clear CTAs or re-arm the mic mid-stream — only once the reply is complete", async () => {
@@ -644,6 +662,9 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
     );
     const [payload] = sessionVoiceStreamMock.mock.calls[0];
     expect((payload as { transcript: string }).transcript).toContain("What should I hit or do on this next shot");
+    // Regression lock (specs/caddie-opening-reco-from-tee-plan.md): the GPS
+    // path must never use the tee phrasing — that would fabricate a position.
+    expect((payload as { transcript: string }).transcript).not.toEqual(expect.stringContaining("on the tee"));
     expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
     expect(talkToCaddieMock).not.toHaveBeenCalled();
 
@@ -660,10 +681,36 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
     ]);
     expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
     expect(ttsSpeakSpy).toHaveBeenCalledWith("Smooth 8-iron. Center of the green.", "strategist");
+    expect(ttsEnqueueSpy).not.toHaveBeenCalled(); // "Smooth 8-iron." (14 chars) merges rather than pipelines
 
     // (e) same completion lifecycle as a normal reply: follow-up mounts, mic re-arms.
     expect(await screen.findByText("Ask follow-up")).toBeTruthy();
     expect(await screen.findByLabelText("Start recording")).toBeTruthy();
+  });
+
+  it("(a-tee) fromTee:true resolves to the honest from-the-tee phrasing (specs/caddie-opening-reco-from-tee-plan.md)", async () => {
+    const stream = deferredStream();
+    sessionVoiceStreamMock.mockImplementationOnce(stream.mockImpl);
+    const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 365, fromTee: true });
+    renderSheet({ resolveOpeningShot });
+
+    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
+    expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
+    const [payload] = sessionVoiceStreamMock.mock.calls[0];
+    const transcript = (payload as { transcript: string }).transcript;
+    expect(transcript).toContain("365");
+    expect(transcript).toContain("on the tee");
+    expect(transcript).toContain("off the tee");
+    expect(transcript).not.toEqual(expect.stringContaining("yards from the pin"));
+
+    // Transparency: the user bubble renders the same honest tee wording.
+    expect(await screen.findByText(/on the tee, about 365 yards to the pin/)).toBeTruthy();
+
+    act(() => {
+      stream.pushToken("Smooth 3-wood off the tee.");
+      stream.resolve("Smooth 3-wood off the tee.");
+    });
+    expect(await screen.findByText("Smooth 3-wood off the tee.")).toBeTruthy();
   });
 
   it("(b) does not fire with no active session — sheet opens idle", async () => {
@@ -690,6 +737,7 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
     expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
     expect(talkToCaddieMock).not.toHaveBeenCalled();
     expect(screen.getByText(/Ask anything/)).toBeTruthy();
+    expect(screen.queryByText(/on the tee/)).toBeNull(); // honest idle, no fabricated tee phrasing
 
     // Advance further ticks — no retry-spam.
     await act(async () => {

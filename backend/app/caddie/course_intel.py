@@ -9,12 +9,17 @@ from app.caddie.types import (
     GreenSlope,
     WeatherConditions,
 )
-from app.services.elevation import fetch_elevation_cached, compute_green_slope
+from app.services.elevation import (
+    fetch_elevation_cached,
+    compute_green_slope,
+    compute_hole_elevation_profile,
+)
 from app.services.weather import (
     fetch_weather,
     compute_air_density_factor,
     estimate_conditions,
 )
+from app.services import courses_mapped
 
 log = logging.getLogger("looper.course_intel")
 
@@ -26,6 +31,8 @@ async def build_hole_intelligence(
     yards: Optional[int] = 400,
     handicap_rating: Optional[int] = 9,
     osm_features: Optional[dict] = None,
+    persisted_elevation: Optional[dict] = None,
+    course_id: Optional[str] = None,
 ) -> HoleIntelligence:
     """Build intelligence for a single hole from coordinates + data sources.
 
@@ -35,11 +42,35 @@ async def build_hole_intelligence(
         yards: Hole yardage
         handicap_rating: Hole handicap index
         osm_features: Nearby OSM features (bunkers, water, etc.)
+        persisted_elevation: The stored green feature's `properties` dict, when
+            available — carries `tee_elevation_ft`/`green_elevation_ft`/
+            `delta_ft`/`green_slope` persisted by a prior compute (this
+            function's own write-back, ingest, or precompute). When both
+            elevations are present, this is used and NO USGS/3DEP calls are
+            made.
+        course_id: When set (and `persisted_elevation` misses), a genuine live
+            compute with real tee AND green elevations is written back into
+            the stored green feature via a targeted JSONB merge — best-effort,
+            never sinks the response.
 
     Returns:
         HoleIntelligence with elevation, hazards, green slope, etc.
     """
     hole_number = hole_coords.get("holeNumber", 1)
+    # `.get(..., 1)` only defaults an ABSENT key — an explicit `holeNumber:
+    # null` still comes through as None here, which `HoleIntelligence.hole_number`
+    # (a required `int` field) cannot accept and would drop the whole hole's
+    # intel. Coalesce that one case so display is never dropped; every other
+    # malformed shape (str/float/bool/huge int) is already int-coercible by
+    # pydantic and passes through unchanged (write-back gating is separate,
+    # below, and unaffected by this).
+    if hole_number is None:
+        hole_number = 1
+    # RAW candidate for the write-back key — NO default. A defaulted "1" must
+    # never become the write-back destination for a request that genuinely
+    # omitted holeNumber (that would silently persist elevation onto stored
+    # hole 1). `hole_number` above stays display-only.
+    raw_hole_number = hole_coords.get("holeNumber")
     green = hole_coords.get("green", {})
     tee = hole_coords.get("tee")
 
@@ -59,21 +90,43 @@ async def build_hole_intelligence(
         else None
     )
 
-    # Fetch elevations for tee and green
+    # Elevation + green slope — read persisted static data first (ZERO
+    # USGS/3DEP calls on a cache hit); otherwise compute live (unchanged
+    # behavior) and best-effort write the result back for next time.
     elevation_change = 0.0
-    if tee and green:
-        tee_elev = await fetch_elevation_cached(tee["lat"], tee["lng"])
-        green_elev = await fetch_elevation_cached(green["lat"], green["lng"])
-        if tee_elev is not None and green_elev is not None:
-            elevation_change = green_elev - tee_elev  # positive = uphill
-
-    # Effective distance adjusted for elevation
-    effective_yards = None if yards is None else yards + round(elevation_change / 3)
-
-    # Green slope
     green_slope_data = None
-    if green:
-        slope_result = await compute_green_slope(green)
+
+    persisted_hit = (
+        persisted_elevation is not None
+        and persisted_elevation.get("tee_elevation_ft") is not None
+        and persisted_elevation.get("green_elevation_ft") is not None
+    )
+
+    if persisted_hit:
+        # READ PATH — zero USGS/3DEP. Prefer stored delta_ft; fall back to
+        # (green - tee) if delta_ft somehow absent.
+        delta = persisted_elevation.get("delta_ft")
+        if delta is None:
+            delta = persisted_elevation["green_elevation_ft"] - persisted_elevation["tee_elevation_ft"]
+        elevation_change = float(delta)
+        gs = persisted_elevation.get("green_slope")
+        if gs:
+            green_slope_data = GreenSlope(
+                direction=gs["direction"],
+                severity=gs["severity"],
+                percent_grade=gs["percent_grade"],
+                description=gs["description"],
+            )
+    else:
+        # LIVE COMPUTE — unchanged behavior, plus write-back.
+        tee_elev = green_elev = None
+        if tee and green:
+            tee_elev = await fetch_elevation_cached(tee["lat"], tee["lng"])
+            green_elev = await fetch_elevation_cached(green["lat"], green["lng"])
+            if tee_elev is not None and green_elev is not None:
+                elevation_change = green_elev - tee_elev  # positive = uphill
+
+        slope_result = await compute_green_slope(green) if green else None
         if slope_result:
             green_slope_data = GreenSlope(
                 direction=slope_result["direction"],
@@ -81,6 +134,33 @@ async def build_hole_intelligence(
                 percent_grade=slope_result["percent_grade"],
                 description=slope_result["description"],
             )
+
+        # WRITE-BACK — only on a genuine compute with BOTH real elevations AND
+        # a validated write-back key (never the defaulted `hole_number` — a
+        # request with no/garbage holeNumber must not silently mis-write).
+        # Never synthesize 0/None to fill a gap (the "+0ft" lesson): if either
+        # endpoint is None, persist nothing (absent stays absent).
+        if course_id and tee_elev is not None and green_elev is not None:
+            if courses_mapped._valid_hole_number(raw_hole_number):
+                profile = compute_hole_elevation_profile(
+                    tee_elev, green_elev, slope_result  # slope_result is the raw dict|None
+                )
+                try:
+                    await courses_mapped.update_green_feature_properties(
+                        course_id, raw_hole_number, courses_mapped._elevation_patch(profile)
+                    )
+                except Exception:  # noqa: BLE001 — persistence is best-effort; never sink intel
+                    log.warning(
+                        "elevation write-back failed for hole %s", raw_hole_number, exc_info=True
+                    )
+            else:
+                log.debug(
+                    "skip elevation write-back: invalid holeNumber %r (course %s)",
+                    raw_hole_number, course_id,
+                )
+
+    # Effective distance adjusted for elevation
+    effective_yards = None if yards is None else yards + round(elevation_change / 3)
 
     # Classify hazards from OSM features. DEFENSIVE: a single malformed OSM
     # feature must never destroy the whole hole's intel — the computed

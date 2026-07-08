@@ -3,6 +3,372 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — harden-elevation-writeback-holenumber: validate the write-back key (backend, silent, integration/next, DONE)
+
+Implemented `specs/harden-elevation-writeback-holenumber-plan.md` — commit
+`9c5e338`, pushed to `integration/next`. The static elevation write-back added
+in `0200576` trusted the request's `holeNumber` as both the DISPLAY value and
+the SQL write-back key; an absent holeNumber silently persisted a live
+compute onto stored hole 1, and a str/float/None/negative/huge/bool value
+flowed straight into the `:hole_number` SQL param.
+
+- `backend/app/services/courses_mapped.py`: `_MAX_HOLE_NUMBER = 36` +
+  `_valid_hole_number(value)` (int, not bool, `1..36`) — the ONE shared
+  bound. `update_green_feature_properties` now rejects an invalid key
+  BEFORE opening a DB session (defense in depth).
+- `backend/app/caddie/course_intel.py`: `raw_hole_number` (no default) is
+  the write-back key, gated on `courses_mapped._valid_hole_number(...)`;
+  invalid -> skip + `log.debug` (non-spammy), never raise. `hole_number`
+  (defaulted) stays display-only and unaffected.
+  Plan deviation (minimal, noted in the commit): an explicit `holeNumber:
+  null` also broke the DISPLAY value — `HoleIntelligence.hole_number` is a
+  required pydantic `int`, so `None` raised a `ValidationError` and dropped
+  the whole hole's intel, contradicting the plan's own "intel never dropped"
+  test requirement. Added a one-line `None -> 1` coalesce for display only;
+  the write-back gate already correctly skips this case unchanged.
+- `backend/app/routes/caddie.py` `_feature_center`: folded in the related
+  cycle-18 backlog note — a malformed same-type feature now `continue`s to
+  scan remaining features instead of returning `None` on the first bad one.
+- Tests: extended `backend/tests/test_course_intel_static_read.py` (mirrors
+  its existing `sys.modules` `app.db` stub + `monkeypatch.setattr` style) —
+  write-back skip/proceed matrix, `_valid_hole_number` unit coverage,
+  `update_green_feature_properties` returns `False` without opening a DB
+  session on an invalid key.
+
+Gates green: `ruff check .` (all checks passed);
+`pytest tests/test_course_intel_static_read.py tests/test_precompute_elevation.py`
+(46/46 passed); also ran the neighboring
+`test_course_intel_resilience.py test_hole_elevation_ingest.py
+test_elevation_profile.py` (54/54 passed) as a sanity sweep. No DB-backed
+integration test run locally (no local Postgres) — CI backend gate covers
+the Postgres round-trip. Silent, backend-only, no shared-type/SQL/migration
+change; rides bundle PR.
+
+## 2026-07-08 — fix-ios-voicetel-flush-dropped: immediate flush on iOS failure events + pagehide (frontend, silent, integration/next, DONE)
+
+Implemented `specs/fix-ios-voicetel-flush-dropped-plan.md` verbatim (Option A) —
+commit `1c65b49`, pushed to `integration/next`. Voice telemetry was near-blind on
+iOS (WKWebView suspends before the 8s batch timer / 12-event count trigger
+fires), dropping the highest-signal events (mic_error, speak_failed, etc.).
+No auth change, no new unauthenticated surface — everything still rides the
+existing Clerk-authenticated `fetch(keepalive)`.
+
+- `frontend/src/lib/voice/telemetry.ts`: `voiceEvent()` gains an optional
+  `flush?: boolean` control flag — when set, the event queues then the WHOLE
+  queue flushes immediately (ride-alongs included); the flag is never part of
+  the queued/POSTed event object. Added a `window` `pagehide` listener
+  alongside the existing `document` `visibilitychange` listener (both flush
+  via the same authenticated path).
+- `frontend/src/hooks/useLooperDictation.ts`: `flush: true` on `mic_error`,
+  `live_start_failed`, `live_unsupported`, `resolved_fallback` (success paths
+  stay batched).
+- `frontend/src/hooks/useSheetTTS.ts`: `flush: true` on both `speak_failed`
+  sites and `prime_failed`.
+- NEW `frontend/src/lib/voice/telemetry.test.ts` (jsdom, 10 deterministic
+  cases — fake timers paired with `vi.useRealTimers()`, module imported once):
+  batch-timer flush, count trigger, failure event immediate flush, immediate
+  flush drains ride-alongs in order, `flush` flag never leaks into the
+  payload, `pagehide` flush, `visibilitychange`→hidden flush (preserved),
+  auth header/content-type/URL/keepalive preserved, fetch-rejection and
+  authHeaders-rejection both swallowed without wedging the queue.
+- `frontend/src/hooks/useSheetTTS.test.ts`: updated the one exact-object
+  `prime_failed` matcher to include `flush: true` (only pre-existing test
+  edit required per plan).
+
+Gates green: `npm run lint`, `npx tsc --noEmit`, `npm run build`,
+`voice-tests/runner.ts --smoke` (274/274), and
+`vitest run telemetry.test.ts caddie-turn-timing.test.ts
+CaddieSheet.handsfree.test.tsx useSheetTTS.test.ts` (59/59 passed). No backend
+file touched, so `ruff` not required (not run). Silent, telemetry-only —
+no app-visible surface change; rides bundle PR #109.
+
+## 2026-07-08 — course-intel-static-persistence: persist per-hole elevation, skip USGS on repeat opens (backend, silent, integration/next, DONE)
+
+Implemented `specs/course-intel-static-persistence-plan.md` verbatim — commit
+`0200576`, pushed to `integration/next`. course-intel now reads persisted
+tee/green elevation + green slope from the stored green feature's JSONB
+`properties` (`courses_mapped`) before hitting USGS/3DEP: a cache hit (both
+`tee_elevation_ft`/`green_elevation_ft` present) issues ZERO network calls.
+A genuine live compute that produces real tee AND green elevations is
+best-effort written back via a NEW targeted `update_green_feature_properties`
+(single-feature JSONB `||` merge — never `upsert_course`, so it can't race
+or clobber curated hazard data mid-round). `/session/start` now fires a
+`BackgroundTasks` job (`_precompute_course_elevations`) that samples every
+hole still missing persisted elevation (2 batched 3DEP calls), so the
+second time the owner opens intel on a course, elevation is instant.
+
+- `backend/app/services/courses_mapped.py`: `update_green_feature_properties`
+  (targeted UPDATE, no-op-safe, returns bool) + `_elevation_patch` (maps a
+  `compute_hole_elevation_profile` result to the persisted shape,
+  `net_change_ft -> delta_ft`, omits `green_slope` when None).
+- `backend/app/caddie/course_intel.py`: `build_hole_intelligence` gains
+  optional `persisted_elevation`/`course_id`; read-first branch (persisted
+  hit -> zero calls) else unchanged live compute + best-effort write-back,
+  guarded so it NEVER persists a fabricated 0/None (absent stays absent).
+- `backend/app/routes/caddie.py`: `get_course_intel` feeds the green
+  feature's persisted props from the stored course it already reads (no
+  second `get_course`) via a new `_green_persisted_elevation` helper;
+  `start_session` gets a `BackgroundTasks` param and schedules the
+  precompute job; added `_feature_center` (reuses `_ring_centroid`) +
+  `_precompute_course_elevations` (idempotent — skips already-persisted
+  holes, resilient — never raises/fails the request, never `upsert_course`).
+- Tests: `backend/tests/test_course_intel_static_read.py` (NEW, non-DB) —
+  cache-hit skips `fetch_elevation_cached`/`compute_green_slope`/
+  `fetch_3dep_samples` entirely; delta_ft-absent fallback; absent-vs-zero
+  (partial live compute never calls `update_green_feature_properties`);
+  `_elevation_patch` omit/include green_slope. `backend/tests/test_precompute_elevation.py`
+  (NEW, non-DB) — `_feature_center` Point/Polygon/absent; precompute skips
+  holes missing tee-or-green and holes already persisted (idempotent),
+  zero-sample early return when nothing is computable, resilient to
+  `get_course` raising.
+- **Deviation from plan (flagged for eng-lead, not improvised around):**
+  the plan's DB-backed integration tests (b) `test_course_intel_write_back.py`,
+  (d)-DB-half `test_session_precompute.py`, and (e) `test_green_feature_update.py`
+  were NOT added. Discovered while implementing: CI's Postgres service
+  (`postgres:16`, vanilla, `.github/workflows/ci.yml`) has no PostGIS
+  extension, and `tests/integration/conftest.py`'s schema setup only runs
+  `Base.metadata.create_all` (ORM models) — it never bootstraps the
+  raw-SQL-only `courses`/`tee_sets`/`holes`/`hole_features`/`hole_yardages`
+  tables from `backend/supabase/migrations/001_course_mapping_schema.sql`
+  (guarded, not touched). This is pre-existing: no test in the repo
+  exercises `courses_mapped` against a live DB today. Adding these three
+  files as specified would either error at schema creation in CI (no
+  PostGIS) or require changing the shared CI Postgres service image —
+  out of scope for this backend-only plan. Recommend a follow-up infra
+  item: swap CI's postgres service to a PostGIS-enabled image (e.g.
+  `postgis/postgis:16-3.4`) and add a schema-bootstrap fixture for the
+  course-mapping tables to `tests/integration/conftest.py`.
+- Gates: `ruff check .` clean; `pytest tests/ --ignore=tests/integration -q`
+  → 1045 passed (incl. the 2 new files, 42 tests covering this change);
+  frontend `tsc --noEmit` clean (no frontend change); `voice-tests/runner.ts
+  --smoke` → 274/274 pass. DB-backed integration tests NOT run locally
+  (no Postgres on this machine) — see deviation note above re: CI coverage.
+- Silent (backend-only, no user-visible change) — rides along in the
+  `integration/next` bundle.
+
+## 2026-07-07 — caddie-opening-reco-from-tee: honest from-the-tee fallback for the auto opening reco (frontend, noticeable, integration/next, DONE)
+
+Implemented `specs/caddie-opening-reco-from-tee-plan.md` exactly — commit
+`5c9b6db`, pushed to `integration/next`. When the auto opening caddie
+recommendation can't get a live GPS fix (absent/denied/timeout) OR the fix is
+implausible (>800y from the green), it now falls back to a from-the-tee
+recommendation instead of staying idle — phrased honestly ("I'm on the tee,
+about 365 to the pin. What should I hit off the tee?"), never claiming a
+position the player isn't at. Covers home testing and the first tee before
+GPS lock. All existing honest-null cases preserved (no green -> null; no GPS
+& no tee -> null).
+
+- NEW `frontend/src/lib/caddie/opening-shot.ts` — pure, DOM/GPS-free helper
+  `resolveOpeningShotDistance(gps, tee, green)` with the exact branch order
+  from the plan: no green -> null; plausible GPS wins; implausible GPS FALLS
+  THROUGH to the tee fallback (the core new behavior — was the bug); usable
+  tee -> `{ fromTee: true }`; else -> null. Same `1..800y` bounds on both
+  paths. 6 unit tests (`opening-shot.test.ts`) cover every branch incl. the
+  implausible-GPS-falls-through case.
+- `RoundPageClient.tsx`: `resolveOpeningShot` keeps the async GPS acquisition
+  + `withTimeout` in place, now delegates the distance math to the new
+  helper (added `teeForHole` alongside `greenForHole`).
+- `CaddieSheet.tsx`: prop type widened to
+  `{ distanceYards: number; fromTee?: boolean } | null`; only the `const q`
+  question-string line branches on `shot.fromTee` for tee wording. The
+  `openingGenRef`/`openingFiredRef`/pristine-idle guard block was left
+  byte-for-byte untouched per the plan.
+- `CaddieSheet.session.test.tsx`: added a tee-phrasing test, a regression
+  lock that the GPS path never says "on the tee", and a null-path assertion
+  that idle never shows tee phrasing either.
+- No deviation from the plan. No shared-type/DTO changes (`types.ts`,
+  `models.py` untouched, confirmed — this shape is a local UI contract only).
+- Gates: `npm run lint` clean, `tsc --noEmit` clean, `npm run build` green,
+  `voice-tests/runner.ts --smoke` 274/274 pass, full `vitest run` 1660/1660
+  pass (incl. new + touched tests).
+
+## 2026-07-07 — caddie-realtime-conversation Slice A2: sentence-level TTS pipelining (frontend, noticeable-leaning latency, integration/next, DONE)
+
+Implemented `specs/caddie-realtime-conversation-plan.md` §6.5.4 (Slice A2) —
+commit `77a0f79`, pushed to `integration/next` (rolling bundle PR #109).
+Removes the "text finishes streaming, THEN voice starts" gap on the classic
+sheet path (`CaddieSheet.tsx` `askCaddie`) the owner described in his
+2026-07-07 latency feedback — TTS now starts on the FIRST sentence while the
+rest of the reply is still streaming, instead of waiting for the whole reply.
+
+- NEW `frontend/src/lib/caddie/sentence-stream.ts` — pure incremental
+  sentence extractor (regex boundary + a short abbreviation/number-guard
+  list), 14 unit tests covering the tricky false positives from the plan
+  ("165 yds." stays one sentence, "Nice drive. Now hit the 8." splits,
+  decimals never split, multi-punctuation "Really?! Go." splits, trailing
+  partial buffers until `flush()`).
+- `frontend/src/hooks/useSheetTTS.ts` — added `beginStream()`/`enqueue()`/
+  `endStream()` as a queued-playback mode alongside the existing `speak()`.
+  Internally rebuilt as a single ordered play queue (each chunk synthesized +
+  abortable independently, always played sequentially on the ONE persistent
+  `<audio>` element); `speak()` is now sugar for "one-chunk turn" over the
+  same queue, so it is 100% behavior-preserving for every existing caller.
+  +8 new unit tests proving the hard invariants: `onSpeakStart` fires once
+  per turn (chunk 1 only), `onPlaybackEnd` fires once — only after the LAST
+  chunk's natural `ended`, never between chunks (this is the invariant that
+  matters most: firing mid-reply would re-arm hands-free while the caddie is
+  still talking) — `stop()`/a new `speak()` clears the whole queue + aborts
+  pending synths with no re-arm, and a failed `play()` ends the turn silently
+  (mirrors old behavior — a TTS failure never re-arms hands-free).
+- `CaddieSheet.tsx` `askCaddie`: `onToken` feeds the segmenter incrementally
+  and `enqueue()`s each completed sentence (guarded by the existing
+  `isStale()`, so a superseded turn never enqueues); a
+  `MIN_TTS_CHUNK_CHARS = 20` merge threshold holds short fragments (e.g.
+  "Easy 7.") and merges them with the next sentence rather than burning a
+  `/speak` call on 2–3 words. At completion, reconciles the un-enqueued tail
+  against the authoritative `responseText` so the full reply is spoken
+  exactly once — no drop, no duplicate. When nothing was pipelined mid-stream
+  (short reply, or the non-streaming fallback tier with zero tokens),
+  completion falls back to the EXACT old single `tts.speak(responseText)`
+  call — unchanged behavior for short/simple replies. Errors/aborts now also
+  call `tts.stop()` so a discarded partial reply is never spoken.
+- Plan deviation (noted per the builder brief): the task described removing
+  `tts.speak()` from the streaming path outright. Kept it as the queue's
+  single-chunk fallback instead (functionally identical — one call, whole
+  text, same invariants) specifically so `CaddieSheet.session.test.tsx` /
+  `.handsfree.test.tsx` — whose every scripted reply is short enough to stay
+  under the merge threshold — pass **byte-for-byte unmodified except for**
+  adding `beginStream`/`enqueue`/`endStream` stubs to their `useSheetTTS`
+  mocks (the hook's API surface grew; every existing assertion is untouched,
+  plus 2 new assertions confirming `enqueue()` is NOT called in those
+  fallback scenarios). This was traced carefully call-by-call before
+  implementing — see the hook's internal design comments.
+- Cost note (per the brief): pipelining trades one full-reply `/speak` proxy
+  call for N per-sentence calls on longer replies. The
+  `MIN_TTS_CHUNK_CHARS` guard keeps this lean — only real, substantial
+  sentence boundaries pipeline; short replies and stray fragments still
+  collapse to one call, same as today.
+- Out of scope (untouched, as directed): `lib/voice/realtime.ts`,
+  `warm-session.ts`, `stream-buffer.ts` and its tests — this is the classic
+  Deepgram+SSE+`useSheetTTS` path only; the live-mode Realtime path (§5) is
+  unaffected.
+
+Gates (all GREEN, evidence): `npm run lint` 0 errors; `npx tsc --noEmit`
+clean; `npm run build` ok; `npx tsx voice-tests/runner.ts --smoke` 274/274;
+`npx vitest run` **78 files / 1650 tests, all passing** (+37 new tests: 14
+segmenter + 8 queue-mode + existing suites untouched-and-still-green).
+
+Classification: **noticeable-leaning latency improvement** on the classic
+caddie-sheet path (device-perceivable: caddie voice should start noticeably
+sooner on multi-sentence replies) — rides on bundle PR #109 with the
+already-shipped stage-timing telemetry (silent) that will make the
+before/after `caddie.eos_to_first_audio` numbers visible on the owner's
+device. Slice C (Realtime transport migration) remains deferred/not started.
+
+## 2026-07-07 — caddie-realtime-conversation: stage-timing telemetry slice (frontend, SILENT, integration/next, DONE)
+
+Cycle 15 (owner-triggered). Implemented the **stage-timing telemetry** slice of
+`specs/caddie-realtime-conversation-plan.md` §6.5.3 (own contract:
+`specs/caddie-realtime-telemetry-plan.md`, opus-planned this cycle) — commit `6fcb40d`,
+pushed to `integration/next`. Makes the owner's latency pain ("long pause between speak →
+transcribe → text → voice", v1.0.808 feedback) **measurable on his real device** before
+we attack it. SILENT: telemetry events only, no UI, no behavior change.
+
+- NEW `frontend/src/lib/voice/caddie-turn-timing.ts` — `createCaddieTurnTimer` factory:
+  per-turn marks (`markEos/markTranscript/markFirstToken/markFirstAudio`), complete-legs-only
+  emission, sanity clamp (drop `<=0` / `>60000ms`), once-per-turn guards, `markEos()` as the
+  per-turn reset, injectable `now`/`emit`/`flush`, full try/catch swallow (can never throw
+  into audio/dictation). Monotonic `performance.now()`.
+- Classic sheet path (`CaddieSheet.tsx` + new `onSpeakStart` callback on `useSheetTTS.ts`):
+  emits `caddie.eos_to_transcript`, `caddie.transcript_to_first_token`,
+  `caddie.first_token_to_first_audio`, and the headline `caddie.eos_to_first_audio`.
+  `useSheetTTS` stays a pure audio hook (signals "audio started", emits no telemetry itself).
+- Realtime orb path (`useVoiceCaddie.ts`, CONSUMER-only via `handleConnectionStatus`
+  status-transition detection): `markEos` on `listening`→`connected` (= `speech_stopped`),
+  `markFirstAudio` on first `speaking`. **`realtime.ts` + `warm-session.ts` NOT touched** —
+  warm-path hard gate deliberately not tripped. Honest proxy caveat documented (first
+  `response.audio_transcript.delta` as "voice starting", the closest consumer-observable seam).
+- **iOS must-fix:** headline `caddie.eos_to_first_audio` calls `flushVoiceEvents()`
+  synchronously at turn end (keepalive already set) so the one number we care about survives
+  the known "voicetel flush-drop" background batch death.
+- No new endpoint / schema; rides the existing authed `POST /api/voice/telemetry` (surface/
+  event are free-form str on the backend — confirmed no backend change needed).
+
+Gates (all GREEN, evidence): `npm run lint` 0/0; `npx tsc --noEmit` clean; `npx vitest run`
+**1628 passed / 77 files** incl. new `caddie-turn-timing.test.ts` (8) + extended
+`useSheetTTS.test.ts` (+2) + extended `CaddieSheet.handsfree.test.tsx` (+1);
+`voice-tests/runner.ts --smoke` 274/274; `npm run build` ok. Backend unchanged (no backend gate).
+**CI on PR #109 @ 6fcb40d:** backend gate PASS, frontend gate PASS (E2E advisory settling).
+**Reviewer: CLEAN** — 7/7 invariants + security (no PII in payloads); one NON-BLOCKING
+cross-turn-skew note already anticipated by the plan (clamp backstop, self-correcting).
+
+Classification **SILENT** → bundle PR #109 stays open, accumulating; **not** requesting owner
+approval. NEXT latency slice = **A2 (sentence-level TTS pipelining)**, now measurable via
+these markers (plan §6.5.4 BUILD-conditional). Slice C (transport migration) still deferred
+(multi-cycle, flag-gated, device-verified — not started).
+
+## 2026-07-07 — caddie-realtime-conversation Slice A: Realtime mint grounding parity (backend-only, silent-leaning, integration/next, DONE)
+
+Implemented **Slice A ONLY** of `specs/caddie-realtime-conversation-plan.md` (commit
+`34c1222`) — backend grounding parity between `build_realtime_instructions` (the
+OpenAI Realtime mint, used today by the round-page orb) and `_build_session_voice_prompt`
+(the sheet's text session path). No transport/frontend change; `realtime.ts` and the
+warm-path invariants were not touched.
+
+- `backend/app/caddie/voice_prompts.py`: `_situation_block` now also renders green slope
+  (`hole_intel.green_slope.description`), last recommendation (club/target/aim/miss), and
+  recent shots (last 5) — all guarded (`if present`). New `_conversation_history_block`
+  renders the last ~20 `session.conversation_history` turns into a new "Earlier this round"
+  section in `build_realtime_instructions`. **Discovery vs the plan:** no change was needed
+  in `backend/app/routes/realtime.py` — `get_owned_session` already hydrates
+  `conversation_history` from `caddie_messages` into the `RoundSession`, and
+  `start_realtime_session` already passes the full `session` object into
+  `build_realtime_instructions`; the gap was purely that the prompt builder wasn't
+  rendering it. Noted here per the "minimal sound adjustment" rule rather than silently
+  deviating.
+- `backend/app/routes/caddie.py`: `get_session_conditions` (`get_conditions` tool payload)
+  now includes `green_slope: {description}` (None when unmapped — honest, same discipline
+  as hazards). `get_session_status` now includes `recent_shots` (last 5).
+- `backend/app/services/realtime_relay.py`: `get_conditions` tool description mentions
+  green slope; kept the "never name an unmapped hazard" wording intact.
+- New `backend/tests/test_realtime_grounding.py` — 17 pure unit tests (no DB): each gap
+  present vs absent, byte-identical-when-absent (`test_absent_grounding_fields_are_byte_identical`),
+  HAZARD_GROUNDING_RULE untouched/undupped, plus route-handler-level tests for the two grown
+  tool payloads (`get_session_conditions` green_slope, `get_session_status` recent_shots) via
+  the same `get_owned_session` monkeypatch pattern as `test_realtime_tools.py`.
+
+Gates: `ruff check .` clean; `uv run pytest -q` → 1034 passed, 74 skipped (DB-gated
+integration tests skip locally — no local Postgres per policy; CI runs those), including the
+new file's 17/17 and the pre-existing `test_realtime_tools.py`/`test_realtime_payload.py`/
+`test_setup_voice.py` (28/28) unmodified and still green. Frontend sanity (backend-only
+change): `npm run lint` clean, `npx tsc --noEmit` clean, `voice-tests/runner.ts --smoke` →
+274/274 — all unchanged, confirming no frontend drift. Pushed to `integration/next`
+(`34c1222`).
+
+**Classification:** noticeable-leaning per the task brief (it makes the live orb caddie
+smarter today — it now remembers earlier-this-round conversation, references green slope/
+last rec/recent shots) but the change is entirely inside the mint's instructions string and
+existing tool JSON — no new endpoint, no schema/type change, nothing for QA to click through
+distinctly from "the caddie seems to remember more." Rides in the bundle; no separate ping
+needed. Slice C (the actual tap-to-talk → continuous-listen transport migration the owner
+asked for) is NOT done — it's the high-risk slice, explicitly deferred per the plan's own
+recommendation, to be planned/device-verified separately.
+
+**Eng-lead review (this cycle):** reviewer CLEAN (guards prove byte-identical when
+absent; attribute-safe against the real models; HAZARD_GROUNDING_RULE intact; owned-session
+gated, no injection surface — one non-blocking nit that a test name oversells a
+near-tautological assertion, real coverage exists elsewhere, not worth a round-trip). QA
+PASS (ruff clean; 1034 passed / 74 DB-skipped; grounding 17/17; frontend lint/tsc/voice
+274/274). Classified **SILENT** for the ship gate — no distinct owner-testable surface, so
+it rides the bundle; no owner ping.
+
+**Plan updated mid-cycle with owner latency feedback (2026-07-07, testing v1.0.808):**
+"long pause between when I speak, transcribing, the text coming out, and then the voice."
+Folded into `specs/caddie-realtime-conversation-plan.md` as a FIRST-CLASS requirement:
+§6.5 — **end-to-end latency is now the top success metric (≤~1.5-2.0s end-of-speech →
+voice)**, with a stage-by-stage table (current classic path ~3-5s: 1.2s Deepgram VAD tail +
+TTS-waits-for-full-text) vs Realtime speech-to-speech (~0.8-1.5s, no STT→text→TTS trip);
+§6.5.3 stage-timing voicetel telemetry (headline `eos_to_first_audio` must flush immediately
+to survive the iOS voicetel flush-drop); §6.5.4 interim-mitigation decision — BUILD a LEAN
+sentence-level TTS pipelining stopgap (slice A2) ONLY IF Slice C won't land device-verified
+within ~2 cycles (durable: the classic path is the permanent honest-degradation fallback,
+so not throwaway), else SKIP. Backlog updated with the latency metric + A2/telemetry slices.
+
+**Next cycle:** Slice C is a device-verified-behind-a-flag migration (multi-cycle) — do NOT
+rush it into a bundle the owner can't test on-device. Decide A2 (interim TTS pipelining) vs
+straight-to-C based on C's timeline; the queued `caddie-opening-reco-from-tee` composes with
+C's opening-turn seam.
+
 ## 2026-07-07 — fix-ios-tts-playback: caddie TTS on-device fix (P0, NOTICEABLE, integration/next, DONE)
 
 Implemented `specs/fix-ios-tts-playback-plan.md` exactly (commit `35c4103`). Owner's iPhone was
@@ -7147,3 +7513,76 @@ fresh `roundActive` from the weather mirror ref (no stale closure). Dropped the 
 Gates: vitest weather-freshness 17/17 (+5 new deterministic cases), lint clean, tsc clean,
 next build ok, voice smoke 274/274. Committed 8ec8672 → integration/next; opened the fresh
 rolling bundle PR #108 (silent-only — no owner ping). Rides until a noticeable item lands.
+
+---
+
+## 2026-07-08 — SHIPPED: #108 iOS caddie voice fix + weather guard
+
+Owner "ship it". Merge 38ed64f → main (frontend-only). TestFlight v1.0.808
+(build 202607072128). P0: CapacitorHttp's patched fetch was corrupting the
+TTS mp3 blobs → NotSupportedError on every spoken reply on the owner's
+iPhone → hands-free loop never re-armed. Fixed via native CapacitorHttp
+blob fetch + primed persistent audio element + prime_failed telemetry.
+Riders: completed-round weather guard. Thirteen ships.
+NEXT (owner directive): caddie-realtime-conversation opus plan — Ask Caddie
+on the Realtime engine, hands-free like setup. Then reco-from-tee + static
+intel persistence + the iOS voicetel flush fix.
+
+## 2026-07-09 — cycle 17: caddie-opening-reco-from-tee (NOTICEABLE, integration/next, DONE)
+
+Step 0 clean: PR #109 OPEN/CLEAN, CI green on 71b104e, no owner comments (overnight),
+no approval to process. integration/next synced (0 behind main).
+
+Picked p1 caddie-opening-reco-from-tee. Opus plan (specs/caddie-opening-reco-from-tee-plan.md)
+factored the logic into a pure DOM/GPS-free helper. Builder (5c9b6db) added
+`frontend/src/lib/caddie/opening-shot.ts` — `resolveOpeningShotDistance(gps,tee,green)`:
+plausible GPS wins; implausible/absent GPS FALLS THROUGH to tee→green (fromTee:true);
+honest null when no green or no usable tee. CaddieSheet phrases the tee fallback honestly
+("I'm on the tee, about N yards to the pin. What should I hit off the tee?"); the
+openingGenRef/pristine-idle guards stayed byte-for-byte. 6 helper unit tests + 3 phrasing
+tests (incl. GPS-path `not.stringContaining("on the tee")` regression lock + null-idle).
+
+Review pass: reviewer CLEAN (no blocking; no security surface — pure client helper, no
+security-review needed), qa PASS (lint/tsc/build/voice 274/274/vitest 1660/1660/ruff),
+designer APPROVE-WITH-NIT. Folded two non-blocking nits in c2b27de: designer's "yards"
+unit-consistency on the tee sentence, and reviewer's restored `if(!greenForHole) return null`
+early guard (skips a pointless 6s geolocation wait when the hole has no green). Re-ran gates:
+lint/tsc clean, affected vitest 45/45, build ok, voice 274/274.
+
+NOTICEABLE — rides bundle PR #109 (already awaiting the owner's "ship it"; checklist updated).
+Per standing rule: NO push notification (overnight); the item accumulates on the bundle and
+merges with the owner's single approval. backlog 0ecbf49. One item this cycle (backend-heavy
+course-intel-static-persistence stays queued for next cycle). Head c2b27de.
+
+---
+
+## 2026-07-09 — CHECKPOINT: monthly spend limit hit (loop paused)
+
+Cycle 18 (course-intel-static-persistence) terminated mid-plan on the
+MONTHLY spend cap ("raise at claude.ai/settings/usage"). Per policy
+(tasks/todo.md locked budget: subscription → ≤$50 overflow → hard-stop),
+the loop PAUSES here; no further cycles dispatched. Tree clean, nothing
+lost.
+
+STATE AT PAUSE:
+- Bundle PR #109 OPEN + CI GREEN on 59e87ee, 2 noticeable (A2 TTS
+  pipelining, from-tee opening reco) + 2 silent — AWAITING owner "ship it".
+- Cycle 18 findings to seed the retry (explored before dying):
+  * courses_mapped is NORMALIZED relational, not JSONB-blob; only
+    hole_features.properties is JSONB.
+  * PRECEDENT EXISTS: embed_elevation_in_green_features (osm_ingest.py)
+    already writes tee/green elevation + delta + slope into the green
+    feature's properties and round-trips via upsert_course/get_course —
+    no schema change needed.
+  * sample_course_elevations computes a whole course in ~2 batched 3DEP
+    calls (the right precompute path); session/start is the BackgroundTask
+    hook.
+  * CONCURRENCY RISK: upsert_course does destructive delete+reinsert of
+    all features — must not run on the hot read path; write-back needs a
+    targeted properties update, not a full upsert.
+- Remaining queue after this item: fix-ios-voicetel-flush-dropped,
+  Slice C transport migration (flag-gated), persona voices (owner taste),
+  strategy guides (owner-paused).
+
+RESUME: next session (after limit reset or owner raises the cap) — retry
+cycle 18 with the findings above; then continue the queue.

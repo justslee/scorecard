@@ -1,6 +1,6 @@
 """Caddie API routes - recommendation, course intelligence, voice, personalities, sessions."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import anthropic
 import json
@@ -41,6 +41,8 @@ from app.caddie import learning as learning_mod
 from app.caddie.types import PlayerStatistics, PlayerTendencies
 from app.services.osm import fetch_course_features
 from app.services import courses_mapped
+from app.services.elevation import sample_course_elevations
+from app.services.course_spatial import _ring_centroid
 from app.services.clerk_auth import current_user_id, optional_user_id
 
 log = logging.getLogger("looper.caddie")
@@ -78,6 +80,95 @@ async def _resolve_mapped_course_id(course_name: str) -> str | None:
     except Exception:  # noqa: BLE001 — best-effort by design
         log.warning("mapped-course name resolution failed", exc_info=True)
     return None
+
+
+def _green_persisted_elevation(stored_hole: Optional[dict]) -> Optional[dict]:
+    """Pull the green feature's persisted elevation subset from a stored hole
+    (as returned by `courses_mapped.get_course`), or None when absent."""
+    if not stored_hole:
+        return None
+    feats = (stored_hole.get("features") or {}).get("features") or []
+    for f in feats:
+        props = f.get("properties") or {}
+        if props.get("featureType") == "green" and props.get("tee_elevation_ft") is not None:
+            return props  # full props dict; build_hole_intelligence reads only elevation keys
+    return None
+
+
+def _feature_center(feats: list[dict], feature_type: str) -> Optional[tuple[float, float]]:
+    """(lng, lat) centre of the first WELL-FORMED feature of `feature_type`.
+
+    A malformed feature (missing/invalid geometry) must not blind the whole
+    hole: skip it and keep scanning later same-type features rather than
+    returning None on the first bad one.
+    """
+    for f in feats:
+        if (f.get("properties") or {}).get("featureType") != feature_type:
+            continue
+        geom = f.get("geometry") or {}
+        coords = geom.get("coordinates")
+        gtype = geom.get("type")
+        try:
+            if gtype == "Point":
+                return (coords[0], coords[1])
+            if gtype == "Polygon":
+                lon, lat = _ring_centroid(coords[0])
+                return (lon, lat)
+            if gtype == "MultiPolygon":
+                lon, lat = _ring_centroid(coords[0][0])
+                return (lon, lat)
+        except (TypeError, IndexError, KeyError):
+            continue  # malformed feature — keep scanning remaining same-type features
+    return None
+
+
+async def _precompute_course_elevations(course_id: str) -> None:
+    """Seed per-hole elevation into green-feature properties so the 2nd
+    course-intel open shows elevation instantly. Best-effort: never raises."""
+    try:
+        course = await courses_mapped.get_course(course_id)
+        if not course:
+            return
+
+        # Build the minimal LineString hole list sample_course_elevations
+        # expects (tee = coords[0], green = coords[-1]), deriving tee/green
+        # centres from stored polygon features. Only holes MISSING persisted
+        # elevation are sampled (idempotent + avoids re-hitting USGS).
+        synth_holes: list[dict] = []
+        SYNTH_NAME = "precompute"
+        for h in course.get("holes", []):
+            feats = (h.get("features") or {}).get("features") or []
+            green_c = _feature_center(feats, "green")
+            tee_c = _feature_center(feats, "tee")
+            if green_c is None or tee_c is None:
+                continue  # absent != zero — cannot sample; skip
+            if _green_persisted_elevation(h) is not None:
+                continue  # already persisted — idempotent skip
+            synth_holes.append({
+                "type": "Feature",
+                "properties": {"course_name": SYNTH_NAME, "ref": h["number"]},
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [
+                        [tee_c[0], tee_c[1]],      # [lng, lat] tee   -> coords[0]
+                        [green_c[0], green_c[1]],  # [lng, lat] green -> coords[-1]
+                    ],
+                },
+            })
+
+        if not synth_holes:
+            return  # nothing to do — zero USGS calls
+
+        profiles = await sample_course_elevations(synth_holes, SYNTH_NAME)  # 2 batched calls
+        for hole_number, profile in profiles.items():  # omit-on-missing already applied
+            try:
+                await courses_mapped.update_green_feature_properties(
+                    course_id, hole_number, courses_mapped._elevation_patch(profile)
+                )
+            except Exception:
+                log.warning("precompute write-back failed hole %s", hole_number, exc_info=True)
+    except Exception:
+        log.warning("elevation precompute failed course=%s", course_id, exc_info=True)
 
 
 def _first_text(message) -> str:
@@ -143,6 +234,7 @@ class SessionVoiceRequest(BaseModel):
 @router.post("/session/start")
 async def start_session(
     request: StartSessionRequest,
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
     user_id: str = Depends(current_user_id),
 ):
     """Start or resume a round session. Hydrates the player's persistent memories
@@ -164,6 +256,15 @@ async def start_session(
     session = await sessions.get_or_create(
         request.round_id, course_id, user_id=user_id,
     )
+
+    # Precompute per-hole elevation into the stored green features so the
+    # next course-intel open shows it instantly (zero USGS calls). Resilient
+    # + idempotent — fired after the response is sent, never blocks/fails
+    # session start.
+    if course_id:
+        bg = background_tasks if background_tasks is not None else BackgroundTasks()
+        bg.add_task(_precompute_course_elevations, course_id)
+
     if request.club_distances:
         session.club_distances = request.club_distances
     if request.handicap is not None:
@@ -255,6 +356,7 @@ async def get_session_status(round_id: str, user_id: str = Depends(current_user_
         "shot_count": len(session.shot_history),
         "conversation_length": len(session.conversation_history),
         "last_recommendation": session.last_recommendation.model_dump() if session.last_recommendation else None,
+        "recent_shots": [s.model_dump() for s in session.shot_history[-5:]],
     }
 
 
@@ -371,6 +473,12 @@ async def get_session_conditions(
         hazards_payload = [h.model_dump() for h in intel.hazards]
         hazards_line = format_hazards_line(hn, intel.hazards)
 
+    # Honest by design, same discipline as hazards: no slope data mapped for
+    # this hole → None, never a guessed break.
+    green_slope = None
+    if intel is not None and intel.green_slope:
+        green_slope = {"description": intel.green_slope.description}
+
     return {
         "round_id": round_id,
         "hole_number": hn,
@@ -378,6 +486,7 @@ async def get_session_conditions(
         "plays_like": plays_like,
         "hazards": hazards_payload,
         "hazards_line": hazards_line,
+        "green_slope": green_slope,
     }
 
 
@@ -1004,12 +1113,17 @@ async def get_course_intel(
     hole_intel_map: dict[int, HoleIntelligence] = {}
     for hc in request.hole_coordinates:
         try:
+            stored_hole = stored_holes_by_number.get(hc.get("holeNumber"))
+            persisted_elev = _green_persisted_elevation(stored_hole)
+
             intel = await build_hole_intelligence(
                 hole_coords=hc,
                 par=hc.get("par"),
                 yards=hc.get("yards"),
                 handicap_rating=hc.get("handicap"),
                 osm_features=osm_features,
+                persisted_elevation=persisted_elev,
+                course_id=owned_session.course_id if owned_session else None,
             )
             stored_hole = stored_holes_by_number.get(intel.hole_number)
             if stored_hole is not None:

@@ -51,8 +51,10 @@ import { getGolferProfile } from "@/lib/storage";
 import { buildClubMap } from "@/lib/caddie/clubs";
 import { shouldDismissSheetDrag, useBodyScrollLock } from "@/lib/sheet";
 import { useStreamBuffer } from "@/lib/caddie/stream-buffer";
+import { createSentenceStream } from "@/lib/caddie/sentence-stream";
 import { useSheetTTS } from "@/hooks/useSheetTTS";
 import { getSheetTtsEnabled, setSheetTtsEnabled } from "@/lib/voice/tts-pref";
+import { createCaddieTurnTimer } from "@/lib/voice/caddie-turn-timing";
 import type {
   CaddieRecommendation,
   VoiceCaddieMessage,
@@ -90,7 +92,7 @@ export interface CaddieSheetProps {
   /** Resolves the golfer's live distance-to-pin (yards) for the auto opening
    *  turn, or null when there is no GPS fix / no green coords / it times out.
    *  Parent owns GPS + course coords; the sheet stays GPS-free. */
-  resolveOpeningShot?: () => Promise<{ distanceYards: number } | null>;
+  resolveOpeningShot?: () => Promise<{ distanceYards: number; fromTee?: boolean } | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +166,14 @@ type Mode = "voice" | "tap";
 const REARM_GRACE_MS = 400; // §3.3 echo guard — wait past playback end before opening the mic
 const DEAD_AIR_MS = 6000; // §3.4 — armed but silent too long → drop out
 const MAX_EMPTY_STREAK = 2; // §3.4 — consecutive empty/failed loop-armed listens → drop out
+
+// Sentence-level TTS pipelining (specs/caddie-realtime-conversation-plan.md
+// §6.5.4, Slice A2) — a completed sentence shorter than this is held and
+// merged with the next one before it's sent to TTS, so a 2-word fragment
+// mid-stream doesn't burn a whole extra `/speak` proxy call. Tuned so a
+// short caddie beat ("Easy 7.") merges with what follows rather than firing
+// alone — real caddie replies' opening clauses comfortably clear it.
+const MIN_TTS_CHUNK_CHARS = 20;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -292,7 +302,12 @@ export default function CaddieSheet({
     }, REARM_GRACE_MS);
   }, [open, mode, isListening, isTranscribing, isThinking, isStreaming]);
 
-  const tts = useSheetTTS({ onPlaybackEnd: handlePlaybackEnd });
+  // Classic-path per-turn stage-timing telemetry (silent —
+  // specs/caddie-realtime-telemetry-plan.md). One instance per sheet
+  // instance, held in a ref so it persists across renders.
+  const turn = useRef(createCaddieTurnTimer({ surface: "caddie-turn" })).current;
+
+  const tts = useSheetTTS({ onPlaybackEnd: handlePlaybackEnd, onSpeakStart: () => turn.markFirstAudio() });
 
   // Streaming caddie reply (specs/voice-streaming-replies-plan.md). One
   // AbortController per in-flight ask — a new question or a sheet close
@@ -479,9 +494,38 @@ export default function CaddieSheet({
       setVoiceAnswer(null);
       setIsStreaming(false); // flips true on the FIRST token — see onToken below
       const currentHistory = convHistoryRef.current;
+
+      // Sentence-level TTS pipelining (specs/caddie-realtime-conversation-plan.md
+      // §6.5.4, Slice A2) — local to THIS call (a superseded turn's own
+      // closure just stops being fed once isStale() flips true; no shared
+      // ref bookkeeping needed across turns). `ttsBegun` gates the one-time
+      // tts.beginStream() call to the first real token of this turn — a
+      // stale/aborted call's late tokens never reach it (isStale() guard
+      // below). `ttsAnyEnqueued` tracks whether ANY chunk was pipelined
+      // mid-stream; if none was (short reply, or the non-streaming fallback
+      // with zero tokens), completion falls back to the exact old
+      // single-call tts.speak() behavior.
+      const sentenceStream = createSentenceStream();
+      let ttsBegun = false;
+      let ttsAnyEnqueued = false;
+      let ttsPending = ""; // sentence(s) extracted but held under MIN_TTS_CHUNK_CHARS
       const onToken = (delta: string) => {
         setIsStreaming(true); // no-op re-render after the first call (same value)
+        turn.markFirstToken(); // idempotent — lands on the first token only
         answerBuffer.push(delta);
+        if (isStale()) return; // a superseded turn must not enqueue TTS chunks
+        if (!ttsBegun) {
+          ttsBegun = true;
+          tts.beginStream();
+        }
+        for (const sentence of sentenceStream.push(delta)) {
+          ttsPending = ttsPending ? `${ttsPending} ${sentence}` : sentence;
+          if (ttsPending.length >= MIN_TTS_CHUNK_CHARS) {
+            tts.enqueue(ttsPending, personaId);
+            ttsAnyEnqueued = true;
+            ttsPending = "";
+          }
+        }
       };
 
       const askStatelessNonStream = async (): Promise<string> => {
@@ -564,9 +608,24 @@ export default function CaddieSheet({
         // CI's slower frame timing exposed).
         answerBuffer.cancel();
         setVoiceAnswer(responseText); // authoritative full text — overwrites any partial coalesced render
-        tts.speak(responseText, personaId); // fires exactly once, on completion
+
+        // Reconcile against the authoritative responseText: enqueue only the
+        // not-yet-enqueued remainder, so the full text is spoken exactly
+        // once (no drop, no duplicate) — never a second full-text speak() on
+        // top of chunks already queued (plan §6.5.4 hard invariant #1).
+        const tail = [ttsPending, ...sentenceStream.flush()].filter(Boolean).join(" ");
+        if (!ttsAnyEnqueued) {
+          // Nothing was pipelined mid-stream (short reply, or the
+          // non-streaming fallback with zero tokens) — exactly the old
+          // single-call behavior.
+          tts.speak(responseText, personaId);
+        } else {
+          if (tail) tts.enqueue(tail, personaId);
+          tts.endStream();
+        }
       } catch (err) {
         if (isStale()) return; // superseded (new question / sheet close) — not a real failure
+        tts.stop(); // discard any chunks already queued for this failed turn — never speak a partial
         answerBuffer.cancel();
         // Discard the partial rather than keep it on screen (plan §5): a
         // truncated caddie reply can be actively misleading (cut mid-club or
@@ -590,10 +649,25 @@ export default function CaddieSheet({
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [personaId, sessionActive, roundId, holeNumber, holePar, holeYards, onUpdateConvHistory, tts.speak, answerBuffer]
+    [
+      personaId,
+      sessionActive,
+      roundId,
+      holeNumber,
+      holePar,
+      holeYards,
+      onUpdateConvHistory,
+      tts.speak,
+      tts.beginStream,
+      tts.enqueue,
+      tts.endStream,
+      tts.stop,
+      answerBuffer,
+    ]
     // convHistory intentionally absent — read from convHistoryRef.current (#1).
-    // tts.speak (not the whole `tts` object) — the hook memoizes it stably, so
-    // depending on the full object would recreate askCaddie every render.
+    // Individual tts.* methods (not the whole `tts` object) — the hook
+    // memoizes each stably, so depending on the full object would recreate
+    // askCaddie every render.
   );
 
   /**
@@ -631,7 +705,9 @@ export default function CaddieSheet({
       // (specs/caddie-auto-shot-reco-plan.md deviation — reviewer-caught).
       if (streamAbortRef.current || recorderRef.current || convHistoryRef.current.length > 0) return;
       if (!shot) return; // no GPS fix → stay idle (open as today)
-      const q = `I'm about ${shot.distanceYards} yards from the pin. What should I hit or do on this next shot?`;
+      const q = shot.fromTee
+        ? `I'm on the tee, about ${shot.distanceYards} yards to the pin. What should I hit off the tee?`
+        : `I'm about ${shot.distanceYards} yards from the pin. What should I hit or do on this next shot?`;
       setTranscript(q); // existing state → shows in the user bubble (transparency)
       await askCaddie(q, { suppressError: true }); // identical streaming path; honest-idle on failure
     })();
@@ -768,6 +844,10 @@ export default function CaddieSheet({
   const stopListening = useCallback(async () => {
     const recorder = recorderRef.current;
     if (!recorder) return;
+    // Start of turn — honest end-of-speech instant for the classic VAD path
+    // (specs/caddie-realtime-telemetry-plan.md §1.4). Resets the timer's
+    // downstream marks for this new turn.
+    turn.markEos();
     const gen = openGenRef.current;
     // This listen cycle is ending — consume the loop-armed flag now (before
     // any await) so a manual tap racing in can't be mistaken for this cycle,
@@ -830,6 +910,7 @@ export default function CaddieSheet({
       if (openGenRef.current !== gen) return;
       emptyStreakRef.current = 0; // a real turn is starting — reset the streak
       setTranscript(finalText);
+      turn.markTranscript(); // brackets eos_to_transcript
       // Auto-call caddie with the finalized transcript
       await askCaddie(finalText);
     } catch (err) {
@@ -843,7 +924,9 @@ export default function CaddieSheet({
       recorderRef.current = null;
       setIsTranscribing(false);
     }
-  }, [askCaddie]);
+    // `turn` (a useRef .current) is stable for the component's lifetime — no
+    // eslint-disable needed, but listed for exhaustiveness.
+  }, [askCaddie, turn]);
 
   autoStopRef.current = () => void stopListening();
   startListeningRef.current = () => void startListening(); // hands-free loop indirection (§3.3)

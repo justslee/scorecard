@@ -26,6 +26,7 @@ import {
 import { warmSession } from '@/lib/voice/warm-session';
 import { sortByOrder } from '@/lib/voice/realtime-ordering';
 import { appendSessionMessage } from '@/lib/caddie/api';
+import { createCaddieTurnTimer } from '@/lib/voice/caddie-turn-timing';
 import {
   INITIAL_TRANSPORT_STATE,
   MINT_DEADLINE_MS,
@@ -90,6 +91,13 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
     optsRef.current = opts;
   });
 
+  // Realtime-orb per-turn stage-timing telemetry (silent —
+  // specs/caddie-realtime-telemetry-plan.md §1.6). Consumer-only: derived
+  // from the status transitions realtime.ts already emits, never from
+  // realtime.ts itself.
+  const rtTurn = useRef(createCaddieTurnTimer({ surface: 'caddie-rt' })).current;
+  const prevStatusRef = useRef<RealtimeStatus>('idle');
+
   const clearMintDeadline = useCallback(() => {
     if (mintDeadlineRef.current !== null) {
       clearTimeout(mintDeadlineRef.current);
@@ -132,6 +140,19 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
    *  adopted warm client — one ladder, one place it's driven from. */
   const handleConnectionStatus = useCallback(
     (s: RealtimeStatus) => {
+      // A listening -> connected transition is unambiguously speech_stopped
+      // (only speech_started sets 'listening') — the honest end-of-speech
+      // instant for this path. The FIRST 'speaking' after that is first
+      // audio; the timer's once-per-turn guard collapses the many 'speaking'
+      // transitions within one response to a single emit + flush (§1.6).
+      if (prevStatusRef.current === 'listening' && s === 'connected') {
+        rtTurn.markEos();
+      }
+      if (s === 'speaking') {
+        rtTurn.markFirstAudio();
+      }
+      prevStatusRef.current = s;
+
       setStatus(s);
       if (s === 'connected' && !everConnectedRef.current) {
         everConnectedRef.current = true;
@@ -159,7 +180,9 @@ export function useVoiceCaddie(opts: UseVoiceCaddieOptions): UseVoiceCaddieResul
         else degradeToText('REALTIME_ERROR');
       }
     },
-    [degradeToText],
+    // `rtTurn` (a useRef .current) is stable for the component's lifetime —
+    // listed for exhaustiveness only.
+    [degradeToText, rtTurn],
   );
 
   const startBurst = useCallback(() => {
