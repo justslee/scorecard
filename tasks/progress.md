@@ -3,6 +3,53 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-07 — caddie-realtime-conversation Slice A: Realtime mint grounding parity (backend-only, silent-leaning, integration/next, DONE)
+
+Implemented **Slice A ONLY** of `specs/caddie-realtime-conversation-plan.md` (commit
+`34c1222`) — backend grounding parity between `build_realtime_instructions` (the
+OpenAI Realtime mint, used today by the round-page orb) and `_build_session_voice_prompt`
+(the sheet's text session path). No transport/frontend change; `realtime.ts` and the
+warm-path invariants were not touched.
+
+- `backend/app/caddie/voice_prompts.py`: `_situation_block` now also renders green slope
+  (`hole_intel.green_slope.description`), last recommendation (club/target/aim/miss), and
+  recent shots (last 5) — all guarded (`if present`). New `_conversation_history_block`
+  renders the last ~20 `session.conversation_history` turns into a new "Earlier this round"
+  section in `build_realtime_instructions`. **Discovery vs the plan:** no change was needed
+  in `backend/app/routes/realtime.py` — `get_owned_session` already hydrates
+  `conversation_history` from `caddie_messages` into the `RoundSession`, and
+  `start_realtime_session` already passes the full `session` object into
+  `build_realtime_instructions`; the gap was purely that the prompt builder wasn't
+  rendering it. Noted here per the "minimal sound adjustment" rule rather than silently
+  deviating.
+- `backend/app/routes/caddie.py`: `get_session_conditions` (`get_conditions` tool payload)
+  now includes `green_slope: {description}` (None when unmapped — honest, same discipline
+  as hazards). `get_session_status` now includes `recent_shots` (last 5).
+- `backend/app/services/realtime_relay.py`: `get_conditions` tool description mentions
+  green slope; kept the "never name an unmapped hazard" wording intact.
+- New `backend/tests/test_realtime_grounding.py` — 17 pure unit tests (no DB): each gap
+  present vs absent, byte-identical-when-absent (`test_absent_grounding_fields_are_byte_identical`),
+  HAZARD_GROUNDING_RULE untouched/undupped, plus route-handler-level tests for the two grown
+  tool payloads (`get_session_conditions` green_slope, `get_session_status` recent_shots) via
+  the same `get_owned_session` monkeypatch pattern as `test_realtime_tools.py`.
+
+Gates: `ruff check .` clean; `uv run pytest -q` → 1034 passed, 74 skipped (DB-gated
+integration tests skip locally — no local Postgres per policy; CI runs those), including the
+new file's 17/17 and the pre-existing `test_realtime_tools.py`/`test_realtime_payload.py`/
+`test_setup_voice.py` (28/28) unmodified and still green. Frontend sanity (backend-only
+change): `npm run lint` clean, `npx tsc --noEmit` clean, `voice-tests/runner.ts --smoke` →
+274/274 — all unchanged, confirming no frontend drift. Pushed to `integration/next`
+(`34c1222`).
+
+**Classification:** noticeable-leaning per the task brief (it makes the live orb caddie
+smarter today — it now remembers earlier-this-round conversation, references green slope/
+last rec/recent shots) but the change is entirely inside the mint's instructions string and
+existing tool JSON — no new endpoint, no schema/type change, nothing for QA to click through
+distinctly from "the caddie seems to remember more." Rides in the bundle; no separate ping
+needed. Slice C (the actual tap-to-talk → continuous-listen transport migration the owner
+asked for) is NOT done — it's the high-risk slice, explicitly deferred per the plan's own
+recommendation, to be planned/device-verified separately.
+
 ## 2026-07-07 — fix-ios-tts-playback: caddie TTS on-device fix (P0, NOTICEABLE, integration/next, DONE)
 
 Implemented `specs/fix-ios-tts-playback-plan.md` exactly (commit `35c4103`). Owner's iPhone was
