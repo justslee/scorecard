@@ -8137,3 +8137,56 @@ suites unmodified), backend ruff (no backend change). Commit 40af2dd on
 Silent (UX polish behind the already-default-ON live mode + telemetry
 only) — rides along in the next bundle; no owner ping needed for this
 item alone.
+
+---
+
+## 2026-07-08 — course search: filter/downrank junk Places venues (silent, on integration/next)
+
+Implemented specs/search-places-junk-filter-plan.md exactly (backend-only).
+Google Places leg of course search was surfacing near-junk non-course rows
+for famous courses ("Pebble Beach Pro Shop", gift shops, "The Lodge at
+Pebble Beach") now that Pebble Beach is live in prod.
+
+`backend/app/services/course_finder.py`: new pure `classify_place_venue(name,
+types, primary_type) -> "course" | "non_course" | "ambiguous"` plus three
+module-level constant sets (`_GOLF_COURSE_TYPES`, `_NON_COURSE_PRIMARY_TYPES`,
+`_NON_COURSE_NAME_SUBSTRINGS`). golf_course-in-types immunity checked FIRST
+(never dropped/penalized regardless of name/primaryType); hard-drop only when
+primaryType is an unambiguous non-golf venue (store/restaurant/lodging/etc)
+AND golf_course absent; name-substring heuristics ("pro shop", "academy",
+"lodge", ...) only DOWNRANK, never drop. `search_google_places`'s FieldMask
+now also requests `places.types,places.primaryType`; `non_course` rows are
+`continue`d (dropped at the source); kept rows get an additive
+`venue_penalty: 1 if ambiguous else 0` (existing emitted fields unchanged,
+types/primaryType NOT emitted). `rank_courses`'s sort key gained
+`venue_penalty` as the new LOWEST-priority tie-break, positioned after
+exact/prefix/local and before dist/alpha — prefix-first relevance and tiering
+untouched; local/osm/golfapi rows default to 0 and are unaffected.
+
+Tests added to `backend/tests/test_course_search.py`: `TestClassifyPlaceVenue`
+(8 cases: golf_course immunity over junk name, store-primaryType pro-shop
+drop, gift-shop drop, academy->ambiguous, lodge with lodging primaryType->
+drop vs benign primaryType->ambiguous, clean loosely-typed course->course,
+whitespace/case normalization, missing types/primaryType->course);
+`TestSearchGooglePlacesVenueFilter` (mocks `httpx.AsyncClient` at the same
+seam `test_osm_boundary_selection.py` uses: hard-drop + zero-penalty case,
+ambiguous-kept + penalty + rank_courses ordering case, FieldMask assertion
+for `places.types`/`places.primaryType`); `TestRankCoursesVenuePenalty`
+(local > clean external > ambiguous external tier ordering; exact-match still
+leads regardless of penalty; venue_penalty defaults to 0 when unset).
+
+Gates: `ruff check .` — All checks passed. `pytest tests/test_course_search.py
+-q` — 41 passed (up from 30). Full non-DB backend suite (`pytest tests/ -q
+--ignore=tests/integration`) — 1179 passed, nothing else broke. No frontend
+change (frontend gates out of scope). DB integration tests not run locally
+(no local Postgres) — pure/plumbing change fully covered by the offline unit
+tests above; CI backend gate covers DB-backed paths.
+
+Commit cdf87bc on `integration/next` ("course-search: filter/downrank
+non-course Places venues (pro shops, grills, lodges)"), pushed to
+origin/integration/next.
+
+Silent (backend relevance/ranking plumbing, no client-facing shape change —
+`venue_penalty` is an internal ranking hint, not added to types.ts/models.py
+per the plan) — rides along in the next bundle; no owner ping for this item
+alone.
