@@ -23,6 +23,7 @@ import {
 } from '@/lib/caddie/api';
 import { MessageOrderTracker } from '@/lib/voice/realtime-ordering';
 import { IdleTimer, REALTIME_IDLE_DISCONNECT_MS } from '@/lib/voice/idle-timer';
+import { voiceEvent } from '@/lib/voice/telemetry';
 
 // ── Public types ─────────────────────────────────────────────────────────
 
@@ -584,7 +585,18 @@ export class RealtimeCaddieClient {
         break;
       }
       case 'error': {
-        const message = (evt.error as { message?: string } | undefined)?.message || 'Realtime error';
+        const errPayload = evt.error as { type?: string; code?: string; message?: string } | undefined;
+        const message = errPayload?.message || 'Realtime error';
+        // Breadcrumb only (specs/caddie-stale-hole-live-plan.md observability
+        // follow-up) — a rejected conversation.item.create (e.g. the
+        // sendContext role:"system" re-anchor) surfaces here as a data-channel
+        // `error` event and previously no-op'd with no signal. This does NOT
+        // change control flow: no teardown, no role:"user" fallback (yet) —
+        // just makes a rejection visible in telemetry. type/code/message only,
+        // never the client_secret or any other session data.
+        voiceEvent('caddie', 'realtime_dc_error', {
+          detail: `type=${errPayload?.type ?? 'unknown'} code=${errPayload?.code ?? 'unknown'} message=${message}`,
+        });
         this.events.onError?.(new Error(message));
         break;
       }
