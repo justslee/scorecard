@@ -13,10 +13,14 @@
 
 // Case-insensitive; kept short and specific to what a caddie actually says —
 // not a general abbreviation dictionary.
+// NOTE: deliberately does NOT include "no" — a sentence-final "No." is
+// common in caddie speech ("Into the wind? No. Club up to a 6.") and must
+// remain a real boundary. The rare "No. 5" (hole number) false positive is
+// harmless here: MIN_TTS_CHUNK_CHARS in CaddieSheet.tsx merges a short
+// "No." forward into the next sentence anyway.
 const ABBREVIATIONS = new Set([
   "yds",
   "yd",
-  "no",
   "mr",
   "mrs",
   "dr",

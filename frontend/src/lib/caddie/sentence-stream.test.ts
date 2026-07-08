@@ -85,6 +85,11 @@ describe("createSentenceStream", () => {
     ]);
   });
 
+  it('a sentence-final "No." IS a real boundary (not in the abbreviation guard — common in caddie speech)', () => {
+    const s = createSentenceStream();
+    expect(s.push("Into the wind? No. Club up to a 6.")).toEqual(["Into the wind?", "No."]);
+  });
+
   it("a closing quote/paren between the punctuation and whitespace is still a boundary", () => {
     const s = createSentenceStream();
     expect(s.push('He said "go." Now move. ')).toEqual(['He said "go."', "Now move."]);

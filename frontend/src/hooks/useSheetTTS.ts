@@ -79,7 +79,7 @@ interface QueueItem {
   personaId: string;
   controller: AbortController;
   blobUrl: string | null;
-  status: "loading" | "ready" | "playing" | "error";
+  status: "loading" | "ready" | "playing";
 }
 
 function createAudioEl(onEnded: () => void, onPaused: () => void): HTMLAudioElement {
@@ -175,6 +175,28 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
     setIsSpeaking(false);
   }, [releaseObjectUrl]);
 
+  // Drops `item` and everything queued AFTER it (aborting their in-flight
+  // synths) without touching whatever's currently playing (an EARLIER item,
+  // already shifted off the queue — unaffected). Used when a chunk's synth
+  // fails: never skip the failed chunk and let a later one play after it —
+  // that would leave a misleading gap mid-reply (plan §5). Whatever already
+  // played stays an honest, clean prefix.
+  const truncateQueueFrom = useCallback((item: QueueItem) => {
+    const idx = queueRef.current.indexOf(item);
+    if (idx === -1) return;
+    for (const later of queueRef.current.slice(idx)) {
+      later.controller.abort();
+      if (later.blobUrl && later.blobUrl !== objectUrlRef.current) {
+        try {
+          URL.revokeObjectURL(later.blobUrl);
+        } catch {
+          /* best effort */
+        }
+      }
+    }
+    queueRef.current = queueRef.current.slice(0, idx);
+  }, []);
+
   // Forward-declared via a ref so playItem/maybeAdvance (defined with useCallback,
   // referencing each other) can call one another without a definition-order
   // problem — both are stable (empty deps) so this is set once.
@@ -224,14 +246,13 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
           voiceEvent("sheet-tts", "speak_failed", {
             detail: err instanceof Error ? err.name : "unknown",
           });
-          // A failed play() ends this turn silently — mirrors the
-          // non-queued path's existing behavior: a TTS failure never
-          // re-arms hands-free, and any remaining queued chunks are
-          // dropped rather than risking more failed play() calls.
-          playingIdRef.current = null;
-          playingRealRef.current = false;
+          // Unified failure rule: ANY chunk failure (synth OR play) ends the
+          // turn immediately — no re-arm, no further chunks. This item never
+          // played, so (unlike a synth failure on a LATER chunk — see
+          // truncateQueueFrom) there's no earlier audio to preserve; clear
+          // everything queued.
           clearAllInternal();
-          turnEndedFiredRef.current = true; // suppress any late finalize
+          turnEndedFiredRef.current = true; // suppress any late finalize — no re-arm
         }
       })();
     },
@@ -240,12 +261,8 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
 
   const maybeAdvance = useCallback(() => {
     if (playingIdRef.current != null) return; // already playing something
-    while (queueRef.current.length > 0) {
-      const head = queueRef.current[0];
-      if (head.status === "error") {
-        queueRef.current.shift();
-        continue;
-      }
+    const head = queueRef.current[0];
+    if (head) {
       if (head.status === "loading") return; // wait — retried when it resolves
       playItem(head);
       return;
@@ -287,16 +304,25 @@ export function useSheetTTS(opts?: UseSheetTTSOptions): SheetTTS {
           maybeAdvanceRef.current();
         } catch (err) {
           if (controller.signal.aborted) return; // expected — superseded
-          item.status = "error";
           voiceEvent("sheet-tts", "speak_failed", {
             detail: err instanceof Error ? err.name : "unknown",
           });
+          // Unified failure rule: ANY chunk failure (synth OR play) ends the
+          // turn immediately — no re-arm, no further chunks. Unlike a play()
+          // failure (nothing to preserve), a synth failure can happen for a
+          // LATER chunk while an EARLIER one is still playing — drop this
+          // chunk and everything after it (truncateQueueFrom), but let
+          // whatever's already playing finish naturally: a clean prefix is
+          // honest, a gap mid-reply (playing chunk 3 after skipping a failed
+          // chunk 2) is not (plan §5).
+          truncateQueueFrom(item);
+          turnEndedFiredRef.current = true; // suppress re-arm — the reply is truncated, not complete
           maybeAdvanceRef.current();
         }
       })();
       maybeAdvanceRef.current();
     },
-    [],
+    [truncateQueueFrom],
   );
 
   const stop = useCallback(() => {

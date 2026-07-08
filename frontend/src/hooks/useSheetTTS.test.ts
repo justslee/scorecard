@@ -501,6 +501,77 @@ describe("useSheetTTS", () => {
       expect(spoken).toBe("Smooth 7-iron. Aim left of the flag.");
     });
 
+    // Unified failure rule (post-review fix): ANY chunk failure — synth OR
+    // play() — ends the turn immediately, with no re-arm and no further
+    // chunks, matching pre-A2 all-or-nothing behavior.
+    it("speak(): a synth failure never plays and never fires onPlaybackEnd (no re-arm)", async () => {
+      speakCaddieReplyMock.mockRejectedValueOnce(new Error("network"));
+      const onPlaybackEnd = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+      act(() => result.current.unlock());
+      const playCallsAfterUnlock = playSpy.mock.calls.length;
+      act(() => result.current.speak("Nice drive.", "classic"));
+
+      await waitFor(() =>
+        expect(voiceEventMock).toHaveBeenCalledWith("sheet-tts", "speak_failed", expect.any(Object)),
+      );
+      expect(playSpy.mock.calls.length).toBe(playCallsAfterUnlock); // never played at all
+      expect(result.current.isSpeaking).toBe(false);
+
+      // A stray 'ended'/'pause' after the failure must not resurrect the turn.
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("ended")));
+      act(() => el.dispatchEvent(new Event("pause")));
+      expect(onPlaybackEnd).not.toHaveBeenCalled();
+    });
+
+    it("enqueue(): a mid-queue chunk synth failure truncates the queue — a later (already-synthesized) chunk never plays, the earlier chunk finishes naturally, and onPlaybackEnd never fires", async () => {
+      let rejectSecond: (e: Error) => void = () => {};
+      const secondPromise = new Promise<Blob>((_resolve, reject) => {
+        rejectSecond = reject;
+      });
+      let resolveThird: (b: Blob) => void = () => {};
+      const thirdPromise = new Promise<Blob>((resolve) => {
+        resolveThird = resolve;
+      });
+      speakCaddieReplyMock.mockResolvedValueOnce(makeBlob()); // "One."
+      speakCaddieReplyMock.mockImplementationOnce(() => secondPromise); // "Two." — fails
+      speakCaddieReplyMock.mockImplementationOnce(() => thirdPromise); // "Three." — synths fine, must never play
+
+      const onPlaybackEnd = vi.fn();
+      const { result } = renderHook(() => useSheetTTS({ onPlaybackEnd }));
+
+      act(() => result.current.unlock());
+      const playCallsAfterUnlock = playSpy.mock.calls.length;
+      act(() => result.current.beginStream());
+      act(() => result.current.enqueue("One.", "classic"));
+      await waitFor(() => expect(playSpy.mock.calls.length).toBe(playCallsAfterUnlock + 1)); // chunk 1 playing
+
+      act(() => result.current.enqueue("Two.", "classic"));
+      act(() => result.current.enqueue("Three.", "classic"));
+      act(() => result.current.endStream());
+
+      act(() => rejectSecond(new Error("network")));
+      await waitFor(() =>
+        expect(voiceEventMock).toHaveBeenCalledWith("sheet-tts", "speak_failed", expect.any(Object)),
+      );
+
+      // "Three." resolves successfully AFTER the truncation — it must still
+      // never play (no skip-the-gap-and-continue).
+      act(() => resolveThird(makeBlob()));
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Chunk 1 (already playing when the failure happened) finishes
+      // naturally — a clean, honest prefix.
+      const el = document.querySelector("audio")!;
+      act(() => el.dispatchEvent(new Event("ended")));
+
+      expect(playSpy.mock.calls.length).toBe(playCallsAfterUnlock + 1); // still just chunk 1's play()
+      expect(onPlaybackEnd).not.toHaveBeenCalled(); // no re-arm despite the honest prefix having played
+      expect(result.current.isSpeaking).toBe(false);
+    });
+
     it("enqueue()/speak() are no-ops when the mute pref is off — nothing synthesized, no queue built", () => {
       enabledState.value = false;
       const { result } = renderHook(() => useSheetTTS());
