@@ -4,6 +4,8 @@ import {
   formatMiles,
   dedupeByName,
   mergeAndSortNearby,
+  appendNearby,
+  NEARBY_LIMIT,
   matchesQueryPrefix,
   tokenizeCourseName,
   courseNameKey,
@@ -12,6 +14,7 @@ import {
   resultSourceLabel,
 } from "./course-search-helpers";
 import type { CourseSearchResult } from "./golf-api";
+import type { NearbyResult } from "./course-search-helpers";
 
 // ---------------------------------------------------------------------------
 // distanceMiles
@@ -175,6 +178,116 @@ describe("mergeAndSortNearby", () => {
 
   it("handles empty array", () => {
     expect(mergeAndSortNearby([], USER.lat, USER.lng)).toEqual([]);
+  });
+
+  it(`caps the result at NEARBY_LIMIT (${NEARBY_LIMIT}), nearest first`, () => {
+    const input: CourseSearchResult[] = Array.from({ length: NEARBY_LIMIT + 5 }, (_, i) =>
+      makeResult({
+        id: `c${i}`,
+        name: `Course ${i}`,
+        // Farther away as i increases, so distance order == index order.
+        center: { lat: 40.7442 + i * 0.05, lng: -73.4593 },
+      })
+    );
+    const result = mergeAndSortNearby(input, USER.lat, USER.lng);
+    expect(result).toHaveLength(NEARBY_LIMIT);
+    expect(result.map((r) => r.id)).toEqual(
+      Array.from({ length: NEARBY_LIMIT }, (_, i) => `c${i}`)
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// appendNearby — progressive, no-reshuffle append (search-speed-and-golfapi-
+// verify-plan.md, win 2/3)
+// ---------------------------------------------------------------------------
+
+describe("appendNearby", () => {
+  it("NEVER reshuffles existing rows, even when a nearer row arrives later (owner's no-reshuffle law)", () => {
+    // Existing rows deliberately NOT distance-sorted (as they'd be if a
+    // faster leg landed first and a later, closer leg is still in flight).
+    const existing: NearbyResult[] = [
+      { ...makeResult({ id: "far", name: "Far Course", center: { lat: 41.0, lng: -74.0 } }), distanceMi: 20 },
+      { ...makeResult({ id: "mid", name: "Mid Course", center: { lat: 40.8, lng: -73.5 } }), distanceMi: 5 },
+    ];
+    const incoming: CourseSearchResult[] = [
+      makeResult({ id: "closest", name: "Closest Course", center: { lat: 40.745, lng: -73.46 } }),
+    ];
+    const result = appendNearby(existing, incoming, USER.lat, USER.lng);
+    // Existing order is untouched — "far" still comes before "mid" — the new
+    // (closer) row is appended at the END, not spliced in by distance.
+    expect(result.map((r) => r.id)).toEqual(["far", "mid", "closest"]);
+  });
+
+  it("dedupes incoming against existing by courseNameKey", () => {
+    const existing: NearbyResult[] = [
+      { ...makeResult({ id: "mapped-1", name: "Bethpage Black", source: "mapped", center: { lat: 40.745, lng: -73.459 } }), distanceMi: 0.5 },
+    ];
+    const incoming: CourseSearchResult[] = [
+      makeResult({ id: "osm-1", name: "bethpage, black!", source: "osm", center: { lat: 40.745, lng: -73.459 } }), // dupe by courseNameKey
+      makeResult({ id: "osm-2", name: "Pebble Beach", source: "osm", center: { lat: 40.75, lng: -73.46 } }),
+    ];
+    const result = appendNearby(existing, incoming, USER.lat, USER.lng);
+    expect(result.map((r) => r.id)).toEqual(["mapped-1", "osm-2"]);
+  });
+
+  it("sorts only the NEW rows among themselves by distance; existing rows are left as-is", () => {
+    const existing: NearbyResult[] = [
+      { ...makeResult({ id: "existing", name: "Existing Course", center: { lat: 41.0, lng: -74.0 } }), distanceMi: 20 },
+    ];
+    const incoming: CourseSearchResult[] = [
+      makeResult({ id: "new-far", name: "New Far", center: { lat: 40.9, lng: -73.6 } }),
+      makeResult({ id: "new-near", name: "New Near", center: { lat: 40.745, lng: -73.459 } }),
+    ];
+    const result = appendNearby(existing, incoming, USER.lat, USER.lng);
+    expect(result.map((r) => r.id)).toEqual(["existing", "new-near", "new-far"]);
+  });
+
+  it("mapped-first tie-break among the new rows", () => {
+    const existing: NearbyResult[] = [];
+    const center = { lat: 40.75, lng: -73.46 };
+    const incoming: CourseSearchResult[] = [
+      makeResult({ id: "osm", name: "Twin Oaks OSM", source: "osm", center }),
+      makeResult({ id: "mapped", name: "Twin Oaks Mapped", source: "mapped", center }),
+    ];
+    const result = appendNearby(existing, incoming, USER.lat, USER.lng);
+    expect(result[0].id).toBe("mapped");
+  });
+
+  it(`caps the combined list at NEARBY_LIMIT (${NEARBY_LIMIT})`, () => {
+    const existing: NearbyResult[] = Array.from({ length: NEARBY_LIMIT - 1 }, (_, i) => ({
+      ...makeResult({ id: `existing-${i}`, name: `Existing ${i}` }),
+      distanceMi: i,
+    }));
+    const incoming: CourseSearchResult[] = [
+      makeResult({ id: "new-1", name: "New One", center: { lat: 40.745, lng: -73.459 } }),
+      makeResult({ id: "new-2", name: "New Two", center: { lat: 40.75, lng: -73.46 } }),
+      makeResult({ id: "new-3", name: "New Three", center: { lat: 40.8, lng: -73.5 } }),
+    ];
+    const result = appendNearby(existing, incoming, USER.lat, USER.lng);
+    expect(result).toHaveLength(NEARBY_LIMIT);
+    // The existing rows are preserved in full (no reshuffle); only ONE of the
+    // three new rows fits under the cap.
+    expect(result.slice(0, NEARBY_LIMIT - 1).map((r) => r.id)).toEqual(
+      existing.map((r) => r.id)
+    );
+    expect(result[NEARBY_LIMIT - 1].id).toBe("new-1");
+  });
+
+  it("handles empty existing and empty incoming", () => {
+    expect(appendNearby([], [], USER.lat, USER.lng)).toEqual([]);
+  });
+
+  it("respects a custom limit argument", () => {
+    const existing: NearbyResult[] = [
+      { ...makeResult({ id: "a", name: "A" }), distanceMi: 1 },
+    ];
+    const incoming: CourseSearchResult[] = [
+      makeResult({ id: "b", name: "B", center: { lat: 40.75, lng: -73.46 } }),
+      makeResult({ id: "c", name: "C", center: { lat: 40.76, lng: -73.47 } }),
+    ];
+    const result = appendNearby(existing, incoming, USER.lat, USER.lng, 2);
+    expect(result).toHaveLength(2);
   });
 });
 

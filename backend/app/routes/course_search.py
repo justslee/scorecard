@@ -17,6 +17,7 @@ import asyncio
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -52,6 +53,24 @@ _LOCAL_MIN_HITS = 3
 # (ok/empty), never when one errored/timed out (that would poison a real
 # course out of the cache for 5 minutes on a transient failure).
 _search_cache: SearchCacheStore = FileSearchCacheStore()
+
+# Positive-only quantized geo-cell cache for /api/courses/nearby's OSM leg
+# (search-speed-and-golfapi-verify, latency half). Distinct file from
+# `_search_cache` above — nearby is keyed by GPS cell + radius, not by a
+# normalized name query, so the two must never share a JSON file.
+_nearby_cache: SearchCacheStore = FileSearchCacheStore(
+    path=Path(__file__).parent.parent.parent / "data" / "nearby_search_cache.json"
+)
+
+# ~1.1 km cell at mid-latitudes (2 decimal places of lat/lng).
+NEARBY_CELL_DECIMALS = 2
+
+
+def _nearby_cache_key(lat: float, lng: float, radius_m: int) -> str:
+    """Quantize a GPS point + radius into a stable cache key so nearby opens
+    from (roughly) the same spot hit the same cell, without needing an exact
+    coordinate match. Pure/no I/O — unit-testable in isolation."""
+    return f"nearby:{round(lat, NEARBY_CELL_DECIMALS)}:{round(lng, NEARBY_CELL_DECIMALS)}:{radius_m}"
 
 
 # ── Leg helpers ────────────────────────────────────────────────────────────────
@@ -375,10 +394,33 @@ async def nearby_courses(
     lng: float = Query(...),
     radiusMeters: Optional[int] = Query(50000),
 ):
-    """Find courses near GPS coordinates using OSM."""
+    """Find courses near GPS coordinates using OSM.
+
+    Latency fix (search-speed-and-golfapi-verify): this leg used to run on
+    OSM's generous non-interactive budget (up to ~12s, no cache) and blocked
+    the whole `/api/courses/nearby` UI section behind it every single open.
+    Now: (1) an interactive budget (~5.5s worst case, see
+    ``services/osm.search_golf_courses``) and (2) a positive-only quantized
+    geo-cell cache so a repeat open from (roughly) the same spot is instant.
+
+    HONESTY (no-fake-data / no-error-empty law): ``search_golf_courses``
+    returns ``[]`` for BOTH a genuine empty area AND a timeout/error — those
+    are indistinguishable at this seam, so we cache POSITIVE results ONLY and
+    never negative-cache nearby. A genuinely empty area simply re-queries on
+    the next open (rare, safe, no user-visible cost).
+    """
+    radius = radiusMeters or 50000
+    key = _nearby_cache_key(lat, lng, radius)
+    cached = _nearby_cache.get(key)
+    if cached is not None:
+        return {"courses": cached}
+
     results = await search_golf_courses(
         lat=lat,
         lng=lng,
-        radius_m=radiusMeters or 50000,
+        radius_m=radius,
+        interactive=True,
     )
+    if results:
+        _nearby_cache.set(key, results)
     return {"courses": results}

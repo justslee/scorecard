@@ -799,15 +799,31 @@ export interface NearbySearchOutcome {
   osmOk: boolean;
 }
 
+/** Fired once per leg (mapped/osm) as it lands, so a caller can render the
+ *  fast mapped leg immediately instead of waiting on `Promise.all` for the
+ *  slower OSM leg — see search-speed-and-golfapi-verify-plan.md. */
+export interface NearbyLegUpdate {
+  leg: 'mapped' | 'osm';
+  results: CourseSearchResult[];
+  ok: boolean;
+}
+
 /**
  * Search courses by GPS proximity via multiple sources, reporting leg health.
  * The two legs fail independently (allSettled semantics) — one leg down never
  * empties the other's results.
+ *
+ * `onLeg` (optional, back-compat) fires as each leg settles with that leg's
+ * OWN results (not the merged aggregate) so a caller can render the fast
+ * mapped leg the instant it lands and append the slower OSM leg later,
+ * without blocking on this function's `Promise.all` return. The aggregate
+ * `NearbySearchOutcome` return value is unchanged for existing callers.
  */
 export async function searchNearbyDetailed(
   lat: number,
   lng: number,
-  radiusMeters = 25000
+  radiusMeters = 25000,
+  onLeg?: (update: NearbyLegUpdate) => void
 ): Promise<NearbySearchOutcome> {
   const results: CourseSearchResult[] = [];
   let mappedOk = true;
@@ -818,40 +834,50 @@ export async function searchNearbyDetailed(
     `/api/courses/mapped/nearby?lat=${lat}&lng=${lng}&radiusMeters=${radiusMeters}`
   )
     .then((data) => {
-      for (const c of data.courses || []) {
-        results.push({
-          id: c.id,
-          name: c.name ?? '',
-          address: c.address,
-          center: c.location,
-          source: 'mapped',
-          hasCoordinates: true,
-        });
-      }
+      const mappedResults: CourseSearchResult[] = (data.courses || []).map((c) => ({
+        id: c.id,
+        name: c.name ?? '',
+        address: c.address,
+        center: c.location,
+        source: 'mapped' as const,
+        hasCoordinates: true,
+      }));
+      results.push(...mappedResults);
+      onLeg?.({ leg: 'mapped', results: mappedResults, ok: true });
     })
-    .catch(() => { mappedOk = false; });
+    .catch(() => {
+      mappedOk = false;
+      onLeg?.({ leg: 'mapped', results: [], ok: false });
+    });
 
   // 2. Search OSM nearby via the backend (honors lat/lng, returns geometry centers).
   const osmPromise = fetchAPI<CourseSearchApiResponse>(
     `/api/courses/nearby?lat=${lat}&lng=${lng}&radiusMeters=${radiusMeters}`
   )
     .then((data) => {
+      const osmResults: CourseSearchResult[] = [];
       for (const c of data.courses || []) {
         const isDupe = results.some(
           (r) => r.name.toLowerCase() === c.name?.toLowerCase()
         );
         if (!isDupe) {
-          results.push({
+          const r: CourseSearchResult = {
             id: c.id,
             name: c.name ?? '',
             address: c.address,
             center: c.center,
             source: 'osm',
-          });
+          };
+          results.push(r);
+          osmResults.push(r);
         }
       }
+      onLeg?.({ leg: 'osm', results: osmResults, ok: true });
     })
-    .catch(() => { osmOk = false; });
+    .catch(() => {
+      osmOk = false;
+      onLeg?.({ leg: 'osm', results: [], ok: false });
+    });
 
   await Promise.all([mappedPromise, osmPromise]);
 

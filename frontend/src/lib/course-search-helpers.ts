@@ -140,9 +140,26 @@ export interface NearbyResult extends CourseSearchResult {
   distanceMi?: number;
 }
 
+/** Cap on rendered/merged Nearby rows — a distance-sorted list this long is
+ *  already more than a golfer scans; smaller payload/render too. Applied at
+ *  this pure layer so every caller (mergeAndSortNearby, appendNearby)
+ *  benefits without duplicating the cap. */
+export const NEARBY_LIMIT = 12;
+
+/** Shared distance comparator for nearby rows: nearest first (undefined
+ *  distance sorts last), mapped source wins ties (it has full data). */
+function byDistanceMappedFirst(a: NearbyResult, b: NearbyResult): number {
+  const dA = a.distanceMi ?? Infinity;
+  const dB = b.distanceMi ?? Infinity;
+  if (dA !== dB) return dA - dB;
+  if (a.source === "mapped" && b.source !== "mapped") return -1;
+  if (b.source === "mapped" && a.source !== "mapped") return 1;
+  return 0;
+}
+
 /**
  * Merge mapped + OSM nearby results, deduplicate by name, and sort by distance.
- * Mapped results rank first on ties (they have full data).
+ * Mapped results rank first on ties (they have full data). Capped at `limit`.
  *
  * @param results   Raw results from searchNearby() or parallel mapped+OSM calls.
  * @param userLat   User's latitude.
@@ -151,7 +168,8 @@ export interface NearbyResult extends CourseSearchResult {
 export function mergeAndSortNearby(
   results: CourseSearchResult[],
   userLat: number,
-  userLng: number
+  userLng: number,
+  limit = NEARBY_LIMIT
 ): NearbyResult[] {
   // Attach distances
   const withDist: NearbyResult[] = results.map((r) => ({
@@ -164,17 +182,45 @@ export function mergeAndSortNearby(
 
   // Deduplicate by name (keeps first occurrence — we sort before deduping so
   // the closest copy wins)
-  const sorted = withDist.sort((a, b) => {
-    const dA = a.distanceMi ?? Infinity;
-    const dB = b.distanceMi ?? Infinity;
-    if (dA !== dB) return dA - dB;
-    // Tie-break: mapped source first
-    if (a.source === "mapped" && b.source !== "mapped") return -1;
-    if (b.source === "mapped" && a.source !== "mapped") return 1;
-    return 0;
-  });
+  const sorted = withDist.sort(byDistanceMappedFirst);
 
-  return dedupeByName(sorted);
+  return dedupeByName(sorted).slice(0, limit);
+}
+
+/**
+ * Append newly-arrived nearby results to an already-rendered list WITHOUT
+ * reshuffling existing rows (the owner's no-reshuffle law — see
+ * search-speed-and-golfapi-verify-plan.md). New rows are:
+ *  1. Deduped against what's already shown (by `courseNameKey`).
+ *  2. Sorted among THEMSELVES by distance, mapped-first tie-break (mirrors
+ *     `mergeAndSortNearby`'s comparator).
+ *  3. Appended BELOW the existing rows — existing rows never move.
+ * The combined list is then capped at `limit`.
+ */
+export function appendNearby(
+  existing: NearbyResult[],
+  incoming: CourseSearchResult[],
+  userLat: number,
+  userLng: number,
+  limit = NEARBY_LIMIT
+): NearbyResult[] {
+  const existingKeys = new Set(existing.map((r) => courseNameKey(r.name)));
+
+  const withDist: NearbyResult[] = incoming
+    .filter((r) => !existingKeys.has(courseNameKey(r.name)))
+    .map((r) => ({
+      ...r,
+      distanceMi:
+        r.center
+          ? distanceMiles({ lat: userLat, lng: userLng }, r.center)
+          : undefined,
+    }));
+
+  // Dedupe incoming against ITSELF too (e.g. an OSM leg with two similarly
+  // named rows), keeping the closest copy — mirrors mergeAndSortNearby.
+  const newSorted = dedupeByName(withDist.sort(byDistanceMappedFirst));
+
+  return [...existing, ...newSorted].slice(0, limit);
 }
 
 // ---------------------------------------------------------------------------
