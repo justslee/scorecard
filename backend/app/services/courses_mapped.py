@@ -393,6 +393,64 @@ async def upsert_course(course: dict) -> Optional[dict]:
     return await get_course(course_id)
 
 
+# ── Targeted per-feature update (static per-hole elevation persistence) ────────
+async def update_green_feature_properties(
+    course_id: str,
+    hole_number: int,
+    patch: dict,
+) -> bool:
+    """Merge `patch` into the green feature's JSONB `properties` for one hole.
+
+    Non-destructive single-feature JSONB `||` merge — the OPPOSITE of
+    `upsert_course` (which deletes+reinserts every feature). Safe on hot/read
+    paths and concurrent with reads. No-op-safe: returns False when the hole
+    or its green feature is absent (no row updated), True otherwise. Never
+    raises on a missing target; only genuine DB/driver errors propagate to
+    the caller's try/except.
+    """
+    if not patch:
+        return False
+    async with async_session() as db:
+        result = await db.execute(
+            text(
+                """
+                update public.hole_features hf
+                set properties = coalesce(hf.properties, '{}'::jsonb) || cast(:patch as jsonb)
+                from public.holes h
+                where hf.hole_id = h.id
+                  and h.course_id = :course_id
+                  and h.hole_number = :hole_number
+                  and hf.feature_type = 'green'
+                """
+            ),
+            {
+                "course_id": course_id,
+                "hole_number": hole_number,
+                "patch": json.dumps(patch),
+            },
+        )
+        await db.commit()
+    return (result.rowcount or 0) > 0
+
+
+def _elevation_patch(profile: dict) -> dict:
+    """Map a `compute_hole_elevation_profile`-shaped dict to the persisted
+    patch shape, applying the `net_change_ft -> delta_ft` alias and the
+    omit-green_slope-when-None rule. Exact mirror of
+    `osm_ingest.embed_elevation_in_green_features`'s field mapping — kept in
+    ONE place so the request write-back and the precompute job never drift.
+    """
+    patch = {
+        "tee_elevation_ft":   profile["tee_elevation_ft"],
+        "green_elevation_ft": profile["green_elevation_ft"],
+        "delta_ft":           profile["net_change_ft"],
+        "plays_like_yards":   profile.get("plays_like_yards", 0.0),
+    }
+    if profile.get("green_slope") is not None:
+        patch["green_slope"] = profile["green_slope"]
+    return patch
+
+
 # ── Delete ──────────────────────────────────────────────────────────────────────
 async def delete_course(course_id: str) -> None:
     async with async_session() as db:
