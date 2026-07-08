@@ -3,6 +3,47 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — harden-elevation-writeback-holenumber: validate the write-back key (backend, silent, integration/next, DONE)
+
+Implemented `specs/harden-elevation-writeback-holenumber-plan.md` — commit
+`9c5e338`, pushed to `integration/next`. The static elevation write-back added
+in `0200576` trusted the request's `holeNumber` as both the DISPLAY value and
+the SQL write-back key; an absent holeNumber silently persisted a live
+compute onto stored hole 1, and a str/float/None/negative/huge/bool value
+flowed straight into the `:hole_number` SQL param.
+
+- `backend/app/services/courses_mapped.py`: `_MAX_HOLE_NUMBER = 36` +
+  `_valid_hole_number(value)` (int, not bool, `1..36`) — the ONE shared
+  bound. `update_green_feature_properties` now rejects an invalid key
+  BEFORE opening a DB session (defense in depth).
+- `backend/app/caddie/course_intel.py`: `raw_hole_number` (no default) is
+  the write-back key, gated on `courses_mapped._valid_hole_number(...)`;
+  invalid -> skip + `log.debug` (non-spammy), never raise. `hole_number`
+  (defaulted) stays display-only and unaffected.
+  Plan deviation (minimal, noted in the commit): an explicit `holeNumber:
+  null` also broke the DISPLAY value — `HoleIntelligence.hole_number` is a
+  required pydantic `int`, so `None` raised a `ValidationError` and dropped
+  the whole hole's intel, contradicting the plan's own "intel never dropped"
+  test requirement. Added a one-line `None -> 1` coalesce for display only;
+  the write-back gate already correctly skips this case unchanged.
+- `backend/app/routes/caddie.py` `_feature_center`: folded in the related
+  cycle-18 backlog note — a malformed same-type feature now `continue`s to
+  scan remaining features instead of returning `None` on the first bad one.
+- Tests: extended `backend/tests/test_course_intel_static_read.py` (mirrors
+  its existing `sys.modules` `app.db` stub + `monkeypatch.setattr` style) —
+  write-back skip/proceed matrix, `_valid_hole_number` unit coverage,
+  `update_green_feature_properties` returns `False` without opening a DB
+  session on an invalid key.
+
+Gates green: `ruff check .` (all checks passed);
+`pytest tests/test_course_intel_static_read.py tests/test_precompute_elevation.py`
+(46/46 passed); also ran the neighboring
+`test_course_intel_resilience.py test_hole_elevation_ingest.py
+test_elevation_profile.py` (54/54 passed) as a sanity sweep. No DB-backed
+integration test run locally (no local Postgres) — CI backend gate covers
+the Postgres round-trip. Silent, backend-only, no shared-type/SQL/migration
+change; rides bundle PR.
+
 ## 2026-07-08 — fix-ios-voicetel-flush-dropped: immediate flush on iOS failure events + pagehide (frontend, silent, integration/next, DONE)
 
 Implemented `specs/fix-ios-voicetel-flush-dropped-plan.md` verbatim (Option A) —
