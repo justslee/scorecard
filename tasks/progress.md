@@ -9709,7 +9709,16 @@ provider) integration test that /book yields needs_human + the correct
 foreupsoftware.com deep-link + persists the row (confirmation None); a guard
 that no foreUP code path returns status=confirmed/a confirmation number.
 
-## AWAITING: Fable plan for S2 (specs/teetime-s2-plan.md)
-Dispatched Plan agent on fable. On return → write specs/teetime-s2-plan.md,
-then dispatch ONE builder to implement on integration/next. If plan finds the
-handoff already correct + only tests remain → still land the tests + verify.
+Fable plan DONE → specs/teetime-s2-plan.md. Confirms handoff already built;
+S2 = invariant tests (foreUP-provider integration persistence, no-auto-charge/
+no-fabricated-confirmation guards, frontend CTA contract) + ONE honesty fix:
+page.tsx:919-923 fabricates {status:pending,"Booking request sent"} on network
+failure though nothing was sent → make it honest needs_human "book on course
+site". That fix is the one user-visible change (noticeable-leaning).
+
+## AWAITING: builder implementing specs/teetime-s2-plan.md on integration/next
+Dispatched ONE builder. On return → reviewer (no auto-charge / no stored card /
+no fabricated confirmation = BLOCKING) + /security-review judgment (booking/PII)
++ QA STRICT gates. Then update bundle PR checklist, classify honestly. DB-backed
+integration tests run in CI only (no local Postgres). Do NOT re-run the builder
+if it reports pushed — reconcile from origin/integration/next.
