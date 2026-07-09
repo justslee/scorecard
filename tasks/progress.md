@@ -10310,7 +10310,14 @@ TestLateralFramingContract exact-string pins + cross-module coherence test in te
 (Sec.6d, asserts 'aim {high}' present / 'aim {fall}' absent — the sign-flip tooth) + strengthen line
 276 assertion. 3 files total.
 
-## AWAITING: builder to implement specs/caddie-slope-framing-reconcile-plan.md on integration/next
-Builder commits+pushes its own commit (ff-only, no per-item PR). On return → reviewer (Fable,
-burned sign-flip area) + qa (ruff + the named pytest files; no local Postgres) → update PR #122
-checklist. NOTICEABLE, NO ship (owner bundling). Reconcile from git log on resume; do not rebuild.
+## Builder DONE — 7c50935 on integration/next. slope_advice.py two lateral strings re-framed to
+green_read's vocabulary + docstring; new TestLateralFramingContract + cross-module coherence test +
+strengthened test_green_geometry.py:276. Red→green teeth proven (10-12 assertions red pre-change,
+all green post). 3 files, ruff clean, targeted pytest green (72+25+35 passed). No geometry/shared-type
+touch. NOTICEABLE.
+
+## AWAITING: reviewer (Fable, correctness+sign+voice-coherence) + qa (gates) on 7c50935
+On both green → update PR #122 checklist (+ slope-framing-reconcile NOTICEABLE), progress, NO ship
+(owner bundling). BLOCKING → re-dispatch builder. Reconcile from git log on resume; work is pushed,
+do not rebuild. Designer folded into reviewer's voice-coherence mandate (2-string copy change, no
+visual surface); escalate to designer only if reviewer flags tone.
