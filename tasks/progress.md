@@ -22,10 +22,21 @@ to the player's selected tee (compose with the multi-tee anchor) / GPS when on h
 as HoleIntelligence intel (like `hazards`/`approach_bearing_deg`) + a caddie TOOL answer
 (get_bend or fold into get_carries — Fable plan decides). No ML, no new data. NOTICEABLE.
 
-## AWAITING: Fable Plan agent on caddie-bend-distance
-Dispatched the Plan agent (fable) to produce specs/caddie-bend-distance-plan.md. On return:
-save the plan, then dispatch ONE builder to implement it ON integration/next (commit+push,
-no per-item PR). Nothing uncommitted was held across this await (tree was clean).
+Fable plan DONE → saved to specs/caddie-bend-distance-plan.md. Key finding it pinned: the
+spoken bend DIRECTION is the TURN cross (tee→bend × bend→green), NOT the vertex's chord
+deviation sign — on Bethpage-4 (dogleg LEFT) the corner sits RIGHT of the chord, so the naive
+deviation-sign impl would say "bends right" on every dogleg-left hole (the repo's twice-burned
+sign-flip class). Deviation cross SELECTS the vertex; turn cross gives direction. New `get_bend`
+tool (not folded into get_carries), additive HoleBend on HoleIntelligence, tee-anchored via the
+same _derive_tee_green path as hazards, 15y straight threshold, honest None on no-polyline.
+
+## AWAITING: builder implementing specs/caddie-bend-distance-plan.md on integration/next
+Dispatched ONE builder to implement the plan on integration/next (commit+push, NO per-item PR).
+On builder DONE: review the item — reviewer (Fable falsifier: turn-cross direction + bearing
+sweep must go RED on a sign flip), qa (backend ruff + the named pytest suites; frontend
+lint/tsc/build/voice-smoke), designer NOT needed (tool-only, no UI renders). Then update PR
+#121 checklist (+ caddie-bend-distance NOTICEABLE), progress.md. Do NOT ship — owner said keep
+bundling #121. If builder reports "waiting on CI" it has already pushed — pin CI to its head.
 
 ## 2026-07-09 cycle 42 — PICK: caddie-green-slope-spatial (NOTICEABLE, rides bundle #119)
 
