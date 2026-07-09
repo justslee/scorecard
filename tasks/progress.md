@@ -9249,3 +9249,21 @@ Re-review: designer (verify the 4 blockers are actually fixed — esp. the `tel:
 correctly and no inert button remains) + reviewer/QA re-confirm on e303884. If green: open
 the rolling bundle PR (integration/next -> main) + release-manager (NOTICEABLE — real course
 data + working call CTA replaces demo data on the tee-time screen) + owner ping.
+
+## 2026-07-09 cycle 41 — PICK: multi-tee-anchor-reconciliation (P1, owner hole-3 bug, NOTICEABLE)
+
+Step 0: PR #119 OPEN, no "ship it" comment, no new blocker beyond the hole-3 report. Nothing
+to merge. Bundle #119 stays awaiting owner. Synced main->integration/next (already up to date).
+
+Pick this cycle rides the SAME bundle #119. Owner: Bethpage hole-3 card=178Y but "FROM THE
+TEE" F/C/B tiles show ~231/Plays245 because the hole has 5 tee boxes (232/207/174/159/136y)
+and tiles anchor tee box[0]=232 back tee instead of the player's selected (174y) tee. Fix:
+anchor the tiles + plays-like to the player's chosen tee (mapped to nearest OSM tee box by
+name/ref, else card-yardage-nearest), reconcile header when >~8% disagree, GPS still overrides,
+honest card fallback. THIRD geometry-anchor incident -> Fable plan + Fable reviewer must FALSIFY
+tiles resolve to ~178 not 232.
+
+## AWAITING
+Fable Plan agent producing the implementation plan for multi-tee-anchor-reconciliation. On
+return: save to specs/multi-tee-anchor-reconciliation-plan.md, commit+push, then dispatch ONE
+builder on integration/next. Plan agent cannot Write (returns text) — eng-lead saves the file.
