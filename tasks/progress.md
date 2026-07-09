@@ -8986,10 +8986,17 @@ Only caddie-tool-loop-parity + caddie-advice-eval-harness remain done-on-bundle
 
 Classification: SILENT (docs/backlog) — rides bundle #117. No owner ping.
 
-## AWAITING (cycle 38, 2026-07-09) — fcb-caption-proximity build
-Plan written: specs/fcb-caption-proximity-plan.md (opus). Builder dispatched to
-implement on integration/next: extract pure DistancesCard component, re-anchor
-F/C/B caption directly above the tile row, add safe-area bottom clearance to the
-card wrapper, + jsdom render test for DOM adjacency/clearance. SILENT rider on
-bundle PR #117. Resume: check builder commit on integration/next, then run
-reviewer + qa + designer; screenshot validation deferred to owner's next build.
+## Cycle 38 (2026-07-09) — eng-lead: fcb-caption-proximity DONE on bundle #117
+Plan (opus): specs/fcb-caption-proximity-plan.md. Built f1a5e2c on integration/next
+(extract pure DistancesCard + re-anchor caption above the F/C/B tiles + safe-area
+bottom clearance; data-overlay preserved; 24/24 vitest incl. new jsdom render test).
+Reviewer: CLEAN (byte-faithful extraction, only the 2 intended edits, tests are genuine
+regression guards). Designer: SHIP (one non-blocking nit — center vs right-align caption
+over the 3-tile row — deferred to owner's on-device judgment). CI on f1a5e2c: Frontend
+gates ✓ + Backend gate ✓ (E2E advisory). On-device screenshot validation deferred to the
+owner's next TestFlight build (honest — sim flow too heavy + crash-history for a P2 CSS
+polish). PR #117 checklist updated. NO owner ping: #117 was already awaiting "ship it" on
+a noticeable change (caddie-tool-loop-parity); this minor UI polish rides along and merges
+with the owner's single approval. Bundle still awaiting owner ship-it.
+
+Checkpoint commit: 6760bd4 (plan+AWAITING) → superseded by this close note.
