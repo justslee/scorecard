@@ -9682,3 +9682,34 @@ call/honest-empty. Twenty-four ships.
 NEXT: tee-time S2 (booking = deep-link handoff), S3 (AI caller + owner
 "call me" rehearsal harness), S4 (scraping adapters); physics 2nd slice;
 bend; tree-CV. Fast-follows logged: osm distance-sort, course_ids wiring.
+
+---
+
+## 2026-07-09 — cycle 44 START: tee-time S2 (foreUP booking = deep-link handoff)
+
+Step 0: board clean — #120 (S1) SHIPPED, no Needs-Review card, no owner feedback
+on the #120 thread, no open PR, bundle empty. Synced integration/next ← main
+(fe65329). PICK: teetime-s2-foreup-booking-handoff.
+
+Reconnaissance (much of S2 is pre-built in S0/S1 with S2 in mind):
+- backend/app/services/tee_times/foreup.py:489 book() ALREADY returns
+  needs_human + slot.booking_url, no confirmation number (docstring: "S2 owns
+  the booking handoff UX; we NEVER book programmatically").
+- router_provider.py:115 routes foreup slots → foreup.book(); tested.
+- routes/tee_times.py /book persists every attempt (incl. needs_human) to the
+  tee_time_bookings table (TeeTimeBooking ORM, models.py:462).
+- Frontend page.tsx:1199 renders bookingUrl → "Book on the course site →" CTA
+  (needs_human handoff, honest subCopy, never fabricates a confirmation);
+  confirm-copy.ts:52 handles the foreUP real-time needs_human case.
+So S2 = VERIFY end-to-end + PIN the safety invariants with tests + fix any
+correctness gap. The invariant to guarantee: NEVER auto-charge, NEVER store a
+card/creds, NEVER a fabricated confirmation — deep-link handoff to the course's
+own foreUP booking page only. Missing coverage: a foreUP-route (not routing-
+provider) integration test that /book yields needs_human + the correct
+foreupsoftware.com deep-link + persists the row (confirmation None); a guard
+that no foreUP code path returns status=confirmed/a confirmation number.
+
+## AWAITING: Fable plan for S2 (specs/teetime-s2-plan.md)
+Dispatched Plan agent on fable. On return → write specs/teetime-s2-plan.md,
+then dispatch ONE builder to implement on integration/next. If plan finds the
+handoff already correct + only tests remain → still land the tests + verify.
