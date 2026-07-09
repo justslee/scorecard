@@ -1,7 +1,7 @@
 /**
  * Tee-time provider abstraction — Phase 1 (mock/foundation).
  *
- * These types form the stable contract that every provider (Mock, Affiliate,
+ * These types form the stable contract that every provider (Mock, Routing,
  * GolfNow, Lightspeed/Chronogolf) normalises into.  The UI only ever talks
  * to this shape; swapping a real provider in later requires zero UI rework.
  */
@@ -38,7 +38,7 @@ export interface TeeTimeQuery {
  * A single available tee time returned by any provider.
  *
  * Every provider normalises into this shape so the UI is provider-agnostic.
- * `bookingUrl` is present on Affiliate/scrape sources where we deep-link out;
+ * `bookingUrl` is present on Routing/scrape sources where we deep-link out;
  * it may be absent when the provider can complete the booking natively
  * (Chronogolf/GolfNow — Phase 2+).
  */
@@ -51,28 +51,32 @@ export interface TeeTimeSlot {
   city: string;
   /** ISO 8601 date (YYYY-MM-DD). */
   date: string;
-  /** 24-h "HH:MM" format. */
+  /** 24-h "HH:MM" format, or "" when no real time is known (routing provider —
+   *  never render this as a time; show the requested window instead). */
   time: string;
   /** Available player slots (1–4). */
   players: number;
-  /** Price in USD — null when unknown (affiliate slots; prices are never fabricated). */
+  /** Price in USD — null when unknown (routing slots; prices are never fabricated). */
   priceUsd: number | null;
   cartIncluded: boolean;
   distanceMiles: number;
   /** 0–5 star rating. */
   rating: number;
   designer?: string;
-  /** Deep-link to the booking page on an external site (Affiliate / Phase 1). */
+  /** Deep-link to the booking page on an external site (Routing / Phase 1). */
   bookingUrl?: string;
-  /** Identifies which provider generated this slot (mock | affiliate | golfnow | chronogolf). */
+  /** Identifies which provider generated this slot (mock | routing | golfnow | chronogolf). */
   provider: string;
   holes: 9 | 18;
   /**
-   * True when `time` is the requested window start, NOT verified live
-   * availability (affiliate provider). Render as an estimate ("~"), never as
-   * a confirmed tee time.
+   * DEPRECATED (S0): no provider sets this true anymore — the "estimated
+   * window" design was replaced by honest `time=""` + `route`. Kept typed but
+   * inert this slice; scheduled for deletion in the S1 cleanup.
    */
   estimated?: boolean;
+  /** How this entry gets booked: deep-link handoff, phone call, or (undefined)
+   *  real bookable availability. */
+  route?: "book_on_site" | "call";
 }
 
 // ─── Booking ──────────────────────────────────────────────────────────────────

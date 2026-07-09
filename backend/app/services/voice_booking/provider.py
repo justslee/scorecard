@@ -73,8 +73,10 @@ class VoiceCallProvider(TeeTimeProvider):
             golfer_name=details.name,
             callback_number=details.phone or "",
             date=slot.date,
-            # A slot time (often an affiliate *estimate*) becomes a 2-hour
-            # acceptance window — the agent may take a nearby alternative.
+            # A slot time becomes a 2-hour acceptance window — the agent may
+            # take a nearby alternative. TODO(S3): routing slots carry
+            # time="" (unreachable from _get_provider today, no provider
+            # feeds this path) — a future caller must pass the window, not "".
             time_window_start=slot.time,
             time_window_end=_window_end(slot.time),
             party_size=details.party_size,

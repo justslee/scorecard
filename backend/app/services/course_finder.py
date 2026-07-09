@@ -1,7 +1,7 @@
 """Shared course-finding helpers (Google Places + Mapbox + name de-dupe).
 
 Extracted from routes/course_search.py so other services (e.g. the tee-time
-AffiliateLinkProvider) can find real courses WITHOUT HTTP-calling our own API.
+RoutingTeeTimeProvider) can find real courses WITHOUT HTTP-calling our own API.
 The route module keeps thin aliases to these functions, so its behavior and
 its tests are unchanged.
 """
@@ -272,7 +272,7 @@ async def search_google_places(
     logging, so a caller with its own leg-health/observability wrapper (see
     routes/course_search.py `_run_leg`) can distinguish "error" from a genuine
     empty match. Defaults to False so existing callers (this module's own
-    default behavior, tee_times/affiliate.py) are unaffected."""
+    default behavior, tee_times/routing.py) are unaffected."""
     key = api_key if api_key is not None else GOOGLE_PLACES_API_KEY
     if not key:
         return []

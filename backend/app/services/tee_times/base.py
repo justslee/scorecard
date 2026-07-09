@@ -41,20 +41,26 @@ class TeeTimeSlot:
     course_name: str
     city: str
     date: str                        # YYYY-MM-DD
-    time: str                        # "HH:MM"
+    time: str                        # "HH:MM", or "" when no real time is known (routing)
     players: int                     # available slots (1–4)
-    price_usd: float | None          # None = unknown (affiliate) — NEVER fabricated
+    price_usd: float | None          # None = unknown (routing) — NEVER fabricated
     cart_included: bool
     distance_miles: float
     rating: float                    # 0–5 (0 = unknown)
-    provider: str                    # "mock" | "affiliate" | "golfnow" | "chronogolf"
+    provider: str                    # "mock" | "routing" | "golfnow" | "chronogolf"
     holes: Literal[9, 18]
     designer: str | None = None
-    booking_url: str | None = None   # deep-link for Affiliate / Phase 1
-    # True when `time` is the requested window start, NOT verified live
-    # availability (AffiliateLinkProvider). Legal posture: estimated slots are
-    # suggestions to book on the course's own site — never presented as live.
+    booking_url: str | None = None   # deep-link for Routing / Phase 1
+    # DEPRECATED (S0): no provider sets this True anymore — the "estimated
+    # window" design was replaced by honest `time=""` + `route`. Kept (default
+    # False) to avoid touching booking-rehydration/ICS/mock-test surfaces this
+    # slice; scheduled for deletion in the S1 cleanup.
     estimated: bool = False
+    # How this entry gets booked: "book_on_site" (course website known — deep-
+    # link handoff), "call" (no website — phone the pro shop), or None (the
+    # provider knows real availability — mock today, a live inventory provider
+    # in a later slice).
+    route: Literal["book_on_site", "call"] | None = None
 
 
 @dataclass

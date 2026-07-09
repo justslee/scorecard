@@ -1,14 +1,16 @@
-"""Tests for the AffiliateLinkProvider (Phase 1b) — real courses, honest slots.
+"""Tests for RoutingTeeTimeProvider (S0 "kill fake data").
 
 The course-finder is injected (no network): the provider must emit exactly one
-estimated slot per course per requested window, never fabricate a price, carry
-the course website as booking_url, and hand booking to a human (needs_human).
+route-tagged entry per PUBLIC course per requested window, with NO fabricated
+time, never fabricate a price, carry the course website as booking_url (and
+route="book_on_site") or route="call" without one, exclude private clubs
+BEFORE the cap, and hand booking to a human (needs_human).
 """
 
 import pytest
 
-from app.services.tee_times.affiliate import (
-    AffiliateLinkProvider,
+from app.services.tee_times.routing import (
+    RoutingTeeTimeProvider,
     _haversine_miles,
     _parse_latlng,
 )
@@ -48,6 +50,16 @@ _COURSES = [
     },
 ]
 
+# Liberty National (near its `near` anchor) — must never reach the output.
+_LIBERTY = {
+    "id": "gplaces-liberty",
+    "name": "Liberty National Golf Club",
+    "address": "Jersey City, NJ",
+    "center": {"lat": 40.7095, "lng": -74.0532},
+    "website": "https://www.libertynationalgolfclub.com/",
+    "rating": 4.9,
+}
+
 
 def _fake_finder(courses, origin=_ORIGIN):
     async def find(_query):
@@ -56,59 +68,64 @@ def _fake_finder(courses, origin=_ORIGIN):
 
 
 class TestSearchAvailability:
-    async def test_one_estimated_slot_per_course(self):
-        provider = AffiliateLinkProvider(find_courses=_fake_finder(_COURSES))
+    async def test_one_route_entry_per_public_course(self):
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
         slots = await provider.search_availability(_query())
 
         assert len(slots) == 2
-        assert all(s.estimated is True for s in slots)
-        assert all(s.provider == "affiliate" for s in slots)
-        # One slot per course — the window start, clearly an estimate.
-        assert all(s.time == "07:00" for s in slots)
+        assert all(s.provider == "routing" for s in slots)
         assert {s.course_name for s in slots} == {
             "Presidio Golf Course", "Lincoln Park Golf Course",
         }
 
-    async def test_never_fabricates_price(self):
-        provider = AffiliateLinkProvider(find_courses=_fake_finder(_COURSES))
+    async def test_honest_core_no_fabricated_time_price_or_estimate(self):
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
         slots = await provider.search_availability(_query())
+        assert all(s.time == "" for s in slots), "a synthesized time slot is a test failure"
+        assert all(s.estimated is False for s in slots)
         assert all(s.price_usd is None for s in slots)
 
-    async def test_booking_url_from_places_website_when_available(self):
-        provider = AffiliateLinkProvider(find_courses=_fake_finder(_COURSES))
+    async def test_route_book_on_site_when_website_known(self):
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
         slots = await provider.search_availability(_query())
         by_name = {s.course_name: s for s in slots}
+        assert by_name["Presidio Golf Course"].route == "book_on_site"
         assert by_name["Presidio Golf Course"].booking_url == "https://www.presidiogolf.com/"
-        # No website known → no URL. Never a fabricated link.
+
+    async def test_route_call_when_no_website(self):
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
+        slots = await provider.search_availability(_query())
+        by_name = {s.course_name: s for s in slots}
+        assert by_name["Lincoln Park Golf Course"].route == "call"
         assert by_name["Lincoln Park Golf Course"].booking_url is None
 
     async def test_distance_computed_from_origin_and_sorted(self):
-        provider = AffiliateLinkProvider(find_courses=_fake_finder(_COURSES))
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
         slots = await provider.search_availability(_query())
         assert slots[0].course_name == "Presidio Golf Course"
         assert slots[0].distance_miles == 0.0
         assert slots[1].distance_miles > 0.0
 
     async def test_max_distance_filter(self):
-        provider = AffiliateLinkProvider(find_courses=_fake_finder(_COURSES))
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
         slots = await provider.search_availability(_query(max_distance_miles=1.0))
         # Lincoln Park is ~1.8 mi from the origin — filtered out.
         assert [s.course_name for s in slots] == ["Presidio Golf Course"]
 
     async def test_empty_finder_returns_empty_list(self):
-        provider = AffiliateLinkProvider(find_courses=_fake_finder([], origin=None))
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder([], origin=None))
         assert await provider.search_availability(_query()) == []
 
     async def test_finder_error_returns_empty_list_never_raises(self):
         async def boom(_query):
             raise RuntimeError("overpass down")
-        provider = AffiliateLinkProvider(find_courses=boom)
+        provider = RoutingTeeTimeProvider(find_courses=boom)
         assert await provider.search_availability(_query()) == []
 
     async def test_skips_courses_without_id_or_name(self):
         bad = [{"name": "No Id Course", "center": {"lat": 1, "lng": 1}},
                {"id": "x1", "name": "", "center": {"lat": 1, "lng": 1}}]
-        provider = AffiliateLinkProvider(find_courses=_fake_finder(bad))
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(bad))
         assert await provider.search_availability(_query()) == []
 
     async def test_caps_course_count(self):
@@ -116,34 +133,53 @@ class TestSearchAvailability:
             {"id": f"c{i}", "name": f"Course {i}", "center": {"lat": 37.79, "lng": -122.46}}
             for i in range(20)
         ]
-        provider = AffiliateLinkProvider(find_courses=_fake_finder(many))
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(many))
         slots = await provider.search_availability(_query())
         assert len(slots) == 8
+
+    async def test_private_club_never_reaches_output(self):
+        courses = [*_COURSES, _LIBERTY]
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(courses))
+        slots = await provider.search_availability(_query())
+        assert "Liberty National Golf Club" not in {s.course_name for s in slots}
+        assert len(slots) == 2  # filtered BEFORE the cap, not just excluded post-hoc
+
+    async def test_private_club_filtered_even_when_it_would_fill_the_cap(self):
+        # 8 privates + 2 publics: filter runs before the cap, so both publics
+        # still make it through (a naive filter-after-cap would drop them).
+        privates = [{**_LIBERTY, "id": f"gplaces-liberty-{i}"} for i in range(8)]
+        courses = privates + _COURSES
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(courses))
+        slots = await provider.search_availability(_query())
+        assert {s.course_name for s in slots} == {
+            "Presidio Golf Course", "Lincoln Park Golf Course",
+        }
 
 
 class TestBook:
     @pytest.fixture
     def slot(self) -> TeeTimeSlot:
         return TeeTimeSlot(
-            id="gplaces-abc123-2026-07-04-07:00-0",
+            id="gplaces-abc123-2026-07-04-route",
             course_id="gplaces-abc123",
             course_name="Presidio Golf Course",
             city="San Francisco, CA",
             date="2026-07-04",
-            time="07:00",
+            time="",
             players=4,
             price_usd=None,
             cart_included=False,
             distance_miles=0.0,
             rating=4.3,
-            provider="affiliate",
+            provider="routing",
             holes=18,
             booking_url="https://www.presidiogolf.com/",
-            estimated=True,
+            estimated=False,
+            route="book_on_site",
         )
 
     async def test_book_returns_needs_human_with_url(self, slot):
-        provider = AffiliateLinkProvider(find_courses=_fake_finder(_COURSES))
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
         result = await provider.book(slot, BookingDetails(name="Owner", party_size=4))
         assert result.status == "needs_human"
         assert result.booking_url == "https://www.presidiogolf.com/"
@@ -152,10 +188,12 @@ class TestBook:
 
     async def test_book_without_url_still_needs_human(self, slot):
         slot.booking_url = None
-        provider = AffiliateLinkProvider(find_courses=_fake_finder(_COURSES))
+        slot.route = "call"
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
         result = await provider.book(slot, BookingDetails(name="Owner", party_size=4))
         assert result.status == "needs_human"
         assert result.booking_url is None
+        assert result.confirmation_number is None
 
 
 class TestHelpers:

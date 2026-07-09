@@ -5,8 +5,12 @@
  * these functions; the backend holds the provider logic (secrets, caching, etc.)
  * so no provider credentials ever reach the client.
  *
- * When the backend is unavailable (local dev without the backend running), the
- * client falls back to the frontend mock provider so the dev experience is smooth.
+ * S0 ("kill fake data", specs/teetime-s0-plan.md): a backend failure NO LONGER
+ * silently serves the frontend mock catalogue on the real path — that was a
+ * second fake-data leak alongside the (now-deleted) backend mock-fallback.
+ * The mock fallback fires ONLY when the caller has explicitly opted in with
+ * `NEXT_PUBLIC_TEETIME_PROVIDER=mock` (dev without the backend running); any
+ * other failure rethrows so the UI shows the honest "provider unavailable" miss.
  */
 
 import { fetchAPI } from "@/lib/api";
@@ -18,7 +22,7 @@ import { getActiveProvider } from "./registry";
 export interface SearchResponse {
   query: TeeTimeQuery;
   results: TeeTimeSlot[];
-  /** "mock" | "affiliate" | "golfnow" | "chronogolf" */
+  /** "mock" | "routing" | "golfnow" | "chronogolf" */
   provider: string;
   /** True when results come from cache. */
   cached: boolean;
@@ -31,11 +35,17 @@ export interface BookResponse {
 
 // ─── Search ───────────────────────────────────────────────────────────────────
 
+/** Explicit dev opt-in for the frontend mock catalogue — see the file docstring. */
+function mockOptIn(): boolean {
+  return process.env.NEXT_PUBLIC_TEETIME_PROVIDER === "mock";
+}
+
 /**
  * Search for available tee times.
  *
- * Calls the backend `GET /api/tee-times/search`; falls back to the frontend
- * mock provider if the backend returns a non-2xx response or throws.
+ * Calls the backend `GET /api/tee-times/search`. On failure: falls back to
+ * the frontend mock provider ONLY when `NEXT_PUBLIC_TEETIME_PROVIDER=mock`
+ * (explicit dev opt-in); otherwise rethrows so the caller shows an honest miss.
  */
 export async function searchTeeTimes(query: TeeTimeQuery): Promise<TeeTimeSlot[]> {
   try {
@@ -52,9 +62,9 @@ export async function searchTeeTimes(query: TeeTimeQuery): Promise<TeeTimeSlot[]
 
     const data = await fetchAPI<SearchResponse>(`/api/tee-times/search?${params}`);
     return data.results;
-  } catch {
-    // Fallback to frontend mock (e.g. backend not running locally).
-    console.warn("[teetime] Backend unavailable — falling back to frontend mock");
+  } catch (err) {
+    if (!mockOptIn()) throw err;
+    console.warn("[teetime] Backend unavailable — NEXT_PUBLIC_TEETIME_PROVIDER=mock, using frontend mock");
     return getActiveProvider().searchAvailability(query);
   }
 }
@@ -64,8 +74,9 @@ export async function searchTeeTimes(query: TeeTimeQuery): Promise<TeeTimeSlot[]
 /**
  * Attempt to book a slot.
  *
- * Calls the backend `POST /api/tee-times/book`; falls back to the frontend
- * mock provider if the backend is unavailable.
+ * Calls the backend `POST /api/tee-times/book`. On failure: falls back to the
+ * frontend mock provider ONLY when `NEXT_PUBLIC_TEETIME_PROVIDER=mock`
+ * (explicit dev opt-in); otherwise rethrows.
  */
 export async function bookTeeTime(slot: TeeTimeSlot, details: BookingDetails): Promise<BookingResult> {
   try {
@@ -75,8 +86,9 @@ export async function bookTeeTime(slot: TeeTimeSlot, details: BookingDetails): P
       body: JSON.stringify({ slot, details }),
     });
     return data.result;
-  } catch {
-    console.warn("[teetime] Backend unavailable — falling back to frontend mock book");
+  } catch (err) {
+    if (!mockOptIn()) throw err;
+    console.warn("[teetime] Backend unavailable — NEXT_PUBLIC_TEETIME_PROVIDER=mock, using frontend mock book");
     return getActiveProvider().book(slot, details);
   }
 }
