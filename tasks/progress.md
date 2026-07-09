@@ -9123,3 +9123,23 @@ owner/PM pick before any build cycle touches the validator.
 
 Classification: SILENT investigation. NO code change, NO PR, NO owner ping. Bundle still empty.
 Diag scripts (scratchpad, not committed): diag_7_11.py, diag_b_vs_c.py.
+
+---
+
+## 2026-07-09 — SHIPPED: #118 caddie ball-flight physics engine
+
+Owner "ship it". Merge dc4dcce → main; deploy verified by SHA + health ok.
+TestFlight v1.0.939 (build 202607090928). The caddie's distances are now
+real physics: RK4 trajectory (drag on airspeed vector, Magnus, spin decay,
+air density, elevation-plane termination, calibrated roll), reverse-fit to
+the player's club distances. THE INCIDENT DEAD: 300 driver + 4mph downwind
++ 38ft downhill = total 327 (was "390"); 390 pin plays like 358 (shorter).
+get_shot_distance tool = the ONLY distance source (both mouths, parity);
+PHYSICS_GROUNDING_RULE forbids model math; crude elevation/3 + capped-wind
+deleted; recommendation shares the physics; honest degradation. Incident is
+golden eval scenario + RED-proof mutant. Fable-planned, Fable-built, Fable-
+reviewed (security clean + 1 honesty fix; correctness hand-verified).
+Silent riders: ORCHESTRATION.md + agent-architecture study + tee-time
+plans. Twenty-two ships this run.
+NEXT: tee-time S0 (rip fake data) → S1 foreUP; caddie physics steps 2nd-
+slice (tiles consume backend plays-like); green-slope + bend + tree-CV.
