@@ -9854,3 +9854,18 @@ NEXT: reviewer (parity check — tile==caddie for a fixture) + qa (STRICT gates)
 (PLAYS tile is user-facing/calm — review the new "wind+elev · you"/"elev from you" copy
 against NORTHSTAR). BLOCKING → re-dispatch builder. Clean+green → update PR #121 checklist
 (NOTICEABLE → approval-eligible), release-manager TestFlight, owner ping. Never merge to main.
+
+## AWAITING: reviewer + qa + designer on physics-tiles-coherence (item commit 879291c) on integration/next
+Builder pushed 879291c (item) + progress. HEAD 173442f. Local gates green (backend 129
+pass; frontend 1832 vitest, tsc/lint clean, 274/274 voice, build ok). Item files: backend
+tools.py (server-side bearing parity + wind-honesty + conditions_used fields), RoundPageClient
+.tsx (hook wiring, drop playsLikeYards for tile), new use-physics-plays-like.ts + plays-tile.ts
+(+tests), api.ts typing, fcb-labels.ts captions, test_caddie_tools.py + golden fixture both sides.
+Builder deviation to scrutinize: plays-tile.ts takes TWO basis inputs (basisYards + fallbackYards)
+so the available:false row shows the RAW basis while the offline/error row may show the old
+effectiveYards-composed number — reviewer must confirm NO fallback cell pairs an
+elevation/wind-composed NUMBER with a caption claiming an adjustment it didn't verify (that would
+be the contradictory-number bug re-entering).
+On return: BLOCKING (parity break / dishonest fallback / correctness / Northstar) → re-dispatch
+builder; all clean+green → update PR #121 checklist (NOTICEABLE, approval-eligible), dispatch
+release-manager for TestFlight + owner ping. Never merge to main.
