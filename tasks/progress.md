@@ -10151,3 +10151,10 @@ dial-safety, disclosure, auth, gate-integrity cleared). QA: green after guard fi
 Owner-setup to test live: VOICE_BOOKING_ENABLED=1 + Twilio creds +
 VOICE_BOOKING_OWNER_NUMBER (his E.164). Live bridge still NotImplemented (S3b) —
 button returns 'not enabled' note until then.
+
+## AWAITING (S3b Twilio↔Realtime bridge on feat/teetime-s3-caller)
+- Dispatched Fable Plan → specs/teetime-s3b-twilio-bridge-plan.md.
+- Next: builder implements live bridge (telephony.get_live_transport, WS media-stream route,
+  call-token registry, realtime instructions), then reviewer + /security-review + QA.
+- On resume: check specs/teetime-s3b-twilio-bridge-plan.md exists, then git log for builder commits.
+- Do NOT merge; push updates PR #124.
