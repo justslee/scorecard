@@ -3,6 +3,48 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-09 — builder: caddie-tool-loop-parity landed on the bundle (NOTICEABLE, full-stack, DONE)
+
+Implemented `specs/caddie-tool-loop-parity-plan.md` — the classic text caddie (sheet/fallback)
+now has the same six tools as the Realtime orb, and `get_carries` is REAL on both mouths.
+Parity by construction: NEW `backend/app/caddie/tools.py` = ONE canonical registry
+(`CADDIE_TOOLS`, name-sorted) rendered two ways (`realtime_tools()` → relay `DEFAULT_TOOLS`
+unchanged-shape; `anthropic_tools()` → module constant `TEXT_TOOLS`), plus the six `*_payload`
+helpers EXTRACTED from `routes/caddie.py` (recommend/shot/status/conditions/profile + new
+`carries_payload`) — the HTTP session endpoints and the server-side `resolve_tool` dispatcher
+both call the same helpers. NEW `backend/app/caddie/tool_loop.py::run_caddie_turn` = bounded
+loop wired into all four text endpoints (AsyncAnthropic everywhere): STRUCTURAL stops only
+(3-call cap, `tool_choice:none` final call, 900-token budget, repeated-identical-call cache,
+6s/tool timeout, 4000-char result clip, calm `is_error` copy — never raw exceptions). Streaming
+twins emit a new `event: status` keepalive frame; `streamCaddieReply` re-arms its watchdogs on
+it (so a >8s tool turn no longer falls to the dumber tier) and `CaddieSheet` swaps the thinking
+pulse to "checking the numbers…". Real carries: `GET /caddie/session/{id}/carries` +
+`getSessionCarries`/`SessionCarries` in `caddie/api.ts`; the `realtime.ts` `available:false`
+stub is GONE; honest-empty matrix per the no-fake-data lesson (unmapped → available:false+reason;
+mapped-but-clean → true+[]+note; zero-carry entries filtered; club lists null when no distances).
+Fixed the pre-existing `SessionConditions` TS drift (hazards/hazards_line/green_slope). Prompt
+edit additive-only: one `TOOL_USE_RULE` line (voice_prompts.py) into both stable_texts.
+
+Evals/tests: golden scenario `carry-question-cites-true-along-path-carry`; new Tier-1 check
+`carries_tool_matches_hazards` (registry + 2 teeth mutants: invented carry, dropped carry);
+`tests/eval/test_tool_parity.py` (schema drift + deterministic ordering);
+`tests/test_caddie_tools.py` (honest-empty matrix + resolver contract);
+`tests/test_caddie_tool_loop.py` (11 loop tests incl. all structural stops).
+Gates: backend `pytest tests --ignore=tests/integration` → **1361 passed** (eval suite 52),
+ruff clean; frontend lint/tsc/build clean, vitest **1736 passed** (84 files), voice-tests
+smoke **274/274**. DB-backed integration tests deferred to CI as always.
+
+Deviations (small, noted for the eng-lead): (1) `TOOL_USE_RULE` sits BEFORE
+`OBSERVED_REALITY_RULE` in stable_text (plan said after) — keeps test_voice_stream's
+endswith(OBSERVED_REALITY_RULE) pins intact; still additive. (2) `test_caddie_caching.py`
+fixtures updated to the plan's own client change (sync fakes → AsyncAnthropic stream fakes;
+templates gained the one `{tool_rule}` line via the imported constant) — same assertions,
+no weakening. (3) No pydantic response model for /carries (plan marked optional): followed the
+neighboring /conditions dict pattern; TS `SessionCarries` mirrors `carries_payload` field-for-
+field. (4) `_first_text` retained (pinned by test_voice_error_hygiene) though the mouths now
+assemble replies from the loop. (5) Manual live-turn evidence + `/security-review`//`/code-review`
+passes still owed at the bundle level (no live key here) — flagged to eng-lead.
+
 ## eng-lead cycle 34 (2026-07-08) — caddie-advice-eval-harness on the bundle; PR #117 opened (SILENT)
 
 Fresh `integration/next` after #116 shipped (v1.0.911). Step 0 clean: no Needs Review cards, no

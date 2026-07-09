@@ -248,6 +248,20 @@ export interface SessionConditions {
     plays_like_delta: number;
     elevation_change_ft: number;
   } | null;
+  /** Real mapped bunker/water hazards for the hole — empty when none are
+   *  mapped (honest, never invented). Mirrors backend Hazard (types.py). */
+  hazards: Array<{
+    type: string;
+    side: string;
+    distance_from_green: number;
+    penalty_severity: string;
+    lat: number | null;
+    lng: number | null;
+    carry_yards: number;
+    line_side: string;
+  }>;
+  hazards_line: string | null;
+  green_slope: { description: string } | null;
 }
 
 /** Deterministic read backing the `get_conditions` voice tool. */
@@ -258,6 +272,41 @@ export async function getSessionConditions(
   const qs = holeNumber != null ? `?hole_number=${holeNumber}` : '';
   return get<SessionConditions>(
     `/caddie/session/${encodeURIComponent(roundId)}/conditions${qs}`,
+  );
+}
+
+/** One hazard's along-path carry, paired with the player's own clubs.
+ *  Mirrors backend tools.carries_payload (app/caddie/tools.py). */
+export interface CarryEntry {
+  type: string;
+  side: string;
+  carry_yards: number;
+  /** null when the player has entered no club distances — never inferred. */
+  clubs_that_clear: string[] | null;
+  clubs_short_of_it: string[] | null;
+}
+
+export interface SessionCarries {
+  round_id: string;
+  hole_number: number;
+  /** false = the hole has no cached intel (course unmapped) — the persona
+   *  must say carries aren't available, never invent a number. */
+  available: boolean;
+  reason?: string;
+  carries?: CarryEntry[];
+  club_distances?: Record<string, number>;
+  /** Set when the hole is mapped but genuinely hazard-free (a TRUE empty,
+   *  distinct from "unknown"). */
+  note?: string | null;
+}
+
+/** Real along-path carries backing the `get_carries` voice tool. */
+export async function getSessionCarries(
+  roundId: string,
+  holeNumber: number,
+): Promise<SessionCarries> {
+  return get<SessionCarries>(
+    `/caddie/session/${encodeURIComponent(roundId)}/carries?hole_number=${holeNumber}`,
   );
 }
 
@@ -591,6 +640,10 @@ interface StreamCaddieReplyOpts {
   /** Called once per token delta, in order, as it arrives. Never called for
    *  the non-progressive (getReader-absent) fallback path. */
   onToken: (delta: string) => void;
+  /** Called on each `status` keepalive frame (a server-side tool round is
+   *  running — caddie-tool-loop-parity). Optional; purely cosmetic. The
+   *  load-bearing effect of a status frame is the watchdog re-arm below. */
+  onStatus?: (label: string) => void;
   firstTokenTimeoutMs: number;
   idleTimeoutMs: number;
   signal?: AbortSignal;
@@ -607,7 +660,7 @@ interface StreamCaddieReplyOpts {
 export async function streamCaddieReply(
   path: string,
   body: unknown,
-  { onToken, firstTokenTimeoutMs, idleTimeoutMs, signal }: StreamCaddieReplyOpts,
+  { onToken, onStatus, firstTokenTimeoutMs, idleTimeoutMs, signal }: StreamCaddieReplyOpts,
 ): Promise<string> {
   const controller = new AbortController();
   const onExternalAbort = () => controller.abort(signal!.reason);
@@ -717,6 +770,19 @@ export async function streamCaddieReply(
             armIdleTimer(); // reset on every token — dead air only, never a slow-but-live stream
           }
           onToken(delta);
+        } else if (frame.event === "status") {
+          // A server-side tool round is running (caddie-tool-loop-parity):
+          // the stream is alive, just not emitting text yet. Re-arm whichever
+          // watchdog is active so a legitimate multi-second tool turn isn't
+          // aborted as dead air. Old frames without this event never regress
+          // — unknown events already fell through parseSSEFrame handling.
+          if (!sawFirstToken) armFirstTokenTimer();
+          else armIdleTimer();
+          try {
+            onStatus?.(JSON.parse(frame.data) as string);
+          } catch {
+            // A malformed status label is cosmetic-only — never fatal.
+          }
         } else if (frame.event === "error") {
           const calm = JSON.parse(frame.data) as string;
           throw sawFirstToken ? new _StreamTerminalError(calm) : new BeforeFirstByteError(calm);
@@ -757,10 +823,11 @@ export async function streamCaddieReply(
 /** Streaming twin of sessionVoice — 3-tier CaddieSheet ladder, tier 1. */
 export async function sessionVoiceStream(
   params: { round_id: string; transcript: string; personality_id: string; hole_number: number },
-  opts: { onToken: (delta: string) => void; signal?: AbortSignal },
+  opts: { onToken: (delta: string) => void; onStatus?: (label: string) => void; signal?: AbortSignal },
 ): Promise<string> {
   return streamCaddieReply("/caddie/session/voice/stream", params, {
     onToken: opts.onToken,
+    onStatus: opts.onStatus,
     signal: opts.signal,
     firstTokenTimeoutMs: STREAM_FIRST_TOKEN_TIMEOUT_MS,
     idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,
@@ -783,7 +850,7 @@ export async function talkToCaddieStream(
     current_recommendation?: CaddieRecommendation;
     conversation_history?: VoiceCaddieMessage[];
   },
-  opts: { onToken: (delta: string) => void; signal?: AbortSignal },
+  opts: { onToken: (delta: string) => void; onStatus?: (label: string) => void; signal?: AbortSignal },
 ): Promise<string> {
   return streamCaddieReply(
     "/caddie/voice/stream",
@@ -803,6 +870,7 @@ export async function talkToCaddieStream(
     },
     {
       onToken: opts.onToken,
+      onStatus: opts.onStatus,
       signal: opts.signal,
       firstTokenTimeoutMs: STREAM_FIRST_TOKEN_TIMEOUT_MS,
       idleTimeoutMs: STREAM_IDLE_TIMEOUT_MS,

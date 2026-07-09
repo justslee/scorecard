@@ -6,7 +6,6 @@ import anthropic
 import json
 import logging
 import os
-import time
 from typing import AsyncIterator, Optional
 from pydantic import BaseModel
 
@@ -23,8 +22,9 @@ from app.caddie.player_stats import analyze_player_stats
 from app.caddie.course_intel import build_hole_intelligence, build_weather_conditions
 from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
 from app.caddie.guide_writer import format_guide_line
-from app.caddie.voice_prompts import OBSERVED_REALITY_RULE
-from sqlalchemy import select, func as sqlfunc
+from app.caddie.voice_prompts import OBSERVED_REALITY_RULE, TOOL_USE_RULE
+from app.caddie import tools as caddie_tools
+from app.caddie.tool_loop import run_caddie_turn
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.caddie.personalities import (
@@ -35,9 +35,9 @@ from app.caddie.personalities import (
     DEFAULT_PERSONALITY_ID,
 )
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
-from app.caddie.session import sessions, ShotRecord, get_owned_session
+from app.caddie.session import sessions, get_owned_session
 from app.db.engine import async_session
-from app.db.models import PlayerProfile, Shot
+from app.db.models import PlayerProfile
 from app.caddie import memory as memory_mod
 from app.caddie import learning as learning_mod
 from app.caddie.types import PlayerStatistics, PlayerTendencies
@@ -62,16 +62,18 @@ _CADDIE_TIMEOUT_S = 25.0
 _CADDIE_MAX_RETRIES = 1
 
 
-def _log_caddie_usage(usage, *, context: str, persona_id: Optional[str]) -> None:
+def _log_caddie_usage(usage, *, context: str, persona_id: Optional[str], call_index: int = 0) -> None:
     """One structured line proving prompt-cache engagement (or an honest
     below-floor no-op) — cache_read/cache_creation vs plain input tokens.
-    Logging must never break a reply, so this never raises."""
+    `call_index` tags which model call of a (possibly multi-call) tool-loop
+    turn this was. Logging must never break a reply, so this never raises."""
     try:
         log.info(
             "caddie_usage",
             extra={
                 "caddie_context": context,
                 "persona_id": persona_id,
+                "call_index": call_index,
                 "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
                 "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
                 "input_tokens": getattr(usage, "input_tokens", 0) or 0,
@@ -217,13 +219,16 @@ async def _precompute_course_elevations(course_id: str) -> None:
 def _first_text(message) -> str:
     """The first text block of a Claude response, or '' when the model
     returned no text (rare but real — empty content was crashing session_voice
-    with an IndexError that leaked 'list index out of range' to the sheet)."""
+    with an IndexError that leaked 'list index out of range' to the sheet).
+
+    The voice mouths now assemble their reply from the tool loop's streamed
+    deltas (app/caddie/tool_loop.py), but this stays the canonical safe-read
+    helper for one-shot Claude responses (pinned by test_voice_error_hygiene)."""
     for block in getattr(message, "content", None) or []:
         text = getattr(block, "text", None)
         if text:
             return text
     return ""
-
 
 
 router = APIRouter(prefix="/api/caddie", tags=["caddie"])
@@ -395,22 +400,7 @@ async def end_session(round_id: str, user_id: str = Depends(current_user_id)):
 async def get_session_status(round_id: str, user_id: str = Depends(current_user_id)):
     """Check session status and cached data. Caller must own the round."""
     session = await get_owned_session(round_id, user_id)
-    return {
-        "status": "active",
-        "round_id": session.round_id,
-        "current_hole": session.current_hole,
-        "holes_with_intel": list(session.hole_intel.keys()),
-        "has_weather": session.weather is not None,
-        "shot_count": len(session.shot_history),
-        "conversation_length": len(session.conversation_history),
-        "last_recommendation": session.last_recommendation.model_dump() if session.last_recommendation else None,
-        "recent_shots": [s.model_dump() for s in session.shot_history[-5:]],
-    }
-
-
-# A byte-identical shot arriving this soon after the previous one is treated
-# as a client retry (network flake / duplicate tap), not a second real shot.
-_SHOT_RETRY_WINDOW_SECONDS = 30.0
+    return caddie_tools.session_status_payload(session)
 
 
 @router.post("/session/shot")
@@ -425,62 +415,20 @@ async def record_shot(request: RecordShotRequest, user_id: str = Depends(current
     day one. Lat/lng are unknown on the voice path — left null.
 
     Idempotence: an identical (hole, club, distance, result) shot within
-    _SHOT_RETRY_WINDOW_SECONDS of the last recorded one is a retry — neither
-    store is written twice.
+    tools.SHOT_RETRY_WINDOW_SECONDS of the last recorded one is a retry —
+    neither store is written twice. Body lives in app/caddie/tools.py, shared
+    with the text tool loop (parity by construction).
     """
     session = await get_owned_session(request.round_id, user_id)
-
-    last = session.shot_history[-1] if session.shot_history else None
-    if (
-        last is not None
-        and last.hole_number == request.hole_number
-        and last.club == request.club
-        and last.distance_yards == request.distance_yards
-        and last.result == request.result
-        and (time.time() - last.timestamp) < _SHOT_RETRY_WINDOW_SECONDS
-    ):
-        return {
-            "status": "recorded",
-            "total_shots": len(session.shot_history),
-            "duplicate": True,
-        }
-
-    shot = ShotRecord(
-        hole_number=request.hole_number,
-        club=request.club,
-        distance_yards=request.distance_yards,
+    return await caddie_tools.record_shot_payload(
+        session,
+        request.round_id,
+        user_id,
+        request.hole_number,
+        request.club,
+        request.distance_yards,
         result=request.result,
-        timestamp=time.time(),
     )
-    await sessions.append_shot(request.round_id, shot)
-
-    # Durable dual-write. shot_number is assigned server-side as the next
-    # index for (round_id, hole_number) — same contract as POST /api/shots.
-    # Best-effort: the analytics write must never break in-round voice logging.
-    try:
-        async with async_session() as db:
-            next_n = await db.execute(
-                select(sqlfunc.coalesce(sqlfunc.max(Shot.shot_number), 0) + 1)
-                .where(
-                    Shot.round_id == request.round_id,
-                    Shot.hole_number == request.hole_number,
-                )
-            )
-            db.add(Shot(
-                round_id=request.round_id,
-                user_id=user_id,
-                hole_number=request.hole_number,
-                shot_number=int(next_n.scalar_one()),
-                distance_yards=request.distance_yards,
-                club=request.club,
-                result=request.result,
-            ))
-            await db.commit()
-    except Exception:
-        # Session history still has the shot; learning just misses this one.
-        pass
-
-    return {"status": "recorded", "total_shots": len(session.shot_history) + 1}
 
 
 # ── Session-derived tool endpoints (Realtime tool surface v1) ──
@@ -498,44 +446,11 @@ async def get_session_conditions(
     the plays-like delta is the elevation-adjusted effective yardage already
     computed into hole_intel. Honest by design: holes without cached intel
     return plays_like=None rather than a guess — the model is instructed to
-    never invent numbers a tool didn't return.
+    never invent numbers a tool didn't return. Body lives in
+    app/caddie/tools.py, shared with the text tool loop.
     """
     session = await get_owned_session(round_id, user_id)
-    hn = hole_number or session.current_hole
-    intel = session.hole_intel.get(hn)
-    plays_like = None
-    if intel is not None and intel.effective_yards:
-        plays_like = {
-            "yards": intel.yards,
-            "effective_yards": intel.effective_yards,
-            "plays_like_delta": intel.effective_yards - intel.yards,
-            "elevation_change_ft": intel.elevation_change_ft,
-        }
-
-    # Real bunker/water hazards for the hole, honest by design: empty (not
-    # invented) when the hole has none mapped. HAZARD_GROUNDING_RULE tells the
-    # model never to name a hazard absent from this list.
-    hazards_payload: list[dict] = []
-    hazards_line = None
-    if intel is not None and intel.hazards:
-        hazards_payload = [h.model_dump() for h in intel.hazards]
-        hazards_line = format_hazards_line(hn, intel.hazards)
-
-    # Honest by design, same discipline as hazards: no slope data mapped for
-    # this hole → None, never a guessed break.
-    green_slope = None
-    if intel is not None and intel.green_slope:
-        green_slope = {"description": intel.green_slope.description}
-
-    return {
-        "round_id": round_id,
-        "hole_number": hn,
-        "weather": session.weather.model_dump() if session.weather else None,
-        "plays_like": plays_like,
-        "hazards": hazards_payload,
-        "hazards_line": hazards_line,
-        "green_slope": green_slope,
-    }
+    return caddie_tools.conditions_payload(session, hole_number)
 
 
 @router.get("/session/{round_id}/player-profile")
@@ -547,31 +462,28 @@ async def get_session_player_profile(
 
     Effective club distances are the session's (entered) distances for now —
     P4 blends in learned distances. Tendencies come from player_profiles.
+    Body lives in app/caddie/tools.py, shared with the text tool loop.
     """
     session = await get_owned_session(round_id, user_id)
-    profile = await memory_mod.get_player_profile(user_id)
-    handicap = session.handicap
-    if handicap is None and profile is not None and profile.handicap is not None:
-        handicap = float(profile.handicap)
-    tendencies = None
-    if profile is not None:
-        tendencies = {
-            "miss_direction": profile.miss_direction,
-            "miss_short_pct": float(profile.miss_short_pct) if profile.miss_short_pct is not None else None,
-            "three_putts_per_round": (
-                float(profile.three_putts_per_round) if profile.three_putts_per_round is not None else None
-            ),
-            "par5_bogey_rate": float(profile.par5_bogey_rate) if profile.par5_bogey_rate is not None else None,
-        }
-    return {
-        "round_id": round_id,
-        "handicap": handicap,
-        "club_distances": {
-            CLUB_DISPLAY_NAMES.get(k, k): v for k, v in session.club_distances.items() if v
-        },
-        "tendencies": tendencies,
-        "rounds_analyzed": profile.rounds_analyzed if profile else 0,
-    }
+    return await caddie_tools.player_profile_payload(session, user_id)
+
+
+@router.get("/session/{round_id}/carries")
+async def get_session_carries(
+    round_id: str,
+    hole_number: Optional[int] = None,
+    user_id: str = Depends(current_user_id),
+):
+    """Real along-path carries for the `get_carries` voice tool (both mouths).
+
+    Combines the hole's mapped hazards' along-path carry_yards with the
+    player's entered club distances. Honest empties per the no-fake-data
+    rule: `available:false` when the hole has no cached intel, an explicit
+    empty list + note when the hole genuinely has no in-play hazards — never
+    an invented carry. Body lives in app/caddie/tools.py.
+    """
+    session = await get_owned_session(round_id, user_id)
+    return caddie_tools.carries_payload(session, hole_number or session.current_hole)
 
 
 # ── Shared conversation ledger append (voice mouth → caddie_messages) ──
@@ -639,40 +551,20 @@ async def append_session_message(
 async def session_recommend(request: SessionRecommendRequest, user_id: str = Depends(caddie_rate_limited_user)):
     """Get a recommendation using cached session state (weather, intel, stats, history).
 
-    Caller must own the round.
+    Caller must own the round. Body lives in app/caddie/tools.py, shared with
+    the text tool loop (parity by construction).
     """
     session = await get_owned_session(request.round_id, user_id)
-
-    session.current_hole = request.hole_number
-
-    # Use cached hole intelligence
-    hole_intel = session.hole_intel.get(request.hole_number)
-    if hole_intel is None:
-        hole_intel = HoleIntelligence(
-            hole_number=request.hole_number,
-            par=request.par,
-            yards=request.yards,
-            effective_yards=request.yards,
-        )
-
-    distance = request.distance_yards or request.yards
-    club_distances = session.club_distances or {}
-
-    rec = generate_recommendation(
-        hole=hole_intel,
-        distance_yards=distance,
-        club_distances=club_distances,
-        handicap=session.handicap or 15.0,
-        weather=session.weather,
-        player_stats=session.player_stats,
-        shot_bearing=request.shot_bearing or 0.0,
+    return await caddie_tools.recommend_payload(
+        session,
+        request.round_id,
+        request.hole_number,
+        distance_yards=request.distance_yards,
+        par=request.par,
+        yards=request.yards,
+        shot_bearing=request.shot_bearing,
         competition_legal=request.competition_legal,
     )
-
-    # Targeted update: only writes last_recommendation + current_hole, so a
-    # concurrent /session/shot append doesn't get clobbered.
-    await sessions.set_recommendation(request.round_id, rec, request.hole_number)
-    return rec.model_dump()
 
 
 # ── Session-aware voice ──
@@ -807,6 +699,7 @@ You have memory of the entire round conversation and prior rounds. Reference ear
 or known tendencies when relevant.
 
 {HAZARD_GROUNDING_RULE}
+{TOOL_USE_RULE}
 {OBSERVED_REALITY_RULE}"""
 
     # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
@@ -831,21 +724,31 @@ async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(cad
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
 
     system_blocks, messages, persona_id = await _build_session_voice_prompt(request, user_id)
+    # The tool loop resolves against the live session (same object the orb's
+    # HTTP tool endpoints read) — ownership already enforced by the builder.
+    session = await get_owned_session(request.round_id, user_id)
+    ctx = caddie_tools.ToolContext(
+        session=session, round_id=request.round_id,
+        user_id=user_id, default_hole=request.hole_number,
+    )
 
     try:
-        client = anthropic.Anthropic(
+        client = anthropic.AsyncAnthropic(
             api_key=api_key, timeout=_CADDIE_TIMEOUT_S, max_retries=_CADDIE_MAX_RETRIES,
         )
         model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
-        message = client.messages.create(
-            model=model,
-            max_tokens=300,
-            temperature=0.7,
-            system=system_blocks,
-            messages=messages,
-        )
-        _log_caddie_usage(message.usage, context="session_voice", persona_id=persona_id)
-        response_text = _first_text(message) or "Say that once more? I want to get this right."
+        response_text = ""
+        async for kind, payload in run_caddie_turn(
+            client, model, system_blocks, messages, ctx,
+            on_usage=lambda usage, call_n: _log_caddie_usage(
+                usage, context="session_voice", persona_id=persona_id, call_index=call_n,
+            ),
+        ):
+            # token/status frames are streaming-only concerns — the JSON mouth
+            # keeps just the final assembled text.
+            if kind == "done":
+                response_text = payload
+        response_text = response_text or "Say that once more? I want to get this right."
 
         # Atomic dual append — either both turns persist or neither, so the
         # round's conversation history can't wedge into a user-without-assistant
@@ -880,21 +783,25 @@ async def _sse_reply(
     transcript: Optional[str] = None,
     hole_number: Optional[int] = None,
     persona_id: Optional[str] = None,
+    ctx: Optional[caddie_tools.ToolContext] = None,
 ) -> AsyncIterator[str]:
-    """Stream a Claude reply as SSE frames — the async twin of the
-    `client.messages.create(...)` call in session_voice/voice_caddie, with
-    IDENTICAL params (model, max_tokens, temperature). Runs only AFTER the
-    caller has done all auth/gate/prompt-assembly work and committed the
-    200 OK + streaming headers, so nothing here can turn into a JSON error
-    response — failures become `event: error` frames instead.
+    """Stream a Claude reply as SSE frames — the async twin of the tool-loop
+    consumption in session_voice/voice_caddie, with IDENTICAL params (model,
+    max_tokens, temperature, tools). Runs only AFTER the caller has done all
+    auth/gate/prompt-assembly work and committed the 200 OK + streaming
+    headers, so nothing here can turn into a JSON error response — failures
+    become `event: error` frames instead.
 
     `system` accepts either a bare string or the two-block prompt-cache list
     built by `_build_session_voice_prompt` / `_build_voice_prompt` — the SDK
-    forwards both forms unchanged.
+    forwards both forms unchanged. `ctx` is the tool-resolution context; None
+    (or a session-less ctx) means every tool answers honestly that no live
+    round data is available (the stateless mouth).
 
     Framing (internal contract, not a shared model — see
     specs/voice-streaming-replies-plan.md §1):
         event: token\\ndata: <json-encoded delta>\\n\\n   # zero or more
+        event: status\\ndata: <json-encoded label>\\n\\n  # zero or more (tool rounds; watchdog keepalive)
         event: done\\ndata: {}\\n\\n                       # exactly one on success
         event: error\\ndata: <calm copy>\\n\\n              # exactly one on failure
 
@@ -903,33 +810,32 @@ async def _sse_reply(
     `completed`. A client disconnect or a mid-stream Anthropic error means
     `completed` never flips True, so nothing persists — an abandoned or
     truncated turn is dropped from history entirely rather than wedging a
-    partial reply into the round's conversation ledger.
+    partial reply into the round's conversation ledger. Tool blocks are never
+    persisted — `caddie_messages` stays a plain role/content ledger.
     """
     client = anthropic.AsyncAnthropic(
         api_key=api_key, timeout=_CADDIE_TIMEOUT_S, max_retries=_CADDIE_MAX_RETRIES,
     )
     model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+    tool_ctx = ctx or caddie_tools.ToolContext(
+        session=None, round_id=None, user_id="", default_hole=hole_number,
+    )
     parts: list[str] = []
     completed = False
     try:
-        async with client.messages.stream(
-            model=model,
-            max_tokens=300,
-            temperature=0.7,
-            system=system,
-            messages=messages,
-        ) as stream:
-            async for text in stream.text_stream:
-                if text:
-                    parts.append(text)
-                    yield f"event: token\ndata: {json.dumps(text)}\n\n"
-            # Guarded: a stream that can't produce a final message must never
-            # turn a SUCCESSFUL reply into an `event: error`.
-            try:
-                final_message = await stream.get_final_message()
-                _log_caddie_usage(final_message.usage, context=log_context, persona_id=persona_id)
-            except Exception:  # noqa: BLE001
-                log.debug(f"{log_context} usage logging failed", exc_info=True)
+        async for kind, payload in run_caddie_turn(
+            client, model, system, messages, tool_ctx,
+            on_usage=lambda usage, call_n: _log_caddie_usage(
+                usage, context=log_context, persona_id=persona_id, call_index=call_n,
+            ),
+        ):
+            if kind == "token":
+                parts.append(payload)
+                yield f"event: token\ndata: {json.dumps(payload)}\n\n"
+            elif kind == "status":
+                # Keepalive between tool rounds — the client re-arms its
+                # watchdog so a legitimate tool turn isn't aborted as dead air.
+                yield f"event: status\ndata: {json.dumps(payload)}\n\n"
         completed = True
     except anthropic.AuthenticationError:
         log.exception(f"{log_context} auth failed")
@@ -970,6 +876,13 @@ async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depe
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
 
     system_blocks, messages, persona_id = await _build_session_voice_prompt(request, user_id)
+    # Tool-resolution context — same live session the orb's HTTP tool
+    # endpoints read (ownership already enforced by the builder above).
+    session = await get_owned_session(request.round_id, user_id)
+    ctx = caddie_tools.ToolContext(
+        session=session, round_id=request.round_id,
+        user_id=user_id, default_hole=request.hole_number,
+    )
 
     return StreamingResponse(
         _sse_reply(
@@ -981,6 +894,7 @@ async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depe
             transcript=request.transcript,
             hole_number=request.hole_number,
             persona_id=persona_id,
+            ctx=ctx,
         ),
         media_type="text/event-stream",
     )
@@ -1388,6 +1302,7 @@ driver doesn't care about a bunker at 370. If they're just chatting, be personab
 golf-focused. Never break character.
 
 {HAZARD_GROUNDING_RULE}
+{TOOL_USE_RULE}
 {OBSERVED_REALITY_RULE}"""
 
     # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
@@ -1408,27 +1323,34 @@ async def voice_caddie(
 ):
     """Stateless voice caddie (use /session/voice for session-aware).
 
-    Auth required — Anthropic spend is metered against our project keys."""
+    Auth required — Anthropic spend is metered against our project keys.
+    Carries the same TEXT_TOOLS schema as the session mouth (parity), but a
+    session-less ToolContext — every tool resolution answers honestly that no
+    live round data is available, so the model says so instead of guessing."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
 
     system_blocks, messages, persona_id = await _build_voice_prompt(request, user_id)
+    ctx = caddie_tools.ToolContext(
+        session=None, round_id=None, user_id=user_id, default_hole=request.hole_number,
+    )
 
     try:
-        client = anthropic.Anthropic(
+        client = anthropic.AsyncAnthropic(
             api_key=api_key, timeout=_CADDIE_TIMEOUT_S, max_retries=_CADDIE_MAX_RETRIES,
         )
         model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
-        message = client.messages.create(
-            model=model,
-            max_tokens=300,
-            temperature=0.7,
-            system=system_blocks,
-            messages=messages,
-        )
-        _log_caddie_usage(message.usage, context="voice_caddie", persona_id=persona_id)
-        response_text = _first_text(message) or "Say that once more? I want to get this right."
+        response_text = ""
+        async for kind, payload in run_caddie_turn(
+            client, model, system_blocks, messages, ctx,
+            on_usage=lambda usage, call_n: _log_caddie_usage(
+                usage, context="voice_caddie", persona_id=persona_id, call_index=call_n,
+            ),
+        ):
+            if kind == "done":
+                response_text = payload
+        response_text = response_text or "Say that once more? I want to get this right."
         return VoiceCaddieResponse(response=response_text)
     except anthropic.AuthenticationError:
         raise HTTPException(401, "Invalid API key")
@@ -1454,11 +1376,16 @@ async def voice_caddie_stream(
         raise HTTPException(500, "ANTHROPIC_API_KEY not configured")
 
     system_blocks, messages, persona_id = await _build_voice_prompt(request, user_id)
+    # Session-less tool context (parity): tools are offered, and every
+    # resolution answers honestly that no live round data is available.
+    ctx = caddie_tools.ToolContext(
+        session=None, round_id=None, user_id=user_id, default_hole=request.hole_number,
+    )
 
     return StreamingResponse(
         _sse_reply(
             api_key, system_blocks, messages,
-            log_context="voice_caddie_stream", persona_id=persona_id,
+            log_context="voice_caddie_stream", persona_id=persona_id, ctx=ctx,
         ),
         media_type="text/event-stream",
     )

@@ -13,6 +13,8 @@ from typing import Optional
 import httpx
 from fastapi import HTTPException
 
+from app.caddie.tools import realtime_tools
+
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_REALTIME_MODEL = os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime")
@@ -38,107 +40,13 @@ _REALTIME_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secret
 
 
 # ── Tools the model can call. The frontend dispatches these against FastAPI. ──
+#
+# The schemas live in the canonical registry (app/caddie/tools.py) shared with
+# the text mouths' tool loop — parity by construction. This module keeps the
+# public DEFAULT_TOOLS name so existing imports (routes/realtime.py, tests)
+# work unchanged.
 
-DEFAULT_TOOLS: list[dict] = [
-    {
-        "type": "function",
-        "name": "get_recommendation",
-        "description": (
-            "Get a DECADE-style club + aim recommendation for the current shot. "
-            "Always call this before suggesting a club, distance, or aim line."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "hole_number": {"type": "integer", "description": "Hole the player is on (1-18)"},
-                "distance_yards": {
-                    "type": "integer",
-                    "description": "Distance to the pin in yards. Omit if unknown — backend will default to hole yardage.",
-                },
-            },
-            "required": ["hole_number"],
-        },
-    },
-    {
-        "type": "function",
-        "name": "record_shot",
-        "description": (
-            "Log a shot to the round history once the player has hit it. "
-            "Use this when the player tells you what they hit and the result."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "hole_number": {"type": "integer"},
-                "club": {"type": "string", "description": "Club used, e.g. '7iron', 'pw', 'driver'."},
-                "distance_yards": {"type": "integer", "description": "Approx carry/total distance hit."},
-                "result": {
-                    "type": "string",
-                    "description": "Where it ended up (fairway | rough | green | bunker | water | ob).",
-                },
-            },
-            "required": ["hole_number", "club", "distance_yards"],
-        },
-    },
-    {
-        "type": "function",
-        "name": "get_session_status",
-        "description": "Return the current round's cached state — useful to check what's already known.",
-        "parameters": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "type": "function",
-        "name": "get_conditions",
-        "description": (
-            "Current weather (wind, temperature) plus how the hole plays — the "
-            "plays-like yardage delta from elevation. Also returns the hole's real "
-            "bunker/water hazards (empty list if none are mapped) and the green's slope "
-            "description, when mapped. Always call this before discussing wind, "
-            "temperature, effective distance, green break, or any hazard — never name "
-            "a hazard, or a yardage to one, that isn't in the returned list."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "hole_number": {
-                    "type": "integer",
-                    "description": "Hole to evaluate (1-18). Omit for the current hole.",
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "name": "get_player_profile",
-        "description": (
-            "The player's handicap, club distances, and miss tendencies. "
-            "Always call this before referencing the player's own numbers."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "type": "function",
-        "name": "get_carries",
-        "description": (
-            "Carry distances needed to clear bunkers/water off the tee. If it "
-            "returns available:false the course isn't mapped — say you don't "
-            "have carries here and NEVER invent a carry number."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "hole_number": {"type": "integer", "description": "Hole the player is on (1-18)"},
-            },
-            "required": ["hole_number"],
-        },
-    },
-]
+DEFAULT_TOOLS: list[dict] = realtime_tools()
 
 
 def build_session_payload(

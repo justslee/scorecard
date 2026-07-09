@@ -38,6 +38,7 @@ class Tier1CheckName(str, Enum):
     VALIDATE_GUIDE_ACCEPTS = "validate_guide_accepts"
     GROUND_TRUTH_BLOCK_COMPLETE = "ground_truth_block_complete"
     CONTEXT_CONTAINS = "context_contains"
+    CARRIES_TOOL_MATCHES_HAZARDS = "carries_tool_matches_hazards"
 
 
 class Tier2DeterministicCheckName(str, Enum):
@@ -68,6 +69,7 @@ _TIER1_REQUIRED_FIELDS: dict[Tier1CheckName, tuple[str, ...]] = {
     Tier1CheckName.VALIDATE_GUIDE_ACCEPTS: ("guide",),
     Tier1CheckName.GROUND_TRUTH_BLOCK_COMPLETE: (),
     Tier1CheckName.CONTEXT_CONTAINS: ("literal",),
+    Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS: (),
 }
 
 _TIER2_DET_REQUIRED_FIELDS: dict[Tier2DeterministicCheckName, tuple[str, ...]] = {

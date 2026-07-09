@@ -200,6 +200,56 @@ def test_must_mention_any_fails_when_none_of_the_phrases_are_present():
     assert checks_mod.must_mention_any("Watch the left bunker off the tee.", required).passed
 
 
+# ── 5b. Carries-tool mutant (caddie-tool-loop-parity D8b) ───────────────────
+
+
+async def test_carries_tool_matches_hazards_goes_red_on_an_invented_carry(monkeypatch):
+    """Mutant: a carries_payload that 'helpfully' appends a hazard the hole
+    never had (the exact fabricated-carry failure the tool exists to kill).
+    The check must PASS against the real payload and FAIL on the mutant."""
+    scenario = _scenario("carry-question-cites-true-along-path-carry")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(check=Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS)
+
+    assert checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed, (
+        "sanity: the real carries_payload must match the mapped hazards"
+    )
+
+    real_carries_payload = checks_mod.carries_payload
+
+    def _mutant(session, hole_number):
+        payload = real_carries_payload(session, hole_number)
+        if payload.get("available") and payload.get("carries") is not None:
+            payload["carries"] = list(payload["carries"]) + [{
+                "type": "bunker", "side": "right", "carry_yards": 260,
+                "clubs_that_clear": None, "clubs_short_of_it": None,
+            }]
+        return payload
+
+    monkeypatch.setattr(checks_mod, "carries_payload", _mutant)
+    mutant_result = checks_mod.TIER1_CHECKS[check.check.value](ctx, check)
+    assert not mutant_result.passed, "check must go RED on an invented carry"
+
+
+async def test_carries_tool_matches_hazards_goes_red_on_a_dropped_carry(monkeypatch):
+    """Mutant twin: a payload that silently DROPS a mapped carry (a lossy
+    'simplification') must also fail — none dropped, none invented."""
+    scenario = _scenario("carry-question-cites-true-along-path-carry")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(check=Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS)
+
+    real_carries_payload = checks_mod.carries_payload
+
+    def _mutant(session, hole_number):
+        payload = real_carries_payload(session, hole_number)
+        if payload.get("available") and payload.get("carries"):
+            payload["carries"] = payload["carries"][:-1]
+        return payload
+
+    monkeypatch.setattr(checks_mod, "carries_payload", _mutant)
+    assert not checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed
+
+
 # ── 6. Registry closure — no dead checks (plan §7 item 6) ──────────────────
 
 # Tier-1 checks whose "goes red" behavior is proven by an internal mutant
@@ -210,6 +260,7 @@ TIER1_CHECKS_EXERCISED_BY_TEETH = {
     Tier1CheckName.HAZARDS_LINE_ONLY_FROM_INPUT.value,
     Tier1CheckName.HAZARDS_LINE_EMPTY_WHEN_NO_HAZARDS.value,
     Tier1CheckName.VALIDATE_GUIDE_REJECTS.value,
+    Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS.value,
 }
 
 

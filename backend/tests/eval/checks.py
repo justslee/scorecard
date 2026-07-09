@@ -28,6 +28,7 @@ from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.guide_writer import build_ground_truth_block, validate_guide
 from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
 from app.caddie.session import RoundSession
+from app.caddie.tools import carries_payload
 from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, HoleStrategyGuide, WeatherConditions
 from app.caddie.voice_prompts import OBSERVED_REALITY_RULE
 
@@ -127,6 +128,10 @@ class Tier1Context:
     text_prompt: str            # full text-mouth system prompt (BLOCK0 + BLOCK1)
     text_situation_block: str   # BLOCK1 only ("--- CURRENT SITUATION ---" section)
     realtime_prompt: str        # build_realtime_instructions() output
+    # The scenario itself, for checks that exercise session-derived tool
+    # payloads (carries_tool_matches_hazards builds the RoundSession from it).
+    # Optional so hand-built contexts in the teeth tests stay valid.
+    scenario: Optional[Scenario] = None
 
 
 def build_tier1_context(
@@ -145,6 +150,7 @@ def build_tier1_context(
         text_prompt=text_prompt,
         text_situation_block=text_situation_block,
         realtime_prompt=realtime_prompt,
+        scenario=scenario,
     )
 
 
@@ -273,6 +279,35 @@ def check_context_contains(ctx: Tier1Context, check: Tier1Check) -> CheckResult:
     return CheckResult(ok, f"{check.literal!r} not found in the CURRENT SITUATION block" if not ok else "ok")
 
 
+def check_carries_tool_matches_hazards(ctx: Tier1Context, check: Tier1Check) -> CheckResult:
+    """`get_carries` (both mouths resolve through `app.caddie.tools.
+    carries_payload`) must report EXACTLY the scenario's mapped along-path
+    carries — no invented numbers, none dropped — and follow the D3
+    honest-empty contract (caddie-tool-loop-parity): a mapped hole is
+    available (with a note when genuinely hazard-free), an UNMAPPED hole is
+    available:false with a reason, never a fabricated carry."""
+    if ctx.scenario is None:
+        return CheckResult(False, "context carries no scenario — cannot build the RoundSession")
+    hole = ctx.scenario.situation.hole
+    session = build_round_session(ctx.scenario)
+
+    payload = carries_payload(session, hole.number)
+    if payload.get("available") is not True:
+        return CheckResult(False, f"carries unavailable for a hole WITH intel: {payload!r}")
+    expected = sorted(hz.carry_yards for hz in ctx.hazards if hz.carry_yards > 0)
+    got = sorted(c["carry_yards"] for c in payload.get("carries") or [])
+    if got != expected:
+        return CheckResult(False, f"carry set mismatch: tool says {got}, mapped hazards say {expected}")
+    if not expected and not payload.get("note"):
+        return CheckResult(False, "hazard-free hole must carry the explicit 'no mapped bunkers' note")
+
+    # Honest-empty flag: a hole with NO intel must be available:false + reason.
+    unmapped = carries_payload(session, hole.number + 1)
+    if unmapped.get("available") is not False or not unmapped.get("reason"):
+        return CheckResult(False, f"unmapped hole must be available:false with a reason, got {unmapped!r}")
+    return CheckResult(True, "ok")
+
+
 TIER1_CHECKS: dict[str, Callable[[Tier1Context, Tier1Check], CheckResult]] = {
     Tier1CheckName.PROMPT_CONTAINS_RULE.value: check_prompt_contains_rule,
     Tier1CheckName.PROMPT_CONTAINS_LITERAL.value: check_prompt_contains_literal,
@@ -283,6 +318,7 @@ TIER1_CHECKS: dict[str, Callable[[Tier1Context, Tier1Check], CheckResult]] = {
     Tier1CheckName.VALIDATE_GUIDE_ACCEPTS.value: check_validate_guide_accepts,
     Tier1CheckName.GROUND_TRUTH_BLOCK_COMPLETE.value: check_ground_truth_block_complete,
     Tier1CheckName.CONTEXT_CONTAINS.value: check_context_contains,
+    Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS.value: check_carries_tool_matches_hazards,
 }
 
 
