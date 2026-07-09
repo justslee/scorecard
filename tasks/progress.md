@@ -3,6 +3,30 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-09 cycle 46 — PICK: caddie-bend-distance (NOTICEABLE, rides bundle #121)
+
+Step 0 done: PR #121 OPEN + STRICT-green on 06c7bb0 (S2 booking-handoff silent + physics
+tiles-coherence NOTICEABLE). Owner directive: CONTINUE TO BUNDLE — do NOT ship #121 yet; add
+this cycle's item. No Needs Review card is awaiting my action. Sync clean (main a37f74d ==
+merged into integration/next 06c7bb0; up to date).
+
+Pick (specs/caddie-physics-engine.md §P2): **caddie-bend-distance**. FREE from existing
+geometry. The dogleg/bend = the golf=hole polyline vertex with MAX perpendicular deviation
+from the tee→green chord. Reuses backend/app/caddie/hazards.py: `_hole_polyline` (stored
+featureType=="hole" LineString), `_xy_m` (east/north frame), `_derive_tee_green`, the chord
+unit (ux,uy), and the left=positive-cross convention (test_left_is_positive_cross). Compute
+along-path distance to the bend vertex (cumulative segment length from the tee's projection,
+same as `_project_onto_polyline`'s carry) + direction (sign of the cross = left/right).
+Threshold: |deviation| < ~15y off the chord ⇒ STRAIGHT (no invented bend). Anchor distance
+to the player's selected tee (compose with the multi-tee anchor) / GPS when on hole. Expose
+as HoleIntelligence intel (like `hazards`/`approach_bearing_deg`) + a caddie TOOL answer
+(get_bend or fold into get_carries — Fable plan decides). No ML, no new data. NOTICEABLE.
+
+## AWAITING: Fable Plan agent on caddie-bend-distance
+Dispatched the Plan agent (fable) to produce specs/caddie-bend-distance-plan.md. On return:
+save the plan, then dispatch ONE builder to implement it ON integration/next (commit+push,
+no per-item PR). Nothing uncommitted was held across this await (tree was clean).
+
 ## 2026-07-09 cycle 42 — PICK: caddie-green-slope-spatial (NOTICEABLE, rides bundle #119)
 
 Step 0 done: bundle PR #119 OPEN + STRICT-green (head 8da82c4), Needs Review card
