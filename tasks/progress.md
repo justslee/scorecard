@@ -9793,3 +9793,24 @@ engine plays-like for a fixture hole/conditions + honest fallback, exact gates).
 save plan → dispatch ONE builder on integration/next → reviewer (parity: tile==caddie) + qa
 (strict gates) + designer (PLAYS tile is user-facing). NOTICEABLE → makes #121 approval-
 eligible → release-manager TestFlight + owner ping. Do NOT merge to main.
+
+## cycle 45 — Fable plan DONE → specs/physics-tiles-coherence-plan.md (322 lines)
+Bearing-parity resolved SERVER-SIDE: reuse existing HoleIntelligence.approach_bearing_deg
+(backend/app/caddie/types.py:139, cached in session.hole_intel, already used by
+get_green_read) instead of the hardcoded shot_bearing_deg=0.0 in shot_distance_payload —
+fixes text tool loop, realtime voice, AND the new tile identically (a request field would
+let a forgetful caller reintroduce divergence). Wind-honesty: unknown bearing → still-air +
+surfaced "wind not applied" (not a fabricated north direction); add conditions_used
+.shot_bearing_deg / wind_applied to payload for an honest caption. Double-count trap: pass
+the RAW selected-tee basis, NEVER holeIntel.effectiveYards (already embeds elevation).
+Fallback matrix: 7 rows, deprecated playsLikeYards in ZERO cells. Parity gate: shared golden
+fixture backend/tests/fixtures/plays_like_parity.json pinned by BOTH backend pytest + frontend
+vitest. Files: tools.py, RoundPageClient.tsx, frontend/src/lib/caddie/api.ts,
+frontend/src/lib/caddie/fcb-labels.ts, backend/tests/test_caddie_tools.py.
+
+## AWAITING: builder implementing specs/physics-tiles-coherence-plan.md on integration/next
+Dispatched ONE builder to implement the plan (NOT re-plan), commit+push to integration/next.
+On return: reviewer (parity — construct a fixture hole/conditions, assert tile==caddie; the
+divergence is the whole bug) + qa (STRICT gates) + designer (PLAYS tile user-facing, calm).
+BLOCKING → re-dispatch builder. Clean+green → update PR #121 checklist (NOTICEABLE item →
+approval-eligible), release-manager TestFlight, owner ping. Never merge to main.
