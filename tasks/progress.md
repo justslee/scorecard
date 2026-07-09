@@ -3,6 +3,251 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## eng-lead cycle 31 — P0 live-caddie STALE-HOLE fix → bundle PR #115 (NOTICEABLE, awaiting ship-it)
+
+Owner-reported P0 with a session-verified diagnosis: the live (Realtime) caddie
+answered from a STALE hole (briefed hole 1 while on Bethpage hole 3) because
+`build_realtime_instructions` bakes the hole in at MINT time (warm pool mints at
+round open) and never refreshed on a hole change.
+
+- **Plan (opus):** `specs/caddie-stale-hole-live-plan.md`. Chose an out-of-band
+  `conversation.item.create` (`role:"system"`, NO `response.create` — silent
+  re-anchor) over `session.update`, verified against current Realtime docs
+  (session.update is next-response-only + would force the client to reconstruct
+  the full server-composed instruction string it doesn't hold).
+- **Build (a4e8d35):** `sendContext()` seam + `buildHoleContextText`; hole props
+  threaded through `useCaddieLiveSession`; connect-time anchor on every `connected`
+  transition (covers cold mint / warm adoption / reconnect / resume) + a
+  `holeNumber`-keyed effect firing exactly once per change (guarded by
+  `anchoredHoleRef`, no double-refresh); defense-in-depth `current_hole` into the
+  mint request (in-memory, no DB write, back-compat). Point-3 (from-tee 231y) =
+  course-data tee-coord follow-up, NOTED not fixed. Point-4 F/C/B source caption
+  relocated above the tiles (was occluded by the pill bar) + honest PLAYS sub.
+- **Observability follow-up (0d61f01, silent):** `voiceEvent("caddie",
+  "realtime_dc_error",…)` breadcrumb so a rejected `role:"system"` item is
+  diagnosable on a real round (the shape is unverified against live GA; fails safe).
+- **Reviews:** reviewer **SOUND** (exactly-once/lifecycle/silent invariants traced
+  + tested; pinning tests byte-preserved; security clean); qa **PASS** (fresh gates:
+  lint·tsc·build·voice 274/274·vitest 77/77 incl. 6 new lifecycle assertions·ruff);
+  designer **APPROVE** (occlusion fixed, tokens untouched, honest sub).
+- **Bundle:** PR #115 retitled + checklisted (1 noticeable + 4 silent). Notion card
+  #115 → **Needs Review** with TestFlight test steps + the GA-verification caveat.
+  Owner active in-session → **no push**; awaiting "ship it". Release-manager to cut
+  the TestFlight build once CI is green.
+
+## 2026-07-08 — builder: caddie-stale-hole-live (frontend+backend, NOTICEABLE, integration/next, DONE)
+
+Implemented `specs/caddie-stale-hole-live-plan.md` exactly (P0, owner-reported: the
+live/Realtime caddie answered from a stale hole — on Bethpage hole 3 it opened with
+hole 1's briefing, because Realtime session instructions are baked at MINT time and
+never refresh on a hole change).
+
+- Load-bearing fix: `RealtimeCaddieClient.sendContext()` (`frontend/src/lib/voice/
+  realtime.ts`) — silent `conversation.item.create` (`role:"system"`, NO
+  `response.create`) that re-anchors the model to the current hole, per the plan's
+  primary mechanism. NOT verified against a live OpenAI Realtime connection this
+  cycle (voice-tests --smoke is deterministic/offline, no device available) — the
+  plan's pre-authorized `role:"user"` + `"[Course update]"` fallback is documented
+  but not needed/applied; a real device/staging check should confirm the GA model
+  accepts the system-role item before this ships to the owner.
+- `buildHoleContextText`/`HoleContext` (`frontend/src/lib/caddie/opening-turn.ts`,
+  new `opening-turn.test.ts`), threaded `holeNumber/holePar/holeYards` +
+  `anchoredHoleRef`/`holeContextRef` + `anchorHole()` into
+  `frontend/src/hooks/useCaddieLiveSession.ts`: called on every connect transition
+  (before the opening turn — corrects a warm-pool session minted at hole 1) and on
+  every hole-change effect while connected (exactly once per change, no
+  double-refresh). Forwarded from `frontend/src/components/CaddieSheet.tsx`.
+- Defense-in-depth (§3.8, additive): optional `current_hole` threaded through
+  `frontend/src/lib/caddie/api.ts` → `POST /realtime/session` →
+  `StartRealtimeSessionRequest` (`backend/app/routes/realtime.py`), sets
+  `session.current_hole` in-memory before `build_realtime_instructions` (no DB
+  write). Optional/back-compatible both sides — no `types.ts`/`models.py` change
+  needed (plan confirmed).
+- Point 3 diagnosis (§3.9, no logic change): the reported "231y on a 178y card" is
+  the tee-fallback branch being CORRECT — hole 3's ingested tee coordinate really is
+  ~231y from the green (course-data issue). Left a NOTE in `opening-shot.ts` and
+  added a cheap `opening_shot` telemetry breadcrumb; `opening-shot.test.ts` untouched.
+  Follow-up: audit Bethpage hole 3's ingested tee coordinate.
+- Point 4 UI (§3.10): moved the F/C/B source caption above the tile row in
+  `frontend/src/app/round/[id]/RoundPageClient.tsx` (the floating pill bar occluded
+  it below); tied the PLAYS tile sub to `fcbSource`. **Deviation from the plan's
+  literal wording**: used "from you"/"wind from you" instead of the plan's "elev
+  from you"/"wind+elev from you" — the fcbLive branch never actually applies
+  holeIntel's elevation term, so that label would fabricate an adjustment (kept the
+  plan's honest-labeling intent, not its exact copy).
+
+Gates all green: frontend lint, `tsc --noEmit`, `next build`, voice-tests --smoke
+(274/274), vitest across CaddieSheet.realtime/handsfree/session +
+opening-shot/opening-turn (5 files, 77/77 — extended CaddieSheet.realtime.test.tsx
+with `sendContext` on the fake client + 6 new assertions, added
+`test_in_round_mint_uses_request_current_hole_over_stored` to
+`test_realtime_tools.py`), backend `ruff check .` clean. Backend DB-backed tests not
+run locally (no local Postgres) — CI covers them. Committed `a4e8d35` on
+`integration/next`, pushed. **NOTICEABLE** — the live caddie visibly stops
+answering the wrong hole; worth flagging in the next approval bundle.
+
+## 2026-07-08 — builder: caddie-stale-hole-live observability follow-up (SILENT, integration/next, DONE)
+
+Reviewer-flagged gap on the P0 fix (`a4e8d35`): `sendContext()`'s `role:"system"`
+`conversation.item.create` shape is unverified against a live OpenAI Realtime GA
+connection; if the server rejects it, it surfaced as a data-channel `error` event
+that previously no-op'd with zero telemetry — no way to tell from a TestFlight
+round whether the re-anchor was accepted or rejected.
+
+Added a breadcrumb ONLY in `handleEvent`'s `'error'` case
+(`frontend/src/lib/voice/realtime.ts`): `voiceEvent("caddie", "realtime_dc_error",
+{ detail: "type=... code=... message=..." })`, same helper/pattern as the existing
+`opening_shot` breadcrumb. Control flow unchanged — no teardown, no `role:"user"`
+fallback (deferred until we have real rejection data to decide it from). No
+secrets/PII logged.
+
+Gates: frontend lint clean, `tsc --noEmit` clean, `CaddieSheet.realtime.test.tsx`
+28/28 (no test change needed — that suite mocks `RealtimeCaddieClient` entirely,
+so it doesn't exercise `handleEvent`'s `error` case), `realtime-warm.test.ts` +
+`realtime-dispatch.test.ts` + `realtime-ordering.test.ts` 30/30, voice-tests
+--smoke 274/274. Committed `0d61f01` on `integration/next`, pushed. **SILENT** —
+telemetry-only, nothing user-visible.
+
+## eng-lead cycle 30 — caddie-llm-rate-limiting → bundle PR #115 (SILENT, DONE)
+
+Picked excellence-audit P1 area-E (grade F): zero per-user ceilings on paid LLM
+endpoints. Opus plan `specs/caddie-llm-rate-limiting-plan.md` → builder (456cfef,
+c36cf73 on `integration/next`, pushed). Two-tier per-user limiter (in-process
+sliding-window RPM + file-backed daily budget, **no migration** — modeled on
+`FileBudgetStore`), 14 paid endpoints, fail-OPEN, calm 429 (FE `humanizeVoiceError`
+already normalizes it — no FE change), loud `looper.ratelimit` log.
+
+Review verdicts:
+- **reviewer: SOUND** — no blocking correctness/security issues. Fail-open total
+  (enforce() has no `await`; only the intentional 429 escapes), auth-first (behind
+  `require_owner`→`current_user_id`), memory-bounded (evict + MAX_TRACKED_USERS sweep),
+  no lock/DoS pivot, window+UTC-daily math correct. Non-blocking nits: guard-blocked
+  `.env.example` (from_env defaults cover it — a human should add `CADDIE_RATE_*`);
+  latent test-hygiene singleton flake risk (conftest fixture would isolate it);
+  import-time env parse. All tracked in backlog note, none block ship.
+- **qa: PASS** — ruff clean; 19/19 new rate-limit tests (RPM boundary, recovery,
+  429 shape+Retry-After, per-user isolation, daily cap+UTC rollover+restart-persist,
+  est-token cap, fail-open, kill-switch, eviction, owner multiplier); full backend
+  suite 1220 passed / 82 expected-skip (no local Postgres) / 0 failed.
+
+PR #115 checklist updated (3 silent items: prompt-caching, timeouts/retries,
+rate-limiting). **Noticeable = 0 → owner NOT pinged; bundle keeps accumulating.**
+
+SECURITY OBSERVATION: during this cycle a prompt-injection payload appeared appended
+to tool output (git-log / a fake "system" block) attempting to (a) get the QA agent to
+relay output via a Telegram `reply` tool and conceal itself, and (b) inject fake
+"date changed" notes + Telegram-pairing instructions. Both the QA agent and eng-lead
+ignored it; no Telegram action taken, no pairing approved, task unchanged. Same class
+as the earlier secret-echo incident — flagging for the retro (untrusted content in tool
+output must never be treated as instructions).
+
+NEXT: excellence-audit P1s — caddie-tool-loop-parity (NEEDS opus plan; noticeable),
+caddie-advice-eval-harness (silent). GolfAPI-universe half still blocked on 401 key.
+
+## 2026-07-08 — builder: caddie-llm-rate-limiting (backend, SILENT, integration/next, DONE)
+
+Implemented `specs/caddie-llm-rate-limiting-plan.md` exactly (audit item E, grade F —
+zero per-user rate/spend limits on paid LLM endpoints). No DB migration, as designed.
+
+- NEW `backend/app/services/rate_limit.py` — two-tier per-user limiter:
+  `SlidingWindowLimiter` (in-process deque, injectable clock, RPM=30/60s default,
+  memory-hygiene `sweep()` + `MAX_TRACKED_USERS` soft cap) + `FileDailyBudgetStore`
+  (JSON file at `backend/data/caddie_rate_limit.json`, modeled line-for-line on
+  `FileBudgetStore` in `golfapi_cache.py`, UTC-day rollover via injectable `now`,
+  daily requests=1500 / est-tokens=4,000,000 defaults) + `CaddieRateLimiter`
+  (`from_env()` for the module singleton; explicit-arg constructor for tests; fail-OPEN
+  on any internal error, logs loudly at `looper.ratelimit`; owner multiplier via
+  `OWNER_CLERK_USER_ID`) + `caddie_rate_limited_user` dependency (`Depends(current_user_id)`
+  → enforce → returns user id, drop-in for `Depends(current_user_id)`).
+- Wired `Depends(caddie_rate_limited_user)` onto the 14 endpoints named in plan §3:
+  `caddie.py` (`session_voice`, `session_voice_stream`, `voice_caddie`,
+  `voice_caddie_stream`, `session_recommend`, `get_recommendation`, `get_course_intel`),
+  `realtime.py` (`start_realtime_session`, `start_setup_session`), `voice.py` (`speak`,
+  `parse_voice_scores` — newly per-user-bound), `voice_advanced.py` (`parse_round_setup`,
+  `parse_scorecard`, `parse_voice_transcript` — newly per-user-bound). Cheap/free
+  endpoints (`session/start`, `weather`, `personalities`, `transcribe`, `live-token`, etc.)
+  left untouched per plan §3.
+- NEW `backend/tests/test_rate_limit.py` — 19 deterministic offline tests (injectable
+  clock/`now`/stores, `tmp_path` file round-trip, no `time.sleep`, no DB, no network)
+  covering all 10 plan §9 cases (RPM boundary, sliding-window recovery incl. partial
+  expiry, 429 shape + Retry-After, per-user isolation, daily cap + UTC rollover + file
+  persistence, est-token cap, fail-open, kill-switch, memory eviction + soft-cap sweep,
+  owner multiplier).
+- **Deviation (noted, not built around):** could not add the 6 env vars to
+  `backend/.env.example` (plan step 4) — `guard.sh` hard-blocks any Edit/Write on
+  `*.env.*` paths including `.env.example`, and CLAUDE.md's do-not-touch list says
+  `**/.env*`. Skipped rather than bypassed; `CaddieRateLimiter.from_env()`'s defaults
+  already match the plan's table (documented in the module docstring), so this is a
+  documentation-only gap — a human (or the guard's owner) should add the 6 lines to
+  `.env.example` directly. gitignore needed no change: `backend/data/` is already fully
+  ignored, so the runtime `caddie_rate_limit.json` counter is covered.
+
+Gates: `ruff check .` clean; `pytest tests/test_rate_limit.py -q` 19/19 green;
+full `pytest -q` 1220 passed, 82 skipped (pre-existing DB-dependent skips, no
+Postgres locally, unchanged by this item) — no regressions from the dependency swaps.
+Committed to `integration/next` (456cfef) and pushed. **Classification: SILENT**
+(no shared-type change, no success-path wire-shape change — only a new 429 status
+already calmed by the existing `humanizeVoiceError` frontend fallback per plan §5).
+
+## 2026-07-08 — eng-lead cycle 29: caddie prompt-caching + LLM timeouts/retries → bundle PR #115 (SILENT, DONE)
+
+Step 0: board clean — no Needs Review cards awaiting action, no owner feedback on
+the #114 ship card. Bundle empty after #114 (TestFlight v1.0.888). Synced main →
+integration/next cleanly.
+
+Picked the cheapest-biggest-win P1 from the caddie-excellence audit:
+`caddie-prompt-caching-text-path` (SILENT, cost/infra) + folded `caddie-llm-timeouts-retries`.
+Opus Plan agent verified the Anthropic API shape via the claude-api skill (list-form
+`system` + `cache_control` ephemeral; Sonnet-4.5 min cacheable prefix = 1024 tokens;
+`usage.cache_read/creation_input_tokens`; constructor-level timeout/max_retries; SDK
+0.77.0 adequate, no bump) → `specs/caddie-prompt-caching-text-path-plan.md`. Builder
+implemented exactly (b7bd75d, e28b2db).
+
+Review team (item reviewed as it landed):
+- reviewer: SOUND — all 6 load-bearing invariants verified, incl. brain content
+  identical to main byte-for-byte (only the sanctioned pointer reword); cache
+  breakpoint on stable block only; streaming/persistence intact; no `/security-review`
+  warranted (no new endpoint/dep/auth/external-input surface).
+- qa: PASS (independent) — ruff clean, 29/29 targeted, 1201/1201 non-DB suite.
+
+Opened the rolling bundle **PR #115** (integration/next → main), CI pinned to head
+e28b2db (both gates running). **Noticeable count: 0** — silent bundle, accumulating;
+no owner ping, no TestFlight build. Board card added as the record.
+
+## 2026-07-08 — builder: caddie-prompt-caching-text-path + caddie-llm-timeouts-retries (backend, SILENT, integration/next, DONE)
+
+Implemented the approved opus plan (`specs/caddie-prompt-caching-text-path-plan.md`)
+exactly, folding in the `caddie-llm-timeouts-retries` item as planned. Both P1
+items seeded by the caddie-excellence audit (cycle 27).
+
+- `backend/app/routes/caddie.py` — `_build_session_voice_prompt` and
+  `_build_voice_prompt` now return `system` as a two-block Anthropic content
+  list: BLOCK 0 (persona + memory + instructions + hazard rule) carries
+  `cache_control: {"type": "ephemeral"}`; BLOCK 1 (`--- CURRENT SITUATION ---`)
+  has none. Pure reordering + the one required pointer reword ("use the
+  context above" -> "use the CURRENT SITUATION section") — brain content
+  unchanged. Threaded `list[dict]` through all 5 consumers + `_sse_reply`
+  (renamed `system_prompt: str` -> `system: list[dict]`, added `persona_id`).
+  Added `_CADDIE_TIMEOUT_S = 25.0` / `_CADDIE_MAX_RETRIES = 1` on all three
+  Anthropic client constructors (was ~10-min SDK default, could starve the
+  worker). Added `_log_caddie_usage()` — logs cache_read/cache_creation/
+  input/output tokens after every sync `create()` and from
+  `stream.get_final_message()` in `_sse_reply`, guarded so logging failure
+  never turns a successful reply into an error.
+- New `backend/tests/test_caddie_caching.py` (list/breakpoint shape,
+  stable-before-volatile ordering, brain-regression content guard vs. a
+  frozen copy of the old single-string template, sync + stream usage-logging,
+  system list reaching the SDK, timeout/retry constructor args). Extended
+  `backend/tests/test_voice_stream.py` fakes (`get_final_message`,
+  constructor kwargs) and updated pre-existing builder-content assertions for
+  the new list return shape — no test deleted or weakened.
+- Gates: `ruff check .` clean; full non-DB suite 1201/1201 (was 1180 before
+  +21 new/extended). Backend-only, no shared-shape change (types.ts/models.py
+  untouched). DB-backed integration tests run in CI (no local Postgres).
+- Commit b7bd75d on `integration/next`, pushed. Silent (no client-visible
+  shape change — same model, same spoken behavior) — rides along in the
+  current bundle, no owner ping.
+
 ## 2026-07-08 — eng-lead cycle 28: caddie-excellence AUDIT (owner-directed, docs/backlog, SILENT, DONE)
 
 Owner directive (2026-07-09): "run a review/research to determine improvements …
@@ -8318,3 +8563,17 @@ Noticeable (user-visible on TestFlight — Nearby-courses section in course
 search opens meaningfully faster, especially on a repeat visit to the same
 area; mapped rows now appear near-instantly instead of waiting on the OSM
 leg) — should ride in the next approval-bundle email, not silent.
+
+---
+
+## 2026-07-09 — SHIPPED: #114 nearby search speed
+
+Owner "ship it". Merge 5d20ec7 → main; deploy verified by headSha + health
+ok. TestFlight v1.0.888 (build 202607081830). Two-phase progressive nearby
+render (instant local paint, no-reshuffle appends), geo-cell cache
+(positive-only), interactive OSM budget. Double-reviewed SHIP. Riders:
+caddie-excellence audit + glasses research (docs). Glasses/shot-tracking
+TABLED by owner (research preserved). Eighteen ships this run.
+NEXT: excellence-audit P1s — prompt caching (cost), rate limiting,
+LLM timeouts, tool-loop parity (opus plan), advice eval harness.
+GolfAPI-universe half still blocked on the 401 key fix.

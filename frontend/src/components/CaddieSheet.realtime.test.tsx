@@ -170,6 +170,7 @@ const realtimeMock = vi.hoisted(() => {
     setMuted = vi.fn();
     stop = vi.fn();
     sendText = vi.fn();
+    sendContext = vi.fn();
     setEvents = vi.fn((e: Events) => {
       this.events = e;
     });
@@ -338,6 +339,69 @@ describe("CaddieSheet live mode — opening turn", () => {
     expect(client.sendText).toHaveBeenCalledWith(
       "I'm about 150 yards from the pin. What should I hit or do on this next shot?",
     );
+  });
+
+  it("opening turn carries the hole: connect silently re-anchors (sendContext) BEFORE the spoken opening turn (sendText)", async () => {
+    // specs/caddie-stale-hole-live-plan.md §3.4/§3.6/§7 — the connect-time
+    // re-anchor is sent first (silent, no response.create), then the spoken
+    // opening turn. Uses buildProps' default holeNumber:3/holePar:4/holeYards:401.
+    const resolveOpeningShot = vi.fn(async () => ({ distanceYards: 150 }));
+    renderSheet({ resolveOpeningShot });
+    await flush();
+
+    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => client.emitStatus("connected"));
+    await flush();
+
+    expect(client.sendContext).toHaveBeenCalledTimes(1);
+    const contextText = client.sendContext.mock.calls[0][0] as string;
+    expect(contextText).toContain("hole 3");
+    expect(contextText).toContain("par 4");
+    expect(contextText).toContain("401");
+    // The existing sendText assertion (unchanged) plus ordering: sendContext
+    // fires strictly before sendText on the same client.
+    expect(client.sendText).toHaveBeenCalledWith(
+      "I'm about 150 yards from the pin. What should I hit or do on this next shot?",
+    );
+    expect(client.sendContext.mock.invocationCallOrder[0]).toBeLessThan(
+      client.sendText.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("no double-refresh at connect: exactly one sendContext on connect (the hole-change effect adds no second item for the same hole)", async () => {
+    renderSheet();
+    await flush();
+    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => client.emitStatus("connected"));
+    await flush();
+
+    expect(client.sendContext).toHaveBeenCalledTimes(1);
+  });
+
+  it("hole-change refresh fires EXACTLY once per change", async () => {
+    const { rerender, props } = renderSheet();
+    await flush();
+    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => client.emitStatus("connected"));
+    await flush();
+    expect(client.sendContext).toHaveBeenCalledTimes(1); // connect anchor (hole 3)
+
+    // Hole change 3 -> 4: exactly one more sendContext, for hole 4.
+    rerender(<CaddieSheet {...props} holeNumber={4} holePar={4} holeYards={380} />);
+    await flush();
+    expect(client.sendContext).toHaveBeenCalledTimes(2);
+    expect(client.sendContext.mock.calls[1][0] as string).toContain("hole 4");
+
+    // Same hole re-rendered again: no additional sendContext.
+    rerender(<CaddieSheet {...props} holeNumber={4} holePar={4} holeYards={380} />);
+    await flush();
+    expect(client.sendContext).toHaveBeenCalledTimes(2);
+
+    // Hole change 4 -> 5: exactly one more.
+    rerender(<CaddieSheet {...props} holeNumber={5} holePar={3} holeYards={178} />);
+    await flush();
+    expect(client.sendContext).toHaveBeenCalledTimes(3);
+    expect(client.sendContext.mock.calls[2][0] as string).toContain("hole 5");
   });
 
   it("does not send an opening turn when resolveOpeningShot resolves null (honest idle)", async () => {
@@ -550,6 +614,30 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     expect(screen.getByLabelText("Mute")).toBeTruthy(); // still the live footer, not classic mic
   });
 
+  it("drop -> reconnect re-anchors silently: second client's sendContext fires on its connect, sendText does NOT (no re-greet)", async () => {
+    // specs/caddie-stale-hole-live-plan.md §3.4/§7 — a reconnect mints a
+    // fresh (possibly stale) server session; the connect-time anchor still
+    // silently re-anchors it, with no spoken re-greet.
+    const resolveOpeningShot = vi.fn(async () => ({ distanceYards: 150 }));
+    renderSheet({ resolveOpeningShot });
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+    expect(first.sendContext).toHaveBeenCalledTimes(1); // connect anchor on the first client
+
+    act(() => first.emitStatus("closed")); // unexpected drop -> reconnect
+    await flush();
+
+    const second = realtimeMock.FakeRealtimeCaddieClient.instances[1];
+    act(() => second.emitStatus("connected"));
+    await flush();
+
+    expect(second.sendContext).toHaveBeenCalledTimes(1); // silent re-anchor
+    expect(second.sendText).not.toHaveBeenCalled(); // no re-greet
+  });
+
   it("drop -> reconnect FAIL -> classic fallback: mic usable, transcript preserved, no re-greet", async () => {
     const resolveOpeningShot = vi.fn(async () => ({ distanceYards: 150 }));
     renderControlledSheet({ resolveOpeningShot });
@@ -752,6 +840,35 @@ describe("CaddieSheet live mode — Slice E idle suspend/resume", () => {
 
     expect(screen.getByLabelText("Mute")).toBeTruthy(); // back to the live footer
     expect(screen.queryByText("Paused — tap to resume")).toBeNull();
+  });
+
+  it("resume re-anchors silently: the resumed client's sendContext fires on its connect, sendText does NOT (no re-greet)", async () => {
+    // specs/caddie-stale-hole-live-plan.md §3.4/§7 — Slice E resume mints a
+    // fresh (possibly stale) server session too; the connect-time anchor
+    // silently corrects it.
+    vi.useFakeTimers();
+    renderSheet();
+    await flush();
+
+    const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => first.emitStatus("connected"));
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(REALTIME_IDLE_DISCONNECT_MS);
+    });
+    act(() => first.emitStatus("closed"));
+    await flush();
+
+    act(() => fireEvent.click(screen.getByLabelText("Resume listening")));
+    await flush();
+
+    const second = realtimeMock.FakeRealtimeCaddieClient.instances[1];
+    act(() => second.emitStatus("connected"));
+    await flush();
+
+    expect(second.sendContext).toHaveBeenCalledTimes(1);
+    expect(second.sendText).not.toHaveBeenCalled(); // no re-greet
   });
 
   it("resume does not double-attach mic (double-tap guard)", async () => {

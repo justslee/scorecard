@@ -409,6 +409,10 @@ export interface RealtimeSessionToken {
 export async function startRealtimeSession(params: {
   round_id: string;
   personality_id: string;
+  /** Defense-in-depth (specs/caddie-stale-hole-live-plan.md §3.8) — the hole
+   *  the client believes it is on at mint time, so the minted instructions
+   *  are also right from the first turn. Optional/back-compatible. */
+  current_hole?: number;
 }): Promise<RealtimeSessionToken> {
   return post<RealtimeSessionToken>('/realtime/session', params);
 }

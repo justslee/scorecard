@@ -251,6 +251,47 @@ async def test_in_round_mint_uses_persona_voice_and_default_tools(monkeypatch):
     assert captured["stored"] == ("round-77", "rs_test", "strategist")
 
 
+async def test_in_round_mint_uses_request_current_hole_over_stored(monkeypatch):
+    """specs/caddie-stale-hole-live-plan.md §3.8 — defense-in-depth: a request
+    that carries `current_hole` overrides the session's (possibly stale)
+    stored hole for THIS mint's instructions, in-memory only (no DB write)."""
+    captured: dict = {}
+    session = RoundSession(round_id="round-88", user_id="user-1", current_hole=1)
+
+    async def fake_get_owned_session(round_id, user_id):
+        return session
+
+    async def fake_load_personality(pid):
+        return _persona()
+
+    async def fake_get_top_memories(user_id):
+        return []
+
+    async def fake_mint(instructions, voice_id, tools=None):
+        captured["instructions"] = instructions
+        return {"value": "ek_test", "expires_at": 999, "id": "rs_test", "model": "gpt-realtime"}
+
+    async def fake_set_realtime_session_id(round_id, rsid, personality_id=None):
+        pass
+
+    monkeypatch.setattr(realtime_routes, "get_owned_session", fake_get_owned_session)
+    monkeypatch.setattr(realtime_routes, "load_personality", fake_load_personality)
+    monkeypatch.setattr(realtime_routes.memory_mod, "get_top_memories", fake_get_top_memories)
+    monkeypatch.setattr(realtime_routes, "mint_ephemeral_session", fake_mint)
+    monkeypatch.setattr(
+        realtime_routes.sessions, "set_realtime_session_id", fake_set_realtime_session_id
+    )
+
+    await realtime_routes.start_realtime_session(
+        realtime_routes.StartRealtimeSessionRequest(
+            round_id="round-88", personality_id="strategist", current_hole=3
+        ),
+        user_id="user-1",
+    )
+
+    assert "Current hole: #3" in captured["instructions"]
+
+
 async def test_in_round_mint_rejects_non_owner(monkeypatch):
     """Ownership failure propagates — no mint happens for someone else's round."""
     from fastapi import HTTPException

@@ -56,7 +56,12 @@ import { warmSession } from "@/lib/voice/warm-session";
 import { sortByOrder } from "@/lib/voice/realtime-ordering";
 import { MINT_DEADLINE_MS } from "@/lib/caddie/transport";
 import { REALTIME_IDLE_DISCONNECT_MS } from "@/lib/voice/idle-timer";
-import { buildOpeningTurnText, type OpeningShot } from "@/lib/caddie/opening-turn";
+import {
+  buildOpeningTurnText,
+  buildHoleContextText,
+  type OpeningShot,
+  type HoleContext,
+} from "@/lib/caddie/opening-turn";
 import { voiceEvent } from "@/lib/voice/telemetry";
 
 export type CaddieLiveState = "connecting" | "live" | "suspended" | "fallback";
@@ -72,6 +77,12 @@ export interface UseCaddieLiveSessionOptions {
   active: boolean;
   roundId: string;
   personaId: string;
+  /** Current hole facts (specs/caddie-stale-hole-live-plan.md §3.3) — used to
+   *  silently re-anchor the live session on connect and on every hole change
+   *  so the caddie never answers from a stale minted hole. */
+  holeNumber: number;
+  holePar: number;
+  holeYards: number;
   resolveOpeningShot?: () => Promise<OpeningShot | null>;
 }
 
@@ -95,6 +106,9 @@ export function useCaddieLiveSession({
   active,
   roundId,
   personaId,
+  holeNumber,
+  holePar,
+  holeYards,
   resolveOpeningShot,
 }: UseCaddieLiveSessionOptions): UseCaddieLiveSessionResult {
   const [liveState, setLiveState] = useState<CaddieLiveState>("connecting");
@@ -109,6 +123,11 @@ export function useCaddieLiveSession({
   const micReadyRef = useRef(false);
   const openedTurnRef = useRef(false);
   const fellBackRef = useRef(false);
+  /** The hole number this activation's live session was last re-anchored to
+   *  (specs/caddie-stale-hole-live-plan.md §3.3-3.5). Null = never anchored
+   *  yet this activation (connect covers it). Guards against a redundant
+   *  `sendContext` when the hole-change effect re-runs at the same hole. */
+  const anchoredHoleRef = useRef<number | null>(null);
 
   // ── Slice D reconnect state machine refs ──────────────────────────────
   /** One reconnect per activation — bounds a flapping signal to a single
@@ -146,6 +165,15 @@ export function useCaddieLiveSession({
   useEffect(() => {
     resolveOpeningShotRef.current = resolveOpeningShot;
   }, [resolveOpeningShot]);
+
+  /** Mirror of the current hole facts — read by the connect/reconnect/resume
+   *  callbacks (empty dep arrays) so they always re-anchor to the LATEST
+   *  hole, not the one captured at mount (specs/caddie-stale-hole-live-plan.md
+   *  §3.3). */
+  const holeContextRef = useRef<HoleContext>({ holeNumber, par: holePar, yards: holeYards });
+  useEffect(() => {
+    holeContextRef.current = { holeNumber, par: holePar, yards: holeYards };
+  }, [holeNumber, holePar, holeYards]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -217,6 +245,20 @@ export function useCaddieLiveSession({
     });
   }, []);
 
+  /** Silently re-anchors the live session to the current hole
+   *  (specs/caddie-stale-hole-live-plan.md §2/§3.4-3.5) — no `response.create`,
+   *  so the caddie never spontaneously chatters on a hole change; it simply
+   *  stops being wrong the next time asked. Called on every connect
+   *  transition (before the opening turn) and on every hole change while
+   *  connected. No-op before the client has ever connected or when the hole
+   *  context isn't known yet. */
+  const anchorHole = useCallback(() => {
+    const h = holeContextRef.current;
+    if (!clientRef.current || !everConnectedRef.current || !h) return;
+    clientRef.current.sendContext(buildHoleContextText(h));
+    anchoredHoleRef.current = h.holeNumber;
+  }, []);
+
   /** Fires the opening turn exactly once, once BOTH the mic is ready and the
    *  client has connected at least once (order-independent — whichever
    *  happens second calls this and both guards are already true). A no-op
@@ -233,6 +275,11 @@ export function useCaddieLiveSession({
       if (!mountedRef.current || fellBackRef.current) return;
       if (!shot) return; // no GPS fix → honest idle, exactly like the classic path
       lastActivityAtRef.current = Date.now();
+      // Cheap breadcrumb (specs/caddie-stale-hole-live-plan.md §3.9) — confirms
+      // GPS-vs-tee split on real rounds without changing opening-shot.ts logic.
+      voiceEvent("caddie", "opening_shot", {
+        detail: `fromTee=${!!shot.fromTee} distanceYards=${shot.distanceYards}`,
+      });
       clientRef.current?.sendText(buildOpeningTurnText(shot));
     })();
   }, []);
@@ -252,6 +299,7 @@ export function useCaddieLiveSession({
       lastActivityAtRef.current = 0;
       mutedRef.current = false;
       suspendedRef.current = false;
+      anchoredHoleRef.current = null;
       clearMintDeadline();
       clearReconnectDeadline();
       clientRef.current?.stop();
@@ -276,6 +324,7 @@ export function useCaddieLiveSession({
     lastActivityAtRef.current = 0;
     mutedRef.current = false;
     suspendedRef.current = false;
+    anchoredHoleRef.current = null;
     setLiveState("connecting");
     setStatus("idle");
     setMessages([]);
@@ -300,6 +349,7 @@ export function useCaddieLiveSession({
             reconnectingRef.current = false;
             setLiveState((prev) => (prev === "fallback" ? prev : "live"));
             if (mutedRef.current) clientRef.current?.setMuted(true);
+            anchorHole(); // silent re-anchor — the resumed/reconnected server session may be stale
             maybeFireOpeningTurn(); // no-op — openedTurnRef already set
           } else if (s === "closed" || s === "error") {
             fallBack();
@@ -313,6 +363,7 @@ export function useCaddieLiveSession({
             clearMintDeadline();
             setLiveState((prev) => (prev === "fallback" ? prev : "live"));
           }
+          anchorHole(); // silent re-anchor BEFORE the opening turn — corrects a stale (e.g. warm-pool) mint
           maybeFireOpeningTurn();
           return;
         }
@@ -366,7 +417,14 @@ export function useCaddieLiveSession({
         if (!cancelled && !fellBackRef.current) fallBack();
       }, MINT_DEADLINE_MS);
       // Always cold — the warm pool is already consumed mid-round (plan §2.2).
-      const client = new RealtimeCaddieClient({ roundId, personalityId: personaId }, events);
+      // currentHole (§3.8, defense-in-depth): read live off holeContextRef so
+      // a reconnect mints with the hole current AT THAT MOMENT, not the hole
+      // at activation. The connect-time anchorHole() above is still the
+      // load-bearing correction.
+      const client = new RealtimeCaddieClient(
+        { roundId, personalityId: personaId, currentHole: holeContextRef.current.holeNumber },
+        events,
+      );
       clientRef.current = client;
       void (async () => {
         try {
@@ -410,7 +468,11 @@ export function useCaddieLiveSession({
         if (!cancelled && !fellBackRef.current) fallBack();
       }, MINT_DEADLINE_MS);
       // Always cold — the warm pool is already consumed mid-round (same as reconnect).
-      const client = new RealtimeCaddieClient({ roundId, personalityId: personaId }, events);
+      // currentHole (§3.8, defense-in-depth) — read live off holeContextRef.
+      const client = new RealtimeCaddieClient(
+        { roundId, personalityId: personaId, currentHole: holeContextRef.current.holeNumber },
+        events,
+      );
       clientRef.current = client;
       void (async () => {
         try {
@@ -457,7 +519,11 @@ export function useCaddieLiveSession({
 
       // Cold mint — presence of `roundId` (no `mode` field) selects caddie
       // mode, exactly as useVoiceCaddie's startBurst().
-      const client = new RealtimeCaddieClient({ roundId, personalityId: personaId }, events);
+      // currentHole (§3.8, defense-in-depth) — read live off holeContextRef.
+      const client = new RealtimeCaddieClient(
+        { roundId, personalityId: personaId, currentHole: holeContextRef.current.holeNumber },
+        events,
+      );
       clientRef.current = client;
       try {
         await client.start();
@@ -485,6 +551,22 @@ export function useCaddieLiveSession({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, roundId, personaId]);
+
+  // Re-anchor on every hole change while the live session is connected
+  // (specs/caddie-stale-hole-live-plan.md §3.5). Keyed on `holeNumber` only
+  // (plus stable `anchorHole`/`active`) so it fires exactly once per actual
+  // change; `anchoredHoleRef` makes a re-run at the same hole a no-op, which
+  // also prevents a double-refresh race with the connect-time anchor above
+  // (both converge on the same `anchoredHoleRef` value). If the session
+  // hasn't connected yet, `anchorHole()` early-returns and `anchoredHoleRef`
+  // stays null — the eventual connect anchors the then-current hole read
+  // live from `holeContextRef`, so nothing needs to be queued here.
+  useEffect(() => {
+    if (!active) return;
+    if (anchoredHoleRef.current === null) return; // never anchored yet this activation → connect covers it
+    if (holeNumber === anchoredHoleRef.current) return; // no change → no double-refresh
+    anchorHole();
+  }, [active, holeNumber, anchorHole]);
 
   const toggleMute = useCallback(() => {
     const next = !muted;

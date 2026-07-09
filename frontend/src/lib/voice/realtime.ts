@@ -23,6 +23,7 @@ import {
 } from '@/lib/caddie/api';
 import { MessageOrderTracker } from '@/lib/voice/realtime-ordering';
 import { IdleTimer, REALTIME_IDLE_DISCONNECT_MS } from '@/lib/voice/idle-timer';
+import { voiceEvent } from '@/lib/voice/telemetry';
 
 // ── Public types ─────────────────────────────────────────────────────────
 
@@ -73,6 +74,13 @@ export interface RealtimeCaddieOptions {
    * the structural guarantee the forbidden mic-live warm shortcut lacked.
    */
   withholdMic?: boolean;
+  /** Defense-in-depth (specs/caddie-stale-hole-live-plan.md §3.8): the hole the
+   *  client believes it is on AT MINT TIME, so the minted instructions'
+   *  situation block and `get_conditions` default are also right from the
+   *  first turn. Strictly additive — the load-bearing fix is the client-side
+   *  `sendContext()` re-anchor (§3.4-3.5), which corrects even a warm-pool
+   *  session minted before the hole was known. Optional/back-compatible. */
+  currentHole?: number;
 }
 
 // ── Tool dispatch ────────────────────────────────────────────────────────
@@ -217,6 +225,7 @@ export class RealtimeCaddieClient {
           : await startRealtimeSession({
               round_id: this.opts.roundId ?? '',
               personality_id: this.opts.personalityId,
+              current_hole: this.opts.currentHole,
             });
       this.events.onMinted?.();
 
@@ -346,6 +355,25 @@ export class RealtimeCaddieClient {
         partial: false,
         order: this.order.orderForTypedUser(),
       });
+    }
+  }
+
+  /** Push an authoritative, SILENT context item into the running conversation
+   *  (no response.create, no transcript bubble) — re-anchors the model to the
+   *  current hole after a hole change or before the opening turn
+   *  (specs/caddie-stale-hole-live-plan.md §2/§3.1). */
+  sendContext(text: string): void {
+    this.idle.touch();
+    if (this.dc?.readyState === 'open') {
+      this.dc.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'system',
+          content: [{ type: 'input_text', text }],
+        },
+      }));
+      // No response.create — silent re-anchor, used on the model's NEXT turn.
     }
   }
 
@@ -557,7 +585,18 @@ export class RealtimeCaddieClient {
         break;
       }
       case 'error': {
-        const message = (evt.error as { message?: string } | undefined)?.message || 'Realtime error';
+        const errPayload = evt.error as { type?: string; code?: string; message?: string } | undefined;
+        const message = errPayload?.message || 'Realtime error';
+        // Breadcrumb only (specs/caddie-stale-hole-live-plan.md observability
+        // follow-up) — a rejected conversation.item.create (e.g. the
+        // sendContext role:"system" re-anchor) surfaces here as a data-channel
+        // `error` event and previously no-op'd with no signal. This does NOT
+        // change control flow: no teardown, no role:"user" fallback (yet) —
+        // just makes a rejection visible in telemetry. type/code/message only,
+        // never the client_secret or any other session data.
+        voiceEvent('caddie', 'realtime_dc_error', {
+          detail: `type=${errPayload?.type ?? 'unknown'} code=${errPayload?.code ?? 'unknown'} message=${message}`,
+        });
         this.events.onError?.(new Error(message));
         break;
       }
