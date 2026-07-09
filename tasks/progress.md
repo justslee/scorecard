@@ -40,6 +40,55 @@ no-DB local) + frontend tsc/lint/build/voice; (3) designer NOT needed (tool-only
 issues → back to builder. Green → update bundle PR #119 checklist (NOTICEABLE) + board + progress.
 Do NOT merge #119. Do NOT push notification (routine; bundle already awaiting ship-it).
 
+## 2026-07-09 — builder: caddie-green-slope-spatial-plan implemented (NOTICEABLE, DONE — rides bundle #119)
+
+Implemented specs/caddie-green-slope-spatial-plan.md exactly, including the resolved §0 sign
+correction: built the PHYSICALLY CORRECT `uphill_leave_side == fall_side` (the LOW side), NOT
+the spec's original inverted "miss RIGHT for uphill." New pure module
+`backend/app/caddie/green_geometry.py` (stdlib + reused `hazards._xy_m`, no DB/network):
+`approach_bearing_deg` (tee→green compass bearing, honest `None` when degenerate), frozen
+`GreenRead` dataclass, `green_read()` (pure trig — `s=sin(β−α)`, `c=cos(β−α)`, 20° deadband,
+severity-gated confidence), `GREEN_GROUNDING_RULE`. Wired per §4, mirroring the
+`get_shot_distance` precedent exactly: `HoleIntelligence.approach_bearing_deg` (additive,
+defaulted None); `course_intel.py` computes it from tee/green coords; `tools.py` registry entry
+(alphabetical, between get_conditions/get_player_profile) + `green_read_payload` + `resolve_tool`
+branch; `routes/caddie.py` `POST /session/green-read` + `GREEN_GROUNDING_RULE` appended to both
+text-mouth stable_text blocks; `voice_prompts.py` behavior block. Frontend plumbing only (no UI):
+`lib/caddie/api.ts::getSessionGreenRead`, `realtime.ts::dispatchTool` case, 2 new
+`realtime-dispatch.test.ts` cases. Also fixed the spec's inverted §P1 prose in
+`specs/caddie-physics-engine.md` (same commit, per plan step 5).
+
+Tests: `backend/tests/test_green_geometry.py` (NEW, 35 tests) — full 16-row two-approach
+adversarial matrix (§6a, both β=0 and β=225 tables), magnitude spot-checks, uphill/downhill-
+inversion fault-injection guard, deadband boundary (±10°/±25°), flat/mild/moderate/severe
+severity gating, coordinate-level `approach_bearing_deg` (3-point correctness table + 2
+degenerate cases + end-to-end coord test), the pinned owner golden case (β=0, α=270 "slopes
+west" ⇒ `uphill_leave_side=="left"`), `GREEN_GROUNDING_RULE` content check, and a
+slope_advice.py cross-consistency check (never disagree on the high side). `get_green_read`
+added to `EXPECTED_TOOL_NAMES` (test_realtime_tools.py, all 4 sites) and the honest-fallback
+matrix (test_caddie_tools.py: no-intel / no-slope / slope-without-bearing, each a distinct
+reason, plus happy-path + resolve_tool default-hole/explicit-hole cases). GREEN_GROUNDING_RULE
+wired into `test_realtime_grounding.py` (present-exactly-once, mirrors the HAZARD pattern) and
+into the eval harness (`tests/eval/checks.py` `_RULE_TEXT`, `schema.py` `_VALID_RULE_NAMES`) with
+one new golden scenario (`green-slope-west-uphill-leave-left`) encoding the owner's chain —
+satisfies plan step 7's Tier-1 golden eval scenario. The two "old template" brain-regression
+guards in `test_caddie_caching.py` were updated to include the new rule line (same pattern
+already used for the physics/tool-rule additions) — not weakened, just kept in sync with the
+deliberate additive prompt change.
+
+Gates all green: `ruff check .` clean; backend pytest — `test_green_geometry.py` (35/35),
+`test_caddie_tools.py`, `test_realtime_tools.py`, `test_realtime_grounding.py`,
+`test_slope_advice.py` = 129 passed; full non-DB backend sweep 1526 passed / 82 skipped (the 82
+are `tests/integration/*` self-skipping cleanly on no reachable Postgres — deferred to CI per
+instructions, no container spun up); `tests/eval` 58/58. Frontend: `tsc --noEmit` clean, lint
+clean, `next build` succeeds, `voice-tests/runner.ts --smoke` 274/274, full vitest suite 87 files
+/ 1815 tests passed (incl. the 2 new `get_green_read` dispatch cases). Commit `dfe0159` on
+`integration/next`, pushed. NOTICEABLE (new voice-tool surface reachable from the live caddie —
+rides bundle #119, does not open a separate PR). Next: reviewer — Fable adversarial correctness
+pass on the rotation/sign per the AWAITING note above; qa can treat the pytest/vitest run above
+as already-green evidence. Do NOT merge #119; do NOT push notification (routine, bundle already
+awaiting the owner's "ship it").
+
 ## 2026-07-09 — builder: multi-tee-anchor-reconciliation — Fable BLOCKING fix (SILENT, DONE)
 
 Fixed the ONE BLOCKING correctness issue Fable found on c682f7f: `resolveTeeAnchor`
