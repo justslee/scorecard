@@ -3,6 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-09 — builder: caddie-shot-physics-engine steps 1-5 — ENGINE CORE (SILENT this cycle, backend-only, DONE; tool wiring = steps 6-13, next cycle)
+
+Implemented the pure ball-flight engine `backend/app/caddie/physics.py` per
+`specs/caddie-shot-physics-engine-plan.md` steps 1-5 + `backend/tests/test_physics.py`
+(66 tests). Pure stdlib (math/dataclasses/functools), frozen dataclasses, no async/IO —
+hazards.py pattern, `PHYSICS_GROUNDING_RULE` module constant included. (1) Atmosphere
+(`air_density_kg_m3`, Magnus humidity, barometric only when pressure missing — mirrors
+weather.py's surface-pressure no-double-count trap) + RK4 integrator (`integrate_flight`:
+drag/Magnus on airspeed u=v−w, spin-ratio Cd/Cl, exponential spin decay, landing-plane
+termination with sub-step interpolation; deterministic; monotone in headwind/ρ).
+(2) `CLUB_REFERENCE` (Trackman-average rows driver..lw) + calibration test pinning the
+aero constants: every row integrates to its reference carry ±4y / descent ±3° (worst:
+carry −3.0y on 7i, descent +2.4° on 3w). (3) Reverse fit (`neutral_carry_from_stored`
+woods=total via roll_frac / irons=carry, `fit_launch_to_carry` secant + lru_cache;
+driver round-trip 300 → 299.3). (4) Closed-form roll model calibrated to plan §5
+(driver 22.4y neutral on 300, 7i 4.6, wedges 1.6-2.4, firm +7.2 / soft −10.8, 20mph head
+kills 90% of driver roll). (5) `shot_distance_for_club` / `plays_like_target` /
+`conditions_from_weather` / `elevation_only_plays_like`. **THE INCIDENT TEST PASSES:
+300y driver, 4mph tail, −38ft → carry 300.9 + roll 25.8 = total 326.6 (band 315-330,
+hard-assert <340) — NOT 390; and the 390 pin plays like 358.2 (SHORTER), killing both
+halves of the owner's screenshot bug.** Two documented model deviations (both in code
+comments): `RHO_SENSITIVITY_EXP=0.55` effective-density correction (linear-ρ gave Denver
++18y vs the plan's measured 4-11y band; identity at neutral ρ so calibration unaffected;
+Denver now +8.2y, 40/90°F spread 4.6y) and `_FIT_SPIN_K_CAP=1.4` (spin ×k saturates 7i
+carry at ~219y making stored=220 unreachable; fits k≤1.4 bit-identical). NOT touched (by
+design, next cycle): tools.py, tool_loop.py, course_intel.py, club_selection.py, prompts,
+frontend. Gates: `ruff check .` clean; physics+hazards+air_density+club_selection suites
+148 passed. Committed to `integration/next`.
+
 ## 2026-07-10 — builder: fcb-caption-proximity — re-anchor F/C/B caption + pill-bar clearance (SILENT, frontend-only, DONE)
 
 Implemented `specs/fcb-caption-proximity-plan.md` exactly. Designer follow-up to
