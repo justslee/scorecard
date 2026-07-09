@@ -10085,3 +10085,15 @@ correctness (a sort/haversine bug would surface the WRONG course to the owner). 
 ruff + targeted pytest directly to confirm. On green + reviewer SHIP → update PR #121 checklist
 (silent item), progress note, STOP (no ship — owner bundling). If reviewer BLOCKING → re-dispatch
 builder. Classified SILENT (backend-only, dict shape unchanged, only cap membership/order).
+
+## cycle 47 DONE — osm distance-sort-before-truncate shipped to bundle (SILENT)
+Item teetime-osm-distance-sort-before-truncate (P1 S1 fast-follow) landed on integration/next
+at 96714ef. osm.py now sorts by true haversine distance before the [:15]/[:25] cap → the closest
+course (18 Mile Creek at the 15mi UI default) is no longer silently dropped. reviewer verdict
+SHIP (haversine matches course_finder; sort-before-cap correct in BOTH functions; regression test
+hand-falsified vs unfixed code — not tautological). QA green: ruff clean, 120/120 targeted pytest.
+Backend-only, dict shape unchanged, no UI surface → no designer, no shared-type sync. Classified
+SILENT. PR #121 checklist updated (now: physics-tiles-coherence NOTICEABLE + S2 SILENT + this
+SILENT). backlog.json marked done-on-bundle. NO SHIP — owner is bundling; bundle stays approval-
+eligible on the earlier physics NOTICEABLE item, not shipped this cycle. Next fast-follow still
+open: teetime-course-ids-not-wired-real-provider (P3). No push notification sent (routine silent).

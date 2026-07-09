@@ -2022,8 +2022,8 @@
       "type": "minor",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
-      "notes": "QA (cycle 43) found backend/app/services/osm.py search_golf_courses() does results[:15] BEFORE the caller sorts by distance (line predates S1, commit 73ebdcb6). At a 15-25mi radius this can silently drop the CLOSEST course \u2014 reproducibly dropped 18 Mile Creek (the S1 reference course) at the UI default 15mi 'Max drive'. Directly limits how often the owner actually SEES the new real foreUP data. Fix: sort-by-distance before the cap, or raise the cap. High-value fast-follow to S1."
+      "status": "done-on-bundle",
+      "notes": "done-on-bundle (integration/next 96714ef; silent \u2014 backend correctness). osm.py search_golf_courses/search_osm_with_geometry now sort by true haversine distance (new _haversine_m mirror + pure _sort_by_distance keyed (distance,name), sort iff lat&lng, None-coords-last) BEFORE the [:15]/[:25] cap (now named consts) \u2014 the closest course (18 Mile Creek at 15mi default) is no longer dropped. name-only order untouched; routing/course_search unchanged (re-rank downstream); dict shape unchanged, no shared-type sync. Fable plan specs/teetime-osm-distance-sort-plan.md. New test_osm_distance_sort.py hand-falsified vs unfixed code. reviewer SHIP, QA ruff+120 pytest green. rides bundle PR #121."
     },
     {
       "id": "teetime-course-ids-not-wired-real-provider",
