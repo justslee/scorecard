@@ -10226,3 +10226,21 @@ pytest -k tee_time; frontend lint/tsc/vitest golf-api-nearby+courses; voice smok
 Postgres — DB-backed selector tests run in CI. Then designer (user-facing behavior change) if
 gates green. Update PR #121 checklist (NOTICEABLE item), progress note. NO SHIP (owner bundling).
 If builder pushes then work is on integration/next — reconcile from git log, do NOT rebuild.
+
+## AWAITING: reviewer (correctness/security) + qa (gates) on course-ids-wiring 65f3c42 (bundle #121)
+Builder pushed 65f3c42 (impl) + d39c74e (progress) on integration/next. Local reconciled to
+d39c74e (ff). Diff (8cfe9c3..d39c74e): new selection.py + courses_by_ids + filter in routing.py
+before MAX_COURSES cap + attach_stable_ids on /api/courses/nearby + frontend id fallback; 4 test
+files; NO types.ts/models.py change. Builder gates green: ruff clean, backend 1660 passed/83
+skipped (209 passed/12 skipped on -k tee_time|selection; Postgres DB tests self-skip locally),
+frontend lint/tsc clean, vitest 46 passed, voice 274/274.
+Two builder deviations to VET in review: (1) lazy import of courses_by_ids inside resolve_selectors
+(avoids pulling app.db.engine into DB-free provider tests — matches existing course_finder pattern);
+(2) updated test_course_search.py assertion that encoded the OLD raw /nearby shape (pre-fix bug the
+plan §4.1 explicitly changes) — reviewer MUST confirm this is fixing a bug-assertion, not masking a
+regression. Reviewer focus: no always-zero regression (candidate-id match {id∪osm_id∪det-UUID});
+name+proximity false-positive bound; honest-drop (no fabricated slots); frontend id-fallback side
+effects. qa: ruff + pytest -k tee_time|selection + frontend lint/tsc/vitest + voice smoke (no local
+Postgres). On green + reviewer SHIP → designer (NOTICEABLE behavior change) → update PR #121
+checklist → progress. NO SHIP (owner bundling). If BLOCKING → re-dispatch builder. Reconcile from
+git log on resume; work is already pushed — do NOT rebuild.
