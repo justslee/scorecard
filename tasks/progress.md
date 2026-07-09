@@ -9895,3 +9895,24 @@ Re-dispatched builder. Guard: do NOT weaken/re-pin the golden evals; if the wind
 is genuinely ambiguous (honesty goal vs evals, needs a product call) STOP and flag — don't guess.
 On return: re-run reviewer(parity+fallback) + qa(strict, incl. tests/eval) + designer(deadband).
 Never merge to main.
+
+## cycle 45 — builder ROUND 2 DONE: 3 BLOCKING fixed, pushed 9d871cc on integration/next
+1. shot_distance_payload (backend/app/caddie/tools.py): bearing-unknown + wind present now
+   applies the wind against an assumed due-north shot line (restored pre-879291c behavior)
+   instead of dropping it to still air, and surfaces the assumption honestly
+   ("shot direction unknown — wind applied relative to due north") rather than being silent.
+   Bearing-known path (server-side tee→green bearing, parity) untouched. tests/eval golden
+   suite back to green (56/56); test_caddie_tools.py's no-intel test updated to assert the
+   restored/correct behavior (was asserting the regressed one — not a weakening, this is the
+   test that encoded 879291c's bug).
+2. plays-tile.ts physics===null fallback: gated hasElev on `!isLive` (in addition to
+   hasLocalIntel/!fromCard) — live mode's fallbackYards is the raw fcbLive.center, never
+   elevation-composed, so it can no longer caption "elev from you" it didn't compute. New
+   test row added.
+3. Shared `ELEV_DEADBAND_FT = 3` constant (plays-tile.ts), used by both the PLAYS caption's
+   hasElev check and the ELEV tile's "level" check (RoundPageClient.tsx) — the two tiles can
+   no longer contradict on a 1-2ft hole. New test row added.
+Gates green: backend ruff clean; pytest 185/185 on the 5 targeted suites incl. both golden
+eval files; frontend lint clean, tsc clean, voice-tests 274/274, vitest 1834/1834 (88 files),
+build ok. Full detail in the builder report to eng-lead. Next: re-review (reviewer/qa/designer)
+before this can go back into the bundle's noticeable-change ledger. Never merged to main.
