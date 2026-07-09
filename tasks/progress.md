@@ -72,6 +72,13 @@ commit progress. Do NOT ship — owner directive is keep bundling #121.
 On any BLOCKING finding → re-dispatch the builder with the specifics, then re-review.
 Nothing uncommitted held across this await (builder already pushed dee66d8/e56d363).
 
+UPDATE: qa verdict = PASS (reproduced independently on 87109ef): ruff clean, backend 246/246 +
+1624/1624 (no skips), frontend lint/tsc clean, vitest 1836/1836, next build ok, voice 274/274.
+Only a pre-existing non-blocking jsdom `window.scrollTo` warning (frontend/src/lib/sheet.ts:81),
+not caused by this change. STILL AWAITING the Fable reviewer's falsification verdict on dee66d8.
+On reviewer SHIP → update PR #121 checklist (+bend NOTICEABLE), verify CI strict-green, commit,
+do NOT ship. On reviewer BLOCKING → re-dispatch builder, re-review.
+
 ## 2026-07-09 cycle 42 — PICK: caddie-green-slope-spatial (NOTICEABLE, rides bundle #119)
 
 Step 0 done: bundle PR #119 OPEN + STRICT-green (head 8da82c4), Needs Review card
