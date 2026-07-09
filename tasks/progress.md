@@ -9758,3 +9758,38 @@ review judgment, and QA (strict gates). On return: BLOCKING → re-dispatch buil
 clean → open rolling bundle PR (integration/next → main), S2 on checklist. Classify
 SILENT (visible booking CTA already shipped #120; S2 adds hardening + an edge-case
 honesty fix, no new user-visible capability) → rides the bundle, NO owner ping.
+
+## 2026-07-09 — cycle 45 START: physics tiles-coherence (PLAYS tile consumes backend physics plays-like)
+
+Step 0 clean: no owner approvals/feedback pending (board cards #119/#117 have no new
+comments; #121 SILENT, awaits nothing). main synced a37f74d; integration/next up to date;
+PR #121 STRICT-green on 95989ec (Frontend+Backend+E2E all SUCCESS).
+
+PICK (NOTICEABLE): the round-page PLAYS tile computes plays-like from the FRONTEND
+heuristic playsLikeYards (frontend/src/lib/map/wind.ts, @deprecated) while the CADDIE uses
+the physics engine (get_shot_distance / physics_plays_like). Same hole → tile number and
+caddie number can DISAGREE (the hole-3 178-vs-231 inconsistency class). FIX: the tile reads
+the SAME physics plays-like the caddie cites — via POST /caddie/session/shot-distance (or a
+session/course-intel endpoint) returning physics plays_like for the current hole
+(target = selected-tee yardage basis + engine elevation + live wind). RoundPageClient shows
+THAT; honest fallback (no weather / no club distances / physics unavailable) degrades to a
+non-contradictory display, never a made-up number.
+
+CRITICAL RISK for the plan (flagged to Fable): shot_distance_payload resolves wind vs DUE
+NORTH (shot_bearing_deg=0.0 — session doesn't know shot bearing) and surfaces that as an
+assumption; the tile KNOWS the hole bearing (tee→green) via relativeWind. For tile==caddie
+parity the bearing handling must be consistent between the two mouths — the plan must resolve
+this (either thread the hole bearing into the physics for BOTH the tile and the caddie tool,
+or have the tile consume exactly the caddie's north-resolved number). This is the whole bug
+class; the reviewer will construct a fixture hole/conditions and assert tile==caddie.
+
+Composes with the just-shipped multi-tee anchor (#119/#120): the plays-like adjusts the
+SELECTED-TEE distance basis (playsBase), not a re-derived yardage.
+
+## AWAITING: Fable implementation plan → specs/physics-tiles-coherence-plan.md
+Dispatched the Plan agent on the FABLE model to write the plan (approach, files, the
+bearing-parity resolution, honest-fallback matrix, deterministic tests: tile plays-like ==
+engine plays-like for a fixture hole/conditions + honest fallback, exact gates). On return:
+save plan → dispatch ONE builder on integration/next → reviewer (parity: tile==caddie) + qa
+(strict gates) + designer (PLAYS tile is user-facing). NOTICEABLE → makes #121 approval-
+eligible → release-manager TestFlight + owner ping. Do NOT merge to main.
