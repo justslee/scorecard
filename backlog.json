@@ -3,6 +3,18 @@
   "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "teetime-s3b-twilio-bridge",
+      "title": "S3b: Twilio\u2194Realtime live-transport bridge (makes 'call me' actually dial)",
+      "type": "major",
+      "priority": 1,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [
+        "#124 merged"
+      ],
+      "why": "S3 (PR #124) built the full rehearsal harness (trigger, endpoint, dialog, disclosure, safety, tests \u2014 reviewer/security SHIP) EXCEPT telephony.get_live_transport() which is still NotImplementedError \u2014 so nothing actually DIALS. S3b implements the Twilio\u2194OpenAI-Realtime audio bridge (outbound Twilio call \u2194 the realtime booking session) so the owner's rehearsal call actually rings his phone. Owner-gated: VOICE_BOOKING_ENABLED + Twilio creds + his verified number. This is the last mile; after it + creds, the owner taps Settings\u2192Rehearsal call and plays pro shop live. Fable plan; security review (live outbound telephony, the dial-safety invariant must hold end-to-end); the existing text simulator stays the CI-safe test (no live dial in CI)."
+    },
+    {
       "id": "caddie-surface-osm-trees",
       "title": "Surface existing OSM trees/woods to the caddie (the tree-spike GO)",
       "type": "major",
