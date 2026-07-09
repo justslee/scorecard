@@ -9342,3 +9342,27 @@ vitest 1808, voice 274/274, tsc/lint clean, build ok, ruff clean.
 header+tiles must now agree). On return: BLOCKING issues -> re-dispatch builder; all green ->
 update bundle PR #119 checklist (add multi-tee item, NOTICEABLE). Bundle #119 stays awaiting
 owner ship-it; do NOT merge.
+
+## 2026-07-09 cycle 41 — REVIEWS IN: designer PASS, qa PASS, Fable reviewer BLOCK
+
+Fable reviewer verified the headline Bethpage hole-3 fix is correct (174-box -> tiles ≈174,
+NOT 232), GPS precedence intact, consumer sweep complete, osm.py safe. BUT found ONE BLOCKING
+gap: card-source picks are EXEMPT from the par-aware reconciliation guard (tee-anchor.ts:243
+`if (source !== 'card' && ...)`), so a 178 card can silently adopt a 136y box (23.6% ≤ 25%
+bound) -> tiles 136 under a 178 header = the SAME surface-disagreement class, understatement
+direction (golfer 3 clubs short). Worse: the shipped "sanity bound" test moved the fixture off
+the plan's own 178/{136,400} to 250/{130,400} (numbers where the 25% bound alone rejects) —
+bent-fixture pattern. designer PASS (2 non-blocking watch-items: residual few-yard header/tile
+drift in normal state; pre-existing unmapped-round mismatch out of scope). qa PASS (vitest 1808,
+voice 274, ruff clean; noted 19 tests not 26 in tee-anchor.test.ts).
+
+FIX (send to builder): apply the par-aware guard to CARD picks in resolveTeeAnchor — par 3:
+deltaFrac<=0.08; par 4/5/unknown: deltaFrac<=0.25 AND box.yardsToGreen<=cardYards*1.08; failing
+card picks fall through to honest card-only. RESTORE the plan's original 178/{136,400}->card-only
+fixture as a real test (do NOT relocate fixtures to pass). Leaves Bethpage (2.2%) and doglegs
+untouched.
+
+## AWAITING
+Builder round 2 fixing the Fable BLOCK on c682f7f (integration/next). On return: re-run Fable
+reviewer (confirm 178/{136,400}->card-only and the guard applies to card picks) + qa gates. If
+green: update bundle PR #119 checklist (multi-tee item, NOTICEABLE). Do NOT merge #119.
