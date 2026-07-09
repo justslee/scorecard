@@ -3,6 +3,40 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: fcb-caption-proximity — re-anchor F/C/B caption + pill-bar clearance (SILENT, frontend-only, DONE)
+
+Implemented `specs/fcb-caption-proximity-plan.md` exactly. Designer follow-up to
+`fcb-caption-visibility`: the F/C/B source caption ("from the tee" / live "● from where
+you stand") had been moved to the TOP of the distances card by the prior visibility fix,
+which orphaned it visually from the Front/Center/Back tiles it describes. Extracted the
+card into a new pure presentational component,
+`frontend/src/components/yardage/DistancesCard.tsx` (props in, JSX out — `fcbCaption`,
+`fcbTiles`, `windTile`, `elevTile`, `playsTile`; imports `T`/`DEFAULT_ACCENT` from
+`@/components/yardage/tokens`; moved the `MapStat` helper in with it), re-anchored the
+caption immediately ABOVE the F/C/B tile row (between the Wind/Elev/Plays stat grid and
+the tile row; `marginBottom: 8 → 6`, same tokens, still right-aligned), and gave the card
+wrapper safe-area-aware bottom clearance (`padding: "10px 14px 12px"` →
+`"10px 14px max(20px, calc(env(safe-area-inset-bottom) + 14px))"`) so it clears the
+floating Ask-caddie/Enter-score pill bar — reusing the same `max(..., calc(env(...)+...))`
+idiom already used by the pill bar and scroll body. `data-overlay` preserved on the
+wrapper root (map tap/zoom logic in `RoundPageClient` depends on
+`closest("[data-overlay]")`). In `RoundPageClient.tsx`: swapped the inline ~80-line block
+for `<DistancesCard .../>`, deleted the now-orphaned in-file `MapStat`; all derivations
+(`fcbCaption`/`fcbTiles`/`windTile`/`elevTile`/`playsTile`) stay in `RoundPageClient`
+unchanged — pure layout, zero behavior/number changes. Added
+`frontend/src/components/yardage/DistancesCard.test.tsx` (RTL render, jsdom) asserting:
+caption is the tile row's immediately-preceding sibling wrapper; the Wind/Elev/Plays grid
+precedes the caption in document order (guards the old top placement); wrapper padding
+string contains both `env(safe-area-inset-bottom)` and `max(`; `data-overlay` preserved;
+live vs from-tee text/color (jsdom normalizes hex to `rgb()` on read, compared
+accordingly). `fcb-labels.test.ts` untouched, still green. Gates: `npm run lint` clean,
+`npx tsc --noEmit` clean, `npm run build` succeeded (19/19 static pages), voice-tests
+smoke `pass=274 fail=0`, `npx vitest run src/lib/caddie/fcb-labels.test.ts
+src/components/yardage/DistancesCard.test.tsx` → **24 passed**. Commit on
+`integration/next` (pushed). Owner should eyeball on the next TestFlight build: caption
+should now read directly above the F/C/B tiles and clear the pill bar (pixel-level framing
+not provable by jsdom render tests per the plan's honest note).
+
 ## 2026-07-10 — builder: carry-tie-break laundering bypass closed (SILENT, backend-only, DONE)
 
 Follow-up to the carry-aware side validation below: eng-lead's adversarial review found a
