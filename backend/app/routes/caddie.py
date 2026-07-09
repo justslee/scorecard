@@ -23,6 +23,7 @@ from app.caddie.player_stats import analyze_player_stats
 from app.caddie.course_intel import build_hole_intelligence, build_weather_conditions
 from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
 from app.caddie.guide_writer import format_guide_line
+from app.caddie.voice_prompts import OBSERVED_REALITY_RULE
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -40,7 +41,6 @@ from app.db.models import PlayerProfile, Shot
 from app.caddie import memory as memory_mod
 from app.caddie import learning as learning_mod
 from app.caddie.types import PlayerStatistics, PlayerTendencies
-from app.services.osm import fetch_course_features
 from app.services import courses_mapped
 from app.services.course_guides import _precompute_course_guides
 from app.services.elevation import sample_course_elevations
@@ -806,7 +806,8 @@ golf-focused. Never break character.
 You have memory of the entire round conversation and prior rounds. Reference earlier holes/shots
 or known tendencies when relevant.
 
-{HAZARD_GROUNDING_RULE}"""
+{HAZARD_GROUNDING_RULE}
+{OBSERVED_REALITY_RULE}"""
 
     # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
     volatile_text = f"--- CURRENT SITUATION ---\n{context}"
@@ -1179,12 +1180,6 @@ async def get_course_intel(
 
     weather = await build_weather_conditions(lat, lng)
 
-    osm_features = None
-    try:
-        osm_features = await fetch_course_features(lat, lng, radius_m=2000)
-    except Exception:
-        pass
-
     # Resolve the owned session once (used both for the stored-course hazard
     # lookup below and the cache write at the end).
     owned_session = None
@@ -1216,7 +1211,6 @@ async def get_course_intel(
                 par=hc.get("par"),
                 yards=hc.get("yards"),
                 handicap_rating=hc.get("handicap"),
-                osm_features=osm_features,
                 persisted_elevation=persisted_elev,
                 course_id=owned_session.course_id if owned_session else None,
                 persisted_guide=persisted_guide,
@@ -1393,7 +1387,8 @@ tee is irrelevant (don't mention it); talk about what's in play at THEIR landing
 driver doesn't care about a bunker at 370. If they're just chatting, be personable but keep it
 golf-focused. Never break character.
 
-{HAZARD_GROUNDING_RULE}"""
+{HAZARD_GROUNDING_RULE}
+{OBSERVED_REALITY_RULE}"""
 
     # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
     volatile_text = f"--- CURRENT SITUATION ---\n{context}"

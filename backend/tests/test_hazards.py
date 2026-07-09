@@ -12,6 +12,8 @@ about by hand: west (more negative longitude) = LEFT, east = RIGHT.
 
 import math
 
+import pytest
+
 from app.caddie.hazards import (
     HAZARD_GROUNDING_RULE,
     extract_hole_hazards,
@@ -42,6 +44,52 @@ def _point_north_east(base_lon: float, base_lat: float, yards_north: float, yard
     lat = base_lat + _lat_offset_deg(base_lat, yards_north)
     lon = base_lon + _lon_offset_deg(base_lat, yards_east)
     return lon, lat
+
+
+def _rotate(along: float, lateral: float, bearing_deg: float) -> tuple[float, float]:
+    """Map a downrange/lateral (yards) offset into (north, east) yards for a
+    hole whose tee->green travel direction is the compass `bearing_deg`
+    (0 = due north, 90 = due east, clockwise) — used to sweep the sign-
+    convention regression matrix across every compass direction, not just the
+    due-north fixtures the rest of this file uses.
+
+    Derived (not copied verbatim from the plan doc) directly against
+    hazards.py's own cross-product convention (`lateral_m = ux*hy - uy*hx`,
+    positive = LEFT — see extract_hole_hazards) rather than assumed, because
+    a plausible-looking rotation formula can silently have its lateral sign
+    flipped. Forward unit vector u = (sin(bearing), cos(bearing)) in
+    (east, north); the CCW-rotate-by-90 vector p = (-cos(bearing),
+    sin(bearing)) satisfies cross(u, p) = +1, so `along*u + lateral*p` gives
+    cross(u, offset) == lateral: positive lateral -> positive cross -> LEFT,
+    matching the module's documented convention at every bearing (verified
+    against the due-north case: bearing=0 collapses to
+    (north=along, east=-lateral) — negative east/west = left, exactly the
+    existing due-north fixtures below, e.g. test_left_is_positive_cross_convention).
+    """
+    theta = math.radians(bearing_deg)
+    north = along * math.cos(theta) + lateral * math.sin(theta)
+    east = along * math.sin(theta) - lateral * math.cos(theta)
+    return north, east
+
+
+def _hole_at_bearing(bearing_deg: float, green_yards: float = 300.0):
+    """Tee at (_TEE_LON, _TEE_LAT), green `green_yards` downrange along
+    compass `bearing_deg`. Mirrors `_base_hole_features` but for an arbitrary
+    travel direction instead of always due north."""
+    green_north, green_east = _rotate(green_yards, 0.0, bearing_deg)
+    green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, green_north, green_east)
+    tee_feat = _square_polygon("tee", _TEE_LON, _TEE_LAT)
+    green_feat = _square_polygon("green", green_lon, green_lat)
+    return tee_feat, green_feat
+
+
+def _hazard_at_bearing(bearing_deg: float, along: float, lateral: float, feature_type: str = "bunker") -> dict:
+    """A hazard `along` yards downrange, `lateral` yards left (positive) or
+    right (negative) of the tee->green centerline, for a hole traveling at
+    compass `bearing_deg`."""
+    north, east = _rotate(along, lateral, bearing_deg)
+    lon, lat = _point_north_east(_TEE_LON, _TEE_LAT, north, east)
+    return _point_feature(feature_type, lon, lat)
 
 
 def _square_polygon(feature_type: str, center_lon: float, center_lat: float, half_deg: float = 0.00005) -> dict:
@@ -283,6 +331,191 @@ class TestExtractHoleHazards:
             features.append(_point_feature("bunker", lon, lat))
         hazards = extract_hole_hazards(_fc(*features), cap=5)
         assert len(hazards) == 5
+
+
+# ── Bearing-swept regression matrix (hazard-side-flip incident, item 1) ────────
+#
+# hazards.py itself is verified CORRECT (see module docstring) — the reported
+# incident's root cause was a *different*, broken side classifier
+# (course_intel._classify_side, deleted in item 2). But this module had no
+# regression lock sweeping bearings other than due-north, so a future sign
+# regression to the cross-product math here would ship silently. These pin
+# the sign convention at all 8 compass directions.
+
+
+_BEARINGS = [0, 45, 90, 135, 180, 225, 270, 315]
+
+
+class TestBearingSweptRegression:
+    @pytest.mark.parametrize("bearing", _BEARINGS)
+    def test_left_bunker_is_left_at_all_eight_bearings(self, bearing):
+        tee_feat, green_feat = _hole_at_bearing(bearing)
+        bunker = _hazard_at_bearing(bearing, along=245, lateral=25)
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "left"
+        assert abs(hazards[0].carry_yards - 245) <= 5
+
+    @pytest.mark.parametrize("bearing", _BEARINGS)
+    def test_right_bunker_is_right_at_all_eight_bearings(self, bearing):
+        tee_feat, green_feat = _hole_at_bearing(bearing)
+        bunker = _hazard_at_bearing(bearing, along=245, lateral=-25)
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "right"
+        assert abs(hazards[0].carry_yards - 245) <= 5
+
+    def test_bethpage_hole4_north_hole_west_bunker_is_left(self):
+        """Named regression for the reported owner-facing incident: a
+        north-pointing hole (bearing 0) with its bunker complex physically
+        WEST of the centerline (negative east = left, per this file's own
+        due-north convention) must report line_side == "left" — never
+        "right" — at carry ~265y off the tee."""
+        tee_feat, green_feat = _hole_at_bearing(0, green_yards=430)
+        bunker = _hazard_at_bearing(0, along=265, lateral=25)
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "left"
+        assert abs(hazards[0].carry_yards - 265) <= 5
+
+    @pytest.mark.parametrize("bearing", _BEARINGS)
+    def test_center_within_deadband_at_all_bearings(self, bearing):
+        tee_feat, green_feat = _hole_at_bearing(bearing)
+        bunker = _hazard_at_bearing(bearing, along=150, lateral=6)  # within 10y deadband
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "center"
+
+
+# ── Played-polyline classification (dogleg side-flip fix, 2026-07-08) ─────────
+#
+# The chord (tee→green straight line) mirrors sides on doglegs: Bethpage
+# Black 4's landing bunker sits 32y LEFT of the played first leg but right of
+# the chord, and the chord math emitted the owner-facing incident string
+# ("bunker R 265-485y" — see test_bethpage_validation for the real-fixture
+# lock). When the FeatureCollection carries the golf=hole way (featureType
+# "hole" LineString), side/carry classify against the PLAYED line instead.
+
+
+def _dogleg_hole(leg1_yards: float = 270.0, leg1_bearing: float = 45.0,
+                 leg2_yards: float = 200.0, leg2_bearing: float = 0.0):
+    """Tee at the base point, first leg at `leg1_bearing`, then a dogleg to
+    `leg2_bearing` (defaults: 45° then due north = a dogleg LEFT, the Bethpage
+    4 shape). Returns (tee_feat, green_feat, hole_way_feature)."""
+    n1, e1 = _rotate(leg1_yards, 0.0, leg1_bearing)
+    v1_lon, v1_lat = _point_north_east(_TEE_LON, _TEE_LAT, n1, e1)
+    dn2, de2 = _rotate(leg2_yards, 0.0, leg2_bearing)
+    green_lon, green_lat = _point_north_east(v1_lon, v1_lat, dn2, de2)
+
+    tee_feat = _square_polygon("tee", _TEE_LON, _TEE_LAT)
+    green_feat = _square_polygon("green", green_lon, green_lat)
+    hole_way = {
+        "type": "Feature",
+        "properties": {"featureType": "hole"},
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [
+                [_TEE_LON, _TEE_LAT],
+                [v1_lon, v1_lat],
+                [green_lon, green_lat],
+            ],
+        },
+    }
+    return tee_feat, green_feat, hole_way
+
+
+class TestPolylineClassification:
+    def test_dogleg_outside_corner_bunker_is_left_of_played_line(self):
+        """The incident geometry, synthetically: bunker 30y LEFT of the first
+        leg at 200y along the played line (squarely mid-leg-1, so the nearest
+        segment is unambiguous). The chord puts it RIGHT (asserted below as
+        the documented failure mode); the polyline must say LEFT with the
+        along-path carry."""
+        tee_feat, green_feat, hole_way = _dogleg_hole()
+        bunker = _hazard_at_bearing(45, along=200, lateral=30)
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, hole_way, bunker))
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "left"
+        assert abs(hazards[0].carry_yards - 200) <= 5
+
+        # Same features WITHOUT the hole way -> chord fallback mirrors the
+        # side. This pins WHY the polyline path exists; if the chord ever
+        # starts agreeing here, the fixture no longer exercises the dogleg.
+        chord_hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert chord_hazards[0].line_side == "right"
+
+    def test_polyline_carry_is_cumulative_along_path(self):
+        """A hazard on the second leg reports the distance the ball travels
+        ALONG the played line (leg1 + partial leg2), not the straight-line
+        distance from the tee (which is ~30y shorter on this dogleg)."""
+        tee_feat, green_feat, hole_way = _dogleg_hole()
+        # 150y up leg 2 (due north) from the corner: path carry = 270 + 150.
+        n1, e1 = _rotate(270, 0.0, 45)
+        v1_lon, v1_lat = _point_north_east(_TEE_LON, _TEE_LAT, n1, e1)
+        b_lon, b_lat = _point_north_east(v1_lon, v1_lat, 150, 0)
+        bunker = _point_feature("bunker", b_lon, b_lat)
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, hole_way, bunker))
+        assert len(hazards) == 1
+        assert abs(hazards[0].carry_yards - 420) <= 5
+
+    def test_explicit_polyline_arg_overrides_chord(self):
+        """Callers with a played line from another source can pass it via
+        `polyline=` (GeoJSON [[lon, lat], ...]) even when the
+        FeatureCollection has no hole LineString of its own."""
+        tee_feat, green_feat, hole_way = _dogleg_hole()
+        bunker = _hazard_at_bearing(45, along=200, lateral=30)
+
+        hazards = extract_hole_hazards(
+            _fc(tee_feat, green_feat, bunker),
+            polyline=hole_way["geometry"]["coordinates"],
+        )
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "left"
+        assert abs(hazards[0].carry_yards - 200) <= 5
+
+    def test_degenerate_polyline_falls_back_to_chord(self):
+        """A polyline with no non-degenerate segment (all identical points)
+        must not blow up or zero out — the chord math takes over."""
+        tee_feat, green_feat, _, _ = _base_hole_features()
+        b_lon, b_lat = _point_north_east(_TEE_LON, _TEE_LAT, 200, -20)
+        bunker = _point_feature("bunker", b_lon, b_lat)
+
+        hazards = extract_hole_hazards(
+            _fc(tee_feat, green_feat, bunker),
+            polyline=[[_TEE_LON, _TEE_LAT], [_TEE_LON, _TEE_LAT]],
+        )
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "left"
+        assert abs(hazards[0].carry_yards - 200) <= 5
+
+    def test_straight_polyline_matches_chord_results(self):
+        """On a straight hole the two frames must agree — polyline
+        classification is a strict generalization, not a behavior change for
+        non-dogleg holes."""
+        tee_feat, green_feat, _, _ = _base_hole_features()
+        green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 300, 0)
+        hole_way = {
+            "type": "Feature",
+            "properties": {"featureType": "hole"},
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[_TEE_LON, _TEE_LAT], [green_lon, green_lat]],
+            },
+        }
+        b_lon, b_lat = _point_north_east(_TEE_LON, _TEE_LAT, 245, -20)
+        bunker = _point_feature("bunker", b_lon, b_lat)
+
+        with_way = extract_hole_hazards(_fc(tee_feat, green_feat, hole_way, bunker))
+        chord_only = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert [(h.line_side, h.carry_yards) for h in with_way] == [
+            (h.line_side, h.carry_yards) for h in chord_only
+        ]
 
 
 # ── format_hazards_line ───────────────────────────────────────────────────────

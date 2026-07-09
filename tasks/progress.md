@@ -3,6 +3,150 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — builder: hazard side-flip REWORK per adversarial review (backend-only, rides the NOTICEABLE bundle, DONE)
+
+Reworked d9eda1c per the Fable review's two BLOCKING findings (review text at the bottom
+of this file's history; it reproduced the prod string "bunker R 265-485y" from
+tests/fixtures/bethpage_overpass.json).
+
+BLOCKING 1 — classify against the played POLYLINE, not the tee→green chord
+(`app/caddie/hazards.py`): hazard side = cross product against the NEAREST segment of the
+hole's golf=hole way (projected in the existing local east/north frame); carry =
+CUMULATIVE along-path distance to the projection, measured relative to the tee's own
+projection onto the way. Chord math kept ONLY as the no-polyline fallback (still tested).
+`assemble_osm_course` now appends the golf=hole way (featureType "hole" LineString,
+original props incl. osm_id) to each hole's FeatureCollection so the polyline survives
+upsert→hole_features→get_course; both real callers (routes/caddie.py:1222,
+course_guides.py:99) pass that FC, so they pick the polyline up automatically
+(course_intel computes no hazards since d9eda1c — nothing to wire there). Real-fixture
+regression added (test_bethpage_validation.py::TestHole4HazardSideRegression): hole 4's
+landing bunker now classifies LEFT, along-path carry 275 (review estimated ≈265 off the
+chord dot; the played line curves — asserted 265±15), no right bunker ≤350y, and the
+hazard line reads "bunker L 275y, bunker R 390y, bunker C 470-495y". Synthetic dogleg +
+8-bearing matrix lock the sign convention.
+
+DEVIATION (noted plainly): the review expected hole 4's corrected sides to be "left +
+maybe center" and demanded a test that the validator rejects ANY "right bunker" claim on
+hole 4. The real fixture shows a GENUINE right-side bunker at ~390y (second landing
+zone), so against the full hazard list a bare "right … bunkers" phrase is geometrically
+backed and the side validator alone cannot reject it (side sets carry no yardage). Added
+instead: the validator-rejects test scoped to the tee-shot hazards (carry ≤350y, left-only
+— rejects "Stay away from the right-side bunkers") + a pinned full-side-complement test
+documenting the limitation. Possible follow-up for eng-lead: carry-aware side validation.
+
+BLOCKING 2 — plural bypass (`app/caddie/guide_writer.py`): _HAZARD_PATTERNS keywords now
+match optional plurals (re.escape(k) + "(?:e?s)?" — "bunkers", "ditches", "sand traps").
+The prior side-flip tests were BENT to singular ("right-side bunker") to pass with the
+singular-only pattern — un-bent to the plan's verbatim plural rows + added the incident-
+shaped plural rows ("Stay away from the right-side bunkers", "Carry the bunkers on the
+right at 265" → REJECT against left-only). Non-blocking review items folded in:
+"(left|right|short) of" opposition alternates so "Miss right of the fairway bunker" isn't
+over-rejected (side-precedes-hazard span only — "the bunker right of the fairway" stays
+checked), and a comment-only note on _derive_tee_green's tee-ordering assumption.
+
+Gates: `uv run ruff check .` clean; `uv run pytest -q` → **1281 passed, 82 skipped**
+(skips = DB-backed integration tests, run in CI). Frontend untouched. NOTE for ship:
+prod courses were ingested BEFORE the hole way was stored — Bethpage/Pebble need the
+re-ingest + guide re-research runbook (specs/hazard-side-flip-plan.md) to pick up
+polyline classification; until then prod stored features have no polyline and fall back
+to the chord.
+
+## eng-lead cycle 33 — F/C/B caption visibility landed on the bundle (NOTICEABLE, not yet shipped)
+
+Picked P1 fcb-caption-visibility (owner-confusing UX, frontend-only — deliberately no
+overlap with the hazard-side-flip backend fix under its own separate review this cycle).
+opus Plan → `specs/fcb-caption-visibility-plan.md`; builder implemented §3/§4.1-4.4/§5 on
+`integration/next` (b4a66ac). Review verdicts: **reviewer SOUND** (behavior-preserving —
+playsTile v/sub and caption 1:1 with old code, sole intended change "adjusted"→"wind+elev";
+lineVsCardHint guards/boundary sound; 18 tests assert correctly; no lint/type/unused-import
+risk). **designer SHIP** (honest, token-consistent) with ONE non-blocking should-fix — the
+caption's new top-of-card spot is disconnected from the F/C/B tiles it labels; re-anchor
+locally + fix pill-bar occlusion via bottom padding, validated against a real TestFlight
+screenshot → spun out as backlog `fcb-caption-proximity`. **qa green** (independent re-run:
+tsc clean, fcb-labels 18/18, voice smoke 274/274; builder full vitest 1734, build ✓).
+§4.5 dogleg hint HELD (designer leans no; if revisited must compare fcb.center to hole.yards,
+not derived `distance`) → backlog `fcb-line-vs-card-hint`. Reviewer also noted HoleCard.tsx:164
+still renders sub="adjusted" (different component, out of scope).
+
+Bundle status: `integration/next` now carries TWO noticeable items — the hazard-side-flip
+fix (d9eda1c, in its own review) + this caption fix (b4a66ac). Per this cycle's rules NO
+PR opened, NO release-manager, NO owner notification: the bundle PR opens after the hazard
+geometry review clears, and the owner is looped in then. No merge to main.
+
+## 2026-07-08 — builder: F/C/B caption visibility (frontend-only, NOTICEABLE, integration/next b4a66ac, DONE)
+
+Implemented `specs/fcb-caption-visibility-plan.md` §4.1-4.4 + the full pure helper
+module + tests (§3, §5) exactly. The round-map F/C/B source caption ("from where you
+stand" / "from the tee") was still hidden under the floating Ask-caddie/Enter-score pill
+bar even after last cycle's move above the tile row — the whole distances card sits at
+the bottom of the viewport. Moved it to a thin right-aligned header row at the TOP of
+the card (removed the old block, exactly one caption now). Also renamed the PLAYS
+tile's bare `"adjusted"` sub label to `"wind+elev"` so it truthfully names what was
+adjusted.
+
+New `frontend/src/lib/caddie/fcb-labels.ts` (mirrors `plays-like.ts`'s pattern) extracts
+`fcbSourceCaption`, `playsSubLabel`, and `lineVsCardHint` as pure, unit-tested functions
+(18 new tests, all green). The collapsed `playsTile` ternary in `RoundPageClient.tsx` is
+behavior-identical to the pre-refactor code — verified branch-by-branch.
+
+**Held per plan §4.5:** `lineVsCardHint` (the dogleg line-vs-card hint) ships as a
+tested pure helper but is NOT wired into the render this cycle — the `distance` value it
+would compare against is a derived display value, not the literal scorecard yardage, so
+the designer needs to confirm the right comparison before it ships. TODO left at the
+`fcbTiles` derivation in `RoundPageClient.tsx`.
+
+Gates: lint clean, `tsc --noEmit` clean, new `fcb-labels.test.ts` 18/18, full vitest
+suite 84 files / 1734 tests (no regressions), `next build` succeeds, voice-tests smoke
+274/274. Grep-verified exactly one live source of the caption strings (the new pure
+module) and zero remaining `"adjusted"` in `RoundPageClient.tsx`.
+
+## 2026-07-08 — builder: hazard-side-flip fix (backend-only, NOTICEABLE, integration/next d9eda1c, DONE)
+
+Implemented `specs/hazard-side-flip-plan.md` exactly (P0, owner-reported: Bethpage
+hole 4's cached strategy guide named the bunker complex "right" when our own surveyed
+geometry has it on the LEFT; the caddie then insisted the bad data was right over the
+owner's own eyes). Four items, all landed:
+
+1. `test_hazards.py` — 8-compass bearing-swept regression matrix + a named Bethpage
+   hole-4 regression case, locking `hazards.extract_hole_hazards`'s sign convention
+   (verified CORRECT, untouched). 47/47 pass (20 original + 27 new).
+2. Deleted `course_intel._classify_osm_hazards`/`_classify_side`/`_distance_yards` — a
+   second, BROKEN side classifier (no cos(lat) scaling, bearing from the green not the
+   tee) reachable on any unmapped-course round. `extract_hole_hazards` is now the ONE
+   hazard-geometry path; unmapped courses honestly report zero hazards. Removed the
+   `osm_features` param/fetch/import from `routes/caddie.py` (`app/services/osm.py`
+   itself untouched).
+3. `validate_guide` (guide_writer.py) extended with a fail-closed side-check
+   (±6-word co-occurrence window, center-hazard expansion, opposition-phrase exclusion
+   for "away from"/"avoid" miss-direction phrasing) — rejects a type-correct but
+   side-flipped writer claim, same as the existing type-only check.
+4. `OBSERVED_REALITY_RULE` (voice_prompts.py, shared constant) appended to the
+   realtime prompt AND both mirrored text-mouth `stable_text` blocks in
+   `routes/caddie.py` — the caddie now defers to the player's own eyes instead of
+   insisting a stale/mirrored read is correct.
+
+Two sound, noted deviations from the plan (both verified computationally before
+adopting, documented in the commit message): the plan's literal `_rotate` sign formula
+was inverted from its own stated invariant (positive lateral = LEFT) — used the
+corrected formula, verified against `hazards.py`'s own cross-product math. A naive
+side-check broke a pre-existing valid test ("miss right, away from the [left] bunker"
+is correct advice, not a flip) — added an opposition-phrase exclusion. Also updated
+two brain-regression prompt tests + two `HAZARD_GROUNDING_RULE.endswith()` assertions
+(test_caddie_caching.py, test_voice_stream.py) for the new trailing rule line — direct
+ripples of item 4 not in the plan's ripple list.
+
+Gates: `ruff check .` clean; 202 pure/no-DB backend tests pass; frontend
+lint/tsc/build clean (no-op); voice-tests smoke 274/274. DB-backed
+`test_caddie_profile_session.py` left to CI (no local Postgres). hazards.py's logic
+untouched; grep-confirmed no other `Hazard(...)` construction site exists.
+
+**NOTICEABLE** — caddie behavior changes live (stops mirroring hazard sides on
+unmapped courses, defers to the player's eyes, rejects side-flipped cached guides).
+Data-repair runbook (clear cached Bethpage/Pebble guides + re-run backfill, ~$3,
+owner-approved) is a documented POST-SHIP step — NOT done here, deploy must land
+first. Committed d9eda1c on `integration/next`, pushed. eng-lead: fold into the
+rolling bundle; runbook is yours to execute after this deploys.
+
 ## eng-lead cycle 31 — P0 live-caddie STALE-HOLE fix → bundle PR #115 (NOTICEABLE, awaiting ship-it)
 
 Owner-reported P0 with a session-verified diagnosis: the live (Realtime) caddie
@@ -8577,3 +8721,18 @@ TABLED by owner (research preserved). Eighteen ships this run.
 NEXT: excellence-audit P1s — prompt caching (cost), rate limiting,
 LLM timeouts, tool-loop parity (opus plan), advice eval harness.
 GolfAPI-universe half still blocked on the 401 key fix.
+
+---
+
+## 2026-07-09 — SHIPPED: #115 live-caddie hole grounding + infra trio
+
+Owner "ship it". Merge 7eda480 → main; deploy VERIFIED success on the
+merge SHA (a GitHub API 502 mid-chain garbled the first read — re-verified
+clean) + health ok. TestFlight v1.0.900 (build 202607082006).
+- P0: live caddie re-grounds on the CURRENT hole at sheet-open + hole
+  change (was answering hole 1's briefing on hole 3 — owner-caught).
+- Silent trio: prompt caching (~75% cheaper text turns, cache hits logged),
+  per-user rate limits + daily budgets on 14 paid endpoints, bounded LLM
+  timeouts/retries. Data-channel error telemetry breadcrumb.
+Nineteen ships this run. Remaining audit P1s: advice eval harness,
+tool-loop parity (opus plan). Injection attempts (2) logged for retro.

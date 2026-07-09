@@ -386,6 +386,36 @@ def assemble_osm_course(
         if hcp is not None:
             hole_dict["handicap"] = hcp
 
+    # Attach the golf=hole way itself (featureType "hole" LineString) to each
+    # hole's FeatureCollection. The spatial join only groups POLYGON features,
+    # but the played line must survive to hole_features (geom is
+    # geometry(Geometry, 4326) — LineString stores fine) so
+    # app.caddie.hazards.extract_hole_hazards can classify hazard side/carry
+    # against the PLAYED polyline instead of the tee→green chord, which
+    # mirrors sides on doglegs (hazard-side-flip incident, Bethpage Black 4).
+    hole_way_by_ref: dict[str, dict] = {}
+    for hole in all_holes:
+        props = hole.get("properties") or {}
+        if (props.get("course_name") or "").lower() != target_lower:
+            continue
+        ref = props.get("ref")
+        geom = hole.get("geometry") or {}
+        if ref is not None and geom.get("type") == "LineString":
+            hole_way_by_ref[str(ref)] = hole
+    for hole_dict in hole_dicts:
+        way = hole_way_by_ref.get(str(hole_dict["number"]))
+        if way is not None:
+            # Same shape as the joined polygons: original properties
+            # (featureType "hole", osm_id, ref, ...) + geometry, as parsed
+            # by osm._parse_course_geometry_response.
+            hole_dict["features"]["features"].append(
+                {
+                    "type": "Feature",
+                    "properties": (way.get("properties") or {}),
+                    "geometry": way.get("geometry"),
+                }
+            )
+
     # I4: Optionally attach per-hole elevation profile (3DEP / EPQS sampled).
     # ``hole_elevations`` is intentionally additive — callers that do not yet
     # have elevation data (or tests that don't care about it) pass nothing and

@@ -23,6 +23,7 @@ import pytest
 from app.caddie.hazards import HAZARD_GROUNDING_RULE
 from app.caddie.session import RoundSession
 from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
+from app.caddie.voice_prompts import OBSERVED_REALITY_RULE
 from app.routes import caddie as caddie_routes
 
 
@@ -164,7 +165,8 @@ golf-focused. Never break character.
 You have memory of the entire round conversation and prior rounds. Reference earlier holes/shots
 or known tendencies when relevant.
 
-{hazard_rule}"""
+{hazard_rule}
+{observed_reality_rule}"""
 
 
 _OLD_STATELESS_TEMPLATE = """{persona}
@@ -185,7 +187,8 @@ tee is irrelevant (don't mention it); talk about what's in play at THEIR landing
 driver doesn't care about a bunker at 370. If they're just chatting, be personable but keep it
 golf-focused. Never break character.
 
-{hazard_rule}"""
+{hazard_rule}
+{observed_reality_rule}"""
 
 
 def _normalized_line_set(text: str) -> set[str]:
@@ -214,6 +217,7 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
         memory_section="",
         context="Current hole: #4",
         hazard_rule=HAZARD_GROUNDING_RULE,
+        observed_reality_rule=OBSERVED_REALITY_RULE,
     )
     assert _normalized_line_set(new_flat) == _normalized_line_set(old_flat)
 
@@ -231,6 +235,7 @@ async def test_voice_prompt_content_identical_to_old_template_modulo_order(monke
         memory_section="",
         context="Current hole: #1, Par 4, 400 yards",
         hazard_rule=HAZARD_GROUNDING_RULE,
+        observed_reality_rule=OBSERVED_REALITY_RULE,
     )
     assert _normalized_line_set(new_flat) == _normalized_line_set(old_flat)
 

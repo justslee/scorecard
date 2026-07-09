@@ -314,6 +314,168 @@ def test_validator_still_allows_mapped_hazard_mentions():
     assert validate_guide(_bare_guide(miss_side="avoid the water right"), wz) is not None
 
 
+# ── Side-flip validation (hazard-side-flip incident, 2026-07-08) ────────────
+#
+# Type-only grounding rejected an INVENTED hazard type but not a type-correct
+# claim about the WRONG SIDE of a real one — the actual owner-facing
+# incident (Bethpage hole 4: our geometry has the bunker complex on the
+# LEFT; the cached guide said "right-side bunkers"). These pin the new
+# co-occurrence side-check exactly against the plan's edge-case table.
+
+
+def _left_bunker() -> list[Hazard]:
+    return [Hazard(type="bunker", side="left", line_side="left", carry_yards=245)]
+
+
+def _right_water() -> list[Hazard]:
+    return [Hazard(type="water", side="right", line_side="right", carry_yards=190)]
+
+
+def _left_water() -> list[Hazard]:
+    return [Hazard(type="water", side="left", line_side="left", carry_yards=190)]
+
+
+def _center_bunker() -> list[Hazard]:
+    return [Hazard(type="bunker", side="center", line_side="center", carry_yards=200)]
+
+
+def test_side_check_passes_when_side_matches_real_geometry():
+    guide = _guide(play_line="Aim left of the fairway bunker.")
+    assert validate_guide(guide, _left_bunker()) is not None
+
+
+def test_side_check_rejects_flipped_side_even_though_type_is_correct():
+    # Plan §Item-3 edge-case table row 2, VERBATIM (plural "bunkers"): a
+    # prior implementation bent this row to singular "bunker" to pass with a
+    # singular-only keyword pattern — the plural is the point (the incident
+    # text said "right-side bunkerS") and must reject.
+    guide = _guide(
+        play_line="Favor center of the fairway.",
+        miss_side="Favor left-center away from the right-side bunkers.",
+    )
+    assert validate_guide(guide, _left_bunker()) is None
+
+
+def test_side_check_rejects_flipped_side_reverse_phrasing():
+    # Plan §Item-3 edge-case table row 3, VERBATIM (plural "bunkers") — see
+    # the un-bending note on the row-2 test above.
+    guide = _guide(miss_side="Bail out left, away from the right bunkers.")
+    assert validate_guide(guide, _left_bunker()) is None
+
+
+def test_side_check_rejects_plural_right_side_bunkers_claim():
+    """The exact incident shape, pluralized: 'right-side bunkers' against a
+    left-only bunker hole must reject — singular-only patterns let the plural
+    bypass BOTH the type scan and the side check."""
+    guide = _guide(miss_side="Stay away from the right-side bunkers.")
+    assert validate_guide(guide, _left_bunker()) is None
+
+
+def test_side_check_rejects_plural_bunkers_on_the_right_with_carry():
+    guide = _guide(play_line="Carry the bunkers on the right at 265.")
+    assert validate_guide(guide, _left_bunker()) is None
+
+
+def test_type_check_rejects_plural_hazard_types_when_none_mapped():
+    """Plural forms must hit the TYPE scan too, not just the side check —
+    'the ditches cross at 220' with nothing mapped is still an invention."""
+    for text in ["watch the ditches at 220", "deep bunkers guard the green",
+                 "sand traps flank the fairway", "marshes line the left"]:
+        assert validate_guide(_guide(miss_side=text), []) is None, text
+
+
+def test_side_check_does_not_over_reject_miss_right_of_hazard_phrasing():
+    """'Miss right of the fairway bunker' aims the MISS relative to the
+    hazard — it claims nothing about which side the bunker itself sits on,
+    so a LEFT bunker must not reject it ('right of' opposition alternate)."""
+    guide = _guide(miss_side="Miss right of the fairway bunker.")
+    assert validate_guide(guide, _left_bunker()) is not None
+
+
+def test_side_check_still_rejects_hazard_right_of_phrasing():
+    """Reverse order is NOT opposition: 'the bunker right of the fairway'
+    IS a claim that the bunker sits right — flipped against a left bunker."""
+    guide = _guide(miss_side="A deep bunker right of the fairway catches drives.")
+    assert validate_guide(guide, _left_bunker()) is None
+
+
+def test_side_check_passes_generic_language_with_no_hazard_keyword_near_side_word():
+    """No hazard keyword at all in the field -> the side words are pure
+    bail-out language and are never checked against geometry."""
+    guide = _guide(miss_side="Trouble left, keep it right-center.")
+    assert validate_guide(guide, _left_bunker()) is not None
+
+
+def test_side_check_passes_correct_water_side():
+    guide = _guide(miss_side="Water guards the right.")
+    assert validate_guide(guide, _right_water()) is not None
+
+
+def test_side_check_rejects_flipped_water_side():
+    guide = _guide(miss_side="Water guards the right.")
+    assert validate_guide(guide, _left_water()) is None
+
+
+def test_side_check_passes_two_correctly_placed_hazards_in_one_sentence():
+    """"bunker left, water right" mentions BOTH left and right in one field —
+    each is correct for a DIFFERENT hazard, and must not cross-contaminate."""
+    guide = _guide(play_line="Bunker left, water right.")
+    assert validate_guide(guide, _left_bunker() + _right_water()) is not None
+
+
+def test_side_check_rejects_one_flipped_hazard_among_two_mentioned():
+    """Same sentence shape as above, but water is actually on the LEFT —
+    the bunker claim is correct, the water claim is flipped; must reject."""
+    guide = _guide(play_line="Bunker left, water right.")
+    assert validate_guide(guide, _left_bunker() + _left_water()) is None
+
+
+def test_side_check_passes_when_claimed_side_is_far_from_a_center_hazard():
+    guide = _guide(play_line="Aim at the right edge of the green; the bunker sits left.")
+    assert validate_guide(guide, _center_bunker()) is not None
+
+
+def test_side_check_passes_side_words_with_no_hazard_in_field_at_all():
+    guide = _guide(miss_side="Miss short-right, never long.")
+    assert validate_guide(guide, []) is not None
+
+
+def test_side_check_runs_after_type_check():
+    """A hazard TYPE that isn't mapped at all is still rejected by the
+    type-only scan, even before the side-check would apply — adding the
+    side-check must not weaken or bypass the existing type gate."""
+    guide = _guide(miss_side="Bunker sits left of the fairway.")
+    assert validate_guide(guide, _right_water()) is None  # no bunker mapped at all
+
+
+def test_center_only_hole_allows_either_lateral_claim():
+    guide = _guide(play_line="Bunker sits right of the fairway; some say aim left.")
+    assert validate_guide(guide, _center_bunker()) is not None
+
+
+def test_multiple_mistakes_items_each_scanned():
+    """A side-flip hidden in a LATER common_mistakes item must still reject —
+    every item is scanned, not just the first."""
+    guide = _guide(
+        common_mistakes=[
+            "Overclubbing the approach",
+            "Bailing out right into the bunker",
+            "Three-putting the false front",
+        ],
+    )
+    assert validate_guide(guide, _left_bunker()) is None
+
+
+def test_correct_side_multi_hazard_passes():
+    guide = _guide(
+        play_line="Bunker left off the tee.",
+        miss_side="Water guards the right around the green.",
+    )
+    result = validate_guide(guide, _left_bunker() + _right_water())
+    assert result is not None
+    assert result.play_line == guide.play_line
+
+
 # ── Success-path shape test (reviewer finding: the live writer path had zero
 # coverage — an SDK-surface mismatch would spend tokens and silently cache
 # nothing). Drives research_hole_guide through a fake client whose response
