@@ -9664,3 +9664,21 @@ push). NOTICEABLE (owner can search near Hamburg NY and see real 18 Mile
 Creek tee times with real clock times + "Book on the course site" deep-link
 to foreupsoftware.com — this rides the open bundle, no separate ping per
 cycle directive: pause noticeable pings while a bundle awaits ship-it).
+
+---
+
+## 2026-07-09 — SHIPPED: #120 real foreUP tee-time availability (S1)
+
+Owner "ship it". Merge a37f74d → main (STRICT gate all-SUCCESS); deploy
+verified by SHA + health ok. TestFlight v1.0.976 (build 202607091400).
+The "I want real data" milestone: ForeUpProvider hits the live public
+foreUP times endpoint; verified against 18 Mile Creek (Hamburg NY) — 18
+REAL slots captured as the CI fixture (odd tee-sheet times, $24 muni fees
+— genuinely real, not fabricated). CourseBookingCapability store + NY seed
++ validate script (discovery); 5-min cache, one-poll-per-window, per-host
+rate limit, circuit-breaker on bot signals, honest UA. Router: foreup-
+capable → real slots + "Book on the course site" deep-link; else voice_
+call/honest-empty. Twenty-four ships.
+NEXT: tee-time S2 (booking = deep-link handoff), S3 (AI caller + owner
+"call me" rehearsal harness), S4 (scraping adapters); physics 2nd slice;
+bend; tree-CV. Fast-follows logged: osm distance-sort, course_ids wiring.
