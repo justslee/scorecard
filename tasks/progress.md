@@ -9916,3 +9916,21 @@ Gates green: backend ruff clean; pytest 185/185 on the 5 targeted suites incl. b
 eval files; frontend lint clean, tsc clean, voice-tests 274/274, vitest 1834/1834 (88 files),
 build ok. Full detail in the builder report to eng-lead. Next: re-review (reviewer/qa/designer)
 before this can go back into the bundle's noticeable-change ledger. Never merged to main.
+
+## cycle 45 — ROUND 2 VERIFIED GREEN (eng-lead ran the critical gates directly)
+Backend: ruff clean; tests/eval/test_golden_tier1.py + test_harness_has_teeth.py +
+test_caddie_tools.py → 93 passed (the physics-regression fix confirmed by the AUTHORITATIVE
+golden evals; parity fixture holds). Frontend: lint clean, tsc clean, plays-tile.test.ts +
+fcb-labels.test.ts 37 passed, voice 274/274, build ok. All 3 round-1 blockers resolved.
+Renamed test_caddie_tools test was one the builder ADDED in 879291c encoding the regressed
+behavior — corrected, not weakened; tests/eval/ untouched. PR #121 checklist updated: added the
+NOTICEABLE "physics tiles-coherence" item → bundle now APPROVAL-ELIGIBLE.
+
+## AWAITING: CI strict-green on PR #121 head 1cb6d2c, THEN release-manager (NOTICEABLE)
+At note time: Backend gate SUCCESS, Frontend gate IN_PROGRESS on 1cb6d2c (head == local).
+NEXT: assert Frontend + Backend (+ E2E advisory) each state:SUCCESS on 1cb6d2c (pending==0,
+fail==0, no CANCELLED required gate). When strict-green → dispatch release-manager to build
+TestFlight from integration/next + PushNotification the owner for approval (NOTICEABLE:
+the PLAYS tile now agrees with the caddie — directly addresses the hole-3 divergence reports).
+Do NOT merge to main (owner ship-it only). If a required gate goes RED → hand the failure to
+the builder. If a required gate CANCELS → re-trigger and re-verify SUCCESS on the head.
