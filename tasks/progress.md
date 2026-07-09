@@ -31,14 +31,21 @@ fall_side (LOW side). Falls-left ⇒ leave LEFT. eng-lead confirmed independentl
 CORRECT rule; spec §P1 prose gets a one-line fix; discrepancy surfaced loudly on bundle PR #119
 + board for owner confirm (bundle already gates on his "ship it").
 
+builder DONE: pushed dfe0159 (feature) + 182dd79 (progress) on integration/next. Local gates all
+green per builder: ruff clean; pytest 129 passed on the 5 targeted suites (35/35 in new
+test_green_geometry.py incl. all 16 matrix rows + owner golden case); full non-DB backend sweep
+1526 passed / 82 skipped (integration/* self-skip on no-Postgres → CI); eval 58/58; frontend tsc
+clean, lint clean, build ok, voice 274/274, vitest 1815 passed. Spec §P1 prose corrected in same
+commit. Physically-correct rule implemented (uphill_leave_side == fall_side).
+
 ## AWAITING
-builder implementing specs/caddie-green-slope-spatial-plan.md ON integration/next (commits+pushes,
-no per-item PR). On return: (1) reviewer — Fable adversarial correctness review that FALSIFIES the
-rotation/sign with hand-derived cases (a sign flip or lat/lng swap must turn the §6 table red);
-(2) qa — ruff + pytest (green_geometry/caddie_tools/realtime_tools/grounding/slope_advice, all
-no-DB local) + frontend tsc/lint/build/voice; (3) designer NOT needed (tool-only, no UI). BLOCKING
-issues → back to builder. Green → update bundle PR #119 checklist (NOTICEABLE) + board + progress.
-Do NOT merge #119. Do NOT push notification (routine; bundle already awaiting ship-it).
+Fable reviewer (model=fable) adversarially FALSIFYING the rotation/sign on dfe0159's diff + qa
+re-running gates, dispatched concurrently. On return: BLOCKING correctness/security/sign issue →
+re-dispatch builder, re-review. Both green → (1) confirm CI Frontend+Backend gates SUCCESS on
+head 182dd79 (strict: state:SUCCESS, not just fail==0); (2) update bundle PR #119 checklist
+(add green-slope item, NOTICEABLE, note the sign-inversion catch); (3) update board record +
+backlog. Do NOT merge #119. Do NOT push notification (routine silent-style review; bundle already
+awaits owner ship-it, which now covers 3 noticeable items). Designer NOT needed (tool-only, no UI).
 
 ## 2026-07-09 — builder: caddie-green-slope-spatial-plan implemented (NOTICEABLE, DONE — rides bundle #119)
 
