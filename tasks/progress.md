@@ -10049,3 +10049,31 @@ backend/tests/test_osm_distance_sort.py (pure mock of _post_with_retry, nearest-
 (ruff + targeted pytest, no local Postgres; DB tests via CI). Then update PR #121 checklist.
 NO SHIP (owner bundling). If builder pushes then the work is on integration/next — reconcile
 from git log, do not rebuild.
+
+## DONE: teetime-osm-distance-sort-before-truncate implemented + pushed to integration/next (96714ef)
+Builder implemented specs/teetime-osm-distance-sort-plan.md exactly, no deviations. Pushed
+commit 96714ef on integration/next (head was 6d39984, ff-only, no per-item PR).
+
+What shipped in `backend/app/services/osm.py`: `import math`; module constants
+`_MAX_COURSE_RESULTS = 15` / `_MAX_GEOMETRY_RESULTS = 25`; `_haversine_m` (verbatim mirror of
+`course_finder._haversine_m`, meters); pure `_sort_by_distance(results, lat, lng)` keyed on
+`(haversine_m, name)`, `None`/missing center coords sort last via `math.inf`, stable sort.
+`search_golf_courses` and `search_osm_with_geometry` both now `_sort_by_distance(...)` when
+`lat is not None and lng is not None` (same condition that builds the Overpass `around` clause)
+BEFORE the `[:_MAX_COURSE_RESULTS]` / `[:_MAX_GEOMETRY_RESULTS]` cap — fixes the bug where the
+closest course (18 Mile Creek) could be silently dropped by truncating Overpass's arbitrary
+element order first. Name-only searches (no lat/lng) are untouched — byte-identical order.
+`routing.py` / `course_search.py` left alone (reconcile-only per plan).
+
+New `backend/tests/test_osm_distance_sort.py` (pure, no DB/network, monkeypatches
+`app.services.osm._post_with_retry` with an AsyncMock): regression (16 far courses + nearest
+last in elements → 15-cap keeps nearest, ascending distance), name-only preserves element
+order, tie-by-name determinism, `search_osm_with_geometry` 26-element/25-cap regression, plus
+direct `_sort_by_distance` unit tests incl. None-coord-sorts-last and empty-list.
+
+Gates: `ruff check .` → All checks passed. `pytest tests/test_osm_distance_sort.py
+tests/test_osm_fetch_hardening.py tests/test_course_search.py tests/test_tee_time_routing.py
+tests/test_course_finder_relevance.py` → 120 passed in 0.31s. No local Postgres used (per
+instruction); DB-backed suites run in CI. Frontend untouched — no lint/tsc/voice delta.
+Backend-only, silent (no shared-type / API-shape change). Next: reviewer (correctness) + qa
+(CI gates) before folding into PR #121's checklist. NO SHIP — owner still bundling.
