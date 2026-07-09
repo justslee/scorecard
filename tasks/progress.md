@@ -3,6 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: carry-aware side validation landed on the bundle (SILENT, backend-only, DONE)
+
+Implemented `specs/carry-aware-side-validation-plan.md` exactly — `4eb8ad2` on
+`integration/next` (pushed). Extends the fail-closed side-flip grounding pass in
+`backend/app/caddie/guide_writer.py` (`validate_guide` / `_has_side_flip`) so a side claim
+("right bunker") bound to a nearby yardage number is validated against the (side, carry)
+PAIR of real hazards, not just the side set. Closes the gap where a hole with the same
+hazard type on BOTH sides (Bethpage hole 4: bunkers L~275 / R~390 / C~470-495) let the
+INCIDENT LIE "right bunkers off the tee at 265" ride along on a real side word — the old
+side-set-only check couldn't reject a numbered variant. New `hazards_by_type: dict[str,
+list[tuple[str,int]]]` retains `carry_yards`; new `_side_and_carry_supported` helper;
+new `_CARRY_NUMBER_PATTERN`/`_CARRY_TOLERANCE_YARDS`(25)/`_MIN_PLAUSIBLE_CARRY`(100)/
+`_MAX_PLAUSIBLE_CARRY`(650) constants. EACH hazard-keyword occurrence binds its OWN
+nearest side AND its OWN nearest number (never "any number in the field") — a truthful
+"right bunker at 390" elsewhere can never launder a co-located false claim; any failing
+occurrence rejects the whole guide. No-number side claims are UNCHANGED (verbatim old
+behavior) — this is a strict narrowing, not a new pass path.
+Tests: `TestHole4HazardSideRegression` truth ("right bunker at 390" PASS, fixture
+precondition asserted) + incident-lie ("right bunkers off the tee at 265" REJECT) against
+the REAL Bethpage fixture hazards; `test_guide_writer.py` carry-check block (10 new tests:
+correct distance incl. "390y"/"390 yards", wrong distance, number-stuffing bypass,
+no-number unchanged both directions, window boundary, implausible number, range binding).
+Gates: `ruff check .` clean; `pytest tests/test_guide_writer.py tests/test_bethpage_validation.py
+tests/eval -q` → **131 passed**, no failures, no test weakened/deleted. Backend-only —
+frontend gates unaffected, not run. Classified SILENT (no user-visible surface; caddie
+guides are LLM-researched then this validator gates them before caching — tightens an
+existing anti-hallucination control). No DB spun up locally; nothing here is DB-backed
+(pure in-memory validation logic + a committed OSM fixture).
+
 ## 2026-07-10 — eng-lead cycle 35: caddie-tool-loop-parity reviewed + on bundle #117 (NOTICEABLE)
 
 Fable plan (`specs/caddie-tool-loop-parity-plan.md`) → Fable builder (`7124c38` on
