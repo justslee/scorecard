@@ -61,6 +61,11 @@ class TeeTimeSlot:
     # provider knows real availability — mock today, a live inventory provider
     # in a later slice).
     route: Literal["book_on_site", "call"] | None = None
+    # The pro shop's phone number (Places nationalPhoneNumber / OSM phone tag),
+    # when known — powers a real `tel:` link on `route == "call"` entries.
+    # None when unknown; the UI must never render a tappable-looking button
+    # without a real number behind it.
+    phone: str | None = None
 
 
 @dataclass

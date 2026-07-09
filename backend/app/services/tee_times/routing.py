@@ -12,6 +12,8 @@ window:
   - `booking_url` = the course website (Google Places websiteUri) when known.
   - `route` = "book_on_site" when a website is known, else "call" — tells the
     UI whether the golfer deep-links out or has to phone the pro shop.
+  - `phone` = the pro shop's number (Places nationalPhoneNumber / OSM phone
+    tag) when known — powers a real `tel:` link for `route == "call"` entries.
 
 Pipeline: discover -> dedupe_by_name -> private filter -> cap at
 MAX_COURSES -> sort by (distance, name). The private filter (private_filter.py)
@@ -51,8 +53,8 @@ DEFAULT_RADIUS_MILES = 15.0
 _METERS_PER_MILE = 1609.344
 
 # A course finder returns (courses, origin): normalized course dicts
-# ({id, name, address?, center{lat,lng}, website?, rating?}) plus the search
-# origin (lat, lng) when known — used for honest distance computation.
+# ({id, name, address?, center{lat,lng}, website?, phone?, rating?}) plus the
+# search origin (lat, lng) when known — used for honest distance computation.
 CourseFinder = Callable[[TeeTimeQuery], Awaitable[tuple[list[dict], tuple[float, float] | None]]]
 
 _LATLNG_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
@@ -176,6 +178,7 @@ class RoutingTeeTimeProvider(TeeTimeProvider):
                 booking_url=website,
                 estimated=False,
                 route="book_on_site" if website else "call",
+                phone=course.get("phone"),
             ))
 
         slots.sort(key=lambda s: (s.distance_miles, s.course_name))

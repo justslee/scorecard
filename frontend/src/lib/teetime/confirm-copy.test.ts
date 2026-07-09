@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { confirmCopy } from "./confirm-copy";
+import { confirmCopy, callTelHref } from "./confirm-copy";
 import type { TeeTimeSlot, BookingResult } from "./types";
 
 const BASE_SLOT: TeeTimeSlot = {
@@ -104,5 +104,22 @@ describe("confirmCopy — mock (dev) confirmed slot", () => {
     const result: BookingResult = { status: "confirmed", confirmationNumber: "ABC123" };
     const copy = confirmCopy(slot, result);
     expect(copy.looperLine).not.toContain("Demo data");
+  });
+});
+
+describe("callTelHref — never a dead-end button", () => {
+  it("a call-route slot WITH a phone number flows into a real tel: link", () => {
+    const slot: TeeTimeSlot = { ...BASE_SLOT, route: "call", bookingUrl: undefined, phone: "+14155551234" };
+    expect(callTelHref(slot)).toBe("tel:+14155551234");
+  });
+
+  it("a call-route slot WITHOUT a phone number renders no button (null href)", () => {
+    const slot: TeeTimeSlot = { ...BASE_SLOT, route: "call", bookingUrl: undefined, phone: undefined };
+    expect(callTelHref(slot)).toBeNull();
+  });
+
+  it("an empty-string phone is treated as unknown — no button", () => {
+    const slot: TeeTimeSlot = { ...BASE_SLOT, route: "call", bookingUrl: undefined, phone: "" };
+    expect(callTelHref(slot)).toBeNull();
   });
 });

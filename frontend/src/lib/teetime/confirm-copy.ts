@@ -70,3 +70,13 @@ export function confirmCopy(slot: TeeTimeSlot, bookingResult: BookingResult | nu
 
   return { stampWord, looperLine, ctaLabel, subCopy };
 }
+
+/**
+ * The `tel:` URI for a "call" route's CTA — or `null` when no phone number
+ * is known. Never render a tappable-looking call button without a real
+ * number behind it (S0 review finding — a dead-end CTA is worse than the
+ * "Held" bug this slice killed).
+ */
+export function callTelHref(slot: Pick<TeeTimeSlot, "phone">): string | null {
+  return slot.phone ? `tel:${slot.phone}` : null;
+}

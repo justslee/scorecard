@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { searchTeeTimes, bookTeeTime } from "@/lib/teetime/client";
-import { confirmCopy } from "@/lib/teetime/confirm-copy";
+import { confirmCopy, callTelHref } from "@/lib/teetime/confirm-copy";
 import type { TeeTimeSlot, TeeTimeQuery, BookingResult } from "@/lib/teetime/types";
 import {
   reconcileCourseOptions,
@@ -889,7 +889,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
             append({ t: nowStr(), text: `Nothing in ${q.timeWindowStart}–${q.timeWindowEnd}`, state: "miss", course: "" });
           }
         } catch {
-          append({ t: nowStr(), text: "Provider unavailable — couldn't check this window.", state: "miss", course: "" });
+          append({ t: nowStr(), text: "Couldn't reach that window — skipping it.", state: "miss", course: "" });
         }
       }
 
@@ -898,7 +898,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
       const unique = allSlots.filter((s) => { if (seen.has(s.id)) return false; seen.add(s.id); return true; });
 
       if (unique.length === 0) {
-        setError("No bookable courses found. Try widening the window or radius.");
+        setError("Nothing open nearby. Try a wider window or radius.");
         return;
       }
 
@@ -910,7 +910,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
       // A route entry (routing provider) is a course we found, not a locked
       // slot — the copy says so; only a real availability provider "locks in".
       const bestLine = best.route
-        ? `${best.courseName} — closest match. Setting up your handoff.`
+        ? `${best.courseName} — closest match. Pulling up how to book.`
         : `${best.courseName} ${best.time} — ${best.players} open. Locking in.`;
       append({ t: nowStr(), text: bestLine, state: "ok", course: best.courseName });
 
@@ -924,7 +924,10 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
       if (result.status === "confirmed") {
         append({ t: nowStr(), text: `${best.courseName} confirmed — ${best.time}.`, state: "win", course: best.courseName });
       } else {
-        append({ t: nowStr(), text: `Booking ${result.status}${result.message ? ": " + result.message : ""}`, state: result.status === "failed" ? "miss" : "ok", course: best.courseName });
+        // The backend's `message` is already golfer-facing copy (routing's
+        // needs_human handoff line, etc.) — never surface the raw status enum.
+        const text = result.message ?? (result.status === "failed" ? "That didn't go through." : "Working on it.");
+        append({ t: nowStr(), text, state: result.status === "failed" ? "miss" : "ok", course: best.courseName });
       }
 
       await new Promise<void>((r) => setTimeout(r, 1200));
@@ -985,7 +988,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
                   <motion.span key={i} animate={{ opacity: [0.2, 1, 0.2] }} transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15 }} style={{ width: 2, height: 2, borderRadius: 99, background: T.pencil, display: "inline-block" }} />
                 ))}
               </div>
-              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 14, color: T.pencil, letterSpacing: -0.1 }}>Contacting provider&hellip;</div>
+              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 14, color: T.pencil, letterSpacing: -0.1 }}>Checking nearby courses&hellip;</div>
             </div>
           )}
           {log.map((l, i) => (
@@ -1088,6 +1091,7 @@ function Confirmed({ accent, slot, bookingResult, group, windows, onBack }: Conf
   const bookingUrl = bookingResult?.bookingUrl ?? slot.bookingUrl;
   const copy = confirmCopy(slot, bookingResult);
   const { stampWord, looperLine, ctaLabel, subCopy } = copy;
+  const telHref = callTelHref(slot);
 
   // No fabricated tee time (routing): `formatTime12h("")` would read "NaN:NaN".
   // Show the requested window instead — the window whose date matches this
@@ -1127,7 +1131,7 @@ function Confirmed({ accent, slot, bookingResult, group, windows, onBack }: Conf
             </svg>
             Home
           </button>
-          <Kicker>Looper · {bookingResult?.status ?? "found"}</Kicker>
+          <Kicker>Looper · {stampWord}</Kicker>
         </div>
 
         {/* Stamp */}
@@ -1211,14 +1215,25 @@ function Confirmed({ accent, slot, bookingResult, group, windows, onBack }: Conf
             </div>
           )}
         </div>
-      ) : needsHuman ? (
+      ) : needsHuman && telHref ? (
         <div style={{ padding: "0 22px 14px" }}>
-          <div style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${T.hairline}`, textAlign: "center" as const, fontFamily: T.mono, fontSize: 10, letterSpacing: 1.4, color: T.ink, textTransform: "uppercase" as const, fontWeight: 600 }}>
+          {/* No online booking link — but a real phone number, so this is a
+              working tel: link, never an inert button. */}
+          <a
+            href={telHref}
+            style={{ display: "block", width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${T.ink}`, background: "transparent", cursor: "pointer", textAlign: "center" as const, fontFamily: T.mono, fontSize: 10, letterSpacing: 1.4, color: T.ink, textTransform: "uppercase" as const, fontWeight: 600, textDecoration: "none" }}
+          >
             {ctaLabel}
-          </div>
+          </a>
           <div style={{ marginTop: 6, textAlign: "center", fontFamily: T.serif, fontStyle: "italic", fontSize: 12, color: T.pencilSoft }}>
-            No online booking link &mdash; the pro shop can take it
+            {slot.phone}
           </div>
+        </div>
+      ) : needsHuman ? (
+        // No booking link AND no phone on file — never render button chrome
+        // with nothing behind it; the looper message already says to call.
+        <div style={{ padding: "0 22px 14px", textAlign: "center" as const, fontFamily: T.serif, fontStyle: "italic", fontSize: 13, color: T.pencilSoft }}>
+          No phone number on file for this course &mdash; try their website or a quick search.
         </div>
       ) : null}
 

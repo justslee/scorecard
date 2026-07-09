@@ -401,6 +401,7 @@ out center;
             )
             or None,
             "center": {"lat": center["lat"], "lng": center.get("lon", center.get("lng"))},
+            "phone": tags.get("phone") or tags.get("contact:phone"),
             "source": "osm",
         })
 

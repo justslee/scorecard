@@ -77,6 +77,10 @@ export interface TeeTimeSlot {
   /** How this entry gets booked: deep-link handoff, phone call, or (undefined)
    *  real bookable availability. */
   route?: "book_on_site" | "call";
+  /** The pro shop's phone number, when known — powers a real `tel:` link on
+   *  `route === "call"` entries. Undefined when unknown; never render a
+   *  tappable-looking call button without a real number behind it. */
+  phone?: string;
 }
 
 // ─── Booking ──────────────────────────────────────────────────────────────────

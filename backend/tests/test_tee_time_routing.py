@@ -46,6 +46,7 @@ _COURSES = [
         "name": "Lincoln Park Golf Course",
         "address": "San Francisco, CA",
         "center": {"lat": 37.7817, "lng": -122.4948},
+        "phone": "+14155551234",
         # No website / rating — OSM results often lack both.
     },
 ]
@@ -98,6 +99,21 @@ class TestSearchAvailability:
         by_name = {s.course_name: s for s in slots}
         assert by_name["Lincoln Park Golf Course"].route == "call"
         assert by_name["Lincoln Park Golf Course"].booking_url is None
+
+    async def test_phone_flows_from_course_dict_to_slot(self):
+        # A "call" route (no website) with a phone in the discovered course
+        # dict must carry through — the frontend `tel:` CTA depends on it.
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
+        slots = await provider.search_availability(_query())
+        by_name = {s.course_name: s for s in slots}
+        assert by_name["Lincoln Park Golf Course"].phone == "+14155551234"
+
+    async def test_phone_none_when_course_has_none(self):
+        # Presidio's fixture carries no "phone" key — must not be fabricated.
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
+        slots = await provider.search_availability(_query())
+        by_name = {s.course_name: s for s in slots}
+        assert by_name["Presidio Golf Course"].phone is None
 
     async def test_distance_computed_from_origin_and_sorted(self):
         provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))

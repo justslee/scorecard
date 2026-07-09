@@ -282,8 +282,8 @@ async def search_google_places(
         "X-Goog-Api-Key": key,
         "X-Goog-FieldMask": (
             "places.id,places.displayName,places.formattedAddress,"
-            "places.location,places.websiteUri,places.rating,"
-            "places.types,places.primaryType"
+            "places.location,places.websiteUri,places.nationalPhoneNumber,"
+            "places.rating,places.types,places.primaryType"
         ),
     }
     body = {"textQuery": query, "includedType": "golf_course", "maxResultCount": 10}
@@ -315,6 +315,7 @@ async def search_google_places(
                     "address": p.get("formattedAddress"),
                     "center": {"lat": lat, "lng": lng},
                     "website": p.get("websiteUri"),
+                    "phone": p.get("nationalPhoneNumber"),
                     "rating": p.get("rating"),
                     "source": "google_places",
                     "venue_penalty": 1 if cls == "ambiguous" else 0,

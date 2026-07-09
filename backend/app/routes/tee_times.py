@@ -118,6 +118,9 @@ class TeeTimeSlotOut(BaseModel):
     # How this entry gets booked: "book_on_site", "call", or None (real
     # bookable availability — mock today). See base.TeeTimeSlot.
     route: Literal["book_on_site", "call"] | None = None
+    # The pro shop's phone number, when known — powers a real `tel:` link on
+    # "call"-route entries. See base.TeeTimeSlot.
+    phone: str | None = None
 
     @classmethod
     def from_svc(cls, s: SvcSlot) -> "TeeTimeSlotOut":
@@ -139,6 +142,7 @@ class TeeTimeSlotOut(BaseModel):
             holes=s.holes,
             estimated=s.estimated,
             route=s.route,
+            phone=s.phone,
         )
 
 
@@ -299,6 +303,7 @@ async def book_tee_time(req: BookRequest, owner_id: str = Depends(current_user_i
             booking_url=slot_data.get("bookingUrl"),
             estimated=bool(slot_data.get("estimated", False)),
             route=slot_data.get("route"),
+            phone=slot_data.get("phone"),
         )
         details = SvcBookingDetails(
             name=details_data["name"],
