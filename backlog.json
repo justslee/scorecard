@@ -46,7 +46,7 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "done-on-bundle (integration/next d3f529d feature + 3ce8bd5 designer polish; NOTICEABLE). Real foreUP availability leg on the S0 router. Fable plan specs/teetime-s1-foreup-plan.md. New backend/app/services/tee_times/{foreup.py,capability_store.py,router_provider.py} + backend/data/foreup_ny_seed.json (18 Mile Creek GC, Hamburg NY 20410/4467, real geocode+phone) + backend/scripts/validate_foreup_courses.py. Politeness stack: 480s cache, asyncio single-flight, per-host SlidingWindowLimiter rpm=10, circuit breaker 3-fail/open-300s/half-open — all ON the fetch path (module singletons). ForeUpProvider parses foreUP public times endpoint (api-key:no_limits, honest UA, 8s timeout, bool-as-int guarded, verified-empty OMITS the course, never fabricates time/price/capacity). Kill switch TEETIME_FOREUP_ENABLED. CI fixture foreup_18mile_times.json = REAL live capture (18 slots), all test assertions fixture-derived; no live hit in CI (MockTransport). 64 S1 tests + 137 tee-time regression green; frontend lint/tsc/vitest 161/vitest build/voice 274 green. Reviewer SHIP (+/security-review clean), designer SHIP, QA PASS incl. live Playwright run (18 Mile Creek 12:21PM $24 'Found' + real deep-link). Rides the bundle; awaiting owner ship-it.",
       "depends_on": [
         "teetime-s0-kill-fake-data"
       ],
@@ -115,7 +115,9 @@
       "priority": 3,
       "risk": "low",
       "status": "ready",
-      "depends_on": ["caddie-green-slope-spatial"],
+      "depends_on": [
+        "caddie-green-slope-spatial"
+      ],
       "why": "Fable reviewer nit on dfe0159 (non-blocking): slope_advice.py's pre-existing lateral advice ('favor the high side') and green_read's 'miss the fall/low side for the uphill putt' frame the SAME slope from opposite ends — they agree on which side is HIGH (cross-consistency test pins it) but if both surface in one caddie answer the spoken lateral guidance could read as mixed. Reconcile the spoken framing so the two modules never emit contradictory-sounding lateral cues. Pure prose/logic, no geometry change."
     },
     {
@@ -2013,6 +2015,33 @@
       "depends_on": [],
       "why": "Reviewer nit (2026-07-08, commit 0200576): course_intel.py build_hole_intelligence uses hole_number = hole_coords.get('holeNumber', 1); on a live compute with course_id set this write-back would persist THIS hole's elevation onto hole 1's green if a request ever omits holeNumber (and the persisted-read lookup keys by None -> miss). Edge-only (frontend always sends holeNumber) so non-blocking, but a data-integrity risk: gate the write-back on hole_coords.get('holeNumber') is not None (skip persist rather than default to 1). Also minor: _feature_center should 'continue' past a malformed first same-type feature instead of returning None.",
       "spec": ""
+    },
+    {
+      "id": "teetime-osm-distance-sort-before-truncate",
+      "title": "Course discovery: sort by distance BEFORE truncating to 15 (osm.py drops nearby courses, incl. 18 Mile Creek at default radius)",
+      "type": "minor",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "notes": "QA (cycle 43) found backend/app/services/osm.py search_golf_courses() does results[:15] BEFORE the caller sorts by distance (line predates S1, commit 73ebdcb6). At a 15-25mi radius this can silently drop the CLOSEST course — reproducibly dropped 18 Mile Creek (the S1 reference course) at the UI default 15mi 'Max drive'. Directly limits how often the owner actually SEES the new real foreUP data. Fix: sort-by-distance before the cap, or raise the cap. High-value fast-follow to S1."
+    },
+    {
+      "id": "teetime-course-ids-not-wired-real-provider",
+      "title": "Selecting specific courses (course_ids) has no effect on the real routing/router provider",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "notes": "QA (cycle 43): TeeTimeQuery.course_ids is threaded into the search-cache key but never filtered on in routing.py/router_provider.py — only mock.py honors it. Selecting courses in the UI is a no-op on the real discovery path. Pre-existing, not from S1."
+    },
+    {
+      "id": "teetime-searching-copy-polish",
+      "title": "Tee-time searching-transcript copy: drop the double reservation disclaimer + unify route/real-slot verb",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct — the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' — unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style — rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm — not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home · Partners · Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
