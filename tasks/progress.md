@@ -10039,3 +10039,13 @@ ONE builder to implement on integration/next (commit+push, no per-item PR), then
 ruff, lint, tsc, voice smoke, build; backend DB tests via CI only — no local Postgres). Then
 update PR #121 checklist. Do NOT ship (owner bundling). If Fable plan flags a deeper issue,
 reconsider scope before building.
+
+## AWAITING: builder implementing osm distance-sort (specs/teetime-osm-distance-sort-plan.md)
+Fable plan saved. Dispatched ONE builder on integration/next. Plan: add math + _haversine_m +
+pure _sort_by_distance to osm.py; sort by (dist,name) only when lat AND lng present; cap via new
+_MAX_COURSE_RESULTS=15 / _MAX_GEOMETRY_RESULTS=25; SAME fix to search_osm_with_geometry; new
+backend/tests/test_osm_distance_sort.py (pure mock of _post_with_retry, nearest-of-16 survives
+15-cap). Backend-only, no shared-type sync. On builder return → reviewer (correctness) + qa
+(ruff + targeted pytest, no local Postgres; DB tests via CI). Then update PR #121 checklist.
+NO SHIP (owner bundling). If builder pushes then the work is on integration/next — reconcile
+from git log, do not rebuild.
