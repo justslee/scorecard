@@ -9814,3 +9814,43 @@ On return: reviewer (parity — construct a fixture hole/conditions, assert tile
 divergence is the whole bug) + qa (STRICT gates) + designer (PLAYS tile user-facing, calm).
 BLOCKING → re-dispatch builder. Clean+green → update PR #121 checklist (NOTICEABLE item →
 approval-eligible), release-manager TestFlight, owner ping. Never merge to main.
+
+## cycle 45 — builder DONE: pushed 879291c on integration/next (NOTICEABLE)
+
+Implemented specs/physics-tiles-coherence-plan.md exactly. Backend
+(app/caddie/tools.py shot_distance_payload): server-side bearing parity — reads
+intel.approach_bearing_deg (same bearing get_green_read uses) instead of the hardcoded
+shot_bearing_deg=0.0; when bearing unknown + wind ≥1mph, strips wind from the conditions
+build (still-air) instead of fabricating a due-north direction, surfaces "hole direction
+unknown — N mph wind not applied"; added conditions_used.shot_bearing_deg /.wind_applied.
+New golden parity fixture backend/tests/fixtures/plays_like_parity.json (hole 7, bearing
+90°, elev −12ft, wind 12mph FROM 90, target 150 → plays_like_yards 173), mirrored at
+frontend/src/lib/caddie/__fixtures__/plays_like_parity.json, pinned by a backend pytest AND
+a frontend vitest — an engine change now forces both to re-pin.
+
+Frontend: new usePhysicsPlaysLike hook (lib/caddie/use-physics-plays-like.ts — cached
+hole:basis:weatherFetchedAt, 400ms debounce + 2s live-GPS floor, no spinner) + new pure
+plays-tile.ts (playsTileDisplay — physics number verbatim, 7-row honest fallback matrix,
+deprecated playsLikeYards used in ZERO cells) wired into RoundPageClient.tsx (playsLikeYards
+import dropped for the tile; wind.ts's relativeWind/bearingDeg/compassFrom still drive the
+WIND tile label). fcb-labels.ts playsSubLabel gained "wind+elev · you" / "elev from you" for
+the newly-possible live+elev state (updated 2 existing tests to match — a deliberate,
+plan-mandated behavior change, not a weakened assertion). api.ts SessionShotDistance
+.conditions_used properly typed (was Record<string,unknown>).
+
+Noted deviation (builder's own call, minimal + honest): plays-tile.ts takes TWO basis
+inputs (basisYards + fallbackYards) instead of the plan §4.3's single basisYards — required
+because §5's fallback matrix needs the available:false row to show the plain raw basis
+(never elevation-composed) while the offline/error row may still show the old
+effectiveYards-composed number; one basisYards can't represent both inside the pure/testable
+module without pushing the row-selection logic back into RoundPageClient.
+
+Gates (builder-reported): backend ruff clean; 129 pytest passing (6 new bearing/wind-honesty
+/parity/identity tests, non-DB, no Postgres needed). Frontend: lint clean, tsc clean, 1832
+vitest passing (35 new in plays-tile.test.ts + fcb-labels.test.ts), voice-tests smoke
+274/274, next build green, realtime-dispatch.test.ts unchanged/passing (11/11).
+
+NEXT: reviewer (parity check — tile==caddie for a fixture) + qa (STRICT gates) + designer
+(PLAYS tile is user-facing/calm — review the new "wind+elev · you"/"elev from you" copy
+against NORTHSTAR). BLOCKING → re-dispatch builder. Clean+green → update PR #121 checklist
+(NOTICEABLE → approval-eligible), release-manager TestFlight, owner ping. Never merge to main.
