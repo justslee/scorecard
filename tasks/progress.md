@@ -10282,3 +10282,27 @@ Not shipping this cycle. Bundle #121 carries builder code (65f3c42) not yet CI-r
 ship cycle: confirm every REQUIRED gate (Frontend + Backend) is state:SUCCESS on the PR's FINAL
 head SHA (gh pr checks 121 --json bucket,state,name + gh pr view 121 --json headRefOid — assert
 they match) BEFORE any merge. A cancelled/absent required gate is NOT a pass.
+
+## 2026-07-09 cycle 49 — PICK: caddie-slope-framing-reconcile (rides bundle #122)
+Step 0: no owner ship-it/feedback on the open bundle. PR #122 (integration/next → main) has no
+comments/reviews; #119 card stale-shipped, no new comments. Sync clean: main==origin/main==608ae56,
+merged into integration/next 6c7abca (up to date).
+
+Parallel in-flight (DO NOT TOUCH): feat/teetime-s3-caller, spike/tree-detection-cv. Voice cards
+Queued (owner). Pick honestly among small/isolated: chose caddie-slope-framing-reconcile (P3 minor,
+low risk, ready) — NOT in the in-flight areas.
+
+The nit (Fable reviewer on dfe0159): slope_advice.py (surfaced via aim_point.py approach advice)
+frames the SAME green slope as green_read (get_green_read tool) from opposite ends — when slope
+drops to the golfer's LEFT, slope_advice says "favor the RIGHT/high side" (approach-angle framing)
+while green_read says "leave LEFT/low side for the uphill putt" (putt framing). Same geometry
+(cross-consistency test pins which side is HIGH), but if both surface in one caddie answer the
+spoken lateral cues read as contradictory (aim right vs miss left). Reconcile the spoken framing so
+the two modules never emit contradictory-sounding lateral guidance. Pure prose/logic; NO geometry
+change (the green_read rotation math is proven with teeth — leave it untouched). Burned sign-flip
+area → Fable plan is the mandated safeguard.
+
+## AWAITING: Fable Plan agent to write specs/caddie-slope-framing-reconcile-plan.md
+On return → dispatch builder to implement it on integration/next → reviewer + qa → update PR #122.
+NOTICEABLE (caddie spoken output changes) but NO ship (owner bundling). Reconcile from git log on
+resume; do not rebuild finished children.
