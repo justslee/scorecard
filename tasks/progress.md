@@ -10020,3 +10020,22 @@ TestFlight from integration/next + PushNotification the owner for approval (NOTI
 the PLAYS tile now agrees with the caddie — directly addresses the hole-3 divergence reports).
 Do NOT merge to main (owner ship-it only). If a required gate goes RED → hand the failure to
 the builder. If a required gate CANCELS → re-trigger and re-verify SUCCESS on the head.
+
+## cycle 47 (2026-07-09) — PICK: teetime-osm-distance-sort-before-truncate (P1, minor/silent)
+Step 0 clean: no owner "ship it" / feedback on board (#120 card no comments) or PR #121.
+main a37f74d synced into integration/next (already up to date). PR #121 STRICT-green on f616472
+(physics-tiles-coherence + S2 booking-handoff + bend-distance). Owner bundling — NO SHIP.
+PICK is the higher-priority S1 fast-follow: backend/app/services/osm.py:423 `return results[:15]`
+truncates in Overpass's arbitrary order (NOT distance-sorted), silently dropping the CLOSEST
+course at wide radius — reproducibly drops 18 Mile Creek (the S1 reference course the owner is
+actively testing on v1.0.976) at the 15mi default. Fix: sort by distance to (lat,lng) before the
+[:15] cap. Callers: tee_times/routing.py:_default_find_courses + routes/course_search.py (both
+benefit). Also audit search_osm_with_geometry (line 426) for the same pattern. Rides bundle #121.
+
+## AWAITING: Fable implementation plan for teetime-osm-distance-sort-before-truncate
+Dispatched Plan agent on fable → specs/teetime-osm-distance-sort-plan.md. On return: dispatch
+ONE builder to implement on integration/next (commit+push, no per-item PR), then reviewer
+(correctness — a distance-sort bug shows the WRONG course to the owner) + qa (STRICT gates:
+ruff, lint, tsc, voice smoke, build; backend DB tests via CI only — no local Postgres). Then
+update PR #121 checklist. Do NOT ship (owner bundling). If Fable plan flags a deeper issue,
+reconsider scope before building.
