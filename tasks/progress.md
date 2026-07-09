@@ -9322,3 +9322,23 @@ selected; check the reconciliation guard's dogleg exemption isn't backwards) + q
 already green above — spot-check) + designer (new "from the card" caption + card-only tile
 "—" state against NORTHSTAR yardage-book feel). If green: update bundle PR #119 checklist.
 Rides bundle #119 (NOTICEABLE — fixes a real owner-reported prod bug).
+
+## 2026-07-09 cycle 41 — BUILT multi-tee-anchor (commit c682f7f)
+
+Builder implemented the Fable plan verbatim on integration/next (c682f7f, pushed). New pure
+frontend/src/lib/course/tee-anchor.ts (resolveTeeAnchor named->card-nearest[25% bound, back-most
+tie]->single->legacy + par-aware >8%/1.08x guard + card-only fallback; extractTeeBoxes,
+attachTeeBoxes, applyTeeAnchors, resolveFcbSource). CourseCoordinates.teeBoxes exposed;
+mapped-course-api collects ALL tee centroids; attachTeeBoxes wired into use-hole-coordinates +
+InlineHoleDiagram; RoundPageClient uses anchoredCoords everywhere + header ladder + card-only
+tiles; fcb-labels "card" source; DistancesCard v:number|string; osm.py preserves tee ref/name.
+26 new tee-anchor tests incl. hole-3 fixture (proves center in [166,186], NOT >220). Gates green:
+vitest 1808, voice 274/274, tsc/lint clean, build ok, ruff clean.
+
+## AWAITING
+3 parallel reviews on c682f7f: (1) Fable reviewer — adversarial, must FALSIFY tiles->~178 not
+232 against hole-3 5-tee data + check the reconciliation guard doesn't misfire on doglegs;
+(2) qa — strict gates; (3) designer — tile/caption/header strings user-facing (calm/yardage-book,
+header+tiles must now agree). On return: BLOCKING issues -> re-dispatch builder; all green ->
+update bundle PR #119 checklist (add multi-tee item, NOTICEABLE). Bundle #119 stays awaiting
+owner ship-it; do NOT merge.
