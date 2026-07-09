@@ -156,7 +156,7 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle-122",
       "depends_on": [
         "caddie-green-slope-spatial"
       ],
