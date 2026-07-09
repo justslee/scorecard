@@ -264,13 +264,28 @@ def _parse_course_geometry_response(
                 feature_type = "water"
                 bucket = water
 
+            properties: dict = {
+                "featureType": feature_type,
+                "osm_id": osm_id,
+            }
+            if feature_type == "tee":
+                # Preserve the tee-box's OSM ref/name tags (e.g. golf:name /
+                # ref = "White") so the frontend's named-tee-box match
+                # (lib/course/tee-anchor.ts resolveTeeAnchor) can anchor
+                # "from the tee" geometry to the player's actual selected tee
+                # instead of an arbitrary box (spec:
+                # multi-tee-anchor-reconciliation). Additive — no shape
+                # change for existing rows without these tags.
+                ref = tags.get("ref") or tags.get("golf:name")
+                name = tags.get("name")
+                if ref:
+                    properties["ref"] = ref
+                if name:
+                    properties["name"] = name
             bucket.append({
                 "type": "Feature",
                 "geometry": polygon,
-                "properties": {
-                    "featureType": feature_type,
-                    "osm_id": osm_id,
-                },
+                "properties": properties,
             })
 
         elif golf_tag == "rough":

@@ -54,6 +54,7 @@ import { shouldRefreshOnDemand, WeatherRefreshScheduler } from "@/lib/map/weathe
 import { computeFCBDistances } from "@/lib/course/course-coordinates";
 import { fcbSourceCaption, playsSubLabel } from "@/lib/caddie/fcb-labels";
 import { yardsDistance } from "@/lib/course/hole-projection";
+import { applyTeeAnchors, resolveFcbSource } from "@/lib/course/tee-anchor";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
@@ -337,6 +338,29 @@ export default function RoundPage() {
     loaded: mapCoordsLoaded,
   } = useHoleCoordinates(mappedCourse?.id ?? null);
 
+  // Anchor "from the tee" geometry to the PLAYER'S selected tee, not an
+  // arbitrary stored tee box (spec: multi-tee-anchor-reconciliation — third
+  // geometry-anchor incident after hazards + doglegs). Pure + memoized;
+  // `round` loads before `mappedCourse` is set, so teeName/holes are already
+  // present by the time mapCoords resolves. Every mapCoords consumer below
+  // is replaced with anchoredCoords so tiles, plays-like, wind bearing,
+  // opening shot, course-intel, and both maps' tee markers all agree.
+  const { coords: anchoredCoords, anchorByHole } = useMemo(
+    () =>
+      applyTeeAnchors(mapCoords, {
+        teeName: round?.teeName ?? null,
+        holes: round?.holes ?? [],
+      }),
+    [mapCoords, round?.teeName, round?.holes]
+  );
+  // Per-hole tee overrides for InlineHoleDiagram, which self-fetches its own
+  // coords and can't compute the anchor itself (no access to round data).
+  const teeOverrideByHole = useMemo(() => {
+    const m = new Map<number, { lat: number; lng: number } | null>();
+    for (const [holeNumber, anchor] of anchorByHole) m.set(holeNumber, anchor.tee);
+    return m;
+  }, [anchorByHole]);
+
   /**
    * Caddie session — the durable round brain (Postgres). Started once per
    * mount for ONLINE rounds; the sheet then uses the rich /session endpoints.
@@ -555,7 +579,7 @@ export default function RoundPage() {
   );
   // Legacy rounds have no stored anchor — fall back to the first available
   // hole tee coordinate so the wind tiles aren't permanently "no data".
-  const fallbackTee = mapCoords.find((c) => c.tee)?.tee ?? null;
+  const fallbackTee = anchoredCoords.find((c) => c.tee)?.tee ?? null;
   const weatherAnchor = roundAnchor ?? fallbackTee;
   const weatherLat = weatherAnchor?.lat;
   const weatherLng = weatherAnchor?.lng;
@@ -723,9 +747,9 @@ export default function RoundPage() {
       }).catch(() => {});
 
       try {
-        if (mapCoords.length > 0) {
+        if (anchoredCoords.length > 0) {
           const intel = await fetchCourseIntel(
-            mapCoords.map((c) => ({
+            anchoredCoords.map((c) => ({
               holeNumber: c.holeNumber,
               green: c.green,
               tee: c.tee,
@@ -783,7 +807,7 @@ export default function RoundPage() {
         // Silent — recommendations degrade gracefully without intel.
       }
     })();
-  }, [caddieSessionActive, mapCoordsLoaded, mapCoords, mappedCourse, round, roundId, applyWeather]);
+  }, [caddieSessionActive, mapCoordsLoaded, anchoredCoords, mappedCourse, round, roundId, applyWeather]);
 
   const hole = HOLES[currentHole - 1] ?? HOLES[0];
   // Prefer round's par data (authoritative); fall back to illustration constant.
@@ -1061,7 +1085,7 @@ export default function RoundPage() {
 
   // F/C/B for the tiles under the map: real from-tee distances when the course
   // has verified coords for this hole; the illustration-derived estimate otherwise.
-  const holeCoordsForTiles = mapCoords.find((c) => c.holeNumber === currentHole) ?? null;
+  const holeCoordsForTiles = anchoredCoords.find((c) => c.holeNumber === currentHole) ?? null;
 
   // Auto opening shot recommendation (specs/caddie-auto-shot-reco-plan.md):
   // resolves the golfer's live GPS distance-to-pin for the Ask Caddie
@@ -1116,17 +1140,41 @@ export default function RoundPage() {
         })()
       : false;
   const fcbLive = posOnHole && playerPos ? computeFCBDistances(playerPos, holeCoordsForTiles!) : null;
+  // Which stored tee box (if any) resolveTeeAnchor picked for this hole —
+  // drives the honest card-only fallback below (spec:
+  // multi-tee-anchor-reconciliation §fix.5). null on legacy/unmapped rounds.
+  const teeAnchor = anchorByHole.get(currentHole) ?? null;
+  const cardYards = round?.holes[currentHole - 1]?.yards ?? null;
+  // GPS override is untouched and still wins over the anchor (spec §fix.4) —
+  // resolveFcbSource returns "you" whenever fcbLive is present, regardless
+  // of the anchor's source; see lib/course/tee-anchor.test.ts for the
+  // explicit precedence assertions.
+  const fcbSource = resolveFcbSource(teeAnchor?.source ?? null, fcbLive != null);
+  const showCardOnly = fcbSource === "card";
   const fcb = fcbLive ?? fcbFromTee;
-  const fcbSource: "you" | "tee" = fcbLive ? "you" : "tee";
   const fcbCaption = fcbSourceCaption(fcbSource);
   // TODO(fcb §4.5): line-vs-card hint held pending designer sign-off on the
   // card-yardage source (`distance` here is a derived display value, not the
   // literal scorecard yardage — see specs/fcb-caption-visibility-plan.md §4.5).
-  const fcbTiles = [
-    { k: "Front", v: fcb?.front ?? distance - 12, color: "#a8553f" },
-    { k: "Center", v: fcb?.center ?? distance, color: T.ink },
-    { k: "Back", v: fcb?.back ?? distance + 14, color: "#5d7285" },
-  ];
+  const fcbTiles: { k: string; v: number | string; color: string }[] = showCardOnly
+    ? [
+        { k: "Front", v: "—", color: "#a8553f" },
+        { k: "Center", v: cardYards ?? "—", color: T.ink },
+        { k: "Back", v: "—", color: "#5d7285" },
+      ]
+    : [
+        { k: "Front", v: fcb?.front ?? distance - 12, color: "#a8553f" },
+        { k: "Center", v: fcb?.center ?? distance, color: T.ink },
+        { k: "Back", v: fcb?.back ?? distance + 14, color: "#5d7285" },
+      ];
+  // One reconciled header ladder (spec §fix.2/§fix.3): the scorecard yardage
+  // is authoritative when known; else the anchored tee→green geometry; the
+  // mock illustration number is the LAST resort, and only on the paper
+  // fallback (no mapped course / round anchor) — a mapped-course round must
+  // never fall back to the mock number (that's exactly this incident: a
+  // phantom 178/232 disagreement from two different sources).
+  const headerYards =
+    cardYards ?? fcbFromTee?.center ?? (mappedCourse || roundAnchor ? null : hole.yards);
   // Per-hole relative wind: same weather, different bearing per hole.
   const holeBearing = holeCoordsForTiles?.tee && holeCoordsForTiles?.green
     ? bearingDeg(holeCoordsForTiles.tee, holeCoordsForTiles.green)
@@ -1152,10 +1200,13 @@ export default function RoundPage() {
       }
     : { v: "—", sub: "elev" };
   // Plays-like: elevation-adjusted yards from intel when known, then wind on
-  // top; every label states exactly what was adjusted.
+  // top; every label states exactly what was adjusted. Card-only skips
+  // holeIntel entirely — it was computed from the same unusable geometry.
   const playsBase = fcbLive
     ? fcbLive.center // live rangefinder wins: plays-like from where they stand
-    : holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance);
+    : showCardOnly
+      ? (cardYards ?? distance)
+      : holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance);
   // specs/caddie-stale-hole-live-plan.md §3.10 — honest sub label: only claim
   // an elevation adjustment when playsBase actually came from holeIntel's
   // elevation-adjusted yards (the fcbLive branch above uses the raw live
@@ -1167,8 +1218,9 @@ export default function RoundPage() {
       : `${Math.round(playsBase)}Y`,
     sub: playsSubLabel({
       hasWind: holeWind != null,
-      hasElev: holeIntel != null,
+      hasElev: holeIntel != null && !showCardOnly,
       isLive: fcbLive != null,
+      fromCard: showCardOnly,
     }),
   };
   // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
@@ -1679,6 +1731,7 @@ export default function RoundPage() {
                 height={mapHeight}
                 teeMarker={teeMarker}
                 cameraTransition="cut"
+                teeOverrideByHole={teeOverrideByHole}
               />
 
               {/* Page-turn wipe — sweeps across in the swipe direction, the
@@ -1809,7 +1862,7 @@ export default function RoundPage() {
                       {String(currentHole).padStart(2, "0")}
                     </span>
                     <span>Par {holePar}</span>
-                    <span>{hole.yards}y</span>
+                    <span>{headerYards != null ? `${headerYards}y` : "—"}</span>
                     <span style={{ color: T.pencil }}>Hcp {hole.hcp}</span>
                   </div>
 
@@ -2290,12 +2343,12 @@ export default function RoundPage() {
         <GoogleSatelliteMap
           courseId={mappedCourse?.id ?? ""}
           courseName={round.courseName}
-          holeCoordinates={mapCoords}
+          holeCoordinates={anchoredCoords}
           currentHole={currentHole}
           onHoleChange={goHole}
           onClose={() => setMapZoom(false)}
           autoDetectHole={false}
-          centerOnly={mapCoords.length === 0}
+          centerOnly={anchoredCoords.length === 0}
           fallbackCenter={mapCenter ?? roundAnchor ?? undefined}
           teeMarker={teeMarker}
         />

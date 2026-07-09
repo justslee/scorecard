@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 import { fetchMappedCourse, mappedCourseToCoordinates } from "@/lib/courses/mapped-course-api";
 import { getCourseCoordinates } from "@/lib/course/course-coordinates";
+import { attachTeeBoxes } from "@/lib/course/tee-anchor";
 import type { CourseCoordinates } from "@/lib/golf-api";
 
 export interface HoleCoordinatesState {
@@ -43,7 +44,13 @@ export function useHoleCoordinates(courseId: string | null): HoleCoordinatesStat
           getCourseCoordinates(courseId),
         ]);
         if (cancelled) return;
-        const effective = coords.length > 0 ? coords : mappedCourseToCoordinates(course);
+        // golfapi-cache/mock coords carry no teeBoxes of their own — merge in
+        // the mapped course's stored tee-box polygons so multi-tee holes are
+        // still selectable (spec: multi-tee-anchor-reconciliation). The
+        // mappedCourseToCoordinates() branch already includes them.
+        const effective = coords.length > 0
+          ? attachTeeBoxes(coords, course)
+          : mappedCourseToCoordinates(course);
         setAllCoords(effective);
         if (course.location) setCourseCenter(course.location);
         setLoaded(true);

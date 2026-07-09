@@ -9283,3 +9283,42 @@ ONE builder implementing specs/multi-tee-anchor-reconciliation-plan.md on integr
 (commits + pushes there, NO per-item PR). On return: Fable reviewer (must FALSIFY tiles->~178
 not 232 against hole-3 5-tee data) + qa (gates strict) + designer (tile/caption/header strings
 user-facing). If green: update bundle PR #119 checklist. Rides bundle #119 (NOTICEABLE).
+
+## 2026-07-09 cycle 41 — multi-tee-anchor-reconciliation IMPLEMENTED, pushed to integration/next
+
+Built exactly per specs/multi-tee-anchor-reconciliation-plan.md. New pure module
+`frontend/src/lib/course/tee-anchor.ts`: `extractTeeBoxes` (all tee polygon centroids, not
+just [0]), `resolveTeeAnchor` (named-match -> card-nearest w/ 25% sanity bound + deterministic
+back-most tie rule -> single -> legacy), the par-aware >8%/1.08x reconciliation guard (par 3:
+|geo-card|/card>8%; par 4/5: only geo>card*1.08 so doglegs don't misfire), the honest
+`card-only` fallback (tee:null), `attachTeeBoxes`, `applyTeeAnchors`, and `resolveFcbSource`
+(GPS live fix always wins over the anchor — spec §fix.4, explicitly tested). `CourseCoordinates
+.teeBoxes?` added (golf-api.ts); `mappedCourseToCoordinates` now collects ALL tee centroids;
+`attachTeeBoxes` wired into both `use-hole-coordinates.ts` and `InlineHoleDiagram.tsx` (new
+`teeOverrideByHole` prop) so the mock/golfapi path still gets the 5 boxes.
+`RoundPageClient.tsx`: anchored coords applied ONCE via `applyTeeAnchors` useMemo, every
+`mapCoords` consumer replaced (tiles, fetchCourseIntel, fallbackTee/weather anchor, fullscreen
+map, inline map tee-override); header ladder = card -> anchored center -> mock `hole.yards`
+ONLY on paper fallback (stopped showing the mock number on mapped-course rounds); card-only
+tiles: Center=card, Front/Back="—", caption "from the card" (`fcb-labels.ts` new `"card"`
+FcbSource + `fromCard` playsSubLabel branch, never claims elev on unusable geometry);
+`DistancesCard` fcbTiles `v` widened to `number|string`. GPS override branch (~1088-1121)
+untouched. Backend: `osm.py` now preserves tee `ref`/`golf:name`/`name` tags on ingest
+(additive, no shape change — models.py already in sync).
+
+Tests: NEW `frontend/src/lib/course/tee-anchor.test.ts` — hole-3 fixture proves selected box
+174y for card 178/par3 -> `computeFCBDistances(anchor.tee,...).center` in [166,186], explicitly
+NOT the 232y back tee (26 tests: hole-3 proof, named-match-wins + guard re-anchor, tie rule,
+25% sanity bound, dogleg no-misfire (both directions), 3 honest-fallback cases, attachTeeBoxes
+x2, applyTeeAnchors x2, resolveFcbSource GPS-precedence x4). Extended `fcb-labels.test.ts`
++5 (no existing assertion touched/weakened). ALL gates green: lint clean, `tsc --noEmit`
+clean, `npm run test` 1808/1808 passed (48 in the 3 touched files), `npm run build` succeeded,
+`voice-tests --smoke` 274/274, backend `ruff check .` clean. Commit pushed to integration/next
+(see `git log -1` for SHA).
+
+## AWAITING
+Fable reviewer (must FALSIFY: run the hole-3 fixture logic and confirm 174y not 232y is
+selected; check the reconciliation guard's dogleg exemption isn't backwards) + qa (gates
+already green above — spot-check) + designer (new "from the card" caption + card-only tile
+"—" state against NORTHSTAR yardage-book feel). If green: update bundle PR #119 checklist.
+Rides bundle #119 (NOTICEABLE — fixes a real owner-reported prod bug).

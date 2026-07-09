@@ -28,10 +28,11 @@
  *   • HoleDiagram SVG — tap-to-measure, pinch-zoom, GPS dot, all unaffected.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import type { HoleData } from '@/lib/courses/types';
 import { fetchMappedCourse, mappedCourseToCoordinates } from '@/lib/courses/mapped-course-api';
 import { getCourseCoordinates } from '@/lib/course/course-coordinates';
+import { attachTeeBoxes } from '@/lib/course/tee-anchor';
 import { GPSWatcher, type Position } from '@/lib/gps';
 import { T } from '@/components/yardage/tokens';
 import { indexByHoleNumber } from '@/lib/hole-index';
@@ -138,6 +139,16 @@ interface InlineHoleDiagramProps {
   teeMarker?: string | null;
   /** Camera behavior on hole change — see GoogleSatelliteMapProps.cameraTransition. */
   cameraTransition?: "pan" | "cut";
+  /**
+   * Per-hole tee overrides (RoundPageClient's resolved tee anchor —
+   * lib/course/tee-anchor.ts applyTeeAnchors) — replaces the tee point on
+   * this component's own fetched coords before rendering, so the satellite
+   * map's colored tee marker sits on the player's actual tee instead of an
+   * arbitrary geometry pick (spec: multi-tee-anchor-reconciliation). A
+   * `null` value for a hole means the honest card-only fallback (no marker).
+   * Absent = unchanged (back-compat for callers without round context).
+   */
+  teeOverrideByHole?: ReadonlyMap<number, { lat: number; lng: number } | null>;
 }
 
 export default function InlineHoleDiagram({
@@ -147,6 +158,7 @@ export default function InlineHoleDiagram({
   height = 260,
   teeMarker = null,
   cameraTransition = "pan",
+  teeOverrideByHole,
 }: InlineHoleDiagramProps) {
   // Indexed course data — built once from the fetched CourseData.
   const [holeIndex, setHoleIndex] = useState<Map<number, HoleData>>(new Map());
@@ -193,8 +205,12 @@ export default function InlineHoleDiagram({
         // Prefer GolfAPI-verified coords; fall back to green/tee centroids derived
         // from the mapped OSM geometry so the satellite map still renders for
         // courses without GolfAPI data (e.g. any newly-mapped course) instead of
-        // dropping to the paper diagram.
-        const effectiveCoords = coords.length > 0 ? coords : mappedCourseToCoordinates(course);
+        // dropping to the paper diagram. golfapi/mock coords carry no teeBoxes
+        // of their own — merge in the mapped course's tee-box polygons so
+        // multi-tee holes are still selectable (spec: multi-tee-anchor-reconciliation).
+        const effectiveCoords = coords.length > 0
+          ? attachTeeBoxes(coords, course)
+          : mappedCourseToCoordinates(course);
 
         const ci = new Map<number, CourseCoordinates>();
         for (const c of effectiveCoords) ci.set(c.holeNumber, c);
@@ -232,6 +248,29 @@ export default function InlineHoleDiagram({
     return () => watcher.stop();
   }, []);
 
+  // ── Tee-anchor override (spec: multi-tee-anchor-reconciliation) ──────────
+  // RoundPageClient resolves each hole's actual player-selected tee (via
+  // applyTeeAnchors) from ITS OWN fetch of these same coords; this component
+  // self-fetches independently, so the resolved override is threaded down as
+  // a prop and merged onto the tee field here rather than re-resolved.
+  const effectiveAllCoords = useMemo(() => {
+    if (!teeOverrideByHole || teeOverrideByHole.size === 0) return allCoords;
+    return allCoords.map((c) => {
+      if (!teeOverrideByHole.has(c.holeNumber)) return c;
+      return { ...c, tee: teeOverrideByHole.get(c.holeNumber) ?? undefined };
+    });
+  }, [allCoords, teeOverrideByHole]);
+
+  const effectiveCoordsIndex = useMemo(() => {
+    if (!teeOverrideByHole || teeOverrideByHole.size === 0) return coordsIndex;
+    const idx = new Map(coordsIndex);
+    for (const [holeNumber, override] of teeOverrideByHole) {
+      const existing = idx.get(holeNumber);
+      if (existing) idx.set(holeNumber, { ...existing, tee: override ?? undefined });
+    }
+    return idx;
+  }, [coordsIndex, teeOverrideByHole]);
+
   // ── Renderer selection ────────────────────────────────────────────────────
   // Key changed from NEXT_PUBLIC_MAPBOX_TOKEN (Mapbox, retired) to
   // NEXT_PUBLIC_GOOGLE_MAPS_KEY (@capacitor/google-maps).
@@ -259,7 +298,7 @@ export default function InlineHoleDiagram({
         <GoogleSatelliteMap
           courseId={courseId ?? ""}
           courseName=""
-          holeCoordinates={hasHoleCoords ? allCoords : []}
+          holeCoordinates={hasHoleCoords ? effectiveAllCoords : []}
           currentHole={currentHole}
           onHoleChange={() => {
             // Round page controls the hole — ignore auto-detection updates.
@@ -289,7 +328,7 @@ export default function InlineHoleDiagram({
   const features = holeFeatures(holeData);
   if (features.length === 0) return null; // No geometry ingested for this hole.
 
-  const holeCoords = coordsIndex.get(currentHole) ?? null;
+  const holeCoords = effectiveCoordsIndex.get(currentHole) ?? null;
   const gpsForDiagram = gpsPos ? { lat: gpsPos.lat, lng: gpsPos.lng } : null;
 
   return (
