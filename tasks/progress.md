@@ -9585,11 +9585,19 @@ capability_store.py, router_provider.py, foreup_ny_seed.json, validate script,
 Creek). Local gates green: ruff clean, backend 1583/1583, frontend
 lint/tsc/vitest/build/voice-smoke all pass. Kill switch TEETIME_FOREUP_ENABLED.
 
-## AWAITING: reviewer + /security-review + qa + designer on d3f529d (in parallel).
-Verdicts SHIP + green → open the rolling bundle PR (integration/next → main),
-add S1 to the checklist (NOTICEABLE), then release-manager TestFlight + notify.
-BLOCKING → re-dispatch builder. If cycle dies here: next cycle reconciles from
-origin/integration/next @ 387e378, checks review verdicts, does NOT rebuild.
+Reviews ALL GREEN: reviewer SHIP (+/security-review clean), designer SHIP,
+QA PASS (incl. live Playwright: 18 Mile Creek 12:21PM $24 'Found' + deep-link).
+Designer item-1 polish folded in (3ce8bd5). Backlog: S1 done-on-bundle + 3
+fast-follows logged (2a8553b). Bundle PR **#120** OPENED (integration/next->main),
+head=2a8553bdc79f113c6cd1e6a5c34e574cf668115e. NOTICEABLE.
+
+## AWAITING: CI on PR #120 (STRICT gate = Frontend AND Backend both state:SUCCESS
+on head 2a8553bdc79f113c6cd1e6a5c34e574cf668115e; a CANCELLED/skipped required gate is NOT a pass — #118 lesson).
+When green → dispatch release-manager: build TestFlight from integration/next,
+PushNotification owner for approval (record on Notion board). Owner 'ship it' ->
+release-manager merges #120 -> main + cuts fresh integration/next.
+If cycle dies here: next cycle re-checks 'gh pr checks 120 --json bucket,state'
+pinned to head 2a8553bdc79f113c6cd1e6a5c34e574cf668115e; does NOT rebuild anything.
 
 ## 2026-07-09 — cycle 43 BUILDER DONE: teetime-s1-foreup implemented per plan
 
