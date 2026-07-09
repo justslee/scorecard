@@ -9533,3 +9533,20 @@ Per cycle directive: NO push notification, NO merge. Bundle #119 continues to aw
 single "ship it" (now carries TWO noticeable items, the multi-tee fix being a direct answer to his
 live hole-3 report). On ship-it: release-manager builds fresh TestFlight from integration/next +
 merges. AWAITING (this cycle): none — cycle complete.
+
+---
+
+## 2026-07-09 — SHIPPED: #119 honest tee-times + multi-tee anchor + green-slope reasoning
+
+Owner "ship it". Merge 2f85031 → main (STRICT gate: all 3 required gates
+state:SUCCESS — the #118 cancelled-gate loophole closed); deploy verified by
+SHA + health ok. TestFlight v1.0.966 (build 202607091224). Three noticeable,
+all Fable-reviewed: tee-time S0 (fake "Held" deleted, private filter, real
+tel: links); multi-tee anchor (Fable BLOCKED r1 — card-pick bypass + masked
+fixture); green-slope get_green_read (Fable PLAN caught the SPEC sign-
+inversion: uphill leave = the LOW/fall side). Twenty-three ships.
+LESSON: dispatching a new noticeable cycle while a bundle awaits ship-it
+moved the "ship it" target (branch advanced with unreviewed WIP) — held the
+merge until it cleared review. Pause noticeable cycles while awaiting the
+owner's ship-it.
+NEXT: tee-time S1 (foreUP); physics 2nd slice; bend; tree-CV.
