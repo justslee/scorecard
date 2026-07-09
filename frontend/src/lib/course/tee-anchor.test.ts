@@ -154,6 +154,26 @@ describe('named match', () => {
     expect(anchor.source).toBe('card');
     expect(anchor.tee).toEqual(cardNearest174.point);
   });
+
+  it('ambiguous named match (two boxes both substring-match "white", e.g. combo tees) falls through to card-nearest rather than guessing', () => {
+    const comboA = box(207, 'white/blue');
+    const comboB = box(174, 'white/gold');
+    const boxes = [box(232), comboA, comboB, box(159), box(136)];
+
+    const anchor = resolveTeeAnchor({
+      currentTee: null,
+      green: GREEN,
+      boxes,
+      teeName: 'white',
+      cardYards: 178,
+      par: 3,
+    });
+
+    // Not 'named' (2 matches) — falls to card-nearest, which correctly picks
+    // the 174y box (comboB) anyway since it's closest to the 178 card.
+    expect(anchor.source).toBe('card');
+    expect(anchor.tee).toEqual(comboB.point);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -181,11 +201,54 @@ describe('card-nearest tie rule', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. Sanity bound
+// 4. Sanity bound — card picks are par-aware guarded too (Fable BLOCKING fix)
+//
+// The first cut only gated a fresh card-nearest pick behind the blanket 25%
+// sanity bound, exempting it entirely from the tighter par-aware guard that
+// named/single/legacy picks get. That let a card pick disagree with the
+// header by up to ~25% — e.g. card 178 / boxes {136, 400} / par 3 used to
+// return `source: 'card'` with tiles Center = 136, because
+// |136-178|/178 = 23.6% ≤ 25% even though it's 15.6% outside the par-3 8%
+// tolerance. `cardPickValid` now applies the identical guard used for every
+// other selection path.
 // ---------------------------------------------------------------------------
 
-describe('sanity bound (25%)', () => {
-  it('card 250, only boxes 130 and 400 (best delta 32%) → card-only, never adopts an unrelated box', () => {
+describe('sanity bound (25%) + par-aware guard on card picks', () => {
+  it('card 178, only boxes 136 and 400, par 3 → card-only (the plan §2.4 fixture; blanket 25% alone would wrongly accept 136y: |136-178|/178 = 23.6% ≤ 25%)', () => {
+    const boxes = [box(136), box(400)];
+
+    const anchor = resolveTeeAnchor({
+      currentTee: null,
+      green: GREEN,
+      boxes,
+      teeName: null,
+      cardYards: 178,
+      par: 3,
+    });
+
+    expect(anchor.source).toBe('card-only');
+    expect(anchor.tee).toBeNull();
+    expect(anchor.cardYards).toBe(178);
+  });
+
+  it('card 178, single box 210, par 3 → card-only (18% gap — inside the old blanket 25% bound but outside the par-3 8% guard)', () => {
+    const boxes = [box(210)];
+
+    const anchor = resolveTeeAnchor({
+      currentTee: null,
+      green: GREEN,
+      boxes,
+      teeName: null,
+      cardYards: 178,
+      par: 3,
+    });
+
+    expect(anchor.source).toBe('card-only');
+    expect(anchor.tee).toBeNull();
+    expect(anchor.cardYards).toBe(178);
+  });
+
+  it('card 250, only boxes 130 and 400, par 4 (best delta 48% — over the blanket 25% bound too) → card-only, never adopts an unrelated box', () => {
     const boxes = [box(130), box(400)];
 
     const anchor = resolveTeeAnchor({
@@ -200,6 +263,44 @@ describe('sanity bound (25%)', () => {
     expect(anchor.source).toBe('card-only');
     expect(anchor.tee).toBeNull();
     expect(anchor.cardYards).toBe(250);
+  });
+
+  it('par 4/5 card pick: a legitimate dogleg (shorter than card, within 25% and not over-length) is still accepted as `card`', () => {
+    // card 548, box straight-line 470y (-14.2%) — same shape as the dogleg
+    // no-misfire fixtures below, but exercised through the card-nearest step
+    // itself (cardPickValid), not just the post-hoc reconciliation guard.
+    const boxes = [box(470), box(650)];
+
+    const anchor = resolveTeeAnchor({
+      currentTee: null,
+      green: GREEN,
+      boxes,
+      teeName: null,
+      cardYards: 548,
+      par: 5,
+    });
+
+    expect(anchor.source).toBe('card');
+    expect(anchor.tee).toEqual(boxes[0].point);
+  });
+
+  it('par 4 card pick: within the 25% sanity bound but LONGER than card by more than 8% → rejected (card-only), not adopted', () => {
+    // card 400, box 435 (+8.75%, within 25% but over the 1.08x over-length
+    // check) — proves the par-4/5 branch enforces both halves of
+    // cardPickValid, not just the blanket percentage.
+    const boxes = [box(435)];
+
+    const anchor = resolveTeeAnchor({
+      currentTee: null,
+      green: GREEN,
+      boxes,
+      teeName: null,
+      cardYards: 400,
+      par: 4,
+    });
+
+    expect(anchor.source).toBe('card-only');
+    expect(anchor.tee).toBeNull();
   });
 });
 

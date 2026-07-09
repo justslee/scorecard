@@ -154,6 +154,33 @@ function guardFails(
   return geo > cardYards * 1.08;
 }
 
+/**
+ * Whether a card-nearest pick is trustworthy enough to adopt as
+ * `source: 'card'` — the SAME par-aware tolerance as `guardFails` above
+ * (par 3: within 8%; par 4/5/unknown: within the 25% sanity bound AND not
+ * more than 8% longer than the card — doglegs are legitimately shorter than
+ * the card and must never be rejected for that).
+ *
+ * This closes a Fable BLOCKING finding on the first cut: a fresh card pick
+ * only had to clear the blanket 25% sanity bound, so e.g. card 178 / par 3
+ * could silently adopt a 136y box (23.6% ≤ 25%) — the same header-vs-tiles
+ * disagreement class as the prod bug, in the more dangerous understatement
+ * direction. A pick that fails this must fall through to the honest
+ * `card-only` state, never return a contradictory geometry number.
+ *
+ * Uses `pick.box.yardsToGreen` directly (not `guardFails`/`yardsDistance`
+ * against a `green` point) — that field is already the authoritative
+ * tee→green distance regardless of whether a `green` point was supplied to
+ * `resolveTeeAnchor` for this call.
+ */
+function cardPickValid(pick: CardPick | null, cardYards: number, par: number | null): boolean {
+  if (!pick) return false;
+  if (par === 3) {
+    return pick.deltaFrac <= 0.08;
+  }
+  return pick.deltaFrac <= 0.25 && pick.box.yardsToGreen <= cardYards * 1.08;
+}
+
 // ── Core selection ───────────────────────────────────────────────────────────
 
 /**
@@ -163,18 +190,23 @@ function guardFails(
  * Selection order (spec §fix.1):
  *   1. Named match — exactly one box's name matches `teeName`.
  *   2. Card-nearest — box whose yardsToGreen is closest to `cardYards`,
- *      rejected outright if the closest candidate is still >25% off (a
- *      178y card must not silently adopt an unrelated 136y box).
+ *      accepted only if it ALSO passes the same par-aware reconciliation
+ *      guard as steps 1/3/4 below (see `cardPickValid`): par 3 within 8%;
+ *      par 4/5/unknown within the 25% sanity bound AND not more than 8%
+ *      longer than the card. A 178y par-3 card must not adopt a 136y box
+ *      just because it happens to clear a blanket 25% bound. A pick that
+ *      fails falls straight through to the honest `card-only` state.
  *   3. Single box — exactly one box exists and there's no card/name signal
  *      to prefer otherwise.
  *   4. Legacy — nothing to choose with; keep the incoming `currentTee`.
  *
- * After steps 1/3/4 (NOT a fresh card pick, which is already the
- * reconciliation target), the par-aware >8%/1.08x reconciliation guard
- * (spec §fix.3) checks the result against `cardYards`. A guard failure
- * re-runs the card-nearest step; if that also fails (or there are no boxes
- * at all), the result is the honest `card-only` fallback — `tee: null` —
- * rather than a contradictory geometry number (spec §fix.5).
+ * After steps 1/3/4 (NOT a fresh card pick, which is already validated
+ * against the identical guard in step 2), the par-aware >8%/1.08x
+ * reconciliation guard (spec §fix.3) checks the result against `cardYards`.
+ * A guard failure re-runs the card-nearest step; if that also fails (or
+ * there are no boxes at all), the result is the honest `card-only`
+ * fallback — `tee: null` — rather than a contradictory geometry number
+ * (spec §fix.5).
  *
  * Pure function — no side-effects, no DOM, headless-testable.
  */
@@ -190,12 +222,16 @@ export function resolveTeeAnchor(opts: {
 
   const cardPick =
     cardYards != null && boxes.length > 0 ? nearestByCard(boxes, cardYards) : null;
-  const cardValid = cardPick != null && cardPick.deltaFrac <= 0.25;
+  const cardValid = cardYards != null && cardPickValid(cardPick, cardYards, par);
 
   let tee: { lat: number; lng: number } | null = null;
   let source: TeeAnchorSource | null = null;
 
-  // 1. Named match.
+  // 1. Named match. Requires EXACTLY one match — an ambiguous match (e.g. two
+  // combo-tee boxes like "White/Blue" and "White/Gold" both substring-match
+  // "white") intentionally falls through to card-nearest rather than
+  // guessing between them (non-blocking known limitation; see
+  // tee-anchor.test.ts "ambiguous named match").
   if (teeName) {
     const matches = boxes.filter((b) => b.name != null && namesMatch(b.name, teeName));
     if (matches.length === 1) {
@@ -219,8 +255,9 @@ export function resolveTeeAnchor(opts: {
   // 4. Legacy / honest fallback.
   if (!tee) {
     if (cardYards != null && boxes.length > 0 && !cardValid) {
-      // A card number exists but nothing satisfies the sanity bound —
-      // honest fallback, never silently keep a contradicting legacy point.
+      // A card number exists but nothing satisfies the par-aware guard
+      // (cardPickValid) — honest fallback, never silently keep a
+      // contradicting legacy point.
       return { tee: null, source: 'card-only', cardYards };
     }
     tee = currentTee;
@@ -228,7 +265,8 @@ export function resolveTeeAnchor(opts: {
   }
 
   // Reconciliation guard — applies to named / single / legacy picks. A fresh
-  // 'card' pick is already the reconciliation target, so it's exempt.
+  // 'card' pick already passed the identical par-aware guard (cardValid /
+  // cardPickValid above), so it's exempt from re-checking here.
   if (source !== 'card' && tee && green && cardYards != null) {
     if (guardFails(tee, green, cardYards, par)) {
       if (cardValid) {
