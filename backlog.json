@@ -3,6 +3,16 @@
   "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "caddie-surface-osm-trees",
+      "title": "Surface existing OSM trees/woods to the caddie (the tree-spike GO)",
+      "type": "major",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "TREE SPIKE VERDICT (specs/tree-detection-cv-findings.md): satellite-CV canopy detection DISPROVEN on real Bethpage (tree canopy is LESS green than fairway; bunker-edge false positives) \u2014 NO-GO. But OSM ALREADY has ~43-63 tree nodes + woods polygons per Bethpage hole that the app ALREADY ingests and currently ignores. GO: gate those into hole features as 'tree'/'woods' type \u2192 the caddie answers 'how far to clear the trees' via the existing hazard/carry path (tree line carry along the tee->green line, like hazards). ~small change, NO ML, NO satellite CV, NO training. Honest 'trees not mapped here' fallback where OSM coverage is sparse. Pretrained DeepForest (no training) held in reserve only if OSM coverage proves inadequate on other courses. Fable plan; reuse the polyline/hazard carry frame."
+    },
+    {
       "id": "voice-target-speaker-enrollment-spike",
       "title": "Spike: target-speaker filtering (voice enrollment + on-device TSVAD)",
       "type": "major",
