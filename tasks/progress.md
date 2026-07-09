@@ -30,13 +30,33 @@ sign-flip class). Deviation cross SELECTS the vertex; turn cross gives direction
 tool (not folded into get_carries), additive HoleBend on HoleIntelligence, tee-anchored via the
 same _derive_tee_green path as hazards, 15y straight threshold, honest None on no-polyline.
 
-## AWAITING: builder implementing specs/caddie-bend-distance-plan.md on integration/next
-Dispatched ONE builder to implement the plan on integration/next (commit+push, NO per-item PR).
-On builder DONE: review the item — reviewer (Fable falsifier: turn-cross direction + bearing
-sweep must go RED on a sign flip), qa (backend ruff + the named pytest suites; frontend
-lint/tsc/build/voice-smoke), designer NOT needed (tool-only, no UI renders). Then update PR
-#121 checklist (+ caddie-bend-distance NOTICEABLE), progress.md. Do NOT ship — owner said keep
-bundling #121. If builder reports "waiting on CI" it has already pushed — pin CI to its head.
+## DONE: caddie-bend-distance implemented + pushed to integration/next (dee66d8)
+Builder implemented specs/caddie-bend-distance-plan.md in full, exactly to plan (no deviations).
+Pushed commit dee66d8 on integration/next (head was 9e0d396, ff-only, no per-item PR).
+
+What shipped: `extract_hole_bend()` in `backend/app/caddie/hazards.py` (turn-cross direction,
+NOT chord-deviation sign — the crux), `HoleBend` type (additive on `HoleIntelligence`), new
+`get_bend` tool (registry first-sorted, `bend_payload` honest unmapped-vs-straight matrix,
+`resolve_tool` branch, `GET /session/{round_id}/bend` route), grounding in all three prompt
+builders + `BEND_GROUNDING_RULE`, two golden eval scenarios (dogleg-left + straight-hole),
+frontend mirrors (`types.ts`, `api.ts::getSessionBend`, `realtime.ts::dispatchTool` case). No UI.
+
+Teeth verified directly: mutated `direction = "left" if turn > 0 else "right"` to the naive
+`best_dev > 0` (deviation-sign) form and reran — 11 of the new `TestExtractHoleBend` cases +
+the `bend-dogleg-cites-geometry` eval scenario went RED (turn-cross confirmed load-bearing).
+Real Bethpage-4 OSM fixture locks `direction == "left"` (`TestHole4BendRegression`).
+
+Gates green: `ruff check .` clean; targeted suite (test_hazards/test_caddie_tools/
+test_realtime_tools/test_realtime_grounding/test_bethpage_validation/tests/eval) 235 passed;
+full non-DB backend suite 1624 passed (also updated test_caddie_caching.py's pinned legacy-
+template guard with the new rule placeholder — same pattern as prior additive rules, not a
+plan file but necessary maintenance); frontend lint/tsc/vitest(1836)/build/voice-smoke(274)
+all green. DB-backed `tests/integration/*` not run locally (no local Postgres per policy) —
+trust CI; those two files construct `HoleIntelligence` without `bend` (additive default None,
+should pass unchanged).
+
+NEXT: eng-lead review (reviewer/qa/designer-not-needed per dispatch note above), then update
+PR #121 checklist (+ caddie-bend-distance NOTICEABLE). Do NOT ship — owner said keep bundling.
 
 ## 2026-07-09 cycle 42 — PICK: caddie-green-slope-spatial (NOTICEABLE, rides bundle #119)
 
