@@ -8951,3 +8951,11 @@ Only caddie-tool-loop-parity + caddie-advice-eval-harness remain done-on-bundle
 (screenshot-gated); glasses-shot-tracking-spike stays tabled (owner).
 
 Classification: SILENT (docs/backlog) — rides bundle #117. No owner ping.
+
+## AWAITING (cycle 38, 2026-07-09) — fcb-caption-proximity build
+Plan written: specs/fcb-caption-proximity-plan.md (opus). Builder dispatched to
+implement on integration/next: extract pure DistancesCard component, re-anchor
+F/C/B caption directly above the tile row, add safe-area bottom clearance to the
+card wrapper, + jsdom render test for DOM adjacency/clearance. SILENT rider on
+bundle PR #117. Resume: check builder commit on integration/next, then run
+reviewer + qa + designer; screenshot validation deferred to owner's next build.
