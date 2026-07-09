@@ -9211,11 +9211,11 @@ Gates (all green, evidence below) — no deviation from the plan beyond the giti
 above (which is infra-necessary, not a spec change).
 
 ## AWAITING
-Reviewer + QA + Designer on tee-time S0 at HEAD 265d803 (integration/next). Reviewer = no-fake-
-data honesty + private_filter correctness (normalize/is_private, no substring FP) + the two
-slot.time=="" render gates. QA = gates pinned to 265d803 (backend non-DB pytest, frontend
-lint/tsc/vitest/build/voice-smoke; DB integration runs in CI). Designer = tee-time copy
-(route-driven Found/Call/Book-on-site, honest empty) vs NORTHSTAR calm/honest yardage-book.
-BLOCKING -> re-dispatch builder; all green -> open rolling bundle PR (integration/next->main),
-then release-manager (NOTICEABLE) + owner ping. Builder pushed 3d3db52+265d803, local gates all
-green; .gitignore exception added so private_clubs.json is tracked (verified).
+Builder (round 2) fixing designer BLOCKERS on tee-time S0 at 3d3db52 (integration/next).
+Reviewer=CLEAN(ship), QA=GREEN(aec8764). Designer 4 fixes: (1) Confirmed Kicker renders raw
+enum "LOOPER · NEEDS_HUMAN" -> use stampWord; (2) log line "Booking needs_human:" leaks enum
+-> use result.message; (3) "call" route CTA is a dead-end button, no phone in pipeline -> thread
+nationalPhoneNumber through Places->slot.phone->tel: link (or drop the inert button); (4) tone:
+"Provider unavailable"/"Contacting provider" -> golfer-voice. On return: re-run designer +
+gates -> if green open rolling bundle PR (integration/next->main) + release-manager (NOTICEABLE)
++ owner ping. NOTE: verify MY PR gates green per ship-gate-verification memory before ship.
