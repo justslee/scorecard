@@ -913,7 +913,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
       // it up" stays honest without overclaiming a reservation we haven't made.
       const bestLine = best.route
         ? `${best.courseName} — closest match. Pulling up how to book.`
-        : `${best.courseName} ${best.time} — ${best.players} open. Setting it up.`;
+        : `${best.courseName} ${formatTime12h(best.time)} — ${best.players} open. Setting it up.`;
       append({ t: nowStr(), text: bestLine, state: "ok", course: best.courseName });
 
       let result: BookingResult;
