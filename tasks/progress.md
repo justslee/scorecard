@@ -3,6 +3,33 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — builder: F/C/B caption visibility (frontend-only, NOTICEABLE, integration/next b4a66ac, DONE)
+
+Implemented `specs/fcb-caption-visibility-plan.md` §4.1-4.4 + the full pure helper
+module + tests (§3, §5) exactly. The round-map F/C/B source caption ("from where you
+stand" / "from the tee") was still hidden under the floating Ask-caddie/Enter-score pill
+bar even after last cycle's move above the tile row — the whole distances card sits at
+the bottom of the viewport. Moved it to a thin right-aligned header row at the TOP of
+the card (removed the old block, exactly one caption now). Also renamed the PLAYS
+tile's bare `"adjusted"` sub label to `"wind+elev"` so it truthfully names what was
+adjusted.
+
+New `frontend/src/lib/caddie/fcb-labels.ts` (mirrors `plays-like.ts`'s pattern) extracts
+`fcbSourceCaption`, `playsSubLabel`, and `lineVsCardHint` as pure, unit-tested functions
+(18 new tests, all green). The collapsed `playsTile` ternary in `RoundPageClient.tsx` is
+behavior-identical to the pre-refactor code — verified branch-by-branch.
+
+**Held per plan §4.5:** `lineVsCardHint` (the dogleg line-vs-card hint) ships as a
+tested pure helper but is NOT wired into the render this cycle — the `distance` value it
+would compare against is a derived display value, not the literal scorecard yardage, so
+the designer needs to confirm the right comparison before it ships. TODO left at the
+`fcbTiles` derivation in `RoundPageClient.tsx`.
+
+Gates: lint clean, `tsc --noEmit` clean, new `fcb-labels.test.ts` 18/18, full vitest
+suite 84 files / 1734 tests (no regressions), `next build` succeeds, voice-tests smoke
+274/274. Grep-verified exactly one live source of the caption strings (the new pure
+module) and zero remaining `"adjusted"` in `RoundPageClient.tsx`.
+
 ## 2026-07-08 — builder: hazard-side-flip fix (backend-only, NOTICEABLE, integration/next d9eda1c, DONE)
 
 Implemented `specs/hazard-side-flip-plan.md` exactly (P0, owner-reported: Bethpage
