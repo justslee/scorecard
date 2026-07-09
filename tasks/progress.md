@@ -3,6 +3,40 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — builder: caddie-advice-eval-harness landed on the bundle (SILENT, backend-only, DONE)
+
+Implemented `specs/caddie-advice-eval-plan.md` exactly — a two-tier golden-set eval for caddie
+advice quality (caddie-excellence-audit area G, grade D: "unfalsifiable quality"). New dir
+`backend/tests/eval/`: `schema.py` (pydantic Scenario/Situation/Expected, CLOSED check-name
+registry — unknown check name = load-time ValidationError), `checks.py` (`TIER1_CHECKS`/
+`TIER2_DETERMINISTIC` registries, pure), `golden/caddie_advice.jsonl` (25 scenarios — the 5
+required incident seeds + 20 more across the §4/§9 mix: dogleg L/R classification, guide
+accept/reject × {invented type, side-flip, plural, injection, opposition-phrasing, center-hazard},
+honest-empty, plays-like up/down, wind, chatty question, 5 club-selection yardages, reach
+filtering — short of the 30-50 target, noted below), `test_golden_tier1.py` (parametrized
+pytest, all offline, no DB/network/key), `test_harness_has_teeth.py` (the #1 deliverable: mutant
+tests proving every check family goes RED — internal mutants, no source edits), `run_tier2.py`
+(on-demand live runner, double-gated on `ANTHROPIC_API_KEY`+`CADDIE_EVAL_LIVE=1`, judge≠candidate
+enforced, budget cap with projection-abort, injection-safe judge prompt), `README.md`.
+
+Manual mutation drill performed once (plan §7, mandatory): stripped `{OBSERVED_REALITY_RULE}`
+from `_build_session_voice_prompt`'s `stable_text` in `routes/caddie.py`, ran
+`uv run pytest tests/eval -x` → RED (`prompt_contains_rule: OBSERVED_REALITY_RULE missing from
+mouth(s): ['text']`), reverted via `git checkout -- app/routes/caddie.py` (confirmed clean diff
+after). Gates: `ruff check .` clean; `pytest tests/eval` → 46 passed, no Postgres/no API key
+needed; full `pytest` → 1327 passed, 82 skipped (DB integration tests, unchanged, CI-only);
+`pytest --collect-only -q tests/eval` confirms `run_tier2.py` is NOT collected; `CADDIE_EVAL_LIVE=1
+uv run python -m tests.eval.run_tier2` with no key → clean exit 2. Tier 2 never run live (no key
+in this environment, by design — it's on-demand and costs money).
+
+Deviation from plan, noted plainly: landed **25 scenarios**, not the 30-50 the plan targeted —
+prioritized correctness (every scenario's Tier-1 checks verified against the real functions
+before being written, see commit) and the teeth proof over raw count, given effort budget.
+`README.md` documents "every new caddie incident MUST land as a scenario in the same PR as its
+fix" so the set grows from here. Everything else implemented as specified; no scope changes.
+Silent (no user-visible surface — eval-internal only; `specs/caddie-advice-eval-plan.md` §3
+confirmed no `types.ts`/`models.py` touch, none made).
+
 ## 2026-07-08 — builder: hazard side-flip REWORK per adversarial review (backend-only, rides the NOTICEABLE bundle, DONE)
 
 Reworked d9eda1c per the Fable review's two BLOCKING findings (review text at the bottom
