@@ -32,6 +32,21 @@ tool. If a tool reports data as unavailable, say so plainly — never invent a n
 Stay in character at all times. Reference prior shots and prior rounds when it sharpens the advice.
 """
 
+# Epistemic-humility rule (hazard-side-flip incident, 2026-07-06): the caddie
+# "gaslit" the owner by insisting a mirrored/stale side reading was correct
+# over what he could see standing on the tee. Shared by BOTH mouths — the
+# realtime prompt (appended below) and the text mouth's stable_text
+# (routes/caddie.py) — so wording never drifts between them.
+OBSERVED_REALITY_RULE = (
+    "The player can see the hole and you cannot. When they contradict the data "
+    "on something they can directly observe — which side a hazard is on, what's "
+    "visible, where the pin looks — defer to their eyes, plainly and without "
+    "argument (\"You're looking at it — trust your eyes; my map may have it "
+    "mirrored\"). Correct the read, don't defend it. Stay blunt about GOLF — club, "
+    "strategy, commitment — but never insist the player is wrong about something "
+    "in front of them."
+)
+
 
 def build_realtime_instructions(
     personality: CaddiePersonality,
@@ -58,7 +73,10 @@ def build_realtime_instructions(
     if history_block:
         parts.append("# Earlier this round (recent conversation)\n" + history_block)
 
-    parts.append("# Behavior\n" + _BASE_BEHAVIOR.strip() + "\n" + HAZARD_GROUNDING_RULE)
+    parts.append(
+        "# Behavior\n" + _BASE_BEHAVIOR.strip() + "\n" + HAZARD_GROUNDING_RULE
+        + "\n" + OBSERVED_REALITY_RULE
+    )
 
     return "\n\n".join(parts)
 

@@ -1,7 +1,6 @@
 """Course intelligence engine - builds per-hole analysis from data sources."""
 
 import logging
-import math
 from typing import Optional
 from app.caddie.types import (
     HoleIntelligence,
@@ -31,7 +30,6 @@ async def build_hole_intelligence(
     par: Optional[int] = 4,
     yards: Optional[int] = 400,
     handicap_rating: Optional[int] = 9,
-    osm_features: Optional[dict] = None,
     persisted_elevation: Optional[dict] = None,
     course_id: Optional[str] = None,
     persisted_guide: Optional[dict] = None,
@@ -43,7 +41,6 @@ async def build_hole_intelligence(
         par: Hole par
         yards: Hole yardage
         handicap_rating: Hole handicap index
-        osm_features: Nearby OSM features (bunkers, water, etc.)
         persisted_elevation: The stored green feature's `properties` dict, when
             available — carries `tee_elevation_ft`/`green_elevation_ft`/
             `delta_ft`/`green_slope` persisted by a prior compute (this
@@ -171,18 +168,19 @@ async def build_hole_intelligence(
     # Effective distance adjusted for elevation
     effective_yards = None if yards is None else yards + round(elevation_change / 3)
 
-    # Classify hazards from OSM features. DEFENSIVE: a single malformed OSM
-    # feature must never destroy the whole hole's intel — the computed
-    # elevation/effective yards above are more valuable than the hazard list
-    # (owner's 2026-07-07 round: a hazard-block exception per hole surfaced
-    # as elevation '0ft' on every tile because the route's per-hole catch
-    # discarded everything).
+    # Hazards: this function no longer classifies them at all. The OSM-derived
+    # classifier that used to live here (`_classify_osm_hazards`/
+    # `_classify_side`) computed side with no cos(lat) longitude scaling and
+    # measured bearing FROM THE GREEN instead of the tee->green travel
+    # direction — it silently mislabeled sides (hazard-side-flip incident,
+    # 2026-07-08) and has been deleted rather than fixed, so there is exactly
+    # ONE hazard-geometry path in the app: `hazards.extract_hole_hazards`,
+    # which the caller (routes/caddie.py) applies on top of this function's
+    # result when the round resolves to a curated, stored-geometry course.
+    # An unmapped course now honestly reports no hazards — never a guessed
+    # side — which triggers HAZARD_GROUNDING_RULE's generic-language
+    # fallback in the caddie prompt ([[no-fake-data-fallbacks]]).
     hazards: list[Hazard] = []
-    try:
-        hazards = _classify_osm_hazards(osm_features, green, tee)
-    except Exception:  # noqa: BLE001 — hazards are best-effort by design
-        log.warning("hazard classification failed; continuing without", exc_info=True)
-        hazards = []
 
     # Strategy guide — read-through of the offline-researched, grounding-
     # validated blob cached forever in the green feature's JSONB. Best-effort
@@ -210,58 +208,6 @@ async def build_hole_intelligence(
         hazards=hazards,
         strategy_guide=strategy_guide,
     )
-
-
-def _classify_osm_hazards(osm_features, green, tee) -> list[Hazard]:
-    """Bunker/water hazards from raw OSM features, classified vs the green.
-    Callers wrap this — one malformed feature must never sink a hole's intel."""
-    hazards: list[Hazard] = []
-    if not osm_features or not green:
-        return hazards
-
-    def _valid(pt) -> bool:
-        # Malformed OSM centers must be SKIPPED, not classified: missing keys
-        # once produced a 'bunker at 9,429,088 yards' via .get() defaults.
-        return (
-            isinstance(pt, dict)
-            and isinstance(pt.get("lat"), (int, float))
-            and isinstance(pt.get("lng"), (int, float))
-        )
-
-    # Process bunkers
-    for bunker in osm_features.get("bunkers", []):
-        center = bunker.get("center", {})
-        if not _valid(center):
-            continue
-        dist = _distance_yards(center, green)
-        side = _classify_side(center, green, tee)
-        severity = "moderate" if dist < 10 else "mild"
-        hazards.append(Hazard(
-            type="bunker",
-            side=side,
-            distance_from_green=round(dist),
-            penalty_severity=severity,
-            lat=center.get("lat"),
-            lng=center.get("lng"),
-        ))
-    # Process water
-    for water in osm_features.get("water", []):
-        center = water.get("center", {})
-        if not _valid(center):
-            continue
-        dist = _distance_yards(center, green)
-        if dist > 100:
-            continue  # too far to be relevant
-        side = _classify_side(center, green, tee)
-        hazards.append(Hazard(
-            type="water",
-            side=side,
-            distance_from_green=round(dist),
-            penalty_severity="death",
-            lat=center.get("lat"),
-            lng=center.get("lng"),
-        ))
-    return hazards
 
 
 async def build_weather_conditions(
@@ -304,53 +250,3 @@ async def build_weather_conditions(
         air_density_factor=round(density, 4),
         conditions=conditions,
     )
-
-
-def _distance_yards(p1: dict, p2: dict) -> float:
-    """Approximate distance between two lat/lng points in yards."""
-    lat1, lng1 = math.radians(p1.get("lat", 0)), math.radians(p1.get("lng", 0))
-    lat2, lng2 = math.radians(p2.get("lat", 0)), math.radians(p2.get("lng", 0))
-
-    dlat = lat2 - lat1
-    dlng = lng2 - lng1
-
-    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlng / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    meters = 6371000 * c
-    return meters * 1.09361  # meters to yards
-
-
-def _classify_side(
-    feature: dict,
-    green: dict,
-    tee: Optional[dict],
-) -> str:
-    """Classify which side of the green a feature is on (left/right/front/back)."""
-    if not tee:
-        return "center"
-
-    # Vector from tee to green (the "hole direction")
-    hole_bearing = math.atan2(
-        green.get("lng", 0) - tee.get("lng", 0),
-        green.get("lat", 0) - tee.get("lat", 0),
-    )
-
-    # Vector from green to feature
-    feature_bearing = math.atan2(
-        feature.get("lng", 0) - green.get("lng", 0),
-        feature.get("lat", 0) - green.get("lat", 0),
-    )
-
-    # Angle difference
-    angle_diff = math.degrees(feature_bearing - hole_bearing) % 360
-
-    # Classify
-    if angle_diff < 45 or angle_diff > 315:
-        return "back"
-    elif 45 <= angle_diff < 135:
-        return "right"
-    elif 135 <= angle_diff < 225:
-        return "front"
-    else:
-        return "left"

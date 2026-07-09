@@ -337,6 +337,111 @@ _MAX_FIELD_CHARS = 240
 _MAX_MISTAKES = 3
 
 
+# ── Side-flip validation (hazard-side-flip incident, 2026-07-08) ────────────
+#
+# Type-only grounding (rule 2 below) does not catch a writer that names the
+# RIGHT hazard type but the WRONG side of it — this was the actual
+# owner-facing incident: Bethpage hole 4's cached guide named "right-side
+# bunkers" when our own surveyed geometry has the bunker complex on the
+# LEFT. This extends the same fail-closed pass to side claims, using a small
+# co-occurrence window rather than counting left/right globally (a guide can
+# legitimately mention "left" and "right" in one sentence for two DIFFERENT,
+# correctly-placed hazards — see "bunker left, water right").
+
+_SIDE_PATTERN = re.compile(r"\b(left|right)\b")
+_SIDE_WINDOW_WORDS = 6
+
+# A side word separated from the hazard keyword by an opposition phrase
+# ("miss right, AWAY FROM the [left] bunker") describes the MISS/target
+# direction, not the hazard's own location — the two are opposite by
+# construction, so that pairing must never be checked against geometry
+# (a real, pre-existing guide shape: "Best miss is right, away from the
+# bunker" for a LEFT bunker is correct golf advice, not a side-flip).
+_SIDE_OPPOSITION_PATTERN = re.compile(r"\b(?:away from|away|avoid|clear of)\b")
+
+
+def _acceptable_sides(canonical_type: str, sides_by_type: dict[str, set[str]]) -> set[str]:
+    """Sides that do NOT contradict a hazard type's real geometry: its actual
+    surveyed side(s), plus BOTH left and right when the type includes a
+    genuinely-on-line ("center", within the 10y lateral deadband) hazard — an
+    on-line hazard reasonably supports describing play toward either side."""
+    sides = sides_by_type.get(canonical_type, set())
+    return sides | ({"left", "right"} if "center" in sides else set())
+
+
+def _has_side_flip(text_fields: list[str], sides_by_type: dict[str, set[str]]) -> bool:
+    """True if any text field claims a left/right side for a geometry-present
+    hazard type that contradicts that type's real, surveyed side(s).
+
+    Anchored on each hazard-keyword occurrence — only for types actually
+    present in `sides_by_type`; a type absent from the hole's geometry is
+    already caught by the type-only scan in `validate_guide` and is never
+    side-checked here. For each occurrence, looks at the single NEAREST
+    left/right word within a `_SIDE_WINDOW_WORDS`-word window (ties broken
+    toward the word immediately following the keyword — natural phrasing
+    puts the side descriptor right after the hazard name, e.g. "bunker left,
+    water right", which is how two different, correctly-placed hazards in
+    one sentence are told apart). A hazard keyword with no side word in its
+    window is ignored (a bare hazard mention with no side claim passes); a
+    field with no hazard keyword at all is ignored (pure bail-out language,
+    "trouble left, keep it right-center", passes); a side word separated
+    from the hazard keyword by an opposition phrase ("away from", "avoid",
+    "clear of") describes the miss direction, not the hazard's location, and
+    is excluded from consideration (see `_SIDE_OPPOSITION_PATTERN`).
+    """
+    for field_text in text_fields:
+        lowered = (field_text or "").lower()
+        tokens = list(re.finditer(r"\S+", lowered))
+        if not tokens:
+            continue
+
+        def _word_idx(char_pos: int, _tokens=tokens) -> int:
+            for i, tok in enumerate(_tokens):
+                if tok.start() <= char_pos < tok.end():
+                    return i
+            return -1
+
+        side_hits = [
+            (_word_idx(m.start()), m.group(1), m.start(), m.end())
+            for m in _SIDE_PATTERN.finditer(lowered)
+        ]
+        if not side_hits:
+            continue
+
+        for canonical_type in sides_by_type:
+            pattern = _HAZARD_PATTERNS.get(canonical_type)
+            if pattern is None:
+                continue
+            for hz_match in pattern.finditer(lowered):
+                hz_idx = _word_idx(hz_match.start())
+                hz_start, hz_end = hz_match.start(), hz_match.end()
+
+                candidates: list[tuple[int, str]] = []
+                for idx, side, s_start, s_end in side_hits:
+                    if abs(idx - hz_idx) > _SIDE_WINDOW_WORDS:
+                        continue
+                    if hz_end <= s_start:
+                        between = lowered[hz_end:s_start]
+                    elif s_end <= hz_start:
+                        between = lowered[s_end:hz_start]
+                    else:
+                        between = ""  # overlapping spans, no text between
+                    if _SIDE_OPPOSITION_PATTERN.search(between):
+                        continue
+                    candidates.append((idx, side))
+
+                if not candidates:
+                    continue
+                # Nearest by absolute word distance; ties prefer the side
+                # word AFTER the hazard keyword (idx >= hz_idx sorts first).
+                _, nearest_side = min(
+                    candidates, key=lambda hit: (abs(hit[0] - hz_idx), hit[0] < hz_idx)
+                )
+                if nearest_side not in _acceptable_sides(canonical_type, sides_by_type):
+                    return True
+    return False
+
+
 def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[HoleStrategyGuide]:
     """Deterministic, no-LLM, fail-CLOSED grounding pass (§8). BOTH a
     correctness control and the primary anti-hallucination / prompt-injection
@@ -358,6 +463,19 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
     5. Structural failures also REJECT: empty `play_line` after strip; any of
        `play_line`/`miss_side`/`green_notes` over 240 chars; more than 3
        `common_mistakes`.
+    6. SIDE grounding (hazard-side-flip incident, `_has_side_flip`): for a
+       hazard type that IS present in the geometry, the claimed left/right
+       side (co-occurring within `_SIDE_WINDOW_WORDS` words of the hazard
+       keyword) must match the type's real surveyed `line_side` — a
+       type-correct but side-flipped claim ("right-side bunkers" when our
+       geometry has them on the left) -> REJECT, same as an invented type.
+       A hazard whose real side is "center" (on-line) accepts either lateral
+       claim. A side word separated from the hazard keyword by an opposition
+       phrase ("away from", "avoid", "clear of") describes the MISS
+       direction, not the hazard's location, and is never checked (a "best
+       miss is right, away from the [left] bunker" style guide is correct
+       golf advice, not a side-flip). Runs after the type scan (2/3) so an
+       already-wrong type is still rejected the same way it always was.
 
     Returns `guide` unchanged on PASS, `None` on REJECT — the caller omits
     (no write, no placeholder; [[no-fake-data-fallbacks]]).
@@ -370,6 +488,12 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
         for canonical_type, pattern in _HAZARD_PATTERNS.items():
             if canonical_type not in allowed_types and pattern.search(lowered):
                 return None
+
+    sides_by_type: dict[str, set[str]] = {}
+    for hz in hazards:
+        sides_by_type.setdefault(hz.type, set()).add(hz.line_side)
+    if _has_side_flip(text_fields, sides_by_type):
+        return None
 
     # Defense-in-depth (security review): researched text is DATA — a field
     # that reads like an instruction, meta-prompt, or link is not golf advice.

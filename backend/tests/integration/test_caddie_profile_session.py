@@ -205,7 +205,7 @@ class TestCourseIntelAnchor:
             weather_calls.append((lat, lng))
             return WeatherConditions(temperature_f=61.0, wind_speed_mph=9.0)
 
-        async def fake_intel(*, hole_coords, par, yards, handicap_rating, osm_features, **kwargs):
+        async def fake_intel(*, hole_coords, par, yards, handicap_rating, **kwargs):
             return HoleIntelligence(
                 hole_number=hole_coords.get("holeNumber", 0),
                 par=par,
@@ -213,12 +213,8 @@ class TestCourseIntelAnchor:
                 effective_yards=yards,
             )
 
-        async def fake_osm(lat, lng, radius_m=2000):
-            return None
-
         monkeypatch.setattr("app.routes.caddie.build_weather_conditions", fake_weather)
         monkeypatch.setattr("app.routes.caddie.build_hole_intelligence", fake_intel)
-        monkeypatch.setattr("app.routes.caddie.fetch_course_features", fake_osm)
 
         set_auth(TEST_OWNER_ID)
         await _start_session(client)

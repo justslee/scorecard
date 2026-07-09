@@ -12,6 +12,8 @@ about by hand: west (more negative longitude) = LEFT, east = RIGHT.
 
 import math
 
+import pytest
+
 from app.caddie.hazards import (
     HAZARD_GROUNDING_RULE,
     extract_hole_hazards,
@@ -42,6 +44,52 @@ def _point_north_east(base_lon: float, base_lat: float, yards_north: float, yard
     lat = base_lat + _lat_offset_deg(base_lat, yards_north)
     lon = base_lon + _lon_offset_deg(base_lat, yards_east)
     return lon, lat
+
+
+def _rotate(along: float, lateral: float, bearing_deg: float) -> tuple[float, float]:
+    """Map a downrange/lateral (yards) offset into (north, east) yards for a
+    hole whose tee->green travel direction is the compass `bearing_deg`
+    (0 = due north, 90 = due east, clockwise) — used to sweep the sign-
+    convention regression matrix across every compass direction, not just the
+    due-north fixtures the rest of this file uses.
+
+    Derived (not copied verbatim from the plan doc) directly against
+    hazards.py's own cross-product convention (`lateral_m = ux*hy - uy*hx`,
+    positive = LEFT — see extract_hole_hazards) rather than assumed, because
+    a plausible-looking rotation formula can silently have its lateral sign
+    flipped. Forward unit vector u = (sin(bearing), cos(bearing)) in
+    (east, north); the CCW-rotate-by-90 vector p = (-cos(bearing),
+    sin(bearing)) satisfies cross(u, p) = +1, so `along*u + lateral*p` gives
+    cross(u, offset) == lateral: positive lateral -> positive cross -> LEFT,
+    matching the module's documented convention at every bearing (verified
+    against the due-north case: bearing=0 collapses to
+    (north=along, east=-lateral) — negative east/west = left, exactly the
+    existing due-north fixtures below, e.g. test_left_is_positive_cross_convention).
+    """
+    theta = math.radians(bearing_deg)
+    north = along * math.cos(theta) + lateral * math.sin(theta)
+    east = along * math.sin(theta) - lateral * math.cos(theta)
+    return north, east
+
+
+def _hole_at_bearing(bearing_deg: float, green_yards: float = 300.0):
+    """Tee at (_TEE_LON, _TEE_LAT), green `green_yards` downrange along
+    compass `bearing_deg`. Mirrors `_base_hole_features` but for an arbitrary
+    travel direction instead of always due north."""
+    green_north, green_east = _rotate(green_yards, 0.0, bearing_deg)
+    green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, green_north, green_east)
+    tee_feat = _square_polygon("tee", _TEE_LON, _TEE_LAT)
+    green_feat = _square_polygon("green", green_lon, green_lat)
+    return tee_feat, green_feat
+
+
+def _hazard_at_bearing(bearing_deg: float, along: float, lateral: float, feature_type: str = "bunker") -> dict:
+    """A hazard `along` yards downrange, `lateral` yards left (positive) or
+    right (negative) of the tee->green centerline, for a hole traveling at
+    compass `bearing_deg`."""
+    north, east = _rotate(along, lateral, bearing_deg)
+    lon, lat = _point_north_east(_TEE_LON, _TEE_LAT, north, east)
+    return _point_feature(feature_type, lon, lat)
 
 
 def _square_polygon(feature_type: str, center_lon: float, center_lat: float, half_deg: float = 0.00005) -> dict:
@@ -283,6 +331,64 @@ class TestExtractHoleHazards:
             features.append(_point_feature("bunker", lon, lat))
         hazards = extract_hole_hazards(_fc(*features), cap=5)
         assert len(hazards) == 5
+
+
+# ── Bearing-swept regression matrix (hazard-side-flip incident, item 1) ────────
+#
+# hazards.py itself is verified CORRECT (see module docstring) — the reported
+# incident's root cause was a *different*, broken side classifier
+# (course_intel._classify_side, deleted in item 2). But this module had no
+# regression lock sweeping bearings other than due-north, so a future sign
+# regression to the cross-product math here would ship silently. These pin
+# the sign convention at all 8 compass directions.
+
+
+_BEARINGS = [0, 45, 90, 135, 180, 225, 270, 315]
+
+
+class TestBearingSweptRegression:
+    @pytest.mark.parametrize("bearing", _BEARINGS)
+    def test_left_bunker_is_left_at_all_eight_bearings(self, bearing):
+        tee_feat, green_feat = _hole_at_bearing(bearing)
+        bunker = _hazard_at_bearing(bearing, along=245, lateral=25)
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "left"
+        assert abs(hazards[0].carry_yards - 245) <= 5
+
+    @pytest.mark.parametrize("bearing", _BEARINGS)
+    def test_right_bunker_is_right_at_all_eight_bearings(self, bearing):
+        tee_feat, green_feat = _hole_at_bearing(bearing)
+        bunker = _hazard_at_bearing(bearing, along=245, lateral=-25)
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "right"
+        assert abs(hazards[0].carry_yards - 245) <= 5
+
+    def test_bethpage_hole4_north_hole_west_bunker_is_left(self):
+        """Named regression for the reported owner-facing incident: a
+        north-pointing hole (bearing 0) with its bunker complex physically
+        WEST of the centerline (negative east = left, per this file's own
+        due-north convention) must report line_side == "left" — never
+        "right" — at carry ~265y off the tee."""
+        tee_feat, green_feat = _hole_at_bearing(0, green_yards=430)
+        bunker = _hazard_at_bearing(0, along=265, lateral=25)
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "left"
+        assert abs(hazards[0].carry_yards - 265) <= 5
+
+    @pytest.mark.parametrize("bearing", _BEARINGS)
+    def test_center_within_deadband_at_all_bearings(self, bearing):
+        tee_feat, green_feat = _hole_at_bearing(bearing)
+        bunker = _hazard_at_bearing(bearing, along=150, lateral=6)  # within 10y deadband
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert len(hazards) == 1
+        assert hazards[0].line_side == "center"
 
 
 # ── format_hazards_line ───────────────────────────────────────────────────────
