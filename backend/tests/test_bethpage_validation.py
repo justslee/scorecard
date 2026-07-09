@@ -445,16 +445,48 @@ class TestHole4HazardSideRegression:
         assert validate_guide(guide, landing) is None
 
     def test_full_hazard_list_side_sets_are_pinned(self, hole4_hazards):
-        """Reality note (deviation from the review's expectation, on purpose):
-        hole 4's FULL corrected hazard set is left(~275) + right(~390) +
-        center(~470-495) — there IS a genuine right-side bunker at the second
-        landing zone, so against the full list a bare "right ... bunkers"
-        phrase remains geometrically backed and the side validator alone
-        cannot reject it (side sets carry no yardage). The operative controls
-        for the incident are the corrected ground-truth block / hazard line
-        (asserted above); this test pins the full side complement so any
-        future drift is loud."""
+        """Reality note (updated: carry-aware-side-validation-plan.md closed
+        the numbered variant of the gap described below): hole 4's FULL
+        corrected hazard set is left(~275) + right(~390) + center(~470-495) —
+        there IS a genuine right-side bunker at the second landing zone, so
+        a BARE, no-number "right ... bunkers" phrase against the full list
+        remains geometrically backed and stays side-set-backed PASS (side
+        sets carry no yardage, unchanged). A NUMBERED claim like "right
+        bunkers off the tee at 265" is now caught too — `_has_side_flip`
+        binds the claimed side to its nearest carry number and checks the
+        (side, carry) pair against real geometry, so a real side paired with
+        a wrong number rejects (see `TestHole4HazardSideRegression` below).
+        This test pins the full side complement so any future drift is
+        loud."""
         sides = sorted({(h.type, h.line_side) for h in hole4_hazards})
         assert sides == [("bunker", "center"), ("bunker", "left"), ("bunker", "right")]
         right = [h for h in hole4_hazards if h.line_side == "right"]
         assert all(h.carry_yards > 350 for h in right)
+
+    def test_hole4_truth_right_bunker_at_390_passes(self, hole4_hazards):
+        """Carry-aware side validation TRUTH case: a side claim ("right")
+        bound to the REAL carry number for that side (390) must pass against
+        the full hole-4 hazard list."""
+        assert any(
+            h.line_side == "right" and abs(h.carry_yards - 390) <= 25
+            for h in hole4_hazards
+        ), "fixture precondition: hole 4 must have a right bunker near 390y"
+
+        guide = HoleStrategyGuide(
+            play_line="Favor the left-center of the fairway off the tee.",
+            miss_side="The right bunker at 390 pinches the second landing zone.",
+        )
+        assert validate_guide(guide, hole4_hazards) is not None
+
+    def test_hole4_incident_lie_right_bunkers_at_265_rejects(self, hole4_hazards):
+        """The exact incident LIE, numbered: 'right bunkers off the tee at
+        265' — 265 is the LEFT bunker's carry, not the right one's. The
+        old side-set-only check could not reject this (see the reality note
+        on `test_full_hazard_list_side_sets_are_pinned` above); the
+        carry-aware pair check now does, against the SAME full hole4_hazards
+        list used in the truth case above."""
+        guide = HoleStrategyGuide(
+            play_line="Favor the left-center of the fairway off the tee.",
+            miss_side="Watch the right bunkers off the tee at 265.",
+        )
+        assert validate_guide(guide, hole4_hazards) is None
