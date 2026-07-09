@@ -9550,3 +9550,32 @@ moved the "ship it" target (branch advanced with unreviewed WIP) — held the
 merge until it cleared review. Pause noticeable cycles while awaiting the
 owner's ship-it.
 NEXT: tee-time S1 (foreUP); physics 2nd slice; bend; tree-CV.
+
+---
+
+## 2026-07-09 — cycle 43 START: teetime-s1-foreup-availability (NOTICEABLE)
+
+Bundle empty post-#119. Pick: real foreUP availability leg (S1 of
+specs/teetime-real-booking-plan.md). S0 scaffold exists: routing.py,
+private_filter.py, base.TeeTimeSlot has `route`/`phone`/`estimated`,
+routes/tee_times.py `_get_provider()` defaults to routing.
+
+LIVE foreUP PROBE (done this cycle — endpoint shape VERIFIED, not guessed):
+- GET foreupsoftware.com/index.php/api/booking/times?time=all&date=MM-DD-YYYY
+  &holes=all&players=N&booking_class=false&schedule_id=SID&specials_only=0
+  &api_key=no_limits  + header `api-key: no_limits`  → HTTP 200, JSON array.
+- REAL NY course: **18 Mile Creek Golf Course, Hamburg NY** — course_id=20410,
+  schedule_id=4467 (booking/20410/4467). booking_class=false WORKS.
+- Real slot returned: {"time":"2026-07-11 12:21", course_id:20410,
+  course_name:"18 Mile Creek Golf Course", schedule_id:4467, teesheet_holes:18,
+  available_spots:2, available_spots_9:2, available_spots_18:2,
+  maximum_players_per_booking:4, minimum_players:1,
+  allowed_group_sizes:["1","2","3","4"], holes:"9/18", ...green/cart fee fields}.
+- `time` field = "YYYY-MM-DD HH:MM" local. Use it directly (NOT start_front).
+- The builder MUST capture 18 Mile Creek's FULL live response as the CI fixture
+  (recorded JSON, never live-hit in CI). 18 Mile Creek = the S1 seed course.
+
+## AWAITING: Fable plan (specs/teetime-s1-foreup-plan.md).
+On plan return → checkpoint, dispatch ONE builder on integration/next.
+If this cycle dies here: next cycle reads this note + the plan file and
+dispatches the builder; do NOT re-probe (findings above are authoritative).
