@@ -9869,3 +9869,29 @@ be the contradictory-number bug re-entering).
 On return: BLOCKING (parity break / dishonest fallback / correctness / Northstar) → re-dispatch
 builder; all clean+green → update PR #121 checklist (NOTICEABLE, approval-eligible), dispatch
 release-manager for TestFlight + owner ping. Never merge to main.
+
+## cycle 45 — REVIEW ROUND 1: 3 BLOCKING, back to builder (item 879291c)
+Parity HOLDS (reviewer verified golden 173 pinned both sides, wind sign consistent, tile shows
+plays_like verbatim, no double-count, security clean). But 3 BLOCKING:
+1. [QA, physics-critical] shot_distance_payload bearing/wind rewrite REGRESSED the caddie's own
+   physics golden evals — bisected to 879291c, clean on parent ab5dab1:
+   - tests/eval/test_golden_tier1.py::approach-150-into-10mph-plays-like → plays_like=150 (raw,
+     wind DROPPED) vs band [160,170]
+   - tests/eval/test_golden_tier1.py::drive-300-downwind-downhill-physics-total → total=312 vs [315,330]
+   - tests/eval/test_harness_has_teeth.py sanity (engine must land incident drive in band)
+   Cause: the "drop wind when bearing unknown" honesty branch silently zeroes a REAL headwind in
+   scenarios with no hole bearing. Golden evals are AUTHORITATIVE (they encode the incident) — must
+   NOT be re-pinned/weakened to pass. The caddie must still COUNT a known wind.
+2. [reviewer] fallback caption over-claims elevation: live + physics=null + hole-intel shows raw
+   fcbLive distance captioned "elev from you" (RoundPageClient:1241 no !fcbLive guard; plays-tile.ts
+   null branch hasElev unconditional). Permanent on local rounds. Fix: hasElev only when the fallback
+   number is actually effectiveYards (gate on !isLive/!fcbLive); add the missing test row.
+3. [designer] ELEV tile 3ft deadband ("level") vs PLAYS tile zero-deadband hasElev (plays-tile.ts:67
+   elevChange!==0) → two tiles contradict on 1-2ft holes. Give PLAYS the same/shared deadband.
+Non-blocking (defer/optional): caption wrap check on 375px; value-swap transition on PLAYS.
+
+## AWAITING: builder ROUND 2 fixing the 3 blocking items on integration/next
+Re-dispatched builder. Guard: do NOT weaken/re-pin the golden evals; if the wind reconciliation
+is genuinely ambiguous (honesty goal vs evals, needs a product call) STOP and flag — don't guess.
+On return: re-run reviewer(parity+fallback) + qa(strict, incl. tests/eval) + designer(deadband).
+Never merge to main.
