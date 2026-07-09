@@ -89,6 +89,31 @@ describe("confirmCopy — route-driven language", () => {
   });
 });
 
+describe("confirmCopy — needs_human with a real known time (foreup)", () => {
+  it("a real time renders the actual clock time and course name, never 'Held'", () => {
+    const slot: TeeTimeSlot = {
+      ...BASE_SLOT,
+      time: "07:10",
+      route: undefined,
+      provider: "foreup",
+    };
+    const result: BookingResult = { status: "needs_human", bookingUrl: slot.bookingUrl };
+    const copy = confirmCopy(slot, result);
+    expect(copy.looperLine).toContain("7:10 AM");
+    expect(copy.looperLine).toContain(slot.courseName);
+    expect(copy.looperLine.toLowerCase()).not.toContain("held");
+  });
+
+  it("no known time (time='') keeps the existing route-driven lines (regression)", () => {
+    const slot: TeeTimeSlot = { ...BASE_SLOT, time: "", route: "book_on_site" };
+    const result: BookingResult = { status: "needs_human", bookingUrl: slot.bookingUrl };
+    const copy = confirmCopy(slot, result);
+    expect(copy.looperLine.toLowerCase()).toContain("book on the course site");
+    expect(copy.looperLine).not.toContain("AM");
+    expect(copy.looperLine).not.toContain("PM");
+  });
+});
+
 describe("confirmCopy — mock (dev) confirmed slot", () => {
   it("stamps 'Booked' and labels demo data honestly", () => {
     const slot: TeeTimeSlot = { ...BASE_SLOT, provider: "mock", time: "07:36", route: undefined };

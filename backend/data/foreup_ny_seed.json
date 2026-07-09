@@ -1,0 +1,19 @@
+{
+  "_comment": "Curated foreUP capability rows — validated via scripts/validate_foreup_courses.py. Matching (capability_store.match_capability) is exact-normalized-name (or alias) equality plus <=1.0 mi proximity, or an exact course_id. Fail-loud on malformed JSON: a broken edit must fail CI, not silently drop the real-data path. See specs/teetime-s1-foreup-plan.md.",
+  "courses": [
+    {
+      "platform": "foreup",
+      "course_id": null,
+      "foreup_booking_id": "20410",
+      "schedule_id": "4467",
+      "booking_url": "https://foreupsoftware.com/index.php/booking/20410/4467",
+      "phone": "(716) 648-4410",
+      "is_private": false,
+      "verified_at": "2026-07-09T16:57:50Z",
+      "name": "18 Mile Creek Golf Course",
+      "lat": 42.714304,
+      "lng": -78.813114,
+      "aliases": ["18 Mile Creek Golf Club", "Eighteen Mile Creek Golf Course"]
+    }
+  ]
+}

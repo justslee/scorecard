@@ -8,13 +8,24 @@ POST /api/tee-times/book-by-call/simulate — run the voice booking agent agains
      a scripted pro-shop persona (dev/QA surface; NO real call is ever placed)
 
 The active provider is chosen by the TEETIME_PROVIDER env var (default:
-"routing" — real nearby courses, no fabricated time, booking routed to the
-course site or a phone call; see specs/teetime-s0-plan.md). TEETIME_PROVIDER=mock
-is explicit opt-in (dev/tests only); "affiliate" is accepted as a legacy alias
-for "routing". ANY other/unknown value also lands on routing — never mock —
+"routing" — real nearby courses, foreUP-real availability where a booking
+capability is known (specs/teetime-s1-foreup-plan.md), S0 "no fabricated
+time, booking routed to the course site or a phone call" otherwise
+(specs/teetime-s0-plan.md)). TEETIME_FOREUP_ENABLED=0 reverts the whole
+surface to exact S0 behavior (kill switch). TEETIME_PROVIDER=mock is explicit
+opt-in (dev/tests only); "affiliate" is accepted as a legacy alias for
+"routing". ANY other/unknown value also lands on the router — never mock —
 so a prod env-var typo can never silently serve demo data.
+TEETIME_PROVIDER=foreup runs foreUP standalone (debug only — real nearby
+courses with a known capability, no S0 fallback for the rest).
 When a real inventory provider (Chronogolf, GolfNow) has credentials configured,
 set TEETIME_PROVIDER accordingly — only the service module needs to change.
+
+Route-level cache note: the 15-min `_search_cache` below sits ABOVE foreUP's
+own 8-min availability cache (foreup.py), so end-to-end staleness of a real
+slot is bounded by 15 min; the booking deep-link always shows live truth on
+the course's own site. Do not change this route's TTL in the S1 slice — it
+also guards the Places/Overpass quota.
 
 TODO(Phase 2): import ChronogolfProvider, wire when CHRONOGOLF_API_KEY is set.
 TODO(Phase 3): import GolfNowProvider, wire when GOLFNOW_API_KEY is set.
@@ -34,7 +45,8 @@ from sqlalchemy import select
 from app.db.engine import async_session
 from app.db.models import TeeTimeBooking as TeeTimeBookingORM
 from app.services.clerk_auth import current_user_id
-from app.services.tee_times.routing import RoutingTeeTimeProvider
+from app.services.tee_times.foreup import ForeUpProvider
+from app.services.tee_times.router_provider import RoutedTeeTimeProvider
 from app.services.tee_times.base import (
     BookingDetails as SvcBookingDetails,
     BookingResult as SvcBookingResult,
@@ -66,13 +78,17 @@ def _get_provider() -> TeeTimeProvider:
     """
     Return the active provider based on TEETIME_PROVIDER env var.
 
-    Default is ROUTING — real nearby courses, no fabricated time, booking
-    routed to the course site or a phone call (specs/teetime-s0-plan.md, S0
-    "kill fake data"). TEETIME_PROVIDER=mock is explicit opt-in (dev/tests
-    only). "affiliate" is accepted as a legacy alias for "routing" so a prod
-    env still carrying TEETIME_PROVIDER=affiliate lands on the real path with
-    zero env change. Any OTHER/unknown value also falls to routing — never
+    Default is the ROUTER (specs/teetime-s1-foreup-plan.md) — real nearby
+    courses, real foreUP availability where a booking capability is known,
+    S0 "no fabricated time, booking routed to the course site or a phone
+    call" for every other course (specs/teetime-s0-plan.md, "kill fake
+    data"). TEETIME_FOREUP_ENABLED=0 reverts the whole surface to exact S0
+    behavior. TEETIME_PROVIDER=mock is explicit opt-in (dev/tests only).
+    "affiliate" is accepted as a legacy alias for "routing" so a prod env
+    still carrying TEETIME_PROVIDER=affiliate lands on the real path with
+    zero env change. Any OTHER/unknown value also falls to the router — never
     mock — so a typo'd env var can never silently serve demo data.
+    TEETIME_PROVIDER=foreup runs foreUP standalone (debug only).
 
     This is the injection point for real providers:
       TEETIME_PROVIDER=chronogolf → ChronogolfProvider    (Phase 2)
@@ -81,11 +97,13 @@ def _get_provider() -> TeeTimeProvider:
     provider_name = os.getenv("TEETIME_PROVIDER", "routing")
     if provider_name == "mock":
         return MockTeeTimeProvider()  # dev/tests only — explicit opt-in
+    if provider_name == "foreup":
+        return ForeUpProvider()  # standalone debug mode — no S0 fallback
     # TODO(Phase 2): if provider_name == "chronogolf": return ChronogolfProvider()
     # TODO(Phase 3): if provider_name == "golfnow":    return GolfNowProvider()
     if provider_name not in ("routing", "affiliate"):  # "affiliate" = legacy alias
-        log.warning("Unknown TEETIME_PROVIDER=%r — using routing", provider_name)
-    return RoutingTeeTimeProvider()
+        log.warning("Unknown TEETIME_PROVIDER=%r — using router", provider_name)
+    return RoutedTeeTimeProvider()
 
 
 # ─── Search cache (15-min TTL; protects the Places/Overpass quota) ────────────
@@ -116,7 +134,7 @@ class TeeTimeSlotOut(BaseModel):
     # DEPRECATED (S0): no provider sets this True anymore — see base.TeeTimeSlot.
     estimated: bool = False
     # How this entry gets booked: "book_on_site", "call", or None (real
-    # bookable availability — mock today). See base.TeeTimeSlot.
+    # bookable availability — mock and foreup today). See base.TeeTimeSlot.
     route: Literal["book_on_site", "call"] | None = None
     # The pro shop's phone number, when known — powers a real `tel:` link on
     # "call"-route entries. See base.TeeTimeSlot.

@@ -87,6 +87,42 @@ def _radius_meters(max_distance_miles: float | None) -> int:
     return int(max(5_000, min(50_000, miles * _METERS_PER_MILE)))
 
 
+def build_route_entry(course: dict, query: TeeTimeQuery, distance: float) -> TeeTimeSlot | None:
+    """Build the S0 route-tagged entry for one discovered course. Returns
+    `None` for a course missing an id or a name (skip it). Extracted
+    (specs/teetime-s1-foreup-plan.md §5a) so `RoutedTeeTimeProvider` can reuse
+    the exact same "no fabricated time" entry as its degraded fallback —
+    behavior here is byte-identical to the original inline S0 loop body.
+    """
+    course_id = str(course.get("id") or course.get("osm_id") or "")
+    name = (course.get("name") or "").strip()
+    if not course_id or not name:
+        return None
+
+    rating = course.get("rating")
+    website = course.get("website")
+    return TeeTimeSlot(
+        id=f"{course_id}-{query.date}-route",
+        course_id=course_id,
+        course_name=name,
+        city=course.get("address") or "",
+        date=query.date,
+        time="",                     # NO fabricated time — S1 fills real times.
+        players=query.party_size,    # echo of the request, never claimed capacity
+        price_usd=None,               # unknown — never fabricated
+        cart_included=False,
+        distance_miles=distance,
+        rating=float(rating) if rating is not None else 0.0,
+        designer=None,
+        provider="routing",
+        holes=18,
+        booking_url=website,
+        estimated=False,
+        route="book_on_site" if website else "call",
+        phone=course.get("phone"),
+    )
+
+
 async def _default_find_courses(
     query: TeeTimeQuery,
 ) -> tuple[list[dict], tuple[float, float] | None]:
@@ -133,6 +169,15 @@ class RoutingTeeTimeProvider(TeeTimeProvider):
     def name(self) -> str:
         return "routing"
 
+    async def _slots_for_course(
+        self, course: dict, query: TeeTimeQuery, distance: float
+    ) -> list[TeeTimeSlot]:
+        """Hook (specs/teetime-s1-foreup-plan.md §5a): S0's per-course entry.
+        `RoutedTeeTimeProvider` overrides this to check a foreUP capability
+        first, falling back to this exact behavior when none is known."""
+        entry = build_route_entry(course, query, distance)
+        return [entry] if entry else []
+
     async def search_availability(self, query: TeeTimeQuery) -> list[TeeTimeSlot]:
         try:
             courses, origin = await self._find_courses(query)
@@ -158,30 +203,9 @@ class RoutingTeeTimeProvider(TeeTimeProvider):
                 if query.max_distance_miles is not None and distance > query.max_distance_miles:
                     continue
 
-            rating = course.get("rating")
-            website = course.get("website")
-            slots.append(TeeTimeSlot(
-                id=f"{course_id}-{query.date}-route",
-                course_id=course_id,
-                course_name=name,
-                city=course.get("address") or "",
-                date=query.date,
-                time="",                     # NO fabricated time — S1 fills real times.
-                players=query.party_size,    # echo of the request, never claimed capacity
-                price_usd=None,               # unknown — never fabricated
-                cart_included=False,
-                distance_miles=distance,
-                rating=float(rating) if rating is not None else 0.0,
-                designer=None,
-                provider="routing",
-                holes=18,
-                booking_url=website,
-                estimated=False,
-                route="book_on_site" if website else "call",
-                phone=course.get("phone"),
-            ))
+            slots.extend(await self._slots_for_course(course, query, distance))
 
-        slots.sort(key=lambda s: (s.distance_miles, s.course_name))
+        slots.sort(key=lambda s: (s.distance_miles, s.course_name, s.time))
         return slots
 
     async def book(self, slot: TeeTimeSlot, _details: BookingDetails) -> BookingResult:

@@ -49,7 +49,12 @@ export function confirmCopy(slot: TeeTimeSlot, bookingResult: BookingResult | nu
 
   let looperLine: string;
   if (needsHuman) {
-    if (slot.route === "call") {
+    if (slot.time) {
+      // A real provider (foreup) slot with a known time — still a needs_human
+      // deep-link handoff (S2 owns in-app booking), but honest enough to say
+      // the real time out loud instead of falling back to the routing copy.
+      looperLine = `Found ${formatTime12hOrEmpty(slot.time)} at ${slot.courseName} — they take the reservation, book it on the course site.`;
+    } else if (slot.route === "call") {
       looperLine = `Found ${slot.courseName}. No online booking — call the pro shop to set it up.`;
     } else {
       // "book_on_site" (or an unset route on a needs_human result — treat as
