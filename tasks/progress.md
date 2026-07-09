@@ -9163,3 +9163,57 @@ rolling bundle PR, then release-manager (NOTICEABLE) + owner ping. Fable plan sa
 specs/teetime-s0-plan.md (its contract: routing provider emits route entries w/ time="",
 never estimated=True; private_filter excludes Liberty National; kill mock-fallback + client.ts
 silent mock; frontend kills "Held").
+
+---
+
+## 2026-07-09 cycle 40 — BUILT: #teetime-s0-kill-fake-data (NOTICEABLE)
+
+Implemented specs/teetime-s0-plan.md in full on integration/next (commit 3d3db52, pushed).
+Deleted `affiliate.py` (synthesized `estimated=True` slot at the window start) and its test;
+created `routing.py` — `RoutingTeeTimeProvider` emits one route-tagged entry per discovered
+PUBLIC course (max 8), `time=""` (never fabricated), `route="book_on_site"` (website known)
+or `"call"` (no website); pipeline discover -> dedupe_by_name -> private filter -> cap -> sort.
+New `private_filter.py` + `backend/data/private_clubs.json` (Liberty National, exact
+normalized-name equality + `near` geo-gate, never substring; fail-loud on missing/malformed
+JSON). Had to add a `.gitignore` exception (`!backend/data/private_clubs.json`) — `backend/data/`
+is otherwise an entirely-ignored runtime-cache dir, so without the exception the checked-in
+config file the plan requires would silently never reach git/CI. `_get_provider()` now
+defaults to "routing"; `TEETIME_PROVIDER=mock` is explicit opt-in; "affiliate" is a legacy
+alias; any OTHER unknown value also falls to routing (never mock) — kills the prod-typo ->
+demo-data failure mode. Deleted the `/search` mock-fallback substitution block entirely
+(empty is now honest empty, never "mock-fallback"). Added `route` to
+`TeeTimeSlot`/`TeeTimeSlotOut`/`types.ts` (kept in sync across base.py <-> route <-> types.ts);
+`estimated` kept but marked deprecated/inert per plan (no provider sets it True).
+
+Frontend: new `confirm-copy.ts` (pure `confirmCopy` helper) — "Held" is gone everywhere,
+stampWord is "Found" for needs_human, route-driven looperLine/subCopy; `confirm-copy.test.ts`
+asserts no "Held" substring across every (route, status, bookingUrl) combo (37 tests).
+`page.tsx`: every `slot.time` render gated (`formatTime12h("")` was producing "NaN:NaN") —
+Confirmed now shows the requested window ("7:00–10:00 AM") via a new `formatWindowRange`
+helper when time is unknown; calendar button hidden when no real time; Searching copy is
+route-aware ("N courses open to the public", "closest match — setting up your handoff",
+"No bookable courses found"). `client.ts` no longer silently falls back to the frontend mock
+on a backend failure — only when `NEXT_PUBLIC_TEETIME_PROVIDER=mock` explicitly; otherwise
+rethrows to an honest miss in the UI.
+
+Tests: new `test_tee_time_routing.py` (13 tests, ported + extended from the deleted affiliate
+test — private-club-never-in-output, private-filtered-before-cap) + `test_tee_time_private_filter.py`
+(19 tests — name variants, no-substring false positives, near-radius gate, id match, malformed/
+missing JSON raises). Rewrote `test_tee_time_provider_default.py` for the inverted semantics
+(unknown -> routing, never mock; grep-pin that "mock-fallback" no longer exists in the route
+module's source). Updated `tests/integration/test_tee_time_bookings.py` (routing serialization
+section, `_use_routing`/`_ROUTING_SLOT`, `TestSearchCache` pinned to `TEETIME_PROVIDER=mock`)
+— **read but not locally run** (no local Postgres per policy; collection verified clean,
+11 tests collect with zero import/syntax errors) — the two tests pinned in 74626fb
+(`test_confirmed_booking_is_persisted`, `test_mock_slots_are_not_estimated`) are UNCHANGED.
+
+Gates (all green, evidence below) — no deviation from the plan beyond the gitignore fix noted
+above (which is infra-necessary, not a spec change).
+
+## AWAITING
+reviewer (no-fake-data honesty + private-filter matching correctness — the exact-equality/
+suffix-fold/near-radius logic is the reviewer surface per the plan) + qa (full gate re-run,
+esp. CI's DB-backed integration test) + designer (tee-time Confirmed/Searching copy is
+user-facing, NORTHSTAR yardage-book feel). BLOCKING -> re-dispatch builder; green -> this
+opens the rolling bundle PR (first item), then release-manager (NOTICEABLE — real course
+data replaces demo data on the tee-time screen) + owner ping.
