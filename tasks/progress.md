@@ -10302,7 +10302,15 @@ the two modules never emit contradictory-sounding lateral guidance. Pure prose/l
 change (the green_read rotation math is proven with teeth — leave it untouched). Burned sign-flip
 area → Fable plan is the mandated safeguard.
 
-## AWAITING: Fable Plan agent to write specs/caddie-slope-framing-reconcile-plan.md
-On return → dispatch builder to implement it on integration/next → reviewer + qa → update PR #122.
-NOTICEABLE (caddie spoken output changes) but NO ship (owner bundling). Reconcile from git log on
-resume; do not rebuild finished children.
+## Fable plan DONE → specs/caddie-slope-framing-reconcile-plan.md. Approach (a): re-frame the two
+lateral prose strings in slope_advice.py ONLY (rel≈90 + rel≈270) to 'aim {high side} … a miss
+{low side} sits below the hole and leaves the uphill putt' — reconciles with green_read's low-side
+uphill framing; no geometry, no green_geometry.py, no aim_point.py, no shared types. Teeth: new
+TestLateralFramingContract exact-string pins + cross-module coherence test in test_green_geometry.py
+(Sec.6d, asserts 'aim {high}' present / 'aim {fall}' absent — the sign-flip tooth) + strengthen line
+276 assertion. 3 files total.
+
+## AWAITING: builder to implement specs/caddie-slope-framing-reconcile-plan.md on integration/next
+Builder commits+pushes its own commit (ff-only, no per-item PR). On return → reviewer (Fable,
+burned sign-flip area) + qa (ruff + the named pytest files; no local Postgres) → update PR #122
+checklist. NOTICEABLE, NO ship (owner bundling). Reconcile from git log on resume; do not rebuild.
