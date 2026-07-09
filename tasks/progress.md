@@ -10157,3 +10157,32 @@ Twenty-five ships this run. Cycle 48 (course-ids-wiring) was mid-flight
 head was docs-only, shipped clean; cycle 48's work rides the next bundle.
 NEXT (owner-gated): S3 AI caller + "call me" rehearsal (owner present);
 tree-CV spike (own effort). Autonomous queue near a natural pause.
+
+## Fable plan DONE → specs/teetime-course-ids-wiring-plan.md (verdict: BOUNDED, one builder, one PR)
+Fable verified the provenance: OSM-leg selected id is confirmed `undefined` at runtime
+(/api/courses/nearby returns raw osm_id-keyed dicts, never attach_stable_ids; frontend maps
+`id: c.id`). Mapped-leg ids = courses UUIDs (write-through = deterministic_course_id("osm-way/N"),
+derivable; homegrown-ingested = slug-key UUIDs, NOT derivable → only name+proximity reconciles).
+No cell matches today → a naive filter = guaranteed zero (the regression to avoid).
+Plan: (a) backend candidate-id-set filter {id ∪ osm_id ∪ det-UUID} in RoutingTeeTimeProvider.
+search_availability BEFORE the MAX_COURSES cap (covers router + foreUP by inheritance; empty=all,
+mock parity) + route-resolved name+proximity selector fallback (new selection.py, reuses
+private_filter.normalize + MATCH_RADIUS_MILES=1.0) so default pre-selected mapped favorites don't
+zero out; un-reconcilable selections DROP honestly (no fabricated slots) + a log line; CSV parse
+guard. (b) frontend id fix: golf-api.ts:873 `id: c.id ?? c.osm_id ?? ""` + type honesty +
+`.filter(Boolean)` at page.tsx:844 + one backend line adding attach_stable_ids to /api/courses/
+nearby. NO shared-type change (types.ts/models.py untouched; course_selectors is backend-internal).
+MANDATORY regression-guard test: test_tee_time_routing.py TestCourseSelectionFilter (id-less
+osm_id dicts, course_ids=["way/102"] → that kept, others dropped) + empty=all + mapped-UUID-drop +
+det-UUID-match + pre-cap + private-still-excluded; new test_tee_time_selection.py; router test
+(unselected capability course → foreUP never called); golf-api-nearby.test.ts realistic id-less
+fixture. Classify NOTICEABLE (selecting a course actually narrows results) — rides #121, NO SHIP.
+
+## AWAITING: builder implementing specs/teetime-course-ids-wiring-plan.md on integration/next
+Dispatched ONE builder on integration/next (commits the item there + pushes; NO per-item PR).
+Implements the plan EXACTLY (does not re-plan). On builder return → reviewer (adversarial
+correctness — a filter bug surfaces the WRONG or ZERO courses to the owner) + qa (ruff + targeted
+pytest -k tee_time; frontend lint/tsc/vitest golf-api-nearby+courses; voice smoke). NO local
+Postgres — DB-backed selector tests run in CI. Then designer (user-facing behavior change) if
+gates green. Update PR #121 checklist (NOTICEABLE item), progress note. NO SHIP (owner bundling).
+If builder pushes then work is on integration/next — reconcile from git log, do NOT rebuild.
