@@ -308,6 +308,10 @@ export default function CaddieSheet({
   // `voiceAnswer` out from under the still-pushing buffer — a visible
   // restart-from-blank bug the designer flagged).
   const [isStreaming, setIsStreaming] = useState(false);
+  // Server-side tool-round label (caddie-tool-loop-parity): a `status` SSE
+  // frame means the caddie is fetching live numbers before answering. Shown
+  // in the existing thinking pulse ("checking the numbers…") — no new phase.
+  const [statusLabel, setStatusLabel] = useState<string | null>(null);
 
   // Tap mode state
   const [distanceInput, setDistanceInput] = useState("");
@@ -584,7 +588,14 @@ export default function CaddieSheet({
       setError(null);
       setVoiceAnswer(null);
       setIsStreaming(false); // flips true on the FIRST token — see onToken below
+      setStatusLabel(null);
       const currentHistory = convHistoryRef.current;
+
+      // A server-side tool round is running — surface it in the thinking
+      // pulse. Stale turns must not repaint the label of a newer one.
+      const onStatus = (label: string) => {
+        if (!isStale()) setStatusLabel(label);
+      };
 
       // Sentence-level TTS pipelining (specs/caddie-realtime-conversation-plan.md
       // §6.5.4, Slice A2) — local to THIS call (a superseded turn's own
@@ -649,7 +660,7 @@ export default function CaddieSheet({
             handicap: profile?.handicap ?? undefined,
             conversation_history: currentHistory,
           },
-          { onToken, signal: controller.signal },
+          { onToken, onStatus, signal: controller.signal },
         );
       };
 
@@ -659,7 +670,7 @@ export default function CaddieSheet({
           try {
             responseText = await sessionVoiceStream(
               { round_id: roundId, transcript: question, personality_id: personaId, hole_number: holeNumber },
-              { onToken, signal: controller.signal },
+              { onToken, onStatus, signal: controller.signal },
             );
           } catch (err) {
             if (!(err instanceof BeforeFirstByteError)) throw err; // terminal — a token already rendered
@@ -1566,6 +1577,7 @@ export default function CaddieSheet({
                   transcript={transcript}
                   voiceAnswer={voiceAnswer}
                   isStreaming={isStreaming}
+                  statusLabel={statusLabel}
                   convHistory={convHistory}
                   error={error}
                   accent={accent}
@@ -1974,6 +1986,9 @@ interface VoiceBodyProps {
    *  the follow-up/clear CTAs stay unmounted until it flips false, so they
    *  never fire mid-stream and blank out a still-growing answer. */
   isStreaming: boolean;
+  /** Server-side tool-round label ("checking the numbers") — swaps the
+   *  thinking-pulse copy while the caddie fetches live numbers. */
+  statusLabel: string | null;
   convHistory: VoiceCaddieMessage[];
   error: string | null;
   accent: string;
@@ -1989,6 +2004,7 @@ function VoiceBody({
   transcript,
   voiceAnswer,
   isStreaming,
+  statusLabel,
   convHistory,
   error,
   accent,
@@ -2231,7 +2247,7 @@ function VoiceBody({
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <PulseDot accent={accent} />
               <StatusNote>
-                {caddy.name} is thinking…
+                {statusLabel ? `${statusLabel}…` : `${caddy.name} is thinking…`}
               </StatusNote>
             </div>
           </motion.div>

@@ -373,6 +373,22 @@ _SIDE_OPPOSITION_PATTERN = re.compile(
     r"\b(?:away from|away|avoid|clear of|(?:left|right|short) of)\b"
 )
 
+# ── Carry-aware side validation (carry-aware-side-validation-plan.md) ───────
+#
+# Side sets alone (`sides_by_type`) collapse away `carry_yards` — on a hole
+# with hazards of the same type on BOTH sides (e.g. Bethpage hole 4: bunkers
+# L~275 / R~390 / C~470-495), a bare side claim co-occurring with a WRONG
+# yardage number ("right bunkers off the tee at 265") passes the side-only
+# check because "right" is a real side for that type SOMEWHERE on the hole —
+# just not at that number. When a side claim is bound to a nearby yardage,
+# validate the (side, carry) PAIR, not just the side.
+_CARRY_TOLERANCE_YARDS = 25
+_MIN_PLAUSIBLE_CARRY = 100  # below this, "hole 12"/"par 4"-style numbers, never a claimed carry
+_MAX_PLAUSIBLE_CARRY = 650
+_CARRY_NUMBER_PATTERN = re.compile(
+    r"\b(\d{2,3})(?!\d)(?:\s*[-–]\s*\d{2,3}(?!\d))?\s*(?:y(?:ds?)?|yards?)?\b"
+)
+
 
 def _acceptable_sides(canonical_type: str, sides_by_type: dict[str, set[str]]) -> set[str]:
     """Sides that do NOT contradict a hazard type's real geometry: its actual
@@ -383,12 +399,33 @@ def _acceptable_sides(canonical_type: str, sides_by_type: dict[str, set[str]]) -
     return sides | ({"left", "right"} if "center" in sides else set())
 
 
-def _has_side_flip(text_fields: list[str], sides_by_type: dict[str, set[str]]) -> bool:
+def _side_and_carry_supported(
+    canonical_type: str,
+    claimed_side: str,
+    claimed_carry: int,
+    hazards_by_type: dict[str, list[tuple[str, int]]],
+) -> bool:
+    """True iff a real hazard of this type sits on the claimed side (a
+    'center'/on-line hazard supports EITHER lateral side, mirroring
+    `_acceptable_sides`) AND its surveyed carry_yards is within
+    `_CARRY_TOLERANCE_YARDS` of the claimed number."""
+    return any(
+        (side == claimed_side or side == "center")
+        and abs(carry - claimed_carry) <= _CARRY_TOLERANCE_YARDS
+        for side, carry in hazards_by_type.get(canonical_type, [])
+    )
+
+
+def _has_side_flip(
+    text_fields: list[str], hazards_by_type: dict[str, list[tuple[str, int]]]
+) -> bool:
     """True if any text field claims a left/right side for a geometry-present
-    hazard type that contradicts that type's real, surveyed side(s).
+    hazard type that contradicts that type's real, surveyed side(s) — or, when
+    the side claim is bound to a nearby yardage number, contradicts the real
+    (side, carry) pair.
 
     Anchored on each hazard-keyword occurrence — only for types actually
-    present in `sides_by_type`; a type absent from the hole's geometry is
+    present in `hazards_by_type`; a type absent from the hole's geometry is
     already caught by the type-only scan in `validate_guide` and is never
     side-checked here. For each occurrence, looks at the single NEAREST
     left/right word within a `_SIDE_WINDOW_WORDS`-word window (ties broken
@@ -402,7 +439,30 @@ def _has_side_flip(text_fields: list[str], sides_by_type: dict[str, set[str]]) -
     from the hazard keyword by an opposition phrase ("away from", "avoid",
     "clear of") describes the miss direction, not the hazard's location, and
     is excluded from consideration (see `_SIDE_OPPOSITION_PATTERN`).
+
+    CARRY-AWARE EXTENSION (carry-aware-side-validation-plan.md): once a side
+    claim is bound for a hazard-keyword occurrence, this ALSO looks for every
+    plausible yardage number (`_CARRY_NUMBER_PATTERN`, distance to the HAZARD
+    keyword — never to the side word, never "any number in the field") within
+    the same window. No bound number -> the side-only check runs exactly as
+    before. One or more bound numbers -> EVERY one of them must match a real
+    hazard of this type on the claimed side within `_CARRY_TOLERANCE_YARDS`
+    (`_side_and_carry_supported`) or the whole guide rejects — this closes the
+    gap where a real side-set (e.g. bunkers on both left AND right of one
+    hole) let a WRONG number ride along with a real side word. Binding ALL
+    in-window numbers (not just the single nearest) is itself fail-closed
+    against an ambiguity bypass: a "nearest, ties prefer after" pick let a
+    co-located FALSE number equidistant BEFORE the keyword hide behind a TRUE
+    one after it ("The 265-yard right bunker sits 390 off the tee." — both
+    265 and 390 are distance 2 from "bunker"; picking only 390 accepted the
+    false 265 claim). EACH hazard-keyword occurrence still binds its own side
+    and its own number(s) independently, so a truthful "right bunker at 390"
+    elsewhere in the field can never launder a co-located false "left bunker
+    at 390" or "right bunker at 265".
     """
+    sides_by_type: dict[str, set[str]] = {
+        t: {s for s, _ in pairs} for t, pairs in hazards_by_type.items()
+    }
     for field_text in text_fields:
         lowered = (field_text or "").lower()
         tokens = list(re.finditer(r"\S+", lowered))
@@ -421,6 +481,15 @@ def _has_side_flip(text_fields: list[str], sides_by_type: dict[str, set[str]]) -
         ]
         if not side_hits:
             continue
+
+        # Yardage numbers in this field, once — plausibility-filtered so a
+        # discarded/implausible number ("hole 12", "par 4") is as if absent
+        # (falls back to the side-only path below), never an auto-pass.
+        number_hits: list[tuple[int, int]] = []
+        for m in _CARRY_NUMBER_PATTERN.finditer(lowered):
+            n = int(m.group(1))
+            if _MIN_PLAUSIBLE_CARRY <= n <= _MAX_PLAUSIBLE_CARRY:
+                number_hits.append((_word_idx(m.start(1)), n))
 
         for canonical_type in sides_by_type:
             pattern = _HAZARD_PATTERNS.get(canonical_type)
@@ -458,7 +527,35 @@ def _has_side_flip(text_fields: list[str], sides_by_type: dict[str, set[str]]) -
                 _, nearest_side = min(
                     candidates, key=lambda hit: (abs(hit[0] - hz_idx), hit[0] < hz_idx)
                 )
-                if nearest_side not in _acceptable_sides(canonical_type, sides_by_type):
+
+                # Bind ALL plausible numbers in-window to THIS hazard-keyword
+                # occurrence — distance is to the hazard keyword, never to
+                # the side word, and never "any number in the field" (each
+                # occurrence binds its own side and its own number(s)).
+                # Fail-closed on ambiguity: a single "nearest" pick with an
+                # after-keyword tie-break let a co-located FALSE number
+                # (equidistant, before the keyword) launder behind a TRUE one
+                # after it ("The 265-yard right bunker sits 390 off the
+                # tee." — 265 and 390 are both distance 2 from "bunker";
+                # picking only the nearer/after one accepted the false 265
+                # claim). Requiring EVERY in-window number to be supported
+                # closes that: an occurrence with two candidate numbers must
+                # have BOTH match real geometry, or it rejects.
+                number_candidates = [
+                    hit for hit in number_hits if abs(hit[0] - hz_idx) <= _SIDE_WINDOW_WORDS
+                ]
+                if not number_candidates:
+                    # No bound number -> current side-only behavior verbatim.
+                    if nearest_side not in _acceptable_sides(canonical_type, sides_by_type):
+                        return True
+                    continue
+
+                if any(
+                    not _side_and_carry_supported(
+                        canonical_type, nearest_side, carry, hazards_by_type
+                    )
+                    for _, carry in number_candidates
+                ):
                     return True
     return False
 
@@ -491,12 +588,20 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
        type-correct but side-flipped claim ("right-side bunkers" when our
        geometry has them on the left) -> REJECT, same as an invented type.
        A hazard whose real side is "center" (on-line) accepts either lateral
-       claim. A side word separated from the hazard keyword by an opposition
-       phrase ("away from", "avoid", "clear of") describes the MISS
-       direction, not the hazard's location, and is never checked (a "best
-       miss is right, away from the [left] bunker" style guide is correct
-       golf advice, not a side-flip). Runs after the type scan (2/3) so an
-       already-wrong type is still rejected the same way it always was.
+       claim. CARRY-AWARE: when that side claim also co-occurs with a nearby,
+       plausible yardage number (carry-aware-side-validation-plan.md), the
+       (side, carry) PAIR must match a real hazard of this type within
+       `_CARRY_TOLERANCE_YARDS` — this catches a type- and side-plausible but
+       numerically-wrong claim on a hole with hazards of the same type on
+       BOTH sides (e.g. real bunkers left AND right, but the claimed number
+       matches neither). A side claim with no bound number keeps the
+       side-only behavior above verbatim. A side word separated from the
+       hazard keyword by an opposition phrase ("away from", "avoid",
+       "clear of") describes the MISS direction, not the hazard's location,
+       and is never checked (a "best miss is right, away from the [left]
+       bunker" style guide is correct golf advice, not a side-flip). Runs
+       after the type scan (2/3) so an already-wrong type is still rejected
+       the same way it always was.
 
     Returns `guide` unchanged on PASS, `None` on REJECT — the caller omits
     (no write, no placeholder; [[no-fake-data-fallbacks]]).
@@ -510,10 +615,10 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
             if canonical_type not in allowed_types and pattern.search(lowered):
                 return None
 
-    sides_by_type: dict[str, set[str]] = {}
+    hazards_by_type: dict[str, list[tuple[str, int]]] = {}
     for hz in hazards:
-        sides_by_type.setdefault(hz.type, set()).add(hz.line_side)
-    if _has_side_flip(text_fields, sides_by_type):
+        hazards_by_type.setdefault(hz.type, []).append((hz.line_side, hz.carry_yards))
+    if _has_side_flip(text_fields, hazards_by_type):
         return None
 
     # Defense-in-depth (security review): researched text is DATA — a field

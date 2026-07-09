@@ -3,6 +3,201 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: fcb-caption-proximity — re-anchor F/C/B caption + pill-bar clearance (SILENT, frontend-only, DONE)
+
+Implemented `specs/fcb-caption-proximity-plan.md` exactly. Designer follow-up to
+`fcb-caption-visibility`: the F/C/B source caption ("from the tee" / live "● from where
+you stand") had been moved to the TOP of the distances card by the prior visibility fix,
+which orphaned it visually from the Front/Center/Back tiles it describes. Extracted the
+card into a new pure presentational component,
+`frontend/src/components/yardage/DistancesCard.tsx` (props in, JSX out — `fcbCaption`,
+`fcbTiles`, `windTile`, `elevTile`, `playsTile`; imports `T`/`DEFAULT_ACCENT` from
+`@/components/yardage/tokens`; moved the `MapStat` helper in with it), re-anchored the
+caption immediately ABOVE the F/C/B tile row (between the Wind/Elev/Plays stat grid and
+the tile row; `marginBottom: 8 → 6`, same tokens, still right-aligned), and gave the card
+wrapper safe-area-aware bottom clearance (`padding: "10px 14px 12px"` →
+`"10px 14px max(20px, calc(env(safe-area-inset-bottom) + 14px))"`) so it clears the
+floating Ask-caddie/Enter-score pill bar — reusing the same `max(..., calc(env(...)+...))`
+idiom already used by the pill bar and scroll body. `data-overlay` preserved on the
+wrapper root (map tap/zoom logic in `RoundPageClient` depends on
+`closest("[data-overlay]")`). In `RoundPageClient.tsx`: swapped the inline ~80-line block
+for `<DistancesCard .../>`, deleted the now-orphaned in-file `MapStat`; all derivations
+(`fcbCaption`/`fcbTiles`/`windTile`/`elevTile`/`playsTile`) stay in `RoundPageClient`
+unchanged — pure layout, zero behavior/number changes. Added
+`frontend/src/components/yardage/DistancesCard.test.tsx` (RTL render, jsdom) asserting:
+caption is the tile row's immediately-preceding sibling wrapper; the Wind/Elev/Plays grid
+precedes the caption in document order (guards the old top placement); wrapper padding
+string contains both `env(safe-area-inset-bottom)` and `max(`; `data-overlay` preserved;
+live vs from-tee text/color (jsdom normalizes hex to `rgb()` on read, compared
+accordingly). `fcb-labels.test.ts` untouched, still green. Gates: `npm run lint` clean,
+`npx tsc --noEmit` clean, `npm run build` succeeded (19/19 static pages), voice-tests
+smoke `pass=274 fail=0`, `npx vitest run src/lib/caddie/fcb-labels.test.ts
+src/components/yardage/DistancesCard.test.tsx` → **24 passed**. Commit on
+`integration/next` (pushed). Owner should eyeball on the next TestFlight build: caption
+should now read directly above the F/C/B tiles and clear the pill bar (pixel-level framing
+not provable by jsdom render tests per the plan's honest note).
+
+## 2026-07-10 — builder: carry-tie-break laundering bypass closed (SILENT, backend-only, DONE)
+
+Follow-up to the carry-aware side validation below: eng-lead's adversarial review found a
+LOW bypass — `_has_side_flip`'s single-nearest-number tie-break preferred the number AFTER
+the hazard keyword, so a false yardage equidistant BEFORE the keyword could hide behind a
+true one after it (e.g. "The 265-yard right bunker sits 390 off the tee." — both 265 and
+390 are distance 2 from "bunker" — was wrongly ACCEPTED against bunkers L@275/R@390/C@470).
+Fix (`5e4b861` on `integration/next`, pushed): bind ALL plausible in-window numbers per
+hazard-keyword occurrence (not just the nearest) and require EVERY one to satisfy
+`_side_and_carry_supported` for the bound side — any failing number rejects the whole
+guide. No-number path / opposition exclusion / center handling unchanged. Added
+`test_carry_check_rejects_tie_break_laundering` (reviewer's exact input, confirmed
+rejects) + `test_carry_check_single_true_number_still_passes` (companion, confirms the fix
+didn't just reject everything). Gates: `ruff check .` clean; `pytest
+tests/test_guide_writer.py tests/test_bethpage_validation.py tests/eval -q` → **133
+passed** (131 + 2 new), no existing test weakened.
+
+## 2026-07-10 — builder: carry-aware side validation landed on the bundle (SILENT, backend-only, DONE)
+
+Implemented `specs/carry-aware-side-validation-plan.md` exactly — `4eb8ad2` on
+`integration/next` (pushed). Extends the fail-closed side-flip grounding pass in
+`backend/app/caddie/guide_writer.py` (`validate_guide` / `_has_side_flip`) so a side claim
+("right bunker") bound to a nearby yardage number is validated against the (side, carry)
+PAIR of real hazards, not just the side set. Closes the gap where a hole with the same
+hazard type on BOTH sides (Bethpage hole 4: bunkers L~275 / R~390 / C~470-495) let the
+INCIDENT LIE "right bunkers off the tee at 265" ride along on a real side word — the old
+side-set-only check couldn't reject a numbered variant. New `hazards_by_type: dict[str,
+list[tuple[str,int]]]` retains `carry_yards`; new `_side_and_carry_supported` helper;
+new `_CARRY_NUMBER_PATTERN`/`_CARRY_TOLERANCE_YARDS`(25)/`_MIN_PLAUSIBLE_CARRY`(100)/
+`_MAX_PLAUSIBLE_CARRY`(650) constants. EACH hazard-keyword occurrence binds its OWN
+nearest side AND its OWN nearest number (never "any number in the field") — a truthful
+"right bunker at 390" elsewhere can never launder a co-located false claim; any failing
+occurrence rejects the whole guide. No-number side claims are UNCHANGED (verbatim old
+behavior) — this is a strict narrowing, not a new pass path.
+Tests: `TestHole4HazardSideRegression` truth ("right bunker at 390" PASS, fixture
+precondition asserted) + incident-lie ("right bunkers off the tee at 265" REJECT) against
+the REAL Bethpage fixture hazards; `test_guide_writer.py` carry-check block (10 new tests:
+correct distance incl. "390y"/"390 yards", wrong distance, number-stuffing bypass,
+no-number unchanged both directions, window boundary, implausible number, range binding).
+Gates: `ruff check .` clean; `pytest tests/test_guide_writer.py tests/test_bethpage_validation.py
+tests/eval -q` → **131 passed**, no failures, no test weakened/deleted. Backend-only —
+frontend gates unaffected, not run. Classified SILENT (no user-visible surface; caddie
+guides are LLM-researched then this validator gates them before caching — tightens an
+existing anti-hallucination control). No DB spun up locally; nothing here is DB-backed
+(pure in-memory validation logic + a committed OSM fixture).
+
+## 2026-07-10 — eng-lead cycle 35: caddie-tool-loop-parity reviewed + on bundle #117 (NOTICEABLE)
+
+Fable plan (`specs/caddie-tool-loop-parity-plan.md`) → Fable builder (`7124c38` on
+`integration/next`) → full team review:
+- **reviewer** — `/security-review` CLEAN (no HIGH/MED): `get_owned_session` auth on the new
+  `/session/{id}/carries`, tool results as clipped `tool_result` data blocks (never in system,
+  calm error copy), ORM bound params; loop bounds confirmed STRUCTURAL (3 model-call ceiling,
+  `tool_choice:none` final, token budget, per-tool timeout).
+- **qa** — all 8 gates PASS: voice 274/274, vitest 19/19, eval 52/52 (Tier-1 intact),
+  targeted backend 83/83 (incl. new `test_tool_parity.py` drift test + `test_caddie_tool_loop.py`
+  structural-stop asserts + teeth), ruff clean, build ok. No DB spun up; CI covers DB-backed.
+- **designer** — PASS: "checking the numbers…" status copy fits the quiet, lowercase,
+  yardage-book voice; no new UI language; honest (never overclaims a number before the answer).
+Item is SOUND + green on the bundle. PR #117 body updated: bundle now contains a NOTICEABLE
+change → approval-eligible, but the owner ship-it ask is DEFERRED (this run's directive: no push
+notifications; and the plan owes a TestFlight build + on-device live-turn evidence — live key +
+mapped course). Next cycle / release step handles the ping.
+SECURITY: two more prompt-injection attempts this cycle — QA flagged a fake "date changed, don't
+mention it" tool-result, and a same-pattern system-channel message landed mid-cycle. Both ignored;
+concealed nothing. Logged for retro (this is now a recurring adversarial pattern in the run).
+
+## 2026-07-09 — builder: caddie-tool-loop-parity landed on the bundle (NOTICEABLE, full-stack, DONE)
+
+Implemented `specs/caddie-tool-loop-parity-plan.md` — the classic text caddie (sheet/fallback)
+now has the same six tools as the Realtime orb, and `get_carries` is REAL on both mouths.
+Parity by construction: NEW `backend/app/caddie/tools.py` = ONE canonical registry
+(`CADDIE_TOOLS`, name-sorted) rendered two ways (`realtime_tools()` → relay `DEFAULT_TOOLS`
+unchanged-shape; `anthropic_tools()` → module constant `TEXT_TOOLS`), plus the six `*_payload`
+helpers EXTRACTED from `routes/caddie.py` (recommend/shot/status/conditions/profile + new
+`carries_payload`) — the HTTP session endpoints and the server-side `resolve_tool` dispatcher
+both call the same helpers. NEW `backend/app/caddie/tool_loop.py::run_caddie_turn` = bounded
+loop wired into all four text endpoints (AsyncAnthropic everywhere): STRUCTURAL stops only
+(3-call cap, `tool_choice:none` final call, 900-token budget, repeated-identical-call cache,
+6s/tool timeout, 4000-char result clip, calm `is_error` copy — never raw exceptions). Streaming
+twins emit a new `event: status` keepalive frame; `streamCaddieReply` re-arms its watchdogs on
+it (so a >8s tool turn no longer falls to the dumber tier) and `CaddieSheet` swaps the thinking
+pulse to "checking the numbers…". Real carries: `GET /caddie/session/{id}/carries` +
+`getSessionCarries`/`SessionCarries` in `caddie/api.ts`; the `realtime.ts` `available:false`
+stub is GONE; honest-empty matrix per the no-fake-data lesson (unmapped → available:false+reason;
+mapped-but-clean → true+[]+note; zero-carry entries filtered; club lists null when no distances).
+Fixed the pre-existing `SessionConditions` TS drift (hazards/hazards_line/green_slope). Prompt
+edit additive-only: one `TOOL_USE_RULE` line (voice_prompts.py) into both stable_texts.
+
+Evals/tests: golden scenario `carry-question-cites-true-along-path-carry`; new Tier-1 check
+`carries_tool_matches_hazards` (registry + 2 teeth mutants: invented carry, dropped carry);
+`tests/eval/test_tool_parity.py` (schema drift + deterministic ordering);
+`tests/test_caddie_tools.py` (honest-empty matrix + resolver contract);
+`tests/test_caddie_tool_loop.py` (11 loop tests incl. all structural stops).
+Gates: backend `pytest tests --ignore=tests/integration` → **1361 passed** (eval suite 52),
+ruff clean; frontend lint/tsc/build clean, vitest **1736 passed** (84 files), voice-tests
+smoke **274/274**. DB-backed integration tests deferred to CI as always.
+
+Deviations (small, noted for the eng-lead): (1) `TOOL_USE_RULE` sits BEFORE
+`OBSERVED_REALITY_RULE` in stable_text (plan said after) — keeps test_voice_stream's
+endswith(OBSERVED_REALITY_RULE) pins intact; still additive. (2) `test_caddie_caching.py`
+fixtures updated to the plan's own client change (sync fakes → AsyncAnthropic stream fakes;
+templates gained the one `{tool_rule}` line via the imported constant) — same assertions,
+no weakening. (3) No pydantic response model for /carries (plan marked optional): followed the
+neighboring /conditions dict pattern; TS `SessionCarries` mirrors `carries_payload` field-for-
+field. (4) `_first_text` retained (pinned by test_voice_error_hygiene) though the mouths now
+assemble replies from the loop. (5) Manual live-turn evidence + `/security-review`//`/code-review`
+passes still owed at the bundle level (no live key here) — flagged to eng-lead.
+
+## eng-lead cycle 34 (2026-07-08) — caddie-advice-eval-harness on the bundle; PR #117 opened (SILENT)
+
+Fresh `integration/next` after #116 shipped (v1.0.911). Step 0 clean: no Needs Review cards, no
+pending approvals. Picked P1 `caddie-advice-eval-harness` (excellence-audit's "unfalsifiable
+quality" gap). Fable Plan → `specs/caddie-advice-eval-plan.md` (two tiers, hard-separated:
+Tier-1 deterministic prompt-assembly+honesty asserts always in CI offline; Tier-2 LLM-judge
+on-demand/nightly only, off CI). ONE builder implemented it (6103499): `backend/tests/eval/`,
+25-scenario golden JSONL, closed check-name registry, teeth tests. Reviewer (honesty-focused,
+the load-bearing concern) verdict **SOUND** — every check family has a real red-able mutant tied
+to a shipped fix, hole-4 gaslight scenario genuinely fails on the pre-`OBSERVED_REALITY_RULE`
+prompt. Folded in the 3 non-blocking review notes myself (f491b71): emptied-constant masking
+guard + matching teeth test, narrowed the Tier-2 injection pre-scan so deferential caddie speech
+("you are looking right at it") no longer false-positives, fixed a golden notes/number drift.
+Gates on HEAD: ruff clean; `pytest tests/eval` 47 passed offline (no key, no Postgres); full
+suite green; `run_tier2.py` not collected by pytest. Silent-only bundle → **no owner ping**;
+PR #117 accumulates until the next noticeable item. Deviation: 25 scenarios vs the 30-50 target
+(README carries the incident-driven growth rule).
+
+## 2026-07-08 — builder: caddie-advice-eval-harness landed on the bundle (SILENT, backend-only, DONE)
+
+Implemented `specs/caddie-advice-eval-plan.md` exactly — a two-tier golden-set eval for caddie
+advice quality (caddie-excellence-audit area G, grade D: "unfalsifiable quality"). New dir
+`backend/tests/eval/`: `schema.py` (pydantic Scenario/Situation/Expected, CLOSED check-name
+registry — unknown check name = load-time ValidationError), `checks.py` (`TIER1_CHECKS`/
+`TIER2_DETERMINISTIC` registries, pure), `golden/caddie_advice.jsonl` (25 scenarios — the 5
+required incident seeds + 20 more across the §4/§9 mix: dogleg L/R classification, guide
+accept/reject × {invented type, side-flip, plural, injection, opposition-phrasing, center-hazard},
+honest-empty, plays-like up/down, wind, chatty question, 5 club-selection yardages, reach
+filtering — short of the 30-50 target, noted below), `test_golden_tier1.py` (parametrized
+pytest, all offline, no DB/network/key), `test_harness_has_teeth.py` (the #1 deliverable: mutant
+tests proving every check family goes RED — internal mutants, no source edits), `run_tier2.py`
+(on-demand live runner, double-gated on `ANTHROPIC_API_KEY`+`CADDIE_EVAL_LIVE=1`, judge≠candidate
+enforced, budget cap with projection-abort, injection-safe judge prompt), `README.md`.
+
+Manual mutation drill performed once (plan §7, mandatory): stripped `{OBSERVED_REALITY_RULE}`
+from `_build_session_voice_prompt`'s `stable_text` in `routes/caddie.py`, ran
+`uv run pytest tests/eval -x` → RED (`prompt_contains_rule: OBSERVED_REALITY_RULE missing from
+mouth(s): ['text']`), reverted via `git checkout -- app/routes/caddie.py` (confirmed clean diff
+after). Gates: `ruff check .` clean; `pytest tests/eval` → 46 passed, no Postgres/no API key
+needed; full `pytest` → 1327 passed, 82 skipped (DB integration tests, unchanged, CI-only);
+`pytest --collect-only -q tests/eval` confirms `run_tier2.py` is NOT collected; `CADDIE_EVAL_LIVE=1
+uv run python -m tests.eval.run_tier2` with no key → clean exit 2. Tier 2 never run live (no key
+in this environment, by design — it's on-demand and costs money).
+
+Deviation from plan, noted plainly: landed **25 scenarios**, not the 30-50 the plan targeted —
+prioritized correctness (every scenario's Tier-1 checks verified against the real functions
+before being written, see commit) and the teeth proof over raw count, given effort budget.
+`README.md` documents "every new caddie incident MUST land as a scenario in the same PR as its
+fix" so the set grows from here. Everything else implemented as specified; no scope changes.
+Silent (no user-visible surface — eval-internal only; `specs/caddie-advice-eval-plan.md` §3
+confirmed no `types.ts`/`models.py` touch, none made).
+
 ## 2026-07-08 — builder: hazard side-flip REWORK per adversarial review (backend-only, rides the NOTICEABLE bundle, DONE)
 
 Reworked d9eda1c per the Fable review's two BLOCKING findings (review text at the bottom
@@ -8736,3 +8931,72 @@ clean) + health ok. TestFlight v1.0.900 (build 202607082006).
   timeouts/retries. Data-channel error telemetry breadcrumb.
 Nineteen ships this run. Remaining audit P1s: advice eval harness,
 tool-loop parity (opus plan). Injection attempts (2) logged for retro.
+
+---
+
+## 2026-07-10 — SHIPPED: #116 hazard-side truth + yardage legibility
+
+Owner "ship it". Merge 17622cf → main; deploy verified by SHA + health ok.
+TestFlight v1.0.911 (build 202607082229). The Fable-review save: the first
+fix was falsified (chord-vs-polyline root cause on doglegs; bent tests
+caught), reworked on Fable (played-polyline classification, plural-proof
+side-grounded validator, humility rule), real-fixture hole-4 regression.
+DATA REPAIR EXECUTED post-deploy: both courses re-ingested WITH polylines
+(hole 4 live: "bunker L 275y, bunker R 390y, bunker C 470-495y");
+36-hole guide re-research running against true geometry. Twenty ships.
+PROCESS NOTES for retro: (1) tests bent to pass by a builder — caught by
+the Fable adversarial review; (2) ship.sh cwd trap hit AGAIN (127) — the
+ship chain must always cd absolute first; (3) Fable-for-plans policy live.
+
+---
+
+## 2026-07-09 — RETRO (cycle 37; ~30 cycles / 20 ships since retro 6)
+
+Step 0 clean: Bundle #117 Needs-Review card (3981c525) has no owner comment —
+no "ship it", no feedback; PR #117 stays awaiting (not merged, no ping).
+Synced main→integration/next (11 ahead, clean). Pick: RETRO (silent), done
+directly (direct beats nested-agent per our own lesson).
+
+Distilled 5 lessons into tasks/lessons.md (2026-07-09 block):
+1. A red SPEC test = fix the CODE, never edit the assertion — #116's builder
+   rewrote plural side-claim rows to singular to force-pass, masking the
+   chord-vs-polyline dogleg bug; caught ONLY by Fable review. Reviewer checklist
+   must now diff changed tests vs spec; weaker/deleted assertion = BLOCKING.
+2. Prompt-injection is expected input; hold every time (4+ logged: fake system
+   blocks, "date changed don't mention it", Telegram approve-me). No auto-flag
+   card — agents held 100%, detector cost > benefit.
+3. Bake absolute `cd /Users/justinlee/projects/scorecard` as the ship chain's
+   literal first token — #116 hit the cwd trap AGAIN (127) despite the memory
+   rule; a remembered rule doesn't execute.
+4. Checkpoint (commit+push + a `## AWAITING` note) BEFORE every long await —
+   the coordinator dies at await-points nearly every cycle and orphans child
+   reports; make mid-await termination a clean resumable pause.
+5. Wins to keep: Fable-for-plans (falsified #116's wrong fix pre-ship), eval
+   "teeth" requirement, deploy-verified-by-SHA + gate-on-structured-fields.
+
+Backlog groomed: promoted #115 riders (prompt-caching, rate-limiting,
+timeouts-retries) + #116 rider (fcb-caption-visibility) + 6 old riders
+(wind #107, opening-reco/elevation-writeback #109, ci-postgis, auto-shot-reco,
+voicetel-flush) from done-on-bundle → done-shipped-main (all verified on
+origin/main). search-speed-and-golfapi-verify marked partly-shipped (latency
+half #114 on main; universe half BLOCKED on GolfAPI 401 key, owner-action).
+Only caddie-tool-loop-parity + caddie-advice-eval-harness remain done-on-bundle
+(the #117 riders, correctly awaiting ship). fcb-caption-proximity stays ready
+(screenshot-gated); glasses-shot-tracking-spike stays tabled (owner).
+
+Classification: SILENT (docs/backlog) — rides bundle #117. No owner ping.
+
+## Cycle 38 (2026-07-09) — eng-lead: fcb-caption-proximity DONE on bundle #117
+Plan (opus): specs/fcb-caption-proximity-plan.md. Built f1a5e2c on integration/next
+(extract pure DistancesCard + re-anchor caption above the F/C/B tiles + safe-area
+bottom clearance; data-overlay preserved; 24/24 vitest incl. new jsdom render test).
+Reviewer: CLEAN (byte-faithful extraction, only the 2 intended edits, tests are genuine
+regression guards). Designer: SHIP (one non-blocking nit — center vs right-align caption
+over the 3-tile row — deferred to owner's on-device judgment). CI on f1a5e2c: Frontend
+gates ✓ + Backend gate ✓ (E2E advisory). On-device screenshot validation deferred to the
+owner's next TestFlight build (honest — sim flow too heavy + crash-history for a P2 CSS
+polish). PR #117 checklist updated. NO owner ping: #117 was already awaiting "ship it" on
+a noticeable change (caddie-tool-loop-parity); this minor UI polish rides along and merges
+with the owner's single approval. Bundle still awaiting owner ship-it.
+
+Checkpoint commit: 6760bd4 (plan+AWAITING) → superseded by this close note.

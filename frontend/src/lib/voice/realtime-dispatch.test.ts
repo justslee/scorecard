@@ -14,6 +14,22 @@ vi.mock('@/lib/caddie/api', () => ({
   sessionRecommend: vi.fn(async () => ({ club: '8iron', target_yards: 150 })),
   getSessionStatus: vi.fn(async () => ({ status: 'active', round_id: 'r1' })),
   getSessionConditions: vi.fn(async () => ({ weather: null, plays_like: null })),
+  getSessionCarries: vi.fn(async () => ({
+    round_id: 'r1',
+    hole_number: 4,
+    available: true,
+    carries: [
+      {
+        type: 'bunker',
+        side: 'left',
+        carry_yards: 245,
+        clubs_that_clear: ['Driver'],
+        clubs_short_of_it: ['3 Wood'],
+      },
+    ],
+    club_distances: { Driver: 260 },
+    note: null,
+  })),
   getSessionPlayerProfile: vi.fn(async () => ({ handicap: 12 })),
 }));
 
@@ -23,6 +39,7 @@ import {
   sessionRecommend,
   getSessionStatus,
   getSessionConditions,
+  getSessionCarries,
   getSessionPlayerProfile,
 } from '@/lib/caddie/api';
 
@@ -75,13 +92,15 @@ describe('dispatchTool — Realtime tool surface v1', () => {
     expect(getSessionStatus).toHaveBeenCalledWith('round-42');
   });
 
-  it('get_carries is an honest stub until P3 — available:false, no numbers', async () => {
-    const out = (await dispatchTool('get_carries', { hole_number: 1 }, ctx)) as {
+  it('get_carries dispatches to the session carries endpoint with the hole number', async () => {
+    const out = (await dispatchTool('get_carries', { hole_number: 4 }, ctx)) as {
       available: boolean;
-      reason: string;
+      carries: Array<{ carry_yards: number }>;
     };
-    expect(out.available).toBe(false);
-    expect(out.reason).toMatch(/not mapped/i);
+    expect(getSessionCarries).toHaveBeenCalledWith('round-42', 4);
+    // The REAL along-path carry flows through untouched — never a stub.
+    expect(out.available).toBe(true);
+    expect(out.carries[0].carry_yards).toBe(245);
   });
 
   it('unknown tools return an error payload instead of throwing', async () => {

@@ -1,6 +1,6 @@
 {
   "updated": "2026-07-09",
-  "note": "The eng-lead reads this to pick the next task (highest-priority status:ready). The 'real-data wiring' initiative (P1-P22) replaces all mocked/hardcoded frontend data with real DB-backed data. Full detail: specs/real-data-wiring-plan.md. Mirror of the Looper - Product Board. Downstream items are status:blocked until their depends_on ships; the eng-lead flips them to ready as deps land. type: minor=silent (backend/infra/tests, no owner ping) | major=noticeable (user-visible on TestFlight, rolls into an approval bundle). | 2026-07-07 hygiene: p2/p3 readies (hazard-grounding, persistent-map, tee-marker) were already shipped to main \u2014 statuses corrected; course-elevation superseded by real USGS elevation.py. | 2026-07-07 retro hygiene: VOICE AGENT AUDIT P1+P2 CORE IS COMPLETE \u2014 keyterms/auto-send/telemetry (#100), TTS sheet replies (#102, v1.0.750), streamed replies + voice-reply timeouts (#104, v1.0.767) all shipped to main. map-viewer-error-screen-restyle shipped in #103 (was mis-tagged in-progress) and voice-tts-sheet-replies shipped in #102 (was mis-tagged 'awaiting ship-it') \u2014 both corrected to done-shipped-main. Remaining voice work is refinement/device-verify (voice-agentic-setup, voice-live-transcription, voice-language-onboarding, voice-per-player-tees), not core audit. Seeded 3 next candidates (caddie-persona-tts-voices, caddie-hole-strategy-guides, looper-brain-parity) grounded in NORTHSTAR + memory.",
+  "note": "Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
       "id": "fcb-caption-visibility",
@@ -8,7 +8,7 @@
       "type": "minor",
       "priority": 1,
       "risk": "low",
-      "status": "done-on-bundle (integration/next b4a66ac, NOTICEABLE; reviewer SOUND + designer SHIP + qa green). Awaiting the bundle ship with the hazard-side-flip fix.",
+      "status": "done-shipped-main (b4a66ac, shipped with #116 17622cf \u2192 main, TestFlight v1.0.911)",
       "depends_on": [],
       "spec": "specs/fcb-caption-visibility-plan.md",
       "why": "OWNER-CONFUSING UX (2026-07-09 screenshots): the 'from where you stand / from the tee' caption under the Front/Center/Back tiles is OBSCURED by the floating Ask-caddie/Enter-score pills, so 231Y-from-you vs 178Y-card looked like a bug. Move/restyle the source label so it is ALWAYS visible (e.g. above the tiles or inline with the section header); consider clarifying the PLAYS tile ('wind+elev, from you'). Designer pass required (calm, yardage-book). Was scoped into cycle 31 but did not land \u2014 the stale-hole P0 + telemetry shipped without it.",
@@ -20,9 +20,11 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle-117 (f1a5e2c; reviewer CLEAN + designer SHIP; CI green f1a5e2c; on-device screenshot deferred to owner next TestFlight build; rides #117 as minor UI polish)",
       "depends_on": [],
-      "why": "DESIGNER follow-up to fcb-caption-visibility (non-blocking, 2026-07-08): the visibility fix moved the source caption to the TOP of the distances card, which fixes occlusion but disconnects the label from the F/C/B tiles it describes (it now sits directly above the Wind/Elev/Plays row, separated by a full stat row + hairline). Preferred fix: re-anchor the caption LOCALLY above the F/C/B tile row (its natural home) and solve the occlusion at the ROOT \u2014 give the data-overlay card enough bottom padding / bottom safe-area to clear the floating Ask-caddie/Enter-score pill bar height (fallback: a position:sticky mini-header scoped to the F/C/B block). VALIDATE against a real TestFlight screenshot first (designer explicitly wants to judge the current top-placement in situ before committing \u2014 it may read fine on device; do not do a speculative padding hack blind). Designer pass required."
+      "why": "DESIGNER follow-up to fcb-caption-visibility (non-blocking, 2026-07-08): the visibility fix moved the source caption to the TOP of the distances card, which fixes occlusion but disconnects the label from the F/C/B tiles it describes (it now sits directly above the Wind/Elev/Plays row, separated by a full stat row + hairline). Preferred fix: re-anchor the caption LOCALLY above the F/C/B tile row (its natural home) and solve the occlusion at the ROOT \u2014 give the data-overlay card enough bottom padding / bottom safe-area to clear the floating Ask-caddie/Enter-score pill bar height (fallback: a position:sticky mini-header scoped to the F/C/B block). VALIDATE against a real TestFlight screenshot first (designer explicitly wants to judge the current top-placement in situ before committing \u2014 it may read fine on device; do not do a speculative padding hack blind). Designer pass required.",
+      "spec": "specs/fcb-caption-proximity-plan.md",
+      "done_note": "Cycle 38: extracted pure DistancesCard component (frontend/src/components/yardage/DistancesCard.tsx) + jsdom render tests (24/24 incl. DOM adjacency + safe-area clearance + live/from-tee); re-anchored the F/C/B source caption from top-of-card to immediately above the tile row (marginBottom 8->6); killed pill-bar occlusion at the root via card bottom padding max(20px, calc(env(safe-area-inset-bottom)+14px)) (no sticky affordance); data-overlay preserved for map tap/zoom. Pure layout, numbers/behavior unchanged. Non-blocking designer nit: center vs right-align caption over the 3-tile row - deferred to owner on-device judgment."
     },
     {
       "id": "fcb-line-vs-card-hint",
@@ -41,7 +43,7 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "partly-shipped \u2014 LATENCY half done-shipped-main (#114 5d20ec7, two-phase progressive nearby + geo-cell cache, TestFlight v1.0.888); UNIVERSE/verify half BLOCKED on the GolfAPI 401 key fix (owner-action) + docs-verified call count before spend",
       "depends_on": [],
       "why": "OWNER 2026-07-09: (a) nearby search takes a long time \u2014 reduce results shown and/or make the geo search more efficient (geo-indexed query, cached area results, smaller page); (b) use the GolfAPI to fetch the course universe ONCE ('I believe this is just one API call \u2014 do not spend a lot of calls') and use it as a VERIFY step so junk rows like 'Golf Course' or 'Pebble Beach 9th Hole' never surface. CONSTRAINTS: the GolfAPI key currently 401s (owner must fix the account first \u2014 BLOCKED for the universe half until then); the plan MUST verify the exact call count for a universe dump from GolfAPI docs BEFORE any call is spent (pagination risk; hard budget cap 45/mo); store the universe permanently (one-time cost); verify layer = fuzzy-match Places/OSM results against the canonical list, downrank non-matches (never hard-drop mapped/known-good courses). The latency half (a) is UNBLOCKED \u2014 build now."
     },
@@ -51,7 +53,7 @@
       "type": "minor",
       "priority": 1,
       "risk": "low",
-      "status": "done-on-bundle (PR #115, silent; reviewer SOUND + qa PASS)",
+      "status": "done-shipped-main (PR #115, silent; merged 7eda480, TestFlight v1.0.900)",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
       "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.1; area B = grade F). No prompt caching anywhere \u2014 the text caddie re-bills ~700-900 tokens of near-static system prefix (persona + _BASE_BEHAVIOR + HAZARD_GROUNDING_RULE + hole static geometry/hazards/guide) PLUS the full last-20-turn history on EVERY turn (_build_session_voice_prompt, routes/caddie.py:756-802). Restructure static->dynamic and set an Anthropic cache_control:{type:'ephemeral'} breakpoint after the per-round-stable prefix; render order tools->system->messages. SOTA: cache read ~0.1x input (up to 90% cheaper) + lower latency, break-even at 2 requests. Verify the pinned model's min-cacheable prefix (~1024-2048 tokens) \u2014 may need to co-locate more static content behind the breakpoint to clear the floor; confirm via usage.cache_read_input_tokens. Silent (cost/latency only, no wire-shape change). UNBLOCKED."
@@ -74,7 +76,7 @@
       "type": "minor",
       "priority": 1,
       "risk": "medium",
-      "status": "done-on-bundle (PR #115, silent; 456cfef; reviewer SOUND [security-angle double-checked] + qa PASS 19/19 + 1220 full). Two-tier per-user limiter (in-process sliding-window RPM + file-backed daily budget, no migration) on 14 paid endpoints; fail-OPEN; calm 429; loud log. Follow-ups noted: real usage.token accounting to replace the coarse est-token cap; conftest fixture to isolate the module singleton in tests; add CADDIE_RATE_* to .env.example (guard-blocked for the agent \u2014 human to add).",
+      "status": "done-shipped-main (PR #115, silent; merged 7eda480, TestFlight v1.0.900)",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
       "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.2; area E = grade F). ZERO per-user rate/token/spend limits on the paid LLM endpoints \u2014 only guards are auth + a 4000-char input cap; an authed client can loop /voice/stream, /session/voice*, /realtime/session mint, /course-intel with no cost ceiling (the single biggest cost/scale risk, and it can drain the metered-overflow $50 cap). Add per-user RPM + TPM limits (enforce BOTH \u2014 request count alone misses one expensive prompt) and a hard monthly token/$ budget with 80/90% alerts; token-aware abuse flag (high-input/short-output = injection probing). Start single-box (in-process/Postgres counter); note Redis shared store is needed once we run >=2 workers (see caddie-multiworker, P2). Silent backend/infra. UNBLOCKED for single-box."
@@ -85,7 +87,7 @@
       "type": "minor",
       "priority": 1,
       "risk": "low",
-      "status": "done-on-bundle (PR #115, silent; reviewer SOUND + qa PASS)",
+      "status": "done-shipped-main (PR #115, silent; merged 7eda480, TestFlight v1.0.900)",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
       "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.3; area F). The Anthropic caddie calls pass no timeout/max_retries (routes/caddie.py:796,863,1359; memory.py:129) so they inherit the SDK ~10-min default \u2014 with --workers 1 a single hung call ties up the ONLY worker for minutes on-course (throughput cliff). Add explicit timeout (~20-30s) + bounded retries; degrade to calm in-character honest copy on exhaustion (matches the humanizeVoiceError / fail-to-honest-state rule). Contrast the already-bounded httpx timeouts (realtime mint 15s, TTS 30s). Cheap, high-value resilience. Silent. UNBLOCKED."
@@ -96,7 +98,7 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "done-on-bundle (PR #117, NOTICEABLE; 7124c38 on integration/next; cycle 35). Fable plan specs/caddie-tool-loop-parity-plan.md. ONE canonical tool registry backend/app/caddie/tools.py rendered two ways (realtime_tools()->relay DEFAULT_TOOLS; TEXT_TOOLS->Anthropic); parity locked by drift test tests/eval/test_tool_parity.py. Bounded server-side loop backend/app/caddie/tool_loop.py: structural stops only (3-model-call ceiling, tool_choice:none final, output-token budget, repeated-call dedupe, per-tool 6s timeout). Real get_carries (player clubs vs along-path hazard carries from #116 polyline; honest empties, never fabricated) both mouths; stub at realtime.ts:126 removed. SSE resolves tools in-stream + event:status ('checking the numbers'). Reviewer security-review CLEAN (no HIGH/MED; get_owned_session auth, tool results as clipped data blocks, calm errors); designer PASS; QA all gates green (voice 274/274, vitest 19/19, eval 52/52, targeted 83/83, ruff clean, build ok). OWED before owner ship-it ask: TestFlight build + on-device live-turn evidence (live key + mapped course).",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
       "classification": "noticeable (the sheet/fallback caddie can currently NOT fetch fresh numbers or act; parity makes it as capable as the orb \u2014 owner would feel smarter sheet answers)",
@@ -108,7 +110,7 @@
       "type": "minor",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle (PR #117, silent; f491b71 on integration/next; reviewer SOUND \u2014 harness honest/falsifiable, 3 non-blocking notes folded in; Tier-1 47 passed offline + full suite green + ruff clean). Two-tier caddie advice-quality eval: Tier-1 deterministic prompt-assembly+honesty asserts (always in CI, no key/DB) over a 25-scenario golden JSONL seeded from the real hole-4 incidents (no-left-bunker hallucination, observed-reality gaslight, Bethpage-4 side-flip) with a closed check-name registry + teeth tests proving every check goes RED on the pre-fix world; Tier-2 LLM-judge (judge!=candidate, injection-safe, budget-capped, projection-abort) is on-demand/nightly only, triple-gated off CI. Follow-ups: grow golden set 25->30-50 (incident-driven growth rule in README); optional nightly Tier-2 schedule workflow; optional extract _build_session_voice_prompt pure body so the text mouth is Tier-2-drivable offline.",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
       "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.5; area G = grade D). No advice-QUALITY harness exists \u2014 caddie tests cover geometry/plumbing only, runtime LLM output has no automated quality gate, so 'good enough to replace a caddie' is unfalsifiable and every other caddie improvement is unmeasurable. Build a git-diffable golden JSONL (30-50 scenarios: hole geometry + player + question -> expected advice properties, incl. edge cases: dogleg, hazard carry, downhill lie, low-confidence parse). Two tiers per SOTA: deterministic assertions first (names a real club? sane yardage bounds? no hallucinated hazard? valid shape) + an LLM-JUDGE rubric ('grounded in the actual hole? accounts for stated lie/wind? appropriately concise?'); regression-gate in CI; de-bias the judge (judge with a DIFFERENT model than the one under test, randomize order, control for verbosity). Extends the existing offline voice-tests gate pattern. Silent. UNBLOCKED."
@@ -1747,7 +1749,7 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "done-on-bundle",
+      "status": "done-shipped-main (rider, shipped via early bundle to main)",
       "shipped": "#106 / TestFlight v1.0.789 (2026-07-07)",
       "depends_on": [],
       "why": "Owner 2026-07-07: 'assume the default will be \"What should I hit or do on this next shot\" \u2014 takes where you are on the hole and gives a brief recommendation already there when I open Ask Caddie. Then follow-ups fully conversational.' Uses GPS position + hole intel via the existing /session/recommend; render as the caddie's opening turn (streamed + spoken per prefs).",
@@ -1759,7 +1761,7 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "done-on-bundle",
+      "status": "done-shipped-main (rides #107, merged 1271254)",
       "landed": "integration/next @ 96cb16e (loop cycle 10, 2026-07-07) \u2014 silent; reviewer SHIP, QA 1602/1602. Follow-up nit (non-blocking): hole-change + visibility refresh are gated only on staleness, not round-active, so a COMPLETED round still refetches weather on hole-nav/foreground \u2014 fold the round.status!=='completed' guard in next time RoundPageClient is touched.",
       "depends_on": [],
       "why": "Owner 2026-07-07: one wind reading for a 4+ hour round. Source granularity is honest (one Open-Meteo grid cell covers the course; per-hole SPEED differences exist in no data source \u2014 never fake them), but STALENESS is fixable: quietly refetch weather every ~20-30 min or on hole change when the reading is >20 min old; tiles update in place. Direction-per-hole-bearing already works.",
@@ -1782,7 +1784,7 @@
       "type": "noticeable",
       "priority": 1,
       "risk": "medium",
-      "status": "done-on-bundle (5c9b6db + c2b27de polish; pure helper lib/caddie/opening-shot.ts + CaddieSheet phrasing; reviewer clean, designer approved, gates green; rides bundle PR #109)",
+      "status": "done-shipped-main (5c9b6db, rides #109; verified on origin/main)",
       "depends_on": [],
       "why": "Owner ask (2026-07-08): when GPS is absent or implausible (>800y from the green), the auto opening recommendation should fall back to a FROM-THE-TEE recommendation, labeled honestly (e.g. 'From the tee, 365 to the pin...'). Covers home testing + the first tee before GPS lock. Honest labeling per the no-fake-data-fallbacks lesson.",
       "spec": ""
@@ -1804,7 +1806,7 @@
       "type": "silent",
       "priority": 2,
       "risk": "low",
-      "status": "done-on-bundle",
+      "status": "done-shipped-main (rider, shipped via early bundle to main)",
       "depends_on": [],
       "why": "Observed 2026-07-08: voicetel volume is near-blind (~1 event in 4h of a live session). lib/voice/telemetry.ts flushes on an 8s timer / 12-event batch / visibilitychange->hidden with keepalive fetch. On iOS WKWebView (Capacitor), pagehide is more reliable than visibilitychange, and the CapacitorHttp-patched fetch may not honor keepalive when the webview suspends -> queued events die on background/kill before the timer fires. Add a pagehide/freeze listener + verify keepalive actually ships (or use sendBeacon / a smaller batch / immediate flush for rare high-signal events). Don't fix while we're mid-TTS fix; targeted follow-up.",
       "resolution": "Cycle 19 (1c65b49, rides PR #109). Option A \u2014 smallest secure design, no new/unauth surface: added a `flush?:boolean` flag to voiceEvent() that immediately drains the WHOLE queue, wired it on all failure events (mic_error/live_start_failed/live_unsupported/resolved_fallback/speak_failed/prime_failed) so they ship while foregrounded; added a window pagehide listener alongside visibilitychange. Authenticated fetch(keepalive) + Clerk Bearer preserved; sendBeacon/token-in-body rejected (attack surface). Reviewer CLEAN + security-reviewed (auth preserved, no PII, flag never in payload); 10 deterministic jsdom tests. Unblocks device-side latency verification.",
@@ -1816,7 +1818,7 @@
       "type": "silent",
       "priority": 3,
       "risk": "low",
-      "status": "done-on-bundle",
+      "status": "done-shipped-main (3a8f3d7 CI PostGIS bootstrap + DB-backed tests)",
       "done_commit": "3a8f3d7",
       "done_note": "Cycle 23 (2026-07-08): CI Postgres service -> postgis/postgis:16-3.4; conftest _ensure_schema now bootstraps the raw-SQL course-mapping schema (001_course_mapping_schema.sql run verbatim via asyncpg simple-query protocol, is_file-guarded) + 5 tables added to per-test TRUNCATE; new tests/integration/test_courses_mapped_db.py with 7 DB-backed tests (write-back->get_course round-trip, JSONB merge preserves other keys, 4 no-op-returns-False paths, precompute backfill idempotency via real _precompute_course_elevations seam). VERIFIED IN CI: the 7 tests RUN (not skip) and PASS against PostGIS -- backend gate 1161 passed (up from 1080 local-skip); frontend gate green; reviewer SHIP (no blocking, all assertions matched to real code). Rides bundle PR #111 (silent). Only ci.yml + conftest.py + new test file touched; no app/deploy/migration edits.",
       "depends_on": [],
@@ -1829,7 +1831,7 @@
       "type": "silent",
       "priority": 6,
       "risk": "low",
-      "status": "done-on-bundle",
+      "status": "done-shipped-main (978fb8e, rides #109)",
       "done_commit": "9c5e338",
       "done_note": "Cycle 20 (2026-07-08): write-back key now a validated int in 1..36 (_valid_hole_number in courses_mapped.py), fully decoupled from the display hole_number; absent/malformed/out-of-range holeNumber skips the persist (logs debug, never raises) instead of defaulting to hole 1; defense-in-depth guard short-circuits before SQL/session. Folded in the _feature_center continue-past-malformed fix. Reviewer SHIP (no blocking), QA green (100/100 non-DB + 40 item tests, voice smoke 274/274). Rides bundle PR #109. DB round-trip left to CI Postgres gate.",
       "depends_on": [],

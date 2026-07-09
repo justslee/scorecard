@@ -60,3 +60,6 @@ frontend/.env.local
 .clerk-test-creds
 frontend/test-results/
 /scorecard/
+
+# Tier-2 caddie eval run reports (specs/caddie-advice-eval-plan.md) — local only
+backend/tests/eval/last_run.json

@@ -285,6 +285,62 @@ describe("streamCaddieReply — getReader path", () => {
     expect(err2.message).not.toBe(CALM_REPLY_ERROR);
   });
 
+  it("(f2) a `status` keepalive frame re-arms the first-token watchdog and invokes onStatus — a tool turn longer than firstTokenTimeoutMs still succeeds", async () => {
+    const s = makeControllableStream();
+    stubStreamingFetch(s);
+    const onToken = vi.fn();
+    const onStatus = vi.fn();
+
+    const pending = streamCaddieReply(
+      "/caddie/session/voice/stream",
+      { round_id: "r1", transcript: "what carries the left bunker?" },
+      { onToken, onStatus, firstTokenTimeoutMs: 8_000, idleTimeoutMs: 10_000 },
+    );
+
+    // 6s in: no token yet, but the server signals a tool round is running.
+    await vi.advanceTimersByTimeAsync(6_000);
+    s.push(sseFrame("status", "checking the numbers"));
+    await vi.waitFor(() => expect(onStatus).toHaveBeenCalledWith("checking the numbers"));
+
+    // Another 6s of silence — 12s total, past the original 8s deadline, but
+    // the status frame re-armed the watchdog so the stream must still be live.
+    await vi.advanceTimersByTimeAsync(6_000);
+    s.push(sseFrame("token", "245 carries it."));
+    s.push(sseFrame("done", {}));
+    s.close();
+
+    await expect(pending).resolves.toBe("245 carries it.");
+    expect(onToken).toHaveBeenCalledWith("245 carries it.");
+  });
+
+  it("(f3) a `status` frame AFTER the first token re-arms the idle watchdog", async () => {
+    const s = makeControllableStream();
+    stubStreamingFetch(s);
+    const onToken = vi.fn();
+    const onStatus = vi.fn();
+
+    const pending = streamCaddieReply(
+      "/caddie/session/voice/stream",
+      { round_id: "r1", transcript: "hi" },
+      { onToken, onStatus, firstTokenTimeoutMs: 8_000, idleTimeoutMs: 10_000 },
+    );
+
+    s.push(sseFrame("token", "Let me check. "));
+    await vi.waitFor(() => expect(onToken).toHaveBeenCalledTimes(1));
+
+    // 9s of dead air, then a status frame (tool round) resets the idle timer;
+    // another 9s later the reply lands — 18s of no tokens total, no timeout.
+    await vi.advanceTimersByTimeAsync(9_000);
+    s.push(sseFrame("status", "checking the numbers"));
+    await vi.waitFor(() => expect(onStatus).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(9_000);
+    s.push(sseFrame("token", "It's 245."));
+    s.push(sseFrame("done", {}));
+    s.close();
+
+    await expect(pending).resolves.toBe("Let me check. It's 245.");
+  });
+
   it("(f) a non-2xx response is pre-first-token -> BeforeFirstByteError", async () => {
     const fetchMock = vi.fn(() =>
       Promise.resolve({

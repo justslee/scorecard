@@ -47,6 +47,18 @@ OBSERVED_REALITY_RULE = (
     "in front of them."
 )
 
+# Text-mouth tool instruction (caddie-tool-loop-parity): the classic text
+# caddie now carries the same six tools the Realtime orb has (canonical
+# registry in app/caddie/tools.py). Appended to BOTH text builders'
+# stable_text (routes/caddie.py) — one constant so wording never drifts.
+TOOL_USE_RULE = (
+    "You have tools to fetch live numbers (recommendation, conditions, carries, "
+    "player profile) and to log shots. Prefer a tool over guessing when the "
+    "CURRENT SITUATION lacks the number; never state a yardage or carry that "
+    "came from neither a tool nor the CURRENT SITUATION. If a tool reports data "
+    "unavailable, say so plainly."
+)
+
 
 def build_realtime_instructions(
     personality: CaddiePersonality,

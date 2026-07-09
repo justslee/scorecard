@@ -476,6 +476,115 @@ def test_correct_side_multi_hazard_passes():
     assert result.play_line == guide.play_line
 
 
+# ── Carry-aware side validation (carry-aware-side-validation-plan.md) ───────
+#
+# Side sets alone can't catch a WRONG number riding along a REAL side word on
+# a hole with the same hazard type on both sides ("right bunkers ... at 265"
+# when the real right-side bunker is at 390) — that's exactly the Bethpage
+# hole 4 shape. `_hole4_like_bunkers()` reproduces it: bunkers L@275, R@390,
+# C@470, matching the plan's edge-case table geometry shorthand.
+
+
+def _hole4_like_bunkers() -> list[Hazard]:
+    return [
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=275),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=390),
+        Hazard(type="bunker", side="center", line_side="center", carry_yards=470),
+    ]
+
+
+def test_carry_check_passes_side_and_correct_distance():
+    guide = _guide(miss_side="The right bunker at 390 pinches the landing area.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
+def test_carry_check_passes_side_and_correct_distance_yd_abbreviation():
+    guide = _guide(miss_side="The right bunker at 390y pinches the landing area.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
+def test_carry_check_passes_side_and_correct_distance_yards_word():
+    guide = _guide(miss_side="The right bunker at 390 yards pinches the landing area.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
+def test_carry_check_rejects_side_with_wrong_distance():
+    """The incident shape: a real side (right IS a real bunker side on this
+    hole) paired with a number that belongs to a DIFFERENT hazard (265 is the
+    left bunker's carry, not the right one's) must still reject."""
+    guide = _guide(miss_side="The right bunker at 265 catches drives off the tee.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is None
+
+
+def test_carry_check_rejects_number_stuffing_bypass():
+    """A truthful 'right bunker at 390' elsewhere in the SAME field must not
+    launder a co-located false 'left bunker at 390' — each hazard-keyword
+    occurrence binds its own nearest side and its own nearest number."""
+    guide = _guide(
+        miss_side="The right bunker at 390 is fine; the left bunker at 390 is not."
+    )
+    assert validate_guide(guide, _hole4_like_bunkers()) is None
+
+
+def test_carry_check_no_number_claims_unchanged_pass():
+    guide = _guide(miss_side="Right-side bunkers guard the landing area.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
+def test_carry_check_no_number_claims_unchanged_reject():
+    guide = _guide(miss_side="Right-side bunkers guard the landing area.")
+    assert validate_guide(guide, _left_bunker()) is None
+
+
+def test_carry_check_number_outside_window_falls_back_to_side_only():
+    """A number far enough from the hazard keyword (beyond the same
+    `_SIDE_WINDOW_WORDS` window used for sides) never binds — the claim falls
+    back to the side-only path. 265 belongs to NEITHER the right bunker (390)
+    nor center (470) — if it were wrongly bound this would REJECT, so a PASS
+    here proves the window correctly excluded it and the real side (right)
+    carried the check instead."""
+    guide = _guide(
+        miss_side=(
+            "The right bunker catches the drive off the tee; by the way the "
+            "green sits at roughly 265 on the card."
+        )
+    )
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
+def test_carry_check_implausible_number_not_bound():
+    guide = _guide(miss_side="Bunker left on hole 12 catches a pulled drive.")
+    assert validate_guide(guide, _left_bunker()) is not None
+
+
+def test_carry_check_rejects_tie_break_laundering():
+    """Adversarial-review finding (post-4eb8ad2): a single-nearest-number pick
+    with an after-keyword tie-break let a co-located FALSE number, equidistant
+    BEFORE the hazard keyword, hide behind a TRUE one after it. "265" and
+    "390" are both distance 2 from "bunker" here — the claim asserts a right
+    bunker at BOTH 265 (false) and 390 (true); the false one must still
+    reject the whole guide, not get out-voted by the true one."""
+    guide = _guide(miss_side="The 265-yard right bunker sits 390 off the tee.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is None
+
+
+def test_carry_check_single_true_number_still_passes():
+    """Companion to the tie-break-laundering test above: with only ONE
+    candidate number in-window (the true one), the fix must not have simply
+    started rejecting everything."""
+    guide = _guide(miss_side="The right bunker sits 390 off the tee.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
+def test_carry_check_range_binds_first_number():
+    """Plan edge-case table row: 'bunkers at 470-495 dead center... right' —
+    the range's FIRST number (470) binds (the tail 495 is consumed by the
+    same match, never bound separately); the bound 'right' side is supported
+    via the center hazard at 470 (center accepts either lateral claim)."""
+    guide = _guide(miss_side="Bunkers right at 470-495, dead center in play.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
 # ── Success-path shape test (reviewer finding: the live writer path had zero
 # coverage — an SDK-surface mismatch would spend tokens and silently cache
 # nothing). Drives research_hole_guide through a fake client whose response

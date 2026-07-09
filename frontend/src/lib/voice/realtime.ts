@@ -18,6 +18,7 @@ import {
   sessionRecommend,
   getSessionStatus,
   getSessionConditions,
+  getSessionCarries,
   getSessionPlayerProfile,
   type RealtimeSessionToken,
 } from '@/lib/caddie/api';
@@ -124,13 +125,12 @@ export async function dispatchTool(
       return await getSessionPlayerProfile(ctx.roundId);
     }
     case 'get_carries': {
-      // P2 STUB — real per-(hole, tee) carries land in P3 (ingest-precomputed
-      // PostGIS intersections). The instructions require the persona to say
-      // carries aren't available here, never to invent a number.
-      return {
-        available: false,
-        reason: 'Carry distances are not mapped for this course yet.',
-      };
+      // Real along-path carries from the round session's mapped hazards
+      // (caddie-tool-loop-parity) — the same carries_payload the text tool
+      // loop resolves. Honest empties: available:false when the course isn't
+      // mapped, an explicit empty list + note when the hole has no in-play
+      // hazards. The persona must never invent a carry number.
+      return await getSessionCarries(ctx.roundId, Number(args.hole_number));
     }
     case 'set_round_setup': {
       // Handled entirely on the client: the component builds + creates the round

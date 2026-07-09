@@ -6,9 +6,9 @@ Covers (plan §6):
   2. Stable-before-volatile ordering.
   3. Brain-regression guard: rendered content is line-set-identical to the
      OLD single-string template, modulo ordering + the one pointer reword.
-  4. Cache-usage logging fires (sync).
+  4. Cache-usage logging fires (JSON mouth — now the async tool loop).
   5. Cache-usage logging fires (stream) + SSE frames unchanged.
-  6. The `system` list is what reaches the SDK (sync + stream).
+  6. The `system` list is what reaches the SDK (JSON + stream).
   7. Timeout/retry constructor args.
 """
 
@@ -23,7 +23,7 @@ import pytest
 from app.caddie.hazards import HAZARD_GROUNDING_RULE
 from app.caddie.session import RoundSession
 from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
-from app.caddie.voice_prompts import OBSERVED_REALITY_RULE
+from app.caddie.voice_prompts import OBSERVED_REALITY_RULE, TOOL_USE_RULE
 from app.routes import caddie as caddie_routes
 
 
@@ -143,6 +143,9 @@ async def test_voice_prompt_stable_before_volatile_ordering(monkeypatch):
 
 
 # ── 3: brain-regression guard — content-identical modulo order + reword ────
+# (The templates carry {tool_rule} — the ONE deliberate additive line from
+# caddie-tool-loop-parity, referenced via the imported TOOL_USE_RULE constant
+# so wording edits don't rot this guard. Everything else must stay identical.)
 
 
 _OLD_SESSION_TEMPLATE = """{persona}
@@ -166,6 +169,7 @@ You have memory of the entire round conversation and prior rounds. Reference ear
 or known tendencies when relevant.
 
 {hazard_rule}
+{tool_rule}
 {observed_reality_rule}"""
 
 
@@ -188,6 +192,7 @@ driver doesn't care about a bunker at 370. If they're just chatting, be personab
 golf-focused. Never break character.
 
 {hazard_rule}
+{tool_rule}
 {observed_reality_rule}"""
 
 
@@ -217,6 +222,7 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
         memory_section="",
         context="Current hole: #4",
         hazard_rule=HAZARD_GROUNDING_RULE,
+        tool_rule=TOOL_USE_RULE,
         observed_reality_rule=OBSERVED_REALITY_RULE,
     )
     assert _normalized_line_set(new_flat) == _normalized_line_set(old_flat)
@@ -235,12 +241,17 @@ async def test_voice_prompt_content_identical_to_old_template_modulo_order(monke
         memory_section="",
         context="Current hole: #1, Par 4, 400 yards",
         hazard_rule=HAZARD_GROUNDING_RULE,
+        tool_rule=TOOL_USE_RULE,
         observed_reality_rule=OBSERVED_REALITY_RULE,
     )
     assert _normalized_line_set(new_flat) == _normalized_line_set(old_flat)
 
 
-# ── Fakes for anthropic.Anthropic (sync) ────────────────────────────────────
+# ── Fakes for anthropic.AsyncAnthropic ──────────────────────────────────────
+# (The non-streaming text mouths now consume the shared tool loop on the
+# ASYNC client — caddie-tool-loop-parity. A final message without a
+# `stop_reason` of "tool_use" ends the turn after one call, exactly like the
+# old single `messages.create` behavior these tests were written against.)
 
 
 class _FakeUsage:
@@ -260,24 +271,51 @@ class _FakeMessage:
     def __init__(self, text: str, usage: _FakeUsage):
         self.content = [_FakeTextBlock(text)]
         self.usage = usage
+        self.stop_reason = "end_turn"
 
 
-class _FakeSyncMessages:
+class _FakeTurnStream:
+    """Async context manager mimicking AsyncMessageStreamManager for one
+    plain (no-tool) turn."""
+
+    def __init__(self, text: str, usage: _FakeUsage):
+        self._text = text
+        self._usage = usage
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def _gen(self):
+        if self._text:
+            yield self._text
+
+    @property
+    def text_stream(self):
+        return self._gen()
+
+    async def get_final_message(self):
+        return _FakeMessage(self._text, self._usage)
+
+
+class _FakeTurnMessages:
     def __init__(self, text: str, usage: _FakeUsage):
         self._text = text
         self._usage = usage
         self.captured_kwargs: dict | None = None
 
-    def create(self, **kwargs):
+    def stream(self, **kwargs):
         self.captured_kwargs = kwargs
-        return _FakeMessage(self._text, self._usage)
+        return _FakeTurnStream(self._text, self._usage)
 
 
-class _FakeSyncAnthropic:
-    """Stand-in for anthropic.Anthropic — captures constructor kwargs and the
-    last instance's `.messages` so tests can assert on captured_kwargs."""
+class _FakeTurnAnthropic:
+    """Stand-in for anthropic.AsyncAnthropic — captures constructor kwargs and
+    the last instance's `.messages` so tests can assert on captured_kwargs."""
 
-    last_instance: "_FakeSyncAnthropic | None" = None
+    last_instance: "_FakeTurnAnthropic | None" = None
     _text: str = "Take the 7-iron."
     _usage: _FakeUsage = _FakeUsage()
 
@@ -285,8 +323,8 @@ class _FakeSyncAnthropic:
         self.api_key = api_key
         self.timeout = timeout
         self.max_retries = max_retries
-        self.messages = _FakeSyncMessages(_FakeSyncAnthropic._text, _FakeSyncAnthropic._usage)
-        _FakeSyncAnthropic.last_instance = self
+        self.messages = _FakeTurnMessages(_FakeTurnAnthropic._text, _FakeTurnAnthropic._usage)
+        _FakeTurnAnthropic.last_instance = self
 
     @classmethod
     def configure(cls, text: str = "Take the 7-iron.", usage: _FakeUsage | None = None):
@@ -318,11 +356,11 @@ def test_session_voice_logs_cache_usage_and_sends_system_list(monkeypatch, caplo
 
     monkeypatch.setattr(caddie_routes.sessions, "append_message_pair", _fake_append_message_pair)
 
-    _FakeSyncAnthropic.configure(
+    _FakeTurnAnthropic.configure(
         text="Take the 7-iron.",
         usage=_FakeUsage(cache_read=100, cache_creation=0, input_tokens=20, output_tokens=9),
     )
-    monkeypatch.setattr(caddie_routes.anthropic, "Anthropic", _FakeSyncAnthropic)
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _FakeTurnAnthropic)
 
     client = _make_client()
     with caplog.at_level("INFO", logger="looper.caddie"):
@@ -333,7 +371,7 @@ def test_session_voice_logs_cache_usage_and_sends_system_list(monkeypatch, caplo
     assert res.status_code == 200
     assert res.json()["response"] == "Take the 7-iron."
 
-    kwargs = _FakeSyncAnthropic.last_instance.messages.captured_kwargs
+    kwargs = _FakeTurnAnthropic.last_instance.messages.captured_kwargs
     assert isinstance(kwargs["system"], list)
     assert kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert "cache_control" not in kwargs["system"][1]
@@ -353,11 +391,11 @@ def test_voice_caddie_logs_cache_usage_and_sends_system_list(monkeypatch, caplog
     _patch_voice_prompt_deps(monkeypatch)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
 
-    _FakeSyncAnthropic.configure(
+    _FakeTurnAnthropic.configure(
         text="Nice shot.",
         usage=_FakeUsage(cache_read=0, cache_creation=250, input_tokens=15, output_tokens=6),
     )
-    monkeypatch.setattr(caddie_routes.anthropic, "Anthropic", _FakeSyncAnthropic)
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _FakeTurnAnthropic)
 
     client = _make_client()
     with caplog.at_level("INFO", logger="looper.caddie"):
@@ -367,7 +405,7 @@ def test_voice_caddie_logs_cache_usage_and_sends_system_list(monkeypatch, caplog
         )
     assert res.status_code == 200
 
-    kwargs = _FakeSyncAnthropic.last_instance.messages.captured_kwargs
+    kwargs = _FakeTurnAnthropic.last_instance.messages.captured_kwargs
     assert isinstance(kwargs["system"], list)
     assert kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
 
@@ -381,7 +419,7 @@ def test_voice_caddie_logs_cache_usage_and_sends_system_list(monkeypatch, caplog
 # ── 7: timeout/retry constructor args ───────────────────────────────────────
 
 
-def test_session_voice_constructs_sync_client_with_timeout_and_retries(monkeypatch):
+def test_session_voice_constructs_async_client_with_timeout_and_retries(monkeypatch):
     session = RoundSession(round_id="round-1", user_id="user-1", current_hole=1)
     _patch_session_builder_deps(monkeypatch, session)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
@@ -391,8 +429,8 @@ def test_session_voice_constructs_sync_client_with_timeout_and_retries(monkeypat
 
     monkeypatch.setattr(caddie_routes.sessions, "append_message_pair", _fake_append_message_pair)
 
-    _FakeSyncAnthropic.configure()
-    monkeypatch.setattr(caddie_routes.anthropic, "Anthropic", _FakeSyncAnthropic)
+    _FakeTurnAnthropic.configure()
+    monkeypatch.setattr(caddie_routes.anthropic, "AsyncAnthropic", _FakeTurnAnthropic)
 
     client = _make_client()
     res = client.post(
@@ -400,8 +438,8 @@ def test_session_voice_constructs_sync_client_with_timeout_and_retries(monkeypat
         json={"round_id": "round-1", "transcript": "hi", "personality_id": "classic", "hole_number": 1},
     )
     assert res.status_code == 200
-    assert _FakeSyncAnthropic.last_instance.timeout == caddie_routes._CADDIE_TIMEOUT_S
-    assert _FakeSyncAnthropic.last_instance.max_retries == caddie_routes._CADDIE_MAX_RETRIES
+    assert _FakeTurnAnthropic.last_instance.timeout == caddie_routes._CADDIE_TIMEOUT_S
+    assert _FakeTurnAnthropic.last_instance.max_retries == caddie_routes._CADDIE_MAX_RETRIES
 
 
 @pytest.mark.asyncio
