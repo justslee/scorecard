@@ -3,6 +3,53 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — builder: hazard-side-flip fix (backend-only, NOTICEABLE, integration/next d9eda1c, DONE)
+
+Implemented `specs/hazard-side-flip-plan.md` exactly (P0, owner-reported: Bethpage
+hole 4's cached strategy guide named the bunker complex "right" when our own surveyed
+geometry has it on the LEFT; the caddie then insisted the bad data was right over the
+owner's own eyes). Four items, all landed:
+
+1. `test_hazards.py` — 8-compass bearing-swept regression matrix + a named Bethpage
+   hole-4 regression case, locking `hazards.extract_hole_hazards`'s sign convention
+   (verified CORRECT, untouched). 47/47 pass (20 original + 27 new).
+2. Deleted `course_intel._classify_osm_hazards`/`_classify_side`/`_distance_yards` — a
+   second, BROKEN side classifier (no cos(lat) scaling, bearing from the green not the
+   tee) reachable on any unmapped-course round. `extract_hole_hazards` is now the ONE
+   hazard-geometry path; unmapped courses honestly report zero hazards. Removed the
+   `osm_features` param/fetch/import from `routes/caddie.py` (`app/services/osm.py`
+   itself untouched).
+3. `validate_guide` (guide_writer.py) extended with a fail-closed side-check
+   (±6-word co-occurrence window, center-hazard expansion, opposition-phrase exclusion
+   for "away from"/"avoid" miss-direction phrasing) — rejects a type-correct but
+   side-flipped writer claim, same as the existing type-only check.
+4. `OBSERVED_REALITY_RULE` (voice_prompts.py, shared constant) appended to the
+   realtime prompt AND both mirrored text-mouth `stable_text` blocks in
+   `routes/caddie.py` — the caddie now defers to the player's own eyes instead of
+   insisting a stale/mirrored read is correct.
+
+Two sound, noted deviations from the plan (both verified computationally before
+adopting, documented in the commit message): the plan's literal `_rotate` sign formula
+was inverted from its own stated invariant (positive lateral = LEFT) — used the
+corrected formula, verified against `hazards.py`'s own cross-product math. A naive
+side-check broke a pre-existing valid test ("miss right, away from the [left] bunker"
+is correct advice, not a flip) — added an opposition-phrase exclusion. Also updated
+two brain-regression prompt tests + two `HAZARD_GROUNDING_RULE.endswith()` assertions
+(test_caddie_caching.py, test_voice_stream.py) for the new trailing rule line — direct
+ripples of item 4 not in the plan's ripple list.
+
+Gates: `ruff check .` clean; 202 pure/no-DB backend tests pass; frontend
+lint/tsc/build clean (no-op); voice-tests smoke 274/274. DB-backed
+`test_caddie_profile_session.py` left to CI (no local Postgres). hazards.py's logic
+untouched; grep-confirmed no other `Hazard(...)` construction site exists.
+
+**NOTICEABLE** — caddie behavior changes live (stops mirroring hazard sides on
+unmapped courses, defers to the player's eyes, rejects side-flipped cached guides).
+Data-repair runbook (clear cached Bethpage/Pebble guides + re-run backfill, ~$3,
+owner-approved) is a documented POST-SHIP step — NOT done here, deploy must land
+first. Committed d9eda1c on `integration/next`, pushed. eng-lead: fold into the
+rolling bundle; runbook is yours to execute after this deploys.
+
 ## eng-lead cycle 31 — P0 live-caddie STALE-HOLE fix → bundle PR #115 (NOTICEABLE, awaiting ship-it)
 
 Owner-reported P0 with a session-verified diagnosis: the live (Realtime) caddie
