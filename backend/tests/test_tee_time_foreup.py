@@ -14,12 +14,16 @@ could quietly drift or be bent.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import inspect
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
 import httpx
 
+import app.services.tee_times.foreup as foreup_module
 from app.services.rate_limit import SlidingWindowLimiter
 from app.services.tee_times.base import BookingDetails, TeeTimeQuery, TeeTimeSlot
 from app.services.tee_times.capability_store import CourseBookingCapability
@@ -558,3 +562,69 @@ class TestBook:
 
     async def test_name_property(self):
         assert _provider().name == "foreup"
+
+
+# ── S2 invariants (specs/teetime-s2-plan.md §3b) ────────────────────────────
+# foreUP booking is ALWAYS a deep-link handoff — never programmatic booking.
+# These pin the five S2 invariants at the source-code level so a future edit
+# to foreup.py that starts confirming/charging fails a test, not a review hope.
+
+def _s2_slot(**overrides) -> TeeTimeSlot:
+    defaults = dict(
+        id="foreup-20410-2026-07-11-07:10-0",
+        course_id="foreup-20410",
+        course_name="18 Mile Creek Golf Course",
+        city="",
+        date="2026-07-11",
+        time="07:10",
+        players=2,
+        price_usd=24.0,
+        cart_included=False,
+        distance_miles=0.0,
+        rating=0.0,
+        provider="foreup",
+        holes=18,
+        booking_url="https://foreupsoftware.com/index.php/booking/20410/4467",
+        route=None,
+    )
+    defaults.update(overrides)
+    return TeeTimeSlot(**defaults)
+
+
+class TestS2Invariants:
+    async def test_universal_needs_human_across_a_sweep_of_slot_shapes(self):
+        """Every book() result -> status=needs_human, confirmation_number=None,
+        regardless of booking_url/time/route on the slot. The missing-
+        booking_url case must yield an honestly-absent booking_url — never a
+        fabricated one."""
+        provider = _provider()
+        sweep = [
+            _s2_slot(),
+            _s2_slot(booking_url=None),  # missing booking_url case
+            _s2_slot(time=""),
+            _s2_slot(route="book_on_site"),
+            _s2_slot(booking_url=None, time="", route="book_on_site"),
+        ]
+        for slot in sweep:
+            result = await provider.book(slot, BookingDetails(name="Owner", party_size=2))
+            assert result.status == "needs_human", slot
+            assert result.confirmation_number is None, slot
+
+        # Missing-booking_url case: honestly absent, never invented.
+        missing_url_result = await provider.book(
+            _s2_slot(booking_url=None), BookingDetails(name="Owner", party_size=2)
+        )
+        assert missing_url_result.booking_url is None
+
+    def test_provider_surface_guard_no_confirm_no_write_verbs_no_card_data(self):
+        """Source-level guard: the foreUP provider module can never confirm a
+        booking, can never write to foreUP (GET-only), and structurally
+        cannot carry card/payment/credential data."""
+        src = inspect.getsource(foreup_module)
+        assert 'status="confirmed"' not in src
+        assert "client.post" not in src
+        assert "client.put" not in src
+        assert re.search(r"card|payment|cvv|credit", src, re.I) is None
+
+        field_names = {f.name for f in dataclasses.fields(BookingDetails)}
+        assert field_names == {"name", "party_size", "email", "phone"}

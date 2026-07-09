@@ -920,7 +920,13 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
       try {
         result = await bookTeeTime(best, { name: bookerName ?? "Guest", partySize });
       } catch {
-        result = { status: "pending", message: "Booking request sent — check back shortly." };
+        // No request actually reached the booking service — never fabricate
+        // "sent" copy. Honest needs_human handoff: the CTA still works via
+        // slot.bookingUrl fallback (confirmCopy), stamp reads "Found".
+        result = {
+          status: "needs_human",
+          message: "Couldn't reach the booking service — book directly on the course site.",
+        };
       }
 
       if (result.status === "confirmed") {

@@ -90,18 +90,41 @@ describe("confirmCopy — route-driven language", () => {
 });
 
 describe("confirmCopy — needs_human with a real known time (foreup)", () => {
+  const FOREUP_SLOT: TeeTimeSlot = {
+    ...BASE_SLOT,
+    time: "07:10",
+    route: undefined,
+    provider: "foreup",
+    bookingUrl: "https://foreupsoftware.com/index.php/booking/20410/4467",
+  };
+
   it("a real time renders the actual clock time and course name, never 'Held'", () => {
-    const slot: TeeTimeSlot = {
-      ...BASE_SLOT,
-      time: "07:10",
-      route: undefined,
-      provider: "foreup",
-    };
-    const result: BookingResult = { status: "needs_human", bookingUrl: slot.bookingUrl };
-    const copy = confirmCopy(slot, result);
+    const result: BookingResult = { status: "needs_human", bookingUrl: FOREUP_SLOT.bookingUrl };
+    const copy = confirmCopy(FOREUP_SLOT, result);
     expect(copy.looperLine).toContain("7:10 AM");
-    expect(copy.looperLine).toContain(slot.courseName);
+    expect(copy.looperLine).toContain(FOREUP_SLOT.courseName);
     expect(copy.looperLine.toLowerCase()).not.toContain("held");
+  });
+
+  it("pins the S2 handoff contract: ctaLabel, stampWord, subCopy exact strings", () => {
+    // The deep-link precedence rule the page uses (bookingResult.bookingUrl ??
+    // slot.bookingUrl, page.tsx:1093) — both carry the foreupsoftware.com URL
+    // here so a drift to a generic website would fail this fixture too.
+    const result: BookingResult = { status: "needs_human", bookingUrl: FOREUP_SLOT.bookingUrl };
+    const copy = confirmCopy(FOREUP_SLOT, result);
+    expect(copy.ctaLabel).toBe("Book on the course site →");
+    expect(copy.stampWord).toBe("Found");
+    expect(copy.stampWord).not.toBe("Held");
+    expect(copy.stampWord).not.toBe("Booked");
+    expect(copy.subCopy).toBe("You book direct — the course takes the reservation.");
+  });
+
+  it("missing booking_url + no phone: honest 'call the course' CTA, no dead button", () => {
+    const slot: TeeTimeSlot = { ...FOREUP_SLOT, bookingUrl: undefined, phone: undefined };
+    const result: BookingResult = { status: "needs_human", bookingUrl: undefined };
+    const copy = confirmCopy(slot, result);
+    expect(copy.ctaLabel).toBe("Call the course to book");
+    expect(callTelHref(slot)).toBeNull();
   });
 
   it("no known time (time='') keeps the existing route-driven lines (regression)", () => {
@@ -111,6 +134,31 @@ describe("confirmCopy — needs_human with a real known time (foreup)", () => {
     expect(copy.looperLine.toLowerCase()).toContain("book on the course site");
     expect(copy.looperLine).not.toContain("AM");
     expect(copy.looperLine).not.toContain("PM");
+  });
+});
+
+describe("confirmCopy — S2 honesty fix: network-failure fallback (page.tsx catch)", () => {
+  it("the honest needs_human fallback (no fabricated 'pending'/'sent') stamps Found and keeps a working CTA via slot.bookingUrl", () => {
+    // Mirrors the shape page.tsx now produces when bookTeeTime() throws: no
+    // request reached the booking service, so the result carries no
+    // bookingUrl/confirmationNumber of its own — confirmCopy must fall back
+    // to slot.bookingUrl, never claim "sent" or "pending".
+    const slot: TeeTimeSlot = {
+      ...BASE_SLOT,
+      time: "07:10",
+      route: undefined,
+      provider: "foreup",
+      bookingUrl: "https://foreupsoftware.com/index.php/booking/20410/4467",
+    };
+    const result: BookingResult = {
+      status: "needs_human",
+      message: "Couldn't reach the booking service — book directly on the course site.",
+    };
+    const copy = confirmCopy(slot, result);
+    expect(copy.stampWord).toBe("Found");
+    expect(copy.stampWord).not.toBe("Pending");
+    expect(copy.ctaLabel).toBe("Book on the course site →");
+    expect(allCopyText(copy)).not.toMatch(/held/i);
   });
 });
 

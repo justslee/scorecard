@@ -10,10 +10,14 @@ Covers:
   6. /search TTL cache: second identical query returns cached=true
 """
 
+from app.services.rate_limit import SlidingWindowLimiter
+from app.services.tee_times.foreup import CircuitBreaker, ForeUpProvider
+from app.services.tee_times.router_provider import RoutedTeeTimeProvider
 from app.services.tee_times.routing import RoutingTeeTimeProvider
 from app.services.tee_times.search_cache import FileSearchCacheStore
 
 from .conftest import TEST_OWNER_ID, OTHER_OWNER_ID, set_auth
+from ..test_tee_time_foreup import FIXTURE_DATE, FakeCacheStore, _cap, _fixture_transport
 
 BASE = "/api/tee-times"
 
@@ -283,3 +287,109 @@ class TestSearchCache:
         assert r1.json()["cached"] is False
         r2 = await client.get(f"{BASE}/search", params={**params, "partySize": 2})
         assert r2.json()["cached"] is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. foreUP-provider handoff persisted end-to-end (specs/teetime-s2-plan.md §3a)
+# ─────────────────────────────────────────────────────────────────────────────
+
+FOREUP_BOOKING_URL = "https://foreupsoftware.com/index.php/booking/20410/4467"
+
+
+class TestForeUpHandoffPersistence:
+    """Proves the full HTTP path — search -> real foreUP slot -> POST /book ->
+    persisted row — carries the course's own foreupsoftware.com deep-link (NOT
+    a generic website), never fabricates a confirmation, and is honestly
+    persisted as needs_human. `TestBookingPersistence.test_needs_human_...`
+    covers the same shape via the ROUTING provider's generic-website slot;
+    this class is the foreUP-specific counterpart. No live network — the
+    ForeUpProvider is wired to an httpx.MockTransport over the same fixture
+    (backend/tests/fixtures/foreup_18mile_times.json) test_tee_time_foreup.py
+    uses."""
+
+    def _use_foreup_router(self, monkeypatch):
+        """Route uses a RoutedTeeTimeProvider with an injected (offline)
+        finder + a ForeUpProvider wired to the fixture transport — no live
+        network, ever."""
+        from app.routes import tee_times as route_mod
+
+        cap = _cap()
+
+        async def find(_query):
+            return [
+                {
+                    "id": "gplaces-18mile",
+                    "name": cap.name,
+                    "address": "6374 Boston State Rd, Hamburg, NY",
+                    "center": {"lat": cap.lat, "lng": cap.lng},
+                    "website": None,
+                    "rating": 4.1,
+                },
+            ], (cap.lat, cap.lng)
+
+        provider = RoutedTeeTimeProvider(
+            find_courses=find,
+            foreup=ForeUpProvider(
+                capabilities=lambda: (cap,),
+                transport=_fixture_transport(),
+                cache=FakeCacheStore(),
+                limiter=SlidingWindowLimiter(rpm=1000, window_s=60),
+                breaker=CircuitBreaker(),
+            ),
+            capabilities=lambda: (cap,),
+            foreup_enabled=True,
+        )
+        monkeypatch.setattr(route_mod, "_get_provider", lambda: provider)
+        return cap
+
+    async def test_search_book_persist_end_to_end_with_the_foreup_deep_link(
+        self, client, monkeypatch, tmp_path
+    ):
+        cap = self._use_foreup_router(monkeypatch)
+        _isolate_cache(monkeypatch, tmp_path)
+        set_auth(TEST_OWNER_ID)
+
+        # 1. GET /search -> a real foreUP slot, real time, real deep-link.
+        r = await client.get(
+            f"{BASE}/search",
+            params={
+                "date": FIXTURE_DATE,
+                "timeWindowStart": "00:00",
+                "timeWindowEnd": "23:59",
+                "partySize": 1,
+                "area": f"{cap.lat},{cap.lng}",
+            },
+        )
+        assert r.status_code == 200, r.text
+        results = r.json()["results"]
+        assert results, "sanity: the fixture must yield at least one foreup slot"
+        slot = next(s for s in results if s["provider"] == "foreup")
+        assert slot["time"] != ""
+        assert slot["bookingUrl"] == FOREUP_BOOKING_URL
+        assert slot["estimated"] is False
+        assert slot["route"] is None
+
+        # 2. POST /book with that exact serialized slot -> needs_human, the
+        #    SAME deep-link, no fabricated confirmation.
+        r2 = await client.post(
+            f"{BASE}/book",
+            json={"slot": slot, "details": {"name": "Owner", "partySize": 1}},
+        )
+        assert r2.status_code == 200, r2.text
+        result = r2.json()["result"]
+        assert result["status"] == "needs_human"
+        assert result["bookingUrl"] == FOREUP_BOOKING_URL
+        assert result["confirmationNumber"] is None
+        assert "Held" not in r2.text
+
+        # 3. GET /bookings -> the attempt is durably persisted, honestly.
+        r3 = await client.get(f"{BASE}/bookings")
+        assert r3.status_code == 200, r3.text
+        items = r3.json()
+        assert len(items) == 1
+        b = items[0]
+        assert b["status"] == "needs_human"
+        assert b["confirmationCode"] is None
+        assert b["bookingUrl"] == FOREUP_BOOKING_URL
+        assert b["provider"] == "foreup"
+        assert b["time"] == slot["time"]
