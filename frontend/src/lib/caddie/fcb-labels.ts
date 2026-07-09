@@ -57,19 +57,28 @@ export interface PlaysSubInput {
  * PLAYS-tile sub label. Each branch truthfully names what was adjusted.
  * Mirrors the pre-refactor ternary in RoundPageClient exactly, EXCEPT the
  * wind+elev branch, which was the bare "adjusted".
+ *
+ * specs/physics-tiles-coherence-plan.md §4.3: now that the tile can carry a
+ * live rangefinder distance AND the backend physics engine's elevation term
+ * at once (previously the live branch always meant "no elev term applied"),
+ * the live+wind+elev and live+elev states are newly reachable and need their
+ * own honest captions rather than silently collapsing into "wind from you" /
+ * "from you".
  */
 export function playsSubLabel({ hasWind, hasElev, isLive, fromCard }: PlaysSubInput): string {
   if (fromCard) {
     return hasWind ? "wind on card" : "from card"; // never claim elev here
   }
+  if (isLive && hasWind && hasElev) return "wind+elev · you"; // both applied, live basis
   if (hasWind) {
     if (isLive) return "wind from you"; // wind on live distance; no elev term applied
     if (hasElev) return "wind+elev";    // was "adjusted" — wind AND elevation both applied
     return "wind-adj";                  // wind only
   }
-  if (hasElev && !isLive) return "elev-adj"; // elevation only
-  if (isLive) return "from you";             // raw live distance, no adjustments
-  return "from tee";                         // raw card/tee distance
+  if (isLive && hasElev) return "elev from you"; // elev applied to a live basis, no wind
+  if (hasElev) return "elev-adj";                // elevation only
+  if (isLive) return "from you";                 // raw live distance, no adjustments
+  return "from tee";                             // raw card/tee distance
 }
 
 // ---------------------------------------------------------------------------

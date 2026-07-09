@@ -7,7 +7,9 @@ number or an explicit unavailable/empty, never fabricated) and the
 `resolve_tool` contract the text tool loop depends on.
 """
 
+import json
 import os
+from pathlib import Path
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://stub:stub@localhost/stub")
 os.environ.setdefault("LOOPER_SECRETS_DISABLED", "1")
@@ -16,23 +18,27 @@ import pytest  # noqa: E402
 
 from app.caddie import tools as tools_mod  # noqa: E402
 from app.caddie.session import RoundSession  # noqa: E402
-from app.caddie.types import GreenSlope, Hazard, HoleIntelligence  # noqa: E402
+from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, WeatherConditions  # noqa: E402
 from app.caddie.tools import (  # noqa: E402
     ToolContext,
     carries_payload,
     green_read_payload,
     resolve_tool,
     session_status_payload,
+    shot_distance_payload,
 )
 
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-def _session(hole_intel=None, club_distances=None) -> RoundSession:
+
+def _session(hole_intel=None, club_distances=None, weather=None) -> RoundSession:
     return RoundSession(
         round_id="round-1",
         user_id="user-1",
         current_hole=4,
         hole_intel=hole_intel or {},
         club_distances=club_distances or {},
+        weather=weather,
     )
 
 
@@ -237,6 +243,104 @@ async def test_resolve_tool_shot_distance_spoken_club_names_resolve():
     assert out["available"] is True
     assert out["club"] == "7iron"
     assert out["carry_yards"] == 160  # stored iron distances are carries
+
+
+# ── shot_distance_payload: server-side bearing parity (physics-tiles-coherence) ──
+# specs/physics-tiles-coherence-plan.md §2/§3 — the session's own tee→green
+# bearing (HoleIntelligence.approach_bearing_deg, the SAME one get_green_read
+# consumes) now resolves the wind vector, instead of the hardcoded due-north
+# assumption. This is the fix that makes the caddie's own numbers AND the new
+# PLAYS tile agree — one engine, one number, everywhere.
+
+
+def test_shot_distance_bearing_known_headwind_plays_longer_than_target():
+    """Bearing 90 (hole plays east), wind FROM 90 (blowing from the east,
+    into the golfer's face) → a real headwind → plays-like > target."""
+    intel = {4: HoleIntelligence(hole_number=4, par=4, yards=400, approach_bearing_deg=90.0)}
+    weather = WeatherConditions(temperature_f=70.0, wind_speed_mph=10.0, wind_direction=90)
+    session = _session(hole_intel=intel, club_distances={"8iron": 150}, weather=weather)
+    out = shot_distance_payload(session, hole_number=4, target_yards=150)
+    assert out["available"] is True
+    assert out["plays_like_yards"] > 150
+    assert out["conditions_used"]["shot_bearing_deg"] == 90
+    assert out["conditions_used"]["wind_applied"] is True
+    assert "wind resolved along the hole (tee→green line)" in out["assumptions"]
+
+
+def test_shot_distance_bearing_known_tailwind_plays_shorter_than_target():
+    """Same hole, wind FROM 270 (blowing from the west, at the golfer's
+    back) → a tailwind → plays-like < target."""
+    intel = {4: HoleIntelligence(hole_number=4, par=4, yards=400, approach_bearing_deg=90.0)}
+    weather = WeatherConditions(temperature_f=70.0, wind_speed_mph=10.0, wind_direction=270)
+    session = _session(hole_intel=intel, club_distances={"8iron": 150}, weather=weather)
+    out = shot_distance_payload(session, hole_number=4, target_yards=150)
+    assert out["available"] is True
+    assert out["plays_like_yards"] < 150
+    assert out["conditions_used"]["shot_bearing_deg"] == 90
+
+
+def test_shot_distance_no_intel_and_wind_is_not_applied_honestly():
+    """[[no-fake-data-fallbacks]]: no hole intel → bearing unknown → NEVER
+    fabricate a due-north wind direction. The engine runs in still air
+    instead, and says so — wind_applied is False, and the number equals the
+    identical still-air payload (weather with wind zeroed)."""
+    weather = WeatherConditions(temperature_f=70.0, wind_speed_mph=15.0, wind_direction=45)
+    session = _session(club_distances={"8iron": 150}, weather=weather)
+    out = shot_distance_payload(session, hole_number=4, target_yards=150)
+    assert out["available"] is True
+    assert out["conditions_used"]["wind_applied"] is False
+    assert out["conditions_used"]["shot_bearing_deg"] is None
+    # Honest reporting: the REAL weather is still reported even though it
+    # wasn't applied to the number.
+    assert out["conditions_used"]["wind_speed_mph"] == 15.0
+    assert out["conditions_used"]["wind_direction"] == 45
+    assert any("wind not applied" in a for a in out["assumptions"])
+    assert "shot direction unknown — wind applied relative to due north" not in " ".join(
+        out["assumptions"]
+    )
+
+    calm_weather = WeatherConditions(temperature_f=70.0, wind_speed_mph=0.0, wind_direction=45)
+    calm_session = _session(club_distances={"8iron": 150}, weather=calm_weather)
+    calm_out = shot_distance_payload(calm_session, hole_number=4, target_yards=150)
+    assert out["plays_like_yards"] == calm_out["plays_like_yards"]
+
+
+def test_shot_distance_calm_flat_bearing_known_identity():
+    """Regression: calm air + flat + bearing known ⇒ plays-like == target
+    (physics_plays_like's neutral-baseline cancellation, unaffected by the
+    bearing plumbing)."""
+    intel = {4: HoleIntelligence(hole_number=4, par=4, yards=400, approach_bearing_deg=45.0)}
+    session = _session(hole_intel=intel, club_distances={"8iron": 150})  # weather=None
+    out = shot_distance_payload(session, hole_number=4, target_yards=150)
+    assert out["available"] is True
+    assert out["plays_like_yards"] == 150
+    assert out["conditions_used"]["wind_applied"] is False
+
+
+def test_shot_distance_golden_parity_fixture_pins_the_engine():
+    """The cross-language pin (plan §3): shot_distance_payload for one
+    fully-specified fixture must equal the checked-in golden JSON that the
+    frontend vitest (plays-tile.test.ts) also pins. If the engine changes,
+    THIS test forces the golden update, which forces the frontend re-pin —
+    tile and caddie cannot silently drift apart."""
+    intel = {
+        7: HoleIntelligence(
+            hole_number=7, par=4, yards=400,
+            elevation_change_ft=-12.0, approach_bearing_deg=90.0,
+        )
+    }
+    weather = WeatherConditions(temperature_f=70.0, wind_speed_mph=12.0, wind_direction=90)
+    session = RoundSession(
+        round_id="parity-round",
+        user_id="user-1",
+        current_hole=7,
+        hole_intel=intel,
+        club_distances={"7iron": 165, "driver": 250},
+        weather=weather,
+    )
+    out = shot_distance_payload(session, hole_number=7, target_yards=150)
+    golden = json.loads((FIXTURES_DIR / "plays_like_parity.json").read_text())
+    assert out == golden
 
 
 # ── get_green_read: honest-fallback matrix + the rotation engine ────────────

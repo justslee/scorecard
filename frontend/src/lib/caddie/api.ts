@@ -330,6 +330,26 @@ export async function getSessionPlayerProfile(roundId: string): Promise<SessionP
   );
 }
 
+/** Physical conditions the engine actually resolved for this shot — mirrors
+ *  the `conditions_used` dict `shot_distance_payload` builds
+ *  (backend/app/caddie/tools.py). `shot_bearing_deg` is the session's
+ *  tee→green bearing when known (server-side bearing parity — the SAME
+ *  bearing get_green_read uses), null when unmapped; `wind_applied` is false
+ *  whenever a still-air fallback ran (no weather, calm, or the bearing was
+ *  unknown — never a fabricated due-north wind, see
+ *  specs/physics-tiles-coherence-plan.md §2b). */
+export interface SessionShotDistanceConditions {
+  weather_available: boolean;
+  wind_speed_mph: number | null;
+  wind_direction: number | null;
+  elevation_change_ft: number;
+  shot_bearing_deg: number | null;
+  wind_applied: boolean;
+  firmness: string;
+  temperature_f: number | null;
+  air_density_kg_m3: number;
+}
+
 /** One shot's physics-engine numbers — mirrors backend
  *  tools.shot_distance_payload (app/caddie/tools.py). `available: false`
  *  means the needed club distance isn't on file (honest, never a
@@ -348,7 +368,7 @@ export interface SessionShotDistance {
   plays_like_yards?: number | null;
   suggested_club?: string | null;
   breakdown?: Record<string, number> | null;
-  conditions_used?: Record<string, unknown>;
+  conditions_used?: SessionShotDistanceConditions;
   assumptions?: string[];
 }
 

@@ -586,7 +586,9 @@ def shot_distance_payload(
       - no cached weather → still air, surfaced in assumptions;
       - no hole intel → flat ground, surfaced in assumptions;
       - the shot's compass bearing is not known to the session → wind is
-        applied relative to due north and that assumption is surfaced.
+        NOT applied (still air run instead of guessing a direction) and
+        that assumption is surfaced; elevation/air-density terms still
+        apply.
     """
     hn = hole_number or session.current_hole
     base = {"round_id": session.round_id, "hole_number": hn}
@@ -604,20 +606,37 @@ def shot_distance_payload(
     if intel is None:
         assumptions.append("no hole elevation data — treated the shot as flat")
 
+    bearing = intel.approach_bearing_deg if intel is not None else None
+
     weather = session.weather
+    weather_for_cond = weather
+    has_wind = weather is not None and (weather.wind_speed_mph or 0) >= 1
     if weather is None:
         assumptions.append("no live weather cached — still air assumed")
-    elif (weather.wind_speed_mph or 0) >= 1:
-        # The session does not know the shot's compass bearing; the wind
-        # vector is resolved against due north. Surfaced, never silent.
-        assumptions.append(
-            "shot direction unknown — wind applied relative to due north"
-        )
+    elif has_wind:
+        if bearing is not None:
+            # Server-side bearing parity ([[physics-tiles-coherence]]): the
+            # session's own tee→green geometry resolves the wind vector —
+            # the same bearing get_green_read uses — instead of guessing.
+            assumptions.append("wind resolved along the hole (tee→green line)")
+        else:
+            # The session does not know the shot's compass bearing. Rather
+            # than fabricate a due-north direction (which materially moves
+            # the number), run the engine in still air and say so.
+            assumptions.append(
+                f"hole direction unknown — {weather.wind_speed_mph:.0f} mph "
+                "wind not applied"
+            )
+            weather_for_cond = weather.model_copy(
+                update={"wind_speed_mph": 0.0, "wind_gusts_mph": 0.0}
+            )
+
+    wind_applied = has_wind and bearing is not None
 
     stored = session.club_distances.get(club_key, 0) if club_key else 0
     carry_hint = float(stored or target_yards or 0) or None
     cond, cond_assumptions = physics.conditions_from_weather(
-        weather, shot_bearing_deg=0.0,
+        weather_for_cond, shot_bearing_deg=bearing or 0.0,
         elevation_delta_ft=elevation_ft,
         carry_hint_yards=carry_hint,
     )
@@ -643,6 +662,8 @@ def shot_distance_payload(
             "firmness": cond.firmness,
             "elevation_change_ft": elevation_ft,
             "air_density_kg_m3": round(cond.rho_kg_m3, 4),
+            "shot_bearing_deg": bearing,
+            "wind_applied": wind_applied,
         },
     }
 

@@ -46,9 +46,9 @@ describe('fcbSourceCaption', () => {
 // ---------------------------------------------------------------------------
 
 describe('playsSubLabel', () => {
-  it('wind + elev + live → "wind from you" (live wins over elev)', () => {
+  it('wind + elev + live → "wind+elev · you" (physics-tiles-coherence: the newly-possible live+elev state)', () => {
     expect(playsSubLabel({ hasWind: true, hasElev: true, isLive: true })).toBe(
-      'wind from you',
+      'wind+elev · you',
     );
   });
 
@@ -76,9 +76,9 @@ describe('playsSubLabel', () => {
     );
   });
 
-  it('no wind + elev + live → "from you"', () => {
+  it('no wind + elev + live → "elev from you" (physics-tiles-coherence: newly-possible live+elev state)', () => {
     expect(playsSubLabel({ hasWind: false, hasElev: true, isLive: true })).toBe(
-      'from you',
+      'elev from you',
     );
   });
 
