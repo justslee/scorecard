@@ -9404,3 +9404,22 @@ Re-review on 9524f0f: (1) Fable reviewer confirm the guard now applies to card p
 CI Frontend+Backend gates SUCCESS on head. designer already PASS (no user-facing string change,
 card-only UI unchanged — just triggers correctly in more cases). If green: update bundle PR #119
 checklist (multi-tee item, NOTICEABLE) + log designer's 2 watch-items to backlog. Do NOT merge #119.
+
+## 2026-07-09 cycle 41 — DONE: multi-tee-anchor-reconciliation GREEN on bundle #119
+
+All three reviews green: designer PASS, qa PASS, Fable reviewer SHIP (round 2, after it BLOCKED
+round 1 for card picks bypassing the guard + caught a bent test fixture — the review earned its
+keep on this 3rd geometry incident). Final commit 9524f0f (core c682f7f + guard fix). CI on head
+f42bbf3: Frontend gate SUCCESS + Backend gate SUCCESS (E2E advisory non-required) = strict gate
+satisfied. Gates: vitest 1813, voice 274/274, tsc/lint/build clean, ruff clean.
+
+Bundle PR #119 checklist updated (added the multi-tee NOTICEABLE item). Board record created:
+"Bundle #119: tee-time S0 + multi-tee anchor reconciliation" (Needs Review, Major, PR linked).
+backlog.json: multi-tee-anchor-reconciliation -> done-on-bundle-119; logged 2 designer watch-items
+as new ready cards (fcb-header-tile-drift-clamp minor P3; fcb-unmapped-paper-fallback-mismatch
+minor P2).
+
+Per cycle directive: NO push notification, NO merge. Bundle #119 continues to await the owner's
+single "ship it" (now carries TWO noticeable items, the multi-tee fix being a direct answer to his
+live hole-3 report). On ship-it: release-manager builds fresh TestFlight from integration/next +
+merges. AWAITING (this cycle): none — cycle complete.
