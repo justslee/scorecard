@@ -10133,3 +10133,27 @@ realistic osm_id-shaped ids + a mapped-only-selection case), any minimal fronten
 the exact gates. On plan return → checkpoint, dispatch ONE builder on integration/next, then
 reviewer + qa. NO SHIP (owner bundling). If plan flags this is bigger than a bounded cross-stack
 fix → reconsider scope / mark needs-owner-decision rather than forcing it onto the bundle.
+
+---
+
+## 2026-07-09 — SHIPPED: #121 physics tile coherence + bend distance + booking-handoff + distance-sort
+
+Owner "ship it". Merge 608ae56 → main (STRICT gate all-SUCCESS; final head-
+check guard confirmed no unreviewed WIP slipped in — the #119 collision
+handled correctly this time). Deploy verified by SHA + health ok. TestFlight
+v1.0.1006 (build 202607091849). Four fixes:
+- Physics tile coherence (NOTICEABLE): the PLAYS tile consumes the same
+  physics engine the caddie cites — one number everywhere (2 review rounds,
+  3 blockers fixed).
+- Bend distance (NOTICEABLE): get_bend from the hole polyline's dogleg
+  vertex; direction = turn-cross not deviation-sign; Fable geometry SHIP
+  (8-bearing falsification, real Bethpage-4 fixture).
+- S2 booking-handoff (SILENT): foreUP booking = deep-link handoff; pinned
+  no-auto-charge / no-stored-card / no-fake-confirmation invariants.
+- OSM distance-sort (SILENT): sort by true distance BEFORE the top-N cap —
+  the closest course can't be dropped (18 Mile Creek at 15mi default).
+Twenty-five ships this run. Cycle 48 (course-ids-wiring) was mid-flight
+"awaiting Fable plan" at ship time; guarded ship aborted-if-head-moved,
+head was docs-only, shipped clean; cycle 48's work rides the next bundle.
+NEXT (owner-gated): S3 AI caller + "call me" rehearsal (owner present);
+tree-CV spike (own effort). Autonomous queue near a natural pause.
