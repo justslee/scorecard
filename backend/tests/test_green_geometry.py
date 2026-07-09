@@ -273,4 +273,34 @@ def test_green_read_never_disagrees_with_slope_advice_on_the_high_side(
     )
     advice = slope_miss_advice(slope, beta)
     assert advice is not None
-    assert expected_high_side_word in advice.lower()
+    assert f"aim {expected_high_side_word}" in advice.lower()
+
+
+@pytest.mark.parametrize(
+    "beta,alpha",
+    [
+        (0.0, 90.0),    # rel=90  — falls right
+        (0.0, 270.0),   # rel=270 — falls left (owner case)
+        (225.0, 315.0), # rel=90  — falls right, non-trivial beta
+        (225.0, 135.0), # rel=270 — falls left, non-trivial beta
+    ],
+)
+def test_slope_advice_lateral_framing_matches_green_read(beta, alpha):
+    """Framing reconcile (caddie-slope-framing-reconcile): when both modules
+    speak about the same lateral tilt, slope_advice must (1) tell the player to
+    AIM at green_read's high side, and (2) name green_read's uphill_leave_side
+    as the miss that leaves the uphill putt — same words, no opposite-sounding
+    cues. A sign flip in slope_advice's rel branches makes aim==fall_side and
+    fails here."""
+    read = green_read(alpha, _MODERATE_GRADE, _MODERATE_SEVERITY, beta)
+    slope = GreenSlope(
+        direction=alpha, severity=_MODERATE_SEVERITY,
+        percent_grade=_MODERATE_GRADE, description="test",
+    )
+    advice = slope_miss_advice(slope, beta)
+    assert advice is not None
+    low = advice.lower()
+    assert f"aim {read.high_side}" in low            # aim = HIGH side
+    assert f"aim {read.fall_side}" not in low        # never aim at the low side (sign-flip tooth)
+    assert f"a miss {read.uphill_leave_side}" in low # miss low side -> uphill putt
+    assert "uphill putt" in low                      # shared causal phrase with read_line
