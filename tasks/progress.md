@@ -9716,7 +9716,40 @@ page.tsx:919-923 fabricates {status:pending,"Booking request sent"} on network
 failure though nothing was sent → make it honest needs_human "book on course
 site". That fix is the one user-visible change (noticeable-leaning).
 
-## AWAITING: reviewer + QA on S2 commit 3ccf783 (integration/next)
+## 2026-07-09 — cycle 44 DONE: tee-time S2 (foreUP booking = deep-link handoff) on bundle #121
+
+S2 = LOW-CODE / HIGH-INVARIANT. Handoff mechanics were already built (S0/S1);
+this slice PINS the safety invariants with tests that have teeth + one honesty
+fix. Commit 3ccf783 on integration/next.
+- Invariants guarded (reviewer verified teeth against real source): foreUP
+  book() ALWAYS needs_human, confirmation_number None; deep-link is the course's
+  own foreupsoftware.com booking page (exact-string asserted at search/book/
+  persist); BookingDetails structurally = {name,party_size,email,phone} (no card
+  possible); source guard rejects status="confirmed"/client.post|put/card|cvv|
+  credit; every attempt persisted honestly (status needs_human, confirmationCode
+  null).
+- Honesty fix: frontend/src/app/tee-time/page.tsx booking catch-block no longer
+  fabricates {status:pending,"Booking request sent"} on a network failure →
+  honest {needs_human,"Couldn't reach the booking service — book directly on the
+  course site."}; stamp "Found", CTA still resolves via slot deep-link. vitest pins it.
+- Fable plan: specs/teetime-s2-plan.md. Reviewer: CLEAN, no BLOCKING. QA: 9/9
+  gates GREEN (ruff; 114 backend unit incl. TestS2Invariants; 12 integration
+  collected incl. TestForeUpHandoffPersistence; lint/tsc/build; 164 vitest incl.
+  foreUP CTA cases; 274 voice-tests).
+- Classification: SILENT — the visible "Book on the course site" CTA already
+  shipped in #120 (S1); S2 adds hardening + an edge-case honesty fix, no new
+  user-visible capability. Rides the bundle; NO owner ping this cycle.
+
+## AWAITING: CI strict-green on bundle PR #121 (integration/next → main)
+Opened PR #121 (rolling bundle; S2 the only item, SILENT). Both gates IN_PROGRESS
+at cycle end — the Backend gate runs the DB-backed integration test
+(TestForeUpHandoffPersistence) that can't run locally (no Postgres). NEXT CYCLE:
+reconcile #121 CI FIRST — assert Frontend AND Backend gates each state:SUCCESS on
+the head SHA (CANCELLED/skipped ≠ pass; re-trigger with an empty commit if a
+required gate cancels). If the Backend gate RED on the integration test →
+re-dispatch builder with the CI failure. Do NOT merge (silent bundle, no owner
+ship-it) — S2 rides until the next NOTICEABLE item triggers the approval flow.
+Do NOT auto-start S3 (HIGH-risk telephony — own cycle + Fable plan + owner present).
 Builder DONE — pushed 3ccf783 (invariant tests + the fabricated-pending honesty
 fix in page.tsx). Local gates all green. DB-backed integration tests run in CI
 only. Dispatched reviewer (BLOCKING if any auto-charge / stored card / fabricated
