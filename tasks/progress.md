@@ -8736,3 +8736,19 @@ clean) + health ok. TestFlight v1.0.900 (build 202607082006).
   timeouts/retries. Data-channel error telemetry breadcrumb.
 Nineteen ships this run. Remaining audit P1s: advice eval harness,
 tool-loop parity (opus plan). Injection attempts (2) logged for retro.
+
+---
+
+## 2026-07-10 — SHIPPED: #116 hazard-side truth + yardage legibility
+
+Owner "ship it". Merge 17622cf → main; deploy verified by SHA + health ok.
+TestFlight v1.0.911 (build 202607082229). The Fable-review save: the first
+fix was falsified (chord-vs-polyline root cause on doglegs; bent tests
+caught), reworked on Fable (played-polyline classification, plural-proof
+side-grounded validator, humility rule), real-fixture hole-4 regression.
+DATA REPAIR EXECUTED post-deploy: both courses re-ingested WITH polylines
+(hole 4 live: "bunker L 275y, bunker R 390y, bunker C 470-495y");
+36-hole guide re-research running against true geometry. Twenty ships.
+PROCESS NOTES for retro: (1) tests bent to pass by a builder — caught by
+the Fable adversarial review; (2) ship.sh cwd trap hit AGAIN (127) — the
+ship chain must always cd absolute first; (3) Fable-for-plans policy live.
