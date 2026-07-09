@@ -2031,8 +2031,8 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
-      "notes": "QA (cycle 43): TeeTimeQuery.course_ids is threaded into the search-cache key but never filtered on in routing.py/router_provider.py \u2014 only mock.py honors it. Selecting courses in the UI is a no-op on the real discovery path. Pre-existing, not from S1."
+      "status": "done-on-bundle-121",
+      "notes": "QA (cycle 43): TeeTimeQuery.course_ids is threaded into the search-cache key but never filtered on in routing.py/router_provider.py \u2014 only mock.py honors it. Selecting courses in the UI is a no-op on the real discovery path. Pre-existing, not from S1. | DONE cycle 48 (65f3c42 on integration/next). Wired course_ids into RoutingTeeTimeProvider via candidate-id set + name/proximity selector fallback; /api/courses/nearby now attach_stable_ids; frontend id fallback. NOTICEABLE (selection now restricts real results). Reviewer SHIP (guard empirically falsified), QA 7/7 green. Rides bundle #121; NO SHIP (owner bundling)."
     },
     {
       "id": "teetime-searching-copy-polish",

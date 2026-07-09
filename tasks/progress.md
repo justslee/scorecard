@@ -10244,3 +10244,41 @@ effects. qa: ruff + pytest -k tee_time|selection + frontend lint/tsc/vitest + vo
 Postgres). On green + reviewer SHIP → designer (NOTICEABLE behavior change) → update PR #121
 checklist → progress. NO SHIP (owner bundling). If BLOCKING → re-dispatch builder. Reconcile from
 git log on resume; work is already pushed — do NOT rebuild.
+
+## cycle 48 DONE — course-ids-wiring landed on bundle #121 (NOTICEABLE)
+teetime-course-ids-not-wired-real-provider shipped to integration/next at 65f3c42 (impl) +
+d39c74e/580ee70 (progress). Selecting specific courses on the tee-time page now genuinely
+restricts the REAL search results (was a silent no-op — course_ids only honored by mock, never
+by routing.py/router_provider.py). Fix: new services/tee_times/selection.py (candidate-id set
+{id∪osm_id∪det-UUID} + route-resolved name+proximity selector fallback, resolve_selectors never
+raises) + courses_by_ids (parameterized, UUID-prefiltered) + filter in
+RoutingTeeTimeProvider.search_availability after private-filter/before MAX_COURSES cap (empty=all,
+mock parity; un-reconcilable selection DROPPED honestly, no fabricated slot, zero-after-filter
+logged) + /api/courses/nearby now attach_stable_ids + frontend golf-api.ts id fallback +
+.filter(Boolean). NO shared-type change (types.ts/models.py untouched).
+Reviewer (opus, /code-review): SHIP — EMPIRICALLY falsified the guard (neutered filter → mandatory
+test_selected_osm_id_keeps_only_that_course +4 go RED; non-tautological), verified no always-zero
+regression, honest-drop/no-fail-open, foreUP-not-called-when-unselected, name-match bounded, SQL
+safe (id=ANY(:ids) + uuid prefilter), no import cycle, scope clean. Non-blocking notes only
+(attach_stable_ids mutates-in-place = benign/idempotent; DB-down+slug-favorite degenerate case =
+plan's accepted risk-2). QA: 7/7 green (ruff; pytest 209p/12s -k tee_time|selection, full 1660p/83s;
+frontend lint/tsc/vitest 46p; voice 274/274). Postgres selector tests self-skip locally → CI verifies.
+DESIGNER: SKIPPED — functional/behavior change with NO visual surface delta (id fallback +
+.filter(Boolean); no new component/restyle/copy). Documented; cost-disciplined.
+PR #121 checklist updated (now 3 NOTICEABLE: physics-tiles-coherence, caddie-bend-distance*, this;
++ 2 SILENT: S2 booking-handoff, osm-distance-sort). backlog.json → done-on-bundle-121.
+NO SHIP — owner is bundling; bundle stays approval-eligible on the earlier physics NOTICEABLE
+item, NOT shipped this cycle. NO push notification (routine bundle accumulation; owner directed
+"keep bundling, don't ship yet").
+CI NOTE: at cycle close, GitHub had NOT yet propagated the cycle-48 pushes (8cfe9c3→65f3c42→
+d39c74e→580ee70) into the PR head — last CI run was on 7523ae3 (SUCCESS, but PRE-builder-code).
+The builder's code (65f3c42) is UNVERIFIED-BY-CI as of cycle close (verified locally: reviewer +
+QA green). AT SHIP TIME the release-manager MUST pin strict-green (Frontend+Backend state:SUCCESS)
+on the FINAL head SHA before merge — do NOT trust the 7523ae3 run. Monitor set to confirm CI
+triggers on the head.
+
+## AWAITING: CI to trigger + go strict-green on integration/next head (580ee70+) — verify at ship, not blocking this cycle
+Not shipping this cycle. Bundle #121 carries builder code (65f3c42) not yet CI-run. Next cycle /
+ship cycle: confirm every REQUIRED gate (Frontend + Backend) is state:SUCCESS on the PR's FINAL
+head SHA (gh pr checks 121 --json bucket,state,name + gh pr view 121 --json headRefOid — assert
+they match) BEFORE any merge. A cancelled/absent required gate is NOT a pass.
