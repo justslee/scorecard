@@ -10133,3 +10133,12 @@ realistic osm_id-shaped ids + a mapped-only-selection case), any minimal fronten
 the exact gates. On plan return → checkpoint, dispatch ONE builder on integration/next, then
 reviewer + qa. NO SHIP (owner bundling). If plan flags this is bigger than a bounded cross-stack
 fix → reconsider scope / mark needs-owner-decision rather than forcing it onto the bundle.
+
+## AWAITING (feat/teetime-s3-caller — reviewer + QA)
+S3 caller + rehearsal harness IMPLEMENTED on feat/teetime-s3-caller (worktree
+agent-a594409eae41bedd2). Backend: router voice-route wiring + rehearsal endpoint
++ VoiceCallProvider window fix; 111 backend tests pass, ruff clean. Frontend:
+Settings rehearsal trigger + book-window pass; tsc 0, lint clean, voice 274/274,
+build ok. Pushed. Awaiting: reviewer (+/security-review) on the diff and QA
+(strict gates). On SHIP+green → open PR feat/teetime-s3-caller → main. On
+BLOCKING → fix in this worktree, re-review. Do NOT merge (owner approves).
