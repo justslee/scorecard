@@ -58,6 +58,20 @@ should pass unchanged).
 NEXT: eng-lead review (reviewer/qa/designer-not-needed per dispatch note above), then update
 PR #121 checklist (+ caddie-bend-distance NOTICEABLE). Do NOT ship — owner said keep bundling.
 
+## AWAITING: reviewer + qa on caddie-bend-distance (item commit dee66d8) on integration/next
+Dispatched concurrently: (1) reviewer as a FABLE FALSIFIER — attacks the turn-cross direction +
+the 8-bearing sweep + tee-anchor subtraction + straight-threshold honesty; a sign flip / wrong
+vertex / straight-vs-unknown conflation must go RED. Runs /security-review on the new read-only
+`GET /session/{round_id}/bend` route (get_owned_session-gated like its siblings). (2) qa — reruns
+the backend named suites + full non-DB suite, frontend lint/tsc/vitest/build/voice-smoke.
+Designer NOT dispatched (tool-only, no UI renders). Head e56d363 (feature dee66d8 + progress
+e56d363), all local gates already green per builder.
+On BOTH green/CLEAN → update PR #121 checklist (+ caddie-bend-distance NOTICEABLE), verify CI
+strict-green on the pushed head (Frontend+Backend state:SUCCESS, pending==0, no CANCELLED gate),
+commit progress. Do NOT ship — owner directive is keep bundling #121.
+On any BLOCKING finding → re-dispatch the builder with the specifics, then re-review.
+Nothing uncommitted held across this await (builder already pushed dee66d8/e56d363).
+
 ## 2026-07-09 cycle 42 — PICK: caddie-green-slope-spatial (NOTICEABLE, rides bundle #119)
 
 Step 0 done: bundle PR #119 OPEN + STRICT-green (head 8da82c4), Needs Review card
