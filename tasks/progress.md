@@ -10077,3 +10077,11 @@ tests/test_course_finder_relevance.py` → 120 passed in 0.31s. No local Postgre
 instruction); DB-backed suites run in CI. Frontend untouched — no lint/tsc/voice delta.
 Backend-only, silent (no shared-type / API-shape change). Next: reviewer (correctness) + qa
 (CI gates) before folding into PR #121's checklist. NO SHIP — owner still bundling.
+
+## AWAITING: reviewer (correctness) on osm distance-sort 96714ef + eng-lead QA gates
+Builder pushed 96714ef (osm.py sort-before-truncate + new test_osm_distance_sort.py) + bf52761
+(progress). ruff clean, 120/120 targeted pytest per builder. Dispatched reviewer for adversarial
+correctness (a sort/haversine bug would surface the WRONG course to the owner). eng-lead running
+ruff + targeted pytest directly to confirm. On green + reviewer SHIP → update PR #121 checklist
+(silent item), progress note, STOP (no ship — owner bundling). If reviewer BLOCKING → re-dispatch
+builder. Classified SILENT (backend-only, dict shape unchanged, only cap membership/order).
