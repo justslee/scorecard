@@ -93,7 +93,9 @@ async def test_persisted_hit_skips_all_elevation_calls(monkeypatch):
     )
 
     assert intel.elevation_change_ft == 29.4
-    assert intel.effective_yards == 412 + round(29.4 / 3)
+    # Physics elevation-only plays-like (plan step 9): driver-class 412y,
+    # 29.4ft uphill → +13 by descent geometry (was +10 under the 1yd/3ft rule).
+    assert intel.effective_yards == 425
     assert intel.green_slope is not None
     assert intel.green_slope.direction == 180.0
     assert intel.green_slope.severity == "moderate"

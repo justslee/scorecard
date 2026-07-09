@@ -3,6 +3,46 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-09 — builder: caddie-shot-physics-engine steps 6-13 — TOOL WIRING (NOTICEABLE, DONE; engine goes live in both caddie mouths)
+
+Wired the physics engine core (90e787f) into the caddie per
+`specs/caddie-shot-physics-engine-plan.md` steps 6-13 — the caddie stops giving
+physically-absurd distances. (6) `get_shot_distance` in the canonical registry
+(`app/caddie/tools.py`, name-sorted after get_session_status): club mode → carry/roll/
+total from the RK4 flight; target mode → plays-like + suggested club; honest degradation
+(available:false when no stored club distance; still-air/flat/bearing-unknown assumptions
+surfaced, never fabricated). `shot_distance_payload` is the single body behind BOTH
+mouths; `resolve_tool` branch pulls session club distances + weather + hole elevation.
+tool_loop.py needed ZERO changes (proven by test: TEXT_TOOLS carries the tool
+automatically). get_conditions description now points shot-specific questions at
+get_shot_distance. (7) Realtime parity: POST `/api/caddie/session/shot-distance` +
+frontend `getSessionShotDistance` + `dispatchTool` case (+2 dispatch tests);
+test_tool_parity green by construction. (8) `PHYSICS_GROUNDING_RULE` in both mouths
+(_build_session_voice_prompt, _build_voice_prompt, build_realtime_instructions) — the
+model must speak engine numbers verbatim, never do distance arithmetic. (9)
+course_intel.py effective_yards → `physics.elevation_only_plays_like` (club-aware
+Δh/tan(descent), replacing 1yd/3ft); guide_writer's ground-truth plays_like aligned to
+the same function. (10) `compute_adjustments` delegates to physics: adjusted total =
+ONE `physics_plays_like` solve (same computation as the tool → get_recommendation and
+get_shot_distance cannot disagree in one turn); per-factor ShotAdjustment lines are
+isolated-factor solves; neutral-baseline correction cancels the fitted-down-wood
+round-trip bias (a 210y 3wood integrates to ~228 neutral — the flagged wrinkle) AND a
+final-club recompute fixes the core's wood/iron oscillation (200y firm flipped
+hybrid↔5iron with mismatched numbers). (11) Eval teeth: `SHOT_DISTANCE_IN_BAND` Tier-1
+check runs the REAL shot_distance_payload offline in CI; 3 golden scenarios from
+incident-2026-07-09-390-drive (300/downwind/downhill total in [315,330] — engine says
+327, NOT 390; 150-into-10mph plays [160,170]; 100y-wedge+20ft plays [105,110]) + RED-
+proof mutant (the literal 390/392 payload goes red). (12) wind.ts playsLikeYards
+@deprecated (display-only; advice numbers come from the backend engine). Retuned-not-
+weakened expectations (documented in each test): course_intel 412y+29.4ft 422→425
+(driver-class descent), golden plays-like 187→186 / 144→145, elevation lines +5→+4 /
+−4→−3, firmness tests moved to a wood target (physics: firmness moves roll, not carry —
+new test pins the iron approach staying untouched), prompt snapshot templates gained the
+physics rule line, realtime tool surface set +get_shot_distance. Gates: backend ruff
+clean + 1454 passed (57 eval incl. teeth); frontend eslint + tsc clean, vitest 1744
+passed, voice smoke 274/274. DB-backed integration tests left to CI as always. Tier-2
+paid eval NOT run (on-demand only, per plan step 13).
+
 ## 2026-07-09 — builder: caddie-shot-physics-engine steps 1-5 — ENGINE CORE (SILENT this cycle, backend-only, DONE; tool wiring = steps 6-13, next cycle)
 
 Implemented the pure ball-flight engine `backend/app/caddie/physics.py` per

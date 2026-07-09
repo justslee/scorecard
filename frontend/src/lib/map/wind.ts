@@ -62,6 +62,13 @@ export function relativeWind(
  * Conservative wind-adjusted plays-like distance. Headwind hurts more than
  * tailwind helps (standard ball-flight asymmetry): +0.8%/mph into, −0.5%/mph
  * helping, clamped to ±15%. Rounded to the yard.
+ *
+ * @deprecated Display-only heuristic for the round tiles. Any ADVICE-grade
+ * plays-like number now comes from the backend ball-flight physics engine
+ * (backend/app/caddie/physics.py via the `get_shot_distance` tool /
+ * POST /caddie/session/shot-distance) — do not use this for caddie advice,
+ * and do not extend it (specs/caddie-shot-physics-engine-plan.md step 12; a
+ * follow-up slice points the tiles at the backend number too).
  */
 export function playsLikeYards(distanceYds: number, headMph: number): number {
   const factor =

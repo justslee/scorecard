@@ -330,6 +330,39 @@ export async function getSessionPlayerProfile(roundId: string): Promise<SessionP
   );
 }
 
+/** One shot's physics-engine numbers — mirrors backend
+ *  tools.shot_distance_payload (app/caddie/tools.py). `available: false`
+ *  means the needed club distance isn't on file (honest, never a
+ *  tour-average stand-in); assumptions surface every simplification. */
+export interface SessionShotDistance {
+  round_id: string;
+  hole_number: number;
+  available: boolean;
+  reason?: string;
+  mode?: 'club' | 'target' | 'both';
+  club?: string | null;
+  carry_yards?: number | null;
+  roll_yards?: number | null;
+  total_yards?: number | null;
+  target_yards?: number | null;
+  plays_like_yards?: number | null;
+  suggested_club?: string | null;
+  breakdown?: Record<string, number> | null;
+  conditions_used?: Record<string, unknown>;
+  assumptions?: string[];
+}
+
+/** Ball-flight physics backing the `get_shot_distance` voice tool
+ *  (specs/caddie-shot-physics-engine-plan.md step 7 — realtime parity). */
+export async function getSessionShotDistance(params: {
+  round_id: string;
+  hole_number?: number;
+  club?: string;
+  target_yards?: number;
+}): Promise<SessionShotDistance> {
+  return post('/caddie/session/shot-distance', params);
+}
+
 /**
  * Append a Realtime voice turn (pair) to the round's shared caddie_messages
  * ledger, so the text mouth (/session/voice) shares one conversation history.

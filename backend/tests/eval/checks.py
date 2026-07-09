@@ -27,8 +27,9 @@ from typing import Callable, Optional
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.guide_writer import build_ground_truth_block, validate_guide
 from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
+from app.caddie.physics import PHYSICS_GROUNDING_RULE, elevation_only_plays_like
 from app.caddie.session import RoundSession
-from app.caddie.tools import carries_payload
+from app.caddie.tools import carries_payload, shot_distance_payload
 from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, HoleStrategyGuide, WeatherConditions
 from app.caddie.voice_prompts import OBSERVED_REALITY_RULE
 
@@ -74,15 +75,16 @@ def resolve_hazards(hole: HoleSituation) -> list[Hazard]:
 def build_round_session(scenario: Scenario) -> RoundSession:
     """A synthetic `RoundSession` from a golden `Scenario` — the same shape
     `build_realtime_instructions`/`_build_session_voice_prompt` consume in
-    production. Effective yardage uses the identical elevation formula
-    `build_ground_truth_block` uses (`yards + elevation_change_ft / 3`), so
-    the two mouths' "plays uphill" numbers always agree with each other and
-    with the ground-truth block."""
+    production. Effective yardage uses the identical physics elevation-only
+    plays-like `build_hole_intelligence` and `build_ground_truth_block` use
+    (`physics.elevation_only_plays_like`, plan step 9), so the two mouths'
+    "plays uphill" numbers always agree with each other, with the ground-truth
+    block, and with production."""
     hole = scenario.situation.hole
     hazards = resolve_hazards(hole)
     effective_yards: Optional[int] = None
     if hole.yards is not None:
-        effective_yards = int(round(hole.yards + hole.elevation_change_ft / 3))
+        effective_yards = elevation_only_plays_like(hole.yards, hole.elevation_change_ft)
     guide = HoleStrategyGuide(**scenario.situation.strategy_guide) if scenario.situation.strategy_guide else None
     green_slope = GreenSlope(**hole.green_slope) if hole.green_slope else None
     intel = HoleIntelligence(
@@ -159,6 +161,7 @@ def build_tier1_context(
 _RULE_TEXT: dict[str, str] = {
     "HAZARD_GROUNDING_RULE": HAZARD_GROUNDING_RULE,
     "OBSERVED_REALITY_RULE": OBSERVED_REALITY_RULE,
+    "PHYSICS_GROUNDING_RULE": PHYSICS_GROUNDING_RULE,
 }
 
 
@@ -308,6 +311,33 @@ def check_carries_tool_matches_hazards(ctx: Tier1Context, check: Tier1Check) -> 
     return CheckResult(True, "ok")
 
 
+def check_shot_distance_in_band(ctx: Tier1Context, check: Tier1Check) -> CheckResult:
+    """Runs the REAL `get_shot_distance` machinery (`tools.shot_distance_payload`
+    → the RK4 physics engine) against the scenario's situation — offline,
+    deterministic, CI-gated. Asserts the number the tool would hand the model
+    lands inside `band`: `total_yards` when a `club` is given, `plays_like_yards`
+    when a `target_yards` is given. This is the eval tooth for the 2026-07-09
+    incident: a 300y drive, 4mph tail, 38ft down must total 315-330 — the
+    pre-physics behavior ('total around 390') is structurally out of band."""
+    if ctx.scenario is None:
+        return CheckResult(False, "context carries no scenario — cannot build the RoundSession")
+    hole = ctx.scenario.situation.hole
+    session = build_round_session(ctx.scenario)
+
+    payload = shot_distance_payload(
+        session, hole_number=hole.number, club=check.club, target_yards=check.target_yards,
+    )
+    if payload.get("available") is not True:
+        return CheckResult(False, f"shot distance unavailable for a fully-specified scenario: {payload!r}")
+    field = "total_yards" if check.club else "plays_like_yards"
+    value = payload.get(field)
+    if value is None:
+        return CheckResult(False, f"payload carries no {field}: {payload!r}")
+    lo, hi = check.band
+    ok = lo <= value <= hi
+    return CheckResult(ok, f"{field}={value} outside physics band [{lo}, {hi}]" if not ok else "ok")
+
+
 TIER1_CHECKS: dict[str, Callable[[Tier1Context, Tier1Check], CheckResult]] = {
     Tier1CheckName.PROMPT_CONTAINS_RULE.value: check_prompt_contains_rule,
     Tier1CheckName.PROMPT_CONTAINS_LITERAL.value: check_prompt_contains_literal,
@@ -319,6 +349,7 @@ TIER1_CHECKS: dict[str, Callable[[Tier1Context, Tier1Check], CheckResult]] = {
     Tier1CheckName.GROUND_TRUTH_BLOCK_COMPLETE.value: check_ground_truth_block_complete,
     Tier1CheckName.CONTEXT_CONTAINS.value: check_context_contains,
     Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS.value: check_carries_tool_matches_hazards,
+    Tier1CheckName.SHOT_DISTANCE_IN_BAND.value: check_shot_distance_in_band,
 }
 
 

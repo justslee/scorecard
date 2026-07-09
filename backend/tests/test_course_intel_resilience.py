@@ -47,7 +47,11 @@ async def test_malformed_osm_features_keep_elevation(monkeypatch):
     )
 
     assert intel.elevation_change_ft == pytest.approx(29.4, abs=0.1)
-    assert intel.effective_yards == 422
+    # Physics elevation-only plays-like (plan step 9): 412y is driver-class
+    # (shallow ~38° descent), so 29.4ft uphill costs Δh/tan(descent) ≈ +13y —
+    # more than the old club-blind 1yd/3ft rule's +10 (412→422). Retuned, not
+    # weakened: 425 is the engine's correct number for this hole.
+    assert intel.effective_yards == 425
     assert intel.hazards == []
 
 

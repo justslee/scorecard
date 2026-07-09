@@ -279,6 +279,7 @@ def generate_recommendation(
             elevation_change_ft=hole.elevation_change_ft,
             weather=weather,
             shot_bearing=shot_bearing,
+            club_distances=clubs,  # anchors the physics solve to the player's bag
         )
 
     # Select club

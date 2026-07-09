@@ -30,8 +30,9 @@ from typing import Optional
 
 from sqlalchemy import select, func as sqlfunc
 
+from app.caddie import physics
 from app.caddie.aim_point import generate_recommendation
-from app.caddie.club_selection import CLUB_DISPLAY_NAMES
+from app.caddie.club_selection import CLUB_DISPLAY_NAMES, physics_plays_like
 from app.caddie.hazards import format_hazards_line
 from app.caddie.session import RoundSession, ShotRecord, sessions
 from app.caddie.types import HoleIntelligence
@@ -66,7 +67,10 @@ CADDIE_TOOLS: list[dict] = [
             "bunker/water hazards (empty list if none are mapped) and the green's slope "
             "description, when mapped. Always call this before discussing wind, "
             "temperature, effective distance, green break, or any hazard — never name "
-            "a hazard, or a yardage to one, that isn't in the returned list."
+            "a hazard, or a yardage to one, that isn't in the returned list. For a "
+            "SPECIFIC shot's numbers (what a club carries/totals here, or what a "
+            "target distance plays like), call get_shot_distance instead — this "
+            "tool's plays_like block is the hole-level elevation view only."
         ),
         "input_schema": {
             "type": "object",
@@ -113,6 +117,36 @@ CADDIE_TOOLS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {},
+        },
+    },
+    {
+        "name": "get_shot_distance",
+        "description": (
+            "What ONE shot does under the current conditions, from the ball-flight "
+            "physics engine anchored to the player's own club distances. Pass club "
+            "(e.g. 'driver', '7iron') for that club's carry, roll, and total here; "
+            "pass target_yards for what that distance plays like and the club that "
+            "covers it; pass both for both. ALWAYS call this before speaking any "
+            "carry, roll, total, or plays-like number for a specific shot — never "
+            "compute distance adjustments yourself. If it returns available:false, "
+            "say the number isn't available instead of estimating one."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "hole_number": {
+                    "type": "integer",
+                    "description": "Hole context for elevation/conditions (1-18). Omit for the current hole.",
+                },
+                "club": {
+                    "type": "string",
+                    "description": "Club to simulate, e.g. 'driver', '7iron', 'pw'. Provide club and/or target_yards.",
+                },
+                "target_yards": {
+                    "type": "integer",
+                    "description": "Target distance to solve plays-like for. Provide club and/or target_yards.",
+                },
+            },
         },
     },
     {
@@ -431,6 +465,161 @@ def carries_payload(session: RoundSession, hole_number: int) -> dict:
     }
 
 
+# Spoken/model club names → canonical CLUB_REFERENCE keys. Built from the
+# display names ("7 Iron" → "7iron") plus the long wedge forms and N-letter
+# shorthands the model actually says. Lookup lowercases and strips spaces/
+# hyphens first, so "7 iron", "7-Iron", and "7iron" all resolve.
+_CLUB_ALIASES: dict[str, str] = {
+    **{display.lower().replace(" ", ""): key for key, display in CLUB_DISPLAY_NAMES.items()},
+    "pitchingwedge": "pw",
+    "gapwedge": "gw",
+    "sandwedge": "sw",
+    "lobwedge": "lw",
+    **{f"{n}i": f"{n}iron" for n in range(4, 10)},
+    "3w": "3wood",
+    "5w": "5wood",
+}
+
+
+def _canonical_club(raw: str) -> Optional[str]:
+    key = raw.strip().lower().replace(" ", "").replace("-", "")
+    if key in physics.CLUB_REFERENCE:
+        return key
+    return _CLUB_ALIASES.get(key)
+
+
+def shot_distance_payload(
+    session: RoundSession,
+    hole_number: Optional[int] = None,
+    club: Optional[str] = None,
+    target_yards: Optional[int] = None,
+) -> dict:
+    """One shot's physics numbers for the `get_shot_distance` tool — pure.
+
+    The structural fix for the 2026-07-09 incident (the caddie told the owner
+    a 300y drive with 4mph downwind and 38ft downhill "totals around 390"):
+    the model had no tool that answers "what does MY shot do here", so it
+    improvised arithmetic on the pin distance. This payload runs the real
+    ball-flight engine (app/caddie/physics.py) against the session's live
+    weather + the hole's elevation, anchored to the player's stored distances.
+
+    Honest degradation ([[no-fake-data-fallbacks]]):
+      - unknown/missing club distance → available:false + reason, never a
+        tour-average stand-in for the PLAYER's number;
+      - no cached weather → still air, surfaced in assumptions;
+      - no hole intel → flat ground, surfaced in assumptions;
+      - the shot's compass bearing is not known to the session → wind is
+        applied relative to due north and that assumption is surfaced.
+    """
+    hn = hole_number or session.current_hole
+    base = {"round_id": session.round_id, "hole_number": hn}
+
+    club_key: Optional[str] = None
+    if club:
+        club_key = _canonical_club(club)
+        if club_key is None:
+            return {**base, "available": False, "reason": f"Unknown club {club!r}."}
+
+    assumptions: list[str] = []
+
+    intel = session.hole_intel.get(hn)
+    elevation_ft = float(intel.elevation_change_ft) if intel is not None else 0.0
+    if intel is None:
+        assumptions.append("no hole elevation data — treated the shot as flat")
+
+    weather = session.weather
+    if weather is None:
+        assumptions.append("no live weather cached — still air assumed")
+    elif (weather.wind_speed_mph or 0) >= 1:
+        # The session does not know the shot's compass bearing; the wind
+        # vector is resolved against due north. Surfaced, never silent.
+        assumptions.append(
+            "shot direction unknown — wind applied relative to due north"
+        )
+
+    stored = session.club_distances.get(club_key, 0) if club_key else 0
+    carry_hint = float(stored or target_yards or 0) or None
+    cond, cond_assumptions = physics.conditions_from_weather(
+        weather, shot_bearing_deg=0.0,
+        elevation_delta_ft=elevation_ft,
+        carry_hint_yards=carry_hint,
+    )
+    assumptions.extend(cond_assumptions)
+
+    payload: dict = {
+        **base,
+        "available": True,
+        "mode": "both" if (club_key and target_yards) else ("club" if club_key else "target"),
+        "club": club_key,
+        "carry_yards": None,
+        "roll_yards": None,
+        "total_yards": None,
+        "target_yards": target_yards,
+        "plays_like_yards": None,
+        "suggested_club": None,
+        "breakdown": None,
+        "conditions_used": {
+            "weather_available": weather is not None,
+            "temperature_f": weather.temperature_f if weather else None,
+            "wind_speed_mph": weather.wind_speed_mph if weather else None,
+            "wind_direction": weather.wind_direction if weather else None,
+            "firmness": cond.firmness,
+            "elevation_change_ft": elevation_ft,
+            "air_density_kg_m3": round(cond.rho_kg_m3, 4),
+        },
+    }
+
+    if club_key:
+        if not stored or stored <= 0:
+            return {
+                **base,
+                "available": False,
+                "reason": (
+                    f"No stored distance for {CLUB_DISPLAY_NAMES.get(club_key, club_key)} — "
+                    "ask the player how far they hit it."
+                ),
+            }
+        result = physics.shot_distance_for_club(club_key, float(stored), cond)
+        payload.update(
+            carry_yards=round(result.carry_yards),
+            roll_yards=round(result.roll_yards),
+            total_yards=round(result.total_yards),
+            breakdown={
+                "neutral_carry_yards": round(result.neutral_carry_yards),
+                "apex_ft": round(result.apex_ft),
+                "descent_deg": round(result.descent_deg, 1),
+                "flight_time_s": round(result.flight_time_s, 1),
+                "lateral_drift_yards": round(result.lateral_yards, 1),
+            },
+        )
+        assumptions.extend(result.assumptions)
+
+    if target_yards:
+        known = {
+            c: d for c, d in session.club_distances.items()
+            if c in physics.CLUB_REFERENCE and d and d > 0
+        }
+        if not known:
+            return {
+                **base,
+                "available": False,
+                "reason": "No club distances on file — plays-like needs at least one.",
+            }
+        plays_like, suggested, pl_assumptions = physics_plays_like(
+            float(target_yards), known, cond
+        )
+        payload.update(
+            plays_like_yards=round(plays_like),
+            suggested_club=suggested,
+        )
+        for a in pl_assumptions:
+            if a not in assumptions:
+                assumptions.append(a)
+
+    payload["assumptions"] = assumptions
+    return payload
+
+
 # ── Server-side dispatcher (text tool loop) ──────────────────────────────────
 
 
@@ -513,6 +702,18 @@ async def resolve_tool(name: str, args: dict, ctx: ToolContext) -> dict:
 
     if name == "get_player_profile":
         return await player_profile_payload(session, ctx.user_id)
+
+    if name == "get_shot_distance":
+        club = args.get("club")
+        target = _as_int(args.get("target_yards"))
+        if not club and target is None:
+            return {"error": "get_shot_distance requires club and/or target_yards"}
+        return shot_distance_payload(
+            session,
+            hole_number=_as_int(args.get("hole_number")) or ctx.default_hole,
+            club=str(club) if club else None,
+            target_yards=target,
+        )
 
     # name == "get_carries" (the registry is closed — see _TOOL_NAMES gate)
     hn = _as_int(args.get("hole_number")) or ctx.default_hole

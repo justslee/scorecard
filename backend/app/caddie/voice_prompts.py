@@ -14,6 +14,7 @@ from app.caddie.session import RoundSession
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.hazards import HAZARD_GROUNDING_RULE, format_hazards_line
 from app.caddie.guide_writer import format_guide_line
+from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.db.models import CaddieMemory
 
 
@@ -87,6 +88,7 @@ def build_realtime_instructions(
 
     parts.append(
         "# Behavior\n" + _BASE_BEHAVIOR.strip() + "\n" + HAZARD_GROUNDING_RULE
+        + "\n" + PHYSICS_GROUNDING_RULE
         + "\n" + OBSERVED_REALITY_RULE
     )
 

@@ -2,6 +2,7 @@
 
 import logging
 from typing import Optional
+from app.caddie.physics import elevation_only_plays_like
 from app.caddie.types import (
     HoleIntelligence,
     Hazard,
@@ -165,8 +166,14 @@ async def build_hole_intelligence(
                     raw_hole_number, course_id,
                 )
 
-    # Effective distance adjusted for elevation
-    effective_yards = None if yards is None else yards + round(elevation_change / 3)
+    # Effective distance adjusted for elevation — physics-engine plays-like
+    # (Δcarry ≈ Δh / tan(descent angle) for the club covering the distance),
+    # replacing the club-independent 1yd/3ft rule (plan step 9). Semantics
+    # unchanged: pin-relative, elevation-only, still air — live wind belongs
+    # to the get_shot_distance tool, not this static per-hole number.
+    effective_yards = (
+        None if yards is None else elevation_only_plays_like(yards, elevation_change)
+    )
 
     # Hazards: this function no longer classifies them at all. The OSM-derived
     # classifier that used to live here (`_classify_osm_hazards`/

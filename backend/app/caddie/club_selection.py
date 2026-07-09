@@ -1,8 +1,19 @@
-"""Club selection engine with distance adjustments."""
+"""Club selection engine with distance adjustments.
+
+Distance adjustments are DELEGATED to the ball-flight physics engine
+(app/caddie/physics.py, specs/caddie-shot-physics-engine-plan.md step 10):
+the old stack of scalar rules of thumb (1yd/3ft elevation, %/mph wind,
+2yd/10°F, 2%/1000ft altitude, ±2-3% firmness) could not distinguish carry
+from roll and produced the 2026-07-09 "390-yard drive" incident. The total
+adjusted distance now comes from ONE physics plays-like solve — the same
+computation behind the `get_shot_distance` tool — so `get_recommendation`
+and `get_shot_distance` can never disagree within a single caddie turn.
+"""
 
 from typing import Optional
+
+from app.caddie import physics
 from app.caddie.types import ShotAdjustment, WeatherConditions
-from app.services.weather import compute_wind_adjustment
 
 
 # Default club distances (fallback when user hasn't set up profile)
@@ -71,96 +82,181 @@ def normalize_club_distances(raw: dict[str, int]) -> dict[str, int]:
     return result
 
 
+def physics_plays_like(
+    target_yards: float,
+    club_distances: dict[str, int],
+    cond: "physics.ShotConditions",
+) -> tuple[float, str, tuple[str, ...]]:
+    """Neutral-baseline-corrected plays-like — the ONE number both
+    `compute_adjustments` and the `get_shot_distance` tool speak.
+
+    Two corrections on top of `physics.plays_like_target`:
+
+    1. FINAL-CLUB RECOMPUTE. The core's club iteration can oscillate when the
+       plays-like number crosses the wood/iron boundary (e.g. a 200y target on
+       firm turf flips hybrid↔5iron), leaving a plays-like computed on a
+       DIFFERENT basis than the returned club. Recompute the plays-like for
+       the club it settled on, so number and club are always consistent.
+    2. NEUTRAL-BASELINE CANCELLATION. The roll model does not perfectly
+       round-trip a fitted-DOWN wood's stored total (a 210y 3-wood integrates
+       to ~228 neutral total — flagged by the core builder), so the raw solve
+       would report a phantom ~15y adjustment in dead-calm air. Subtracting
+       the same club's NEUTRAL plays-like makes still-air an exact identity:
+       corrected = target + (plays_under_conditions − plays_neutral). The
+       systematic model bias cancels; only the CONDITIONS' effect remains —
+       the same differential-use principle the reverse fit itself relies on.
+
+    Returns (plays_like_yards, club_key, assumptions).
+    """
+    plays, club, assumptions = physics.plays_like_target(
+        float(target_yards), club_distances, cond
+    )
+    stored = float(club_distances[club])
+
+    def _plays_for(c: "physics.ShotConditions") -> float:
+        result = physics.shot_distance_for_club(club, stored, c)
+        achieved = (
+            result.total_yards if club in physics.WOOD_CLUBS else result.carry_yards
+        )
+        if achieved <= 0:
+            return float(target_yards)
+        return float(target_yards) * stored / achieved
+
+    corrected = float(target_yards) + (_plays_for(cond) - _plays_for(physics.NEUTRAL_CONDITIONS))
+    return corrected, club, assumptions
+
+
+def _isolated_delta(
+    target_yards: int, bag: dict[str, int], cond: "physics.ShotConditions"
+) -> int:
+    """One factor's plays-like delta in whole yards (display breakdown)."""
+    plays, _, _ = physics_plays_like(target_yards, bag, cond)
+    return round(plays - target_yards)
+
+
 def compute_adjustments(
     raw_distance: int,
     elevation_change_ft: float = 0.0,
     weather: Optional[WeatherConditions] = None,
     shot_bearing: float = 0.0,
+    club_distances: Optional[dict[str, int]] = None,
 ) -> tuple[int, list[ShotAdjustment]]:
-    """Compute all distance adjustments and return adjusted distance.
+    """Physics-engine distance adjustments (plan step 10).
+
+    The ADJUSTED TOTAL comes from one combined `physics_plays_like` solve of
+    all conditions together — identical to the `get_shot_distance` tool's
+    target mode, so the two can never disagree in one turn. The per-factor
+    `ShotAdjustment` lines are display breakdowns: each factor re-solved in
+    ISOLATION against neutral (they explain the total; small cross-factor
+    interaction lives only in the combined number). Same output shape as
+    before, so aim_point/recommendation-card contracts hold.
+
+    ``club_distances``: the player's bag anchoring the solve; falls back to
+    DEFAULT_CLUB_DISTANCES (same fallback select_club has always used).
 
     Returns:
         (adjusted_distance, list of adjustments applied)
     """
-    adjustments: list[ShotAdjustment] = []
-    total_adj = 0
+    has_weather_effect = weather is not None and (
+        weather.wind_speed_mph >= 3
+        or abs(weather.temperature_f - 70.0) >= 5
+        or weather.altitude_ft > 500
+        or weather.conditions in ("soft", "firm")
+    )
+    if abs(elevation_change_ft) <= 1 and not has_weather_effect:
+        return raw_distance, []  # nothing to adjust — skip the solves
 
-    # 1. Elevation: +1 yard per 3 feet uphill, -1 per 3 feet downhill
+    bag = {
+        c: int(d)
+        for c, d in (club_distances or DEFAULT_CLUB_DISTANCES).items()
+        if c in physics.CLUB_REFERENCE and d and d > 0
+    } or dict(DEFAULT_CLUB_DISTANCES)
+
+    adjustments: list[ShotAdjustment] = []
+
+    # 1. Elevation — same club-aware Δh/tan(descent) number course_intel's
+    # effective_yards speaks (physics.elevation_only_plays_like), so the
+    # "treat it as X" context line and this breakdown never disagree.
     if abs(elevation_change_ft) > 1:
-        elev_adj = round(elevation_change_ft / 3)
+        elev_adj = physics.elevation_only_plays_like(raw_distance, elevation_change_ft) - raw_distance
         if elev_adj != 0:
-            direction = "uphill" if elev_adj > 0 else "downhill"
+            direction = "uphill" if elevation_change_ft > 0 else "downhill"
             adjustments.append(ShotAdjustment(
                 type="elevation",
                 yards=elev_adj,
                 description=f"{abs(elevation_change_ft):.0f}ft {direction} — {'adds' if elev_adj > 0 else 'saves'} {abs(elev_adj)} yds",
             ))
-            total_adj += elev_adj
 
     if weather:
-        # 2. Wind
+        # Combined conditions once — wind vector, air density, landing grade.
+        full_cond, _ = physics.conditions_from_weather(
+            weather, shot_bearing,
+            elevation_delta_ft=elevation_change_ft,
+            carry_hint_yards=float(raw_distance),
+        )
+
+        # 2. Wind (isolated: the flight re-run with only the wind vector)
         if weather.wind_speed_mph >= 3:
-            wind = compute_wind_adjustment(
-                weather.wind_speed_mph,
-                weather.wind_direction,
-                shot_bearing,
-                raw_distance,
+            wind_adj = _isolated_delta(
+                raw_distance, bag,
+                physics.ShotConditions(head_mps=full_cond.head_mps, cross_mps=full_cond.cross_mps),
             )
-            wind_adj = wind["distance_adjustment"]
             if wind_adj != 0:
+                feel = "into/cross wind adds" if wind_adj > 0 else "helping wind saves"
                 adjustments.append(ShotAdjustment(
                     type="wind",
                     yards=wind_adj,
-                    description=wind["description"],
+                    description=f"{weather.wind_speed_mph:.0f}mph wind — {feel} {abs(wind_adj)} yds",
                 ))
-                total_adj += wind_adj
 
-        # 3. Temperature: ~2 yards per 10°F from 70°F baseline
-        temp_diff = weather.temperature_f - 70.0
-        temp_adj = round(-temp_diff * 0.2)  # cold = longer distance needed
-        if abs(temp_adj) >= 2:
-            direction = "cold" if temp_adj > 0 else "warm"
-            adjustments.append(ShotAdjustment(
-                type="temperature",
-                yards=temp_adj,
-                description=f"{weather.temperature_f:.0f}°F ({direction}) — {'+' if temp_adj > 0 else ''}{temp_adj} yds",
-            ))
-            total_adj += temp_adj
+        # 3. Temperature (isolated: air density at this temp, sea-level pressure)
+        if abs(weather.temperature_f - 70.0) >= 5:
+            rho_temp = physics.air_density_kg_m3(weather.temperature_f, weather.humidity, 1013.25)
+            temp_adj = _isolated_delta(raw_distance, bag, physics.ShotConditions(rho_kg_m3=rho_temp))
+            if temp_adj != 0:
+                direction = "cold" if temp_adj > 0 else "warm"
+                adjustments.append(ShotAdjustment(
+                    type="temperature",
+                    yards=temp_adj,
+                    description=f"{weather.temperature_f:.0f}°F ({direction}) — {'+' if temp_adj > 0 else ''}{temp_adj} yds",
+                ))
 
-        # 4. Altitude (air density): ~2% per 1000ft
+        # 4. Altitude (isolated: barometric density at this elevation)
         if weather.altitude_ft > 500:
-            alt_pct = weather.altitude_ft / 1000 * 0.02
-            alt_adj = round(-raw_distance * alt_pct)  # negative = ball goes farther
-            if abs(alt_adj) >= 2:
+            rho_alt = physics.air_density_kg_m3(70.0, 50.0, None, altitude_ft=weather.altitude_ft)
+            alt_adj = _isolated_delta(raw_distance, bag, physics.ShotConditions(rho_kg_m3=rho_alt))
+            if alt_adj != 0:
                 adjustments.append(ShotAdjustment(
                     type="altitude",
                     yards=alt_adj,
                     description=f"{weather.altitude_ft:.0f}ft elevation — ball carries {abs(alt_adj)} yds farther",
                 ))
-                total_adj += alt_adj
 
-        # 5. Conditions
-        if weather.conditions == "soft":
-            cond_adj = round(raw_distance * 0.03)  # 3% more for soft conditions (less roll)
-            if cond_adj >= 2:
-                adjustments.append(ShotAdjustment(
-                    type="conditions",
-                    yards=cond_adj,
-                    description=f"Soft conditions — less roll, plays {cond_adj} yds longer",
-                ))
-                total_adj += cond_adj
-        elif weather.conditions == "firm":
-            cond_adj = round(-raw_distance * 0.02)
-            if cond_adj <= -2:
-                adjustments.append(ShotAdjustment(
-                    type="conditions",
-                    yards=cond_adj,
-                    description=f"Firm conditions — extra roll, plays {abs(cond_adj)} yds shorter",
-                ))
-                total_adj += cond_adj
+        # 5. Turf firmness (isolated: roll model only — physics says this only
+        # moves shots judged by TOTAL, i.e. tee balls; an iron approach's
+        # carry is untouched by firm/soft turf).
+        if weather.conditions in ("soft", "firm"):
+            cond_adj = _isolated_delta(
+                raw_distance, bag, physics.ShotConditions(firmness=weather.conditions)
+            )
+            if cond_adj != 0:
+                if weather.conditions == "soft":
+                    desc = f"Soft conditions — less roll, plays {abs(cond_adj)} yds longer"
+                else:
+                    desc = f"Firm conditions — extra roll, plays {abs(cond_adj)} yds shorter"
+                adjustments.append(ShotAdjustment(type="conditions", yards=cond_adj, description=desc))
 
-    adjusted = raw_distance + total_adj
-    return max(1, adjusted), adjustments
+        plays_like, _, _ = physics_plays_like(raw_distance, bag, full_cond)
+    else:
+        # Elevation-only: same combined solve, still air.
+        cond, _ = physics.conditions_from_weather(
+            None, shot_bearing,
+            elevation_delta_ft=elevation_change_ft,
+            carry_hint_yards=float(raw_distance),
+        )
+        plays_like, _, _ = physics_plays_like(raw_distance, bag, cond)
+
+    return max(1, round(plays_like)), adjustments
 
 
 def select_club(
