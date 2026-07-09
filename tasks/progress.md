@@ -9388,3 +9388,19 @@ untouched.
 Builder round 2 fixing the Fable BLOCK on c682f7f (integration/next). On return: re-run Fable
 reviewer (confirm 178/{136,400}->card-only and the guard applies to card picks) + qa gates. If
 green: update bundle PR #119 checklist (multi-tee item, NOTICEABLE). Do NOT merge #119.
+
+## 2026-07-09 cycle 41 — builder r2 fixed Fable BLOCK (9524f0f)
+
+cardPickValid applied to the card-nearest selection (par 3: deltaFrac<=0.08; par 4/5/unknown:
+deltaFrac<=0.25 AND box.yardsToGreen<=cardYards*1.08); failing card picks fall to honest
+card-only. Restored plan §2.4 fixture (178/{136,400}/par3 -> card-only) + added single-box-210
+case + dogleg accept/over-length reject cases + combo-tee comment/test. Gates green: vitest 1813,
+voice 274/274, tsc/lint/build clean, ruff clean. True test count 24 (not 26). Bethpage hole-3
+still 174-box (2.2%); 178/{136,400} now card-only not 136; doglegs don't misfire.
+
+## AWAITING
+Re-review on 9524f0f: (1) Fable reviewer confirm the guard now applies to card picks AND the
+178/{136,400}->card-only fixture is restored (not re-bent); (2) qa re-run gates strict + confirm
+CI Frontend+Backend gates SUCCESS on head. designer already PASS (no user-facing string change,
+card-only UI unchanged — just triggers correctly in more cases). If green: update bundle PR #119
+checklist (multi-tee item, NOTICEABLE) + log designer's 2 watch-items to backlog. Do NOT merge #119.
