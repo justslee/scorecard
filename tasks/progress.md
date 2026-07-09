@@ -9575,7 +9575,12 @@ LIVE foreUP PROBE (done this cycle — endpoint shape VERIFIED, not guessed):
 - The builder MUST capture 18 Mile Creek's FULL live response as the CI fixture
   (recorded JSON, never live-hit in CI). 18 Mile Creek = the S1 seed course.
 
-## AWAITING: Fable plan (specs/teetime-s1-foreup-plan.md).
-On plan return → checkpoint, dispatch ONE builder on integration/next.
-If this cycle dies here: next cycle reads this note + the plan file and
-dispatches the builder; do NOT re-probe (findings above are authoritative).
+Fable plan DONE → specs/teetime-s1-foreup-plan.md (foreup.py provider +
+capability_store.py JSON seed [NO migration] + router_provider.py + politeness
+stack cache/single-flight/limiter/breaker + validate script + fixture tests).
+
+## AWAITING: builder implementing specs/teetime-s1-foreup-plan.md on integration/next.
+On builder return → reviewer (scrape/ToS posture + no-fake-fixture BLOCKING +
+circuit-breaker) + /security-review (external-fetch/SSRF/rate-limit) + qa STRICT
+gates. If this cycle dies here: next cycle reconciles from origin/integration/next
+(check builder's actual commits — do NOT rebuild) and runs the reviews.
