@@ -629,17 +629,25 @@ class TestNearbyCourses:
 
         result = await course_search.nearby_courses(lat=40.7442, lng=-73.4593, radiusMeters=25000)
 
-        assert result == {"courses": [{"osm_id": "way/1", "name": "Bethpage Black", "source": "osm"}]}
+        # attach_stable_ids gives the id-less OSM hit the deterministic
+        # write-through UUID (specs/teetime-course-ids-wiring-plan.md §4.1) —
+        # unifies wire ids with /api/courses/search so a tee-time selection
+        # made from this leg can be reconciled by the selection filter.
+        expected_id = course_finder.deterministic_course_id("osm-way/1")
+        expected_course = {
+            "osm_id": "way/1", "name": "Bethpage Black", "source": "osm", "id": expected_id,
+        }
+        assert result == {"courses": [expected_course]}
         # Interactive budget requested — this is the latency fix (win b).
         assert len(calls) == 1
         assert calls[0]["interactive"] is True
         assert calls[0]["lat"] == 40.7442
         assert calls[0]["lng"] == -73.4593
         assert calls[0]["radius_m"] == 25000
-        # Positive result is cached.
+        # Positive result is cached (post-attach_stable_ids shape).
         assert len(nearby_cache.set_calls) == 1
         cached_key, cached_val = nearby_cache.set_calls[0]
-        assert cached_val == [{"osm_id": "way/1", "name": "Bethpage Black", "source": "osm"}]
+        assert cached_val == [expected_course]
         assert cached_key == course_search._nearby_cache_key(40.7442, -73.4593, 25000)
 
     async def test_empty_result_is_never_cached(self, monkeypatch):

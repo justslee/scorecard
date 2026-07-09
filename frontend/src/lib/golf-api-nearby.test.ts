@@ -64,6 +64,54 @@ describe("searchNearbyDetailed", () => {
     expect(out.results.map((r) => r.id).sort()).toEqual(["m-1", "osm-2"]);
   });
 
+  it("realistic id-less OSM fixture (osm_id only, no id) — result.id falls back to osm_id", async () => {
+    // The real backend shape BEFORE attach_stable_ids reaches this leg (or a
+    // stale cached payload mid-deploy): search_golf_courses returns dicts
+    // keyed osm_id, no id key (specs/teetime-course-ids-wiring-plan.md §0).
+    mockFetchAPI.mockImplementation(async (path: string) => {
+      if (path.startsWith(MAPPED)) return { courses: [] };
+      return {
+        courses: [
+          { osm_id: "way/123", name: "Bethpage Black", center: { lat: 40.745, lng: -73.456 } },
+        ],
+      };
+    });
+
+    const out = await searchNearbyDetailed(40.75, -73.5, 40000);
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0].id).toBe("way/123");
+  });
+
+  it("id and osm_id both present — id wins", async () => {
+    mockFetchAPI.mockImplementation(async (path: string) => {
+      if (path.startsWith(MAPPED)) return { courses: [] };
+      return {
+        courses: [
+          {
+            id: "cb8d3e00-cdb2-568f-8f7a-695259936ad4",
+            osm_id: "way/123",
+            name: "Bethpage Black",
+            center: { lat: 40.745, lng: -73.456 },
+          },
+        ],
+      };
+    });
+
+    const out = await searchNearbyDetailed(40.75, -73.5, 40000);
+    expect(out.results).toHaveLength(1);
+    expect(out.results[0].id).toBe("cb8d3e00-cdb2-568f-8f7a-695259936ad4");
+  });
+
+  it("neither id nor osm_id present — the unidentifiable row is skipped", async () => {
+    mockFetchAPI.mockImplementation(async (path: string) => {
+      if (path.startsWith(MAPPED)) return { courses: [] };
+      return { courses: [{ name: "No Identity Course", center: { lat: 40.745, lng: -73.456 } }] };
+    });
+
+    const out = await searchNearbyDetailed(40.75, -73.5, 40000);
+    expect(out.results).toEqual([]);
+  });
+
   it("passes the caller's radius through to both legs", async () => {
     mockFetchAPI.mockResolvedValue({ courses: [] });
 

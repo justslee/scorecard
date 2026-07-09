@@ -29,6 +29,7 @@ times/prices as live availability, and we never claim a reservation was made.
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from typing import Awaitable, Callable
@@ -44,6 +45,9 @@ from .base import (
     TeeTimeSlot,
 )
 from .private_filter import exclude_private
+from .selection import CourseSelector, matches_selection
+
+log = logging.getLogger(__name__)
 
 # One route-tagged entry per course; keep the list calm and scannable.
 MAX_COURSES = 8
@@ -186,6 +190,18 @@ class RoutingTeeTimeProvider(TeeTimeProvider):
             return []
 
         courses = exclude_private(courses)
+
+        if query.course_ids:
+            selectors = query.course_selectors or [
+                CourseSelector(id=i) for i in query.course_ids
+            ]
+            filtered = [c for c in courses if matches_selection(c, selectors)]
+            if courses and not filtered:
+                log.info(
+                    "tee_time_selection: %d selected ids matched 0 of %d discovered courses",
+                    len(query.course_ids), len(courses),
+                )
+            courses = filtered
 
         slots: list[TeeTimeSlot] = []
         for course in courses[:MAX_COURSES]:

@@ -11,6 +11,7 @@ dependency is needed.
 
 import json
 import logging
+import uuid
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -121,6 +122,34 @@ async def nearby_courses(lat: float, lng: float, radius_meters: float = 50000) -
             await db.execute(text(sql), {"lat": lat, "lng": lng, "radius": radius_meters})
         ).mappings().all()
     return [_list_item(r) for r in rows]
+
+
+# ── Batch lookup by id (tee-time course-selection resolution) ─────────────────
+async def courses_by_ids(ids: list[str]) -> list[dict]:
+    """Fetch id/name/lat/lng for a batch of mapped courses.
+
+    Pre-filters to UUID-parsable strings so the ``id`` column's uuid cast can
+    never error on a malformed/raw external id (e.g. an "osm-way/123" that
+    failed to resolve to a deterministic UUID)."""
+    valid_ids: list[str] = []
+    for raw in ids:
+        try:
+            uuid.UUID(raw)
+            valid_ids.append(raw)
+        except (ValueError, AttributeError, TypeError):
+            continue
+    if not valid_ids:
+        return []
+
+    sql = """
+        select id::text as id, name,
+               ST_X(location::geometry) as lng, ST_Y(location::geometry) as lat
+        from public.courses
+        where id = ANY(:ids)
+    """
+    async with async_session() as db:
+        rows = (await db.execute(text(sql), {"ids": valid_ids})).mappings().all()
+    return [dict(r) for r in rows]
 
 
 # ── Get single course (with tees / holes / yardages / features) ────────────────

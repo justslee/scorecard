@@ -841,7 +841,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
   // One query per selected window, each on its OWN day's next date.
   const queries: TeeTimeQuery[] = buildTeeTimeQueries({
     windows: selectedWindows.map((w) => ({ label: w.label, start: w.start, end: w.end, date: w.date })),
-    courseIds: selectedCourses.map((c) => c.id),
+    courseIds: selectedCourses.map((c) => c.id).filter(Boolean),
     partySize,
     maxDistanceMiles: maxMiles,
     maxPriceUsd: maxPriceUsd ?? undefined,
