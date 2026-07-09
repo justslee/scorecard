@@ -38,14 +38,31 @@ test_green_geometry.py incl. all 16 matrix rows + owner golden case); full non-D
 clean, lint clean, build ok, voice 274/274, vitest 1815 passed. Spec §P1 prose corrected in same
 commit. Physically-correct rule implemented (uphill_leave_side == fall_side).
 
-## AWAITING
-Fable reviewer (model=fable) adversarially FALSIFYING the rotation/sign on dfe0159's diff + qa
-re-running gates, dispatched concurrently. On return: BLOCKING correctness/security/sign issue →
-re-dispatch builder, re-review. Both green → (1) confirm CI Frontend+Backend gates SUCCESS on
-head 182dd79 (strict: state:SUCCESS, not just fail==0); (2) update bundle PR #119 checklist
-(add green-slope item, NOTICEABLE, note the sign-inversion catch); (3) update board record +
-backlog. Do NOT merge #119. Do NOT push notification (routine silent-style review; bundle already
-awaits owner ship-it, which now covers 3 noticeable items). Designer NOT needed (tool-only, no UI).
+## 2026-07-09 cycle 42 — DONE: caddie-green-slope-spatial GREEN on bundle #119
+
+Both reviews green: qa PASS (140 targeted incl. 16-row matrix + owner golden case; full non-DB
+sweep 1526 pass/82 skip→CI; eval 58/58; frontend tsc/lint/build clean, voice 274/274, vitest
+1815); Fable reviewer SHIP — hand-derived 7 matrix rows + proved the teeth by FAULT INJECTION
+(global sign flip 18 red, uphill/downhill inversion 16 red incl. golden case, x/y swap 3 red),
+verified aspect convention, honest fallbacks, two-mouth parity, and route auth (get_owned_session,
+no IDOR). One NON-BLOCKING nit → backlog (caddie-slope-framing-reconcile P3): slope_advice.py's
+spoken lateral framing vs green_read could read mixed; they agree on which side is HIGH (tested).
+
+KEY OUTCOME (spatial-correctness win): the Fable plan + reviewer CAUGHT the spec's golden chain
+was SIGN-INVERTED. Physically correct + shipped: slope-falls-LEFT ⇒ LEFT is the LOW side ⇒
+leave/miss LEFT ⇒ below the hole ⇒ UPHILL putt (uphill_leave_side == fall_side). Corroborated by
+slope_advice.py + universal "leave it below the hole." Spec §P1 prose + backlog `why` corrected.
+
+Final: feature dfe0159 (+ progress 182dd79, checkpoint d863ab7) on integration/next. CI on head
+d863ab7 STRICT-green: Frontend gate SUCCESS + Backend gate SUCCESS + E2E advisory SUCCESS
+(pending==0, fail==0, none cancelled). Bundle PR #119 checklist updated (3rd NOTICEABLE item:
+Caddie green-slope spatial read). backlog: caddie-green-slope-spatial -> done-on-bundle-119;
+added caddie-slope-framing-reconcile (minor P3). Board record card 3981c525 to update.
+
+Per cycle directive: NO merge, NO push notification. Bundle #119 now carries THREE noticeable
+items and awaits the owner's single "ship it" (poll card 3981c525 comments + Remote Control).
+On ship-it: release-manager builds fresh TestFlight from integration/next + merges. AWAITING
+(this cycle): none — cycle complete.
 
 ## 2026-07-09 — builder: caddie-green-slope-spatial-plan implemented (NOTICEABLE, DONE — rides bundle #119)
 

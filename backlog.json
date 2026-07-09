@@ -104,9 +104,19 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "done-on-bundle-119",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (screenshots): the caddie couldn't connect 'slopes west' to the player's left/right and butchered slope-left→miss-right→uphill-putt until hand-walked. Build backend/app/caddie/green_geometry.py: slope aspect → rotate into the player's tee→green frame → LEFT/RIGHT; pure rule engine 'which side leaves the uphill putt' (slope-falls-left ⇒ leave RIGHT ⇒ uphill) with a full aspect test table; expose as a TOOL the caddie CITES, forbid the LLM from deriving break geometry. Eval teeth from this exact session. Fable plan. See specs/caddie-physics-engine.md."
+      "why": "OWNER 2026-07-09 (screenshots): the caddie couldn't connect 'slopes west' to the player's left/right and butchered the slope→miss-side→uphill-putt chain until hand-walked. DONE (cycle 42, dfe0159 on bundle #119): backend/app/caddie/green_geometry.py rotates the green's downhill aspect into the player's tee→green LEFT/RIGHT frame (reuses hazards._xy_m + positive-cross=LEFT); pure rule engine 'which side leaves the uphill putt'. NOTE: the Fable plan + reviewer CAUGHT that the spec's chain was SIGN-INVERTED — physically correct is slope-falls-LEFT ⇒ LEFT is the LOW side ⇒ leave/miss LEFT ⇒ below the hole ⇒ UPHILL putt (uphill_leave_side == fall_side). Exposed as the get_green_read TOOL both mouths cite; GREEN_GROUNDING_RULE forbids the LLM deriving break geometry. 16-row adversarial matrix (2 approaches × 8 aspects) + owner golden case; teeth proven by fault injection (sign flip 18 red, uphill/downhill inversion 16 red, x/y swap 3 red). Spec §P1 prose corrected. See specs/caddie-green-slope-spatial-plan.md."
+    },
+    {
+      "id": "caddie-slope-framing-reconcile",
+      "title": "Reconcile slope_advice.py spoken lateral framing with green_read",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": ["caddie-green-slope-spatial"],
+      "why": "Fable reviewer nit on dfe0159 (non-blocking): slope_advice.py's pre-existing lateral advice ('favor the high side') and green_read's 'miss the fall/low side for the uphill putt' frame the SAME slope from opposite ends — they agree on which side is HIGH (cross-consistency test pins it) but if both surface in one caddie answer the spoken lateral guidance could read as mixed. Reconcile the spoken framing so the two modules never emit contradictory-sounding lateral cues. Pure prose/logic, no geometry change."
     },
     {
       "id": "caddie-shot-physics-engine",
