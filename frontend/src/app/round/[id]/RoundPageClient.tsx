@@ -51,6 +51,7 @@ import type { WeatherConditions } from "@/lib/caddie/types";
 import { bearingDeg, relativeWind, playsLikeYards, compassFrom } from "@/lib/map/wind";
 import { shouldRefreshOnDemand, WeatherRefreshScheduler } from "@/lib/map/weather-freshness";
 import { computeFCBDistances } from "@/lib/course/course-coordinates";
+import { fcbSourceCaption, playsSubLabel } from "@/lib/caddie/fcb-labels";
 import { yardsDistance } from "@/lib/course/hole-projection";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
@@ -1116,6 +1117,10 @@ export default function RoundPage() {
   const fcbLive = posOnHole && playerPos ? computeFCBDistances(playerPos, holeCoordsForTiles!) : null;
   const fcb = fcbLive ?? fcbFromTee;
   const fcbSource: "you" | "tee" = fcbLive ? "you" : "tee";
+  const fcbCaption = fcbSourceCaption(fcbSource);
+  // TODO(fcb §4.5): line-vs-card hint held pending designer sign-off on the
+  // card-yardage source (`distance` here is a derived display value, not the
+  // literal scorecard yardage — see specs/fcb-caption-visibility-plan.md §4.5).
   const fcbTiles = [
     { k: "Front", v: fcb?.front ?? distance - 12, color: "#a8553f" },
     { k: "Center", v: fcb?.center ?? distance, color: T.ink },
@@ -1155,16 +1160,16 @@ export default function RoundPage() {
   // elevation-adjusted yards (the fcbLive branch above uses the raw live
   // rangefinder distance, no elevation term), and say so when it's "from
   // you" rather than the tee card.
-  const playsTile = holeWind
-    ? {
-        v: `${playsLikeYards(playsBase, holeWind.headMph)}Y`,
-        sub: fcbLive ? "wind from you" : holeIntel ? "adjusted" : "wind-adj",
-      }
-    : holeIntel && !fcbLive
-    ? { v: `${Math.round(playsBase)}Y`, sub: "elev-adj" }
-    : fcbLive
-    ? { v: `${Math.round(playsBase)}Y`, sub: "from you" }
-    : { v: `${Math.round(playsBase)}Y`, sub: "from tee" };
+  const playsTile = {
+    v: holeWind
+      ? `${playsLikeYards(playsBase, holeWind.headMph)}Y`
+      : `${Math.round(playsBase)}Y`,
+    sub: playsSubLabel({
+      hasWind: holeWind != null,
+      hasElev: holeIntel != null,
+      isLive: fcbLive != null,
+    }),
+  };
   // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
   const shotPoint = shotPointForPath(hole.path);
 
@@ -1847,6 +1852,26 @@ export default function RoundPage() {
                       (owner 2026-07-02). F/C/B uses real from-tee coordinates
                       when the course has them. */}
                   <div data-overlay style={{ background: T.paper, padding: `10px 14px 12px` }}>
+                    {/* F/C/B source caption — moved to the TOP of the card
+                        (specs/fcb-caption-visibility-plan.md §4.4): even the
+                        stat-row placement from caddie-stale-hole-live-plan.md
+                        §3.10 was still under the floating Ask-caddie /
+                        Enter-score pill bar, which occludes the bottom of
+                        this card. Up here it's always visible. Same tokens,
+                        quiet right-aligned micro-label. */}
+                    <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                      <span
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 8.5,
+                          letterSpacing: 1.2,
+                          textTransform: "uppercase",
+                          color: fcbCaption.isLive ? DEFAULT_ACCENT : T.pencilSoft,
+                        }}
+                      >
+                        {fcbCaption.text}
+                      </span>
+                    </div>
                     <div
                       style={{
                         display: "grid",
@@ -1859,26 +1884,6 @@ export default function RoundPage() {
                       <MapStat k="Wind" v={windTile.v} sub={windTile.sub} />
                       <MapStat k="Elev" v={elevTile.v} sub={elevTile.sub} />
                       <MapStat k="Plays" v={playsTile.v} sub={playsTile.sub} />
-                    </div>
-                    {/* F/C/B source caption — moved ABOVE the tile row
-                        (specs/caddie-stale-hole-live-plan.md §3.10): the
-                        floating Ask-caddie/Enter-score pill bar occludes the
-                        bottom of this card, so a caption below the tiles was
-                        invisible. Up here, under the stat divider, the pill
-                        bar never reaches it. Same tokens, quiet
-                        right-aligned micro-label. */}
-                    <div
-                      style={{
-                        marginBottom: 8,
-                        textAlign: "right",
-                        fontFamily: T.mono,
-                        fontSize: 8.5,
-                        letterSpacing: 1.2,
-                        textTransform: "uppercase",
-                        color: fcbSource === "you" ? DEFAULT_ACCENT : T.pencilSoft,
-                      }}
-                    >
-                      {fcbSource === "you" ? "● from where you stand" : "from the tee"}
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       {fcbTiles.map((d) => (
