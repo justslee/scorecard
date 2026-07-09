@@ -626,5 +626,19 @@ class TestS2Invariants:
         assert "client.put" not in src
         assert re.search(r"card|payment|cvv|credit", src, re.I) is None
 
+        # Anti-scope-creep guard: BookingDetails may carry ONLY the golfer's
+        # own identity + the honest requested search window (S3 added
+        # time_window_start/end so the AI-call route can ask the pro shop for a
+        # real window when a routed slot has no time of its own). It must NEVER
+        # grow a card/payment/credential field — that is the invariant. Any new
+        # field forces a conscious update here.
         field_names = {f.name for f in dataclasses.fields(BookingDetails)}
-        assert field_names == {"name", "party_size", "email", "phone"}
+        assert field_names == {
+            "name", "party_size", "email", "phone",
+            "time_window_start", "time_window_end",
+        }
+        # Belt-and-suspenders: no field name ever hints at payment data.
+        assert not any(
+            re.search(r"card|payment|cvv|credit|account|routing_number", f, re.I)
+            for f in field_names
+        )
