@@ -7,9 +7,12 @@ GET  /api/tee-times/bookings — the owner's booking attempts, newest first
 POST /api/tee-times/book-by-call/simulate — run the voice booking agent against
      a scripted pro-shop persona (dev/QA surface; NO real call is ever placed)
 
-The active provider is chosen by the TEETIME_PROVIDER env var (default: "mock").
-  TEETIME_PROVIDER=affiliate → AffiliateLinkProvider (real courses, estimated
-    windows, booking handed to the course site — Phase 1b)
+The active provider is chosen by the TEETIME_PROVIDER env var (default:
+"routing" — real nearby courses, no fabricated time, booking routed to the
+course site or a phone call; see specs/teetime-s0-plan.md). TEETIME_PROVIDER=mock
+is explicit opt-in (dev/tests only); "affiliate" is accepted as a legacy alias
+for "routing". ANY other/unknown value also lands on routing — never mock —
+so a prod env-var typo can never silently serve demo data.
 When a real inventory provider (Chronogolf, GolfNow) has credentials configured,
 set TEETIME_PROVIDER accordingly — only the service module needs to change.
 
@@ -31,7 +34,7 @@ from sqlalchemy import select
 from app.db.engine import async_session
 from app.db.models import TeeTimeBooking as TeeTimeBookingORM
 from app.services.clerk_auth import current_user_id
-from app.services.tee_times.affiliate import AffiliateLinkProvider
+from app.services.tee_times.routing import RoutingTeeTimeProvider
 from app.services.tee_times.base import (
     BookingDetails as SvcBookingDetails,
     BookingResult as SvcBookingResult,
@@ -63,22 +66,26 @@ def _get_provider() -> TeeTimeProvider:
     """
     Return the active provider based on TEETIME_PROVIDER env var.
 
-    Default is AFFILIATE (real nearby courses + honest booking handoff) since
-    2026-07-02, when GOOGLE_PLACES_API_KEY went live in prod — the phase-1b
-    plan's flip point. TEETIME_PROVIDER=mock restores the demo provider; the
-    search route also falls back to mock results when affiliate finds nothing
-    (no location / unmapped area), so the screen never goes empty.
+    Default is ROUTING — real nearby courses, no fabricated time, booking
+    routed to the course site or a phone call (specs/teetime-s0-plan.md, S0
+    "kill fake data"). TEETIME_PROVIDER=mock is explicit opt-in (dev/tests
+    only). "affiliate" is accepted as a legacy alias for "routing" so a prod
+    env still carrying TEETIME_PROVIDER=affiliate lands on the real path with
+    zero env change. Any OTHER/unknown value also falls to routing — never
+    mock — so a typo'd env var can never silently serve demo data.
 
     This is the injection point for real providers:
       TEETIME_PROVIDER=chronogolf → ChronogolfProvider    (Phase 2)
       TEETIME_PROVIDER=golfnow    → GolfNowProvider       (Phase 3)
     """
-    provider_name = os.getenv("TEETIME_PROVIDER", "affiliate")
-    if provider_name == "affiliate":
-        return AffiliateLinkProvider()
+    provider_name = os.getenv("TEETIME_PROVIDER", "routing")
+    if provider_name == "mock":
+        return MockTeeTimeProvider()  # dev/tests only — explicit opt-in
     # TODO(Phase 2): if provider_name == "chronogolf": return ChronogolfProvider()
     # TODO(Phase 3): if provider_name == "golfnow":    return GolfNowProvider()
-    return MockTeeTimeProvider()
+    if provider_name not in ("routing", "affiliate"):  # "affiliate" = legacy alias
+        log.warning("Unknown TEETIME_PROVIDER=%r — using routing", provider_name)
+    return RoutingTeeTimeProvider()
 
 
 # ─── Search cache (15-min TTL; protects the Places/Overpass quota) ────────────
@@ -106,9 +113,14 @@ class TeeTimeSlotOut(BaseModel):
     bookingUrl: str | None
     provider: str
     holes: Literal[9, 18]
-    # True when `time` is the requested window start, not verified live
-    # availability (affiliate provider) — the UI renders these as "~" estimates.
+    # DEPRECATED (S0): no provider sets this True anymore — see base.TeeTimeSlot.
     estimated: bool = False
+    # How this entry gets booked: "book_on_site", "call", or None (real
+    # bookable availability — mock today). See base.TeeTimeSlot.
+    route: Literal["book_on_site", "call"] | None = None
+    # The pro shop's phone number, when known — powers a real `tel:` link on
+    # "call"-route entries. See base.TeeTimeSlot.
+    phone: str | None = None
 
     @classmethod
     def from_svc(cls, s: SvcSlot) -> "TeeTimeSlotOut":
@@ -129,6 +141,8 @@ class TeeTimeSlotOut(BaseModel):
             provider=s.provider,
             holes=s.holes,
             estimated=s.estimated,
+            route=s.route,
+            phone=s.phone,
         )
 
 
@@ -243,21 +257,13 @@ async def search_tee_times(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Provider error: {exc}") from exc
 
-    provider_name = provider.name
-    if not slots and not isinstance(provider, MockTeeTimeProvider):
-        # Real provider found nothing (no location / unmapped area) — fall back
-        # to the demo catalogue so the screen never goes empty. Labeled via
-        # `provider` so the client can tell handoff slots from demo slots.
-        provider_name = "mock-fallback"
-        slots = await MockTeeTimeProvider().search_availability(query)
-
     results = [TeeTimeSlotOut.from_svc(s) for s in slots]
     _search_cache.set(cache_key, [r.model_dump() for r in results])
 
     return SearchResponse(
         query=echo_query,
         results=results,
-        provider=provider_name,
+        provider=provider.name,
         cached=False,
     )
 
@@ -268,7 +274,8 @@ async def book_tee_time(req: BookRequest, owner_id: str = Depends(current_user_i
     Attempt to book the given slot.
 
     Mock provider returns status="confirmed" with a mock confirmation number;
-    the affiliate provider returns "needs_human" + the course's booking URL.
+    the routing provider returns "needs_human" + the course's booking URL
+    (or a call instruction when no website is known).
     Every attempt — including needs_human handoffs — is persisted so the owner
     has a record of what was (or still needs to be) booked.
     """
@@ -295,6 +302,8 @@ async def book_tee_time(req: BookRequest, owner_id: str = Depends(current_user_i
             designer=slot_data.get("designer"),
             booking_url=slot_data.get("bookingUrl"),
             estimated=bool(slot_data.get("estimated", False)),
+            route=slot_data.get("route"),
+            phone=slot_data.get("phone"),
         )
         details = SvcBookingDetails(
             name=details_data["name"],

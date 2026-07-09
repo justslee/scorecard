@@ -96,3 +96,14 @@ _(none yet — the first weekly retro will populate this)_
   a golden-set harness trustworthy; require it on every new eval. (3) Deploy-verified-by-SHA and
   gate-on-structured-fields (never scraped output) have held clean since #104. Keep all three
   standing.
+
+- **A CANCELLED required gate is NOT a pass — "green" means SUCCESS, not "not-failed."** #118
+  (physics engine) merged while the PR-head Backend gate was CANCELLED: the gate check asked
+  fail-count==0 AND pending==0, and CANCELLED is a THIRD state that satisfied both (it's not
+  in the `fail` bucket, not `pending`). The cancel came from a concurrent guard-fix push that
+  moved the head and auto-superseded the prior backend run. Outcome was safe only by luck
+  (main's post-merge push run confirmed the backend green; the code is DB-free and was tested
+  locally + by the reviewer). RULE: green = every REQUIRED gate in `state:SUCCESS` on the
+  pushed head SHA — verify Frontend AND Backend gates are SUCCESS, never merge on fail==0
+  alone. A cancelled/skipped required gate blocks; re-run it (empty commit) and wait. Related:
+  [[ship-gate-verification]].

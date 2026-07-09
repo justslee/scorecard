@@ -1,17 +1,27 @@
 """
-AffiliateLinkProvider — Phase 1b "honest affiliate" provider.
+RoutingTeeTimeProvider — S0 "kill fake data" (specs/teetime-s0-plan.md).
 
 Finds REAL nearby golf courses (via the shared course-finder service: OSM
-nearby search, Google Places text search, Mapbox geocoding fallback) and emits
-ONE slot per course per requested window:
+nearby search, Google Places text search, Mapbox geocoding fallback) and
+emits ONE route-tagged entry per discovered PUBLIC course per requested
+window:
 
-  - `time` = the window start, flagged `estimated=True` — it is a suggestion
-    to book on the course's own site, NOT verified live availability.
+  - `time = ""` — NO fabricated time. This slice never invents a tee time;
+    a later slice (real inventory / foreUP) fills in verified times.
   - `price_usd=None` — we NEVER fabricate a price.
   - `booking_url` = the course website (Google Places websiteUri) when known.
+  - `route` = "book_on_site" when a website is known, else "call" — tells the
+    UI whether the golfer deep-links out or has to phone the pro shop.
+  - `phone` = the pro shop's number (Places nationalPhoneNumber / OSM phone
+    tag) when known — powers a real `tel:` link for `route == "call"` entries.
+
+Pipeline: discover -> dedupe_by_name -> private filter -> cap at
+MAX_COURSES -> sort by (distance, name). The private filter (private_filter.py)
+runs BEFORE the cap so a private club never consumes a result slot.
 
 book() never completes a reservation: it returns `needs_human` with the
-booking URL so the golfer finishes on the course's own booking page.
+booking URL (or a call instruction) so the golfer finishes on the course's
+own booking page or by phone.
 
 LEGAL POSTURE (see specs/tee-time-booking-plan.md): we never present invented
 times/prices as live availability, and we never claim a reservation was made.
@@ -33,8 +43,9 @@ from .base import (
     TeeTimeQuery,
     TeeTimeSlot,
 )
+from .private_filter import exclude_private
 
-# One estimated slot per course; keep the list calm and scannable.
+# One route-tagged entry per course; keep the list calm and scannable.
 MAX_COURSES = 8
 
 # Nearby-search radius when the query has no explicit distance preference.
@@ -42,8 +53,8 @@ DEFAULT_RADIUS_MILES = 15.0
 _METERS_PER_MILE = 1609.344
 
 # A course finder returns (courses, origin): normalized course dicts
-# ({id, name, address?, center{lat,lng}, website?, rating?}) plus the search
-# origin (lat, lng) when known — used for honest distance computation.
+# ({id, name, address?, center{lat,lng}, website?, phone?, rating?}) plus the
+# search origin (lat, lng) when known — used for honest distance computation.
 CourseFinder = Callable[[TeeTimeQuery], Awaitable[tuple[list[dict], tuple[float, float] | None]]]
 
 _LATLNG_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
@@ -111,8 +122,8 @@ async def _default_find_courses(
     return [], None
 
 
-class AffiliateLinkProvider(TeeTimeProvider):
-    """Real courses, estimated windows, booking handed to the course site."""
+class RoutingTeeTimeProvider(TeeTimeProvider):
+    """Real courses, no fabricated time, booking routed to the site or a call."""
 
     def __init__(self, find_courses: CourseFinder | None = None) -> None:
         # Injectable for tests; defaults to the real course-finder chain.
@@ -120,7 +131,7 @@ class AffiliateLinkProvider(TeeTimeProvider):
 
     @property
     def name(self) -> str:
-        return "affiliate"
+        return "routing"
 
     async def search_availability(self, query: TeeTimeQuery) -> list[TeeTimeSlot]:
         try:
@@ -128,6 +139,8 @@ class AffiliateLinkProvider(TeeTimeProvider):
         except Exception:
             # Contract: never raise — no courses means no slots.
             return []
+
+        courses = exclude_private(courses)
 
         slots: list[TeeTimeSlot] = []
         for course in courses[:MAX_COURSES]:
@@ -146,30 +159,33 @@ class AffiliateLinkProvider(TeeTimeProvider):
                     continue
 
             rating = course.get("rating")
+            website = course.get("website")
             slots.append(TeeTimeSlot(
-                id=f"{course_id}-{query.date}-{query.time_window_start}-0",
+                id=f"{course_id}-{query.date}-route",
                 course_id=course_id,
                 course_name=name,
                 city=course.get("address") or "",
                 date=query.date,
-                time=query.time_window_start,   # window start — an estimate
-                players=query.party_size,
-                price_usd=None,                  # unknown — never fabricated
+                time="",                     # NO fabricated time — S1 fills real times.
+                players=query.party_size,    # echo of the request, never claimed capacity
+                price_usd=None,               # unknown — never fabricated
                 cart_included=False,
                 distance_miles=distance,
                 rating=float(rating) if rating is not None else 0.0,
                 designer=None,
-                provider="affiliate",
+                provider="routing",
                 holes=18,
-                booking_url=course.get("website"),
-                estimated=True,
+                booking_url=website,
+                estimated=False,
+                route="book_on_site" if website else "call",
+                phone=course.get("phone"),
             ))
 
         slots.sort(key=lambda s: (s.distance_miles, s.course_name))
         return slots
 
     async def book(self, slot: TeeTimeSlot, _details: BookingDetails) -> BookingResult:
-        """Never books on the golfer's behalf — hand off to the course site."""
+        """Never books on the golfer's behalf — hand off to the site or a call."""
         if slot.booking_url:
             message = (
                 f"Finish booking on {slot.course_name}'s site — "

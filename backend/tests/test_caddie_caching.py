@@ -20,6 +20,7 @@ import json
 
 import pytest
 
+from app.caddie.green_geometry import GREEN_GROUNDING_RULE
 from app.caddie.hazards import HAZARD_GROUNDING_RULE
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.session import RoundSession
@@ -145,10 +146,11 @@ async def test_voice_prompt_stable_before_volatile_ordering(monkeypatch):
 
 # ── 3: brain-regression guard — content-identical modulo order + reword ────
 # (The templates carry {tool_rule} — the deliberate additive line from
-# caddie-tool-loop-parity — and {physics_rule} — the deliberate additive line
-# from caddie-shot-physics-engine step 8 — both referenced via the imported
-# constants so wording edits don't rot this guard. Everything else must stay
-# identical.)
+# caddie-tool-loop-parity — {physics_rule} — the deliberate additive line
+# from caddie-shot-physics-engine step 8 — and {green_rule} — the deliberate
+# additive line from caddie-green-slope-spatial step 4 — all referenced via
+# the imported constants so wording edits don't rot this guard. Everything
+# else must stay identical.)
 
 
 _OLD_SESSION_TEMPLATE = """{persona}
@@ -173,6 +175,7 @@ or known tendencies when relevant.
 
 {hazard_rule}
 {physics_rule}
+{green_rule}
 {tool_rule}
 {observed_reality_rule}"""
 
@@ -197,6 +200,7 @@ golf-focused. Never break character.
 
 {hazard_rule}
 {physics_rule}
+{green_rule}
 {tool_rule}
 {observed_reality_rule}"""
 
@@ -228,6 +232,7 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
         context="Current hole: #4",
         hazard_rule=HAZARD_GROUNDING_RULE,
         physics_rule=PHYSICS_GROUNDING_RULE,
+        green_rule=GREEN_GROUNDING_RULE,
         tool_rule=TOOL_USE_RULE,
         observed_reality_rule=OBSERVED_REALITY_RULE,
     )
@@ -248,6 +253,7 @@ async def test_voice_prompt_content_identical_to_old_template_modulo_order(monke
         context="Current hole: #1, Par 4, 400 yards",
         hazard_rule=HAZARD_GROUNDING_RULE,
         physics_rule=PHYSICS_GROUNDING_RULE,
+        green_rule=GREEN_GROUNDING_RULE,
         tool_rule=TOOL_USE_RULE,
         observed_reality_rule=OBSERVED_REALITY_RULE,
     )

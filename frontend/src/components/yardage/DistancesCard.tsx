@@ -7,7 +7,10 @@ import { T, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 // the tiles) is render-testable without pulling in mapbox-gl/Capacitor.
 interface DistancesCardProps {
   fcbCaption: { text: string; isLive: boolean }; // from fcbSourceCaption
-  fcbTiles: { k: string; v: number; color: string }[];
+  // v can be a string ("—") in the honest card-only fallback (spec:
+  // multi-tee-anchor-reconciliation §fix.5) — Front/Back have no reconciled
+  // geometry to show.
+  fcbTiles: { k: string; v: number | string; color: string }[];
   windTile: { v: string; sub: string };
   elevTile: { v: string; sub: string };
   playsTile: { v: string; sub: string };

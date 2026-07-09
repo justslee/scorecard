@@ -33,6 +33,7 @@ from sqlalchemy import select, func as sqlfunc
 from app.caddie import physics
 from app.caddie.aim_point import generate_recommendation
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES, physics_plays_like
+from app.caddie.green_geometry import green_read
 from app.caddie.hazards import format_hazards_line
 from app.caddie.session import RoundSession, ShotRecord, sessions
 from app.caddie.types import HoleIntelligence
@@ -71,6 +72,25 @@ CADDIE_TOOLS: list[dict] = [
             "SPECIFIC shot's numbers (what a club carries/totals here, or what a "
             "target distance plays like), call get_shot_distance instead — this "
             "tool's plays_like block is the hole-level elevation view only."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "hole_number": {
+                    "type": "integer",
+                    "description": "Hole to evaluate (1-18). Omit for the current hole.",
+                },
+            },
+        },
+    },
+    {
+        "name": "get_green_read",
+        "description": (
+            "Which side of the green leaves the uphill putt, from the deterministic "
+            "green-slope engine in the player's own left/right frame. ALWAYS call this "
+            "before discussing green slope, break, high/low side, or where to leave an "
+            "approach — never convert a compass slope direction to left/right yourself. "
+            "If available:false, say the green isn't mapped for slope — never invent a read."
         ),
         "input_schema": {
             "type": "object",
@@ -376,6 +396,63 @@ def conditions_payload(session: RoundSession, hole_number: Optional[int] = None)
         "hazards": hazards_payload,
         "hazards_line": hazards_line,
         "green_slope": green_slope,
+    }
+
+
+def green_read_payload(session: RoundSession, hole_number: Optional[int] = None) -> dict:
+    """Which side of the green leaves the uphill putt — pure; the
+    ``get_green_read`` tool. Rotates the hole's stored green-slope aspect
+    (``HoleIntelligence.green_slope.direction``, a downhill-toward compass
+    bearing) into the player's own tee->green approach frame via
+    ``app.caddie.green_geometry.green_read`` — never a compass word the model
+    would have to translate itself.
+
+    Honest degradation ([[no-fake-data-fallbacks]]), same discipline as
+    ``carries_payload``/``shot_distance_payload``:
+      - no cached intel for the hole -> available:false, reason.
+      - intel present but no green_slope mapped -> available:false, reason.
+      - green_slope mapped but no approach bearing (no tee coords) ->
+        available:false, reason — the compass description may still be
+        surfaced, clearly labeled, so the model has *something* honest to
+        say, but never asked to translate it to a side itself.
+    """
+    hn = hole_number or session.current_hole
+    base = {"round_id": session.round_id, "hole_number": hn}
+    intel = session.hole_intel.get(hn)
+
+    if intel is None or intel.green_slope is None:
+        return {**base, "available": False, "reason": "No green slope mapped for this hole."}
+
+    gs = intel.green_slope
+    if intel.approach_bearing_deg is None:
+        return {
+            **base,
+            "available": False,
+            "reason": "Tee position unknown — can't orient the slope to your line.",
+            "slope_compass": gs.description,
+        }
+
+    read = green_read(gs.direction, gs.percent_grade, gs.severity, intel.approach_bearing_deg)
+
+    return {
+        **base,
+        "available": True,
+        "fall_side": read.fall_side,
+        "high_side": read.high_side,
+        "uphill_leave_side": read.uphill_leave_side,
+        "downhill_leave_side": read.downhill_leave_side,
+        "uphill_leave_depth": read.uphill_leave_depth,
+        "cross_grade_pct": read.cross_grade_pct,
+        "along_grade_pct": read.along_grade_pct,
+        "severity": read.severity,
+        "confidence": read.confidence,
+        "read_line": read.read_line,
+        "slope_compass": gs.description,
+        "approach_bearing_deg": intel.approach_bearing_deg,
+        "assumptions": [
+            "approach frame is tee-to-green (no live ball position); "
+            "a mid-round shot from a different spot may read differently"
+        ],
     }
 
 
@@ -713,6 +790,11 @@ async def resolve_tool(name: str, args: dict, ctx: ToolContext) -> dict:
             hole_number=_as_int(args.get("hole_number")) or ctx.default_hole,
             club=str(club) if club else None,
             target_yards=target,
+        )
+
+    if name == "get_green_read":
+        return green_read_payload(
+            session, hole_number=_as_int(args.get("hole_number")) or ctx.default_hole
         )
 
     # name == "get_carries" (the registry is closed — see _TOOL_NAMES gate)

@@ -129,6 +129,14 @@ class HoleIntelligence(BaseModel):
     # cached session hole_intel JSONB predating this field still validates.
     # None = no guide cached yet (honest omission, never a placeholder).
     strategy_guide: Optional[HoleStrategyGuide] = None
+    # Tee->green compass bearing (0=N, 90=E, clockwise) computed by
+    # app.caddie.green_geometry.approach_bearing_deg when both tee and green
+    # coords are known — the frame get_green_read rotates the stored green
+    # slope into. Additive + defaulted so cached session hole_intel JSONB
+    # predating this field still validates. None = no tee coords (unmapped
+    # course, or a hole with no stored tee) — the caddie degrades honestly
+    # rather than guessing a bearing.
+    approach_bearing_deg: Optional[float] = None
 
 
 # ── Weather ──

@@ -15,6 +15,7 @@
 import { fetchAPI } from '@/lib/api';
 import type { CourseData } from './types';
 import type { CourseCoordinates } from '@/lib/golf-api';
+import { extractTeeBoxes } from '@/lib/course/tee-anchor';
 
 export type { CourseData };
 
@@ -141,11 +142,20 @@ export function mappedCourseToCoordinates(course: CourseData): CourseCoordinates
     // Green is the primary distance target; skip holes with no derivable green.
     if (!green) continue;
 
+    // ALL tee-box polygon centroids for this hole (not just `tee` above,
+    // which stays the first/back-most box for backward compatibility with
+    // non-round consumers like the course editor) — lets tee-anchor.ts pick
+    // the box matching the player's actual selected tee.
+    const teeBoxes = extractTeeBoxes(features, green);
+
     coords.push({
       holeNumber: hole.number,
       green,
       tee,
       hazards: hazards.length > 0 ? hazards : undefined,
+      teeBoxes: teeBoxes.length > 0
+        ? teeBoxes.map((b) => ({ lat: b.point.lat, lng: b.point.lng, name: b.name }))
+        : undefined,
     });
   }
 

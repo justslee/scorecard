@@ -32,6 +32,13 @@ describe('fcbSourceCaption', () => {
       isLive: false,
     });
   });
+
+  it('source "card" → the honest fallback caption, no accent dot (multi-tee-anchor-reconciliation §fix.5)', () => {
+    expect(fcbSourceCaption('card')).toEqual({
+      text: 'from the card',
+      isLive: false,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -84,6 +91,30 @@ describe('playsSubLabel', () => {
   it('no wind + no elev + not live → "from tee"', () => {
     expect(playsSubLabel({ hasWind: false, hasElev: false, isLive: false })).toBe(
       'from tee',
+    );
+  });
+
+  it('fromCard + no wind → "from card" (honest card-only fallback)', () => {
+    expect(playsSubLabel({ hasWind: false, hasElev: false, isLive: false, fromCard: true })).toBe(
+      'from card',
+    );
+  });
+
+  it('fromCard + wind → "wind on card"', () => {
+    expect(playsSubLabel({ hasWind: true, hasElev: false, isLive: false, fromCard: true })).toBe(
+      'wind on card',
+    );
+  });
+
+  it('fromCard + wind + elev → still "wind on card" — NEVER claims elev on unusable geometry', () => {
+    expect(playsSubLabel({ hasWind: true, hasElev: true, isLive: false, fromCard: true })).toBe(
+      'wind on card',
+    );
+  });
+
+  it('fromCard takes precedence even when isLive is true (defensive — should never co-occur in practice)', () => {
+    expect(playsSubLabel({ hasWind: false, hasElev: false, isLive: true, fromCard: true })).toBe(
+      'from card',
     );
   });
 });

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { searchTeeTimes, bookTeeTime } from "@/lib/teetime/client";
+import { confirmCopy, callTelHref } from "@/lib/teetime/confirm-copy";
 import type { TeeTimeSlot, TeeTimeQuery, BookingResult } from "@/lib/teetime/types";
 import {
   reconcileCourseOptions,
@@ -287,6 +288,7 @@ export default function TeeTimePage() {
       slot={chosenSlot}
       bookingResult={bookingResult}
       group={group}
+      windows={windows}
       onBack={() => router.push("/")}
     />
   );
@@ -878,12 +880,16 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
           const results = await searchTeeTimes(q);
           allSlots = [...allSlots, ...results];
           if (results.length > 0) {
-            append({ t: nowStr(), text: `${results.length} slot${results.length !== 1 ? "s" : ""} in ${q.timeWindowStart}–${q.timeWindowEnd}`, state: "ok", course: "" });
+            const isRouteEntries = Boolean(results[0]?.route);
+            const text = isRouteEntries
+              ? `${results.length} course${results.length !== 1 ? "s" : ""} open to the public in ${q.timeWindowStart}–${q.timeWindowEnd}`
+              : `${results.length} slot${results.length !== 1 ? "s" : ""} in ${q.timeWindowStart}–${q.timeWindowEnd}`;
+            append({ t: nowStr(), text, state: "ok", course: "" });
           } else {
             append({ t: nowStr(), text: `Nothing in ${q.timeWindowStart}–${q.timeWindowEnd}`, state: "miss", course: "" });
           }
         } catch {
-          append({ t: nowStr(), text: "Provider unavailable — demo data", state: "miss", course: "" });
+          append({ t: nowStr(), text: "Couldn't reach that window — skipping it.", state: "miss", course: "" });
         }
       }
 
@@ -892,7 +898,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
       const unique = allSlots.filter((s) => { if (seen.has(s.id)) return false; seen.add(s.id); return true; });
 
       if (unique.length === 0) {
-        setError("No slots found. Try widening the window or radius.");
+        setError("Nothing open nearby. Try a wider window or radius.");
         return;
       }
 
@@ -901,7 +907,12 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
         a.distanceMiles - b.distanceMiles ||
         (a.priceUsd ?? Number.MAX_SAFE_INTEGER) - (b.priceUsd ?? Number.MAX_SAFE_INTEGER)
       )[0];
-      append({ t: nowStr(), text: `${best.courseName} ${best.time} — ${best.players} open. Locking in.`, state: "ok", course: best.courseName });
+      // A route entry (routing provider) is a course we found, not a locked
+      // slot — the copy says so; only a real availability provider "locks in".
+      const bestLine = best.route
+        ? `${best.courseName} — closest match. Pulling up how to book.`
+        : `${best.courseName} ${best.time} — ${best.players} open. Locking in.`;
+      append({ t: nowStr(), text: bestLine, state: "ok", course: best.courseName });
 
       let result: BookingResult;
       try {
@@ -913,7 +924,10 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
       if (result.status === "confirmed") {
         append({ t: nowStr(), text: `${best.courseName} confirmed — ${best.time}.`, state: "win", course: best.courseName });
       } else {
-        append({ t: nowStr(), text: `Booking ${result.status}${result.message ? ": " + result.message : ""}`, state: result.status === "failed" ? "miss" : "ok", course: best.courseName });
+        // The backend's `message` is already golfer-facing copy (routing's
+        // needs_human handoff line, etc.) — never surface the raw status enum.
+        const text = result.message ?? (result.status === "failed" ? "That didn't go through." : "Working on it.");
+        append({ t: nowStr(), text, state: result.status === "failed" ? "miss" : "ok", course: best.courseName });
       }
 
       await new Promise<void>((r) => setTimeout(r, 1200));
@@ -974,7 +988,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
                   <motion.span key={i} animate={{ opacity: [0.2, 1, 0.2] }} transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15 }} style={{ width: 2, height: 2, borderRadius: 99, background: T.pencil, display: "inline-block" }} />
                 ))}
               </div>
-              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 14, color: T.pencil, letterSpacing: -0.1 }}>Contacting provider&hellip;</div>
+              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 14, color: T.pencil, letterSpacing: -0.1 }}>Checking nearby courses&hellip;</div>
             </div>
           )}
           {log.map((l, i) => (
@@ -1046,10 +1060,13 @@ interface ConfirmedProps {
   slot: TeeTimeSlot | null;
   bookingResult: BookingResult | null;
   group: GroupMember[];
+  /** The prefs windows the golfer selected — used when `slot.time` is unknown
+   *  (routing) to show the requested window instead of a fabricated time. */
+  windows: TimeWindow[];
   onBack: () => void;
 }
 
-function Confirmed({ accent, slot, bookingResult, group, onBack }: ConfirmedProps) {
+function Confirmed({ accent, slot, bookingResult, group, windows, onBack }: ConfirmedProps) {
   if (!slot) {
     return (
       <PaperShell>
@@ -1065,22 +1082,28 @@ function Confirmed({ accent, slot, bookingResult, group, onBack }: ConfirmedProp
     );
   }
 
-  const confCode  = bookingResult?.confirmationNumber ?? (bookingResult?.status === "pending" ? "PENDING" : "—");
-  // "~" marks an estimated window (affiliate) — never presented as a confirmed slot.
-  const teeTime    = `${slot.estimated ? "~" : ""}${formatTime12h(slot.time)}`;
+  const confCode   = bookingResult?.confirmationNumber ?? (bookingResult?.status === "pending" ? "PENDING" : "—");
   const dateLabel  = formatDateLabel(slot.date);
   const isMock     = slot.provider === "mock";
   // A needs_human result is a HANDOFF, not a booking — the course takes the
   // reservation; we never fabricate a confirmation.
   const needsHuman = bookingResult?.status === "needs_human";
   const bookingUrl = bookingResult?.bookingUrl ?? slot.bookingUrl;
-  const stampWord  = bookingResult?.status === "confirmed" ? "Booked"
-    : bookingResult?.status === "pending" ? "Pending"
-    : needsHuman ? "Held"
-    : "Found";
-  const looperLine = needsHuman
-    ? `Found ${teeTime} at ${slot.courseName}. Held for you to book — ${bookingUrl ? "finish on the course site." : "call the course to book."}${isMock ? " (Demo data.)" : ""}`
-    : `Found one. ${teeTime} at ${slot.courseName}${slot.cartIncluded ? ", cart included" : ", walking"}.${isMock ? " (Demo data.)" : ""}`;
+  const copy = confirmCopy(slot, bookingResult);
+  const { stampWord, looperLine, ctaLabel, subCopy } = copy;
+  const telHref = callTelHref(slot);
+
+  // No fabricated tee time (routing): `formatTime12h("")` would read "NaN:NaN".
+  // Show the requested window instead — the window whose date matches this
+  // slot, falling back to the first selected, then the first window.
+  const hasKnownTime = slot.time !== "";
+  const requestedWindow = windows.find((w) => w.date === slot.date)
+    ?? windows.find((w) => w.selected)
+    ?? windows[0];
+  const timeCardKicker = hasKnownTime ? "Tee off" : "Your window";
+  const timeCardFigure = hasKnownTime
+    ? formatTime12h(slot.time)
+    : requestedWindow ? formatWindowRange(requestedWindow.start, requestedWindow.end) : "—";
 
   const addToCalendar = () => {
     const ev = {
@@ -1108,7 +1131,7 @@ function Confirmed({ accent, slot, bookingResult, group, onBack }: ConfirmedProp
             </svg>
             Home
           </button>
-          <Kicker>Looper · {bookingResult?.status ?? "found"}</Kicker>
+          <Kicker>Looper · {stampWord}</Kicker>
         </div>
 
         {/* Stamp */}
@@ -1145,9 +1168,9 @@ function Confirmed({ accent, slot, bookingResult, group, onBack }: ConfirmedProp
         <div style={{ padding: "18px 20px", borderRadius: 14, background: T.ink, color: T.paper, position: "relative", overflow: "hidden" }}>
           <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 6, background: `repeating-linear-gradient(to bottom, ${accent} 0, ${accent} 3px, transparent 3px, transparent 7px)` }} />
           <div style={{ paddingLeft: 10 }}>
-            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.6, color: "rgba(244,241,234,0.55)", textTransform: "uppercase" as const, fontWeight: 500 }}>Tee off</div>
-            <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 68, letterSpacing: -2.2, color: T.paper, lineHeight: 0.95, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
-              {teeTime}
+            <div style={{ fontFamily: T.mono, fontSize: 9, letterSpacing: 1.6, color: "rgba(244,241,234,0.55)", textTransform: "uppercase" as const, fontWeight: 500 }}>{timeCardKicker}</div>
+            <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: hasKnownTime ? 68 : 40, letterSpacing: -2.2, color: T.paper, lineHeight: 0.95, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+              {timeCardFigure}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4, marginTop: 14, paddingTop: 12, borderTop: "1px dashed rgba(244,241,234,0.2)" }}>
               {[
@@ -1170,7 +1193,7 @@ function Confirmed({ accent, slot, bookingResult, group, onBack }: ConfirmedProp
         <Transcript accent={accent} lines={[{ who: "looper", text: looperLine }]} />
       </div>
 
-      {/* Booking handoff — the course takes the reservation (affiliate/mock). */}
+      {/* Booking handoff — the course takes the reservation (routing/mock). */}
       {bookingUrl ? (
         <div style={{ padding: "0 22px 14px" }}>
           <a
@@ -1179,11 +1202,11 @@ function Confirmed({ accent, slot, bookingResult, group, onBack }: ConfirmedProp
             rel="noopener noreferrer"
             style={{ display: "block", width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${accent}`, background: "transparent", cursor: "pointer", textAlign: "center" as const, fontFamily: T.mono, fontSize: 10, letterSpacing: 1.4, color: accent, textTransform: "uppercase" as const, fontWeight: 600, textDecoration: "none" }}
           >
-            {needsHuman ? <>Book on the course site &rarr;</> : <>Book on GolfNow &rarr;</>}
+            {ctaLabel}
           </a>
-          {needsHuman && (
+          {needsHuman && subCopy && (
             <div style={{ marginTop: 6, textAlign: "center", fontFamily: T.serif, fontStyle: "italic", fontSize: 12, color: T.pencilSoft }}>
-              Held for you to book &mdash; the course takes the reservation
+              {subCopy}
             </div>
           )}
           {isMock && (
@@ -1192,14 +1215,25 @@ function Confirmed({ accent, slot, bookingResult, group, onBack }: ConfirmedProp
             </div>
           )}
         </div>
-      ) : needsHuman ? (
+      ) : needsHuman && telHref ? (
         <div style={{ padding: "0 22px 14px" }}>
-          <div style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${T.hairline}`, textAlign: "center" as const, fontFamily: T.mono, fontSize: 10, letterSpacing: 1.4, color: T.ink, textTransform: "uppercase" as const, fontWeight: 600 }}>
-            Call the course to book
-          </div>
+          {/* No online booking link — but a real phone number, so this is a
+              working tel: link, never an inert button. */}
+          <a
+            href={telHref}
+            style={{ display: "block", width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${T.ink}`, background: "transparent", cursor: "pointer", textAlign: "center" as const, fontFamily: T.mono, fontSize: 10, letterSpacing: 1.4, color: T.ink, textTransform: "uppercase" as const, fontWeight: 600, textDecoration: "none" }}
+          >
+            {ctaLabel}
+          </a>
           <div style={{ marginTop: 6, textAlign: "center", fontFamily: T.serif, fontStyle: "italic", fontSize: 12, color: T.pencilSoft }}>
-            No online booking link &mdash; the pro shop can take it
+            {slot.phone}
           </div>
+        </div>
+      ) : needsHuman ? (
+        // No booking link AND no phone on file — never render button chrome
+        // with nothing behind it; the looper message already says to call.
+        <div style={{ padding: "0 22px 14px", textAlign: "center" as const, fontFamily: T.serif, fontStyle: "italic", fontSize: 13, color: T.pencilSoft }}>
+          No phone number on file for this course &mdash; try their website or a quick search.
         </div>
       ) : null}
 
@@ -1225,14 +1259,18 @@ function Confirmed({ accent, slot, bookingResult, group, onBack }: ConfirmedProp
         </div>
       </Section>
 
-      <div style={{ padding: "20px 22px 36px" }}>
-        <button
-          onClick={addToCalendar}
-          style={{ width: "100%", padding: "14px 18px", borderRadius: 14, border: "none", background: accent, color: T.paper, cursor: "pointer", fontFamily: T.serif, fontStyle: "italic", fontSize: 18, letterSpacing: -0.3 }}
-        >
-          Add to calendar · Set reminder
-        </button>
-      </div>
+      {/* No known tee time (routing) → never a calendar event at a fabricated
+          time; the button returns once a real time is known (S1). */}
+      {hasKnownTime && (
+        <div style={{ padding: "20px 22px 36px" }}>
+          <button
+            onClick={addToCalendar}
+            style={{ width: "100%", padding: "14px 18px", borderRadius: 14, border: "none", background: accent, color: T.paper, cursor: "pointer", fontFamily: T.serif, fontStyle: "italic", fontSize: 18, letterSpacing: -0.3 }}
+          >
+            Add to calendar · Set reminder
+          </button>
+        </div>
+      )}
     </PaperShell>
   );
 }
@@ -1253,6 +1291,19 @@ function formatTime12h(hhmm: string): string {
   const period = h < 12 ? "AM" : "PM";
   const hour   = h % 12 || 12;
   return `${hour}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+/** "07:00" + "10:00" → "7:00–10:00 AM"; different periods → "11:00 AM–1:00 PM". */
+function formatWindowRange(start: string, end: string): string {
+  const [sh] = start.split(":").map(Number);
+  const [eh] = end.split(":").map(Number);
+  const sPeriod = sh < 12 ? "AM" : "PM";
+  const ePeriod = eh < 12 ? "AM" : "PM";
+  const startLabel = formatTime12h(start);
+  const endLabel = formatTime12h(end);
+  return sPeriod === ePeriod
+    ? `${startLabel.replace(` ${sPeriod}`, "")}–${endLabel}`
+    : `${startLabel}–${endLabel}`;
 }
 
 /* ─────────────────────────────────────────────

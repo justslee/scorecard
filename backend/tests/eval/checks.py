@@ -26,6 +26,7 @@ from typing import Callable, Optional
 
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.guide_writer import build_ground_truth_block, validate_guide
+from app.caddie.green_geometry import GREEN_GROUNDING_RULE
 from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
 from app.caddie.physics import PHYSICS_GROUNDING_RULE, elevation_only_plays_like
 from app.caddie.session import RoundSession
@@ -162,6 +163,7 @@ _RULE_TEXT: dict[str, str] = {
     "HAZARD_GROUNDING_RULE": HAZARD_GROUNDING_RULE,
     "OBSERVED_REALITY_RULE": OBSERVED_REALITY_RULE,
     "PHYSICS_GROUNDING_RULE": PHYSICS_GROUNDING_RULE,
+    "GREEN_GROUNDING_RULE": GREEN_GROUNDING_RULE,
 }
 
 

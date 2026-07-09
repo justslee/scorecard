@@ -1,0 +1,11 @@
+{
+  "_comment": "Private clubs excluded from tee-time results BEFORE routing. Matching: exact normalized-name equality (name or alias) with generic suffix folding; optional near-anchor and provider ids. NEVER substring match. Keep entries specific; always set `near` when known.",
+  "clubs": [
+    {
+      "name": "Liberty National Golf Club",
+      "aliases": ["Liberty National Golf Course", "Liberty National"],
+      "ids": [],
+      "near": { "lat": 40.7095, "lng": -74.0532, "radius_miles": 10 }
+    }
+  ]
+}

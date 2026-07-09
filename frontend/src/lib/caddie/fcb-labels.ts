@@ -13,7 +13,7 @@
 // fcbSourceCaption
 // ---------------------------------------------------------------------------
 
-export type FcbSource = "you" | "tee";
+export type FcbSource = "you" | "tee" | "card";
 
 export interface FcbCaption {
   /** Display string incl. the leading accent dot when live. Rendered under
@@ -23,13 +23,15 @@ export interface FcbCaption {
   isLive: boolean;
 }
 
-/** Source caption for the F/C/B tiles. */
+/** Source caption for the F/C/B tiles. "card" is the honest fallback when no
+ *  stored tee geometry could be reconciled with the scorecard yardage (spec:
+ *  multi-tee-anchor-reconciliation §fix.5) — never claim "from the tee" for a
+ *  number that's actually just the card. */
 export function fcbSourceCaption(source: FcbSource): FcbCaption {
   const isLive = source === "you";
-  return {
-    text: isLive ? "● from where you stand" : "from the tee",
-    isLive,
-  };
+  const text =
+    source === "you" ? "● from where you stand" : source === "card" ? "from the card" : "from the tee";
+  return { text, isLive };
 }
 
 // ---------------------------------------------------------------------------
@@ -43,6 +45,12 @@ export interface PlaysSubInput {
   hasElev: boolean;
   /** fcbLive != null — plays-base came from the live rangefinder distance. */
   isLive: boolean;
+  /** True in the honest card-only fallback (no usable tee geometry could be
+   *  reconciled with the card — spec: multi-tee-anchor-reconciliation
+   *  §fix.5). playsBase is the raw scorecard yardage; NEVER claim an
+   *  elevation adjustment here — holeIntel was computed from the same
+   *  unusable geometry. Takes precedence over hasElev/hasWind's elev term. */
+  fromCard?: boolean;
 }
 
 /**
@@ -50,7 +58,10 @@ export interface PlaysSubInput {
  * Mirrors the pre-refactor ternary in RoundPageClient exactly, EXCEPT the
  * wind+elev branch, which was the bare "adjusted".
  */
-export function playsSubLabel({ hasWind, hasElev, isLive }: PlaysSubInput): string {
+export function playsSubLabel({ hasWind, hasElev, isLive, fromCard }: PlaysSubInput): string {
+  if (fromCard) {
+    return hasWind ? "wind on card" : "from card"; // never claim elev here
+  }
   if (hasWind) {
     if (isLive) return "wind from you"; // wind on live distance; no elev term applied
     if (hasElev) return "wind+elev";    // was "adjusted" — wind AND elevation both applied

@@ -100,9 +100,16 @@ the parent has to — the work must survive. So, as an ironclad rule:
 - **On resume, reconcile from the branch, not memory**: `git log origin/integration/next`,
   check the child's actual commits, and continue. A child that reports "waiting on CI" has
   already pushed its work — pin CI to the pushed head and proceed; never rebuild it.
-- **CI gate is a structured-field check, never piped**: green = `gh pr checks N --json bucket`
-  with pending==0 AND fail-count==0, pinned to YOUR pushed head SHA (a follow-up commit
-  re-triggers CI — verify the head matches). Ship chains use `set -o pipefail` + absolute
+- **CI gate = every required check is SUCCESS, not merely "not failed."** green requires:
+  `gh pr checks N --json bucket,state` with pending==0 AND fail-count==0 **AND no required
+  gate in a `cancel`/`skipping` state** — a CANCELLED backend/frontend gate is NOT a pass
+  (it never ran to green; a concurrent push that moves the head auto-cancels the prior run).
+  Concretely: after pending==0, assert the Frontend + Backend gates each show `state:SUCCESS`
+  on YOUR pushed head SHA — do not merge on fail==0 alone (#118 merged with the backend gate
+  CANCELLED because fail-count was 0; main's post-merge run happened to confirm it — luck, not
+  discipline). If a required gate is cancelled, push an empty commit or re-run it and wait for
+  SUCCESS. Pin to the head SHA (a follow-up commit re-triggers CI — verify the head matches).
+  Ship chains use `set -o pipefail` + absolute
   `cd /Users/justinlee/projects/scorecard` as the literal first token, and verify each stage's
   OUTPUT (the "Uploaded vX" line, the deploy run's headSha == the merge SHA), never trust
   chain completion.

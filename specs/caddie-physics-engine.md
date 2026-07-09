@@ -41,11 +41,15 @@ humidity → ρ), wind VECTOR (not just head component), elevation delta, lie.
 Deterministic "which side leaves the uphill putt" from the slope vector + player view.
 - Slope stored as a vector/aspect; rotate into the player's tee→green frame → LEFT/RIGHT
   relative to the golfer (never "west"). The hazard-side polyline frame already does this.
-- Rule engine: slope-falls-left ⇒ high side is RIGHT ⇒ approach miss RIGHT ⇒ uphill putt.
-  A pure function + test table for all aspects; the LLM CITES its output ("leave it right,
+- Rule engine: slope-falls-left ⇒ LEFT is the low side ⇒ a miss/leave on the fall side sits
+  BELOW the hole ⇒ that miss leaves the UPHILL putt (miss/leave the high side ⇒ downhill,
+  the one to avoid). [Corrected 2026-07-09 — the original chain here read "approach miss
+  RIGHT ⇒ uphill putt", which is the HIGH/downhill side and physically backwards; see
+  specs/caddie-green-slope-spatial-plan.md §0 for the full derivation and the resolution.]
+  A pure function + test table for all aspects; the LLM CITES its output ("leave it left,
   that's your uphill putt") and is forbidden from deriving putt-break geometry itself.
-- Eval scenarios: slope-left → recommends right-side leave for an uphill putt (the exact
-  chain the owner hand-walked).
+- Eval scenarios: slope-left → recommends a LEFT-side (fall-side/low-side) leave for an
+  uphill putt (the exact chain the owner hand-walked, corrected per §0 above).
 
 ## P2 — Bend distance (free from existing geometry)
 The hole polyline (now stored) has vertices; the dogleg = the max-deviation vertex from

@@ -1,7 +1,7 @@
 """Shared course-finding helpers (Google Places + Mapbox + name de-dupe).
 
 Extracted from routes/course_search.py so other services (e.g. the tee-time
-AffiliateLinkProvider) can find real courses WITHOUT HTTP-calling our own API.
+RoutingTeeTimeProvider) can find real courses WITHOUT HTTP-calling our own API.
 The route module keeps thin aliases to these functions, so its behavior and
 its tests are unchanged.
 """
@@ -272,7 +272,7 @@ async def search_google_places(
     logging, so a caller with its own leg-health/observability wrapper (see
     routes/course_search.py `_run_leg`) can distinguish "error" from a genuine
     empty match. Defaults to False so existing callers (this module's own
-    default behavior, tee_times/affiliate.py) are unaffected."""
+    default behavior, tee_times/routing.py) are unaffected."""
     key = api_key if api_key is not None else GOOGLE_PLACES_API_KEY
     if not key:
         return []
@@ -282,8 +282,8 @@ async def search_google_places(
         "X-Goog-Api-Key": key,
         "X-Goog-FieldMask": (
             "places.id,places.displayName,places.formattedAddress,"
-            "places.location,places.websiteUri,places.rating,"
-            "places.types,places.primaryType"
+            "places.location,places.websiteUri,places.nationalPhoneNumber,"
+            "places.rating,places.types,places.primaryType"
         ),
     }
     body = {"textQuery": query, "includedType": "golf_course", "maxResultCount": 10}
@@ -315,6 +315,7 @@ async def search_google_places(
                     "address": p.get("formattedAddress"),
                     "center": {"lat": lat, "lng": lng},
                     "website": p.get("websiteUri"),
+                    "phone": p.get("nationalPhoneNumber"),
                     "rating": p.get("rating"),
                     "source": "google_places",
                     "venue_penalty": 1 if cls == "ambiguous" else 0,

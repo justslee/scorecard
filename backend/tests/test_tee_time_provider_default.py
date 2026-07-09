@@ -1,16 +1,19 @@
-"""Provider default + empty-result fallback (phase-1b flip, 2026-07-02).
+"""Provider default + honest-empty semantics (S0 "kill fake data", 2026-07-xx).
 
-The default provider became AFFILIATE when GOOGLE_PLACES_API_KEY went live in
-prod; when a real provider finds nothing (no location / unmapped area) the
-search route falls back to the mock catalogue, labeled `mock-fallback`, so the
-tee-time screen never renders empty.
+The default provider is ROUTING (real nearby courses, no fabricated time,
+booking routed to the course site or a phone call). TEETIME_PROVIDER=mock is
+explicit opt-in; "affiliate" is a legacy alias for "routing"; any OTHER
+unknown value ALSO falls to routing — never mock — so a prod env-var typo can
+never silently serve demo data. When a real provider finds nothing, the
+search route returns an honest empty list — the old mock-fallback substitution
+is gone.
 """
 
 import pytest
 
 from app.routes import tee_times as route_mod
 from app.routes.tee_times import _get_provider, search_tee_times
-from app.services.tee_times.affiliate import AffiliateLinkProvider
+from app.services.tee_times.routing import RoutingTeeTimeProvider
 from app.services.tee_times.base import TeeTimeProvider, TeeTimeQuery, TeeTimeSlot
 from app.services.tee_times.mock import MockTeeTimeProvider
 
@@ -23,8 +26,8 @@ class _FakeCache:
         self.last = (key, results)
 
 
-class _EmptyAffiliate(TeeTimeProvider):
-    name = "affiliate"
+class _EmptyRouting(TeeTimeProvider):
+    name = "routing"
 
     async def search_availability(self, query: TeeTimeQuery) -> list[TeeTimeSlot]:
         return []
@@ -34,23 +37,27 @@ class _EmptyAffiliate(TeeTimeProvider):
 
 
 class TestProviderDefault:
-    def test_default_is_affiliate(self, monkeypatch):
+    def test_default_is_routing(self, monkeypatch):
         monkeypatch.delenv("TEETIME_PROVIDER", raising=False)
-        assert isinstance(_get_provider(), AffiliateLinkProvider)
+        assert isinstance(_get_provider(), RoutingTeeTimeProvider)
 
-    def test_mock_opt_out_still_works(self, monkeypatch):
+    def test_mock_opt_in_still_works(self, monkeypatch):
         monkeypatch.setenv("TEETIME_PROVIDER", "mock")
         assert isinstance(_get_provider(), MockTeeTimeProvider)
 
-    def test_unknown_value_falls_back_to_mock(self, monkeypatch):
+    def test_legacy_affiliate_alias_lands_on_routing(self, monkeypatch):
+        monkeypatch.setenv("TEETIME_PROVIDER", "affiliate")
+        assert isinstance(_get_provider(), RoutingTeeTimeProvider)
+
+    def test_unknown_value_falls_to_routing_never_mock(self, monkeypatch):
         monkeypatch.setenv("TEETIME_PROVIDER", "definitely-not-real")
-        assert isinstance(_get_provider(), MockTeeTimeProvider)
+        assert isinstance(_get_provider(), RoutingTeeTimeProvider)
 
 
-class TestEmptyResultFallback:
+class TestEmptyResultIsHonest:
     @pytest.mark.asyncio
-    async def test_affiliate_empty_falls_back_to_mock_catalogue(self, monkeypatch):
-        monkeypatch.setattr(route_mod, "_get_provider", lambda: _EmptyAffiliate())
+    async def test_routing_empty_returns_honest_empty_never_mock_fallback(self, monkeypatch):
+        monkeypatch.setattr(route_mod, "_get_provider", lambda: _EmptyRouting())
         monkeypatch.setattr(route_mod, "_search_cache", _FakeCache())
 
         resp = await search_tee_times(
@@ -63,11 +70,11 @@ class TestEmptyResultFallback:
             maxDistanceMiles=None,
             maxPriceUsd=None,
         )
-        assert resp.provider == "mock-fallback"
-        assert len(resp.results) > 0  # the screen never goes empty
+        assert resp.results == []
+        assert resp.provider == "routing"
 
     @pytest.mark.asyncio
-    async def test_mock_provider_empty_does_not_double_fallback(self, monkeypatch):
+    async def test_mock_provider_empty_stays_mock(self, monkeypatch):
         class _EmptyMock(MockTeeTimeProvider):
             async def search_availability(self, query):
                 return []
@@ -87,3 +94,11 @@ class TestEmptyResultFallback:
         )
         assert resp.provider == "mock"
         assert resp.results == []
+
+
+class TestNoMockFallbackStringExists:
+    def test_mock_fallback_string_not_present_in_route_module(self):
+        import inspect
+
+        source = inspect.getsource(route_mod)
+        assert "mock-fallback" not in source

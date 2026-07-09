@@ -21,6 +21,7 @@ import {
   getSessionCarries,
   getSessionPlayerProfile,
   getSessionShotDistance,
+  getSessionGreenRead,
   type RealtimeSessionToken,
 } from '@/lib/caddie/api';
 import { MessageOrderTracker } from '@/lib/voice/realtime-ordering';
@@ -143,6 +144,16 @@ export async function dispatchTool(
         hole_number: args.hole_number != null ? Number(args.hole_number) : undefined,
         club: args.club != null ? String(args.club) : undefined,
         target_yards: args.target_yards != null ? Number(args.target_yards) : undefined,
+      });
+    }
+    case 'get_green_read': {
+      // Which side of the green leaves the uphill putt — the same
+      // green_read_payload the text tool loop resolves. The persona must
+      // speak the side verbatim (GREEN_GROUNDING_RULE), never translate a
+      // compass slope direction to left/right itself.
+      return await getSessionGreenRead({
+        round_id: ctx.roundId,
+        hole_number: args.hole_number != null ? Number(args.hole_number) : undefined,
       });
     }
     case 'set_round_setup': {

@@ -77,6 +77,14 @@ export interface CourseCoordinates {
     lat: number;
     lng: number;
   }>;
+  /**
+   * ALL stored tee-box centroids for this hole (not just the first/back-most
+   * one that `tee` above defaults to) — lets lib/course/tee-anchor.ts pick
+   * the box matching the player's actual selected tee instead of an
+   * arbitrary geometry pick (spec: multi-tee-anchor-reconciliation). Absent
+   * when the source has only a single tee point (e.g. raw GolfAPI coords).
+   */
+  teeBoxes?: Array<{ lat: number; lng: number; name: string | null }>;
 }
 
 // ===== Course Name Composition =====

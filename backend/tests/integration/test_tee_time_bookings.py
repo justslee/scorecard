@@ -1,15 +1,16 @@
-"""Integration tests for tee-time booking persistence + search cache (Phase 1b).
+"""Integration tests for tee-time booking persistence + search cache (S0).
 
 Covers:
   1. POST /book persists the attempt (mock provider → confirmed row)
-  2. needs_human attempts (affiliate provider) are persisted too
+  2. needs_human attempts (routing provider) are persisted too
   3. GET /bookings is owner-scoped (cross-user isolation) + newest first
   4. Auth fails-closed on /book and /bookings
-  5. Estimated affiliate slots serialize with estimated=true + priceUsd=null
+  5. Routing slots serialize honestly (route present, time="", estimated=False,
+     priceUsd=null, no "Held" anywhere in the payload)
   6. /search TTL cache: second identical query returns cached=true
 """
 
-from app.services.tee_times.affiliate import AffiliateLinkProvider
+from app.services.tee_times.routing import RoutingTeeTimeProvider
 from app.services.tee_times.search_cache import FileSearchCacheStore
 
 from .conftest import TEST_OWNER_ID, OTHER_OWNER_ID, set_auth
@@ -34,21 +35,22 @@ _MOCK_SLOT = {
     "holes": 18,
 }
 
-_AFFILIATE_SLOT = {
+_ROUTING_SLOT = {
     **_MOCK_SLOT,
-    "id": "gplaces-abc-2026-07-04-07:00-0",
+    "id": "gplaces-abc-2026-07-04-route",
     "courseId": "gplaces-abc",
-    "time": "07:00",
+    "time": "",
     "priceUsd": None,
     "bookingUrl": "https://www.presidiogolf.com/",
-    "provider": "affiliate",
-    "estimated": True,
+    "provider": "routing",
+    "estimated": False,
+    "route": "book_on_site",
 }
 
 _DETAILS = {"name": "Owner", "partySize": 4}
 
 
-def _affiliate_courses():
+def _routing_courses():
     async def find(_query):
         return [
             {
@@ -63,13 +65,13 @@ def _affiliate_courses():
     return find
 
 
-def _use_affiliate(monkeypatch) -> None:
-    """Route uses an AffiliateLinkProvider with an injected (offline) finder."""
+def _use_routing(monkeypatch) -> None:
+    """Route uses a RoutingTeeTimeProvider with an injected (offline) finder."""
     from app.routes import tee_times as route_mod
 
     monkeypatch.setattr(
         route_mod, "_get_provider",
-        lambda: AffiliateLinkProvider(find_courses=_affiliate_courses()),
+        lambda: RoutingTeeTimeProvider(find_courses=_routing_courses()),
     )
 
 
@@ -117,10 +119,10 @@ class TestBookingPersistence:
         assert "createdAt" in b and "id" in b
 
     async def test_needs_human_attempt_is_persisted(self, client, monkeypatch):
-        _use_affiliate(monkeypatch)
+        _use_routing(monkeypatch)
         set_auth(TEST_OWNER_ID)
         r = await client.post(
-            f"{BASE}/book", json={"slot": _AFFILIATE_SLOT, "details": _DETAILS}
+            f"{BASE}/book", json={"slot": _ROUTING_SLOT, "details": _DETAILS}
         )
         assert r.status_code == 200, r.text
         result = r.json()["result"]
@@ -134,7 +136,7 @@ class TestBookingPersistence:
         assert items[0]["priceUsd"] is None
         assert items[0]["bookingUrl"] == "https://www.presidiogolf.com/"
         assert items[0]["confirmationCode"] is None
-        assert items[0]["provider"] == "affiliate"
+        assert items[0]["provider"] == "routing"
 
     async def test_bookings_cross_user_isolation(self, client):
         set_auth(TEST_OWNER_ID)
@@ -181,15 +183,15 @@ class TestAuthFailsClosed:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. Estimated affiliate slots serialize honestly
+# 5. Routing slots serialize honestly
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-class TestEstimatedSlotSerialization:
-    async def test_search_returns_estimated_slots_with_null_price(
+class TestRoutingSlotSerialization:
+    async def test_search_returns_routing_slots_with_honest_shape(
         self, client, monkeypatch, tmp_path
     ):
-        _use_affiliate(monkeypatch)
+        _use_routing(monkeypatch)
         _isolate_cache(monkeypatch, tmp_path)
         set_auth(TEST_OWNER_ID)
         r = await client.get(
@@ -204,14 +206,16 @@ class TestEstimatedSlotSerialization:
         )
         assert r.status_code == 200, r.text
         data = r.json()
-        assert data["provider"] == "affiliate"
+        assert data["provider"] == "routing"
         assert len(data["results"]) == 1
         slot = data["results"][0]
-        assert slot["estimated"] is True
+        assert slot["route"] == "book_on_site"
+        assert slot["time"] == ""
+        assert slot["estimated"] is False
         assert slot["priceUsd"] is None
-        assert slot["time"] == "07:00"
         assert slot["bookingUrl"] == "https://www.presidiogolf.com/"
         assert slot["courseName"] == "Presidio Golf Course"
+        assert "Held" not in r.text, "no fabricated-slot 'Held' framing anywhere in the payload"
 
     async def test_mock_slots_are_not_estimated(self, client, monkeypatch, tmp_path):
         # Pin the mock provider (product default is affiliate since 2026-07-02);
@@ -243,6 +247,10 @@ class TestEstimatedSlotSerialization:
 
 class TestSearchCache:
     async def test_second_identical_search_is_cached(self, client, monkeypatch, tmp_path):
+        # Cache semantics are provider-agnostic — pin mock so this doesn't
+        # depend on the routing provider's Places/Mapbox legs (no keys in CI;
+        # a no-op result is still cacheable but shouldn't be what this pins).
+        monkeypatch.setenv("TEETIME_PROVIDER", "mock")
         _isolate_cache(monkeypatch, tmp_path)
         set_auth(TEST_OWNER_ID)
         params = {
@@ -262,6 +270,7 @@ class TestSearchCache:
         assert r2.json()["results"] == r1.json()["results"]
 
     async def test_different_query_is_not_cached(self, client, monkeypatch, tmp_path):
+        monkeypatch.setenv("TEETIME_PROVIDER", "mock")
         _isolate_cache(monkeypatch, tmp_path)
         set_auth(TEST_OWNER_ID)
         params = {

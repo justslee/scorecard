@@ -2,6 +2,7 @@
 
 import logging
 from typing import Optional
+from app.caddie.green_geometry import approach_bearing_deg as compute_approach_bearing_deg
 from app.caddie.physics import elevation_only_plays_like
 from app.caddie.types import (
     HoleIntelligence,
@@ -80,6 +81,16 @@ async def build_hole_intelligence(
     raw_hole_number = hole_coords.get("holeNumber")
     green = hole_coords.get("green", {})
     tee = hole_coords.get("tee")
+
+    # Tee->green approach bearing (green_geometry's rotation frame for
+    # get_green_read) — pure, no I/O. No tee coords -> None (honest; the
+    # tool degrades to "can't orient the slope to your line" rather than
+    # guessing a travel direction).
+    bearing: Optional[float] = None
+    if tee and green:
+        bearing = compute_approach_bearing_deg(
+            tee["lat"], tee["lng"], green["lat"], green["lng"]
+        )
 
     # The route passes raw request values, which may be null (stored round
     # with no yardage). Coalesce display-only ints to defaults; keep yards
@@ -214,6 +225,7 @@ async def build_hole_intelligence(
         green_slope=green_slope_data,
         hazards=hazards,
         strategy_guide=strategy_guide,
+        approach_bearing_deg=bearing,
     )
 
 
