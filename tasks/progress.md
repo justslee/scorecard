@@ -9716,59 +9716,12 @@ page.tsx:919-923 fabricates {status:pending,"Booking request sent"} on network
 failure though nothing was sent → make it honest needs_human "book on course
 site". That fix is the one user-visible change (noticeable-leaning).
 
-## AWAITING: builder implementing specs/teetime-s2-plan.md on integration/next
-Dispatched ONE builder. On return → reviewer (no auto-charge / no stored card /
-no fabricated confirmation = BLOCKING) + /security-review judgment (booking/PII)
-+ QA STRICT gates. Then update bundle PR checklist, classify honestly. DB-backed
-integration tests run in CI only (no local Postgres). Do NOT re-run the builder
-if it reports pushed — reconcile from origin/integration/next.
-
-## 2026-07-09 — builder DONE: teetime-s2-foreup-booking-handoff pushed to integration/next
-
-Implemented specs/teetime-s2-plan.md exactly (low-code, high-invariant — the
-handoff was already built in S0/S1). Pushed commit (see `git log -1` on
-integration/next for the SHA).
-
-TESTS (the contract, §3):
-- backend/tests/integration/test_tee_time_bookings.py: new
-  `TestForeUpHandoffPersistence` — search → real foreUP slot (fixture-backed,
-  httpx.MockTransport, no live network) → POST /book → needs_human +
-  foreupsoftware.com deep-link (not a generic website) + confirmationNumber
-  null → persisted tee_time_bookings row (status=needs_human, confCode=null,
-  provider=foreup). DB-backed → collect-only verified locally (12 tests
-  collected incl. the new one); runs for real only in the CI Postgres gate.
-- backend/tests/test_tee_time_foreup.py: new `TestS2Invariants` — universal
-  needs_human sweep across slot shapes incl. missing-booking_url (never
-  invents a URL); source-level guard (`inspect.getsource`) — no
-  `status="confirmed"`, no `client.post`/`client.put`, no card/payment/cvv/
-  credit regex hit; `BookingDetails` fields == {name,party_size,email,phone}.
-- backend/tests/test_tee_time_router.py: `TestBookDispatch` extended with
-  explicit status/confirmation_number assertions + a new test using the REAL
-  ForeUpProvider (not the fake) through RoutedTeeTimeProvider.
-- frontend/src/lib/teetime/confirm-copy.test.ts: pinned exact
-  ctaLabel="Book on the course site →", stampWord="Found" (not Held/Booked),
-  subCopy for the foreup needs_human case; missing-booking_url+no-phone →
-  "Call the course to book"; a new case pinning the S2 honesty-fix shape.
-
-HONESTY FIX (§4.1, the one real code change): frontend/src/app/tee-time/
-page.tsx — the bookTeeTime catch fallback fabricated
-`{status:"pending", message:"Booking request sent — check back shortly."}`
-though no request was sent. Now honest: `{status:"needs_human", message:
-"Couldn't reach the booking service — book directly on the course site."}` —
-stamp reads "Found", CTA still works via slot.bookingUrl fallback.
-
-Gates (all green): ruff check clean · backend targeted suite 71/71 passed ·
-full non-DB backend suite 1586/1586 passed · integration collect-only 12
-tests collected (incl. the new class) · frontend lint clean · tsc clean ·
-vitest src/lib/teetime 164/164 passed · next build succeeded · voice-tests
-smoke 274/274 passed.
-
-Deviations from plan: none — implemented exactly as specced (tests only +
-the one honesty fix; did not touch foreup.py book(), the mock confirmed
-path, or shared types).
-
-Classification: builder judgment is SILENT (test-only + one small honest-
-copy fix on an already-shipped needs_human path, triggers only on a network
-failure at booking time) — but the cycle-44 START note above flagged the
-same fix as "noticeable-leaning"; leaving the final call to eng-lead review
-rather than deciding unilaterally.
+## AWAITING: reviewer + QA on S2 commit 3ccf783 (integration/next)
+Builder DONE — pushed 3ccf783 (invariant tests + the fabricated-pending honesty
+fix in page.tsx). Local gates all green. DB-backed integration tests run in CI
+only. Dispatched reviewer (BLOCKING if any auto-charge / stored card / fabricated
+confirmation / dishonest handoff; verify guard tests have teeth) + /security-
+review judgment, and QA (strict gates). On return: BLOCKING → re-dispatch builder;
+clean → open rolling bundle PR (integration/next → main), S2 on checklist. Classify
+SILENT (visible booking CTA already shipped #120; S2 adds hardening + an edge-case
+honesty fix, no new user-visible capability) → rides the bundle, NO owner ping.
