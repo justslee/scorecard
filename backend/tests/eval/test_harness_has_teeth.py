@@ -250,6 +250,58 @@ async def test_carries_tool_matches_hazards_goes_red_on_a_dropped_carry(monkeypa
     assert not checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed
 
 
+# ── 5c. Shot-distance mutant (caddie-shot-physics-engine plan step 11) ──────
+
+
+async def test_shot_distance_in_band_goes_red_on_pre_physics_arithmetic(monkeypatch):
+    """Mutant: the exact pre-wiring failure — the 2026-07-09 incident's
+    'total around 390 / plays about 392', i.e. rule-of-thumb arithmetic
+    applied to the PIN distance instead of the physics engine's flight of the
+    player's DRIVE. The check must PASS against the real engine (total ~327,
+    inside [315, 330]) and go RED on the incident numbers."""
+    scenario = _scenario("drive-300-downwind-downhill-physics-total")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(
+        check=Tier1CheckName.SHOT_DISTANCE_IN_BAND, club="driver", band=[315, 330],
+    )
+
+    assert checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed, (
+        "sanity: the real physics engine must land the incident drive in band"
+    )
+
+    def _mutant(session, hole_number=None, club=None, target_yards=None):
+        # Pre-physics behavior: 390 pin + 4mph tail (~+2y 'help') applied as
+        # scalar fudges — the number the caddie actually told the owner.
+        return {
+            "available": True, "mode": "club", "club": club,
+            "carry_yards": 360, "roll_yards": 30, "total_yards": 390,
+            "plays_like_yards": 392, "assumptions": [],
+        }
+
+    monkeypatch.setattr(checks_mod, "shot_distance_payload", _mutant)
+    mutant_result = checks_mod.TIER1_CHECKS[check.check.value](ctx, check)
+    assert not mutant_result.passed, "check must go RED on the incident's 390 total"
+    assert "390" in mutant_result.detail
+
+
+async def test_shot_distance_in_band_goes_red_when_engine_unavailable(monkeypatch):
+    """A payload that degrades to available:false for a fully-specified
+    scenario is a wiring regression, not a pass — the check must fail closed."""
+    scenario = _scenario("drive-300-downwind-downhill-physics-total")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(
+        check=Tier1CheckName.SHOT_DISTANCE_IN_BAND, club="driver", band=[315, 330],
+    )
+
+    monkeypatch.setattr(
+        checks_mod, "shot_distance_payload",
+        lambda session, hole_number=None, club=None, target_yards=None: {
+            "available": False, "reason": "regressed",
+        },
+    )
+    assert not checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed
+
+
 # ── 6. Registry closure — no dead checks (plan §7 item 6) ──────────────────
 
 # Tier-1 checks whose "goes red" behavior is proven by an internal mutant
@@ -261,6 +313,7 @@ TIER1_CHECKS_EXERCISED_BY_TEETH = {
     Tier1CheckName.HAZARDS_LINE_EMPTY_WHEN_NO_HAZARDS.value,
     Tier1CheckName.VALIDATE_GUIDE_REJECTS.value,
     Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS.value,
+    Tier1CheckName.SHOT_DISTANCE_IN_BAND.value,
 }
 
 

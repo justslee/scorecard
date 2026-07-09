@@ -39,6 +39,7 @@ class Tier1CheckName(str, Enum):
     GROUND_TRUTH_BLOCK_COMPLETE = "ground_truth_block_complete"
     CONTEXT_CONTAINS = "context_contains"
     CARRIES_TOOL_MATCHES_HAZARDS = "carries_tool_matches_hazards"
+    SHOT_DISTANCE_IN_BAND = "shot_distance_in_band"
 
 
 class Tier2DeterministicCheckName(str, Enum):
@@ -70,6 +71,9 @@ _TIER1_REQUIRED_FIELDS: dict[Tier1CheckName, tuple[str, ...]] = {
     Tier1CheckName.GROUND_TRUTH_BLOCK_COMPLETE: (),
     Tier1CheckName.CONTEXT_CONTAINS: ("literal",),
     Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS: (),
+    # band is universally required; the club-vs-target_yards either/or is
+    # enforced by the model validator below (exactly one must be set).
+    Tier1CheckName.SHOT_DISTANCE_IN_BAND: ("band",),
 }
 
 _TIER2_DET_REQUIRED_FIELDS: dict[Tier2DeterministicCheckName, tuple[str, ...]] = {
@@ -80,7 +84,7 @@ _TIER2_DET_REQUIRED_FIELDS: dict[Tier2DeterministicCheckName, tuple[str, ...]] =
     Tier2DeterministicCheckName.MUST_MENTION_ANY: ("phrases",),
 }
 
-_VALID_RULE_NAMES = {"HAZARD_GROUNDING_RULE", "OBSERVED_REALITY_RULE"}
+_VALID_RULE_NAMES = {"HAZARD_GROUNDING_RULE", "OBSERVED_REALITY_RULE", "PHYSICS_GROUNDING_RULE"}
 _VALID_MOUTHS = {"text", "realtime"}
 
 
@@ -153,6 +157,10 @@ class Tier1Check(BaseModel):
     literal: Optional[str] = None
     hazards: Optional[list[dict]] = None
     guide: Optional[dict] = None
+    # shot_distance_in_band: exactly one of club/target_yards, plus band=[lo, hi].
+    club: Optional[str] = None
+    target_yards: Optional[int] = None
+    band: Optional[list[float]] = None
 
     @model_validator(mode="after")
     def _required_fields_present(self) -> "Tier1Check":
@@ -166,6 +174,13 @@ class Tier1Check(BaseModel):
             raise ValueError(f"unknown rule name {self.rule!r} — expected one of {_VALID_RULE_NAMES}")
         if not set(self.mouths) <= _VALID_MOUTHS:
             raise ValueError(f"unknown mouth(s) {set(self.mouths) - _VALID_MOUTHS} — expected {_VALID_MOUTHS}")
+        if self.check == Tier1CheckName.SHOT_DISTANCE_IN_BAND:
+            if (self.club is None) == (self.target_yards is None):
+                raise ValueError(
+                    "shot_distance_in_band requires exactly one of club / target_yards"
+                )
+            if len(self.band or []) != 2 or self.band[0] > self.band[1]:
+                raise ValueError(f"band must be [lo, hi] with lo <= hi, got {self.band!r}")
         return self
 
 

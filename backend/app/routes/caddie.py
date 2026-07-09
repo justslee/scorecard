@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from typing import AsyncIterator, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.caddie.types import (
     CourseIntelRequest,
@@ -21,6 +21,7 @@ from app.caddie.aim_point import generate_recommendation
 from app.caddie.player_stats import analyze_player_stats
 from app.caddie.course_intel import build_hole_intelligence, build_weather_conditions
 from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
+from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.guide_writer import format_guide_line
 from app.caddie.voice_prompts import OBSERVED_REALITY_RULE, TOOL_USE_RULE
 from app.caddie import tools as caddie_tools
@@ -486,6 +487,44 @@ async def get_session_carries(
     return caddie_tools.carries_payload(session, hole_number or session.current_hole)
 
 
+class ShotDistanceRequest(BaseModel):
+    """One shot's physics numbers (the `get_shot_distance` voice tool).
+    At least one of `club` / `target_yards` is required."""
+    round_id: str
+    hole_number: Optional[int] = None
+    club: Optional[str] = None
+    # gt=0: a zero/negative target is not a shot — reject it rather than
+    # return a degenerate all-None payload as if valid (reviewer-caught
+    # honesty gap; no fabricated precision).
+    target_yards: Optional[int] = Field(default=None, gt=0)
+
+
+@router.post("/session/shot-distance")
+async def get_session_shot_distance(
+    request: ShotDistanceRequest,
+    user_id: str = Depends(current_user_id),
+):
+    """Physics-engine shot distances for the `get_shot_distance` voice tool
+    (both mouths — the Realtime orb dispatches here; the text tool loop
+    resolves the same body via tools.shot_distance_payload).
+
+    Deterministic + pure of network: runs the RK4 ball-flight engine against
+    the session's cached weather + hole elevation, anchored to the player's
+    stored club distances. Honest degradation per [[no-fake-data-fallbacks]]:
+    available:false when the needed club distance isn't on file; still-air /
+    flat-ground assumptions are surfaced, never silently fabricated.
+    """
+    if not request.club and request.target_yards is None:
+        raise HTTPException(422, "At least one of club / target_yards is required")
+    session = await get_owned_session(request.round_id, user_id)
+    return caddie_tools.shot_distance_payload(
+        session,
+        hole_number=request.hole_number,
+        club=request.club,
+        target_yards=request.target_yards,
+    )
+
+
 # ── Shared conversation ledger append (voice mouth → caddie_messages) ──
 
 
@@ -699,6 +738,7 @@ You have memory of the entire round conversation and prior rounds. Reference ear
 or known tendencies when relevant.
 
 {HAZARD_GROUNDING_RULE}
+{PHYSICS_GROUNDING_RULE}
 {TOOL_USE_RULE}
 {OBSERVED_REALITY_RULE}"""
 
@@ -1302,6 +1342,7 @@ driver doesn't care about a bunker at 370. If they're just chatting, be personab
 golf-focused. Never break character.
 
 {HAZARD_GROUNDING_RULE}
+{PHYSICS_GROUNDING_RULE}
 {TOOL_USE_RULE}
 {OBSERVED_REALITY_RULE}"""
 

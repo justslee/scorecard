@@ -3,6 +3,75 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-09 — builder: caddie-shot-physics-engine steps 6-13 — TOOL WIRING (NOTICEABLE, DONE; engine goes live in both caddie mouths)
+
+Wired the physics engine core (90e787f) into the caddie per
+`specs/caddie-shot-physics-engine-plan.md` steps 6-13 — the caddie stops giving
+physically-absurd distances. (6) `get_shot_distance` in the canonical registry
+(`app/caddie/tools.py`, name-sorted after get_session_status): club mode → carry/roll/
+total from the RK4 flight; target mode → plays-like + suggested club; honest degradation
+(available:false when no stored club distance; still-air/flat/bearing-unknown assumptions
+surfaced, never fabricated). `shot_distance_payload` is the single body behind BOTH
+mouths; `resolve_tool` branch pulls session club distances + weather + hole elevation.
+tool_loop.py needed ZERO changes (proven by test: TEXT_TOOLS carries the tool
+automatically). get_conditions description now points shot-specific questions at
+get_shot_distance. (7) Realtime parity: POST `/api/caddie/session/shot-distance` +
+frontend `getSessionShotDistance` + `dispatchTool` case (+2 dispatch tests);
+test_tool_parity green by construction. (8) `PHYSICS_GROUNDING_RULE` in both mouths
+(_build_session_voice_prompt, _build_voice_prompt, build_realtime_instructions) — the
+model must speak engine numbers verbatim, never do distance arithmetic. (9)
+course_intel.py effective_yards → `physics.elevation_only_plays_like` (club-aware
+Δh/tan(descent), replacing 1yd/3ft); guide_writer's ground-truth plays_like aligned to
+the same function. (10) `compute_adjustments` delegates to physics: adjusted total =
+ONE `physics_plays_like` solve (same computation as the tool → get_recommendation and
+get_shot_distance cannot disagree in one turn); per-factor ShotAdjustment lines are
+isolated-factor solves; neutral-baseline correction cancels the fitted-down-wood
+round-trip bias (a 210y 3wood integrates to ~228 neutral — the flagged wrinkle) AND a
+final-club recompute fixes the core's wood/iron oscillation (200y firm flipped
+hybrid↔5iron with mismatched numbers). (11) Eval teeth: `SHOT_DISTANCE_IN_BAND` Tier-1
+check runs the REAL shot_distance_payload offline in CI; 3 golden scenarios from
+incident-2026-07-09-390-drive (300/downwind/downhill total in [315,330] — engine says
+327, NOT 390; 150-into-10mph plays [160,170]; 100y-wedge+20ft plays [105,110]) + RED-
+proof mutant (the literal 390/392 payload goes red). (12) wind.ts playsLikeYards
+@deprecated (display-only; advice numbers come from the backend engine). Retuned-not-
+weakened expectations (documented in each test): course_intel 412y+29.4ft 422→425
+(driver-class descent), golden plays-like 187→186 / 144→145, elevation lines +5→+4 /
+−4→−3, firmness tests moved to a wood target (physics: firmness moves roll, not carry —
+new test pins the iron approach staying untouched), prompt snapshot templates gained the
+physics rule line, realtime tool surface set +get_shot_distance. Gates: backend ruff
+clean + 1454 passed (57 eval incl. teeth); frontend eslint + tsc clean, vitest 1744
+passed, voice smoke 274/274. DB-backed integration tests left to CI as always. Tier-2
+paid eval NOT run (on-demand only, per plan step 13).
+
+## 2026-07-09 — builder: caddie-shot-physics-engine steps 1-5 — ENGINE CORE (SILENT this cycle, backend-only, DONE; tool wiring = steps 6-13, next cycle)
+
+Implemented the pure ball-flight engine `backend/app/caddie/physics.py` per
+`specs/caddie-shot-physics-engine-plan.md` steps 1-5 + `backend/tests/test_physics.py`
+(66 tests). Pure stdlib (math/dataclasses/functools), frozen dataclasses, no async/IO —
+hazards.py pattern, `PHYSICS_GROUNDING_RULE` module constant included. (1) Atmosphere
+(`air_density_kg_m3`, Magnus humidity, barometric only when pressure missing — mirrors
+weather.py's surface-pressure no-double-count trap) + RK4 integrator (`integrate_flight`:
+drag/Magnus on airspeed u=v−w, spin-ratio Cd/Cl, exponential spin decay, landing-plane
+termination with sub-step interpolation; deterministic; monotone in headwind/ρ).
+(2) `CLUB_REFERENCE` (Trackman-average rows driver..lw) + calibration test pinning the
+aero constants: every row integrates to its reference carry ±4y / descent ±3° (worst:
+carry −3.0y on 7i, descent +2.4° on 3w). (3) Reverse fit (`neutral_carry_from_stored`
+woods=total via roll_frac / irons=carry, `fit_launch_to_carry` secant + lru_cache;
+driver round-trip 300 → 299.3). (4) Closed-form roll model calibrated to plan §5
+(driver 22.4y neutral on 300, 7i 4.6, wedges 1.6-2.4, firm +7.2 / soft −10.8, 20mph head
+kills 90% of driver roll). (5) `shot_distance_for_club` / `plays_like_target` /
+`conditions_from_weather` / `elevation_only_plays_like`. **THE INCIDENT TEST PASSES:
+300y driver, 4mph tail, −38ft → carry 300.9 + roll 25.8 = total 326.6 (band 315-330,
+hard-assert <340) — NOT 390; and the 390 pin plays like 358.2 (SHORTER), killing both
+halves of the owner's screenshot bug.** Two documented model deviations (both in code
+comments): `RHO_SENSITIVITY_EXP=0.55` effective-density correction (linear-ρ gave Denver
++18y vs the plan's measured 4-11y band; identity at neutral ρ so calibration unaffected;
+Denver now +8.2y, 40/90°F spread 4.6y) and `_FIT_SPIN_K_CAP=1.4` (spin ×k saturates 7i
+carry at ~219y making stored=220 unreachable; fits k≤1.4 bit-identical). NOT touched (by
+design, next cycle): tools.py, tool_loop.py, course_intel.py, club_selection.py, prompts,
+frontend. Gates: `ruff check .` clean; physics+hazards+air_density+club_selection suites
+148 passed. Committed to `integration/next`.
+
 ## 2026-07-10 — builder: fcb-caption-proximity — re-anchor F/C/B caption + pill-bar clearance (SILENT, frontend-only, DONE)
 
 Implemented `specs/fcb-caption-proximity-plan.md` exactly. Designer follow-up to
@@ -9000,3 +9069,57 @@ a noticeable change (caddie-tool-loop-parity); this minor UI polish rides along 
 with the owner's single approval. Bundle still awaiting owner ship-it.
 
 Checkpoint commit: 6760bd4 (plan+AWAITING) → superseded by this close note.
+
+---
+
+## 2026-07-09 — SHIPPED: #117 audit close-out (eval harness + tool parity + carry-aware validator)
+
+Owner "ship it". Merge 2d55633 → main; deploy verified by SHA + health ok.
+TestFlight v1.0.927 (build 202607090621). The excellence audit's ENTIRE P1
+tier is now shipped: prompt caching, rate limits, LLM timeouts, eval
+harness (teeth-proven), tool-loop parity (real carries), carry-aware side
+validation (laundering bypass closed), + retro lessons + caption polish.
+POST-SHIP RECOVERY: Bethpage HOLE 4 GUIDE CACHED (validated vs true
+geometry — the incident hole recovered); 7/11 honest-empty (research
+persistently conflicts with geometry — suspect OSM quirks; future card).
+Bethpage 16/18, Pebble 18/18. Twenty-one ships this run.
+
+---
+
+## Cycle 39 (2026-07-09) — eng-lead: Bethpage 7/11 validation conflict DIAGNOSED (silent investigation)
+
+Step 0 clean: #117 shipped (v1.0.927), no cards in Needs Review, #117 card thread empty.
+integration/next synced with main (Already up to date); bundle empty; no open PRs.
+
+PICK: diagnose why Bethpage Black holes 7 & 11 stay honest-empty (guide research fails
+validation ~4x each). Ran OFFLINE from the committed fixture tests/fixtures/bethpage_overpass.json
+(identical to prod-ingested data) through the real assemble_osm_course pipeline — NO prod SSM
+needed, no local API key needed, no DB.
+
+VERDICT — root cause (c) validator over-strict, NOT (a) geometry or (b) OSM:
+- (a) RULED OUT: extract_hole_hazards produces correct sides/carries matching reality.
+  Hole 7 = par-5 dogleg-right (polyline 346->36->55deg), bunkers R 170/430/520 + L 355/525.
+  Hole 11 = par-4, bunkers both sides (L 245/415, R 270/325/420). All normal, correct,
+  NON-numbered guide phrasings PASS validate_guide.
+- (b) RULED OUT on-hole: 7/11 have only bunkers; nearest water is 395-431y OFF the played
+  line (not in play). A water/OB mention is therefore a CORRECT rejection (and OSM has no
+  'ob' polygon type, so any OB phrase always rejects — expected/honest).
+- (c) CONFIRMED + REPRODUCED: _side_and_carry_supported() checks a claimed carry against
+  each bunker's CENTROID +-25y, but Bethpage bunkers are large — hole 7's right cross-bunker
+  centroid=170y actually spans 103-280y (178y wide). A web-researched guide citing any carry
+  in the real footprint (220/240/250/260y) but >25y from the centroid gets the WHOLE guide
+  REJECTED (all four demonstrated). Grounded, reasonable numbered advice keeps failing = the
+  persistence pattern.
+
+OUTCOME: carded `bethpage-7-11-geometry-audit` (backlog.json + Notion board, Backlog/Minor)
+as DECISION-NEEDED, NOT fixed inline. Per tasks/lessons.md, the validator is the
+anti-injection/grounding control (laundering bypass closed 3 days ago, 5e4b861) — a carry-
+tolerance loosening is NOT (c)-small; it needs the full adversarial treatment. Two paths on
+the card: (c1) widen the carry check to the bunker's surveyed near->far SPAN (recovers guides
+on big-bunker holes; requires Fable plan + eval teeth proving each accept goes RED pre-fix +
+adversarial review that no false-number laundering re-opens) vs (c2) accept status quo —
+honest-empty is SAFE (caddie falls back to the grounded generic hazard line). Recommend the
+owner/PM pick before any build cycle touches the validator.
+
+Classification: SILENT investigation. NO code change, NO PR, NO owner ping. Bundle still empty.
+Diag scripts (scratchpad, not committed): diag_7_11.py, diag_b_vs_c.py.

@@ -21,6 +21,7 @@ import json
 import pytest
 
 from app.caddie.hazards import HAZARD_GROUNDING_RULE
+from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.session import RoundSession
 from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
 from app.caddie.voice_prompts import OBSERVED_REALITY_RULE, TOOL_USE_RULE
@@ -143,9 +144,11 @@ async def test_voice_prompt_stable_before_volatile_ordering(monkeypatch):
 
 
 # ── 3: brain-regression guard — content-identical modulo order + reword ────
-# (The templates carry {tool_rule} — the ONE deliberate additive line from
-# caddie-tool-loop-parity, referenced via the imported TOOL_USE_RULE constant
-# so wording edits don't rot this guard. Everything else must stay identical.)
+# (The templates carry {tool_rule} — the deliberate additive line from
+# caddie-tool-loop-parity — and {physics_rule} — the deliberate additive line
+# from caddie-shot-physics-engine step 8 — both referenced via the imported
+# constants so wording edits don't rot this guard. Everything else must stay
+# identical.)
 
 
 _OLD_SESSION_TEMPLATE = """{persona}
@@ -169,6 +172,7 @@ You have memory of the entire round conversation and prior rounds. Reference ear
 or known tendencies when relevant.
 
 {hazard_rule}
+{physics_rule}
 {tool_rule}
 {observed_reality_rule}"""
 
@@ -192,6 +196,7 @@ driver doesn't care about a bunker at 370. If they're just chatting, be personab
 golf-focused. Never break character.
 
 {hazard_rule}
+{physics_rule}
 {tool_rule}
 {observed_reality_rule}"""
 
@@ -222,6 +227,7 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
         memory_section="",
         context="Current hole: #4",
         hazard_rule=HAZARD_GROUNDING_RULE,
+        physics_rule=PHYSICS_GROUNDING_RULE,
         tool_rule=TOOL_USE_RULE,
         observed_reality_rule=OBSERVED_REALITY_RULE,
     )
@@ -241,6 +247,7 @@ async def test_voice_prompt_content_identical_to_old_template_modulo_order(monke
         memory_section="",
         context="Current hole: #1, Par 4, 400 yards",
         hazard_rule=HAZARD_GROUNDING_RULE,
+        physics_rule=PHYSICS_GROUNDING_RULE,
         tool_rule=TOOL_USE_RULE,
         observed_reality_rule=OBSERVED_REALITY_RULE,
     )

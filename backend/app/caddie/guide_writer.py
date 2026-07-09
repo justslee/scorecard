@@ -40,6 +40,7 @@ import anthropic
 from pydantic import BaseModel, Field
 
 from app.caddie.hazards import HAZARD_GROUNDING_RULE
+from app.caddie.physics import elevation_only_plays_like
 from app.caddie.types import Hazard, HoleStrategyGuide
 
 log = logging.getLogger("looper.guide_writer")
@@ -114,7 +115,10 @@ def build_ground_truth_block(
     if yards is not None:
         hole_line += f", {yards} yards"
         if elevation_change_ft:
-            plays_like = int(round(yards + elevation_change_ft / 3))
+            # Same physics elevation-only plays-like course_intel's
+            # effective_yards speaks (plan step 9) — the offline writer's
+            # ground truth must not disagree with the live caddie's number.
+            plays_like = elevation_only_plays_like(yards, elevation_change_ft)
             direction = "uphill" if elevation_change_ft > 0 else "downhill"
             hole_line += f", plays_like {plays_like} ({direction} {abs(round(elevation_change_ft))}ft)"
     hole_line += "."

@@ -1,7 +1,145 @@
 {
   "updated": "2026-07-09",
-  "note": "Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
+  "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
+    {
+      "id": "teetime-s0-kill-fake-data",
+      "title": "Tee-time S0: delete synthesized 'Held' slots + private-course filter + honest copy",
+      "type": "major",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "specs/teetime-real-booking-plan.md S0 (ship first, no external deps). Delete affiliate.py synthesized-slot emission + the mock-fallback substitution in routes/tee_times.py; add private_filter.py + private_clubs.json (Liberty National excluded \u2014 the offender); kill 'Held' everywhere (route-driven 'Found'/'Call'/'Book on course site'); honest-empty when no real data. Tests: private filter, honest-empty, no synthesized slots ever. Owner: 'I want real data.'"
+    },
+    {
+      "id": "teetime-s1-foreup-availability",
+      "title": "Tee-time S1: real foreUP availability (validated NY course set) + deep-link",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [
+        "teetime-s0-kill-fake-data"
+      ],
+      "why": "specs/teetime-real-booking-plan.md S1. ForeUpProvider hitting the public /api/booking/times endpoint; CourseBookingCapability table + migration; foreup_ny_seed.json (NOT Bethpage-first) + validate_foreup_courses.py; cache(5-10min, one poll/course/window) + per-host rate limit + circuit-breaker. VERIFY against a REAL live NY foreUP course (owner eyeballs vs reality); capture the response as the CI fixture (never live-hit CI). FLAG live param/response literals during build. Fable plan already written. Legal: low-not-zero, read-only, honest UA."
+    },
+    {
+      "id": "teetime-s2-foreup-booking-handoff",
+      "title": "Tee-time S2: foreUP booking = deep-link handoff (evidence-gated)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [
+        "teetime-s1-foreup-availability"
+      ],
+      "why": "specs/teetime-real-booking-plan.md S2. Confirm on a live page that reservations need account+card \u2192 book() returns needs_human + booking_url deep-link to the course's own page. Never store user payment/creds, never auto-charge. Test: handoff yields correct deep-link + persists a tee_time_bookings row."
+    },
+    {
+      "id": "teetime-s3-ai-caller-plus-rehearsal",
+      "title": "Tee-time S3: AI pro-shop caller route + owner 'call me' rehearsal harness",
+      "type": "major",
+      "priority": 2,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [
+        "teetime-s0-kill-fake-data"
+      ],
+      "why": "specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool."
+    },
+    {
+      "id": "teetime-s4-scraping-adapters",
+      "title": "Tee-time S4: Playwright scraping adapters for gated platforms (GRAY, gated)",
+      "type": "major",
+      "priority": 3,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [
+        "teetime-s1-foreup-availability"
+      ],
+      "why": "specs/teetime-real-booking-plan.md S4. Only courses whose availability is behind a rendered page (Chronogolf/Lightspeed widgets) with no clean JSON and no foreUP/call route. Headless Playwright, HTML parse, honest UA, low freq, heavy cache, never solve CAPTCHAs, never log in to scrape. Tests vs saved HTML fixtures (never live in CI). Explicitly GRAY \u2014 per-course opt-in, lowest priority."
+    },
+    {
+      "id": "caddie-remove-seeded-question",
+      "title": "Caddie opens in its OWN voice \u2014 drop the fake user-voice question",
+      "type": "major",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09: the auto-opening posts the question AS the player ('I'm on the tee, about 390\u2026') and live mode doesn't cleanly answer it. Make the caddie OPEN with the recommendation in its own voice (assistant-side briefing), not a synthesized user bubble. Keeps the auto-reco value, kills the fake question. buildOpeningTurnText/opening-turn path + live opening. Small, ship first."
+    },
+    {
+      "id": "caddie-green-slope-spatial",
+      "title": "Green-slope spatial reasoning: deterministic uphill-putt side",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 (screenshots): the caddie couldn't connect 'slopes west' to the player's left/right and butchered slope-left\u2192miss-right\u2192uphill-putt until hand-walked. Build backend/app/caddie/green_geometry.py: slope aspect \u2192 rotate into the player's tee\u2192green frame \u2192 LEFT/RIGHT; pure rule engine 'which side leaves the uphill putt' (slope-falls-left \u21d2 leave RIGHT \u21d2 uphill) with a full aspect test table; expose as a TOOL the caddie CITES, forbid the LLM from deriving break geometry. Eval teeth from this exact session. Fable plan. See specs/caddie-physics-engine.md."
+    },
+    {
+      "id": "caddie-shot-physics-engine",
+      "title": "Ball-flight physics engine \u2014 real carry/roll vs wind/elevation/air",
+      "type": "major",
+      "priority": 1,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 ('add a physics component\u2026 write very complex physics equations if we have to'): the caddie said a 300y drive + 4mph downwind + 38ft downhill = 390 (physically absurd; it also adjusted the PIN distance, not the drive). Current model: elevation = yards + feet/3, wind = capped \u00b115% linear \u2014 both toys. Build backend/app/caddie/physics.py: documented ball-flight model (RK4 trajectory OR calibrated closed form \u2014 plan picks), air density (temp/altitude/humidity), wind VECTOR \u00d7 time-of-flight, elevation via fall-time, ROLL modeled separately (downhill drive gains via roll not carry \u2014 THE fix). Output {carry,total,plays_like} with assumptions surfaced; calibrated to references; exposed as get_shot_distance tool both mouths cite. Eval: the exact 300/downwind/downhill case \u2192 315-330 not 390. Fable plan; adversarial review on the calibration. See specs/caddie-physics-engine.md."
+    },
+    {
+      "id": "caddie-bend-distance",
+      "title": "Distance-to-the-bend from the stored hole polyline",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09: the caddie couldn't answer 'how far to the bend in the fairway?'. FREE from existing data: the hole polyline (now stored) \u2014 the dogleg = max-deviation vertex from the tee\u2192green chord; compute along-path distance to it; expose as intel + a tool answer ('bends right at ~250'). No ML. See specs/caddie-physics-engine.md."
+    },
+    {
+      "id": "caddie-tree-detection-cv",
+      "title": "Tree detection from satellite (CV segmentation POC)",
+      "type": "major",
+      "priority": 3,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 ('can't you detect trees from the satellite map?'): trees aren't in OSM. Feasibility (research in specs/caddie-physics-engine.md): canopy segmentation on the satellite tile is a SOLVED CV task \u2014 pretrained tree-canopy/land-cover models, no custom training to start. POC: run a pretrained segmentation over each hole's tile at ingest, extract canopy polygons near the fairway corridor, store as 'tree' features \u2192 caddie gets tree carry/clearance via the hazard path; honest 'trees aren't mapped' fallback until coverage real; one inference/hole at ingest, cached. Spike first (feasibility + accuracy on Bethpage before UX). Fable plan."
+    },
+    {
+      "id": "teetime-kill-fake-held",
+      "title": "Tee-time: kill fake 'Held', honest suggestion framing + private-club filter",
+      "type": "major",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 (screenshot): the affiliate provider synthesizes ONE estimated slot per course (time=window start, estimated=True) but the UI renders 'Found ~6:30 AM\u2026 Held for you' \u2014 NO hold exists (no-fake-data violation). Also Liberty National (PRIVATE) surfaced as bookable. FIX: never say 'Held'; render estimates as 'suggested window \u2014 call to confirm'; filter/flag private clubs (Places types + curated private list). Frontend copy + a private-course guard. Immediate honesty fix, ship first."
+    },
+    {
+      "id": "teetime-partnership-applications",
+      "title": "Tee-time: file GolfNow + Supreme Golf + foreUP vendor applications",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "blocked",
+      "depends_on": [],
+      "why": "OWNER-ACTION (parallel, free): apply to GolfNow affiliate (affiliate.gnsvc.com / business-partnership form), Supreme Golf affiliate, and foreUP's vendor API program. Any approval upgrades Route 1 from scraping to sanctioned API. Blocked on the owner submitting the forms (needs a business identity/positioning) \u2014 the agent can draft the applications but the owner sends them."
+    },
+    {
+      "id": "bethpage-7-11-geometry-audit",
+      "title": "Bethpage 7/11 guide-validation conflict: DIAGNOSED \u2014 carry-tolerance vs bunker footprint (decision needed)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "medium",
+      "status": "diagnosed \u2014 decision needed (do NOT inline-fix: validator is the anti-injection/grounding control)",
+      "depends_on": [],
+      "why": "INVESTIGATION 2026-07-09 (cycle 39, OFFLINE from committed fixture tests/fixtures/bethpage_overpass.json \u2014 same data prod ingested; no prod SSM needed). Holes 7 & 11 were persistently honest-empty (research ~4x each fails validate_guide). ROOT CAUSE = (c) validator over-strict, NOT (a) geometry or (b) OSM. EVIDENCE: (a) ruled out \u2014 extract_hole_hazards gives correct sides/carries matching reality: hole 7 par-5 dogleg-right (polyline 346->36->55deg) bunkers R 170/430/520 + L 355/525; hole 11 par-4 bunkers both sides L 245/415 R 270/325/420. All normal/correct non-numbered guide phrasings PASS the validator. (b) ruled out on-hole \u2014 7/11 have ONLY bunkers, nearest water 395-431y OFF the played line (not in play); a water/OB mention is therefore a CORRECT rejection (OSM has no 'ob' polygon type so any OB phrase always rejects \u2014 expected). (c) CONFIRMED + reproduced: _side_and_carry_supported() checks a claimed carry vs each bunker's CENTROID +-25y, but Bethpage bunkers are large \u2014 hole 7's right cross-bunker centroid=170y actually SPANS 103-280y (178y wide). A web-researched guide naturally citing any carry in the real footprint (220/240/250/260) but >25y from centroid -> WHOLE guide REJECTED (demonstrated: all four reject). That is why grounded, reasonable numbered advice keeps failing = the persistence pattern. DECISION NEEDED (genuine product/risk call, not an obvious fix): (c1) widen the carry check to the bunker's surveyed near->far carry SPAN (recovers guides on big-bunker holes) \u2014 but this loosens the grounding/anti-laundering control that had a bypass closed just days ago (5e4b861 carry-tie-break laundering), so it REQUIRES the full adversarial treatment: Fable plan + eval-harness teeth (each new accept-case proven RED pre-fix) + adversarial review proving no false number laundering re-opens; vs (c2) accept status quo \u2014 honest-empty is SAFE and correct (caddie falls back to the grounded generic hazard line); large-bunker holes simply get no cached prose guide. Recommend (c1) as a properly-reviewed future build item IF cached guides on such holes are wanted; otherwise close as working-as-designed. Optional confirmation: an on-box research pass capturing the exact rejected text would pin which number/phrase fired in prod, but the local reproduction already demonstrates the mechanism \u2014 not worth an unattended prod SSM action. FILES: backend/app/caddie/guide_writer.py (_side_and_carry_supported, _has_side_flip, _CARRY_TOLERANCE_YARDS=25); backend/app/caddie/hazards.py (extract_hole_hazards, centroid-based carry). FORBIDDEN to inline-fix per tasks/lessons.md (geometry/validation change without full adversarial treatment)."
+    },
     {
       "id": "fcb-caption-visibility",
       "title": "F/C/B source caption hidden behind floating pills",

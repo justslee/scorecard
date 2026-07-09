@@ -31,6 +31,19 @@ vi.mock('@/lib/caddie/api', () => ({
     note: null,
   })),
   getSessionPlayerProfile: vi.fn(async () => ({ handicap: 12 })),
+  getSessionShotDistance: vi.fn(async () => ({
+    round_id: 'r1',
+    hole_number: 14,
+    available: true,
+    mode: 'club',
+    club: 'driver',
+    carry_yards: 301,
+    roll_yards: 26,
+    total_yards: 327,
+    plays_like_yards: null,
+    suggested_club: null,
+    assumptions: ['treated your 300y driver as TOTAL distance'],
+  })),
 }));
 
 import { dispatchTool } from './realtime';
@@ -41,6 +54,7 @@ import {
   getSessionConditions,
   getSessionCarries,
   getSessionPlayerProfile,
+  getSessionShotDistance,
 } from '@/lib/caddie/api';
 
 const ctx = { roundId: 'round-42' };
@@ -101,6 +115,34 @@ describe('dispatchTool — Realtime tool surface v1', () => {
     // The REAL along-path carry flows through untouched — never a stub.
     expect(out.available).toBe(true);
     expect(out.carries[0].carry_yards).toBe(245);
+  });
+
+  it('get_shot_distance dispatches to the session shot-distance endpoint (physics parity)', async () => {
+    const out = (await dispatchTool(
+      'get_shot_distance',
+      { hole_number: 14, club: 'driver' },
+      ctx,
+    )) as { available: boolean; total_yards: number };
+    expect(getSessionShotDistance).toHaveBeenCalledWith({
+      round_id: 'round-42',
+      hole_number: 14,
+      club: 'driver',
+      target_yards: undefined,
+    });
+    // The REAL engine total flows through untouched — the incident's 390
+    // can only be killed if the persona receives the physics number.
+    expect(out.available).toBe(true);
+    expect(out.total_yards).toBe(327);
+  });
+
+  it('get_shot_distance forwards target_yards for plays-like solves', async () => {
+    await dispatchTool('get_shot_distance', { target_yards: 150 }, ctx);
+    expect(getSessionShotDistance).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: undefined,
+      club: undefined,
+      target_yards: 150,
+    });
   });
 
   it('unknown tools return an error payload instead of throwing', async () => {

@@ -77,7 +77,14 @@ class TestNormalizeClubDistances:
 # ── compute_adjustments ───────────────────────────────────────────────────────
 
 class TestComputeAdjustments:
-    """Distance + adjustment list returned; weather/elevation effects applied."""
+    """Distance + adjustment list returned; weather/elevation effects applied.
+
+    Expectations retuned 2026-07-09 to the physics engine's outputs
+    (specs/caddie-shot-physics-engine-plan.md step 10): adjustments now come
+    from the ball-flight model, not the old scalar rules of thumb, so the
+    exact yardages shifted (e.g. 15ft uphill at 150y is +4 via Δh/tan(descent)
+    for a 9-iron-class shot, not the club-blind +5 of the 1yd/3ft rule).
+    """
 
     def test_no_adjustments_returns_raw(self):
         dist, adjs = compute_adjustments(150)
@@ -85,18 +92,20 @@ class TestComputeAdjustments:
         assert adjs == []
 
     def test_uphill_adds_yards(self):
-        # 15 feet uphill → +5 yards (15/3 = 5)
+        # 15 ft uphill at 150y: Δh/tan(~51° nine-iron descent) → +4, not the
+        # old flat-rule +5. Combined solve lands 155 (154.6 rounded).
         dist, adjs = compute_adjustments(150, elevation_change_ft=15.0)
         assert dist == 155
         assert len(adjs) == 1
         assert adjs[0].type == "elevation"
-        assert adjs[0].yards == 5
+        assert adjs[0].yards == 4
 
     def test_downhill_subtracts_yards(self):
-        # 12 feet downhill → -4 yards
+        # 12 ft downhill → -3 by descent geometry (old flat rule said -4);
+        # combined solve 146 (146.2 rounded).
         dist, adjs = compute_adjustments(150, elevation_change_ft=-12.0)
         assert dist == 146
-        assert adjs[0].yards == -4
+        assert adjs[0].yards == -3
 
     def test_small_elevation_ignored(self):
         # abs(elev) <= 1 → no adjustment
@@ -132,18 +141,29 @@ class TestComputeAdjustments:
         assert alt_adj.yards < 0  # ball carries farther, effective distance shorter
 
     def test_soft_conditions_add_yards(self):
+        # Physics: firmness moves shots judged by TOTAL (tee balls with roll).
+        # 250 → driver basis; soft turf kills roll → plays longer. (At an
+        # iron-approach distance the carry is untouched — physically correct,
+        # the old blanket ±3% was not.)
         weather = WeatherConditions(conditions="soft", wind_speed_mph=0.0)
-        dist, adjs = compute_adjustments(200, weather=weather)
+        dist, adjs = compute_adjustments(250, weather=weather)
         cond_adjs = [a for a in adjs if a.type == "conditions"]
         assert len(cond_adjs) == 1
         assert cond_adjs[0].yards > 0
 
     def test_firm_conditions_subtract_yards(self):
         weather = WeatherConditions(conditions="firm", wind_speed_mph=0.0)
-        dist, adjs = compute_adjustments(200, weather=weather)
+        dist, adjs = compute_adjustments(250, weather=weather)
         cond_adjs = [a for a in adjs if a.type == "conditions"]
         assert len(cond_adjs) == 1
         assert cond_adjs[0].yards < 0
+
+    def test_iron_approach_untouched_by_firmness(self):
+        # A 150y approach is judged by CARRY — firm turf must not shrink it.
+        weather = WeatherConditions(conditions="firm", wind_speed_mph=0.0)
+        dist, adjs = compute_adjustments(150, weather=weather)
+        assert dist == 150
+        assert [a for a in adjs if a.type == "conditions"] == []
 
     def test_minimum_distance_is_one(self):
         # Huge downhill + tailwind could try to push below 0

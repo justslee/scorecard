@@ -157,3 +157,77 @@ async def test_resolve_tool_get_session_status_reads_the_session():
     out = await resolve_tool("get_session_status", {}, ctx)
     assert out == session_status_payload(session)
     assert out["round_id"] == "round-1"
+
+
+# ── get_shot_distance: the physics tool flows through the SHARED machinery ──
+# (specs/caddie-shot-physics-engine-plan.md step 6 — tool_loop.py needed ZERO
+# changes: the registry renders it into TEXT_TOOLS and resolve_tool serves it.)
+
+
+def test_shot_distance_tool_is_in_text_tools_registry():
+    """The new tool reaches the text mouths automatically via TEXT_TOOLS —
+    proof the loop needed no changes (it always passes the whole registry)."""
+    names = [t["name"] for t in tools_mod.TEXT_TOOLS]
+    assert "get_shot_distance" in names
+    assert names == sorted(names)  # still name-sorted (prompt-cache guard)
+
+
+async def test_resolve_tool_shot_distance_club_mode_runs_the_engine():
+    """Club mode: the resolver pulls session club distances + weather + hole
+    elevation and returns real integrated numbers (driver 300 in still air
+    round-trips its stored total — the engine's pinned neutral behavior)."""
+    ctx = ToolContext(
+        session=_session(hole_intel=_hole4_intel([]), club_distances={"driver": 300}),
+        round_id="round-1", user_id="user-1", default_hole=4,
+    )
+    out = await resolve_tool("get_shot_distance", {"club": "driver"}, ctx)
+    assert out["available"] is True
+    assert out["mode"] == "club"
+    assert out["club"] == "driver"
+    assert 296 <= out["total_yards"] <= 302  # neutral ≈ stored total (±2 + rounding)
+    assert out["carry_yards"] + out["roll_yards"] == pytest.approx(out["total_yards"], abs=1)
+    assert out["assumptions"]  # simplifications are always surfaced
+
+
+async def test_resolve_tool_shot_distance_target_mode_solves_plays_like():
+    clubs = {"8iron": 150, "7iron": 160, "6iron": 170}
+    ctx = ToolContext(
+        session=_session(hole_intel=_hole4_intel([]), club_distances=clubs),
+        round_id="round-1", user_id="user-1", default_hole=4,
+    )
+    out = await resolve_tool("get_shot_distance", {"target_yards": 150}, ctx)
+    assert out["available"] is True
+    assert out["mode"] == "target"
+    # Still air, flat hole → a target plays like itself (neutral identity).
+    assert out["plays_like_yards"] == 150
+    assert out["suggested_club"] in clubs
+
+
+async def test_resolve_tool_shot_distance_no_stored_distance_is_honest():
+    """[[no-fake-data-fallbacks]]: no stored 3-wood distance → available:false
+    + reason, never a tour-average stand-in for the PLAYER's number."""
+    ctx = ToolContext(
+        session=_session(club_distances={"driver": 300}),
+        round_id="round-1", user_id="user-1", default_hole=4,
+    )
+    out = await resolve_tool("get_shot_distance", {"club": "3wood"}, ctx)
+    assert out["available"] is False
+    assert "No stored distance" in out["reason"]
+
+
+async def test_resolve_tool_shot_distance_requires_club_or_target():
+    ctx = ToolContext(session=_session(), round_id="round-1", user_id="user-1", default_hole=4)
+    out = await resolve_tool("get_shot_distance", {}, ctx)
+    assert out == {"error": "get_shot_distance requires club and/or target_yards"}
+
+
+async def test_resolve_tool_shot_distance_spoken_club_names_resolve():
+    """The model says '7 iron', not '7iron' — aliases must resolve."""
+    ctx = ToolContext(
+        session=_session(club_distances={"7iron": 160}),
+        round_id="round-1", user_id="user-1", default_hole=4,
+    )
+    out = await resolve_tool("get_shot_distance", {"club": "7 Iron"}, ctx)
+    assert out["available"] is True
+    assert out["club"] == "7iron"
+    assert out["carry_yards"] == 160  # stored iron distances are carries

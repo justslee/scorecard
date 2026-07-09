@@ -20,6 +20,7 @@ import {
   getSessionConditions,
   getSessionCarries,
   getSessionPlayerProfile,
+  getSessionShotDistance,
   type RealtimeSessionToken,
 } from '@/lib/caddie/api';
 import { MessageOrderTracker } from '@/lib/voice/realtime-ordering';
@@ -131,6 +132,18 @@ export async function dispatchTool(
       // mapped, an explicit empty list + note when the hole has no in-play
       // hazards. The persona must never invent a carry number.
       return await getSessionCarries(ctx.roundId, Number(args.hole_number));
+    }
+    case 'get_shot_distance': {
+      // Ball-flight physics for ONE shot (carry/roll/total for a club, or
+      // plays-like for a target) — the same shot_distance_payload the text
+      // tool loop resolves. The persona must speak these numbers verbatim
+      // (PHYSICS_GROUNDING_RULE), never do distance arithmetic itself.
+      return await getSessionShotDistance({
+        round_id: ctx.roundId,
+        hole_number: args.hole_number != null ? Number(args.hole_number) : undefined,
+        club: args.club != null ? String(args.club) : undefined,
+        target_yards: args.target_yards != null ? Number(args.target_yards) : undefined,
+      });
     }
     case 'set_round_setup': {
       // Handled entirely on the client: the component builds + creates the round
