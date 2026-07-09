@@ -345,15 +345,57 @@ def test_side_check_passes_when_side_matches_real_geometry():
 
 
 def test_side_check_rejects_flipped_side_even_though_type_is_correct():
+    # Plan §Item-3 edge-case table row 2, VERBATIM (plural "bunkers"): a
+    # prior implementation bent this row to singular "bunker" to pass with a
+    # singular-only keyword pattern — the plural is the point (the incident
+    # text said "right-side bunkerS") and must reject.
     guide = _guide(
         play_line="Favor center of the fairway.",
-        miss_side="Favor left-center, away from the right-side bunker.",
+        miss_side="Favor left-center away from the right-side bunkers.",
     )
     assert validate_guide(guide, _left_bunker()) is None
 
 
 def test_side_check_rejects_flipped_side_reverse_phrasing():
-    guide = _guide(miss_side="Bail out left, away from the right bunker.")
+    # Plan §Item-3 edge-case table row 3, VERBATIM (plural "bunkers") — see
+    # the un-bending note on the row-2 test above.
+    guide = _guide(miss_side="Bail out left, away from the right bunkers.")
+    assert validate_guide(guide, _left_bunker()) is None
+
+
+def test_side_check_rejects_plural_right_side_bunkers_claim():
+    """The exact incident shape, pluralized: 'right-side bunkers' against a
+    left-only bunker hole must reject — singular-only patterns let the plural
+    bypass BOTH the type scan and the side check."""
+    guide = _guide(miss_side="Stay away from the right-side bunkers.")
+    assert validate_guide(guide, _left_bunker()) is None
+
+
+def test_side_check_rejects_plural_bunkers_on_the_right_with_carry():
+    guide = _guide(play_line="Carry the bunkers on the right at 265.")
+    assert validate_guide(guide, _left_bunker()) is None
+
+
+def test_type_check_rejects_plural_hazard_types_when_none_mapped():
+    """Plural forms must hit the TYPE scan too, not just the side check —
+    'the ditches cross at 220' with nothing mapped is still an invention."""
+    for text in ["watch the ditches at 220", "deep bunkers guard the green",
+                 "sand traps flank the fairway", "marshes line the left"]:
+        assert validate_guide(_guide(miss_side=text), []) is None, text
+
+
+def test_side_check_does_not_over_reject_miss_right_of_hazard_phrasing():
+    """'Miss right of the fairway bunker' aims the MISS relative to the
+    hazard — it claims nothing about which side the bunker itself sits on,
+    so a LEFT bunker must not reject it ('right of' opposition alternate)."""
+    guide = _guide(miss_side="Miss right of the fairway bunker.")
+    assert validate_guide(guide, _left_bunker()) is not None
+
+
+def test_side_check_still_rejects_hazard_right_of_phrasing():
+    """Reverse order is NOT opposition: 'the bunker right of the fairway'
+    IS a claim that the bunker sits right — flipped against a left bunker."""
+    guide = _guide(miss_side="A deep bunker right of the fairway catches drives.")
     assert validate_guide(guide, _left_bunker()) is None
 
 

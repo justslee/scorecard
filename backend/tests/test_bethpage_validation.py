@@ -22,6 +22,9 @@ from typing import Optional
 
 import pytest
 
+from app.caddie.guide_writer import validate_guide
+from app.caddie.hazards import extract_hole_hazards, format_hazards_line
+from app.caddie.types import HoleStrategyGuide
 from app.services.osm import _parse_course_geometry_response
 from app.services.osm_ingest import _deterministic_uuid, assemble_osm_course
 
@@ -366,3 +369,92 @@ class TestAssembledOutput:
                     f"Hole {n}: assembled par={hole.get('par')}, card={CARD[n]['par']}"
                 )
         assert mismatches == [], "Par mismatch in assembled output:\n" + "\n".join(mismatches)
+
+    def test_assembled_each_hole_stores_the_golf_hole_way(self, assembled: dict):
+        """Every assembled hole must carry its golf=hole way (featureType
+        "hole" LineString) so hazard side/carry classify against the PLAYED
+        line after the DB round-trip — the chord mirrors sides on doglegs
+        (hazard-side-flip incident, hole 4)."""
+        missing = []
+        for h in assembled["holes"]:
+            ways = [
+                f for f in h["features"]["features"]
+                if (f.get("properties") or {}).get("featureType") == "hole"
+                and (f.get("geometry") or {}).get("type") == "LineString"
+                and len((f.get("geometry") or {}).get("coordinates") or []) >= 2
+            ]
+            if len(ways) != 1:
+                missing.append(h["number"])
+        assert missing == [], f"Holes without exactly one stored hole way: {missing}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# VI. Hole 4 hazard side regression (hazard-side-flip incident, 2026-07-08)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# The owner-facing incident, reproduced from THIS fixture: hole 4's golf=hole
+# way runs 268y at bearing 46.1° then doglegs LEFT to 23.3°; the landing
+# bunker sits ~32y LEFT of the played first leg but right of the tee→green
+# chord, so chord-based classification emitted "bunker R 265-485y" and the
+# cached strategy guide told the owner the bunkers were on the RIGHT. These
+# tests lock the polyline-based classification against the real geometry.
+
+
+@pytest.fixture(scope="module")
+def hole4_hazards(assembled: dict) -> list:
+    hole4 = next(h for h in assembled["holes"] if h["number"] == 4)
+    return extract_hole_hazards(hole4["features"], cap=10)
+
+
+class TestHole4HazardSideRegression:
+    def test_landing_bunker_classifies_left_with_along_path_carry(self, hole4_hazards):
+        """The incident bunker: nearest bunker off the tee must be LEFT with
+        along-path carry ≈265 (the played line curves slightly, so the honest
+        along-path number lands at ~275; the chord dot-product read 265)."""
+        assert hole4_hazards, "hole 4 must extract hazards from the fixture"
+        nearest = hole4_hazards[0]
+        assert nearest.type == "bunker"
+        assert nearest.line_side == "left"
+        assert abs(nearest.carry_yards - 265) <= 15
+
+    def test_no_right_bunker_in_the_first_landing_zone(self, hole4_hazards):
+        """The chord math put bunkers RIGHT at 265/305/etc. The real first
+        landing zone (carry ≤ 350y) has NO right-side bunker — any reappearance
+        means the side math regressed back toward the chord."""
+        early_right = [
+            h for h in hole4_hazards if h.line_side == "right" and h.carry_yards <= 350
+        ]
+        assert early_right == []
+
+    def test_hazard_line_no_longer_emits_the_incident_string(self, hole4_hazards):
+        line = format_hazards_line(4, hole4_hazards[:5])
+        assert line.startswith("Hole 4 hazards: bunker L ")
+        assert "bunker R 265" not in line
+
+    def test_validator_rejects_right_claim_for_the_landing_zone(self, hole4_hazards):
+        """Validator knock-on, scoped to the tee-shot hazards (carry ≤ 350y —
+        the zone the incident guide described): with the corrected LEFT-only
+        landing sides, `_acceptable_sides` must reject the incident's
+        'right-side bunkers' claim."""
+        landing = [h for h in hole4_hazards if h.carry_yards <= 350]
+        assert landing and all(h.line_side == "left" for h in landing)
+        guide = HoleStrategyGuide(
+            play_line="Favor the right side of the fairway.",
+            miss_side="Stay away from the right-side bunkers.",
+        )
+        assert validate_guide(guide, landing) is None
+
+    def test_full_hazard_list_side_sets_are_pinned(self, hole4_hazards):
+        """Reality note (deviation from the review's expectation, on purpose):
+        hole 4's FULL corrected hazard set is left(~275) + right(~390) +
+        center(~470-495) — there IS a genuine right-side bunker at the second
+        landing zone, so against the full list a bare "right ... bunkers"
+        phrase remains geometrically backed and the side validator alone
+        cannot reject it (side sets carry no yardage). The operative controls
+        for the incident are the corrected ground-truth block / hazard line
+        (asserted above); this test pins the full side complement so any
+        future drift is loud."""
+        sides = sorted({(h.type, h.line_side) for h in hole4_hazards})
+        assert sides == [("bunker", "center"), ("bunker", "left"), ("bunker", "right")]
+        right = [h for h in hole4_hazards if h.line_side == "right"]
+        assert all(h.carry_yards > 350 for h in right)

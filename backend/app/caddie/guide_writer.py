@@ -323,11 +323,16 @@ _HAZARD_KEYWORD_TO_TYPE: dict[str, str] = {
 }
 
 # Compiled once: word-boundary alternation per canonical type. Multi-word
-# keywords keep internal spaces; "." in "o.b." is escaped.
+# keywords keep internal spaces; "." in "o.b." is escaped. Each keyword also
+# matches its optional plural — "(?:e?s)?" covers both "bunkers" and
+# "ditches"/"marshes" — because singular-only patterns let the EXACT incident
+# text ("right-side bunkerS") bypass both the type scan and the side check
+# (reviewer-caught, 2026-07-08). The suffix applies after the FULL keyword,
+# so multi-word keys pluralize on their last word ("sand trap" → "sand traps").
 _HAZARD_PATTERNS: dict[str, "re.Pattern[str]"] = {
     _t: re.compile(
         r"\b(?:" + "|".join(
-            re.escape(k) for k, t in _HAZARD_KEYWORD_TO_TYPE.items() if t == _t
+            re.escape(k) + r"(?:e?s)?" for k, t in _HAZARD_KEYWORD_TO_TYPE.items() if t == _t
         ) + r")\b"
     )
     for _t in {t for t in _HAZARD_KEYWORD_TO_TYPE.values()}
@@ -357,7 +362,16 @@ _SIDE_WINDOW_WORDS = 6
 # construction, so that pairing must never be checked against geometry
 # (a real, pre-existing guide shape: "Best miss is right, away from the
 # bunker" for a LEFT bunker is correct golf advice, not a side-flip).
-_SIDE_OPPOSITION_PATTERN = re.compile(r"\b(?:away from|away|avoid|clear of)\b")
+# "left of"/"right of"/"short of" cover the relative-direction phrasing
+# "miss right OF the fairway bunker" — a target relative to the hazard, not
+# a claim about the hazard's own side. Those alternates can only match when
+# the side word PRECEDES the hazard keyword (the scan window includes the
+# side word in that direction only — see `_has_side_flip`): in the reverse
+# order, "the bunker right of the green" IS a claim about the bunker's side
+# and stays checked.
+_SIDE_OPPOSITION_PATTERN = re.compile(
+    r"\b(?:away from|away|avoid|clear of|(?:left|right|short) of)\b"
+)
 
 
 def _acceptable_sides(canonical_type: str, sides_by_type: dict[str, set[str]]) -> set[str]:
@@ -421,9 +435,16 @@ def _has_side_flip(text_fields: list[str], sides_by_type: dict[str, set[str]]) -
                     if abs(idx - hz_idx) > _SIDE_WINDOW_WORDS:
                         continue
                     if hz_end <= s_start:
+                        # Hazard first: EXCLUDE the side word from the span —
+                        # "the bunker right of the green" claims the bunker's
+                        # own side and must stay checked.
                         between = lowered[hz_end:s_start]
                     elif s_end <= hz_start:
-                        between = lowered[s_end:hz_start]
+                        # Side word first: INCLUDE it, so relative-direction
+                        # phrasing anchored on the side word ("miss right OF
+                        # the fairway bunker") matches the "(left|right|short)
+                        # of" opposition alternates.
+                        between = lowered[s_start:hz_start]
                     else:
                         between = ""  # overlapping spans, no text between
                     if _SIDE_OPPOSITION_PATTERN.search(between):

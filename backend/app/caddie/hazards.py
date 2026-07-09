@@ -12,14 +12,25 @@ empty list, and ``HAZARD_GROUNDING_RULE`` tells the model to speak generally
 instead of naming a feature that isn't in the data.
 
 Math convention (pinned — see test_hazards.py::test_left_is_positive_cross):
-  - û = unit vector along the tee→green travel direction.
-  - h = hazard centroid − tee (metres, equirectangular projection).
-  - carry_yards = dot(h, û), converted to yards, rounded to the nearest 5,
-    negatives clamped to 0 (a hazard "behind" the tee never happens for a
+  - Preferred frame: the hole's PLAYED line — the ``golf=hole`` way polyline
+    (stored as a ``featureType == "hole"`` LineString, or passed via the
+    ``polyline=`` arg). The hazard centroid is projected onto its nearest
+    segment; carry is the CUMULATIVE along-path distance to that projection
+    and side is the cross product against THAT segment's direction. On a
+    dogleg, a bunker on the outside of the first leg is classified against
+    the leg the player actually hits over — the tee→green chord mirrors it
+    (Bethpage Black 4 incident, 2026-07-08: the hole doglegs LEFT; the 265y
+    carry bunker is 32y LEFT of the played first leg but sits right of the
+    straight chord, so the chord math emitted "bunker R 265y").
+  - Chord fallback (no polyline available): û = unit vector along the
+    tee→green direction; h = hazard centroid − tee (metres, equirectangular
+    projection); carry = dot(h, û); side = sign of cross(û, h).
+  - In both frames: carry_yards is converted to yards, rounded to the nearest
+    5, negatives clamped to 0 (a hazard "behind" the tee never happens for a
     real bunker/water feature, but the clamp keeps the number sane).
-  - line_side = sign of cross(û, h): POSITIVE = LEFT of the travel direction,
-    negative = right. A 10-yard lateral deadband collapses near-line hazards
-    to "center" rather than reporting noisy left/right jitter.
+    POSITIVE lateral = LEFT of the travel direction, negative = right. A
+    10-yard lateral deadband collapses near-line hazards to "center" rather
+    than reporting noisy left/right jitter.
 """
 
 from __future__ import annotations
@@ -99,6 +110,12 @@ def _derive_tee_green(
     Priority:
     1. ``tee``/``green`` Polygon centroids in the FeatureCollection.
     2. Fallback: a ``"hole"`` LineString's first vertex = tee, last = green.
+       NOTE (tee-ordering dependency): this assumes the ``golf=hole`` way is
+       digitized tee→green, which is the OSM convention. A way drawn
+       green→tee would swap the derived endpoints AND reverse the polyline's
+       travel direction (mirroring every side) — there is no independent
+       signal here to detect that; the ingest-time yardage validation
+       (test_bethpage_validation "GROSS REVERSED" check) is the guard.
     3. Last resort: the ``tee=``/``green=`` args ({"lat", "lng"} dicts).
 
     Never guesses a bearing — a side left `None` propagates to the caller,
@@ -141,14 +158,88 @@ def _derive_tee_green(
     return tee_pt, green_pt
 
 
+def _hole_polyline(feature_list: list[dict]) -> Optional[list[tuple[float, float]]]:
+    """Return the hole's ``golf=hole`` way as ``[(lon, lat), ...]`` when the
+    FeatureCollection stores it (``featureType == "hole"`` LineString with
+    ≥2 vertices) — the PLAYED line hazards should be classified against.
+    ``None`` when no usable polyline exists (chord fallback)."""
+    for f in feature_list:
+        props = f.get("properties") or {}
+        if props.get("featureType") != "hole":
+            continue
+        geom = f.get("geometry") or {}
+        if geom.get("type") != "LineString":
+            continue
+        coords = geom.get("coordinates") or []
+        if len(coords) >= 2:
+            return [(float(c[0]), float(c[1])) for c in coords]
+    return None
+
+
+def _project_onto_polyline(
+    path_xy: list[tuple[float, float]], hx: float, hy: float
+) -> Optional[tuple[float, float]]:
+    """Project the hazard point (hx, hy) onto its nearest polyline segment.
+
+    Returns ``(carry_m, lateral_m)``:
+      - carry_m = CUMULATIVE along-path distance from the polyline start to
+        the projection point (the played distance to reach the hazard, not
+        the straight-line chord distance).
+      - lateral_m = cross product of THAT segment's unit direction with the
+        hazard offset from the segment start — same sign convention as the
+        chord math (positive = LEFT of travel).
+
+    The projection parameter is clamped to each interior segment, but the
+    FIRST segment extrapolates behind the tee and the LAST extrapolates past
+    the green, so a hazard beyond either end keeps its true carry instead of
+    being clamped to the path length (mirrors the chord path's behavior; the
+    caller's max(0, ...) clamp still floors behind-the-tee carries at 0).
+
+    Returns ``None`` when the polyline has no non-degenerate segment.
+    """
+    best: Optional[tuple[float, float, float]] = None  # (dist², carry, lateral)
+    cum_m = 0.0
+    last_seg = len(path_xy) - 2
+    for i in range(len(path_xy) - 1):
+        ax, ay = path_xy[i]
+        bx, by = path_xy[i + 1]
+        dx, dy = bx - ax, by - ay
+        seg_len = math.hypot(dx, dy)
+        if seg_len == 0.0:
+            continue
+        t = ((hx - ax) * dx + (hy - ay) * dy) / (seg_len * seg_len)
+        if i > 0:
+            t = max(0.0, t)
+        if i < last_seg:
+            t = min(1.0, t)
+        px, py = ax + t * dx, ay + t * dy
+        dist_sq = (hx - px) ** 2 + (hy - py) ** 2
+        ux, uy = dx / seg_len, dy / seg_len
+        lateral = ux * (hy - ay) - uy * (hx - ax)  # positive = LEFT of this segment
+        if best is None or dist_sq < best[0]:
+            best = (dist_sq, cum_m + t * seg_len, lateral)
+        cum_m += seg_len
+    if best is None:
+        return None
+    return best[1], best[2]
+
+
 def extract_hole_hazards(
     features: Optional[dict],
     *,
     tee: Optional[dict] = None,
     green: Optional[dict] = None,
     cap: int = _DEFAULT_CAP,
+    polyline: Optional[list] = None,
 ) -> list[Hazard]:
     """Extract real bunker/water hazards from a hole's stored GeoJSON FeatureCollection.
+
+    Carry/side are classified against the hole's PLAYED polyline (the
+    ``golf=hole`` way) whenever one is available — either passed explicitly
+    via ``polyline=`` or found in the FeatureCollection itself as a
+    ``featureType == "hole"`` LineString (the shape ``assemble_osm_course``
+    stores). Only when NO polyline exists does the tee→green straight chord
+    fall back in — the chord mirrors sides on doglegs (see module docstring).
 
     Args:
         features: ``{"type": "FeatureCollection", "features": [...]}`` — the
@@ -156,6 +247,9 @@ def extract_hole_hazards(
         tee, green: optional ``{"lat", "lng"}`` fallback points, used only when
             the FeatureCollection itself has no derivable tee/green geometry.
         cap: max hazards returned (nearest-first).
+        polyline: optional explicit played-line override — GeoJSON-style
+            ``[[lon, lat], ...]`` (≥2 vertices). Defaults to the
+            FeatureCollection's own hole LineString, then the chord.
 
     Returns:
         Hazard list sorted by carry_yards ascending, capped at `cap`. Empty
@@ -176,6 +270,27 @@ def extract_hole_hazards(
         return []
     ux, uy = gx / length_m, gy / length_m
 
+    # Played line: explicit arg wins, else the stored hole LineString. All
+    # points share the tee-based local east/north frame (_xy_m) so the
+    # projection math and the chord fallback are in the same coordinates.
+    # Carry is measured relative to the TEE's own projection onto the path
+    # (not the way's first vertex) so polyline and chord carries agree — the
+    # golf=hole way often starts at the back tee, behind the derived tee.
+    path = None
+    if polyline and len(polyline) >= 2:
+        path = [(float(c[0]), float(c[1])) for c in polyline]
+    if path is None:
+        path = _hole_polyline(feature_list)
+    path_xy: Optional[list[tuple[float, float]]] = None
+    tee_along_m = 0.0
+    if path is not None:
+        path_xy = [_xy_m(tee_lat, tee_lon, lat, lon) for lon, lat in path]
+        tee_projected = _project_onto_polyline(path_xy, 0.0, 0.0)  # tee = frame origin
+        if tee_projected is None:
+            path_xy = None  # degenerate polyline (all zero-length segments)
+        else:
+            tee_along_m = tee_projected[0]
+
     hazards: list[Hazard] = []
     for f in feature_list:
         props = f.get("properties") or {}
@@ -188,8 +303,13 @@ def extract_hole_hazards(
         h_lon, h_lat = pt
         hx, hy = _xy_m(tee_lat, tee_lon, h_lat, h_lon)
 
-        carry_m = ux * hx + uy * hy
-        lateral_m = ux * hy - uy * hx  # positive = LEFT of tee→green travel
+        projected = _project_onto_polyline(path_xy, hx, hy) if path_xy else None
+        if projected is not None:
+            carry_m = projected[0] - tee_along_m
+            lateral_m = projected[1]
+        else:
+            carry_m = ux * hx + uy * hy
+            lateral_m = ux * hy - uy * hx  # positive = LEFT of tee→green travel
 
         carry_yards = max(0, _round_to_5(carry_m * _YARDS_PER_METER))
         lateral_yards = lateral_m * _YARDS_PER_METER

@@ -3,6 +3,54 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-08 — builder: hazard side-flip REWORK per adversarial review (backend-only, rides the NOTICEABLE bundle, DONE)
+
+Reworked d9eda1c per the Fable review's two BLOCKING findings (review text at the bottom
+of this file's history; it reproduced the prod string "bunker R 265-485y" from
+tests/fixtures/bethpage_overpass.json).
+
+BLOCKING 1 — classify against the played POLYLINE, not the tee→green chord
+(`app/caddie/hazards.py`): hazard side = cross product against the NEAREST segment of the
+hole's golf=hole way (projected in the existing local east/north frame); carry =
+CUMULATIVE along-path distance to the projection, measured relative to the tee's own
+projection onto the way. Chord math kept ONLY as the no-polyline fallback (still tested).
+`assemble_osm_course` now appends the golf=hole way (featureType "hole" LineString,
+original props incl. osm_id) to each hole's FeatureCollection so the polyline survives
+upsert→hole_features→get_course; both real callers (routes/caddie.py:1222,
+course_guides.py:99) pass that FC, so they pick the polyline up automatically
+(course_intel computes no hazards since d9eda1c — nothing to wire there). Real-fixture
+regression added (test_bethpage_validation.py::TestHole4HazardSideRegression): hole 4's
+landing bunker now classifies LEFT, along-path carry 275 (review estimated ≈265 off the
+chord dot; the played line curves — asserted 265±15), no right bunker ≤350y, and the
+hazard line reads "bunker L 275y, bunker R 390y, bunker C 470-495y". Synthetic dogleg +
+8-bearing matrix lock the sign convention.
+
+DEVIATION (noted plainly): the review expected hole 4's corrected sides to be "left +
+maybe center" and demanded a test that the validator rejects ANY "right bunker" claim on
+hole 4. The real fixture shows a GENUINE right-side bunker at ~390y (second landing
+zone), so against the full hazard list a bare "right … bunkers" phrase is geometrically
+backed and the side validator alone cannot reject it (side sets carry no yardage). Added
+instead: the validator-rejects test scoped to the tee-shot hazards (carry ≤350y, left-only
+— rejects "Stay away from the right-side bunkers") + a pinned full-side-complement test
+documenting the limitation. Possible follow-up for eng-lead: carry-aware side validation.
+
+BLOCKING 2 — plural bypass (`app/caddie/guide_writer.py`): _HAZARD_PATTERNS keywords now
+match optional plurals (re.escape(k) + "(?:e?s)?" — "bunkers", "ditches", "sand traps").
+The prior side-flip tests were BENT to singular ("right-side bunker") to pass with the
+singular-only pattern — un-bent to the plan's verbatim plural rows + added the incident-
+shaped plural rows ("Stay away from the right-side bunkers", "Carry the bunkers on the
+right at 265" → REJECT against left-only). Non-blocking review items folded in:
+"(left|right|short) of" opposition alternates so "Miss right of the fairway bunker" isn't
+over-rejected (side-precedes-hazard span only — "the bunker right of the fairway" stays
+checked), and a comment-only note on _derive_tee_green's tee-ordering assumption.
+
+Gates: `uv run ruff check .` clean; `uv run pytest -q` → **1281 passed, 82 skipped**
+(skips = DB-backed integration tests, run in CI). Frontend untouched. NOTE for ship:
+prod courses were ingested BEFORE the hole way was stored — Bethpage/Pebble need the
+re-ingest + guide re-research runbook (specs/hazard-side-flip-plan.md) to pick up
+polyline classification; until then prod stored features have no polyline and fall back
+to the chord.
+
 ## eng-lead cycle 33 — F/C/B caption visibility landed on the bundle (NOTICEABLE, not yet shipped)
 
 Picked P1 fcb-caption-visibility (owner-confusing UX, frontend-only — deliberately no
