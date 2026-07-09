@@ -30,6 +30,17 @@
 import { playsSubLabel } from "./fcb-labels";
 import type { SessionShotDistance } from "./api";
 
+/**
+ * Shared with the ELEV tile's "level" threshold (RoundPageClient.tsx) so the
+ * two tiles on the same card never contradict each other on a small grade —
+ * round-2 review BLOCKING 3: the ELEV tile called a 1-2ft hole "level" while
+ * the PLAYS caption claimed "elev-adj" for the same hole. Single source of
+ * truth for the CAPTION threshold; the backend physics number may still
+ * apply a tiny sub-deadband elevation term to the plays-like YARDAGE — that's
+ * real physics, just not worth captioning as an adjustment.
+ */
+export const ELEV_DEADBAND_FT = 3;
+
 export interface PlaysTileInput {
   /** The physics engine's response for the CURRENT key, or null when no
    *  response has landed yet (pending, error, offline, no session, or a
@@ -65,7 +76,7 @@ export function playsTileDisplay({
   if (physics?.available && physics.plays_like_yards != null) {
     const hasWind = physics.conditions_used?.wind_applied === true;
     const elevChange = physics.conditions_used?.elevation_change_ft;
-    const hasElev = typeof elevChange === "number" && elevChange !== 0;
+    const hasElev = typeof elevChange === "number" && Math.abs(elevChange) >= ELEV_DEADBAND_FT;
     return {
       v: `${physics.plays_like_yards}Y`,
       sub: playsSubLabel({ hasWind, hasElev, isLive, fromCard }),
@@ -84,12 +95,17 @@ export function playsTileDisplay({
 
   // physics === null: pending / error / offline / no session / local round.
   // The deprecated wind heuristic is used in NO cell; the elevation term (if
-  // any) is the backend's own cached number, not invented locally.
+  // any) is the backend's own cached number, not invented locally. In LIVE
+  // mode `fallbackYards` is the raw rangefinder center (never elevation-
+  // composed — see the module doc) — captioning "elev" there would claim an
+  // adjustment never computed (round-2 review BLOCKING 2), so this row can
+  // only claim elevation when NOT live (and not card-only, which has no
+  // usable intel geometry either).
   return {
     v: `${Math.round(fallbackYards)}Y`,
     sub: playsSubLabel({
       hasWind: false,
-      hasElev: hasLocalIntel && !fromCard,
+      hasElev: hasLocalIntel && !isLive && !fromCard,
       isLive,
       fromCard,
     }),

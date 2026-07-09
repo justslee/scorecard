@@ -54,7 +54,7 @@ import { shouldRefreshOnDemand, WeatherRefreshScheduler } from "@/lib/map/weathe
 import { computeFCBDistances } from "@/lib/course/course-coordinates";
 import { fcbSourceCaption } from "@/lib/caddie/fcb-labels";
 import { usePhysicsPlaysLike } from "@/lib/caddie/use-physics-plays-like";
-import { playsTileDisplay } from "@/lib/caddie/plays-tile";
+import { playsTileDisplay, ELEV_DEADBAND_FT } from "@/lib/caddie/plays-tile";
 import { yardsDistance } from "@/lib/course/hole-projection";
 import { applyTeeAnchors, resolveFcbSource } from "@/lib/course/tee-anchor";
 import { haptic } from "@/lib/haptics";
@@ -1198,7 +1198,12 @@ export default function RoundPage() {
   const elevTile = holeIntel
     ? {
         v: `${holeIntel.elevFt >= 0 ? "+" : ""}${Math.round(holeIntel.elevFt)}ft`,
-        sub: Math.abs(holeIntel.elevFt) < 3 ? "level" : holeIntel.elevFt > 0 ? "uphill" : "downhill",
+        sub:
+          Math.abs(holeIntel.elevFt) < ELEV_DEADBAND_FT
+            ? "level"
+            : holeIntel.elevFt > 0
+              ? "uphill"
+              : "downhill",
       }
     : { v: "—", sub: "elev" };
   // Plays-like: physics-tiles-coherence (specs/physics-tiles-coherence-plan.md)

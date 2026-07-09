@@ -183,6 +183,40 @@ describe('playsTileDisplay — §5 fallback matrix', () => {
     expect(result.sub).toBe('from card');
   });
 
+  it('physics===null, live, local intel present → "from you" (NEVER claims elev it never computed)', () => {
+    // Round-2 review BLOCKING 2: in live rangefinder mode fallbackYards is
+    // the RAW fcbLive.center (never elevation-composed), so this row must
+    // not caption "elev from you" — that would claim an adjustment the
+    // fallback number never applied.
+    const result = playsTileDisplay({
+      physics: null, basisYards: 140, fallbackYards: 140,
+      isLive: true, fromCard: false, hasLocalIntel: true,
+    });
+    expect(result.v).toBe('140Y');
+    expect(result.sub).toBe('from you');
+  });
+
+  it('Physics OK, sub-deadband elevation (2ft) → no elev claim, matches ELEV tile\'s "level"', () => {
+    // Round-2 review BLOCKING 3: the ELEV tile calls anything under 3ft
+    // "level"; the PLAYS caption must use the same threshold so the two
+    // tiles never contradict each other on a small grade.
+    const physics: SessionShotDistance = {
+      round_id: 'r1', hole_number: 4, available: true, mode: 'target',
+      plays_like_yards: 151, target_yards: 150,
+      conditions_used: {
+        weather_available: false, wind_speed_mph: null, wind_direction: null,
+        elevation_change_ft: 2, shot_bearing_deg: null, wind_applied: false,
+        firmness: 'medium', temperature_f: null, air_density_kg_m3: 1.2,
+      },
+    };
+    const result = playsTileDisplay({
+      physics, basisYards: 150, fallbackYards: 150,
+      isLive: false, fromCard: false, hasLocalIntel: true,
+    });
+    expect(result.v).toBe('151Y'); // the number may still reflect real sub-deadband physics
+    expect(result.sub).toBe('from tee'); // but the caption never claims "elev-adj"
+  });
+
   it('Live rangefinder, physics succeeds → physics number with live basis, "wind+elev · you"', () => {
     const physics: SessionShotDistance = {
       round_id: 'r1', hole_number: 4, available: true, mode: 'target',

@@ -279,30 +279,29 @@ def test_shot_distance_bearing_known_tailwind_plays_shorter_than_target():
     assert out["conditions_used"]["shot_bearing_deg"] == 90
 
 
-def test_shot_distance_no_intel_and_wind_is_not_applied_honestly():
-    """[[no-fake-data-fallbacks]]: no hole intel → bearing unknown → NEVER
-    fabricate a due-north wind direction. The engine runs in still air
-    instead, and says so — wind_applied is False, and the number equals the
-    identical still-air payload (weather with wind zeroed)."""
+def test_shot_distance_no_intel_wind_still_applied_with_honest_assumption():
+    """[[no-fake-data-fallbacks]] / physics-tiles-coherence round-2 fix: no
+    hole intel → bearing unknown must NOT silently drop a real, intended
+    wind to still air (that's the same wrong-direction class as the
+    incident this tool exists to prevent, and it regressed the caddie's own
+    golden evals — a golfer asking "150 into 10mph" wants the wind in the
+    number). Instead the wind is resolved against an assumed due-north shot
+    line, and the assumption is surfaced honestly rather than being silent
+    about the guess."""
     weather = WeatherConditions(temperature_f=70.0, wind_speed_mph=15.0, wind_direction=45)
     session = _session(club_distances={"8iron": 150}, weather=weather)
     out = shot_distance_payload(session, hole_number=4, target_yards=150)
     assert out["available"] is True
-    assert out["conditions_used"]["wind_applied"] is False
+    assert out["conditions_used"]["wind_applied"] is True
     assert out["conditions_used"]["shot_bearing_deg"] is None
-    # Honest reporting: the REAL weather is still reported even though it
-    # wasn't applied to the number.
     assert out["conditions_used"]["wind_speed_mph"] == 15.0
     assert out["conditions_used"]["wind_direction"] == 45
-    assert any("wind not applied" in a for a in out["assumptions"])
-    assert "shot direction unknown — wind applied relative to due north" not in " ".join(
-        out["assumptions"]
-    )
+    assert "shot direction unknown — wind applied relative to due north" in out["assumptions"]
 
     calm_weather = WeatherConditions(temperature_f=70.0, wind_speed_mph=0.0, wind_direction=45)
     calm_session = _session(club_distances={"8iron": 150}, weather=calm_weather)
     calm_out = shot_distance_payload(calm_session, hole_number=4, target_yards=150)
-    assert out["plays_like_yards"] == calm_out["plays_like_yards"]
+    assert out["plays_like_yards"] != calm_out["plays_like_yards"]
 
 
 def test_shot_distance_calm_flat_bearing_known_identity():

@@ -586,9 +586,10 @@ def shot_distance_payload(
       - no cached weather → still air, surfaced in assumptions;
       - no hole intel → flat ground, surfaced in assumptions;
       - the shot's compass bearing is not known to the session → wind is
-        NOT applied (still air run instead of guessing a direction) and
-        that assumption is surfaced; elevation/air-density terms still
-        apply.
+        still applied (a golfer asking "150 into 10mph" wants the wind in
+        the number), resolved against an assumed due-north shot line, and
+        that assumption is surfaced honestly rather than silently dropping
+        a real, intended wind to still air.
     """
     hn = hole_number or session.current_hole
     base = {"round_id": session.round_id, "hole_number": hn}
@@ -609,7 +610,6 @@ def shot_distance_payload(
     bearing = intel.approach_bearing_deg if intel is not None else None
 
     weather = session.weather
-    weather_for_cond = weather
     has_wind = weather is not None and (weather.wind_speed_mph or 0) >= 1
     if weather is None:
         assumptions.append("no live weather cached — still air assumed")
@@ -620,23 +620,22 @@ def shot_distance_payload(
             # the same bearing get_green_read uses — instead of guessing.
             assumptions.append("wind resolved along the hole (tee→green line)")
         else:
-            # The session does not know the shot's compass bearing. Rather
-            # than fabricate a due-north direction (which materially moves
-            # the number), run the engine in still air and say so.
+            # The session does not know the shot's compass bearing. A real,
+            # intended wind must still count in the number — dropping it to
+            # still air silently understates the shot (the same wrong-
+            # direction class as the incident this tool was built to fix).
+            # Resolve it against an assumed due-north shot line and say so,
+            # rather than fabricating a false "no wind" answer.
             assumptions.append(
-                f"hole direction unknown — {weather.wind_speed_mph:.0f} mph "
-                "wind not applied"
-            )
-            weather_for_cond = weather.model_copy(
-                update={"wind_speed_mph": 0.0, "wind_gusts_mph": 0.0}
+                "shot direction unknown — wind applied relative to due north"
             )
 
-    wind_applied = has_wind and bearing is not None
+    wind_applied = has_wind
 
     stored = session.club_distances.get(club_key, 0) if club_key else 0
     carry_hint = float(stored or target_yards or 0) or None
     cond, cond_assumptions = physics.conditions_from_weather(
-        weather_for_cond, shot_bearing_deg=bearing or 0.0,
+        weather, shot_bearing_deg=bearing if bearing is not None else 0.0,
         elevation_delta_ft=elevation_ft,
         carry_hint_yards=carry_hint,
     )
