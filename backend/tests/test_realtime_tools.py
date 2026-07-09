@@ -36,6 +36,7 @@ EXPECTED_TOOL_NAMES = {
     "get_player_profile",
     "get_carries",
     "get_shot_distance",  # physics engine (specs/caddie-shot-physics-engine-plan.md)
+    "get_green_read",  # green-slope rotation (specs/caddie-green-slope-spatial-plan.md)
 }
 
 

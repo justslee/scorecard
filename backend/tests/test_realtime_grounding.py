@@ -30,6 +30,7 @@ from app.caddie.types import (  # noqa: E402
     GreenSlope,
     HoleIntelligence,
 )
+from app.caddie.green_geometry import GREEN_GROUNDING_RULE  # noqa: E402
 from app.caddie.hazards import HAZARD_GROUNDING_RULE  # noqa: E402
 from app.caddie.voice_prompts import build_realtime_instructions, _situation_block  # noqa: E402
 import app.routes.caddie as caddie_routes  # noqa: E402
@@ -221,6 +222,33 @@ def test_hazard_grounding_rule_present_with_full_grounding():
     text = build_realtime_instructions(_persona(), session=session)
     assert text.count(HAZARD_GROUNDING_RULE) == 1
     assert HAZARD_GROUNDING_RULE in text
+
+
+# ── GREEN_GROUNDING_RULE stays intact ─────────────────────────────────────────
+
+
+def test_green_grounding_rule_present_with_full_grounding():
+    """Same guard as the hazard rule above, for the green-slope rotation
+    engine's grounding rule (specs/caddie-green-slope-spatial-plan.md)."""
+    session = _bare_session(
+        conversation_history=[VoiceCaddieMessage(role="user", content="hi")],
+        last_recommendation=CaddieRecommendation(club="pw", target_yards=110, raw_yards=110),
+        shot_history=[ShotRecord(hole_number=6, club="driver", distance_yards=260, result="fairway")],
+        hole_intel={
+            7: HoleIntelligence(
+                hole_number=7, par=4, yards=380,
+                green_slope=GreenSlope(description="Flat"),
+            )
+        },
+    )
+    text = build_realtime_instructions(_persona(), session=session)
+    assert text.count(GREEN_GROUNDING_RULE) == 1
+    assert GREEN_GROUNDING_RULE in text
+
+
+def test_green_grounding_rule_present_with_no_grounding_data():
+    text = build_realtime_instructions(_persona())
+    assert text.count(GREEN_GROUNDING_RULE) == 1
 
 
 # ── Tool payload: get_session_conditions exposes green_slope ─────────────────

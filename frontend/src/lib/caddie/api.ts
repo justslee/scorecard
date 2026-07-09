@@ -363,6 +363,41 @@ export async function getSessionShotDistance(params: {
   return post('/caddie/session/shot-distance', params);
 }
 
+/** Which side of the green leaves the uphill putt — mirrors backend
+ *  tools.green_read_payload (app/caddie/tools.py). The LLM consumes this as
+ *  a tool_result (typed `unknown` there); this shape documents the contract
+ *  for the dispatch layer. `available: false` means no green slope is
+ *  mapped, or the tee position (so the approach bearing) isn't known —
+ *  never a guessed side (specs/caddie-green-slope-spatial-plan.md). */
+export interface SessionGreenRead {
+  round_id: string;
+  hole_number: number;
+  available: boolean;
+  reason?: string;
+  fall_side?: 'left' | 'right' | 'none';
+  high_side?: 'left' | 'right' | 'none';
+  uphill_leave_side?: 'left' | 'right' | 'none';
+  downhill_leave_side?: 'left' | 'right' | 'none';
+  uphill_leave_depth?: 'short' | 'long' | null;
+  cross_grade_pct?: number;
+  along_grade_pct?: number;
+  severity?: string;
+  confidence?: 'high' | 'low' | 'none';
+  read_line?: string;
+  slope_compass?: string;
+  approach_bearing_deg?: number;
+  assumptions?: string[];
+}
+
+/** Green-slope rotation read backing the `get_green_read` voice tool
+ *  (specs/caddie-green-slope-spatial-plan.md). */
+export async function getSessionGreenRead(params: {
+  round_id: string;
+  hole_number?: number;
+}): Promise<SessionGreenRead> {
+  return post('/caddie/session/green-read', params);
+}
+
 /**
  * Append a Realtime voice turn (pair) to the round's shared caddie_messages
  * ledger, so the text mouth (/session/voice) shares one conversation history.

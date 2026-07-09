@@ -20,6 +20,7 @@ from app.caddie.types import (
 from app.caddie.aim_point import generate_recommendation
 from app.caddie.player_stats import analyze_player_stats
 from app.caddie.course_intel import build_hole_intelligence, build_weather_conditions
+from app.caddie.green_geometry import GREEN_GROUNDING_RULE
 from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.guide_writer import format_guide_line
@@ -525,6 +526,32 @@ async def get_session_shot_distance(
     )
 
 
+class GreenReadRequest(BaseModel):
+    """Which side of the green leaves the uphill putt (the `get_green_read` voice tool)."""
+    round_id: str
+    hole_number: Optional[int] = None
+
+
+@router.post("/session/green-read")
+async def get_session_green_read(
+    request: GreenReadRequest,
+    user_id: str = Depends(current_user_id),
+):
+    """Deterministic green-slope read for the `get_green_read` voice tool
+    (both mouths — the Realtime orb dispatches here; the text tool loop
+    resolves the same body via tools.green_read_payload).
+
+    Rotates the hole's stored green-slope aspect into the player's own
+    tee->green approach frame (app.caddie.green_geometry) — never a compass
+    word the model would have to translate itself. Honest degradation per
+    [[no-fake-data-fallbacks]]: available:false when no slope is mapped for
+    the hole, or when the tee position (and so the approach bearing) isn't
+    known. Body lives in app/caddie/tools.py, shared with the text tool loop.
+    """
+    session = await get_owned_session(request.round_id, user_id)
+    return caddie_tools.green_read_payload(session, hole_number=request.hole_number)
+
+
 # ── Shared conversation ledger append (voice mouth → caddie_messages) ──
 
 
@@ -739,6 +766,7 @@ or known tendencies when relevant.
 
 {HAZARD_GROUNDING_RULE}
 {PHYSICS_GROUNDING_RULE}
+{GREEN_GROUNDING_RULE}
 {TOOL_USE_RULE}
 {OBSERVED_REALITY_RULE}"""
 
@@ -1343,6 +1371,7 @@ golf-focused. Never break character.
 
 {HAZARD_GROUNDING_RULE}
 {PHYSICS_GROUNDING_RULE}
+{GREEN_GROUNDING_RULE}
 {TOOL_USE_RULE}
 {OBSERVED_REALITY_RULE}"""
 

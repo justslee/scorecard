@@ -44,6 +44,17 @@ vi.mock('@/lib/caddie/api', () => ({
     suggested_club: null,
     assumptions: ['treated your 300y driver as TOTAL distance'],
   })),
+  getSessionGreenRead: vi.fn(async () => ({
+    round_id: 'r1',
+    hole_number: 7,
+    available: true,
+    fall_side: 'left',
+    high_side: 'right',
+    uphill_leave_side: 'left',
+    downhill_leave_side: 'right',
+    uphill_leave_depth: null,
+    read_line: 'Green falls to your left — right side is the high side; a miss left leaves the uphill putt.',
+  })),
 }));
 
 import { dispatchTool } from './realtime';
@@ -55,6 +66,7 @@ import {
   getSessionCarries,
   getSessionPlayerProfile,
   getSessionShotDistance,
+  getSessionGreenRead,
 } from '@/lib/caddie/api';
 
 const ctx = { roundId: 'round-42' };
@@ -142,6 +154,25 @@ describe('dispatchTool — Realtime tool surface v1', () => {
       hole_number: undefined,
       club: undefined,
       target_yards: 150,
+    });
+  });
+
+  it('get_green_read dispatches to the session green-read endpoint with the hole number', async () => {
+    const out = (await dispatchTool('get_green_read', { hole_number: 7 }, ctx)) as {
+      available: boolean;
+      uphill_leave_side: string;
+    };
+    expect(getSessionGreenRead).toHaveBeenCalledWith({ round_id: 'round-42', hole_number: 7 });
+    // The REAL rotation-engine side flows through untouched — never a stub.
+    expect(out.available).toBe(true);
+    expect(out.uphill_leave_side).toBe('left');
+  });
+
+  it('get_green_read omits hole_number when not provided (defaults server-side)', async () => {
+    await dispatchTool('get_green_read', {}, ctx);
+    expect(getSessionGreenRead).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: undefined,
     });
   });
 

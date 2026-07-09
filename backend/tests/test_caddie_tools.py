@@ -16,8 +16,14 @@ import pytest  # noqa: E402
 
 from app.caddie import tools as tools_mod  # noqa: E402
 from app.caddie.session import RoundSession  # noqa: E402
-from app.caddie.types import Hazard, HoleIntelligence  # noqa: E402
-from app.caddie.tools import ToolContext, carries_payload, resolve_tool, session_status_payload  # noqa: E402
+from app.caddie.types import GreenSlope, Hazard, HoleIntelligence  # noqa: E402
+from app.caddie.tools import (  # noqa: E402
+    ToolContext,
+    carries_payload,
+    green_read_payload,
+    resolve_tool,
+    session_status_payload,
+)
 
 
 def _session(hole_intel=None, club_distances=None) -> RoundSession:
@@ -231,3 +237,119 @@ async def test_resolve_tool_shot_distance_spoken_club_names_resolve():
     assert out["available"] is True
     assert out["club"] == "7iron"
     assert out["carry_yards"] == 160  # stored iron distances are carries
+
+
+# ── get_green_read: honest-fallback matrix + the rotation engine ────────────
+# (specs/caddie-green-slope-spatial-plan.md — flows through the SAME shared
+# machinery pattern as get_shot_distance above.)
+
+
+def test_green_read_tool_is_in_text_tools_registry():
+    names = [t["name"] for t in tools_mod.TEXT_TOOLS]
+    assert "get_green_read" in names
+    assert names == sorted(names)  # still name-sorted (prompt-cache guard)
+
+
+def test_green_read_payload_no_intel_is_honestly_unavailable():
+    session = _session()
+    out = green_read_payload(session, hole_number=4)
+    assert out["available"] is False
+    assert "No green slope mapped" in out["reason"]
+
+
+def test_green_read_payload_intel_without_green_slope_is_honestly_unavailable():
+    session = _session(hole_intel={4: HoleIntelligence(hole_number=4, par=4, yards=400)})
+    out = green_read_payload(session, hole_number=4)
+    assert out["available"] is False
+    assert "No green slope mapped" in out["reason"]
+
+
+def test_green_read_payload_slope_without_bearing_is_honestly_unavailable():
+    """[[no-fake-data-fallbacks]]: a slope is mapped but the tee position (so
+    the approach bearing) isn't known — available:false with a DISTINCT
+    reason from the no-slope-mapped case, and the compass description is
+    still surfaced, clearly labeled, so the model has something honest to
+    say without being asked to translate it to a side itself."""
+    session = _session(
+        hole_intel={
+            4: HoleIntelligence(
+                hole_number=4, par=4, yards=400,
+                green_slope=GreenSlope(
+                    direction=270.0, severity="moderate", percent_grade=3.0,
+                    description="Green slopes moderately toward the west",
+                ),
+                approach_bearing_deg=None,
+            )
+        }
+    )
+    out = green_read_payload(session, hole_number=4)
+    assert out["available"] is False
+    assert "can't orient the slope to your line" in out["reason"]
+    assert out["reason"] != "No green slope mapped for this hole."
+    assert out["slope_compass"] == "Green slopes moderately toward the west"
+
+
+def test_green_read_payload_happy_path_matches_the_owner_golden_case():
+    """β=0 (approach due north), α=270 (slopes west) -> uphill_leave_side
+    "left" — the exact owner chain, end to end through the payload."""
+    session = _session(
+        hole_intel={
+            4: HoleIntelligence(
+                hole_number=4, par=4, yards=400,
+                green_slope=GreenSlope(
+                    direction=270.0, severity="moderate", percent_grade=3.0,
+                    description="Green slopes moderately toward the west",
+                ),
+                approach_bearing_deg=0.0,
+            )
+        }
+    )
+    out = green_read_payload(session, hole_number=4)
+    assert out["available"] is True
+    assert out["fall_side"] == "left"
+    assert out["high_side"] == "right"
+    assert out["uphill_leave_side"] == "left"
+    assert out["downhill_leave_side"] == "right"
+    assert out["confidence"] == "high"
+    assert "left" in out["read_line"].lower()
+    assert out["assumptions"]  # tee->green approach frame is surfaced, never silent
+
+
+async def test_resolve_tool_green_read_falls_back_to_default_hole():
+    session = _session(
+        hole_intel={
+            4: HoleIntelligence(
+                hole_number=4, par=4, yards=400,
+                green_slope=GreenSlope(
+                    direction=90.0, severity="moderate", percent_grade=3.0,
+                    description="Green slopes moderately toward the east",
+                ),
+                approach_bearing_deg=0.0,
+            )
+        }
+    )
+    ctx = ToolContext(session=session, round_id="round-1", user_id="user-1", default_hole=4)
+    out = await resolve_tool("get_green_read", {}, ctx)
+    assert out["available"] is True
+    assert out["hole_number"] == 4
+    assert out["fall_side"] == "right"
+
+
+async def test_resolve_tool_green_read_uses_explicit_hole_number():
+    session = _session(
+        hole_intel={
+            9: HoleIntelligence(
+                hole_number=9, par=3, yards=160,
+                green_slope=GreenSlope(
+                    direction=225.0, severity="severe", percent_grade=6.0,
+                    description="Green slopes severely toward the southwest",
+                ),
+                approach_bearing_deg=0.0,
+            )
+        }
+    )
+    ctx = ToolContext(session=session, round_id="round-1", user_id="user-1", default_hole=4)
+    out = await resolve_tool("get_green_read", {"hole_number": 9}, ctx)
+    assert out["available"] is True
+    assert out["hole_number"] == 9
+    assert out["fall_side"] == "left"
