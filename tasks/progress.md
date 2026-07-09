@@ -9219,3 +9219,33 @@ nationalPhoneNumber through Places->slot.phone->tel: link (or drop the inert but
 "Provider unavailable"/"Contacting provider" -> golfer-voice. On return: re-run designer +
 gates -> if green open rolling bundle PR (integration/next->main) + release-manager (NOTICEABLE)
 + owner ping. NOTE: verify MY PR gates green per ship-gate-verification memory before ship.
+
+---
+
+## 2026-07-09 cycle 40 — BUILT round 2: 4 designer blockers fixed (commit e303884)
+
+All 4 designer BLOCKERs fixed on integration/next (e303884, pushed): (1) Confirmed Kicker
+uses `stampWord` (no more raw "LOOPER · NEEDS_HUMAN"); (2) Searching log line uses the
+backend's `result.message` directly instead of `Booking ${status}: ...` (honest fallback
+"That didn't go through." / "Working on it." when no message); (3) phone threaded end-to-end
+— Places `nationalPhoneNumber` + OSM `phone`/`contact:phone` tag -> course_finder.py/osm.py
+normalized dicts -> `TeeTimeSlot.phone` -> `RoutingTeeTimeProvider` -> `TeeTimeSlotOut` ->
+`types.ts`; new pure `callTelHref()` in confirm-copy.ts renders a real `tel:` link when a
+phone is known, else a plain non-interactive line (never inert button chrome); (4) tone
+fixes — "Provider unavailable"->"Couldn't reach that window — skipping it.", "Contacting
+provider…"->"Checking nearby courses…", "Setting up your handoff."->"Pulling up how to
+book.", empty state ->"Nothing open nearby. Try a wider window or radius."
+
+Tests added: 2 backend (`test_tee_time_routing.py` — phone flows through / stays null),
+3 frontend (`confirm-copy.test.ts` — `callTelHref` with/without/empty phone). ALL gates
+re-run green: `ruff check .` clean; backend pytest (non-DB) 1480 passed; frontend lint +
+`tsc --noEmit` clean; `vitest run src/lib/teetime` 159 passed; `npm run build` succeeded;
+`voice-tests --smoke` 274/274. `tests/integration/test_tee_time_bookings.py` reviewed (not
+run — no local Postgres): the new `phone` field is additive with a `None` default and no
+test asserts full-payload dict equality, so no edit was required there.
+
+## AWAITING
+Re-review: designer (verify the 4 blockers are actually fixed — esp. the `tel:` link renders
+correctly and no inert button remains) + reviewer/QA re-confirm on e303884. If green: open
+the rolling bundle PR (integration/next -> main) + release-manager (NOTICEABLE — real course
+data + working call CTA replaces demo data on the tee-time screen) + owner ping.
