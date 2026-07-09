@@ -3,6 +3,16 @@
   "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "multi-tee-anchor-reconciliation",
+      "title": "Multi-tee holes: 'from the tee' F/C/B \u2260 card yardage (anchor to the played tee)",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 (screenshot): Bethpage hole 3 card=178Y but F/C/B 'FROM THE TEE'=~231, Plays 245. Prod-verified: the hole has 5 tee boxes (232/207/174/159/136y to green); the card (178) matches the 174y tee but the tiles anchor to the 232y BACK tee (geometry picks tee box [0] regardless of the played tee). Fix: anchor the 'from the tee' F/C/B + plays-like to the tee the PLAYER SELECTED at round start (the round already knows it \u2014 the colored tee-marker placed it), mapped to the nearest OSM tee box (name match, else card-yardage-nearest); reconcile the header when they disagree >8%; GPS rangefinder still overrides when on the hole; honest fallback to the card number. Full diagnosis: specs/multi-tee-anchor-reconciliation.md. Fable plan; geometry-correctness (3rd anchor incident after hazards + doglegs) \u2192 full adversarial review per lessons.md."
+    },
+    {
       "id": "teetime-s0-kill-fake-data",
       "title": "Tee-time S0: delete synthesized 'Held' slots + private-course filter + honest copy",
       "type": "major",
