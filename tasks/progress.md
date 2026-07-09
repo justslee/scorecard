@@ -10142,3 +10142,12 @@ Settings rehearsal trigger + book-window pass; tsc 0, lint clean, voice 274/274,
 build ok. Pushed. Awaiting: reviewer (+/security-review) on the diff and QA
 (strict gates). On SHIP+green → open PR feat/teetime-s3-caller → main. On
 BLOCKING → fix in this worktree, re-review. Do NOT merge (owner approves).
+
+## DONE (feat/teetime-s3-caller — PR #124)
+S3 AI pro-shop caller + owner rehearsal harness. PR #124 (feat/teetime-s3-caller
+→ main), NOT merged (owner approves). Reviewer/security: SHIP (no HIGH/MEDIUM;
+dial-safety, disclosure, auth, gate-integrity cleared). QA: green after guard fix
+(156 backend pass; tsc 0, lint clean, voice 274/274, build ok). NOTICEABLE.
+Owner-setup to test live: VOICE_BOOKING_ENABLED=1 + Twilio creds +
+VOICE_BOOKING_OWNER_NUMBER (his E.164). Live bridge still NotImplemented (S3b) —
+button returns 'not enabled' note until then.
