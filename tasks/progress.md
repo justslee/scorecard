@@ -58,6 +58,46 @@ should pass unchanged).
 NEXT: eng-lead review (reviewer/qa/designer-not-needed per dispatch note above), then update
 PR #121 checklist (+ caddie-bend-distance NOTICEABLE). Do NOT ship — owner said keep bundling.
 
+## DONE: teetime-course-ids-wiring implemented + pushed to integration/next (65f3c42)
+Builder implemented specs/teetime-course-ids-wiring-plan.md in full, exactly to plan (one
+noted necessary test update, see below). Pushed on integration/next (head was 8cfe9c3 →
+65f3c42, ff-only, no per-item PR).
+
+What shipped: `course_ids` (courseIds on the tee-time page) now actually filters the real
+routing/router provider — previously parsed but never consulted, so a course selection was a
+silent no-op (or, for a multi-select CSV edge case, filtered everything out). New
+`backend/app/services/tee_times/selection.py` (pure `candidate_ids`/`matches_selection` —
+id-set match else name+proximity, mirrors `capability_store`'s shape — plus `resolve_selectors`,
+one DB lookup, never raises). Filter runs in `routing.py` after private-club exclusion and
+before the MAX_COURSES cap. `courses_mapped.courses_by_ids` new batch lookup (UUID-pre-filtered).
+`/api/courses/nearby` now `attach_stable_ids`s its OSM results (previously only `/search` did),
+fixing OSM-leg rows whose `id` was silently `undefined` at runtime. Frontend:
+`id: c.id ?? c.osm_id ?? ""` (skip empty-id rows), `CourseSearchApiResponse.id` optional,
+`courseIds` filters empties. No wire/shared-shape change — `types.ts`/`models.py` untouched
+(confirmed in diff).
+
+Import-cycle care: `selection.py`'s DB helper (`courses_mapped.courses_by_ids`) is imported
+LAZILY inside `resolve_selectors`, not at module level — `courses_mapped.py` pulls in
+`app.db.engine` at import time, which raises without `DATABASE_URL`. A naive top-level import
+would have made importing `base.py`/`routing.py` (and therefore every DB-free routing/router/
+mock provider test) require a DB. Verified DB-free import + full non-DB suite pass without
+`DATABASE_URL` set.
+
+One necessary test update (not a weakened assertion — flagging per policy): 
+`test_course_search.py::test_hits_are_cached_and_requested_on_the_interactive_budget` asserted
+the OLD buggy `/nearby` raw-dict shape (no `id`) that this plan's ground truth (§0) identifies
+as the bug being fixed; updated it to assert the new `attach_stable_ids`'d shape (with a UUID
+`id` now present), which is the plan's own §4.1 requirement, not a scope change.
+
+Gates green: backend `ruff check .` clean; `pytest tests/ -k "tee_time or selection"` — 209
+passed, 12 skipped (Postgres integration tests self-skip, no local DB per policy); full backend
+suite 1660 passed, 83 skipped. Frontend: lint clean, tsc clean, `vitest run
+golf-api-nearby.test.ts teetime/courses.test.ts` 46 passed, voice-tests smoke 274 passed.
+
+NEXT: eng-lead review; rides the same bundle as caddie-bend-distance (owner said keep
+bundling, don't ship yet). This item is NOTICEABLE (selecting specific courses on the
+tee-time page now actually restricts results — previously silently ignored).
+
 ## AWAITING: reviewer + qa on caddie-bend-distance (item commit dee66d8) on integration/next
 Dispatched concurrently: (1) reviewer as a FABLE FALSIFIER — attacks the turn-cross direction +
 the 8-bearing sweep + tee-anchor subtraction + straight-threshold honesty; a sign flip / wrong
