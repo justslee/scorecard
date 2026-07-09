@@ -3,6 +3,50 @@
   "note": "Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "teetime-kill-fake-held",
+      "title": "Tee-time: kill fake 'Held', honest suggestion framing + private-club filter",
+      "type": "major",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 (screenshot): the affiliate provider synthesizes ONE estimated slot per course (time=window start, estimated=True) but the UI renders 'Found ~6:30 AM\u2026 Held for you' \u2014 NO hold exists (no-fake-data violation). Also Liberty National (PRIVATE) surfaced as bookable. FIX: never say 'Held'; render estimates as 'suggested window \u2014 call to confirm'; filter/flag private clubs (Places types + curated private list). Frontend copy + a private-course guard. Immediate honesty fix, ship first."
+    },
+    {
+      "id": "teetime-real-availability-foreup",
+      "title": "Tee-time POC: real availability via foreUP public pages + deep-link handoff",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [
+        "teetime-kill-fake-held"
+      ],
+      "why": "OWNER 2026-07-09 (GolfNow won't grant API): per specs/tee-time-real-availability-research.md Route 1 \u2014 read-only fetch real slots from foreUP-family public booking endpoints (Bethpage runs on foreUP: foreupsoftware.com/booking/19765/2431 \u2014 the owner's home course, instant ground-truth validation), display honestly, deep-link into the COURSE'S OWN booking page to finish. NO auto-book, no user creds, no 'Held'. Per-platform adapters (foreUP first); heavy cache + strict rate limit (one poll/course/window); circuit-break on 4xx; gentle (Bethpage fights BOOKING bots, not availability display \u2014 low freq, no login, never auto-book). Needs a Fable plan (adapter arch, cache/limit, ToS-risk posture, private-course exclusion)."
+    },
+    {
+      "id": "teetime-ai-caller-poc",
+      "title": "Tee-time POC: AI pro-shop caller (disclosed, consented course)",
+      "type": "major",
+      "priority": 2,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [
+        "teetime-kill-fake-held"
+      ],
+      "why": "OWNER 2026-07-09 (route no aggregator can gate \u2014 every course has a phone): per research Route 2 \u2014 outbound call to a PRO SHOP (business line) via our realtime stack + Twilio, discloses AI in the first seconds (2026 FCC/state norm), asks availability / books in the player's name, logs transcript, human-confirms. POC = ONE consented friendly local course. Needs a Fable plan (Twilio bridge to the realtime session, disclosure script, booking-confirmation capture, PCI: never take card over the AI line)."
+    },
+    {
+      "id": "teetime-partnership-applications",
+      "title": "Tee-time: file GolfNow + Supreme Golf + foreUP vendor applications",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "blocked",
+      "depends_on": [],
+      "why": "OWNER-ACTION (parallel, free): apply to GolfNow affiliate (affiliate.gnsvc.com / business-partnership form), Supreme Golf affiliate, and foreUP's vendor API program. Any approval upgrades Route 1 from scraping to sanctioned API. Blocked on the owner submitting the forms (needs a business identity/positioning) \u2014 the agent can draft the applications but the owner sends them."
+    },
+    {
       "id": "fcb-caption-visibility",
       "title": "F/C/B source caption hidden behind floating pills",
       "type": "minor",
