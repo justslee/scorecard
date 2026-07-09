@@ -3,6 +3,23 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: carry-tie-break laundering bypass closed (SILENT, backend-only, DONE)
+
+Follow-up to the carry-aware side validation below: eng-lead's adversarial review found a
+LOW bypass — `_has_side_flip`'s single-nearest-number tie-break preferred the number AFTER
+the hazard keyword, so a false yardage equidistant BEFORE the keyword could hide behind a
+true one after it (e.g. "The 265-yard right bunker sits 390 off the tee." — both 265 and
+390 are distance 2 from "bunker" — was wrongly ACCEPTED against bunkers L@275/R@390/C@470).
+Fix (`5e4b861` on `integration/next`, pushed): bind ALL plausible in-window numbers per
+hazard-keyword occurrence (not just the nearest) and require EVERY one to satisfy
+`_side_and_carry_supported` for the bound side — any failing number rejects the whole
+guide. No-number path / opposition exclusion / center handling unchanged. Added
+`test_carry_check_rejects_tie_break_laundering` (reviewer's exact input, confirmed
+rejects) + `test_carry_check_single_true_number_still_passes` (companion, confirms the fix
+didn't just reject everything). Gates: `ruff check .` clean; `pytest
+tests/test_guide_writer.py tests/test_bethpage_validation.py tests/eval -q` → **133
+passed** (131 + 2 new), no existing test weakened.
+
 ## 2026-07-10 — builder: carry-aware side validation landed on the bundle (SILENT, backend-only, DONE)
 
 Implemented `specs/carry-aware-side-validation-plan.md` exactly — `4eb8ad2` on
