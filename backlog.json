@@ -8,9 +8,32 @@
       "type": "minor",
       "priority": 1,
       "risk": "low",
+      "status": "done-on-bundle (integration/next b4a66ac, NOTICEABLE; reviewer SOUND + designer SHIP + qa green). Awaiting the bundle ship with the hazard-side-flip fix.",
+      "depends_on": [],
+      "spec": "specs/fcb-caption-visibility-plan.md",
+      "why": "OWNER-CONFUSING UX (2026-07-09 screenshots): the 'from where you stand / from the tee' caption under the Front/Center/Back tiles is OBSCURED by the floating Ask-caddie/Enter-score pills, so 231Y-from-you vs 178Y-card looked like a bug. Move/restyle the source label so it is ALWAYS visible (e.g. above the tiles or inline with the section header); consider clarifying the PLAYS tile ('wind+elev, from you'). Designer pass required (calm, yardage-book). Was scoped into cycle 31 but did not land \u2014 the stale-hole P0 + telemetry shipped without it.",
+      "done_note": "Cycle 33: extracted label derivation into pure frontend/src/lib/caddie/fcb-labels.ts (fcbSourceCaption/playsSubLabel/lineVsCardHint) + 18 vitest cases; relocated the source caption to an always-visible top-of-card right-aligned header row (removed the old occluded below-divider caption); PLAYS sub 'adjusted' -> honest 'wind+elev'. Numbers unchanged (behavior-preserving; reviewer verified v/sub 1:1). Gates green: lint/tsc/build, vitest 1734, voice smoke 274. Designer non-blocking follow-up spun out as fcb-caption-proximity."
+    },
+    {
+      "id": "fcb-caption-proximity",
+      "title": "F/C/B caption: re-anchor local to the tiles + kill pill-bar occlusion at the root",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
       "status": "ready",
       "depends_on": [],
-      "why": "OWNER-CONFUSING UX (2026-07-09 screenshots): the 'from where you stand / from the tee' caption under the Front/Center/Back tiles is OBSCURED by the floating Ask-caddie/Enter-score pills, so 231Y-from-you vs 178Y-card looked like a bug. Move/restyle the source label so it is ALWAYS visible (e.g. above the tiles or inline with the section header); consider clarifying the PLAYS tile ('wind+elev, from you'). Designer pass required (calm, yardage-book). Was scoped into cycle 31 but did not land \u2014 the stale-hole P0 + telemetry shipped without it."
+      "why": "DESIGNER follow-up to fcb-caption-visibility (non-blocking, 2026-07-08): the visibility fix moved the source caption to the TOP of the distances card, which fixes occlusion but disconnects the label from the F/C/B tiles it describes (it now sits directly above the Wind/Elev/Plays row, separated by a full stat row + hairline). Preferred fix: re-anchor the caption LOCALLY above the F/C/B tile row (its natural home) and solve the occlusion at the ROOT \u2014 give the data-overlay card enough bottom padding / bottom safe-area to clear the floating Ask-caddie/Enter-score pill bar height (fallback: a position:sticky mini-header scoped to the F/C/B block). VALIDATE against a real TestFlight screenshot first (designer explicitly wants to judge the current top-placement in situ before committing \u2014 it may read fine on device; do not do a speculative padding hack blind). Designer pass required."
+    },
+    {
+      "id": "fcb-line-vs-card-hint",
+      "title": "PLAYS/Center 'line vs card' dogleg hint (HELD \u2014 designer leans no)",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "held",
+      "depends_on": [],
+      "spec": "specs/fcb-caption-visibility-plan.md",
+      "why": "Plan \u00a74.5 (line-vs-card hint) built as a pure tested helper (lineVsCardHint in fcb-labels.ts) but intentionally NOT rendered. Designer recommendation (2026-07-08): DON'T add it as spec'd \u2014 the card already carries 7 microlabels and a second explanatory tag tips it toward annotated-dashboard (NORTHSTAR risk). If ever revisited, the comparison base MUST change: compare fcb.center to hole.yards (the real scorecard number), NOT the derived `distance` display placeholder (RoundPageClient.tsx:1058 = Math.max(80, hole.yards - round(hole.yards*0.6))), or the 'line' tag misfires on nearly every hole (fake-signal risk). Keep held pending owner ask."
     },
     {
       "id": "search-speed-and-golfapi-verify",

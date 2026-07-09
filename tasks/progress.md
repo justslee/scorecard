@@ -3,6 +3,28 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## eng-lead cycle 33 — F/C/B caption visibility landed on the bundle (NOTICEABLE, not yet shipped)
+
+Picked P1 fcb-caption-visibility (owner-confusing UX, frontend-only — deliberately no
+overlap with the hazard-side-flip backend fix under its own separate review this cycle).
+opus Plan → `specs/fcb-caption-visibility-plan.md`; builder implemented §3/§4.1-4.4/§5 on
+`integration/next` (b4a66ac). Review verdicts: **reviewer SOUND** (behavior-preserving —
+playsTile v/sub and caption 1:1 with old code, sole intended change "adjusted"→"wind+elev";
+lineVsCardHint guards/boundary sound; 18 tests assert correctly; no lint/type/unused-import
+risk). **designer SHIP** (honest, token-consistent) with ONE non-blocking should-fix — the
+caption's new top-of-card spot is disconnected from the F/C/B tiles it labels; re-anchor
+locally + fix pill-bar occlusion via bottom padding, validated against a real TestFlight
+screenshot → spun out as backlog `fcb-caption-proximity`. **qa green** (independent re-run:
+tsc clean, fcb-labels 18/18, voice smoke 274/274; builder full vitest 1734, build ✓).
+§4.5 dogleg hint HELD (designer leans no; if revisited must compare fcb.center to hole.yards,
+not derived `distance`) → backlog `fcb-line-vs-card-hint`. Reviewer also noted HoleCard.tsx:164
+still renders sub="adjusted" (different component, out of scope).
+
+Bundle status: `integration/next` now carries TWO noticeable items — the hazard-side-flip
+fix (d9eda1c, in its own review) + this caption fix (b4a66ac). Per this cycle's rules NO
+PR opened, NO release-manager, NO owner notification: the bundle PR opens after the hazard
+geometry review clears, and the owner is looped in then. No merge to main.
+
 ## 2026-07-08 — builder: F/C/B caption visibility (frontend-only, NOTICEABLE, integration/next b4a66ac, DONE)
 
 Implemented `specs/fcb-caption-visibility-plan.md` §4.1-4.4 + the full pure helper
