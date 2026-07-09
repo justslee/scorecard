@@ -875,9 +875,14 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
       append({ t: nowStr(), text: `Checking ${selectedCourses.length || "nearby"} course${selectedCourses.length !== 1 ? "s" : ""} …`, state: "pending", course: "" });
 
       let allSlots: TeeTimeSlot[] = [];
+      // Remember which requested window each slot came from, so a phone-call
+      // booking (routed slot with no time of its own) can ask the pro shop for
+      // that honest window rather than a fabricated time.
+      const slotWindows = new Map<string, { start: string; end: string }>();
       for (const q of queries) {
         try {
           const results = await searchTeeTimes(q);
+          for (const r of results) slotWindows.set(r.id, { start: q.timeWindowStart, end: q.timeWindowEnd });
           allSlots = [...allSlots, ...results];
           if (results.length > 0) {
             const isRouteEntries = Boolean(results[0]?.route);
@@ -918,7 +923,13 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
 
       let result: BookingResult;
       try {
-        result = await bookTeeTime(best, { name: bookerName ?? "Guest", partySize });
+        const win = slotWindows.get(best.id);
+        result = await bookTeeTime(best, {
+          name: bookerName ?? "Guest",
+          partySize,
+          timeWindowStart: win?.start,
+          timeWindowEnd: win?.end,
+        });
       } catch {
         // No request actually reached the booking service — never fabricate
         // "sent" copy. Honest needs_human handoff: the CTA still works via

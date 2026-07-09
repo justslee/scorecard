@@ -14,7 +14,13 @@
  */
 
 import { fetchAPI } from "@/lib/api";
-import type { TeeTimeQuery, TeeTimeSlot, BookingDetails, BookingResult } from "./types";
+import type {
+  TeeTimeQuery,
+  TeeTimeSlot,
+  BookingDetails,
+  BookingResult,
+  RehearsalCallResponse,
+} from "./types";
 import { getActiveProvider } from "./registry";
 
 // ─── Backend response shapes ──────────────────────────────────────────────────
@@ -91,4 +97,18 @@ export async function bookTeeTime(slot: TeeTimeSlot, details: BookingDetails): P
     console.warn("[teetime] Backend unavailable — NEXT_PUBLIC_TEETIME_PROVIDER=mock, using frontend mock book");
     return getActiveProvider().book(slot, details);
   }
+}
+
+/**
+ * Owner-only: place a REHEARSAL booking call to the owner's own verified number
+ * (a self-call to validate the AI pro-shop caller before any real course is
+ * dialed). No request body — the callee comes only from backend server config
+ * (VOICE_BOOKING_OWNER_NUMBER); nothing here can influence which number rings.
+ * Returns the transcript + outcome, or a structured "refused"/"not_enabled"
+ * reason. No mock fallback — a failure surfaces honestly to the caller.
+ */
+export async function placeRehearsalCall(): Promise<RehearsalCallResponse> {
+  return fetchAPI<RehearsalCallResponse>("/api/tee-times/rehearsal-call", {
+    method: "POST",
+  });
 }
