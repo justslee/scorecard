@@ -9156,5 +9156,10 @@ route-driven Found/Call/Book-on-site + honest empty. Tests: private filter, hone
 no "Held" string. Bundle currently empty; this lands first, opens the rolling PR.
 
 ## AWAITING
-Fable Plan agent -> specs/teetime-s0-plan.md. On return: save plan, checkpoint, dispatch ONE
-builder on integration/next. (Nothing built yet; branch = clean at HEAD.)
+Builder implementing specs/teetime-s0-plan.md on integration/next (commits + pushes there).
+On return: reviewer (no-fake-data honesty + private-filter correctness) + qa (gates) +
+designer (tee-time copy is user-facing). BLOCKING -> re-dispatch builder; green -> open the
+rolling bundle PR, then release-manager (NOTICEABLE) + owner ping. Fable plan saved at
+specs/teetime-s0-plan.md (its contract: routing provider emits route entries w/ time="",
+never estimated=True; private_filter excludes Liberty National; kill mock-fallback + client.ts
+silent mock; frontend kills "Held").
