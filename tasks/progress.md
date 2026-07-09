@@ -10097,3 +10097,39 @@ SILENT. PR #121 checklist updated (now: physics-tiles-coherence NOTICEABLE + S2 
 SILENT). backlog.json marked done-on-bundle. NO SHIP — owner is bundling; bundle stays approval-
 eligible on the earlier physics NOTICEABLE item, not shipped this cycle. Next fast-follow still
 open: teetime-course-ids-not-wired-real-provider (P3). No push notification sent (routine silent).
+
+## cycle 48 (2026-07-09) — Step 0 clear; PICK teetime-course-ids-not-wired-real-provider
+Step 0: PR #121 STRICT-green (E2E + Backend + Frontend all SUCCESS on 99896aa); NO PR comments;
+latest board card (#120) no comments; no owner "ship it"/feedback. main a37f74d already in
+integration/next (99896aa) — sync clean. Owner bundling → NO SHIP this cycle regardless.
+
+PICK (order #1 per cycle brief): teetime-course-ids-not-wired-real-provider (P3, ready).
+Gap: TeeTimeQuery.course_ids is threaded into the search-cache key + honored by mock.py, but
+NEVER filtered in routing.py / router_provider.py → selecting specific courses in the UI is a
+no-op on the REAL discovery path.
+
+INVESTIGATION (provenance — matters because a naive filter could REGRESS to always-zero):
+- Route: /api/tee-times/search parses courseIds CSV → SvcQuery.course_ids (tee_times.py:247).
+- RoutingTeeTimeProvider.search_availability discovers by AREA (search_golf_courses OSM /
+  Places), builds course_id = str(course["id"] or course["osm_id"]); NEVER consults course_ids.
+  RoutedTeeTimeProvider inherits this loop (only overrides _slots_for_course), so a filter in
+  the base loop covers BOTH providers + the foreUP path.
+- mock semantics: `not query.course_ids or c["id"] in query.course_ids` (empty = all).
+- ID PROVENANCE HAZARD: UI selectedCourses come from searchNearbyDetailed = TWO legs:
+  (a) /api/courses/mapped/nearby → id = mapped-course UUID (these NEVER appear in routing's OSM
+      discovery), (b) /api/courses/nearby → returns search_golf_courses dicts keyed `osm_id`
+      (NO `id` key) but the frontend reads `c.id` (golf-api.ts:873) → OSM-leg course id is
+      likely `undefined`. So a backend `course_id in course_ids` filter risks matching NOTHING
+      for real UI selections → selecting a course returns ZERO (worse than today's harmless
+      no-op). Fix likely needs a small frontend id source fix (osm_id→id) AND/OR robust match.
+- Classify: NOTICEABLE (selecting a course will actually narrow results — a visible behavior
+  change) but rides #121 (already approval-eligible); NO SHIP this cycle.
+
+## AWAITING: Fable plan on specs/teetime-course-ids-wiring-plan.md
+Dispatched Plan agent on FABLE to design the safe wiring: exact ID-provenance reconciliation
+(UI selected id ↔ routing course_id, incl. mapped-UUID + undefined-OSM-id cases), filter
+semantics (empty=all, mock-parity), the GUARD proving no always-zero regression (test with
+realistic osm_id-shaped ids + a mapped-only-selection case), any minimal frontend id fix, and
+the exact gates. On plan return → checkpoint, dispatch ONE builder on integration/next, then
+reviewer + qa. NO SHIP (owner bundling). If plan flags this is bigger than a bounded cross-stack
+fix → reconsider scope / mark needs-owner-decision rather than forcing it onto the bundle.
