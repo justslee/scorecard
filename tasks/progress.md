@@ -9579,11 +9579,17 @@ Fable plan DONE → specs/teetime-s1-foreup-plan.md (foreup.py provider +
 capability_store.py JSON seed [NO migration] + router_provider.py + politeness
 stack cache/single-flight/limiter/breaker + validate script + fixture tests).
 
-## AWAITING: builder implementing specs/teetime-s1-foreup-plan.md on integration/next.
-On builder return → reviewer (scrape/ToS posture + no-fake-fixture BLOCKING +
-circuit-breaker) + /security-review (external-fetch/SSRF/rate-limit) + qa STRICT
-gates. If this cycle dies here: next cycle reconciles from origin/integration/next
-(check builder's actual commits — do NOT rebuild) and runs the reviews.
+Builder DONE → d3f529d (feature) + 387e378 (progress). New: foreup.py,
+capability_store.py, router_provider.py, foreup_ny_seed.json, validate script,
+3 test files + REAL fixture foreup_18mile_times.json (18 live slots, 18 Mile
+Creek). Local gates green: ruff clean, backend 1583/1583, frontend
+lint/tsc/vitest/build/voice-smoke all pass. Kill switch TEETIME_FOREUP_ENABLED.
+
+## AWAITING: reviewer + /security-review + qa + designer on d3f529d (in parallel).
+Verdicts SHIP + green → open the rolling bundle PR (integration/next → main),
+add S1 to the checklist (NOTICEABLE), then release-manager TestFlight + notify.
+BLOCKING → re-dispatch builder. If cycle dies here: next cycle reconciles from
+origin/integration/next @ 387e378, checks review verdicts, does NOT rebuild.
 
 ## 2026-07-09 — cycle 43 BUILDER DONE: teetime-s1-foreup implemented per plan
 
