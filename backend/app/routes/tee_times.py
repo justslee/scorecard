@@ -36,7 +36,8 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from typing import Any, Literal
+from datetime import date, timedelta
+from typing import Any, Callable, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -44,7 +45,7 @@ from sqlalchemy import select
 
 from app.db.engine import async_session
 from app.db.models import TeeTimeBooking as TeeTimeBookingORM
-from app.services.clerk_auth import current_user_id
+from app.services.clerk_auth import current_user_id, require_owner
 from app.services.tee_times.foreup import ForeUpProvider
 from app.services.tee_times.router_provider import RoutedTeeTimeProvider
 from app.services.tee_times.base import (
@@ -60,6 +61,14 @@ from app.services.tee_times.search_cache import (
     SearchCacheStore,
     query_cache_key,
 )
+from app.services.voice_booking import telephony
+from app.services.voice_booking.compliance import (
+    SuppressionList,
+    check_call_allowed,
+    disclosure_line,
+    normalize_phone,
+)
+from app.services.voice_booking.outcome import to_booking_result
 from app.services.voice_booking.simulator import (
     PERSONA_NAMES,
     default_context,
@@ -328,6 +337,10 @@ async def book_tee_time(req: BookRequest, owner_id: str = Depends(current_user_i
             party_size=int(details_data["partySize"]),
             email=details_data.get("email"),
             phone=details_data.get("phone"),
+            # The golfer's requested search window — lets the AI-call route ask
+            # the pro shop for a time when the routed slot itself carries none.
+            time_window_start=details_data.get("timeWindowStart"),
+            time_window_end=details_data.get("timeWindowEnd"),
         )
     except (KeyError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=f"Invalid slot/details: {exc}") from exc
@@ -470,5 +483,181 @@ async def simulate_book_by_call(
             confirmationNumber=sim.booking_result.confirmation_number,
             message=sim.booking_result.message,
             bookingUrl=sim.booking_result.booking_url,
+        ),
+    )
+
+
+# ─── Owner rehearsal call — the "call me, I'll be the pro shop" harness ────────
+#
+# specs/teetime-rehearsal-call-harness.md + specs/teetime-s3-caller-plan.md.
+#
+# POST /api/tee-times/rehearsal-call places a LIVE outbound call to the OWNER's
+# OWN verified number (allowlist of exactly one, from server config — NEVER a
+# request value) and bridges it to the REAL booking agent against a TEST course
+# ("Rehearsal Pro Shop"), so the owner can role-play a pro shop and validate the
+# script before any real course is ever dialed.
+#
+# DIAL-SAFETY INVARIANT: this endpoint takes no request body; the dialed number
+# and the compliance allowlist both come from VOICE_BOOKING_OWNER_NUMBER alone.
+# There is no code path by which a request value becomes a dialed number.
+#
+# HONEST STATUS: nothing dials after this slice — the live Twilio↔Realtime
+# bridge (telephony.get_live_transport) is owner-gated and still NotImplemented.
+# With the gate off (default) the owner gets a structured "not_enabled" reason;
+# with it fully configured, the owner-gated bridge message. See §8 of the plan.
+#
+# To actually receive a call the owner sets on the backend (all required):
+#   VOICE_BOOKING_ENABLED=1
+#   TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER
+#   VOICE_BOOKING_OWNER_NUMBER=+1XXXXXXXXXX   # his own verified E.164 — the
+#                                             # ONLY number this endpoint can dial
+# Optional: VOICE_BOOKING_OWNER_NAME (spoken in the disclosure),
+#           VOICE_BOOKING_REHEARSAL_TZ (calling-hours time zone).
+
+# Injectable for tests ONLY (a SimulatedCallTransport) — None means the real,
+# owner-gated telephony.get_live_transport(). Production NEVER sets this, so the
+# sole live-dial gate remains telephony.get_live_transport().
+_rehearsal_transport_factory: Callable[[], Any] | None = None
+
+_REHEARSAL_COURSE_NAME = "Rehearsal Pro Shop"
+
+
+class RehearsalCallResponse(BaseModel):
+    # "completed" — the call ran (or was simulated) end to end;
+    # "refused"   — a compliance gate blocked it before any dial;
+    # "not_enabled" — live calling is disabled / the bridge isn't shipped yet.
+    status: Literal["completed", "refused", "not_enabled"]
+    reason: str | None = None            # gate/compliance/gating text when not "completed"
+    calleeNumber: str | None = None      # masked (last 4) — which number would ring
+    disclosure: str | None = None        # the agent's mandatory first words, previewed
+    transcript: list[CallTurnOut] = []
+    outcome: CallOutcomeOut | None = None
+    result: BookingResultOut | None = None
+
+
+def _mask_number(e164: str) -> str:
+    """"+14155550199" → "+1•••••••0199" (display only; never used to dial)."""
+    if len(e164) <= 5:
+        return e164
+    return e164[:2] + "•" * (len(e164) - 6) + e164[-4:]
+
+
+def _next_saturday(today: date) -> date:
+    """The next Saturday strictly after `today` (weekday() == 5)."""
+    days_ahead = (5 - today.weekday()) % 7
+    if days_ahead == 0:
+        days_ahead = 7
+    return today + timedelta(days=days_ahead)
+
+
+def _build_rehearsal_context(
+    owner_number: str,
+    owner_name: str,
+    tz: str,
+    today: date | None = None,
+) -> VoiceBookingContext:
+    """Build the TEST booking context for a rehearsal call. Pure given `today`.
+
+    The callee, the disclosure's callback number, and the compliance allowlist
+    are all the owner's own number — a self-call. A concrete sample ask
+    (next Saturday morning, 1 player, 7–11am) gives the agent something real
+    to say and role-play against.
+    """
+    when = _next_saturday(today or date.today())
+    return VoiceBookingContext(
+        course_id="rehearsal",
+        course_name=_REHEARSAL_COURSE_NAME,
+        phone=owner_number,
+        golfer_name=owner_name,
+        callback_number=owner_number,
+        date=when.isoformat(),
+        time_window_start="07:00",
+        time_window_end="11:00",
+        party_size=1,
+        max_price_usd=None,
+        course_tz=tz,
+    )
+
+
+@router.post("/rehearsal-call", response_model=RehearsalCallResponse)
+async def rehearsal_call(owner_id: str = Depends(require_owner)) -> RehearsalCallResponse:
+    """Place a rehearsal booking call to the OWNER's own verified number.
+
+    Owner-only (router-level require_owner + the explicit dependency here). Takes
+    NO request body — the dialed number is exclusively VOICE_BOOKING_OWNER_NUMBER
+    (see the dial-safety invariant above). Runs the real compliance gates and
+    the real booking dialog; returns the transcript + outcome, or a structured
+    reason when a gate blocks it / live calling is not enabled. No audio is ever
+    stored (compliance.STORE_AUDIO=False); only the text transcript is logged.
+    Suppression is not persisted for a self-call rehearsal.
+    """
+    owner_number = normalize_phone(os.getenv("VOICE_BOOKING_OWNER_NUMBER"))
+    if owner_number is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Rehearsal calling is not configured: set "
+            "VOICE_BOOKING_OWNER_NUMBER to the owner's E.164 number.",
+        )
+
+    owner_name = os.getenv("VOICE_BOOKING_OWNER_NAME") or "the Looper owner"
+    tz = os.getenv("VOICE_BOOKING_REHEARSAL_TZ") or "America/New_York"
+    ctx = _build_rehearsal_context(owner_number, owner_name, tz)
+    disclosure = disclosure_line(ctx)
+    masked = _mask_number(owner_number)
+
+    # Real compliance gates — allowlist is EXACTLY the owner's own number.
+    gate = check_call_allowed(
+        ctx,
+        verified_lines={owner_number},
+        suppression=SuppressionList(),
+        now=None,
+    )
+    if not gate.allowed:
+        return RehearsalCallResponse(
+            status="refused",
+            reason=gate.reason,
+            calleeNumber=masked,
+            disclosure=disclosure,
+        )
+
+    # Obtain the call transport. The ONLY production source is the owner-gated
+    # telephony.get_live_transport(); tests inject a SimulatedCallTransport via
+    # _rehearsal_transport_factory. A disabled gate / unshipped bridge surfaces
+    # as an honest "not_enabled" reason, never a 5xx.
+    factory = _rehearsal_transport_factory or telephony.get_live_transport
+    try:
+        transport = factory()
+    except (RuntimeError, NotImplementedError) as exc:
+        return RehearsalCallResponse(
+            status="not_enabled",
+            reason=str(exc),
+            calleeNumber=masked,
+            disclosure=disclosure,
+        )
+
+    transcript, outcome = await transport.run_call(ctx)
+    for turn in transcript:                      # text-only log; no audio ever
+        log.info("rehearsal-call [%s] %s", turn.speaker, turn.text)
+    result = to_booking_result(outcome, ctx)
+
+    return RehearsalCallResponse(
+        status="completed",
+        calleeNumber=masked,
+        disclosure=disclosure,
+        transcript=[CallTurnOut(speaker=t.speaker, text=t.text) for t in transcript],
+        outcome=CallOutcomeOut(
+            result=outcome.result,
+            date=outcome.date,
+            time=outcome.time,
+            partySize=outcome.party_size,
+            confirmationNumber=outcome.confirmation_number,
+            costUsd=outcome.cost_usd,
+            detail=outcome.detail,
+        ),
+        result=BookingResultOut(
+            status=result.status,
+            confirmationNumber=result.confirmation_number,
+            message=result.message,
+            bookingUrl=result.booking_url,
         ),
     )

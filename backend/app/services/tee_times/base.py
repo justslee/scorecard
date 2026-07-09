@@ -74,6 +74,12 @@ class BookingDetails:
     party_size: int
     email: str | None = None
     phone: str | None = None
+    # The golfer's REQUESTED search window (honest data echoed from the query,
+    # never a fabricated time). Used by the voice-call booking path when the
+    # routed slot itself carries no time (`slot.time == ""`, the S0 default) —
+    # the agent asks the pro shop for "anything between start and end".
+    time_window_start: str | None = None   # "HH:MM" 24h
+    time_window_end: str | None = None
 
 
 @dataclass
