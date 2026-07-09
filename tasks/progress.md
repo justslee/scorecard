@@ -8577,3 +8577,18 @@ TABLED by owner (research preserved). Eighteen ships this run.
 NEXT: excellence-audit P1s — prompt caching (cost), rate limiting,
 LLM timeouts, tool-loop parity (opus plan), advice eval harness.
 GolfAPI-universe half still blocked on the 401 key fix.
+
+---
+
+## 2026-07-09 — SHIPPED: #115 live-caddie hole grounding + infra trio
+
+Owner "ship it". Merge 7eda480 → main; deploy VERIFIED success on the
+merge SHA (a GitHub API 502 mid-chain garbled the first read — re-verified
+clean) + health ok. TestFlight v1.0.900 (build 202607082006).
+- P0: live caddie re-grounds on the CURRENT hole at sheet-open + hole
+  change (was answering hole 1's briefing on hole 3 — owner-caught).
+- Silent trio: prompt caching (~75% cheaper text turns, cache hits logged),
+  per-user rate limits + daily budgets on 14 paid endpoints, bounded LLM
+  timeouts/retries. Data-channel error telemetry breadcrumb.
+Nineteen ships this run. Remaining audit P1s: advice eval harness,
+tool-loop parity (opus plan). Injection attempts (2) logged for retro.
