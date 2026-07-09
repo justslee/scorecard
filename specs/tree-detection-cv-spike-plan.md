@@ -93,7 +93,12 @@ Only if the baseline is inadequate:
 3. `backend/scripts/tree_detect_spike.py` — the harness (numpy/Pillow, isolated venv only;
    guarded imports with a friendly "create the spike venv first" message). Fetches ESRI
    tiles for a corridor, runs the detector, writes raw + overlay PNGs + a stats line.
-4. `specs/tree-detection-cv-findings.md` — the real findings + verdict.
+4. `backend/scripts/tree_osm_compare.py` — the OSM-vs-CV comparison (isolated venv):
+   fetches the same tiles + the OSM `natural=tree`/`wood`/`forest`/`scrub`/`tree_row`
+   features osm.py ingests, writes the 3-panel figure, and prints the exact numbers the
+   findings cite (canopy %, OSM counts, ExG corridor vs in-woods, CV recall in woods) so
+   the verdict is reproducible, not asserted.
+5. `specs/tree-detection-cv-findings.md` — the real findings + verdict.
 
 **NOT committed:** the spike venv, tiles, PNGs (under gitignored `backend/data/`).
 **No change to `backend/pyproject.toml` or `uv.lock`. No app code touched.**

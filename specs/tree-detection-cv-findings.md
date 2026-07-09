@@ -38,14 +38,19 @@ small feature) on surfacing existing OSM trees to the caddie.
 
 ## Measured results
 
-| Hole | CV canopy % | OSM tree nodes | OSM woods polys | CV recall inside OSM woods |
-|------|-------------|----------------|-----------------|----------------------------|
-| Black 1  | 12.5–12.8% | 65 | 0 | — (no woods poly) |
-| Black 15 | 10.0% | 66 | 3 | **11.6%** |
-| Black 18 | 10.9% | 47 | 2 | **14.3%** |
+All numbers below are the actual stdout of `backend/scripts/tree_osm_compare.py` on the
+three corridors (see Reproduce). OSM is a live database, so the tree-node/woods-poly
+counts drift by a few as volunteers edit — the counts here are a representative query
+(2026-07-09); the CV and ExG numbers are deterministic from the tiles.
 
-Greenness check (ExG on 0–255 channels): whole-corridor mean ExG ≈ 55–63, but inside
-OSM-mapped woodland ExG ≈ **20–31** — i.e. **tree canopy is LESS green than the fairway**.
+| Hole | CV canopy % | OSM tree nodes | OSM woods polys | mean ExG (corridor / in-woods) | CV recall inside OSM woods |
+|------|-------------|----------------|-----------------|-------------------------------|----------------------------|
+| Black 1  | 12.5% | ~63 | 0 | 63.8 / — | — (no woods poly) |
+| Black 15 | 10.0% | ~62 | 3 | 55.6 / **20.2** | **11.6%** |
+| Black 18 | 10.9% | ~43 | 2 | 60.5 / **31.4** | **14.3%** |
+
+Greenness check (ExG on 0–255 channels): whole-corridor mean ExG 55.6–63.8, but inside
+OSM-mapped woodland ExG 20.2–31.4 — i.e. **tree canopy is LESS green than the fairway**.
 A green-index gate therefore keeps turf strongly and trees weakly — backwards from what
 we want, and exactly why classical colour segmentation fails here.
 
@@ -78,8 +83,9 @@ left side) and standalone dark-green trees — but not cleanly enough to trust u
 **Trees are already in our pipeline.** `backend/app/services/osm.py` already fetches
 `natural=tree` (→ `featureType:"tree"` points) and `natural=wood`/`landuse=forest`
 (→ `featureType:"woods"` polygons), and `osm_ingest.py` stores them per hole in PostGIS
-`hole_features`. At Bethpage the bbox holds **537 tree nodes + 73 woods polygons
-(~1.01 km²)**. They are simply **excluded from the caddie** by two lines in
+`hole_features`. A course-wide Overpass query of the Bethpage State Park bbox returned
+**537 tree nodes + 73 woods/scrub polygons (~1.01 km²)** (live count, 2026-07-09). They
+are simply **excluded from the caddie** by two lines in
 `backend/app/caddie/hazards.py`:
 
 ```
@@ -124,10 +130,20 @@ per-hole comparison shows real gaps on continuous tree lines), so the honest
 ```
 python3 -m venv /tmp/tree-spike-venv
 /tmp/tree-spike-venv/bin/pip install numpy Pillow requests
+
+# CV-only (raw + canopy overlay, canopy %):
 /tmp/tree-spike-venv/bin/python backend/scripts/tree_detect_spike.py \
   --tee 40.742998,-73.454575 --green 40.745071,-73.451351 --label black-1 \
   --zoom 19 --out /tmp/tree-spike-out
+
+# The FULL comparison behind every number + figure in this doc (CV %, OSM node/poly
+# counts, mean ExG corridor vs in-woods, CV recall inside OSM woods, 3-panel figure):
+/tmp/tree-spike-venv/bin/python backend/scripts/tree_osm_compare.py \
+  --tee 40.745894,-73.450704 --green 40.749638,-73.452077 --label black-15 \
+  --out /tmp/tree-spike-out
 ```
 
-Pure geometry helpers (`backend/scripts/tree_spike_geometry.py`) are covered by
-`backend/tests/test_tree_spike_geometry.py` (runs in CI, no numpy/DB/network).
+`tree_osm_compare.py` is the source of the results table and the committed figures in
+`specs/tree-detection-cv-figures/` (it hits Overpass live, so tree/woods counts may drift
+a few). The pure geometry helpers (`backend/scripts/tree_spike_geometry.py`) are covered
+by `backend/tests/test_tree_spike_geometry.py` (runs in CI, no numpy/DB/network).
