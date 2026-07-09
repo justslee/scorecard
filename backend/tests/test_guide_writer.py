@@ -557,6 +557,25 @@ def test_carry_check_implausible_number_not_bound():
     assert validate_guide(guide, _left_bunker()) is not None
 
 
+def test_carry_check_rejects_tie_break_laundering():
+    """Adversarial-review finding (post-4eb8ad2): a single-nearest-number pick
+    with an after-keyword tie-break let a co-located FALSE number, equidistant
+    BEFORE the hazard keyword, hide behind a TRUE one after it. "265" and
+    "390" are both distance 2 from "bunker" here — the claim asserts a right
+    bunker at BOTH 265 (false) and 390 (true); the false one must still
+    reject the whole guide, not get out-voted by the true one."""
+    guide = _guide(miss_side="The 265-yard right bunker sits 390 off the tee.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is None
+
+
+def test_carry_check_single_true_number_still_passes():
+    """Companion to the tie-break-laundering test above: with only ONE
+    candidate number in-window (the true one), the fix must not have simply
+    started rejecting everything."""
+    guide = _guide(miss_side="The right bunker sits 390 off the tee.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
 def test_carry_check_range_binds_first_number():
     """Plan edge-case table row: 'bunkers at 470-495 dead center... right' —
     the range's FIRST number (470) binds (the tail 495 is consumed by the

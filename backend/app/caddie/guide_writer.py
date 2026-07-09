@@ -441,19 +441,24 @@ def _has_side_flip(
     is excluded from consideration (see `_SIDE_OPPOSITION_PATTERN`).
 
     CARRY-AWARE EXTENSION (carry-aware-side-validation-plan.md): once a side
-    claim is bound for a hazard-keyword occurrence, this ALSO looks for the
-    single NEAREST plausible yardage number (`_CARRY_NUMBER_PATTERN`, distance
-    to the HAZARD keyword — never to the side word, never "any number in the
-    field") within the same window. No bound number -> the side-only check
-    runs exactly as before. A bound number `n` -> the claim must match a real
-    hazard of this type on the claimed side within `_CARRY_TOLERANCE_YARDS` of
-    `n` (`_side_and_carry_supported`) or the whole guide rejects — this closes
-    the gap where a real side-set (e.g. bunkers on both left AND right of one
-    hole) let a WRONG number ride along with a real side word. EACH
-    hazard-keyword occurrence binds its own nearest side and its own nearest
-    number independently, so a truthful "right bunker at 390" elsewhere in the
-    field can never launder a co-located false "left bunker at 390" or "right
-    bunker at 265".
+    claim is bound for a hazard-keyword occurrence, this ALSO looks for every
+    plausible yardage number (`_CARRY_NUMBER_PATTERN`, distance to the HAZARD
+    keyword — never to the side word, never "any number in the field") within
+    the same window. No bound number -> the side-only check runs exactly as
+    before. One or more bound numbers -> EVERY one of them must match a real
+    hazard of this type on the claimed side within `_CARRY_TOLERANCE_YARDS`
+    (`_side_and_carry_supported`) or the whole guide rejects — this closes the
+    gap where a real side-set (e.g. bunkers on both left AND right of one
+    hole) let a WRONG number ride along with a real side word. Binding ALL
+    in-window numbers (not just the single nearest) is itself fail-closed
+    against an ambiguity bypass: a "nearest, ties prefer after" pick let a
+    co-located FALSE number equidistant BEFORE the keyword hide behind a TRUE
+    one after it ("The 265-yard right bunker sits 390 off the tee." — both
+    265 and 390 are distance 2 from "bunker"; picking only 390 accepted the
+    false 265 claim). EACH hazard-keyword occurrence still binds its own side
+    and its own number(s) independently, so a truthful "right bunker at 390"
+    elsewhere in the field can never launder a co-located false "left bunker
+    at 390" or "right bunker at 265".
     """
     sides_by_type: dict[str, set[str]] = {
         t: {s for s, _ in pairs} for t, pairs in hazards_by_type.items()
@@ -523,10 +528,19 @@ def _has_side_flip(
                     candidates, key=lambda hit: (abs(hit[0] - hz_idx), hit[0] < hz_idx)
                 )
 
-                # Bind the NEAREST plausible number to THIS hazard-keyword
+                # Bind ALL plausible numbers in-window to THIS hazard-keyword
                 # occurrence — distance is to the hazard keyword, never to
                 # the side word, and never "any number in the field" (each
-                # occurrence binds its own side AND its own number).
+                # occurrence binds its own side and its own number(s)).
+                # Fail-closed on ambiguity: a single "nearest" pick with an
+                # after-keyword tie-break let a co-located FALSE number
+                # (equidistant, before the keyword) launder behind a TRUE one
+                # after it ("The 265-yard right bunker sits 390 off the
+                # tee." — 265 and 390 are both distance 2 from "bunker";
+                # picking only the nearer/after one accepted the false 265
+                # claim). Requiring EVERY in-window number to be supported
+                # closes that: an occurrence with two candidate numbers must
+                # have BOTH match real geometry, or it rejects.
                 number_candidates = [
                     hit for hit in number_hits if abs(hit[0] - hz_idx) <= _SIDE_WINDOW_WORDS
                 ]
@@ -536,11 +550,11 @@ def _has_side_flip(
                         return True
                     continue
 
-                _, nearest_carry = min(
-                    number_candidates, key=lambda hit: (abs(hit[0] - hz_idx), hit[0] < hz_idx)
-                )
-                if not _side_and_carry_supported(
-                    canonical_type, nearest_side, nearest_carry, hazards_by_type
+                if any(
+                    not _side_and_carry_supported(
+                        canonical_type, nearest_side, carry, hazards_by_type
+                    )
+                    for _, carry in number_candidates
                 ):
                     return True
     return False
