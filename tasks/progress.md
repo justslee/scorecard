@@ -79,6 +79,16 @@ not caused by this change. STILL AWAITING the Fable reviewer's falsification ver
 On reviewer SHIP → update PR #121 checklist (+bend NOTICEABLE), verify CI strict-green, commit,
 do NOT ship. On reviewer BLOCKING → re-dispatch builder, re-review.
 
+UPDATE: Fable reviewer returned its /security-review portion = CLEAN (no HIGH/MEDIUM; new
+GET /session/{round_id}/bend is read-only, get_owned_session-gated like carries → no IDOR,
+404-not-403 to avoid round-id enumeration; no data exposure; inputs FastAPI-typed; frontend
+encodeURIComponent + Number() coercion → no injection). BUT its final message did NOT include
+the GEOMETRY falsification verdict (turn-cross direction across the 8 bearings, vertex selection,
+straight-vs-unknown honesty, test teeth) — the highest-priority ask. Continuing the same reviewer
+agent (a390c6761ed1c9ee7, context intact) via SendMessage to get the explicit SHIP/BLOCKING
+geometry verdict. AWAITING that. On geometry SHIP → proceed as above. On geometry BLOCKING →
+re-dispatch builder with specifics, re-review.
+
 ## 2026-07-09 cycle 42 — PICK: caddie-green-slope-spatial (NOTICEABLE, rides bundle #119)
 
 Step 0 done: bundle PR #119 OPEN + STRICT-green (head 8da82c4), Needs Review card
