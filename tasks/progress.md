@@ -9014,3 +9014,43 @@ POST-SHIP RECOVERY: Bethpage HOLE 4 GUIDE CACHED (validated vs true
 geometry — the incident hole recovered); 7/11 honest-empty (research
 persistently conflicts with geometry — suspect OSM quirks; future card).
 Bethpage 16/18, Pebble 18/18. Twenty-one ships this run.
+
+---
+
+## Cycle 39 (2026-07-09) — eng-lead: Bethpage 7/11 validation conflict DIAGNOSED (silent investigation)
+
+Step 0 clean: #117 shipped (v1.0.927), no cards in Needs Review, #117 card thread empty.
+integration/next synced with main (Already up to date); bundle empty; no open PRs.
+
+PICK: diagnose why Bethpage Black holes 7 & 11 stay honest-empty (guide research fails
+validation ~4x each). Ran OFFLINE from the committed fixture tests/fixtures/bethpage_overpass.json
+(identical to prod-ingested data) through the real assemble_osm_course pipeline — NO prod SSM
+needed, no local API key needed, no DB.
+
+VERDICT — root cause (c) validator over-strict, NOT (a) geometry or (b) OSM:
+- (a) RULED OUT: extract_hole_hazards produces correct sides/carries matching reality.
+  Hole 7 = par-5 dogleg-right (polyline 346->36->55deg), bunkers R 170/430/520 + L 355/525.
+  Hole 11 = par-4, bunkers both sides (L 245/415, R 270/325/420). All normal, correct,
+  NON-numbered guide phrasings PASS validate_guide.
+- (b) RULED OUT on-hole: 7/11 have only bunkers; nearest water is 395-431y OFF the played
+  line (not in play). A water/OB mention is therefore a CORRECT rejection (and OSM has no
+  'ob' polygon type, so any OB phrase always rejects — expected/honest).
+- (c) CONFIRMED + REPRODUCED: _side_and_carry_supported() checks a claimed carry against
+  each bunker's CENTROID +-25y, but Bethpage bunkers are large — hole 7's right cross-bunker
+  centroid=170y actually spans 103-280y (178y wide). A web-researched guide citing any carry
+  in the real footprint (220/240/250/260y) but >25y from the centroid gets the WHOLE guide
+  REJECTED (all four demonstrated). Grounded, reasonable numbered advice keeps failing = the
+  persistence pattern.
+
+OUTCOME: carded `bethpage-7-11-geometry-audit` (backlog.json + Notion board, Backlog/Minor)
+as DECISION-NEEDED, NOT fixed inline. Per tasks/lessons.md, the validator is the
+anti-injection/grounding control (laundering bypass closed 3 days ago, 5e4b861) — a carry-
+tolerance loosening is NOT (c)-small; it needs the full adversarial treatment. Two paths on
+the card: (c1) widen the carry check to the bunker's surveyed near->far SPAN (recovers guides
+on big-bunker holes; requires Fable plan + eval teeth proving each accept goes RED pre-fix +
+adversarial review that no false-number laundering re-opens) vs (c2) accept status quo —
+honest-empty is SAFE (caddie falls back to the grounded generic hazard line). Recommend the
+owner/PM pick before any build cycle touches the validator.
+
+Classification: SILENT investigation. NO code change, NO PR, NO owner ping. Bundle still empty.
+Diag scripts (scratchpad, not committed): diag_7_11.py, diag_b_vs_c.py.
