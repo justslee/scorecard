@@ -3,6 +3,28 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-09 — builder: multi-tee-anchor-reconciliation — Fable BLOCKING fix (SILENT, DONE)
+
+Fixed the ONE BLOCKING correctness issue Fable found on c682f7f: `resolveTeeAnchor`
+(`frontend/src/lib/course/tee-anchor.ts`) exempted `source==='card'` picks from the
+par-aware reconciliation guard, so a card pick only had to clear the blanket 25% sanity
+bound — letting tiles disagree with the header by up to ~25% (e.g. card 178/boxes
+{136,400}/par 3 used to return `source:'card'` with tiles Center=136, the same
+header-vs-tiles disagreement class as the original prod bug, in the more dangerous
+understatement direction). New `cardPickValid` applies the identical par-3-8%/par-4-5-25%
+-and-not-over-length-by-8% guard to card picks too; a failing card pick now falls through
+to the honest `card-only` state (tee: null) instead of a contradictory number. Restored
+the plan's own §2.4 fixture (card 178, boxes {136,400}, par 3 -> card-only) that a prior
+test edit had relocated to numbers where the blanket bound alone happened to pass,
+masking the gap — added the single-box-210 case, a dogleg-still-accepted case, an
+over-length-rejected case, fixed the mis-described "32%"->"48%" comment, and added a
+non-blocking test/comment for the ambiguous combo-tee named-match fallthrough. True test
+count 19 -> 24 `it()` blocks. Bethpage hole-3 fixture (174y, not 232y) still passes;
+doglegs still don't misfire. Gates all green: lint, tsc, vitest 1813/1813 (87 files),
+next build, voice-tests smoke 274/274, backend ruff. Commit `9524f0f` on
+`integration/next`. Silent (correctness fix to an in-flight, not-yet-shipped feature —
+no separate user-visible change beyond what c682f7f already introduced).
+
 ## 2026-07-09 — builder: caddie-shot-physics-engine steps 6-13 — TOOL WIRING (NOTICEABLE, DONE; engine goes live in both caddie mouths)
 
 Wired the physics engine core (90e787f) into the caddie per
