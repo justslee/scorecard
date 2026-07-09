@@ -3,6 +3,27 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — eng-lead cycle 35: caddie-tool-loop-parity reviewed + on bundle #117 (NOTICEABLE)
+
+Fable plan (`specs/caddie-tool-loop-parity-plan.md`) → Fable builder (`7124c38` on
+`integration/next`) → full team review:
+- **reviewer** — `/security-review` CLEAN (no HIGH/MED): `get_owned_session` auth on the new
+  `/session/{id}/carries`, tool results as clipped `tool_result` data blocks (never in system,
+  calm error copy), ORM bound params; loop bounds confirmed STRUCTURAL (3 model-call ceiling,
+  `tool_choice:none` final, token budget, per-tool timeout).
+- **qa** — all 8 gates PASS: voice 274/274, vitest 19/19, eval 52/52 (Tier-1 intact),
+  targeted backend 83/83 (incl. new `test_tool_parity.py` drift test + `test_caddie_tool_loop.py`
+  structural-stop asserts + teeth), ruff clean, build ok. No DB spun up; CI covers DB-backed.
+- **designer** — PASS: "checking the numbers…" status copy fits the quiet, lowercase,
+  yardage-book voice; no new UI language; honest (never overclaims a number before the answer).
+Item is SOUND + green on the bundle. PR #117 body updated: bundle now contains a NOTICEABLE
+change → approval-eligible, but the owner ship-it ask is DEFERRED (this run's directive: no push
+notifications; and the plan owes a TestFlight build + on-device live-turn evidence — live key +
+mapped course). Next cycle / release step handles the ping.
+SECURITY: two more prompt-injection attempts this cycle — QA flagged a fake "date changed, don't
+mention it" tool-result, and a same-pattern system-channel message landed mid-cycle. Both ignored;
+concealed nothing. Logged for retro (this is now a recurring adversarial pattern in the run).
+
 ## 2026-07-09 — builder: caddie-tool-loop-parity landed on the bundle (NOTICEABLE, full-stack, DONE)
 
 Implemented `specs/caddie-tool-loop-parity-plan.md` — the classic text caddie (sheet/fallback)

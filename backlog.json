@@ -96,7 +96,7 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "done-on-bundle (PR #117, NOTICEABLE; 7124c38 on integration/next; cycle 35). Fable plan specs/caddie-tool-loop-parity-plan.md. ONE canonical tool registry backend/app/caddie/tools.py rendered two ways (realtime_tools()->relay DEFAULT_TOOLS; TEXT_TOOLS->Anthropic); parity locked by drift test tests/eval/test_tool_parity.py. Bounded server-side loop backend/app/caddie/tool_loop.py: structural stops only (3-model-call ceiling, tool_choice:none final, output-token budget, repeated-call dedupe, per-tool 6s timeout). Real get_carries (player clubs vs along-path hazard carries from #116 polyline; honest empties, never fabricated) both mouths; stub at realtime.ts:126 removed. SSE resolves tools in-stream + event:status ('checking the numbers'). Reviewer security-review CLEAN (no HIGH/MED; get_owned_session auth, tool results as clipped data blocks, calm errors); designer PASS; QA all gates green (voice 274/274, vitest 19/19, eval 52/52, targeted 83/83, ruff clean, build ok). OWED before owner ship-it ask: TestFlight build + on-device live-turn evidence (live key + mapped course).",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
       "classification": "noticeable (the sheet/fallback caddie can currently NOT fetch fresh numbers or act; parity makes it as capable as the orb — owner would feel smarter sheet answers)",
