@@ -162,11 +162,19 @@ def _mouth_text(ctx: Tier1Context, mouth: str) -> str:
 
 def check_prompt_contains_rule(ctx: Tier1Context, check: Tier1Check) -> CheckResult:
     rule_text = _RULE_TEXT[check.rule]
+    # Guard the toothlessness vector: an emptied/whitespace rule constant would make
+    # `rule_text in prompt` trivially True. A grounding rule that shrank to nothing is a
+    # regression, not a pass — fail loudly instead of masking it.
+    if not rule_text.strip():
+        return CheckResult(False, f"{check.rule} is empty — a grounding rule must not vanish")
     missing = [m for m in check.mouths if rule_text not in _mouth_text(ctx, m)]
     return CheckResult(not missing, f"{check.rule} missing from mouth(s): {missing}" if missing else "ok")
 
 
 def check_prompt_contains_literal(ctx: Tier1Context, check: Tier1Check) -> CheckResult:
+    # Same guard: an empty literal is `"" in prompt` == always True (toothless).
+    if not check.literal.strip():
+        return CheckResult(False, "literal is empty — cannot assert an empty contract phrase")
     missing = [m for m in check.mouths if check.literal not in _mouth_text(ctx, m)]
     return CheckResult(not missing, f"{check.literal!r} missing from mouth(s): {missing}" if missing else "ok")
 

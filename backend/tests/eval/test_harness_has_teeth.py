@@ -75,6 +75,22 @@ async def test_prompt_contains_rule_goes_red_on_hazard_grounding_mutant(monkeypa
     assert not mutant_result.passed
 
 
+async def test_prompt_contains_rule_goes_red_when_constant_emptied(monkeypatch):
+    """Toothlessness vector: if a grounding-rule constant shrank to '' , a naive
+    `rule_text in prompt` would be trivially True. The guard must fail instead —
+    a vanished rule is a regression, not a pass. (Mutant = the emptied constant,
+    not a stripped prompt.)"""
+    scenario = _scenario("hole4-observed-reality-gaslight")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(check=Tier1CheckName.PROMPT_CONTAINS_RULE, rule="OBSERVED_REALITY_RULE", mouths=["text", "realtime"])
+
+    assert checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed
+    monkeypatch.setitem(checks_mod._RULE_TEXT, "OBSERVED_REALITY_RULE", "   ")
+    assert not checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed, (
+        "check must go RED when the rule constant is empty/whitespace"
+    )
+
+
 async def test_prompt_contains_literal_goes_red_when_sentence_limit_stripped(monkeypatch):
     scenario = _scenario("chatty-question-stays-calm")
     ctx = await _build_prompts(scenario, monkeypatch)
