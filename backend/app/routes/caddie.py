@@ -7,7 +7,7 @@ import json
 import logging
 import os
 from typing import AsyncIterator, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.caddie.types import (
     CourseIntelRequest,
@@ -493,7 +493,10 @@ class ShotDistanceRequest(BaseModel):
     round_id: str
     hole_number: Optional[int] = None
     club: Optional[str] = None
-    target_yards: Optional[int] = None
+    # gt=0: a zero/negative target is not a shot — reject it rather than
+    # return a degenerate all-None payload as if valid (reviewer-caught
+    # honesty gap; no fabricated precision).
+    target_yards: Optional[int] = Field(default=None, gt=0)
 
 
 @router.post("/session/shot-distance")
