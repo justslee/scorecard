@@ -908,10 +908,12 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
         (a.priceUsd ?? Number.MAX_SAFE_INTEGER) - (b.priceUsd ?? Number.MAX_SAFE_INTEGER)
       )[0];
       // A route entry (routing provider) is a course we found, not a locked
-      // slot — the copy says so; only a real availability provider "locks in".
+      // slot — the copy says so. A real slot (foreup: route is undefined) is
+      // still a needs_human deep-link handoff, not a completed booking — "Setting
+      // it up" stays honest without overclaiming a reservation we haven't made.
       const bestLine = best.route
         ? `${best.courseName} — closest match. Pulling up how to book.`
-        : `${best.courseName} ${best.time} — ${best.players} open. Locking in.`;
+        : `${best.courseName} ${formatTime12h(best.time)} — ${best.players} open. Setting it up.`;
       append({ t: nowStr(), text: bestLine, state: "ok", course: best.courseName });
 
       let result: BookingResult;

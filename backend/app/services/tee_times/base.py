@@ -47,7 +47,7 @@ class TeeTimeSlot:
     cart_included: bool
     distance_miles: float
     rating: float                    # 0–5 (0 = unknown)
-    provider: str                    # "mock" | "routing" | "golfnow" | "chronogolf"
+    provider: str                    # "mock" | "routing" | "foreup" | "golfnow" | "chronogolf"
     holes: Literal[9, 18]
     designer: str | None = None
     booking_url: str | None = None   # deep-link for Routing / Phase 1
@@ -58,8 +58,8 @@ class TeeTimeSlot:
     estimated: bool = False
     # How this entry gets booked: "book_on_site" (course website known — deep-
     # link handoff), "call" (no website — phone the pro shop), or None (the
-    # provider knows real availability — mock today, a live inventory provider
-    # in a later slice).
+    # provider knows real availability — mock and foreup today, more live
+    # inventory providers in later slices).
     route: Literal["book_on_site", "call"] | None = None
     # The pro shop's phone number (Places nationalPhoneNumber / OSM phone tag),
     # when known — powers a real `tel:` link on `route == "call"` entries.

@@ -61,6 +61,11 @@ backend/data/*
 # club exclusion list is source, not a runtime cache; loader fails loudly if
 # it's missing, so it must ship with the repo.
 !backend/data/private_clubs.json
+# Exception: checked-in curated foreUP capability seed (specs/teetime-s1-foreup-plan.md)
+# — fail-loud config, not a runtime cache; must ship with the repo.
+!backend/data/foreup_ny_seed.json
+# backend/data/foreup_availability_cache.json and foreup_validated.json stay
+# ignored (already covered by backend/data/* above) — runtime-only.
 .env.vercel
 frontend/.env.local
 .clerk-test-creds

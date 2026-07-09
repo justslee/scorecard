@@ -9533,3 +9533,134 @@ Per cycle directive: NO push notification, NO merge. Bundle #119 continues to aw
 single "ship it" (now carries TWO noticeable items, the multi-tee fix being a direct answer to his
 live hole-3 report). On ship-it: release-manager builds fresh TestFlight from integration/next +
 merges. AWAITING (this cycle): none — cycle complete.
+
+---
+
+## 2026-07-09 — SHIPPED: #119 honest tee-times + multi-tee anchor + green-slope reasoning
+
+Owner "ship it". Merge 2f85031 → main (STRICT gate: all 3 required gates
+state:SUCCESS — the #118 cancelled-gate loophole closed); deploy verified by
+SHA + health ok. TestFlight v1.0.966 (build 202607091224). Three noticeable,
+all Fable-reviewed: tee-time S0 (fake "Held" deleted, private filter, real
+tel: links); multi-tee anchor (Fable BLOCKED r1 — card-pick bypass + masked
+fixture); green-slope get_green_read (Fable PLAN caught the SPEC sign-
+inversion: uphill leave = the LOW/fall side). Twenty-three ships.
+LESSON: dispatching a new noticeable cycle while a bundle awaits ship-it
+moved the "ship it" target (branch advanced with unreviewed WIP) — held the
+merge until it cleared review. Pause noticeable cycles while awaiting the
+owner's ship-it.
+NEXT: tee-time S1 (foreUP); physics 2nd slice; bend; tree-CV.
+
+---
+
+## 2026-07-09 — cycle 43 START: teetime-s1-foreup-availability (NOTICEABLE)
+
+Bundle empty post-#119. Pick: real foreUP availability leg (S1 of
+specs/teetime-real-booking-plan.md). S0 scaffold exists: routing.py,
+private_filter.py, base.TeeTimeSlot has `route`/`phone`/`estimated`,
+routes/tee_times.py `_get_provider()` defaults to routing.
+
+LIVE foreUP PROBE (done this cycle — endpoint shape VERIFIED, not guessed):
+- GET foreupsoftware.com/index.php/api/booking/times?time=all&date=MM-DD-YYYY
+  &holes=all&players=N&booking_class=false&schedule_id=SID&specials_only=0
+  &api_key=no_limits  + header `api-key: no_limits`  → HTTP 200, JSON array.
+- REAL NY course: **18 Mile Creek Golf Course, Hamburg NY** — course_id=20410,
+  schedule_id=4467 (booking/20410/4467). booking_class=false WORKS.
+- Real slot returned: {"time":"2026-07-11 12:21", course_id:20410,
+  course_name:"18 Mile Creek Golf Course", schedule_id:4467, teesheet_holes:18,
+  available_spots:2, available_spots_9:2, available_spots_18:2,
+  maximum_players_per_booking:4, minimum_players:1,
+  allowed_group_sizes:["1","2","3","4"], holes:"9/18", ...green/cart fee fields}.
+- `time` field = "YYYY-MM-DD HH:MM" local. Use it directly (NOT start_front).
+- The builder MUST capture 18 Mile Creek's FULL live response as the CI fixture
+  (recorded JSON, never live-hit in CI). 18 Mile Creek = the S1 seed course.
+
+Fable plan DONE → specs/teetime-s1-foreup-plan.md (foreup.py provider +
+capability_store.py JSON seed [NO migration] + router_provider.py + politeness
+stack cache/single-flight/limiter/breaker + validate script + fixture tests).
+
+Builder DONE → d3f529d (feature) + 387e378 (progress). New: foreup.py,
+capability_store.py, router_provider.py, foreup_ny_seed.json, validate script,
+3 test files + REAL fixture foreup_18mile_times.json (18 live slots, 18 Mile
+Creek). Local gates green: ruff clean, backend 1583/1583, frontend
+lint/tsc/vitest/build/voice-smoke all pass. Kill switch TEETIME_FOREUP_ENABLED.
+
+Reviews ALL GREEN: reviewer SHIP (+/security-review clean), designer SHIP,
+QA PASS (incl. live Playwright: 18 Mile Creek 12:21PM $24 'Found' + deep-link).
+Designer item-1 polish folded in (3ce8bd5). Backlog: S1 done-on-bundle + 3
+fast-follows logged (2a8553b). Bundle PR **#120** OPENED (integration/next->main),
+head=2a8553bdc79f113c6cd1e6a5c34e574cf668115e. NOTICEABLE.
+
+## AWAITING: CI on PR #120 (STRICT gate = Frontend AND Backend both state:SUCCESS
+on head 2a8553bdc79f113c6cd1e6a5c34e574cf668115e; a CANCELLED/skipped required gate is NOT a pass — #118 lesson).
+When green → dispatch release-manager: build TestFlight from integration/next,
+PushNotification owner for approval (record on Notion board). Owner 'ship it' ->
+release-manager merges #120 -> main + cuts fresh integration/next.
+If cycle dies here: next cycle re-checks 'gh pr checks 120 --json bucket,state'
+pinned to head 2a8553bdc79f113c6cd1e6a5c34e574cf668115e; does NOT rebuild anything.
+
+## 2026-07-09 — cycle 43 BUILDER DONE: teetime-s1-foreup implemented per plan
+
+Implemented specs/teetime-s1-foreup-plan.md exactly, no re-plan. New:
+`backend/app/services/tee_times/foreup.py` (ForeUpProvider — request/parse/
+normalize per §3d field-mapping table, `slots_for_capability` 3-way
+None/[]/slots contract, 8-min FileSearchCacheStore cache keyed on
+booking_id/schedule_id/date/players, in-process asyncio-Future single-flight,
+module-singleton SlidingWindowLimiter rpm=10/60s keyed "foreupsoftware.com",
+module-singleton CircuitBreaker 3-fail/open-300s/half-open-1-trial, `book()`
+always needs_human); `capability_store.py` (CourseBookingCapability, seed
+fail-loud / validated fail-soft, `match_capability` exact-name+<=1mi or exact
+id); `backend/data/foreup_ny_seed.json` (18 Mile Creek, REAL lat/lng
+42.714304/-78.813114 geocoded from the real address, phone (716) 648-4410);
+`router_provider.py` (RoutedTeeTimeProvider extends RoutingTeeTimeProvider via
+the new `_slots_for_course` hook extracted in routing.py — S0 tests pass
+BYTE-IDENTICAL, unedited); `backend/scripts/validate_foreup_courses.py`
+(capture/validate CLI, never run in CI). Route wiring: `_get_provider()`
+default/routing/affiliate/unknown -> RoutedTeeTimeProvider, "foreup" ->
+standalone debug, TEETIME_FOREUP_ENABLED=0 kill switch.
+
+FIXTURE PROVENANCE (BLOCKING item — verified real, not fabricated): captured
+via ONE live probe of the real endpoint (`validate_foreup_courses.py
+--capture-fixture --dry-run`), 18 Mile Creek Golf Course (course_id=20410,
+schedule_id=4467), date=2026-07-11, players=1. Raw response saved verbatim to
+`backend/tests/fixtures/foreup_18mile_times.json`: 18 real slots, times
+12:21-18:03, green_fee $14-$24 (confirmed `green_fee` is the real key name —
+matches the plan's primary guess, documented in foreup.py's docstring). All
+foreup.py test assertions in test_tee_time_foreup.py are DERIVED from the
+fixture at runtime (re-implementing the documented rules independently), not
+hand-typed counts.
+
+Gates (local, no Postgres — DB-backed tests deferred to CI per lessons.md):
+ruff clean; targeted pytest 130/130 (test_tee_time_foreup 29, capability_store
+14, router 13, routing/private_filter/search_cache/rate_limit unchanged);
+full non-DB backend sweep 1583/1583; frontend lint clean, tsc clean, vitest
+teetime 161/161 (incl. 2 new confirm-copy cases for a real foreup time),
+`npm run build` OK, voice-tests smoke 274/274. Manual end-to-end sanity (no
+extra live hit — MockTransport serving the captured fixture, real
+capability_store.load_capabilities() seed): router surfaces 6 real 18 Mile
+Creek slots (party_size=2, party-filtered) + a plain S0 route entry for an
+unmatched course, exactly per §5c.
+
+Frontend touches (3, minimal, per plan §9): confirm-copy.ts needsHuman+real-
+time case ("Found 7:10 AM at ... — they take the reservation, book it on the
+course site."); tee-time/page.tsx "Locking in." -> "Setting it up." (needs_
+human handoff, never overclaim); types.ts comment sync (+foreup, base.py/
+tee_times.py route-field comments too).
+
+Deviation from plan: none substantive. Minor: seed `verified_at` timestamp
+set to the exact capture time (2026-07-09T16:57:50Z) rather than a placeholder
+midnight stamp — more honest provenance, same shape.
+
+Reviewer should scrutinize (per plan §14): fixture authenticity (raw capture,
+derived assertions — no hand-typed counts); wrong-course real times (match_
+capability exact-name+<=1mi, tested >1mi-away non-match); verified-empty
+omits the course (never a fake book_on_site entry); cache key includes
+players+date, excludes window; breaker/limiter actually sit ON the fetch path
+(transport-call-counting tests prove zero HTTP on cache-hit/limiter-block/
+open-breaker); bool-as-int trap (`_as_int` checks isinstance(v, bool) first).
+
+Committed to integration/next (commit SHAs in the next progress entry after
+push). NOTICEABLE (owner can search near Hamburg NY and see real 18 Mile
+Creek tee times with real clock times + "Book on the course site" deep-link
+to foreupsoftware.com — this rides the open bundle, no separate ping per
+cycle directive: pause noticeable pings while a bundle awaits ship-it).

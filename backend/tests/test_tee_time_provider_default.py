@@ -1,19 +1,23 @@
-"""Provider default + honest-empty semantics (S0 "kill fake data", 2026-07-xx).
+"""Provider default + honest-empty semantics (S0 "kill fake data" + S1 real
+foreUP availability, specs/teetime-s1-foreup-plan.md).
 
-The default provider is ROUTING (real nearby courses, no fabricated time,
-booking routed to the course site or a phone call). TEETIME_PROVIDER=mock is
-explicit opt-in; "affiliate" is a legacy alias for "routing"; any OTHER
-unknown value ALSO falls to routing — never mock — so a prod env-var typo can
-never silently serve demo data. When a real provider finds nothing, the
-search route returns an honest empty list — the old mock-fallback substitution
-is gone.
+The default provider is the ROUTER (RoutedTeeTimeProvider) — real nearby
+courses, real foreUP availability where a booking capability is known, S0's
+"no fabricated time, booking routed to the course site or a phone call" for
+every other course. TEETIME_PROVIDER=mock is explicit opt-in; "affiliate" is
+a legacy alias for "routing"/the router; any OTHER unknown value ALSO falls
+to the router — never mock — so a prod env-var typo can never silently serve
+demo data. TEETIME_PROVIDER=foreup runs foreUP standalone (debug only). When
+a real provider finds nothing, the search route returns an honest empty list
+— the old mock-fallback substitution is gone.
 """
 
 import pytest
 
 from app.routes import tee_times as route_mod
 from app.routes.tee_times import _get_provider, search_tee_times
-from app.services.tee_times.routing import RoutingTeeTimeProvider
+from app.services.tee_times.foreup import ForeUpProvider
+from app.services.tee_times.router_provider import RoutedTeeTimeProvider
 from app.services.tee_times.base import TeeTimeProvider, TeeTimeQuery, TeeTimeSlot
 from app.services.tee_times.mock import MockTeeTimeProvider
 
@@ -37,21 +41,25 @@ class _EmptyRouting(TeeTimeProvider):
 
 
 class TestProviderDefault:
-    def test_default_is_routing(self, monkeypatch):
+    def test_default_is_router(self, monkeypatch):
         monkeypatch.delenv("TEETIME_PROVIDER", raising=False)
-        assert isinstance(_get_provider(), RoutingTeeTimeProvider)
+        assert isinstance(_get_provider(), RoutedTeeTimeProvider)
 
     def test_mock_opt_in_still_works(self, monkeypatch):
         monkeypatch.setenv("TEETIME_PROVIDER", "mock")
         assert isinstance(_get_provider(), MockTeeTimeProvider)
 
-    def test_legacy_affiliate_alias_lands_on_routing(self, monkeypatch):
+    def test_legacy_affiliate_alias_lands_on_router(self, monkeypatch):
         monkeypatch.setenv("TEETIME_PROVIDER", "affiliate")
-        assert isinstance(_get_provider(), RoutingTeeTimeProvider)
+        assert isinstance(_get_provider(), RoutedTeeTimeProvider)
 
-    def test_unknown_value_falls_to_routing_never_mock(self, monkeypatch):
+    def test_unknown_value_falls_to_router_never_mock(self, monkeypatch):
         monkeypatch.setenv("TEETIME_PROVIDER", "definitely-not-real")
-        assert isinstance(_get_provider(), RoutingTeeTimeProvider)
+        assert isinstance(_get_provider(), RoutedTeeTimeProvider)
+
+    def test_foreup_opt_in_runs_standalone(self, monkeypatch):
+        monkeypatch.setenv("TEETIME_PROVIDER", "foreup")
+        assert isinstance(_get_provider(), ForeUpProvider)
 
 
 class TestEmptyResultIsHonest:

@@ -63,9 +63,15 @@ export interface TeeTimeSlot {
   /** 0–5 star rating. */
   rating: number;
   designer?: string;
-  /** Deep-link to the booking page on an external site (Routing / Phase 1). */
+  /** Deep-link to the booking page on an external site (Routing / foreup / Phase 1). */
   bookingUrl?: string;
-  /** Identifies which provider generated this slot (mock | routing | golfnow | chronogolf). */
+  /**
+   * Identifies which provider generated this slot
+   * (mock | routing | foreup | golfnow | chronogolf). "foreup" slots carry a
+   * REAL `time` (never "") + a `bookingUrl` deep-link to the course's foreUP
+   * booking page, with `route` undefined (the provider knows real
+   * availability — see `route`'s doc below).
+   */
   provider: string;
   holes: 9 | 18;
   /**
