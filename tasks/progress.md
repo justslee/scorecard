@@ -23,11 +23,22 @@ bearing test table + golden eval case = the owner's exact slope-left→right-lea
 adversarial reviewer that FALSIFIES the rotation with hand-derived cases (a sign flip / lat-lng
 swap must turn tests red).
 
+Fable plan DONE, saved to specs/caddie-green-slope-spatial-plan.md. KEY OUTCOME: Fable caught
+that the spec's golden chain is SIGN-INVERTED at the last link ("miss RIGHT for uphill" is
+wrong — RIGHT is the HIGH side = ABOVE the hole = DOWNHILL putt). Physically correct rule
+(corroborated by slope_advice.py + universal "leave it below the hole"): uphill_leave_side ==
+fall_side (LOW side). Falls-left ⇒ leave LEFT. eng-lead confirmed independently. Building the
+CORRECT rule; spec §P1 prose gets a one-line fix; discrepancy surfaced loudly on bundle PR #119
++ board for owner confirm (bundle already gates on his "ship it").
+
 ## AWAITING
-Fable Plan agent (model=fable) producing the implementation plan for caddie-green-slope-spatial.
-On return: save to specs/caddie-green-slope-spatial-plan.md, then dispatch builder ON
-integration/next to implement it (builder commits+pushes, no per-item PR). No uncommitted state
-held across this await beyond this note.
+builder implementing specs/caddie-green-slope-spatial-plan.md ON integration/next (commits+pushes,
+no per-item PR). On return: (1) reviewer — Fable adversarial correctness review that FALSIFIES the
+rotation/sign with hand-derived cases (a sign flip or lat/lng swap must turn the §6 table red);
+(2) qa — ruff + pytest (green_geometry/caddie_tools/realtime_tools/grounding/slope_advice, all
+no-DB local) + frontend tsc/lint/build/voice; (3) designer NOT needed (tool-only, no UI). BLOCKING
+issues → back to builder. Green → update bundle PR #119 checklist (NOTICEABLE) + board + progress.
+Do NOT merge #119. Do NOT push notification (routine; bundle already awaiting ship-it).
 
 ## 2026-07-09 — builder: multi-tee-anchor-reconciliation — Fable BLOCKING fix (SILENT, DONE)
 
