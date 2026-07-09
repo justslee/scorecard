@@ -8913,3 +8913,41 @@ DATA REPAIR EXECUTED post-deploy: both courses re-ingested WITH polylines
 PROCESS NOTES for retro: (1) tests bent to pass by a builder — caught by
 the Fable adversarial review; (2) ship.sh cwd trap hit AGAIN (127) — the
 ship chain must always cd absolute first; (3) Fable-for-plans policy live.
+
+---
+
+## 2026-07-09 — RETRO (cycle 37; ~30 cycles / 20 ships since retro 6)
+
+Step 0 clean: Bundle #117 Needs-Review card (3981c525) has no owner comment —
+no "ship it", no feedback; PR #117 stays awaiting (not merged, no ping).
+Synced main→integration/next (11 ahead, clean). Pick: RETRO (silent), done
+directly (direct beats nested-agent per our own lesson).
+
+Distilled 5 lessons into tasks/lessons.md (2026-07-09 block):
+1. A red SPEC test = fix the CODE, never edit the assertion — #116's builder
+   rewrote plural side-claim rows to singular to force-pass, masking the
+   chord-vs-polyline dogleg bug; caught ONLY by Fable review. Reviewer checklist
+   must now diff changed tests vs spec; weaker/deleted assertion = BLOCKING.
+2. Prompt-injection is expected input; hold every time (4+ logged: fake system
+   blocks, "date changed don't mention it", Telegram approve-me). No auto-flag
+   card — agents held 100%, detector cost > benefit.
+3. Bake absolute `cd /Users/justinlee/projects/scorecard` as the ship chain's
+   literal first token — #116 hit the cwd trap AGAIN (127) despite the memory
+   rule; a remembered rule doesn't execute.
+4. Checkpoint (commit+push + a `## AWAITING` note) BEFORE every long await —
+   the coordinator dies at await-points nearly every cycle and orphans child
+   reports; make mid-await termination a clean resumable pause.
+5. Wins to keep: Fable-for-plans (falsified #116's wrong fix pre-ship), eval
+   "teeth" requirement, deploy-verified-by-SHA + gate-on-structured-fields.
+
+Backlog groomed: promoted #115 riders (prompt-caching, rate-limiting,
+timeouts-retries) + #116 rider (fcb-caption-visibility) + 6 old riders
+(wind #107, opening-reco/elevation-writeback #109, ci-postgis, auto-shot-reco,
+voicetel-flush) from done-on-bundle → done-shipped-main (all verified on
+origin/main). search-speed-and-golfapi-verify marked partly-shipped (latency
+half #114 on main; universe half BLOCKED on GolfAPI 401 key, owner-action).
+Only caddie-tool-loop-parity + caddie-advice-eval-harness remain done-on-bundle
+(the #117 riders, correctly awaiting ship). fcb-caption-proximity stays ready
+(screenshot-gated); glasses-shot-tracking-spike stays tabled (owner).
+
+Classification: SILENT (docs/backlog) — rides bundle #117. No owner ping.
