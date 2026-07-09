@@ -55,6 +55,17 @@ vi.mock('@/lib/caddie/api', () => ({
     uphill_leave_depth: null,
     read_line: 'Green falls to your left — right side is the high side; a miss left leaves the uphill putt.',
   })),
+  getSessionBend: vi.fn(async () => ({
+    round_id: 'r1',
+    hole_number: 4,
+    available: true,
+    straight: false,
+    direction: 'left',
+    distance_yards: 270,
+    deviation_yards: 88,
+    double_dogleg: false,
+    assumptions: ['distance measured from the tee along the hole centerline'],
+  })),
 }));
 
 import { dispatchTool } from './realtime';
@@ -67,6 +78,7 @@ import {
   getSessionPlayerProfile,
   getSessionShotDistance,
   getSessionGreenRead,
+  getSessionBend,
 } from '@/lib/caddie/api';
 
 const ctx = { roundId: 'round-42' };
@@ -174,6 +186,23 @@ describe('dispatchTool — Realtime tool surface v1', () => {
       round_id: 'round-42',
       hole_number: undefined,
     });
+  });
+
+  it('get_bend dispatches to the session bend endpoint with the hole number', async () => {
+    const out = (await dispatchTool('get_bend', { hole_number: 4 }, ctx)) as {
+      available: boolean;
+      direction: string;
+    };
+    expect(getSessionBend).toHaveBeenCalledWith('round-42', 4);
+    // The REAL geometry direction flows through untouched — never a stub,
+    // and never the deviation-sign mirror (the caddie-bend-distance crux).
+    expect(out.available).toBe(true);
+    expect(out.direction).toBe('left');
+  });
+
+  it('get_bend omits hole_number when not provided (defaults server-side)', async () => {
+    await dispatchTool('get_bend', {}, ctx);
+    expect(getSessionBend).toHaveBeenLastCalledWith('round-42', undefined);
   });
 
   it('unknown tools return an error payload instead of throwing', async () => {

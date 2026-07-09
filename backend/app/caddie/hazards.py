@@ -31,6 +31,19 @@ Math convention (pinned — see test_hazards.py::test_left_is_positive_cross):
     POSITIVE lateral = LEFT of the travel direction, negative = right. A
     10-yard lateral deadband collapses near-line hazards to "center" rather
     than reporting noisy left/right jitter.
+  - Bend/dogleg (``extract_hole_bend``): the vertex with the largest
+    perpendicular deviation off the tee→green chord (``dev_m = ux*vy -
+    uy*vx``, positive = LEFT of the chord, same cross form as above) SELECTS
+    the bend and drives the straight-hole threshold — but the SPOKEN
+    direction is a different quantity: the turn cross between the tee→bend
+    leg and the bend→green leg (``turn = u1x*u2y - u1y*u2x`` where u1, u2 are
+    those two legs' unit vectors; turn > 0 = "left", turn < 0 = "right"). On
+    a dogleg the outside corner sits on the OPPOSITE side of the straight
+    chord from the way the hole actually turns (e.g. a dogleg-LEFT hole's
+    corner sits right of the chord) — reporting the deviation sign instead
+    of the turn cross says "right" on every dogleg-left hole, the sign-flip
+    incident class this repo has been burned by twice. See
+    test_hazards.py::TestExtractHoleBend for the pinned example.
 """
 
 from __future__ import annotations
@@ -38,7 +51,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-from app.caddie.types import Hazard
+from app.caddie.types import Hazard, HoleBend
 from app.services.course_spatial import _ring_centroid
 
 # Metres per degree of latitude (WGS-84 mean) — mirrors the equirectangular
@@ -48,6 +61,11 @@ _LAT_M_PER_DEG: float = 111_320.0
 _YARDS_PER_METER: float = 1.09361
 _LATERAL_DEADBAND_YARDS: float = 10.0
 _DEFAULT_CAP: int = 5
+# Below this chord deviation the hole is reported as measured-straight (see
+# extract_hole_bend). 15y is comfortably above OSM digitization jitter and
+# the 10y hazard lateral deadband, comfortably below any bend a caddie would
+# actually name.
+_BEND_MIN_DEVIATION_YARDS: float = 15.0
 
 _HAZARD_FEATURE_TYPES: frozenset[str] = frozenset({"bunker", "water"})
 _SEVERITY_BY_TYPE: dict[str, str] = {"water": "death", "bunker": "moderate"}
@@ -65,6 +83,13 @@ HAZARD_GROUNDING_RULE = (
     '("trouble left", "keep it right-center", "bail out short") and never state '
     'a specific feature with a distance (e.g. never "a bunker at 260 on the '
     'left") unless it is in the data.'
+)
+
+BEND_GROUNDING_RULE = (
+    "Only say the fairway bends or doglegs — or give a distance to a bend — if the "
+    "hole-shape data for this hole or the get_bend tool provides it. If the data says "
+    "the hole plays straight, say it plays straight. If no hole-shape data is given, "
+    "never guess a dogleg direction or a distance to a bend."
 )
 
 
@@ -222,6 +247,172 @@ def _project_onto_polyline(
     if best is None:
         return None
     return best[1], best[2]
+
+
+def extract_hole_bend(
+    features: Optional[dict],
+    *,
+    tee: Optional[dict] = None,
+    green: Optional[dict] = None,
+    polyline: Optional[list] = None,
+) -> Optional[HoleBend]:
+    """Where/how far the fairway bends (the dogleg) on a hole, measured from
+    the tee along the hole's mapped centerline.
+
+    Identical inputs/frame to extract_hole_hazards — reuses
+    _derive_tee_green/_xy_m/_hole_polyline/_project_onto_polyline so bend
+    distance and hazard carry_yards are measured from the SAME tee-anchored
+    origin by construction (module docstring's "bend / turn-cross" paragraph).
+
+    Direction is the TURN CROSS (tee→bend x bend→green), NOT the sign of the
+    bend vertex's chord deviation — see the module docstring and
+    test_hazards.py::TestExtractHoleBend for why: the deviation sign only
+    SELECTS the bend vertex (argmax |deviation|) and drives the straight-hole
+    threshold; it is never the spoken direction.
+
+    Returns:
+      - None: cannot determine (no tee/green, no polyline at all, a
+        degenerate polyline, or a zero-length chord) — honest unknown, never
+        a guessed bearing. A hole with no mapped centerline has no interior
+        vertices to define a bend, so "no polyline" can never mean "straight".
+      - HoleBend(straight=True, deviation_yards=n): the max chord deviation
+        among candidate vertices is below the 15y threshold.
+      - HoleBend(straight=False, direction, distance_yards, deviation_yards,
+        double_dogleg): a real, measured bend.
+
+    Same reversed-way exposure as extract_hole_hazards (module docstring
+    "Chord fallback" note + _derive_tee_green's tee-ordering dependency): a
+    green→tee digitized way would mirror this bend's direction along with
+    every hazard side, consistently — no new risk surface (guarded by the
+    ingest-time "GROSS REVERSED" yardage validation, test_bethpage_validation).
+    """
+    feature_list: list[dict] = (features or {}).get("features") or []
+
+    tee_pt, green_pt = _derive_tee_green(feature_list, tee, green)
+    if tee_pt is None or green_pt is None:
+        return None
+
+    tee_lon, tee_lat = tee_pt
+    green_lon, green_lat = green_pt
+
+    gx, gy = _xy_m(tee_lat, tee_lon, green_lat, green_lon)
+    length_m = math.hypot(gx, gy)
+    if length_m == 0.0:
+        return None
+    ux, uy = gx / length_m, gy / length_m
+
+    path = None
+    if polyline and len(polyline) >= 2:
+        path = [(float(c[0]), float(c[1])) for c in polyline]
+    if path is None:
+        path = _hole_polyline(feature_list)
+    if path is None:
+        # No interior vertices to define a bend — honest unknown, never a
+        # fabricated "straight" (the chord fallback intentionally has no
+        # equivalent here, unlike extract_hole_hazards).
+        return None
+
+    path_xy = [_xy_m(tee_lat, tee_lon, lat, lon) for lon, lat in path]
+    tee_projected = _project_onto_polyline(path_xy, 0.0, 0.0)  # tee = frame origin
+    if tee_projected is None:
+        return None  # degenerate polyline (all zero-length segments)
+    tee_along_m = tee_projected[0]
+
+    if len(path_xy) < 3:
+        # Only tee/green endpoints, no interior vertices at all — trivially
+        # measured-straight (nothing to deviate).
+        return HoleBend(straight=True, deviation_yards=0)
+
+    # Cumulative along-path distance from the path's own start to each vertex.
+    cum_m: list[float] = [0.0]
+    for i in range(len(path_xy) - 1):
+        ax, ay = path_xy[i]
+        bx, by = path_xy[i + 1]
+        cum_m.append(cum_m[-1] + math.hypot(bx - ax, by - ay))
+
+    # Candidate interior vertices: real forward progress past the tee's own
+    # projection (a kink behind the tee is back-tee routing jitter, not a
+    # bend the player faces) and not coincident with the green (no outgoing
+    # leg to define a turn from there).
+    candidates: list[tuple[int, float, float]] = []  # (index, dev_m, along_m)
+    for i in range(1, len(path_xy) - 1):
+        vx, vy = path_xy[i]
+        along_m = cum_m[i] - tee_along_m
+        if along_m <= 0:
+            continue
+        if math.hypot(gx - vx, gy - vy) <= 1.0:
+            continue
+        dev_m = ux * vy - uy * vx  # positive = LEFT of the chord
+        candidates.append((i, dev_m, along_m))
+
+    if not candidates:
+        return HoleBend(straight=True, deviation_yards=0)
+
+    # argmax |dev_m|; exact tie -> earlier vertex (smaller along-path distance
+    # sorts first — the first corner is the one the player faces).
+    best_i, best_dev, best_along = max(candidates, key=lambda c: (abs(c[1]), -c[2]))
+    max_dev_yards = abs(best_dev) * _YARDS_PER_METER
+
+    if max_dev_yards < _BEND_MIN_DEVIATION_YARDS:
+        return HoleBend(straight=True, deviation_yards=round(max_dev_yards))
+
+    vx, vy = path_xy[best_i]
+    v_mag = math.hypot(vx, vy)
+    if v_mag == 0.0:
+        # Bend vertex coincides with the tee frame origin — no tee->bend leg
+        # to define a turn. Degenerate; treat as straight rather than divide
+        # by zero (unreachable in practice: the along_m > 0 guard above
+        # already requires real forward progress from the tee).
+        return HoleBend(straight=True, deviation_yards=round(max_dev_yards))
+    u1x, u1y = vx / v_mag, vy / v_mag
+
+    dx, dy = gx - vx, gy - vy
+    d_mag = math.hypot(dx, dy)  # > 1.0m, guaranteed by the candidate filter
+    u2x, u2y = dx / d_mag, dy / d_mag
+
+    # The correctness crux (module docstring): direction is the TURN cross
+    # between the two legs, not the chord-deviation sign computed above.
+    # turn == 0 is unreachable here — a vertex whose chord deviation is at or
+    # above the threshold cannot be collinear with tee and green (collinear
+    # implies dev_m == 0), so no straight-through branch is needed.
+    turn = u1x * u2y - u1y * u2x
+    direction = "left" if turn > 0 else "right"
+
+    distance_yards = _round_to_5(best_along * _YARDS_PER_METER)
+
+    # Double dogleg (honesty): any OTHER candidate with the opposite
+    # deviation sign at/above the threshold means an S-shape — flag it so
+    # neither mouth describes the hole as a simple single dogleg.
+    double_dogleg = any(
+        dev * best_dev < 0 and abs(dev) * _YARDS_PER_METER >= _BEND_MIN_DEVIATION_YARDS
+        for _, dev, _ in candidates
+    )
+
+    return HoleBend(
+        straight=False,
+        direction=direction,
+        distance_yards=distance_yards,
+        deviation_yards=round(max_dev_yards),
+        double_dogleg=double_dogleg,
+    )
+
+
+def format_bend_line(hole_number: int, bend: Optional[HoleBend]) -> str:
+    """Compact spoken-style bend/dogleg line for a hole, e.g.:
+
+        "Hole 4 shape: doglegs right at ~250y"
+        "Hole 4 shape: plays straight — no significant bend"
+
+    Returns "" when ``bend`` is None (unmapped centerline) — the line is
+    simply omitted; BEND_GROUNDING_RULE tells the model never to guess a
+    dogleg in that case rather than treating the omission as "straight".
+    """
+    if bend is None:
+        return ""
+    if bend.straight:
+        return f"Hole {hole_number} shape: plays straight — no significant bend"
+    suffix = " (double dogleg)" if bend.double_dogleg else ""
+    return f"Hole {hole_number} shape: doglegs {bend.direction} at ~{bend.distance_yards}y{suffix}"
 
 
 def extract_hole_hazards(

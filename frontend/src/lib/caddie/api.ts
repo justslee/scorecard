@@ -7,6 +7,7 @@ import type {
   CaddieRecommendation,
   WeatherConditions,
   HoleIntelligence,
+  HoleBend,
   CaddiePersonalityInfo,
   VoiceCaddieMessage,
 } from './types';
@@ -262,6 +263,9 @@ export interface SessionConditions {
   }>;
   hazards_line: string | null;
   green_slope: { description: string } | null;
+  /** Where/how far the fairway bends — null when the centerline isn't
+   *  mapped (honest unknown, distinct from a measured-straight hole). */
+  bend: HoleBend | null;
 }
 
 /** Deterministic read backing the `get_conditions` voice tool. */
@@ -307,6 +311,39 @@ export async function getSessionCarries(
 ): Promise<SessionCarries> {
   return get<SessionCarries>(
     `/caddie/session/${encodeURIComponent(roundId)}/carries?hole_number=${holeNumber}`,
+  );
+}
+
+/** Where/how far the fairway bends — mirrors backend tools.bend_payload
+ *  (app/caddie/tools.py). Fields come verbatim from the hole's cached
+ *  HoleBend, never recomputed client-side. */
+export interface BendPayload {
+  round_id: string;
+  hole_number: number;
+  /** false = no cached intel OR the centerline isn't mapped (two distinct
+   *  reasons, see `reason`) — the persona must say the shape is unknown,
+   *  never invent a dogleg. */
+  available: boolean;
+  reason?: string;
+  straight?: boolean;
+  direction?: 'left' | 'right' | null;
+  distance_yards?: number | null;
+  deviation_yards?: number;
+  double_dogleg?: boolean;
+  /** Set when the hole is mapped but genuinely straight (a TRUE fact,
+   *  distinct from "unknown"). */
+  note?: string | null;
+  assumptions?: string[];
+}
+
+/** Where/how far the fairway bends, backing the `get_bend` voice tool. */
+export async function getSessionBend(
+  roundId: string,
+  holeNumber?: number,
+): Promise<BendPayload> {
+  const qs = holeNumber != null ? `?hole_number=${holeNumber}` : '';
+  return get<BendPayload>(
+    `/caddie/session/${encodeURIComponent(roundId)}/bend${qs}`,
   );
 }
 

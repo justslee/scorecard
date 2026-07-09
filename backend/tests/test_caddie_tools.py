@@ -18,10 +18,12 @@ import pytest  # noqa: E402
 
 from app.caddie import tools as tools_mod  # noqa: E402
 from app.caddie.session import RoundSession  # noqa: E402
-from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, WeatherConditions  # noqa: E402
+from app.caddie.types import GreenSlope, Hazard, HoleBend, HoleIntelligence, WeatherConditions  # noqa: E402
 from app.caddie.tools import (  # noqa: E402
     ToolContext,
+    bend_payload,
     carries_payload,
+    conditions_payload,
     green_read_payload,
     resolve_tool,
     session_status_payload,
@@ -456,3 +458,105 @@ async def test_resolve_tool_green_read_uses_explicit_hole_number():
     assert out["available"] is True
     assert out["hole_number"] == 9
     assert out["fall_side"] == "left"
+
+
+# ── bend_payload: the honest matrix (caddie-bend-distance-plan.md §5) ───────
+# Mirrors the carries_payload matrix — unmapped centerline (bend=None) is a
+# DIFFERENT fact than a measured-straight hole (bend.straight=True): never
+# conflated ([[no-fake-data-fallbacks]]).
+
+
+def test_bend_no_intel_is_honestly_unavailable():
+    out = bend_payload(_session(), 4)
+    assert out == {
+        "round_id": "round-1",
+        "hole_number": 4,
+        "available": False,
+        "reason": "No mapped course data for this hole.",
+    }
+
+
+def test_bend_intel_present_but_bend_none_is_honestly_unavailable_never_straight():
+    """RED if a missing/unmapped centerline is conflated with 'straight' —
+    the reason must be distinct from the straight-hole note."""
+    session = _session(
+        hole_intel={4: HoleIntelligence(hole_number=4, par=4, yards=400, bend=None)}
+    )
+    out = bend_payload(session, 4)
+    assert out["available"] is False
+    assert "not mapped" in out["reason"]
+    assert "straight" not in out["reason"].lower()
+
+
+def test_bend_straight_hole_available_true_with_note_and_no_direction():
+    session = _session(
+        hole_intel={
+            4: HoleIntelligence(
+                hole_number=4, par=4, yards=400,
+                bend=HoleBend(straight=True, deviation_yards=6),
+            )
+        }
+    )
+    out = bend_payload(session, 4)
+    assert out["available"] is True
+    assert out["straight"] is True
+    assert out["direction"] is None
+    assert out["distance_yards"] is None
+    assert out["note"] == "No significant bend — this hole plays straight."
+
+
+def test_bend_real_bend_fields_verbatim():
+    session = _session(
+        hole_intel={
+            4: HoleIntelligence(
+                hole_number=4, par=4, yards=517,
+                bend=HoleBend(
+                    straight=False, direction="left", distance_yards=270,
+                    deviation_yards=88, double_dogleg=False,
+                ),
+            )
+        }
+    )
+    out = bend_payload(session, 4)
+    assert out["available"] is True
+    assert out["straight"] is False
+    assert out["direction"] == "left"
+    assert out["distance_yards"] == 270
+    assert out["deviation_yards"] == 88
+    assert out["double_dogleg"] is False
+    assert out["assumptions"]  # tee-anchored measurement is surfaced, never silent
+
+
+async def test_resolve_tool_get_bend_falls_back_to_default_hole():
+    session = _session(
+        hole_intel={
+            4: HoleIntelligence(
+                hole_number=4, par=4, yards=517,
+                bend=HoleBend(straight=False, direction="right", distance_yards=250, deviation_yards=40),
+            )
+        }
+    )
+    ctx = ToolContext(session=session, round_id="round-1", user_id="user-1", default_hole=4)
+    out = await resolve_tool("get_bend", {}, ctx)
+    assert out["available"] is True
+    assert out["direction"] == "right"
+    assert out["hole_number"] == 4
+
+
+def test_conditions_payload_includes_bend_when_mapped():
+    session = _session(
+        hole_intel={
+            4: HoleIntelligence(
+                hole_number=4, par=4, yards=517,
+                bend=HoleBend(straight=False, direction="left", distance_yards=270, deviation_yards=88),
+            )
+        }
+    )
+    out = conditions_payload(session, 4)
+    assert out["bend"]["direction"] == "left"
+    assert out["bend"]["distance_yards"] == 270
+
+
+def test_conditions_payload_omits_bend_when_unmapped():
+    out = conditions_payload(_session(), 4)
+    assert out["bend"] is None

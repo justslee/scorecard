@@ -19,6 +19,7 @@ import {
   getSessionStatus,
   getSessionConditions,
   getSessionCarries,
+  getSessionBend,
   getSessionPlayerProfile,
   getSessionShotDistance,
   getSessionGreenRead,
@@ -133,6 +134,16 @@ export async function dispatchTool(
       // mapped, an explicit empty list + note when the hole has no in-play
       // hazards. The persona must never invent a carry number.
       return await getSessionCarries(ctx.roundId, Number(args.hole_number));
+    }
+    case 'get_bend': {
+      // Where/how far the fairway bends — the same bend_payload the text
+      // tool loop resolves. Honest empties: available:false when the
+      // centerline isn't mapped (distinct from a measured-straight hole).
+      // The persona must never invent a dogleg direction or a distance.
+      return await getSessionBend(
+        ctx.roundId,
+        args.hole_number != null ? Number(args.hole_number) : undefined,
+      );
     }
     case 'get_shot_distance': {
       // Ball-flight physics for ONE shot (carry/roll/total for a club, or

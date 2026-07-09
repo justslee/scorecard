@@ -1,6 +1,6 @@
 """Canonical caddie tool registry + shared server-side resolution.
 
-ONE source of truth for the six caddie tools (specs/caddie-tool-loop-parity-plan.md
+ONE source of truth for the caddie tools (specs/caddie-tool-loop-parity-plan.md
 D1/D2), rendered two ways so the two mouths can never drift:
 
   - ``realtime_tools()``  → OpenAI Realtime shape
@@ -45,6 +45,26 @@ from app.db.models import Shot
 # ── Canonical registry (order-stable: sorted by name; byte-stable at import) ──
 
 CADDIE_TOOLS: list[dict] = [
+    {
+        "name": "get_bend",
+        "description": (
+            "Where and how far the fairway bends (the dogleg) on a hole, measured from "
+            "the tee along the hole's mapped centerline. Call this when the player asks "
+            "about the bend, corner, or dogleg. If it returns straight:true, the hole has "
+            "no significant bend — say it plays straight. If available:false the hole's "
+            "centerline isn't mapped — say you don't know the shape and NEVER invent a "
+            "dogleg or a distance to one."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "hole_number": {
+                    "type": "integer",
+                    "description": "Hole to evaluate (1-18). Omit for the current hole.",
+                },
+            },
+        },
+    },
     {
         "name": "get_carries",
         "description": (
@@ -388,6 +408,11 @@ def conditions_payload(session: RoundSession, hole_number: Optional[int] = None)
     if intel is not None and intel.green_slope:
         green_slope = {"description": intel.green_slope.description}
 
+    # Honest by design: unmapped centerline (bend=None) is distinct from a
+    # measured-straight hole (bend.straight=True) — both are True facts, but
+    # a different kind of "no bend" (see bend_payload).
+    bend = intel.bend.model_dump() if intel is not None and intel.bend is not None else None
+
     return {
         "round_id": session.round_id,
         "hole_number": hn,
@@ -396,6 +421,7 @@ def conditions_payload(session: RoundSession, hole_number: Optional[int] = None)
         "hazards": hazards_payload,
         "hazards_line": hazards_line,
         "green_slope": green_slope,
+        "bend": bend,
     }
 
 
@@ -539,6 +565,58 @@ def carries_payload(session: RoundSession, hole_number: int) -> dict:
         "carries": carries,
         "club_distances": dict(club_yards),
         "note": "No mapped bunkers or water in play on this hole." if not carries else None,
+    }
+
+
+def bend_payload(session: RoundSession, hole_number: Optional[int] = None) -> dict:
+    """Where/how far the fairway bends for the `get_bend` tool — pure.
+
+    Fields come verbatim from `HoleIntelligence.bend` (app/caddie/hazards.py::
+    extract_hole_bend at intel time), never recomputed here. Honest matrix
+    ([[no-fake-data-fallbacks]]) — unmapped centerline is a DIFFERENT fact
+    than a measured-straight hole, never conflated:
+
+      - no hole_intel for the hole → available:false + reason;
+      - intel present but `bend is None` (centerline unmapped) →
+        available:false + reason — distinct from "straight";
+      - `bend.straight` → available:true, straight:true, a TRUE note (the
+        `carries_payload` note pattern), direction/distance both None;
+      - a real bend → available:true, straight:false, direction/
+        distance_yards/deviation_yards/double_dogleg verbatim, plus the
+        tee-anchored assumption (v1 has no GPS composition — §3).
+    """
+    hn = hole_number or session.current_hole
+    base = {"round_id": session.round_id, "hole_number": hn}
+    intel = session.hole_intel.get(hn)
+
+    if intel is None:
+        return {**base, "available": False, "reason": "No mapped course data for this hole."}
+    if intel.bend is None:
+        return {**base, "available": False, "reason": "Hole centerline not mapped — can't measure the bend."}
+
+    bend = intel.bend
+    if bend.straight:
+        return {
+            **base,
+            "available": True,
+            "straight": True,
+            "direction": None,
+            "distance_yards": None,
+            "note": "No significant bend — this hole plays straight.",
+        }
+
+    return {
+        **base,
+        "available": True,
+        "straight": False,
+        "direction": bend.direction,
+        "distance_yards": bend.distance_yards,
+        "deviation_yards": bend.deviation_yards,
+        "double_dogleg": bend.double_dogleg,
+        "assumptions": [
+            "distance measured from the tee along the hole centerline; from "
+            "mid-hole the bend is closer than this"
+        ],
     }
 
 
@@ -816,6 +894,9 @@ async def resolve_tool(name: str, args: dict, ctx: ToolContext) -> dict:
         return green_read_payload(
             session, hole_number=_as_int(args.get("hole_number")) or ctx.default_hole
         )
+
+    if name == "get_bend":
+        return bend_payload(session, _as_int(args.get("hole_number")) or ctx.default_hole)
 
     # name == "get_carries" (the registry is closed — see _TOOL_NAMES gate)
     hn = _as_int(args.get("hole_number")) or ctx.default_hole

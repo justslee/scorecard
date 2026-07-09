@@ -13,7 +13,7 @@ from app.caddie.types import CaddiePersonality
 from app.caddie.session import RoundSession
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.green_geometry import GREEN_GROUNDING_RULE
-from app.caddie.hazards import HAZARD_GROUNDING_RULE, format_hazards_line
+from app.caddie.hazards import BEND_GROUNDING_RULE, HAZARD_GROUNDING_RULE, format_bend_line, format_hazards_line
 from app.caddie.guide_writer import format_guide_line
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.db.models import CaddieMemory
@@ -89,6 +89,7 @@ def build_realtime_instructions(
 
     parts.append(
         "# Behavior\n" + _BASE_BEHAVIOR.strip() + "\n" + HAZARD_GROUNDING_RULE
+        + "\n" + BEND_GROUNDING_RULE
         + "\n" + PHYSICS_GROUNDING_RULE
         + "\n" + GREEN_GROUNDING_RULE
         + "\n" + OBSERVED_REALITY_RULE
@@ -132,6 +133,9 @@ def _situation_block(session: Optional[RoundSession]) -> str:
             hazards_line = format_hazards_line(session.current_hole, intel.hazards)
             if hazards_line:
                 lines.append(hazards_line)
+        bend_line = format_bend_line(session.current_hole, intel.bend)
+        if bend_line:
+            lines.append(bend_line)
         guide_line = format_guide_line(intel.strategy_guide)
         if guide_line:
             lines.append(guide_line)

@@ -80,6 +80,17 @@ export interface HoleStrategyGuide {
   schema_version: number;
 }
 
+// Where/how far the fairway bends (the dogleg), measured from the tee along
+// the hole's mapped centerline — mirrors
+// `backend/app/caddie/types.py::HoleBend` exactly.
+export interface HoleBend {
+  straight: boolean;
+  direction: 'left' | 'right' | null;
+  distance_yards: number | null;
+  deviation_yards: number;
+  double_dogleg: boolean;
+}
+
 export interface HoleIntelligence {
   hole_number: number;
   par: number;
@@ -99,6 +110,9 @@ export interface HoleIntelligence {
     bogey_rate: number;
   };
   strategy_guide?: HoleStrategyGuide;
+  /** None = centerline unmapped (honest unknown), distinct from a
+   *  measured-straight hole (bend.straight === true). */
+  bend?: HoleBend | null;
 }
 
 export interface CaddiePersonalityInfo {

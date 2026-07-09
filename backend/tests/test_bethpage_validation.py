@@ -23,7 +23,7 @@ from typing import Optional
 import pytest
 
 from app.caddie.guide_writer import validate_guide
-from app.caddie.hazards import extract_hole_hazards, format_hazards_line
+from app.caddie.hazards import extract_hole_bend, extract_hole_hazards, format_hazards_line
 from app.caddie.types import HoleStrategyGuide
 from app.services.osm import _parse_course_geometry_response
 from app.services.osm_ingest import _deterministic_uuid, assemble_osm_course
@@ -490,3 +490,32 @@ class TestHole4HazardSideRegression:
             miss_side="Watch the right bunkers off the tee at 265.",
         )
         assert validate_guide(guide, hole4_hazards) is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# VII. Hole 4 bend/dogleg direction lock (caddie-bend-distance)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# The same crux as the hazard-side-flip incident, one level up: hole 4's
+# golf=hole way runs 268y at bearing 46.1° then doglegs LEFT to 23.3° — the
+# real OSM-digitized geometry, not a synthetic fixture. A deviation-sign
+# implementation of extract_hole_bend reports "right" against this exact
+# data (mirroring the same corner that sits right of the chord, hazards.py
+# module docstring); this test locks the TURN-cross answer, "left", against
+# the real fixture.
+
+
+class TestHole4BendRegression:
+    def test_hole4_bend_direction_is_left_on_real_osm_geometry(self, assembled: dict):
+        hole4 = next(h for h in assembled["holes"] if h["number"] == 4)
+        bend = extract_hole_bend(hole4["features"])
+        assert bend is not None, "hole 4 must have a mapped centerline to measure a bend"
+        assert bend.straight is False
+        assert bend.direction == "left", (
+            "hole 4 is a documented dogleg LEFT (hazards.py module docstring) — a "
+            "deviation-sign implementation would report 'right' here"
+        )
+        # Landing-zone band: the along-path corner distance off the real
+        # fixture (builder-measured ~265y). The hard tooth is the direction
+        # assertion above, which is sign-sensitive against real OSM data.
+        assert 200 <= bend.distance_yards <= 350
