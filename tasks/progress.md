@@ -3,6 +3,32 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-09 cycle 42 — PICK: caddie-green-slope-spatial (NOTICEABLE, rides bundle #119)
+
+Step 0 done: bundle PR #119 OPEN + STRICT-green (head 8da82c4), Needs Review card
+3981c525-92e0-818a-b49f-c8cb84106397 has NO owner comment yet → still awaiting "ship it".
+Do NOT merge. New work rides SAME bundle. Sync clean (main == integration/next up to date).
+
+Pick (from specs/caddie-physics-engine.md §P1 item 2 in sequencing): green-slope spatial
+reasoning. Build backend/app/caddie/green_geometry.py — rotate the green's slope aspect into
+the player's tee→green (or shot→green) LEFT/RIGHT frame reusing the hazards.py cross-product
+machinery (`_xy_m` east/north projection + `cross(travel_unit, vec)` where positive = LEFT of
+travel). Rule engine: slope-falls-LEFT ⇒ high side RIGHT ⇒ miss/leave RIGHT ⇒ uphill putt.
+Expose as caddie TOOL `get_green_read` (mirror the `get_shot_distance` physics precedent:
+CADDIE_TOOLS entry + green_read_payload + resolve_tool branch). Add GREEN_GROUNDING_RULE
+(mirror PHYSICS/HAZARD_GROUNDING_RULE; wire into voice_prompts.py ~L15-17 import + ~L91
+append) forbidding the LLM from deriving break/putt geometry itself. Full 8-aspect × approach
+bearing test table + golden eval case = the owner's exact slope-left→right-leave→uphill chain
+(must FAIL pre-fix). SPATIAL-CORRECTNESS (4th geometry incident class) → Fable plan + Fable
+adversarial reviewer that FALSIFIES the rotation with hand-derived cases (a sign flip / lat-lng
+swap must turn tests red).
+
+## AWAITING
+Fable Plan agent (model=fable) producing the implementation plan for caddie-green-slope-spatial.
+On return: save to specs/caddie-green-slope-spatial-plan.md, then dispatch builder ON
+integration/next to implement it (builder commits+pushes, no per-item PR). No uncommitted state
+held across this await beyond this note.
+
 ## 2026-07-09 — builder: multi-tee-anchor-reconciliation — Fable BLOCKING fix (SILENT, DONE)
 
 Fixed the ONE BLOCKING correctness issue Fable found on c682f7f: `resolveTeeAnchor`
