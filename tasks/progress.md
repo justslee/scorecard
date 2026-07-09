@@ -9267,3 +9267,19 @@ tiles resolve to ~178 not 232.
 Fable Plan agent producing the implementation plan for multi-tee-anchor-reconciliation. On
 return: save to specs/multi-tee-anchor-reconciliation-plan.md, commit+push, then dispatch ONE
 builder on integration/next. Plan agent cannot Write (returns text) — eng-lead saves the file.
+
+## 2026-07-09 cycle 41 — Fable plan saved (specs/multi-tee-anchor-reconciliation-plan.md)
+
+Plan is grounded: new pure `frontend/src/lib/course/tee-anchor.ts` (resolveTeeAnchor: named
+match -> card-nearest -> single -> legacy, with a par-aware >8% reconciliation guard and a
+`card-only` honest fallback); expose all tee-box centroids on CourseCoordinates.teeBoxes
+(mapped-course-api + attachTeeBoxes) so the mock/golfapi path still gets the 5 boxes; apply
+anchored coords ONCE in RoundPageClient (tiles, plays-like, wind, opening shot, course-intel,
+tee markers); header ladder card -> anchored center -> mock only for paper fallback; GPS
+override branch untouched. Hole-3 fixture test proves tiles ≈174 (card 178), NOT 232.
+
+## AWAITING
+ONE builder implementing specs/multi-tee-anchor-reconciliation-plan.md on integration/next
+(commits + pushes there, NO per-item PR). On return: Fable reviewer (must FALSIFY tiles->~178
+not 232 against hole-3 5-tee data) + qa (gates strict) + designer (tile/caption/header strings
+user-facing). If green: update bundle PR #119 checklist. Rides bundle #119 (NOTICEABLE).
