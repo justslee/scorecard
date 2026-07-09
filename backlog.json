@@ -3,6 +3,64 @@
   "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "teetime-s0-kill-fake-data",
+      "title": "Tee-time S0: delete synthesized 'Held' slots + private-course filter + honest copy",
+      "type": "major",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "specs/teetime-real-booking-plan.md S0 (ship first, no external deps). Delete affiliate.py synthesized-slot emission + the mock-fallback substitution in routes/tee_times.py; add private_filter.py + private_clubs.json (Liberty National excluded \u2014 the offender); kill 'Held' everywhere (route-driven 'Found'/'Call'/'Book on course site'); honest-empty when no real data. Tests: private filter, honest-empty, no synthesized slots ever. Owner: 'I want real data.'"
+    },
+    {
+      "id": "teetime-s1-foreup-availability",
+      "title": "Tee-time S1: real foreUP availability (validated NY course set) + deep-link",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [
+        "teetime-s0-kill-fake-data"
+      ],
+      "why": "specs/teetime-real-booking-plan.md S1. ForeUpProvider hitting the public /api/booking/times endpoint; CourseBookingCapability table + migration; foreup_ny_seed.json (NOT Bethpage-first) + validate_foreup_courses.py; cache(5-10min, one poll/course/window) + per-host rate limit + circuit-breaker. VERIFY against a REAL live NY foreUP course (owner eyeballs vs reality); capture the response as the CI fixture (never live-hit CI). FLAG live param/response literals during build. Fable plan already written. Legal: low-not-zero, read-only, honest UA."
+    },
+    {
+      "id": "teetime-s2-foreup-booking-handoff",
+      "title": "Tee-time S2: foreUP booking = deep-link handoff (evidence-gated)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [
+        "teetime-s1-foreup-availability"
+      ],
+      "why": "specs/teetime-real-booking-plan.md S2. Confirm on a live page that reservations need account+card \u2192 book() returns needs_human + booking_url deep-link to the course's own page. Never store user payment/creds, never auto-charge. Test: handoff yields correct deep-link + persists a tee_time_bookings row."
+    },
+    {
+      "id": "teetime-s3-ai-caller-plus-rehearsal",
+      "title": "Tee-time S3: AI pro-shop caller route + owner 'call me' rehearsal harness",
+      "type": "major",
+      "priority": 2,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [
+        "teetime-s0-kill-fake-data"
+      ],
+      "why": "specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool."
+    },
+    {
+      "id": "teetime-s4-scraping-adapters",
+      "title": "Tee-time S4: Playwright scraping adapters for gated platforms (GRAY, gated)",
+      "type": "major",
+      "priority": 3,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [
+        "teetime-s1-foreup-availability"
+      ],
+      "why": "specs/teetime-real-booking-plan.md S4. Only courses whose availability is behind a rendered page (Chronogolf/Lightspeed widgets) with no clean JSON and no foreUP/call route. Headless Playwright, HTML parse, honest UA, low freq, heavy cache, never solve CAPTCHAs, never log in to scrape. Tests vs saved HTML fixtures (never live in CI). Explicitly GRAY \u2014 per-course opt-in, lowest priority."
+    },
+    {
       "id": "caddie-remove-seeded-question",
       "title": "Caddie opens in its OWN voice \u2014 drop the fake user-voice question",
       "type": "major",
@@ -61,30 +119,6 @@
       "status": "ready",
       "depends_on": [],
       "why": "OWNER 2026-07-09 (screenshot): the affiliate provider synthesizes ONE estimated slot per course (time=window start, estimated=True) but the UI renders 'Found ~6:30 AM\u2026 Held for you' \u2014 NO hold exists (no-fake-data violation). Also Liberty National (PRIVATE) surfaced as bookable. FIX: never say 'Held'; render estimates as 'suggested window \u2014 call to confirm'; filter/flag private clubs (Places types + curated private list). Frontend copy + a private-course guard. Immediate honesty fix, ship first."
-    },
-    {
-      "id": "teetime-real-availability-foreup",
-      "title": "Tee-time POC: real availability via foreUP public pages + deep-link handoff",
-      "type": "major",
-      "priority": 1,
-      "risk": "medium",
-      "status": "ready",
-      "depends_on": [
-        "teetime-kill-fake-held"
-      ],
-      "why": "OWNER 2026-07-09 (GolfNow won't grant API): per specs/tee-time-real-availability-research.md Route 1 \u2014 read-only fetch real slots from foreUP-family public booking endpoints (Bethpage runs on foreUP: foreupsoftware.com/booking/19765/2431 \u2014 the owner's home course, instant ground-truth validation), display honestly, deep-link into the COURSE'S OWN booking page to finish. NO auto-book, no user creds, no 'Held'. Per-platform adapters (foreUP first); heavy cache + strict rate limit (one poll/course/window); circuit-break on 4xx; gentle (Bethpage fights BOOKING bots, not availability display \u2014 low freq, no login, never auto-book). Needs a Fable plan (adapter arch, cache/limit, ToS-risk posture, private-course exclusion)."
-    },
-    {
-      "id": "teetime-ai-caller-poc",
-      "title": "Tee-time POC: AI pro-shop caller (disclosed, consented course)",
-      "type": "major",
-      "priority": 2,
-      "risk": "high",
-      "status": "ready",
-      "depends_on": [
-        "teetime-kill-fake-held"
-      ],
-      "why": "OWNER 2026-07-09 (route no aggregator can gate \u2014 every course has a phone): per research Route 2 \u2014 outbound call to a PRO SHOP (business line) via our realtime stack + Twilio, discloses AI in the first seconds (2026 FCC/state norm), asks availability / books in the player's name, logs transcript, human-confirms. POC = ONE consented friendly local course. Needs a Fable plan (Twilio bridge to the realtime session, disclosure script, booking-confirmation capture, PCI: never take card over the AI line)."
     },
     {
       "id": "teetime-partnership-applications",
