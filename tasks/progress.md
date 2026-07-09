@@ -9584,3 +9584,69 @@ On builder return → reviewer (scrape/ToS posture + no-fake-fixture BLOCKING +
 circuit-breaker) + /security-review (external-fetch/SSRF/rate-limit) + qa STRICT
 gates. If this cycle dies here: next cycle reconciles from origin/integration/next
 (check builder's actual commits — do NOT rebuild) and runs the reviews.
+
+## 2026-07-09 — cycle 43 BUILDER DONE: teetime-s1-foreup implemented per plan
+
+Implemented specs/teetime-s1-foreup-plan.md exactly, no re-plan. New:
+`backend/app/services/tee_times/foreup.py` (ForeUpProvider — request/parse/
+normalize per §3d field-mapping table, `slots_for_capability` 3-way
+None/[]/slots contract, 8-min FileSearchCacheStore cache keyed on
+booking_id/schedule_id/date/players, in-process asyncio-Future single-flight,
+module-singleton SlidingWindowLimiter rpm=10/60s keyed "foreupsoftware.com",
+module-singleton CircuitBreaker 3-fail/open-300s/half-open-1-trial, `book()`
+always needs_human); `capability_store.py` (CourseBookingCapability, seed
+fail-loud / validated fail-soft, `match_capability` exact-name+<=1mi or exact
+id); `backend/data/foreup_ny_seed.json` (18 Mile Creek, REAL lat/lng
+42.714304/-78.813114 geocoded from the real address, phone (716) 648-4410);
+`router_provider.py` (RoutedTeeTimeProvider extends RoutingTeeTimeProvider via
+the new `_slots_for_course` hook extracted in routing.py — S0 tests pass
+BYTE-IDENTICAL, unedited); `backend/scripts/validate_foreup_courses.py`
+(capture/validate CLI, never run in CI). Route wiring: `_get_provider()`
+default/routing/affiliate/unknown -> RoutedTeeTimeProvider, "foreup" ->
+standalone debug, TEETIME_FOREUP_ENABLED=0 kill switch.
+
+FIXTURE PROVENANCE (BLOCKING item — verified real, not fabricated): captured
+via ONE live probe of the real endpoint (`validate_foreup_courses.py
+--capture-fixture --dry-run`), 18 Mile Creek Golf Course (course_id=20410,
+schedule_id=4467), date=2026-07-11, players=1. Raw response saved verbatim to
+`backend/tests/fixtures/foreup_18mile_times.json`: 18 real slots, times
+12:21-18:03, green_fee $14-$24 (confirmed `green_fee` is the real key name —
+matches the plan's primary guess, documented in foreup.py's docstring). All
+foreup.py test assertions in test_tee_time_foreup.py are DERIVED from the
+fixture at runtime (re-implementing the documented rules independently), not
+hand-typed counts.
+
+Gates (local, no Postgres — DB-backed tests deferred to CI per lessons.md):
+ruff clean; targeted pytest 130/130 (test_tee_time_foreup 29, capability_store
+14, router 13, routing/private_filter/search_cache/rate_limit unchanged);
+full non-DB backend sweep 1583/1583; frontend lint clean, tsc clean, vitest
+teetime 161/161 (incl. 2 new confirm-copy cases for a real foreup time),
+`npm run build` OK, voice-tests smoke 274/274. Manual end-to-end sanity (no
+extra live hit — MockTransport serving the captured fixture, real
+capability_store.load_capabilities() seed): router surfaces 6 real 18 Mile
+Creek slots (party_size=2, party-filtered) + a plain S0 route entry for an
+unmatched course, exactly per §5c.
+
+Frontend touches (3, minimal, per plan §9): confirm-copy.ts needsHuman+real-
+time case ("Found 7:10 AM at ... — they take the reservation, book it on the
+course site."); tee-time/page.tsx "Locking in." -> "Setting it up." (needs_
+human handoff, never overclaim); types.ts comment sync (+foreup, base.py/
+tee_times.py route-field comments too).
+
+Deviation from plan: none substantive. Minor: seed `verified_at` timestamp
+set to the exact capture time (2026-07-09T16:57:50Z) rather than a placeholder
+midnight stamp — more honest provenance, same shape.
+
+Reviewer should scrutinize (per plan §14): fixture authenticity (raw capture,
+derived assertions — no hand-typed counts); wrong-course real times (match_
+capability exact-name+<=1mi, tested >1mi-away non-match); verified-empty
+omits the course (never a fake book_on_site entry); cache key includes
+players+date, excludes window; breaker/limiter actually sit ON the fetch path
+(transport-call-counting tests prove zero HTTP on cache-hit/limiter-block/
+open-breaker); bool-as-int trap (`_as_int` checks isinstance(v, bool) first).
+
+Committed to integration/next (commit SHAs in the next progress entry after
+push). NOTICEABLE (owner can search near Hamburg NY and see real 18 Mile
+Creek tee times with real clock times + "Book on the course site" deep-link
+to foreupsoftware.com — this rides the open bundle, no separate ping per
+cycle directive: pause noticeable pings while a bundle awaits ship-it).
