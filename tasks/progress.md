@@ -9143,3 +9143,18 @@ Silent riders: ORCHESTRATION.md + agent-architecture study + tee-time
 plans. Twenty-two ships this run.
 NEXT: tee-time S0 (rip fake data) → S1 foreUP; caddie physics steps 2nd-
 slice (tiles consume backend plays-like); green-slope + bend + tree-CV.
+
+---
+
+## 2026-07-09 cycle 40 — IN PROGRESS: #teetime-s0-kill-fake-data (NOTICEABLE)
+
+Picked tee-time S0 (owner: "I want real data"). Per specs/teetime-real-booking-plan.md S0:
+rip synthesized slots + mock-fallback; add private_filter.py + private_clubs.json (Liberty
+National excluded); skeleton RoutingTeeTimeProvider (discovery + private filter + honest
+empty, NO foreUP yet); add `route` field to base.py/types.ts; frontend kill "Held" ->
+route-driven Found/Call/Book-on-site + honest empty. Tests: private filter, honest-empty,
+no "Held" string. Bundle currently empty; this lands first, opens the rolling PR.
+
+## AWAITING
+Fable Plan agent -> specs/teetime-s0-plan.md. On return: save plan, checkpoint, dispatch ONE
+builder on integration/next. (Nothing built yet; branch = clean at HEAD.)
