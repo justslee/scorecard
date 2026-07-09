@@ -9000,3 +9000,17 @@ a noticeable change (caddie-tool-loop-parity); this minor UI polish rides along 
 with the owner's single approval. Bundle still awaiting owner ship-it.
 
 Checkpoint commit: 6760bd4 (plan+AWAITING) → superseded by this close note.
+
+---
+
+## 2026-07-09 — SHIPPED: #117 audit close-out (eval harness + tool parity + carry-aware validator)
+
+Owner "ship it". Merge 2d55633 → main; deploy verified by SHA + health ok.
+TestFlight v1.0.927 (build 202607090621). The excellence audit's ENTIRE P1
+tier is now shipped: prompt caching, rate limits, LLM timeouts, eval
+harness (teeth-proven), tool-loop parity (real carries), carry-aware side
+validation (laundering bypass closed), + retro lessons + caption polish.
+POST-SHIP RECOVERY: Bethpage HOLE 4 GUIDE CACHED (validated vs true
+geometry — the incident hole recovered); 7/11 honest-empty (research
+persistently conflicts with geometry — suspect OSM quirks; future card).
+Bethpage 16/18, Pebble 18/18. Twenty-one ships this run.
