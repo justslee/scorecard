@@ -16,6 +16,7 @@ import pytest
 
 from app.caddie.hazards import (
     HAZARD_GROUNDING_RULE,
+    extract_hole_bend,
     extract_hole_hazards,
     format_hazards_line,
 )
@@ -568,3 +569,226 @@ class TestFormatHazardsLine:
 def test_grounding_rule_forbids_inventing_hazards():
     assert "do not invent one" in HAZARD_GROUNDING_RULE
     assert "bunker at 260 on the left" in HAZARD_GROUNDING_RULE
+
+
+# ── extract_hole_bend ──────────────────────────────────────────────────────
+#
+# Correctness crux (module docstring, "bend / turn-cross" paragraph): the
+# spoken direction is the TURN cross (tee→bend x bend→green), NOT the sign of
+# the bend vertex's CHORD deviation. `_dogleg_hole()`'s default shape (leg1
+# 45°, leg2 due north — the Bethpage-4 dogleg-LEFT shape) is the pinned
+# example: the corner sits RIGHT of the tee→green chord, but the true turn is
+# LEFT. Tests 2/3 below lock that; a deviation-sign implementation reports
+# "right" and goes RED on both.
+
+
+class TestExtractHoleBend:
+    def test_01_right_dogleg_direction_and_distance(self):
+        """tee→(0,250yN)→green(180yE,250yN): a clean 90° right turn at the
+        corner. RED if: threshold logic is inverted (reports straight), or
+        distance is measured to the wrong vertex (e.g. straight-line to the
+        green instead of the along-path corner)."""
+        tee_feat, green_feat, hole_way = _dogleg_hole(
+            leg1_yards=250.0, leg1_bearing=0.0, leg2_yards=180.0, leg2_bearing=90.0,
+        )
+        bend = extract_hole_bend(_fc(tee_feat, green_feat, hole_way))
+        assert bend is not None
+        assert bend.straight is False
+        assert bend.direction == "right"
+        assert abs(bend.distance_yards - 250) <= 5
+
+    def test_02_left_dogleg_direction_and_distance(self):
+        """The Bethpage-4 shape (`_dogleg_hole()` defaults: leg1 45°, leg2
+        due north). RED under a deviation-sign implementation, which reports
+        "right" here (see test_03's explicit mirror-trap pin)."""
+        tee_feat, green_feat, hole_way = _dogleg_hole()
+        bend = extract_hole_bend(_fc(tee_feat, green_feat, hole_way))
+        assert bend is not None
+        assert bend.straight is False
+        assert bend.direction == "left"
+        assert abs(bend.distance_yards - 270) <= 5
+
+    def test_03_mirror_trap_chord_deviation_disagrees_with_reported_direction(self):
+        """The same Bethpage-4 fixture as test_02: the bend vertex's CHORD
+        deviation is negative (right-of-chord) while the reported direction
+        is "left" — this documents WHY direction is the turn cross, not the
+        deviation sign, and makes a naive (deviation-sign) implementation
+        fail with a self-explaining assertion rather than a bare mismatch."""
+        tee_feat, green_feat, hole_way = _dogleg_hole()
+        bend = extract_hole_bend(_fc(tee_feat, green_feat, hole_way))
+        assert bend is not None and bend.direction == "left"
+
+        # Recompute the corner vertex's chord deviation inline (independent
+        # of extract_hole_bend's internals) to prove the mirror.
+        tee_lon, tee_lat = _TEE_LON, _TEE_LAT
+        n1, e1 = _rotate(270.0, 0.0, 45.0)
+        v_lon, v_lat = _point_north_east(tee_lon, tee_lat, n1, e1)
+        dn2, de2 = _rotate(200.0, 0.0, 0.0)
+        green_lon, green_lat = _point_north_east(v_lon, v_lat, dn2, de2)
+
+        def _xy(lon, lat):
+            cos_lat = math.cos(math.radians((tee_lat + lat) / 2.0))
+            x = (lon - tee_lon) * _LAT_M_PER_DEG * cos_lat
+            y = (lat - tee_lat) * _LAT_M_PER_DEG
+            return x, y
+
+        gx, gy = _xy(green_lon, green_lat)
+        vx, vy = _xy(v_lon, v_lat)
+        length = math.hypot(gx, gy)
+        ux, uy = gx / length, gy / length
+        dev_m = ux * vy - uy * vx
+        assert dev_m < 0, "corner must sit RIGHT of the tee->green chord (the incident geometry)"
+
+    def test_04_straight_hole_two_vertex_and_jittery_many_vertex(self):
+        """A bare 2-vertex way and a many-vertex way with <=8y lateral jitter
+        both measure straight. RED if the implementation invents a bend or
+        drops the threshold."""
+        green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 300, 0)
+        tee_feat = _square_polygon("tee", _TEE_LON, _TEE_LAT)
+        green_feat = _square_polygon("green", green_lon, green_lat)
+
+        two_vertex_way = _hole_linestring(_TEE_LON, _TEE_LAT, green_lat)
+        bend = extract_hole_bend(_fc(tee_feat, green_feat, two_vertex_way))
+        assert bend is not None
+        assert bend.straight is True
+        assert bend.direction is None
+
+        coords = [[_TEE_LON, _TEE_LAT]]
+        for i, north in enumerate((50, 100, 150, 200, 250)):
+            lateral = 6 if i % 2 == 0 else -6
+            lon, lat = _point_north_east(_TEE_LON, _TEE_LAT, north, lateral)
+            coords.append([lon, lat])
+        coords.append([green_lon, green_lat])
+        jittery_way = {
+            "type": "Feature", "properties": {"featureType": "hole"},
+            "geometry": {"type": "LineString", "coordinates": coords},
+        }
+        bend = extract_hole_bend(_fc(tee_feat, green_feat, jittery_way))
+        assert bend is not None
+        assert bend.straight is True
+        assert bend.direction is None
+
+    def test_05_threshold_boundary_12y_straight_18y_bend(self):
+        """A single interior vertex just below/above the pinned 15y
+        threshold. RED on any threshold drift."""
+        green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 300, 0)
+        tee_feat = _square_polygon("tee", _TEE_LON, _TEE_LAT)
+        green_feat = _square_polygon("green", green_lon, green_lat)
+
+        for deviation_yards, expect_straight in ((12, True), (18, False)):
+            v_lon, v_lat = _point_north_east(_TEE_LON, _TEE_LAT, 150, -deviation_yards)
+            hole_way = {
+                "type": "Feature", "properties": {"featureType": "hole"},
+                "geometry": {"type": "LineString", "coordinates": [
+                    [_TEE_LON, _TEE_LAT], [v_lon, v_lat], [green_lon, green_lat],
+                ]},
+            }
+            bend = extract_hole_bend(_fc(tee_feat, green_feat, hole_way))
+            assert bend is not None
+            assert bend.straight is expect_straight, (
+                f"deviation {deviation_yards}y: expected straight={expect_straight}, got {bend}"
+            )
+
+    @pytest.mark.parametrize("offset", _BEARINGS)
+    def test_06_bearing_invariance_right_dogleg(self, offset):
+        """The right-dogleg shape (test_01) rotated to all 8 compass
+        headings must report direction=="right" and the same distance at
+        every bearing. RED on any east/north sign slip."""
+        tee_feat, green_feat, hole_way = _dogleg_hole(
+            leg1_bearing=offset, leg2_bearing=(offset + 90) % 360,
+        )
+        bend = extract_hole_bend(_fc(tee_feat, green_feat, hole_way))
+        assert bend is not None
+        assert bend.direction == "right"
+        assert abs(bend.distance_yards - 270) <= 5
+
+    def test_07_no_polyline_returns_none_never_straight(self):
+        """Tee/green polygons only, no hole LineString — the chord fallback
+        has no interior vertices, so this must be an honest unknown. RED if
+        the implementation fabricates a "straight" or a bend from the chord."""
+        tee_feat, green_feat, _ = _dogleg_hole()
+        assert extract_hole_bend(_fc(tee_feat, green_feat)) is None
+
+    def test_08_tee_anchor_subtraction(self):
+        """The way's digitized start sits 30y BEHIND the derived tee (a
+        back-tee routing artifact); the bend vertex is at a TRUE 250y from
+        the tee. RED if tee_along_m isn't subtracted (would report 280)."""
+        way_start_lon, way_start_lat = _point_north_east(_TEE_LON, _TEE_LAT, -30, 0)
+        bend_lon, bend_lat = _point_north_east(_TEE_LON, _TEE_LAT, 250, -30)
+        green_lon, green_lat = _point_north_east(_TEE_LON, _TEE_LAT, 450, 0)
+        tee_feat = _square_polygon("tee", _TEE_LON, _TEE_LAT)
+        green_feat = _square_polygon("green", green_lon, green_lat)
+        hole_way = {
+            "type": "Feature", "properties": {"featureType": "hole"},
+            "geometry": {"type": "LineString", "coordinates": [
+                [way_start_lon, way_start_lat], [bend_lon, bend_lat], [green_lon, green_lat],
+            ]},
+        }
+        bend = extract_hole_bend(_fc(tee_feat, green_feat, hole_way))
+        assert bend is not None
+        assert bend.straight is False
+        assert abs(bend.distance_yards - 250) <= 5
+        assert abs(bend.distance_yards - 280) > 15  # NOT the un-anchored number
+
+    def test_09_double_dogleg_primary_selection_and_cumulative_distance(self):
+        """An S-shape: bend A (dev +40y, ~215y cumulative along-path) is the
+        primary (max |dev| beats bend B's 25y); bend B (dev -25y, opposite
+        sign, over threshold) sets double_dogleg. A's OWN reported distance
+        is cumulative (tee->waypoint->A, ~215y) — not the straight-line
+        tee->A distance (~204y, which rounds to a materially different
+        204/205 value). RED on a straight-line-to-vertex implementation,
+        which would report ~205 instead of ~215."""
+        # Chord runs due north (green due north of tee, on-centerline).
+        # Path: tee(0,0) -> waypoint(0,150; ON the chord, dev=0) ->
+        # A(-40,200; dev=+40, the primary) -> B(25,320; dev=-25) -> green(0,450).
+        points_east_north = [(0, 0), (0, 150), (-40, 200), (25, 320), (0, 450)]
+        coords = [
+            list(_point_north_east(_TEE_LON, _TEE_LAT, north, east))
+            for east, north in points_east_north
+        ]
+        tee_feat = _square_polygon("tee", *coords[0])
+        green_feat = _square_polygon("green", *coords[-1])
+        hole_way = {
+            "type": "Feature", "properties": {"featureType": "hole"},
+            "geometry": {"type": "LineString", "coordinates": coords},
+        }
+        bend = extract_hole_bend(_fc(tee_feat, green_feat, hole_way))
+        assert bend is not None
+        assert bend.straight is False
+        assert abs(bend.deviation_yards - 40) <= 3, "primary must be bend A (dev +40), not B (dev -25)"
+        assert bend.double_dogleg is True
+        assert abs(bend.distance_yards - 215) <= 10, f"expected the CUMULATIVE distance (~215y), got {bend.distance_yards}"
+        straight_line_to_a = math.hypot(-40 * 0.9144, 200 * 0.9144) / 0.9144
+        assert abs(bend.distance_yards - straight_line_to_a) > 5, (
+            "distance must diverge from a straight-line-to-vertex calculation "
+            f"(straight-line ~{straight_line_to_a:.0f}y, got {bend.distance_yards}y)"
+        )
+
+    def test_10_degenerate_polyline_and_behind_tee_kink(self):
+        """An all-identical-vertex polyline is degenerate -> None. A large
+        kink (60y deviation) located entirely BEHIND the tee must not be
+        reported as the bend — with no other candidate, the honest answer is
+        measured-straight, never the excluded kink's numbers."""
+        tee_feat, green_feat, _ = _dogleg_hole()
+        degenerate_way = {
+            "type": "Feature", "properties": {"featureType": "hole"},
+            "geometry": {"type": "LineString", "coordinates": [
+                [_TEE_LON, _TEE_LAT], [_TEE_LON, _TEE_LAT],
+            ]},
+        }
+        assert extract_hole_bend(_fc(tee_feat, green_feat, degenerate_way)) is None
+
+        points_east_north = [(0, -60), (60, -20), (0, 50), (0, 400)]
+        coords = [
+            list(_point_north_east(_TEE_LON, _TEE_LAT, north, east))
+            for east, north in points_east_north
+        ]
+        tee_feat = _square_polygon("tee", _TEE_LON, _TEE_LAT)
+        green_feat = _square_polygon("green", *coords[-1])
+        hole_way = {
+            "type": "Feature", "properties": {"featureType": "hole"},
+            "geometry": {"type": "LineString", "coordinates": coords},
+        }
+        bend = extract_hole_bend(_fc(tee_feat, green_feat, hole_way))
+        assert bend is not None
+        assert bend.straight is True, f"a behind-tee kink must never be reported as the bend, got {bend}"

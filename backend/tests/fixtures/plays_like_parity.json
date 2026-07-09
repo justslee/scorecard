@@ -1,0 +1,34 @@
+{
+  "assumptions": [
+    "wind resolved along the hole (tee→green line)",
+    "steady 12 mph wind from 90° (gusts not modeled)",
+    "landing-area slope approximated from the overall elevation change",
+    "treated your 165y 7iron as CARRY distance",
+    "launch profile assumed from tour-average 7iron shape scaled to your number",
+    "landing turf medium; landing-area grade -2.7%",
+    "plays-like solved from your 7iron's flight under these conditions (carry basis)"
+  ],
+  "available": true,
+  "breakdown": null,
+  "carry_yards": null,
+  "club": null,
+  "conditions_used": {
+    "air_density_kg_m3": 1.1939,
+    "elevation_change_ft": -12.0,
+    "firmness": "medium",
+    "shot_bearing_deg": 90.0,
+    "temperature_f": 70.0,
+    "weather_available": true,
+    "wind_applied": true,
+    "wind_direction": 90,
+    "wind_speed_mph": 12.0
+  },
+  "hole_number": 7,
+  "mode": "target",
+  "plays_like_yards": 173,
+  "roll_yards": null,
+  "round_id": "parity-round",
+  "suggested_club": "7iron",
+  "target_yards": 150,
+  "total_yards": null
+}

@@ -27,7 +27,13 @@ from typing import Callable, Optional
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.guide_writer import build_ground_truth_block, validate_guide
 from app.caddie.green_geometry import GREEN_GROUNDING_RULE
-from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
+from app.caddie.hazards import (
+    BEND_GROUNDING_RULE,
+    HAZARD_GROUNDING_RULE,
+    extract_hole_bend,
+    extract_hole_hazards,
+    format_hazards_line,
+)
 from app.caddie.physics import PHYSICS_GROUNDING_RULE, elevation_only_plays_like
 from app.caddie.session import RoundSession
 from app.caddie.tools import carries_payload, shot_distance_payload
@@ -88,6 +94,10 @@ def build_round_session(scenario: Scenario) -> RoundSession:
         effective_yards = elevation_only_plays_like(hole.yards, hole.elevation_change_ft)
     guide = HoleStrategyGuide(**scenario.situation.strategy_guide) if scenario.situation.strategy_guide else None
     green_slope = GreenSlope(**hole.green_slope) if hole.green_slope else None
+    # Additive: only scenarios with `features` (real GeoJSON) exercise the
+    # production bend geometry — scenarios with a pre-built `hazards` list or
+    # none at all keep bend=None (honest unknown), same convention as hazards.
+    bend = extract_hole_bend(hole.features) if hole.features is not None else None
     intel = HoleIntelligence(
         hole_number=hole.number,
         par=hole.par,
@@ -97,6 +107,7 @@ def build_round_session(scenario: Scenario) -> RoundSession:
         hazards=hazards,
         strategy_guide=guide,
         green_slope=green_slope,
+        bend=bend,
     )
     weather = (
         WeatherConditions(**scenario.situation.weather.model_dump())
@@ -164,6 +175,7 @@ _RULE_TEXT: dict[str, str] = {
     "OBSERVED_REALITY_RULE": OBSERVED_REALITY_RULE,
     "PHYSICS_GROUNDING_RULE": PHYSICS_GROUNDING_RULE,
     "GREEN_GROUNDING_RULE": GREEN_GROUNDING_RULE,
+    "BEND_GROUNDING_RULE": BEND_GROUNDING_RULE,
 }
 
 

@@ -3,6 +3,92 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-09 cycle 46 — PICK: caddie-bend-distance (NOTICEABLE, rides bundle #121)
+
+Step 0 done: PR #121 OPEN + STRICT-green on 06c7bb0 (S2 booking-handoff silent + physics
+tiles-coherence NOTICEABLE). Owner directive: CONTINUE TO BUNDLE — do NOT ship #121 yet; add
+this cycle's item. No Needs Review card is awaiting my action. Sync clean (main a37f74d ==
+merged into integration/next 06c7bb0; up to date).
+
+Pick (specs/caddie-physics-engine.md §P2): **caddie-bend-distance**. FREE from existing
+geometry. The dogleg/bend = the golf=hole polyline vertex with MAX perpendicular deviation
+from the tee→green chord. Reuses backend/app/caddie/hazards.py: `_hole_polyline` (stored
+featureType=="hole" LineString), `_xy_m` (east/north frame), `_derive_tee_green`, the chord
+unit (ux,uy), and the left=positive-cross convention (test_left_is_positive_cross). Compute
+along-path distance to the bend vertex (cumulative segment length from the tee's projection,
+same as `_project_onto_polyline`'s carry) + direction (sign of the cross = left/right).
+Threshold: |deviation| < ~15y off the chord ⇒ STRAIGHT (no invented bend). Anchor distance
+to the player's selected tee (compose with the multi-tee anchor) / GPS when on hole. Expose
+as HoleIntelligence intel (like `hazards`/`approach_bearing_deg`) + a caddie TOOL answer
+(get_bend or fold into get_carries — Fable plan decides). No ML, no new data. NOTICEABLE.
+
+Fable plan DONE → saved to specs/caddie-bend-distance-plan.md. Key finding it pinned: the
+spoken bend DIRECTION is the TURN cross (tee→bend × bend→green), NOT the vertex's chord
+deviation sign — on Bethpage-4 (dogleg LEFT) the corner sits RIGHT of the chord, so the naive
+deviation-sign impl would say "bends right" on every dogleg-left hole (the repo's twice-burned
+sign-flip class). Deviation cross SELECTS the vertex; turn cross gives direction. New `get_bend`
+tool (not folded into get_carries), additive HoleBend on HoleIntelligence, tee-anchored via the
+same _derive_tee_green path as hazards, 15y straight threshold, honest None on no-polyline.
+
+## DONE: caddie-bend-distance implemented + pushed to integration/next (dee66d8)
+Builder implemented specs/caddie-bend-distance-plan.md in full, exactly to plan (no deviations).
+Pushed commit dee66d8 on integration/next (head was 9e0d396, ff-only, no per-item PR).
+
+What shipped: `extract_hole_bend()` in `backend/app/caddie/hazards.py` (turn-cross direction,
+NOT chord-deviation sign — the crux), `HoleBend` type (additive on `HoleIntelligence`), new
+`get_bend` tool (registry first-sorted, `bend_payload` honest unmapped-vs-straight matrix,
+`resolve_tool` branch, `GET /session/{round_id}/bend` route), grounding in all three prompt
+builders + `BEND_GROUNDING_RULE`, two golden eval scenarios (dogleg-left + straight-hole),
+frontend mirrors (`types.ts`, `api.ts::getSessionBend`, `realtime.ts::dispatchTool` case). No UI.
+
+Teeth verified directly: mutated `direction = "left" if turn > 0 else "right"` to the naive
+`best_dev > 0` (deviation-sign) form and reran — 11 of the new `TestExtractHoleBend` cases +
+the `bend-dogleg-cites-geometry` eval scenario went RED (turn-cross confirmed load-bearing).
+Real Bethpage-4 OSM fixture locks `direction == "left"` (`TestHole4BendRegression`).
+
+Gates green: `ruff check .` clean; targeted suite (test_hazards/test_caddie_tools/
+test_realtime_tools/test_realtime_grounding/test_bethpage_validation/tests/eval) 235 passed;
+full non-DB backend suite 1624 passed (also updated test_caddie_caching.py's pinned legacy-
+template guard with the new rule placeholder — same pattern as prior additive rules, not a
+plan file but necessary maintenance); frontend lint/tsc/vitest(1836)/build/voice-smoke(274)
+all green. DB-backed `tests/integration/*` not run locally (no local Postgres per policy) —
+trust CI; those two files construct `HoleIntelligence` without `bend` (additive default None,
+should pass unchanged).
+
+NEXT: eng-lead review (reviewer/qa/designer-not-needed per dispatch note above), then update
+PR #121 checklist (+ caddie-bend-distance NOTICEABLE). Do NOT ship — owner said keep bundling.
+
+## AWAITING: reviewer + qa on caddie-bend-distance (item commit dee66d8) on integration/next
+Dispatched concurrently: (1) reviewer as a FABLE FALSIFIER — attacks the turn-cross direction +
+the 8-bearing sweep + tee-anchor subtraction + straight-threshold honesty; a sign flip / wrong
+vertex / straight-vs-unknown conflation must go RED. Runs /security-review on the new read-only
+`GET /session/{round_id}/bend` route (get_owned_session-gated like its siblings). (2) qa — reruns
+the backend named suites + full non-DB suite, frontend lint/tsc/vitest/build/voice-smoke.
+Designer NOT dispatched (tool-only, no UI renders). Head e56d363 (feature dee66d8 + progress
+e56d363), all local gates already green per builder.
+On BOTH green/CLEAN → update PR #121 checklist (+ caddie-bend-distance NOTICEABLE), verify CI
+strict-green on the pushed head (Frontend+Backend state:SUCCESS, pending==0, no CANCELLED gate),
+commit progress. Do NOT ship — owner directive is keep bundling #121.
+On any BLOCKING finding → re-dispatch the builder with the specifics, then re-review.
+Nothing uncommitted held across this await (builder already pushed dee66d8/e56d363).
+
+UPDATE: qa verdict = PASS (reproduced independently on 87109ef): ruff clean, backend 246/246 +
+1624/1624 (no skips), frontend lint/tsc clean, vitest 1836/1836, next build ok, voice 274/274.
+Only a pre-existing non-blocking jsdom `window.scrollTo` warning (frontend/src/lib/sheet.ts:81),
+not caused by this change. STILL AWAITING the Fable reviewer's falsification verdict on dee66d8.
+On reviewer SHIP → update PR #121 checklist (+bend NOTICEABLE), verify CI strict-green, commit,
+do NOT ship. On reviewer BLOCKING → re-dispatch builder, re-review.
+
+UPDATE: Fable reviewer returned its /security-review portion = CLEAN (no HIGH/MEDIUM; new
+GET /session/{round_id}/bend is read-only, get_owned_session-gated like carries → no IDOR,
+404-not-403 to avoid round-id enumeration; no data exposure; inputs FastAPI-typed; frontend
+encodeURIComponent + Number() coercion → no injection). BUT its final message did NOT include
+the GEOMETRY falsification verdict (turn-cross direction across the 8 bearings, vertex selection,
+straight-vs-unknown honesty, test teeth) — the highest-priority ask. Continuing the same reviewer
+agent (a390c6761ed1c9ee7, context intact) via SendMessage to get the explicit SHIP/BLOCKING
+geometry verdict. AWAITING that. On geometry SHIP → proceed as above. On geometry BLOCKING →
+re-dispatch builder with specifics, re-review.
+
 ## 2026-07-09 cycle 42 — PICK: caddie-green-slope-spatial (NOTICEABLE, rides bundle #119)
 
 Step 0 done: bundle PR #119 OPEN + STRICT-green (head 8da82c4), Needs Review card
@@ -9664,3 +9750,386 @@ push). NOTICEABLE (owner can search near Hamburg NY and see real 18 Mile
 Creek tee times with real clock times + "Book on the course site" deep-link
 to foreupsoftware.com — this rides the open bundle, no separate ping per
 cycle directive: pause noticeable pings while a bundle awaits ship-it).
+
+---
+
+## 2026-07-09 — SHIPPED: #120 real foreUP tee-time availability (S1)
+
+Owner "ship it". Merge a37f74d → main (STRICT gate all-SUCCESS); deploy
+verified by SHA + health ok. TestFlight v1.0.976 (build 202607091400).
+The "I want real data" milestone: ForeUpProvider hits the live public
+foreUP times endpoint; verified against 18 Mile Creek (Hamburg NY) — 18
+REAL slots captured as the CI fixture (odd tee-sheet times, $24 muni fees
+— genuinely real, not fabricated). CourseBookingCapability store + NY seed
++ validate script (discovery); 5-min cache, one-poll-per-window, per-host
+rate limit, circuit-breaker on bot signals, honest UA. Router: foreup-
+capable → real slots + "Book on the course site" deep-link; else voice_
+call/honest-empty. Twenty-four ships.
+NEXT: tee-time S2 (booking = deep-link handoff), S3 (AI caller + owner
+"call me" rehearsal harness), S4 (scraping adapters); physics 2nd slice;
+bend; tree-CV. Fast-follows logged: osm distance-sort, course_ids wiring.
+
+---
+
+## 2026-07-09 — cycle 44 START: tee-time S2 (foreUP booking = deep-link handoff)
+
+Step 0: board clean — #120 (S1) SHIPPED, no Needs-Review card, no owner feedback
+on the #120 thread, no open PR, bundle empty. Synced integration/next ← main
+(fe65329). PICK: teetime-s2-foreup-booking-handoff.
+
+Reconnaissance (much of S2 is pre-built in S0/S1 with S2 in mind):
+- backend/app/services/tee_times/foreup.py:489 book() ALREADY returns
+  needs_human + slot.booking_url, no confirmation number (docstring: "S2 owns
+  the booking handoff UX; we NEVER book programmatically").
+- router_provider.py:115 routes foreup slots → foreup.book(); tested.
+- routes/tee_times.py /book persists every attempt (incl. needs_human) to the
+  tee_time_bookings table (TeeTimeBooking ORM, models.py:462).
+- Frontend page.tsx:1199 renders bookingUrl → "Book on the course site →" CTA
+  (needs_human handoff, honest subCopy, never fabricates a confirmation);
+  confirm-copy.ts:52 handles the foreUP real-time needs_human case.
+So S2 = VERIFY end-to-end + PIN the safety invariants with tests + fix any
+correctness gap. The invariant to guarantee: NEVER auto-charge, NEVER store a
+card/creds, NEVER a fabricated confirmation — deep-link handoff to the course's
+own foreUP booking page only. Missing coverage: a foreUP-route (not routing-
+provider) integration test that /book yields needs_human + the correct
+foreupsoftware.com deep-link + persists the row (confirmation None); a guard
+that no foreUP code path returns status=confirmed/a confirmation number.
+
+Fable plan DONE → specs/teetime-s2-plan.md. Confirms handoff already built;
+S2 = invariant tests (foreUP-provider integration persistence, no-auto-charge/
+no-fabricated-confirmation guards, frontend CTA contract) + ONE honesty fix:
+page.tsx:919-923 fabricates {status:pending,"Booking request sent"} on network
+failure though nothing was sent → make it honest needs_human "book on course
+site". That fix is the one user-visible change (noticeable-leaning).
+
+## 2026-07-09 — cycle 44 DONE: tee-time S2 (foreUP booking = deep-link handoff) on bundle #121
+
+S2 = LOW-CODE / HIGH-INVARIANT. Handoff mechanics were already built (S0/S1);
+this slice PINS the safety invariants with tests that have teeth + one honesty
+fix. Commit 3ccf783 on integration/next.
+- Invariants guarded (reviewer verified teeth against real source): foreUP
+  book() ALWAYS needs_human, confirmation_number None; deep-link is the course's
+  own foreupsoftware.com booking page (exact-string asserted at search/book/
+  persist); BookingDetails structurally = {name,party_size,email,phone} (no card
+  possible); source guard rejects status="confirmed"/client.post|put/card|cvv|
+  credit; every attempt persisted honestly (status needs_human, confirmationCode
+  null).
+- Honesty fix: frontend/src/app/tee-time/page.tsx booking catch-block no longer
+  fabricates {status:pending,"Booking request sent"} on a network failure →
+  honest {needs_human,"Couldn't reach the booking service — book directly on the
+  course site."}; stamp "Found", CTA still resolves via slot deep-link. vitest pins it.
+- Fable plan: specs/teetime-s2-plan.md. Reviewer: CLEAN, no BLOCKING. QA: 9/9
+  gates GREEN (ruff; 114 backend unit incl. TestS2Invariants; 12 integration
+  collected incl. TestForeUpHandoffPersistence; lint/tsc/build; 164 vitest incl.
+  foreUP CTA cases; 274 voice-tests).
+- Classification: SILENT — the visible "Book on the course site" CTA already
+  shipped in #120 (S1); S2 adds hardening + an edge-case honesty fix, no new
+  user-visible capability. Rides the bundle; NO owner ping this cycle.
+
+## AWAITING: CI strict-green on bundle PR #121 (integration/next → main)
+Opened PR #121 (rolling bundle; S2 the only item, SILENT). Both gates IN_PROGRESS
+at cycle end — the Backend gate runs the DB-backed integration test
+(TestForeUpHandoffPersistence) that can't run locally (no Postgres). NEXT CYCLE:
+reconcile #121 CI FIRST — assert Frontend AND Backend gates each state:SUCCESS on
+the head SHA (CANCELLED/skipped ≠ pass; re-trigger with an empty commit if a
+required gate cancels). If the Backend gate RED on the integration test →
+re-dispatch builder with the CI failure. Do NOT merge (silent bundle, no owner
+ship-it) — S2 rides until the next NOTICEABLE item triggers the approval flow.
+Do NOT auto-start S3 (HIGH-risk telephony — own cycle + Fable plan + owner present).
+Builder DONE — pushed 3ccf783 (invariant tests + the fabricated-pending honesty
+fix in page.tsx). Local gates all green. DB-backed integration tests run in CI
+only. Dispatched reviewer (BLOCKING if any auto-charge / stored card / fabricated
+confirmation / dishonest handoff; verify guard tests have teeth) + /security-
+review judgment, and QA (strict gates). On return: BLOCKING → re-dispatch builder;
+clean → open rolling bundle PR (integration/next → main), S2 on checklist. Classify
+SILENT (visible booking CTA already shipped #120; S2 adds hardening + an edge-case
+honesty fix, no new user-visible capability) → rides the bundle, NO owner ping.
+
+## 2026-07-09 — cycle 45 START: physics tiles-coherence (PLAYS tile consumes backend physics plays-like)
+
+Step 0 clean: no owner approvals/feedback pending (board cards #119/#117 have no new
+comments; #121 SILENT, awaits nothing). main synced a37f74d; integration/next up to date;
+PR #121 STRICT-green on 95989ec (Frontend+Backend+E2E all SUCCESS).
+
+PICK (NOTICEABLE): the round-page PLAYS tile computes plays-like from the FRONTEND
+heuristic playsLikeYards (frontend/src/lib/map/wind.ts, @deprecated) while the CADDIE uses
+the physics engine (get_shot_distance / physics_plays_like). Same hole → tile number and
+caddie number can DISAGREE (the hole-3 178-vs-231 inconsistency class). FIX: the tile reads
+the SAME physics plays-like the caddie cites — via POST /caddie/session/shot-distance (or a
+session/course-intel endpoint) returning physics plays_like for the current hole
+(target = selected-tee yardage basis + engine elevation + live wind). RoundPageClient shows
+THAT; honest fallback (no weather / no club distances / physics unavailable) degrades to a
+non-contradictory display, never a made-up number.
+
+CRITICAL RISK for the plan (flagged to Fable): shot_distance_payload resolves wind vs DUE
+NORTH (shot_bearing_deg=0.0 — session doesn't know shot bearing) and surfaces that as an
+assumption; the tile KNOWS the hole bearing (tee→green) via relativeWind. For tile==caddie
+parity the bearing handling must be consistent between the two mouths — the plan must resolve
+this (either thread the hole bearing into the physics for BOTH the tile and the caddie tool,
+or have the tile consume exactly the caddie's north-resolved number). This is the whole bug
+class; the reviewer will construct a fixture hole/conditions and assert tile==caddie.
+
+Composes with the just-shipped multi-tee anchor (#119/#120): the plays-like adjusts the
+SELECTED-TEE distance basis (playsBase), not a re-derived yardage.
+
+## AWAITING: Fable implementation plan → specs/physics-tiles-coherence-plan.md
+Dispatched the Plan agent on the FABLE model to write the plan (approach, files, the
+bearing-parity resolution, honest-fallback matrix, deterministic tests: tile plays-like ==
+engine plays-like for a fixture hole/conditions + honest fallback, exact gates). On return:
+save plan → dispatch ONE builder on integration/next → reviewer (parity: tile==caddie) + qa
+(strict gates) + designer (PLAYS tile is user-facing). NOTICEABLE → makes #121 approval-
+eligible → release-manager TestFlight + owner ping. Do NOT merge to main.
+
+## cycle 45 — Fable plan DONE → specs/physics-tiles-coherence-plan.md (322 lines)
+Bearing-parity resolved SERVER-SIDE: reuse existing HoleIntelligence.approach_bearing_deg
+(backend/app/caddie/types.py:139, cached in session.hole_intel, already used by
+get_green_read) instead of the hardcoded shot_bearing_deg=0.0 in shot_distance_payload —
+fixes text tool loop, realtime voice, AND the new tile identically (a request field would
+let a forgetful caller reintroduce divergence). Wind-honesty: unknown bearing → still-air +
+surfaced "wind not applied" (not a fabricated north direction); add conditions_used
+.shot_bearing_deg / wind_applied to payload for an honest caption. Double-count trap: pass
+the RAW selected-tee basis, NEVER holeIntel.effectiveYards (already embeds elevation).
+Fallback matrix: 7 rows, deprecated playsLikeYards in ZERO cells. Parity gate: shared golden
+fixture backend/tests/fixtures/plays_like_parity.json pinned by BOTH backend pytest + frontend
+vitest. Files: tools.py, RoundPageClient.tsx, frontend/src/lib/caddie/api.ts,
+frontend/src/lib/caddie/fcb-labels.ts, backend/tests/test_caddie_tools.py.
+
+## AWAITING: builder implementing specs/physics-tiles-coherence-plan.md on integration/next
+Dispatched ONE builder to implement the plan (NOT re-plan), commit+push to integration/next.
+On return: reviewer (parity — construct a fixture hole/conditions, assert tile==caddie; the
+divergence is the whole bug) + qa (STRICT gates) + designer (PLAYS tile user-facing, calm).
+BLOCKING → re-dispatch builder. Clean+green → update PR #121 checklist (NOTICEABLE item →
+approval-eligible), release-manager TestFlight, owner ping. Never merge to main.
+
+## cycle 45 — builder DONE: pushed 879291c on integration/next (NOTICEABLE)
+
+Implemented specs/physics-tiles-coherence-plan.md exactly. Backend
+(app/caddie/tools.py shot_distance_payload): server-side bearing parity — reads
+intel.approach_bearing_deg (same bearing get_green_read uses) instead of the hardcoded
+shot_bearing_deg=0.0; when bearing unknown + wind ≥1mph, strips wind from the conditions
+build (still-air) instead of fabricating a due-north direction, surfaces "hole direction
+unknown — N mph wind not applied"; added conditions_used.shot_bearing_deg /.wind_applied.
+New golden parity fixture backend/tests/fixtures/plays_like_parity.json (hole 7, bearing
+90°, elev −12ft, wind 12mph FROM 90, target 150 → plays_like_yards 173), mirrored at
+frontend/src/lib/caddie/__fixtures__/plays_like_parity.json, pinned by a backend pytest AND
+a frontend vitest — an engine change now forces both to re-pin.
+
+Frontend: new usePhysicsPlaysLike hook (lib/caddie/use-physics-plays-like.ts — cached
+hole:basis:weatherFetchedAt, 400ms debounce + 2s live-GPS floor, no spinner) + new pure
+plays-tile.ts (playsTileDisplay — physics number verbatim, 7-row honest fallback matrix,
+deprecated playsLikeYards used in ZERO cells) wired into RoundPageClient.tsx (playsLikeYards
+import dropped for the tile; wind.ts's relativeWind/bearingDeg/compassFrom still drive the
+WIND tile label). fcb-labels.ts playsSubLabel gained "wind+elev · you" / "elev from you" for
+the newly-possible live+elev state (updated 2 existing tests to match — a deliberate,
+plan-mandated behavior change, not a weakened assertion). api.ts SessionShotDistance
+.conditions_used properly typed (was Record<string,unknown>).
+
+Noted deviation (builder's own call, minimal + honest): plays-tile.ts takes TWO basis
+inputs (basisYards + fallbackYards) instead of the plan §4.3's single basisYards — required
+because §5's fallback matrix needs the available:false row to show the plain raw basis
+(never elevation-composed) while the offline/error row may still show the old
+effectiveYards-composed number; one basisYards can't represent both inside the pure/testable
+module without pushing the row-selection logic back into RoundPageClient.
+
+Gates (builder-reported): backend ruff clean; 129 pytest passing (6 new bearing/wind-honesty
+/parity/identity tests, non-DB, no Postgres needed). Frontend: lint clean, tsc clean, 1832
+vitest passing (35 new in plays-tile.test.ts + fcb-labels.test.ts), voice-tests smoke
+274/274, next build green, realtime-dispatch.test.ts unchanged/passing (11/11).
+
+NEXT: reviewer (parity check — tile==caddie for a fixture) + qa (STRICT gates) + designer
+(PLAYS tile is user-facing/calm — review the new "wind+elev · you"/"elev from you" copy
+against NORTHSTAR). BLOCKING → re-dispatch builder. Clean+green → update PR #121 checklist
+(NOTICEABLE → approval-eligible), release-manager TestFlight, owner ping. Never merge to main.
+
+## AWAITING: reviewer + qa + designer on physics-tiles-coherence (item commit 879291c) on integration/next
+Builder pushed 879291c (item) + progress. HEAD 173442f. Local gates green (backend 129
+pass; frontend 1832 vitest, tsc/lint clean, 274/274 voice, build ok). Item files: backend
+tools.py (server-side bearing parity + wind-honesty + conditions_used fields), RoundPageClient
+.tsx (hook wiring, drop playsLikeYards for tile), new use-physics-plays-like.ts + plays-tile.ts
+(+tests), api.ts typing, fcb-labels.ts captions, test_caddie_tools.py + golden fixture both sides.
+Builder deviation to scrutinize: plays-tile.ts takes TWO basis inputs (basisYards + fallbackYards)
+so the available:false row shows the RAW basis while the offline/error row may show the old
+effectiveYards-composed number — reviewer must confirm NO fallback cell pairs an
+elevation/wind-composed NUMBER with a caption claiming an adjustment it didn't verify (that would
+be the contradictory-number bug re-entering).
+On return: BLOCKING (parity break / dishonest fallback / correctness / Northstar) → re-dispatch
+builder; all clean+green → update PR #121 checklist (NOTICEABLE, approval-eligible), dispatch
+release-manager for TestFlight + owner ping. Never merge to main.
+
+## cycle 45 — REVIEW ROUND 1: 3 BLOCKING, back to builder (item 879291c)
+Parity HOLDS (reviewer verified golden 173 pinned both sides, wind sign consistent, tile shows
+plays_like verbatim, no double-count, security clean). But 3 BLOCKING:
+1. [QA, physics-critical] shot_distance_payload bearing/wind rewrite REGRESSED the caddie's own
+   physics golden evals — bisected to 879291c, clean on parent ab5dab1:
+   - tests/eval/test_golden_tier1.py::approach-150-into-10mph-plays-like → plays_like=150 (raw,
+     wind DROPPED) vs band [160,170]
+   - tests/eval/test_golden_tier1.py::drive-300-downwind-downhill-physics-total → total=312 vs [315,330]
+   - tests/eval/test_harness_has_teeth.py sanity (engine must land incident drive in band)
+   Cause: the "drop wind when bearing unknown" honesty branch silently zeroes a REAL headwind in
+   scenarios with no hole bearing. Golden evals are AUTHORITATIVE (they encode the incident) — must
+   NOT be re-pinned/weakened to pass. The caddie must still COUNT a known wind.
+2. [reviewer] fallback caption over-claims elevation: live + physics=null + hole-intel shows raw
+   fcbLive distance captioned "elev from you" (RoundPageClient:1241 no !fcbLive guard; plays-tile.ts
+   null branch hasElev unconditional). Permanent on local rounds. Fix: hasElev only when the fallback
+   number is actually effectiveYards (gate on !isLive/!fcbLive); add the missing test row.
+3. [designer] ELEV tile 3ft deadband ("level") vs PLAYS tile zero-deadband hasElev (plays-tile.ts:67
+   elevChange!==0) → two tiles contradict on 1-2ft holes. Give PLAYS the same/shared deadband.
+Non-blocking (defer/optional): caption wrap check on 375px; value-swap transition on PLAYS.
+
+## AWAITING: builder ROUND 2 fixing the 3 blocking items on integration/next
+Re-dispatched builder. Guard: do NOT weaken/re-pin the golden evals; if the wind reconciliation
+is genuinely ambiguous (honesty goal vs evals, needs a product call) STOP and flag — don't guess.
+On return: re-run reviewer(parity+fallback) + qa(strict, incl. tests/eval) + designer(deadband).
+Never merge to main.
+
+## cycle 45 — builder ROUND 2 DONE: 3 BLOCKING fixed, pushed 9d871cc on integration/next
+1. shot_distance_payload (backend/app/caddie/tools.py): bearing-unknown + wind present now
+   applies the wind against an assumed due-north shot line (restored pre-879291c behavior)
+   instead of dropping it to still air, and surfaces the assumption honestly
+   ("shot direction unknown — wind applied relative to due north") rather than being silent.
+   Bearing-known path (server-side tee→green bearing, parity) untouched. tests/eval golden
+   suite back to green (56/56); test_caddie_tools.py's no-intel test updated to assert the
+   restored/correct behavior (was asserting the regressed one — not a weakening, this is the
+   test that encoded 879291c's bug).
+2. plays-tile.ts physics===null fallback: gated hasElev on `!isLive` (in addition to
+   hasLocalIntel/!fromCard) — live mode's fallbackYards is the raw fcbLive.center, never
+   elevation-composed, so it can no longer caption "elev from you" it didn't compute. New
+   test row added.
+3. Shared `ELEV_DEADBAND_FT = 3` constant (plays-tile.ts), used by both the PLAYS caption's
+   hasElev check and the ELEV tile's "level" check (RoundPageClient.tsx) — the two tiles can
+   no longer contradict on a 1-2ft hole. New test row added.
+Gates green: backend ruff clean; pytest 185/185 on the 5 targeted suites incl. both golden
+eval files; frontend lint clean, tsc clean, voice-tests 274/274, vitest 1834/1834 (88 files),
+build ok. Full detail in the builder report to eng-lead. Next: re-review (reviewer/qa/designer)
+before this can go back into the bundle's noticeable-change ledger. Never merged to main.
+
+## cycle 45 — ROUND 2 VERIFIED GREEN (eng-lead ran the critical gates directly)
+Backend: ruff clean; tests/eval/test_golden_tier1.py + test_harness_has_teeth.py +
+test_caddie_tools.py → 93 passed (the physics-regression fix confirmed by the AUTHORITATIVE
+golden evals; parity fixture holds). Frontend: lint clean, tsc clean, plays-tile.test.ts +
+fcb-labels.test.ts 37 passed, voice 274/274, build ok. All 3 round-1 blockers resolved.
+Renamed test_caddie_tools test was one the builder ADDED in 879291c encoding the regressed
+behavior — corrected, not weakened; tests/eval/ untouched. PR #121 checklist updated: added the
+NOTICEABLE "physics tiles-coherence" item → bundle now APPROVAL-ELIGIBLE.
+
+## AWAITING: CI strict-green on PR #121 head 1cb6d2c, THEN release-manager (NOTICEABLE)
+At note time: Backend gate SUCCESS, Frontend gate IN_PROGRESS on 1cb6d2c (head == local).
+NEXT: assert Frontend + Backend (+ E2E advisory) each state:SUCCESS on 1cb6d2c (pending==0,
+fail==0, no CANCELLED required gate). When strict-green → dispatch release-manager to build
+TestFlight from integration/next + PushNotification the owner for approval (NOTICEABLE:
+the PLAYS tile now agrees with the caddie — directly addresses the hole-3 divergence reports).
+Do NOT merge to main (owner ship-it only). If a required gate goes RED → hand the failure to
+the builder. If a required gate CANCELS → re-trigger and re-verify SUCCESS on the head.
+
+## cycle 47 (2026-07-09) — PICK: teetime-osm-distance-sort-before-truncate (P1, minor/silent)
+Step 0 clean: no owner "ship it" / feedback on board (#120 card no comments) or PR #121.
+main a37f74d synced into integration/next (already up to date). PR #121 STRICT-green on f616472
+(physics-tiles-coherence + S2 booking-handoff + bend-distance). Owner bundling — NO SHIP.
+PICK is the higher-priority S1 fast-follow: backend/app/services/osm.py:423 `return results[:15]`
+truncates in Overpass's arbitrary order (NOT distance-sorted), silently dropping the CLOSEST
+course at wide radius — reproducibly drops 18 Mile Creek (the S1 reference course the owner is
+actively testing on v1.0.976) at the 15mi default. Fix: sort by distance to (lat,lng) before the
+[:15] cap. Callers: tee_times/routing.py:_default_find_courses + routes/course_search.py (both
+benefit). Also audit search_osm_with_geometry (line 426) for the same pattern. Rides bundle #121.
+
+## AWAITING: Fable implementation plan for teetime-osm-distance-sort-before-truncate
+Dispatched Plan agent on fable → specs/teetime-osm-distance-sort-plan.md. On return: dispatch
+ONE builder to implement on integration/next (commit+push, no per-item PR), then reviewer
+(correctness — a distance-sort bug shows the WRONG course to the owner) + qa (STRICT gates:
+ruff, lint, tsc, voice smoke, build; backend DB tests via CI only — no local Postgres). Then
+update PR #121 checklist. Do NOT ship (owner bundling). If Fable plan flags a deeper issue,
+reconsider scope before building.
+
+## AWAITING: builder implementing osm distance-sort (specs/teetime-osm-distance-sort-plan.md)
+Fable plan saved. Dispatched ONE builder on integration/next. Plan: add math + _haversine_m +
+pure _sort_by_distance to osm.py; sort by (dist,name) only when lat AND lng present; cap via new
+_MAX_COURSE_RESULTS=15 / _MAX_GEOMETRY_RESULTS=25; SAME fix to search_osm_with_geometry; new
+backend/tests/test_osm_distance_sort.py (pure mock of _post_with_retry, nearest-of-16 survives
+15-cap). Backend-only, no shared-type sync. On builder return → reviewer (correctness) + qa
+(ruff + targeted pytest, no local Postgres; DB tests via CI). Then update PR #121 checklist.
+NO SHIP (owner bundling). If builder pushes then the work is on integration/next — reconcile
+from git log, do not rebuild.
+
+## DONE: teetime-osm-distance-sort-before-truncate implemented + pushed to integration/next (96714ef)
+Builder implemented specs/teetime-osm-distance-sort-plan.md exactly, no deviations. Pushed
+commit 96714ef on integration/next (head was 6d39984, ff-only, no per-item PR).
+
+What shipped in `backend/app/services/osm.py`: `import math`; module constants
+`_MAX_COURSE_RESULTS = 15` / `_MAX_GEOMETRY_RESULTS = 25`; `_haversine_m` (verbatim mirror of
+`course_finder._haversine_m`, meters); pure `_sort_by_distance(results, lat, lng)` keyed on
+`(haversine_m, name)`, `None`/missing center coords sort last via `math.inf`, stable sort.
+`search_golf_courses` and `search_osm_with_geometry` both now `_sort_by_distance(...)` when
+`lat is not None and lng is not None` (same condition that builds the Overpass `around` clause)
+BEFORE the `[:_MAX_COURSE_RESULTS]` / `[:_MAX_GEOMETRY_RESULTS]` cap — fixes the bug where the
+closest course (18 Mile Creek) could be silently dropped by truncating Overpass's arbitrary
+element order first. Name-only searches (no lat/lng) are untouched — byte-identical order.
+`routing.py` / `course_search.py` left alone (reconcile-only per plan).
+
+New `backend/tests/test_osm_distance_sort.py` (pure, no DB/network, monkeypatches
+`app.services.osm._post_with_retry` with an AsyncMock): regression (16 far courses + nearest
+last in elements → 15-cap keeps nearest, ascending distance), name-only preserves element
+order, tie-by-name determinism, `search_osm_with_geometry` 26-element/25-cap regression, plus
+direct `_sort_by_distance` unit tests incl. None-coord-sorts-last and empty-list.
+
+Gates: `ruff check .` → All checks passed. `pytest tests/test_osm_distance_sort.py
+tests/test_osm_fetch_hardening.py tests/test_course_search.py tests/test_tee_time_routing.py
+tests/test_course_finder_relevance.py` → 120 passed in 0.31s. No local Postgres used (per
+instruction); DB-backed suites run in CI. Frontend untouched — no lint/tsc/voice delta.
+Backend-only, silent (no shared-type / API-shape change). Next: reviewer (correctness) + qa
+(CI gates) before folding into PR #121's checklist. NO SHIP — owner still bundling.
+
+## AWAITING: reviewer (correctness) on osm distance-sort 96714ef + eng-lead QA gates
+Builder pushed 96714ef (osm.py sort-before-truncate + new test_osm_distance_sort.py) + bf52761
+(progress). ruff clean, 120/120 targeted pytest per builder. Dispatched reviewer for adversarial
+correctness (a sort/haversine bug would surface the WRONG course to the owner). eng-lead running
+ruff + targeted pytest directly to confirm. On green + reviewer SHIP → update PR #121 checklist
+(silent item), progress note, STOP (no ship — owner bundling). If reviewer BLOCKING → re-dispatch
+builder. Classified SILENT (backend-only, dict shape unchanged, only cap membership/order).
+
+## cycle 47 DONE — osm distance-sort-before-truncate shipped to bundle (SILENT)
+Item teetime-osm-distance-sort-before-truncate (P1 S1 fast-follow) landed on integration/next
+at 96714ef. osm.py now sorts by true haversine distance before the [:15]/[:25] cap → the closest
+course (18 Mile Creek at the 15mi UI default) is no longer silently dropped. reviewer verdict
+SHIP (haversine matches course_finder; sort-before-cap correct in BOTH functions; regression test
+hand-falsified vs unfixed code — not tautological). QA green: ruff clean, 120/120 targeted pytest.
+Backend-only, dict shape unchanged, no UI surface → no designer, no shared-type sync. Classified
+SILENT. PR #121 checklist updated (now: physics-tiles-coherence NOTICEABLE + S2 SILENT + this
+SILENT). backlog.json marked done-on-bundle. NO SHIP — owner is bundling; bundle stays approval-
+eligible on the earlier physics NOTICEABLE item, not shipped this cycle. Next fast-follow still
+open: teetime-course-ids-not-wired-real-provider (P3). No push notification sent (routine silent).
+
+## cycle 48 (2026-07-09) — Step 0 clear; PICK teetime-course-ids-not-wired-real-provider
+Step 0: PR #121 STRICT-green (E2E + Backend + Frontend all SUCCESS on 99896aa); NO PR comments;
+latest board card (#120) no comments; no owner "ship it"/feedback. main a37f74d already in
+integration/next (99896aa) — sync clean. Owner bundling → NO SHIP this cycle regardless.
+
+PICK (order #1 per cycle brief): teetime-course-ids-not-wired-real-provider (P3, ready).
+Gap: TeeTimeQuery.course_ids is threaded into the search-cache key + honored by mock.py, but
+NEVER filtered in routing.py / router_provider.py → selecting specific courses in the UI is a
+no-op on the REAL discovery path.
+
+INVESTIGATION (provenance — matters because a naive filter could REGRESS to always-zero):
+- Route: /api/tee-times/search parses courseIds CSV → SvcQuery.course_ids (tee_times.py:247).
+- RoutingTeeTimeProvider.search_availability discovers by AREA (search_golf_courses OSM /
+  Places), builds course_id = str(course["id"] or course["osm_id"]); NEVER consults course_ids.
+  RoutedTeeTimeProvider inherits this loop (only overrides _slots_for_course), so a filter in
+  the base loop covers BOTH providers + the foreUP path.
+- mock semantics: `not query.course_ids or c["id"] in query.course_ids` (empty = all).
+- ID PROVENANCE HAZARD: UI selectedCourses come from searchNearbyDetailed = TWO legs:
+  (a) /api/courses/mapped/nearby → id = mapped-course UUID (these NEVER appear in routing's OSM
+      discovery), (b) /api/courses/nearby → returns search_golf_courses dicts keyed `osm_id`
+      (NO `id` key) but the frontend reads `c.id` (golf-api.ts:873) → OSM-leg course id is
+      likely `undefined`. So a backend `course_id in course_ids` filter risks matching NOTHING
+      for real UI selections → selecting a course returns ZERO (worse than today's harmless
+      no-op). Fix likely needs a small frontend id source fix (osm_id→id) AND/OR robust match.
+- Classify: NOTICEABLE (selecting a course will actually narrow results — a visible behavior
+  change) but rides #121 (already approval-eligible); NO SHIP this cycle.
+
+## AWAITING: Fable plan on specs/teetime-course-ids-wiring-plan.md
+Dispatched Plan agent on FABLE to design the safe wiring: exact ID-provenance reconciliation
+(UI selected id ↔ routing course_id, incl. mapped-UUID + undefined-OSM-id cases), filter
+semantics (empty=all, mock-parity), the GUARD proving no always-zero regression (test with
+realistic osm_id-shaped ids + a mapped-only-selection case), any minimal frontend id fix, and
+the exact gates. On plan return → checkpoint, dispatch ONE builder on integration/next, then
+reviewer + qa. NO SHIP (owner bundling). If plan flags this is bigger than a bounded cross-stack
+fix → reconsider scope / mark needs-owner-decision rather than forcing it onto the bundle.

@@ -7,6 +7,7 @@ import type {
   CaddieRecommendation,
   WeatherConditions,
   HoleIntelligence,
+  HoleBend,
   CaddiePersonalityInfo,
   VoiceCaddieMessage,
 } from './types';
@@ -262,6 +263,9 @@ export interface SessionConditions {
   }>;
   hazards_line: string | null;
   green_slope: { description: string } | null;
+  /** Where/how far the fairway bends — null when the centerline isn't
+   *  mapped (honest unknown, distinct from a measured-straight hole). */
+  bend: HoleBend | null;
 }
 
 /** Deterministic read backing the `get_conditions` voice tool. */
@@ -310,6 +314,39 @@ export async function getSessionCarries(
   );
 }
 
+/** Where/how far the fairway bends — mirrors backend tools.bend_payload
+ *  (app/caddie/tools.py). Fields come verbatim from the hole's cached
+ *  HoleBend, never recomputed client-side. */
+export interface BendPayload {
+  round_id: string;
+  hole_number: number;
+  /** false = no cached intel OR the centerline isn't mapped (two distinct
+   *  reasons, see `reason`) — the persona must say the shape is unknown,
+   *  never invent a dogleg. */
+  available: boolean;
+  reason?: string;
+  straight?: boolean;
+  direction?: 'left' | 'right' | null;
+  distance_yards?: number | null;
+  deviation_yards?: number;
+  double_dogleg?: boolean;
+  /** Set when the hole is mapped but genuinely straight (a TRUE fact,
+   *  distinct from "unknown"). */
+  note?: string | null;
+  assumptions?: string[];
+}
+
+/** Where/how far the fairway bends, backing the `get_bend` voice tool. */
+export async function getSessionBend(
+  roundId: string,
+  holeNumber?: number,
+): Promise<BendPayload> {
+  const qs = holeNumber != null ? `?hole_number=${holeNumber}` : '';
+  return get<BendPayload>(
+    `/caddie/session/${encodeURIComponent(roundId)}/bend${qs}`,
+  );
+}
+
 export interface SessionPlayerProfile {
   round_id: string;
   handicap: number | null;
@@ -330,6 +367,26 @@ export async function getSessionPlayerProfile(roundId: string): Promise<SessionP
   );
 }
 
+/** Physical conditions the engine actually resolved for this shot — mirrors
+ *  the `conditions_used` dict `shot_distance_payload` builds
+ *  (backend/app/caddie/tools.py). `shot_bearing_deg` is the session's
+ *  tee→green bearing when known (server-side bearing parity — the SAME
+ *  bearing get_green_read uses), null when unmapped; `wind_applied` is false
+ *  whenever a still-air fallback ran (no weather, calm, or the bearing was
+ *  unknown — never a fabricated due-north wind, see
+ *  specs/physics-tiles-coherence-plan.md §2b). */
+export interface SessionShotDistanceConditions {
+  weather_available: boolean;
+  wind_speed_mph: number | null;
+  wind_direction: number | null;
+  elevation_change_ft: number;
+  shot_bearing_deg: number | null;
+  wind_applied: boolean;
+  firmness: string;
+  temperature_f: number | null;
+  air_density_kg_m3: number;
+}
+
 /** One shot's physics-engine numbers — mirrors backend
  *  tools.shot_distance_payload (app/caddie/tools.py). `available: false`
  *  means the needed club distance isn't on file (honest, never a
@@ -348,7 +405,7 @@ export interface SessionShotDistance {
   plays_like_yards?: number | null;
   suggested_club?: string | null;
   breakdown?: Record<string, number> | null;
-  conditions_used?: Record<string, unknown>;
+  conditions_used?: SessionShotDistanceConditions;
   assumptions?: string[];
 }
 

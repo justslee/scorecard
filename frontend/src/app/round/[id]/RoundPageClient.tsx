@@ -49,10 +49,12 @@ import { resolveMappedCourse } from "@/lib/map-bridge";
 import type { MappedCourseListItem } from "@/lib/map-bridge";
 import { roundCourseAnchor } from "@/lib/round-anchor";
 import type { WeatherConditions } from "@/lib/caddie/types";
-import { bearingDeg, relativeWind, playsLikeYards, compassFrom } from "@/lib/map/wind";
+import { bearingDeg, relativeWind, compassFrom } from "@/lib/map/wind";
 import { shouldRefreshOnDemand, WeatherRefreshScheduler } from "@/lib/map/weather-freshness";
 import { computeFCBDistances } from "@/lib/course/course-coordinates";
-import { fcbSourceCaption, playsSubLabel } from "@/lib/caddie/fcb-labels";
+import { fcbSourceCaption } from "@/lib/caddie/fcb-labels";
+import { usePhysicsPlaysLike } from "@/lib/caddie/use-physics-plays-like";
+import { playsTileDisplay, ELEV_DEADBAND_FT } from "@/lib/caddie/plays-tile";
 import { yardsDistance } from "@/lib/course/hole-projection";
 import { applyTeeAnchors, resolveFcbSource } from "@/lib/course/tee-anchor";
 import { haptic } from "@/lib/haptics";
@@ -1196,33 +1198,53 @@ export default function RoundPage() {
   const elevTile = holeIntel
     ? {
         v: `${holeIntel.elevFt >= 0 ? "+" : ""}${Math.round(holeIntel.elevFt)}ft`,
-        sub: Math.abs(holeIntel.elevFt) < 3 ? "level" : holeIntel.elevFt > 0 ? "uphill" : "downhill",
+        sub:
+          Math.abs(holeIntel.elevFt) < ELEV_DEADBAND_FT
+            ? "level"
+            : holeIntel.elevFt > 0
+              ? "uphill"
+              : "downhill",
       }
     : { v: "—", sub: "elev" };
-  // Plays-like: elevation-adjusted yards from intel when known, then wind on
-  // top; every label states exactly what was adjusted. Card-only skips
-  // holeIntel entirely — it was computed from the same unusable geometry.
+  // Plays-like: physics-tiles-coherence (specs/physics-tiles-coherence-plan.md)
+  // — the PLAYS tile now shows the SAME plays_like_yards the backend physics
+  // engine gives the caddie, via usePhysicsPlaysLike below, instead of the
+  // deprecated frontend wind heuristic (lib/map/wind.ts playsLikeYards, no
+  // longer imported here). `playsBase` remains the pre-existing local
+  // approximation — elevation-adjusted yards from intel when known — but is
+  // now used ONLY as the honest fallback while no physics response has
+  // landed (§5's offline/error row); it is never combined with wind locally.
+  // Card-only skips holeIntel entirely — it was computed from the same
+  // unusable geometry.
   const playsBase = fcbLive
     ? fcbLive.center // live rangefinder wins: plays-like from where they stand
     : showCardOnly
       ? (cardYards ?? distance)
       : holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance);
-  // specs/caddie-stale-hole-live-plan.md §3.10 — honest sub label: only claim
-  // an elevation adjustment when playsBase actually came from holeIntel's
-  // elevation-adjusted yards (the fcbLive branch above uses the raw live
-  // rangefinder distance, no elevation term), and say so when it's "from
-  // you" rather than the tee card.
-  const playsTile = {
-    v: holeWind
-      ? `${playsLikeYards(playsBase, holeWind.headMph)}Y`
-      : `${Math.round(playsBase)}Y`,
-    sub: playsSubLabel({
-      hasWind: holeWind != null,
-      hasElev: holeIntel != null && !showCardOnly,
-      isLive: fcbLive != null,
-      fromCard: showCardOnly,
-    }),
-  };
+  // The RAW basis sent to the physics call — NEVER holeIntel.effectiveYards
+  // (the engine applies elevation itself; passing the already-adjusted
+  // number would double-count it — plan §4.2). null when no usable geometry
+  // at all yet (hook stays disabled; the fallback above still renders).
+  const physicsBasisYards = fcbLive
+    ? fcbLive.center
+    : showCardOnly
+      ? cardYards
+      : (fcbFromTee?.center ?? null);
+  const physicsPlaysLike = usePhysicsPlaysLike({
+    roundId,
+    enabled: caddieSessionActive && !isLocalRound,
+    currentHole,
+    basisYards: physicsBasisYards,
+    weatherFetchedAt,
+  });
+  const playsTile = playsTileDisplay({
+    physics: physicsPlaysLike,
+    basisYards: physicsBasisYards ?? playsBase,
+    fallbackYards: playsBase,
+    isLive: fcbLive != null,
+    fromCard: showCardOnly,
+    hasLocalIntel: holeIntel != null && !showCardOnly,
+  });
   // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
   const shotPoint = shotPointForPath(hole.path);
 

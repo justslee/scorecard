@@ -107,6 +107,19 @@ class HoleStrategyGuide(BaseModel):
     schema_version: int = 1  # bump on shape change -> staleness re-research trigger
 
 
+class HoleBend(BaseModel):
+    """Where/how far the fairway bends (the dogleg), measured from the tee
+    along the hole's mapped centerline (app/caddie/hazards.py::extract_hole_bend).
+    Additive on HoleIntelligence, defaulted, so cached session hole_intel
+    JSONB predating this field still validates."""
+
+    straight: bool = False
+    direction: Optional[str] = None        # "left" | "right"; None when straight
+    distance_yards: Optional[int] = None   # tee-anchored along-path, rounded to 5
+    deviation_yards: int = 0               # max |perpendicular deviation| off the chord
+    double_dogleg: bool = False
+
+
 class HoleIntelligence(BaseModel):
     hole_number: int
     par: int
@@ -137,6 +150,11 @@ class HoleIntelligence(BaseModel):
     # course, or a hole with no stored tee) — the caddie degrades honestly
     # rather than guessing a bearing.
     approach_bearing_deg: Optional[float] = None
+    # Where/how far the fairway bends, from app.caddie.hazards.extract_hole_bend.
+    # Additive + defaulted so cached session hole_intel JSONB predating this
+    # field still validates. None = centerline unmapped (honest unknown,
+    # distinct from a measured-straight hole — see HoleBend.straight).
+    bend: Optional[HoleBend] = None
 
 
 # ── Weather ──

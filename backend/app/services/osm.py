@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 import re
 from typing import Optional
 
@@ -354,6 +355,44 @@ def osm_name_filter(name: str) -> str:
     return f'["name"~"{phrase}",i]' if phrase else ""
 
 
+# ── Distance sort (pure, no I/O) ───────────────────────────────────────────────
+
+# Result caps for the two Overpass-backed search functions below. Named so the
+# cap is self-explanatory wherever it's referenced (prod code and tests alike).
+_MAX_COURSE_RESULTS = 15  # search_golf_courses: name/nearby course search
+_MAX_GEOMETRY_RESULTS = 25  # search_osm_with_geometry: boundary-search results
+
+
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in meters (mirrors course_finder._haversine_m)."""
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = math.radians(lat2 - lat1), math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def _sort_by_distance(results: list[dict], lat: float, lng: float) -> list[dict]:
+    """Sort *results* by distance from ``(lat, lng)``, nearest first (pure, no I/O).
+
+    Key is ``(haversine_m(lat, lng, center), name)`` — the name tie-break gives
+    deterministic ordering for exact-distance ties, matching routing.py's
+    ``(distance_miles, course_name)`` convention. A result with a missing/None
+    ``center`` lat or lng sorts last (``math.inf``) instead of raising. Python's
+    sort is stable, so ties beyond the key fall back to original Overpass order.
+    """
+    def _key(r: dict) -> tuple[float, str]:
+        center = r.get("center") or {}
+        clat, clng = center.get("lat"), center.get("lng")
+        if clat is None or clng is None:
+            dist = math.inf
+        else:
+            dist = _haversine_m(lat, lng, clat, clng)
+        return (dist, r.get("name", ""))
+
+    return sorted(results, key=_key)
+
+
 # ── HTTP fetch functions ───────────────────────────────────────────────────────
 
 async def search_golf_courses(
@@ -420,7 +459,10 @@ out center;
             "source": "osm",
         })
 
-    return results[:15]
+    if lat is not None and lng is not None:
+        results = _sort_by_distance(results, lat, lng)
+
+    return results[:_MAX_COURSE_RESULTS]
 
 
 async def search_osm_with_geometry(
@@ -513,7 +555,10 @@ out geom;
             "tags": tags,
         })
 
-    return results[:25]
+    if lat is not None and lng is not None:
+        results = _sort_by_distance(results, lat, lng)
+
+    return results[:_MAX_GEOMETRY_RESULTS]
 
 
 def _parse_boundary_geometry(el: dict) -> Optional[dict]:

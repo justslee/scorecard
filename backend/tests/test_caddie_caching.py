@@ -21,7 +21,7 @@ import json
 import pytest
 
 from app.caddie.green_geometry import GREEN_GROUNDING_RULE
-from app.caddie.hazards import HAZARD_GROUNDING_RULE
+from app.caddie.hazards import BEND_GROUNDING_RULE, HAZARD_GROUNDING_RULE
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.session import RoundSession
 from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
@@ -147,8 +147,9 @@ async def test_voice_prompt_stable_before_volatile_ordering(monkeypatch):
 # ── 3: brain-regression guard — content-identical modulo order + reword ────
 # (The templates carry {tool_rule} — the deliberate additive line from
 # caddie-tool-loop-parity — {physics_rule} — the deliberate additive line
-# from caddie-shot-physics-engine step 8 — and {green_rule} — the deliberate
-# additive line from caddie-green-slope-spatial step 4 — all referenced via
+# from caddie-shot-physics-engine step 8 — {green_rule} — the deliberate
+# additive line from caddie-green-slope-spatial step 4 — and {bend_rule} —
+# the deliberate additive line from caddie-bend-distance — all referenced via
 # the imported constants so wording edits don't rot this guard. Everything
 # else must stay identical.)
 
@@ -174,6 +175,7 @@ You have memory of the entire round conversation and prior rounds. Reference ear
 or known tendencies when relevant.
 
 {hazard_rule}
+{bend_rule}
 {physics_rule}
 {green_rule}
 {tool_rule}
@@ -199,6 +201,7 @@ driver doesn't care about a bunker at 370. If they're just chatting, be personab
 golf-focused. Never break character.
 
 {hazard_rule}
+{bend_rule}
 {physics_rule}
 {green_rule}
 {tool_rule}
@@ -231,6 +234,7 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
         memory_section="",
         context="Current hole: #4",
         hazard_rule=HAZARD_GROUNDING_RULE,
+        bend_rule=BEND_GROUNDING_RULE,
         physics_rule=PHYSICS_GROUNDING_RULE,
         green_rule=GREEN_GROUNDING_RULE,
         tool_rule=TOOL_USE_RULE,
@@ -252,6 +256,7 @@ async def test_voice_prompt_content_identical_to_old_template_modulo_order(monke
         memory_section="",
         context="Current hole: #1, Par 4, 400 yards",
         hazard_rule=HAZARD_GROUNDING_RULE,
+        bend_rule=BEND_GROUNDING_RULE,
         physics_rule=PHYSICS_GROUNDING_RULE,
         green_rule=GREEN_GROUNDING_RULE,
         tool_rule=TOOL_USE_RULE,

@@ -21,7 +21,14 @@ from app.caddie.aim_point import generate_recommendation
 from app.caddie.player_stats import analyze_player_stats
 from app.caddie.course_intel import build_hole_intelligence, build_weather_conditions
 from app.caddie.green_geometry import GREEN_GROUNDING_RULE
-from app.caddie.hazards import HAZARD_GROUNDING_RULE, extract_hole_hazards, format_hazards_line
+from app.caddie.hazards import (
+    BEND_GROUNDING_RULE,
+    HAZARD_GROUNDING_RULE,
+    extract_hole_bend,
+    extract_hole_hazards,
+    format_bend_line,
+    format_hazards_line,
+)
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.guide_writer import format_guide_line
 from app.caddie.voice_prompts import OBSERVED_REALITY_RULE, TOOL_USE_RULE
@@ -488,6 +495,26 @@ async def get_session_carries(
     return caddie_tools.carries_payload(session, hole_number or session.current_hole)
 
 
+@router.get("/session/{round_id}/bend")
+async def get_session_bend(
+    round_id: str,
+    hole_number: Optional[int] = None,
+    user_id: str = Depends(current_user_id),
+):
+    """Where/how far the fairway bends for the `get_bend` voice tool (both mouths).
+
+    Fields come verbatim from the hole's cached `HoleIntelligence.bend`
+    (app/caddie/hazards.py::extract_hole_bend at intel time) — never
+    recomputed here. Honest matrix per the no-fake-data rule:
+    `available:false` when the hole has no cached intel OR the centerline
+    isn't mapped (two distinct reasons), `straight:true` + a note when the
+    hole genuinely plays straight — never an invented dogleg. Body lives in
+    app/caddie/tools.py.
+    """
+    session = await get_owned_session(round_id, user_id)
+    return caddie_tools.bend_payload(session, hole_number or session.current_hole)
+
+
 class ShotDistanceRequest(BaseModel):
     """One shot's physics numbers (the `get_shot_distance` voice tool).
     At least one of `club` / `target_yards` is required."""
@@ -695,6 +722,9 @@ async def _build_session_voice_prompt(
             hazards_line = format_hazards_line(request.hole_number, hole_intel.hazards)
             if hazards_line:
                 context_parts.append(hazards_line)
+        bend_line = format_bend_line(request.hole_number, hole_intel.bend)
+        if bend_line:
+            context_parts.append(bend_line)
         guide_line = format_guide_line(hole_intel.strategy_guide)
         if guide_line:
             context_parts.append(guide_line)
@@ -765,6 +795,7 @@ You have memory of the entire round conversation and prior rounds. Reference ear
 or known tendencies when relevant.
 
 {HAZARD_GROUNDING_RULE}
+{BEND_GROUNDING_RULE}
 {PHYSICS_GROUNDING_RULE}
 {GREEN_GROUNDING_RULE}
 {TOOL_USE_RULE}
@@ -1206,6 +1237,11 @@ async def get_course_intel(
                         tee=hc.get("tee"),
                         green=hc.get("green"),
                     )
+                    intel.bend = extract_hole_bend(
+                        stored_features,
+                        tee=hc.get("tee"),
+                        green=hc.get("green"),
+                    )
             holes.append(intel.model_dump())
             hole_intel_map[intel.hole_number] = intel
         except Exception as e:
@@ -1370,6 +1406,7 @@ driver doesn't care about a bunker at 370. If they're just chatting, be personab
 golf-focused. Never break character.
 
 {HAZARD_GROUNDING_RULE}
+{BEND_GROUNDING_RULE}
 {PHYSICS_GROUNDING_RULE}
 {GREEN_GROUNDING_RULE}
 {TOOL_USE_RULE}

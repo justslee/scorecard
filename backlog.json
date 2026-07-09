@@ -1,16 +1,16 @@
 {
   "updated": "2026-07-09",
-  "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle→done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
+  "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
       "id": "multi-tee-anchor-reconciliation",
-      "title": "Multi-tee holes: 'from the tee' F/C/B ≠ card yardage (anchor to the played tee)",
+      "title": "Multi-tee holes: 'from the tee' F/C/B \u2260 card yardage (anchor to the played tee)",
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "done-on-bundle-119 (9524f0f on integration/next; c682f7f core + 9524f0f Fable-BLOCK fix; NOTICEABLE — Bethpage hole-3 tiles/header now agree by construction, resolve to ~174 not 232). Fable plan specs/multi-tee-anchor-reconciliation-plan.md; new pure frontend/src/lib/course/tee-anchor.ts (resolveTeeAnchor named->card-nearest[par-aware >8%/1.08x guard + 25% bound]->single->legacy, honest card-only fallback tee=null); anchored coords applied once in RoundPageClient (tiles/plays-like/wind/opening-shot/course-intel/tee-markers); GPS override preserved; osm.py preserves tee ref/name. 24 unit tests incl. hole-3 fixture. Reviewer(Fable) first BLOCKED (card picks bypassed guard + bent fixture) -> fixed -> SHIP; designer PASS; QA green (vitest 1813, voice 274/274, ruff clean); CI Frontend+Backend SUCCESS on head. Rides bundle #119, awaiting owner ship-it.",
+      "status": "done-on-bundle-119 (9524f0f on integration/next; c682f7f core + 9524f0f Fable-BLOCK fix; NOTICEABLE \u2014 Bethpage hole-3 tiles/header now agree by construction, resolve to ~174 not 232). Fable plan specs/multi-tee-anchor-reconciliation-plan.md; new pure frontend/src/lib/course/tee-anchor.ts (resolveTeeAnchor named->card-nearest[par-aware >8%/1.08x guard + 25% bound]->single->legacy, honest card-only fallback tee=null); anchored coords applied once in RoundPageClient (tiles/plays-like/wind/opening-shot/course-intel/tee-markers); GPS override preserved; osm.py preserves tee ref/name. 24 unit tests incl. hole-3 fixture. Reviewer(Fable) first BLOCKED (card picks bypassed guard + bent fixture) -> fixed -> SHIP; designer PASS; QA green (vitest 1813, voice 274/274, ruff clean); CI Frontend+Backend SUCCESS on head. Rides bundle #119, awaiting owner ship-it.",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (screenshot): Bethpage hole 3 card=178Y but F/C/B 'FROM THE TEE'=~231, Plays 245. Prod-verified: the hole has 5 tee boxes (232/207/174/159/136y to green); the card (178) matches the 174y tee but the tiles anchor to the 232y BACK tee (geometry picks tee box [0] regardless of the played tee). Fix: anchor the 'from the tee' F/C/B + plays-like to the tee the PLAYER SELECTED at round start (the round already knows it — the colored tee-marker placed it), mapped to the nearest OSM tee box (name match, else card-yardage-nearest); reconcile the header when they disagree >8%; GPS rangefinder still overrides when on the hole; honest fallback to the card number. Full diagnosis: specs/multi-tee-anchor-reconciliation.md. Fable plan; geometry-correctness (3rd anchor incident after hazards + doglegs) → full adversarial review per lessons.md."
+      "why": "OWNER 2026-07-09 (screenshot): Bethpage hole 3 card=178Y but F/C/B 'FROM THE TEE'=~231, Plays 245. Prod-verified: the hole has 5 tee boxes (232/207/174/159/136y to green); the card (178) matches the 174y tee but the tiles anchor to the 232y BACK tee (geometry picks tee box [0] regardless of the played tee). Fix: anchor the 'from the tee' F/C/B + plays-like to the tee the PLAYER SELECTED at round start (the round already knows it \u2014 the colored tee-marker placed it), mapped to the nearest OSM tee box (name match, else card-yardage-nearest); reconcile the header when they disagree >8%; GPS rangefinder still overrides when on the hole; honest fallback to the card number. Full diagnosis: specs/multi-tee-anchor-reconciliation.md. Fable plan; geometry-correctness (3rd anchor incident after hazards + doglegs) \u2192 full adversarial review per lessons.md."
     },
     {
       "id": "fcb-header-tile-drift-clamp",
@@ -19,7 +19,7 @@
       "priority": 3,
       "risk": "low",
       "status": "ready",
-      "note": "Designer watch-item from multi-tee (c682f7f): in the NORMAL non-card-only state, header prefers cardYards exactly while the Center tile prefers anchored geometry center — a golfer can still see e.g. 178y header next to a 181 tile. Honest (real GPS vs scorecard differ a couple yards) and the 'from the tee' caption explains it, but two stacked near-equal numbers is the pattern the owner flagged. Add a '<=X yd, don't render both' clamp or a quiet designer note. Not a bug; polish."
+      "note": "Designer watch-item from multi-tee (c682f7f): in the NORMAL non-card-only state, header prefers cardYards exactly while the Center tile prefers anchored geometry center \u2014 a golfer can still see e.g. 178y header next to a 181 tile. Honest (real GPS vs scorecard differ a couple yards) and the 'from the tee' caption explains it, but two stacked near-equal numbers is the pattern the owner flagged. Add a '<=X yd, don't render both' clamp or a quiet designer note. Not a bug; polish."
     },
     {
       "id": "fcb-unmapped-paper-fallback-mismatch",
@@ -38,7 +38,7 @@
       "risk": "low",
       "status": "ready",
       "depends_on": [],
-      "why": "specs/teetime-real-booking-plan.md S0 (ship first, no external deps). Delete affiliate.py synthesized-slot emission + the mock-fallback substitution in routes/tee_times.py; add private_filter.py + private_clubs.json (Liberty National excluded — the offender); kill 'Held' everywhere (route-driven 'Found'/'Call'/'Book on course site'); honest-empty when no real data. Tests: private filter, honest-empty, no synthesized slots ever. Owner: 'I want real data.'"
+      "why": "specs/teetime-real-booking-plan.md S0 (ship first, no external deps). Delete affiliate.py synthesized-slot emission + the mock-fallback substitution in routes/tee_times.py; add private_filter.py + private_clubs.json (Liberty National excluded \u2014 the offender); kill 'Held' everywhere (route-driven 'Found'/'Call'/'Book on course site'); honest-empty when no real data. Tests: private filter, honest-empty, no synthesized slots ever. Owner: 'I want real data.'"
     },
     {
       "id": "teetime-s1-foreup-availability",
@@ -46,7 +46,7 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "done-on-bundle (integration/next d3f529d feature + 3ce8bd5 designer polish; NOTICEABLE). Real foreUP availability leg on the S0 router. Fable plan specs/teetime-s1-foreup-plan.md. New backend/app/services/tee_times/{foreup.py,capability_store.py,router_provider.py} + backend/data/foreup_ny_seed.json (18 Mile Creek GC, Hamburg NY 20410/4467, real geocode+phone) + backend/scripts/validate_foreup_courses.py. Politeness stack: 480s cache, asyncio single-flight, per-host SlidingWindowLimiter rpm=10, circuit breaker 3-fail/open-300s/half-open — all ON the fetch path (module singletons). ForeUpProvider parses foreUP public times endpoint (api-key:no_limits, honest UA, 8s timeout, bool-as-int guarded, verified-empty OMITS the course, never fabricates time/price/capacity). Kill switch TEETIME_FOREUP_ENABLED. CI fixture foreup_18mile_times.json = REAL live capture (18 slots), all test assertions fixture-derived; no live hit in CI (MockTransport). 64 S1 tests + 137 tee-time regression green; frontend lint/tsc/vitest 161/vitest build/voice 274 green. Reviewer SHIP (+/security-review clean), designer SHIP, QA PASS incl. live Playwright run (18 Mile Creek 12:21PM $24 'Found' + real deep-link). Rides the bundle; awaiting owner ship-it.",
+      "status": "done-on-bundle (integration/next d3f529d feature + 3ce8bd5 designer polish; NOTICEABLE). Real foreUP availability leg on the S0 router. Fable plan specs/teetime-s1-foreup-plan.md. New backend/app/services/tee_times/{foreup.py,capability_store.py,router_provider.py} + backend/data/foreup_ny_seed.json (18 Mile Creek GC, Hamburg NY 20410/4467, real geocode+phone) + backend/scripts/validate_foreup_courses.py. Politeness stack: 480s cache, asyncio single-flight, per-host SlidingWindowLimiter rpm=10, circuit breaker 3-fail/open-300s/half-open \u2014 all ON the fetch path (module singletons). ForeUpProvider parses foreUP public times endpoint (api-key:no_limits, honest UA, 8s timeout, bool-as-int guarded, verified-empty OMITS the course, never fabricates time/price/capacity). Kill switch TEETIME_FOREUP_ENABLED. CI fixture foreup_18mile_times.json = REAL live capture (18 slots), all test assertions fixture-derived; no live hit in CI (MockTransport). 64 S1 tests + 137 tee-time regression green; frontend lint/tsc/vitest 161/vitest build/voice 274 green. Reviewer SHIP (+/security-review clean), designer SHIP, QA PASS incl. live Playwright run (18 Mile Creek 12:21PM $24 'Found' + real deep-link). Rides the bundle; awaiting owner ship-it.",
       "depends_on": [
         "teetime-s0-kill-fake-data"
       ],
@@ -58,11 +58,11 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle (integration/next 3ccf783; SILENT \u2014 hardening + honesty fix). foreUP booking = deep-link handoff pinned by TestForeUpHandoffPersistence (integration, DB-backed\u2192CI) + TestS2Invariants (no auto-charge/no stored card/no fabricated confirmation guards, real teeth) + router guard through real ForeUpProvider; frontend honesty fix (page.tsx catch no longer fabricates 'Booking request sent' \u2192 honest needs_human). Fable plan specs/teetime-s2-plan.md. Reviewer CLEAN, QA 9/9. On bundle PR #121. NEXT: S3 (AI caller + owner rehearsal harness \u2014 HIGH risk telephony, own cycle + owner present).",
       "depends_on": [
         "teetime-s1-foreup-availability"
       ],
-      "why": "specs/teetime-real-booking-plan.md S2. Confirm on a live page that reservations need account+card → book() returns needs_human + booking_url deep-link to the course's own page. Never store user payment/creds, never auto-charge. Test: handoff yields correct deep-link + persists a tee_time_bookings row."
+      "why": "specs/teetime-real-booking-plan.md S2. Confirm on a live page that reservations need account+card \u2192 book() returns needs_human + booking_url deep-link to the course's own page. Never store user payment/creds, never auto-charge. Test: handoff yields correct deep-link + persists a tee_time_bookings row."
     },
     {
       "id": "teetime-s3-ai-caller-plus-rehearsal",
@@ -74,7 +74,7 @@
       "depends_on": [
         "teetime-s0-kill-fake-data"
       ],
-      "why": "specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script — zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool."
+      "why": "specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool."
     },
     {
       "id": "teetime-s4-scraping-adapters",
@@ -86,17 +86,17 @@
       "depends_on": [
         "teetime-s1-foreup-availability"
       ],
-      "why": "specs/teetime-real-booking-plan.md S4. Only courses whose availability is behind a rendered page (Chronogolf/Lightspeed widgets) with no clean JSON and no foreUP/call route. Headless Playwright, HTML parse, honest UA, low freq, heavy cache, never solve CAPTCHAs, never log in to scrape. Tests vs saved HTML fixtures (never live in CI). Explicitly GRAY — per-course opt-in, lowest priority."
+      "why": "specs/teetime-real-booking-plan.md S4. Only courses whose availability is behind a rendered page (Chronogolf/Lightspeed widgets) with no clean JSON and no foreUP/call route. Headless Playwright, HTML parse, honest UA, low freq, heavy cache, never solve CAPTCHAs, never log in to scrape. Tests vs saved HTML fixtures (never live in CI). Explicitly GRAY \u2014 per-course opt-in, lowest priority."
     },
     {
       "id": "caddie-remove-seeded-question",
-      "title": "Caddie opens in its OWN voice — drop the fake user-voice question",
+      "title": "Caddie opens in its OWN voice \u2014 drop the fake user-voice question",
       "type": "major",
       "priority": 1,
       "risk": "low",
       "status": "ready",
       "depends_on": [],
-      "why": "OWNER 2026-07-09: the auto-opening posts the question AS the player ('I'm on the tee, about 390…') and live mode doesn't cleanly answer it. Make the caddie OPEN with the recommendation in its own voice (assistant-side briefing), not a synthesized user bubble. Keeps the auto-reco value, kills the fake question. buildOpeningTurnText/opening-turn path + live opening. Small, ship first."
+      "why": "OWNER 2026-07-09: the auto-opening posts the question AS the player ('I'm on the tee, about 390\u2026') and live mode doesn't cleanly answer it. Make the caddie OPEN with the recommendation in its own voice (assistant-side briefing), not a synthesized user bubble. Keeps the auto-reco value, kills the fake question. buildOpeningTurnText/opening-turn path + live opening. Small, ship first."
     },
     {
       "id": "caddie-green-slope-spatial",
@@ -106,7 +106,7 @@
       "risk": "medium",
       "status": "done-on-bundle-119",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (screenshots): the caddie couldn't connect 'slopes west' to the player's left/right and butchered the slope→miss-side→uphill-putt chain until hand-walked. DONE (cycle 42, dfe0159 on bundle #119): backend/app/caddie/green_geometry.py rotates the green's downhill aspect into the player's tee→green LEFT/RIGHT frame (reuses hazards._xy_m + positive-cross=LEFT); pure rule engine 'which side leaves the uphill putt'. NOTE: the Fable plan + reviewer CAUGHT that the spec's chain was SIGN-INVERTED — physically correct is slope-falls-LEFT ⇒ LEFT is the LOW side ⇒ leave/miss LEFT ⇒ below the hole ⇒ UPHILL putt (uphill_leave_side == fall_side). Exposed as the get_green_read TOOL both mouths cite; GREEN_GROUNDING_RULE forbids the LLM deriving break geometry. 16-row adversarial matrix (2 approaches × 8 aspects) + owner golden case; teeth proven by fault injection (sign flip 18 red, uphill/downhill inversion 16 red, x/y swap 3 red). Spec §P1 prose corrected. See specs/caddie-green-slope-spatial-plan.md."
+      "why": "OWNER 2026-07-09 (screenshots): the caddie couldn't connect 'slopes west' to the player's left/right and butchered the slope\u2192miss-side\u2192uphill-putt chain until hand-walked. DONE (cycle 42, dfe0159 on bundle #119): backend/app/caddie/green_geometry.py rotates the green's downhill aspect into the player's tee\u2192green LEFT/RIGHT frame (reuses hazards._xy_m + positive-cross=LEFT); pure rule engine 'which side leaves the uphill putt'. NOTE: the Fable plan + reviewer CAUGHT that the spec's chain was SIGN-INVERTED \u2014 physically correct is slope-falls-LEFT \u21d2 LEFT is the LOW side \u21d2 leave/miss LEFT \u21d2 below the hole \u21d2 UPHILL putt (uphill_leave_side == fall_side). Exposed as the get_green_read TOOL both mouths cite; GREEN_GROUNDING_RULE forbids the LLM deriving break geometry. 16-row adversarial matrix (2 approaches \u00d7 8 aspects) + owner golden case; teeth proven by fault injection (sign flip 18 red, uphill/downhill inversion 16 red, x/y swap 3 red). Spec \u00a7P1 prose corrected. See specs/caddie-green-slope-spatial-plan.md."
     },
     {
       "id": "caddie-slope-framing-reconcile",
@@ -118,17 +118,17 @@
       "depends_on": [
         "caddie-green-slope-spatial"
       ],
-      "why": "Fable reviewer nit on dfe0159 (non-blocking): slope_advice.py's pre-existing lateral advice ('favor the high side') and green_read's 'miss the fall/low side for the uphill putt' frame the SAME slope from opposite ends — they agree on which side is HIGH (cross-consistency test pins it) but if both surface in one caddie answer the spoken lateral guidance could read as mixed. Reconcile the spoken framing so the two modules never emit contradictory-sounding lateral cues. Pure prose/logic, no geometry change."
+      "why": "Fable reviewer nit on dfe0159 (non-blocking): slope_advice.py's pre-existing lateral advice ('favor the high side') and green_read's 'miss the fall/low side for the uphill putt' frame the SAME slope from opposite ends \u2014 they agree on which side is HIGH (cross-consistency test pins it) but if both surface in one caddie answer the spoken lateral guidance could read as mixed. Reconcile the spoken framing so the two modules never emit contradictory-sounding lateral cues. Pure prose/logic, no geometry change."
     },
     {
       "id": "caddie-shot-physics-engine",
-      "title": "Ball-flight physics engine — real carry/roll vs wind/elevation/air",
+      "title": "Ball-flight physics engine \u2014 real carry/roll vs wind/elevation/air",
       "type": "major",
       "priority": 1,
       "risk": "high",
       "status": "ready",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 ('add a physics component… write very complex physics equations if we have to'): the caddie said a 300y drive + 4mph downwind + 38ft downhill = 390 (physically absurd; it also adjusted the PIN distance, not the drive). Current model: elevation = yards + feet/3, wind = capped ±15% linear — both toys. Build backend/app/caddie/physics.py: documented ball-flight model (RK4 trajectory OR calibrated closed form — plan picks), air density (temp/altitude/humidity), wind VECTOR × time-of-flight, elevation via fall-time, ROLL modeled separately (downhill drive gains via roll not carry — THE fix). Output {carry,total,plays_like} with assumptions surfaced; calibrated to references; exposed as get_shot_distance tool both mouths cite. Eval: the exact 300/downwind/downhill case → 315-330 not 390. Fable plan; adversarial review on the calibration. See specs/caddie-physics-engine.md."
+      "why": "OWNER 2026-07-09 ('add a physics component\u2026 write very complex physics equations if we have to'): the caddie said a 300y drive + 4mph downwind + 38ft downhill = 390 (physically absurd; it also adjusted the PIN distance, not the drive). Current model: elevation = yards + feet/3, wind = capped \u00b115% linear \u2014 both toys. Build backend/app/caddie/physics.py: documented ball-flight model (RK4 trajectory OR calibrated closed form \u2014 plan picks), air density (temp/altitude/humidity), wind VECTOR \u00d7 time-of-flight, elevation via fall-time, ROLL modeled separately (downhill drive gains via roll not carry \u2014 THE fix). Output {carry,total,plays_like} with assumptions surfaced; calibrated to references; exposed as get_shot_distance tool both mouths cite. Eval: the exact 300/downwind/downhill case \u2192 315-330 not 390. Fable plan; adversarial review on the calibration. See specs/caddie-physics-engine.md."
     },
     {
       "id": "caddie-bend-distance",
@@ -138,7 +138,7 @@
       "risk": "low",
       "status": "ready",
       "depends_on": [],
-      "why": "OWNER 2026-07-09: the caddie couldn't answer 'how far to the bend in the fairway?'. FREE from existing data: the hole polyline (now stored) — the dogleg = max-deviation vertex from the tee→green chord; compute along-path distance to it; expose as intel + a tool answer ('bends right at ~250'). No ML. See specs/caddie-physics-engine.md."
+      "why": "OWNER 2026-07-09: the caddie couldn't answer 'how far to the bend in the fairway?'. FREE from existing data: the hole polyline (now stored) \u2014 the dogleg = max-deviation vertex from the tee\u2192green chord; compute along-path distance to it; expose as intel + a tool answer ('bends right at ~250'). No ML. See specs/caddie-physics-engine.md."
     },
     {
       "id": "caddie-tree-detection-cv",
@@ -148,7 +148,7 @@
       "risk": "high",
       "status": "ready",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 ('can't you detect trees from the satellite map?'): trees aren't in OSM. Feasibility (research in specs/caddie-physics-engine.md): canopy segmentation on the satellite tile is a SOLVED CV task — pretrained tree-canopy/land-cover models, no custom training to start. POC: run a pretrained segmentation over each hole's tile at ingest, extract canopy polygons near the fairway corridor, store as 'tree' features → caddie gets tree carry/clearance via the hazard path; honest 'trees aren't mapped' fallback until coverage real; one inference/hole at ingest, cached. Spike first (feasibility + accuracy on Bethpage before UX). Fable plan."
+      "why": "OWNER 2026-07-09 ('can't you detect trees from the satellite map?'): trees aren't in OSM. Feasibility (research in specs/caddie-physics-engine.md): canopy segmentation on the satellite tile is a SOLVED CV task \u2014 pretrained tree-canopy/land-cover models, no custom training to start. POC: run a pretrained segmentation over each hole's tile at ingest, extract canopy polygons near the fairway corridor, store as 'tree' features \u2192 caddie gets tree carry/clearance via the hazard path; honest 'trees aren't mapped' fallback until coverage real; one inference/hole at ingest, cached. Spike first (feasibility + accuracy on Bethpage before UX). Fable plan."
     },
     {
       "id": "teetime-kill-fake-held",
@@ -158,7 +158,7 @@
       "risk": "low",
       "status": "ready",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (screenshot): the affiliate provider synthesizes ONE estimated slot per course (time=window start, estimated=True) but the UI renders 'Found ~6:30 AM… Held for you' — NO hold exists (no-fake-data violation). Also Liberty National (PRIVATE) surfaced as bookable. FIX: never say 'Held'; render estimates as 'suggested window — call to confirm'; filter/flag private clubs (Places types + curated private list). Frontend copy + a private-course guard. Immediate honesty fix, ship first."
+      "why": "OWNER 2026-07-09 (screenshot): the affiliate provider synthesizes ONE estimated slot per course (time=window start, estimated=True) but the UI renders 'Found ~6:30 AM\u2026 Held for you' \u2014 NO hold exists (no-fake-data violation). Also Liberty National (PRIVATE) surfaced as bookable. FIX: never say 'Held'; render estimates as 'suggested window \u2014 call to confirm'; filter/flag private clubs (Places types + curated private list). Frontend copy + a private-course guard. Immediate honesty fix, ship first."
     },
     {
       "id": "teetime-partnership-applications",
@@ -168,17 +168,17 @@
       "risk": "low",
       "status": "blocked",
       "depends_on": [],
-      "why": "OWNER-ACTION (parallel, free): apply to GolfNow affiliate (affiliate.gnsvc.com / business-partnership form), Supreme Golf affiliate, and foreUP's vendor API program. Any approval upgrades Route 1 from scraping to sanctioned API. Blocked on the owner submitting the forms (needs a business identity/positioning) — the agent can draft the applications but the owner sends them."
+      "why": "OWNER-ACTION (parallel, free): apply to GolfNow affiliate (affiliate.gnsvc.com / business-partnership form), Supreme Golf affiliate, and foreUP's vendor API program. Any approval upgrades Route 1 from scraping to sanctioned API. Blocked on the owner submitting the forms (needs a business identity/positioning) \u2014 the agent can draft the applications but the owner sends them."
     },
     {
       "id": "bethpage-7-11-geometry-audit",
-      "title": "Bethpage 7/11 guide-validation conflict: DIAGNOSED — carry-tolerance vs bunker footprint (decision needed)",
+      "title": "Bethpage 7/11 guide-validation conflict: DIAGNOSED \u2014 carry-tolerance vs bunker footprint (decision needed)",
       "type": "minor",
       "priority": 2,
       "risk": "medium",
-      "status": "diagnosed — decision needed (do NOT inline-fix: validator is the anti-injection/grounding control)",
+      "status": "diagnosed \u2014 decision needed (do NOT inline-fix: validator is the anti-injection/grounding control)",
       "depends_on": [],
-      "why": "INVESTIGATION 2026-07-09 (cycle 39, OFFLINE from committed fixture tests/fixtures/bethpage_overpass.json — same data prod ingested; no prod SSM needed). Holes 7 & 11 were persistently honest-empty (research ~4x each fails validate_guide). ROOT CAUSE = (c) validator over-strict, NOT (a) geometry or (b) OSM. EVIDENCE: (a) ruled out — extract_hole_hazards gives correct sides/carries matching reality: hole 7 par-5 dogleg-right (polyline 346->36->55deg) bunkers R 170/430/520 + L 355/525; hole 11 par-4 bunkers both sides L 245/415 R 270/325/420. All normal/correct non-numbered guide phrasings PASS the validator. (b) ruled out on-hole — 7/11 have ONLY bunkers, nearest water 395-431y OFF the played line (not in play); a water/OB mention is therefore a CORRECT rejection (OSM has no 'ob' polygon type so any OB phrase always rejects — expected). (c) CONFIRMED + reproduced: _side_and_carry_supported() checks a claimed carry vs each bunker's CENTROID +-25y, but Bethpage bunkers are large — hole 7's right cross-bunker centroid=170y actually SPANS 103-280y (178y wide). A web-researched guide naturally citing any carry in the real footprint (220/240/250/260) but >25y from centroid -> WHOLE guide REJECTED (demonstrated: all four reject). That is why grounded, reasonable numbered advice keeps failing = the persistence pattern. DECISION NEEDED (genuine product/risk call, not an obvious fix): (c1) widen the carry check to the bunker's surveyed near->far carry SPAN (recovers guides on big-bunker holes) — but this loosens the grounding/anti-laundering control that had a bypass closed just days ago (5e4b861 carry-tie-break laundering), so it REQUIRES the full adversarial treatment: Fable plan + eval-harness teeth (each new accept-case proven RED pre-fix) + adversarial review proving no false number laundering re-opens; vs (c2) accept status quo — honest-empty is SAFE and correct (caddie falls back to the grounded generic hazard line); large-bunker holes simply get no cached prose guide. Recommend (c1) as a properly-reviewed future build item IF cached guides on such holes are wanted; otherwise close as working-as-designed. Optional confirmation: an on-box research pass capturing the exact rejected text would pin which number/phrase fired in prod, but the local reproduction already demonstrates the mechanism — not worth an unattended prod SSM action. FILES: backend/app/caddie/guide_writer.py (_side_and_carry_supported, _has_side_flip, _CARRY_TOLERANCE_YARDS=25); backend/app/caddie/hazards.py (extract_hole_hazards, centroid-based carry). FORBIDDEN to inline-fix per tasks/lessons.md (geometry/validation change without full adversarial treatment)."
+      "why": "INVESTIGATION 2026-07-09 (cycle 39, OFFLINE from committed fixture tests/fixtures/bethpage_overpass.json \u2014 same data prod ingested; no prod SSM needed). Holes 7 & 11 were persistently honest-empty (research ~4x each fails validate_guide). ROOT CAUSE = (c) validator over-strict, NOT (a) geometry or (b) OSM. EVIDENCE: (a) ruled out \u2014 extract_hole_hazards gives correct sides/carries matching reality: hole 7 par-5 dogleg-right (polyline 346->36->55deg) bunkers R 170/430/520 + L 355/525; hole 11 par-4 bunkers both sides L 245/415 R 270/325/420. All normal/correct non-numbered guide phrasings PASS the validator. (b) ruled out on-hole \u2014 7/11 have ONLY bunkers, nearest water 395-431y OFF the played line (not in play); a water/OB mention is therefore a CORRECT rejection (OSM has no 'ob' polygon type so any OB phrase always rejects \u2014 expected). (c) CONFIRMED + reproduced: _side_and_carry_supported() checks a claimed carry vs each bunker's CENTROID +-25y, but Bethpage bunkers are large \u2014 hole 7's right cross-bunker centroid=170y actually SPANS 103-280y (178y wide). A web-researched guide naturally citing any carry in the real footprint (220/240/250/260) but >25y from centroid -> WHOLE guide REJECTED (demonstrated: all four reject). That is why grounded, reasonable numbered advice keeps failing = the persistence pattern. DECISION NEEDED (genuine product/risk call, not an obvious fix): (c1) widen the carry check to the bunker's surveyed near->far carry SPAN (recovers guides on big-bunker holes) \u2014 but this loosens the grounding/anti-laundering control that had a bypass closed just days ago (5e4b861 carry-tie-break laundering), so it REQUIRES the full adversarial treatment: Fable plan + eval-harness teeth (each new accept-case proven RED pre-fix) + adversarial review proving no false number laundering re-opens; vs (c2) accept status quo \u2014 honest-empty is SAFE and correct (caddie falls back to the grounded generic hazard line); large-bunker holes simply get no cached prose guide. Recommend (c1) as a properly-reviewed future build item IF cached guides on such holes are wanted; otherwise close as working-as-designed. Optional confirmation: an on-box research pass capturing the exact rejected text would pin which number/phrase fired in prod, but the local reproduction already demonstrates the mechanism \u2014 not worth an unattended prod SSM action. FILES: backend/app/caddie/guide_writer.py (_side_and_carry_supported, _has_side_flip, _CARRY_TOLERANCE_YARDS=25); backend/app/caddie/hazards.py (extract_hole_hazards, centroid-based carry). FORBIDDEN to inline-fix per tasks/lessons.md (geometry/validation change without full adversarial treatment)."
     },
     {
       "id": "fcb-caption-visibility",
@@ -186,10 +186,10 @@
       "type": "minor",
       "priority": 1,
       "risk": "low",
-      "status": "done-shipped-main (b4a66ac, shipped with #116 17622cf → main, TestFlight v1.0.911)",
+      "status": "done-shipped-main (b4a66ac, shipped with #116 17622cf \u2192 main, TestFlight v1.0.911)",
       "depends_on": [],
       "spec": "specs/fcb-caption-visibility-plan.md",
-      "why": "OWNER-CONFUSING UX (2026-07-09 screenshots): the 'from where you stand / from the tee' caption under the Front/Center/Back tiles is OBSCURED by the floating Ask-caddie/Enter-score pills, so 231Y-from-you vs 178Y-card looked like a bug. Move/restyle the source label so it is ALWAYS visible (e.g. above the tiles or inline with the section header); consider clarifying the PLAYS tile ('wind+elev, from you'). Designer pass required (calm, yardage-book). Was scoped into cycle 31 but did not land — the stale-hole P0 + telemetry shipped without it.",
+      "why": "OWNER-CONFUSING UX (2026-07-09 screenshots): the 'from where you stand / from the tee' caption under the Front/Center/Back tiles is OBSCURED by the floating Ask-caddie/Enter-score pills, so 231Y-from-you vs 178Y-card looked like a bug. Move/restyle the source label so it is ALWAYS visible (e.g. above the tiles or inline with the section header); consider clarifying the PLAYS tile ('wind+elev, from you'). Designer pass required (calm, yardage-book). Was scoped into cycle 31 but did not land \u2014 the stale-hole P0 + telemetry shipped without it.",
       "done_note": "Cycle 33: extracted label derivation into pure frontend/src/lib/caddie/fcb-labels.ts (fcbSourceCaption/playsSubLabel/lineVsCardHint) + 18 vitest cases; relocated the source caption to an always-visible top-of-card right-aligned header row (removed the old occluded below-divider caption); PLAYS sub 'adjusted' -> honest 'wind+elev'. Numbers unchanged (behavior-preserving; reviewer verified v/sub 1:1). Gates green: lint/tsc/build, vitest 1734, voice smoke 274. Designer non-blocking follow-up spun out as fcb-caption-proximity."
     },
     {
@@ -200,20 +200,20 @@
       "risk": "low",
       "status": "done-on-bundle-117 (f1a5e2c; reviewer CLEAN + designer SHIP; CI green f1a5e2c; on-device screenshot deferred to owner next TestFlight build; rides #117 as minor UI polish)",
       "depends_on": [],
-      "why": "DESIGNER follow-up to fcb-caption-visibility (non-blocking, 2026-07-08): the visibility fix moved the source caption to the TOP of the distances card, which fixes occlusion but disconnects the label from the F/C/B tiles it describes (it now sits directly above the Wind/Elev/Plays row, separated by a full stat row + hairline). Preferred fix: re-anchor the caption LOCALLY above the F/C/B tile row (its natural home) and solve the occlusion at the ROOT — give the data-overlay card enough bottom padding / bottom safe-area to clear the floating Ask-caddie/Enter-score pill bar height (fallback: a position:sticky mini-header scoped to the F/C/B block). VALIDATE against a real TestFlight screenshot first (designer explicitly wants to judge the current top-placement in situ before committing — it may read fine on device; do not do a speculative padding hack blind). Designer pass required.",
+      "why": "DESIGNER follow-up to fcb-caption-visibility (non-blocking, 2026-07-08): the visibility fix moved the source caption to the TOP of the distances card, which fixes occlusion but disconnects the label from the F/C/B tiles it describes (it now sits directly above the Wind/Elev/Plays row, separated by a full stat row + hairline). Preferred fix: re-anchor the caption LOCALLY above the F/C/B tile row (its natural home) and solve the occlusion at the ROOT \u2014 give the data-overlay card enough bottom padding / bottom safe-area to clear the floating Ask-caddie/Enter-score pill bar height (fallback: a position:sticky mini-header scoped to the F/C/B block). VALIDATE against a real TestFlight screenshot first (designer explicitly wants to judge the current top-placement in situ before committing \u2014 it may read fine on device; do not do a speculative padding hack blind). Designer pass required.",
       "spec": "specs/fcb-caption-proximity-plan.md",
       "done_note": "Cycle 38: extracted pure DistancesCard component (frontend/src/components/yardage/DistancesCard.tsx) + jsdom render tests (24/24 incl. DOM adjacency + safe-area clearance + live/from-tee); re-anchored the F/C/B source caption from top-of-card to immediately above the tile row (marginBottom 8->6); killed pill-bar occlusion at the root via card bottom padding max(20px, calc(env(safe-area-inset-bottom)+14px)) (no sticky affordance); data-overlay preserved for map tap/zoom. Pure layout, numbers/behavior unchanged. Non-blocking designer nit: center vs right-align caption over the 3-tile row - deferred to owner on-device judgment."
     },
     {
       "id": "fcb-line-vs-card-hint",
-      "title": "PLAYS/Center 'line vs card' dogleg hint (HELD — designer leans no)",
+      "title": "PLAYS/Center 'line vs card' dogleg hint (HELD \u2014 designer leans no)",
       "type": "minor",
       "priority": 3,
       "risk": "low",
       "status": "held",
       "depends_on": [],
       "spec": "specs/fcb-caption-visibility-plan.md",
-      "why": "Plan §4.5 (line-vs-card hint) built as a pure tested helper (lineVsCardHint in fcb-labels.ts) but intentionally NOT rendered. Designer recommendation (2026-07-08): DON'T add it as spec'd — the card already carries 7 microlabels and a second explanatory tag tips it toward annotated-dashboard (NORTHSTAR risk). If ever revisited, the comparison base MUST change: compare fcb.center to hole.yards (the real scorecard number), NOT the derived `distance` display placeholder (RoundPageClient.tsx:1058 = Math.max(80, hole.yards - round(hole.yards*0.6))), or the 'line' tag misfires on nearly every hole (fake-signal risk). Keep held pending owner ask."
+      "why": "Plan \u00a74.5 (line-vs-card hint) built as a pure tested helper (lineVsCardHint in fcb-labels.ts) but intentionally NOT rendered. Designer recommendation (2026-07-08): DON'T add it as spec'd \u2014 the card already carries 7 microlabels and a second explanatory tag tips it toward annotated-dashboard (NORTHSTAR risk). If ever revisited, the comparison base MUST change: compare fcb.center to hole.yards (the real scorecard number), NOT the derived `distance` display placeholder (RoundPageClient.tsx:1058 = Math.max(80, hole.yards - round(hole.yards*0.6))), or the 'line' tag misfires on nearly every hole (fake-signal risk). Keep held pending owner ask."
     },
     {
       "id": "search-speed-and-golfapi-verify",
@@ -221,9 +221,9 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "partly-shipped — LATENCY half done-shipped-main (#114 5d20ec7, two-phase progressive nearby + geo-cell cache, TestFlight v1.0.888); UNIVERSE/verify half BLOCKED on the GolfAPI 401 key fix (owner-action) + docs-verified call count before spend",
+      "status": "partly-shipped \u2014 LATENCY half done-shipped-main (#114 5d20ec7, two-phase progressive nearby + geo-cell cache, TestFlight v1.0.888); UNIVERSE/verify half BLOCKED on the GolfAPI 401 key fix (owner-action) + docs-verified call count before spend",
       "depends_on": [],
-      "why": "OWNER 2026-07-09: (a) nearby search takes a long time — reduce results shown and/or make the geo search more efficient (geo-indexed query, cached area results, smaller page); (b) use the GolfAPI to fetch the course universe ONCE ('I believe this is just one API call — do not spend a lot of calls') and use it as a VERIFY step so junk rows like 'Golf Course' or 'Pebble Beach 9th Hole' never surface. CONSTRAINTS: the GolfAPI key currently 401s (owner must fix the account first — BLOCKED for the universe half until then); the plan MUST verify the exact call count for a universe dump from GolfAPI docs BEFORE any call is spent (pagination risk; hard budget cap 45/mo); store the universe permanently (one-time cost); verify layer = fuzzy-match Places/OSM results against the canonical list, downrank non-matches (never hard-drop mapped/known-good courses). The latency half (a) is UNBLOCKED — build now."
+      "why": "OWNER 2026-07-09: (a) nearby search takes a long time \u2014 reduce results shown and/or make the geo search more efficient (geo-indexed query, cached area results, smaller page); (b) use the GolfAPI to fetch the course universe ONCE ('I believe this is just one API call \u2014 do not spend a lot of calls') and use it as a VERIFY step so junk rows like 'Golf Course' or 'Pebble Beach 9th Hole' never surface. CONSTRAINTS: the GolfAPI key currently 401s (owner must fix the account first \u2014 BLOCKED for the universe half until then); the plan MUST verify the exact call count for a universe dump from GolfAPI docs BEFORE any call is spent (pagination risk; hard budget cap 45/mo); store the universe permanently (one-time cost); verify layer = fuzzy-match Places/OSM results against the canonical list, downrank non-matches (never hard-drop mapped/known-good courses). The latency half (a) is UNBLOCKED \u2014 build now."
     },
     {
       "id": "caddie-prompt-caching-text-path",
@@ -234,7 +234,7 @@
       "status": "done-shipped-main (PR #115, silent; merged 7eda480, TestFlight v1.0.900)",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
-      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.1; area B = grade F). No prompt caching anywhere — the text caddie re-bills ~700-900 tokens of near-static system prefix (persona + _BASE_BEHAVIOR + HAZARD_GROUNDING_RULE + hole static geometry/hazards/guide) PLUS the full last-20-turn history on EVERY turn (_build_session_voice_prompt, routes/caddie.py:756-802). Restructure static->dynamic and set an Anthropic cache_control:{type:'ephemeral'} breakpoint after the per-round-stable prefix; render order tools->system->messages. SOTA: cache read ~0.1x input (up to 90% cheaper) + lower latency, break-even at 2 requests. Verify the pinned model's min-cacheable prefix (~1024-2048 tokens) — may need to co-locate more static content behind the breakpoint to clear the floor; confirm via usage.cache_read_input_tokens. Silent (cost/latency only, no wire-shape change). UNBLOCKED."
+      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.1; area B = grade F). No prompt caching anywhere \u2014 the text caddie re-bills ~700-900 tokens of near-static system prefix (persona + _BASE_BEHAVIOR + HAZARD_GROUNDING_RULE + hole static geometry/hazards/guide) PLUS the full last-20-turn history on EVERY turn (_build_session_voice_prompt, routes/caddie.py:756-802). Restructure static->dynamic and set an Anthropic cache_control:{type:'ephemeral'} breakpoint after the per-round-stable prefix; render order tools->system->messages. SOTA: cache read ~0.1x input (up to 90% cheaper) + lower latency, break-even at 2 requests. Verify the pinned model's min-cacheable prefix (~1024-2048 tokens) \u2014 may need to co-locate more static content behind the breakpoint to clear the floor; confirm via usage.cache_read_input_tokens. Silent (cost/latency only, no wire-shape change). UNBLOCKED."
     },
     {
       "id": "glasses-shot-tracking-spike",
@@ -246,7 +246,7 @@
       "depends_on": [
         "owner-acquires-rayban-meta"
       ],
-      "why": "OWNER TABLED 2026-07-09 (revisit on his word; research preserved in specs/glasses-shot-tracking-research.md). OWNER 2026-07-09 thesis, researched (specs/glasses-shot-tracking-research.md): continuous-vision tracking INFEASIBLE (60-90min battery, 1-min clip caps, thermal shutoffs) but TRIGGERED-CLIP design is plausible — IMU/impact-audio trigger -> 5-10s 720p clip via Meta Wearables DAT (dev preview; 12MP cam + 5-mic + speakers accessible to OUR phone app) -> on-phone swing/ball classification, fused with GPS displacement. ~5-7 min total camera/round = inside battery. Replaces vocal confirmation with VISUAL — the owner's objection to phone-only sensing dissolves. Putts = first sensor with a real chance, but trigger reliability unproven. SHIPPING gated on Meta opening publishing (their 2026 date); PROTOTYPING possible now. STEP 0 ($0, today): owner pairs Ray-Ban Metas as BT audio with the live caddie — phone-free conversation works without any code. Spike = diagnostic-only, measure trigger precision/recall + battery on owner rounds before any UX."
+      "why": "OWNER TABLED 2026-07-09 (revisit on his word; research preserved in specs/glasses-shot-tracking-research.md). OWNER 2026-07-09 thesis, researched (specs/glasses-shot-tracking-research.md): continuous-vision tracking INFEASIBLE (60-90min battery, 1-min clip caps, thermal shutoffs) but TRIGGERED-CLIP design is plausible \u2014 IMU/impact-audio trigger -> 5-10s 720p clip via Meta Wearables DAT (dev preview; 12MP cam + 5-mic + speakers accessible to OUR phone app) -> on-phone swing/ball classification, fused with GPS displacement. ~5-7 min total camera/round = inside battery. Replaces vocal confirmation with VISUAL \u2014 the owner's objection to phone-only sensing dissolves. Putts = first sensor with a real chance, but trigger reliability unproven. SHIPPING gated on Meta opening publishing (their 2026 date); PROTOTYPING possible now. STEP 0 ($0, today): owner pairs Ray-Ban Metas as BT audio with the live caddie \u2014 phone-free conversation works without any code. Spike = diagnostic-only, measure trigger precision/recall + battery on owner rounds before any UX."
     },
     {
       "id": "caddie-llm-rate-limiting",
@@ -257,7 +257,7 @@
       "status": "done-shipped-main (PR #115, silent; merged 7eda480, TestFlight v1.0.900)",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
-      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.2; area E = grade F). ZERO per-user rate/token/spend limits on the paid LLM endpoints — only guards are auth + a 4000-char input cap; an authed client can loop /voice/stream, /session/voice*, /realtime/session mint, /course-intel with no cost ceiling (the single biggest cost/scale risk, and it can drain the metered-overflow $50 cap). Add per-user RPM + TPM limits (enforce BOTH — request count alone misses one expensive prompt) and a hard monthly token/$ budget with 80/90% alerts; token-aware abuse flag (high-input/short-output = injection probing). Start single-box (in-process/Postgres counter); note Redis shared store is needed once we run >=2 workers (see caddie-multiworker, P2). Silent backend/infra. UNBLOCKED for single-box."
+      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.2; area E = grade F). ZERO per-user rate/token/spend limits on the paid LLM endpoints \u2014 only guards are auth + a 4000-char input cap; an authed client can loop /voice/stream, /session/voice*, /realtime/session mint, /course-intel with no cost ceiling (the single biggest cost/scale risk, and it can drain the metered-overflow $50 cap). Add per-user RPM + TPM limits (enforce BOTH \u2014 request count alone misses one expensive prompt) and a hard monthly token/$ budget with 80/90% alerts; token-aware abuse flag (high-input/short-output = injection probing). Start single-box (in-process/Postgres counter); note Redis shared store is needed once we run >=2 workers (see caddie-multiworker, P2). Silent backend/infra. UNBLOCKED for single-box."
     },
     {
       "id": "caddie-llm-timeouts-retries",
@@ -268,7 +268,7 @@
       "status": "done-shipped-main (PR #115, silent; merged 7eda480, TestFlight v1.0.900)",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
-      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.3; area F). The Anthropic caddie calls pass no timeout/max_retries (routes/caddie.py:796,863,1359; memory.py:129) so they inherit the SDK ~10-min default — with --workers 1 a single hung call ties up the ONLY worker for minutes on-course (throughput cliff). Add explicit timeout (~20-30s) + bounded retries; degrade to calm in-character honest copy on exhaustion (matches the humanizeVoiceError / fail-to-honest-state rule). Contrast the already-bounded httpx timeouts (realtime mint 15s, TTS 30s). Cheap, high-value resilience. Silent. UNBLOCKED."
+      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.3; area F). The Anthropic caddie calls pass no timeout/max_retries (routes/caddie.py:796,863,1359; memory.py:129) so they inherit the SDK ~10-min default \u2014 with --workers 1 a single hung call ties up the ONLY worker for minutes on-course (throughput cliff). Add explicit timeout (~20-30s) + bounded retries; degrade to calm in-character honest copy on exhaustion (matches the humanizeVoiceError / fail-to-honest-state rule). Contrast the already-bounded httpx timeouts (realtime mint 15s, TTS 30s). Cheap, high-value resilience. Silent. UNBLOCKED."
     },
     {
       "id": "caddie-tool-loop-parity",
@@ -279,8 +279,8 @@
       "status": "done-on-bundle (PR #117, NOTICEABLE; 7124c38 on integration/next; cycle 35). Fable plan specs/caddie-tool-loop-parity-plan.md. ONE canonical tool registry backend/app/caddie/tools.py rendered two ways (realtime_tools()->relay DEFAULT_TOOLS; TEXT_TOOLS->Anthropic); parity locked by drift test tests/eval/test_tool_parity.py. Bounded server-side loop backend/app/caddie/tool_loop.py: structural stops only (3-model-call ceiling, tool_choice:none final, output-token budget, repeated-call dedupe, per-tool 6s timeout). Real get_carries (player clubs vs along-path hazard carries from #116 polyline; honest empties, never fabricated) both mouths; stub at realtime.ts:126 removed. SSE resolves tools in-stream + event:status ('checking the numbers'). Reviewer security-review CLEAN (no HIGH/MED; get_owned_session auth, tool results as clipped data blocks, calm errors); designer PASS; QA all gates green (voice 274/274, vitest 19/19, eval 52/52, targeted 83/83, ruff clean, build ok). OWED before owner ship-it ask: TestFlight build + on-device live-turn evidence (live key + mapped course).",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
-      "classification": "noticeable (the sheet/fallback caddie can currently NOT fetch fresh numbers or act; parity makes it as capable as the orb — owner would feel smarter sheet answers)",
-      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.4; area C = grade D). The Realtime orb exposes 6 tools (one, get_carries, is a stub returning available:false); the classic Claude text path passes NO tools= at all (routes/caddie.py:781-822,1342-1374) — it can't fetch a recommendation, log a shot, or pull carries mid-turn, so the sheet/fallback brain is materially dumber than the orb. Give the Claude path the same tool schema (backing endpoints already exist: /session/recommend, /session/shot, /session/{id}/conditions, /session/{id}/player-profile) with a BOUNDED server-side tool loop (hard max-iteration + token-budget + no-progress stop — warning text alone does NOT stop a loop); implement get_carries for real (currently stubbed both ends, realtime.ts:118). Pairs with caddie-prompt-caching (don't mutate the tool set mid-round or it busts the cache). NEEDS AN OPUS PLAN. UNBLOCKED."
+      "classification": "noticeable (the sheet/fallback caddie can currently NOT fetch fresh numbers or act; parity makes it as capable as the orb \u2014 owner would feel smarter sheet answers)",
+      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.4; area C = grade D). The Realtime orb exposes 6 tools (one, get_carries, is a stub returning available:false); the classic Claude text path passes NO tools= at all (routes/caddie.py:781-822,1342-1374) \u2014 it can't fetch a recommendation, log a shot, or pull carries mid-turn, so the sheet/fallback brain is materially dumber than the orb. Give the Claude path the same tool schema (backing endpoints already exist: /session/recommend, /session/shot, /session/{id}/conditions, /session/{id}/player-profile) with a BOUNDED server-side tool loop (hard max-iteration + token-budget + no-progress stop \u2014 warning text alone does NOT stop a loop); implement get_carries for real (currently stubbed both ends, realtime.ts:118). Pairs with caddie-prompt-caching (don't mutate the tool set mid-round or it busts the cache). NEEDS AN OPUS PLAN. UNBLOCKED."
     },
     {
       "id": "caddie-advice-eval-harness",
@@ -288,28 +288,28 @@
       "type": "minor",
       "priority": 1,
       "risk": "low",
-      "status": "done-on-bundle (PR #117, silent; f491b71 on integration/next; reviewer SOUND — harness honest/falsifiable, 3 non-blocking notes folded in; Tier-1 47 passed offline + full suite green + ruff clean). Two-tier caddie advice-quality eval: Tier-1 deterministic prompt-assembly+honesty asserts (always in CI, no key/DB) over a 25-scenario golden JSONL seeded from the real hole-4 incidents (no-left-bunker hallucination, observed-reality gaslight, Bethpage-4 side-flip) with a closed check-name registry + teeth tests proving every check goes RED on the pre-fix world; Tier-2 LLM-judge (judge!=candidate, injection-safe, budget-capped, projection-abort) is on-demand/nightly only, triple-gated off CI. Follow-ups: grow golden set 25->30-50 (incident-driven growth rule in README); optional nightly Tier-2 schedule workflow; optional extract _build_session_voice_prompt pure body so the text mouth is Tier-2-drivable offline.",
+      "status": "done-on-bundle (PR #117, silent; f491b71 on integration/next; reviewer SOUND \u2014 harness honest/falsifiable, 3 non-blocking notes folded in; Tier-1 47 passed offline + full suite green + ruff clean). Two-tier caddie advice-quality eval: Tier-1 deterministic prompt-assembly+honesty asserts (always in CI, no key/DB) over a 25-scenario golden JSONL seeded from the real hole-4 incidents (no-left-bunker hallucination, observed-reality gaslight, Bethpage-4 side-flip) with a closed check-name registry + teeth tests proving every check goes RED on the pre-fix world; Tier-2 LLM-judge (judge!=candidate, injection-safe, budget-capped, projection-abort) is on-demand/nightly only, triple-gated off CI. Follow-ups: grow golden set 25->30-50 (incident-driven growth rule in README); optional nightly Tier-2 schedule workflow; optional extract _build_session_voice_prompt pure body so the text mouth is Tier-2-drivable offline.",
       "depends_on": [],
       "spec": "specs/caddie-excellence-audit.md",
-      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.5; area G = grade D). No advice-QUALITY harness exists — caddie tests cover geometry/plumbing only, runtime LLM output has no automated quality gate, so 'good enough to replace a caddie' is unfalsifiable and every other caddie improvement is unmeasurable. Build a git-diffable golden JSONL (30-50 scenarios: hole geometry + player + question -> expected advice properties, incl. edge cases: dogleg, hazard carry, downhill lie, low-confidence parse). Two tiers per SOTA: deterministic assertions first (names a real club? sane yardage bounds? no hallucinated hazard? valid shape) + an LLM-JUDGE rubric ('grounded in the actual hole? accounts for stated lie/wind? appropriately concise?'); regression-gate in CI; de-bias the judge (judge with a DIFFERENT model than the one under test, randomize order, control for verbosity). Extends the existing offline voice-tests gate pattern. Silent. UNBLOCKED."
+      "why": "AUDIT 2026-07-08 (caddie-excellence-audit P1.5; area G = grade D). No advice-QUALITY harness exists \u2014 caddie tests cover geometry/plumbing only, runtime LLM output has no automated quality gate, so 'good enough to replace a caddie' is unfalsifiable and every other caddie improvement is unmeasurable. Build a git-diffable golden JSONL (30-50 scenarios: hole geometry + player + question -> expected advice properties, incl. edge cases: dogleg, hazard carry, downhill lie, low-confidence parse). Two tiers per SOTA: deterministic assertions first (names a real club? sane yardage bounds? no hallucinated hazard? valid shape) + an LLM-JUDGE rubric ('grounded in the actual hole? accounts for stated lie/wind? appropriately concise?'); regression-gate in CI; de-bias the judge (judge with a DIFFERENT model than the one under test, randomize order, control for verbosity). Extends the existing offline voice-tests gate pattern. Silent. UNBLOCKED."
     },
     {
       "id": "caddie-realtime-conversation",
-      "title": "Ask Caddie runs on the Realtime engine — hands-free like round setup",
+      "title": "Ask Caddie runs on the Realtime engine \u2014 hands-free like round setup",
       "type": "major",
       "priority": 1,
       "risk": "high",
-      "status": "in-progress (Slices A+A2+telemetry shipped; C1 SHIPPED #110 flag-gated live mode v1.0.840; D landed on bundle #111 — live-session resilience, silent. Remaining: owner on-device verify of C1 -> Slice E flag default flip)",
+      "status": "in-progress (Slices A+A2+telemetry shipped; C1 SHIPPED #110 flag-gated live mode v1.0.840; D landed on bundle #111 \u2014 live-session resilience, silent. Remaining: owner on-device verify of C1 -> Slice E flag default flip)",
       "depends_on": [],
       "why": "Owner 2026-07-08 (explicit direction, twice): 'the caddie still requires me to click before and after I'm talking instead of following the start round model where it detects for me.' Root: the sheet's Deepgram live path keeps failing on his iPhone -> fallback recorder has no VAD -> manual taps. DIRECTION: route the in-round Ask Caddie conversation through the OpenAI Realtime session (server VAD, same as setup; a warm session already exists for the round page orb). Sheet becomes the live transcript/answer view; the auto opening reco becomes the first spoken turn (compose with caddie-opening-reco-from-tee); barge-in native. NEEDS A FULL OPUS PLAN: session/tool grounding parity (hazards, memory, profile via session context), warm-path invariants (pinning tests untouchable), cost per round, fallback to the sheet path when Realtime can't connect, exit/mute affordances. Supersedes further Deepgram-sheet conversational patches.",
       "spec": "specs/caddie-realtime-conversation-plan.md",
       "slices": {
-        "A": "DONE (34c1222): Backend grounding parity for the Realtime mint (conversation history, green slope, last rec, recent shots) — guarded, byte-identical when absent; improves the live orb today. Reviewer CLEAN + QA PASS.",
+        "A": "DONE (34c1222): Backend grounding parity for the Realtime mint (conversation history, green slope, last rec, recent shots) \u2014 guarded, byte-identical when absent; improves the live orb today. Reviewer CLEAN + QA PASS.",
         "B": "Live-mode transcript-view shell in CaddieSheet behind caddie-live-mode flag (default off), mocked client in tests. Additive UI.",
-        "C": "C1 SHIPPED (#110, ac9bec0, TestFlight v1.0.840): flag-gated (?liveMode=1, default OFF) Realtime transport in the Ask Caddie sheet — continuous listen + opening turn via sendText + mute/close + honest pre-connect fallback. Double-reviewed. Owner on-device verification pending -> drives flag default flip (Slice E).",
-        "D": "DONE (f303c91, on integration/next bundle PR #111; SILENT, flag default OFF): live-session resilience — post-connected drop -> ONE quiet cold-mint reconnect (transcript preserved, no re-greet); reconnect fail -> classic tap-to-talk fallback in-place with conversation seeded (never a dead sheet); in-flight start() resurrection guard; bounded 1/activation; idle-vs-drop classification; cross-client transcript ordering. Opus plan specs/caddie-realtime-slice-d-plan.md. Gates green (voice 274/274, vitest 1686, pinning 104/104 unmodified); reviewer CLEAN.",
+        "C": "C1 SHIPPED (#110, ac9bec0, TestFlight v1.0.840): flag-gated (?liveMode=1, default OFF) Realtime transport in the Ask Caddie sheet \u2014 continuous listen + opening turn via sendText + mute/close + honest pre-connect fallback. Double-reviewed. Owner on-device verification pending -> drives flag default flip (Slice E).",
+        "D": "DONE (f303c91, on integration/next bundle PR #111; SILENT, flag default OFF): live-session resilience \u2014 post-connected drop -> ONE quiet cold-mint reconnect (transcript preserved, no re-greet); reconnect fail -> classic tap-to-talk fallback in-place with conversation seeded (never a dead sheet); in-flight start() resurrection guard; bounded 1/activation; idle-vs-drop classification; cross-client transcript ordering. Opus plan specs/caddie-realtime-slice-d-plan.md. Gates green (voice 274/274, vitest 1686, pinning 104/104 unmodified); reviewer CLEAN.",
         "E": "Cost/idle polish, telemetry, flag default flip after owner device sign-off.",
-        "A2": "CONDITIONAL/LEAN interim: sentence-level TTS pipelining on the CLASSIC sheet path (synth+play sentence 1 while rest streams) — cuts ~1-2s off first-voice. BUILD only if Slice C wont land device-verified within ~2 cycles; durable (classic path is the permanent fallback), not throwaway. SKIP if C imminent. See plan 6.5.4.",
+        "A2": "CONDITIONAL/LEAN interim: sentence-level TTS pipelining on the CLASSIC sheet path (synth+play sentence 1 while rest streams) \u2014 cuts ~1-2s off first-voice. BUILD only if Slice C wont land device-verified within ~2 cycles; durable (classic path is the permanent fallback), not throwaway. SKIP if C imminent. See plan 6.5.4.",
         "telemetry": "Stage-timing voicetel events (eos_to_transcript, transcript_to_first_token, first_token_to_first_audio, eos_to_first_audio headline) so the budget is visible on-device. Headline event must flush immediately (iOS voicetel flush-drop). See plan 6.5.3."
       },
       "classification": "noticeable (Slice C is the owner-visible hands-free change; A/B are enablers, A improves the live caddie today)",
@@ -611,19 +611,19 @@
       "risk": "low",
       "status": "done",
       "depends_on": [],
-      "why": "Designer flagged (games-matchplay-nassau review): these two user-facing game-result components are entirely dark-mode Tailwind (zinc gradients, emerald/amber rank circles, Lucide Trophy, text-white) — a NORTHSTAR violation predating the wiring work. The in-round LeaderboardSheet (what golfers see during play) is already on-paper; these post-round/standings views are not. Restyle to T.* tokens matching the rest of the app. No logic changes."
+      "why": "Designer flagged (games-matchplay-nassau review): these two user-facing game-result components are entirely dark-mode Tailwind (zinc gradients, emerald/amber rank circles, Lucide Trophy, text-white) \u2014 a NORTHSTAR violation predating the wiring work. The in-round LeaderboardSheet (what golfers see during play) is already on-paper; these post-round/standings views are not. Restyle to T.* tokens matching the rest of the app. No logic changes."
     },
     {
       "id": "restyle-dark-components-sweep",
-      "title": "Restyle reachable dark components (auth) — most flagged dark files are DEAD/unmounted",
+      "title": "Restyle reachable dark components (auth) \u2014 most flagged dark files are DEAD/unmounted",
       "type": "minor",
       "priority": 24.5,
       "risk": "low",
       "status": "done",
       "depends_on": [],
-      "why": "REACHABILITY AUDIT (2026-06-27): of the ~21 dark-Tailwind components, almost all are DEAD CODE / UNMOUNTED legacy from the pre-yardage-book prototype, superseded by the wired screens. Dead subtrees (0 reachable importers): GamesPanel→AddGameModal/VoiceGameSetup; ScoreGrid→HoleScoreModal; CaddieModal→CaddiePanel→CaddieNotesCard/CustomPersonaModal/PinMarkControl/ShotTrackingControl; plus RoundSummary, TournamentGamesPanel, TournamentLeaderboard, VoiceTournamentSetup, GPSMapView, CameraCapture, CourseSearchImport. ONLY genuinely-reachable dark UI = the auth screens (SignInClient, SignUpClient, AuthProvider — real /sign-in /sign-up routes). So restyling the dead ones is moot; restyle ONLY auth here. SEPARATE, BIGGER ISSUE: several FLAGSHIP features are unmounted (no entry point) — AI caddie, OCR scorecard scan, GPS/shot-tracking, rich mid-round games panel. Those need a product decision (re-mount+wire+restyle vs delete) — see unmounted-features-decision. (Note: ScoreGrid/HoleScoreModal were already restyled before this was discovered — harmless, just unused.)",
-      "grooming_note_2026_06_27": "NOT moot. Follow-up reachability grep (2026-06-27): CourseSearch.tsx and PlayerAutocomplete.tsx both have file-header comments confirming they have no dark classes or lucide-react (already clean). Auth screens grep returned no matches — already restyled as noted. TWO reachable files still violate NORTHSTAR (lucide-react icons): SwipeableRow.tsx (used in /players/page.tsx — imports Trash2, AlertTriangle from lucide-react) and settings/page.tsx (imports Trash2 from lucide-react). Fix = replace those icons with inline SVGs matching the existing style. EditGroupsModal has zero importers (confirmed dead). Recommend: keep status READY with narrowed scope: replace lucide icons in SwipeableRow.tsx and settings/page.tsx only.",
-      "done_note": "All REACHABLE render paths now lucide-free: settings + SwipeableRow (pass 1), players/page + NewTournamentRoundClient (pass 2). Remaining lucide importers are all dead (P29 list) or blocked (P28 GPS/caddie cluster) or unimported (AuthButtons) — they get deleted/reworked there, not restyled. Gates green."
+      "why": "REACHABILITY AUDIT (2026-06-27): of the ~21 dark-Tailwind components, almost all are DEAD CODE / UNMOUNTED legacy from the pre-yardage-book prototype, superseded by the wired screens. Dead subtrees (0 reachable importers): GamesPanel\u2192AddGameModal/VoiceGameSetup; ScoreGrid\u2192HoleScoreModal; CaddieModal\u2192CaddiePanel\u2192CaddieNotesCard/CustomPersonaModal/PinMarkControl/ShotTrackingControl; plus RoundSummary, TournamentGamesPanel, TournamentLeaderboard, VoiceTournamentSetup, GPSMapView, CameraCapture, CourseSearchImport. ONLY genuinely-reachable dark UI = the auth screens (SignInClient, SignUpClient, AuthProvider \u2014 real /sign-in /sign-up routes). So restyling the dead ones is moot; restyle ONLY auth here. SEPARATE, BIGGER ISSUE: several FLAGSHIP features are unmounted (no entry point) \u2014 AI caddie, OCR scorecard scan, GPS/shot-tracking, rich mid-round games panel. Those need a product decision (re-mount+wire+restyle vs delete) \u2014 see unmounted-features-decision. (Note: ScoreGrid/HoleScoreModal were already restyled before this was discovered \u2014 harmless, just unused.)",
+      "grooming_note_2026_06_27": "NOT moot. Follow-up reachability grep (2026-06-27): CourseSearch.tsx and PlayerAutocomplete.tsx both have file-header comments confirming they have no dark classes or lucide-react (already clean). Auth screens grep returned no matches \u2014 already restyled as noted. TWO reachable files still violate NORTHSTAR (lucide-react icons): SwipeableRow.tsx (used in /players/page.tsx \u2014 imports Trash2, AlertTriangle from lucide-react) and settings/page.tsx (imports Trash2 from lucide-react). Fix = replace those icons with inline SVGs matching the existing style. EditGroupsModal has zero importers (confirmed dead). Recommend: keep status READY with narrowed scope: replace lucide icons in SwipeableRow.tsx and settings/page.tsx only.",
+      "done_note": "All REACHABLE render paths now lucide-free: settings + SwipeableRow (pass 1), players/page + NewTournamentRoundClient (pass 2). Remaining lucide importers are all dead (P29 list) or blocked (P28 GPS/caddie cluster) or unimported (AuthButtons) \u2014 they get deleted/reworked there, not restyled. Gates green."
     },
     {
       "id": "mount-caddie",
@@ -633,7 +633,7 @@
       "risk": "medium",
       "status": "done",
       "depends_on": [],
-      "why": "Flagship README feature, backend live (/api/caddie/*) but UNMOUNTED — CaddieModal/CaddiePanel have no entry point. Add a calm caddie entry (e.g. a button on RoundPageClient that opens the caddie in a yardage-book sheet), restyle CaddiePanel + CaddieNotesCard + CustomPersonaModal off dark Tailwind to T.*. Keep the backend wiring + clubDistances (from the now-real bag) feeding recommendations. Pin/shot-tracking/GPS controls are the separate mount-gps-shot-tracking item.",
+      "why": "Flagship README feature, backend live (/api/caddie/*) but UNMOUNTED \u2014 CaddieModal/CaddiePanel have no entry point. Add a calm caddie entry (e.g. a button on RoundPageClient that opens the caddie in a yardage-book sheet), restyle CaddiePanel + CaddieNotesCard + CustomPersonaModal off dark Tailwind to T.*. Keep the backend wiring + clubDistances (from the now-real bag) feeding recommendations. Pin/shot-tracking/GPS controls are the separate mount-gps-shot-tracking item.",
       "scoping_note": "Scoped LEAN/voice-first: new CaddieSheet using GPS-free /caddie/voice + /caddie/recommend. Full 1215-line CaddiePanel (mapbox/GPS/shot-tracking/pins) stays orphaned under blocked P28; not re-mounted (honors NORTHSTAR calm/voice-first, avoids dragging in blocked work).",
       "done_note": "Lean voice-first CaddieSheet on in-round screen (/caddie/voice + /caddie/recommend). Reviewer (1 bug + 2 nits) + designer (2 blockers + polish) all folded; gates green. GPS panel remains under P28."
     },
@@ -650,7 +650,7 @@
     },
     {
       "id": "mount-gps-shot-tracking",
-      "title": "Re-mount GPS map + shot-tracking + pin controls (caddie companion) — follow-up",
+      "title": "Re-mount GPS map + shot-tracking + pin controls (caddie companion) \u2014 follow-up",
       "type": "major",
       "priority": 28,
       "risk": "medium",
@@ -671,9 +671,9 @@
         "mount-caddie",
         "mount-ocr-scan"
       ],
-      "why": "After re-mounting caddie/OCR/GPS, delete what remains truly dead (e.g. ScoreGrid/HoleScoreModal — superseded by yardage ScoreSheet; RoundSummary, TournamentGamesPanel/TournamentLeaderboard, GamesPanel if its function is covered inline). Do LAST so we don't delete something a re-mount item revives. Verify zero importers + build before each deletion.",
-      "grooming_note_2026_06_27": "UNBLOCKABLE with caveats (2026-06-27): mount-caddie (P26) and mount-ocr-scan (P27) are DONE. Removed mount-gps-shot-tracking from depends_on — GPS-related files (GPSMapView, ShotTrackingControl, PinMarkControl, CameraCapture) are EXCLUDED from this deletion because CameraCapture is now actively used by ScanSheet (mounted), and the others belong to the P28 GPS mounting work. CONFIRMED DEAD files (zero reachable importers, safe to delete): ScoreGrid.tsx, HoleScoreModal.tsx (superseded by ScoreSheet), RoundSummary.tsx, TournamentGamesPanel.tsx, TournamentLeaderboard.tsx, GamesPanel.tsx, AddGameModal.tsx, VoiceGameSetup.tsx, VoiceTournamentSetup.tsx, EditGroupsModal.tsx, CourseSearchImport.tsx. HOLD CONDITION: owner standing constraint — do NOT delete until caddie+OCR is validated on a real TestFlight build. Status = ready-but-hold; flip to ready once the next approval bundle containing caddie+OCR ships and owner replies 'ship it'.",
-      "done_note": "Deleted 11 confirmed-superseded files (5269 LOC): ScoreGrid, HoleScoreModal, TournamentLeaderboard, GamesPanel, AddGameModal, RoundSummary, EditGroupsModal, CourseSearchImport, VoiceGameSetup, VoiceTournamentSetup, TournamentGamesPanel. tsc/build confirm no dangling refs. KEPT (intentionally): P28 GPS/caddie cluster (CaddiePanel/GPSMapView/ShotTrackingControl/PinMarkControl/CaddieNotesCard/CustomPersonaModal — reuse when P28 ships) + AuthButtons (auth, unimported). Those + their lucide imports get resolved with P28."
+      "why": "After re-mounting caddie/OCR/GPS, delete what remains truly dead (e.g. ScoreGrid/HoleScoreModal \u2014 superseded by yardage ScoreSheet; RoundSummary, TournamentGamesPanel/TournamentLeaderboard, GamesPanel if its function is covered inline). Do LAST so we don't delete something a re-mount item revives. Verify zero importers + build before each deletion.",
+      "grooming_note_2026_06_27": "UNBLOCKABLE with caveats (2026-06-27): mount-caddie (P26) and mount-ocr-scan (P27) are DONE. Removed mount-gps-shot-tracking from depends_on \u2014 GPS-related files (GPSMapView, ShotTrackingControl, PinMarkControl, CameraCapture) are EXCLUDED from this deletion because CameraCapture is now actively used by ScanSheet (mounted), and the others belong to the P28 GPS mounting work. CONFIRMED DEAD files (zero reachable importers, safe to delete): ScoreGrid.tsx, HoleScoreModal.tsx (superseded by ScoreSheet), RoundSummary.tsx, TournamentGamesPanel.tsx, TournamentLeaderboard.tsx, GamesPanel.tsx, AddGameModal.tsx, VoiceGameSetup.tsx, VoiceTournamentSetup.tsx, EditGroupsModal.tsx, CourseSearchImport.tsx. HOLD CONDITION: owner standing constraint \u2014 do NOT delete until caddie+OCR is validated on a real TestFlight build. Status = ready-but-hold; flip to ready once the next approval bundle containing caddie+OCR ships and owner replies 'ship it'.",
+      "done_note": "Deleted 11 confirmed-superseded files (5269 LOC): ScoreGrid, HoleScoreModal, TournamentLeaderboard, GamesPanel, AddGameModal, RoundSummary, EditGroupsModal, CourseSearchImport, VoiceGameSetup, VoiceTournamentSetup, TournamentGamesPanel. tsc/build confirm no dangling refs. KEPT (intentionally): P28 GPS/caddie cluster (CaddiePanel/GPSMapView/ShotTrackingControl/PinMarkControl/CaddieNotesCard/CustomPersonaModal \u2014 reuse when P28 ships) + AuthButtons (auth, unimported). Those + their lucide imports get resolved with P28."
     },
     {
       "id": "test-voice-pipeline",
@@ -706,7 +706,7 @@
       "depends_on": [],
       "why": "npm run lint reports ~108 pre-existing errors. Burn down in small behavior-preserving batches; then promote ESLint to a required CI job.",
       "acceptance": "npm run lint exits 0; ESLint becomes a required CI job.",
-      "done_note": "Root cause was ESLint linting the Capacitor ios/ minified bundle (~2874 false positives) — added ios/** to globalIgnores. Real ~84 problems in src/ fixed (hook refactors, any->types, unescaped entities). lint exit 0/0 problems; tsc/build/238 tests verified by eng-lead."
+      "done_note": "Root cause was ESLint linting the Capacitor ios/ minified bundle (~2874 false positives) \u2014 added ios/** to globalIgnores. Real ~84 problems in src/ fixed (hook refactors, any->types, unescaped entities). lint exit 0/0 problems; tsc/build/238 tests verified by eng-lead."
     },
     {
       "id": "voice-low-confidence-ux",
@@ -717,7 +717,7 @@
       "status": "done",
       "depends_on": [],
       "spec": "specs/voice-low-confidence-ux.md",
-      "why": "The parser returns a confidence score but the UI never shows it or asks to confirm. VoiceParseResultSchema (schemas.ts:68) has required confidence; backend parse-round-setup (voice_advanced.py:72) already returns confidence in the response but VoiceRoundSetup.tsx ignores it. In-round scoring (ScoreSheet.tsx) has no voice input at all — only a static 'Or say…' hint text with no mic button. V1 scope: (1) amber kicker on round-setup result card when confidence<0.7 or courseName empty; (2) new voice-to-score flow in ScoreSheet with confidence-aware confirm step. Backend parse-scores needs confidence added to VoiceScoreResponse. Reuse T.warningWash/T.warningInk pattern from ScanSheet.",
+      "why": "The parser returns a confidence score but the UI never shows it or asks to confirm. VoiceParseResultSchema (schemas.ts:68) has required confidence; backend parse-round-setup (voice_advanced.py:72) already returns confidence in the response but VoiceRoundSetup.tsx ignores it. In-round scoring (ScoreSheet.tsx) has no voice input at all \u2014 only a static 'Or say\u2026' hint text with no mic button. V1 scope: (1) amber kicker on round-setup result card when confidence<0.7 or courseName empty; (2) new voice-to-score flow in ScoreSheet with confidence-aware confirm step. Backend parse-scores needs confidence added to VoiceScoreResponse. Reuse T.warningWash/T.warningInk pattern from ScanSheet.",
       "done_note": "SETUP slice shipped: backend confidence wired into VoiceRoundSetup; calm amber cue (kicker + dashed warningWash course card) when confidence<0.7 or course missing; high-confidence path unchanged; voice-tests 261/261. Reviewer ship + designer polish-then-ship (false-affordance copy fixed, ScanSheet-consistency nits folded). SCORING half split to voice-to-score-confidence (P35)."
     },
     {
@@ -725,7 +725,7 @@
       "priority": 34,
       "status": "DONE (plumbing + UX both shipped)",
       "title": "Identify the owner by Clerk user id, not players[0] (fix mis-attribution across home + profile)",
-      "rationale": "Reviewer flagged: home (recent scores + scoring avg) and profile (ScoringByTee + Season log) all assume r.players[0] is the owner. Player has no owner flag; array order is just entry order, so a round where the owner is not first-listed attributes another players scores to the owner — a fabricated-fact-by-bug. Pre-existing (3 call sites: page.tsx:40-41,75-77; profile/page.tsx:71,113). Fix all sites together once user-identity lands: map Clerk user -> player (add owner/userId to Player or round-membership), then derive owner totals from that.",
+      "rationale": "Reviewer flagged: home (recent scores + scoring avg) and profile (ScoringByTee + Season log) all assume r.players[0] is the owner. Player has no owner flag; array order is just entry order, so a round where the owner is not first-listed attributes another players scores to the owner \u2014 a fabricated-fact-by-bug. Pre-existing (3 call sites: page.tsx:40-41,75-77; profile/page.tsx:71,113). Fix all sites together once user-identity lands: map Clerk user -> player (add owner/userId to Player or round-membership), then derive owner totals from that.",
       "blocked_by": "",
       "classification": "noticeable-correctness",
       "progress": "2026-06-28: shipped the full ownerPlayerId plumbing on integration/next. BACKEND: migration 0005_008 adds nullable rounds.owner_player_id; ORM + Pydantic Round/RoundCreate carry ownerPlayerId; create_round stores it (defaults to players[0] when omitted); _build_full_round returns it with a first-player fallback for legacy rounds; +2 integration tests (explicit non-first owner round-trips; default-to-first). FRONTEND: Round/RoundCreate types carry ownerPlayerId; new canonical helper lib/round-owner.ts getOwnerPlayerId(round)=ownerPlayerId??players[0] with 4 unit tests; ALL read sites switched off r.players[0] (page.tsx x2, profile/page.tsx x2, profile-stats.ts x3) + stale comments corrected. This centralizes the owner-identity assumption into ONE tested place and makes it correct end-to-end for any round that carries ownerPlayerId. Gates green (fe: lint/tsc/voice265/unit284/build/crash; be: ruff/models/migration-chain; integration tests run in CI Postgres)."
@@ -735,7 +735,7 @@
       "priority": 35,
       "status": "done",
       "title": "In-round voice-to-score with confidence/confirm (scoring half of P33)",
-      "rationale": "PM found the in-round scoring path has NO voice mic at all and no confidence field. This is net-new: add a real mic in ScoreSheet, a VoiceScoreResponse.confidence field (backend voice.py), and a confirm step (mirror ScanSheet) when low-confidence. Own bundle — deferred from P33 setup slice. See specs/voice-low-confidence-ux.md scoring section.",
+      "rationale": "PM found the in-round scoring path has NO voice mic at all and no confidence field. This is net-new: add a real mic in ScoreSheet, a VoiceScoreResponse.confidence field (backend voice.py), and a confirm step (mirror ScanSheet) when low-confidence. Own bundle \u2014 deferred from P33 setup slice. See specs/voice-low-confidence-ux.md scoring section.",
       "classification": "noticeable + backend change",
       "note": "Best done AFTER the current massive bundle ships + is validated, since it touches backend. | Owner approved building now (chose voice-to-score over validating-first) 2026-06-27.",
       "done_note": "Real mic in ScoreSheet (record->Hearing->parse->confirm), confidence cue<0.65, manual digit-wheel untouched. Backend confidence field (no migration). Reviewer fix-then-ship (open-generation guard fixed hot-mic race + stale-confirm wrong-hole apply; range-validate 1-15) + designer polish (44pt mic, animations, surgical amber) all folded. Gates verified: voice-tests 265, vitest 238, build, pytest 138+13skip."
@@ -772,16 +772,16 @@
       "priority": 39,
       "status": "done",
       "title": "Add Sign Out (missing entirely) + restyle Settings to yardage-book T.*",
-      "rationale": "GAPS found: (1) no signOut anywhere — app gates on sign-in but cannot sign out (AuthButtons dead/unmounted); (2) settings/page.tsx is the only screen still on Tailwind/CSS classes (T.* count 0), a NORTHSTAR inconsistency. Sign-out via Clerk useClerk().signOut() -> AuthGate shows sign-in. Restyle whole page to T.*; keep About + Clear Local Cache.",
+      "rationale": "GAPS found: (1) no signOut anywhere \u2014 app gates on sign-in but cannot sign out (AuthButtons dead/unmounted); (2) settings/page.tsx is the only screen still on Tailwind/CSS classes (T.* count 0), a NORTHSTAR inconsistency. Sign-out via Clerk useClerk().signOut() -> AuthGate shows sign-in. Restyle whole page to T.*; keep About + Clear Local Cache.",
       "classification": "noticeable",
-      "done_note": "Sign Out added (was entirely missing — Clerk useClerk().signOut -> AuthGate shows sign-in; mount guarded by same env var as AuthProvider). Settings fully restyled Tailwind->T.* yardage-book. Reviewer ship + designer polish (neutral non-alarming sign-out, in-page confirms for both actions, friendly error, honest Beta version) folded. Gates verified."
+      "done_note": "Sign Out added (was entirely missing \u2014 Clerk useClerk().signOut -> AuthGate shows sign-in; mount guarded by same env var as AuthProvider). Settings fully restyled Tailwind->T.* yardage-book. Reviewer ship + designer polish (neutral non-alarming sign-out, in-page confirms for both actions, friendly error, honest Beta version) folded. Gates verified."
     },
     {
       "id": "round-delete-ui",
       "priority": 40,
       "status": "done",
       "title": "Wire delete-round UI (plumbing existed, no affordance)",
-      "rationale": "GAP: full delete-round stack already built+tested (DELETE /api/rounds/{id} owner-scoped+cascade, api.deleteRound, deleteRoundAsync, useApi.deleteRound) but NO UI calls it — users cannot remove a mistaken/test round. Add swipe-to-delete on home recent-rounds reusing existing SwipeableRow (as players page does). Low-risk: only UI wiring.",
+      "rationale": "GAP: full delete-round stack already built+tested (DELETE /api/rounds/{id} owner-scoped+cascade, api.deleteRound, deleteRoundAsync, useApi.deleteRound) but NO UI calls it \u2014 users cannot remove a mistaken/test round. Add swipe-to-delete on home recent-rounds reusing existing SwipeableRow (as players page does). Low-risk: only UI wiring.",
       "classification": "noticeable",
       "done_note": "Swipe-to-delete on home recent-rounds via existing SwipeableRow + deleteRoundAsync (plumbing pre-existed, no UI). Optimistic removal + date-sorted rollback, liveRoundId cleared, stats refresh. Reviewer SHIP + designer SHIP; 4 consistency nits folded. Known gap (documented): deleteRound/Player swallow API failures."
     },
@@ -791,7 +791,7 @@
       "status": "shipped-pending-verify",
       "title": "Fix voice/auth 401: switch Capacitor iosScheme capacitor->https so Clerk can mint tokens",
       "rationale": "Owner still hits transcribe 401 (no auth token). Token-bridge code verified correct -> root cause is Clerk failing to issue session JWTs on the custom capacitor://localhost origin. Fix: iosScheme https (https://localhost is Capacitor-recommended, first-class secure origin Clerk supports + secure context for mic). COORDINATED: backend CORS must allow https://localhost (added) and deploy together -> ships with the bundle merge. Cannot be a standalone test build vs current prod (would CORS-block). Gates green. UNVERIFIED on-device (cannot test here); fallback if insufficient = Clerk dashboard allowed-origin / pk_live.",
-      "classification": "noticeable + backend (CORS) — owner can test",
+      "classification": "noticeable + backend (CORS) \u2014 owner can test",
       "shipped": "v0.1.323 build 202606272115"
     },
     {
@@ -799,17 +799,17 @@
       "priority": 42,
       "status": "done",
       "title": "Playwright auth/login E2E gate (owner QA feedback)",
-      "done_note": "Playwright + @clerk/testing. Tier-1 (sign-in screen renders — would have caught the auth-gate breakage) now RUNS in CI via the public pk_test key (no secret needed). Tier-2 (full sign-in w/ Clerk test user) skips until CLERK_SECRET_KEY repo secret + test user added. Advisory CI job until first green, then promote Tier-1 to required. Limitation: web E2E does NOT reproduce Capacitor webview-origin issues (needs device/simulator smoke).",
+      "done_note": "Playwright + @clerk/testing. Tier-1 (sign-in screen renders \u2014 would have caught the auth-gate breakage) now RUNS in CI via the public pk_test key (no secret needed). Tier-2 (full sign-in w/ Clerk test user) skips until CLERK_SECRET_KEY repo secret + test user added. Advisory CI job until first green, then promote Tier-1 to required. Limitation: web E2E does NOT reproduce Capacitor webview-origin issues (needs device/simulator smoke).",
       "classification": "silent"
     },
     {
       "id": "clerk-prod-instance",
       "priority": 43,
       "status": "build-shipped-awaiting-signin",
-      "title": "Finish Clerk production instance (pk_live) — DNS + key swap, the real login fix",
+      "title": "Finish Clerk production instance (pk_live) \u2014 DNS + key swap, the real login fix",
       "rationale": "Owner paused mid-setup. Clerk prod domain looperapp.org needs 5 CNAMEs in Route53 (accounts->accounts.clerk.services; clerk->frontend-api.clerk.services; clk._domainkey->dkim1.y38xe4k5qi21.clerk.services; clk2._domainkey->dkim2.y38xe4k5qi21.clerk.services; clkmail->mail.y38xe4k5qi21.clerk.services). looper-loop IAM lacks route53 perms so owner adds them. Then owner sends pk_live + JWKS URL + issuer; eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. See specs/clerk-production-migration.md. Permanent login fix; auth-bypass build is the stopgap.",
       "classification": "owner-action + eng follow-up",
-      "progress": "2026-06-28: eng added all 5 Clerk CNAMEs to Route53 (zone Z068252329IRE4BQ9U293) after owner granted route53 perms to looper-loop IAM — all resolve live. Awaiting: owner clicks Verify in Clerk -> sends pk_live + JWKS URL + issuer -> eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. | 2026-06-28: owner GO. Deploy points backend at prod Clerk for VERIFICATION only (CLERK_JWKS_URL/ISSUER=clerk.looperapp.org); OWNER_CLERK_USER_ID left untouched (no gate weakening). After owner first sign-in: capture their prod sub -> set OWNER_CLERK_USER_ID to it (P44). | 2026-06-28: PR #52 merged, backend deployed (prod Clerk verification confirmed), pk_live build v1.0.335 (202606280011) uploaded to TestFlight. Awaiting owner sign-in test. If data 403s, set OWNER_CLERK_USER_ID to owner prod sub (P44). | 2026-06-28: \"Preparing your book\" hang root-caused to prod Clerk rejecting Origin https://localhost (origin_invalid). FIXED via Backend API PATCH /v1/instance allowed_origins=[https://localhost, capacitor://localhost] (HTTP 204; verified /v1/environment now 200 for that origin). No rebuild needed — owner reopens v1.0.335. SECURITY: owner pasted sk_live in chat -> must rotate."
+      "progress": "2026-06-28: eng added all 5 Clerk CNAMEs to Route53 (zone Z068252329IRE4BQ9U293) after owner granted route53 perms to looper-loop IAM \u2014 all resolve live. Awaiting: owner clicks Verify in Clerk -> sends pk_live + JWKS URL + issuer -> eng swaps ship.sh key + backend CLERK_JWKS_URL/ISSUER, redeploys, rebuilds. | 2026-06-28: owner GO. Deploy points backend at prod Clerk for VERIFICATION only (CLERK_JWKS_URL/ISSUER=clerk.looperapp.org); OWNER_CLERK_USER_ID left untouched (no gate weakening). After owner first sign-in: capture their prod sub -> set OWNER_CLERK_USER_ID to it (P44). | 2026-06-28: PR #52 merged, backend deployed (prod Clerk verification confirmed), pk_live build v1.0.335 (202606280011) uploaded to TestFlight. Awaiting owner sign-in test. If data 403s, set OWNER_CLERK_USER_ID to owner prod sub (P44). | 2026-06-28: \"Preparing your book\" hang root-caused to prod Clerk rejecting Origin https://localhost (origin_invalid). FIXED via Backend API PATCH /v1/instance allowed_origins=[https://localhost, capacitor://localhost] (HTTP 204; verified /v1/environment now 200 for that origin). No rebuild needed \u2014 owner reopens v1.0.335. SECURITY: owner pasted sk_live in chat -> must rotate."
     },
     {
       "id": "fix-integration-test-loop",
@@ -833,17 +833,17 @@
       "priority": 47,
       "status": "VERIFIED-native-auth-works-shipped-v1.0.369",
       "title": "Clerk session persistence in iOS webview (standardBrowser:false)",
-      "rationale": "Sign-in completed but session did not persist (isSignedIn stayed false -> bounced to signed-out) — iOS WKWebView blocks Clerk third-party session cookie. Fix: standardBrowser:false on ClerkProvider (Clerk official native option, avoids cookies), gated to Capacitor.isNativePlatform() so web/dev unaffected; + CapacitorCookies enabled. WKAppBoundDomains layer REMOVED (risky for Capacitor localhost). Awaiting on-device test.",
+      "rationale": "Sign-in completed but session did not persist (isSignedIn stayed false -> bounced to signed-out) \u2014 iOS WKWebView blocks Clerk third-party session cookie. Fix: standardBrowser:false on ClerkProvider (Clerk official native option, avoids cookies), gated to Capacitor.isNativePlatform() so web/dev unaffected; + CapacitorCookies enabled. WKAppBoundDomains layer REMOVED (risky for Capacitor localhost). Awaiting on-device test.",
       "classification": "noticeable",
       "progress": "2026-06-28: shipped v1.0.339 (build 202606280108) with standardBrowser:false + CapacitorCookies (WKAppBoundDomains dropped as too risky for Capacitor). Awaiting owner: sign in -> does session persist (reach home + stay)? | Bundled into COMPLETE native-auth build v1.0.343 (build 202606280228), uploaded; CapacitorPreferences SPM resolved clean. Awaiting owner: sign in -> stays -> force-quit -> still signed in.",
-      "note": "ROOT CAUSE (matches evidence exactly): WebView CORS blocks reading the Authorization response header cross-origin (capacitor://localhost -> clerk.looperapp.org), so the session JWT is never captured (tok never flips). FIX: CapacitorHttp:{enabled:true} routes fetch through native NSURLSession which bypasses browser CORS + reads all headers. + richer copyable diagnostic (auth-hdr field = key signal). Building. WATCH: CapacitorHttp patches global fetch — verify the audio-blob transcribe upload + other API calls still work on-device. | Shipped v1.0.361 (build 202606280650). Awaiting owner: sign in -> auth-hdr/signed true? Copyable diagnostic added. | v1.0.361 diagnostic: native-sent:FALSE (window hooks never fire with CDN clerk-js) — CONFIRMED. Fix: bundle @clerk/clerk-js locally + register FAPI callbacks on the INSTANCE + pass Clerk={instance} to ClerkProvider (the @clerk/expo pattern). Building. | Shipped v1.0.365 (build 202606280936): local @clerk/clerk-js instance + instance callbacks. Awaiting owner: native-sent should now be true. | CRASH ROOT CAUSE: bundled Clerk instance had no UI components -> <SignIn> mountSignIn assertComponentsReady throws -> white-screen. FIXED (d78de56): standard CDN ClerkProvider + guarded window hooks; app loads (sim-verified). NATIVE-AUTH ROOT CAUSE: clerk-react@5/clerk-js@5 dont honor the token hooks -> native-sent never fires. REAL FIX: upgrade clerk-react->v6 (clerk-js@6 honors hooks + ships UI). Building v6 upgrade. Autonomous testing now exists: frontend/ios/SIMTEST.md + simtest-headless.mjs (CI-able crash check). | VERIFIED 2026-06-28 via REAL credentialed sign-in in iPhone-17 sim (WebKit remote inspector + ios-webkit-debug-proxy): @clerk/react 6.11.1 / clerk-js 6.22.0. ALL native-auth signals GREEN: native-sent=true on EVERY FAPI request incl. sign_ins POST/attempt_first_factor (v6 honors window hooks); auth-hdr=true + tok=true (CapacitorHttp made authorization response header readable, JWT captured + persisted to Preferences); napi=true. Password (first factor) ACCEPTED. signed=false reached ONLY because Clerk gated the new device behind an emailed second-factor OTP ('signing in from a new device') which the agent can't read (no inbox) — Clerk product security, orthogonal to native-auth plumbing. CONCLUSION: native-auth fix CONFIRMED working; remaining step is the human entering the email OTP on first sign-in. Shipped verified build v1.0.369 (build 202606281037)."
+      "note": "ROOT CAUSE (matches evidence exactly): WebView CORS blocks reading the Authorization response header cross-origin (capacitor://localhost -> clerk.looperapp.org), so the session JWT is never captured (tok never flips). FIX: CapacitorHttp:{enabled:true} routes fetch through native NSURLSession which bypasses browser CORS + reads all headers. + richer copyable diagnostic (auth-hdr field = key signal). Building. WATCH: CapacitorHttp patches global fetch \u2014 verify the audio-blob transcribe upload + other API calls still work on-device. | Shipped v1.0.361 (build 202606280650). Awaiting owner: sign in -> auth-hdr/signed true? Copyable diagnostic added. | v1.0.361 diagnostic: native-sent:FALSE (window hooks never fire with CDN clerk-js) \u2014 CONFIRMED. Fix: bundle @clerk/clerk-js locally + register FAPI callbacks on the INSTANCE + pass Clerk={instance} to ClerkProvider (the @clerk/expo pattern). Building. | Shipped v1.0.365 (build 202606280936): local @clerk/clerk-js instance + instance callbacks. Awaiting owner: native-sent should now be true. | CRASH ROOT CAUSE: bundled Clerk instance had no UI components -> <SignIn> mountSignIn assertComponentsReady throws -> white-screen. FIXED (d78de56): standard CDN ClerkProvider + guarded window hooks; app loads (sim-verified). NATIVE-AUTH ROOT CAUSE: clerk-react@5/clerk-js@5 dont honor the token hooks -> native-sent never fires. REAL FIX: upgrade clerk-react->v6 (clerk-js@6 honors hooks + ships UI). Building v6 upgrade. Autonomous testing now exists: frontend/ios/SIMTEST.md + simtest-headless.mjs (CI-able crash check). | VERIFIED 2026-06-28 via REAL credentialed sign-in in iPhone-17 sim (WebKit remote inspector + ios-webkit-debug-proxy): @clerk/react 6.11.1 / clerk-js 6.22.0. ALL native-auth signals GREEN: native-sent=true on EVERY FAPI request incl. sign_ins POST/attempt_first_factor (v6 honors window hooks); auth-hdr=true + tok=true (CapacitorHttp made authorization response header readable, JWT captured + persisted to Preferences); napi=true. Password (first factor) ACCEPTED. signed=false reached ONLY because Clerk gated the new device behind an emailed second-factor OTP ('signing in from a new device') which the agent can't read (no inbox) \u2014 Clerk product security, orthogonal to native-auth plumbing. CONCLUSION: native-auth fix CONFIRMED working; remaining step is the human entering the email OTP on first sign-in. Shipped verified build v1.0.369 (build 202606281037)."
     },
     {
       "id": "clerk-token-cache",
       "priority": 48,
       "status": "shipped-v1.0.343-awaiting-test",
       "title": "Persist Clerk session across cold restart (tokenCache via @capacitor/preferences)",
-      "rationale": "With standardBrowser:false + no tokenCache, the session is in-memory only — force-quit loses it. Add a tokenCache backed by @capacitor/preferences so sign-in survives app restarts. Follow-up after the native-session fix is confirmed working.",
+      "rationale": "With standardBrowser:false + no tokenCache, the session is in-memory only \u2014 force-quit loses it. Add a tokenCache backed by @capacitor/preferences so sign-in survives app restarts. Follow-up after the native-session fix is confirmed working.",
       "classification": "noticeable",
       "progress": "2026-06-28: implemented via Clerk internal __internal_onBeforeRequest/onAfterResponse hooks + @capacitor/preferences (native Keychain), key __clerk_client_jwt (same as @clerk/expo). Gated to native. Bundled into the complete native-auth build with standardBrowser:false. | Bundled into COMPLETE native-auth build v1.0.343 (build 202606280228), uploaded; CapacitorPreferences SPM resolved clean. Awaiting owner: sign in -> stays -> force-quit -> still signed in."
     },
@@ -852,9 +852,9 @@
       "priority": 49,
       "status": "partly-done-clear-on-signout+comments+storage-module; keychain-swap split out",
       "title": "Auth-storage hardening: Keychain for Clerk JWT + clear-on-signout + fix false comments",
-      "rationale": "Security review of v1.0.343 (auth wiring otherwise SOUND). Three items, bundle as one pass before production: (1) store __clerk_client_jwt in a Keychain-backed plugin (@aparajita/capacitor-secure-storage or capacitor-secure-storage-plugin) with kSecAttrAccessibleWhenUnlockedThisDeviceOnly so it is excluded from device/iCloud backups (currently @capacitor/preferences = UserDefaults plaintext, backup-exposed — Medium); (2) the AuthProvider comments at :50 and :117-118 + the commit msg FALSELY claim Keychain — correct them; (3) on Clerk sign-out, Preferences.remove/secureStorage.remove the JWT (hooks currently never clear it -> stale credential persists after sign-out). Also confirm Clerk FAPI returns Access-Control-Expose-Headers: Authorization for the native flow (load-bearing for the response-header read). Not beta-blocking (private TestFlight, owner-only); REQUIRED before App Store/wider release.",
+      "rationale": "Security review of v1.0.343 (auth wiring otherwise SOUND). Three items, bundle as one pass before production: (1) store __clerk_client_jwt in a Keychain-backed plugin (@aparajita/capacitor-secure-storage or capacitor-secure-storage-plugin) with kSecAttrAccessibleWhenUnlockedThisDeviceOnly so it is excluded from device/iCloud backups (currently @capacitor/preferences = UserDefaults plaintext, backup-exposed \u2014 Medium); (2) the AuthProvider comments at :50 and :117-118 + the commit msg FALSELY claim Keychain \u2014 correct them; (3) on Clerk sign-out, Preferences.remove/secureStorage.remove the JWT (hooks currently never clear it -> stale credential persists after sign-out). Also confirm Clerk FAPI returns Access-Control-Expose-Headers: Authorization for the native flow (load-bearing for the response-header read). Not beta-blocking (private TestFlight, owner-only); REQUIRED before App Store/wider release.",
       "classification": "security (pre-production, not beta-blocking)",
-      "progress": "2026-06-28: shipped on integration/next — (2) corrected the FALSE \"Keychain\" comments in AuthProvider; (3) clear-on-signout: ClerkTokenBridge now clears the persisted native JWT on a real signed-in->signed-out transition (ref-guarded so cold-start restoration is never clobbered; native-only), fixing the stale-credential-after-signout vuln; + centralized all token read/write/clear into frontend/src/lib/native-token-store.ts (one place to swap the backend) with a unit test (4 cases). Sub-item \"confirm FAPI exposes Authorization header for native flow\" = CONFIRMED (credentialed sim test showed auth-hdr=true via CapacitorHttp). REMAINING part (1) Keychain plugin swap split to clerk-jwt-keychain-swap (needs on-device Keychain verification)."
+      "progress": "2026-06-28: shipped on integration/next \u2014 (2) corrected the FALSE \"Keychain\" comments in AuthProvider; (3) clear-on-signout: ClerkTokenBridge now clears the persisted native JWT on a real signed-in->signed-out transition (ref-guarded so cold-start restoration is never clobbered; native-only), fixing the stale-credential-after-signout vuln; + centralized all token read/write/clear into frontend/src/lib/native-token-store.ts (one place to swap the backend) with a unit test (4 cases). Sub-item \"confirm FAPI exposes Authorization header for native flow\" = CONFIRMED (credentialed sim test showed auth-hdr=true via CapacitorHttp). REMAINING part (1) Keychain plugin swap split to clerk-jwt-keychain-swap (needs on-device Keychain verification)."
     },
     {
       "id": "stats-scoring-breakdown",
@@ -876,7 +876,7 @@
       "id": "clerk-native-applications",
       "priority": 52,
       "status": "owner-action",
-      "title": "Enable \"Native Applications\" in Clerk dashboard (native_api_disabled — the session blocker)",
+      "title": "Enable \"Native Applications\" in Clerk dashboard (native_api_disabled \u2014 the session blocker)",
       "rationale": "Deep-fix found native mode fails with native_api_disabled until Native Applications is enabled in Clerk: https://dashboard.clerk.com/last-active?path=native-applications -> Configure -> Native applications -> Enable. One-time, no rebuild. Combined with the code fix (x-mobile + always-set auth header) this should make the session persist.",
       "classification": "owner-action"
     },
@@ -887,7 +887,7 @@
       "title": "Wire simtest-headless.mjs (client-side crash check) into CI",
       "rationale": "New harness frontend/ios/simtest-headless.mjs runs the prod bundle through Chromium w/ faked iOS bridge, exits non-zero on client-side crash (would have caught the v1.0.365 white-screen). Add as a CI step so client-side crashes are caught automatically (owner QA-feedback aligned).",
       "classification": "silent",
-      "progress": "2026-06-28: wired into CI required-frontend job — build now bakes the public prod Clerk pk so the native auth path executes, then `npm run test:native-crash` (ios/simtest-headless.mjs) runs the prod bundle in Chromium with the iOS bridge faked and fails the build on any client-side exception. Verified locally: healthy build exits 0 (loaded=true, native-sent=true, no PAGEERROR); CORS errors to clerk.looperapp.org are expected requestfailed (no native bridge headlessly) and correctly do NOT count as a crash. Catches the v1.0.365 white-screen class automatically."
+      "progress": "2026-06-28: wired into CI required-frontend job \u2014 build now bakes the public prod Clerk pk so the native auth path executes, then `npm run test:native-crash` (ios/simtest-headless.mjs) runs the prod bundle in Chromium with the iOS bridge faked and fails the build on any client-side exception. Verified locally: healthy build exits 0 (loaded=true, native-sent=true, no PAGEERROR); CORS errors to clerk.looperapp.org are expected requestfailed (no native bridge headlessly) and correctly do NOT count as a crash. Catches the v1.0.365 white-screen class automatically."
     },
     {
       "id": "clerk-jwt-keychain-swap",
@@ -897,10 +897,10 @@
       "rationale": "Final part of clerk-jwt-keychain. Replace @capacitor/preferences (UserDefaults, plaintext, backup-exposed) with @aparajita/capacitor-secure-storage using kSecAttrAccessibleWhenUnlockedThisDeviceOnly so the Clerk JWT is encrypted at rest + excluded from device/iCloud backups. Thanks to native-token-store.ts this is a single-file backend swap (+ add the plugin + cap sync). NOTE: adds a native dependency (SPM/pod) and the actual Keychain persistence can only be fully verified on a real device/sim sign-in -> bundle with other device-verifiable changes or verify via a credentialed sim run before shipping. REQUIRED before App Store / wider release; NOT beta-blocking (owner-only TestFlight).",
       "classification": "silent",
       "review_followups": [
-        "LOW (TOCTOU, reviewer 2026-06-28): an in-flight FAPI response can re-persist the JWT just after clearNativeToken() on sign-out. Security-nil (Clerk destroys the session server-side; re-persisted token is revoked). Fix when doing the Keychain swap: gate setNativeToken on a module-level 'signed out' flag that clearNativeToken sets and a sign-in transition (false->true) resets — taking care NOT to suppress the re-sign-in token write (it happens during the sign_in FAPI exchange, before isSignedIn flips).",
-        "LOW (cold-start stale token, reviewer 2026-06-28): if sign-out happens while the app is killed, the stale (already server-invalid) JWT isn't cleared until it's injected and rejected. Fix: in nativeOnAfterResponse, clearNativeToken() on a FAPI authentication-failure error code — but first confirm the EXACT Clerk FAPI error code via a credentialed run so a valid token is never wrongly wiped."
+        "LOW (TOCTOU, reviewer 2026-06-28): an in-flight FAPI response can re-persist the JWT just after clearNativeToken() on sign-out. Security-nil (Clerk destroys the session server-side; re-persisted token is revoked). Fix when doing the Keychain swap: gate setNativeToken on a module-level 'signed out' flag that clearNativeToken sets and a sign-in transition (false->true) resets \u2014 taking care NOT to suppress the re-sign-in token write (it happens during the sign_in FAPI exchange, before isSignedIn flips).",
+        "LOW (cold-start stale token, reviewer 2026-06-28): if sign-out happens while the app is killed, the stale (already server-invalid) JWT isn't cleared until it's injected and rejected. Fix: in nativeOnAfterResponse, clearNativeToken() on a FAPI authentication-failure error code \u2014 but first confirm the EXACT Clerk FAPI error code via a credentialed run so a valid token is never wrongly wiped."
       ],
-      "defer_note": "Auth/JWT storage swap + new native dependency (@aparajita/capacitor-secure-storage) + needs /security-review. Login breakage on real builds went uncaught before (see memory qa-test-critical-flows). Build in an ATTENDED session so login can be device-verified before ship — not unattended loop work."
+      "defer_note": "Auth/JWT storage swap + new native dependency (@aparajita/capacitor-secure-storage) + needs /security-review. Login breakage on real builds went uncaught before (see memory qa-test-critical-flows). Build in an ATTENDED session so login can be device-verified before ship \u2014 not unattended loop work."
     },
     {
       "id": "owner-player-identity-ux",
@@ -909,7 +909,7 @@
       "title": "Round setup: let the owner mark which player is \"me\" (sets ownerPlayerId)",
       "rationale": "Completes owner-player-identity. The backend + read sites now honour round.ownerPlayerId, but round/new (frontend/src/app/round/new/page.tsx) still sends players in form order with no owner designation, so ownerPlayerId always defaults to players[0]. Add a calm, yardage-book-styled way to mark exactly one player row as \"you\" (default the first), pre-filling the owner's Clerk name (useUser) is optional. Pass ownerPlayerId in createRound. THIS is the change that actually fixes mis-attribution when the owner is not first-listed. Needs designer review (user-facing setup UX).",
       "classification": "noticeable-correctness",
-      "progress": "2026-06-28: shipped on integration/next. round/new now lets the owner mark which player is \"you\" — ownerIndex state (default first), a quiet serif-italic \"you\" marker on the owner row, and a \"✓ this is me\" pill in the player editor; ownerPlayerId resolved at create (handles id reassignment + dedup; falls back to first). Designer-reviewed (yardage-book): ship-blocker fixed (pill moved ABOVE the autocomplete so the inline suggestion can not push it off-sheet while typing) + typography moved to serif-italic lowercase to match the \"you\" annotation register; default-checked-on-Player-1 and T.pencil \"you\" marker approved as-is. Gates: lint/tsc/voice265/unit284/build/native-crash. This makes the owner-player-identity fix USER-VISIBLE: a round where the owner is not first-listed now attributes the owner’s own scores correctly in home + profile."
+      "progress": "2026-06-28: shipped on integration/next. round/new now lets the owner mark which player is \"you\" \u2014 ownerIndex state (default first), a quiet serif-italic \"you\" marker on the owner row, and a \"\u2713 this is me\" pill in the player editor; ownerPlayerId resolved at create (handles id reassignment + dedup; falls back to first). Designer-reviewed (yardage-book): ship-blocker fixed (pill moved ABOVE the autocomplete so the inline suggestion can not push it off-sheet while typing) + typography moved to serif-italic lowercase to match the \"you\" annotation register; default-checked-on-Player-1 and T.pencil \"you\" marker approved as-is. Gates: lint/tsc/voice265/unit284/build/native-crash. This makes the owner-player-identity fix USER-VISIBLE: a round where the owner is not first-listed now attributes the owner\u2019s own scores correctly in home + profile."
     },
     {
       "id": "voice-low-confidence-missing-note",
@@ -918,16 +918,16 @@
       "title": "Voice score confirm: name exactly which players a low-confidence parse missed",
       "rationale": "Voice is the Northstar's primary interface. The score-confirm panel showed only a generic 'double-check these' + amber on absent tiles, so the golfer had to infer which name to fix. Now, on a LOW-confidence parse that missed some (not all) players, a calm note names them.",
       "classification": "noticeable",
-      "progress": "2026-06-28: shipped on integration/next. New pure helper lib/voice/confirm-guidance.ts (missingScoreNote + joinNames + missingPlayerNames) gated to confidence<0.65 AND some-but-not-all players missing (intentional one-score dictation and empty parses are NOT nagged); +10 unit tests. Rendered as a quiet serif-italic line in VoiceConfirmPanel (ScoreSheet.tsx). Designer-reviewed: ship-blocker fixed (note color amber->T.pencil so it's a calm aside, not a 3rd amber layer) + wording trimmed to just naming who was missed (kept minimal per Northstar). NOTE: backend /api/voice/parse-scores + local fallback only return {scores,confidence} (no warnings/explanations on the SCORE path — those exist only in the round-SETUP pipeline), so this derives the note deterministically client-side. Gates: lint/tsc/voice265/unit294/build/native-crash."
+      "progress": "2026-06-28: shipped on integration/next. New pure helper lib/voice/confirm-guidance.ts (missingScoreNote + joinNames + missingPlayerNames) gated to confidence<0.65 AND some-but-not-all players missing (intentional one-score dictation and empty parses are NOT nagged); +10 unit tests. Rendered as a quiet serif-italic line in VoiceConfirmPanel (ScoreSheet.tsx). Designer-reviewed: ship-blocker fixed (note color amber->T.pencil so it's a calm aside, not a 3rd amber layer) + wording trimmed to just naming who was missed (kept minimal per Northstar). NOTE: backend /api/voice/parse-scores + local fallback only return {scores,confidence} (no warnings/explanations on the SCORE path \u2014 those exist only in the round-SETUP pipeline), so this derives the note deterministically client-side. Gates: lint/tsc/voice265/unit294/build/native-crash."
     },
     {
       "id": "voice-agentic-setup",
       "priority": 10,
       "status": "built (Realtime end-to-end); awaiting on-device test",
-      "title": "Agentic conversational round setup — caddie asks back for missing info",
+      "title": "Agentic conversational round setup \u2014 caddie asks back for missing info",
       "rationale": "OWNER PRIORITY (2026-06-28): make voice setup a back-and-forth agent, not a one-shot parser. If the golfer says who's playing but not the course, the caddie should ASK ('Which course? Which tees?') and fill the gaps over multiple turns, instead of failing with 'no course matched'. Turns voice from parse-or-fail into a conversation that always reaches a complete, startable round. Likely: multi-turn state in VoiceRoundSetup + a backend prompt that returns {filled fields, missing fields, a spoken follow-up question}; loop until complete. High priority.",
       "classification": "noticeable",
-      "progress": "2026-06-28: BACKEND foundation shipped on integration/next. parse-round-setup is now multi-turn: request carries current+expecting, response returns missing/followUpQuestion/complete; pure helpers (round_setup_missing, round_setup_question, merge_round_setup, _finalize_round_setup) + expecting-biased local fallback; 18 unit tests; backward compatible. REMAINING (next cycle, top priority): wire VoiceRoundSetup to the loop — on an incomplete parse, show the caddie question and auto-record the answer (pass current+expecting), looping until complete, with a max-turn guard; auto-parse after transcription for a smooth single-tap conversation. That part is device-verifiable (live voice I/O) + needs designer review, so it gets its own focused cycle. Extract a pure nextConvoStep reducer for unit tests. | 2026-06-28: FRONTEND loop shipped on integration/next. VoiceRoundSetup is now multi-turn: nextConvoStep reducer (+8 tests, MAX 4 follow-ups), handleParse sends current+expecting and branches complete/ask, auto-parse (no manual tap), caddie question in header. Reviewer-fixed (mountedRef mic-leak guard; per-turn parse-guard reset) + designer-fixed (question in header, removed dead transcribed phase/Understand-this button, gentler wording). Gates green. NOTE: end-to-end conversation requires the new parse-round-setup on PROD (rides the bundle merge -> deploy); against the old prod endpoint nextConvoStep degrades to one-shot (no fields -> complete). | 2026-06-28: REALTIME pivot started. Backend foundation: round-less POST /api/realtime/setup-session (no existing round needed) + set_round_setup tool (course, players with PER-PLAYER tee, default tee, holes, gameFormat) + conversational setup instructions (caddie/setup_voice.py); reuses mint_ephemeral_session (whisper-1 live transcription + server VAD). 6 unit tests. NEXT (device-tested): rewire VoiceRoundSetup to the realtime client (reuse realtime.ts/useRealtimeCaddie) — live transcription + the caddie asking back + dispatch set_round_setup -> createRound. Replaces the batch record/transcribe/parse flow. | 2026-06-28: FRONTEND Realtime integration done. startSetupSession (api) + realtime.ts setup mode (round-less mint + set_round_setup ack) + new VoiceRoundSetupRealtime.tsx (continuous Realtime session: live transcription, caddie talks back, conversation UI, mute, error/retry) wired into round/new (replaces the batch VoiceRoundSetup). On set_round_setup tool -> maps to handleVoiceSetup (fills course/players/tee, user confirms with Tee off). Gates: tsc/lint/voice265/unit304/build/native-crash. WebRTC voice path is DEVICE-ONLY verifiable -> needs a TestFlight test. Caveat: per-player tee groups are captured in the tool but the round model carries a single tee for now (default = first player tee) -> see voice-per-player-tees follow-up."
+      "progress": "2026-06-28: BACKEND foundation shipped on integration/next. parse-round-setup is now multi-turn: request carries current+expecting, response returns missing/followUpQuestion/complete; pure helpers (round_setup_missing, round_setup_question, merge_round_setup, _finalize_round_setup) + expecting-biased local fallback; 18 unit tests; backward compatible. REMAINING (next cycle, top priority): wire VoiceRoundSetup to the loop \u2014 on an incomplete parse, show the caddie question and auto-record the answer (pass current+expecting), looping until complete, with a max-turn guard; auto-parse after transcription for a smooth single-tap conversation. That part is device-verifiable (live voice I/O) + needs designer review, so it gets its own focused cycle. Extract a pure nextConvoStep reducer for unit tests. | 2026-06-28: FRONTEND loop shipped on integration/next. VoiceRoundSetup is now multi-turn: nextConvoStep reducer (+8 tests, MAX 4 follow-ups), handleParse sends current+expecting and branches complete/ask, auto-parse (no manual tap), caddie question in header. Reviewer-fixed (mountedRef mic-leak guard; per-turn parse-guard reset) + designer-fixed (question in header, removed dead transcribed phase/Understand-this button, gentler wording). Gates green. NOTE: end-to-end conversation requires the new parse-round-setup on PROD (rides the bundle merge -> deploy); against the old prod endpoint nextConvoStep degrades to one-shot (no fields -> complete). | 2026-06-28: REALTIME pivot started. Backend foundation: round-less POST /api/realtime/setup-session (no existing round needed) + set_round_setup tool (course, players with PER-PLAYER tee, default tee, holes, gameFormat) + conversational setup instructions (caddie/setup_voice.py); reuses mint_ephemeral_session (whisper-1 live transcription + server VAD). 6 unit tests. NEXT (device-tested): rewire VoiceRoundSetup to the realtime client (reuse realtime.ts/useRealtimeCaddie) \u2014 live transcription + the caddie asking back + dispatch set_round_setup -> createRound. Replaces the batch record/transcribe/parse flow. | 2026-06-28: FRONTEND Realtime integration done. startSetupSession (api) + realtime.ts setup mode (round-less mint + set_round_setup ack) + new VoiceRoundSetupRealtime.tsx (continuous Realtime session: live transcription, caddie talks back, conversation UI, mute, error/retry) wired into round/new (replaces the batch VoiceRoundSetup). On set_round_setup tool -> maps to handleVoiceSetup (fills course/players/tee, user confirms with Tee off). Gates: tsc/lint/voice265/unit304/build/native-crash. WebRTC voice path is DEVICE-ONLY verifiable -> needs a TestFlight test. Caveat: per-player tee groups are captured in the tool but the round model carries a single tee for now (default = first player tee) -> see voice-per-player-tees follow-up."
     },
     {
       "id": "voice-live-transcription",
@@ -936,7 +936,7 @@
       "title": "Live (real-time) transcription on device while recording",
       "rationale": "OWNER PRIORITY (2026-06-28): show words as they're spoken. Today VoiceRoundSetup runs Web Speech API for interim text (startListening, VoiceRoundSetup.tsx ~142) but that API is unavailable in the iOS WKWebView, so nothing shows on device. Need real streaming STT (e.g. Deepgram live WebSocket) feeding interim text to the existing interimTranscript UI, with the current record->stop->Deepgram batch as fallback. Apply to ScoreSheet voice + VoiceRoundSetup. High priority.",
       "classification": "noticeable",
-      "shipped": "PR #61 → main 912eefb (2026-06-28); backend /api/voice/live-token deployed + live (401 unauth). WS streaming is device-only — owner to verify live words on TestFlight."
+      "shipped": "PR #61 \u2192 main 912eefb (2026-06-28); backend /api/voice/live-token deployed + live (401 unauth). WS streaming is device-only \u2014 owner to verify live words on TestFlight."
     },
     {
       "id": "voice-single-tap-record",
@@ -952,7 +952,7 @@
       "status": "epic",
       "classification": "epic",
       "title": "EPIC: Map/GPS + caddie intelligence (plays-like, DECADE-style management)",
-      "rationale": "Owner strategic direction (2026-06-28). Caddie that gives plays-like yardages + 'hit this club' using contours/slope + weather/wind, plus a DECADE-style expected-strokes course-management optimizer we build ourselves. Strategy: LICENSE the commodity layer (catalog, scorecard, F/C/B points, hazard/green polygons), BUILD the terrain intelligence (USGS 3DEP/NAIP, free) + the management engine + clean API; LICENSE-OR-SKIP green-reading (needs survey-grade data). KEY FINDING from planning: most caddie math ALREADY EXISTS (backend/app/caddie/strokes_gained.py, dispersion.py, club_selection.py plays-like, services/weather.py, services/elevation.py) — gaps are a true optimizer, a 3DEP precompute pipeline, tactical slope advice, and on-course UX. See phased cards tagged epic=map-gps-caddie-intelligence."
+      "rationale": "Owner strategic direction (2026-06-28). Caddie that gives plays-like yardages + 'hit this club' using contours/slope + weather/wind, plus a DECADE-style expected-strokes course-management optimizer we build ourselves. Strategy: LICENSE the commodity layer (catalog, scorecard, F/C/B points, hazard/green polygons), BUILD the terrain intelligence (USGS 3DEP/NAIP, free) + the management engine + clean API; LICENSE-OR-SKIP green-reading (needs survey-grade data). KEY FINDING from planning: most caddie math ALREADY EXISTS (backend/app/caddie/strokes_gained.py, dispersion.py, club_selection.py plays-like, services/weather.py, services/elevation.py) \u2014 gaps are a true optimizer, a 3DEP precompute pipeline, tactical slope advice, and on-course UX. See phased cards tagged epic=map-gps-caddie-intelligence."
     },
     {
       "id": "caddie-playslike-card",
@@ -967,7 +967,7 @@
       "area": "frontend",
       "title": "Plays-like yardage card in the caddie panel",
       "rationale": "Surface target_yards ('plays like') vs raw_yards + the per-factor adjustments breakdown ALREADY returned by /recommend, plus a wind-relative-to-shot chip. CaddiePanel.tsx. Data already present; mostly a UI surfacing win. Component test headless; live GPS = device.",
-      "shipped": "PR #62 → main 83dfe03 (2026-06-28); in TestFlight build."
+      "shipped": "PR #62 \u2192 main 83dfe03 (2026-06-28); in TestFlight build."
     },
     {
       "id": "caddie-altitude-pressure",
@@ -980,9 +980,9 @@
       "size": "S",
       "headless": "yes",
       "area": "backend",
-      "title": "Finish altitude→pressure in air-density (weather.py:73 TODO)",
-      "rationale": "Implement ~12 hPa/100m altitude→pressure so high-altitude plays-like/air-density is correct; add unit test. Fully self-verifiable.",
-      "progress": "2026-06-28: investigated — the TODO was moot: the caller passes Open-Meteo surface_pressure (already altitude-adjusted), so applying a 12hPa/100m term would double-count and overstate thin-air at altitude. Corrected the misleading comment + added 5 unit tests verifying direction (standard~1, Denver-alt<0.9, cold/dry>1, hot/humid<1, no double-count)."
+      "title": "Finish altitude\u2192pressure in air-density (weather.py:73 TODO)",
+      "rationale": "Implement ~12 hPa/100m altitude\u2192pressure so high-altitude plays-like/air-density is correct; add unit test. Fully self-verifiable.",
+      "progress": "2026-06-28: investigated \u2014 the TODO was moot: the caller passes Open-Meteo surface_pressure (already altitude-adjusted), so applying a 12hPa/100m term would double-count and overstate thin-air at altitude. Corrected the misleading comment + added 5 unit tests verifying direction (standard~1, Denver-alt<0.9, cold/dry>1, hot/humid<1, no double-count)."
     },
     {
       "id": "caddie-comp-legal-mode",
@@ -997,7 +997,7 @@
       "area": "backend+frontend",
       "title": "Competition-legal mode toggle",
       "rationale": "competition_legal flag on recommend/session that zeroes elevation/wind/slope adjustments and tags the recommendation (USGA device legality); UI switch. Backend self-verifiable; legal-correctness sensitive.",
-      "shipped": "PR #62 → main 83dfe03 (2026-06-28); backend deployed (competition_legal accepted), TestFlight build cut. 48 backend tests."
+      "shipped": "PR #62 \u2192 main 83dfe03 (2026-06-28); backend deployed (competition_legal accepted), TestFlight build cut. 48 backend tests."
     },
     {
       "id": "caddie-licensed-hazard-polygons",
@@ -1025,7 +1025,7 @@
       "headless": "yes",
       "area": "backend",
       "title": "DECADE expected-strokes target optimizer (dispersion convolution core)",
-      "rationale": "New caddie/target_optimizer.py: over candidate aim points, sample the player's dispersion ellipse (dispersion.get_dispersion) across an expected-strokes field (strokes_gained.expected_strokes + hazard penalties); return the target minimizing expected strokes. Pure, unit-testable. THE differentiator — high value, low device risk. Calibration is the risk (keep params tunable).",
+      "rationale": "New caddie/target_optimizer.py: over candidate aim points, sample the player's dispersion ellipse (dispersion.get_dispersion) across an expected-strokes field (strokes_gained.expected_strokes + hazard penalties); return the target minimizing expected strokes. Pure, unit-testable. THE differentiator \u2014 high value, low device risk. Calibration is the risk (keep params tunable).",
       "shipped": "Built e2d38bc (2026-06-29). Pure DECADE aim optimizer backend/app/caddie/decade.py (Gaussian-quadrature dispersion convolution over an area->expected-strokes model; reuses strokes_gained Broadie tables). 40 behavioral tests. Additive (NOT wired into recommend yet = caddie-decade-wire-recommend p18). | SHIPPED in bundle #68 -> main b475b82 (2026-06-29); backend deployed (migration 009), TestFlight build cut."
     },
     {
@@ -1041,7 +1041,7 @@
       "area": "backend",
       "title": "Wire DECADE optimizer into generate_recommendation",
       "rationale": "Replace/augment the heuristic aim point in aim_point.py with the optimizer's target + expected-strokes delta vs aim-at-flag; keep traffic-light fallback when geometry missing. Gate behind a flag; snapshot tests to catch regressions.",
-      "shipped": "Built 3f2b5a3 (2026-06-29). SAFE activation: decade_advice.py surfaces the DECADE optimizer as ADDITIVE hazard-aware aim advice in reasoning[] (build_classify_point from OSM hazards + dispersion-scaled optimize_aim, threshold 4y). Club/target/aim_point/miss_side UNCHANGED (verified). 57 tests, 161 caddie green. (Risky aim-override variant intentionally NOT done — additive advice is the safe activation; real polygons plug into build_classify_point later.) | SHIPPED in bundle #68 -> main b475b82 (2026-06-29); backend deployed (migration 009), TestFlight build cut."
+      "shipped": "Built 3f2b5a3 (2026-06-29). SAFE activation: decade_advice.py surfaces the DECADE optimizer as ADDITIVE hazard-aware aim advice in reasoning[] (build_classify_point from OSM hazards + dispersion-scaled optimize_aim, threshold 4y). Club/target/aim_point/miss_side UNCHANGED (verified). 57 tests, 161 caddie green. (Risky aim-override variant intentionally NOT done \u2014 additive advice is the safe activation; real polygons plug into build_classify_point later.) | SHIPPED in bundle #68 -> main b475b82 (2026-06-29); backend deployed (migration 009), TestFlight build cut."
     },
     {
       "id": "caddie-tactical-slope-advice",
@@ -1054,7 +1054,7 @@
       "size": "M",
       "headless": "yes",
       "area": "backend",
-      "title": "Tactical slope/miss-bias advice ('bigger slope long → miss short, club down')",
+      "title": "Tactical slope/miss-bias advice ('bigger slope long \u2192 miss short, club down')",
       "rationale": "Use green/approach slope + hazard asymmetry so the engine emits DECADE-style lines and biases select_club + miss-side. Unit-test the decision, not the prose. This is the owner's headline 'club down' tactic.",
       "shipped": "Built 4e0ea0b (2026-06-29). Pure slope_miss_advice (relative-to-approach, severity-gated) appended to caddie reasoning; additive (no club/aim/model change); 39 tests, 87 caddie tests green. | SHIPPED in bundle #68 -> main b475b82 (2026-06-29); backend deployed (migration 009), TestFlight build cut."
     },
@@ -1099,7 +1099,7 @@
       "headless": "yes",
       "area": "backend+data",
       "title": "Per-hole elevation profile precompute + store",
-      "rationale": "Sample tee→green line + green grid from the COG into a hole_elevation_profiles table; replaces live USGS EPQS for profiled courses (EPQS stays fallback). Enables cheap plays-like lookups."
+      "rationale": "Sample tee\u2192green line + green grid from the COG into a hole_elevation_profiles table; replaces live USGS EPQS for profiled courses (EPQS stays fallback). Enables cheap plays-like lookups."
     },
     {
       "id": "dem-target-playslike",
@@ -1141,7 +1141,7 @@
       "size": "M",
       "headless": "no",
       "area": "frontend",
-      "title": "Tap-to-target on the map → live plays-like + recommendation",
+      "title": "Tap-to-target on the map \u2192 live plays-like + recommendation",
       "rationale": "Add aim-point selection in GPSMapView.tsx; on tap, compute bearing/distance and call recommend with the target so plays-like + optimizer target render on the map. Device-tested (map/GPS)."
     },
     {
@@ -1157,7 +1157,7 @@
       "area": "frontend/ios",
       "title": "Migrate GPS to @capacitor/geolocation (web fallback)",
       "rationale": "gps.ts currently uses navigator.geolocation though @capacitor/geolocation is installed; swap with web fallback + permissions for better iOS accuracy/background. Owner device test.",
-      "shipped": "Built f3ef9a7 on integration/next (2026-06-28). Native @capacitor/geolocation + web fallback; public API unchanged; 23 tests. GPS accuracy + iOS permission flow are device-only — verify on next build. | SHIPPED PR #63 -> main 233e28a (2026-06-28); backend deployed + healthy; TestFlight build cut. Device-verify pending."
+      "shipped": "Built f3ef9a7 on integration/next (2026-06-28). Native @capacitor/geolocation + web fallback; public API unchanged; 23 tests. GPS accuracy + iOS permission flow are device-only \u2014 verify on next build. | SHIPPED PR #63 -> main 233e28a (2026-06-28); backend deployed + healthy; TestFlight build cut. Device-verify pending."
     },
     {
       "id": "voice-tactical-advice",
@@ -1186,7 +1186,7 @@
       "area": "frontend",
       "title": "Wind-direction-relative visualization",
       "rationale": "Show head/cross/tail relative to the chosen shot bearing on the map/panel using existing compute_wind_adjustment output.",
-      "shipped": "Built c03dd8e on integration/next (2026-06-28). Pure windRelativeToShot helper + 17 tests; extends the plays-like wind chip with head/cross/tail relative to shot bearing. Visible only with GPS+wind — device-verify. | SHIPPED PR #63 -> main 233e28a (2026-06-28); backend deployed + healthy; TestFlight build cut. Device-verify pending."
+      "shipped": "Built c03dd8e on integration/next (2026-06-28). Pure windRelativeToShot helper + 17 tests; extends the plays-like wind chip with head/cross/tail relative to shot bearing. Visible only with GPS+wind \u2014 device-verify. | SHIPPED PR #63 -> main 233e28a (2026-06-28); backend deployed + healthy; TestFlight build cut. Device-verify pending."
     },
     {
       "id": "dem-nationwide-ml",
@@ -1237,7 +1237,7 @@
       "classification": "noticeable-correctness",
       "headless": "partial",
       "title": "Fix /tournament/<id> deep-link (same static-export hard-reload bug as rounds)",
-      "rationale": "tournament/[id] uses the same generateStaticParams placeholder pattern as round/[id], so opening a tournament hard-reloads → Capacitor index.html shell → AuthGate 'Preparing your book' stuck screen. Apply the same fix as the round-nav fix: a static /tournament/view?id= route + read id from useSearchParams + roundHref-style helper + update tournament nav sites. Verified pattern in the round fix."
+      "rationale": "tournament/[id] uses the same generateStaticParams placeholder pattern as round/[id], so opening a tournament hard-reloads \u2192 Capacitor index.html shell \u2192 AuthGate 'Preparing your book' stuck screen. Apply the same fix as the round-nav fix: a static /tournament/view?id= route + read id from useSearchParams + roundHref-style helper + update tournament nav sites. Verified pattern in the round fix."
     },
     {
       "id": "voice-per-player-tees",
@@ -1254,7 +1254,7 @@
       "classification": "noticeable",
       "title": "VoiceRoundSetupRealtime polish: drag-to-dismiss, mic icon, live header subtitle",
       "rationale": "Designer nice-to-haves deferred from the first build (ship-blockers already fixed): (8) add drag-to-dismiss like the caddie sheet; (5) replace 'MUTE'/'MUTED' text with the mic SVG + strikethrough; (7) swap the static 'Tell me what you're playing.' subtitle to the live status once a conversation is active. Also apply the 44pt close-target fix to the old VoiceRoundSetup.tsx if it's still reachable.",
-      "done_note": "2026-06-28: shipped on integration/next. (8) drag-to-dismiss via framer-motion useDragControls started from a 44pt grab handle (mirrors CaddieSheet: >120px/flick closes, else springs back; touchAction pan-y so the conversation list still scrolls); (5) MUTE/MUTED text replaced with an inline MicIcon + slash-when-muted (no lucide); (7) header subtitle now reflects live session status (connecting/listening/caddie speaking) once a conversation is active, falling back to the static 'Tell me what you're playing.' prompt at idle, plus a calm 'Let's try that again.' on error. 44pt-close fix N/A — old VoiceRoundSetup.tsx is unreachable in the app (only its own test + a stale comment reference it; round/new mounts VoiceRoundSetupRealtime). Frontend-only; gates green: lint 0, tsc 0, voice 265/265, vitest 365, build OK. WebRTC voice path is device-only verifiable -> rides the next TestFlight bundle.",
+      "done_note": "2026-06-28: shipped on integration/next. (8) drag-to-dismiss via framer-motion useDragControls started from a 44pt grab handle (mirrors CaddieSheet: >120px/flick closes, else springs back; touchAction pan-y so the conversation list still scrolls); (5) MUTE/MUTED text replaced with an inline MicIcon + slash-when-muted (no lucide); (7) header subtitle now reflects live session status (connecting/listening/caddie speaking) once a conversation is active, falling back to the static 'Tell me what you're playing.' prompt at idle, plus a calm 'Let's try that again.' on error. 44pt-close fix N/A \u2014 old VoiceRoundSetup.tsx is unreachable in the app (only its own test + a stale comment reference it; round/new mounts VoiceRoundSetupRealtime). Frontend-only; gates green: lint 0, tsc 0, voice 265/265, vitest 365, build OK. WebRTC voice path is device-only verifiable -> rides the next TestFlight bundle.",
       "shipped": "SHIPPED PR #63 -> main 233e28a (2026-06-28); backend deployed + healthy; TestFlight build cut. Device-verify pending."
     },
     {
@@ -1314,10 +1314,10 @@
       "classification": "noticeable",
       "build": "build (backend-heavy)",
       "size": "M/L",
-      "headless": "NO (needs 2 real accounts — owner device test)",
+      "headless": "NO (needs 2 real accounts \u2014 owner device test)",
       "area": "backend+frontend",
       "title": "Real cross-account friend graph (Friendship model + relax owner-only gate)",
-      "rationale": "Friendship table + endpoints; link by clerk_user_id; accept/decline. CRITICAL: the app is single-owner gated — main.py applies require_owner to EVERY router. Real social requires relaxing this for new social routes (use current_user_id with per-row authz). This gate change is the security-review hotspot — MUST pass /security-review + /code-review. Gates A5/A6. DECISION NEEDED from owner: open the app beyond owner-only?",
+      "rationale": "Friendship table + endpoints; link by clerk_user_id; accept/decline. CRITICAL: the app is single-owner gated \u2014 main.py applies require_owner to EVERY router. Real social requires relaxing this for new social routes (use current_user_id with per-row authz). This gate change is the security-review hotspot \u2014 MUST pass /security-review + /code-review. Gates A5/A6. DECISION NEEDED from owner: open the app beyond owner-only?",
       "depends_on": [
         "social-invite-surfaces"
       ]
@@ -1333,7 +1333,7 @@
       "headless": "NO (device + real contacts + iOS permission)",
       "area": "frontend+backend+native",
       "title": "Phone-number friend matching (privacy-preserving)",
-      "rationale": "Capacitor contacts plugin (net-new) + explicit consent screen + client-side E.164 normalize + HMAC-SHA256 hash (never upload raw numbers) → POST /api/partners/match against hashes of opted-in users. Per-user 'discoverable by phone' toggle (default off). NSContactsUsageDescription + Apple privacy manifest. Privacy/legal (TCPA) — highest-risk card.",
+      "rationale": "Capacitor contacts plugin (net-new) + explicit consent screen + client-side E.164 normalize + HMAC-SHA256 hash (never upload raw numbers) \u2192 POST /api/partners/match against hashes of opted-in users. Per-user 'discoverable by phone' toggle (default off). NSContactsUsageDescription + Apple privacy manifest. Privacy/legal (TCPA) \u2014 highest-risk card.",
       "depends_on": [
         "social-friend-graph"
       ]
@@ -1349,7 +1349,7 @@
       "headless": "NO (device + APNs)",
       "area": "frontend+backend+native",
       "title": "Push-delivered invites (rare-by-design)",
-      "rationale": "Capacitor push plugin + APNs; push ONLY for accepted/tee-time-found invite moments (strict trigger list — notifications are rare by design per CLAUDE.md). Device-token store + send. Do last.",
+      "rationale": "Capacitor push plugin + APNs; push ONLY for accepted/tee-time-found invite moments (strict trigger list \u2014 notifications are rare by design per CLAUDE.md). Device-token store + send. Do last.",
       "depends_on": [
         "social-friend-graph"
       ]
@@ -1365,7 +1365,7 @@
       "headless": "mostly (live GolfAPI; cache repeatable)",
       "area": "frontend",
       "title": "Course detail screen + 'Start a round here' (/courses/[id])",
-      "rationale": "Extract the existing CourseSearch/golf-api.ts flow into a /courses route + detail screen; 'Start a round here' reuses round/new onSelectCourse (already works). One quiet new spoke from home — a route, NOT a tab. Pin id source to golfApiCourseId.",
+      "rationale": "Extract the existing CourseSearch/golf-api.ts flow into a /courses route + detail screen; 'Start a round here' reuses round/new onSelectCourse (already works). One quiet new spoke from home \u2014 a route, NOT a tab. Pin id source to golfApiCourseId.",
       "spec": "specs/course-detail-start-round.md",
       "plan": "specs/course-detail-start-round-plan.md",
       "built_commit": "d5db7c6 (+ polish a907aa7)",
@@ -1380,7 +1380,7 @@
       "spec": "specs/course-review-model.md",
       "plan": "specs/course-review-model-plan.md",
       "built_commit": "7dec6d7",
-      "built_note": "NOTICEABLE (rides next approval bundle). NEW authed backend endpoint + table + a review form on RoundRecap. Backend: CourseReview ORM (course_reviews table, owner-scoped, keyed on string course_key = GolfAPI id or name:<slug>) + Pydantic CourseReview/CourseReviewCreate; Alembic migration 009_course_reviews (ADDITIVE only — CREATE TABLE + 2 indexes; verified upgrade->downgrade->upgrade on PG16); router course_reviews.py POST/GET /api/courses/{course_key}/reviews (current_user_id owner-scoped, require_owner UNTOUCHED, registered before catch-all courses.router); 15 integration tests. Frontend: resolveCourseKey/normalizeCourseName pure helper (+15 vitest), getCourseReviews/createCourseReview, calm 1-5 rating + note form on RoundRecap (hidden when no course key, never blocks Done). Reviewer SHIP, /security-review PASS, designer APPROVE-WITH-NITS (4 non-blocking nits: maxLength 2000->280, add Noted. fade, borderRadius 10->14, same-number-tap deselect). Gates: lint 0, tsc clean, voice 265/265, vitest 451/451, build clean, ruff clean, pytest 234/234. Pushed to integration/next; on rolling bundle PR (NOT merged). DEVICE/SHIP-ONLY: live endpoint hits prod only after owner ships (deploy runs alembic upgrade head). Backend the owner can test once shipped. Follow-up: course-reviews-surface (B3).",
+      "built_note": "NOTICEABLE (rides next approval bundle). NEW authed backend endpoint + table + a review form on RoundRecap. Backend: CourseReview ORM (course_reviews table, owner-scoped, keyed on string course_key = GolfAPI id or name:<slug>) + Pydantic CourseReview/CourseReviewCreate; Alembic migration 009_course_reviews (ADDITIVE only \u2014 CREATE TABLE + 2 indexes; verified upgrade->downgrade->upgrade on PG16); router course_reviews.py POST/GET /api/courses/{course_key}/reviews (current_user_id owner-scoped, require_owner UNTOUCHED, registered before catch-all courses.router); 15 integration tests. Frontend: resolveCourseKey/normalizeCourseName pure helper (+15 vitest), getCourseReviews/createCourseReview, calm 1-5 rating + note form on RoundRecap (hidden when no course key, never blocks Done). Reviewer SHIP, /security-review PASS, designer APPROVE-WITH-NITS (4 non-blocking nits: maxLength 2000->280, add Noted. fade, borderRadius 10->14, same-number-tap deselect). Gates: lint 0, tsc clean, voice 265/265, vitest 451/451, build clean, ruff clean, pytest 234/234. Pushed to integration/next; on rolling bundle PR (NOT merged). DEVICE/SHIP-ONLY: live endpoint hits prod only after owner ships (deploy runs alembic upgrade head). Backend the owner can test once shipped. Follow-up: course-reviews-surface (B3).",
       "epic": "course-search-reviews",
       "classification": "noticeable",
       "build": "build",
@@ -1388,7 +1388,7 @@
       "headless": "yes",
       "area": "backend+frontend",
       "title": "CourseReview model + write-a-review after a round",
-      "rationale": "CourseReview table keyed on golfApiCourseId (sidesteps the course-table unification refactor). Review entry from the RoundRecap modal (RoundPageClient.tsx:612) — the natural 'review the course' moment. Rating + short note. Fall back to course name if no golfApiCourseId.",
+      "rationale": "CourseReview table keyed on golfApiCourseId (sidesteps the course-table unification refactor). Review entry from the RoundRecap modal (RoundPageClient.tsx:612) \u2014 the natural 'review the course' moment. Rating + short note. Fall back to course name if no golfApiCourseId.",
       "depends_on": [],
       "shipped": "SHIPPED in bundle #68 -> main b475b82 (2026-06-29); backend deployed (migration 009), TestFlight build cut."
     },
@@ -1403,7 +1403,7 @@
       "headless": "yes",
       "area": "frontend+backend",
       "title": "Surface reviews (course detail + profile section)",
-      "rationale": "Show reviews on /courses/[id]; add a 'Reviews' Section to profile (profile/page.tsx:285, the existing Section shell). Endpoints: GET …/reviews, GET /api/users/{id}/reviews.",
+      "rationale": "Show reviews on /courses/[id]; add a 'Reviews' Section to profile (profile/page.tsx:285, the existing Section shell). Endpoints: GET \u2026/reviews, GET /api/users/{id}/reviews.",
       "depends_on": [
         "course-detail-start-round",
         "course-review-model"
@@ -1422,11 +1422,11 @@
       "headless": "recent yes; nearby = device (GPS)",
       "area": "frontend",
       "title": "Course discovery from home (recent + nearby)",
-      "rationale": "One quiet /courses entry point from home; recent (getRecentCourses) + nearby (searchNearby, golf-api.ts:733). Keep home calm — one affordance, not a grid.",
+      "rationale": "One quiet /courses entry point from home; recent (getRecentCourses) + nearby (searchNearby, golf-api.ts:733). Keep home calm \u2014 one affordance, not a grid.",
       "depends_on": [
         "course-detail-start-round"
       ],
-      "shipped": "Built aeda9fe (2026-06-29). Calm Recent-courses section on home (up to 3, localStorage, no location prompt, no empty state); reuses mapRecentCourses/course-list.ts. 483 vitest + build green. Nearby skipped (would prompt on load) — follow-up. | SHIPPED in bundle #68 -> main b475b82 (2026-06-29); backend deployed (migration 009), TestFlight build cut."
+      "shipped": "Built aeda9fe (2026-06-29). Calm Recent-courses section on home (up to 3, localStorage, no location prompt, no empty state); reuses mapRecentCourses/course-list.ts. 483 vitest + build green. Nearby skipped (would prompt on load) \u2014 follow-up. | SHIPPED in bundle #68 -> main b475b82 (2026-06-29); backend deployed (migration 009), TestFlight build cut."
     },
     {
       "id": "course-identity-unify",
@@ -1434,12 +1434,12 @@
       "status": "later",
       "epic": "course-search-reviews",
       "classification": "silent",
-      "build": "build (heavy migration — owner applies)",
+      "build": "build (heavy migration \u2014 owner applies)",
       "size": "L",
       "headless": "backend tests yes; full path device",
       "area": "backend+data",
       "title": "Unify course identity (GolfAPI / scoring_courses / mapped PostGIS)",
-      "rationale": "Reconcile the 4 course systems so reviews + GPS + scoring share one course id. Already flagged in specs/real-data-wiring-plan.md. Touches supabase/migrations (guard-protected — owner applies). Sequence LAST; B1–B4 deliberately avoid depending on it by keying reviews on golfApiCourseId.",
+      "rationale": "Reconcile the 4 course systems so reviews + GPS + scoring share one course id. Already flagged in specs/real-data-wiring-plan.md. Touches supabase/migrations (guard-protected \u2014 owner applies). Sequence LAST; B1\u2013B4 deliberately avoid depending on it by keying reviews on golfApiCourseId.",
       "depends_on": [
         "course-review-model"
       ]
@@ -1471,12 +1471,12 @@
       "headless": "yes",
       "area": "frontend",
       "title": "Floating 'island' pill bottom tab bar (owner-requested nav)",
-      "rationale": "Owner wants a floating Instagram-style pill tab bar (IMG_2960) for easy nav across the new features. Yardage-book styled (calm, on-paper), hidden on immersive round/voice/GPS screens. Tabs: Round/Home · Partners · Courses (+ profile). Foundation for surfacing the social + course epics. See specs/social-course-features-plan.md.",
+      "rationale": "Owner wants a floating Instagram-style pill tab bar (IMG_2960) for easy nav across the new features. Yardage-book styled (calm, on-paper), hidden on immersive round/voice/GPS screens. Tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). Foundation for surfacing the social + course epics. See specs/social-course-features-plan.md.",
       "depends_on": [],
-      "spec_note": "Floating pill bottom tab (Instagram-style, IMG_2960) in yardage-book style. Real destinations that EXIST now: Home (/), Partners (/players — currently orphaned; the tab surfaces it), Profile (/profile). Optionally a Courses tab routing to the existing CourseSearch or a calm coming-soon until /courses exists. HIDE on immersive screens (active round /round/[id]/view, voice setup overlay, GPS/map). Must not disrupt existing nav or layout safe-areas. Frontend-only.",
+      "spec_note": "Floating pill bottom tab (Instagram-style, IMG_2960) in yardage-book style. Real destinations that EXIST now: Home (/), Partners (/players \u2014 currently orphaned; the tab surfaces it), Profile (/profile). Optionally a Courses tab routing to the existing CourseSearch or a calm coming-soon until /courses exists. HIDE on immersive screens (active round /round/[id]/view, voice setup overlay, GPS/map). Must not disrupt existing nav or layout safe-areas. Frontend-only.",
       "built_commit": "bf023b4",
       "followups": [
-        "players-page-back-button: /players is now a hub tab; the Back-to-profile arrow implies a false hierarchy (designer nit, pre-existing) — remove/repurpose in a later item"
+        "players-page-back-button: /players is now a hub tab; the Back-to-profile arrow implies a false hierarchy (designer nit, pre-existing) \u2014 remove/repurpose in a later item"
       ],
       "shipped": "SHIPPED PR #66 -> main 4b902b7 (2026-06-28); TestFlight build cut."
     },
@@ -1490,7 +1490,7 @@
       "headless": "partial (config verifiable; quality device-only)",
       "area": "backend",
       "title": "Harden Realtime voice setup: noise reduction + better transcription + semantic VAD",
-      "rationale": "The preload-removal hotfix (cd2e516) stopped background hallucination, but the root noise/silence-hallucination risk remains because the mint uses whisper-1, no noise reduction, and raw server_vad. In realtime_relay.py mint config: (1) add input_audio_noise_reduction {type:'near_field'} (phone-near-mouth); (2) switch audio.input.transcription.model whisper-1 -> gpt-4o-transcribe (or -mini) — env-configurable (OPENAI_TRANSCRIBE_MODEL) with whisper-1 fallback, since whisper hallucinates on silence; (3) consider turn_detection semantic_vad (eagerness) vs server_vad to cut noise-triggered false turns. VERIFY exact field names against the OpenAI Realtime API reference before shipping (an unsupported transcription model breaks the mint). Owner-testable on device. If wind robustness still inadequate after this, evaluate a Krisp-equipped Deepgram pipeline (LiveKit/Pipecat) — see notes.",
+      "rationale": "The preload-removal hotfix (cd2e516) stopped background hallucination, but the root noise/silence-hallucination risk remains because the mint uses whisper-1, no noise reduction, and raw server_vad. In realtime_relay.py mint config: (1) add input_audio_noise_reduction {type:'near_field'} (phone-near-mouth); (2) switch audio.input.transcription.model whisper-1 -> gpt-4o-transcribe (or -mini) \u2014 env-configurable (OPENAI_TRANSCRIBE_MODEL) with whisper-1 fallback, since whisper hallucinates on silence; (3) consider turn_detection semantic_vad (eagerness) vs server_vad to cut noise-triggered false turns. VERIFY exact field names against the OpenAI Realtime API reference before shipping (an unsupported transcription model breaks the mint). Owner-testable on device. If wind robustness still inadequate after this, evaluate a Krisp-equipped Deepgram pipeline (LiveKit/Pipecat) \u2014 see notes.",
       "depends_on": [],
       "shipped": "Built e90a7ef on integration/next (2026-06-28). Fields verified vs OpenAI API ref: noise_reduction@audio.input (near_field), transcription gpt-4o-transcribe (env OPENAI_REALTIME_TRANSCRIBE_MODEL), VAD env-switch (default server_vad). 10 payload tests. MUST device-test voice-connect at ship (mint not live-verifiable headlessly). | SHIPPED PR #63 -> main 233e28a (2026-06-28); backend deployed + healthy; TestFlight build cut. Device-verify pending. | DEVICE-VERIFIED 2026-06-28: owner confirms voice connects on v1.0.436 (new gpt-4o-transcribe + near_field noise reduction accepted by the mint)."
     },
@@ -1503,8 +1503,8 @@
       "size": "S",
       "headless": "partial",
       "area": "frontend",
-      "title": "Fix voice-setup chat ordering — user message shows AFTER the caddie's reply",
-      "rationale": "OWNER HIGH PRIORITY (2026-06-28): owner says 'hello', caddie replies, but the caddie's reply renders ABOVE the 'hello'. Cause: the user transcript event (conversation.item.input_audio_transcription.completed) arrives AFTER the assistant's streamed response deltas, and messages render in arrival/insertion order (VoiceRoundSetupRealtime upsert appends new ids in arrival order). Fix: order messages by conversation-item sequence, not arrival — the user's input item is created BEFORE the response item. In realtime.ts handleEvent, capture an ordering key (item creation order / a monotonic seq, or use the item_id ordering the API provides) and sort the rendered list by it; keep streamed assistant deltas coalescing. Add a unit test for the ordering helper.",
+      "title": "Fix voice-setup chat ordering \u2014 user message shows AFTER the caddie's reply",
+      "rationale": "OWNER HIGH PRIORITY (2026-06-28): owner says 'hello', caddie replies, but the caddie's reply renders ABOVE the 'hello'. Cause: the user transcript event (conversation.item.input_audio_transcription.completed) arrives AFTER the assistant's streamed response deltas, and messages render in arrival/insertion order (VoiceRoundSetupRealtime upsert appends new ids in arrival order). Fix: order messages by conversation-item sequence, not arrival \u2014 the user's input item is created BEFORE the response item. In realtime.ts handleEvent, capture an ordering key (item creation order / a monotonic seq, or use the item_id ordering the API provides) and sort the rendered list by it; keep streamed assistant deltas coalescing. Add a unit test for the ordering helper.",
       "depends_on": [],
       "progress": "2026-06-28: built 179d03c on integration/next. New pure MessageOrderTracker + sortByOrder (lib/voice/realtime-ordering.ts): a stable monotonic order key assigned when each conversation ITEM begins (user slot reserved at input_audio_buffer.speech_started, identity-matched by item_id to the transcript; assistant slot at response.created/first delta), NOT when transcript text arrives. realtime.ts: RealtimeMessage gains required `order`, handleEvent threads item_id, sendText emits the typed line centrally + renders even if DC closed. Both renderers sort by order (VoiceRoundSetupRealtime + useRealtimeCaddie). Reviewer adversarial pass: found + fixed a real desync (FIFO user-slot matching corrupted ordering for the rest of the session on phantom/empty/VAD-bounced speech_started -> re-keyed by item_id; added the regression test). 9 unit tests. Gates: lint 0/0 / tsc 0 / voice-tests 265/265 / vitest 374/374 / build clean. DEVICE-ONLY verify: WebRTC live voice ordering must be confirmed on the next TestFlight build. NOTICEABLE -> rides the next approval bundle.",
       "shipped": "SHIPPED PR #64 -> main b0033de (2026-06-28); frontend-only, TestFlight build cut. item_id-keyed ordering; reviewer caught+fixed a FIFO desync. Device-verify the live order."
@@ -1518,9 +1518,9 @@
       "size": "S",
       "headless": "partial (drag is device/pointer; logic testable)",
       "area": "frontend",
-      "title": "Fix sheet grabber-handle drag — swiping it scrolls the background page instead of dismissing",
+      "title": "Fix sheet grabber-handle drag \u2014 swiping it scrolls the background page instead of dismissing",
       "rationale": "OWNER (2026-06-28): swiping DOWN on a sheet's grab handle moves the background page instead of dismissing the sheet. The drag isn't being captured at the handle, so the gesture falls through to page scroll. Audit the drag-to-dismiss sheets (CaddieSheet + the new VoiceRoundSetupRealtime grab handle): ensure the handle's onPointerDown calls dragControls.start(e), the draggable motion.div has the dragControls + dragListener=false wired, and the background/body can't scroll under the sheet (lock body scroll / overscroll-behavior: contain / touch-action on the backdrop) while a sheet is open. Verify on device.",
-      "progress": "2026-06-28: built 52a1d9a on integration/next. Audit found BOTH sheets already had the handle wired correctly (onPointerDown -> dragControls.start, touch-action:none, dragListener=false, drag y + dragControls on the motion.div). Root cause of the fall-through was the MISSING piece: nothing locked the page behind an open sheet, so any gesture framer-motion didn't claim scrolled the background (esp. iOS WKWebView document rubber-band, which touch-action alone doesn't suppress). Fix: new src/lib/sheet.ts with useBodyScrollLock(locked) (pins <body> position:fixed + overflow hidden + overscroll-behavior none, restores scroll on close) and the pure shouldDismissSheetDrag(offsetY, velocityY) threshold (>120px OR >600px/s) extracted from both sheets. Wired into CaddieSheet (locked on `open`) and VoiceRoundSetupRealtime (locked for mounted lifetime); added touch-action:none + overscroll-behavior:contain to both backdrops. Inner conversation list stays scrollable. 8 unit tests (src/lib/sheet.test.ts: threshold edges + lock apply/restore via jsdom). Gates: lint 0 / tsc 0 / voice-tests 265/265 / vitest 382/382 / build clean. DEVICE-ONLY verify: the drag gesture is pointer/touch-only — confirm on next TestFlight that the handle dismisses and the page no longer scrolls behind an open sheet. NOTICEABLE -> rides the next approval bundle.",
+      "progress": "2026-06-28: built 52a1d9a on integration/next. Audit found BOTH sheets already had the handle wired correctly (onPointerDown -> dragControls.start, touch-action:none, dragListener=false, drag y + dragControls on the motion.div). Root cause of the fall-through was the MISSING piece: nothing locked the page behind an open sheet, so any gesture framer-motion didn't claim scrolled the background (esp. iOS WKWebView document rubber-band, which touch-action alone doesn't suppress). Fix: new src/lib/sheet.ts with useBodyScrollLock(locked) (pins <body> position:fixed + overflow hidden + overscroll-behavior none, restores scroll on close) and the pure shouldDismissSheetDrag(offsetY, velocityY) threshold (>120px OR >600px/s) extracted from both sheets. Wired into CaddieSheet (locked on `open`) and VoiceRoundSetupRealtime (locked for mounted lifetime); added touch-action:none + overscroll-behavior:contain to both backdrops. Inner conversation list stays scrollable. 8 unit tests (src/lib/sheet.test.ts: threshold edges + lock apply/restore via jsdom). Gates: lint 0 / tsc 0 / voice-tests 265/265 / vitest 382/382 / build clean. DEVICE-ONLY verify: the drag gesture is pointer/touch-only \u2014 confirm on next TestFlight that the handle dismisses and the page no longer scrolls behind an open sheet. NOTICEABLE -> rides the next approval bundle.",
       "depends_on": [],
       "shipped": "SHIPPED PR #65 -> main 5bc63f4 (2026-06-28); frontend-only, TestFlight build cut. Body-scroll-lock behind sheets (position:fixed) fixes WKWebView bg bounce. Device-verify the swipe."
     },
@@ -1535,7 +1535,7 @@
       "headless": "no (audio is device-only)",
       "area": "frontend",
       "title": "Caddie voice plays TWICE (two overlapping voices) on every response",
-      "rationale": "OWNER 2026-06-28 (voice is otherwise much better now): when the caddie responds, two overlapping voices play. Setup uses ONE RealtimeCaddieClient, so NOT two sessions. Top suspects, in order: (1) the WebRTC remote audio element in realtime.ts is created with document.createElement(\"audio\")+autoplay but NEVER appended to the DOM and has no playsInline — on iOS WKWebView the remote track can auto-play via the audio session AND the element → two offset copies. FIX candidate: append the audioEl to document.body (display:none), set playsInline + autoplay, and ensure it is the SOLE sink; remove on cleanup. (2) double response per turn — verify only ONE response.created fires per user turn (no stray response.create; confirm server_vad create_response not combined with an explicit create; confirm interrupt_response cancels an in-progress response so a new turn does not overlap an old one). (3) stale session/audioEl not torn down on reconnect. Device-verify with the owner. HIGH priority.",
+      "rationale": "OWNER 2026-06-28 (voice is otherwise much better now): when the caddie responds, two overlapping voices play. Setup uses ONE RealtimeCaddieClient, so NOT two sessions. Top suspects, in order: (1) the WebRTC remote audio element in realtime.ts is created with document.createElement(\"audio\")+autoplay but NEVER appended to the DOM and has no playsInline \u2014 on iOS WKWebView the remote track can auto-play via the audio session AND the element \u2192 two offset copies. FIX candidate: append the audioEl to document.body (display:none), set playsInline + autoplay, and ensure it is the SOLE sink; remove on cleanup. (2) double response per turn \u2014 verify only ONE response.created fires per user turn (no stray response.create; confirm server_vad create_response not combined with an explicit create; confirm interrupt_response cancels an in-progress response so a new turn does not overlap an old one). (3) stale session/audioEl not torn down on reconnect. Device-verify with the owner. HIGH priority.",
       "depends_on": [],
       "shipped": "SHIPPED PR #66 -> main 4b902b7 (2026-06-28); TestFlight build cut."
     },
@@ -1548,8 +1548,8 @@
       "size": "S-M",
       "headless": "partial (match logic headless; voice device-only)",
       "area": "frontend(+small backend)",
-      "title": "Voice player-name disambiguation — match spoken names to saved partners (Dipak not Deepak)",
-      "rationale": "Owner 2026-06-28. PRIMARY (frontend-only, safe): fuzzy/phonetic match the player names from set_round_setup against the saved roster (getPlayers) in handleSetRoundSetup/round-new, mapping each to a SavedPlayer.id so the round links the real partner + profile; unknown -> keep free-text (today). Pure match helper + tests. SECONDARY (only if it does NOT risk the voice mint): inject saved player names into build_setup_instructions (setup_voice.py) to bias transcription. NOT blocked — roster exists.",
+      "title": "Voice player-name disambiguation \u2014 match spoken names to saved partners (Dipak not Deepak)",
+      "rationale": "Owner 2026-06-28. PRIMARY (frontend-only, safe): fuzzy/phonetic match the player names from set_round_setup against the saved roster (getPlayers) in handleSetRoundSetup/round-new, mapping each to a SavedPlayer.id so the round links the real partner + profile; unknown -> keep free-text (today). Pure match helper + tests. SECONDARY (only if it does NOT risk the voice mint): inject saved player names into build_setup_instructions (setup_voice.py) to bias transcription. NOT blocked \u2014 roster exists.",
       "depends_on": [],
       "shipped": "Built 84edfad on integration/next (2026-06-28). Fuzzy+phonetic player-name match vs saved roster in voice setup (Dipak->Deepak resolves to saved partner). gates: lint/tsc/vitest475/voice265/build green. Device-verify the voice flow. | SHIPPED in bundle #68 -> main b475b82 (2026-06-29); backend deployed (migration 009), TestFlight build cut."
     },
@@ -1601,7 +1601,7 @@
       "size": "M",
       "headless": "yes",
       "area": "backend",
-      "title": "POC I1: spatial join — assign green/fairway/tee/bunker polygons to Black holes",
+      "title": "POC I1: spatial join \u2014 assign green/fairway/tee/bunker polygons to Black holes",
       "rationale": "Nearest hole-centerline assignment w/ cross-course rejection; output per-hole GeoJSON FeatureCollection. Prefer PostGIS ST_Distance/ST_ClosestPoint (no new dep). The core new algorithm.",
       "depends_on": [
         "course-poc-i0-osm-polygons"
@@ -1669,7 +1669,7 @@
       "headless": "yes",
       "area": "backend",
       "title": "Prioritize + cap caddie reasoning (calm, voice-first)",
-      "rationale": "The 3 new advice layers (slope/terrain/DECADE) could push reasoning to 8+ lines — too noisy for the voice caddie + the calm Northstar. Added prioritize_reasoning() + MAX_REASONING_ITEMS=4, safety-first ordering (club > pin/hazard > slope/miss > terrain > color), club line never dropped.",
+      "rationale": "The 3 new advice layers (slope/terrain/DECADE) could push reasoning to 8+ lines \u2014 too noisy for the voice caddie + the calm Northstar. Added prioritize_reasoning() + MAX_REASONING_ITEMS=4, safety-first ordering (club > pin/hazard > slope/miss > terrain > color), club line never dropped.",
       "shipped": "Built f746c2d (2026-06-29). 25 tests; all 180 existing pass unweakened; club/aim unchanged. | SHIPPED in bundle #68 -> main b475b82 (2026-06-29); backend deployed (migration 009), TestFlight build cut."
     },
     {
@@ -1724,7 +1724,7 @@
       "headless": "partial (link; render device)",
       "area": "frontend",
       "title": "Reachable entry for the homegrown course-map viewer (Bethpage Black)",
-      "rationale": "/map/course was URL-only (no nav) — unreachable in the iOS app. Added a calm Course maps (beta) entry on /courses -> Bethpage Black -> /map/course?id=2b8caab5... so the owner can tap to see the homegrown hole map.",
+      "rationale": "/map/course was URL-only (no nav) \u2014 unreachable in the iOS app. Added a calm Course maps (beta) entry on /courses -> Bethpage Black -> /map/course?id=2b8caab5... so the owner can tap to see the homegrown hole map.",
       "shipped": "Built 4ae5fb4 (2026-06-29). Frontend-only; 531 tests green. Needs ship for the owner to view it. Bethpage Black ingested (18 holes, 181 features) on prod. | SHIPPED PR #70 -> main fe18b78 (2026-06-29); TestFlight build cut. Bethpage Black viewable via Courses tab -> Course maps (beta)."
     },
     {
@@ -1748,7 +1748,7 @@
       "area": "frontend",
       "title": "Yardage-book hole diagram (base render)",
       "rationale": "Replaced broken Mapbox satellite /map/course with pure-SVG yardage-book hole diagram (cosLat projection, tee->green rotation, on-paper palette, hole info). Owner-requested significant improvement. Base for tap-measure + GPS.",
-      "shipped": "Built 44de60c (2026-06-29). hole-projection.ts + HoleDiagram.tsx + 30 tests, 561 vitest. Not shipped alone — ships with the interactive+GPS layer. | SHIPPED PR #71 -> main 6b667fd (2026-06-29)."
+      "shipped": "Built 44de60c (2026-06-29). hole-projection.ts + HoleDiagram.tsx + 30 tests, 561 vitest. Not shipped alone \u2014 ships with the interactive+GPS layer. | SHIPPED PR #71 -> main 6b667fd (2026-06-29)."
     },
     {
       "id": "hole-diagram-interactive-gps",
@@ -1761,7 +1761,7 @@
       "depends_on": [
         "hole-diagram-base"
       ],
-      "shipped": "Built 7c2b15f (2026-06-29). Inverse projection (unprojectPoint, round-trip<1e-7); tap-to-measure (from-tee/to-pin); GPS on-hole overlay (you dot + live distances when on-hole, graceful when remote — fixes 50531). 57 new tests, 580 vitest green. | SHIPPED PR #71 -> main 6b667fd (2026-06-29)."
+      "shipped": "Built 7c2b15f (2026-06-29). Inverse projection (unprojectPoint, round-trip<1e-7); tap-to-measure (from-tee/to-pin); GPS on-hole overlay (you dot + live distances when on-hole, graceful when remote \u2014 fixes 50531). 57 new tests, 580 vitest green. | SHIPPED PR #71 -> main 6b667fd (2026-06-29)."
     },
     {
       "id": "map-viewer-error-screen-restyle",
@@ -1770,7 +1770,7 @@
       "priority": 6,
       "risk": "low",
       "status": "done-shipped-main",
-      "done_note": "Shipped in bundle #103 (commit 8998b3f; TestFlight v1.0.759, 2026-07-07). ErrorScreen restyled to the yardage-book not-found pattern — serif-italic headline, mono-uppercase caption, hairline pill Back, paper-noise bg; AlertCircle dropped; signature + 3 call sites unchanged. Was mis-tagged in-progress after it already shipped.",
+      "done_note": "Shipped in bundle #103 (commit 8998b3f; TestFlight v1.0.759, 2026-07-07). ErrorScreen restyled to the yardage-book not-found pattern \u2014 serif-italic headline, mono-uppercase caption, hairline pill Back, paper-noise bg; AlertCircle dropped; signature + 3 call sites unchanged. Was mis-tagged in-progress after it already shipped.",
       "depends_on": [],
       "why": "Designer review of ff2b043: the map viewer's ErrorScreen (frontend/src/app/map/course/page.tsx ~159-210) is generic/off-brand (sans body, Lucide AlertCircle, plain text link) next to the on-brand detail-page not-found state (serif-italic headline, mono caption, pill button). The unified detail landing now funnels more traffic through /map/course, so a golfer on patchy course wifi is one tap from a jarring screen. Match the detail page's not-found pattern.",
       "spec": "specs/map-viewer-error-screen-restyle-plan.md"
@@ -1799,7 +1799,7 @@
     },
     {
       "id": "caddie-hazard-grounding",
-      "title": "Ground the caddie in real hazard geometry — stop invented hazards",
+      "title": "Ground the caddie in real hazard geometry \u2014 stop invented hazards",
       "type": "major",
       "priority": 2,
       "risk": "medium",
@@ -1810,13 +1810,13 @@
     },
     {
       "id": "persistent-hole-map",
-      "title": "Persistent round map — no per-hole 'Loading map…'",
+      "title": "Persistent round map \u2014 no per-hole 'Loading map\u2026'",
       "type": "major",
       "priority": 2,
       "risk": "medium",
       "status": "done-shipped-main (9d597a9; un-keyed persistent map + createCameraQueue; verified on main 2026-07-07)",
       "depends_on": [],
-      "why": "Owner 2026-07-06 (screenshot, hole 4): the satellite map shows 'Loading map…' on every hole swipe because the native map remounts per hole. Fix: ONE persistent @capacitor/google-maps instance mounted for the whole round; hole swipes move the camera to the next hole's bounds (near-instant, tiles cached); pre-warm adjacent holes' tiles when idle. NOT 18 map instances (memory). Respect the onMapReady crash lesson: every native call gated on map readiness; a long-lived instance reduces create/destroy churn. Pairs with tee-marker-on-map (same component).",
+      "why": "Owner 2026-07-06 (screenshot, hole 4): the satellite map shows 'Loading map\u2026' on every hole swipe because the native map remounts per hole. Fix: ONE persistent @capacitor/google-maps instance mounted for the whole round; hole swipes move the camera to the next hole's bounds (near-instant, tiles cached); pre-warm adjacent holes' tiles when idle. NOT 18 map instances (memory). Respect the onMapReady crash lesson: every native call gated on map readiness; a long-lived instance reduces create/destroy churn. Pairs with tee-marker-on-map (same component).",
       "spec": ""
     },
     {
@@ -1827,7 +1827,7 @@
       "risk": "low",
       "status": "done (shipped in bundle #100, commit 82d8d8b; keyterms.ts + tests live)",
       "depends_on": [],
-      "why": "Voice audit P1.1 (specs/voice-agent-audit.md): nova-3 keyterm prompting on live+batch calls — bias STT with player names, course names, golf terms. Cheapest accuracy win; SOTA agents always send domain vocabulary.",
+      "why": "Voice audit P1.1 (specs/voice-agent-audit.md): nova-3 keyterm prompting on live+batch calls \u2014 bias STT with player names, course names, golf terms. Cheapest accuracy win; SOTA agents always send domain vocabulary.",
       "spec": "specs/voice-agent-audit.md"
     },
     {
@@ -1850,18 +1850,18 @@
       "risk": "low",
       "status": "done (shipped in bundle #100, commit 82d8d8b; UtteranceEnd auto-send in deepgram-live.ts)",
       "depends_on": [],
-      "why": "Voice audit P1.3: one tap → speak → it sends itself after ~1.2s silence (Deepgram endpointing events already on the socket). Tap-to-send stays as manual override.",
+      "why": "Voice audit P1.3: one tap \u2192 speak \u2192 it sends itself after ~1.2s silence (Deepgram endpointing events already on the socket). Tap-to-send stays as manual override.",
       "spec": "specs/voice-agent-audit.md"
     },
     {
       "id": "voice-telemetry",
-      "title": "Voice telemetry — transport/fallback/latency events",
+      "title": "Voice telemetry \u2014 transport/fallback/latency events",
       "type": "minor",
       "priority": 2,
       "risk": "low",
       "status": "done (shipped in bundle #100, commit 82d8d8b; telemetry.ts + /voice telemetry route)",
       "depends_on": [],
-      "why": "Voice audit P1.4: zero visibility today — the OWNER discovered the iOS live-dictation fallback. Structured client events (transport, live-vs-fallback, latency, error class) logged to the backend.",
+      "why": "Voice audit P1.4: zero visibility today \u2014 the OWNER discovered the iOS live-dictation fallback. Structured client events (transport, live-vs-fallback, latency, error class) logged to the backend.",
       "spec": "specs/voice-agent-audit.md"
     },
     {
@@ -1870,7 +1870,7 @@
       "type": "minor",
       "priority": 5,
       "risk": "low",
-      "status": "superseded — real USGS 3DEP/EPQS ingest now lives in backend/app/services/elevation.py + fetch_elevation_cached; Elev tile reads real data via course-intel. Close (bookkeeping) 2026-07-07",
+      "status": "superseded \u2014 real USGS 3DEP/EPQS ingest now lives in backend/app/services/elevation.py + fetch_elevation_cached; Elev tile reads real data via course-intel. Close (bookkeeping) 2026-07-07",
       "depends_on": [],
       "why": "The Elev tile was a hardcoded fake (+3ft on every hole) and is now replaced by real Gusts. To bring an HONEST Elev tile + real plays-like model back: fetch elevation profiles (e.g. Google Elevation/open DEM) for mapped courses at ingest, store per-hole tee/green deltas.",
       "spec": "specs/voice-agent-audit.md"
@@ -1883,7 +1883,7 @@
       "risk": "low",
       "status": "needs-spec",
       "depends_on": [],
-      "why": "Seeded 2026-07-07 (retro). Now that opt-in TTS sheet replies shipped (voice-tts-sheet-replies, #102) with ONE default voice, the natural next step toward the 'personal caddie' Northstar is mapping each persona to a distinct gpt-4o-mini-tts voice + delivery so 'Classic on the bag' and a brasher persona actually SOUND different. Small, additive to the existing /api/voice/speak proxy + useSheetTTS (persona already threaded). Keep it calm/voice-first; owner may want to pick/preview a voice per persona. Candidate — needs a short spec + owner nod on which personas/voices.",
+      "why": "Seeded 2026-07-07 (retro). Now that opt-in TTS sheet replies shipped (voice-tts-sheet-replies, #102) with ONE default voice, the natural next step toward the 'personal caddie' Northstar is mapping each persona to a distinct gpt-4o-mini-tts voice + delivery so 'Classic on the bag' and a brasher persona actually SOUND different. Small, additive to the existing /api/voice/speak proxy + useSheetTTS (persona already threaded). Keep it calm/voice-first; owner may want to pick/preview a voice per persona. Candidate \u2014 needs a short spec + owner nod on which personas/voices.",
       "spec": ""
     },
     {
@@ -1892,9 +1892,9 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "SLICES 1-3 DONE on integration/next (not yet on main) — storage shape + read-through + both-mouth injection (Slice 1, silent, bundle #112, 1efa798); research writer (guide_writer.py: build_ground_truth_block, WRITER_SYSTEM, research_hole_guide via claude-sonnet-5 + web_search_20260209 + client.messages.parse, validate_guide grounding pass) + precompute service (services/course_guides.py: _precompute_course_guides idempotent/best-effort, env-gated run_guide_backfill capped at GUIDE_BACKFILL_MAX_COURSES default 1, empty allowlist by default) + wiring at courses_mapped.py create/put (primary, post-upsert BackgroundTask) and caddie.py start_session (cold-course fallback) (Slices 2+3, resumed from WIP checkpoint c126a9b/d05f025). Tests: grounding-validation + prompt-injection-safety + failure-honesty added to test_guide_writer.py; new test_course_guides.py covers the precompute job's failure-honesty (research/validation/write-back failures never write; idempotent skip is ZERO LLM calls) and the backfill's env-gating/cap; DB round-trip test for strategy_guide already in tests/integration/test_courses_mapped_db.py (CI-only, self-skips locally). NOT run: the live backfill (no ANTHROPIC_API_KEY/network in this environment — left env-gated/documented, Bethpage recommended first via GUIDE_BACKFILL_COURSES). BLOCKING/unverified: the messages.parse + web_search_20260209 + pause_turn continuation path has never been exercised against a live key/network — needs a live smoke test before the first real backfill. Needs: /security-review + /code-review before the bundle ships (new web-content-into-LLM surface, plan §9).",
+      "status": "SLICES 1-3 DONE on integration/next (not yet on main) \u2014 storage shape + read-through + both-mouth injection (Slice 1, silent, bundle #112, 1efa798); research writer (guide_writer.py: build_ground_truth_block, WRITER_SYSTEM, research_hole_guide via claude-sonnet-5 + web_search_20260209 + client.messages.parse, validate_guide grounding pass) + precompute service (services/course_guides.py: _precompute_course_guides idempotent/best-effort, env-gated run_guide_backfill capped at GUIDE_BACKFILL_MAX_COURSES default 1, empty allowlist by default) + wiring at courses_mapped.py create/put (primary, post-upsert BackgroundTask) and caddie.py start_session (cold-course fallback) (Slices 2+3, resumed from WIP checkpoint c126a9b/d05f025). Tests: grounding-validation + prompt-injection-safety + failure-honesty added to test_guide_writer.py; new test_course_guides.py covers the precompute job's failure-honesty (research/validation/write-back failures never write; idempotent skip is ZERO LLM calls) and the backfill's env-gating/cap; DB round-trip test for strategy_guide already in tests/integration/test_courses_mapped_db.py (CI-only, self-skips locally). NOT run: the live backfill (no ANTHROPIC_API_KEY/network in this environment \u2014 left env-gated/documented, Bethpage recommended first via GUIDE_BACKFILL_COURSES). BLOCKING/unverified: the messages.parse + web_search_20260209 + pause_turn continuation path has never been exercised against a live key/network \u2014 needs a live smoke test before the first real backfill. Needs: /security-review + /code-review before the bundle ships (new web-content-into-LLM surface, plan \u00a79).",
       "depends_on": [],
-      "why": "OWNER UNPAUSED 2026-07-09: 'Maybe a tiny bit of context added there would help to understand the shot and hole better.' Confirmed today the caddie has NO researched course knowledge (only our geometry/hazards/weather/player context). PHASE 1 (build): an LLM writer researches each hole (web search + our stored geometry as GROUND TRUTH — the guide may never contradict real hazards/yardage; HAZARD_GROUNDING_RULE applies) and produces a compact per-hole strategy guide (play line, miss side, green notes), cached ONCE per course server-side, injected into both caddie paths' hole context. PHASE 2 (later, explicitly gated): shot-tracking + subsequent-score stats refine guides ONLY when statistically significant — owner: 'only when there is enough data'. Needs opus plan: writer prompt, grounding contract, cache shape (courses_mapped seam like elevation), cost (one research pass per course), staleness policy. | OWNER 2026-07-09 (design confirmed): cache per (course,hole) — NEVER re-query the same hole (cost AND latency); PREFERRED: preemptive research for EVERY hole at course-mapping/ingest time (BackgroundTask like elevation precompute) so guides are already cached before any user plays it. Runtime query only as the cold-course fallback.",
+      "why": "OWNER UNPAUSED 2026-07-09: 'Maybe a tiny bit of context added there would help to understand the shot and hole better.' Confirmed today the caddie has NO researched course knowledge (only our geometry/hazards/weather/player context). PHASE 1 (build): an LLM writer researches each hole (web search + our stored geometry as GROUND TRUTH \u2014 the guide may never contradict real hazards/yardage; HAZARD_GROUNDING_RULE applies) and produces a compact per-hole strategy guide (play line, miss side, green notes), cached ONCE per course server-side, injected into both caddie paths' hole context. PHASE 2 (later, explicitly gated): shot-tracking + subsequent-score stats refine guides ONLY when statistically significant \u2014 owner: 'only when there is enough data'. Needs opus plan: writer prompt, grounding contract, cache shape (courses_mapped seam like elevation), cost (one research pass per course), staleness policy. | OWNER 2026-07-09 (design confirmed): cache per (course,hole) \u2014 NEVER re-query the same hole (cost AND latency); PREFERRED: preemptive research for EVERY hole at course-mapping/ingest time (BackgroundTask like elevation precompute) so guides are already cached before any user plays it. Runtime query only as the cold-course fallback.",
       "spec": ""
     },
     {
@@ -1905,19 +1905,19 @@
       "risk": "medium",
       "status": "done",
       "depends_on": [],
-      "why": "Seeded 2026-07-07 (retro); owner direction ('page powers' / brain-parity). Today the Looper orb + round caddie are separate mouths with different context. Give the single Looper assistant the SAME brain everywhere — on the home/profile/course pages it should answer and act with the current page's context (recent rounds, this course, the round in progress), not just on the round screen. Voice-first, calm, minimal chrome per NORTHSTAR. Needs a spec: unify the context/tooling behind the sheets, define per-surface capabilities, avoid racing realtime.ts warm-path mic invariants. Candidate — scope before building.",
+      "why": "Seeded 2026-07-07 (retro); owner direction ('page powers' / brain-parity). Today the Looper orb + round caddie are separate mouths with different context. Give the single Looper assistant the SAME brain everywhere \u2014 on the home/profile/course pages it should answer and act with the current page's context (recent rounds, this course, the round in progress), not just on the round screen. Voice-first, calm, minimal chrome per NORTHSTAR. Needs a spec: unify the context/tooling behind the sheets, define per-surface capabilities, avoid racing realtime.ts warm-path mic invariants. Candidate \u2014 scope before building.",
       "spec": "specs/looper-brain-parity-plan.md",
-      "done_note": "SMALLEST-SLICE shipped to integration/next (bundle PR #105, commit 4948cf6). Backend _build_voice_prompt now grounds the off-course Looper orb (and the on-course CaddieSheet stateless fallback) in the player cross-round memory + handicap, mirroring _build_session_voice_prompt — the orb is personal everywhere, no UI delta. Defensive try/except degrades to prior behavior for new/empty users; no schema change. Reviewer SHIP (no IDOR/PII, provably cannot 500 the unguarded voice path); ruff clean; 15/15 voice_stream tests (3 new: grounded / clean-empty / fetcher-raises-degrades). OUT OF SCOPE / follow-ups (not built): orb round-course awareness + realtime-pipeline reroute (large lift, collides with warm-path mic invariants); optional frontend tweak to send real handicap + preferred persona off-course. Classification: noticeable-subtle, awaiting owner ship-it on the bundle."
+      "done_note": "SMALLEST-SLICE shipped to integration/next (bundle PR #105, commit 4948cf6). Backend _build_voice_prompt now grounds the off-course Looper orb (and the on-course CaddieSheet stateless fallback) in the player cross-round memory + handicap, mirroring _build_session_voice_prompt \u2014 the orb is personal everywhere, no UI delta. Defensive try/except degrades to prior behavior for new/empty users; no schema change. Reviewer SHIP (no IDOR/PII, provably cannot 500 the unguarded voice path); ruff clean; 15/15 voice_stream tests (3 new: grounded / clean-empty / fetcher-raises-degrades). OUT OF SCOPE / follow-ups (not built): orb round-course awareness + realtime-pipeline reroute (large lift, collides with warm-path mic invariants); optional frontend tweak to send real handicap + preferred persona off-course. Classification: noticeable-subtle, awaiting owner ship-it on the bundle."
     },
     {
       "id": "caddie-conversational-loop",
-      "title": "Conversational Ask Caddie — hands-free multi-turn like round setup",
+      "title": "Conversational Ask Caddie \u2014 hands-free multi-turn like round setup",
       "type": "major",
       "priority": 1,
       "risk": "medium",
       "status": "done (on integration/next, bundle #106; awaiting owner ship)",
       "depends_on": [],
-      "why": "Owner 2026-07-07 (screenshots, on-course): 'Doesn't feel conversational to have to click the speaker for each interaction. Should be more similar to the round set up to pick up pauses and proceed as needed.' Direction: after the caddie SPEAKS a reply, auto re-arm listening (auto-send already exists); the speaker preference persists (never per-interaction); target = the setup flow's continuous feel. Consider routing Ask Caddie through the existing realtime session (tier 1) as the primary conversational transport with the sheet as transcript view. Needs an opus plan — interaction + transport decisions.",
+      "why": "Owner 2026-07-07 (screenshots, on-course): 'Doesn't feel conversational to have to click the speaker for each interaction. Should be more similar to the round set up to pick up pauses and proceed as needed.' Direction: after the caddie SPEAKS a reply, auto re-arm listening (auto-send already exists); the speaker preference persists (never per-interaction); target = the setup flow's continuous feel. Consider routing Ask Caddie through the existing realtime session (tier 1) as the primary conversational transport with the sheet as transcript view. Needs an opus plan \u2014 interaction + transport decisions.",
       "spec": "",
       "progress": "2026-07-07 (loop cycle 9): SHIPPED to integration/next (eded238 + designer-fix 83fcccb). Hands-free Ask Caddie: after the caddie speaks, the mic auto re-arms (400ms grace) for a continuous conversation like round setup; implicit on via the persisted speaker toggle (no new UI). Stays on the Deepgram+TTS path (Realtime warm-path invariants untouched). Guards: echo grace, 6s dead-air + empty-streak calm drop-out, tap-to-interrupt barge-in, full cleanup. Just-spoken answer persists through re-arm (designer blocker fixed). Reviewer SHIP (guard deviation verified sound), designer PASS, 17 new deterministic tests; gates 1590/1590 vitest + 274/274 voice smoke. Rides bundle PR #106; needs a fresh TestFlight for the owner to feel it before/at merge."
     },
@@ -1930,7 +1930,7 @@
       "status": "done-shipped-main (rider, shipped via early bundle to main)",
       "shipped": "#106 / TestFlight v1.0.789 (2026-07-07)",
       "depends_on": [],
-      "why": "Owner 2026-07-07: 'assume the default will be \"What should I hit or do on this next shot\" — takes where you are on the hole and gives a brief recommendation already there when I open Ask Caddie. Then follow-ups fully conversational.' Uses GPS position + hole intel via the existing /session/recommend; render as the caddie's opening turn (streamed + spoken per prefs).",
+      "why": "Owner 2026-07-07: 'assume the default will be \"What should I hit or do on this next shot\" \u2014 takes where you are on the hole and gives a brief recommendation already there when I open Ask Caddie. Then follow-ups fully conversational.' Uses GPS position + hole intel via the existing /session/recommend; render as the caddie's opening turn (streamed + spoken per prefs).",
       "spec": ""
     },
     {
@@ -1940,9 +1940,9 @@
       "priority": 2,
       "risk": "low",
       "status": "done-shipped-main (rides #107, merged 1271254)",
-      "landed": "integration/next @ 96cb16e (loop cycle 10, 2026-07-07) — silent; reviewer SHIP, QA 1602/1602. Follow-up nit (non-blocking): hole-change + visibility refresh are gated only on staleness, not round-active, so a COMPLETED round still refetches weather on hole-nav/foreground — fold the round.status!=='completed' guard in next time RoundPageClient is touched.",
+      "landed": "integration/next @ 96cb16e (loop cycle 10, 2026-07-07) \u2014 silent; reviewer SHIP, QA 1602/1602. Follow-up nit (non-blocking): hole-change + visibility refresh are gated only on staleness, not round-active, so a COMPLETED round still refetches weather on hole-nav/foreground \u2014 fold the round.status!=='completed' guard in next time RoundPageClient is touched.",
       "depends_on": [],
-      "why": "Owner 2026-07-07: one wind reading for a 4+ hour round. Source granularity is honest (one Open-Meteo grid cell covers the course; per-hole SPEED differences exist in no data source — never fake them), but STALENESS is fixable: quietly refetch weather every ~20-30 min or on hole change when the reading is >20 min old; tiles update in place. Direction-per-hole-bearing already works.",
+      "why": "Owner 2026-07-07: one wind reading for a 4+ hour round. Source granularity is honest (one Open-Meteo grid cell covers the course; per-hole SPEED differences exist in no data source \u2014 never fake them), but STALENESS is fixable: quietly refetch weather every ~20-30 min or on hole change when the reading is >20 min old; tiles update in place. Direction-per-hole-bearing already works.",
       "spec": "specs/wind-periodic-refresh-plan.md"
     },
     {
@@ -1987,7 +1987,7 @@
       "status": "done-shipped-main (rider, shipped via early bundle to main)",
       "depends_on": [],
       "why": "Observed 2026-07-08: voicetel volume is near-blind (~1 event in 4h of a live session). lib/voice/telemetry.ts flushes on an 8s timer / 12-event batch / visibilitychange->hidden with keepalive fetch. On iOS WKWebView (Capacitor), pagehide is more reliable than visibilitychange, and the CapacitorHttp-patched fetch may not honor keepalive when the webview suspends -> queued events die on background/kill before the timer fires. Add a pagehide/freeze listener + verify keepalive actually ships (or use sendBeacon / a smaller batch / immediate flush for rare high-signal events). Don't fix while we're mid-TTS fix; targeted follow-up.",
-      "resolution": "Cycle 19 (1c65b49, rides PR #109). Option A — smallest secure design, no new/unauth surface: added a `flush?:boolean` flag to voiceEvent() that immediately drains the WHOLE queue, wired it on all failure events (mic_error/live_start_failed/live_unsupported/resolved_fallback/speak_failed/prime_failed) so they ship while foregrounded; added a window pagehide listener alongside visibilitychange. Authenticated fetch(keepalive) + Clerk Bearer preserved; sendBeacon/token-in-body rejected (attack surface). Reviewer CLEAN + security-reviewed (auth preserved, no PII, flag never in payload); 10 deterministic jsdom tests. Unblocks device-side latency verification.",
+      "resolution": "Cycle 19 (1c65b49, rides PR #109). Option A \u2014 smallest secure design, no new/unauth surface: added a `flush?:boolean` flag to voiceEvent() that immediately drains the WHOLE queue, wired it on all failure events (mic_error/live_start_failed/live_unsupported/resolved_fallback/speak_failed/prime_failed) so they ship while foregrounded; added a window pagehide listener alongside visibilitychange. Authenticated fetch(keepalive) + Clerk Bearer preserved; sendBeacon/token-in-body rejected (attack surface). Reviewer CLEAN + security-reviewed (auth preserved, no PII, flag never in payload); 10 deterministic jsdom tests. Unblocks device-side latency verification.",
       "spec": "specs/fix-ios-voicetel-flush-dropped-plan.md"
     },
     {
@@ -2022,8 +2022,8 @@
       "type": "minor",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
-      "notes": "QA (cycle 43) found backend/app/services/osm.py search_golf_courses() does results[:15] BEFORE the caller sorts by distance (line predates S1, commit 73ebdcb6). At a 15-25mi radius this can silently drop the CLOSEST course — reproducibly dropped 18 Mile Creek (the S1 reference course) at the UI default 15mi 'Max drive'. Directly limits how often the owner actually SEES the new real foreUP data. Fix: sort-by-distance before the cap, or raise the cap. High-value fast-follow to S1."
+      "status": "done-on-bundle",
+      "notes": "done-on-bundle (integration/next 96714ef; silent \u2014 backend correctness). osm.py search_golf_courses/search_osm_with_geometry now sort by true haversine distance (new _haversine_m mirror + pure _sort_by_distance keyed (distance,name), sort iff lat&lng, None-coords-last) BEFORE the [:15]/[:25] cap (now named consts) \u2014 the closest course (18 Mile Creek at 15mi default) is no longer dropped. name-only order untouched; routing/course_search unchanged (re-rank downstream); dict shape unchanged, no shared-type sync. Fable plan specs/teetime-osm-distance-sort-plan.md. New test_osm_distance_sort.py hand-falsified vs unfixed code. reviewer SHIP, QA ruff+120 pytest green. rides bundle PR #121."
     },
     {
       "id": "teetime-course-ids-not-wired-real-provider",
@@ -2032,7 +2032,7 @@
       "priority": 3,
       "risk": "low",
       "status": "ready",
-      "notes": "QA (cycle 43): TeeTimeQuery.course_ids is threaded into the search-cache key but never filtered on in routing.py/router_provider.py — only mock.py honors it. Selecting courses in the UI is a no-op on the real discovery path. Pre-existing, not from S1."
+      "notes": "QA (cycle 43): TeeTimeQuery.course_ids is threaded into the search-cache key but never filtered on in routing.py/router_provider.py \u2014 only mock.py honors it. Selecting courses in the UI is a no-op on the real discovery path. Pre-existing, not from S1."
     },
     {
       "id": "teetime-searching-copy-polish",
@@ -2041,8 +2041,8 @@
       "priority": 3,
       "risk": "low",
       "status": "ready",
-      "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct — the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' — unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5."
+      "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct \u2014 the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' \u2014 unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5."
     }
   ],
-  "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style — rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm — not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home · Partners · Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
+  "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
 }

@@ -252,6 +252,25 @@ class TestBookDispatch:
         result = await provider.book(slot, BookingDetails(name="Owner", party_size=2))
         assert len(fake.book_calls) == 1
         assert result.message == "fake foreup book"
+        # S2 guard (specs/teetime-s2-plan.md §3b.3): a foreup slot routed
+        # through RoutedTeeTimeProvider must never yield a confirmed booking
+        # or a fabricated confirmation number.
+        assert result.status == "needs_human"
+        assert result.status != "confirmed"
+        assert result.confirmation_number is None
+
+    async def test_foreup_slot_never_confirms_with_the_real_foreup_provider(self):
+        """The same guard, but through the REAL ForeUpProvider (not the fake)
+        — proves the actual production dispatch path, not just FakeForeUp's
+        scripted return value."""
+        from app.services.tee_times.foreup import ForeUpProvider
+
+        provider = _provider(foreup=ForeUpProvider(capabilities=lambda: (_CAP,)))
+        slot = _real_slot(_CAP, _query(), "10:00")
+        result = await provider.book(slot, BookingDetails(name="Owner", party_size=2))
+        assert result.status == "needs_human"
+        assert result.confirmation_number is None
+        assert result.booking_url == _CAP.booking_url
 
     async def test_routing_slot_dispatches_to_super_needs_human(self):
         fake = FakeForeUp(result=[])
