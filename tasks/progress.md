@@ -3,6 +3,24 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## eng-lead cycle 34 (2026-07-08) — caddie-advice-eval-harness on the bundle; PR #117 opened (SILENT)
+
+Fresh `integration/next` after #116 shipped (v1.0.911). Step 0 clean: no Needs Review cards, no
+pending approvals. Picked P1 `caddie-advice-eval-harness` (excellence-audit's "unfalsifiable
+quality" gap). Fable Plan → `specs/caddie-advice-eval-plan.md` (two tiers, hard-separated:
+Tier-1 deterministic prompt-assembly+honesty asserts always in CI offline; Tier-2 LLM-judge
+on-demand/nightly only, off CI). ONE builder implemented it (6103499): `backend/tests/eval/`,
+25-scenario golden JSONL, closed check-name registry, teeth tests. Reviewer (honesty-focused,
+the load-bearing concern) verdict **SOUND** — every check family has a real red-able mutant tied
+to a shipped fix, hole-4 gaslight scenario genuinely fails on the pre-`OBSERVED_REALITY_RULE`
+prompt. Folded in the 3 non-blocking review notes myself (f491b71): emptied-constant masking
+guard + matching teeth test, narrowed the Tier-2 injection pre-scan so deferential caddie speech
+("you are looking right at it") no longer false-positives, fixed a golden notes/number drift.
+Gates on HEAD: ruff clean; `pytest tests/eval` 47 passed offline (no key, no Postgres); full
+suite green; `run_tier2.py` not collected by pytest. Silent-only bundle → **no owner ping**;
+PR #117 accumulates until the next noticeable item. Deviation: 25 scenarios vs the 30-50 target
+(README carries the incident-driven growth rule).
+
 ## 2026-07-08 — builder: caddie-advice-eval-harness landed on the bundle (SILENT, backend-only, DONE)
 
 Implemented `specs/caddie-advice-eval-plan.md` exactly — a two-tier golden-set eval for caddie
