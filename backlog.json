@@ -3,6 +3,26 @@
   "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "voice-target-speaker-enrollment-spike",
+      "title": "Spike: target-speaker filtering (voice enrollment + on-device TSVAD)",
+      "type": "major",
+      "priority": 2,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 (hands-free + only-owner's-voice): the real answer is a one-time voice ENROLLMENT (~5-10s -> speaker embedding) + a Target-Speaker VAD gate that opens the mic-to-model only when the enrolled owner speaks \u2014 rejects partners without breaking hands-free. Spike: which on-device (Core ML) TSVAD/speaker-embedding model, latency budget vs the realtime speech-to-speech path (preprocessing fights sub-second latency \u2014 on-device is the sweet spot), enrollment UX. NOT train-from-scratch (pretrained models exist). Full VoiceFilter extraction only if TSVAD gating insufficient. Fable plan. specs/voice-target-speaker-research.md."
+    },
+    {
+      "id": "voice-reject-distant-voices-tuning",
+      "title": "Voice: reject distant/background voices (mic constraints + VAD threshold)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09: caddie can pick up partners'/background voices. TIER 1 (free, do now): confirm echoCancellation/noiseSuppression/autoGainControl ON in the mic getUserMedia constraints; A/B a higher server_vad energy threshold so only close speech (owner holding the phone) triggers. Partial but real, zero ML. specs/voice-target-speaker-research.md."
+    },
+    {
       "id": "multi-tee-anchor-reconciliation",
       "title": "Multi-tee holes: 'from the tee' F/C/B \u2260 card yardage (anchor to the played tee)",
       "type": "major",
