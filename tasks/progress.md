@@ -9211,9 +9211,11 @@ Gates (all green, evidence below) — no deviation from the plan beyond the giti
 above (which is infra-necessary, not a spec change).
 
 ## AWAITING
-reviewer (no-fake-data honesty + private-filter matching correctness — the exact-equality/
-suffix-fold/near-radius logic is the reviewer surface per the plan) + qa (full gate re-run,
-esp. CI's DB-backed integration test) + designer (tee-time Confirmed/Searching copy is
-user-facing, NORTHSTAR yardage-book feel). BLOCKING -> re-dispatch builder; green -> this
-opens the rolling bundle PR (first item), then release-manager (NOTICEABLE — real course
-data replaces demo data on the tee-time screen) + owner ping.
+Reviewer + QA + Designer on tee-time S0 at HEAD 265d803 (integration/next). Reviewer = no-fake-
+data honesty + private_filter correctness (normalize/is_private, no substring FP) + the two
+slot.time=="" render gates. QA = gates pinned to 265d803 (backend non-DB pytest, frontend
+lint/tsc/vitest/build/voice-smoke; DB integration runs in CI). Designer = tee-time copy
+(route-driven Found/Call/Book-on-site, honest empty) vs NORTHSTAR calm/honest yardage-book.
+BLOCKING -> re-dispatch builder; all green -> open rolling bundle PR (integration/next->main),
+then release-manager (NOTICEABLE) + owner ping. Builder pushed 3d3db52+265d803, local gates all
+green; .gitignore exception added so private_clubs.json is tracked (verified).
