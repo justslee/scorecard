@@ -951,7 +951,7 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
           } else if (results.length > 0) {
             const text = isRouteEntries
               ? selectedCourses.length > 0
-                ? `${picksOpen} of your ${selectedCourses.length} pick${selectedCourses.length !== 1 ? "s" : ""} open to the public in ${q.timeWindowStart}–${q.timeWindowEnd}`
+                ? `${picksOpen} of your ${selectedCourses.length} pick${selectedCourses.length !== 1 ? "s" : ""} ${picksOpen === 1 ? "has" : "have"} times in ${q.timeWindowStart}–${q.timeWindowEnd}`
                 : `${picksOpen} course${picksOpen !== 1 ? "s" : ""} open to the public in ${q.timeWindowStart}–${q.timeWindowEnd}`
               : `${results.length} slot${results.length !== 1 ? "s" : ""} in ${q.timeWindowStart}–${q.timeWindowEnd}`;
             append({ t: nowStr(), text, state: "ok", course: "" });

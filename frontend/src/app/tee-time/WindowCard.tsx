@@ -159,7 +159,7 @@ export default function WindowCard({ win, accent, autoOpenCalendar, onToggle, on
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 4,
+                gap: 3,
                 fontFamily: T.mono,
                 fontSize: 8,
                 letterSpacing: 1,
@@ -178,7 +178,7 @@ export default function WindowCard({ win, accent, autoOpenCalendar, onToggle, on
               {/* Quiet calendar glyph — the date chip's only visual hint
                   that it's tappable to change the date (owner feedback:
                   the affordance wasn't discoverable). */}
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+              <svg width="8" height="8" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
                 <rect x="1.5" y="2" width="9" height="8.5" rx="1" stroke="currentColor" strokeWidth="1" />
                 <path d="M1.5 4.5 H10.5" stroke="currentColor" strokeWidth="1" />
                 <path d="M4 1 V3 M8 1 V3" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
