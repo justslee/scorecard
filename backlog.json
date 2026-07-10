@@ -3,6 +3,66 @@
   "note": "Cycle 73 (2026-07-10): Bundle #131 (caller-natural-preset-voice, NOTICEABLE) SHIPPED to main \u2014 owner \"ship it\" approved, merge 18ea1a0151ceff4307166973351f1bc0ca533de9, post-merge CI both gates SUCCESS, backend deployed + /health verified, TestFlight v1.0.1172 (build 202607101656) uploaded and processingState VALID, prod smoke clean (tee-times/search + caller-voice both correctly auth-gated 401). Fresh integration/next fast-forwarded to 18ea1a0 and pushed. Board card: Bundle #131 (Shipped). Prior note: Cycle 72 (2026-07-10): caddie-guide-injection-hardening SHIPPED to integration/next @ fe2570f (SILENT security, rides bundle PR #130) \u2014 MED-1 newline framing (flatten + reject), MED-2 read-time re-validate in /course-intel covering BOTH caddie mouths, LOW-3 per-item mistake cap, LOW-1/2 plan-doc correction; each fix has a RED-before test (7 RED on pre-fix, 186 offline GREEN), reviewer SHIP, CI Backend+Frontend gates SUCCESS on head d315570. Follow-up carded caddie-guide-session-reload-revalidate (p3). Bundle #130 now = teetime-setup-ux (NOTICEABLE) + this security hardening (silent) \u2014 awaiting a release when owner ships. Prior note: Bundle #125 SHIPPED 2026-07-10 -> main @ 56ddb78 (merge commit); TestFlight v1.0.1096 (build 202607100821) uploaded, processing on Apple's side. 8 items shipped-to-main: caddie-surface-osm-trees, teetime-show-real-time-options, teetime-prefs-ux-polish, voicetel-timing-immediate-flush (silent), caddie-remove-seeded-question, teetime-muni-pseudolocality-guard, fcb-unmapped-paper-fallback-mismatch, fcb-plays-tile-fabricated-fallback. Fresh integration/next cut @ 56ddb78, pushed. Prior note: Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "tournament-live-tracking",
+      "title": "Tournament live tracking (multi-phone standings without reload)",
+      "type": "major",
+      "priority": 4,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [],
+      "why": "AUDIT: NO live tracking \u2014 useEffect([id]) loads once; REST+localStorage only; two phones don't see each other's scores without reload. Largest lift: polling or SSE so standings update live. Backend + staging-testable \u2192 owner-ping-worthy when ready."
+    },
+    {
+      "id": "tournament-per-round-format-course",
+      "title": "Per-round format + course at tournament setup (schema change)",
+      "type": "major",
+      "priority": 3,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "AUDIT: setup collects only a round COUNT; Tournament schema (models.py:182, db/models.py:263) has no per-round course/format fields. Extend setup to configure N rounds each with course+format; add schema fields (+ Alembic migration \u2014 guarded). Backend + frontend."
+    },
+    {
+      "id": "tournament-net-handicap-leaderboard",
+      "title": "Handicap-aware NET leaderboard mode",
+      "type": "major",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "AUDIT: computeStandings (TournamentPageClient.tsx:96-134) is GROSS strokes only \u2014 no handicaps, no games/format factored. Add a Net mode (alongside Gross/To-Par) using player handicaps. User-facing."
+    },
+    {
+      "id": "tournament-voice-setup-wire",
+      "title": "Wire the (already-built) voice tournament setup to the UI \u2014 marquee voice-first gap",
+      "type": "major",
+      "priority": 2,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "AUDIT SURPRISE: a COMPLETE tournament voice contract exists in the parse layer (ParsedTournamentConfigSchema schemas.ts:51, pipeline.ts:159-201 normalization + :466 detection, voice-parser.ts:85 prompt) but NO UI consumes it \u2014 parseVoiceTranscript has zero app/component callers; setup is 100% tap. Wire it to the setup page / Looper orb so 'three-round tournament at Pebble with Justin and Sam' creates a tournament. Model layer done \u2014 only UI glue + createTournament call. THE voice-first marquee gap. Designer pass."
+    },
+    {
+      "id": "tournament-leaderboard-motion-haptics",
+      "title": "Tournament leaderboard motion + haptics pass (owner asked)",
+      "type": "major",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "AUDIT: ZERO framer-motion/haptics in all 3 tournament screens (owner explicitly asked where to add). Opportunities: FLIP layout re-sort of leaderboard rows on standings change (haptic light on moved row); leader crossfade+haptic success on new leader; overtake underline sweep+haptic medium; tab-bar layoutId pill slide+selection haptic; round active\u2192final stamp; settlement reveal stagger. Designer pass (NORTHSTAR calm \u2014 motion serves clarity, not flash). Files: TournamentPageClient.tsx."
+    },
+    {
+      "id": "tournament-cumulative-settlement",
+      "title": "Tournament-cumulative settlement + Settle-up panel (fixes Games-tab honesty; unblocks Venmo)",
+      "type": "major",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "AUDIT 2026-07-10: settlement.ts has computeNetSettlement+minimizeTransfers (Venmo-ready SettlementTransfer{fromPlayerId,toPlayerId,amount}) but ROUND-SCOPED only; tournament level has NONE. Games tab (TournamentPageClient.tsx:1284-1364) lists games as active but COMPUTES NOTHING (borderline no-fake-data). FIX: new computeTournamentSettlement(rounds) aggregating each round netByPlayer \u2192 minimizeTransfers once; render real per-game results + cumulative who-owes-whom in the Games tab (or honest 'configured, not yet scored' when unscored \u2014 never fake). Output shape feeds the future Venmo deep-link. Designer pass. Frontend-only (settlement.ts + TournamentPageClient.tsx)."
+    },
+    {
       "id": "voice-booking-twilio-cred-aliases",
       "title": "Read owner's TWILIO_CLIENT_ID/KEY secret names, map to Twilio convention in telephony gate",
       "type": "major",

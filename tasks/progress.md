@@ -12188,3 +12188,8 @@ both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
 - QA (local, DB-free scope): backend ruff clean; telephony+voice_booking suites 103/103 pass. DB-backed rehearsal/media tests deferred to CI (no local Postgres — never spin a container). Frontend UNTOUCHED (0 files vs main) → its lint/tsc/voice-smoke unaffected.
 - BOOKKEEPING: backlog `voice-booking-twilio-cred-aliases` → `done-on-bundle` (dbb8550, PR #132, not-on-main, inert until owner secrets+redeploy). Bundle PR #132 checklist updated (item = silent infra/config). Still SILENT bundle — no noticeable change, NO owner ship/ping.
 - AWAITING CI on PR #132 head after this bookkeeping push — require Frontend + Backend gates state:SUCCESS pinned to the pushed head SHA (fast ~10s Backend container-init fail = infra flake → `gh run rerun <id> --failed`).
+
+## Cycle 76 (2026-07-10) — tournament audit + build-out (owner focus)
+- Owner: build out tournament + asked state (voice setup? multi-round? leaderboard? settlement? live tracking? mock interactive? animations/haptics?).
+- AUDIT DONE: setup(tap)=wired; voice-setup=BUILT-in-parse-but-UNWIRED (marquee gap); multi-round=partial(aggregates, no per-round format); leaderboard=real-but-not-live, gross-only; settlement=round-only, MISSING at tournament level (unblocks Venmo); live-tracking=MISSING; NO mock (real+interactive, one Games-tab honesty gap); animations/haptics=ZERO in tournament screens. Seeded 6 items.
+- AWAITING: eng-lead tournament-cumulative-settlement (p1) — highest value, fixes Games-tab honesty, Venmo-ready output. Then motion/haptics, voice-setup-wire.
