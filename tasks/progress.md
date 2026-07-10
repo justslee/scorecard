@@ -3,6 +3,62 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: teetime-prefs-ux-polish landed on the bundle #125 (NOTICEABLE, frontend-only, DONE)
+
+Implemented `specs/teetime-prefs-ux-polish-plan.md` exactly (all 4 items,
+designer-led visual/layout polish on the tee-time flow). One commit
+(`945de5c`) on `integration/next`:
+
+1. `PaperShell` renders a fixed, pointer-transparent status-bar scrim (paper
+   @88% + `blur(10px)`, height `env(safe-area-inset-top)`, zIndex 40) so
+   scrolled `Section` headers ("WHERE / N selected") never collide with the
+   iOS status bar/Dynamic Island in the Capacitor/standalone full-bleed
+   context — every tee-time phase renders through `PaperShell`, so one change
+   covers the whole flow. Desktop/browser unaffected (inset 0).
+2. `CourseRow`: right column is now distance-only, right-aligned, uniform
+   across every row; a course's `muni` moved to a mono sub-line under the
+   name (was jammed ragged into the right column); `minHeight: 44` tap
+   target; both Where-section group labels' `marginBottom` normalized 4 -> 6.
+3. `toCourseOptions`' `r.city` fallback is now guarded by the existing
+   `COUNTRY_SEGMENT_RE` (previously only `muniFromAddress` used it) — a raw
+   provider `city` of "USA" can no longer leak into the muni label. Side
+   effect (correct, no-fake-data behavior, called out in the plan): an
+   all-generic-name row whose only signal was a country-only city is now
+   honestly skipped by `hasIdentifyingTokens` rather than shown with a
+   fabricated label. 2 new `courses.test.ts` cases.
+4. Options screen: the route-entry section header is now conditional on the
+   actual route kinds present ("Call to book" / "Book on their site" / "Book
+   direct" when mixed) instead of hardcoded "Call to book" even when the
+   group was all `book_on_site`; kicker changed to the honest "No listed
+   times"; route-entry rows now show distance + city like real-slot Sections
+   do; `minHeight: 44` added to the sub-44pt real-slot rows, the "+N more"
+   expander, route rows (belt), the Prefs roster Add rows, and the two dashed
+   "+ Add" buttons.
+
+All edits are inline-style JSX / one guard-line in `courses.ts`; zero touch
+to `options.ts` (`filterToSelection`/`groupSlotsByCourse`/asks
+projection/`slotOptionLabel`), the phase state machine, `pick()`/
+`bookTeeTime`, `types.ts`/`models.py`, or any backend file — verified via
+`git diff --stat` showing only `tee-time/page.tsx`, `teetime/courses.ts`,
+`teetime/courses.test.ts`.
+
+Gates all green: `npm run lint` (clean), `npx tsc --noEmit` (clean),
+`npm run build` (Turbopack build succeeds, 19/19 static pages), `npx tsx
+voice-tests/runner.ts --smoke` (274/274), `npm test` (89 files / 1882 tests
+passed, incl. the updated `courses.test.ts` + `options.test.ts`), targeted
+`npx vitest run src/lib/teetime/options.test.ts src/lib/teetime/courses.test.ts`
+(74/74). No backend change → no Postgres/Docker spun up, per policy.
+
+Try it: `/tee-time` → scroll the Where section on an iOS Dynamic Island
+profile to see the status-bar scrim; the Nearby/favorites list now has
+aligned distance columns + city sub-lines; the Options "no listed times"
+section header now matches what's actually in the group.
+
+Risk: low — pure visual/layout polish behind the just-shipped f9953f2
+options flow; no behavior change to selection, dispatch, or booking.
+NOTICEABLE (visible on TestFlight — status bar no longer clips scrolled
+headers, course rows read as aligned instead of ragged).
+
 ## 2026-07-10 — builder: teetime-show-real-time-options landed on the bundle #125 (NOTICEABLE, frontend-only, DONE)
 
 Implemented `specs/teetime-show-real-time-options-plan.md` exactly (all 5
