@@ -56,6 +56,7 @@ import { buildFcbTiles, effectiveFcbSource } from "@/lib/course/fcb-tiles";
 import { fcbSourceCaption } from "@/lib/caddie/fcb-labels";
 import { usePhysicsPlaysLike } from "@/lib/caddie/use-physics-plays-like";
 import { playsTileDisplay, ELEV_DEADBAND_FT } from "@/lib/caddie/plays-tile";
+import { playsBasis } from "@/lib/caddie/plays-basis";
 import { yardsDistance } from "@/lib/course/hole-projection";
 import { applyTeeAnchors, resolveFcbSource } from "@/lib/course/tee-anchor";
 import { haptic } from "@/lib/haptics";
@@ -1153,8 +1154,15 @@ export default function RoundPage() {
   // of the anchor's source; see lib/course/tee-anchor.test.ts for the
   // explicit precedence assertions.
   const fcbSource = resolveFcbSource(teeAnchor?.source ?? null, fcbLive != null);
-  const showCardOnly = fcbSource === "card";
   const fcb = fcbLive ?? fcbFromTee;
+  // Widened card-only decision (cycle 62 no-fake-data): the SAME condition the
+  // F/C/B tiles collapse on — fcb == null || fcbSource === 'card'. The old
+  // narrow `showCardOnly = fcbSource === 'card'` left the plays/physics basis
+  // keyed off a narrower flag than the tiles, so in the anchor-only unmapped
+  // state (fcb null, source 'tee', fcbFromTee null) the tiles read honest "—"
+  // while the plays basis fell to the `distance` placeholder. Both now key off
+  // this one flag, so the plays tile stays coherent with the tiles.
+  const effectiveCardOnly = effectiveFcbSource(fcbSource, fcb) === "card";
   // Caption honesty: when there is no real F/C/B geometry (fcb == null) the
   // tiles fall back to card-only (see buildFcbTiles) — so the caption must read
   // "from the card", never "from the tee" over honest "—" tiles. Derive it from
@@ -1168,8 +1176,9 @@ export default function RoundPage() {
   // Tile VALUES via the pure helper — collapses every "no real F/C/B geometry"
   // state to the honest card-only tiles instead of the old fabricated
   // `distance ± offset` numbers (no-fake-data; see lib/course/fcb-tiles.ts).
-  // `showCardOnly` above still drives the plays/physics/caption inputs below
-  // unchanged; only the F/C/B tile fabrication is fixed here.
+  // The plays/physics/caption inputs below key off `effectiveCardOnly` (the
+  // SAME widened condition as the tiles), so the PLAYS tile can no longer show
+  // the `distance` placeholder while the tiles read honest "—".
   const fcbTileValues = buildFcbTiles({ fcb, fcbSource, cardYards });
   const fcbTiles: { k: string; v: number | string; color: string }[] = [
     { k: "Front", v: fcbTileValues.front, color: "#a8553f" },
@@ -1214,29 +1223,25 @@ export default function RoundPage() {
       }
     : { v: "—", sub: "elev" };
   // Plays-like: physics-tiles-coherence (specs/physics-tiles-coherence-plan.md)
-  // — the PLAYS tile now shows the SAME plays_like_yards the backend physics
-  // engine gives the caddie, via usePhysicsPlaysLike below, instead of the
-  // deprecated frontend wind heuristic (lib/map/wind.ts playsLikeYards, no
-  // longer imported here). `playsBase` remains the pre-existing local
-  // approximation — elevation-adjusted yards from intel when known — but is
-  // now used ONLY as the honest fallback while no physics response has
-  // landed (§5's offline/error row); it is never combined with wind locally.
-  // Card-only skips holeIntel entirely — it was computed from the same
-  // unusable geometry.
-  const playsBase = fcbLive
-    ? fcbLive.center // live rangefinder wins: plays-like from where they stand
-    : showCardOnly
-      ? (cardYards ?? distance)
-      : holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance);
-  // The RAW basis sent to the physics call — NEVER holeIntel.effectiveYards
-  // (the engine applies elevation itself; passing the already-adjusted
-  // number would double-count it — plan §4.2). null when no usable geometry
-  // at all yet (hook stays disabled; the fallback above still renders).
-  const physicsBasisYards = fcbLive
-    ? fcbLive.center
-    : showCardOnly
-      ? cardYards
-      : (fcbFromTee?.center ?? null);
+  // — the PLAYS tile shows the SAME plays_like_yards the backend physics engine
+  // gives the caddie, via usePhysicsPlaysLike below, instead of the deprecated
+  // frontend wind heuristic. The basis selection is the pure `playsBasis`
+  // helper (lib/caddie/plays-basis.ts): it keys off `effectiveCardOnly` (not
+  // the old narrow flag) and NEVER receives the `distance` placeholder, so the
+  // fabricated-fallback leak is gone. `playsBase` is the honest fallback while
+  // no physics response has landed (§5's offline/error row) — elevation-
+  // composed intel yards when known, never combined with wind locally;
+  // `physicsBasisYards` is the RAW basis (never effectiveYards — the engine
+  // applies elevation itself; a pre-adjusted basis would double-count it,
+  // plan §4.2). Both are null only when there is no honest basis at all
+  // (card-only with no scorecard yardage) → the tile shows "—".
+  const { playsBase, physicsBasisYards } = playsBasis({
+    fcbLive,
+    effectiveCardOnly,
+    cardYards,
+    holeIntel,
+    fcbFromTee,
+  });
   const physicsPlaysLike = usePhysicsPlaysLike({
     roundId,
     enabled: caddieSessionActive && !isLocalRound,
@@ -1244,14 +1249,19 @@ export default function RoundPage() {
     basisYards: physicsBasisYards,
     weatherFetchedAt,
   });
-  const playsTile = playsTileDisplay({
-    physics: physicsPlaysLike,
-    basisYards: physicsBasisYards ?? playsBase,
-    fallbackYards: playsBase,
-    isLive: fcbLive != null,
-    fromCard: showCardOnly,
-    hasLocalIntel: holeIntel != null && !showCardOnly,
-  });
+  const playsTile =
+    playsBase == null
+      ? // No honest basis (card-only with no scorecard yardage): show "—",
+        // coherent with the "—" F/C/B center — never a fabricated number.
+        { v: "—", sub: "no data" }
+      : playsTileDisplay({
+          physics: physicsPlaysLike,
+          basisYards: physicsBasisYards ?? playsBase,
+          fallbackYards: playsBase,
+          isLive: fcbLive != null,
+          fromCard: effectiveCardOnly,
+          hasLocalIntel: holeIntel != null && !effectiveCardOnly,
+        });
   // Shot marker = midpoint of the hole's last segment (par-3-safe; see helper).
   const shotPoint = shotPointForPath(hole.path);
 
