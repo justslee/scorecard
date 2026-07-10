@@ -10983,3 +10983,11 @@ Dispatched in parallel: reviewer (no-regression to f9953f2 selection/options + s
 designer (NORTHSTAR + iOS-sim before/after of scrolled Where header + Nearby list + Options), qa (strict gates).
 On all-green + designer PASS → update PR #125 checklist (3 noticeable items), progress DONE, no ship/no ping.
 BLOCKING from any → re-dispatch builder, re-review.
+
+## CYCLE 54 DONE — teetime-prefs-ux-polish SHIPPED to bundle #125 (NOTICEABLE). Feature 945de5c on integration/next.
+Reviewer SHIP + QA PASS (5/5 runnable gates: lint/tsc/build/voice 274/274/vitest 1882/1882) + Designer PASS
+(live mocked-network render; Items 2/3/4 confirmed on-Northstar; Item 1 scrim sound, iOS on-device deferred to owner TestFlight).
+No BLOCKING. PR #125 checklist updated → THREE noticeable items (mergeState CLEAN). Per cycle standing rule: NO ship / NO push
+this cycle — item rides bundle #125 until owner "ship it". Cycle-53 follow-ups #2/#3/#5 (route header conditional, distance/city
+on route rows, tap targets) folded in and DONE. Remaining deferred (non-blocking): raw route-row slot.city country-regex guard;
+unify Options distance placement; filterToSelection Set falsy-guard.
