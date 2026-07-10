@@ -11713,3 +11713,64 @@ Recon findings (de-risk the builder):
 ## AWAITING (cycle 67): builder on teetime-s4c2-coverage-expansion @ integration/next.
 Task: web-research + live-probe NY-metro public courses on foreUP / Chronogolf / other TeeItUp tenants; seed only rows verified to return REAL availability (non-empty on >=1 probed date); capture >=1 new fixture/engine; update exact-count test assertions to new verified set; skip Teesnap unless a live NY teesnap.net course found. Commit+push after build.
 Outcomes: SHIP-clean → reviewer+QA; BLOCKING → re-dispatch builder. Reconcile from origin/integration/next on resume.
+
+## teetime-s4c2-coverage-expansion LANDED (2026-07-10, cycle 67) — builder @ a0fb85b, AWAITING reviewer+QA
+Live-probed candidate NY-metro courses on the 3 known-good engines; seeded ONLY rows that
+returned real, non-empty availability on >=1 date. 17 new courses, 11 -> 28 total.
+- **TeeItUp (+12, 8->20):** discovered 2 new tenants via `GET /facilities` enumeration
+  (highest-yield lever): `westchester-county` (6 facilities enumerated, 5 seeded — Dunwoodie,
+  Maple Moor, Mohansic, Saxon Woods, Sprain Lake; Hudson Hills id 3252 REJECTED: HTTP 200,
+  zero teetimes every probed date, resident-gated) and `somerset-group-v2` (6 enumerated, 5
+  seeded — Green Knoll, Neshanic Valley, Quail Brook, Spooky Brook, Warren Brook; Neshanic
+  Valley Academy Course id 10158 skipped as marginal/no phone). Plus 2 single-course tenants:
+  `middle-island-country-club` (Long Island NY, real availability up to 79 slots/day) and
+  `whitneyfarmsgolfcourse` (Monroe CT, Fairfield County — part of the NY-Newark-Jersey City
+  CSA, flagged honestly as CT in the seed comment).
+- **Chronogolf (+1, 3->4):** Putnam County Golf Course (Mahopac NY) — verified NOT
+  resident-gated (checked every bookable slot's `restrictions` field, zero carried a
+  residency restriction). REJECTED Skyway Golf Course (Jersey City) as an honest negative:
+  `out_of_capacity` was `false` (looks bookable) on 13 slots but EVERY one carried a
+  "Non-Resident" restriction string — real-looking availability that a general NY-metro
+  golfer using the app could never actually book. This is the Chronogolf-schema version of
+  the essex-group dead end; same rejection standard applied.
+- **foreUP (+4, new to the generalized seed file, foreup_ny_seed.json untouched):** the 3
+  Essex County NJ courses that were the essex-group TeeItUp dead end (Weequahic, Francis A.
+  Byrne, Hendricks Field) turned out to have migrated to a REAL, non-gated foreUP booking
+  system — same physical courses, honestly re-verified on the engine that actually works
+  (a genuinely useful correction, not a re-litigation of the earlier honest-negative call,
+  which was correct for the TeeItUp channel at the time). Plus Rockland Lake State Park
+  Championship Golf Course (Congers NY).
+- **Data-quality catch:** cross-checked every new row's lat/lng against an independent
+  geocoding source rather than trusting the engine's facility record blindly — caught
+  TeeItUp's somerset-group-v2 data giving Quail Brook and Spooky Brook (two different,
+  non-adjacent addresses) an IDENTICAL placeholder lat/lng; corrected both to real,
+  independently-geocoded coordinates before seeding.
+- Tests: `test_tee_time_capability_store_generalized.py` re-scoped (not weakened, same
+  pattern as S4c on S4a) — counts/name-sets updated to new totals (teeitup 8->20, chronogolf
+  3->4, +new "4 generalized foreup rows" check); every per-row quality check (platform_ids
+  present, probe_status=="verified", real coords, booking_url shape) unchanged/strengthened;
+  lat/lng sanity bounds widened from an NYC-only box to admit real Long Island / Fairfield
+  County CT extents (a legitimate widen, not a loosen — still rejects placeholder/garbage
+  coords).
+- Fixtures captured (raw, live, verbatim): `teeitup_westchestercounty_times.json`,
+  `teeitup_somersetgroup_times.json`, `chronogolf_putnamcounty_times.json`,
+  `foreup_rocklandlake_times.json`.
+- Teesnap: not attempted (no live NY teesnap.net course trivially found in this pass, and
+  budget was fully used on the 3 known-good engines' expansion — consistent with earlier
+  cycles skipping it honestly rather than forcing it).
+- Gates (local, no Postgres): `ruff check .` clean; targeted tee-time suites 109 passed;
+  full tee-time suite 272 passed/12 pg-skip; full backend suite **1885 passed, 83 skipped**
+  (same pg-gated integration tests, auto-skip). Frontend untouched (confirmed zero diff).
+  JSON valid (`python3 -m json.tool` clean).
+- **Classified NOTICEABLE**: 17 more NY-metro courses now show real bookable tee times
+  instead of the S0 fallback — testable on TestFlight once merged (backend-only, no new
+  frontend build needed, same pattern as bundle #128).
+
+## AWAITING (S4c2): reviewer + QA on a0fb85b. Focus: honest-empty/resident-gating judgment
+calls (Hudson Hills, Neshanic Valley Academy, Skyway rejection reasoning), no wrong-course
+lat/lng (esp. the Quail Brook/Spooky Brook correction — verify the corrected coords are
+actually right, not just different), foreUP rows correctly added to the generalized seed
+file (not foreup_ny_seed.json), essex-group TeeItUp tenant still absent/never seeded, S0/S1/
+S4a/S4c byte-identical elsewhere, no live network calls in tests (fixture/MockTransport-only).
+On results → fold BLOCKING (re-dispatch builder), else update backlog + bundle PR checklist.
+If I die: reconcile origin/integration/next @ a0fb85b, do NOT rebuild.
