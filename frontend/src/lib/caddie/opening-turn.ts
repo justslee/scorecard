@@ -1,10 +1,13 @@
 /**
- * buildOpeningTurnText — the single opening-turn question builder shared by
- * CaddieSheet's classic auto opening-shot effect and the live-mode Realtime
- * hook (specs/caddie-realtime-conversation-plan.md §1.3: "keep the
- * opening-turn text builder in one place"; specs/caddie-realtime-slice-c1-plan.md
- * §3). Pure — no DOM, no network — so both paths speak/type the exact same
- * question for a given resolved shot.
+ * buildOpeningGreetingText / buildOpeningGreetingInstruction — the caddie's
+ * self-authored opening greeting, shared by CaddieSheet's classic auto
+ * opening-shot effect and the live-mode Realtime hook
+ * (specs/caddie-remove-seeded-question-plan.md: the caddie opens the
+ * conversation itself — never a fabricated player question). Pure — no DOM,
+ * no network — so both paths render/speak the exact same greeting for a
+ * given resolved shot. `buildOpeningGreetingText` is the single source of
+ * truth for the human-facing words: classic renders them verbatim; the live
+ * wrapper asks the Realtime model to say roughly them in its own voice.
  */
 
 export interface OpeningShot {
@@ -12,10 +15,23 @@ export interface OpeningShot {
   fromTee?: boolean;
 }
 
-export function buildOpeningTurnText(shot: OpeningShot): string {
+export function buildOpeningGreetingText(shot: OpeningShot): string {
   return shot.fromTee
-    ? `I'm on the tee, about ${shot.distanceYards} yards to the pin. What should I hit off the tee?`
-    : `I'm about ${shot.distanceYards} yards from the pin. What should I hit or do on this next shot?`;
+    ? `You're on the tee — about ${shot.distanceYards} to the pin. Want a read on the tee shot?`
+    : `About ${shot.distanceYards} to the pin from here. Want a read on the shot?`;
+}
+
+/**
+ * buildOpeningGreetingInstruction — wraps the greeting content in a fixed
+ * live-mode instruction so the Realtime model voices a caddie-authored
+ * opener (never answers a question the player never asked).
+ */
+export function buildOpeningGreetingInstruction(shot: OpeningShot): string {
+  return (
+    `Open the conversation now with one short greeting in your own voice, roughly: ` +
+    `"${buildOpeningGreetingText(shot)}" The player has not said anything yet — ` +
+    `do not answer a question they never asked. After the greeting, stop and listen.`
+  );
 }
 
 /**

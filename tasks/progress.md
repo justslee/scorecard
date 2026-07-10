@@ -11097,3 +11097,20 @@ handsfree) — core lock: onUpdateConvHistory gets [{role:assistant}] only, no u
 On builder green+pushed → reviewer (adversarial: no fabricated player turn, SSOT preserved, no test weakened) + qa
 (strict gates on pushed head) + designer (opener copy vs NORTHSTAR calm/voice-first). BLOCKING → re-dispatch builder.
 Then update PR #125 checklist (SILENT ride-along), backlog shipped, progress DONE. NO ship / NO ping.
+
+## CYCLE 58 — builder DONE: caddie-remove-seeded-question
+Implemented specs/caddie-remove-seeded-question-plan.md exactly on integration/next. opening-turn.ts:
+buildOpeningTurnText renamed → buildOpeningGreetingText (new caddie-authored copy: tee "You're on the tee —
+about X to the pin. Want a read on the tee shot?" / else "About X to the pin from here. Want a read on the
+shot?") + new buildOpeningGreetingInstruction(shot) live-mode wrapper. CaddieSheet.tsx classic opening effect:
+no more setTranscript+askCaddie network turn — deterministic seed of {role:"assistant"} history + setVoiceAnswer
++ tts.speak. realtime.ts: new sendOpener(text) (system-role conversation.item.create + response.create, NO local
+onMessage → no fabricated user bubble). useCaddieLiveSession.ts: sendText(buildOpeningTurnText) → sendOpener(
+buildOpeningGreetingInstruction). Tests re-pointed (not weakened) in opening-turn.test.ts, CaddieSheet.realtime/
+session/handsfree.test.tsx — core defect lock: onUpdateConvHistory called with exactly [{role:"assistant",
+content:greeting}], no user entry, zero backend calls for the opener. All 6 gates green: lint clean, tsc clean,
+targeted vitest 79/79, full vitest 1890/1890 (89 files), voice-tests smoke 274/274. Frontend-only, SILENT bundle
+accumulation (opener copy is user-visible but this is a bug-fix/behavior-correction on an existing feature, not
+a new capability — eng-lead to confirm noticeable/silent classification). Committed+pushed to integration/next.
+AWAITING: reviewer (adversarial: no fabricated player turn, SSOT preserved, no test weakened) + qa (strict gates
+on pushed head) + designer (opener copy vs NORTHSTAR calm/voice-first). BLOCKING → re-dispatch builder.
