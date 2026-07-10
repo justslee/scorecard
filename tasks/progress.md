@@ -11188,3 +11188,8 @@ Head after bookkeeping pending; CI to re-verify strict-green at ship time.
   tsc clean, voice 274/0, vitest teetime 221/221.
 - AWAITING: reviewer on 1e75611 (real-city-regression probe is the key risk) + CI on the pushed head.
   SHIP → update PR #125 checklist + backlog shipped, checkpoint. BLOCKING → re-dispatch builder. SILENT — no ship/ping.
+
+## Cycle 61 (2026-07-10) — IN PROGRESS
+- Board + PRs: no new owner feedback; #125 still awaits ship-it. Confirmed fcb-caption items already shipped.
+- Scoped the vague p2 stub into a real finding: F/C/B mapped-branch fallback shows fabricated `distance±offset` (a ~40% illustration placeholder) when geometry is null but source isn't card-only → fake yardages on the core surface (no-fake-data violation).
+- AWAITING: eng-lead pass on **fcb-unmapped-paper-fallback-mismatch** (p2): replace the fabricated fallback with honest card-only tiles. Land on #125. No ship/no ping.
