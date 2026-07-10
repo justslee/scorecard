@@ -11061,3 +11061,14 @@ All 6 gates green locally (lint/tsc/build/voice 274/vitest 34/ruff). SILENT tele
 no PII, guards intact, no telemetry-can-throw-into-audio regression) + qa (strict gates on branch). No designer
 (not user-facing), no /security-review (telemetry endpoint untouched, no new auth/data). On all-green → update PR
 #125 checklist (SILENT ride-along), progress DONE, NO ship / NO ping. BLOCKING → re-dispatch builder, re-review.
+
+## CYCLE 56 DONE — voicetel-timing-immediate-flush landed on bundle #125 (SILENT). Feature 2d4b4c9 on integration/next.
+Reviewer SHIP (flush guarded inside if(ms!==null) so clamped legs never POST; PII-safe {ms}-only pinned by test;
+throw-isolated; empty-queue flush no-ops; tests strengthened not gamed — new "incomplete turn still ships
+eos_to_transcript" tooth). QA PASS all 6 gates (lint/tsc/build, voice 274/274, targeted vitest 34/34, ruff).
+No BLOCKING. PR #125 body updated → THREE noticeable + ONE silent; backend CI green on new head, frontend pending.
+Per standing rule + cycle instructions: SILENT ride-along — NO ship / NO ping. Bundle awaits owner "ship it".
+FOLLOW-UP for owner (not a build task): once he uses the live caddie a few times on the next TestFlight build, prod
+will have real caddie-turn vs caddie-rt eos_to_first_audio p90 → cascaded-STT go/no-go (#126) becomes readable.
+Deferred (non-blocking, same telemetry class): if eos_to_transcript volume appears WITHOUT matching eos_to_first_audio,
+that itself diagnoses iOS onSpeakStart never firing — a separate follow-up, not this change.
