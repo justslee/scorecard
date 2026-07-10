@@ -8,7 +8,9 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
+      "landed_commit": "8ac3ec2",
+      "bundle_pr": 131,
       "depends_on": [],
       "why": "Owner chose Option B (2026-07-10) over the voice-clone pipeline: specs/voice-clone-caller-plan.md \u00a72B/\u00a73. The caller hardcodes OpenAI Realtime voice 'sage' (media_bridge build_call_session_update via OPENAI_REALTIME_DEFAULT_VOICE_DEFAULT; OPENAI_REALTIME_DEFAULT_VOICE env already exists). Deliver: (1) pick the most NATURAL OpenAI Realtime voice for 8kHz phone audio (research current catalogue \u2014 ash/ballad/cedar/marin/verse etc.; document the choice) as the new default, (2) a simple OWNER voice-preference setting persisted per account + fed to the bridge's voice selection, (3) a minimal picker UI in the existing tee-time/settings rehearsal-call section (no live preview needed \u2014 inert until Twilio keys; owner hears it on first rehearsal call). Ships DARK (rides the caller gating). Designer pass (small, user-facing)."
     },
