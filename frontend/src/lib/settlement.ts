@@ -327,6 +327,44 @@ export function computeNetSettlement(round: Round): SettlementLedger {
   };
 }
 
+// ─── Tournament-level cumulative settlement ───────────────────────────────────
+
+/**
+ * Compute the CUMULATIVE settlement across every round of a tournament.
+ *
+ * Reuses `computeNetSettlement` per round (all per-format math lives there —
+ * this function duplicates none of it), then sums each round's `netByPlayer`
+ * into one running total and minimizes transfers ONCE over the cumulative net.
+ *
+ * This ordering matters: sum-then-minimize (correct) vs. minimize-per-round-
+ * then-concat (wrong) — the latter can produce MORE transfers than necessary,
+ * e.g. round 1 has A owe B $10 and round 2 has B owe A $10: per-round
+ * minimization emits two transfers (A→B $10, B→A $10) while the cumulative
+ * net is zero and should emit none.
+ *
+ * Returns isEmpty=true when no round produced a money net (every round was
+ * either game-less or unscored) so the caller can render an honest empty
+ * state instead of a fabricated $0 settlement.
+ */
+export function computeTournamentSettlement(rounds: Round[]): SettlementLedger {
+  const netByPlayer: Record<string, number> = {};
+
+  for (const round of rounds) {
+    const roundLedger = computeNetSettlement(round);
+    for (const [pid, amount] of Object.entries(roundLedger.netByPlayer)) {
+      netByPlayer[pid] = r2((netByPlayer[pid] ?? 0) + amount);
+    }
+  }
+
+  const transfers = minimizeTransfers(netByPlayer);
+
+  // Empty when no player has a non-dust cumulative net (covers game-less
+  // rounds and rounds whose net-per-player collapsed to ~0, e.g. unscored).
+  const isEmpty = Object.values(netByPlayer).every((v) => Math.abs(v) < 0.01);
+
+  return { netByPlayer, transfers, isEmpty };
+}
+
 /**
  * Pull the persisted FinalizedSettlement out of a round's games array.
  * Returns null when the round has not been settled yet.
