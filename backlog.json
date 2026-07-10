@@ -68,7 +68,7 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle",
       "depends_on": [],
       "why": "AUDIT 2026-07-10: settlement.ts has computeNetSettlement+minimizeTransfers (Venmo-ready SettlementTransfer{fromPlayerId,toPlayerId,amount}) but ROUND-SCOPED only; tournament level has NONE. Games tab (TournamentPageClient.tsx:1284-1364) lists games as active but COMPUTES NOTHING (borderline no-fake-data). FIX: new computeTournamentSettlement(rounds) aggregating each round netByPlayer \u2192 minimizeTransfers once; render real per-game results + cumulative who-owes-whom in the Games tab (or honest 'configured, not yet scored' when unscored \u2014 never fake). Output shape feeds the future Venmo deep-link. Designer pass. Frontend-only (settlement.ts + TournamentPageClient.tsx)."
     },

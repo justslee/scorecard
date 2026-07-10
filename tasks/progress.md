@@ -12255,3 +12255,7 @@ both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
   `integration/next`. Classification: **noticeable** (user-facing copy fix on
   the Games-tab Settle-up panel just shipped in db5aa67).
 - AWAITING reviewer/qa/designer re-pass on a2dbd14, then bundle PR #132 update.
+
+- FOLD LANDED (a2dbd14): `hasMoneyGames(rounds)` helper (mirrors computeNetSettlement's money-game filter) + 3-way Settle-up empty state: "No money games in this tournament." / "Settle-up appears once rounds are scored." / "All square — nothing to settle." Copy-only render change; +5 tests (settlement 39→44). Self-verified gates on head bee5269: lint clean, tsc clean, voice 274/274, settlement 44/44. Low-risk copy+pure-helper on already-SHIP'd logic → no full re-review.
+- CYCLE 76 COMPLETE: tournament-cumulative-settlement DONE on bundle (db5aa67 + a2dbd14). Reviewer SHIP, designer APPROVE, QA all-green. backlog → done-on-bundle (persisted). PR #132 checklist updated — FIRST NOTICEABLE item on the bundle (tournament Games tab now shows real cumulative Settle-up + honest empty state; Venmo-ready SettlementTransfer output). SILENT this cycle per directive — NO ship, NO owner ping; the noticeable content now sits on #132 awaiting the next "ship it".
+- AWAITING CI on PR #132 head bee5269 (→ post-bookkeeping head) — require Frontend + Backend gates state:SUCCESS pinned to the pushed head SHA (fast ~10s Backend container-init fail = infra flake → `gh run rerun <id> --failed`). Backend untouched by this cycle.
