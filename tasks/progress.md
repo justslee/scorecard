@@ -10192,3 +10192,9 @@ DB-backed integration suite untested locally (policy: no local Postgres) — run
 Pushed to feat/teetime-s3-caller (updates PR #124). Do NOT merge.
 Next: reviewer (adversarial diff review) + /security-review (open-relay + dial-safety +
 disclosure-first + secrets hygiene) + qa (STRICT gates) before PR #124 is ready.
+
+## AWAITING (S3b review — feat/teetime-s3-caller, PR #124)
+- Builder DONE: ef3a31b (bridge), gates green (113 targeted / 1679 non-DB / voice 274-0 / frontend clean).
+- Dispatched: reviewer (adversarial + /security-review + /code-review, focus open-relay + dial-safety) + qa (strict gates), both in worktree.
+- On results: BLOCKING (correctness/security/dial-safety/open-relay) → re-dispatch builder; SHIP+green → update PR #124 body with S3b + owner-setup, then release-manager (noticeable: owner can dial rehearsal) + PushNotification.
+- Do NOT merge.
