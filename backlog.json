@@ -29,9 +29,9 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (screenshots): 'Marine Park Golf Course \u00b7 USA' shows USA not a city (label bug \u2014 show real locality or omit); the Courses header ('WHERE'/'4 SELECTED') is clipped behind the status bar (top safe-area inset); the nearby list grouping/dividers read as 'broken'. Designer pass, calm yardage-book. specs/teetime-results-ux-fixes.md. UPDATE cycle 53: the 'USA' label bug (#4) was FIXED alongside teetime-show-real-time-options (9f0577e, muniFromAddress drops USA/United States of America). UPDATE cycle 59: the '\u00b7 USA' leak also existed on the RESULTS + CONFIRMATION render paths (tee-time/page.tsx g.city / slot.city fed by backend slot.city = raw course.address, foreup.py:211 / routing.py:112) \u2014 FIXED by normalizing those 3 render sites with muniFromAddress (drops country, extracts locality, dangling-'\u00b7 ' guard on the confirmation stamp). REMAINING here: #5 header safe-area/viewport-fit + nearby-list grouping polish (needs on-device screenshot verification). Plus cycle-53 designer/reviewer follow-ups: route-entry section header can contradict a book_on_site row's own copy in a mixed batch (make conditional); add distance/city to route-entry rows; harden filterToSelection Sets vs falsy id/name; sub-44pt tap targets across the tee-time flow."
+      "why": "SHIPPED cycle 59 (code 1d2d0ae, head c1be4be, both gates SUCCESS): results/route/confirmation locality runs through muniFromAddress \u2014 omits bare country instead of '\u00b7 USA'. [bookkeeping corrected cycle 60: eng-lead reported this update but it didn't persist; code was real & green.] | OWNER 2026-07-09 (screenshots): 'Marine Park Golf Course \u00b7 USA' shows USA not a city (label bug \u2014 show real locality or omit); the Courses header ('WHERE'/'4 SELECTED') is clipped behind the status bar (top safe-area inset); the nearby list grouping/dividers read as 'broken'. Designer pass, calm yardage-book. specs/teetime-results-ux-fixes.md. UPDATE cycle 53: the 'USA' label bug (#4) was FIXED alongside teetime-show-real-time-options (9f0577e, muniFromAddress drops USA/United States of America). UPDATE cycle 59: the '\u00b7 USA' leak also existed on the RESULTS + CONFIRMATION render paths (tee-time/page.tsx g.city / slot.city fed by backend slot.city = raw course.address, foreup.py:211 / routing.py:112) \u2014 FIXED by normalizing those 3 render sites with muniFromAddress (drops country, extracts locality, dangling-'\u00b7 ' guard on the confirmation stamp). REMAINING here: #5 header safe-area/viewport-fit + nearby-list grouping polish (needs on-device screenshot verification). Plus cycle-53 designer/reviewer follow-ups: route-entry section header can contradict a book_on_site row's own copy in a mixed batch (make conditional); add distance/city to route-entry rows; harden filterToSelection Sets vs falsy id/name; sub-44pt tap targets across the tee-time flow."
     },
     {
       "id": "s3b-review-nits",
@@ -2179,6 +2179,16 @@
       "status": "ready",
       "depends_on": [],
       "why": "Voice target-speaker spike (PR #127): the only remaining Tier-1 lever after the already-shipped mic constraints \u2014 raise server_vad energy threshold so distant partner voices don't trigger the caddie. Behavior-change A/B (too high = misses the owner's soft speech), so measure, don't ship blind. specs/voice-target-speaker-spike-report.md."
+    },
+    {
+      "id": "teetime-muni-pseudolocality-guard",
+      "title": "Harden muniFromAddress: never surface a pseudo-locality (venue/street name or course-name echo)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Reviewer flag (cycle 59, non-blocking): muniFromAddress returns the LAST surviving comma-segment, so an address with no real city (single-segment venue name, or a segment that just repeats the course name) can surface a pseudo-locality \u2014 e.g. 'Marine Park Golf Course \u00b7 Marine Park Golf Course'. Visible + brushes no-fake-data. Now on the confirmation path. Add a name/muni dedup guard at the build/render sites + lock tests; omit over fabricate; MUST NOT regress real single-word cities (Brooklyn). specs: extend courses.test.ts."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."

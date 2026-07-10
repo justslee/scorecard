@@ -11176,3 +11176,8 @@ Head after bookkeeping pending; CI to re-verify strict-green at ship time.
   through the country regex" honesty follow-up from the polish item.
 - CI on head 1d2d0ae: Backend gate SUCCESS; Frontend gate pending (monitor armed). SILENT bundle accumulation —
   #125 already awaits owner "ship it"; NO merge/ship/ping this cycle.
+
+## Cycle 60 (2026-07-10) — IN PROGRESS
+- Board + PRs: no new owner feedback; #125 still awaits ship-it.
+- Corrected bookkeeping: teetime-prefs-ux-polish was landed+green in cycle 59 (code 1d2d0ae) but its backlog status hadn't persisted → set shipped.
+- AWAITING: eng-lead pass on **teetime-muni-pseudolocality-guard** (p2 minor, reviewer-flagged): muniFromAddress last-segment-wins can surface a venue/street/course-name echo as the "city". Add dedup guard + lock tests; omit over fabricate; don't regress real single-word cities. Silent-ish hardening on #125. No ship/no ping.
