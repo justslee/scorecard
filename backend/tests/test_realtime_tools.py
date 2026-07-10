@@ -216,8 +216,13 @@ async def test_in_round_mint_uses_persona_voice_and_default_tools(monkeypatch):
     async def fake_get_top_memories(user_id):
         return []
 
-    async def fake_mint(instructions, voice_id, tools=None):
-        captured["mint"] = {"instructions": instructions, "voice_id": voice_id, "tools": tools}
+    async def fake_mint(instructions, voice_id, tools=None, *, transcription_prompt=None):
+        captured["mint"] = {
+            "instructions": instructions,
+            "voice_id": voice_id,
+            "tools": tools,
+            "transcription_prompt": transcription_prompt,
+        }
         return {"value": "ek_test", "expires_at": 999, "id": "rs_test", "model": "gpt-realtime"}
 
     async def fake_set_realtime_session_id(round_id, rsid, personality_id=None):
@@ -270,7 +275,7 @@ async def test_in_round_mint_uses_request_current_hole_over_stored(monkeypatch):
     async def fake_get_top_memories(user_id):
         return []
 
-    async def fake_mint(instructions, voice_id, tools=None):
+    async def fake_mint(instructions, voice_id, tools=None, *, transcription_prompt=None):
         captured["instructions"] = instructions
         return {"value": "ek_test", "expires_at": 999, "id": "rs_test", "model": "gpt-realtime"}
 

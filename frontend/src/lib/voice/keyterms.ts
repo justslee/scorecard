@@ -4,6 +4,9 @@
 // send domain vocabulary; before this, we sent none (so "Bethpage" could come
 // back "bath page" and "gimme" as "give me").
 
+// Mirrored in backend/app/caddie/keyterms.py GOLF_KEYTERMS (same order) for
+// the OpenAI Realtime input-transcription prompt — if you edit either list,
+// edit both.
 /** Baseline golf vocabulary — high-confusion terms worth boosting everywhere. */
 export const GOLF_KEYTERMS: readonly string[] = [
   "birdie",
