@@ -3,6 +3,36 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: tournament-cumulative-settlement DONE, on integration/next
+
+Item: `tournament-cumulative-settlement`. Added `computeTournamentSettlement(rounds)`
+to `frontend/src/lib/settlement.ts` — sums each round's existing
+`computeNetSettlement(round).netByPlayer` into one cumulative net (reuses all
+per-format math, duplicates none of it), then calls `minimizeTransfers()` ONCE
+over the summed total (sum-then-minimize, not minimize-per-round-then-concat,
+which would over-transfer — e.g. an A-owes-B-$10 round followed by a
+B-owes-A-$10 round nets to zero transfers, not two). `isEmpty` is true when no
+round produced a non-dust cumulative net.
+
+Rendered a new "Settle up" panel below the existing per-game list in the
+tournament Games tab (`TournamentPageClient.tsx`) — honest empty state
+("Settle-up appears once rounds are scored.") when `isEmpty`, else each
+minimized transfer as a calm serif/mono line ("{from} pays {to} $X.XX"),
+matching the tab's existing hairline/T-token styling. No-fake-data: never
+renders a fabricated $0 settlement.
+
+Tests: 5 new cases in `settlement.test.ts` (`describe('computeTournamentSettlement')`)
+— cumulative aggregation differs from any single round + minimizes to fewer
+transfers than a per-round approach, opposing per-round debts cancel to zero
+transfers (proves sum-then-minimize), game-less/zero-pointValue/unscored
+rounds → isEmpty, zero-sum invariant across formats, empty `rounds: []`.
+
+Gates: frontend lint clean, `tsc --noEmit` clean, voice-tests smoke 274/274,
+`vitest run src/lib/settlement` 39/39 passed. Backend untouched, no DB
+container spun up. Commit `db5aa67` on `integration/next`, pushed.
+Classification: **noticeable** (new user-facing "Settle up" panel on the
+tournament Games tab).
+
 ## 2026-07-10 — builder: caller-natural-preset-voice DONE, on integration/next
 
 Implemented Option B from `specs/voice-clone-caller-plan.md` §2B/§3 — the AI
