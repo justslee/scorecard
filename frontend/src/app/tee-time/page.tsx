@@ -1136,7 +1136,14 @@ function CallAvailabilityCTA({
   const start = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (disabled || state.kind === "calling" || !askWindow) return;
+    if (disabled || state.kind === "calling") return;
+    if (!askWindow) {
+      // No dispatched window for this date — we can't ask the shop for a
+      // specific window, so degrade to the honest tel: link rather than a
+      // silent no-op tap.
+      if (telHref) window.location.href = telHref;
+      return;
+    }
     setState({ kind: "calling" });
     let resp: AvailabilityCallStatus;
     try {
@@ -1206,7 +1213,7 @@ function CallAvailabilityCTA({
         : null;
       return (
         <div style={{ marginTop: 4 }}>
-          <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12, color: T.pencil, marginBottom: 2, letterSpacing: -0.1 }}>
+          <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginBottom: 2, letterSpacing: -0.1 }}>
             Confirmed by phone{calledAtLabel ? ` at ${calledAtLabel}` : ""}:
           </div>
           {spoken.map((s, idx) => (
@@ -1229,9 +1236,11 @@ function CallAvailabilityCTA({
               }}
               disabled={disabled}
               style={{
-                display: "flex", justifyContent: "space-between", width: "100%", minHeight: 36,
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                width: "100%", minHeight: 44,
                 padding: "6px 2px", border: "none", background: "transparent",
                 cursor: disabled ? "default" : "pointer", textAlign: "left" as const,
+                opacity: disabled ? 0.45 : 1,
                 fontFamily: T.mono, fontSize: 13, color: T.ink, fontVariantNumeric: "tabular-nums",
               }}
             >
@@ -1249,7 +1258,8 @@ function CallAvailabilityCTA({
         href={telHref ?? undefined}
         onClick={(e) => e.stopPropagation()}
         style={{
-          display: "block", marginTop: 4, fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5,
+          display: "flex", alignItems: "center", minHeight: 44, marginTop: 4,
+          fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5,
           color: T.pencil, textDecoration: "underline", letterSpacing: -0.1,
         }}
       >
@@ -1263,9 +1273,10 @@ function CallAvailabilityCTA({
       href={telHref ?? undefined}
       onClick={(e) => void start(e)}
       style={{
-        display: "inline-block", marginTop: 4, fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1,
+        display: "inline-flex", alignItems: "center", minHeight: 44,
+        marginTop: 4, fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1,
         color: T.pencilSoft, textTransform: "uppercase" as const, textDecoration: "underline",
-        cursor: "pointer",
+        cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.45 : 1,
       }}
     >
       No online times — we can call the pro shop
