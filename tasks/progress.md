@@ -3,6 +3,44 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: caller-natural-preset-voice DONE, on integration/next
+
+Implemented Option B from `specs/voice-clone-caller-plan.md` §2B/§3 — the AI
+tee-time caller can't clone the owner's voice on OpenAI Realtime, so it now
+speaks in the best natural PRESET voice (**cedar**, was hardcoded "sage")
+with an owner-persisted picker among a calm 6-voice subset. Caller stays
+INERT (no Twilio keys) — voice-selection VALUE only, no pipeline/dialog/
+gating/compliance changes.
+
+- New pure module `backend/app/services/voice_booking/caller_voice.py`:
+  `ALLOWED_CALLER_VOICES` (10-voice allowlist), `DEFAULT_CALLER_VOICE`
+  ="cedar", `PICKER_VOICES`, `is_valid_voice`, `resolve_caller_voice`
+  (owner-pref → `OPENAI_REALTIME_DEFAULT_VOICE` env → default precedence).
+- `media_bridge.build_call_session_update` now resolves the voice via
+  `ctx.caller_voice` instead of the removed hardcoded "sage" default.
+  `VoiceBookingContext.caller_voice: str | None = None` added (byte-identical
+  default for every existing caller).
+- New nullable `golfer_profiles.caller_voice` column (migration
+  `013_caller_voice`, additive, no backfill) + owner-gated
+  `GET`/`PUT /api/tee-times/caller-voice` (422 on an out-of-allowlist voice).
+  `rehearsal_call` now feeds the owner's saved pick through so a rehearsal
+  call audibly reflects the picker — wrapped in try/except (**plan
+  adjustment**: the route + its test file were explicitly zero-DB before;
+  made the new DB read best-effort so that contract survives).
+- Frontend: `CallerVoicePicker` — a calm `<select>` inside the existing
+  "Rehearsal call" settings section, yardage-book styling, honest copy ("no
+  live preview — hear it on your next rehearsal call").
+- Tests: unit coverage for the resolver precedence + allowlist validation +
+  `build_call_session_update` default/override; a DB-backed integration
+  suite for GET/PUT (deferred to CI — no local Postgres); a light frontend
+  vitest for the client wrappers.
+- Gates: backend `ruff check .` clean; 1957 non-DB backend tests pass (25
+  new); frontend lint clean, `tsc --noEmit` clean, voice-tests smoke
+  274/274, new vitest 3/3.
+- **Classification: noticeable** (new settings UI + audible voice change on
+  the owner's next rehearsal call) — rides in the next bundle.
+- Committed to `integration/next` at `dece99b`, pushed.
+
 ## 2026-07-10 — release-manager: bundle PR #130 SHIPPED to main — owner-approved
 
 Owner replied **"ship it"** approving bundle PR #130. Guarded pre-flight
