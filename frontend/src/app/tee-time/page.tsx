@@ -16,6 +16,7 @@ import {
   loadStateAfterLocate,
   loadStateAfterFetch,
   emptyCoursesNote,
+  muniFromAddress,
   type CourseOption,
   type CourseLoadState,
 } from "@/lib/teetime/courses";
@@ -1167,11 +1168,15 @@ function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked 
         const isOpen = expanded[g.courseId] ?? false;
         const shown = isOpen ? g.realSlots : g.realSlots.slice(0, ROWS_PER_COURSE_CAP);
         const hidden = g.realSlots.length - shown.length;
+        // The provider's `city` can be a raw address or a bare country ("USA")
+        // — extract a real locality and omit it entirely when only a country
+        // remains, so a row never reads "Course · USA".
+        const cityLabel = muniFromAddress(g.city);
         return (
           <Section key={g.courseId} kicker={`${g.distanceMiles} mi`} title={g.courseName}>
-            {g.city && (
+            {cityLabel && (
               <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 13, color: T.pencil, marginTop: -6, marginBottom: 8, letterSpacing: -0.1 }}>
-                {g.city}
+                {cityLabel}
               </div>
             )}
             <div>
@@ -1224,6 +1229,7 @@ function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked 
                 const askLine = entry.route === "call"
                   ? `Call for a time in your ${askWindow} window`
                   : `Book on their site — ask for your ${askWindow} window`;
+                const cityLabel = muniFromAddress(g.city);
                 return (
                   <button
                     key={g.courseId}
@@ -1242,9 +1248,9 @@ function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked 
                         {g.distanceMiles} mi
                       </div>
                     </div>
-                    {g.city && (
+                    {cityLabel && (
                       <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginTop: 2, letterSpacing: -0.1 }}>
-                        {g.city}
+                        {cityLabel}
                       </div>
                     )}
                     <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginTop: 2, letterSpacing: -0.1 }}>{askLine}</div>
@@ -1324,6 +1330,9 @@ function Confirmed({ accent, slot, bookingResult, group, asks, onBack }: Confirm
 
   const timeCardKicker = hasKnownTime ? "Tee off" : "Your ask";
   const timeCardFigure = hasKnownTime ? formatTime12h(slot.time) : (askWindow || "—");
+  // A real locality if we have one, otherwise nothing — never a bare country
+  // ("USA") sitting where a city belongs, and never a dangling "· ".
+  const cityLabel = muniFromAddress(slot.city);
 
   const addToCalendar = () => {
     const ev = {
@@ -1378,7 +1387,7 @@ function Confirmed({ accent, slot, bookingResult, group, asks, onBack }: Confirm
             {slot.courseName}
           </div>
           <div style={{ fontFamily: T.serif, fontSize: 14, color: T.pencil, fontStyle: "italic", marginTop: 6, letterSpacing: -0.1 }}>
-            {slot.city} · {slot.holes} holes
+            {cityLabel ? `${cityLabel} · ` : ""}{slot.holes} holes
           </div>
         </div>
       </div>

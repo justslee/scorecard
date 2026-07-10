@@ -11146,6 +11146,25 @@ PR #125 checklist updated -> FOUR noticeable + ONE silent. backlog.json caddie-r
 Per cycle instructions: SILENT bundle accumulation — bundle #125 already awaits owner "ship it"; NO merge/ship/ping.
 Head after bookkeeping pending; CI to re-verify strict-green at ship time.
 
-## Cycle 59 (2026-07-10) — IN PROGRESS
+## Cycle 59 (2026-07-10) — teetime-prefs-ux-polish (RESULTS/CONFIRMATION · USA leak)
 - Board + PRs checked: no new owner feedback; #125 still awaits ship-it. Reconciled caller item → in_review (=PR #124).
-- AWAITING: eng-lead pass on **teetime-prefs-ux-polish** (p2 minor, owner screenshot): course list shows "· USA" not a city; fix label to real locality or omit country. Land on #125. No ship/no ping.
+- FINDING: the prefs course list "· USA" was ALREADY fixed cycle 53/54 (9f0577e muniFromAddress + 945de5c rawCity guard),
+  both on integration/next (unshipped). Remaining SAME-CLASS leak was the RESULTS + CONFIRMATION render paths in
+  tee-time/page.tsx: `g.city` / `slot.city` come from backend slot.city = raw `address`
+  (foreup.py:211 / routing.py:112 set city = course.address), rendered VERBATIM with no country-drop — a booked
+  "Marine Park Golf Course" showed "USA · 18 holes".
+- FIX (frontend-only, tight): import muniFromAddress into page.tsx; normalize the 3 backend-fed city render sites —
+  results "Take your pick" (g.city), route-entry rows (g.city), and the confirmation stamp (slot.city, with a
+  dangling-"· " guard: `{cityLabel ? \`${cityLabel} · \` : ""}{holes} holes`). muniFromAddress drops country segments
+  ("USA"/"United States"→""), extracts a real locality from a full address ("…,Brooklyn,NY 11234,USA"→"Brooklyn"),
+  and passes clean city+state through ("San Francisco, CA"→"San Francisco"). Verified inline on all reported cases.
+- HEADER copy ("WHERE"/"4 SE…"): LEFT intentionally. It's the consistent Section idiom used across the whole screen
+  (When/Windows, Who/The group, Where/Courses); "4 SE…" is the aside truncating "4 selected" — a shared Section/Kicker
+  layout concern needing a cross-Section designer pass, not a contained copy win. Noted for a future design pass.
+- ICS calendar `city` (line ~1337) LEFT as-is: a calendar location benefits from fuller detail; not an in-app "· USA" label.
+- Gates local: lint clean, tsc clean, voice smoke 274/274, vitest courses+options 74/74. Backend source unchanged
+  (CI-DB not needed); frontend-only presentation fix.
+- REMAINING on the item (NOT done here): header safe-area/viewport-fit + on-device nearby-list grouping polish —
+  need on-device screenshots; kept item ready with updated why.
+- AWAITING reviewer (correctness: no dangling separator, no over-strip of a real city) + designer (calm/yardage-book)
+  on the pushed commit. SHIP → update PR #125 checklist; BLOCKING → re-fix. SILENT — no ship/no ping.
