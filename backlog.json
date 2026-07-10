@@ -3,6 +3,36 @@
   "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "caddie-dont-answer-misheard-input",
+      "title": "Caddie: never confidently answer a misheard/gibberish transcript (input grounding)",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 (screenshots): the caddie answers words the ASR INVENTED ('Scars','of God'). BIGGEST win, in our control: extend the grounding doctrine from FACTS to INPUT \u2014 a caddie rule + a plausibility/confidence check so a low-confidence or non-parseable utterance gets 'I didn't catch that, say again?' instead of a confident reply to noise. Both mouths. Eval teeth: a gibberish transcript -> ask-for-repeat, never a fabricated on-topic answer. specs/voice-transcription-reliability-research.md. Fable plan."
+    },
+    {
+      "id": "caddie-realtime-transcription-vocab-bias",
+      "title": "Bias the realtime transcription with golf vocab + hole/club context",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09: realtime transcript has no vocabulary biasing (GOLF_KEYTERMS + player clubs + hole context are wired only to the Deepgram sheet path). Feed a biasing prompt/context to gpt-4o-transcribe in the realtime session IF supported (verify \u2014 some transcribe models don't accept a prompt); reduces 'Scars'-type inventions. specs/voice-transcription-reliability-research.md."
+    },
+    {
+      "id": "caddie-cascaded-stt-spike",
+      "title": "Spike: cascaded STT (Deepgram nova-3 + keyterms + confidence) feeding the live caddie as text",
+      "type": "major",
+      "priority": 2,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 (reliability): the SOTA reliability architecture \u2014 route the live transcript through our own Deepgram nova-3 (already used for the sheet WITH keyterms), gate on confidence, THEN the caddie responds to TEXT ('treat speech as rendering not reasoning' \u2014 our own agent-architecture study). Garbled input caught BEFORE a reply. Trades some latency for reliability+observability vs the current speech-to-speech. Spike: measure the latency delta + reliability gain on real outdoor audio. specs/voice-transcription-reliability-research.md. Fable plan."
+    },
+    {
       "id": "teetime-s3b-twilio-bridge",
       "title": "S3b: Twilio\u2194Realtime live-transport bridge (makes 'call me' actually dial)",
       "type": "major",
