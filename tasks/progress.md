@@ -10569,3 +10569,13 @@ DEFERRED (pure prompt rule this cycle). No frontend/models.py change. Guide_writ
 gibberish→ask-again AND terse-real→still-answers; + injection-as-data) + qa (strict gates + eval
 teeth RED-then-green proof) in parallel. BLOCKING → re-dispatch builder. Else update PR #122 checklist
 (4th NOTICEABLE). NO ship / NO ping this cycle (bundle accumulates).
+
+## AWAITING: reviewer + qa in parallel on head 227fdf4 (a35e96d feature)
+Reviewer: adversarial BOTH ways — (a) gibberish/non-golf → caddie asks-again (not a fabricated golf
+answer); (b) terse-real ("driver?","what club","how far","read?","wind?") → STILL answers directly
+(no over-refusal). Verify rule in all 3 sites BEFORE OBSERVED_REALITY_RULE; guide_writer untouched;
+injection-as-DATA (rule composed from constants only). /security-review + /code-review (NOTICEABLE +
+prompt-fed-to-model). QA: strict gates (ruff, pytest tests/eval incl new teeth, targeted prompt
+tests, frontend lint+tsc+voice smoke) + re-prove RED-then-green teeth. On return: BLOCKING
+(correctness/security/over-refusal/Northstar) → re-dispatch builder + re-review; else update PR #122
+checklist (4th item, NOTICEABLE). NO ship / NO ping this cycle.
