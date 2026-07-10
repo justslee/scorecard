@@ -10662,3 +10662,19 @@ RED-then-green proof) in parallel. Designer only if a UI surface changed (expect
 only). BLOCKING → re-dispatch builder. Else update PR #122 checklist (5th NOTICEABLE). NO ship / NO
 ping this cycle (bundle accumulates). If I die here: re-read this; reconcile from origin/integration/next
 git log (builder pushes its own commits) — do NOT re-run a builder that already pushed.
+
+---
+
+## 2026-07-09 — SHIPPED: #122 caddie fixes (transcription reliability + geometry)
+
+Owner "ship it". Merge d1534b1 → main (STRICT gate all-SUCCESS; guarded ship
+confirmed no unreviewed tree WIP slipped in — head was docs-only past the
+reviewed cde4333). Backend deploy verified by SHA + health ok. FOUR
+noticeable: course-ids-wiring, slope-framing-reconcile, transcription
+VOCAB-BIASING (golf terms/clubs/hole into gpt-4o-transcribe prompt — kills
+'Scars'/'of God' at the source), INPUT-GROUNDING (caddie asks 'say again?'
+vs answering misheard input; still answers terse golf Qs). Twenty-six ships.
+NOTE: TestFlight export FAILED (exit 70) on the first attempt — retrying;
+backend is live regardless. Cycle 52 (surface-osm-trees) was mid-plan at
+ship; guarded ship held it; tree work rides the next bundle.
+NEXT: trees; cascaded-STT spike; voice target-speaker; caller merge+creds.
