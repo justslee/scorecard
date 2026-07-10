@@ -11114,3 +11114,10 @@ accumulation (opener copy is user-visible but this is a bug-fix/behavior-correct
 a new capability — eng-lead to confirm noticeable/silent classification). Committed+pushed to integration/next.
 AWAITING: reviewer (adversarial: no fabricated player turn, SSOT preserved, no test weakened) + qa (strict gates
 on pushed head) + designer (opener copy vs NORTHSTAR calm/voice-first). BLOCKING → re-dispatch builder.
+
+## AWAITING reviewer+designer — caddie-remove-seeded-question 36cbe5f (cycle 58)
+Builder landed 36cbe5f on integration/next (origin). All 6 gates green locally (lint/tsc clean; targeted vitest
+79 passed; full vitest 1890 passed; voice smoke 274/274). Dispatched reviewer (adversarial: core defect gone / no
+user-role opener artifact / SSOT / ordering / guards / no test weakened — scrutinize the mockReset deviation) +
+designer (opener copy vs NORTHSTAR calm/voice-first). On BOTH clear → QA verify on pushed head + update PR #125
+checklist (SILENT ride-along), backlog=shipped, progress DONE. BLOCKING → re-dispatch builder, re-review. NO ship/ping.
