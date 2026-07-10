@@ -51,8 +51,18 @@ enrolled owner voiceprint → open/hold the mic-to-caddie`. This is literally Go
 research. Caveat: the modular cosine-gate is the LOWER-accuracy baseline (~26% frame-EER in
 arXiv:2406.09443) vs jointly-trained Personal-VAD (~10%) — but joint training violates our
 pretrained-only constraint, so the cosine-gate is the right-sized tool, accepting the tradeoff.
-It is a **filter, not a lock** (fail-open on uncertainty — the caddie ignoring its owner is
-product death).
+It should behave as a **filter, not a lock** — but note the two distinct "fail" axes so the
+wiring is honest:
+- **Decision-level (identity):** the committed `SpeakerGate` is deliberately **fail-CLOSED** —
+  an uncertain window (similarity between `closeAt` and `openAt`) does NOT open the gate
+  (mechanic A / gate-first). Hysteresis protects the owner only AFTER a clear open, not on the
+  first uncertain window. So `micEnabled = gate.open` alone would clip/ignore borderline
+  openings — that is by design for the pure core.
+- **System-level (availability):** "fail-open" belongs to the INTEGRATION layer — if the model
+  or gate crashes/is unavailable, bypass the gate so the mic behaves exactly as today (never a
+  dead mic). Mechanic B (open-then-verify) is the integration choice that also softens the
+  decision-level clipping. The caddie ignoring its owner is product death, so the wiring must
+  add mechanic-B openness on top of this fail-closed core; the core does not provide it alone.
 
 ### Concrete pretrained model options (real cited artifact sizes)
 Speaker-embedding models, smallest-viable first:

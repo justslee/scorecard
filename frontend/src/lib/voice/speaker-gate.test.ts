@@ -77,6 +77,26 @@ describe("voiceprint serialization", () => {
     const restored = deserializeEmbedding(serializeEmbedding(emb));
     expect(cosineSimilarity(restored, emb)).toBeCloseTo(1, 5);
   });
+
+  it("Node/Buffer fallback branch round-trips when btoa/atob are absent", () => {
+    // Force the Buffer paths (the cross-runtime branches that vitest's global
+    // btoa/atob would otherwise hide) — guards the byteOffset handling.
+    const savedBtoa = globalThis.btoa;
+    const savedAtob = globalThis.atob;
+    try {
+      // @ts-expect-error — deliberately remove the browser globals for this test.
+      delete globalThis.btoa;
+      // @ts-expect-error — same.
+      delete globalThis.atob;
+      const emb = l2Normalize([0.42, -0.13, 0.77, -0.5, 0.02]);
+      const restored = deserializeEmbedding(serializeEmbedding(emb));
+      expect(restored).toHaveLength(emb.length);
+      restored.forEach((x, i) => expect(x).toBeCloseTo(emb[i], 6));
+    } finally {
+      globalThis.btoa = savedBtoa;
+      globalThis.atob = savedAtob;
+    }
+  });
 });
 
 describe("SpeakerGate", () => {
