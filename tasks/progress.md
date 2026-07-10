@@ -11963,3 +11963,5 @@ next @ 1ed2b71, read children's verdicts, do NOT rebuild.
 - #129 SHIPPED (01dd23bf9, TestFlight v1.0.1149, 29 courses live). Owner tested, "worked much better".
 - Owner confirmed Marine Park unreachable = Cloudflare Turnstile (his own screenshot) — validated our probe; no build, rung-3/partnership stands.
 - AWAITING: eng-lead teetime-setup-ux-owner-feedback (p1) — 8-vs-5 count clarity, calendar-on-add-window, obvious date edit, wider window span. Designer pass required. Land on fresh #.
+- PLAN: specs/teetime-setup-ux-owner-feedback-plan.md (plan-lite, frontend-only). 8-vs-5 FINDING: raw per-query results.length logs the backend discovery set (MAX_COURSES=8 nearby public) while Options is trimmed to the golfer's picks via filterToSelection — two sets, one number. Fix = count selection-filtered picks-open, no fabrication.
+- ## AWAITING builder on plan (frontend, integration/next): implements all 4 asks + re-points window-slider tests. On builder push → reviewer (adversarial) → qa gates → designer (mandatory, user-facing). BLOCKING findings → re-dispatch builder. Reconcile from origin/integration/next log, do NOT re-run a finished child.
