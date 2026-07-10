@@ -5,12 +5,12 @@
     {
       "id": "teetime-availability-everywhere",
       "title": "Fetch real tee-time availability for EVERY course (API \u2192 scrape \u2192 AI-call ladder)",
-      "type": "major",
+      "type": "epic",
       "priority": 1,
       "risk": "high",
-      "status": "planning",
+      "status": "planned",
       "depends_on": [],
-      "why": "OWNER DIRECTIVE 2026-07-10 (screenshot, Marine Park 'No online booking \u2014 call the pro shop'): showing a bare phone number is NOT good enough. Every course MUST return real availability in SOME form. Ladder: (1) clean booking-engine API where one exists (foreUP live; EVALUATE adding Chronogolf/Lightspeed/GolfNow-EZLinks/TeeItUp APIs), (2) WEB SCRAPE the rendered availability widget where no clean JSON API exists, (3) AI phone-call the pro shop (PR #124 caller) as the final fallback for phone-only courses. Owner explicitly OK with building a scraper if it's the best per-course option. PLAN FIRST on Fable (per fable-for-plan-agents): per-engine option eval, scraping feasibility+ToS/legal+infra (headless browser for JS-rendered widgets), caching (GolfAPI-style budget discipline), integration with the reachability router."
+      "why": "PLAN: specs/teetime-availability-everywhere-plan.md (Fable). KEY FINDING: Marine Park was NEVER phone-only \u2014 its site links a live EZLinks online-booking portal; the dead-end was a capability-DETECTION gap (we only know foreUP), not missing data. Ladder = 4 rungs: API \u2192 widget-XHR replay \u2192 headless render \u2192 AI-call \u2192 honest-empty. Sequenced S4a-S4f below. Most of the epic is engine-adapter breadth + per-course capability detection, NOT exotic scraping. OWNER DIRECTIVE 2026-07-10 (screenshot, Marine Park 'No online booking \u2014 call the pro shop'): showing a bare phone number is NOT good enough. Every course MUST return real availability in SOME form. Ladder: (1) clean booking-engine API where one exists (foreUP live; EVALUATE adding Chronogolf/Lightspeed/GolfNow-EZLinks/TeeItUp APIs), (2) WEB SCRAPE the rendered availability widget where no clean JSON API exists, (3) AI phone-call the pro shop (PR #124 caller) as the final fallback for phone-only courses. Owner explicitly OK with building a scraper if it's the best per-course option. PLAN FIRST on Fable (per fable-for-plan-agents): per-engine option eval, scraping feasibility+ToS/legal+infra (headless browser for JS-rendered widgets), caching (GolfAPI-style budget discipline), integration with the reachability router."
     },
     {
       "id": "voicetel-timing-immediate-flush",
@@ -240,11 +240,11 @@
       "type": "major",
       "priority": 1,
       "risk": "high",
-      "status": "ready",
+      "status": "superseded",
       "depends_on": [
         "teetime-s1-foreup-availability"
       ],
-      "why": "ELEVATED to p1 by [teetime-availability-everywhere] owner directive 2026-07-10. specs/teetime-real-booking-plan.md S4. Only courses whose availability is behind a rendered page (Chronogolf/Lightspeed widgets) with no clean JSON and no foreUP/call route. Headless Playwright, HTML parse, honest UA, low freq, heavy cache, never solve CAPTCHAs, never log in to scrape. Tests vs saved HTML fixtures (never live in CI). Explicitly GRAY \u2014 per-course opt-in, lowest priority."
+      "why": "SUPERSEDED by the sequenced S4a-S4f in specs/teetime-availability-everywhere-plan.md. ELEVATED to p1 by [teetime-availability-everywhere] owner directive 2026-07-10. specs/teetime-real-booking-plan.md S4. Only courses whose availability is behind a rendered page (Chronogolf/Lightspeed widgets) with no clean JSON and no foreUP/call route. Headless Playwright, HTML parse, honest UA, low freq, heavy cache, never solve CAPTCHAs, never log in to scrape. Tests vs saved HTML fixtures (never live in CI). Explicitly GRAY \u2014 per-course opt-in, lowest priority."
     },
     {
       "id": "caddie-remove-seeded-question",
@@ -2238,6 +2238,76 @@
       "shipped_to_main_commit": "56ddb78",
       "testflight_version": "v1.0.1096",
       "shipped_pr": "https://github.com/justslee/scorecard/pull/125"
+    },
+    {
+      "id": "teetime-s4a-capability-store-teeitup",
+      "title": "S4a: generalized capability store + adapter registry + fetch-discipline extract + TeeItUp adapter (rung 1)",
+      "type": "major",
+      "priority": 1,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Foundation of the availability ladder. Generalize capability_store.py (platform/channel/platform_ids, back-compat with foreup_ny_seed.json), extract fetch_discipline.py from foreup.py (foreUP behavior byte-identical, pinned by the 64-test S1 suite), add adapters/teeitup.py (single host phx-api-be-east-1b.kenna.io + x-be-alias header, public JSON) + captured fixture + 2-3 probed NY/NJ seed rows, wire router ladder for rung-1 adapters. Everything else hangs off this. Plan \u00a72,\u00a73,\u00a76."
+    },
+    {
+      "id": "teetime-s4b-ezlinks-marine-park",
+      "title": "S4b: EZLinks portal adapter \u2014 Marine Park (the screenshot) returns real times",
+      "type": "major",
+      "priority": 1,
+      "risk": "high",
+      "status": "blocked",
+      "depends_on": [
+        "teetime-s4a-capability-store-teeitup"
+      ],
+      "why": "THE DEMO MOMENT. Network-tab capture marineparkridepp.ezlinksgolf.com, build the 2a httpx adapter + fixture + Marine Park capability row. ACCEPTANCE: owner re-runs the exact screenshot search and sees real Marine Park times (not 'call the pro shop'). If the portal is signed/hostile \u2192 reclassify to rung 2b and pull S4d forward; honest-empty never regresses. Plan \u00a71,\u00a74a. Depends on S4a."
+    },
+    {
+      "id": "teetime-s4c-chronogolf-probe-quick18",
+      "title": "S4c: Chronogolf marketplace adapter + generalized capability probe script + Quick18 HTML-lite",
+      "type": "major",
+      "priority": 2,
+      "risk": "high",
+      "status": "blocked",
+      "depends_on": [
+        "teetime-s4a-capability-store-teeitup"
+      ],
+      "why": "Add adapters/chronogolf.py (marketplace JSON), generalize validate_foreup_courses.py \u2192 probe_booking_capability.py with website fingerprinting (\u00a72b), Quick18 HTML parse if trivially reachable. File the Lightspeed Partner API + refresh GolfNow/Supreme partnership applications as a rider. Plan \u00a71,\u00a72b,\u00a73. Depends on S4a."
+    },
+    {
+      "id": "teetime-s4d-playwright-worker-pending-ux",
+      "title": "S4d: rung-2b headless scraper (Playwright worker) + 'checking\u2026' pending UX",
+      "type": "major",
+      "priority": 3,
+      "risk": "high",
+      "status": "blocked",
+      "depends_on": [
+        "teetime-s4a-capability-store-teeitup"
+      ],
+      "why": "The only slice with deploy-image impact (~400MB Chromium, gated TEETIME_SCRAPER_ENABLED default off). In-process asyncio worker + bounded queue off the request path; TeeTimeSlot gains status live|pending; poll endpoint; frontend pending row; first browser-scraped engine (Club Prophet or hostile EZLinks). Plan \u00a74b,\u00a76,\u00a77. Depends on S4a."
+    },
+    {
+      "id": "teetime-s4e-availability-by-call",
+      "title": "S4e: rung-3 wiring \u2014 availability-ask dialog + call-CTA + result flow-back",
+      "type": "major",
+      "priority": 3,
+      "risk": "high",
+      "status": "blocked",
+      "depends_on": [
+        "teetime-s4a-capability-store-teeitup"
+      ],
+      "why": "Extend voice_booking dialog with an availability-ask mode (asks times, not books), availability_by_call same-day cache, call CTA + 'Calling the pro shop\u2026' async status, spoken times flow back as real phone-confirmed TeeTimeSlots. Fix the S3 TODO (window from slot.time='' on route entries \u2192 pass the query window). Ships DARK behind VOICE_BOOKING gates; rehearsal harness validates when Twilio keys land. Plan \u00a75. Depends on #124 merged + S4a."
+    },
+    {
+      "id": "teetime-s4f-coverage-flywheel",
+      "title": "S4f: coverage flywheel \u2014 auto-probe on honest-empty telemetry + coverage metric + drift canary",
+      "type": "major",
+      "priority": 4,
+      "risk": "medium",
+      "status": "blocked",
+      "depends_on": [
+        "teetime-s4a-capability-store-teeitup"
+      ],
+      "why": "Bundle-rider. Log searched courses with no capability row \u2192 feed the probe script; '% of searched courses returning real availability' metric; monthly re-probe sweep; per-engine schema-drift canary. Plan \u00a72b,\u00a79."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
