@@ -114,9 +114,9 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09: caddie can pick up partners'/background voices. TIER 1 (free, do now): confirm echoCancellation/noiseSuppression/autoGainControl ON in the mic getUserMedia constraints; A/B a higher server_vad energy threshold so only close speech (owner holding the phone) triggers. Partial but real, zero ML. specs/voice-target-speaker-research.md."
+      "why": "RECONCILED 2026-07-10 (PR #127 spike): Tier-1 mic constraints (echoCancel/noiseSuppress/autoGain + backend near_field) verified ALREADY ON at every getUserMedia site \u2014 nothing to build. Remaining lever tracked as [voice-vad-threshold-ab]. | OWNER 2026-07-09: caddie can pick up partners'/background voices. TIER 1 (free, do now): confirm echoCancellation/noiseSuppression/autoGainControl ON in the mic getUserMedia constraints; A/B a higher server_vad energy threshold so only close speech (owner holding the phone) triggers. Partial but real, zero ML. specs/voice-target-speaker-research.md."
     },
     {
       "id": "multi-tee-anchor-reconciliation",
