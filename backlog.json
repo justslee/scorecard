@@ -3,6 +3,64 @@
   "note": "Cycle 73 (2026-07-10): Bundle #131 (caller-natural-preset-voice, NOTICEABLE) SHIPPED to main \u2014 owner \"ship it\" approved, merge 18ea1a0151ceff4307166973351f1bc0ca533de9, post-merge CI both gates SUCCESS, backend deployed + /health verified, TestFlight v1.0.1172 (build 202607101656) uploaded and processingState VALID, prod smoke clean (tee-times/search + caller-voice both correctly auth-gated 401). Fresh integration/next fast-forwarded to 18ea1a0 and pushed. Board card: Bundle #131 (Shipped). Prior note: Cycle 72 (2026-07-10): caddie-guide-injection-hardening SHIPPED to integration/next @ fe2570f (SILENT security, rides bundle PR #130) \u2014 MED-1 newline framing (flatten + reject), MED-2 read-time re-validate in /course-intel covering BOTH caddie mouths, LOW-3 per-item mistake cap, LOW-1/2 plan-doc correction; each fix has a RED-before test (7 RED on pre-fix, 186 offline GREEN), reviewer SHIP, CI Backend+Frontend gates SUCCESS on head d315570. Follow-up carded caddie-guide-session-reload-revalidate (p3). Bundle #130 now = teetime-setup-ux (NOTICEABLE) + this security hardening (silent) \u2014 awaiting a release when owner ships. Prior note: Bundle #125 SHIPPED 2026-07-10 -> main @ 56ddb78 (merge commit); TestFlight v1.0.1096 (build 202607100821) uploaded, processing on Apple's side. 8 items shipped-to-main: caddie-surface-osm-trees, teetime-show-real-time-options, teetime-prefs-ux-polish, voicetel-timing-immediate-flush (silent), caddie-remove-seeded-question, teetime-muni-pseudolocality-guard, fcb-unmapped-paper-fallback-mismatch, fcb-plays-tile-fabricated-fallback. Fresh integration/next cut @ 56ddb78, pushed. Prior note: Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "orb-s5-polish",
+      "title": "Orb S5: orb state motion/haptics tuning + telemetry + inset audit + copy",
+      "type": "major",
+      "priority": 2,
+      "risk": "low",
+      "status": "blocked",
+      "depends_on": [
+        "orb-s1-move-and-nav"
+      ],
+      "why": "Orb epic S5 (\u00a76). Orb idle/listening/thinking/confirming motion+haptics tuning (framer-motion T.springSoft, lib/haptics \u2014 no new motion language); voiceEvent telemetry on orb summon/task-dispatch/fall-through (measures discoverability risk); per-page bottom-inset audit (orb vs page CTAs); copy pass. Designer."
+    },
+    {
+      "id": "orb-s4-mycard-coaching",
+      "title": "Orb S4: My Card stats coaching Q&A grounded in real stats (no-fake-data)",
+      "type": "major",
+      "priority": 1,
+      "risk": "low",
+      "status": "blocked",
+      "depends_on": [
+        "orb-s1-move-and-nav"
+      ],
+      "why": "Orb epic S4 (\u00a74.4). New pure lib/stats-grounding.ts (tested) \u2192 buildStatsGroundingBlock from the profile page's REAL computed stats (profile-stats/personal-bests/handicap/shot-stats) with sample sizes; thin data (<2 rounds)\u2192says so. Register /profile kind:converse. Backend: optional stats_context on VoiceCaddieRequest (types.py:270) + fenced 'cite these numbers; if not here say you don't have it' block in _build_voice_prompt (both /voice + /voice/stream); frontend twin in lib/caddie/api.ts. /security-review (new user-data\u2192prompt path). NO fabricated coaching."
+    },
+    {
+      "id": "orb-s3-setup-wiring",
+      "title": "Orb S3: wire tournament + round voice setup through the orb (the stranded parser finds its home)",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "blocked",
+      "depends_on": [
+        "orb-s1-move-and-nav"
+      ],
+      "why": "Orb epic S3 (\u00a74.2/\u00a74.3). Tournament: new pure lib/tournament-prefill.ts (tested) mapping parseVoiceTranscript tournament result \u2192 the tap form (name, numRounds clamp 1-4, players fuzzy\u2192ids+customPlayers, courses/groupings\u2192honest ack notes never dropped); register /tournament/new kind:task; CREATION stays a human tap; add curated tournament voice-tests scenarios. Round: register /round/new kind:surface reusing VoiceRoundSetup autoStart. This WIRES the audit's stranded tournament parse layer. Designer: prefill-confirm layout."
+    },
+    {
+      "id": "orb-s2-context-contract-teetime",
+      "title": "Orb S2: page-context contract + CaddieOrbSheet host + tee-time dispatch through it (the wow)",
+      "type": "major",
+      "priority": 0,
+      "risk": "medium",
+      "status": "blocked",
+      "depends_on": [
+        "orb-s1-move-and-nav"
+      ],
+      "why": "Orb epic S2 (\u00a73/\u00a74.1/\u00a76). New lib/caddie-context.ts (pure+test) + useCaddiePageContext hook (register on mount, last-writer-wins) + CaddieOrbSheet host wrapping LooperSheetShell (task/converse/surface lanes, confidence gate <0.6 no-auto-dispatch, no-signal FALL-THROUGH to conversation). Migrate general (trivial) + tee-time (registration in PrefsScreen replaces its private sheet hosting; parseTeeTimePrefs/applyParsed UNTOUCHED \u2192 same structured dispatch \u2192 voice-tests green by construction). HYBRID: deterministic parse for dispatch, realtime for Q&A. Designer: sheet copy per context."
+    },
+    {
+      "id": "orb-s1-move-and-nav",
+      "title": "Orb S1: CaddieOrb component + omnipresent placement + remove center-nav orb (4 tabs)",
+      "type": "major",
+      "priority": 0,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Orb epic S1 (specs/omnipresent-caddie-orb-plan.md \u00a71/\u00a72/\u00a76). NOTICEABLE, designer-heavy. New CaddieOrb mounted once in app/layout, fixed bottom-right (safe-area + island clearance), CADDIE medallion (not mic, designer owns mark). shouldShowCaddieOrb(pathname) pure fn+test (hide /round/[id] \u2014 pill IS the orb there \u2014 /map, auth). Remove LooperOrb from FloatingTabBar \u2192 4 tabs (Home\u00b7Courses\u00b7Tee times\u00b7Profile); rewrite FloatingTabBar tests. Migrate tap\u2192summon / hold\u2265350ms\u2192listening pointer state machine verbatim; existing general/tee-time/courses contexts keep working over the UNCHANGED looper-bus (pure placement migration). One-time 'your caddie moved here' intro. Voice-tests untouched=green (hard gate). Designer pass (mark, corner, states, 320px nav)."
+    },
+    {
       "id": "omnipresent-caddie-orb",
       "title": "EPIC: omnipresent context-aware caddie orb (THE CRUX) \u2014 replaces center-nav orb",
       "type": "epic",
