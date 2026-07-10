@@ -3,6 +3,60 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — release-manager: bundle #129 SHIPPED to main + TestFlight
+
+Owner replied "Ship it" — approved bundle PR #129 (`integration/next` → `main`).
+Guarded pre-flight re-verified before touching anything: PR head
+`051e5636` unchanged since approval, both required gates SUCCESS, PR
+OPEN+MERGEABLE, `main` head `19f9e06` as expected.
+
+1. **Merged #129 → main**: `gh pr merge 129 --merge` → merge commit
+   `01dd23bf910856d17ec2e7c3285e803e78f90a18` (fast-forward from `19f9e06`
+   via the merge commit; no force-push anywhere in this run).
+2. **Post-merge main CI green**: both required checks (Frontend gates,
+   Backend gate) SUCCESS on the new main head — no flake, no rerun needed.
+3. **Backend deployed** via the `Deploy backend (SSM)` GH Actions workflow
+   (auto-triggered on push to main) — SSM command status `Success`,
+   `/health` → `{"status":"ok"}` inside that run. Independently re-verified
+   with a fresh SSM probe from this Mac (key-free): `/health` OK; hit
+   `/api/tee-times/search` and `/api/tee-times/availability-call` directly —
+   both correctly 401 "Missing Authorization" (every tee-time route is
+   `require_owner`-gated app-wide per `main.py`, so a raw curl can't reach
+   the "not_enabled" JSON body without a real Clerk token). Confirmed the
+   dark behavior instead via the code path (`main.py` — no
+   `VOICE_BOOKING_ENABLED`/Twilio keys in prod) + CI's
+   `test_availability_call_route.py` (8 passing cases asserting
+   `status="not_enabled"` whenever keys/allowlist are absent).
+   Capability-store smoke check run directly on the box (SSM,
+   `load_all_capabilities()` against the live deployed code): 29 courses
+   loaded, including all 3 named win-courses (Dunwoodie, Maple Moor, Putnam
+   County).
+4. **Cut TestFlight** from the new main (`bash ops/ios/ship.sh`) — there
+   IS a frontend delta this bundle (S4e call-CTA/async UI,
+   `frontend/src/lib/teetime/*`, ~296 insertions), so unlike #128 a new
+   build was required. Upload was clean on the first try (no exit-70
+   retry needed). **v1.0.1149 (build 202607101453)**. Polled the App Store
+   Connect API (JWT minted from the local `.p8`, never printed) — build
+   indexed and reached `processingState=VALID` within ~90s.
+5. **Fresh `integration/next` cut** from new main (`01dd23b`), pushed
+   (fast-forward, branch recreated from `origin/main`).
+6. **Board + backlog**: created the Notion card for bundle #129 (none
+   existed yet — #128's card was the last one, already Shipped) with
+   Status=Shipped, full checklist, PR link, TestFlight version. Backlog
+   `teetime-s4e-availability-by-call`, `teetime-s4c2-coverage-expansion`,
+   `s3b-review-nits` promoted from `shipped`/`shipped` (on
+   `integration/next`) to `shipped-to-main` with
+   `shipped_to_main_commit: 01dd23b`, `testflight_version: v1.0.1149
+   (build 202607101453)`, `shipped_pr: #129`. (`teetime-s4a-*` and
+   `teetime-s4c-*` were already `shipped-to-main` from #128 — untouched.)
+
+**Owner test**: open Tee Time, search Dunwoodie / Maple Moor / Putnam
+County (or any of the other 25 newly-live NY-metro courses) — real
+bookable slots, not the fallback. On a phone-only/locked course the new
+call-CTA appears; tapping it currently reports the call as unavailable
+(`not_enabled`) until Twilio keys land — that is the correct, intended
+dark state, not a bug.
+
 ## 2026-07-10 — builder: S4e — rung-3 availability-by-call (ships dark, DONE)
 
 Implemented `specs/teetime-availability-everywhere-plan.md` §5, §6, §7 as an
