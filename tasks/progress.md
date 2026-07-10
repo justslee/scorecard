@@ -11054,3 +11054,10 @@ headline already immediate-flushes at markFirstAudio (6fcb40d, live all 3 days) 
 calls in markTranscript()/markFirstToken() via the existing injectable flush seam; KEEP terminal flush at markFirstAudio.
 Files: caddie-turn-timing.ts + its 2 test files ONLY. No change to CaddieSheet.tsx / useVoiceCaddie.ts / telemetry.ts / backend.
 ## AWAITING builder — implement the plan on integration/next, commit+push, run all 6 gates. On return → reviewer + qa.
+
+## CYCLE 56 — builder DONE. Feature 2d4b4c9 (caddie-turn-timing.ts + 2 test files) on integration/next; head 37790b1.
+All 6 gates green locally (lint/tsc/build/voice 274/vitest 34/ruff). SILENT telemetry-only, zero UI/behavior change.
+## AWAITING review — dispatched reviewer (adversarial correctness+security on the 2d4b4c9 diff: no over-flush spam,
+no PII, guards intact, no telemetry-can-throw-into-audio regression) + qa (strict gates on branch). No designer
+(not user-facing), no /security-review (telemetry endpoint untouched, no new auth/data). On all-green → update PR
+#125 checklist (SILENT ride-along), progress DONE, NO ship / NO ping. BLOCKING → re-dispatch builder, re-review.
