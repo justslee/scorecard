@@ -11180,7 +11180,7 @@ Head after bookkeeping pending; CI to re-verify strict-green at ship time.
 ## Cycle 60 (2026-07-10) — IN PROGRESS
 - Board + PRs: no new owner feedback; #125 still awaits ship-it.
 - Corrected bookkeeping: teetime-prefs-ux-polish was landed+green in cycle 59 (code 1d2d0ae) but its backlog status hadn't persisted → set shipped.
-- AWAITING: eng-lead pass on **teetime-muni-pseudolocality-guard** (p2 minor, reviewer-flagged): muniFromAddress last-segment-wins can surface a venue/street/course-name echo as the "city". Add dedup guard + lock tests; omit over fabricate; don't regress real single-word cities. Silent-ish hardening on #125. No ship/no ping.
+- DONE: **teetime-muni-pseudolocality-guard** landed on #125. Eng-lead CRASHED mid-cycle (API drop) after committing code 1e75611 (green) but before review — recovered from branch state: ran a fresh reviewer (SHIP, no real-city regression), folded 2 reviewer fixes (add-flow name-echo dedup at courseOptionFromSelection; dropped bare 'club' venue token to protect 'Country Club Hills'-type towns), added lock tests. teetime 222, tsc/lint/voice green; verifying strict-green on pushed head. Bundle #125 = 5 noticeable + 2 silent-hardening, awaits owner ship-it.
 
 - BUILT (1e75611): muniFromAddress lone-venue/street guard + new muniEchoesName/localityLabel name-echo dedup;
   applied in toCourseOptions + 3 tee-time render sites. Tests red→green in courses.test.ts (venue/street omission,
