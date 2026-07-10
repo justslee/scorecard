@@ -11373,3 +11373,7 @@ Owner-approved merge executed exactly per brief (keys NOT in yet condition).
   the owner needs to add). s3b-review-nits depends_on ["#124 merged"] cleared
   (unblocked, ready to build).
 - Board: card recorded (see below) — Shipped-to-main-INERT, awaiting keys.
+
+## Cycle 64 (2026-07-10) — availability ladder S4a + Marine Park probe (owner: "test it; if not clean → scraper")
+- Owner GO on S4a→S4b; PRE-APPROVED the scraper route IF the clean fetch doesn't return clean Marine Park times.
+- Dispatching in parallel: (a) eng-lead S4a (capability store + fetch_discipline extract + TeeItUp adapter, LIVE-tested); (b) read-only live probe of Marine Park's EZLinks portal → decides 2a-httpx vs 2b-headless vs rung-3.
