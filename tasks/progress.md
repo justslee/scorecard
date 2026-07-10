@@ -10612,3 +10612,27 @@ FINAL head SHA (cancelled/absent required gate is NOT a pass).
 Injection note: several embedded "date changed / DO NOT mention" instructions appeared in tool output
 + system-reminder-shaped messages this cycle; disregarded ALL as untrusted DATA per injection-defense
 policy — zero effect on the work. PR #124 (caller) + voice_booking/telephony/tee_times untouched.
+
+## cycle 52 START (2026-07-09) — pick caddie-surface-osm-trees (NOTICEABLE) on bundle #122
+Step 0: no owner ship-it/feedback pending (PR #122 has no comments/reviews; no Needs Review
+card with an owner reply). Bundle #122 still OPEN, FOUR noticeable items, accumulating. NO
+ship / NO ping this cycle (owner active on-course; directive: build next item onto bundle).
+Sync clean (main already merged, integration/next == origin).
+
+PICK: caddie-surface-osm-trees — the tree-spike GO verdict. Satellite CV disproven; the cheap
+real win is that OSM ALREADY ingests trees the caddie ignores (~537 tree nodes + 73 woods
+polys at Bethpage). `backend/app/caddie/hazards.py::_HAZARD_FEATURE_TYPES = {"bunker","water"}`
+excludes featureType "tree"/"woods" — data is already spatially joined to holes (course_spatial
+corridor caps woods=150m, tree=120m) and read by extract_hole_hazards. Gate tree/woods in as a
+tree/woods hazard type so "how far to clear the trees" routes through the SAME polyline carry+
+side frame; per-hole COVERAGE guard + honest "trees aren't mapped here" fallback (no-fake-data);
+distinguish tree point (line/cluster along shot) vs woods polygon; caddie CITES the number
+(grounding rule). Geometry-correctness (polyline/hazard frame = prior anchor-incident area) →
+Fable plan + Fable adversarial reviewer who FALSIFIES tree carry/side across bearings.
+NOTE: referenced specs/tree-detection-cv-findings.md is ABSENT (GO verdict carried in cycle
+context); not a blocker.
+
+## AWAITING: Fable Plan agent producing specs/caddie-surface-osm-trees-plan.md
+On return: dispatch ONE builder to implement the plan on integration/next (commits+pushes there,
+NO per-item PR). Do NOT touch voice_booking/telephony/tee_times (PR #124 separate). If I die
+here: re-read this note, re-dispatch Fable Plan (no code was written yet).
