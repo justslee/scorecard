@@ -1,17 +1,30 @@
 {
   "updated": "2026-07-10",
-  "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
+  "note": "Bundle #125 SHIPPED 2026-07-10 -> main @ 56ddb78 (merge commit); TestFlight v1.0.1096 (build 202607100821) uploaded, processing on Apple's side. 8 items shipped-to-main: caddie-surface-osm-trees, teetime-show-real-time-options, teetime-prefs-ux-polish, voicetel-timing-immediate-flush (silent), caddie-remove-seeded-question, teetime-muni-pseudolocality-guard, fcb-unmapped-paper-fallback-mismatch, fcb-plays-tile-fabricated-fallback. Fresh integration/next cut @ 56ddb78, pushed. Prior note: Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
+    {
+      "id": "teetime-availability-everywhere",
+      "title": "Fetch real tee-time availability for EVERY course (API \u2192 scrape \u2192 AI-call ladder)",
+      "type": "epic",
+      "priority": 1,
+      "risk": "high",
+      "status": "planned",
+      "depends_on": [],
+      "why": "PLAN: specs/teetime-availability-everywhere-plan.md (Fable). KEY FINDING: Marine Park was NEVER phone-only \u2014 its site links a live EZLinks online-booking portal; the dead-end was a capability-DETECTION gap (we only know foreUP), not missing data. Ladder = 4 rungs: API \u2192 widget-XHR replay \u2192 headless render \u2192 AI-call \u2192 honest-empty. Sequenced S4a-S4f below. Most of the epic is engine-adapter breadth + per-course capability detection, NOT exotic scraping. OWNER DIRECTIVE 2026-07-10 (screenshot, Marine Park 'No online booking \u2014 call the pro shop'): showing a bare phone number is NOT good enough. Every course MUST return real availability in SOME form. Ladder: (1) clean booking-engine API where one exists (foreUP live; EVALUATE adding Chronogolf/Lightspeed/GolfNow-EZLinks/TeeItUp APIs), (2) WEB SCRAPE the rendered availability widget where no clean JSON API exists, (3) AI phone-call the pro shop (PR #124 caller) as the final fallback for phone-only courses. Owner explicitly OK with building a scraper if it's the best per-course option. PLAN FIRST on Fable (per fable-for-plan-agents): per-engine option eval, scraping feasibility+ToS/legal+infra (headless browser for JS-rendered widgets), caching (GolfAPI-style budget discipline), integration with the reachability router."
+    },
     {
       "id": "voicetel-timing-immediate-flush",
       "title": "Add caddie latency-timing events to the immediate-flush tier (unblocks cascaded-STT decision)",
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "done",
+      "status": "shipped-to-main",
       "depends_on": [],
       "why": "PROD 2026-07-10: only 1 eos_to_first_audio event + 0 caddie-rt in 3 days \u2014 the caddie latency-timing telemetry is being DROPPED on iOS (cycle-19's flush fix made FAILURE events immediate but not the timing events). This blocks the cascaded-STT go/no-go (spike #126 needs caddie-turn-cascaded vs caddie-rt-speechToSpeech p90 latency). FIX: put the eos_to_first_audio / stage-timing events in the immediate-flush tier (extend the cycle-19 flush logic) so real latency data reaches prod. Small telemetry change. Then the cascaded-STT decision has data.",
-      "progress": "2026-07-10 cycle 56 DONE on integration/next (2d4b4c9), rides bundle PR #125 (SILENT). Fable plan CORRECTED the premise: the headline eos_to_first_audio ALREADY immediate-flushes at markFirstAudio() (6fcb40d, live the whole 3-day window) \u2014 the real gap was the EARLIER legs (eos_to_transcript / transcript_to_first_token) only riding markFirstAudio's single flush, which on iOS often never fires (useSheetTTS onSpeakStart) before WKWebView suspend, losing the whole turn. Fix = 2 guarded safeFlush() calls in markTranscript()/markFirstToken() (caddie-turn-timing.ts) so each leg POSTs the moment it's computed; markFirstAudio keeps its terminal flush (audio legs + RT headline). Guards/clamps/idempotence untouched; \u22643 POSTs/classic turn, human-paced, non-timing telemetry still batches. Reviewer SHIP (clamped legs never POST, PII-safe {ms}-only pinned by test, throw-isolated), QA 6/6 gates. Unblocks #126: once owner uses live caddie on next TestFlight build, prod gets caddie-turn vs caddie-rt p90. Follow-up (same class): eos_to_transcript volume WITHOUT matching eos_to_first_audio would itself diagnose iOS onSpeakStart never firing."
+      "progress": "2026-07-10 cycle 56 DONE on integration/next (2d4b4c9), rides bundle PR #125 (SILENT). Fable plan CORRECTED the premise: the headline eos_to_first_audio ALREADY immediate-flushes at markFirstAudio() (6fcb40d, live the whole 3-day window) \u2014 the real gap was the EARLIER legs (eos_to_transcript / transcript_to_first_token) only riding markFirstAudio's single flush, which on iOS often never fires (useSheetTTS onSpeakStart) before WKWebView suspend, losing the whole turn. Fix = 2 guarded safeFlush() calls in markTranscript()/markFirstToken() (caddie-turn-timing.ts) so each leg POSTs the moment it's computed; markFirstAudio keeps its terminal flush (audio legs + RT headline). Guards/clamps/idempotence untouched; \u22643 POSTs/classic turn, human-paced, non-timing telemetry still batches. Reviewer SHIP (clamped legs never POST, PII-safe {ms}-only pinned by test, throw-isolated), QA 6/6 gates. Unblocks #126: once owner uses live caddie on next TestFlight build, prod gets caddie-turn vs caddie-rt p90. Follow-up (same class): eos_to_transcript volume WITHOUT matching eos_to_first_audio would itself diagnose iOS onSpeakStart never firing.",
+      "shipped_to_main_commit": "56ddb78",
+      "testflight_version": "v1.0.1096",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/125"
     },
     {
       "id": "teetime-show-real-time-options",
@@ -19,9 +32,12 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "done-on-bundle-125",
+      "status": "shipped-to-main",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (screenshots): the result shows 'YOUR WINDOW 6:00-9:30' (the search range) instead of the times found \u2014 'show me my options'. Also the window shown != submitted, and the found course (Forest Park) was NOT in the selected 4. FIX (specs/teetime-results-ux-fixes.md): (1) foreUP courses -> list the real bookable times to pick (data already flows from S1), call-route courses -> honestly frame the window as the ask we'll make, never as a found time; (2) the result window must reflect the SUBMITTED prefs, not a default; (3) the dispatch/'go find us one' path must honor the selected course ids (same class as #122 course-ids-wiring but on the DISPATCH path) \u2014 never substitute an unselected course; honest 'nothing in your selected courses' instead. Fable plan; reviewer (honest presentation, no-fake-data \u2014 a window shown as a found time is a violation). Do NOT touch voice_booking/telephony (#124)."
+      "why": "OWNER 2026-07-09 (screenshots): the result shows 'YOUR WINDOW 6:00-9:30' (the search range) instead of the times found \u2014 'show me my options'. Also the window shown != submitted, and the found course (Forest Park) was NOT in the selected 4. FIX (specs/teetime-results-ux-fixes.md): (1) foreUP courses -> list the real bookable times to pick (data already flows from S1), call-route courses -> honestly frame the window as the ask we'll make, never as a found time; (2) the result window must reflect the SUBMITTED prefs, not a default; (3) the dispatch/'go find us one' path must honor the selected course ids (same class as #122 course-ids-wiring but on the DISPATCH path) \u2014 never substitute an unselected course; honest 'nothing in your selected courses' instead. Fable plan; reviewer (honest presentation, no-fake-data \u2014 a window shown as a found time is a violation). Do NOT touch voice_booking/telephony (#124).",
+      "shipped_to_main_commit": "56ddb78",
+      "testflight_version": "v1.0.1096",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/125"
     },
     {
       "id": "teetime-prefs-ux-polish",
@@ -29,9 +45,12 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "shipped",
+      "status": "shipped-to-main",
       "depends_on": [],
-      "why": "SHIPPED cycle 59 (code 1d2d0ae, head c1be4be, both gates SUCCESS): results/route/confirmation locality runs through muniFromAddress \u2014 omits bare country instead of '\u00b7 USA'. [bookkeeping corrected cycle 60: eng-lead reported this update but it didn't persist; code was real & green.] | OWNER 2026-07-09 (screenshots): 'Marine Park Golf Course \u00b7 USA' shows USA not a city (label bug \u2014 show real locality or omit); the Courses header ('WHERE'/'4 SELECTED') is clipped behind the status bar (top safe-area inset); the nearby list grouping/dividers read as 'broken'. Designer pass, calm yardage-book. specs/teetime-results-ux-fixes.md. UPDATE cycle 53: the 'USA' label bug (#4) was FIXED alongside teetime-show-real-time-options (9f0577e, muniFromAddress drops USA/United States of America). UPDATE cycle 59: the '\u00b7 USA' leak also existed on the RESULTS + CONFIRMATION render paths (tee-time/page.tsx g.city / slot.city fed by backend slot.city = raw course.address, foreup.py:211 / routing.py:112) \u2014 FIXED by normalizing those 3 render sites with muniFromAddress (drops country, extracts locality, dangling-'\u00b7 ' guard on the confirmation stamp). REMAINING here: #5 header safe-area/viewport-fit + nearby-list grouping polish (needs on-device screenshot verification). Plus cycle-53 designer/reviewer follow-ups: route-entry section header can contradict a book_on_site row's own copy in a mixed batch (make conditional); add distance/city to route-entry rows; harden filterToSelection Sets vs falsy id/name; sub-44pt tap targets across the tee-time flow."
+      "why": "SHIPPED cycle 59 (code 1d2d0ae, head c1be4be, both gates SUCCESS): results/route/confirmation locality runs through muniFromAddress \u2014 omits bare country instead of '\u00b7 USA'. [bookkeeping corrected cycle 60: eng-lead reported this update but it didn't persist; code was real & green.] | OWNER 2026-07-09 (screenshots): 'Marine Park Golf Course \u00b7 USA' shows USA not a city (label bug \u2014 show real locality or omit); the Courses header ('WHERE'/'4 SELECTED') is clipped behind the status bar (top safe-area inset); the nearby list grouping/dividers read as 'broken'. Designer pass, calm yardage-book. specs/teetime-results-ux-fixes.md. UPDATE cycle 53: the 'USA' label bug (#4) was FIXED alongside teetime-show-real-time-options (9f0577e, muniFromAddress drops USA/United States of America). UPDATE cycle 59: the '\u00b7 USA' leak also existed on the RESULTS + CONFIRMATION render paths (tee-time/page.tsx g.city / slot.city fed by backend slot.city = raw course.address, foreup.py:211 / routing.py:112) \u2014 FIXED by normalizing those 3 render sites with muniFromAddress (drops country, extracts locality, dangling-'\u00b7 ' guard on the confirmation stamp). REMAINING here: #5 header safe-area/viewport-fit + nearby-list grouping polish (needs on-device screenshot verification). Plus cycle-53 designer/reviewer follow-ups: route-entry section header can contradict a book_on_site row's own copy in a mixed batch (make conditional); add distance/city to route-entry rows; harden filterToSelection Sets vs falsy id/name; sub-44pt tap targets across the tee-time flow.",
+      "shipped_to_main_commit": "56ddb78",
+      "testflight_version": "v1.0.1096",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/125"
     },
     {
       "id": "s3b-review-nits",
@@ -40,10 +59,8 @@
       "priority": 2,
       "risk": "low",
       "status": "ready",
-      "depends_on": [
-        "#124 merged"
-      ],
-      "why": "Fable security review of S3b (SHIP) flagged 3 non-blocking nits to fix before heavy live use: (1) media_bridge opt_out_requested uses bool() so a stringified 'false' from the model reads True and would suppress a real pro-shop number \u2014 use `v is True or str(v).lower()=='true'`; (2) telephony timeout except swallows asyncio.CancelledError \u2014 split TimeoutError (return partial) from CancelledError (re-raise after cleanup); (3) call_registry asyncio.get_event_loop() -> get_running_loop(). All localized to the S3b files; land after #124 merges (branch is worktree-locked now). | 2nd Fable security review (SHIP, mutation-verified) added: (4) pass the call token via TwiML <Parameter> (arrives in start.customParameters) instead of the URL path so it doesn't land in uvicorn/Twilio access logs \u2014 defense-in-depth; add the X-Twilio-Signature-validation comment note; (5) raise websockets floor to >=13.0 (additional_headers needs the new asyncio client; uv.lock resolves 16 so it works today but a future resolution could break the OpenAI handshake). Also noted: future /book path interpolates course_name into call instructions \u2014 bounded (can't alter the dialed number) but a prompt-steer surface to remember when the allowlist is first populated."
+      "depends_on": [],
+      "why": "Fable security review of S3b (SHIP) flagged 3 non-blocking nits to fix before heavy live use: (1) media_bridge opt_out_requested uses bool() so a stringified 'false' from the model reads True and would suppress a real pro-shop number \u2014 use `v is True or str(v).lower()=='true'`; (2) telephony timeout except swallows asyncio.CancelledError \u2014 split TimeoutError (return partial) from CancelledError (re-raise after cleanup); (3) call_registry asyncio.get_event_loop() -> get_running_loop(). All localized to the S3b files; land after #124 merges (branch is worktree-locked now). | 2nd Fable security review (SHIP, mutation-verified) added: (4) pass the call token via TwiML <Parameter> (arrives in start.customParameters) instead of the URL path so it doesn't land in uvicorn/Twilio access logs \u2014 defense-in-depth; add the X-Twilio-Signature-validation comment note; (5) raise websockets floor to >=13.0 (additional_headers needs the new asyncio client; uv.lock resolves 16 so it works today but a future resolution could break the OpenAI handshake). Also noted: future /book path interpolates course_name into call instructions \u2014 bounded (can't alter the dialed number) but a prompt-steer surface to remember when the allowlist is first populated. UNBLOCKED 2026-07-10: #124 merged to main (9cd7394, guarded/inert) \u2014 dep satisfied, ready to build."
     },
     {
       "id": "caddie-dont-answer-misheard-input",
@@ -82,11 +99,12 @@
       "type": "major",
       "priority": 1,
       "risk": "high",
-      "status": "ready",
-      "depends_on": [
-        "#124 merged"
-      ],
-      "why": "S3 (PR #124) built the full rehearsal harness (trigger, endpoint, dialog, disclosure, safety, tests \u2014 reviewer/security SHIP) EXCEPT telephony.get_live_transport() which is still NotImplementedError \u2014 so nothing actually DIALS. S3b implements the Twilio\u2194OpenAI-Realtime audio bridge (outbound Twilio call \u2194 the realtime booking session) so the owner's rehearsal call actually rings his phone. Owner-gated: VOICE_BOOKING_ENABLED + Twilio creds + his verified number. This is the last mile; after it + creds, the owner taps Settings\u2192Rehearsal call and plays pro shop live. Fable plan; security review (live outbound telephony, the dial-safety invariant must hold end-to-end); the existing text simulator stays the CI-safe test (no live dial in CI)."
+      "status": "shipped-to-main-inert",
+      "depends_on": [],
+      "why": "S3 (PR #124) built the full rehearsal harness (trigger, endpoint, dialog, disclosure, safety, tests \u2014 reviewer/security SHIP) EXCEPT telephony.get_live_transport() which is still NotImplementedError \u2014 so nothing actually DIALS. S3b implements the Twilio\u2194OpenAI-Realtime audio bridge (outbound Twilio call \u2194 the realtime booking session) so the owner's rehearsal call actually rings his phone. Owner-gated: VOICE_BOOKING_ENABLED + Twilio creds + his verified number. This is the last mile; after it + creds, the owner taps Settings\u2192Rehearsal call and plays pro shop live. Fable plan; security review (live outbound telephony, the dial-safety invariant must hold end-to-end); the existing text simulator stays the CI-safe test (no live dial in CI).",
+      "shipped_to_main_commit": "9cd7394",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/124",
+      "note": "SHIPPED-TO-MAIN-INERT 2026-07-10 (owner-approved, keys NOT in yet). telephony.get_live_transport() is implemented (media_bridge.py, call_registry.py, voice_booking_ws.py) but VOICE_BOOKING_ENABLED defaults off and no Twilio env is set in prod \u2014 the live bridge is code-complete but dormant. No TestFlight cut (backend-only; no frontend-visible change from S3b itself). Owner turns it on by setting: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, VOICE_BOOKING_OWNER_NUMBER, VOICE_BOOKING_PUBLIC_HOST, VOICE_BOOKING_ENABLED=1 in AWS Secrets Manager / prod .env."
     },
     {
       "id": "caddie-surface-osm-trees",
@@ -94,9 +112,12 @@
       "type": "major",
       "priority": 2,
       "risk": "low",
-      "status": "shipped",
+      "status": "shipped-to-main",
       "depends_on": [],
-      "why": "RECONCILED 2026-07-10 (verified in code): hazards.py tree feature \u2014 landed on bundle #125 (awaiting ship) | TREE SPIKE VERDICT (specs/tree-detection-cv-findings.md): satellite-CV canopy detection DISPROVEN on real Bethpage (tree canopy is LESS green than fairway; bunker-edge false positives) \u2014 NO-GO. But OSM ALREADY has ~43-63 tree nodes + woods polygons per Bethpage hole that the app ALREADY ingests and currently ignores. GO: gate those into hole features as 'tree'/'woods' type \u2192 the caddie answers 'how far to clear the trees' via the existing hazard/carry path (tree line carry along the tee->green line, like hazards). ~small change, NO ML, NO satellite CV, NO training. Honest 'trees not mapped here' fallback where OSM coverage is sparse. Pretrained DeepForest (no training) held in reserve only if OSM coverage proves inadequate on other courses. Fable plan; reuse the polyline/hazard carry frame."
+      "why": "RECONCILED 2026-07-10 (verified in code): hazards.py tree feature \u2014 landed on bundle #125 (awaiting ship) | TREE SPIKE VERDICT (specs/tree-detection-cv-findings.md): satellite-CV canopy detection DISPROVEN on real Bethpage (tree canopy is LESS green than fairway; bunker-edge false positives) \u2014 NO-GO. But OSM ALREADY has ~43-63 tree nodes + woods polygons per Bethpage hole that the app ALREADY ingests and currently ignores. GO: gate those into hole features as 'tree'/'woods' type \u2192 the caddie answers 'how far to clear the trees' via the existing hazard/carry path (tree line carry along the tee->green line, like hazards). ~small change, NO ML, NO satellite CV, NO training. Honest 'trees not mapped here' fallback where OSM coverage is sparse. Pretrained DeepForest (no training) held in reserve only if OSM coverage proves inadequate on other courses. Fable plan; reuse the polyline/hazard carry frame.",
+      "shipped_to_main_commit": "56ddb78",
+      "testflight_version": "v1.0.1096",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/125"
     },
     {
       "id": "voice-target-speaker-enrollment-spike",
@@ -134,8 +155,9 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
-      "note": "Designer watch-item from multi-tee (c682f7f): in the NORMAL non-card-only state, header prefers cardYards exactly while the Center tile prefers anchored geometry center \u2014 a golfer can still see e.g. 178y header next to a 181 tile. Honest (real GPS vs scorecard differ a couple yards) and the 'from the tee' caption explains it, but two stacked near-equal numbers is the pattern the owner flagged. Add a '<=X yd, don't render both' clamp or a quiet designer note. Not a bug; polish."
+      "status": "needs-owner-input",
+      "note": "Designer watch-item from multi-tee (c682f7f): in the NORMAL non-card-only state, header prefers cardYards exactly while the Center tile prefers anchored geometry center \u2014 a golfer can still see e.g. 178y header next to a 181 tile. Honest (real GPS vs scorecard differ a couple yards) and the 'from the tee' caption explains it, but two stacked near-equal numbers is the pattern the owner flagged. Add a '<=X yd, don't render both' clamp or a quiet designer note. Not a bug; polish.",
+      "why": "SCOPED 2026-07-10 \u2014 NOT a clean bug, a DESIGN QUESTION (do not autonomously build). Header shows cardYards (scorecard hole length from the selected tee, RoundPageClient ~1194); Center tile shows fcbFromTee.center (straight-line tee\u2192green geometry). On a from-tee non-live hole these differ by design \u2014 on a dogleg the card follows the fairway while geometry is straight-line, so a small 'drift' is EXPECTED and arguably correct. A 'clamp' that snaps the tile to the card would HIDE the real straight-line-to-green number (useful info). Needs owner/designer call: (a) is the drift actually confusing on-device (validate on a real TestFlight screenshot \u2014 the multi-tee anchor fix already resolved the phantom 178/232 case), (b) if so, prefer a caption/label clarification over clamping the number. Deferred pending that decision."
     },
     {
       "id": "fcb-unmapped-paper-fallback-mismatch",
@@ -143,11 +165,14 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "shipped",
+      "status": "shipped-to-main",
       "shipped_commit": "31c2067",
-      "shipped_note": "SHIPPED 2026-07-10 (cycle 61) on integration/next @ 31c2067. Reachable, persistent, user-visible bug CONFIRMED (reviewer+designer): a round with a course-center anchor (round.courseLat/Lng -> roundAnchor truthy) but no mappedCourse -> useHoleCoordinates(null) -> mapCoords=[] -> anchoredCoords=[] -> holeCoordsForTiles null -> fcb null, teeAnchor null -> resolveFcbSource(null,false)='tee' -> showCardOnly false -> the else branch rendered fabricated distance +/- offset F/C/B for every hole, and DistancesCard renders because roundAnchor is truthy (plus a load-window flash on mapped rounds). FIX: extracted pure buildFcbTiles + effectiveFcbSource (frontend/src/lib/course/fcb-tiles.ts, tested) -> every 'no real geometry' state (fcbSource==='card' || fcb==null) collapses to honest card-only tiles (Front/Back '—', Center=cardYards ?? '—'); caption derives from the SAME condition so it reads 'from the card', never 'from the tee' over '—' tiles. Three working paths (GPS 'you', from-tee, card-only) byte-identical. Reviewer verdict SHIP; designer APPROVE after caption fold. Follow-up (out of scope, tracked separately as fcb-plays-tile-fabricated-fallback): the PLAYS tile still derives from `distance` in the same bug state.",
+      "shipped_note": "SHIPPED 2026-07-10 (cycle 61) on integration/next @ 31c2067. Reachable, persistent, user-visible bug CONFIRMED (reviewer+designer): a round with a course-center anchor (round.courseLat/Lng -> roundAnchor truthy) but no mappedCourse -> useHoleCoordinates(null) -> mapCoords=[] -> anchoredCoords=[] -> holeCoordsForTiles null -> fcb null, teeAnchor null -> resolveFcbSource(null,false)='tee' -> showCardOnly false -> the else branch rendered fabricated distance +/- offset F/C/B for every hole, and DistancesCard renders because roundAnchor is truthy (plus a load-window flash on mapped rounds). FIX: extracted pure buildFcbTiles + effectiveFcbSource (frontend/src/lib/course/fcb-tiles.ts, tested) -> every 'no real geometry' state (fcbSource==='card' || fcb==null) collapses to honest card-only tiles (Front/Back '\u2014', Center=cardYards ?? '\u2014'); caption derives from the SAME condition so it reads 'from the card', never 'from the tee' over '\u2014' tiles. Three working paths (GPS 'you', from-tee, card-only) byte-identical. Reviewer verdict SHIP; designer APPROVE after caption fold. Follow-up (out of scope, tracked separately as fcb-plays-tile-fabricated-fallback): the PLAYS tile still derives from `distance` in the same bug state.",
       "note": "Designer watch-item from multi-tee (c682f7f). Pre-existing, out of scope for #119 (fix scoped to mapped-course rounds). On a round with NO mappedCourse/roundAnchor, headerYards falls back to hole.yards (e.g. 400) while the Center tile falls back to distance (hole.yards-60% ~160) captioned 'from the tee' (the illustration mock, not real geometry). Same original bug class still reachable on unmapped rounds. Close next: honest header/tile reconciliation on the paper-fallback path too.",
-      "why": "SCOPED 2026-07-10 (was an unspecced stub): RoundPageClient F/C/B mapped-branch fallback renders `distance \u00b1 offset` when fcb (fcbLive ?? fcbFromTee) is null but fcbSource !== 'card' (RoundPageClient.tsx ~1167-1171). `distance` (~line 1086) = Math.max(80, hole.yards - round(hole.yards*0.6)) \u2014 a ~40% ILLUSTRATION PLACEHOLDER, not a real yardage. Reachable when the tee-anchor resolves a non-card source but holeCoordsForTiles.tee is null (partial-mapping / anchor-vs-tiles mismatch): the tiles then show fabricated F/C/B that disagree with the card \u2014 a NO-FAKE-DATA violation on the core yardage surface. FIX: never fabricate \u2014 when fcb is null, present honest card-only tiles (Center=cardYards, Front/Back='\u2014') regardless of source; delete the distance\u00b1offset fallback. Keep the 3 working paths (GPS 'you', from-tee, card-only) byte-identical. Unit-test the fcb-null-non-card state."
+      "why": "SCOPED 2026-07-10 (was an unspecced stub): RoundPageClient F/C/B mapped-branch fallback renders `distance \u00b1 offset` when fcb (fcbLive ?? fcbFromTee) is null but fcbSource !== 'card' (RoundPageClient.tsx ~1167-1171). `distance` (~line 1086) = Math.max(80, hole.yards - round(hole.yards*0.6)) \u2014 a ~40% ILLUSTRATION PLACEHOLDER, not a real yardage. Reachable when the tee-anchor resolves a non-card source but holeCoordsForTiles.tee is null (partial-mapping / anchor-vs-tiles mismatch): the tiles then show fabricated F/C/B that disagree with the card \u2014 a NO-FAKE-DATA violation on the core yardage surface. FIX: never fabricate \u2014 when fcb is null, present honest card-only tiles (Center=cardYards, Front/Back='\u2014') regardless of source; delete the distance\u00b1offset fallback. Keep the 3 working paths (GPS 'you', from-tee, card-only) byte-identical. Unit-test the fcb-null-non-card state.",
+      "shipped_to_main_commit": "56ddb78",
+      "testflight_version": "v1.0.1096",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/125"
     },
     {
       "id": "fcb-plays-tile-fabricated-fallback",
@@ -155,9 +180,12 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "shipped",
-      "shipped_note": "SHIPPED 2026-07-10 (cycle 62) on integration/next @ 6a680bc (PR #125). Widened the plays/physics/caption card-only decision to effectiveCardOnly = effectiveFcbSource(fcbSource, fcb) === 'card' (the SAME condition the F/C/B tiles use) and extracted the basis selection into a pure, tested helper playsBasis (frontend/src/lib/caddie/plays-basis.ts) that deliberately does NOT receive `distance` — so the illustration placeholder can never leak into the plays number. In the anchor-only/fcb-null/source-'tee' state the plays basis is now cardYards (never distance); degenerate card-only with no scorecard yardage -> null -> tile shows '—'/'no data' (coherent with the '—' F/C/B center). showCardOnly removed entirely (all 4 uses widened); `distance` now feeds only the HoleCard illustration. Three working paths (GPS / genuine from-tee / real card-only) byte-identical; physics double-count guard preserved (physicsBasisYards never = holeIntel.effectiveYards). 8 headless playsBasis tests. Reviewer SHIP (all 6 adversarial checks + TDZ/unused-var clean), designer APPROVE, QA: tsc/lint/voice 274 + vitest 37 green locally, both required CI gates SUCCESS on head. SILENT accumulation on #125.",
-      "why": "FOLLOW-UP flagged by BOTH reviewer and designer on fcb-unmapped-paper-fallback-mismatch (cycle 61, 31c2067). That fix made the F/C/B tiles + caption honest when fcb is null, but deliberately left `showCardOnly = fcbSource === 'card'` (line ~1156) untouched per scope. So in the SAME bug state (fcb null, fcbSource 'tee' — anchor-only unmapped round), the PLAYS tile still feeds off playsBase = holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance) = `distance` (RoundPageClient.tsx ~1224), the ~40% illustration placeholder, so the plays-like number is fabricated while F/C/B read '—'/card — incoherent and a residual no-fake-data leak. FIX: widen the plays/physics/caption card-only condition to the same `effectiveFcbSource(fcbSource, fcb) === 'card'` (or `fcb == null`) the tiles now use, so playsBase/physicsBasisYards/playsTile.fromCard/playsSubLabel all report honest card basis (cardYards) in this state. Verify plays tile shows a card-basis label, not a distance-derived plays-like, on an anchor-only round."
+      "status": "shipped-to-main",
+      "shipped_note": "SHIPPED 2026-07-10 (cycle 62) on integration/next @ 6a680bc (PR #125). Widened the plays/physics/caption card-only decision to effectiveCardOnly = effectiveFcbSource(fcbSource, fcb) === 'card' (the SAME condition the F/C/B tiles use) and extracted the basis selection into a pure, tested helper playsBasis (frontend/src/lib/caddie/plays-basis.ts) that deliberately does NOT receive `distance` \u2014 so the illustration placeholder can never leak into the plays number. In the anchor-only/fcb-null/source-'tee' state the plays basis is now cardYards (never distance); degenerate card-only with no scorecard yardage -> null -> tile shows '\u2014'/'no data' (coherent with the '\u2014' F/C/B center). showCardOnly removed entirely (all 4 uses widened); `distance` now feeds only the HoleCard illustration. Three working paths (GPS / genuine from-tee / real card-only) byte-identical; physics double-count guard preserved (physicsBasisYards never = holeIntel.effectiveYards). 8 headless playsBasis tests. Reviewer SHIP (all 6 adversarial checks + TDZ/unused-var clean), designer APPROVE, QA: tsc/lint/voice 274 + vitest 37 green locally, both required CI gates SUCCESS on head. SILENT accumulation on #125.",
+      "why": "FOLLOW-UP flagged by BOTH reviewer and designer on fcb-unmapped-paper-fallback-mismatch (cycle 61, 31c2067). That fix made the F/C/B tiles + caption honest when fcb is null, but deliberately left `showCardOnly = fcbSource === 'card'` (line ~1156) untouched per scope. So in the SAME bug state (fcb null, fcbSource 'tee' \u2014 anchor-only unmapped round), the PLAYS tile still feeds off playsBase = holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance) = `distance` (RoundPageClient.tsx ~1224), the ~40% illustration placeholder, so the plays-like number is fabricated while F/C/B read '\u2014'/card \u2014 incoherent and a residual no-fake-data leak. FIX: widen the plays/physics/caption card-only condition to the same `effectiveFcbSource(fcbSource, fcb) === 'card'` (or `fcb == null`) the tiles now use, so playsBase/physicsBasisYards/playsTile.fromCard/playsSubLabel all report honest card basis (cardYards) in this state. Verify plays tile shows a card-basis label, not a distance-derived plays-like, on an anchor-only round.",
+      "shipped_to_main_commit": "56ddb78",
+      "testflight_version": "v1.0.1096",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/125"
     },
     {
       "id": "teetime-s0-kill-fake-data",
@@ -199,23 +227,26 @@
       "type": "major",
       "priority": 2,
       "risk": "high",
-      "status": "in_review",
+      "status": "shipped-to-main-inert",
       "depends_on": [
         "teetime-s0-kill-fake-data"
       ],
-      "why": "RECONCILED 2026-07-10: BUILT as PR #124 (S3 caller + rehearsal harness, double security-SHIP) \u2014 awaits owner merge + Twilio keys, not a fresh build. | specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool."
+      "why": "RECONCILED 2026-07-10: BUILT as PR #124 (S3 caller + rehearsal harness, double security-SHIP) \u2014 awaits owner merge + Twilio keys, not a fresh build. | specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool.",
+      "shipped_to_main_commit": "9cd7394",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/124",
+      "note": "SHIPPED-TO-MAIN-INERT 2026-07-10 (owner-approved merge, explicit condition: keys NOT in yet). Merged to main gated OFF \u2014 VOICE_BOOKING_ENABLED default off, no Twilio env in prod, dial-safety allowlist (VOICE_BOOKING_OWNER_NUMBER only) intact. Post-merge main CI: both required gates SUCCESS (9cd7394); deploy verified \u2014 /health green after restart with the new deps/routes, no boot crash from missing TWILIO_*/VOICE_BOOKING_* env. Frontend DOES carry a visible change (new 'Rehearsal call' section on the existing /settings page, owner-only) \u2014 no TestFlight cut per this task's scope (backend-only feature; the button itself is inert and returns 'not enabled' until keys are set). Owner turns it on: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, VOICE_BOOKING_OWNER_NUMBER, VOICE_BOOKING_PUBLIC_HOST, VOICE_BOOKING_ENABLED=1 in AWS Secrets Manager / prod .env."
     },
     {
       "id": "teetime-s4-scraping-adapters",
       "title": "Tee-time S4: Playwright scraping adapters for gated platforms (GRAY, gated)",
       "type": "major",
-      "priority": 3,
+      "priority": 1,
       "risk": "high",
-      "status": "ready",
+      "status": "superseded",
       "depends_on": [
         "teetime-s1-foreup-availability"
       ],
-      "why": "specs/teetime-real-booking-plan.md S4. Only courses whose availability is behind a rendered page (Chronogolf/Lightspeed widgets) with no clean JSON and no foreUP/call route. Headless Playwright, HTML parse, honest UA, low freq, heavy cache, never solve CAPTCHAs, never log in to scrape. Tests vs saved HTML fixtures (never live in CI). Explicitly GRAY \u2014 per-course opt-in, lowest priority."
+      "why": "SUPERSEDED by the sequenced S4a-S4f in specs/teetime-availability-everywhere-plan.md. ELEVATED to p1 by [teetime-availability-everywhere] owner directive 2026-07-10. specs/teetime-real-booking-plan.md S4. Only courses whose availability is behind a rendered page (Chronogolf/Lightspeed widgets) with no clean JSON and no foreUP/call route. Headless Playwright, HTML parse, honest UA, low freq, heavy cache, never solve CAPTCHAs, never log in to scrape. Tests vs saved HTML fixtures (never live in CI). Explicitly GRAY \u2014 per-course opt-in, lowest priority."
     },
     {
       "id": "caddie-remove-seeded-question",
@@ -223,10 +254,13 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "shipped",
+      "status": "shipped-to-main",
       "depends_on": [],
       "why": "OWNER 2026-07-09: the auto-opening posts the question AS the player ('I'm on the tee, about 390\u2026') and live mode doesn't cleanly answer it. Make the caddie OPEN with the recommendation in its own voice (assistant-side briefing), not a synthesized user bubble. Keeps the auto-reco value, kills the fake question. buildOpeningTurnText/opening-turn path + live opening. Small, ship first.",
-      "evidence": "Landed on bundle #125 (1446ea2). Caddie now opens the conversation itself (assistant-authored greeting) instead of puppeting a fake first-person player question. buildOpeningTurnText->buildOpeningGreetingText (+buildOpeningGreetingInstruction live wrapper); classic path seeds {role:assistant}+tts.speak (no network turn), live path new realtime sendOpener (system item + response.create, no user bubble). Fable-planned; reviewer SHIP; designer APPROVE; gates green (lint/tsc, targeted vitest 79, full 1890, voice 274/274)."
+      "evidence": "Landed on bundle #125 (1446ea2). Caddie now opens the conversation itself (assistant-authored greeting) instead of puppeting a fake first-person player question. buildOpeningTurnText->buildOpeningGreetingText (+buildOpeningGreetingInstruction live wrapper); classic path seeds {role:assistant}+tts.speak (no network turn), live path new realtime sendOpener (system item + response.create, no user bubble). Fable-planned; reviewer SHIP; designer APPROVE; gates green (lint/tsc, targeted vitest 79, full 1890, voice 274/274).",
+      "shipped_to_main_commit": "56ddb78",
+      "testflight_version": "v1.0.1096",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/125"
     },
     {
       "id": "caddie-green-slope-spatial",
@@ -2171,7 +2205,8 @@
       "priority": 3,
       "risk": "low",
       "status": "ready",
-      "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct \u2014 the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' \u2014 unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5."
+      "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct \u2014 the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' \u2014 unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5.",
+      "why": " | SCOPED 2026-07-10: cosmetic copy on the tee-time 'searching\u2026' state; no recorded defect, needs a concrete before/after from the owner or a designer pass to be worth a cycle. Low value solo."
     },
     {
       "id": "tree-prod-data-verified",
@@ -2199,9 +2234,72 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
+      "status": "shipped-to-main",
+      "depends_on": [],
+      "why": "SHIPPED cycle 60 (code 1e75611 + reviewer follow-ups): muniFromAddress drops lone venue/street pseudo-localities; localityLabel/muniEchoesName token-dedup kills name-echo ('Course \u00b7 Course') at build + all 4 render sites incl. add-flow. Reviewer SHIP (no real-city regression); folded 2 fixes (add-flow dedup, bare-'club' real-city protect). teetime 222, gates green. | Reviewer flag (cycle 59, non-blocking): muniFromAddress returns the LAST surviving comma-segment, so an address with no real city (single-segment venue name, or a segment that just repeats the course name) can surface a pseudo-locality \u2014 e.g. 'Marine Park Golf Course \u00b7 Marine Park Golf Course'. Visible + brushes no-fake-data. Now on the confirmation path. Add a name/muni dedup guard at the build/render sites + lock tests; omit over fabricate; MUST NOT regress real single-word cities (Brooklyn). specs: extend courses.test.ts.",
+      "shipped_to_main_commit": "56ddb78",
+      "testflight_version": "v1.0.1096",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/125"
+    },
+    {
+      "id": "teetime-s4a-capability-store-teeitup",
+      "title": "S4a: generalized capability store + adapter registry + fetch-discipline extract + TeeItUp adapter (rung 1)",
+      "type": "major",
+      "priority": 1,
+      "risk": "high",
+      "status": "shipped (integration/next a1382b0; NOTICEABLE). Generalized capability_store to multi-platform (platform/channel/platform_ids, back-compat with foreup_ny_seed.json \u2014 18 Mile Creek row byte-identical). Extracted fetch_discipline.py from foreup.py (CircuitBreaker/SlidingWindowLimiter/TTL cache/SingleFlight/_as_int/_as_price) \u2014 foreUP proven byte-identical by 74 unedited S1 tests. New adapters/teeitup.py (rung 1) against LIVE-VERIFIED endpoint GET phx-api-be-east-1b.kenna.io/v2/tee-times?date=&facilityIds=N header x-be-alias (plan's courseIds guess was WRONG \u2014 corrected). Honest normalization: teetime UTC->America/New_York, players=maxPlayers, greenFee cents/100 (None never fabricated), verified-empty [] vs couldn't-check None. Router ADAPTERS registry keyed by platform + TEETIME_ENGINES allowlist; S0 path byte-identical. 8 REAL NYC munis seeded (Douglaston/Van Cortlandt/Kissena/Silver Lake/Forest Park/South Shore/La Tourette/Clearview) via golf-nyc TeeItUp tenant \u2014 all verified returning real times 2026-07-10. Fixtures: teeitup_golfnyc_times.json (South Shore 58 real slots) + teeitup_empty.json. 79 new tests (MockTransport, no live net). Reviewer SHIP (7 invariants traced, 3 non-blocking nits), QA PASS (ruff, 1836 pass/83 pg-skip, frontend lint/tsc/voice-274). On bundle, awaiting owner ship-it.",
+      "depends_on": [],
+      "why": "Foundation of the availability ladder. Generalize capability_store.py (platform/channel/platform_ids, back-compat with foreup_ny_seed.json), extract fetch_discipline.py from foreup.py (foreUP behavior byte-identical, pinned by the 64-test S1 suite), add adapters/teeitup.py (single host phx-api-be-east-1b.kenna.io + x-be-alias header, public JSON) + captured fixture + 2-3 probed NY/NJ seed rows, wire router ladder for rung-1 adapters. Everything else hangs off this. Plan \u00a72,\u00a73,\u00a76."
+    },
+    {
+      "id": "teetime-s4b-ezlinks-marine-park",
+      "title": "S4b: Marine Park real times \u2014 via TeeItUp golf-nyc tenant (EZLinks is Cloudflare-locked; NO scraper)",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "superseded-by-probe-verdict. EZLinks portal (marineparkridepp/golfnyc2.ezlinksgolf.com) is Cloudflare-Turnstile LOCKED family-wide \u2014 no polite scraper possible (ethical line). Marine Park is NOT on the golf-nyc TeeItUp tenant either. => Marine Park online availability is genuinely rung-3 only; its coverage now depends on S4e (availability-by-call). No EZLinks adapter will be built. See Marine Park probe verdict + S4a live-verify in tasks/progress.md.",
+      "depends_on": [],
+      "why": "PROBE VERDICT 2026-07-10 (agent recon, evidence in scratchpad/FINDINGS.json): Marine Park's EZLinks portal is Cloudflare-Turnstile LOCKED \u2014 no clean HTTP JSON, headless Chromium never clears the gate, and the whole NYC EZLinks family (golfnyc2.ezlinksgolf.com, ~9 munis) is gated identically. DO NOT build an EZLinks scraper (can't pass politely; that's the ethical line \u2014 no CAPTCHA-solving/fingerprint-spoofing). BETTER PATH FOUND: NYC munis are ALSO on TeeItUp at golf-nyc.book.teeitup.com (clean rung-1, the S4a adapter). ACTION: S4a live-verifies Marine Park via the golf-nyc TeeItUp tenant \u2192 if reachable, add its capability row (folds this item into S4a, no scraper). If NOT on TeeItUp \u2192 route Marine Park to rung 3 (AI call) + GolfNow deep-link. Owner's 'if not clean \u2192 scraper' resolves to: scraper is a dead-end here (Cloudflare), but TeeItUp likely covers it cleanly instead."
+    },
+    {
+      "id": "teetime-s4c-chronogolf-probe-quick18",
+      "title": "S4c: Chronogolf marketplace adapter + generalized capability probe script + Quick18 HTML-lite",
+      "type": "major",
+      "priority": 2,
+      "risk": "high",
       "status": "shipped",
       "depends_on": [],
-      "why": "SHIPPED cycle 60 (code 1e75611 + reviewer follow-ups): muniFromAddress drops lone venue/street pseudo-localities; localityLabel/muniEchoesName token-dedup kills name-echo ('Course \u00b7 Course') at build + all 4 render sites incl. add-flow. Reviewer SHIP (no real-city regression); folded 2 fixes (add-flow dedup, bare-'club' real-city protect). teetime 222, gates green. | Reviewer flag (cycle 59, non-blocking): muniFromAddress returns the LAST surviving comma-segment, so an address with no real city (single-segment venue name, or a segment that just repeats the course name) can surface a pseudo-locality \u2014 e.g. 'Marine Park Golf Course \u00b7 Marine Park Golf Course'. Visible + brushes no-fake-data. Now on the confirmation path. Add a name/muni dedup guard at the build/render sites + lock tests; omit over fabricate; MUST NOT regress real single-word cities (Brooklyn). specs: extend courses.test.ts."
+      "why": "SHIPPED 2026-07-10 on integration/next @ f4d0fa2 (bundle PR #128). Chronogolf LIVE-verified (real endpoint marketplace/clubs/<club_id>/teetimes?...&affiliation_type_ids[]=<default> \u2014 NOT the plan's guess; Cloudflare present but honest UA NOT blocked). adapters/chronogolf.py (honest: out_of_capacity is-False filter, cheapest green_fee in DOLLARS not cents, players=party_size documented-not-a-count, single-player restriction honored), registered in router ADAPTERS. +3 live-verified NY-metro seed rows (Rock Spring GC West Orange NJ, Pleasantville CC Westchester NY, Beaver Brook CC Annandale NJ) \u2192 11 NY-area courses now have real availability (8 TeeItUp + 3 Chronogolf). Generalized validate_foreup_courses.py \u2192 probe_booking_capability.py (fingerprint+id-extract+probe+capture-fixture; old foreUP script untouched). Partnership-apps checklist \u2192 specs/teetime-partnership-applications.md (Lightspeed Partner API, GolfNow/TeeOff affiliate, foreUP vendor, Supreme Golf). Quick18 SKIPPED (no live trivially-reachable NY-metro course found). Reviewer: security clean (no SSRF/injection/secret surface); honesty invariants eng-lead-verified; QA green (ruff clean, 1880 passed/83 pg-skip, S0/S1/S4a 177 byte-identical, no live net, frontend untouched). Plan \u00a71,\u00a72b,\u00a73."
+    },
+    {
+      "id": "teetime-s4d-playwright-worker-pending-ux",
+      "title": "S4d: rung-2b headless scraper (Playwright worker) + 'checking\u2026' pending UX",
+      "type": "major",
+      "priority": 3,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [],
+      "why": "NOTE 2026-07-10: EZLinks/Cloudflare-Turnstile sites are NOT scrapable politely even with a headless browser (probe confirmed Chromium never clears Turnstile) \u2014 do NOT target them with S4d. S4d headless is only for JS-rendered widgets WITHOUT anti-bot gates. Re-scope S4d's target engine after S4a/S4c reveal which engines actually need a browser. The only slice with deploy-image impact (~400MB Chromium, gated TEETIME_SCRAPER_ENABLED default off). In-process asyncio worker + bounded queue off the request path; TeeTimeSlot gains status live|pending; poll endpoint; frontend pending row; first browser-scraped engine (Club Prophet or hostile EZLinks). Plan \u00a74b,\u00a76,\u00a77. Depends on S4a."
+    },
+    {
+      "id": "teetime-s4e-availability-by-call",
+      "title": "S4e: rung-3 wiring \u2014 availability-ask dialog + call-CTA + result flow-back",
+      "type": "major",
+      "priority": 3,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Extend voice_booking dialog with an availability-ask mode (asks times, not books), availability_by_call same-day cache, call CTA + 'Calling the pro shop\u2026' async status, spoken times flow back as real phone-confirmed TeeTimeSlots. Fix the S3 TODO (window from slot.time='' on route entries \u2192 pass the query window). Ships DARK behind VOICE_BOOKING gates; rehearsal harness validates when Twilio keys land. Plan \u00a75. Depends on #124 merged + S4a."
+    },
+    {
+      "id": "teetime-s4f-coverage-flywheel",
+      "title": "S4f: coverage flywheel \u2014 auto-probe on honest-empty telemetry + coverage metric + drift canary",
+      "type": "major",
+      "priority": 4,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Bundle-rider. Log searched courses with no capability row \u2192 feed the probe script; '% of searched courses returning real availability' metric; monthly re-probe sweep; per-engine schema-drift canary. Plan \u00a72b,\u00a79."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."

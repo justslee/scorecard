@@ -20,17 +20,22 @@ limiter → circuit breaker → httpx GET → parse JSON array → normalize the
 day (date + party filtered) → cache → per-call window/price filter + sort +
 truncate. Never raises — every external call sits under a catch-all that
 returns `None` ("couldn't check").
+
+The shared politeness stack (circuit breaker, single-flight, honest UA,
+timeout, `false`-instead-of-null coercion guards) now lives in
+`fetch_discipline.py` (specs/teetime-availability-everywhere-plan.md §3) —
+this module imports it rather than defining it; every foreUP behavior below
+is byte-identical to before that extraction.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Callable
 
 import httpx
 
@@ -44,6 +49,16 @@ from .base import (
     TeeTimeSlot,
 )
 from .capability_store import CourseBookingCapability, load_capabilities
+from .fetch_discipline import (
+    AVAILABILITY_CACHE_TTL_S,
+    REQUEST_TIMEOUT_S,
+    USER_AGENT,
+    CircuitBreaker,
+    SingleFlight,
+    _as_int,
+    _as_price,
+    _format_time12h,
+)
 from .routing import _haversine_miles, _parse_latlng
 from .search_cache import FileSearchCacheStore, SearchCacheStore
 
@@ -53,9 +68,7 @@ log = logging.getLogger(__name__)
 
 FOREUP_HOST = "foreupsoftware.com"
 TIMES_URL = "https://foreupsoftware.com/index.php/api/booking/times"
-USER_AGENT = "Looper/1.0 (golf tee-time availability)"   # same style as osm.py
-REQUEST_TIMEOUT_S = 8.0
-FOREUP_CACHE_TTL_S = 480          # 8 min — inside the required 5-10 min band
+FOREUP_CACHE_TTL_S = AVAILABILITY_CACHE_TTL_S   # 8 min — inside the required 5-10 min band
 FOREUP_RPM = 10                   # per-host, 60s window
 MAX_SLOTS_PER_COURSE = 6          # earliest N inside the window — calm, scannable
 
@@ -84,51 +97,8 @@ def build_times_request(
     return TIMES_URL, params, headers
 
 
-# ─── Defensive value coercion — bool-before-int is load-bearing ───────────────
-
-def _as_int(v: object) -> int | None:
-    """Coerce a foreUP field to a real int, or None when absent/malformed.
-
-    `isinstance(v, bool)` MUST be checked before `isinstance(v, int)` —
-    Python bools are ints, so `available_spots: false` (or `true`) would
-    otherwise pass as 0 (or 1) and silently mis-state capacity.
-    """
-    if isinstance(v, bool):
-        return None
-    if isinstance(v, int):
-        return v
-    if isinstance(v, str):
-        try:
-            return int(v)
-        except ValueError:
-            return None
-    return None
-
-
-def _as_price(v: object) -> float | None:
-    """Coerce a foreUP fee field to a positive float, or None. `0`/negative/
-    non-numeric/bool/false/missing are all "unknown" — NEVER fabricated,
-    never coerced to 0."""
-    if isinstance(v, bool):
-        return None
-    if isinstance(v, (int, float)):
-        return float(v) if v > 0 else None
-    if isinstance(v, str):
-        try:
-            f = float(v)
-        except ValueError:
-            return None
-        return f if f > 0 else None
-    return None
-
-
-def _format_time12h(hhmm: str) -> str:
-    """"07:10" -> "7:10 AM" — mirrors frontend formatTime12hOrEmpty."""
-    h, m = (int(x) for x in hhmm.split(":"))
-    period = "AM" if h < 12 else "PM"
-    hour = h % 12 or 12
-    return f"{hour}:{m:02d} {period}"
-
+# `_as_int` / `_as_price` / `_format_time12h` now live in fetch_discipline.py
+# (imported above) — behavior is byte-identical, just one import hop away.
 
 # ─── Parse + normalize (§3d) ───────────────────────────────────────────────────
 
@@ -253,58 +223,9 @@ def _cache_key(cap: CourseBookingCapability, query: TeeTimeQuery) -> str:
     }, sort_keys=True)
 
 
-# ─── Circuit breaker (§6d) ──────────────────────────────────────────────────────
-
-class CircuitBreaker:
-    """Small per-host circuit breaker (single host: foreupsoftware.com).
-
-    closed -> (>=3 consecutive failures) -> open (300s) -> half-open (ONE
-    trial) -> success closes (resets failure count) / failure re-opens for
-    another `open_seconds`.
-    """
-
-    def __init__(
-        self,
-        failure_threshold: int = 3,
-        open_seconds: float = 300.0,
-        clock: Callable[[], float] = time.monotonic,
-    ) -> None:
-        self._failure_threshold = failure_threshold
-        self._open_seconds = open_seconds
-        self._clock = clock
-        self._failures = 0
-        self._state: Literal["closed", "open", "half_open"] = "closed"
-        self._opened_at: float | None = None
-
-    def allow(self) -> bool:
-        if self._state == "closed":
-            return True
-        if self._state == "half_open":
-            # Exactly one trial already admitted — block until it resolves
-            # (record_success / record_failure).
-            return False
-        # open
-        if self._opened_at is not None and self._clock() - self._opened_at >= self._open_seconds:
-            self._state = "half_open"
-            return True
-        return False
-
-    def record_success(self) -> None:
-        self._failures = 0
-        self._state = "closed"
-        self._opened_at = None
-
-    def record_failure(self, reason: str | None = None) -> None:
-        self._failures += 1
-        if self._state == "half_open" or self._failures >= self._failure_threshold:
-            log.warning(
-                "foreup breaker OPEN (%d consecutive failures, last status=%s) — "
-                "serving routing fallback for %ds",
-                self._failures, reason, int(self._open_seconds),
-            )
-            self._state = "open"
-            self._opened_at = self._clock()
-
+# `CircuitBreaker` now lives in fetch_discipline.py (imported above) — same
+# class, same behavior, byte-identical. Re-exported here so existing callers
+# (tests, validate_foreup_courses.py) that import it from `foreup` keep working.
 
 # ─── Module singletons (single host — one limiter, one breaker) ───────────────
 
@@ -336,7 +257,7 @@ class ForeUpProvider(TeeTimeProvider):
         self._breaker = breaker or _breaker
         self._transport = transport
         self._clock = clock
-        self._inflight: dict[str, asyncio.Future] = {}
+        self._singleflight = SingleFlight()
 
     @property
     def name(self) -> str:
@@ -383,30 +304,18 @@ class ForeUpProvider(TeeTimeProvider):
         self, cache_key: str, cap: CourseBookingCapability,
         date_mmddyyyy: str, query_date: str, party_size: int,
     ) -> list[dict] | None:
-        existing = self._inflight.get(cache_key)
-        if existing is not None:
-            return await existing
-
-        fut: asyncio.Future = asyncio.get_event_loop().create_future()
-        self._inflight[cache_key] = fut
-        try:
+        async def _do() -> list[dict] | None:
             # Double-checked cache read — another flight may have resolved
             # and cached between our first `.get()` and acquiring the flight.
             cached = self._cache.get(cache_key)
             if cached is not None:
-                result = cached
-            else:
-                result = await self._do_fetch(cap, date_mmddyyyy, query_date, party_size)
-                if result is not None:
-                    self._cache.set(cache_key, result)
-            fut.set_result(result)
+                return cached
+            result = await self._do_fetch(cap, date_mmddyyyy, query_date, party_size)
+            if result is not None:
+                self._cache.set(cache_key, result)
             return result
-        except BaseException as exc:
-            if not fut.done():
-                fut.set_exception(exc)
-            raise
-        finally:
-            del self._inflight[cache_key]
+
+        return await self._singleflight.run(cache_key, _do)
 
     async def _do_fetch(
         self, cap: CourseBookingCapability, date_mmddyyyy: str,

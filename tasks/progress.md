@@ -3,6 +3,119 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: S4a (tee-time availability-everywhere) landed on the bundle (NOTICEABLE, DONE)
+
+Implemented `specs/teetime-availability-everywhere-plan.md` §2a/§3/§6 (S4a —
+generalized capability store + adapter registry + TeeItUp rung-1) exactly as
+handed off by eng-lead, including the live-verified TeeItUp ground truth
+(`/v2/tee-times?date=&facilityIds=N` + `x-be-alias` header — corrects the
+plan draft's wrong `courseIds` guess). One commit on `integration/next`:
+
+- `capability_store.py` generalized: `CourseBookingCapability` gained
+  `channel`/`platform_ids`/`probe_status` (all defaulted — every existing
+  construction call, incl. `test_tee_time_router.py`'s hand-built caps,
+  keeps working unchanged). `foreup_booking_id`/`schedule_id` stay REAL
+  fields (not derived properties) for back-compat — `foreup.py` needed zero
+  reads changed. Legacy `load_capabilities`/`_parse_row`/the two foreUP
+  files are BYTE-IDENTICAL (only additively populate the new fields); a new
+  `load_all_capabilities` merges legacy foreUP rows + two new generalized
+  files (`booking_capabilities_seed.json` checked in with 8 live-verified
+  golf-nyc TeeItUp munis, `booking_capabilities_validated.json` gitignored,
+  same fail-loud/fail-soft pattern). Dedup key generalized to
+  `(platform, sorted platform_ids)` — verified equivalent to the old
+  `(booking_id, schedule_id)` key for every foreUP case.
+- `fetch_discipline.py` (new): extracted `CircuitBreaker` verbatim, the honest
+  UA + 8s timeout, `_as_int`/`_as_price` bool-before-int guards,
+  `_format_time12h`, and a new generalized `SingleFlight` (foreUP's
+  `_fetch_day` inflight-future dedup, now reusable). `foreup.py` imports
+  these instead of defining them — the original 64-test S1 suite
+  (`test_tee_time_foreup.py`) passes UNCHANGED, proving byte-identical
+  behavior (foreUP keeps its own per-host limiter/breaker singletons, never
+  shared with teeitup).
+- `adapters/teeitup.py` (new): `TeeItUpProvider.slots_for_capability` — same
+  contract as foreUP's (slots | `[]` verified-empty | `None` couldn't-check,
+  never raises). Normalization: UTC teetime → `America/New_York` local time
+  with LOCAL-date filtering (a UTC entry can roll to the next/prev day —
+  tested both directions with synthetic payloads), `players` = `maxPlayers`
+  (bool-before-int guarded), price = min present green fee across the
+  entry's rates in CENTS ÷100 → dollars → positive-guard (never fabricated,
+  never fed raw cents into the dollar guard), holes from the chosen
+  (cheapest) rate. An empty top-level response array is treated as
+  couldn't-check (schema-drift signal), not verified-empty — only
+  `teetimes: []` on a real record counts as verified-empty.
+- `router_provider.py`: added a module `ADAPTERS` registry (`platform ->
+  adapter`) and a `TEETIME_ENGINES` allowlist env; `_slots_for_course` now
+  does `adapter = self._adapters.get(cap.platform)` instead of a hardcoded
+  foreUP call — unknown/disabled platform degrades to the EXACT S0 entry
+  (same code path as "no capability match"). `book()` dispatches by
+  `slot.provider` through the same adapter map. The original S1 fallback
+  ladder + all 5 existing test files pass unchanged.
+- Tests (all fixture-derived, zero live network — teeitup fixtures were
+  captured live by eng-lead in the prior commit `68e64b4`): 35 new
+  `test_tee_time_teeitup.py` (request shape, real-slots parse, UTC→ET
+  rollover both directions, bool-before-int, price-never-fabricated,
+  window/party/price filters, truncation, cache/single-flight/breaker/
+  limiter, book dispatch), 21 `test_tee_time_fetch_discipline.py` (direct
+  `SingleFlight`/`CircuitBreaker`/coercion-guard coverage — new, since the
+  extraction had no prior direct tests), 13
+  `test_tee_time_capability_store_generalized.py` (merged loader, dedup
+  across platforms, back-compat), 10 `test_tee_time_router_teeitup.py`
+  (ladder legs: matched/empty/degraded/unknown-platform/allowlist-disabled/
+  foreUP-unaffected/book-dispatch).
+- Gates (local, no Postgres — DB-integration tests deferred to CI):
+  `ruff check .` clean; `pytest -q` → **1836 passed, 83 skipped** (the 83
+  are the standard Postgres-reachability-gated integration tests, incl.
+  `tests/integration/test_tee_time_bookings.py` — auto-skip via the repo's
+  own reachability probe, no container started). All pre-existing S1/S0
+  tee-time suites (test_tee_time_foreup.py, test_tee_time_capability_store.py,
+  test_tee_time_router.py, test_tee_time_provider_default.py — 66+8 tests)
+  pass byte-identical, zero edits. Frontend untouched (`git status` confirmed
+  — this is a backend-only slice).
+- **Classified NOTICEABLE**: golf-nyc's 8 NYC Parks munis (Douglaston, Van
+  Cortlandt, Kissena, Silver Lake, Forest Park, South Shore, La Tourette,
+  Clearview Park) now show real bookable tee times in the tee-time search
+  instead of the S0 "call the pro shop" fallback — a real availability
+  surface the owner can test on TestFlight, once merged + the S4a-gated
+  behavior (TEETIME_ENGINES default = all adapters enabled, no extra env
+  needed) reaches prod.
+
+## 2026-07-10 — release-manager: bundle #125 SHIPPED to main + TestFlight
+
+Owner replied "Ship it" for PR #125 (`integration/next` -> `main`). Full ship
+executed:
+
+- **Pre-flight re-verified** (not trusted blindly): `integration/next` head
+  unchanged at `6cee98f` since owner approval; PR #125 OPEN/MERGEABLE; both
+  required gates ("Frontend gates", "Backend gate") state:SUCCESS on that
+  exact head.
+- **Merged** `gh pr merge 125 --merge` -> merge commit `56ddb78` on `main`
+  (prior-bundle convention: merge commit, not squash).
+- **Post-merge CI on `main`@`56ddb78` verified GREEN**: Frontend gates
+  SUCCESS, Backend gate SUCCESS, E2E smoke advisory SUCCESS. Backend deploy
+  (SSM) on that SHA also succeeded (no infra flake hit this run).
+- **TestFlight build shipped** via `bash ops/ios/ship.sh` run from `main`@
+  `56ddb78`: archived + distribution-signed + uploaded. **EXPORT SUCCEEDED**
+  on the first attempt (no exit-70 retry needed) — **v1.0.1096** (build
+  `202607100821`), now processing on Apple's side.
+- **Fresh `integration/next` cut** from the new `main` head: old
+  `integration/next` (`6cee98f`) was a direct ancestor of `56ddb78`
+  (fast-forward, no force-push needed) -> fast-forwarded local branch to
+  `56ddb78` and pushed. New `integration/next` head = `56ddb78` (same as
+  `main` until the next item lands).
+- **Board + backlog updated** for the 8 shipped checklist items (see PR #125
+  body): caddie-surface-osm-trees, teetime-show-real-time-options,
+  teetime-prefs-ux-polish, voicetel-timing-immediate-flush (silent),
+  caddie-remove-seeded-question, teetime-muni-pseudolocality-guard,
+  fcb-unmapped-paper-fallback-mismatch, fcb-plays-tile-fabricated-fallback —
+  all marked `shipped-to-main` in `backlog.json` with
+  `shipped_to_main_commit: 56ddb78`, `testflight_version: v1.0.1096`,
+  `shipped_pr` link. "Looper — Product Board" card(s) moved to Shipped with
+  the same PR link + build version.
+- **No new feature work this cycle** — ship + rails reset only.
+
+**Bundle #125 SHIPPED @ 56ddb78 · TestFlight v1.0.1096 (build 202607100821) ·
+fresh integration/next cut @ 56ddb78.**
+
 ## 2026-07-10 — builder: voicetel-timing-immediate-flush landed on the bundle (SILENT, telemetry-only, DONE)
 
 Implemented `specs/voicetel-timing-immediate-flush-plan.md` exactly. One
@@ -11287,3 +11400,204 @@ disclosure-first + secrets hygiene) + qa (STRICT gates) before PR #124 is ready.
 - Dispatched: reviewer (adversarial + /security-review + /code-review, focus open-relay + dial-safety) + qa (strict gates), both in worktree.
 - On results: BLOCKING (correctness/security/dial-safety/open-relay) → re-dispatch builder; SHIP+green → update PR #124 body with S3b + owner-setup, then release-manager (noticeable: owner can dial rehearsal) + PushNotification.
 - Do NOT merge.
+
+## Cycle 63+ (2026-07-10) — owner directive + caller merge
+- OWNER DIRECTIVE (screenshot): tee-time must FETCH real availability for every course, not show a bare "call the pro shop" number. Ladder API→scrape→AI-call. Web scraper approved if best per-course option. → recorded as teetime-availability-everywhere (p1, planning); s4-scraping bumped p1.
+- Owner approved MERGE of caller #124 (keys NOT in yet → merges inert, gated by VOICE_BOOKING_ENABLED until Twilio keys added).
+- Dispatching: (a) release-manager to merge #124 guarded; (b) Fable Plan for the fetch-everywhere ladder.
+
+## Cycle 63+ — DONE: guarded merge of #124 (S3 caller + S3b bridge) to main, INERT
+Owner-approved merge executed exactly per brief (keys NOT in yet condition).
+- Safety verification (all 3 PASS, confirmed in code before touching anything):
+  (a) VOICE_BOOKING_ENABLED gate — router_provider.py (voice route inert unless
+      env=="1"), telephony.get_live_transport() (gating ladder: flag → Twilio
+      creds → VOICE_BOOKING_PUBLIC_HOST), voice_booking_ws.py media_stream route
+      (closes 1008 if flag off, defense-in-depth even though a token couldn't
+      exist without the flag either). (b) No boot crash without TWILIO_*/
+      VOICE_BOOKING_* env — all env reads are runtime os.getenv() inside
+      functions, never module-level; `twilio`/`websockets` imports are lazy
+      (inside _twilio_client_factory / _default_openai_ws), not at import time;
+      main.py just registers the WS router unconditionally (no env needed).
+      (c) Dial-safety allowlist — /rehearsal-call dials ONLY
+      VOICE_BOOKING_OWNER_NUMBER (require_owner-gated, no request body), and
+      the compliance allowlist passed is `{owner_number}` alone.
+- feat/teetime-s3-caller was based on pre-#125 main (mergeable=UNKNOWN/CONFLICTING).
+  Merged origin/main into it (worktree agent-a594409eae41bedd2) → 3 conflicts:
+  tee_times.py (kept both new imports — main's resolve_selectors + this branch's
+  voice_booking imports), tee-time/page.tsx (main's #125 refactor moved the
+  actual booking call from Searching's auto-book to Options.pick() — adopted
+  main's flow and re-threaded timeWindowStart/timeWindowEnd into the new
+  booking call site via asksForDate(asks, slot.date) so phone-call route
+  entries still carry the golfer's honest requested window), progress.md
+  (append-only log, concatenated). Pushed (79d7490) — gates SUCCESS (Frontend +
+  Backend), PR mergeable=MERGEABLE.
+- Merged PR #124 → main: commit **9cd7394**. Post-merge main CI: both required
+  gates SUCCESS (Backend, Frontend) + `deploy` job SUCCESS. Deploy verified —
+  `/health` green after `uv sync` (installs twilio/websockets) + restart with
+  the new code; no boot crash from missing Twilio env (confirms safety check b
+  in prod, not just locally).
+- No TestFlight cut (per task scope — backend-only feature). Frontend DOES
+  carry one visible change: a new "Rehearsal call" section on the existing
+  /settings page (owner-only app, so only the owner ever sees it) — the button
+  is inert (returns "not enabled" until keys are set), no dial risk either way.
+- Synced integration/next: merged origin/main into it (2416f32) — it only had
+  silent bookkeeping commits ahead of old main, so the merge carried the caller
+  code forward cleanly (1 progress.md conflict, concatenated). Local gates
+  green (ruff, tsc) on the synced head.
+- backlog.json: teetime-s3-ai-caller-plus-rehearsal + teetime-s3b-twilio-bridge
+  → status shipped-to-main-inert (both note blocks list the exact Twilio env
+  the owner needs to add). s3b-review-nits depends_on ["#124 merged"] cleared
+  (unblocked, ready to build).
+- Board: card recorded (see below) — Shipped-to-main-INERT, awaiting keys.
+
+## Cycle 64 (2026-07-10) — availability ladder S4a + Marine Park probe (owner: "test it; if not clean → scraper")
+- Owner GO on S4a→S4b; PRE-APPROVED the scraper route IF the clean fetch doesn't return clean Marine Park times.
+- Dispatching in parallel: (a) eng-lead S4a (capability store + fetch_discipline extract + TeeItUp adapter, LIVE-tested); (b) read-only live probe of Marine Park's EZLinks portal → decides 2a-httpx vs 2b-headless vs rung-3.
+
+## Marine Park probe verdict (2026-07-10)
+- EZLinks portal (marineparkridepp / golfnyc2.ezlinksgolf.com) = Cloudflare-Turnstile LOCKED, family-wide (~9 NYC munis). NO scraper (can't pass politely; ethical line). Evidence: scratchpad/FINDINGS.json, screen.png, api_resp.txt.
+- BETTER PATH: NYC munis also on TeeItUp golf-nyc.book.teeitup.com (clean rung-1). S4a redirected to live-verify Marine Park via that tenant → folds S4b into S4a if reachable; else rung-3 AI call. Owner's "scraper if not clean" → scraper dead-ends on Cloudflare, TeeItUp likely covers it clean instead.
+
+## S4a live-verify (eng-lead, 2026-07-10) — TeeItUp probe DONE, dispatching builder
+- LIVE-PROBED TeeItUp/kenna. Real endpoint = `GET https://phx-api-be-east-1b.kenna.io/v2/tee-times?date=YYYY-MM-DD&facilityIds=N` header `x-be-alias:<tenant>` (NOT `/tee-times?...courseIds=` as the plan guessed — corrected by reading the SPA's getTeeTimes saga; `courseIds`/`numberOfPlayers` both 400). Facilities list = `GET /facilities` (header alias). Plain JSON, no auth. HONEST UA works.
+- golf-nyc tenant (coordinator's steer): 9 NYC munis; 8 VERIFIED returning real times TODAY (Douglaston, Van Cortlandt, Kissena, Silver Lake, Forest Park, South Shore, La Tourette, Clearview). Marine Park is NOT on golf-nyc TeeItUp → stays rung-3 (no EZLinks, per probe verdict).
+- Semantics decoded from real capture: teetime entry {teetime: ISO **UTC** → convert to facility America/New_York tz for HH:MM; maxPlayers = OPEN SPOTS (players); rates[].greenFeeWalking/greenFeeCart in **CENTS** (÷100), None when absent; holes from rate}. essex-group secondary (verified-EMPTY today — releaseThreshold; good verified-empty fixture).
+- CAPTURED FIXTURES (real live): backend/tests/fixtures/teeitup_golfnyc_times.json (South Shore, 58 real teetimes) + teeitup_empty.json (essex verified-empty w/ dayInfo+message). Seed rows drafted: scratchpad/seed_rows_golfnyc.json (8 munis).
+
+## AWAITING: builder on S4a (generalize capability_store + extract fetch_discipline + adapters/teeitup.py + router ADAPTERS registry). Ground truth handed: fixtures + endpoint (/v2/tee-times, facilityIds, x-be-alias) + semantics + seed rows. On builder return → reviewer (foreUP byte-identical + adapter honesty) → QA gates SUCCESS on head → update backlog/PR. If I die: reconcile from origin/integration/next, do NOT re-probe (fixtures already captured + committed).
+
+## AWAITING (S4a): reviewer + QA on a1382b0 (builder DONE: capability_store generalized, fetch_discipline extracted, adapters/teeitup.py, router ADAPTERS+TEETIME_ENGINES). Local: ruff clean, 1836 passed/83 Postgres-skipped, zero existing tests edited. NOTICEABLE (8 NYC munis gain live times). On results → fold BLOCKING findings (re-dispatch builder), else update backlog (s4a→shipped, unblock s4b-f) + bundle PR. Reviewer focus: foreUP byte-identical (66 S1 tests unedited), teeitup None/[]/slots honesty, no fabricated price(cents÷100)/players(maxPlayers), cap back-compat, router S0 untouched, load_all_capabilities deviation. If I die: reconcile from origin/integration/next; builder work is at a1382b0, do NOT rebuild.
+
+## S4a LANDED (2026-07-10) — reviewer SHIP + QA PASS
+- Reviewer (fresh, adversarial): SHIP. All 7 invariants traced clean — foreUP byte-identical (74 S1 tests unedited), teeitup honest None/[]/slots, no fabricated price(cents÷100)/players(maxPlayers)/tz(UTC→ET w/ date-rollover), cap back-compat (9 rows/9 dedup keys), router S0 byte-identical, load_all_capabilities sound. No injection/SSRF/secret surface. 3 non-blocking nits (fromisoformat naive-tz defensive assert; 0-cent rate under-report; TEETIME_FOREUP_ENABLED=0 also master-kills teeitup — intended). Nits deferred (candidates for S4f/bundle-rider).
+- QA: PASS at f3ad122 — ruff clean, pytest 1836 pass/83 pg-skip (no DB started), 79 new + 148 pre-existing S1/foreUP green, frontend lint/tsc/voice-274, no live net in tests. E2E N/A (backend-only, no preview).
+- backlog.json: s4a→shipped; s4b→superseded-by-probe-verdict (EZLinks Cloudflare-locked + Marine Park not on TeeItUp → Marine Park is rung-3 only, depends on S4e); s4c/s4d/s4e/s4f→ready (unblocked).
+- Bundle: NOTICEABLE (8 NYC munis gain live tee times). No owner ping this cycle (coordinator directive: land only, loop owns notify). No merge to main.
+
+## Cycle 65 (2026-07-10) — S4c more clean engines
+- S4a green on #128 (strict-green 9223d7c): 8 NYC munis return real TeeItUp times (live-verified, fixtures). Marine Park not on TeeItUp + EZLinks Cloudflare-locked → stays rung-3 (AI call / GolfNow partnership).
+- AWAITING: eng-lead S4c — Chronogolf marketplace adapter + generalized capability-probe script + Quick18-if-trivial; file GolfNow/Lightspeed partnership applications as a rider. More clean coverage, no key dep. Land on #128.
+
+## S4c live-verify (eng-lead, 2026-07-10) — Chronogolf probe DONE, dispatching builder
+- Chronogolf is LIVE + reachable + honest-UA-accepted (Cloudflare `__cf_bm` cookie present but NO block/challenge — unlike EZLinks which was fully locked). Real times+prices retrieved, no auth, no login.
+- REAL ENDPOINT (live-verified, NOT the plan's guess): id-lookup `GET https://www.chronogolf.com/marketplace/v2/clubs/<slug>` → {id (club_id), courses[].id (course_id), default_affiliation_type_id, timezone, location}. Then availability: `GET https://www.chronogolf.com/marketplace/clubs/<club_id>/teetimes?date=YYYY-MM-DD&course_id=<id>&nb_holes=18&affiliation_type_ids[]=<default_affiliation_type_id>` → JSON array of teetimes.
+- Teetime shape: {id, uuid, course_id, start_time "HH:MM" **LOCAL** (tz already ET — NO UTC conversion, unlike TeeItUp), date, hole, round, out_of_capacity (bool), frozen, restrictions[str], green_fees:[{green_fee (DOLLARS float, e.g. 109.0), half_cart, price, affiliation_type_id}]}. NO per-slot open-spots count (only out_of_capacity bool) + players param is a NO-OP.
+- HONESTY DECISION handed to builder (reviewer's key question): include ONLY out_of_capacity==false slots; price = cheapest green_fees[].green_fee (DOLLARS, `_as_price`, None if absent — NOT cents like TeeItUp); players = query.party_size ("bookable online for your party" — the widget's own meaning), documented as NOT a spot-count; honor restrictions (single-player restriction when party==1). Never fabricate a count.
+- 3 NY-metro courses LIVE-VERIFIED bookable today (date+3): Rock Spring GC at West Orange (West Orange NJ; club 10038 / course 11517 / aff 40974; 40.768991,-74.264034; (973) 731-6464; 41 bookable), Pleasantville Country Club (Westchester NY; 10902/12514/44430; 41.133133,-73.783736; (914) 769-2809; 34 bookable), Beaver Brook CC (Annandale NJ; 9853/11294/40234; 40.634559,-74.885144; (908) 735-4200; 67 bookable). All online_booking_enabled=true, public online booking (is_private=false).
+- CAPTURED FIXTURE (real live, 30KB): backend/tests/fixtures/chronogolf_rockspring_times.json (Rock Spring, 65 teetimes / 41 bookable). Builder to also wire probe_booking_capability.py --capture-fixture to reproduce it.
+- Marketplace geo/name search params are NO-OPs (returns default Canada-heavy set); club discovery is via the club page slug (Places/OSM `website` → chronogolf.com/club/<slug>) — the probe script fingerprints `chronogolf.com/club` and extracts club_id/course_id/aff from the v2 club JSON (never hardcode).
+
+## AWAITING (S4c): builder on integration/next — adapters/chronogolf.py + generalized scripts/probe_booking_capability.py + Chronogolf seed rows + partnership-apps doc (+Quick18 if trivial). Ground truth above (endpoint live-verified, fixture captured, 3 seed rows). On builder return → reviewer (Chronogolf never-raises + honest None/[]/slots + no fabricated price/players + live-verified endpoint + probe doesn't break foreUP validation + S0/S1/S4a byte-identical) → QA gates SUCCESS on head SHA → update backlog(s4c)/PR#128. If I die: reconcile from origin/integration/next; do NOT re-probe (endpoint verified, fixture captured); builder commits its own work.
+
+## 2026-07-10 — builder: S4c (Chronogolf adapter + probe-script generalization) landed on the bundle (NOTICEABLE, DONE)
+
+Implemented `specs/teetime-availability-everywhere-plan.md` §3/§6 (S4c —
+Chronogolf marketplace adapter + generalized capability-probe script) on top
+of the S4a foundation, exactly per eng-lead's live-verified ground truth. One
+commit on `integration/next`:
+
+- `adapters/chronogolf.py` (new): `ChronogolfProvider.slots_for_capability`
+  mirrors `teeitup.py`'s contract exactly (slots | `[]` verified-empty | `None`
+  couldn't-check, never raises). Key differences from TeeItUp, documented
+  in-module: `start_time` is ALREADY local (no UTC conversion — date-filter
+  directly on the `date` field); `out_of_capacity` is an EXACT-bool filter
+  (missing/non-bool = omit, never assumed bookable); `green_fees[].green_fee`
+  is DOLLARS not cents (fed straight to `_as_price`, no ÷100); cheapest fee
+  across `green_fees[]` chosen, `None` when none present (never fabricated);
+  `players` = `query.party_size` for bookable slots — documented HONESTLY as
+  NOT a real remaining-capacity count (Chronogolf's public endpoint exposes
+  none) so it can never be misread as TeeItUp's real `maxPlayers`; a
+  single-player restriction (`restrictions[]` substring "single player",
+  case-insensitive) is honored — omitted only when `party_size == 1`. A `200
+  []` is treated as a REAL verified-empty day (documented reasoning: unlike
+  TeeItUp's per-facility wrapper, Chronogolf's array IS the day's teetimes
+  with no request-echo to sanity-check against) — non-200/non-JSON/non-array
+  still degrade to `None` + breaker failure. Own per-host limiter/breaker/
+  cache/single-flight (never shared with foreUP/TeeItUp). `MAX_SLOTS_PER_COURSE
+  = 6`, `book()` always `needs_human` — same invariants as every adapter.
+- `router_provider.py`: registered `ChronogolfProvider` in the module
+  `ADAPTERS` registry + added a `chronogolf` constructor param/override to
+  `RoutedTeeTimeProvider.__init__`, mirroring `teeitup`'s wiring exactly —
+  registration only, zero new ladder logic (the S4a seam did its job).
+- `booking_capabilities_seed.json`: appended 3 LIVE-VERIFIED Chronogolf rows
+  (Rock Spring Golf Club at West Orange, Pleasantville Country Club, Beaver
+  Brook Country Club — `channel="scrape_http"`, `platform_ids`
+  `{club_id, course_id, affiliation_type_id}`, generous aliases for Rock
+  Spring). File's `_comment` updated; `load_all_capabilities()` confirmed
+  parses all 12 rows total (1 legacy foreUP row + 8 teeitup + 3 chronogolf =
+  `len(legacy)+8+3`, verified by hand and by the updated test). The 8
+  existing TeeItUp rows are byte-untouched.
+- `scripts/probe_booking_capability.py` (new): generalizes
+  `validate_foreup_courses.py` (kept fully intact and independently runnable
+  — not touched, not replaced) into a multi-platform probe: fingerprints a
+  course website for foreUP/TeeItUp/EZLinks/Chronogolf/Club Prophet/Quick18/
+  Teesnap markers, extracts platform ids from the matched engine's own
+  page/bootstrap (never hardcoded — for Chronogolf: parses the club slug then
+  does the real STEP A `GET marketplace/v2/clubs/<slug>` lookup), runs ONE
+  read-only availability probe through the SAME `build_times_request` each
+  adapter uses, supports `--capture-fixture`/`--dry-run`, and falls back to
+  `phone_only`/`channel=none` when no engine matches. **Verified live against
+  all 3 implemented platforms this cycle** (real network, real responses):
+  Chronogolf (Rock Spring — correctly auto-resolved club_id=10038/
+  course_id=11517/affiliation_type_id=40974 from nothing but the club-page
+  URL, matching eng-lead's ground truth exactly), foreUP (18 Mile Creek —
+  correctly parsed booking_id/schedule_id from the URL), TeeItUp (Douglaston
+  — fingerprinted the alias correctly; facility_id needed `--facility-id`
+  since the page's bootstrap didn't expose it plainly, documented as the
+  expected fallback path).
+- Quick18 (deliverable 5): **SKIPPED** — searched for a live, trivially-
+  reachable NY-metro Quick18/Sagacity course for several minutes; found none
+  (one promising false-positive, "Fairways of Woodside," turned out to be in
+  Sussex, WI, not Woodside, Queens). Per the instruction to skip rather than
+  force it, no Quick18 adapter was added this cycle.
+- `specs/teetime-partnership-applications.md` (new): ready-to-send owner
+  checklist for Lightspeed/Chronogolf Partner API, GolfNow/TeeOff Affiliate &
+  Partner API, foreUP vendor/partner, and Supreme Golf affiliate — each with
+  a copy-paste use-case blurb + submission fields + priority order (Chronogolf
+  first: closest/highest-confidence given 3 live clubs already wired; GolfNow
+  second: biggest coverage unlock). Several application-form URLs returned
+  paywall/login gates to automated fetch — those are flagged honestly as
+  best-known-not-confirmed entry points rather than presented as verified.
+- Tests: 35 new `test_tee_time_chronogolf.py` (fixture-derived from the real
+  captured `chronogolf_rockspring_times.json` — request shape,
+  out-of-capacity filter, dollars-not-cents pricing, single-player-restriction
+  party filter, verified-empty incl. the 200-`[]` decision, window/price
+  filters, truncation, cache/single-flight/breaker/limiter, book dispatch,
+  never-raises error legs) + 8 new `test_tee_time_router_chronogolf.py`
+  (ADAPTERS registry resolution, matched/empty/degraded ladder legs, foreup/
+  teeitup paths unaffected with chronogolf ALSO wired in, book dispatch).
+  **Adjustment note (flagged, not hidden):** `test_tee_time_capability_store_generalized.py`'s
+  two `TestShippedGeneralizedSeed` tests pinned "the shipped generalized seed
+  file has exactly 8 rows, all teeitup" as an S4a snapshot — since deliverable
+  3 explicitly directs appending 3 curated Chronogolf rows to that SAME file
+  (and the file's own docstring already says "S4a+: teeitup, and future
+  engines"), I re-scoped those two tests to filter by `platform=="teeitup"`
+  (still exactly 8, still golf-nyc/NYC-metro, unchanged assertions) and added
+  a parallel, equally-strict check for the 3 new chronogolf rows — not
+  weakened, no assertion removed, just no longer assuming the shared file is
+  single-platform. Every OTHER S0/S1/S4a test file is byte-identical
+  (confirmed: `test_tee_time_routing.py`, `test_tee_time_private_filter.py`,
+  `test_tee_time_router.py`, `test_tee_time_foreup.py`,
+  `test_tee_time_capability_store.py`, `test_tee_time_teeitup.py`,
+  `test_tee_time_router_teeitup.py`, `test_tee_time_fetch_discipline.py` all
+  pass unedited — 234 tests across the full tee-time suite green).
+- Gates (local, no Postgres): `ruff check .` clean; `pytest -q` →
+  **1880 passed, 83 skipped** (same 83 Postgres-gated integration tests,
+  auto-skip, no container started). Frontend untouched (`git status`
+  confirmed zero frontend diffs).
+- **Classified NOTICEABLE**: 3 more NJ/NY-metro public courses (Rock Spring
+  Golf Club at West Orange, Pleasantville Country Club, Beaver Brook Country
+  Club) now show real bookable tee times + real dollar prices in tee-time
+  search instead of the S0 fallback — testable on TestFlight once merged
+  (no extra env needed; `TEETIME_ENGINES` default enables every registered
+  adapter).
+
+## AWAITING (S4c): reviewer + QA on f4d0fa2 (builder DONE: adapters/chronogolf.py, probe_booking_capability.py, +3 Chronogolf seed rows, partnership doc; Quick18 skipped-none-found). Local builder gates: ruff clean, 1880 passed/83 pg-skip. One test adjusted (test_tee_time_capability_store_generalized.py): re-scoped S4a's "8 rows all teeitup" fixed-count to platform-filtered (still exactly 8 teeitup) + added strict 3-row Chronogolf checks — eng-lead verified: strengthens coverage, not weakened (deliverable legitimately grows the seed file). Reviewer focus: Chronogolf never-raises + honest None/[]/slots + no fabricated price(dollars not cents)/players(=party_size documented-not-a-count)/out_of_capacity filter, live-verified endpoint (fixture real), probe script doesn't break foreUP validation, no injection/SSRF/secret, S0/S1/S4a byte-identical. On results → fold BLOCKING (re-dispatch builder), else update backlog(s4c→shipped) + PR#128 checklist. NOTICEABLE (3 more NY-metro courses gain real availability → 11 total: 8 TeeItUp + 3 Chronogolf). No owner ping (loop owns notify). If I die: reconcile origin/integration/next @ f4d0fa2, do NOT rebuild.
+
+## S4c LANDED (2026-07-10) — reviewer clean + QA PASS
+- Reviewer (fresh, adversarial): security review CLEAN — no HIGH/MEDIUM vulns; URLs from fixed host + curated seed ids (no user input → httpx host/scheme), no SSRF/injection/secret/deserialization surface, no login/CAPTCHA/anti-bot evasion. Probe script is CLI-only, never in CI/server path.
+- Honesty invariants eng-lead-verified directly in chronogolf.py: out_of_capacity `is not False` skip (missing→not-bookable), cheapest green_fee via _as_price in DOLLARS (no /100), players=party_size documented NOT-a-count (lines 50-58 docstring), single-player restriction honored at party_size==1. Never-raises structure mirrors teeitup.py.
+- QA: PASS at 139d532 — ruff clean; pytest 1880 passed/83 pg-skip/0 failed; S0/S1/S4a 8 suites 177 passed BYTE-IDENTICAL (unedited); new S4c suites 57 passed (chronogolf 35 + router 8 + generalized-store 14); frontend untouched (frontend gates N/A); tests confirmed fixture/MockTransport-only, zero live network.
+- One test re-scoped (NOT weakened): test_tee_time_capability_store_generalized.py — S4a's "8 rows all teeitup" fixed-count → platform-filtered (still exactly 8 teeitup) + strict 3-row Chronogolf parallel checks. eng-lead confirmed: deliverable legitimately grows the shared seed file; coverage strengthened.
+- Coverage: 11 NY-area courses now return REAL availability (8 TeeItUp NYC munis + 3 Chronogolf NY-metro: Rock Spring/Pleasantville/Beaver Brook). Quick18 skipped (none trivially reachable).
+- backlog.json: teetime-s4c-chronogolf-probe-quick18 → shipped. PR #128 checklist + title updated (S4a + S4c). Bundle now has 2 NOTICEABLE items (S4a 8 munis, S4c +3 courses). No merge to main; no owner ping (loop owns notify). S4c code landed at f4d0fa2.
