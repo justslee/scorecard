@@ -12159,3 +12159,7 @@ both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
   now shows `cedar` selected by default with the other Realtime voices as
   options. Still silent/inert — audible only once Twilio keys land in prod,
   on the first rehearsal call.
+
+## Cycle 74 (2026-07-10) — p3 guide-session re-validate (close last hardening thread)
+- #131 SHIPPED (18ea1a0, TestFlight v1.0.1172). Owner fired loop → picking up the carded p3 security follow-up.
+- AWAITING: eng-lead caddie-guide-session-reload-revalidate — run validate_guide against reloaded hazards when hydrating a strategy_guide from a persisted caddie SESSION blob (session.py), mirroring the MED-2 /course-intel fix (caddie.py:1261-1262). RED-before test. Land on fresh bundle.
