@@ -11072,3 +11072,7 @@ FOLLOW-UP for owner (not a build task): once he uses the live caddie a few times
 will have real caddie-turn vs caddie-rt eos_to_first_audio p90 → cascaded-STT go/no-go (#126) becomes readable.
 Deferred (non-blocking, same telemetry class): if eos_to_transcript volume appears WITHOUT matching eos_to_first_audio,
 that itself diagnoses iOS onSpeakStart never firing — a separate follow-up, not this change.
+
+## Cycle 58 (2026-07-10) — IN PROGRESS
+- Reconciled 6 stale backlog items → shipped (physics, input-grounding, trees#125, bend, teetime s0/kill-fake-held) — verified in code, committed+pushed.
+- AWAITING: eng-lead pass on **caddie-remove-seeded-question** (p1, owner screenshots). opening-turn.ts:16-18 posts a fake first-person question AS the player; make the caddie OPEN instead (greet/offer). Land on integration/next (bundle continues per owner "we'll continue to bundle"). No ship/no ping.
