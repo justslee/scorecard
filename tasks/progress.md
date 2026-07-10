@@ -3,20 +3,37 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING — cycle 72 caddie-guide-injection-hardening (eng-lead)
-Built + pushed on `integration/next` at HEAD `fe2570f` (backend-only, SILENT
-security hardening). Awaiting **reviewer** (fresh adversarial security review of
-the diff `7bb0d72..fe2570f`).
-- SHIP/clean → run QA gates (ruff + full backend pytest via CI; frontend
-  lint/tsc/voice-smoke), then update bundle PR checklist + backlog
-  (`caddie-guide-injection-hardening` → shipped) + progress, commit+push,
-  confirm strict-green. SILENT — no ship/ping.
-- BLOCKING findings → re-dispatch builder, re-review, then as above.
-Fixes: MED-1 (newline flatten + validate reject), MED-2 (read-time re-validate
-in /course-intel covering BOTH mouths via session.hole_intel), LOW-3 (per-item
-mistake cap), LOW-1/2 (plan §9/§10 doc correction). All fixes have RED-before
-tests (verified: 7 target tests fail on pre-fix source, 186 offline tests green
-with fix).
+## 2026-07-10 — eng-lead: cycle 72 caddie-guide-injection-hardening — DONE, on integration/next (SILENT)
+
+Backend-only SECURITY hardening of the shipped strategy-guide
+web-content-into-LLM surface (findings from the cycle-71 review). Landed
+@ `fe2570f` on `integration/next`; rides bundle PR #130 as SILENT work.
+
+Three fixes, each with a test that goes **RED on the pre-fix code**:
+- **MED-1** — a newline in a guide field broke the single-line "Local
+  knowledge:" DATA framing (multi-line block mimicking a new prompt-section
+  header, injected into BOTH caddie prompts). `format_guide_line` now flattens
+  per-fragment whitespace (`" ".join(frag.split())`); `validate_guide` also
+  rejects any `\n`/`\r`-bearing field (defense-in-depth).
+- **MED-2** — persisted guides (cached FOREVER) were validated only at WRITE
+  time. `/course-intel` (caddie.py:1261) now re-validates at READ time against
+  `intel.hazards`, at loop-body level before the session cache write. BOTH the
+  text mouth (caddie.py:728) and the realtime/voice mouth (voice_prompts.py:159)
+  read `session.hole_intel` populated from that loop → covers BOTH; reviewer
+  confirmed no bypass site. Ungrounded guide → dropped to None (no line, no crash).
+- **LOW-3** — `_MAX_FIELD_CHARS` (240) now applied per `common_mistakes` item.
+- **LOW-1/2 (doc only)** — plan §9/§10 corrected: `injection_pattern` keyword
+  scan is defense-in-depth, NOT a boundary; no content classifier added.
+
+Verification: 7 target tests RED on pre-fix source (stash-verified), 186 offline
+guide/caddie tests GREEN with fix; ruff clean; frontend untouched (lint/tsc/voice
+274/274 still green). **CI on head `d315570`:** Backend gate SUCCESS (ruff +
+pytest incl. route/integration on Postgres — new route test validated in CI) +
+Frontend gate SUCCESS. Reviewer: **SHIP** (adversarial security lens). PR #130
+checklist + backlog updated. SILENT — no owner ship/ping.
+
+Follow-up carded `caddie-guide-session-reload-revalidate` (p3, non-blocking):
+also re-validate guides when hydrating a persisted caddie SESSION blob on reload.
 
 ## 2026-07-10 — builder: tee-time setup UX owner-feedback fixes — DONE, on integration/next
 
