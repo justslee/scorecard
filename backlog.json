@@ -3,6 +3,26 @@
   "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "teetime-show-real-time-options",
+      "title": "Tee-time: show actual bookable TIME OPTIONS (not the window); correct window; respect selection",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 (screenshots): the result shows 'YOUR WINDOW 6:00-9:30' (the search range) instead of the times found \u2014 'show me my options'. Also the window shown != submitted, and the found course (Forest Park) was NOT in the selected 4. FIX (specs/teetime-results-ux-fixes.md): (1) foreUP courses -> list the real bookable times to pick (data already flows from S1), call-route courses -> honestly frame the window as the ask we'll make, never as a found time; (2) the result window must reflect the SUBMITTED prefs, not a default; (3) the dispatch/'go find us one' path must honor the selected course ids (same class as #122 course-ids-wiring but on the DISPATCH path) \u2014 never substitute an unselected course; honest 'nothing in your selected courses' instead. Fable plan; reviewer (honest presentation, no-fake-data \u2014 a window shown as a found time is a violation). Do NOT touch voice_booking/telephony (#124)."
+    },
+    {
+      "id": "teetime-prefs-ux-polish",
+      "title": "Tee-time prefs polish: location labels ('USA' bug), courses-header safe-area, list grouping",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 (screenshots): 'Marine Park Golf Course \u00b7 USA' shows USA not a city (label bug \u2014 show real locality or omit); the Courses header ('WHERE'/'4 SELECTED') is clipped behind the status bar (top safe-area inset); the nearby list grouping/dividers read as 'broken'. Designer pass, calm yardage-book. specs/teetime-results-ux-fixes.md."
+    },
+    {
       "id": "s3b-review-nits",
       "title": "S3b caller: 3 non-blocking review nits (opt_out coercion, CancelledError, get_running_loop)",
       "type": "minor",
