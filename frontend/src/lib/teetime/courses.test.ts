@@ -16,6 +16,8 @@ import { searchNearbyDetailed } from "@/lib/golf-api";
 import {
   toCourseOptions,
   muniFromAddress,
+  localityLabel,
+  muniEchoesName,
   haversineMiles,
   MAX_COURSE_OPTIONS,
   radiusMetersForMiles,
@@ -58,6 +60,102 @@ describe("muniFromAddress", () => {
     expect(muniFromAddress("Pacifica, CA")).toBe("Pacifica");
     expect(muniFromAddress(undefined)).toBe("");
     expect(muniFromAddress("")).toBe("");
+  });
+
+  it("drops a 'USA' country suffix, not just 'United States' (plan §8 #4)", () => {
+    expect(muniFromAddress("300 Finley Rd, San Francisco, CA 94129, USA")).toBe("San Francisco");
+  });
+
+  it("drops a 'United States of America' country suffix", () => {
+    expect(muniFromAddress("300 Finley Rd, San Francisco, CA 94129, United States of America")).toBe("San Francisco");
+  });
+
+  it("still drops the plain 'United States' suffix (regression)", () => {
+    expect(muniFromAddress("300 Finley Rd, San Francisco, CA 94129, United States")).toBe("San Francisco");
+  });
+
+  it("never mistakes a real locality for a country label (anchored, not substring)", () => {
+    // A town whose name merely CONTAINS a country-ish substring must survive —
+    // the filter matches the WHOLE segment, never a substring.
+    expect(muniFromAddress("100 Main St, Unity, OH 44685, USA")).toBe("Unity");
+  });
+
+  // --- Pseudo-locality guard: a LONE surviving segment that is plainly a
+  // venue/street is not a town — omit it rather than surface it as the city. ---
+  it("omits a lone venue segment (no real city in the address)", () => {
+    // "Bethpage State Park" is the whole address — a venue, not a locality.
+    expect(muniFromAddress("Bethpage State Park")).toBe("");
+    expect(muniFromAddress("Marine Park Golf Course")).toBe("");
+    expect(muniFromAddress("Presidio Golf Club")).toBe("");
+  });
+
+  it("omits a lone street segment (a road name is not a town)", () => {
+    expect(muniFromAddress("Finley Road")).toBe(""); // whole-word "Road" suffix → street, not a town
+    expect(muniFromAddress("Skyline Blvd")).toBe(""); // street-suffix guard, no leading number involved
+    expect(muniFromAddress("100 Skyline Blvd")).toBe(""); // whole segment starts with a digit → dropped outright
+  });
+
+  it("keeps a real city even when a street/venue segment precedes it (≥2 segments)", () => {
+    // The guard only fires for a LONE segment — with a real city present the
+    // last cityish segment is a town and must never be dropped.
+    expect(muniFromAddress("Marine Park Golf Course, Brooklyn, NY, USA")).toBe("Brooklyn");
+    expect(muniFromAddress("Finley Rd, San Francisco, CA 94129")).toBe("San Francisco");
+  });
+
+  it("never regresses real one/two-word cities that resemble nothing venue-y", () => {
+    expect(muniFromAddress("Brooklyn")).toBe("Brooklyn");
+    expect(muniFromAddress("Tenafly")).toBe("Tenafly");
+    expect(muniFromAddress("San Francisco")).toBe("San Francisco");
+    expect(muniFromAddress("Los Angeles")).toBe("Los Angeles");
+    expect(muniFromAddress("Menlo Park")).toBe("Menlo Park"); // "Park" alone is NOT a venue token
+    expect(muniFromAddress("Oak Park")).toBe("Oak Park");
+    // Real municipalities that contain the whole word "Club" must survive —
+    // bare "club" is NOT a venue token (golf venues carry golf/course/links).
+    expect(muniFromAddress("Country Club Hills")).toBe("Country Club Hills");
+    expect(muniFromAddress("100 Main St, Country Club Hills, IL 60478, USA")).toBe("Country Club Hills");
+  });
+});
+
+describe("muniEchoesName", () => {
+  it("flags a muni that just repeats the course name (either direction)", () => {
+    expect(muniEchoesName("Tenafly", "Tenafly")).toBe(true);
+    expect(muniEchoesName("San Francisco Golf Club", "San Francisco")).toBe(true); // muni ⊂ name
+    expect(muniEchoesName("Marine Park", "Marine Park Golf Course")).toBe(true);    // name ⊂ muni
+  });
+
+  it("does NOT flag a real, distinct locality", () => {
+    expect(muniEchoesName("Marine Park Golf Course", "Brooklyn")).toBe(false);
+    expect(muniEchoesName("Bethpage Black", "Farmingdale")).toBe(false);
+  });
+
+  it("is token-based, so a shared substring never collides (York ≠ Yorktown)", () => {
+    expect(muniEchoesName("Yorktown Golf Course", "York")).toBe(false);
+  });
+
+  it("returns false for an empty muni", () => {
+    expect(muniEchoesName("Anything", "")).toBe(false);
+  });
+});
+
+describe("localityLabel", () => {
+  it("returns an honest town from an address", () => {
+    expect(localityLabel("Bethpage Black", "99 Quaker Meeting House Rd, Farmingdale, NY, USA")).toBe("Farmingdale");
+  });
+
+  it("omits a locality that would just echo the course name (no 'Course · Course')", () => {
+    // The classic duplication: the only address segment is the venue itself.
+    expect(localityLabel("Marine Park Golf Course", "Marine Park Golf Course")).toBe("");
+    // A city-named course in its own city: "Tenafly · Tenafly" → "Tenafly · —".
+    expect(localityLabel("Tenafly", "Tenafly, NJ, USA")).toBe("");
+  });
+
+  it("keeps a real, distinct locality (never over-omits)", () => {
+    expect(localityLabel("Marine Park Golf Course", "Marine Park Golf Course, Brooklyn, NY, USA")).toBe("Brooklyn");
+  });
+
+  it("returns '' when there is no honest locality", () => {
+    expect(localityLabel("Some Course", undefined)).toBe("");
+    expect(localityLabel("Some Course", "USA")).toBe("");
   });
 });
 
@@ -168,6 +266,40 @@ describe("toCourseOptions", () => {
       [{ id: "b", name: "Bravo Golf Club", center: { lat: 37.8, lng: -122.5 } }],
     );
     expect(options.filter((o) => o.name === "Bravo Golf Club")).toHaveLength(1);
+  });
+
+  it("guards the raw provider 'city' fallback — a country-only value never leaks as a muni (item 3)", () => {
+    const options = toCourseOptions(
+      [result({ id: "usa-city", name: "Presidio Golf Course", address: undefined, city: "USA" })],
+      ORIGIN,
+    );
+    expect(options.find((o) => o.id === "usa-city")?.muni).toBe("");
+  });
+
+  it("keeps a real provider 'city' field as the muni fallback when there's no address", () => {
+    const options = toCourseOptions(
+      [result({ id: "brooklyn", name: "Presidio Golf Course", address: undefined, city: "Brooklyn" })],
+      ORIGIN,
+    );
+    expect(options.find((o) => o.id === "brooklyn")?.muni).toBe("Brooklyn");
+  });
+
+  it("omits a muni that just echoes the course name — never 'Tenafly · Tenafly'", () => {
+    const options = toCourseOptions(
+      [result({ id: "tenafly", name: "Tenafly", address: undefined, city: "Tenafly" })],
+      ORIGIN,
+    );
+    const o = options.find((o) => o.id === "tenafly")!;
+    expect(o.name).toBe("Tenafly");
+    expect(o.muni).toBe("");
+  });
+
+  it("keeps a distinct real city as the muni (Marine Park GC → Brooklyn)", () => {
+    const options = toCourseOptions(
+      [result({ id: "mp", name: "Marine Park Golf Course", address: "Marine Park Golf Course, Brooklyn, NY, USA" })],
+      ORIGIN,
+    );
+    expect(options.find((o) => o.id === "mp")?.muni).toBe("Brooklyn");
   });
 });
 
@@ -332,6 +464,14 @@ describe("addCourseOption / courseOptionFromSelection", () => {
   it("leaves distance unknown (null) when the center or origin is missing", () => {
     expect(courseOptionFromSelection({ id: "x", name: "No Center" }, { lat: 40, lng: -73 }).distance).toBeNull();
     expect(courseOptionFromSelection({ id: "x", name: "No Origin", center: { lat: 40, lng: -73 } }, null).distance).toBeNull();
+  });
+
+  it("omits a locality that just echoes the course name on the add-flow surface (no 'Tenafly · Tenafly')", () => {
+    // The add flow goes through localityLabel, so the name-echo dedup applies
+    // here too — not just in toCourseOptions.
+    expect(courseOptionFromSelection({ id: "t", name: "Tenafly", location: "Tenafly, NJ, USA" }, null).muni).toBe("");
+    // A distinct real locality is still kept.
+    expect(courseOptionFromSelection({ id: "b", name: "Bethpage Black", location: "Farmingdale, NY" }, null).muni).toBe("Farmingdale");
   });
 
   it("appends a new course selected", () => {

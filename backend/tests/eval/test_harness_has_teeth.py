@@ -161,6 +161,46 @@ def test_hazards_line_only_from_input_goes_red_on_a_merged_stale_hazard():
     assert not mutant_result.passed
 
 
+# ── 2b. Trees-stripped-from-features mutant (caddie-surface-osm-trees) ──────
+
+
+def test_context_hazards_match_goes_red_when_trees_stripped_from_features():
+    """The machine-checked proof that the eval detects the exact regression
+    this item fixes: build the `trees-carry-cited-from-geometry` scenario's
+    Tier1 context twice from its real GeoJSON `features` — once verbatim
+    (the check must PASS, citing the mapped tree-line carry), once with every
+    `featureType in {"tree", "woods"}` feature removed before extraction (the
+    check MUST fail) — reproducing re-adding the `"tree"`/`"woods"` exclusion
+    (or any future gate that drops trees from the data path) as a red test."""
+    scenario = _scenario("trees-carry-cited-from-geometry")
+    check = Tier1Check(
+        check=Tier1CheckName.CONTEXT_HAZARDS_MATCH,
+        hazards=[{"type": "trees", "side": "R", "carry": 220}],
+    )
+
+    real_hazards = checks_mod.resolve_hazards(scenario.situation.hole)
+    real_line = checks_mod.format_hazards_line(scenario.situation.hole.number, real_hazards)
+    ctx = checks_mod.Tier1Context(
+        hazards=real_hazards, hazards_line=real_line, ground_truth_block="",
+        text_prompt="", text_situation_block="", realtime_prompt="",
+    )
+    assert checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed, (
+        "sanity: the real extraction must surface the tree-line carry"
+    )
+
+    stripped_features = [
+        f for f in scenario.situation.hole.features["features"]
+        if (f.get("properties") or {}).get("featureType") not in ("tree", "woods")
+    ]
+    stripped_fc = {"type": "FeatureCollection", "features": stripped_features}
+    mutant_hazards = checks_mod.extract_hole_hazards(stripped_fc)
+    mutant_line = checks_mod.format_hazards_line(scenario.situation.hole.number, mutant_hazards)
+    mutant_ctx = dataclasses.replace(ctx, hazards=mutant_hazards, hazards_line=mutant_line)
+
+    mutant_result = checks_mod.TIER1_CHECKS[check.check.value](mutant_ctx, check)
+    assert not mutant_result.passed, "check must go RED when trees are stripped from the input features"
+
+
 # ── 3. Hole-4 guide mutant: harness catches a fail-open validator (item 3) ─
 
 

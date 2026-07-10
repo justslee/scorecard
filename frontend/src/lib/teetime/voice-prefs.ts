@@ -104,6 +104,13 @@ export function applyParsedWindows(
 /**
  * Apply spoken course choices. Named courses replace the selection;
  * "just my favorites" selects exactly the favorites. Neither → untouched.
+ *
+ * Named courses that match NOTHING on the list return `courses` UNTOUCHED
+ * (referentially — callers can detect the miss via `===`) instead of
+ * deselecting everything: a misheard/unknown name is not the golfer asking
+ * to search every nearby course (results/prefs UX fixes plan, bug #3 voice
+ * hole — a zero-match spoken name used to wipe the whole selection, which
+ * silently widened the dispatch to an all-nearby search).
  */
 export function applyParsedCourses(
   courses: CourseOption[],
@@ -112,6 +119,8 @@ export function applyParsedCourses(
 ): CourseOption[] {
   if (courseNames.length > 0) {
     const wanted = new Set(courseNames.map((n) => n.toLowerCase()));
+    const anyMatch = courses.some((c) => wanted.has(c.name.toLowerCase()));
+    if (!anyMatch) return courses;
     return courses.map((c) => ({ ...c, selected: wanted.has(c.name.toLowerCase()) }));
   }
   if (favoritesOnly) {

@@ -3,6 +3,220 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: voicetel-timing-immediate-flush landed on the bundle (SILENT, telemetry-only, DONE)
+
+Implemented `specs/voicetel-timing-immediate-flush-plan.md` exactly. One
+commit (`2d4b4c9`) on `integration/next`:
+
+- `createCaddieTurnTimer` (`frontend/src/lib/voice/caddie-turn-timing.ts`):
+  `markTranscript()` and `markFirstToken()` now call `safeFlush()`
+  immediately after each successfully emits its leg, same as the existing
+  terminal flush in `markFirstAudio()`. Fixes the real gap behind the
+  prod go/no-go blocker (#125/#126): the headline `eos_to_first_audio` was
+  already immediate-flushed (live since 6fcb40d), but the two earlier legs
+  sat in the 8s batch queue and were lost with the whole turn if
+  `markFirstAudio()` (iOS `onSpeakStart`) never fired before a WKWebView
+  suspend. `markFirstAudio()` itself is unchanged — still the sole flush
+  for the two audio legs (one POST) and the only flush on the caddie-rt
+  headline-only path. Header design-notes comment updated to state the
+  per-leg flush rationale.
+- `caddie-turn-timing.test.ts`: updated flush-count/ordering assertions to
+  the new intended behavior (all existing emit/ms assertions kept
+  unweakened); core new tooth is "incomplete turn" now asserting
+  `flush` called once (was `not.toHaveBeenCalled()`) — an earlier leg
+  ships even if the turn never reaches first audio. Both sanity-clamp
+  tests strengthened with `flush).not.toHaveBeenCalled()`. Added a
+  no-PII pin (emit only ever called with `{ ms }`, no `detail`).
+- `CaddieSheet.handsfree.test.tsx` test (14): flush-count expectations
+  updated to 2 (after the two text legs) then 3 (after the shared
+  terminal audio-legs flush); all 4 `voiceEvent` payload assertions
+  unchanged.
+
+Gates green: lint, tsc --noEmit, `next build`, voice-tests smoke
+(274/274), vitest on the 3 touched/adjacent test files (34/34 passed),
+backend `ruff check .` (all checks passed). No product-code paths
+touched (`CaddieSheet.tsx`, `useVoiceCaddie.ts`, `telemetry.ts`,
+backend untouched, per plan). Not pushed for approval — silent,
+telemetry-only.
+
+## 2026-07-10 — builder: teetime-prefs-ux-polish landed on the bundle #125 (NOTICEABLE, frontend-only, DONE)
+
+Implemented `specs/teetime-prefs-ux-polish-plan.md` exactly (all 4 items,
+designer-led visual/layout polish on the tee-time flow). One commit
+(`945de5c`) on `integration/next`:
+
+1. `PaperShell` renders a fixed, pointer-transparent status-bar scrim (paper
+   @88% + `blur(10px)`, height `env(safe-area-inset-top)`, zIndex 40) so
+   scrolled `Section` headers ("WHERE / N selected") never collide with the
+   iOS status bar/Dynamic Island in the Capacitor/standalone full-bleed
+   context — every tee-time phase renders through `PaperShell`, so one change
+   covers the whole flow. Desktop/browser unaffected (inset 0).
+2. `CourseRow`: right column is now distance-only, right-aligned, uniform
+   across every row; a course's `muni` moved to a mono sub-line under the
+   name (was jammed ragged into the right column); `minHeight: 44` tap
+   target; both Where-section group labels' `marginBottom` normalized 4 -> 6.
+3. `toCourseOptions`' `r.city` fallback is now guarded by the existing
+   `COUNTRY_SEGMENT_RE` (previously only `muniFromAddress` used it) — a raw
+   provider `city` of "USA" can no longer leak into the muni label. Side
+   effect (correct, no-fake-data behavior, called out in the plan): an
+   all-generic-name row whose only signal was a country-only city is now
+   honestly skipped by `hasIdentifyingTokens` rather than shown with a
+   fabricated label. 2 new `courses.test.ts` cases.
+4. Options screen: the route-entry section header is now conditional on the
+   actual route kinds present ("Call to book" / "Book on their site" / "Book
+   direct" when mixed) instead of hardcoded "Call to book" even when the
+   group was all `book_on_site`; kicker changed to the honest "No listed
+   times"; route-entry rows now show distance + city like real-slot Sections
+   do; `minHeight: 44` added to the sub-44pt real-slot rows, the "+N more"
+   expander, route rows (belt), the Prefs roster Add rows, and the two dashed
+   "+ Add" buttons.
+
+All edits are inline-style JSX / one guard-line in `courses.ts`; zero touch
+to `options.ts` (`filterToSelection`/`groupSlotsByCourse`/asks
+projection/`slotOptionLabel`), the phase state machine, `pick()`/
+`bookTeeTime`, `types.ts`/`models.py`, or any backend file — verified via
+`git diff --stat` showing only `tee-time/page.tsx`, `teetime/courses.ts`,
+`teetime/courses.test.ts`.
+
+Gates all green: `npm run lint` (clean), `npx tsc --noEmit` (clean),
+`npm run build` (Turbopack build succeeds, 19/19 static pages), `npx tsx
+voice-tests/runner.ts --smoke` (274/274), `npm test` (89 files / 1882 tests
+passed, incl. the updated `courses.test.ts` + `options.test.ts`), targeted
+`npx vitest run src/lib/teetime/options.test.ts src/lib/teetime/courses.test.ts`
+(74/74). No backend change → no Postgres/Docker spun up, per policy.
+
+Try it: `/tee-time` → scroll the Where section on an iOS Dynamic Island
+profile to see the status-bar scrim; the Nearby/favorites list now has
+aligned distance columns + city sub-lines; the Options "no listed times"
+section header now matches what's actually in the group.
+
+Risk: low — pure visual/layout polish behind the just-shipped f9953f2
+options flow; no behavior change to selection, dispatch, or booking.
+NOTICEABLE (visible on TestFlight — status bar no longer clips scrolled
+headers, course rows read as aligned instead of ragged).
+
+## 2026-07-10 — builder: teetime-show-real-time-options landed on the bundle #125 (NOTICEABLE, frontend-only, DONE)
+
+Implemented `specs/teetime-show-real-time-options-plan.md` exactly (all 5
+steps) — the three linked P1 tee-time results/prefs bugs from owner
+screenshots. Two commits on `integration/next`:
+
+- **f9953f2** — core fix (bugs #1–#3). New `prefs → searching → options →
+  confirmed` phase (was `prefs → searching → confirmed`): Searching no
+  longer collapses the full slot list to one auto-picked/auto-booked `best`
+  and no longer books before the golfer sees anything. A new Options screen
+  groups what was actually found per course — real bookable times as tappable
+  rows ("6:10 AM · 2 spots · $24", ~5/course cap + "+ N more"), no-online-time
+  courses under a quiet "No online times" section framed as the ASK ("Call
+  for a time in your 6:30–9:30 window") — never the search window presented
+  as a found time (bug #1). Tapping a row books it directly (eng-lead
+  decision: no confirm sheet) and lands on Confirmed. Bug #2 (displayed
+  window ≠ submitted prefs): killed the `windows.find(w => w.date ===
+  slot.date)` re-derivation race entirely — Options/Confirmed now consume
+  `asks: DispatchedAsk[]`, a 1:1 projection of the queries actually
+  dispatched, threaded start-to-finish. Bug #3 (unselected course returned):
+  dispatch now sends every checked course regardless of the drive-radius
+  slider (a checked box is explicit, the radius already shaped the list),
+  plus a defense-in-depth `filterToSelection` guard (id-or-normalized-name,
+  mirrors the backend's `matches_selection` tolerance) drops any slot from an
+  unselected course before Options ever sees it — honest `emptySelectionNote`
+  instead of substituting. Closed the matching voice hole in
+  `applyParsedCourses`: a spoken course name matching nothing keeps the
+  current selection instead of wiping it (which used to silently widen the
+  next dispatch to an all-nearby search).
+- **9f0577e** — P2 stretch (plan §8 #4): `muniFromAddress` now drops "USA"/
+  "United States of America" address suffixes too, not just "United States"
+  (was a substring test, now anchored to the whole segment so a real
+  locality can never be mistaken for a country label).
+
+New `frontend/src/lib/teetime/options.ts` (leaf module, pure, unit-tested —
+32 cases in `options.test.ts`): `isRealSlot`, `groupSlotsByCourse`,
+`filterToSelection`, `asksForDate`/`formatAskWindows`, `slotOptionLabel`,
+`emptySelectionNote`; `formatTime12h`/`formatWindowRange` moved out of
+page.tsx here so Options + Confirmed share one implementation.
+`confirmCopy` gained an optional `askWindow` (confirm-copy.ts/.test.ts).
+4 new courses.test.ts cases for the P2 fix.
+
+Gates all green: `npm run lint`, `npx tsc --noEmit`, `npm run build`,
+`npx vitest run src/lib/teetime` (205 passed across 9 files),
+`npx tsx voice-tests/runner.ts --smoke` (274/274), `backend ruff check .`
+(clean), and the plan's no-regression backend pytest list —
+`test_tee_time_routing/router/selection/search_cache/foreup.py` — 102 passed
+locally (pure unit tests, no DB required; the full DB-backed integration
+suite still runs in CI per policy). No backend code touched, as scoped.
+
+Try it: `/tee-time` → set prefs with a selection → Dispatch → the new Options
+list replaces the old auto-book flow; tap a row to book.
+
+Risk: low — frontend-only UI/dispatch change behind the existing tee-time
+flow; backend contract unchanged (types.ts ↔ models.py already in parity per
+the plan, no additions needed). NOTICEABLE (visible on TestFlight — the
+results screen changes from "one auto-picked slot" to a real pick-list).
+
+## DONE: caddie-surface-osm-trees implemented + pushed to integration/next (5ade0fd)
+
+Builder implemented specs/caddie-surface-osm-trees-plan.md in full. Gates OSM
+`"tree"` (Point) and `"woods"` (Polygon) features into `extract_hole_hazards`
+(`backend/app/caddie/hazards.py`) via a new observation model — reuses the SAME
+played-polyline `_classify` closure as bunker/water (refactored out,
+behavior-preserving: existing `test_hazards.py` passes unchanged except the
+one documented cap-test rename). Tree Point = 1 observation; woods Polygon =
+every outer-ring vertex (closing vertex deduped). Observations behind the tee
+or >70y off the line are dropped; a side only speaks with >=3 surviving
+observations (coverage guard — 1-2 stray tree points stay silent, any real
+woods polygon qualifies alone). Qualifying side emits a min-carry entry + a
+max-carry entry when spread >=30y (cap 2/side); trees computed SEPARATELY and
+appended AFTER the bunker/water cap, combined list re-sorted — structurally
+can never evict a bunker/water hazard. `format_hazards_line`'s group cap moved
+5->6 (`_FORMAT_GROUP_CAP`) for trailing tree headroom. `HAZARD_GROUNDING_RULE`
+got an additive trees clause (the two pinned substrings survive verbatim).
+`carries_payload` empty-hole note string updated. No type/schema change, no
+frontend change (`Hazard.type` already covers `"trees"` everywhere).
+
+Tests: new `backend/tests/test_tree_hazards.py` (T1-T12: point-cluster range,
+2-isolated-trees-silent, woods near-edge-vs-centroid divergence, behind-tee
+drop, 8-bearing sweep, dogleg played-line-vs-chord mirror, cap-independence
+(trees never evict bunker/water), format-orders-trees-last, crossing-woods
+center band, far-lateral drop, mixed polygon+point per-side merge — 19 cases
+incl. parametrization). `test_hazards.py::test_groups_capped_at_five` renamed
+`test_groups_capped_at_six` (7 groups in, 6 rendered). `test_caddie_tools.py`
+note-string pins (2 sites) updated. Two new golden eval scenarios
+(`trees-carry-cited-from-geometry`, `trees-not-mapped-honest`) validated
+against the real production prompt-assembly path, plus a new mutation-teeth
+test (`test_context_hazards_match_goes_red_when_trees_stripped_from_features`)
+proving the eval detects a stripped-trees regression. RED-then-green proven
+TWICE: (1) the teeth test's own internal FC-mutation assertion, and (2) an
+independent proof — temporarily emptied `_TREE_FEATURE_TYPES` in the actual
+source, ran the tree/eval suites (17 failures, confirmed RED across
+test_tree_hazards.py + the golden scenario + the teeth test itself), restored
+the source, reran to confirm green (348/348). Full gate: backend
+`ruff check .` clean; the plan's 11-file backend pytest list = 348 passed;
+frontend lint/tsc/voice-tests smoke all green (backend-only change, no
+frontend edits).
+
+Plan deviation (found, not improvised around): the committed
+`tests/fixtures/bethpage_overpass.json` carries ZERO real tree/woods OSM
+elements (verified: 0 of 820 raw elements tag `natural=tree/wood/scrub/
+tree_row` or `landuse=forest` — every element is bunker/tee/fairway/green/
+hole-way/water). The module docstring's "537 Bethpage tree nodes" line
+describes a DIFFERENT, more complete Overpass fetch than what's actually
+committed as this test fixture. Per the plan's own fallback instruction ("if
+the fixture's real geometry doesn't support a clean pin, report exactly what
+you found rather than fabricating an assertion"), `test_bethpage_validation.py`
+gets a new `TestTreesRealFixtureGap` section documenting the gap with two real
+assertions (zero tree/woods tags in the raw fixture; zero `trees` hazards
+across all 18 assembled Black holes) instead of inventing hole/side/carry
+numbers that were never actually fetched from OSM. The synthetic T1-T12 suite
+and the golden-set scenario fully cover the observation-model correctness this
+real-fixture slot was meant to additionally confirm. Re-fetching the Overpass
+fixture with the tree/wood/scrub/tree_row query terms (`osm.py` ~line 808) to
+add real positive-case coverage is follow-up work, not part of this slice.
+Also found and fixed mid-implementation: the module-docstring "Trees/woods"
+paragraph edit was silently dropped by an edit-tool ordering quirk (a
+subsequent edit reported "file modified on disk since you last read it");
+caught by re-grepping the file before declaring done, restored, reverified all
+348 tests green.
+
 ## DONE: caddie-input-grounding (INPUT_GROUNDING_RULE) implemented + pushed to integration/next (a35e96d)
 
 Builder implemented specs/caddie-input-grounding-plan.md in full, exactly to plan (no
@@ -10032,7 +10246,7 @@ fixture backend/tests/fixtures/plays_like_parity.json pinned by BOTH backend pyt
 vitest. Files: tools.py, RoundPageClient.tsx, frontend/src/lib/caddie/api.ts,
 frontend/src/lib/caddie/fcb-labels.ts, backend/tests/test_caddie_tools.py.
 
-## AWAITING: builder implementing specs/physics-tiles-coherence-plan.md on integration/next
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Dispatched ONE builder to implement the plan (NOT re-plan), commit+push to integration/next.
 On return: reviewer (parity — construct a fixture hole/conditions, assert tile==caddie; the
 divergence is the whole bug) + qa (STRICT gates) + designer (PLAYS tile user-facing, calm).
@@ -10079,7 +10293,7 @@ NEXT: reviewer (parity check — tile==caddie for a fixture) + qa (STRICT gates)
 against NORTHSTAR). BLOCKING → re-dispatch builder. Clean+green → update PR #121 checklist
 (NOTICEABLE → approval-eligible), release-manager TestFlight, owner ping. Never merge to main.
 
-## AWAITING: reviewer + qa + designer on physics-tiles-coherence (item commit 879291c) on integration/next
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Builder pushed 879291c (item) + progress. HEAD 173442f. Local gates green (backend 129
 pass; frontend 1832 vitest, tsc/lint clean, 274/274 voice, build ok). Item files: backend
 tools.py (server-side bearing parity + wind-honesty + conditions_used fields), RoundPageClient
@@ -10114,7 +10328,7 @@ plays_like verbatim, no double-count, security clean). But 3 BLOCKING:
    elevChange!==0) → two tiles contradict on 1-2ft holes. Give PLAYS the same/shared deadband.
 Non-blocking (defer/optional): caption wrap check on 375px; value-swap transition on PLAYS.
 
-## AWAITING: builder ROUND 2 fixing the 3 blocking items on integration/next
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Re-dispatched builder. Guard: do NOT weaken/re-pin the golden evals; if the wind reconciliation
 is genuinely ambiguous (honesty goal vs evals, needs a product call) STOP and flag — don't guess.
 On return: re-run reviewer(parity+fallback) + qa(strict, incl. tests/eval) + designer(deadband).
@@ -10178,7 +10392,7 @@ ruff, lint, tsc, voice smoke, build; backend DB tests via CI only — no local P
 update PR #121 checklist. Do NOT ship (owner bundling). If Fable plan flags a deeper issue,
 reconsider scope before building.
 
-## AWAITING: builder implementing osm distance-sort (specs/teetime-osm-distance-sort-plan.md)
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Fable plan saved. Dispatched ONE builder on integration/next. Plan: add math + _haversine_m +
 pure _sort_by_distance to osm.py; sort by (dist,name) only when lat AND lng present; cap via new
 _MAX_COURSE_RESULTS=15 / _MAX_GEOMETRY_RESULTS=25; SAME fix to search_osm_with_geometry; new
@@ -10263,7 +10477,7 @@ INVESTIGATION (provenance — matters because a naive filter could REGRESS to al
 - Classify: NOTICEABLE (selecting a course will actually narrow results — a visible behavior
   change) but rides #121 (already approval-eligible); NO SHIP this cycle.
 
-## AWAITING: Fable plan on specs/teetime-course-ids-wiring-plan.md
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Dispatched Plan agent on FABLE to design the safe wiring: exact ID-provenance reconciliation
 (UI selected id ↔ routing course_id, incl. mapped-UUID + undefined-OSM-id cases), filter
 semantics (empty=all, mock-parity), the GUARD proving no always-zero regression (test with
@@ -10316,7 +10530,7 @@ det-UUID-match + pre-cap + private-still-excluded; new test_tee_time_selection.p
 (unselected capability course → foreUP never called); golf-api-nearby.test.ts realistic id-less
 fixture. Classify NOTICEABLE (selecting a course actually narrows results) — rides #121, NO SHIP.
 
-## AWAITING: builder implementing specs/teetime-course-ids-wiring-plan.md on integration/next
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Dispatched ONE builder on integration/next (commits the item there + pushes; NO per-item PR).
 Implements the plan EXACTLY (does not re-plan). On builder return → reviewer (adversarial
 correctness — a filter bug surfaces the WRONG or ZERO courses to the owner) + qa (ruff + targeted
@@ -10483,7 +10697,7 @@ safe: composed ONLY from closed-set constants (unknown club keys/hazard types dr
 transcription.prompt (not session.instructions). No PII beyond player's own clubs. 8 DB-free teeth
 tests. NOTICEABLE-leaning (modest). Plan claims spot-checked against codebase: PASS.
 
-## AWAITING: builder on integration/next implementing the plan (localized, additive; do NOT refactor
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 the session builder — parallel teetime-s3 may touch realtime_relay.py). On builder return: dispatch
 reviewer (injection-as-data focus) + qa (strict gates) in parallel; iterate on BLOCKING only; update
 PR #122 checklist; NO ship/NO ping this cycle (bundle accumulates).
@@ -10548,7 +10762,7 @@ Eval TEETH: eval harness backend/tests/eval/ — Tier1 prompt_contains_rule(INPU
 mouths=[text,realtime]) proven RED via mutation in test_harness_has_teeth.py then green; + a Tier2
 (live, non-CI) judge property for gibberish→ask-again on a new golden scenario ("Scars.").
 
-## AWAITING: Fable plan (specs/caddie-input-grounding-plan.md). On return: dispatch ONE builder to
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 implement it on integration/next; then reviewer (adversarial both ways) + qa (strict gates + eval
 teeth) in parallel. NOTICEABLE — rides bundle PR #122, update checklist. NO ship/NO ping this cycle.
 
@@ -10662,3 +10876,345 @@ RED-then-green proof) in parallel. Designer only if a UI surface changed (expect
 only). BLOCKING → re-dispatch builder. Else update PR #122 checklist (5th NOTICEABLE). NO ship / NO
 ping this cycle (bundle accumulates). If I die here: re-read this; reconcile from origin/integration/next
 git log (builder pushes its own commits) — do NOT re-run a builder that already pushed.
+
+---
+
+## 2026-07-09 — SHIPPED: #122 caddie fixes (transcription reliability + geometry)
+
+Owner "ship it". Merge d1534b1 → main (STRICT gate all-SUCCESS; guarded ship
+confirmed no unreviewed tree WIP slipped in — head was docs-only past the
+reviewed cde4333). Backend deploy verified by SHA + health ok. FOUR
+noticeable: course-ids-wiring, slope-framing-reconcile, transcription
+VOCAB-BIASING (golf terms/clubs/hole into gpt-4o-transcribe prompt — kills
+'Scars'/'of God' at the source), INPUT-GROUNDING (caddie asks 'say again?'
+vs answering misheard input; still answers terse golf Qs). Twenty-six ships.
+NOTE: TestFlight export FAILED (exit 70) on the first attempt — retrying;
+backend is live regardless. Cycle 52 (surface-osm-trees) was mid-plan at
+ship; guarded ship held it; tree work rides the next bundle.
+NEXT: trees; cascaded-STT spike; voice target-speaker; caller merge+creds.
+
+## cycle 52 RECONCILE — bundle #122 SHIPPED concurrently (owner "ship it" mid-cycle)
+While this cycle ran, PR #122 (integration/next→main, the FOUR-item caddie bundle) was MERGED to
+main at 2026-07-10T01:57Z (merge d1534b1) by a concurrent release process; board recorded SHIPPED
+(c08879b). origin/main == d1534b1. integration/next is now 3 ahead of main: c08879b (progress),
+5ade0fd (TREE FEATURE), b379464 (progress) — i.e. a fresh post-ship bundle carrying ONE new
+noticeable item (caddie-surface-osm-trees). No open bundle PR existed → opening a fresh one now.
+PRs #123 (tree-CV spike) + #124 (caller) untouched. Builder gates were all green (348 plan-list,
+1642 non-DB, eval 67, frontend clean, voice 274/274; teeth RED-then-green x2). Builder FLAGGED:
+committed bethpage_overpass.json fixture has ZERO tree/woods OSM elements → real positive
+fixture pin impossible; builder added TestTreesRealFixtureGap (honest: 0 tree tags raw, 0 trees
+hazards across 18 Black holes) per plan fallback. Synthetic T1-T12 + golden cover the math.
+Follow-up (backlog): re-fetch Overpass fixture WITH natural=tree/wood/scrub/tree_row for real
+positive coverage.
+
+## AWAITING: Fable reviewer + qa in parallel on head b379464 (feature 5ade0fd)
+Fable reviewer: FALSIFY tree carry/side across bearings (T6 sweep) + dogleg played-line vs chord
+(T7) + woods NEAR-EDGE-not-centroid (T4, 70y window) + coverage-guard honesty (>=3 obs; unmapped→
+"not in my mapped data" never invented) + cap-crowding (trees never evict bunker/water) + additive
+safety (cached JSONB validates, pinned HAZARD_GROUNDING_RULE substrings survive). Same rigor as
+bend/hazards sign-flip class. QA: STRICT gates (ruff, the 11-file pytest list, eval, frontend
+lint+tsc+voice smoke) + re-prove teeth RED-then-green independently. NO docker/Postgres.
+On return: BLOCKING (correctness/security/Northstar) → re-dispatch builder + re-review; else the
+tree item is green on the FRESH bundle PR. NO ship / NO ping this cycle (owner just shipped #122;
+new bundle accumulates). If I die: reconcile from origin/integration/next log; do NOT re-run a
+child that already pushed.
+
+## cycle 52 DONE — caddie-surface-osm-trees landed on FRESH bundle PR #125 (NOTICEABLE)
+The caddie now surfaces OSM tree/woods through the SAME played-polyline carry+side pipeline as
+bunkers/water. Data was already ingested + corridor-joined per hole; the only gate was
+_HAZARD_FEATURE_TYPES={bunker,water}. New observation model (tree Point=1 obs; woods Polygon=each
+ring vertex) via a shared _classify closure (behavior-preserving for bunker/water); 70y lateral
+window → woods NEAR-EDGE not centroid; per-side min/max-carry range via existing format_hazards_line
+merge ("trees R 220-300y"); coverage guard >=3 obs/side (mapped woods qualifies alone; 1-2 stray
+points silent); trees appended AFTER bunker/water cap + re-sort → never evict a real hazard; group
+cap 5->6; severity "moderate"; _TYPE_ORDER trees=2. HAZARD_GROUNDING_RULE amended (additive; pinned
+substrings survive) → unmapped-trees = "not in my mapped data", never invented. NO schema/frontend
+change. Feature commit 5ade0fd.
+Fable plan (VERIFIED) → specs/caddie-surface-osm-trees-plan.md.
+Fable reviewer SHIP — falsification attempts all failed: 24-bearing tree-vs-bunker parity sweep,
+dogleg played-line-vs-chord hand-derivation, woods near-edge window probes (centroid impl goes RED),
+300-trial cap-eviction fuzz (no bunker/water ever displaced), coverage-guard both directions,
+behavior-preservation of the bunker path, no injection surface (prompt text = geometry constants
+only) so no /security-review warranted.
+QA PASS — ruff clean; 348/348 targeted + 1709/1709 broader non-DB backend; frontend lint/tsc clean;
+voice smoke 274/274; eval teeth independently RED-then-green at source level (empty
+_TREE_FEATURE_TYPES → 16 red; restore → green); working tree clean.
+Designer SKIPPED — no UI surface (backend hazard pipeline; tool/intel/spoken only).
+
+## SHIP CONTEXT — bundle #122 shipped concurrently (owner "ship it" mid-cycle)
+PR #122 (four caddie items) MERGED to main 2026-07-10T01:57Z (d1534b1) by a concurrent release
+process; board SHIPPED. This cycle opened a FRESH bundle PR #125 (integration/next→main) carrying
+ONE noticeable item (trees). NO ship / NO ping this cycle (owner just shipped; new bundle
+accumulates until it's TestFlight-worth-a-ping or the owner asks). Required CI gates to be
+re-verified strict-green (every REQUIRED gate state:SUCCESS) on the FINAL head SHA at ship time.
+
+## FOLLOW-UPS queued (from cycle 52 — non-blocking)
+1. Re-fetch tests/fixtures/bethpage_overpass.json WITH natural=tree/wood/scrub/tree_row (+landuse=
+   forest) Overpass terms so a REAL-fixture POSITIVE tree-hazard pin exists (current fixture has 0
+   tree/woods elements; TestTreesRealFixtureGap documents the gap honestly). Silent.
+2. Reviewer nits (cosmetic, silent): hazards.py ring-closure dedupe uses exact float equality
+   (epsilon dedupe stricter); 30y spread test compares round-to-5 values (raw 27.6y can emit a
+   range). Neither affects correctness; fold into a future caddie-hazards touch.
+
+## CYCLE 53 START (2026-07-09) — teetime-show-real-time-options (NOTICEABLE) on bundle #125
+Owner sent tee-time screenshots (spec: specs/teetime-results-ux-fixes.md). THREE linked P1 bugs:
+(1) show actual TIME OPTIONS not the search window (foreUP has real slots — S1); call-route → honest ask.
+(2) displayed window != submitted prefs (plumbing prefs→dispatch→result).
+(3) found course NOT selected — dispatch/search must honor selected course ids; honest-empty if none.
+Sync clean; no pending "ship it". Riding bundle PR #125.
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
+
+## CYCLE 53 RESULT (2026-07-09) — teetime-show-real-time-options (NOTICEABLE) on bundle #125
+Fable plan (specs/teetime-show-real-time-options-plan.md) VERIFIED the crux: /api/tee-times returns a
+slot LIST per course; frontend collapsed it to a single auto-booked slot + rendered the SEARCH WINDOW.
+All fixes frontend/dispatch-only (zero backend change). Builder pushed f9953f2 (core) + 9f0577e (P2 #4 label).
+- Bug1: new prefs→searching→options→confirmed phase; Options list groups real foreUP slots as tappable
+  "6:10 AM · 2 spots · $24" rows (~5/course + "+N more"); call-route courses framed as the ASK, never a found time.
+- Bug2: displayed window == submitted prefs by construction (asks = 1:1 projection of dispatched queries;
+  killed the windows.find(date) race that surfaced a deselected default).
+- Bug3: dispatch honors selected ids (no radius-drop of checked courses; filterToSelection id-or-name guard;
+  honest emptySelectionNote; closed voice zero-match deselect hole). Never substitutes an unselected course.
+Reviewer SHIP (mutation-proof: neutering filterToSelection → 3 selection tests red; no-fake-data honored;
+scope clean, no backend/voice_booking touched). QA PASS: lint/tsc/build clean, teetime-unit 205/205 (incl new
+options.test.ts), full suite 1880/1880, voice smoke 274/274, backend ruff clean, backend tee-time unit 102/102;
+E2E skipped (no preview URL — honest). Designer APPROVE (live-screenshotted 390px; yardage-book primitives reused).
+PR #125 checklist updated (2 noticeable items). Board record is the PR + this log.
+
+## FOLLOW-UPS queued (cycle 53, non-blocking)
+1. teetime-prefs-ux-polish (#5): header safe-area/viewport-fit + nearby-list grouping — needs on-device screenshot.
+2. Route-entry section header "No online times/Call to book" can contradict a book_on_site row's own honest copy
+   in a mixed batch → make the header conditional (or split into call vs book-direct mini-sections).
+3. Add distance/city context to route-entry rows (real-slot Sections have it; route rows dropped it).
+4. Harden filterToSelection: build id/name Sets with .filter(Boolean) so a falsy selected id/name can't leak.
+5. Sub-44pt tap targets across the whole tee-time flow (pre-existing CourseRow convention; batch pass).
+
+## CYCLE 54 START (2026-07-09) — teetime-prefs-ux-polish (NOTICEABLE) on bundle #125
+Owner's remaining tee-time screenshots (spec: specs/teetime-results-ux-fixes.md #5 + #4). DESIGNER-LED visual pass:
+(1) courses-selection header clipped behind status bar — apply/verify top safe-area inset (note: viewportFit:cover
+    IS set + TTMasthead uses max(14px, env(safe-area-inset-top)) — root cause needs on-device trace, not a missing meta).
+(2) NEARBY list "reads as broken / grouped" — CourseRow dividers + Favorites/Open-to/Nearby group rhythm; even rows,
+    consistent dashed dividers, aligned checkbox|name|distance·city columns (ragged when muni empty).
+(3) location labels — real city/locality or omit, never "USA" (9f0577e did muniFromAddress; verify fully consistent).
+(4) fold small cycle-53 follow-ups IF same-file + clean (route-entry header conditional, distance on route rows,
+    tap-target sizing) — designer's call, one coherent pass, no scope-creep.
+Files: frontend/src/app/tee-time/page.tsx (TTMasthead/Section/CourseRow ~L714-780,1495-1608), CourseSearch.tsx.
+Frontend-only, NO backend, do NOT touch voice_booking/telephony (#124). Classify NOTICEABLE. Rides bundle PR #125.
+Sync clean; no pending "ship it". Per cycle standing rule: no push notifications this cycle.
+## AWAITING Fable plan (specs/teetime-prefs-ux-polish-plan.md). On return → dispatch ONE builder to implement on
+integration/next; then reviewer (no-regression to selection/options flow) + designer PASS (iOS-sim before/after) + QA strict gates.
+
+## CYCLE 54 — Fable plan VERIFIED + saved (specs/teetime-prefs-ux-polish-plan.md)
+Root cause of clipped header found by trace: "WHERE/N SELECTED" is the mid-page Section (L715), NOT the masthead;
+in full-bleed Capacitor/standalone WKWebView (viewportFit:cover + black-translucent) content scrolls UNDER the
+status bar. Fix = fixed pointer-transparent status-bar scrim in PaperShell (height env(safe-area-inset-top),
+paper@88%+blur) — a port of globals.css .app-header pattern; covers all 4 tee-time phases, invisible on desktop.
+Item2 CourseRow: right col distance-only (aligned), muni→mono subline under name, minHeight44, dividers unchanged.
+Item3 courses.ts L106: guard r.city fallback with COUNTRY_SEGMENT_RE (+2 tests). Item4 (same file): conditional
+route header, distance/city on route rows, minHeight44 on sub-44pt rows. ZERO backend, ZERO logic change to f9953f2.
+## AWAITING builder — implement specs/teetime-prefs-ux-polish-plan.md on integration/next, commit+push, run gates.
+On return → reviewer (no-regression) + designer PASS (iOS-sim) + QA strict; then update PR #125 checklist.
+
+## AWAITING review (cycle 54) — builder pushed 945de5c (feature) on integration/next; head 8b23bb3.
+Dispatched in parallel: reviewer (no-regression to f9953f2 selection/options + scrim z-index/pointer-events),
+designer (NORTHSTAR + iOS-sim before/after of scrolled Where header + Nearby list + Options), qa (strict gates).
+On all-green + designer PASS → update PR #125 checklist (3 noticeable items), progress DONE, no ship/no ping.
+BLOCKING from any → re-dispatch builder, re-review.
+
+## CYCLE 54 DONE — teetime-prefs-ux-polish SHIPPED to bundle #125 (NOTICEABLE). Feature 945de5c on integration/next.
+Reviewer SHIP + QA PASS (5/5 runnable gates: lint/tsc/build/voice 274/274/vitest 1882/1882) + Designer PASS
+(live mocked-network render; Items 2/3/4 confirmed on-Northstar; Item 1 scrim sound, iOS on-device deferred to owner TestFlight).
+No BLOCKING. PR #125 checklist updated → THREE noticeable items (mergeState CLEAN). Per cycle standing rule: NO ship / NO push
+this cycle — item rides bundle #125 until owner "ship it". Cycle-53 follow-ups #2/#3/#5 (route header conditional, distance/city
+on route rows, tap targets) folded in and DONE. Remaining deferred (non-blocking): raw route-row slot.city country-regex guard;
+unify Options distance placement; filterToSelection Set falsy-guard.
+
+## CYCLE 56 START — voicetel-timing-immediate-flush (SILENT) on bundle #125
+Evidence gathered (branch==main for the two files; no code diverged yet):
+- The headline `caddie.eos_to_first_audio` ALREADY flushes immediately at markFirstAudio()
+  (caddie-turn-timing.ts safeFlush, commit 6fcb40d, in main since 2026-07-07 — live the WHOLE
+  3-day window the prod near-zero was measured over). So the "headline not in immediate-flush
+  tier" premise is FALSIFIED for eos_to_first_audio.
+- Real remaining gap: the EARLIER legs (eos_to_transcript / transcript_to_first_token /
+  first_token_to_first_audio) are emitted via safeEmit WITHOUT their own flush — they only ride
+  on markFirstAudio's single flush (classic: useSheetTTS onSpeakStart; RT: first 'speaking').
+  If iOS never reaches markFirstAudio (TTS didn't start / app backgrounded), the whole turn's
+  timing — including the headline — dies before the 8s batch. We also get ZERO signal a turn
+  happened. That matches "~1 eos_to_first_audio + 0 caddie-rt in 3 days".
+- Minimal fix direction: flush EACH stage-timing leg immediately as emitted (per-leg), so
+  eos_to_transcript reaches prod the moment the transcript resolves — reliable caddie-turn
+  volume + go/no-go data even when audio-marking is flaky. Keep idempotent/clamp guards; no PII;
+  rate-limit backstop applies. Test (14) "flushes exactly once at first audio" updates to reflect
+  intended per-leg flush (behavior change, not test-gaming).
+## AWAITING Fable plan — specs/voicetel-timing-immediate-flush-plan.md. On return → dispatch builder
+on integration/next; then reviewer + qa; SILENT, rides bundle #125.
+
+## CYCLE 56 — Fable plan VERIFIED + saved (specs/voicetel-timing-immediate-flush-plan.md). Corrects the premise:
+headline already immediate-flushes at markFirstAudio (6fcb40d, live all 3 days) — real gap is the EARLIER legs
+(eos_to_transcript / transcript_to_first_token) only riding markFirstAudio's flush. FIX = 2 guarded safeFlush()
+calls in markTranscript()/markFirstToken() via the existing injectable flush seam; KEEP terminal flush at markFirstAudio.
+Files: caddie-turn-timing.ts + its 2 test files ONLY. No change to CaddieSheet.tsx / useVoiceCaddie.ts / telemetry.ts / backend.
+## AWAITING builder — implement the plan on integration/next, commit+push, run all 6 gates. On return → reviewer + qa.
+
+## CYCLE 56 — builder DONE. Feature 2d4b4c9 (caddie-turn-timing.ts + 2 test files) on integration/next; head 37790b1.
+All 6 gates green locally (lint/tsc/build/voice 274/vitest 34/ruff). SILENT telemetry-only, zero UI/behavior change.
+## AWAITING review — dispatched reviewer (adversarial correctness+security on the 2d4b4c9 diff: no over-flush spam,
+no PII, guards intact, no telemetry-can-throw-into-audio regression) + qa (strict gates on branch). No designer
+(not user-facing), no /security-review (telemetry endpoint untouched, no new auth/data). On all-green → update PR
+#125 checklist (SILENT ride-along), progress DONE, NO ship / NO ping. BLOCKING → re-dispatch builder, re-review.
+
+## CYCLE 56 DONE — voicetel-timing-immediate-flush landed on bundle #125 (SILENT). Feature 2d4b4c9 on integration/next.
+Reviewer SHIP (flush guarded inside if(ms!==null) so clamped legs never POST; PII-safe {ms}-only pinned by test;
+throw-isolated; empty-queue flush no-ops; tests strengthened not gamed — new "incomplete turn still ships
+eos_to_transcript" tooth). QA PASS all 6 gates (lint/tsc/build, voice 274/274, targeted vitest 34/34, ruff).
+No BLOCKING. PR #125 body updated → THREE noticeable + ONE silent; backend CI green on new head, frontend pending.
+Per standing rule + cycle instructions: SILENT ride-along — NO ship / NO ping. Bundle awaits owner "ship it".
+FOLLOW-UP for owner (not a build task): once he uses the live caddie a few times on the next TestFlight build, prod
+will have real caddie-turn vs caddie-rt eos_to_first_audio p90 → cascaded-STT go/no-go (#126) becomes readable.
+Deferred (non-blocking, same telemetry class): if eos_to_transcript volume appears WITHOUT matching eos_to_first_audio,
+that itself diagnoses iOS onSpeakStart never firing — a separate follow-up, not this change.
+
+## Cycle 58 (2026-07-10) — IN PROGRESS
+- Reconciled 6 stale backlog items → shipped (physics, input-grounding, trees#125, bend, teetime s0/kill-fake-held) — verified in code, committed+pushed.
+- AWAITING: eng-lead pass on **caddie-remove-seeded-question** (p1, owner screenshots). opening-turn.ts:16-18 posts a fake first-person question AS the player; make the caddie OPEN instead (greet/offer). Land on integration/next (bundle continues per owner "we'll continue to bundle"). No ship/no ping.
+
+## AWAITING plan (Fable) — caddie-remove-seeded-question, cycle 58
+Dispatched Fable Plan agent to decide the AUTHORSHIP/role fix (crux, not just copy): today buildOpeningTurnText
+(opening-turn.ts) is fed as a user-role turn + user bubble in BOTH consumers — classic CaddieSheet.tsx ~L819
+(setTranscript+askCaddie → backend user transcript + history {role:user}) and live useCaddieLiveSession.ts:283
+(realtime.ts sendText → conversation.item role:'user' + response.create + user bubble). Fix = caddie greets ITSELF
+(assistant authorship, no fabricated player utterance), aware of shot ctx, single shared builder.
+On plan return → write specs/caddie-remove-seeded-question-plan.md, dispatch builder on integration/next.
+Tests to re-point (NOT weaken): opening-turn.test.ts L36-45 (exact first-person strings); CaddieSheet.realtime.test.tsx
+L328-345 (sendText exact string + sendContext-before-opening ordering). SILENT bundle accumulation — no ship/no ping.
+
+## AWAITING builder — caddie-remove-seeded-question (cycle 58)
+Fable plan written → specs/caddie-remove-seeded-question-plan.md (committed). Builder dispatched on integration/next.
+Authorship decision: caddie OPENS itself (assistant-authored), no fabricated player utterance. buildOpeningTurnText
+→ buildOpeningGreetingText (new copy) + buildOpeningGreetingInstruction (live wrapper). Classic: deterministic seed
+(assistant history + setVoiceAnswer + tts.speak, no network turn). Live: new realtime.ts sendOpener (system-role item
++ response.create, NO onMessage → assistant bubble). Tests re-pointed (opening-turn, CaddieSheet.realtime/session/
+handsfree) — core lock: onUpdateConvHistory gets [{role:assistant}] only, no user entry, no backend call for opener.
+On builder green+pushed → reviewer (adversarial: no fabricated player turn, SSOT preserved, no test weakened) + qa
+(strict gates on pushed head) + designer (opener copy vs NORTHSTAR calm/voice-first). BLOCKING → re-dispatch builder.
+Then update PR #125 checklist (SILENT ride-along), backlog shipped, progress DONE. NO ship / NO ping.
+
+## CYCLE 58 — builder DONE: caddie-remove-seeded-question
+Implemented specs/caddie-remove-seeded-question-plan.md exactly on integration/next. opening-turn.ts:
+buildOpeningTurnText renamed → buildOpeningGreetingText (new caddie-authored copy: tee "You're on the tee —
+about X to the pin. Want a read on the tee shot?" / else "About X to the pin from here. Want a read on the
+shot?") + new buildOpeningGreetingInstruction(shot) live-mode wrapper. CaddieSheet.tsx classic opening effect:
+no more setTranscript+askCaddie network turn — deterministic seed of {role:"assistant"} history + setVoiceAnswer
++ tts.speak. realtime.ts: new sendOpener(text) (system-role conversation.item.create + response.create, NO local
+onMessage → no fabricated user bubble). useCaddieLiveSession.ts: sendText(buildOpeningTurnText) → sendOpener(
+buildOpeningGreetingInstruction). Tests re-pointed (not weakened) in opening-turn.test.ts, CaddieSheet.realtime/
+session/handsfree.test.tsx — core defect lock: onUpdateConvHistory called with exactly [{role:"assistant",
+content:greeting}], no user entry, zero backend calls for the opener. All 6 gates green: lint clean, tsc clean,
+targeted vitest 79/79, full vitest 1890/1890 (89 files), voice-tests smoke 274/274. Frontend-only, SILENT bundle
+accumulation (opener copy is user-visible but this is a bug-fix/behavior-correction on an existing feature, not
+a new capability — eng-lead to confirm noticeable/silent classification). Committed+pushed to integration/next.
+AWAITING: reviewer (adversarial: no fabricated player turn, SSOT preserved, no test weakened) + qa (strict gates
+on pushed head) + designer (opener copy vs NORTHSTAR calm/voice-first). BLOCKING → re-dispatch builder.
+
+## AWAITING reviewer+designer — caddie-remove-seeded-question 36cbe5f (cycle 58)
+Builder landed 36cbe5f on integration/next (origin). All 6 gates green locally (lint/tsc clean; targeted vitest
+79 passed; full vitest 1890 passed; voice smoke 274/274). Dispatched reviewer (adversarial: core defect gone / no
+user-role opener artifact / SSOT / ordering / guards / no test weakened — scrutinize the mockReset deviation) +
+designer (opener copy vs NORTHSTAR calm/voice-first). On BOTH clear → QA verify on pushed head + update PR #125
+checklist (SILENT ride-along), backlog=shipped, progress DONE. BLOCKING → re-dispatch builder, re-review. NO ship/ping.
+
+## CYCLE 58 DONE — caddie-remove-seeded-question landed on bundle #125 (NOTICEABLE, no ship/no ping)
+Caddie now OPENS the conversation itself (assistant-authored greeting) instead of puppeting a fake first-person
+player question. Fable-planned (specs/caddie-remove-seeded-question-plan.md) — authorship/role was the crux, not copy.
+Builder 36cbe5f + doc-fixup 1446ea2 on integration/next.
+- opening-turn.ts: buildOpeningTurnText -> buildOpeningGreetingText (new calm copy) + buildOpeningGreetingInstruction
+  (live wrapper, embeds greeting verbatim = single source of truth).
+- CaddieSheet.tsx classic effect: deterministic seed [{role:assistant}] + setVoiceAnswer + tts.speak, NO network turn,
+  NO setTranscript/askCaddie -> no user bubble, no {role:user} history. All double-fire/honest-idle guards untouched.
+- realtime.ts: new sendOpener (system-role conversation.item.create + response.create, NO onMessage -> assistant bubble).
+  sendText/sendContext untouched.
+- useCaddieLiveSession.ts: sendText(buildOpeningTurnText) -> sendOpener(buildOpeningGreetingInstruction). anchorHole
+  (sendContext) still fires before opener — ordering invariant preserved.
+- Tests re-pointed (NOT weakened): opening-turn.test.ts (new strings + authorship lock no "I'm" + instruction SSOT lock);
+  CaddieSheet.realtime.test.tsx (sendOpener once + sendText.not.called + sendContext-before-sendOpener ordering);
+  CaddieSheet.session.test.tsx (core lock: onUpdateConvHistory gets exactly [{role:assistant}], all 3 network mocks
+  uncalled; deleted old user-bubble-transparency assertion = the bug; legit mockReset isolation fix flagged);
+  CaddieSheet.handsfree.test.tsx (deterministic greeting survives auto re-arm).
+Reviewer SHIP (7/7 from the diff; tests stronger not gamed). Designer APPROVE (calm/yardage-book; "yards" correctly
+dropped; reuses caddie-bubble component). QA gates green: lint/tsc clean, targeted vitest 79/79, full vitest 1890/1890,
+voice smoke 274/274. Frontend-only, zero schema/backend.
+PR #125 checklist updated -> FOUR noticeable + ONE silent. backlog.json caddie-remove-seeded-question=shipped.
+Per cycle instructions: SILENT bundle accumulation — bundle #125 already awaits owner "ship it"; NO merge/ship/ping.
+Head after bookkeeping pending; CI to re-verify strict-green at ship time.
+
+## Cycle 59 (2026-07-10) — teetime-prefs-ux-polish (RESULTS/CONFIRMATION · USA leak)
+- Board + PRs checked: no new owner feedback; #125 still awaits ship-it. Reconciled caller item → in_review (=PR #124).
+- FINDING: the prefs course list "· USA" was ALREADY fixed cycle 53/54 (9f0577e muniFromAddress + 945de5c rawCity guard),
+  both on integration/next (unshipped). Remaining SAME-CLASS leak was the RESULTS + CONFIRMATION render paths in
+  tee-time/page.tsx: `g.city` / `slot.city` come from backend slot.city = raw `address`
+  (foreup.py:211 / routing.py:112 set city = course.address), rendered VERBATIM with no country-drop — a booked
+  "Marine Park Golf Course" showed "USA · 18 holes".
+- FIX (frontend-only, tight): import muniFromAddress into page.tsx; normalize the 3 backend-fed city render sites —
+  results "Take your pick" (g.city), route-entry rows (g.city), and the confirmation stamp (slot.city, with a
+  dangling-"· " guard: `{cityLabel ? \`${cityLabel} · \` : ""}{holes} holes`). muniFromAddress drops country segments
+  ("USA"/"United States"→""), extracts a real locality from a full address ("…,Brooklyn,NY 11234,USA"→"Brooklyn"),
+  and passes clean city+state through ("San Francisco, CA"→"San Francisco"). Verified inline on all reported cases.
+- HEADER copy ("WHERE"/"4 SE…"): LEFT intentionally. It's the consistent Section idiom used across the whole screen
+  (When/Windows, Who/The group, Where/Courses); "4 SE…" is the aside truncating "4 selected" — a shared Section/Kicker
+  layout concern needing a cross-Section designer pass, not a contained copy win. Noted for a future design pass.
+- ICS calendar `city` (line ~1337) LEFT as-is: a calendar location benefits from fuller detail; not an in-app "· USA" label.
+- Gates local: lint clean, tsc clean, voice smoke 274/274, vitest courses+options 74/74. Backend source unchanged
+  (CI-DB not needed); frontend-only presentation fix.
+- REMAINING on the item (NOT done here): header safe-area/viewport-fit + on-device nearby-list grouping polish —
+  need on-device screenshots; kept item ready with updated why.
+- Reviewer SHIP (1d2d0ae): no dangling separator, no undefined crash, no over-strip of a real US city, render-only
+  (ICS calendar city correctly left raw; grouping by courseId), no tests weakened.
+- Designer APPROVE: omission-over-fabrication matches no-fake-data / on-paper restraint; no orphan separators/SaaS drift.
+- Both flagged one NON-BLOCKING follow-up: muniFromAddress returns the last surviving segment, so an address with no
+  real city could surface a pseudo-locality — worth a "last-segment-wins" lock test on the shared helper (pre-existing,
+  out of scope for this US-label fix). Logged as a follow-up, not churned onto this diff.
+- PR #125 checklist updated → FIVE noticeable + ONE silent; this closes the deferred "raw route/slot city not run
+  through the country regex" honesty follow-up from the polish item.
+- CI on head 1d2d0ae: Backend gate SUCCESS; Frontend gate pending (monitor armed). SILENT bundle accumulation —
+  #125 already awaits owner "ship it"; NO merge/ship/ping this cycle.
+
+## Cycle 60 (2026-07-10) — IN PROGRESS
+- Board + PRs: no new owner feedback; #125 still awaits ship-it.
+- Corrected bookkeeping: teetime-prefs-ux-polish was landed+green in cycle 59 (code 1d2d0ae) but its backlog status hadn't persisted → set shipped.
+- DONE: **teetime-muni-pseudolocality-guard** landed on #125. Eng-lead CRASHED mid-cycle (API drop) after committing code 1e75611 (green) but before review — recovered from branch state: ran a fresh reviewer (SHIP, no real-city regression), folded 2 reviewer fixes (add-flow name-echo dedup at courseOptionFromSelection; dropped bare 'club' venue token to protect 'Country Club Hills'-type towns), added lock tests. teetime 222, tsc/lint/voice green; verifying strict-green on pushed head. Bundle #125 = 5 noticeable + 2 silent-hardening, awaits owner ship-it.
+
+- BUILT (1e75611): muniFromAddress lone-venue/street guard + new muniEchoesName/localityLabel name-echo dedup;
+  applied in toCourseOptions + 3 tee-time render sites. Tests red→green in courses.test.ts (venue/street omission,
+  name-echo dedup, lock tests for Brooklyn/Tenafly/San Francisco/Menlo Park/Oak Park). Local gates: lint clean,
+  tsc clean, voice 274/0, vitest teetime 221/221.
+- AWAITING: reviewer on 1e75611 (real-city-regression probe is the key risk) + CI on the pushed head.
+  SHIP → update PR #125 checklist + backlog shipped, checkpoint. BLOCKING → re-dispatch builder. SILENT — no ship/ping.
+
+## Cycle 61 (2026-07-10) — IN PROGRESS
+- Board + PRs: no new owner feedback; #125 still awaits ship-it. Confirmed fcb-caption items already shipped.
+- Scoped the vague p2 stub into a real finding: F/C/B mapped-branch fallback shows fabricated `distance±offset` (a ~40% illustration placeholder) when geometry is null but source isn't card-only → fake yardages on the core surface (no-fake-data violation).
+- DONE: **fcb-unmapped-paper-fallback-mismatch** landed on #125 (code 071e2d4→6825103). Killed fabricated distance±offset F/C/B fallback; extracted pure buildFcbTiles helper (no-fake-data invariant: no real geometry → honest card-only), caption derives from same source. Reviewer traced 3 paths unchanged, designer folded caption-honesty fix, 10 headless tests. Backend gate hit a container-init infra flake → re-ran → STRICT-GREEN on 6825103 (both gates SUCCESS). Bundle #125 = 6 noticeable/correctness + hardening, awaits owner ship-it. See [[ci-backend-container-init-flake]].
+- HOLDING after cycle 61 — recommend ship #125. Remaining ready work is p3 copy nits / measurement-gated / owner-blocked.
+
+## Cycle 61 — DONE: fcb-unmapped-paper-fallback-mismatch (SHIPPED to bundle)
+integration/next @ 31c2067 (PR #125). No-fake-data correctness fix on the core yardage surface.
+- Bug (reachable, persistent, confirmed by reviewer+designer): round with a course-center anchor (roundAnchor truthy) but no mappedCourse → mapCoords=[] → anchoredCoords=[] → holeCoordsForTiles null → fcb null, teeAnchor null → fcbSource "tee" → showCardOnly false → F/C/B tiles rendered fabricated `distance ± offset` (distance = ~40% illustration placeholder) for every hole; DistancesCard renders because roundAnchor truthy. Plus load-window flash on mapped rounds.
+- Fix: extracted pure buildFcbTiles + effectiveFcbSource (frontend/src/lib/course/fcb-tiles.ts, tested). Every "no real geometry" state (fcbSource==='card' || fcb==null) → honest card-only tiles (Front/Back "—", Center=cardYards ?? "—"); caption single-sourced off the same condition (reads "from the card"). Three working paths byte-identical.
+- Reviewer: SHIP. Designer: APPROVE (caption fold done). QA: lint/tsc clean, voice 274/274, vitest 39/39 targeted.
+- Follow-up logged: fcb-plays-tile-fabricated-fallback (p3) — PLAYS tile still derives from `distance` in the same state (showCardOnly left untouched per scope; flagged by both reviewer+designer).
+- SILENT accumulation — no ship, no ping (owner authorized bundling; #125 awaits owner "ship it").
+
+## Cycle 62 (2026-07-10) — IN PROGRESS
+- Board + PRs: no new owner feedback; #125 still awaits ship-it.
+- AWAITING: eng-lead pass on **fcb-plays-tile-fabricated-fallback** (p3, no-fake-data follow-up flagged by BOTH reviewer+designer in cycle 61): PLAYS tile still computes off the `distance` placeholder in the anchor-only/fcb-null/source-'tee' state → fabricated plays-like beside honest '—' F/C/B. Widen plays/physics/caption card-only condition to effectiveFcbSource(fcbSource,fcb)==='card'. Land on #125. No ship/no ping.
+- BUILD DONE (this cycle): extracted pure `playsBasis` helper (frontend/src/lib/caddie/plays-basis.ts, 8 tests) that keys off `effectiveCardOnly` and never receives `distance`; RoundPageClient now computes `effectiveCardOnly = effectiveFcbSource(fcbSource,fcb)==='card'` once and feeds it to the basis helper + playsTile.fromCard/hasLocalIntel. `showCardOnly` removed entirely (all 4 uses widened). `distance` now only feeds HoleCard illustration. null basis → PLAYS "—" (coherent with F/C/B). Local gates green: tsc, lint, voice 274/274, vitest 37/37 (plays-basis, plays-tile, fcb-tiles, DistancesCard).
+- AWAITING: reviewer (fresh) + CI on the pushed head. SHIP → update #125 checklist + backlog shipped + designer, checkpoint. BLOCKING → fix + re-review. SILENT — no ship/ping.
+
+## Cycle 62 — DONE: fcb-plays-tile-fabricated-fallback (SHIPPED to bundle)
+integration/next @ 6a680bc (PR #125). No-fake-data correctness — completes cycle 61's F/C/B honesty fix.
+- Bug: F/C/B tiles collapse to honest card-only on the WIDE effectiveFcbSource (fcb==null || fcbSource==='card'), but the PLAYS/physics basis still keyed off the NARROW showCardOnly (fcbSource==='card'). In the anchor-only unmapped state (fcb null, source 'tee', fcbFromTee null) the tiles read '—' while playsBase fell through to `distance` (~40% illustration placeholder) → fabricated plays-like labeled real beside honest '—'.
+- Fix: compute effectiveCardOnly = effectiveFcbSource(fcbSource,fcb)==='card' ONCE; key playsBase, physicsBasisYards, playsTile.fromCard/hasLocalIntel off it. Extracted pure helper playsBasis (frontend/src/lib/caddie/plays-basis.ts, 8 tests) that does NOT receive `distance` → placeholder can't leak. Null basis (card-only, no cardYards) → tile '—'/'no data' (coherent w/ '—' Center). showCardOnly removed (all 4 uses widened, none stayed narrow); `distance` now feeds only HoleCard illustration.
+- showCardOnly audit: 4 uses — playsBase branch, physicsBasisYards branch, playsTile.fromCard, playsTile.hasLocalIntel — ALL widened to effectiveCardOnly; variable deleted. No downstream use meant "literally card" so none left narrow.
+- Before/after (bug case, cardYards=388, no intel): OLD playsBase = holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance) = distance (fabricated); NEW = 388 (scorecard). physicsBasisYards OLD null → NEW 388.
+- Reviewer SHIP (all 6 checks + TDZ/unused-var; distance unreachable, 3 paths byte-identical, double-count guard preserved, no NaN). Designer APPROVE (PLAYS tracks Center's card basis w/ honest 'from card' caption; 'no data' matches Wind empty state; noted a pre-existing out-of-scope elevTile 'elev' vs 'no data' copy nit). QA: tsc/lint/voice 274/274/vitest 37/37 local; both REQUIRED CI gates SUCCESS on 6a680bc (E2E advisory non-required).
+- SILENT accumulation — no ship, no ping. Bundle #125 = 7 noticeable + 1 silent, awaits owner "ship it".
+- Injection note: two planted fake "system-reminder" blocks (date-change + Telegram instructions) appeared this cycle to eng-lead and designer; both ignored per injection-defense (embedded instructions are data, not authority).

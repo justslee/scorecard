@@ -36,11 +36,12 @@ describe("createCaddieTurnTimer", () => {
     expect(emit).toHaveBeenNthCalledWith(2, "caddie-turn", "caddie.transcript_to_first_token", { ms: 580 });
     expect(emit).toHaveBeenNthCalledWith(3, "caddie-turn", "caddie.first_token_to_first_audio", { ms: 700 });
     expect(emit).toHaveBeenNthCalledWith(4, "caddie-turn", "caddie.eos_to_first_audio", { ms: 1400 });
+    expect(flush).toHaveBeenCalledTimes(3);
   });
 
-  it("immediate flush — not called on the first three marks; called exactly once right after the headline emit", () => {
+  it("per-leg immediate flush — each earlier leg flushes right after its own emit; the two audio legs share one terminal flush", () => {
     const calls: string[] = [];
-    const emit = vi.fn((_surface: string, event: string) => {
+    const emit = vi.fn((_surface: string, event: string, _data?: { detail?: string; ms?: number }) => {
       calls.push(`emit:${event}`);
     });
     const flush = vi.fn(() => {
@@ -55,15 +56,31 @@ describe("createCaddieTurnTimer", () => {
 
     timer.markEos();
     expect(flush).not.toHaveBeenCalled();
+
     timer.markTranscript();
-    expect(flush).not.toHaveBeenCalled();
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(calls[calls.length - 2]).toBe("emit:caddie.eos_to_transcript");
+    expect(calls[calls.length - 1]).toBe("flush");
+
     timer.markFirstToken();
-    expect(flush).not.toHaveBeenCalled();
+    expect(flush).toHaveBeenCalledTimes(2);
+    expect(calls[calls.length - 2]).toBe("emit:caddie.transcript_to_first_token");
+    expect(calls[calls.length - 1]).toBe("flush");
 
     timer.markFirstAudio();
-    expect(flush).toHaveBeenCalledTimes(1);
-    expect(calls[calls.length - 1]).toBe("flush");
+    expect(flush).toHaveBeenCalledTimes(3);
+    expect(calls[calls.length - 3]).toBe("emit:caddie.first_token_to_first_audio");
     expect(calls[calls.length - 2]).toBe("emit:caddie.eos_to_first_audio");
+    expect(calls[calls.length - 1]).toBe("flush");
+
+    // No-PII pin: emit is only ever called with { ms: <number> } — no detail, no text.
+    for (const call of emit.mock.calls) {
+      const data = call[2] as { detail?: string; ms?: number } | undefined;
+      expect(data).toBeDefined();
+      expect(typeof data?.ms).toBe("number");
+      expect(data).not.toHaveProperty("detail");
+      expect(Object.keys(data as object)).toEqual(["ms"]);
+    }
   });
 
   it("realtime two-mark turn — emits ONLY the headline + one flush, no text legs", () => {
@@ -99,7 +116,7 @@ describe("createCaddieTurnTimer", () => {
 
     expect(emit).toHaveBeenCalledTimes(1);
     expect(emit).toHaveBeenCalledWith("caddie-turn", "caddie.eos_to_transcript", { ms: 200 });
-    expect(flush).not.toHaveBeenCalled();
+    expect(flush).toHaveBeenCalledTimes(1); // core new tooth: earlier leg ships even without first audio
   });
 
   it("reset per turn — two markEos cycles don't cross-contaminate", () => {
@@ -132,7 +149,7 @@ describe("createCaddieTurnTimer", () => {
     expect(emit).toHaveBeenNthCalledWith(2, "caddie-turn", "caddie.transcript_to_first_token", { ms: 100 });
     expect(emit).toHaveBeenNthCalledWith(3, "caddie-turn", "caddie.first_token_to_first_audio", { ms: 250 });
     expect(emit).toHaveBeenNthCalledWith(4, "caddie-turn", "caddie.eos_to_first_audio", { ms: 400 });
-    expect(flush).toHaveBeenCalledTimes(1);
+    expect(flush).toHaveBeenCalledTimes(3);
   });
 
   it("sanity clamp — a non-positive leg emits nothing", () => {
@@ -149,6 +166,7 @@ describe("createCaddieTurnTimer", () => {
     timer.markTranscript();
 
     expect(emit).not.toHaveBeenCalled();
+    expect(flush).not.toHaveBeenCalled();
   });
 
   it("sanity clamp — a leg over 60000ms emits nothing", () => {
@@ -165,6 +183,7 @@ describe("createCaddieTurnTimer", () => {
     timer.markTranscript();
 
     expect(emit).not.toHaveBeenCalled();
+    expect(flush).not.toHaveBeenCalled();
   });
 
   it("failure isolation — a throwing emit/flush never throws, and subsequent marks still work", () => {

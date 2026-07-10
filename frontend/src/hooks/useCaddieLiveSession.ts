@@ -21,9 +21,10 @@
  *
  * Opening turn: once the client has both connected at least once AND the mic
  * has been attached/acquired, `resolveOpeningShot()` (parent-owned GPS) is
- * awaited exactly once per activation; a resolved shot is spoken as the
- * caddie's first turn via the existing `sendText` seam (which already
- * surfaces it as a user bubble) — never a new realtime.ts method.
+ * awaited exactly once per activation; a resolved shot is spoken by the
+ * model itself via the `sendOpener` seam (system-role instruction +
+ * response.create, no local `onMessage` — never a fabricated user bubble;
+ * specs/caddie-remove-seeded-question-plan.md).
  *
  * Slice D — post-connected resilience (specs/caddie-realtime-slice-d-plan.md):
  * realtime.ts collapses a clean 90s idle disconnect and an unexpected network
@@ -57,7 +58,7 @@ import { sortByOrder } from "@/lib/voice/realtime-ordering";
 import { MINT_DEADLINE_MS } from "@/lib/caddie/transport";
 import { REALTIME_IDLE_DISCONNECT_MS } from "@/lib/voice/idle-timer";
 import {
-  buildOpeningTurnText,
+  buildOpeningGreetingInstruction,
   buildHoleContextText,
   type OpeningShot,
   type HoleContext,
@@ -280,7 +281,7 @@ export function useCaddieLiveSession({
       voiceEvent("caddie", "opening_shot", {
         detail: `fromTee=${!!shot.fromTee} distanceYards=${shot.distanceYards}`,
       });
-      clientRef.current?.sendText(buildOpeningTurnText(shot));
+      clientRef.current?.sendOpener(buildOpeningGreetingInstruction(shot));
     })();
   }, []);
 
