@@ -11473,3 +11473,7 @@ Owner-approved merge executed exactly per brief (keys NOT in yet condition).
 - QA: PASS at f3ad122 — ruff clean, pytest 1836 pass/83 pg-skip (no DB started), 79 new + 148 pre-existing S1/foreUP green, frontend lint/tsc/voice-274, no live net in tests. E2E N/A (backend-only, no preview).
 - backlog.json: s4a→shipped; s4b→superseded-by-probe-verdict (EZLinks Cloudflare-locked + Marine Park not on TeeItUp → Marine Park is rung-3 only, depends on S4e); s4c/s4d/s4e/s4f→ready (unblocked).
 - Bundle: NOTICEABLE (8 NYC munis gain live tee times). No owner ping this cycle (coordinator directive: land only, loop owns notify). No merge to main.
+
+## Cycle 65 (2026-07-10) — S4c more clean engines
+- S4a green on #128 (strict-green 9223d7c): 8 NYC munis return real TeeItUp times (live-verified, fixtures). Marine Park not on TeeItUp + EZLinks Cloudflare-locked → stays rung-3 (AI call / GolfNow partnership).
+- AWAITING: eng-lead S4c — Chronogolf marketplace adapter + generalized capability-probe script + Quick18-if-trivial; file GolfNow/Lightspeed partnership applications as a rider. More clean coverage, no key dep. Land on #128.
