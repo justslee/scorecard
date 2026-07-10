@@ -3,6 +3,65 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE: caddie-input-grounding (INPUT_GROUNDING_RULE) implemented + pushed to integration/next (a35e96d)
+
+Builder implemented specs/caddie-input-grounding-plan.md in full, exactly to plan (no
+deviations, no re-planning). Pushed commit a35e96d on integration/next — no per-item PR
+(bundle PR already open).
+
+What shipped: new `INPUT_GROUNDING_RULE` constant in `backend/app/caddie/voice_prompts.py`
+(right after `OBSERVED_REALITY_RULE`, incident-dated comment for the 2026-07-09 "Scars."
+transcript incident — owner saw the caddie confidently answer ASR-invented gibberish).
+Extends the grounding doctrine from FACTS to INPUT: never answer a question you didn't
+clearly hear — ask the player to repeat, briefly and once — while explicitly protecting
+terse-but-clear golf questions ("driver?", "what club", "how far") from over-refusal (both
+directions of the balance are contractual per the plan). Injected at all THREE caddie
+"mouths" immediately BEFORE `OBSERVED_REALITY_RULE`: `build_realtime_instructions`'s
+Behavior block, and both `stable_text` blocks in `routes/caddie.py`
+(`_build_session_voice_prompt`, `_build_voice_prompt`) + the import at line 34. Placement
+before `OBSERVED_REALITY_RULE` keeps the existing `endswith` pins in `test_voice_stream.py`
+green untouched.
+
+Eval harness teeth (backend/tests/eval/): `checks.py` `_RULE_TEXT` + import,
+`schema.py` `_VALID_RULE_NAMES` + new `Tier2JudgeProperty.ASKS_TO_REPEAT_ON_UNINTELLIGIBLE`,
+two golden scenarios appended to `golden/caddie_advice.jsonl` (negative:
+`gibberish-transcript-asks-to-repeat` — "Scars." must trigger a repeat-ask, never a club
+call; positive/adversarial twin: `terse-driver-question-still-answered` — "Driver?" at 240y
+must still get a direct club answer, proving no over-refusal), README judge-property list
+updated. Two new mutant tests in `test_harness_has_teeth.py` (both-mouth strip + a
+single-mouth realtime-only mutant asserting the failure detail names `['realtime']`).
+Collateral fixed per plan §7: `test_caddie_caching.py` OLD templates
+(`_OLD_SESSION_TEMPLATE`/`_OLD_STATELESS_TEMPLATE`) + both `.format()` calls + import — these
+would have gone red without the update. New `backend/tests/test_input_grounding_prompt.py`
+mirrors `test_epistemic_humility_prompt.py` (constant non-empty + balance wording pin,
+realtime inclusion, Behavior-block ordering pin, routes-import + double-interpolation pin).
+
+Manual RED-then-green mutation drill performed (plan §6c, required evidence): deleted the
+`{INPUT_GROUNDING_RULE}` line from `_build_session_voice_prompt`'s `stable_text`, ran
+`uv run pytest tests/eval -x` → RED:
+`prompt_contains_rule: INPUT_GROUNDING_RULE missing from mouth(s): ['text']` on
+`test_scenario_tier1_checks_pass[gibberish-transcript-asks-to-repeat]` — exactly the failure
+the plan predicted. Restored the line, re-ran the full gate set, confirmed green again.
+
+Gates (all green):
+- `backend && ruff check .` → All checks passed!
+- `backend && uv run pytest tests/eval` → 64 passed (Tier1 + new teeth)
+- `backend && uv run pytest tests/test_input_grounding_prompt.py tests/test_epistemic_humility_prompt.py tests/test_caddie_caching.py tests/test_voice_stream.py tests/test_realtime_grounding.py` → 61 passed
+- `frontend && npm run lint` → clean; `npx tsc --noEmit` → clean; `npx tsx voice-tests/runner.ts --smoke` → pass=274 fail=0 (unaffected, as expected — pure backend prompt/eval change)
+- No docker/local Postgres used; DB-backed backend integration tests deferred to CI per instructions.
+
+Realtime honesty (kept in code comment + commit message): the realtime path is
+speech-to-speech (responds to raw audio) — this prompt rule is a strong NUDGE, not a hard
+gate. The plausibility-signal heuristic (plan §5) and the cascaded-STT confidence gate (plan
+§4, avenue #3 of the transcription-reliability research) are explicitly deferred, separate,
+queued spikes — not attempted this cycle. `guide_writer.py` intentionally NOT touched (not a
+mouth — offline per-hole guide writer never receives a live player utterance). Nothing under
+voice_booking/telephony/tee_times touched (PR #124's area).
+
+Classification: **silent** (prompt/eval-harness change; not a new user-visible surface, though
+the owner may notice the caddie behaving differently on garbled audio going forward). Rides
+the open bundle (no new PR opened).
+
 ## DONE: caddie-realtime-transcription-vocab-bias (2A) implemented + pushed to integration/next (2af38c1)
 
 Builder implemented specs/caddie-realtime-transcription-vocab-bias-plan.md in full, exactly to
