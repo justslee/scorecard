@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildFcbTiles } from './fcb-tiles';
+import { buildFcbTiles, effectiveFcbSource } from './fcb-tiles';
+import { fcbSourceCaption } from '@/lib/caddie/fcb-labels';
 import type { FCBDistances } from './course-coordinates';
 
 const fcb: FCBDistances = { front: 148, center: 162, back: 176 };
@@ -55,5 +56,31 @@ describe('buildFcbTiles', () => {
       center: 300,
       back: '—',
     });
+  });
+});
+
+describe('effectiveFcbSource (caption + tiles single source of truth)', () => {
+  it('returns the real source unchanged when geometry is present (working paths)', () => {
+    expect(effectiveFcbSource('you', fcb)).toBe('you');
+    expect(effectiveFcbSource('tee', fcb)).toBe('tee');
+    expect(effectiveFcbSource('card', fcb)).toBe('card');
+  });
+
+  it('collapses to "card" whenever fcb is null — for EVERY source', () => {
+    expect(effectiveFcbSource('you', null)).toBe('card');
+    expect(effectiveFcbSource('tee', null)).toBe('card');
+    expect(effectiveFcbSource('card', null)).toBe('card');
+  });
+
+  // The caption-honesty regression the designer caught: in the exact bug state
+  // (fcbSource 'tee', fcb null) the caption must read "from the card", never
+  // "from the tee" over honest "—" tiles.
+  it('caption reads "from the card" in the fcb-null + "tee" bug state', () => {
+    const source = effectiveFcbSource('tee', null);
+    expect(fcbSourceCaption(source).text).toBe('from the card');
+  });
+
+  it('caption is unchanged on the from-tee working path', () => {
+    expect(fcbSourceCaption(effectiveFcbSource('tee', fcb)).text).toBe('from the tee');
   });
 });

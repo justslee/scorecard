@@ -52,7 +52,7 @@ import type { WeatherConditions } from "@/lib/caddie/types";
 import { bearingDeg, relativeWind, compassFrom } from "@/lib/map/wind";
 import { shouldRefreshOnDemand, WeatherRefreshScheduler } from "@/lib/map/weather-freshness";
 import { computeFCBDistances } from "@/lib/course/course-coordinates";
-import { buildFcbTiles } from "@/lib/course/fcb-tiles";
+import { buildFcbTiles, effectiveFcbSource } from "@/lib/course/fcb-tiles";
 import { fcbSourceCaption } from "@/lib/caddie/fcb-labels";
 import { usePhysicsPlaysLike } from "@/lib/caddie/use-physics-plays-like";
 import { playsTileDisplay, ELEV_DEADBAND_FT } from "@/lib/caddie/plays-tile";
@@ -1155,7 +1155,13 @@ export default function RoundPage() {
   const fcbSource = resolveFcbSource(teeAnchor?.source ?? null, fcbLive != null);
   const showCardOnly = fcbSource === "card";
   const fcb = fcbLive ?? fcbFromTee;
-  const fcbCaption = fcbSourceCaption(fcbSource);
+  // Caption honesty: when there is no real F/C/B geometry (fcb == null) the
+  // tiles fall back to card-only (see buildFcbTiles) — so the caption must read
+  // "from the card", never "from the tee" over honest "—" tiles. Derive it from
+  // the SAME cardOnly condition as the tile values (fcbSource === 'card' || fcb
+  // == null); the three working paths keep fcb non-null, so this is unchanged
+  // for them.
+  const fcbCaption = fcbSourceCaption(effectiveFcbSource(fcbSource, fcb));
   // TODO(fcb §4.5): line-vs-card hint held pending designer sign-off on the
   // card-yardage source (`distance` here is a derived display value, not the
   // literal scorecard yardage — see specs/fcb-caption-visibility-plan.md §4.5).
