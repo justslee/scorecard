@@ -11086,3 +11086,14 @@ Dispatched Fable Plan agent to decide the AUTHORSHIP/role fix (crux, not just co
 On plan return → write specs/caddie-remove-seeded-question-plan.md, dispatch builder on integration/next.
 Tests to re-point (NOT weaken): opening-turn.test.ts L36-45 (exact first-person strings); CaddieSheet.realtime.test.tsx
 L328-345 (sendText exact string + sendContext-before-opening ordering). SILENT bundle accumulation — no ship/no ping.
+
+## AWAITING builder — caddie-remove-seeded-question (cycle 58)
+Fable plan written → specs/caddie-remove-seeded-question-plan.md (committed). Builder dispatched on integration/next.
+Authorship decision: caddie OPENS itself (assistant-authored), no fabricated player utterance. buildOpeningTurnText
+→ buildOpeningGreetingText (new copy) + buildOpeningGreetingInstruction (live wrapper). Classic: deterministic seed
+(assistant history + setVoiceAnswer + tts.speak, no network turn). Live: new realtime.ts sendOpener (system-role item
++ response.create, NO onMessage → assistant bubble). Tests re-pointed (opening-turn, CaddieSheet.realtime/session/
+handsfree) — core lock: onUpdateConvHistory gets [{role:assistant}] only, no user entry, no backend call for opener.
+On builder green+pushed → reviewer (adversarial: no fabricated player turn, SSOT preserved, no test weakened) + qa
+(strict gates on pushed head) + designer (opener copy vs NORTHSTAR calm/voice-first). BLOCKING → re-dispatch builder.
+Then update PR #125 checklist (SILENT ride-along), backlog shipped, progress DONE. NO ship / NO ping.
