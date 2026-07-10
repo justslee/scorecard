@@ -11166,5 +11166,13 @@ Head after bookkeeping pending; CI to re-verify strict-green at ship time.
   (CI-DB not needed); frontend-only presentation fix.
 - REMAINING on the item (NOT done here): header safe-area/viewport-fit + on-device nearby-list grouping polish —
   need on-device screenshots; kept item ready with updated why.
-- AWAITING reviewer (correctness: no dangling separator, no over-strip of a real city) + designer (calm/yardage-book)
-  on the pushed commit. SHIP → update PR #125 checklist; BLOCKING → re-fix. SILENT — no ship/no ping.
+- Reviewer SHIP (1d2d0ae): no dangling separator, no undefined crash, no over-strip of a real US city, render-only
+  (ICS calendar city correctly left raw; grouping by courseId), no tests weakened.
+- Designer APPROVE: omission-over-fabrication matches no-fake-data / on-paper restraint; no orphan separators/SaaS drift.
+- Both flagged one NON-BLOCKING follow-up: muniFromAddress returns the last surviving segment, so an address with no
+  real city could surface a pseudo-locality — worth a "last-segment-wins" lock test on the shared helper (pre-existing,
+  out of scope for this US-label fix). Logged as a follow-up, not churned onto this diff.
+- PR #125 checklist updated → FIVE noticeable + ONE silent; this closes the deferred "raw route/slot city not run
+  through the country regex" honesty follow-up from the polish item.
+- CI on head 1d2d0ae: Backend gate SUCCESS; Frontend gate pending (monitor armed). SILENT bundle accumulation —
+  #125 already awaits owner "ship it"; NO merge/ship/ping this cycle.
