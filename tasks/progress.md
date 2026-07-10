@@ -10473,3 +10473,22 @@ before any merge (a cancelled/absent required gate is NOT a pass).
 Localization honored: change kept additive/minimal in realtime_relay.py so the parallel
 feat/teetime-s3-caller reconcile stays clean (keyword-only kwargs, 2-line conditional, no session-
 builder refactor).
+
+## cycle 51 START (2026-07-09) — PICK: caddie-dont-answer-misheard-input (P1, NOTICEABLE)
+Step 0: no owner "ship it"/feedback on PR #122 (no PR comments; board has no #122 Needs-Review
+card yet — bundle still accumulating). PR #124 (caller) OPEN/MERGEABLE — NOT touched. Synced
+integration/next (already up to date w/ main).
+PICK grounds specs/voice-transcription-reliability-research.md avenue #1: extend the grounding
+doctrine from FACTS to INPUT. New INPUT_GROUNDING_RULE constant (sibling of OBSERVED_REALITY_RULE
+in voice_prompts.py) injected into BOTH mouths: realtime (build_realtime_instructions Behavior
+block, voice_prompts.py:91-96) + text (routes/caddie.py stable_text @780-802 AND @1393-1413).
+Rule: if the utterance is unintelligible/off-topic-gibberish/low-confidence, DO NOT invent a golf
+answer — briefly ask to repeat; never answer a question you didn't clearly hear. Adversarial BOTH
+ways: gibberish("Scars.")→ask-again; real-terse("driver?","what club")→still answers.
+Eval TEETH: eval harness backend/tests/eval/ — Tier1 prompt_contains_rule(INPUT_GROUNDING_RULE,
+mouths=[text,realtime]) proven RED via mutation in test_harness_has_teeth.py then green; + a Tier2
+(live, non-CI) judge property for gibberish→ask-again on a new golden scenario ("Scars.").
+
+## AWAITING: Fable plan (specs/caddie-input-grounding-plan.md). On return: dispatch ONE builder to
+implement it on integration/next; then reviewer (adversarial both ways) + qa (strict gates + eval
+teeth) in parallel. NOTICEABLE — rides bundle PR #122, update checklist. NO ship/NO ping this cycle.
