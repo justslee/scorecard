@@ -3,6 +3,18 @@
   "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "s3b-review-nits",
+      "title": "S3b caller: 3 non-blocking review nits (opt_out coercion, CancelledError, get_running_loop)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [
+        "#124 merged"
+      ],
+      "why": "Fable security review of S3b (SHIP) flagged 3 non-blocking nits to fix before heavy live use: (1) media_bridge opt_out_requested uses bool() so a stringified 'false' from the model reads True and would suppress a real pro-shop number \u2014 use `v is True or str(v).lower()=='true'`; (2) telephony timeout except swallows asyncio.CancelledError \u2014 split TimeoutError (return partial) from CancelledError (re-raise after cleanup); (3) call_registry asyncio.get_event_loop() -> get_running_loop(). All localized to the S3b files; land after #124 merges (branch is worktree-locked now)."
+    },
+    {
       "id": "caddie-dont-answer-misheard-input",
       "title": "Caddie: never confidently answer a misheard/gibberish transcript (input grounding)",
       "type": "major",
@@ -18,9 +30,10 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle-122",
       "depends_on": [],
-      "why": "OWNER 2026-07-09: realtime transcript has no vocabulary biasing (GOLF_KEYTERMS + player clubs + hole context are wired only to the Deepgram sheet path). Feed a biasing prompt/context to gpt-4o-transcribe in the realtime session IF supported (verify \u2014 some transcribe models don't accept a prompt); reduces 'Scars'-type inventions. specs/voice-transcription-reliability-research.md."
+      "why": "OWNER 2026-07-09: realtime transcript has no vocabulary biasing (GOLF_KEYTERMS + player clubs + hole context are wired only to the Deepgram sheet path). Feed a biasing prompt/context to gpt-4o-transcribe in the realtime session IF supported (verify \u2014 some transcribe models don't accept a prompt); reduces 'Scars'-type inventions. specs/voice-transcription-reliability-research.md.",
+      "progress": "2026-07-09 cycle 50 DONE on integration/next (2af38c1), rides bundle PR #122. Fable plan VERIFIED gpt-4o-transcribe DOES accept a free-text prompt in the GA Realtime session (exclusions = gpt-realtime-whisper + gpt-4o-transcribe-diarize). Threaded a compact biasing prompt (golf vocab + player's own clubs + this-hole hazards) into session.audio.input.transcription.prompt via new pure backend/app/caddie/keyterms.py + additive kwarg through mint path; setup route gets golf baseline only. Injection-safe (closed-set constants only, transcription field not instructions), no PII beyond own clubs, byte-identical payload when absent. Reviewer SHIP (no HIGH/MEDIUM), QA all gates + 1677 non-DB backend green, 8 teeth tests. Honest scope: biases an 8-12% WER model, does NOT gate wind/partner-noise inventions \u2014 confidence-gate (caddie-input-grounding) + caddie-cascaded-stt-spike remain the bigger levers."
     },
     {
       "id": "caddie-cascaded-stt-spike",
