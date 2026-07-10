@@ -697,7 +697,7 @@ describe("CaddieSheet — hands-free conversational loop (specs/caddie-conversat
   // proof: a real (unmocked) createCaddieTurnTimer, driven end-to-end
   // through a hands-free turn, with only the telemetry bus mocked and
   // `performance.now` scripted for deterministic ms.
-  it("(14) emits the four caddie-turn stage-timing markers with plausible ms, and flushes exactly once at first audio", async () => {
+  it("(14) emits the four caddie-turn stage-timing markers with plausible ms, and flushes each stage-timing leg immediately", async () => {
     sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Turn one."]));
 
     const nowSpy = vi.spyOn(performance, "now");
@@ -712,11 +712,11 @@ describe("CaddieSheet — hands-free conversational loop (specs/caddie-conversat
     expect(screen.getByText("Turn one.")).toBeTruthy();
 
     // Text legs (eos_to_transcript, transcript_to_first_token) are already in
-    // by the time the transcript+streamed reply have landed — first audio
-    // hasn't happened yet, so no flush yet.
+    // by the time the transcript+streamed reply have landed — each one flushed
+    // immediately as it emitted, independent of first audio.
     expect(telemetryState.voiceEvent).toHaveBeenCalledWith("caddie-turn", "caddie.eos_to_transcript", { ms: 150 });
     expect(telemetryState.voiceEvent).toHaveBeenCalledWith("caddie-turn", "caddie.transcript_to_first_token", { ms: 350 });
-    expect(telemetryState.flushVoiceEvents).not.toHaveBeenCalled();
+    expect(telemetryState.flushVoiceEvents).toHaveBeenCalledTimes(2);
 
     fireSpeakStart(); // simulates the real speak()'s play() resolving
 
@@ -725,6 +725,6 @@ describe("CaddieSheet — hands-free conversational loop (specs/caddie-conversat
     });
     expect(telemetryState.voiceEvent).toHaveBeenCalledWith("caddie-turn", "caddie.eos_to_first_audio", { ms: 1200 });
     expect(telemetryState.voiceEvent).toHaveBeenCalledTimes(4);
-    expect(telemetryState.flushVoiceEvents).toHaveBeenCalledTimes(1); // flushed immediately at first audio
+    expect(telemetryState.flushVoiceEvents).toHaveBeenCalledTimes(3); // + one terminal flush for the two audio legs
   });
 });
