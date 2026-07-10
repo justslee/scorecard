@@ -12169,3 +12169,17 @@ both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
 - QA gates GREEN: backend ruff clean, new test 3/3, guide-suite 99/99, 2050 collected clean; frontend untouched (0 files in bundle-vs-main), lint clean + tsc OK + voice-smoke 274/274.
 - BUNDLE: opened fresh bundle PR #132 (integration/next → main; silent-only so far — no owner ship). Item checklist ticked. backlog `caddie-guide-session-reload-revalidate` → `done-on-bundle` (87c8ee1). CI (ci.yml, on: pull_request) triggered by opening #132.
 - AWAITING CI on PR #132 head — require Frontend + Backend gates state:SUCCESS pinned to the pushed head SHA (fast ~10s Backend container-init fail = infra flake → `gh run rerun <id> --failed`). SILENT: no ship, no owner ping (bundle carries no noticeable change). Cycle 74 item COMPLETE on the bundle.
+
+## Cycle 75 (2026-07-10) — voice-booking-twilio-cred-aliases (telephony cred-name aliases; SECURITY-sensitive)
+- BUILT (dbb8550): telephony.py `get_live_transport` now resolves account_sid/auth_token
+  standard-name-first, alias-fallback (TWILIO_CLIENT_ID/TWILIO_CLIENT_KEY) via `_first_env`;
+  from_number stays TWILIO_FROM_NUMBER (no alias). Missing-check validates the RESOLVED trio
+  (not fixed names); RuntimeError names BOTH accepted names per credential. Non-crashing WARN
+  if resolved account_sid not AC-prefixed (likely API Key SID) — logs the FACT only, no secret.
+  Client(account_sid, auth_token) + all gates (ENABLED/creds/PUBLIC_HOST) + dial-safety unchanged.
+- TESTS: 7 new in test_telephony_bridge.py (alias-only builds w/ right creds, standard still works,
+  standard wins over alias, partial-SID-only refused, missing msg names both names, WARN leaks no
+  secret, AC-prefix no-warn). Local: ruff clean, 103/103 telephony+voice_booking pass.
+- AWAITING reviewer (SECURITY lens) on dbb8550. SHIP → QA gates + open/update bundle PR, backlog→shipped.
+  BLOCKING → re-dispatch builder, re-review. SILENT (infra/config; enables a major capability but
+  inert until owner adds FROM_NUMBER + OWNER_NUMBER + PUBLIC_HOST + ENABLED=1 + redeploy). No ship/ping.
