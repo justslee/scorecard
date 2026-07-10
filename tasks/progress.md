@@ -12073,3 +12073,7 @@ next @ 1ed2b71, read children's verdicts, do NOT rebuild.
 ## Cycle 71 result → 72 (2026-07-10)
 - Security review DONE: core mitigations real (no HIGH); found MED-1 (newline breaks DATA framing → fake prompt section into caddie), MED-2 (cached guides never re-validated on read), LOW-3 (per-item cap). Created caddie-guide-injection-hardening (p1).
 - AWAITING: eng-lead fixes MED-1 + MED-2 + LOW-3 with red-pre-fix tests; update plan §9 to not overstate injection_pattern. Land on bundle.
+
+## Cycle 73 (2026-07-10) — caller natural preset voice (owner chose Option B over clone)
+- #130 SHIPPED (d5926599, TestFlight v1.0.1162). Fable voice-clone plan delivered honest verdict; owner chose Option B (natural preset voice + picker) over the clone pipeline (shelved as caller-voice-clone-pipeline).
+- AWAITING: eng-lead caller-natural-preset-voice — best natural OpenAI Realtime voice for phone + owner voice-pref setting + minimal picker in settings. Ships dark. Designer pass.
