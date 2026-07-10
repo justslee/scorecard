@@ -2292,9 +2292,11 @@
       "type": "major",
       "priority": 3,
       "risk": "high",
-      "status": "ready",
+      "status": "shipped",
+      "landed_commit": "2830655",
       "depends_on": [],
-      "why": "Extend voice_booking dialog with an availability-ask mode (asks times, not books), availability_by_call same-day cache, call CTA + 'Calling the pro shop…' async status, spoken times flow back as real phone-confirmed TeeTimeSlots. Fix the S3 TODO (window from slot.time='' on route entries → pass the query window). Ships DARK behind VOICE_BOOKING gates; rehearsal harness validates when Twilio keys land. Plan §5. Depends on #124 merged + S4a."
+      "why": "Extend voice_booking dialog with an availability-ask mode (asks times, not books), availability_by_call same-day cache, call CTA + 'Calling the pro shop…' async status, spoken times flow back as real phone-confirmed TeeTimeSlots. Fix the S3 TODO (window from slot.time='' on route entries → pass the query window). Ships DARK behind VOICE_BOOKING gates; rehearsal harness validates when Twilio keys land. Plan §5. Depends on #124 merged + S4a.",
+      "shipped_note": "Landed on integration/next (#129) cycle 68. INERT UNTIL KEYS: nothing dials without VOICE_BOOKING_ENABLED + Twilio creds + non-empty VOICE_BOOKING_VERIFIED_LINES allowlist; POST /api/tee-times/availability-call returns not_enabled when gated; search never triggers a call (cache read-only). Reviewer SECURITY: CLEAN (dial-safe, no fabricated times, not prompt-steerable). QA: local gates all green (1936 backend / 1922 vitest / 274 voice-smoke); E2E-preview blocked by pre-existing infra gap (no per-PR Vercel preview + no CLERK test secret), not an S4e defect. Designer: no-blocking; 44px touch-target + dim/tel:-fallback polish folded in. S3 window bug was already fixed in #124; new endpoint builds window from query, structurally can't regress."
     },
     {
       "id": "teetime-s4f-coverage-flywheel",
