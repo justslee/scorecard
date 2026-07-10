@@ -3,6 +3,41 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — release-manager: bundle PR #130 SHIPPED to main — owner-approved
+
+Owner replied **"ship it"** approving bundle PR #130. Guarded pre-flight
+re-verified: `integration/next` head `dbcc7c22` unchanged since approval,
+both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
+
+- **Merged** `#130` → `main` (`gh pr merge 130 --merge`). Merge commit:
+  `d59265993504ff542838bb20dccfefd91de9431e`.
+- **Post-merge main CI**: both required gates SUCCESS on the new head (CI,
+  Deploy backend (SSM)) — no flake, no rerun needed.
+- **Backend deployed** via the SSM auto-deploy workflow (fires on push to
+  `main`); confirmed live inside the deploy job (`curl localhost:8000/health`
+  → `{"status":"ok"}`, SSM command status Success) and externally
+  (`https://api.looperapp.org/health` → 200 `{"status":"ok"}`).
+- **TestFlight cut** from new `main` via `ops/ios/ship.sh`: **v1.0.1162
+  (build 202607101611)** — archive + export succeeded, uploaded; App Store
+  Connect `processingState: VALID` (polled via the ASC API).
+- **Prod smoke**: `/health` 200 ok; `/api/courses` and
+  `/api/tee-times/search` both correctly auth-gated (401, alive — not 500).
+- **Fresh `integration/next`** cut off new `main` (fast-forwarded, no force
+  push needed since the old tip was an ancestor of the merge commit) and
+  pushed — head `d5926599`.
+- **Board**: new card "Bundle #130: tee-time setup UX … + caddie-guide
+  injection hardening" created directly in Shipped
+  (https://app.notion.com/p/3991c52592e081a6b4a3df021a0f23c2), with PR link,
+  TestFlight version, and owner test steps. `backlog.json` items
+  `teetime-setup-ux-owner-feedback` and `caddie-guide-injection-hardening`
+  updated to shipped-to-main with the merge SHA + TestFlight version.
+
+How the owner tests it (TestFlight build 202607101611 / v1.0.1162):
+add a tee-time window → calendar auto-opens; drag a window wide (now spans
+the full day, 06:00–21:00, was capped at 6h); the picks count in the search
+header now matches exactly what Options shows (no more confusing raw
+discovery-set number); date chip has a visible calendar-edit affordance.
+
 ## 2026-07-10 — eng-lead: cycle 72 caddie-guide-injection-hardening — DONE, on integration/next (SILENT)
 
 Backend-only SECURITY hardening of the shipped strategy-guide
