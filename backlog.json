@@ -8,7 +8,7 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "done-on-bundle-125",
       "depends_on": [],
       "why": "OWNER 2026-07-09 (screenshots): the result shows 'YOUR WINDOW 6:00-9:30' (the search range) instead of the times found \u2014 'show me my options'. Also the window shown != submitted, and the found course (Forest Park) was NOT in the selected 4. FIX (specs/teetime-results-ux-fixes.md): (1) foreUP courses -> list the real bookable times to pick (data already flows from S1), call-route courses -> honestly frame the window as the ask we'll make, never as a found time; (2) the result window must reflect the SUBMITTED prefs, not a default; (3) the dispatch/'go find us one' path must honor the selected course ids (same class as #122 course-ids-wiring but on the DISPATCH path) \u2014 never substitute an unselected course; honest 'nothing in your selected courses' instead. Fable plan; reviewer (honest presentation, no-fake-data \u2014 a window shown as a found time is a violation). Do NOT touch voice_booking/telephony (#124)."
     },
@@ -20,7 +20,7 @@
       "risk": "low",
       "status": "ready",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (screenshots): 'Marine Park Golf Course \u00b7 USA' shows USA not a city (label bug \u2014 show real locality or omit); the Courses header ('WHERE'/'4 SELECTED') is clipped behind the status bar (top safe-area inset); the nearby list grouping/dividers read as 'broken'. Designer pass, calm yardage-book. specs/teetime-results-ux-fixes.md."
+      "why": "OWNER 2026-07-09 (screenshots): 'Marine Park Golf Course \u00b7 USA' shows USA not a city (label bug \u2014 show real locality or omit); the Courses header ('WHERE'/'4 SELECTED') is clipped behind the status bar (top safe-area inset); the nearby list grouping/dividers read as 'broken'. Designer pass, calm yardage-book. specs/teetime-results-ux-fixes.md. UPDATE cycle 53: the 'USA' label bug (#4) was FIXED alongside teetime-show-real-time-options (9f0577e, muniFromAddress drops USA/United States of America). REMAINING here: #5 header safe-area/viewport-fit + nearby-list grouping polish (needs on-device screenshot verification). Plus cycle-53 designer/reviewer follow-ups: route-entry section header can contradict a book_on_site row's own copy in a mixed batch (make conditional); add distance/city to route-entry rows; harden filterToSelection Sets vs falsy id/name; sub-44pt tap targets across the tee-time flow."
     },
     {
       "id": "s3b-review-nits",

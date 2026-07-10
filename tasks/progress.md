@@ -10154,7 +10154,7 @@ fixture backend/tests/fixtures/plays_like_parity.json pinned by BOTH backend pyt
 vitest. Files: tools.py, RoundPageClient.tsx, frontend/src/lib/caddie/api.ts,
 frontend/src/lib/caddie/fcb-labels.ts, backend/tests/test_caddie_tools.py.
 
-## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Dispatched ONE builder to implement the plan (NOT re-plan), commit+push to integration/next.
 On return: reviewer (parity — construct a fixture hole/conditions, assert tile==caddie; the
 divergence is the whole bug) + qa (STRICT gates) + designer (PLAYS tile user-facing, calm).
@@ -10201,7 +10201,7 @@ NEXT: reviewer (parity check — tile==caddie for a fixture) + qa (STRICT gates)
 against NORTHSTAR). BLOCKING → re-dispatch builder. Clean+green → update PR #121 checklist
 (NOTICEABLE → approval-eligible), release-manager TestFlight, owner ping. Never merge to main.
 
-## AWAITING: reviewer + qa + designer on physics-tiles-coherence (item commit 879291c) on integration/next
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Builder pushed 879291c (item) + progress. HEAD 173442f. Local gates green (backend 129
 pass; frontend 1832 vitest, tsc/lint clean, 274/274 voice, build ok). Item files: backend
 tools.py (server-side bearing parity + wind-honesty + conditions_used fields), RoundPageClient
@@ -10236,7 +10236,7 @@ plays_like verbatim, no double-count, security clean). But 3 BLOCKING:
    elevChange!==0) → two tiles contradict on 1-2ft holes. Give PLAYS the same/shared deadband.
 Non-blocking (defer/optional): caption wrap check on 375px; value-swap transition on PLAYS.
 
-## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Re-dispatched builder. Guard: do NOT weaken/re-pin the golden evals; if the wind reconciliation
 is genuinely ambiguous (honesty goal vs evals, needs a product call) STOP and flag — don't guess.
 On return: re-run reviewer(parity+fallback) + qa(strict, incl. tests/eval) + designer(deadband).
@@ -10300,7 +10300,7 @@ ruff, lint, tsc, voice smoke, build; backend DB tests via CI only — no local P
 update PR #121 checklist. Do NOT ship (owner bundling). If Fable plan flags a deeper issue,
 reconsider scope before building.
 
-## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Fable plan saved. Dispatched ONE builder on integration/next. Plan: add math + _haversine_m +
 pure _sort_by_distance to osm.py; sort by (dist,name) only when lat AND lng present; cap via new
 _MAX_COURSE_RESULTS=15 / _MAX_GEOMETRY_RESULTS=25; SAME fix to search_osm_with_geometry; new
@@ -10385,7 +10385,7 @@ INVESTIGATION (provenance — matters because a naive filter could REGRESS to al
 - Classify: NOTICEABLE (selecting a course will actually narrow results — a visible behavior
   change) but rides #121 (already approval-eligible); NO SHIP this cycle.
 
-## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Dispatched Plan agent on FABLE to design the safe wiring: exact ID-provenance reconciliation
 (UI selected id ↔ routing course_id, incl. mapped-UUID + undefined-OSM-id cases), filter
 semantics (empty=all, mock-parity), the GUARD proving no always-zero regression (test with
@@ -10438,7 +10438,7 @@ det-UUID-match + pre-cap + private-still-excluded; new test_tee_time_selection.p
 (unselected capability course → foreUP never called); golf-api-nearby.test.ts realistic id-less
 fixture. Classify NOTICEABLE (selecting a course actually narrows results) — rides #121, NO SHIP.
 
-## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 Dispatched ONE builder on integration/next (commits the item there + pushes; NO per-item PR).
 Implements the plan EXACTLY (does not re-plan). On builder return → reviewer (adversarial
 correctness — a filter bug surfaces the WRONG or ZERO courses to the owner) + qa (ruff + targeted
@@ -10605,7 +10605,7 @@ safe: composed ONLY from closed-set constants (unknown club keys/hazard types dr
 transcription.prompt (not session.instructions). No PII beyond player's own clubs. 8 DB-free teeth
 tests. NOTICEABLE-leaning (modest). Plan claims spot-checked against codebase: PASS.
 
-## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 the session builder — parallel teetime-s3 may touch realtime_relay.py). On builder return: dispatch
 reviewer (injection-as-data focus) + qa (strict gates) in parallel; iterate on BLOCKING only; update
 PR #122 checklist; NO ship/NO ping this cycle (bundle accumulates).
@@ -10670,7 +10670,7 @@ Eval TEETH: eval harness backend/tests/eval/ — Tier1 prompt_contains_rule(INPU
 mouths=[text,realtime]) proven RED via mutation in test_harness_has_teeth.py then green; + a Tier2
 (live, non-CI) judge property for gibberish→ask-again on a new golden scenario ("Scars.").
 
-## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
 implement it on integration/next; then reviewer (adversarial both ways) + qa (strict gates + eval
 teeth) in parallel. NOTICEABLE — rides bundle PR #122, update checklist. NO ship/NO ping this cycle.
 
@@ -10870,4 +10870,28 @@ Owner sent tee-time screenshots (spec: specs/teetime-results-ux-fixes.md). THREE
 (2) displayed window != submitted prefs (plumbing prefs→dispatch→result).
 (3) found course NOT selected — dispatch/search must honor selected course ids; honest-empty if none.
 Sync clean; no pending "ship it". Riding bundle PR #125.
-## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
+## CYCLE 53 DONE — teetime-show-real-time-options SHIPPED to bundle #125 (NOTICEABLE). Reviewer SHIP + QA PASS (8/8 gates) + Designer APPROVE. No BLOCKING. NO ship/NO ping this cycle (cycle standing rule: no push notifications) — item rides bundle #125 (now 2 noticeable items) until owner "ship it".
+
+## CYCLE 53 RESULT (2026-07-09) — teetime-show-real-time-options (NOTICEABLE) on bundle #125
+Fable plan (specs/teetime-show-real-time-options-plan.md) VERIFIED the crux: /api/tee-times returns a
+slot LIST per course; frontend collapsed it to a single auto-booked slot + rendered the SEARCH WINDOW.
+All fixes frontend/dispatch-only (zero backend change). Builder pushed f9953f2 (core) + 9f0577e (P2 #4 label).
+- Bug1: new prefs→searching→options→confirmed phase; Options list groups real foreUP slots as tappable
+  "6:10 AM · 2 spots · $24" rows (~5/course + "+N more"); call-route courses framed as the ASK, never a found time.
+- Bug2: displayed window == submitted prefs by construction (asks = 1:1 projection of dispatched queries;
+  killed the windows.find(date) race that surfaced a deselected default).
+- Bug3: dispatch honors selected ids (no radius-drop of checked courses; filterToSelection id-or-name guard;
+  honest emptySelectionNote; closed voice zero-match deselect hole). Never substitutes an unselected course.
+Reviewer SHIP (mutation-proof: neutering filterToSelection → 3 selection tests red; no-fake-data honored;
+scope clean, no backend/voice_booking touched). QA PASS: lint/tsc/build clean, teetime-unit 205/205 (incl new
+options.test.ts), full suite 1880/1880, voice smoke 274/274, backend ruff clean, backend tee-time unit 102/102;
+E2E skipped (no preview URL — honest). Designer APPROVE (live-screenshotted 390px; yardage-book primitives reused).
+PR #125 checklist updated (2 noticeable items). Board record is the PR + this log.
+
+## FOLLOW-UPS queued (cycle 53, non-blocking)
+1. teetime-prefs-ux-polish (#5): header safe-area/viewport-fit + nearby-list grouping — needs on-device screenshot.
+2. Route-entry section header "No online times/Call to book" can contradict a book_on_site row's own honest copy
+   in a mixed batch → make the header conditional (or split into call vs book-direct mini-sections).
+3. Add distance/city context to route-entry rows (real-slot Sections have it; route rows dropped it).
+4. Harden filterToSelection: build id/name Sets with .filter(Boolean) so a falsy selected id/name can't leak.
+5. Sub-44pt tap targets across the whole tee-time flow (pre-existing CourseRow convention; batch pass).
