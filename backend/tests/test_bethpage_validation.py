@@ -519,3 +519,64 @@ class TestHole4BendRegression:
         # fixture (builder-measured ~265y). The hard tooth is the direction
         # assertion above, which is sign-sensitive against real OSM data.
         assert 200 <= bend.distance_yards <= 350
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# VIII. Trees/woods surfacing against the real fixture (caddie-surface-osm-trees)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# FIXTURE GAP (found while implementing this item, not fabricated around):
+# the COMMITTED `bethpage_overpass.json` carries ZERO `natural=tree`,
+# `natural=wood`, `landuse=forest`, `natural=scrub`, or closed `tree_row`
+# elements — every one of the 820 raw Overpass elements is a
+# bunker/tee/fairway/green/hole-way/water feature (verified below). The
+# module docstring's "537 Bethpage tree nodes" line describes a DIFFERENT,
+# more complete Overpass fetch than what is committed as this test fixture —
+# whoever ran the original fetch either used a broader query or the area
+# filter excluded natural=tree/wood at fetch time; either way, the currently
+# committed JSON cannot exercise the POSITIVE "a real Bethpage hole surfaces
+# a trees hazard" case. Per the plan's own fallback instruction ("if the
+# fixture's real geometry doesn't support a clean pin, report exactly what
+# you found rather than fabricating an assertion"), this section documents
+# that gap with a real assertion instead of inventing tree/woods coordinates
+# that were never actually fetched from OSM. The synthetic T1-T12 suite
+# (test_tree_hazards.py) and the golden-set scenario
+# (`trees-carry-cited-from-geometry`) cover the observation-model correctness
+# that this real-fixture slot was meant to additionally confirm; re-fetching
+# the Overpass fixture with the tree/wood/scrub/tree_row query terms (see
+# `osm.py`'s Overpass query, ~line 808) to add real coverage here is
+# follow-up work, not part of this slice.
+
+
+class TestTreesRealFixtureGap:
+    def test_fixture_currently_has_zero_tree_or_woods_elements(self, raw_data: dict):
+        """Documents the fixture gap precisely: no raw Overpass element in the
+        committed fixture carries a tag that osm.py's parser would turn into
+        a `"tree"` or `"woods"` feature (`natural=tree`, `natural=wood`,
+        `landuse=forest`, `natural=scrub`, closed `natural=tree_row`)."""
+        tree_or_woods_tags = 0
+        for el in raw_data.get("elements", []):
+            tags = el.get("tags") or {}
+            if tags.get("natural") in ("tree", "wood", "scrub", "tree_row"):
+                tree_or_woods_tags += 1
+            if tags.get("landuse") == "forest":
+                tree_or_woods_tags += 1
+        assert tree_or_woods_tags == 0, (
+            "fixture now carries tree/woods elements — this test (and the "
+            "surrounding note) is stale; replace it with the real "
+            "hole-number/side/carry-band assertion the plan calls for"
+        )
+
+    def test_no_black_hole_emits_a_trees_hazard_from_the_current_fixture(self, assembled: dict):
+        """Honest end-to-end consequence of the fixture gap above: every one
+        of the 18 assembled Black holes has zero `type="trees"` hazards
+        (never a fabricated one) — the coverage-guard/honest-omission path
+        holds even against real OSM-derived tee/green/bunker/water geometry,
+        it simply has no tree data to aggregate."""
+        for hole in assembled["holes"]:
+            hazards = extract_hole_hazards(hole["features"], cap=10)
+            tree_hazards = [h for h in hazards if h.type == "trees"]
+            assert tree_hazards == [], (
+                f"hole {hole['number']} unexpectedly emitted trees hazards "
+                f"{tree_hazards} from a fixture with no tree/woods elements"
+            )

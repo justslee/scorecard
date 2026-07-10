@@ -69,7 +69,7 @@ def test_carries_mapped_hole_with_no_hazards_is_available_and_empty_with_note():
     payload = carries_payload(_session(hole_intel=_hole4_intel([])), 4)
     assert payload["available"] is True
     assert payload["carries"] == []
-    assert payload["note"] == "No mapped bunkers or water in play on this hole."
+    assert payload["note"] == "No mapped bunkers, water, or tree lines in play on this hole."
 
 
 def test_carries_zero_carry_entries_are_filtered_out():
@@ -89,7 +89,7 @@ def test_carries_all_zero_carries_yields_empty_with_note():
     payload = carries_payload(_session(hole_intel=_hole4_intel(hazards)), 4)
     assert payload["available"] is True
     assert payload["carries"] == []
-    assert payload["note"] == "No mapped bunkers or water in play on this hole."
+    assert payload["note"] == "No mapped bunkers, water, or tree lines in play on this hole."
 
 
 def test_carries_combines_real_carries_with_player_club_distances():

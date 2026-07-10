@@ -547,7 +547,7 @@ class TestFormatHazardsLine:
         line = format_hazards_line(5, hazards)
         assert line == "Hole 5 hazards: bunker L 300y, water R 100y"
 
-    def test_groups_capped_at_five(self):
+    def test_groups_capped_at_six(self):
         hazards = [
             Hazard(type="bunker", side="left", carry_yards=100, line_side="left"),
             Hazard(type="bunker", side="right", carry_yards=110, line_side="right"),
@@ -555,12 +555,14 @@ class TestFormatHazardsLine:
             Hazard(type="water", side="left", carry_yards=130, line_side="left"),
             Hazard(type="water", side="right", carry_yards=140, line_side="right"),
             Hazard(type="water", side="center", carry_yards=150, line_side="center"),
+            Hazard(type="trees", side="left", carry_yards=160, line_side="left"),
         ]
         line = format_hazards_line(6, hazards)
-        # 6 distinct (type, side) groups exist; the line caps at 5 groups —
-        # the last-sorted one (water/center, min carry 150) is dropped.
-        assert line.count("y") == 5
-        assert "150y" not in line
+        # 7 distinct (type, side) groups exist; the line caps at 6 groups —
+        # type order sorts first (bunker, water, trees), so the last-sorted
+        # group (the only trees group, min carry 160) is the one dropped.
+        assert line.count("y") == 6
+        assert "160y" not in line
 
 
 # ── HAZARD_GROUNDING_RULE ─────────────────────────────────────────────────────

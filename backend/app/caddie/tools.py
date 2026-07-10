@@ -564,7 +564,7 @@ def carries_payload(session: RoundSession, hole_number: int) -> dict:
         "available": True,
         "carries": carries,
         "club_distances": dict(club_yards),
-        "note": "No mapped bunkers or water in play on this hole." if not carries else None,
+        "note": "No mapped bunkers, water, or tree lines in play on this hole." if not carries else None,
     }
 
 
