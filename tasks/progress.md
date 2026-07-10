@@ -10742,3 +10742,29 @@ NOTE: TestFlight export FAILED (exit 70) on the first attempt — retrying;
 backend is live regardless. Cycle 52 (surface-osm-trees) was mid-plan at
 ship; guarded ship held it; tree work rides the next bundle.
 NEXT: trees; cascaded-STT spike; voice target-speaker; caller merge+creds.
+
+## cycle 52 RECONCILE — bundle #122 SHIPPED concurrently (owner "ship it" mid-cycle)
+While this cycle ran, PR #122 (integration/next→main, the FOUR-item caddie bundle) was MERGED to
+main at 2026-07-10T01:57Z (merge d1534b1) by a concurrent release process; board recorded SHIPPED
+(c08879b). origin/main == d1534b1. integration/next is now 3 ahead of main: c08879b (progress),
+5ade0fd (TREE FEATURE), b379464 (progress) — i.e. a fresh post-ship bundle carrying ONE new
+noticeable item (caddie-surface-osm-trees). No open bundle PR existed → opening a fresh one now.
+PRs #123 (tree-CV spike) + #124 (caller) untouched. Builder gates were all green (348 plan-list,
+1642 non-DB, eval 67, frontend clean, voice 274/274; teeth RED-then-green x2). Builder FLAGGED:
+committed bethpage_overpass.json fixture has ZERO tree/woods OSM elements → real positive
+fixture pin impossible; builder added TestTreesRealFixtureGap (honest: 0 tree tags raw, 0 trees
+hazards across 18 Black holes) per plan fallback. Synthetic T1-T12 + golden cover the math.
+Follow-up (backlog): re-fetch Overpass fixture WITH natural=tree/wood/scrub/tree_row for real
+positive coverage.
+
+## AWAITING: Fable reviewer + qa in parallel on head b379464 (feature 5ade0fd)
+Fable reviewer: FALSIFY tree carry/side across bearings (T6 sweep) + dogleg played-line vs chord
+(T7) + woods NEAR-EDGE-not-centroid (T4, 70y window) + coverage-guard honesty (>=3 obs; unmapped→
+"not in my mapped data" never invented) + cap-crowding (trees never evict bunker/water) + additive
+safety (cached JSONB validates, pinned HAZARD_GROUNDING_RULE substrings survive). Same rigor as
+bend/hazards sign-flip class. QA: STRICT gates (ruff, the 11-file pytest list, eval, frontend
+lint+tsc+voice smoke) + re-prove teeth RED-then-green independently. NO docker/Postgres.
+On return: BLOCKING (correctness/security/Northstar) → re-dispatch builder + re-review; else the
+tree item is green on the FRESH bundle PR. NO ship / NO ping this cycle (owner just shipped #122;
+new bundle accumulates). If I die: reconcile from origin/integration/next log; do NOT re-run a
+child that already pushed.
