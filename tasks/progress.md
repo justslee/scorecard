@@ -11774,3 +11774,9 @@ file (not foreup_ny_seed.json), essex-group TeeItUp tenant still absent/never se
 S4a/S4c byte-identical elsewhere, no live network calls in tests (fixture/MockTransport-only).
 On results → fold BLOCKING (re-dispatch builder), else update backlog + bundle PR checklist.
 If I die: reconcile origin/integration/next @ a0fb85b, do NOT rebuild.
+
+## AWAITING (cycle 67): reviewer + QA on a0fb85b (seed=6650456 head).
+Builder landed 17 new verified-real courses (11→28): teeitup 20, chronogolf 4, foreup 4.
+Eng-lead independent live spot-checks PASSED (no fabrication, correct mapping):
+Dunwoodie TeeItUp westchester-county 5814→7 times; Green Knoll somerset-group-v2 7092 name-match; Putnam Chronogolf 19798/28120/149215→84 slots course_id-match no-resident; Rockland Lake foreUP 2442→42 slots exact course_name match.
+Outcomes: both green → update PR #129 checklist (NOTICEABLE addition) + backlog shipped + DONE. BLOCKING → re-dispatch builder. SILENT bundle — no ship/ping this cycle.
