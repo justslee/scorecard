@@ -146,8 +146,9 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
-      "note": "Designer watch-item from multi-tee (c682f7f): in the NORMAL non-card-only state, header prefers cardYards exactly while the Center tile prefers anchored geometry center \u2014 a golfer can still see e.g. 178y header next to a 181 tile. Honest (real GPS vs scorecard differ a couple yards) and the 'from the tee' caption explains it, but two stacked near-equal numbers is the pattern the owner flagged. Add a '<=X yd, don't render both' clamp or a quiet designer note. Not a bug; polish."
+      "status": "needs-owner-input",
+      "note": "Designer watch-item from multi-tee (c682f7f): in the NORMAL non-card-only state, header prefers cardYards exactly while the Center tile prefers anchored geometry center \u2014 a golfer can still see e.g. 178y header next to a 181 tile. Honest (real GPS vs scorecard differ a couple yards) and the 'from the tee' caption explains it, but two stacked near-equal numbers is the pattern the owner flagged. Add a '<=X yd, don't render both' clamp or a quiet designer note. Not a bug; polish.",
+      "why": "SCOPED 2026-07-10 \u2014 NOT a clean bug, a DESIGN QUESTION (do not autonomously build). Header shows cardYards (scorecard hole length from the selected tee, RoundPageClient ~1194); Center tile shows fcbFromTee.center (straight-line tee\u2192green geometry). On a from-tee non-live hole these differ by design \u2014 on a dogleg the card follows the fairway while geometry is straight-line, so a small 'drift' is EXPECTED and arguably correct. A 'clamp' that snaps the tile to the card would HIDE the real straight-line-to-green number (useful info). Needs owner/designer call: (a) is the drift actually confusing on-device (validate on a real TestFlight screenshot \u2014 the multi-tee anchor fix already resolved the phantom 178/232 case), (b) if so, prefer a caption/label clarification over clamping the number. Deferred pending that decision."
     },
     {
       "id": "fcb-unmapped-paper-fallback-mismatch",
@@ -2192,7 +2193,8 @@
       "priority": 3,
       "risk": "low",
       "status": "ready",
-      "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct \u2014 the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' \u2014 unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5."
+      "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct \u2014 the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' \u2014 unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5.",
+      "why": " | SCOPED 2026-07-10: cosmetic copy on the tee-time 'searching\u2026' state; no recorded defect, needs a concrete before/after from the owner or a designer pass to be worth a cycle. Low value solo."
     },
     {
       "id": "tree-prod-data-verified",
