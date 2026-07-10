@@ -10768,3 +10768,40 @@ On return: BLOCKING (correctness/security/Northstar) → re-dispatch builder + r
 tree item is green on the FRESH bundle PR. NO ship / NO ping this cycle (owner just shipped #122;
 new bundle accumulates). If I die: reconcile from origin/integration/next log; do NOT re-run a
 child that already pushed.
+
+## cycle 52 DONE — caddie-surface-osm-trees landed on FRESH bundle PR #125 (NOTICEABLE)
+The caddie now surfaces OSM tree/woods through the SAME played-polyline carry+side pipeline as
+bunkers/water. Data was already ingested + corridor-joined per hole; the only gate was
+_HAZARD_FEATURE_TYPES={bunker,water}. New observation model (tree Point=1 obs; woods Polygon=each
+ring vertex) via a shared _classify closure (behavior-preserving for bunker/water); 70y lateral
+window → woods NEAR-EDGE not centroid; per-side min/max-carry range via existing format_hazards_line
+merge ("trees R 220-300y"); coverage guard >=3 obs/side (mapped woods qualifies alone; 1-2 stray
+points silent); trees appended AFTER bunker/water cap + re-sort → never evict a real hazard; group
+cap 5->6; severity "moderate"; _TYPE_ORDER trees=2. HAZARD_GROUNDING_RULE amended (additive; pinned
+substrings survive) → unmapped-trees = "not in my mapped data", never invented. NO schema/frontend
+change. Feature commit 5ade0fd.
+Fable plan (VERIFIED) → specs/caddie-surface-osm-trees-plan.md.
+Fable reviewer SHIP — falsification attempts all failed: 24-bearing tree-vs-bunker parity sweep,
+dogleg played-line-vs-chord hand-derivation, woods near-edge window probes (centroid impl goes RED),
+300-trial cap-eviction fuzz (no bunker/water ever displaced), coverage-guard both directions,
+behavior-preservation of the bunker path, no injection surface (prompt text = geometry constants
+only) so no /security-review warranted.
+QA PASS — ruff clean; 348/348 targeted + 1709/1709 broader non-DB backend; frontend lint/tsc clean;
+voice smoke 274/274; eval teeth independently RED-then-green at source level (empty
+_TREE_FEATURE_TYPES → 16 red; restore → green); working tree clean.
+Designer SKIPPED — no UI surface (backend hazard pipeline; tool/intel/spoken only).
+
+## SHIP CONTEXT — bundle #122 shipped concurrently (owner "ship it" mid-cycle)
+PR #122 (four caddie items) MERGED to main 2026-07-10T01:57Z (d1534b1) by a concurrent release
+process; board SHIPPED. This cycle opened a FRESH bundle PR #125 (integration/next→main) carrying
+ONE noticeable item (trees). NO ship / NO ping this cycle (owner just shipped; new bundle
+accumulates until it's TestFlight-worth-a-ping or the owner asks). Required CI gates to be
+re-verified strict-green (every REQUIRED gate state:SUCCESS) on the FINAL head SHA at ship time.
+
+## FOLLOW-UPS queued (from cycle 52 — non-blocking)
+1. Re-fetch tests/fixtures/bethpage_overpass.json WITH natural=tree/wood/scrub/tree_row (+landuse=
+   forest) Overpass terms so a REAL-fixture POSITIVE tree-hazard pin exists (current fixture has 0
+   tree/woods elements; TestTreesRealFixtureGap documents the gap honestly). Silent.
+2. Reviewer nits (cosmetic, silent): hazards.py ring-closure dedupe uses exact float equality
+   (epsilon dedupe stricter); 30y spread test compares round-to-5 values (raw 27.6y can emit a
+   range). Neither affects correctness; fold into a future caddie-hazards touch.
