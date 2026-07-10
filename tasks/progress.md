@@ -11194,9 +11194,10 @@ Head after bookkeeping pending; CI to re-verify strict-green at ship time.
 - Scoped the vague p2 stub into a real finding: F/C/B mapped-branch fallback shows fabricated `distance±offset` (a ~40% illustration placeholder) when geometry is null but source isn't card-only → fake yardages on the core surface (no-fake-data violation).
 - AWAITING: eng-lead pass on **fcb-unmapped-paper-fallback-mismatch** (p2): replace the fabricated fallback with honest card-only tiles. Land on #125. No ship/no ping.
 
-## AWAITING (cycle 61 — fcb-unmapped-paper-fallback-mismatch)
-Built + pushed fix on integration/next @ 071e2d4 (helper lib/course/fcb-tiles.ts + test, RoundPageClient tile wiring). Local gates GREEN: lint, tsc, voice 274/274, vitest 12/12.
-Awaiting: reviewer (adversarial 3-paths trace + no-fabrication verify) + designer (NORTHSTAR "—" calm).
-- reviewer SHIP → finalize bookkeeping (backlog→shipped, PR #125 checklist), confirm CI green, report DONE.
-- reviewer BLOCKING → re-dispatch builder on 071e2d4, re-review.
-On resume: reconcile from origin/integration/next log; do NOT rebuild — fix already at 071e2d4.
+## Cycle 61 — DONE: fcb-unmapped-paper-fallback-mismatch (SHIPPED to bundle)
+integration/next @ 31c2067 (PR #125). No-fake-data correctness fix on the core yardage surface.
+- Bug (reachable, persistent, confirmed by reviewer+designer): round with a course-center anchor (roundAnchor truthy) but no mappedCourse → mapCoords=[] → anchoredCoords=[] → holeCoordsForTiles null → fcb null, teeAnchor null → fcbSource "tee" → showCardOnly false → F/C/B tiles rendered fabricated `distance ± offset` (distance = ~40% illustration placeholder) for every hole; DistancesCard renders because roundAnchor truthy. Plus load-window flash on mapped rounds.
+- Fix: extracted pure buildFcbTiles + effectiveFcbSource (frontend/src/lib/course/fcb-tiles.ts, tested). Every "no real geometry" state (fcbSource==='card' || fcb==null) → honest card-only tiles (Front/Back "—", Center=cardYards ?? "—"); caption single-sourced off the same condition (reads "from the card"). Three working paths byte-identical.
+- Reviewer: SHIP. Designer: APPROVE (caption fold done). QA: lint/tsc clean, voice 274/274, vitest 39/39 targeted.
+- Follow-up logged: fcb-plays-tile-fabricated-fallback (p3) — PLAYS tile still derives from `distance` in the same state (showCardOnly left untouched per scope; flagged by both reviewer+designer).
+- SILENT accumulation — no ship, no ping (owner authorized bundling; #125 awaits owner "ship it").
