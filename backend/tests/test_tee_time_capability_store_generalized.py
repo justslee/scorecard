@@ -64,12 +64,22 @@ def _teeitup_row(**overrides) -> dict:
 
 
 class TestShippedGeneralizedSeed:
+    """NOTE (S4c): the shipped seed file grows across the epic's slices — its
+    own docstring says so explicitly ("S4a+: teeitup, and future engines").
+    S4a pinned "8 rows, all teeitup" when teeitup was the only platform in
+    the file yet; S4c appended 3 curated Chronogolf rows (deliverable 3,
+    specs/teetime-availability-everywhere-plan.md §3/§6), so these checks are
+    re-scoped to "teeitup" rows specifically (still exactly 8, still
+    golf-nyc/NYC-metro, unchanged) plus a parallel check for the new
+    Chronogolf rows — not weakened, just no longer assuming the file is
+    single-platform."""
+
     def test_seed_parses_and_contains_eight_golfnyc_teeitup_rows(self):
         raw = json.loads(GENERALIZED_SEED_PATH.read_text())
         rows = raw["courses"]
-        assert len(rows) == 8
-        for row in rows:
-            assert row["platform"] == "teeitup"
+        teeitup_rows = [r for r in rows if r["platform"] == "teeitup"]
+        assert len(teeitup_rows) == 8
+        for row in teeitup_rows:
             assert row["platform_ids"]["alias"] == "golf-nyc"
             assert row["platform_ids"]["facility_id"]
             assert row["probe_status"] == "verified"
@@ -78,14 +88,28 @@ class TestShippedGeneralizedSeed:
             assert 40.0 < row["lat"] < 41.5  # sanity: NYC metro
             assert -75.0 < row["lng"] < -73.0
 
+    def test_seed_contains_three_chronogolf_rows(self):
+        raw = json.loads(GENERALIZED_SEED_PATH.read_text())
+        rows = raw["courses"]
+        chronogolf_rows = [r for r in rows if r["platform"] == "chronogolf"]
+        assert len(chronogolf_rows) == 3
+        for row in chronogolf_rows:
+            assert row["channel"] == "scrape_http"
+            ids = row["platform_ids"]
+            assert ids["club_id"] and ids["course_id"] and ids["affiliation_type_id"]
+            assert row["probe_status"] == "verified"
+            assert row["booking_url"] and row["booking_url"].startswith("https://www.chronogolf.com/club/")
+            assert row["lat"] != 0.0 and row["lng"] != 0.0
+
     def test_load_all_capabilities_includes_both_legacy_and_generalized_rows(self):
         caps = load_all_capabilities()
         platforms = {c.platform for c in caps}
         assert "foreup" in platforms
         assert "teeitup" in platforms
+        assert "chronogolf" in platforms
 
         legacy = load_capabilities()
-        assert len(caps) == len(legacy) + 8
+        assert len(caps) == len(legacy) + 8 + 3
 
         teeitup_caps = [c for c in caps if c.platform == "teeitup"]
         assert len(teeitup_caps) == 8
@@ -100,6 +124,14 @@ class TestShippedGeneralizedSeed:
         # Legacy convenience fields stay honestly absent for a non-foreup row.
         assert douglaston.foreup_booking_id is None
         assert douglaston.schedule_id is None
+
+        chronogolf_caps = [c for c in caps if c.platform == "chronogolf"]
+        assert len(chronogolf_caps) == 3
+        assert {c.name for c in chronogolf_caps} == {
+            "Rock Spring Golf Club at West Orange",
+            "Pleasantville Country Club",
+            "Beaver Brook Country Club",
+        }
 
 
 class TestGeneralizedLoaderBackCompat:

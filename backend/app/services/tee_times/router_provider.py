@@ -43,6 +43,7 @@ import os
 
 from app.services.voice_booking.provider import VoiceCallProvider
 
+from .adapters.chronogolf import ChronogolfProvider
 from .adapters.teeitup import TeeItUpProvider
 from .base import BookingDetails, BookingResult, TeeTimeProvider, TeeTimeQuery, TeeTimeSlot
 from .capability_store import CourseBookingCapability, load_all_capabilities, match_capability
@@ -55,12 +56,14 @@ log = logging.getLogger(__name__)
 # `ForeUpProvider.slots_for_capability` (specs/teetime-availability-everywhere
 # -plan.md §6). Module-level singletons (own per-host limiter/breaker/cache
 # per adapter, as built above) — RoutedTeeTimeProvider takes explicit
-# `foreup`/`teeitup` instances in its constructor for tests, but production
-# code (and any platform this constructor doesn't know about yet) reads this
-# registry so adding an engine never requires touching `_slots_for_course`.
+# `foreup`/`teeitup`/`chronogolf` instances in its constructor for tests, but
+# production code (and any platform this constructor doesn't know about yet)
+# reads this registry so adding an engine never requires touching
+# `_slots_for_course`.
 ADAPTERS: dict[str, TeeTimeProvider] = {
     "foreup": ForeUpProvider(),
     "teeitup": TeeItUpProvider(),
+    "chronogolf": ChronogolfProvider(),
 }
 
 
@@ -87,6 +90,7 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         *,
         foreup: ForeUpProvider | None = None,
         teeitup: TeeItUpProvider | None = None,
+        chronogolf: ChronogolfProvider | None = None,
         adapters: dict[str, TeeTimeProvider] | None = None,
         capabilities=None,
         foreup_enabled: bool | None = None,
@@ -97,15 +101,17 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         super().__init__(find_courses)
         self._foreup = foreup or ForeUpProvider()
         self._teeitup = teeitup or TeeItUpProvider()
+        self._chronogolf = chronogolf or ChronogolfProvider()
         # Platform -> adapter, seeded from the module registry (so any future
         # adapter added to ADAPTERS is picked up automatically) then
-        # overridden with THIS instance's own foreup/teeitup (constructor-
-        # injectable, e.g. FakeForeUp in tests) and any explicit `adapters`
-        # override.
+        # overridden with THIS instance's own foreup/teeitup/chronogolf
+        # (constructor-injectable, e.g. FakeForeUp in tests) and any explicit
+        # `adapters` override.
         self._adapters: dict[str, TeeTimeProvider] = {
             **ADAPTERS,
             "foreup": self._foreup,
             "teeitup": self._teeitup,
+            "chronogolf": self._chronogolf,
             **(adapters or {}),
         }
         self._capabilities = capabilities or load_all_capabilities

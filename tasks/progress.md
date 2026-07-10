@@ -11488,3 +11488,106 @@ Owner-approved merge executed exactly per brief (keys NOT in yet condition).
 - Marketplace geo/name search params are NO-OPs (returns default Canada-heavy set); club discovery is via the club page slug (Places/OSM `website` → chronogolf.com/club/<slug>) — the probe script fingerprints `chronogolf.com/club` and extracts club_id/course_id/aff from the v2 club JSON (never hardcode).
 
 ## AWAITING (S4c): builder on integration/next — adapters/chronogolf.py + generalized scripts/probe_booking_capability.py + Chronogolf seed rows + partnership-apps doc (+Quick18 if trivial). Ground truth above (endpoint live-verified, fixture captured, 3 seed rows). On builder return → reviewer (Chronogolf never-raises + honest None/[]/slots + no fabricated price/players + live-verified endpoint + probe doesn't break foreUP validation + S0/S1/S4a byte-identical) → QA gates SUCCESS on head SHA → update backlog(s4c)/PR#128. If I die: reconcile from origin/integration/next; do NOT re-probe (endpoint verified, fixture captured); builder commits its own work.
+
+## 2026-07-10 — builder: S4c (Chronogolf adapter + probe-script generalization) landed on the bundle (NOTICEABLE, DONE)
+
+Implemented `specs/teetime-availability-everywhere-plan.md` §3/§6 (S4c —
+Chronogolf marketplace adapter + generalized capability-probe script) on top
+of the S4a foundation, exactly per eng-lead's live-verified ground truth. One
+commit on `integration/next`:
+
+- `adapters/chronogolf.py` (new): `ChronogolfProvider.slots_for_capability`
+  mirrors `teeitup.py`'s contract exactly (slots | `[]` verified-empty | `None`
+  couldn't-check, never raises). Key differences from TeeItUp, documented
+  in-module: `start_time` is ALREADY local (no UTC conversion — date-filter
+  directly on the `date` field); `out_of_capacity` is an EXACT-bool filter
+  (missing/non-bool = omit, never assumed bookable); `green_fees[].green_fee`
+  is DOLLARS not cents (fed straight to `_as_price`, no ÷100); cheapest fee
+  across `green_fees[]` chosen, `None` when none present (never fabricated);
+  `players` = `query.party_size` for bookable slots — documented HONESTLY as
+  NOT a real remaining-capacity count (Chronogolf's public endpoint exposes
+  none) so it can never be misread as TeeItUp's real `maxPlayers`; a
+  single-player restriction (`restrictions[]` substring "single player",
+  case-insensitive) is honored — omitted only when `party_size == 1`. A `200
+  []` is treated as a REAL verified-empty day (documented reasoning: unlike
+  TeeItUp's per-facility wrapper, Chronogolf's array IS the day's teetimes
+  with no request-echo to sanity-check against) — non-200/non-JSON/non-array
+  still degrade to `None` + breaker failure. Own per-host limiter/breaker/
+  cache/single-flight (never shared with foreUP/TeeItUp). `MAX_SLOTS_PER_COURSE
+  = 6`, `book()` always `needs_human` — same invariants as every adapter.
+- `router_provider.py`: registered `ChronogolfProvider` in the module
+  `ADAPTERS` registry + added a `chronogolf` constructor param/override to
+  `RoutedTeeTimeProvider.__init__`, mirroring `teeitup`'s wiring exactly —
+  registration only, zero new ladder logic (the S4a seam did its job).
+- `booking_capabilities_seed.json`: appended 3 LIVE-VERIFIED Chronogolf rows
+  (Rock Spring Golf Club at West Orange, Pleasantville Country Club, Beaver
+  Brook Country Club — `channel="scrape_http"`, `platform_ids`
+  `{club_id, course_id, affiliation_type_id}`, generous aliases for Rock
+  Spring). File's `_comment` updated; `load_all_capabilities()` confirmed
+  parses all 12 rows total (1 legacy foreUP row + 8 teeitup + 3 chronogolf =
+  `len(legacy)+8+3`, verified by hand and by the updated test). The 8
+  existing TeeItUp rows are byte-untouched.
+- `scripts/probe_booking_capability.py` (new): generalizes
+  `validate_foreup_courses.py` (kept fully intact and independently runnable
+  — not touched, not replaced) into a multi-platform probe: fingerprints a
+  course website for foreUP/TeeItUp/EZLinks/Chronogolf/Club Prophet/Quick18/
+  Teesnap markers, extracts platform ids from the matched engine's own
+  page/bootstrap (never hardcoded — for Chronogolf: parses the club slug then
+  does the real STEP A `GET marketplace/v2/clubs/<slug>` lookup), runs ONE
+  read-only availability probe through the SAME `build_times_request` each
+  adapter uses, supports `--capture-fixture`/`--dry-run`, and falls back to
+  `phone_only`/`channel=none` when no engine matches. **Verified live against
+  all 3 implemented platforms this cycle** (real network, real responses):
+  Chronogolf (Rock Spring — correctly auto-resolved club_id=10038/
+  course_id=11517/affiliation_type_id=40974 from nothing but the club-page
+  URL, matching eng-lead's ground truth exactly), foreUP (18 Mile Creek —
+  correctly parsed booking_id/schedule_id from the URL), TeeItUp (Douglaston
+  — fingerprinted the alias correctly; facility_id needed `--facility-id`
+  since the page's bootstrap didn't expose it plainly, documented as the
+  expected fallback path).
+- Quick18 (deliverable 5): **SKIPPED** — searched for a live, trivially-
+  reachable NY-metro Quick18/Sagacity course for several minutes; found none
+  (one promising false-positive, "Fairways of Woodside," turned out to be in
+  Sussex, WI, not Woodside, Queens). Per the instruction to skip rather than
+  force it, no Quick18 adapter was added this cycle.
+- `specs/teetime-partnership-applications.md` (new): ready-to-send owner
+  checklist for Lightspeed/Chronogolf Partner API, GolfNow/TeeOff Affiliate &
+  Partner API, foreUP vendor/partner, and Supreme Golf affiliate — each with
+  a copy-paste use-case blurb + submission fields + priority order (Chronogolf
+  first: closest/highest-confidence given 3 live clubs already wired; GolfNow
+  second: biggest coverage unlock). Several application-form URLs returned
+  paywall/login gates to automated fetch — those are flagged honestly as
+  best-known-not-confirmed entry points rather than presented as verified.
+- Tests: 35 new `test_tee_time_chronogolf.py` (fixture-derived from the real
+  captured `chronogolf_rockspring_times.json` — request shape,
+  out-of-capacity filter, dollars-not-cents pricing, single-player-restriction
+  party filter, verified-empty incl. the 200-`[]` decision, window/price
+  filters, truncation, cache/single-flight/breaker/limiter, book dispatch,
+  never-raises error legs) + 8 new `test_tee_time_router_chronogolf.py`
+  (ADAPTERS registry resolution, matched/empty/degraded ladder legs, foreup/
+  teeitup paths unaffected with chronogolf ALSO wired in, book dispatch).
+  **Adjustment note (flagged, not hidden):** `test_tee_time_capability_store_generalized.py`'s
+  two `TestShippedGeneralizedSeed` tests pinned "the shipped generalized seed
+  file has exactly 8 rows, all teeitup" as an S4a snapshot — since deliverable
+  3 explicitly directs appending 3 curated Chronogolf rows to that SAME file
+  (and the file's own docstring already says "S4a+: teeitup, and future
+  engines"), I re-scoped those two tests to filter by `platform=="teeitup"`
+  (still exactly 8, still golf-nyc/NYC-metro, unchanged assertions) and added
+  a parallel, equally-strict check for the 3 new chronogolf rows — not
+  weakened, no assertion removed, just no longer assuming the shared file is
+  single-platform. Every OTHER S0/S1/S4a test file is byte-identical
+  (confirmed: `test_tee_time_routing.py`, `test_tee_time_private_filter.py`,
+  `test_tee_time_router.py`, `test_tee_time_foreup.py`,
+  `test_tee_time_capability_store.py`, `test_tee_time_teeitup.py`,
+  `test_tee_time_router_teeitup.py`, `test_tee_time_fetch_discipline.py` all
+  pass unedited — 234 tests across the full tee-time suite green).
+- Gates (local, no Postgres): `ruff check .` clean; `pytest -q` →
+  **1880 passed, 83 skipped** (same 83 Postgres-gated integration tests,
+  auto-skip, no container started). Frontend untouched (`git status`
+  confirmed zero frontend diffs).
+- **Classified NOTICEABLE**: 3 more NJ/NY-metro public courses (Rock Spring
+  Golf Club at West Orange, Pleasantville Country Club, Beaver Brook Country
+  Club) now show real bookable tee times + real dollar prices in tee-time
+  search instead of the S0 fallback — testable on TestFlight once merged
+  (no extra env needed; `TEETIME_ENGINES` default enables every registered
+  adapter).
