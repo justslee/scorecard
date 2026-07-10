@@ -1,0 +1,149 @@
+{
+  "_comment": "Curated multi-platform capability rows (S4a, specs/teetime-availability-everywhere-plan.md §2a) — the generalized sibling of foreup_ny_seed.json. Loaded by load_all_capabilities (capability_store.py). Matching (match_capability) is exact-normalized-name (or alias) equality plus <=1.0 mi proximity, or an exact course_id. Fail-loud on malformed JSON: a broken edit must fail CI, not silently drop the real-data path. These 8 rows are NYC Parks munis on the golf-nyc TeeItUp tenant, verified live via a direct GET to phx-api-be-east-1b.kenna.io (no auth) on 2026-07-10 — see specs/teetime-availability-everywhere-plan.md §3.",
+  "courses": [
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "golf-nyc",
+        "facility_id": "5044"
+      },
+      "booking_url": "https://golf-nyc.book.teeitup.com/",
+      "phone": "71822465662",
+      "is_private": false,
+      "verified_at": "2026-07-10T13:40:44Z",
+      "probe_status": "verified",
+      "name": "Douglaston Golf Course",
+      "lat": 40.75944,
+      "lng": -73.73586,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "golf-nyc",
+        "facility_id": "5043"
+      },
+      "booking_url": "https://golf-nyc.book.teeitup.com/",
+      "phone": "71854345950",
+      "is_private": false,
+      "verified_at": "2026-07-10T13:40:44Z",
+      "probe_status": "verified",
+      "name": "Van Cortlandt Golf Course",
+      "lat": 40.885538,
+      "lng": -73.89463,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "golf-nyc",
+        "facility_id": "5046"
+      },
+      "booking_url": "https://golf-nyc.book.teeitup.com/",
+      "phone": "(718) 939-4594",
+      "is_private": false,
+      "verified_at": "2026-07-10T13:40:44Z",
+      "probe_status": "verified",
+      "name": "Kissena Golf Course",
+      "lat": 40.742176,
+      "lng": -73.804234,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "golf-nyc",
+        "facility_id": "4757"
+      },
+      "booking_url": "https://golf-nyc.book.teeitup.com/",
+      "phone": "+17184424653",
+      "is_private": false,
+      "verified_at": "2026-07-10T13:40:44Z",
+      "probe_status": "verified",
+      "name": "Silver Lake Golf Course",
+      "lat": 40.622225,
+      "lng": -74.096534,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "golf-nyc",
+        "facility_id": "5045"
+      },
+      "booking_url": "https://golf-nyc.book.teeitup.com/",
+      "phone": "(718) 296-0999",
+      "is_private": false,
+      "verified_at": "2026-07-10T13:40:44Z",
+      "probe_status": "verified",
+      "name": "Forest Park Golf Course",
+      "lat": 40.70046,
+      "lng": -73.860472,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "golf-nyc",
+        "facility_id": "4051"
+      },
+      "booking_url": "https://golf-nyc.book.teeitup.com/",
+      "phone": "+17189840101",
+      "is_private": false,
+      "verified_at": "2026-07-10T13:40:44Z",
+      "probe_status": "verified",
+      "name": "South Shore Golf Course",
+      "lat": 40.549064,
+      "lng": -74.200271,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "golf-nyc",
+        "facility_id": "4049"
+      },
+      "booking_url": "https://golf-nyc.book.teeitup.com/",
+      "phone": "71835118893",
+      "is_private": false,
+      "verified_at": "2026-07-10T13:40:44Z",
+      "probe_status": "verified",
+      "name": "La Tourette Golf Course",
+      "lat": 40.578047,
+      "lng": -74.150461,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "golf-nyc",
+        "facility_id": "4047"
+      },
+      "booking_url": "https://golf-nyc.book.teeitup.com/",
+      "phone": "+17182292570",
+      "is_private": false,
+      "verified_at": "2026-07-10T13:40:44Z",
+      "probe_status": "verified",
+      "name": "Clearview Park Golf Course",
+      "lat": 40.787374,
+      "lng": -73.791407,
+      "aliases": [],
+      "course_id": null
+    }
+  ]
+}

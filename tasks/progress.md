@@ -3,6 +3,82 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: S4a (tee-time availability-everywhere) landed on the bundle (NOTICEABLE, DONE)
+
+Implemented `specs/teetime-availability-everywhere-plan.md` §2a/§3/§6 (S4a —
+generalized capability store + adapter registry + TeeItUp rung-1) exactly as
+handed off by eng-lead, including the live-verified TeeItUp ground truth
+(`/v2/tee-times?date=&facilityIds=N` + `x-be-alias` header — corrects the
+plan draft's wrong `courseIds` guess). One commit on `integration/next`:
+
+- `capability_store.py` generalized: `CourseBookingCapability` gained
+  `channel`/`platform_ids`/`probe_status` (all defaulted — every existing
+  construction call, incl. `test_tee_time_router.py`'s hand-built caps,
+  keeps working unchanged). `foreup_booking_id`/`schedule_id` stay REAL
+  fields (not derived properties) for back-compat — `foreup.py` needed zero
+  reads changed. Legacy `load_capabilities`/`_parse_row`/the two foreUP
+  files are BYTE-IDENTICAL (only additively populate the new fields); a new
+  `load_all_capabilities` merges legacy foreUP rows + two new generalized
+  files (`booking_capabilities_seed.json` checked in with 8 live-verified
+  golf-nyc TeeItUp munis, `booking_capabilities_validated.json` gitignored,
+  same fail-loud/fail-soft pattern). Dedup key generalized to
+  `(platform, sorted platform_ids)` — verified equivalent to the old
+  `(booking_id, schedule_id)` key for every foreUP case.
+- `fetch_discipline.py` (new): extracted `CircuitBreaker` verbatim, the honest
+  UA + 8s timeout, `_as_int`/`_as_price` bool-before-int guards,
+  `_format_time12h`, and a new generalized `SingleFlight` (foreUP's
+  `_fetch_day` inflight-future dedup, now reusable). `foreup.py` imports
+  these instead of defining them — the original 64-test S1 suite
+  (`test_tee_time_foreup.py`) passes UNCHANGED, proving byte-identical
+  behavior (foreUP keeps its own per-host limiter/breaker singletons, never
+  shared with teeitup).
+- `adapters/teeitup.py` (new): `TeeItUpProvider.slots_for_capability` — same
+  contract as foreUP's (slots | `[]` verified-empty | `None` couldn't-check,
+  never raises). Normalization: UTC teetime → `America/New_York` local time
+  with LOCAL-date filtering (a UTC entry can roll to the next/prev day —
+  tested both directions with synthetic payloads), `players` = `maxPlayers`
+  (bool-before-int guarded), price = min present green fee across the
+  entry's rates in CENTS ÷100 → dollars → positive-guard (never fabricated,
+  never fed raw cents into the dollar guard), holes from the chosen
+  (cheapest) rate. An empty top-level response array is treated as
+  couldn't-check (schema-drift signal), not verified-empty — only
+  `teetimes: []` on a real record counts as verified-empty.
+- `router_provider.py`: added a module `ADAPTERS` registry (`platform ->
+  adapter`) and a `TEETIME_ENGINES` allowlist env; `_slots_for_course` now
+  does `adapter = self._adapters.get(cap.platform)` instead of a hardcoded
+  foreUP call — unknown/disabled platform degrades to the EXACT S0 entry
+  (same code path as "no capability match"). `book()` dispatches by
+  `slot.provider` through the same adapter map. The original S1 fallback
+  ladder + all 5 existing test files pass unchanged.
+- Tests (all fixture-derived, zero live network — teeitup fixtures were
+  captured live by eng-lead in the prior commit `68e64b4`): 35 new
+  `test_tee_time_teeitup.py` (request shape, real-slots parse, UTC→ET
+  rollover both directions, bool-before-int, price-never-fabricated,
+  window/party/price filters, truncation, cache/single-flight/breaker/
+  limiter, book dispatch), 21 `test_tee_time_fetch_discipline.py` (direct
+  `SingleFlight`/`CircuitBreaker`/coercion-guard coverage — new, since the
+  extraction had no prior direct tests), 13
+  `test_tee_time_capability_store_generalized.py` (merged loader, dedup
+  across platforms, back-compat), 10 `test_tee_time_router_teeitup.py`
+  (ladder legs: matched/empty/degraded/unknown-platform/allowlist-disabled/
+  foreUP-unaffected/book-dispatch).
+- Gates (local, no Postgres — DB-integration tests deferred to CI):
+  `ruff check .` clean; `pytest -q` → **1836 passed, 83 skipped** (the 83
+  are the standard Postgres-reachability-gated integration tests, incl.
+  `tests/integration/test_tee_time_bookings.py` — auto-skip via the repo's
+  own reachability probe, no container started). All pre-existing S1/S0
+  tee-time suites (test_tee_time_foreup.py, test_tee_time_capability_store.py,
+  test_tee_time_router.py, test_tee_time_provider_default.py — 66+8 tests)
+  pass byte-identical, zero edits. Frontend untouched (`git status` confirmed
+  — this is a backend-only slice).
+- **Classified NOTICEABLE**: golf-nyc's 8 NYC Parks munis (Douglaston, Van
+  Cortlandt, Kissena, Silver Lake, Forest Park, South Shore, La Tourette,
+  Clearview Park) now show real bookable tee times in the tee-time search
+  instead of the S0 "call the pro shop" fallback — a real availability
+  surface the owner can test on TestFlight, once merged + the S4a-gated
+  behavior (TEETIME_ENGINES default = all adapters enabled, no extra env
+  needed) reaches prod.
+
 ## 2026-07-10 — release-manager: bundle #125 SHIPPED to main + TestFlight
 
 Owner replied "Ship it" for PR #125 (`integration/next` -> `main`). Full ship

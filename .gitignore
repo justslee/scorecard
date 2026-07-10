@@ -66,6 +66,12 @@ backend/data/*
 !backend/data/foreup_ny_seed.json
 # backend/data/foreup_availability_cache.json and foreup_validated.json stay
 # ignored (already covered by backend/data/* above) — runtime-only.
+# Exception: checked-in generalized multi-platform capability seed
+# (specs/teetime-availability-everywhere-plan.md §2a) — same fail-loud
+# config reasoning as foreup_ny_seed.json above; must ship with the repo.
+!backend/data/booking_capabilities_seed.json
+# backend/data/booking_capabilities_validated.json stays ignored (already
+# covered by backend/data/* above) — script-appended, runtime-only.
 .env.vercel
 frontend/.env.local
 .clerk-test-creds
