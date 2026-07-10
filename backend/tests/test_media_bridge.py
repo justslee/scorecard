@@ -94,6 +94,30 @@ async def test_session_update_sets_ulaw_in_and_out():
     assert any(t["name"] == "record_booking_outcome" for t in session["tools"])
 
 
+def test_session_update_defaults_to_cedar_voice():
+    """No ctx.caller_voice, no env override → the new natural default "cedar"
+    (was the hardcoded "sage") — specs/voice-clone-caller-plan.md §2B/§3."""
+    ctx = _ctx()
+    payload = build_call_session_update(ctx)
+    assert payload["session"]["audio"]["output"]["voice"] == "cedar"
+
+
+def test_session_update_uses_owner_pref_voice_from_ctx():
+    """ctx.caller_voice (the owner's saved picker choice) wins over the
+    default — this is what makes the picker audibly take effect."""
+    ctx = _ctx(caller_voice="marin")
+    payload = build_call_session_update(ctx)
+    assert payload["session"]["audio"]["output"]["voice"] == "marin"
+
+
+def test_session_update_explicit_override_wins_over_ctx():
+    """The `voice=` kwarg is a test-only escape hatch and takes precedence
+    over ctx.caller_voice / the resolver."""
+    ctx = _ctx(caller_voice="marin")
+    payload = build_call_session_update(ctx, voice="ash")
+    assert payload["session"]["audio"]["output"]["voice"] == "ash"
+
+
 async def test_greeting_forced_before_any_media():
     ctx = _ctx()
     pending = _pending(ctx)

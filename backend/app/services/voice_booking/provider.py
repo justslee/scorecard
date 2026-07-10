@@ -92,6 +92,10 @@ class VoiceCallProvider(TeeTimeProvider):
                 booking_url=slot.booking_url,
             )
 
+        # ctx.caller_voice is left None here (this call path has no owner_id /
+        # async DB access to look up the saved pick without contorting this
+        # provider's shape) — the bridge's caller_voice.resolve_caller_voice()
+        # falls through to OPENAI_REALTIME_DEFAULT_VOICE / "cedar" safely.
         ctx = VoiceBookingContext(
             course_id=slot.course_id,
             course_name=slot.course_name,

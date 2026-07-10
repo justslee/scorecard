@@ -3,6 +3,79 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: caller-natural-preset-voice DONE, on integration/next
+
+Implemented Option B from `specs/voice-clone-caller-plan.md` §2B/§3 — the AI
+tee-time caller can't clone the owner's voice on OpenAI Realtime, so it now
+speaks in the best natural PRESET voice (**cedar**, was hardcoded "sage")
+with an owner-persisted picker among a calm 6-voice subset. Caller stays
+INERT (no Twilio keys) — voice-selection VALUE only, no pipeline/dialog/
+gating/compliance changes.
+
+- New pure module `backend/app/services/voice_booking/caller_voice.py`:
+  `ALLOWED_CALLER_VOICES` (10-voice allowlist), `DEFAULT_CALLER_VOICE`
+  ="cedar", `PICKER_VOICES`, `is_valid_voice`, `resolve_caller_voice`
+  (owner-pref → `OPENAI_REALTIME_DEFAULT_VOICE` env → default precedence).
+- `media_bridge.build_call_session_update` now resolves the voice via
+  `ctx.caller_voice` instead of the removed hardcoded "sage" default.
+  `VoiceBookingContext.caller_voice: str | None = None` added (byte-identical
+  default for every existing caller).
+- New nullable `golfer_profiles.caller_voice` column (migration
+  `013_caller_voice`, additive, no backfill) + owner-gated
+  `GET`/`PUT /api/tee-times/caller-voice` (422 on an out-of-allowlist voice).
+  `rehearsal_call` now feeds the owner's saved pick through so a rehearsal
+  call audibly reflects the picker — wrapped in try/except (**plan
+  adjustment**: the route + its test file were explicitly zero-DB before;
+  made the new DB read best-effort so that contract survives).
+- Frontend: `CallerVoicePicker` — a calm `<select>` inside the existing
+  "Rehearsal call" settings section, yardage-book styling, honest copy ("no
+  live preview — hear it on your next rehearsal call").
+- Tests: unit coverage for the resolver precedence + allowlist validation +
+  `build_call_session_update` default/override; a DB-backed integration
+  suite for GET/PUT (deferred to CI — no local Postgres); a light frontend
+  vitest for the client wrappers.
+- Gates: backend `ruff check .` clean; 1957 non-DB backend tests pass (25
+  new); frontend lint clean, `tsc --noEmit` clean, voice-tests smoke
+  274/274, new vitest 3/3.
+- **Classification: noticeable** (new settings UI + audible voice change on
+  the owner's next rehearsal call) — rides in the next bundle.
+- Committed to `integration/next` at `dece99b`, pushed.
+
+## 2026-07-10 — release-manager: bundle PR #130 SHIPPED to main — owner-approved
+
+Owner replied **"ship it"** approving bundle PR #130. Guarded pre-flight
+re-verified: `integration/next` head `dbcc7c22` unchanged since approval,
+both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
+
+- **Merged** `#130` → `main` (`gh pr merge 130 --merge`). Merge commit:
+  `d59265993504ff542838bb20dccfefd91de9431e`.
+- **Post-merge main CI**: both required gates SUCCESS on the new head (CI,
+  Deploy backend (SSM)) — no flake, no rerun needed.
+- **Backend deployed** via the SSM auto-deploy workflow (fires on push to
+  `main`); confirmed live inside the deploy job (`curl localhost:8000/health`
+  → `{"status":"ok"}`, SSM command status Success) and externally
+  (`https://api.looperapp.org/health` → 200 `{"status":"ok"}`).
+- **TestFlight cut** from new `main` via `ops/ios/ship.sh`: **v1.0.1162
+  (build 202607101611)** — archive + export succeeded, uploaded; App Store
+  Connect `processingState: VALID` (polled via the ASC API).
+- **Prod smoke**: `/health` 200 ok; `/api/courses` and
+  `/api/tee-times/search` both correctly auth-gated (401, alive — not 500).
+- **Fresh `integration/next`** cut off new `main` (fast-forwarded, no force
+  push needed since the old tip was an ancestor of the merge commit) and
+  pushed — head `d5926599`.
+- **Board**: new card "Bundle #130: tee-time setup UX … + caddie-guide
+  injection hardening" created directly in Shipped
+  (https://app.notion.com/p/3991c52592e081a6b4a3df021a0f23c2), with PR link,
+  TestFlight version, and owner test steps. `backlog.json` items
+  `teetime-setup-ux-owner-feedback` and `caddie-guide-injection-hardening`
+  updated to shipped-to-main with the merge SHA + TestFlight version.
+
+How the owner tests it (TestFlight build 202607101611 / v1.0.1162):
+add a tee-time window → calendar auto-opens; drag a window wide (now spans
+the full day, 06:00–21:00, was capped at 6h); the picks count in the search
+header now matches exactly what Options shows (no more confusing raw
+discovery-set number); date chip has a visible calendar-edit affordance.
+
 ## 2026-07-10 — eng-lead: cycle 72 caddie-guide-injection-hardening — DONE, on integration/next (SILENT)
 
 Backend-only SECURITY hardening of the shipped strategy-guide
@@ -12038,3 +12111,17 @@ next @ 1ed2b71, read children's verdicts, do NOT rebuild.
 ## Cycle 71 result → 72 (2026-07-10)
 - Security review DONE: core mitigations real (no HIGH); found MED-1 (newline breaks DATA framing → fake prompt section into caddie), MED-2 (cached guides never re-validated on read), LOW-3 (per-item cap). Created caddie-guide-injection-hardening (p1).
 - AWAITING: eng-lead fixes MED-1 + MED-2 + LOW-3 with red-pre-fix tests; update plan §9 to not overstate injection_pattern. Land on bundle.
+
+## Cycle 73 (2026-07-10) — caller natural preset voice (owner chose Option B over clone)
+- #130 SHIPPED (d5926599, TestFlight v1.0.1162). Fable voice-clone plan delivered honest verdict; owner chose Option B (natural preset voice + picker) over the clone pipeline (shelved as caller-voice-clone-pipeline).
+- AWAITING: eng-lead caller-natural-preset-voice — best natural OpenAI Realtime voice for phone + owner voice-pref setting + minimal picker in settings. Ships dark. Designer pass.
+- VOICE CHOICE: `cedar` (new default, replacing `sage`). Research confirmed current gpt-realtime catalogue = alloy/ash/ballad/coral/echo/sage/shimmer/verse/marin/cedar; OpenAI purpose-built marin+cedar for gpt-realtime w/ superior prosody + natural pauses/fillers (reduces synthetic feel); cedar = "natural and conversational" (marin = "professional and clear") — best for a non-robotic outbound pro-shop call on 8kHz phone. Overridable by OPENAI_REALTIME_DEFAULT_VOICE env.
+- DESIGN handed to builder: new voice_booking/caller_voice.py (ALLOWED set, DEFAULT="cedar", PICKER list, pure resolve_caller_voice(owner_pref)→env→default + is_valid_voice); caller_voice nullable col on golfer_profiles (owner model) + additive migration 013; owner-gated GET/PUT endpoint; VoiceBookingContext gains caller_voice; media_bridge build_call_session_update resolves via resolver; rehearsal-call route reads owner pref → ctx. Caller stays INERT (voice VALUE change only; no gating/pipeline/dialog touch). Picker in settings /Rehearsal call section.
+- BUILDER DONE @ dece99b (head 34095c8): caller_voice.py resolver + cedar default; caller_voice col on golfer_profiles + migration 013; GET/PUT /api/tee-times/caller-voice (owner-gated, 422 on non-allowlist); VoiceBookingContext.caller_voice; media_bridge resolves via resolver (no more hardcoded sage); CallerVoicePicker in /settings. Local gates green (ruff clean, 1957 backend non-DB pass, front lint/tsc clean, voice-smoke 274/274, vitest 3). DB-route tests (7) deferred to CI Postgres. Builder deviation to scrutinize: rehearsal_call owner-pref DB read made best-effort try/except→None (falls to env/default) to keep test_rehearsal_call's no-DB contract.
+- REVIEWER (fresh, adversarial, +/security-review): SHIP — allowlist airtight (no arbitrary string→API; PUT 422s), precedence owner→env→default correct, caller INERT (media_bridge diff = voice value only; dialog/gating/compliance untouched), endpoint owner-gated fail-closed, migration 013 additive/reversible, best-effort rehearsal DB read acceptable, tests genuine. No blocking.
+- QA: PASS all local gates on 603c56b — ruff clean, backend non-DB 1957 passed (incl test_caller_voice 9, test_media_bridge 16), front lint/tsc/build clean, voice-smoke 274/274, caller-voice vitest 3/3, uv sync+import OK.
+- BUNDLE PR #131 opened (integration/next→main). CI STRICT-GREEN on head 603c56b: Backend SUCCESS (incl DB route tests), Frontend SUCCESS, E2E advisory SUCCESS. pending=0 fail=0.
+- DESIGNER: BLOCKING x1 — CallerVoicePicker load-failure (initial GET fail) renders empty optionless <select> mislabeled "Could not save…" (nothing saved; read failed) — dishonest empty-state (no-fake-data-fallbacks memory). Nice-to-haves: label color pencilSoft→pencil, select vertical padding, chevron (pre-existing debt, skip), section-title (future note).
+- BUILDER FIX @ 8ac3ec2 (frontend-only, 1 file): added distinct 'load-error' status → honest "Could not load caller voices — try again." copy + `options.length===0` guard so an optionless <select> can never render; label T.pencilSoft→pencil; select padding 0 12px→10px 12px (minHeight 44 kept). Gates: front lint/tsc clean, voice-smoke 274/274, caller-voice vitest 3/3.
+- DESIGNER RE-CHECK: PASS — blocking resolved (empty-select structurally unreachable), honest copy, polish matches file conventions, no new regression. Non-blocking note (deferred, not a regression): `options.length===0` folds a "loaded-but-empty" case into the "could not load" copy, and "try again" isn't wired to a retry action.
+- CYCLE 73 DONE — caller-natural-preset-voice LANDED on integration/next @ 8ac3ec2 (feature dece99b + design fix 8ac3ec2). Bundle PR #131 (NOTICEABLE: new /settings caller-voice picker). Reviewer SHIP + /security-review, QA green, Designer PASS. Voice choice = cedar (new default; overridable by OPENAI_REALTIME_DEFAULT_VOICE). Caller stays INERT (voice value only; no gating/pipeline/dialog/compliance change). backlog.json: caller-natural-preset-voice → shipped (landed 8ac3ec2, pr 131). SILENT per directive — NO ship, NO owner ping; bundle accumulates for the next ship decision. CI to be re-verified strict-green on final head after this commit.

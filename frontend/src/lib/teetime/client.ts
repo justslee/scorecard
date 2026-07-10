@@ -20,6 +20,7 @@ import type {
   BookingDetails,
   BookingResult,
   RehearsalCallResponse,
+  CallerVoiceResponse,
   AvailabilityCallRequest,
   AvailabilityCallStatus,
 } from "./types";
@@ -112,6 +113,28 @@ export async function bookTeeTime(slot: TeeTimeSlot, details: BookingDetails): P
 export async function placeRehearsalCall(): Promise<RehearsalCallResponse> {
   return fetchAPI<RehearsalCallResponse>("/api/tee-times/rehearsal-call", {
     method: "POST",
+  });
+}
+
+/**
+ * Owner-only: get the caller's current preset-voice pick (resolved value,
+ * raw saved preference, and the picker options). No voice CLONING — this is
+ * Option B (specs/voice-clone-caller-plan.md §2B/§3): the owner chooses among
+ * a calm subset of natural OpenAI Realtime preset voices.
+ */
+export async function getCallerVoice(): Promise<CallerVoiceResponse> {
+  return fetchAPI<CallerVoiceResponse>("/api/tee-times/caller-voice");
+}
+
+/**
+ * Owner-only: save the caller's preset-voice pick. The backend validates
+ * against its allowlist and rejects anything else with 422.
+ */
+export async function setCallerVoice(voice: string): Promise<CallerVoiceResponse> {
+  return fetchAPI<CallerVoiceResponse>("/api/tee-times/caller-voice", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ voice }),
   });
 }
 

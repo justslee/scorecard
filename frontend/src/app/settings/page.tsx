@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useClerk } from '@clerk/react';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
-import { placeRehearsalCall } from '@/lib/teetime/client';
-import type { RehearsalCallResponse } from '@/lib/teetime/types';
+import { getCallerVoice, placeRehearsalCall, setCallerVoice } from '@/lib/teetime/client';
+import type { CallerVoiceOption, RehearsalCallResponse } from '@/lib/teetime/types';
 
 // ---------------------------------------------------------------------------
 // Inline icons — no lucide-react
@@ -338,6 +338,131 @@ function ClearCacheButton() {
 // the callee comes only from backend config.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Caller voice picker — the preset voice Looper's AI pro-shop caller speaks
+// in. No cloning of the owner's own voice is possible on the OpenAI Realtime
+// live-call path (specs/voice-clone-caller-plan.md §2B/§3) — instead the
+// owner picks the best natural preset from a calm subset. No live audio
+// preview: the honest way to hear it is the next rehearsal call below.
+// ---------------------------------------------------------------------------
+
+function CallerVoicePicker() {
+  const [options, setOptions] = useState<CallerVoiceOption[]>([]);
+  const [value, setValue] = useState<string>('');
+  const [status, setStatus] = useState<
+    'loading' | 'load-error' | 'ready' | 'saving' | 'saved' | 'error'
+  >('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    getCallerVoice()
+      .then((res) => {
+        if (cancelled) return;
+        setOptions(res.options);
+        setValue(res.voice);
+        setStatus('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('load-error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onChange = async (voice: string) => {
+    const prev = value;
+    setValue(voice);
+    setStatus('saving');
+    try {
+      const res = await setCallerVoice(voice);
+      setValue(res.voice);
+      setStatus('saved');
+    } catch {
+      setValue(prev);
+      setStatus('error');
+    }
+  };
+
+  const label: React.CSSProperties = {
+    display: 'block',
+    fontFamily: T.mono,
+    fontSize: 9,
+    letterSpacing: 1.6,
+    color: T.pencil,
+    textTransform: 'uppercase',
+    fontWeight: 500,
+    marginBottom: 8,
+  };
+  const body: React.CSSProperties = {
+    fontFamily: T.serif,
+    fontSize: 14,
+    color: T.pencil,
+    fontStyle: 'italic',
+    lineHeight: 1.55,
+    letterSpacing: -0.1,
+    margin: 0,
+  };
+
+  if (status === 'loading') {
+    return <p style={body}>Loading the caller voice…</p>;
+  }
+
+  if (status === 'load-error' || options.length === 0) {
+    return <p style={body}>Could not load caller voices — try again.</p>;
+  }
+
+  return (
+    <div style={{ marginBottom: 20, paddingBottom: 18, borderBottom: `1px dashed ${T.hairline}` }}>
+      <p style={{ ...body, marginBottom: 14 }}>
+        The voice Looper uses when it calls a pro shop for you. You&apos;ll
+        hear it on your next rehearsal call — there&apos;s no live preview here.
+      </p>
+
+      <label htmlFor="caller-voice-select" style={label}>
+        Caller voice
+      </label>
+      <select
+        id="caller-voice-select"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={status === 'saving'}
+        style={{
+          width: '100%',
+          minHeight: 44,
+          padding: '10px 12px',
+          borderRadius: 10,
+          background: T.paperDeep,
+          border: `1px solid ${T.hairline}`,
+          color: T.ink,
+          fontFamily: T.sans,
+          fontSize: 14,
+          outline: 'none',
+          appearance: 'none',
+          WebkitAppearance: 'none',
+          cursor: status === 'saving' ? 'default' : 'pointer',
+          opacity: status === 'saving' ? 0.6 : 1,
+        }}
+      >
+        {options.map((opt) => (
+          <option key={opt.voice} value={opt.voice}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+
+      {status === 'saved' && (
+        <div style={{ ...label, marginTop: 8, marginBottom: 0, color: T.pencil }}>Saved</div>
+      )}
+      {status === 'error' && (
+        <div style={{ ...label, marginTop: 8, marginBottom: 0, color: T.errorInk }}>
+          Could not save the caller voice — try again.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RehearsalCallSection() {
   const [state, setState] = useState<'idle' | 'calling' | 'done' | 'error'>('idle');
   const [resp, setResp] = useState<RehearsalCallResponse | null>(null);
@@ -380,6 +505,8 @@ function RehearsalCallSection() {
 
   return (
     <>
+      <CallerVoicePicker />
+
       <p style={body}>
         Have Looper call your own phone and rehearse a tee-time booking, so you
         can play the pro shop and hear exactly what it says. It never dials
