@@ -10991,3 +10991,23 @@ No BLOCKING. PR #125 checklist updated → THREE noticeable items (mergeState CL
 this cycle — item rides bundle #125 until owner "ship it". Cycle-53 follow-ups #2/#3/#5 (route header conditional, distance/city
 on route rows, tap targets) folded in and DONE. Remaining deferred (non-blocking): raw route-row slot.city country-regex guard;
 unify Options distance placement; filterToSelection Set falsy-guard.
+
+## CYCLE 56 START — voicetel-timing-immediate-flush (SILENT) on bundle #125
+Evidence gathered (branch==main for the two files; no code diverged yet):
+- The headline `caddie.eos_to_first_audio` ALREADY flushes immediately at markFirstAudio()
+  (caddie-turn-timing.ts safeFlush, commit 6fcb40d, in main since 2026-07-07 — live the WHOLE
+  3-day window the prod near-zero was measured over). So the "headline not in immediate-flush
+  tier" premise is FALSIFIED for eos_to_first_audio.
+- Real remaining gap: the EARLIER legs (eos_to_transcript / transcript_to_first_token /
+  first_token_to_first_audio) are emitted via safeEmit WITHOUT their own flush — they only ride
+  on markFirstAudio's single flush (classic: useSheetTTS onSpeakStart; RT: first 'speaking').
+  If iOS never reaches markFirstAudio (TTS didn't start / app backgrounded), the whole turn's
+  timing — including the headline — dies before the 8s batch. We also get ZERO signal a turn
+  happened. That matches "~1 eos_to_first_audio + 0 caddie-rt in 3 days".
+- Minimal fix direction: flush EACH stage-timing leg immediately as emitted (per-leg), so
+  eos_to_transcript reaches prod the moment the transcript resolves — reliable caddie-turn
+  volume + go/no-go data even when audio-marking is flaky. Keep idempotent/clamp guards; no PII;
+  rate-limit backstop applies. Test (14) "flushes exactly once at first audio" updates to reflect
+  intended per-leg flush (behavior change, not test-gaming).
+## AWAITING Fable plan — specs/voicetel-timing-immediate-flush-plan.md. On return → dispatch builder
+on integration/next; then reviewer + qa; SILENT, rides bundle #125.
