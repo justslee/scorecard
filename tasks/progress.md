@@ -10492,3 +10492,21 @@ mouths=[text,realtime]) proven RED via mutation in test_harness_has_teeth.py the
 ## AWAITING: Fable plan (specs/caddie-input-grounding-plan.md). On return: dispatch ONE builder to
 implement it on integration/next; then reviewer (adversarial both ways) + qa (strict gates + eval
 teeth) in parallel. NOTICEABLE — rides bundle PR #122, update checklist. NO ship/NO ping this cycle.
+
+## Fable plan DONE → specs/caddie-input-grounding-plan.md (VERIFIED against codebase)
+New INPUT_GROUNDING_RULE constant (voice_prompts.py, before OBSERVED_REALITY_RULE) injected into 3
+sites: build_realtime_instructions + the TWO stable_text blocks in routes/caddie.py (~801, ~1412),
+each BEFORE OBSERVED_REALITY_RULE (keeps test_voice_stream.py endswith pins green). Balance carve-out
+in the rule text: gibberish→ask-once; terse-real ("driver?","what club","how far") →still answer.
+Eval teeth: checks.py _RULE_TEXT + schema.py _VALID_RULE_NAMES + Tier2JudgeProperty
+ASKS_TO_REPEAT_ON_UNINTELLIGIBLE; two golden scenarios (gibberish-transcript-asks-to-repeat NEG +
+terse-driver-question-still-answered POS); mutant tests in test_harness_has_teeth.py (RED-then-green,
+per-mouth attribution). Collateral: test_caddie_caching.py OLD templates + new
+test_input_grounding_prompt.py. Realtime = nudge-not-gate (honest caveat); plausibility heuristic
+DEFERRED (pure prompt rule this cycle). No frontend/models.py change. Guide_writer EXCLUDED (offline).
+
+## AWAITING: ONE builder implementing specs/caddie-input-grounding-plan.md on integration/next
+(commits + pushes there; NO per-item PR). On builder return: reviewer (adversarial BOTH ways —
+gibberish→ask-again AND terse-real→still-answers; + injection-as-data) + qa (strict gates + eval
+teeth RED-then-green proof) in parallel. BLOCKING → re-dispatch builder. Else update PR #122 checklist
+(4th NOTICEABLE). NO ship / NO ping this cycle (bundle accumulates).
