@@ -10351,3 +10351,25 @@ clean at 8b0c27c) before I acted — the external process aborted/finished its o
 teetime-s3-caller intact at origin 260a792; nothing durable lost. My slope work (7c50935) was
 committed+pushed before this and never at risk. Session owner: the tee-time S3 caller lands as its
 own PR (#124 per the S3b backlog note) — reconcile it there, not on my cycle's commits.
+
+## cycle 50 (2026-07-09) PICK: caddie-realtime-transcription-vocab-bias — on bundle #122
+Step 0 clean: no Needs Review card with actionable owner feedback (query tools plan-gated →
+used search+fetch+view; #119 card stale/superseded by shipped #121; PR #122 has zero comments).
+Bundle #122 OPEN (2 noticeable: course-ids-wiring, slope-framing-reconcile). main synced (608ae56),
+integration/next head 5a4b4d7, clean tree.
+PICK: thread a golf/context BIASING prompt into the OpenAI Realtime input-transcription config
+(gpt-4o-transcribe) so the live transcript stops inventing words outdoors ("Scars","of God").
+Current config = just {model, language:en} at realtime_relay.py:124 — no vocab biasing (keyterms
+are wired ONLY to the Deepgram sheet path). Source of biasing = GOLF_KEYTERMS + player club names
+(session.club_distances) + current-hole/course terms, threaded from the mint route
+(routes/realtime.py → mint_ephemeral_session → build_session_payload).
+
+## AWAITING: Fable Plan agent (specs/caddie-realtime-transcription-vocab-bias-plan.md).
+FIRST it must VERIFY vs CURRENT OpenAI Realtime docs whether input transcription for
+gpt-4o-transcribe accepts a `prompt` biasing field. IF supported → plan the threading (compact
+prompt, no PII beyond player's own clubs, biasing DATA not instructions). IF NOT → honest report +
+pivot to the small available win (confidence-gate / verify keyterms applied) or mark blocked-needs-
+cascaded-stt. On return: SUPPORTED → save plan, dispatch builder on integration/next; UNSUPPORTED →
+record evidence in progress+lessons, pick the honest fallback, no fake capability. Do NOT refactor
+the session builder; keep change LOCALIZED to the transcription-config block (parallel teetime-s3
+effort may also touch this file).
