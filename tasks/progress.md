@@ -10977,3 +10977,9 @@ Item3 courses.ts L106: guard r.city fallback with COUNTRY_SEGMENT_RE (+2 tests).
 route header, distance/city on route rows, minHeight44 on sub-44pt rows. ZERO backend, ZERO logic change to f9953f2.
 ## AWAITING builder — implement specs/teetime-prefs-ux-polish-plan.md on integration/next, commit+push, run gates.
 On return → reviewer (no-regression) + designer PASS (iOS-sim) + QA strict; then update PR #125 checklist.
+
+## AWAITING review (cycle 54) — builder pushed 945de5c (feature) on integration/next; head 8b23bb3.
+Dispatched in parallel: reviewer (no-regression to f9953f2 selection/options + scrim z-index/pointer-events),
+designer (NORTHSTAR + iOS-sim before/after of scrolled Where header + Nearby list + Options), qa (strict gates).
+On all-green + designer PASS → update PR #125 checklist (3 noticeable items), progress DONE, no ship/no ping.
+BLOCKING from any → re-dispatch builder, re-review.
