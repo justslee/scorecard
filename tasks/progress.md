@@ -11958,3 +11958,8 @@ next @ 1ed2b71, read children's verdicts, do NOT rebuild.
 - Tee-time ladder COMPLETE (S4a-S4e on #129, 28 courses + AI-call rung dark). Pivoted off tee-time per prior commitment.
 - Investigated non-tee ready work: NO clean high-value build item. voice-language-onboarding=p7/doesn't-help-owner; voice-vad/cascaded-STT=measurement-gated (need owner usage); caddie features mostly shipped.
 - FOUND: caddie-hole-strategy-guides is on main but its LIVE research path was never smoke-tested (silent-failure risk per 'test-critical-flows' memory). Corrected stale backlog status. Verifying it needs owner OK (prod API spend). HOLDING for owner: ship #129 / keys / redirect / OK-the-smoke-test.
+
+## Cycle 70 (2026-07-10) — owner tee-time setup UX feedback (v1.0.1149 testing)
+- #129 SHIPPED (01dd23bf9, TestFlight v1.0.1149, 29 courses live). Owner tested, "worked much better".
+- Owner confirmed Marine Park unreachable = Cloudflare Turnstile (his own screenshot) — validated our probe; no build, rung-3/partnership stands.
+- AWAITING: eng-lead teetime-setup-ux-owner-feedback (p1) — 8-vs-5 count clarity, calendar-on-add-window, obvious date edit, wider window span. Designer pass required. Land on fresh #.

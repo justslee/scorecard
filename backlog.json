@@ -3,6 +3,16 @@
   "note": "Bundle #125 SHIPPED 2026-07-10 -> main @ 56ddb78 (merge commit); TestFlight v1.0.1096 (build 202607100821) uploaded, processing on Apple's side. 8 items shipped-to-main: caddie-surface-osm-trees, teetime-show-real-time-options, teetime-prefs-ux-polish, voicetel-timing-immediate-flush (silent), caddie-remove-seeded-question, teetime-muni-pseudolocality-guard, fcb-unmapped-paper-fallback-mismatch, fcb-plays-tile-fabricated-fallback. Fresh integration/next cut @ 56ddb78, pushed. Prior note: Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "teetime-setup-ux-owner-feedback",
+      "title": "Tee-time setup UX: fix 8-vs-5 count clarity + window calendar-on-add + obvious date edit + wider span",
+      "type": "major",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "OWNER testing v1.0.1149 (2026-07-10, 'worked much better'), 4 asks: (1) Dispatch log says '8 courses open to the public' after 'Checking your 5 picks' \u2014 search broadens beyond the picks (page.tsx:932 renders results.length vs :920 selectedCourses.length). Make it HONEST/non-confusing: investigate backend broadening intent; either scope to picks or clearly label extras ('your 5 picks + N nearby public'). Designer decides copy. (2) '+ ADD ANOTHER WINDOW' (page.tsx addWindow:535) should auto-POP the calendar so the day is set immediately (WindowCard already has MiniCalendar on date-chip tap). (3) The date chip (WindowCard.tsx:147, 8px mono) is not obviously tappable \u2014 give a clear affordance (calendar icon / 'change date' cue), designer-led. (4) Windows capped at 6h (window-slider.ts MAX_WINDOW_MIN=360, enforced ~line103) \u2014 raise/remove so a window can span wider; update window-slider tests. All frontend (page.tsx, WindowCard.tsx, window-slider.ts) + possible small backend count check. Designer pass REQUIRED (NORTHSTAR, user-facing)."
+    },
+    {
       "id": "teetime-availability-everywhere",
       "title": "Fetch real tee-time availability for EVERY course (API \u2192 scrape \u2192 AI-call ladder)",
       "type": "epic",
