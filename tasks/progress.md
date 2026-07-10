@@ -3,6 +3,45 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE: caddie-realtime-transcription-vocab-bias (2A) implemented + pushed to integration/next (2af38c1)
+
+Builder implemented specs/caddie-realtime-transcription-vocab-bias-plan.md in full, exactly to
+plan (no deviations, no re-planning). Pushed commit 2af38c1 on integration/next (head was
+2bea037, ff-only, no per-item PR — bundle PR #122 already open).
+
+What shipped: new `backend/app/caddie/keyterms.py` — `GOLF_KEYTERMS` (exact 24-term mirror of
+`frontend/src/lib/voice/keyterms.ts`, comment cross-ref added there), `_HAZARD_TERMS` closed
+map, `MAX_TRANSCRIPTION_PROMPT_CHARS=600`, `golf_baseline_prompt()`, and
+`build_transcription_prompt(session)` (most-specific-first: player's own clubs via
+`CLUB_DISPLAY_NAMES` with unknown keys DROPPED not `.get(k,k)`-fallback'd, then this-hole
+hazards, then golf baseline; `None` session → `None` prompt). `realtime_relay.py` gets an
+additive keyword-only `transcription_prompt` kwarg on both `build_session_payload` and
+`mint_ephemeral_session` — absent/falsy leaves the transcription dict byte-identical to today's
+`{model, language}`. `routes/realtime.py`: round route computes
+`build_transcription_prompt(session)` post current_hole-override; setup route passes
+`golf_baseline_prompt()`. Injection-safety load-bearing: prompt composed entirely from
+closed-set constants, lands at `transcription.prompt` only — never `session.instructions`.
+
+Consequential mechanical fix (not scope creep): updated the two pre-existing `fake_mint` stubs
+in `tests/test_realtime_tools.py` to accept the new `transcription_prompt=None` keyword — the
+additive kwarg is real (route now passes it), so the old stubs would TypeError without this;
+no assertions were touched/weakened, just the mock signature.
+
+Gates (all green):
+- `backend && ruff check .` → All checks passed!
+- `backend && uv run python -m pytest tests/test_transcription_prompt.py tests/test_realtime_payload.py tests/test_realtime_tools.py -q` → 34 passed
+- `frontend && npm run lint` → clean; `npx tsc --noEmit` → clean; `npx tsx voice-tests/runner.ts --smoke` → pass=274 fail=0
+- Teeth proven: `git stash -u` (all 6 changed/new files) then re-ran `test_transcription_prompt.py`
+  → "file or directory not found" (module + test file don't exist pre-change) — confirmed RED,
+  then `git stash pop` restored cleanly; ruff + full suite re-verified green after restore.
+- G4 (live mint 200 + echoed `transcription.prompt`): no `OPENAI_API_KEY` in local shell env and
+  `.env*` is off-limits — deferred to CI/staging per plan §5 (additive field; a rejection would
+  be a loud 400, not silent). Not blocking.
+
+Classification (plan §6): **noticeable-leaning, modest** — owner should feel fewer misheard
+*domain* words (club names, scoring terms, hazards) in LIVE mode; will not eliminate all
+invented words from wind/partner noise. Rides bundle PR #122 (no new PR opened).
+
 ## 2026-07-09 cycle 46 — PICK: caddie-bend-distance (NOTICEABLE, rides bundle #121)
 
 Step 0 done: PR #121 OPEN + STRICT-green on 06c7bb0 (S2 booking-handoff silent + physics
