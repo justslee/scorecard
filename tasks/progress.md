@@ -3,6 +3,21 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING — cycle 72 caddie-guide-injection-hardening (eng-lead)
+Built + pushed on `integration/next` at HEAD `fe2570f` (backend-only, SILENT
+security hardening). Awaiting **reviewer** (fresh adversarial security review of
+the diff `7bb0d72..fe2570f`).
+- SHIP/clean → run QA gates (ruff + full backend pytest via CI; frontend
+  lint/tsc/voice-smoke), then update bundle PR checklist + backlog
+  (`caddie-guide-injection-hardening` → shipped) + progress, commit+push,
+  confirm strict-green. SILENT — no ship/ping.
+- BLOCKING findings → re-dispatch builder, re-review, then as above.
+Fixes: MED-1 (newline flatten + validate reject), MED-2 (read-time re-validate
+in /course-intel covering BOTH mouths via session.hole_intel), LOW-3 (per-item
+mistake cap), LOW-1/2 (plan §9/§10 doc correction). All fixes have RED-before
+tests (verified: 7 target tests fail on pre-fix source, 186 offline tests green
+with fix).
+
 ## 2026-07-10 — builder: tee-time setup UX owner-feedback fixes — DONE, on integration/next
 
 Implemented `specs/teetime-setup-ux-owner-feedback-plan.md` (owner testing
