@@ -64,7 +64,10 @@ class CallTokenRegistry:
         """Create a new single-use token bound to `ctx`. Never network I/O."""
         self._purge_expired()
         token = secrets.token_urlsafe(32)  # 256 bits — unguessable
-        loop = asyncio.get_event_loop()
+        # `mint` is always called from within run_call's async context (a
+        # running loop always exists there) — get_running_loop() avoids the
+        # deprecated implicit-loop-creation fallback of get_event_loop().
+        loop = asyncio.get_running_loop()
         pending = PendingCall(
             ctx=ctx,
             future=loop.create_future(),
