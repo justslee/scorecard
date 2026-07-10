@@ -10805,3 +10805,11 @@ re-verified strict-green (every REQUIRED gate state:SUCCESS) on the FINAL head S
 2. Reviewer nits (cosmetic, silent): hazards.py ring-closure dedupe uses exact float equality
    (epsilon dedupe stricter); 30y spread test compares round-to-5 values (raw 27.6y can emit a
    range). Neither affects correctness; fold into a future caddie-hazards touch.
+
+## CYCLE 53 START (2026-07-09) — teetime-show-real-time-options (NOTICEABLE) on bundle #125
+Owner sent tee-time screenshots (spec: specs/teetime-results-ux-fixes.md). THREE linked P1 bugs:
+(1) show actual TIME OPTIONS not the search window (foreUP has real slots — S1); call-route → honest ask.
+(2) displayed window != submitted prefs (plumbing prefs→dispatch→result).
+(3) found course NOT selected — dispatch/search must honor selected course ids; honest-empty if none.
+Sync clean; no pending "ship it". Riding bundle PR #125.
+## AWAITING: Fable plan (specs/teetime-show-real-time-options-plan.md). Next → dispatch builder on plan.
