@@ -11697,3 +11697,19 @@ commit on `integration/next`:
 ## Cycle 67 (2026-07-10) — coverage expansion (owner default: more engines, no redirect)
 - Cycle 66 (s3b-review-nits) shipped-ready on #129. Owner fired loop without redirecting the direction fork → default = more coverage.
 - AWAITING: eng-lead teetime-s4c2-coverage-expansion — probe+seed more NY courses on foreUP/TeeItUp/Chronogolf (+ Teesnap if NY exists), real fixtures only. Grow past 11 courses. Land on #129.
+
+## Cycle 67 (2026-07-10) — coverage expansion: eng-lead recon + builder dispatch
+Engines RE-VERIFIED live today (all 3 intact):
+- TeeItUp golf-nyc facility 5044 (Douglaston) → 78 real teetimes for +3. Endpoint OK.
+- Chronogolf rock-spring (club 10038 / course 11517 / aff 40974) → real slots. Endpoint OK.
+- foreUP 18 Mile Creek (schedule 4467, api_key=no_limits) → real times. Endpoint OK.
+Recon findings (de-risk the builder):
+- DISCOVERY LEVER: `GET https://phx-api-be-east-1b.kenna.io/facilities` with header `x-be-alias:<tenant>` enumerates a WHOLE TeeItUp tenant's facilities at once (id,name,address). Highest-yield vector once a tenant alias is known.
+- golf-nyc tenant EXHAUSTED: has 9 facilities; 8 real courses already seeded, 9th (id 16016) is "Flushing Meadows Pitch and Putt" (marginal, likely skip).
+- essex-group tenant (Essex County NJ, plan §hyp) = DEAD END for verified-real: 3 facilities (Francis Byrne 5962, Hendricks Field 5965, Weequahic 5966) all return HTTP 200 but ZERO teetimes across every date +1..+10 → resident-gated, no public availability. Do NOT seed (fails "verified returns real availability"). Honest negative result.
+- CAUTION: tests/test_tee_time_capability_store_generalized.py hard-asserts exact counts (8 teeitup, 3 chronogolf) + exact name sets against the SHIPPED seed. Adding rows REQUIRES re-scoping those assertions to the new verified counts/names (same as S4c re-scoped S4a) — NOT weakening (keep platform_ids-present, probe_status=verified, real-coords checks).
+- SHIP path: seeded rows must go in checked-in `backend/data/booking_capabilities_seed.json` (validated file is gitignored/script-only).
+
+## AWAITING (cycle 67): builder on teetime-s4c2-coverage-expansion @ integration/next.
+Task: web-research + live-probe NY-metro public courses on foreUP / Chronogolf / other TeeItUp tenants; seed only rows verified to return REAL availability (non-empty on >=1 probed date); capture >=1 new fixture/engine; update exact-count test assertions to new verified set; skip Teesnap unless a live NY teesnap.net course found. Commit+push after build.
+Outcomes: SHIP-clean → reviewer+QA; BLOCKING → re-dispatch builder. Reconcile from origin/integration/next on resume.
