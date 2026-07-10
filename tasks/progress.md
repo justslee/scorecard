@@ -11192,7 +11192,8 @@ Head after bookkeeping pending; CI to re-verify strict-green at ship time.
 ## Cycle 61 (2026-07-10) — IN PROGRESS
 - Board + PRs: no new owner feedback; #125 still awaits ship-it. Confirmed fcb-caption items already shipped.
 - Scoped the vague p2 stub into a real finding: F/C/B mapped-branch fallback shows fabricated `distance±offset` (a ~40% illustration placeholder) when geometry is null but source isn't card-only → fake yardages on the core surface (no-fake-data violation).
-- AWAITING: eng-lead pass on **fcb-unmapped-paper-fallback-mismatch** (p2): replace the fabricated fallback with honest card-only tiles. Land on #125. No ship/no ping.
+- DONE: **fcb-unmapped-paper-fallback-mismatch** landed on #125 (code 071e2d4→6825103). Killed fabricated distance±offset F/C/B fallback; extracted pure buildFcbTiles helper (no-fake-data invariant: no real geometry → honest card-only), caption derives from same source. Reviewer traced 3 paths unchanged, designer folded caption-honesty fix, 10 headless tests. Backend gate hit a container-init infra flake → re-ran → STRICT-GREEN on 6825103 (both gates SUCCESS). Bundle #125 = 6 noticeable/correctness + hardening, awaits owner ship-it. See [[ci-backend-container-init-flake]].
+- HOLDING after cycle 61 — recommend ship #125. Remaining ready work is p3 copy nits / measurement-gated / owner-blocked.
 
 ## Cycle 61 — DONE: fcb-unmapped-paper-fallback-mismatch (SHIPPED to bundle)
 integration/next @ 31c2067 (PR #125). No-fake-data correctness fix on the core yardage surface.
