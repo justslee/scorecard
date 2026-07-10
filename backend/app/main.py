@@ -86,6 +86,12 @@ app.include_router(pins.router, dependencies=_owner_only)
 app.include_router(scorecard.router, dependencies=_owner_only)
 app.include_router(tee_times.router, dependencies=_owner_only)
 
+from app.routes import voice_booking_ws  # noqa: E402
+# DELIBERATELY NOT _owner_only: Twilio's media stream cannot carry owner auth.
+# Sole guard = single-use unguessable call token minted by LiveCallTransport
+# (backend/app/services/voice_booking/call_registry.py). See voice_booking_ws.py.
+app.include_router(voice_booking_ws.router)
+
 
 @app.on_event("startup")
 async def startup():

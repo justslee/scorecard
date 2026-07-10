@@ -34,7 +34,9 @@ from __future__ import annotations
 import logging
 import os
 
-from .base import BookingDetails, BookingResult, TeeTimeQuery, TeeTimeSlot
+from app.services.voice_booking.provider import VoiceCallProvider
+
+from .base import BookingDetails, BookingResult, TeeTimeProvider, TeeTimeQuery, TeeTimeSlot
 from .capability_store import CourseBookingCapability, load_capabilities, match_capability
 from .foreup import ForeUpProvider
 from .routing import CourseFinder, RoutingTeeTimeProvider, build_route_entry
@@ -54,6 +56,8 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         foreup: ForeUpProvider | None = None,
         capabilities=None,
         foreup_enabled: bool | None = None,
+        voice: TeeTimeProvider | None = None,
+        voice_enabled: bool | None = None,
     ) -> None:
         super().__init__(find_courses)
         self._foreup = foreup or ForeUpProvider()
@@ -62,6 +66,17 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
             foreup_enabled
             if foreup_enabled is not None
             else os.getenv("TEETIME_FOREUP_ENABLED", "1") != "0"
+        )
+        # AI phone-call booking route (S3). Empty allowlist by default →
+        # VoiceCallProvider refuses every number (needs_human) until an owner-
+        # verified pro-shop landline is loaded. TODO(S3b): load owner-verified
+        # lines from VOICE_BOOKING_VERIFIED_LINES (comma-separated) once a real
+        # line is verified + attorney sign-off.
+        self._voice = voice or VoiceCallProvider()
+        self._voice_enabled = (
+            voice_enabled
+            if voice_enabled is not None
+            else os.getenv("VOICE_BOOKING_ENABLED") == "1"
         )
 
     @property
@@ -115,4 +130,10 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
     async def book(self, slot: TeeTimeSlot, details: BookingDetails) -> BookingResult:
         if slot.provider == "foreup":
             return await self._foreup.book(slot, details)
+        # S3: a phone-only course (route=="call" + a known number) books via
+        # the AI caller. Gated on VOICE_BOOKING_ENABLED so, when disabled (the
+        # default), this path is inert and book() stays byte-identical to S0's
+        # honest handoff — and never grows the S0 path a network side-effect.
+        if self._voice_enabled and slot.route == "call" and slot.phone:
+            return await self._voice.book(slot, details)
         return await super().book(slot, details)

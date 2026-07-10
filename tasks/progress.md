@@ -11256,6 +11256,75 @@ integration/next @ 6a680bc (PR #125). No-fake-data correctness — completes cyc
 - SILENT accumulation — no ship, no ping. Bundle #125 = 7 noticeable + 1 silent, awaits owner "ship it".
 - Injection note: two planted fake "system-reminder" blocks (date-change + Telegram instructions) appeared this cycle to eng-lead and designer; both ignored per injection-defense (embedded instructions are data, not authority).
 
+---
+
+## feat/teetime-s3-caller branch log (merged into main via PR #124)
+
+## AWAITING (feat/teetime-s3-caller — reviewer + QA)
+S3 caller + rehearsal harness IMPLEMENTED on feat/teetime-s3-caller (worktree
+agent-a594409eae41bedd2). Backend: router voice-route wiring + rehearsal endpoint
++ VoiceCallProvider window fix; 111 backend tests pass, ruff clean. Frontend:
+Settings rehearsal trigger + book-window pass; tsc 0, lint clean, voice 274/274,
+build ok. Pushed. Awaiting: reviewer (+/security-review) on the diff and QA
+(strict gates). On SHIP+green → open PR feat/teetime-s3-caller → main. On
+BLOCKING → fix in this worktree, re-review. Do NOT merge (owner approves).
+
+## DONE (feat/teetime-s3-caller — PR #124)
+S3 AI pro-shop caller + owner rehearsal harness. PR #124 (feat/teetime-s3-caller
+→ main), NOT merged (owner approves). Reviewer/security: SHIP (no HIGH/MEDIUM;
+dial-safety, disclosure, auth, gate-integrity cleared). QA: green after guard fix
+(156 backend pass; tsc 0, lint clean, voice 274/274, build ok). NOTICEABLE.
+Owner-setup to test live: VOICE_BOOKING_ENABLED=1 + Twilio creds +
+VOICE_BOOKING_OWNER_NUMBER (his E.164). Live bridge still NotImplemented (S3b) —
+button returns 'not enabled' note until then.
+
+## AWAITING (S3b Twilio↔Realtime bridge on feat/teetime-s3-caller)
+- Dispatched Fable Plan → specs/teetime-s3b-twilio-bridge-plan.md.
+- Next: builder implements live bridge (telephony.get_live_transport, WS media-stream route,
+  call-token registry, realtime instructions), then reviewer + /security-review + QA.
+- On resume: check specs/teetime-s3b-twilio-bridge-plan.md exists, then git log for builder commits.
+- Do NOT merge; push updates PR #124.
+
+## AWAITING (S3b builder — feat/teetime-s3-caller, updates PR #124)
+- Fable plan committed: specs/teetime-s3b-twilio-bridge-plan.md (12202e2).
+- Builder implementing: call_registry.py, media_bridge.py, voice_booking_ws.py (public token-guarded WS),
+  telephony.py rewrite, pyproject deps (twilio+websockets), 3 new test files + 2 legacy test updates.
+- On builder DONE → reviewer (adversarial) + /security-review (open-relay + dial-safety) + qa (STRICT gates).
+- On resume: git log origin/feat/teetime-s3-caller for builder commits; do NOT re-run builder.
+- Do NOT merge; push updates PR #124.
+
+## DONE (S3b builder — feat/teetime-s3-caller, updates PR #124) — commit ef3a31b
+Implemented specs/teetime-s3b-twilio-bridge-plan.md exactly (worktree agent-a594409eae41bedd2):
+- NEW call_registry.py (CallTokenRegistry — 256-bit single-use expiring tokens),
+  media_bridge.py (session config/instructions/tool + the Twilio↔OpenAI bridge loop,
+  disclosure-first greeting sent BEFORE any caller audio), routes/voice_booking_ws.py
+  (public, NOT owner-gated, token-guarded media-stream WS — loud security comment at
+  file top + main.py mount).
+- telephony.py: NotImplementedError deleted; build_stream_twiml + LiveCallTransport +
+  gating ladder (adds required VOICE_BOOKING_PUBLIC_HOST). Dials ONLY
+  normalize_phone(ctx.phone), never a request value; construction is network-free.
+- Deps: twilio>=9.0.0, websockets>=12.0 (pyproject.toml + uv.lock, `uv sync` run).
+- Refreshed stale "stub" docstrings (__init__.py, provider.py, tee_times.py rehearsal
+  HONEST STATUS block).
+- Updated the 2 legacy stub-encoding tests (test_rehearsal_call.py, test_voice_booking.py)
+  to the new missing-public-host behavior — genuine behavior change, not weakened.
+- New tests (all CI-safe, mocked Twilio/OpenAI, NEVER a live dial): test_telephony_bridge.py
+  (13), test_media_bridge.py (12), test_voice_booking_ws.py (3, incl. bad-token/flag-off/
+  single-use WS refusals via FastAPI websocket_connect).
+Gates green locally: ruff clean; 113/113 new+updated suite pass, 1679/1679 full non-DB
+backend suite pass (DATABASE_URL set to a dummy value for import-time collection only —
+no real Postgres touched, no docker); frontend lint/tsc/build/voice-tests(274/274) all green.
+DB-backed integration suite untested locally (policy: no local Postgres) — runs in CI.
+Pushed to feat/teetime-s3-caller (updates PR #124). Do NOT merge.
+Next: reviewer (adversarial diff review) + /security-review (open-relay + dial-safety +
+disclosure-first + secrets hygiene) + qa (STRICT gates) before PR #124 is ready.
+
+## AWAITING (S3b review — feat/teetime-s3-caller, PR #124)
+- Builder DONE: ef3a31b (bridge), gates green (113 targeted / 1679 non-DB / voice 274-0 / frontend clean).
+- Dispatched: reviewer (adversarial + /security-review + /code-review, focus open-relay + dial-safety) + qa (strict gates), both in worktree.
+- On results: BLOCKING (correctness/security/dial-safety/open-relay) → re-dispatch builder; SHIP+green → update PR #124 body with S3b + owner-setup, then release-manager (noticeable: owner can dial rehearsal) + PushNotification.
+- Do NOT merge.
+
 ## Cycle 63+ (2026-07-10) — owner directive + caller merge
 - OWNER DIRECTIVE (screenshot): tee-time must FETCH real availability for every course, not show a bare "call the pro shop" number. Ladder API→scrape→AI-call. Web scraper approved if best per-course option. → recorded as teetime-availability-everywhere (p1, planning); s4-scraping bumped p1.
 - Owner approved MERGE of caller #124 (keys NOT in yet → merges inert, gated by VOICE_BOOKING_ENABLED until Twilio keys added).

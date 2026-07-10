@@ -1136,7 +1136,18 @@ function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked 
     setPicking(slot.id);
     let result: BookingResult;
     try {
-      result = await bookTeeTime(slot, { name: bookerName ?? "Guest", partySize });
+      // Route entries (phone-call bookings) carry no time of their own —
+      // thread the ACTUAL dispatched window for this slot's date so the AI
+      // caller can ask the pro shop for the golfer's real ask, never a
+      // fabricated time. Real (foreup/mock) slots already have slot.time and
+      // ignore this.
+      const askWindow = asksForDate(asks, slot.date)[0];
+      result = await bookTeeTime(slot, {
+        name: bookerName ?? "Guest",
+        partySize,
+        timeWindowStart: askWindow?.start,
+        timeWindowEnd: askWindow?.end,
+      });
     } catch {
       // No request actually reached the booking service — never fabricate
       // "sent" copy. Honest needs_human handoff: the CTA still works via

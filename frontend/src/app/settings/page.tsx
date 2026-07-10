@@ -4,6 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useClerk } from '@clerk/react';
 import { T, PAPER_NOISE } from '@/components/yardage/tokens';
+import { placeRehearsalCall } from '@/lib/teetime/client';
+import type { RehearsalCallResponse } from '@/lib/teetime/types';
 
 // ---------------------------------------------------------------------------
 // Inline icons — no lucide-react
@@ -329,6 +331,146 @@ function ClearCacheButton() {
 }
 
 // ---------------------------------------------------------------------------
+// Rehearsal call — owner triggers the AI pro-shop caller to ring their OWN
+// number so they can role-play the shop and hear the exact script. Dialing is
+// server-gated; today this shows the disclosure + a calm "not enabled yet"
+// note until the live telephony bridge ships. No number is ever entered here —
+// the callee comes only from backend config.
+// ---------------------------------------------------------------------------
+
+function RehearsalCallSection() {
+  const [state, setState] = useState<'idle' | 'calling' | 'done' | 'error'>('idle');
+  const [resp, setResp] = useState<RehearsalCallResponse | null>(null);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  const run = async () => {
+    setState('calling');
+    setResp(null);
+    setErrMsg(null);
+    try {
+      setResp(await placeRehearsalCall());
+      setState('done');
+    } catch (e) {
+      setErrMsg(
+        e instanceof Error && e.message
+          ? e.message
+          : 'Could not reach the rehearsal service.',
+      );
+      setState('error');
+    }
+  };
+
+  const body: React.CSSProperties = {
+    fontFamily: T.serif,
+    fontSize: 14,
+    color: T.pencil,
+    fontStyle: 'italic',
+    lineHeight: 1.55,
+    letterSpacing: -0.1,
+    margin: 0,
+  };
+  const label: React.CSSProperties = {
+    fontFamily: T.mono,
+    fontSize: 9,
+    letterSpacing: 1.6,
+    color: T.pencil,
+    textTransform: 'uppercase',
+    fontWeight: 500,
+  };
+
+  return (
+    <>
+      <p style={body}>
+        Have Looper call your own phone and rehearse a tee-time booking, so you
+        can play the pro shop and hear exactly what it says. It never dials
+        anyone but you.
+      </p>
+
+      <button
+        onClick={run}
+        disabled={state === 'calling'}
+        style={{
+          width: '100%',
+          minHeight: 44,
+          marginTop: 14,
+          border: `1px solid ${T.hairline}`,
+          borderRadius: 99,
+          background: 'transparent',
+          cursor: state === 'calling' ? 'default' : 'pointer',
+          fontFamily: T.mono,
+          fontSize: 9,
+          letterSpacing: 1.3,
+          color: T.ink,
+          textTransform: 'uppercase',
+          fontWeight: 500,
+          opacity: state === 'calling' ? 0.55 : 1,
+          padding: '0 1rem',
+        }}
+      >
+        {state === 'calling' ? 'Calling…' : 'Place a rehearsal call'}
+      </button>
+
+      {state === 'error' && errMsg && (
+        <p style={{ ...body, marginTop: 12, color: T.pencilSoft }}>{errMsg}</p>
+      )}
+
+      {state === 'done' && resp && (
+        <div style={{ marginTop: 16 }}>
+          {resp.calleeNumber && (
+            <div style={{ ...label, marginBottom: 6 }}>
+              Would ring {resp.calleeNumber}
+            </div>
+          )}
+
+          {resp.disclosure && (
+            <p style={{ ...body, fontStyle: 'normal', marginBottom: 12 }}>
+              “{resp.disclosure}”
+            </p>
+          )}
+
+          {resp.status !== 'completed' && resp.reason && (
+            <p style={{ ...body, color: T.pencilSoft }}>{resp.reason}</p>
+          )}
+
+          {resp.status === 'completed' && resp.transcript.length > 0 && (
+            <div
+              style={{
+                borderTop: `1px dashed ${T.hairline}`,
+                paddingTop: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              {resp.transcript.map((turn, i) => (
+                <div key={i}>
+                  <div style={label}>{turn.speaker === 'agent' ? 'Looper' : 'Shop'}</div>
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontSize: 14,
+                      color: T.ink,
+                      lineHeight: 1.5,
+                      marginTop: 2,
+                    }}
+                  >
+                    {turn.text}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {resp.status === 'completed' && resp.result?.message && (
+            <p style={{ ...body, marginTop: 12 }}>{resp.result.message}</p>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -522,6 +664,11 @@ export default function Settings() {
             device&apos;s offline cache will be cleared.
           </p>
           <ClearCacheButton />
+        </Section>
+
+        {/* ── Rehearsal call section (owner tool) ──────────────────── */}
+        <Section kicker="Tee times" title="Rehearsal call">
+          <RehearsalCallSection />
         </Section>
       </div>
     </div>

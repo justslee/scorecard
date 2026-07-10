@@ -345,3 +345,118 @@ class TestNeverRaises:
             "18 Mile Creek Golf Course", "Plain Public Course", "No Website Municipal Course",
         }
         assert fake.calls == []
+
+
+# ─── S3: the AI phone-call booking route (specs/teetime-s3-caller-plan.md §2) ──
+
+
+def _call_slot() -> TeeTimeSlot:
+    """A phone-only routed slot: route=="call" + a known number, no website."""
+    return TeeTimeSlot(
+        id="way/999-2026-07-11-route", course_id="way/999",
+        course_name="No Website Municipal Course", city="Nowhere, NY",
+        date="2026-07-11", time="", players=2, price_usd=None, cart_included=False,
+        distance_miles=1.0, rating=0.0, provider="routing", holes=18,
+        booking_url=None, route="call", phone="+17165551212",
+    )
+
+
+class _ExplodingTransport:
+    """A call transport that MUST NOT be reached — proves no dial happens."""
+
+    async def run_call(self, ctx):  # pragma: no cover - asserts if invoked
+        raise AssertionError("transport.run_call must never be reached (no dial)")
+
+
+async def _boom_phone_lookup(*_a, **_k):  # pragma: no cover - asserts if invoked
+    raise AssertionError("phone_lookup must not run — slot already carries a phone")
+
+
+class TestVoiceCallRouteWiring:
+    async def test_disabled_is_byte_identical_s0_handoff(self):
+        """Voice disabled (the default) → a call-route slot books via the exact
+        S0 honest handoff, unchanged. No voice provider is consulted."""
+        from app.services.voice_booking.provider import VoiceCallProvider
+
+        voice = VoiceCallProvider(transport=_ExplodingTransport())
+        provider = RoutedTeeTimeProvider(
+            find_courses=_fake_finder(), voice=voice, voice_enabled=False,
+        )
+        result = await provider.book(_call_slot(), BookingDetails(name="Owner", party_size=2))
+        assert result.status == "needs_human"
+        # Exact S0 message for a website-less course (no online booking link).
+        assert result.message == (
+            "Call or visit No Website Municipal Course to book — "
+            "no online booking link is available."
+        )
+
+    async def test_enabled_empty_allowlist_needs_human_without_a_dial(self):
+        """Voice enabled but no owner-verified line → compliance refuses BEFORE
+        any transport is touched. Proves the wire AND the allowlist gate."""
+        from app.services.voice_booking.provider import VoiceCallProvider
+
+        voice = VoiceCallProvider(
+            transport=_ExplodingTransport(),
+            phone_lookup=_boom_phone_lookup,
+            verified_lines=set(),          # nothing verified → refuse every number
+        )
+        provider = RoutedTeeTimeProvider(
+            find_courses=_fake_finder(), voice=voice, voice_enabled=True,
+        )
+        details = BookingDetails(
+            name="Owner", party_size=2,
+            time_window_start="09:00", time_window_end="11:00",
+        )
+        result = await provider.book(_call_slot(), details)
+        assert result.status == "needs_human"
+        assert "not an owner-verified business landline" in (result.message or "")
+
+    async def test_enabled_but_book_on_site_slot_uses_s0(self):
+        """route=="book_on_site" is NOT a call route — even with voice enabled it
+        still hands off to the site, never to the voice provider."""
+        from app.services.voice_booking.provider import VoiceCallProvider
+
+        voice = VoiceCallProvider(transport=_ExplodingTransport())
+        provider = RoutedTeeTimeProvider(
+            find_courses=_fake_finder(), voice=voice, voice_enabled=True,
+        )
+        slot = TeeTimeSlot(
+            id="gplaces-plain-2026-07-11-route", course_id="gplaces-plain",
+            course_name="Plain Public Course", city="Somewhere, NY", date="2026-07-11",
+            time="", players=2, price_usd=None, cart_included=False, distance_miles=1.0,
+            rating=3.8, provider="routing", holes=18,
+            booking_url="https://plainpublic.example.com/", route="book_on_site",
+        )
+        result = await provider.book(slot, BookingDetails(name="Owner", party_size=2))
+        assert result.status == "needs_human"
+        assert result.booking_url == "https://plainpublic.example.com/"
+
+    async def test_enabled_call_route_without_phone_uses_s0(self):
+        """A call route with NO phone can't be dialed — falls through to S0."""
+        from app.services.voice_booking.provider import VoiceCallProvider
+
+        voice = VoiceCallProvider(transport=_ExplodingTransport())
+        provider = RoutedTeeTimeProvider(
+            find_courses=_fake_finder(), voice=voice, voice_enabled=True,
+        )
+        slot = _call_slot()
+        slot.phone = None
+        result = await provider.book(slot, BookingDetails(name="Owner", party_size=2))
+        assert result.status == "needs_human"
+        assert "Call or visit" in (result.message or "")
+
+    async def test_foreup_slot_still_takes_precedence_over_voice(self):
+        """Dispatch order: a foreup slot still books through foreUP even with
+        voice enabled — the voice route never shadows a real-inventory slot."""
+        from app.services.voice_booking.provider import VoiceCallProvider
+
+        fake = FakeForeUp(result=[])
+        voice = VoiceCallProvider(transport=_ExplodingTransport())
+        provider = RoutedTeeTimeProvider(
+            find_courses=_fake_finder(), foreup=fake, capabilities=lambda: (_CAP,),
+            voice=voice, voice_enabled=True,
+        )
+        slot = _real_slot(_CAP, _query(), "10:00")
+        result = await provider.book(slot, BookingDetails(name="Owner", party_size=2))
+        assert len(fake.book_calls) == 1
+        assert result.message == "fake foreup book"
