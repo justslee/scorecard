@@ -11202,3 +11202,7 @@ integration/next @ 31c2067 (PR #125). No-fake-data correctness fix on the core y
 - Reviewer: SHIP. Designer: APPROVE (caption fold done). QA: lint/tsc clean, voice 274/274, vitest 39/39 targeted.
 - Follow-up logged: fcb-plays-tile-fabricated-fallback (p3) — PLAYS tile still derives from `distance` in the same state (showCardOnly left untouched per scope; flagged by both reviewer+designer).
 - SILENT accumulation — no ship, no ping (owner authorized bundling; #125 awaits owner "ship it").
+
+## Cycle 62 (2026-07-10) — IN PROGRESS
+- Board + PRs: no new owner feedback; #125 still awaits ship-it.
+- AWAITING: eng-lead pass on **fcb-plays-tile-fabricated-fallback** (p3, no-fake-data follow-up flagged by BOTH reviewer+designer in cycle 61): PLAYS tile still computes off the `distance` placeholder in the anchor-only/fcb-null/source-'tee' state → fabricated plays-like beside honest '—' F/C/B. Widen plays/physics/caption card-only condition to effectiveFcbSource(fcbSource,fcb)==='card'. Land on #125. No ship/no ping.
