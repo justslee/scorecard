@@ -11879,3 +11879,12 @@ fields (status live|pending, checked_via/checked_at). SHIPS DARK — nothing dia
 VOICE_BOOKING_ENABLED + Twilio keys + owner allowlist. On builder return → commit+push already
 done by builder; then reviewer (SECURITY lens) + QA + designer. BLOCKING → re-dispatch builder.
 If I die: reconcile origin/integration/next, read builder's actual commits, do NOT rebuild.
+
+## AWAITING (cycle 68): reviewer+QA+designer on S4e @ 1ed2b71
+Builder landed S4e (availability-by-call, ships dark). 17 files, 51 new tests, builder gates
+green (1936 backend / 1922 vitest / 274 voice-smoke). Reviewer=SECURITY lens (still-inert/
+dial-safe, no-fabricated-times, window-fix, not-prompt-steerable, cache TTL, ladder byte-
+identical, tests not weakened). QA=all gates SUCCESS on 1ed2b71. Designer=CTA/async states
+calm+honest. On all-green → update PR #129 checklist + backlog shipped + progress; commit+push;
+SILENT (no ship/ping). BLOCKING → re-dispatch builder. If I die: reconcile origin/integration/
+next @ 1ed2b71, read children's verdicts, do NOT rebuild.
