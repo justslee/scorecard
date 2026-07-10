@@ -11780,3 +11780,12 @@ Builder landed 17 new verified-real courses (11→28): teeitup 20, chronogolf 4,
 Eng-lead independent live spot-checks PASSED (no fabrication, correct mapping):
 Dunwoodie TeeItUp westchester-county 5814→7 times; Green Knoll somerset-group-v2 7092 name-match; Putnam Chronogolf 19798/28120/149215→84 slots course_id-match no-resident; Rockland Lake foreUP 2442→42 slots exact course_name match.
 Outcomes: both green → update PR #129 checklist (NOTICEABLE addition) + backlog shipped + DONE. BLOCKING → re-dispatch builder. SILENT bundle — no ship/ping this cycle.
+
+## teetime-s4c2-coverage-expansion LANDED on integration/next (cycle 67, 2026-07-10) — reviewer CLEAN + QA PASS
+- Builder @ a0fb85b: coverage 11→28 live-verified NY-metro courses. teeitup 8→20, chronogolf 3→4, foreup +4 (generalized seed). 4 real fixtures. Count assertions re-scoped (not weakened).
+- Eng-lead independent live spot-checks PASSED: Dunwoodie(teeitup wc 5814→7), Green Knoll(somerset 7092 name-match), Putnam(chronogolf 19798/28120/149215→84, no-resident), Rockland Lake(foreup 2442→42, exact course_name). No fabrication, no wrong-course.
+- Reviewer (a3dc49a2, fresh adversarial, independent live-probe of a DIFFERENT sample): CLEAN. All 12 new teeitup + 4 foreup + Putnam chronogolf return real slots; foreUP course_name field authoritatively matches seed names; reverse-geocode confirms correct town/county/state; Quail/Spooky now distinct correct coords (~2.6mi apart); tests re-scoped not weakened (lng bound -73.0→-72.5 justified by real Middle Island -72.94); no app code-path change; JSON valid. Non-blocking: 4 fixtures are inert provenance snapshots (fine).
+- QA (ad0962b9): PASS on f1c13c3 — ruff clean; pytest 1885 passed / 83 pg-skip / 0 fail (tee-time suites 166/166); seed JSON valid 28 rows; frontend untouched (frontend/E2E gates N/A). No DB container (CI runs pg tests).
+- Honest negatives (NOT seeded): Hudson Hills resident-gated, Skyway all-Non-Resident, Monmouth passholder-gated, essex-group teeitup 0-avail, wrong-state collisions. Teesnap SKIPPED (no live NY teesnap.net trivially found).
+- Classification: NOTICEABLE (more courses show real tee times). Bundle #129 now has ≥1 noticeable change. PR #129 title+body updated (checklist). backlog.json: teetime-s4c2-coverage-expansion → shipped (landed_commit a0fb85b).
+- Per this cycle's directive: SILENT — no ship, no owner ping. Bundle #129 rides to the owner on the NEXT ship decision (or when the loop decides to request approval for the accumulated noticeable bundle). Do NOT auto-ship.
