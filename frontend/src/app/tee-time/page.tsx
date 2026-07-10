@@ -361,6 +361,10 @@ function Prefs({
 }: PrefsProps) {
   const [showRoster, setShowRoster] = useState(false);
   const [showCourseSearch, setShowCourseSearch] = useState(false);
+  // The window just added by "Add another window" — its WindowCard auto-opens
+  // the date calendar once on mount (a NEW window has no obvious date-edit
+  // affordance yet; existing cards are untouched).
+  const [justAddedId, setJustAddedId] = useState<string | null>(null);
 
   /** "+ Add course" pick — appended with an honest distance, de-duped by name. */
   const addCourse = (payload: CourseSelectPayload) => {
@@ -534,8 +538,10 @@ function Prefs({
    *  (never a duplicate stamp of the last one added). */
   const addWindow = () => {
     const slot = nextDefaultWindow(windows);
+    const id = `custom-${Date.now()}`;
+    setJustAddedId(id);
     setWindows([...windows, {
-      id: `custom-${Date.now()}`,
+      id,
       label: slot.label,
       sub: slot.sub,
       start: slot.start,
@@ -581,6 +587,7 @@ function Prefs({
               key={w.id}
               win={w}
               accent={accent}
+              autoOpenCalendar={w.id === justAddedId}
               onToggle={() => toggleWin(w.id)}
               onEdit={(start, end) => editWindow(w.id, start, end)}
               onPickDate={(date) => pickWindowDate(w.id, date)}
@@ -926,10 +933,26 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
         try {
           const results = await searchTeeTimes(q);
           allSlots = [...allSlots, ...results];
-          if (results.length > 0) {
-            const isRouteEntries = Boolean(results[0]?.route);
+          const isRouteEntries = results.length > 0 && Boolean(results[0]?.route);
+          // Route entries are the backend's DISCOVERY set (up to MAX_COURSES
+          // nearby public courses) — report the golfer's PICKS THAT ARE OPEN,
+          // computed the same way Options is (filterToSelection, then
+          // deduped by groupSlotsByCourse), so this line always matches what
+          // Options actually offers. Never advertise an unoffered "nearby
+          // extra" — with an explicit selection, only picks count.
+          const picksOpen = isRouteEntries && selectedCourses.length > 0
+            ? groupSlotsByCourse(
+                filterToSelection(results, selectedCourses.map((c) => ({ id: c.id, name: c.name }))),
+              ).length
+            : results.length;
+
+          if (isRouteEntries && selectedCourses.length > 0 && picksOpen === 0) {
+            append({ t: nowStr(), text: `Nothing in ${q.timeWindowStart}–${q.timeWindowEnd}`, state: "miss", course: "" });
+          } else if (results.length > 0) {
             const text = isRouteEntries
-              ? `${results.length} course${results.length !== 1 ? "s" : ""} open to the public in ${q.timeWindowStart}–${q.timeWindowEnd}`
+              ? selectedCourses.length > 0
+                ? `${picksOpen} of your ${selectedCourses.length} pick${selectedCourses.length !== 1 ? "s" : ""} open to the public in ${q.timeWindowStart}–${q.timeWindowEnd}`
+                : `${picksOpen} course${picksOpen !== 1 ? "s" : ""} open to the public in ${q.timeWindowStart}–${q.timeWindowEnd}`
               : `${results.length} slot${results.length !== 1 ? "s" : ""} in ${q.timeWindowStart}–${q.timeWindowEnd}`;
             append({ t: nowStr(), text, state: "ok", course: "" });
           } else {
