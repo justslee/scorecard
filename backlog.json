@@ -104,9 +104,9 @@
       "type": "major",
       "priority": 2,
       "risk": "high",
-      "status": "ready",
+      "status": "researched",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (hands-free + only-owner's-voice): the real answer is a one-time voice ENROLLMENT (~5-10s -> speaker embedding) + a Target-Speaker VAD gate that opens the mic-to-model only when the enrolled owner speaks \u2014 rejects partners without breaking hands-free. Spike: which on-device (Core ML) TSVAD/speaker-embedding model, latency budget vs the realtime speech-to-speech path (preprocessing fights sub-second latency \u2014 on-device is the sweet spot), enrollment UX. NOT train-from-scratch (pretrained models exist). Full VoiceFilter extraction only if TSVAD gating insufficient. Fable plan. specs/voice-target-speaker-research.md."
+      "why": "SPIKE DONE (PR #127): Tier-1 mic constraints (echoCancel/noiseSuppress/autoGain + backend near_field) ALREADY SHIPPED (~70% of the value, no code win left). Tier-2 TSVAD = FEASIBLE/medium as a NATIVE Core ML Capacitor plugin (WKWebView can't do threaded WASM); Personal-VAD arch, named pretrained models; pure tested SpeakerGate core committed unwired. GO when prioritized (sequence after voice-reliability). Tier-3 VoiceFilter = defer. OWNER 2026-07-09 (hands-free + only-owner's-voice): the real answer is a one-time voice ENROLLMENT (~5-10s -> speaker embedding) + a Target-Speaker VAD gate that opens the mic-to-model only when the enrolled owner speaks \u2014 rejects partners without breaking hands-free. Spike: which on-device (Core ML) TSVAD/speaker-embedding model, latency budget vs the realtime speech-to-speech path (preprocessing fights sub-second latency \u2014 on-device is the sweet spot), enrollment UX. NOT train-from-scratch (pretrained models exist). Full VoiceFilter extraction only if TSVAD gating insufficient. Fable plan. specs/voice-target-speaker-research.md."
     },
     {
       "id": "voice-reject-distant-voices-tuning",
@@ -2168,6 +2168,16 @@
       "status": "done",
       "depends_on": [],
       "why": "PROD 2026-07-09: Bethpage 1038 tree + 5 woods (18/18 holes), Pebble 128 tree + 3 woods (13/18). The surface-osm-trees feature (#125) works immediately on ship; the fixture gap is CI-coverage only."
+    },
+    {
+      "id": "voice-vad-threshold-ab",
+      "title": "A/B raise server_vad threshold 0.5\u21920.6-0.7 (distant voices fall below trigger)",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Voice target-speaker spike (PR #127): the only remaining Tier-1 lever after the already-shipped mic constraints \u2014 raise server_vad energy threshold so distant partner voices don't trigger the caddie. Behavior-change A/B (too high = misses the owner's soft speech), so measure, don't ship blind. specs/voice-target-speaker-spike-report.md."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
