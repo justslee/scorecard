@@ -11377,3 +11377,7 @@ Owner-approved merge executed exactly per brief (keys NOT in yet condition).
 ## Cycle 64 (2026-07-10) — availability ladder S4a + Marine Park probe (owner: "test it; if not clean → scraper")
 - Owner GO on S4a→S4b; PRE-APPROVED the scraper route IF the clean fetch doesn't return clean Marine Park times.
 - Dispatching in parallel: (a) eng-lead S4a (capability store + fetch_discipline extract + TeeItUp adapter, LIVE-tested); (b) read-only live probe of Marine Park's EZLinks portal → decides 2a-httpx vs 2b-headless vs rung-3.
+
+## Marine Park probe verdict (2026-07-10)
+- EZLinks portal (marineparkridepp / golfnyc2.ezlinksgolf.com) = Cloudflare-Turnstile LOCKED, family-wide (~9 NYC munis). NO scraper (can't pass politely; ethical line). Evidence: scratchpad/FINDINGS.json, screen.png, api_resp.txt.
+- BETTER PATH: NYC munis also on TeeItUp golf-nyc.book.teeitup.com (clean rung-1). S4a redirected to live-verify Marine Park via that tenant → folds S4b into S4a if reachable; else rung-3 AI call. Owner's "scraper if not clean" → scraper dead-ends on Cloudflare, TeeItUp likely covers it clean instead.

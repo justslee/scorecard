@@ -2253,15 +2253,15 @@
     },
     {
       "id": "teetime-s4b-ezlinks-marine-park",
-      "title": "S4b: EZLinks portal adapter \u2014 Marine Park (the screenshot) returns real times",
+      "title": "S4b: Marine Park real times \u2014 via TeeItUp golf-nyc tenant (EZLinks is Cloudflare-locked; NO scraper)",
       "type": "major",
       "priority": 1,
-      "risk": "high",
-      "status": "blocked",
+      "risk": "medium",
+      "status": "folding-into-s4a",
       "depends_on": [
         "teetime-s4a-capability-store-teeitup"
       ],
-      "why": "THE DEMO MOMENT. Network-tab capture marineparkridepp.ezlinksgolf.com, build the 2a httpx adapter + fixture + Marine Park capability row. ACCEPTANCE: owner re-runs the exact screenshot search and sees real Marine Park times (not 'call the pro shop'). If the portal is signed/hostile \u2192 reclassify to rung 2b and pull S4d forward; honest-empty never regresses. Plan \u00a71,\u00a74a. Depends on S4a."
+      "why": "PROBE VERDICT 2026-07-10 (agent recon, evidence in scratchpad/FINDINGS.json): Marine Park's EZLinks portal is Cloudflare-Turnstile LOCKED \u2014 no clean HTTP JSON, headless Chromium never clears the gate, and the whole NYC EZLinks family (golfnyc2.ezlinksgolf.com, ~9 munis) is gated identically. DO NOT build an EZLinks scraper (can't pass politely; that's the ethical line \u2014 no CAPTCHA-solving/fingerprint-spoofing). BETTER PATH FOUND: NYC munis are ALSO on TeeItUp at golf-nyc.book.teeitup.com (clean rung-1, the S4a adapter). ACTION: S4a live-verifies Marine Park via the golf-nyc TeeItUp tenant \u2192 if reachable, add its capability row (folds this item into S4a, no scraper). If NOT on TeeItUp \u2192 route Marine Park to rung 3 (AI call) + GolfNow deep-link. Owner's 'if not clean \u2192 scraper' resolves to: scraper is a dead-end here (Cloudflare), but TeeItUp likely covers it cleanly instead."
     },
     {
       "id": "teetime-s4c-chronogolf-probe-quick18",
@@ -2285,7 +2285,7 @@
       "depends_on": [
         "teetime-s4a-capability-store-teeitup"
       ],
-      "why": "The only slice with deploy-image impact (~400MB Chromium, gated TEETIME_SCRAPER_ENABLED default off). In-process asyncio worker + bounded queue off the request path; TeeTimeSlot gains status live|pending; poll endpoint; frontend pending row; first browser-scraped engine (Club Prophet or hostile EZLinks). Plan \u00a74b,\u00a76,\u00a77. Depends on S4a."
+      "why": "NOTE 2026-07-10: EZLinks/Cloudflare-Turnstile sites are NOT scrapable politely even with a headless browser (probe confirmed Chromium never clears Turnstile) \u2014 do NOT target them with S4d. S4d headless is only for JS-rendered widgets WITHOUT anti-bot gates. Re-scope S4d's target engine after S4a/S4c reveal which engines actually need a browser. The only slice with deploy-image impact (~400MB Chromium, gated TEETIME_SCRAPER_ENABLED default off). In-process asyncio worker + bounded queue off the request path; TeeTimeSlot gains status live|pending; poll endpoint; frontend pending row; first browser-scraped engine (Club Prophet or hostile EZLinks). Plan \u00a74b,\u00a76,\u00a77. Depends on S4a."
     },
     {
       "id": "teetime-s4e-availability-by-call",
