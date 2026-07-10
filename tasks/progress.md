@@ -10327,7 +10327,7 @@ INVESTIGATION (provenance — matters because a naive filter could REGRESS to al
 - Classify: NOTICEABLE (selecting a course will actually narrow results — a visible behavior
   change) but rides #121 (already approval-eligible); NO SHIP this cycle.
 
-## AWAITING: Fable plan on specs/teetime-course-ids-wiring-plan.md
+## AWAITING: builder implementing specs/teetime-show-real-time-options-plan.md on integration/next (bugs #1-3 core + optional #4 label; #5 deferred). Next → reviewer + qa + designer on the pushed head.
 Dispatched Plan agent on FABLE to design the safe wiring: exact ID-provenance reconciliation
 (UI selected id ↔ routing course_id, incl. mapped-UUID + undefined-OSM-id cases), filter
 semantics (empty=all, mock-parity), the GUARD proving no always-zero regression (test with
@@ -10612,7 +10612,7 @@ Eval TEETH: eval harness backend/tests/eval/ — Tier1 prompt_contains_rule(INPU
 mouths=[text,realtime]) proven RED via mutation in test_harness_has_teeth.py then green; + a Tier2
 (live, non-CI) judge property for gibberish→ask-again on a new golden scenario ("Scars.").
 
-## AWAITING: Fable plan (specs/caddie-input-grounding-plan.md). On return: dispatch ONE builder to
+## AWAITING: builder implementing specs/teetime-show-real-time-options-plan.md on integration/next (bugs #1-3 core + optional #4 label; #5 deferred). Next → reviewer + qa + designer on the pushed head.
 implement it on integration/next; then reviewer (adversarial both ways) + qa (strict gates + eval
 teeth) in parallel. NOTICEABLE — rides bundle PR #122, update checklist. NO ship/NO ping this cycle.
 
@@ -10812,4 +10812,4 @@ Owner sent tee-time screenshots (spec: specs/teetime-results-ux-fixes.md). THREE
 (2) displayed window != submitted prefs (plumbing prefs→dispatch→result).
 (3) found course NOT selected — dispatch/search must honor selected course ids; honest-empty if none.
 Sync clean; no pending "ship it". Riding bundle PR #125.
-## AWAITING: Fable plan (specs/teetime-show-real-time-options-plan.md). Next → dispatch builder on plan.
+## AWAITING: builder implementing specs/teetime-show-real-time-options-plan.md on integration/next (bugs #1-3 core + optional #4 label; #5 deferred). Next → reviewer + qa + designer on the pushed head.
