@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   cosineSimilarity,
+  l2Normalize,
+  meanEmbedding,
+  serializeEmbedding,
+  deserializeEmbedding,
   SpeakerGate,
   DEFAULT_SPEAKER_GATE,
 } from "./speaker-gate";
@@ -25,6 +29,53 @@ describe("cosineSimilarity", () => {
 
   it("throws on length mismatch", () => {
     expect(() => cosineSimilarity([1, 2], [1, 2, 3])).toThrow(/length mismatch/);
+  });
+});
+
+describe("l2Normalize", () => {
+  it("scales to unit length, preserving direction", () => {
+    const n = l2Normalize([3, 4]);
+    expect(Math.hypot(n[0], n[1])).toBeCloseTo(1);
+    expect(cosineSimilarity(n, [3, 4])).toBeCloseTo(1);
+  });
+  it("leaves a zero vector unchanged", () => {
+    expect(l2Normalize([0, 0, 0])).toEqual([0, 0, 0]);
+  });
+});
+
+describe("meanEmbedding (enrollment centroid)", () => {
+  it("averages windows then normalises", () => {
+    const c = meanEmbedding([
+      [1, 0, 0],
+      [1, 0.1, 0],
+      [0.9, -0.1, 0],
+    ]);
+    expect(Math.hypot(...c)).toBeCloseTo(1);
+    expect(cosineSimilarity(c, [1, 0, 0])).toBeGreaterThan(0.99);
+  });
+  it("smooths out one noisy window (still points at the true voice)", () => {
+    const truth = [1, 0, 0, 0];
+    const noisy = [0, 1, 0, 0]; // one bad frame
+    const c = meanEmbedding([truth, truth, truth, noisy]);
+    expect(cosineSimilarity(c, truth)).toBeGreaterThan(cosineSimilarity(c, noisy));
+  });
+  it("throws on empty input and length mismatch", () => {
+    expect(() => meanEmbedding([])).toThrow(/no windows/);
+    expect(() => meanEmbedding([[1, 2], [1, 2, 3]])).toThrow(/length mismatch/);
+  });
+});
+
+describe("voiceprint serialization", () => {
+  it("round-trips an embedding through base64 (Float32 precision)", () => {
+    const emb = l2Normalize([0.12, -0.98, 0.34, 0.0, 0.5]);
+    const restored = deserializeEmbedding(serializeEmbedding(emb));
+    expect(restored).toHaveLength(emb.length);
+    restored.forEach((x, i) => expect(x).toBeCloseTo(emb[i], 6));
+  });
+  it("a restored voiceprint still matches its source (cosine ~1)", () => {
+    const emb = meanEmbedding([[1, 0.2, -0.3, 0.05], [0.9, 0.25, -0.28, 0.1]]);
+    const restored = deserializeEmbedding(serializeEmbedding(emb));
+    expect(cosineSimilarity(restored, emb)).toBeCloseTo(1, 5);
   });
 });
 

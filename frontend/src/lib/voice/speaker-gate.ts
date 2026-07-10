@@ -50,6 +50,74 @@ export function cosineSimilarity(a: readonly number[], b: readonly number[]): nu
 }
 
 /**
+ * L2-normalise a vector to unit length. Returns a zero vector unchanged (its
+ * direction is undefined). Speaker embeddings are compared by direction, so the
+ * enrollment centroid is normalised once and stored that way.
+ */
+export function l2Normalize(v: readonly number[]): number[] {
+  let mag = 0;
+  for (let i = 0; i < v.length; i++) mag += v[i] * v[i];
+  if (mag === 0) return v.slice();
+  const inv = 1 / Math.sqrt(mag);
+  return v.map((x) => x * inv);
+}
+
+/**
+ * Enrollment centroid: average N per-window embeddings into one L2-normalised
+ * reference vector. Averaging multiple short windows is the standard robustness
+ * trick — it smooths out per-window noise so one bad frame can't skew the
+ * voiceprint. All windows must share a length.
+ */
+export function meanEmbedding(windows: readonly (readonly number[])[]): number[] {
+  if (windows.length === 0) {
+    throw new Error("meanEmbedding: no windows provided");
+  }
+  const dim = windows[0].length;
+  if (dim === 0) throw new Error("meanEmbedding: empty embedding");
+  const sum = new Array<number>(dim).fill(0);
+  for (const w of windows) {
+    if (w.length !== dim) {
+      throw new Error(
+        `meanEmbedding: length mismatch (${w.length} vs ${dim})`,
+      );
+    }
+    for (let i = 0; i < dim; i++) sum[i] += w[i];
+  }
+  for (let i = 0; i < dim; i++) sum[i] /= windows.length;
+  return l2Normalize(sum);
+}
+
+/**
+ * Serialize a voiceprint embedding to a compact base64 string for on-device
+ * storage (Capacitor Preferences — never sent to the backend). Uses Float32 so
+ * a 192-dim embedding is ~768 bytes. Pairs with `deserializeEmbedding`.
+ *
+ * Isomorphic: uses `btoa`/`Buffer` depending on runtime so it works in the
+ * WKWebView and in Node/vitest.
+ */
+export function serializeEmbedding(v: readonly number[]): string {
+  const f32 = Float32Array.from(v);
+  const bytes = new Uint8Array(f32.buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  if (typeof btoa === "function") return btoa(binary);
+  return Buffer.from(bytes).toString("base64");
+}
+
+/** Inverse of `serializeEmbedding`. */
+export function deserializeEmbedding(b64: string): number[] {
+  let bytes: Uint8Array;
+  if (typeof atob === "function") {
+    const binary = atob(b64);
+    bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  } else {
+    bytes = new Uint8Array(Buffer.from(b64, "base64"));
+  }
+  return Array.from(new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4));
+}
+
+/**
  * Default cosine thresholds. Speaker-verification systems pick an operating
  * point near the Equal-Error-Rate (EER); for on-device ECAPA/Resemblyzer-class
  * embeddings a cosine ~0.5-0.7 is a common accept point. These are PLACEHOLDER
