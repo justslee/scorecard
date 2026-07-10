@@ -59,6 +59,21 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
  *  so a real locality is never mistaken for one). */
 const COUNTRY_SEGMENT_RE = /^(u\.?s\.?a\.?|united states(\s+of\s+america)?)$/i;
 
+/** Word-final street suffixes — mark a lone segment as a road, not a town.
+ *  Real one/two-word cities never end in these ("San Francisco", "Menlo Park"),
+ *  so this only ever rejects a street name standing where a locality belongs. */
+const STREET_SUFFIX_RE = /\b(rd|road|ave|avenue|blvd|pkwy|parkway|dr|drive|ln|lane|st|street|hwy|highway)$/i;
+/** Tokens that mark a segment as a golf venue / state park — never a locality.
+ *  Deliberately NOT bare "Park": real cities are named "Menlo Park", "Oak
+ *  Park", so "Park" alone must survive; only "state park" + golf tokens drop. */
+const VENUE_TOKEN_RE = /\b(golf|course|club|links|state\s+park)\b/i;
+
+/** True when a segment plainly names a venue or street rather than a town. */
+function isVenueOrStreetSegment(seg: string): boolean {
+  const s = seg.trim();
+  return VENUE_TOKEN_RE.test(s) || STREET_SUFFIX_RE.test(s);
+}
+
 /** Pull a short city label out of a free-form address. Empty string when unknown. */
 export function muniFromAddress(address?: string): string {
   if (!address) return "";
@@ -70,7 +85,57 @@ export function muniFromAddress(address?: string): string {
   const cityish = parts.filter(
     (p) => !/^\d/.test(p) && !/^[A-Z]{2}(\s+[\d-]+)?$/.test(p) && !COUNTRY_SEGMENT_RE.test(p)
   );
-  return cityish.length > 0 ? cityish[cityish.length - 1] : "";
+  if (cityish.length === 0) return "";
+  const last = cityish[cityish.length - 1];
+  // A LONE surviving segment that is plainly a venue/street ("Bethpage State
+  // Park", "Finley Road") is a pseudo-locality — omit it rather than show it
+  // where a town belongs. Only when it's the SOLE segment: with ≥2 cityish
+  // parts the last is a real city (the street/venue sits earlier), so we never
+  // touch it — "Marine Park Golf Course, Brooklyn" still yields "Brooklyn".
+  if (cityish.length === 1 && isVenueOrStreetSegment(last)) return "";
+  return last;
+}
+
+/** Tokenize a label case/space/punctuation-insensitively for comparison. */
+function labelTokens(s: string): string[] {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter(Boolean);
+}
+
+/** True when `sub`'s tokens appear as a contiguous run within `full`'s tokens. */
+function isContiguousSubsequence(sub: string[], full: string[]): boolean {
+  if (sub.length === 0 || sub.length > full.length) return false;
+  for (let i = 0; i + sub.length <= full.length; i++) {
+    if (sub.every((t, j) => full[i + j] === t)) return true;
+  }
+  return false;
+}
+
+/**
+ * True when a derived `muni` would merely echo the course `name` — the muni's
+ * words are a contiguous run of the name's words, or vice-versa. Used to omit
+ * the locality so a row never reads "Marine Park Golf Course · Marine Park Golf
+ * Course" (or "Tenafly · Tenafly"). Token-based, not substring, so "York"
+ * never collides with "Yorktown".
+ */
+export function muniEchoesName(name: string, muni: string): boolean {
+  if (!muni) return false;
+  const n = labelTokens(name);
+  const m = labelTokens(muni);
+  if (m.length === 0) return false;
+  return isContiguousSubsequence(m, n) || isContiguousSubsequence(n, m);
+}
+
+/**
+ * The honest short locality label for a course: derive the town from the
+ * address (dropping street numbers, state codes, countries, and lone
+ * venue/street pseudo-localities), then omit it when it would just echo the
+ * course name. "" when there's no honest locality to show. Use this at any
+ * render site that shows a locality UNDER a course name, so the confirmation
+ * path inherits the dedup rather than patching each surface.
+ */
+export function localityLabel(name: string, address?: string): string {
+  const muni = muniFromAddress(address);
+  return muniEchoesName(name, muni) ? "" : muni;
 }
 
 /** A stored favorite as this module needs it (course-favorites' shape fits). */
@@ -104,7 +169,9 @@ export function toCourseOptions(
     const nameKey = r.name.toLowerCase();
     const favorite = favIds.has(r.id) || favNames.has(nameKey);
     const rawCity = (r.city ?? "").trim();
-    const muni = muniFromAddress(r.address) || (COUNTRY_SEGMENT_RE.test(rawCity) ? "" : rawCity);
+    const derivedMuni = muniFromAddress(r.address) || (COUNTRY_SEGMENT_RE.test(rawCity) ? "" : rawCity);
+    // Never let the locality echo the course name ("Tenafly · Tenafly").
+    const muni = muniEchoesName(r.name, derivedMuni) ? "" : derivedMuni;
     // Junk rows: an all-generic name ("Golf Course") identifies nothing —
     // skip it UNLESS something else identifies it: the golfer favorited it,
     // or it carries a place ("Golf Course · Tenafly" is honest). Legit

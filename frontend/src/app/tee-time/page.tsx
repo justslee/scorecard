@@ -16,7 +16,7 @@ import {
   loadStateAfterLocate,
   loadStateAfterFetch,
   emptyCoursesNote,
-  muniFromAddress,
+  localityLabel,
   type CourseOption,
   type CourseLoadState,
 } from "@/lib/teetime/courses";
@@ -1169,9 +1169,10 @@ function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked 
         const shown = isOpen ? g.realSlots : g.realSlots.slice(0, ROWS_PER_COURSE_CAP);
         const hidden = g.realSlots.length - shown.length;
         // The provider's `city` can be a raw address or a bare country ("USA")
-        // — extract a real locality and omit it entirely when only a country
-        // remains, so a row never reads "Course · USA".
-        const cityLabel = muniFromAddress(g.city);
+        // — extract a real locality and omit it when only a country remains
+        // ("Course · USA") or when it would just echo the course name
+        // ("Marine Park Golf Course · Marine Park Golf Course").
+        const cityLabel = localityLabel(g.courseName, g.city);
         return (
           <Section key={g.courseId} kicker={`${g.distanceMiles} mi`} title={g.courseName}>
             {cityLabel && (
@@ -1229,7 +1230,7 @@ function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked 
                 const askLine = entry.route === "call"
                   ? `Call for a time in your ${askWindow} window`
                   : `Book on their site — ask for your ${askWindow} window`;
-                const cityLabel = muniFromAddress(g.city);
+                const cityLabel = localityLabel(g.courseName, g.city);
                 return (
                   <button
                     key={g.courseId}
@@ -1331,8 +1332,9 @@ function Confirmed({ accent, slot, bookingResult, group, asks, onBack }: Confirm
   const timeCardKicker = hasKnownTime ? "Tee off" : "Your ask";
   const timeCardFigure = hasKnownTime ? formatTime12h(slot.time) : (askWindow || "—");
   // A real locality if we have one, otherwise nothing — never a bare country
-  // ("USA") sitting where a city belongs, and never a dangling "· ".
-  const cityLabel = muniFromAddress(slot.city);
+  // ("USA") sitting where a city belongs, never a name-echo duplication, and
+  // never a dangling "· ".
+  const cityLabel = localityLabel(slot.courseName, slot.city);
 
   const addToCalendar = () => {
     const ev = {
