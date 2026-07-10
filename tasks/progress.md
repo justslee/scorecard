@@ -11076,3 +11076,13 @@ that itself diagnoses iOS onSpeakStart never firing — a separate follow-up, no
 ## Cycle 58 (2026-07-10) — IN PROGRESS
 - Reconciled 6 stale backlog items → shipped (physics, input-grounding, trees#125, bend, teetime s0/kill-fake-held) — verified in code, committed+pushed.
 - AWAITING: eng-lead pass on **caddie-remove-seeded-question** (p1, owner screenshots). opening-turn.ts:16-18 posts a fake first-person question AS the player; make the caddie OPEN instead (greet/offer). Land on integration/next (bundle continues per owner "we'll continue to bundle"). No ship/no ping.
+
+## AWAITING plan (Fable) — caddie-remove-seeded-question, cycle 58
+Dispatched Fable Plan agent to decide the AUTHORSHIP/role fix (crux, not just copy): today buildOpeningTurnText
+(opening-turn.ts) is fed as a user-role turn + user bubble in BOTH consumers — classic CaddieSheet.tsx ~L819
+(setTranscript+askCaddie → backend user transcript + history {role:user}) and live useCaddieLiveSession.ts:283
+(realtime.ts sendText → conversation.item role:'user' + response.create + user bubble). Fix = caddie greets ITSELF
+(assistant authorship, no fabricated player utterance), aware of shot ctx, single shared builder.
+On plan return → write specs/caddie-remove-seeded-question-plan.md, dispatch builder on integration/next.
+Tests to re-point (NOT weaken): opening-turn.test.ts L36-45 (exact first-person strings); CaddieSheet.realtime.test.tsx
+L328-345 (sendText exact string + sendContext-before-opening ordering). SILENT bundle accumulation — no ship/no ping.
