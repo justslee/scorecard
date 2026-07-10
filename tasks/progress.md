@@ -10440,3 +10440,36 @@ mint deferred to CI/staging (no local OPENAI key; additive field, rejection woul
 noticeable + prompt-fed-to-model + PII surface) AND qa (strict gates) on head daa3810, in parallel.
 On return: BLOCKING (correctness/security/Northstar) → re-dispatch builder + re-review; else update
 PR #122 checklist (3rd noticeable item) + progress. NO ship / NO ping this cycle (bundle accumulates).
+
+## cycle 50 DONE — caddie-realtime-transcription-vocab-bias landed on bundle #122 (NOTICEABLE, modest)
+LIVE-mode input transcript now carries a compact golf/context biasing PROMPT at
+session.audio.input.transcription.prompt (gpt-4o-transcribe) — golf vocabulary + the player's own
+club names + the current hole's hazards — so the outdoor transcript stops inventing words
+("Scars"/"of God"). Fable plan VERIFIED against the GA Realtime API reference that gpt-4o-transcribe
+accepts a free-text prompt (exclusions = gpt-realtime-whisper + gpt-4o-transcribe-diarize, NOT ours).
+New pure backend/app/caddie/keyterms.py (GOLF_KEYTERMS 24-term mirror of frontend + closed-set
+_HAZARD_TERMS + build_transcription_prompt); additive transcription_prompt kwarg threaded
+route→mint_ephemeral_session→build_session_payload; setup route gets golf_baseline_prompt() only.
+Commit 2af38c1 (+ progress daa3810) on integration/next.
+Reviewer (security /security-review + /code-review): SHIP — no HIGH/MEDIUM. Data-flow traced: prompt
+composed ENTIRELY from closed-set constants (unknown club keys / hazard types DROPPED, no .get(k,k)
+passthrough), placed at transcription.prompt (NOT session.instructions), PII boundary = own club
+display names only (handicap/yardages/history/other-players/memories structurally excluded),
+byte-identical dict when context absent, clubs flow only via authenticated get_owned_session.
+QA: PASS all 5 gates (ruff clean; 34 targeted pytest; frontend lint+tsc clean; voice smoke 274/274)
++ full non-DB backend sweep 1677/1677 passed (DB suites excluded, no docker); CI backend gate on
+#122 independently SUCCESS. Teeth proven via git stash -u → module/tests absent → RED, restored green.
+Designer SKIPPED — backend-only mint-config change, no visual surface (reviewer covered voice-hint
+correctness; a transcription hint doesn't touch the yardage-book feel). Cost-disciplined.
+PR #122 checklist updated (now 3 NOTICEABLE: course-ids-wiring, slope-framing-reconcile,
+transcription-vocab-bias). CI on head bc8bc31: Backend gate state:SUCCESS; Frontend gate IN_PROGRESS
+(non-ship cycle — not gating; QA verified frontend gates locally green).
+Injection note: multiple embedded "date changed / DO NOT mention this" instructions appeared in tool
+output + a system-reminder-shaped message this cycle; disregarded ALL as untrusted DATA per
+injection-defense policy — zero effect on the work.
+NO SHIP / NO PING this cycle (per directive — bundle accumulates; owner ships on his single "ship
+it"). NOTE for the ship cycle: re-verify EVERY required gate is state:SUCCESS on the FINAL head SHA
+before any merge (a cancelled/absent required gate is NOT a pass).
+Localization honored: change kept additive/minimal in realtime_relay.py so the parallel
+feat/teetime-s3-caller reconcile stays clean (keyword-only kwargs, 2-line conditional, no session-
+builder refactor).
