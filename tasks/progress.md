@@ -3,6 +3,30 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: tee-time setup UX owner-feedback fixes — DONE, on integration/next
+
+Implemented `specs/teetime-setup-ux-owner-feedback-plan.md` (owner testing
+feedback from v1.0.1149), commit `690c1fe` on `integration/next`. All 4 asks,
+frontend-only, NOTICEABLE:
+1. Searching progress log now reports the golfer's PICKS THAT ARE OPEN
+   (filterToSelection + groupSlotsByCourse dedup, applied before counting)
+   instead of the backend's raw 8-course discovery set — fixes the "8 during
+   search vs 5 on Options" confusion the owner traced. Discovery mode
+   (no selection) unchanged. Backend untouched.
+2. "Add another window" auto-opens that window's date calendar once
+   (`justAddedId` + `autoOpenCalendar` prop, mount-time initializer —
+   existing windows never auto-open, verified no double-open).
+3. Quiet inline-SVG calendar glyph beside the date chip (same hit target,
+   same a11y) so the date is discoverably editable.
+4. Window-span cap removed — `MAX_WINDOW_MIN` = full track (900min) instead
+   of a fixed 6h; tests re-pointed to the exact clamp, not weakened, plus a
+   new full-track-span positive test. Noted + fixed one internal
+   inconsistency in the plan's literal test snippet (see commit body).
+
+Gates (all green): `npm run lint` clean, `tsc --noEmit` clean, voice-tests
+smoke 274/274, `vitest src/lib/teetime` 223/223 (9 files). Pushed to
+`origin/integration/next`. Did NOT open a PR (eng-lead owns the bundle PR).
+
 ## 2026-07-10 — release-manager: bundle #129 SHIPPED to main + TestFlight
 
 Owner replied "Ship it" — approved bundle PR #129 (`integration/next` → `main`).
