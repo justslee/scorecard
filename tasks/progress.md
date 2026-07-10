@@ -12233,3 +12233,7 @@ both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
 
 ## OWNER CRUX DIRECTIVE (2026-07-10) — omnipresent caddie orb, HIGHEST PRIORITY
 - Kill center-nav orb; ONE omnipresent floating caddie-icon orb, same spot on all relevant pages; round-page pill stays; context-aware per page (tee-time dispatch, round setup, tournament setup, My Card stats coaching). Memory updated (omnipresent-caddie-orb supersedes floating-island-tab-nav placement). Fable plan dispatched → then slices. Tournament-settlement cycle (in flight) lands first, then this epic leads.
+
+- REVIEWS on db5aa67: reviewer=SHIP (aggregation sum-then-minimize-once correct, reuses per-format math, honest empty, round-scoped fns untouched, 39/39 genuine tests; 1 copy nit). qa=PASS all 5 gates @ f4adc32 (lint, tsc, voice 274/274, settlement 39/39, games 99/99). designer=APPROVE (calm/yardage-book, no SaaS drift; 3 nits).
+- FOLD (honesty-critical): empty-state copy is ambiguous — when a tournament has ONLY non-money games (no pointValue), isEmpty is true forever, so "appears once rounds are scored" mispromises. Since this item EXISTS to fix Games-tab honesty, distinguish 3 states. Dispatching builder for the copy refinement + hasMoneyGames helper + tests. Leaving pure-style nits (EmptyState reuse, trailing divider) as-is.
+- AWAITING builder on the copy-refinement fold. Clean → re-run gates on new head, update bundle PR #132 checklist (NOTICEABLE), backlog→done-on-bundle, CI green.
