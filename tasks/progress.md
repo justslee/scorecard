@@ -12125,3 +12125,37 @@ next @ 1ed2b71, read children's verdicts, do NOT rebuild.
 - BUILDER FIX @ 8ac3ec2 (frontend-only, 1 file): added distinct 'load-error' status → honest "Could not load caller voices — try again." copy + `options.length===0` guard so an optionless <select> can never render; label T.pencilSoft→pencil; select padding 0 12px→10px 12px (minHeight 44 kept). Gates: front lint/tsc clean, voice-smoke 274/274, caller-voice vitest 3/3.
 - DESIGNER RE-CHECK: PASS — blocking resolved (empty-select structurally unreachable), honest copy, polish matches file conventions, no new regression. Non-blocking note (deferred, not a regression): `options.length===0` folds a "loaded-but-empty" case into the "could not load" copy, and "try again" isn't wired to a retry action.
 - CYCLE 73 DONE — caller-natural-preset-voice LANDED on integration/next @ 8ac3ec2 (feature dece99b + design fix 8ac3ec2). Bundle PR #131 (NOTICEABLE: new /settings caller-voice picker). Reviewer SHIP + /security-review, QA green, Designer PASS. Voice choice = cedar (new default; overridable by OPENAI_REALTIME_DEFAULT_VOICE). Caller stays INERT (voice value only; no gating/pipeline/dialog/compliance change). backlog.json: caller-natural-preset-voice → shipped (landed 8ac3ec2, pr 131). SILENT per directive — NO ship, NO owner ping; bundle accumulates for the next ship decision. CI to be re-verified strict-green on final head after this commit.
+
+## 2026-07-10 — release-manager: bundle PR #131 SHIPPED to main — owner-approved
+
+Owner replied **"ship it"** approving bundle PR #131. Guarded pre-flight
+re-verified: `integration/next` head `d3350b9e` unchanged since approval,
+both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
+
+- **Merged** `#131` → `main` (`gh pr merge 131 --merge`). Merge commit:
+  `18ea1a0151ceff4307166973351f1bc0ca533de9`.
+- **Post-merge main CI**: both required gates SUCCESS on the new head (CI,
+  Deploy backend (SSM)) — no flake, no rerun needed.
+- **Backend deployed** via the SSM auto-deploy workflow (fires on push to
+  `main`); confirmed live: `https://api.looperapp.org/health` → 200
+  `{"status":"ok"}`.
+- **TestFlight cut** from new `main` via `ops/ios/ship.sh`: **v1.0.1172
+  (build 202607101656)** — archive + export succeeded, uploaded; App Store
+  Connect `processingState: VALID` (polled via the ASC API, ~2.5 min).
+- **Prod smoke**: `/health` 200 ok; `/api/tee-times/search` and
+  `/api/tee-times/caller-voice` both correctly auth-gated (401 "Missing
+  Authorization", alive — not 500). Caller-voice endpoint confirmed live +
+  owner-gated without dialing.
+- **Fresh `integration/next`** cut off new `main` (fast-forwarded
+  `d3350b9e` → `18ea1a0`, no force push needed — old tip was an ancestor of
+  the merge commit) and pushed.
+- **Board**: new card "Bundle #131: caller natural preset voice (cedar) +
+  owner voice picker" created directly in Shipped
+  (https://app.notion.com/p/3991c52592e081f0a8fbe62fe9379444), with PR link,
+  TestFlight version, and owner test steps. `backlog.json`
+  `caller-natural-preset-voice` updated with `landed_on` (main, merge SHA,
+  TestFlight version, board link).
+- **How the owner tests it**: Settings → Rehearsal call → the voice picker
+  now shows `cedar` selected by default with the other Realtime voices as
+  options. Still silent/inert — audible only once Twilio keys land in prod,
+  on the first rehearsal call.
