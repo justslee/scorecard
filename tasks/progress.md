@@ -3,6 +3,42 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: voicetel-timing-immediate-flush landed on the bundle (SILENT, telemetry-only, DONE)
+
+Implemented `specs/voicetel-timing-immediate-flush-plan.md` exactly. One
+commit (`2d4b4c9`) on `integration/next`:
+
+- `createCaddieTurnTimer` (`frontend/src/lib/voice/caddie-turn-timing.ts`):
+  `markTranscript()` and `markFirstToken()` now call `safeFlush()`
+  immediately after each successfully emits its leg, same as the existing
+  terminal flush in `markFirstAudio()`. Fixes the real gap behind the
+  prod go/no-go blocker (#125/#126): the headline `eos_to_first_audio` was
+  already immediate-flushed (live since 6fcb40d), but the two earlier legs
+  sat in the 8s batch queue and were lost with the whole turn if
+  `markFirstAudio()` (iOS `onSpeakStart`) never fired before a WKWebView
+  suspend. `markFirstAudio()` itself is unchanged — still the sole flush
+  for the two audio legs (one POST) and the only flush on the caddie-rt
+  headline-only path. Header design-notes comment updated to state the
+  per-leg flush rationale.
+- `caddie-turn-timing.test.ts`: updated flush-count/ordering assertions to
+  the new intended behavior (all existing emit/ms assertions kept
+  unweakened); core new tooth is "incomplete turn" now asserting
+  `flush` called once (was `not.toHaveBeenCalled()`) — an earlier leg
+  ships even if the turn never reaches first audio. Both sanity-clamp
+  tests strengthened with `flush).not.toHaveBeenCalled()`. Added a
+  no-PII pin (emit only ever called with `{ ms }`, no `detail`).
+- `CaddieSheet.handsfree.test.tsx` test (14): flush-count expectations
+  updated to 2 (after the two text legs) then 3 (after the shared
+  terminal audio-legs flush); all 4 `voiceEvent` payload assertions
+  unchanged.
+
+Gates green: lint, tsc --noEmit, `next build`, voice-tests smoke
+(274/274), vitest on the 3 touched/adjacent test files (34/34 passed),
+backend `ruff check .` (all checks passed). No product-code paths
+touched (`CaddieSheet.tsx`, `useVoiceCaddie.ts`, `telemetry.ts`,
+backend untouched, per plan). Not pushed for approval — silent,
+telemetry-only.
+
 ## 2026-07-10 — builder: teetime-prefs-ux-polish landed on the bundle #125 (NOTICEABLE, frontend-only, DONE)
 
 Implemented `specs/teetime-prefs-ux-polish-plan.md` exactly (all 4 items,
