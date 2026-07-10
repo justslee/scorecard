@@ -10895,3 +10895,18 @@ PR #125 checklist updated (2 noticeable items). Board record is the PR + this lo
 3. Add distance/city context to route-entry rows (real-slot Sections have it; route rows dropped it).
 4. Harden filterToSelection: build id/name Sets with .filter(Boolean) so a falsy selected id/name can't leak.
 5. Sub-44pt tap targets across the whole tee-time flow (pre-existing CourseRow convention; batch pass).
+
+## CYCLE 54 START (2026-07-09) — teetime-prefs-ux-polish (NOTICEABLE) on bundle #125
+Owner's remaining tee-time screenshots (spec: specs/teetime-results-ux-fixes.md #5 + #4). DESIGNER-LED visual pass:
+(1) courses-selection header clipped behind status bar — apply/verify top safe-area inset (note: viewportFit:cover
+    IS set + TTMasthead uses max(14px, env(safe-area-inset-top)) — root cause needs on-device trace, not a missing meta).
+(2) NEARBY list "reads as broken / grouped" — CourseRow dividers + Favorites/Open-to/Nearby group rhythm; even rows,
+    consistent dashed dividers, aligned checkbox|name|distance·city columns (ragged when muni empty).
+(3) location labels — real city/locality or omit, never "USA" (9f0577e did muniFromAddress; verify fully consistent).
+(4) fold small cycle-53 follow-ups IF same-file + clean (route-entry header conditional, distance on route rows,
+    tap-target sizing) — designer's call, one coherent pass, no scope-creep.
+Files: frontend/src/app/tee-time/page.tsx (TTMasthead/Section/CourseRow ~L714-780,1495-1608), CourseSearch.tsx.
+Frontend-only, NO backend, do NOT touch voice_booking/telephony (#124). Classify NOTICEABLE. Rides bundle PR #125.
+Sync clean; no pending "ship it". Per cycle standing rule: no push notifications this cycle.
+## AWAITING Fable plan (specs/teetime-prefs-ux-polish-plan.md). On return → dispatch ONE builder to implement on
+integration/next; then reviewer (no-regression to selection/options flow) + designer PASS (iOS-sim before/after) + QA strict gates.
