@@ -11998,3 +11998,7 @@ next @ 1ed2b71, read children's verdicts, do NOT rebuild.
   - DESIGNER (Northstar, ac02569): PASS, no blocking. Folded 2 polish: picks-mode copy ("have/has times" vs muddled "open to the public") + glyph 10x10→8x8/gap3. Non-urgent follow-ups noted: on-band tick contrast for very wide unselected windows; auto-open scroll position with 3+ windows on SE-class phone.
   - Post-polish gates re-run GREEN on 298976b: lint clean, tsc clean, teetime vitest 223/223.
   - NOTICEABLE bundle. backlog.json: teetime-setup-ux-owner-feedback → shipped (landed_commit 298976b). Fresh bundle PR opened → main. SILENT this cycle per directive — NO ship, NO owner ping; bundle accumulates for the next ship decision.
+
+## Cycle 71 (2026-07-10) — owed security review of strategy-guides web-content-into-LLM surface
+- #130 (window UX) strict-green, awaiting owner ship. Owner threads open: voice-clarification, ship #130. Clean autonomous queue drained (p3/p7/measurement-gated only).
+- Doing the OWED /security-review (CLAUDE.md: major changes must pass it; backlog flagged it before ship but code reached main): verify guide_writer/course_guides/caddie injection mitigations are real in code, not just planned. Read-only unless it finds a fix. No prod spend, no owner needed.
