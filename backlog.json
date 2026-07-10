@@ -8,9 +8,10 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
       "depends_on": [],
-      "why": "PROD 2026-07-10: only 1 eos_to_first_audio event + 0 caddie-rt in 3 days \u2014 the caddie latency-timing telemetry is being DROPPED on iOS (cycle-19's flush fix made FAILURE events immediate but not the timing events). This blocks the cascaded-STT go/no-go (spike #126 needs caddie-turn-cascaded vs caddie-rt-speechToSpeech p90 latency). FIX: put the eos_to_first_audio / stage-timing events in the immediate-flush tier (extend the cycle-19 flush logic) so real latency data reaches prod. Small telemetry change. Then the cascaded-STT decision has data."
+      "why": "PROD 2026-07-10: only 1 eos_to_first_audio event + 0 caddie-rt in 3 days \u2014 the caddie latency-timing telemetry is being DROPPED on iOS (cycle-19's flush fix made FAILURE events immediate but not the timing events). This blocks the cascaded-STT go/no-go (spike #126 needs caddie-turn-cascaded vs caddie-rt-speechToSpeech p90 latency). FIX: put the eos_to_first_audio / stage-timing events in the immediate-flush tier (extend the cycle-19 flush logic) so real latency data reaches prod. Small telemetry change. Then the cascaded-STT decision has data.",
+      "progress": "2026-07-10 cycle 56 DONE on integration/next (2d4b4c9), rides bundle PR #125 (SILENT). Fable plan CORRECTED the premise: the headline eos_to_first_audio ALREADY immediate-flushes at markFirstAudio() (6fcb40d, live the whole 3-day window) \u2014 the real gap was the EARLIER legs (eos_to_transcript / transcript_to_first_token) only riding markFirstAudio's single flush, which on iOS often never fires (useSheetTTS onSpeakStart) before WKWebView suspend, losing the whole turn. Fix = 2 guarded safeFlush() calls in markTranscript()/markFirstToken() (caddie-turn-timing.ts) so each leg POSTs the moment it's computed; markFirstAudio keeps its terminal flush (audio legs + RT headline). Guards/clamps/idempotence untouched; \u22643 POSTs/classic turn, human-paced, non-timing telemetry still batches. Reviewer SHIP (clamped legs never POST, PII-safe {ms}-only pinned by test, throw-isolated), QA 6/6 gates. Unblocks #126: once owner uses live caddie on next TestFlight build, prod gets caddie-turn vs caddie-rt p90. Follow-up (same class): eos_to_transcript volume WITHOUT matching eos_to_first_audio would itself diagnose iOS onSpeakStart never firing."
     },
     {
       "id": "teetime-show-real-time-options",
