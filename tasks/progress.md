@@ -3,6 +3,64 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: s3b-review-nits — 5 hardening fixes on inert caller path (SILENT, DONE)
+
+Implemented `specs/s3b-review-nits-plan.md` exactly: 5 localized
+security/robustness fixes on the still owner-gated (inert without
+VOICE_BOOKING_ENABLED=1 + Twilio creds) AI-caller telephony path, landing
+before the owner's Twilio keys go live. Backend-only, one commit on
+`integration/next` (5af0315):
+
+1. `media_bridge.outcome_from_tool_args` — `bool(args.get("opt_out_requested"))`
+   read a model-emitted stringified `"false"` as truthy, which would have
+   silently suppressed a REAL pro-shop number. Added `_coerce_opt_out(v)` =
+   `v is True or str(v).strip().lower() == "true"`. Test:
+   `test_outcome_from_tool_args_opt_out_coerces_stringified_bools`.
+2. `telephony.LiveCallTransport.run_call` — split the combined
+   `except (TimeoutError, CancelledError)` into separate handlers; a
+   cancelled task still runs the discard+hangup cleanup (factored into
+   `_discard_and_hangup`) but now re-raises `CancelledError` instead of
+   swallowing it. Tests:
+   `test_run_call_timeout_returns_partial_transcript_unclear` (existing,
+   still green), `test_run_call_cancellation_reraises_and_cleans_up` (new).
+3. `call_registry.mint` — `asyncio.get_event_loop()` →
+   `get_running_loop()`. Converted the 5 tests that called `mint()` outside
+   a running loop (`test_place_call_dials_only_ctx_phone`,
+   `TestCallTokenRegistry.*`) to `async def` (pytest-asyncio auto mode) —
+   assertions unchanged.
+4. Call token now travels in a TwiML `<Stream><Parameter name="call_token">`
+   instead of the wss URL path (`xml.sax.saxutils.quoteattr`-escaped), so it
+   never lands in uvicorn/Twilio access logs. `voice_booking_ws.media_stream`
+   is now tokenless (`/api/voice-booking/media-stream`) — reads Twilio's
+   `start` frame first (bounded to 10 pre-start frames), extracts
+   `call_token` from `customParameters` (missing → 1008, no audio relayed
+   before validation), then validates via the same single-use/TTL
+   `registry.consume()`. `run_media_bridge` gained an `initial_start` param
+   so the already-consumed start frame is processed exactly once (no
+   double-processing). Noted `X-Twilio-Signature` validation as an explicit
+   out-of-scope TODO. Rewrote `test_voice_booking_ws.py` for the tokenless
+   route + `customParameters`-carried token (added
+   `test_missing_call_token_in_start_refused`); same 1008-refusal/no-frames
+   assertions preserved. Updated `test_build_stream_twiml_shape` /
+   `_strips_scheme_and_trailing_slash` + added
+   `test_build_stream_twiml_escapes_token_value`.
+5. `websockets>=12.0` → `>=13.0` in `pyproject.toml` (OpenAI Realtime
+   handshake needs `additional_headers`, new in the asyncio client since
+   13.0). `uv lock` confirmed no-op resolution (already resolved 16.0);
+   `uv sync` + `python -c "import app.main"` succeed.
+
+Gating ladder (VOICE_BOOKING_ENABLED / Twilio creds / public host) and
+dial-safety (dials ONLY `ctx.phone`) are UNCHANGED.
+
+Gates: `ruff check .` clean. `pytest tests/test_voice_booking.py
+tests/test_voice_booking_ws.py tests/test_telephony_bridge.py
+tests/test_media_bridge.py -q` → **86 passed**. Broader sanity:
+`pytest tests/ --ignore=tests/integration -q` → **1884 passed**, 1967 tests
+collect cleanly with zero import errors. No local Postgres was started
+(DB-backed integration tests run in CI per policy). Zero frontend files
+touched. Silent (backend-only hardening on an inert path) — rides along in
+the bundle, no owner approval needed for this item alone.
+
 ## 2026-07-10 — builder: S4a (tee-time availability-everywhere) landed on the bundle (NOTICEABLE, DONE)
 
 Implemented `specs/teetime-availability-everywhere-plan.md` §2a/§3/§6 (S4a —
