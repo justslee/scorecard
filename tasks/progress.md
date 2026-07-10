@@ -3,6 +3,70 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE: caddie-surface-osm-trees implemented + pushed to integration/next (5ade0fd)
+
+Builder implemented specs/caddie-surface-osm-trees-plan.md in full. Gates OSM
+`"tree"` (Point) and `"woods"` (Polygon) features into `extract_hole_hazards`
+(`backend/app/caddie/hazards.py`) via a new observation model — reuses the SAME
+played-polyline `_classify` closure as bunker/water (refactored out,
+behavior-preserving: existing `test_hazards.py` passes unchanged except the
+one documented cap-test rename). Tree Point = 1 observation; woods Polygon =
+every outer-ring vertex (closing vertex deduped). Observations behind the tee
+or >70y off the line are dropped; a side only speaks with >=3 surviving
+observations (coverage guard — 1-2 stray tree points stay silent, any real
+woods polygon qualifies alone). Qualifying side emits a min-carry entry + a
+max-carry entry when spread >=30y (cap 2/side); trees computed SEPARATELY and
+appended AFTER the bunker/water cap, combined list re-sorted — structurally
+can never evict a bunker/water hazard. `format_hazards_line`'s group cap moved
+5->6 (`_FORMAT_GROUP_CAP`) for trailing tree headroom. `HAZARD_GROUNDING_RULE`
+got an additive trees clause (the two pinned substrings survive verbatim).
+`carries_payload` empty-hole note string updated. No type/schema change, no
+frontend change (`Hazard.type` already covers `"trees"` everywhere).
+
+Tests: new `backend/tests/test_tree_hazards.py` (T1-T12: point-cluster range,
+2-isolated-trees-silent, woods near-edge-vs-centroid divergence, behind-tee
+drop, 8-bearing sweep, dogleg played-line-vs-chord mirror, cap-independence
+(trees never evict bunker/water), format-orders-trees-last, crossing-woods
+center band, far-lateral drop, mixed polygon+point per-side merge — 19 cases
+incl. parametrization). `test_hazards.py::test_groups_capped_at_five` renamed
+`test_groups_capped_at_six` (7 groups in, 6 rendered). `test_caddie_tools.py`
+note-string pins (2 sites) updated. Two new golden eval scenarios
+(`trees-carry-cited-from-geometry`, `trees-not-mapped-honest`) validated
+against the real production prompt-assembly path, plus a new mutation-teeth
+test (`test_context_hazards_match_goes_red_when_trees_stripped_from_features`)
+proving the eval detects a stripped-trees regression. RED-then-green proven
+TWICE: (1) the teeth test's own internal FC-mutation assertion, and (2) an
+independent proof — temporarily emptied `_TREE_FEATURE_TYPES` in the actual
+source, ran the tree/eval suites (17 failures, confirmed RED across
+test_tree_hazards.py + the golden scenario + the teeth test itself), restored
+the source, reran to confirm green (348/348). Full gate: backend
+`ruff check .` clean; the plan's 11-file backend pytest list = 348 passed;
+frontend lint/tsc/voice-tests smoke all green (backend-only change, no
+frontend edits).
+
+Plan deviation (found, not improvised around): the committed
+`tests/fixtures/bethpage_overpass.json` carries ZERO real tree/woods OSM
+elements (verified: 0 of 820 raw elements tag `natural=tree/wood/scrub/
+tree_row` or `landuse=forest` — every element is bunker/tee/fairway/green/
+hole-way/water). The module docstring's "537 Bethpage tree nodes" line
+describes a DIFFERENT, more complete Overpass fetch than what's actually
+committed as this test fixture. Per the plan's own fallback instruction ("if
+the fixture's real geometry doesn't support a clean pin, report exactly what
+you found rather than fabricating an assertion"), `test_bethpage_validation.py`
+gets a new `TestTreesRealFixtureGap` section documenting the gap with two real
+assertions (zero tree/woods tags in the raw fixture; zero `trees` hazards
+across all 18 assembled Black holes) instead of inventing hole/side/carry
+numbers that were never actually fetched from OSM. The synthetic T1-T12 suite
+and the golden-set scenario fully cover the observation-model correctness this
+real-fixture slot was meant to additionally confirm. Re-fetching the Overpass
+fixture with the tree/wood/scrub/tree_row query terms (`osm.py` ~line 808) to
+add real positive-case coverage is follow-up work, not part of this slice.
+Also found and fixed mid-implementation: the module-docstring "Trees/woods"
+paragraph edit was silently dropped by an edit-tool ordering quirk (a
+subsequent edit reported "file modified on disk since you last read it");
+caught by re-grepping the file before declaring done, restored, reverified all
+348 tests green.
+
 ## DONE: caddie-input-grounding (INPUT_GROUNDING_RULE) implemented + pushed to integration/next (a35e96d)
 
 Builder implemented specs/caddie-input-grounding-plan.md in full, exactly to plan (no
