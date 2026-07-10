@@ -30,7 +30,7 @@ from app.caddie.hazards import (
     format_hazards_line,
 )
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
-from app.caddie.guide_writer import format_guide_line
+from app.caddie.guide_writer import format_guide_line, validate_guide
 from app.caddie.voice_prompts import INPUT_GROUNDING_RULE, OBSERVED_REALITY_RULE, TOOL_USE_RULE
 from app.caddie import tools as caddie_tools
 from app.caddie.tool_loop import run_caddie_turn
@@ -1243,6 +1243,24 @@ async def get_course_intel(
                         tee=hc.get("tee"),
                         green=hc.get("green"),
                     )
+
+            # Re-validate the persisted strategy guide at READ time (MED-2,
+            # 2026-07-10 security review). Guides are cached FOREVER in the
+            # green feature's JSONB (types.py) and were previously validated
+            # ONLY at write time — so a guide persisted by an older/weaker
+            # validator (before the side-flip + synonym fail-closed hardening,
+            # 2026-07-08/09) was served verbatim, missing today's checks. We
+            # re-run the SAME fail-closed pass against the SAME hazards the
+            # caddie will state (`intel.hazards`, set just above; `[]` when the
+            # hole has no mapped features). Both the text mouth (this route's
+            # `_build_*` prompt) and the realtime mouth (voice_prompts.py) read
+            # from `session.hole_intel`, which is populated from this loop —
+            # so sanitizing here covers BOTH. A now-invalid guide is DROPPED
+            # (validate_guide -> None), degrading to no local-knowledge line
+            # rather than injecting a stale/ungrounded claim.
+            if intel.strategy_guide is not None:
+                intel.strategy_guide = validate_guide(intel.strategy_guide, intel.hazards)
+
             holes.append(intel.model_dump())
             hole_intel_map[intel.hole_number] = intel
         except Exception as e:

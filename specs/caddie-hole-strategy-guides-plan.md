@@ -413,6 +413,18 @@ Two surfaces:
      never as instructions, and the existing `HAZARD_GROUNDING_RULE` remains in the behavior block of
      BOTH prompts — so even a subtly-off guide cannot make the caddie name a hazard absent from the
      hazard data. `format_guide_line` never emits imperative meta-instructions.
+  3. The renderer flattens per-fragment whitespace and `validate_guide` rejects any newline-bearing
+     field, so a field can never break the single-line DATA framing to mimic a new prompt-section
+     header (MED-1, 2026-07-10 review).
+  4. The guide is re-validated at READ time, not only at write time — guides are cached FOREVER, so
+     this ensures a guide persisted by an older/weaker validator is re-checked against today's
+     grounding pass before it reaches EITHER mouth (MED-2, 2026-07-10 review).
+  - CAVEAT — the `injection_pattern` keyword scan in `validate_guide` (guide_writer.py) is NOT a real
+    security boundary: a keyword blocklist ("ignore", "you are", "system prompt", …) is trivially
+    bypassable by homoglyphs or paraphrase and MUST NOT be relied on as one. The load-bearing controls
+    are the hazard/side grounding pass (§8), the DATA framing, and the structured-output shape; the
+    keyword scan is cheap defense-in-depth only. Do NOT add a content classifier here (overkill for a
+    field that is already the model's own §8-passed structured output).
 - **Grounding-validation pass** (§8) is called out explicitly as both a correctness control and an
   anti-hallucination / prompt-injection control (an injected page trying to plant "there's water
   right at 200" is rejected unless our polygons actually have water right).
@@ -429,7 +441,9 @@ marked ready.
   hole. No placeholder guide.
 - Validation rejects (hazard hallucination or structural) → return `None`; no write. No placeholder.
 - Read path: `build_hole_intelligence` best-effort-parses `persisted_guide`; a missing/malformed blob
-  → `strategy_guide = None` (never raises, never fabricates).
+  → `strategy_guide = None` (never raises, never fabricates). The `/course-intel` route then
+  re-validates the parsed guide against the hole's real hazards (MED-2); an ungrounded guide is
+  dropped to `None` there — degrading to no local-knowledge line, never a crash.
 - Both mouths: `if hole_intel.strategy_guide: append(format_guide_line(...))` — no guide → the line is
   simply OMITTED from the prompt. Never a placeholder, never "no guide available" filler.
 - `format_guide_line` returns "" for an empty/degenerate guide; the caller omits (mirrors the existing

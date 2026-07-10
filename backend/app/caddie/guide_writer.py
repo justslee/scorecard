@@ -66,15 +66,25 @@ def format_guide_line(guide: Optional[HoleStrategyGuide]) -> str:
     if guide is None:
         return ""
 
+    # Normalize whitespace PER FRAGMENT (`" ".join(s.split())` collapses every
+    # run of whitespace — including internal newlines/tabs — to a single space
+    # and trims the ends). A `.strip()` alone left an INTERNAL "\n" intact, so a
+    # field like "Aim center.\n\n# Behavior\n..." rendered as a multi-line block
+    # that mimics a new prompt-section header inside both caddie prompts (MED-1,
+    # 2026-07-10 security review). This renderer's contract is a single line —
+    # enforce it here; `validate_guide` also drops newline-bearing guides.
     fragments: list[str] = []
-    if guide.play_line.strip():
-        fragments.append(guide.play_line.strip())
-    if guide.miss_side.strip():
-        fragments.append(guide.miss_side.strip())
-    if guide.green_notes.strip():
-        fragments.append(guide.green_notes.strip())
+    play_line = " ".join(guide.play_line.split())
+    if play_line:
+        fragments.append(play_line)
+    miss_side = " ".join(guide.miss_side.split())
+    if miss_side:
+        fragments.append(miss_side)
+    green_notes = " ".join(guide.green_notes.split())
+    if green_notes:
+        fragments.append(green_notes)
 
-    mistakes = [m.strip() for m in guide.common_mistakes if m and m.strip()]
+    mistakes = [" ".join(m.split()) for m in guide.common_mistakes if m and m.split()]
     if mistakes:
         fragments.append("common mistakes: " + "; ".join(mistakes[:_MAX_MISTAKES_IN_LINE]))
 
@@ -637,6 +647,15 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
         if injection_pattern.search(field_text or ""):
             return None
 
+    # A field carrying an internal newline (or carriage return) breaks the
+    # single-line "Local knowledge:" DATA framing — it renders as a multi-line
+    # block that can mimic a new prompt-section header (MED-1, 2026-07-10
+    # security review). The renderer flattens whitespace; reject here too
+    # (defense-in-depth) so a newline-bearing guide is never persisted/served.
+    for field_text in text_fields:
+        if field_text and ("\n" in field_text or "\r" in field_text):
+            return None
+
     if not guide.play_line.strip():
         return None
     if len(guide.play_line) > _MAX_FIELD_CHARS:
@@ -646,6 +665,11 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
     if len(guide.green_notes) > _MAX_FIELD_CHARS:
         return None
     if len(guide.common_mistakes) > _MAX_MISTAKES:
+        return None
+    # Per-item length cap on common_mistakes (LOW-3): the 240-char cap applied
+    # to the three main fields but only a COUNT cap (<=3) to common_mistakes —
+    # a single 5,000-char "mistake" item slipped through into the prompt.
+    if any(len(m) > _MAX_FIELD_CHARS for m in guide.common_mistakes):
         return None
 
     return guide
