@@ -19,6 +19,7 @@ from app.caddie.types import (
     PlayerStatistics,
     CaddieRecommendation,
 )
+from app.caddie.guide_writer import validate_guide
 from app.db.engine import async_session
 from app.db.models import CaddieSession as CaddieSessionRow, CaddieMessage as CaddieMessageRow
 
@@ -76,7 +77,23 @@ def _row_to_session(row: CaddieSessionRow, messages: list[CaddieMessageRow]) -> 
     hole_intel: dict[int, HoleIntelligence] = {}
     for k, v in (row.hole_intel or {}).items():
         try:
-            hole_intel[int(k)] = HoleIntelligence.model_validate(v)
+            intel = HoleIntelligence.model_validate(v)
+            # Re-validate a persisted strategy guide on session RELOAD — same
+            # fail-closed contract as /course-intel (caddie.py MED-2, 2026-07-10).
+            # /course-intel re-validates the durable course JSONB on every read,
+            # but a caddie turn that reloads this session WITHOUT re-hitting
+            # /course-intel would otherwise serve a guide baked into an OLD
+            # session blob by a weaker/earlier validator (pre side-flip + synonym
+            # fail-closed hardening) verbatim. Both the text mouth and the
+            # realtime mouth read session.hole_intel, which is hydrated here — so
+            # sanitizing at this single reload seam covers BOTH. Grounded against
+            # the SAME hazards persisted alongside the guide in this very blob
+            # (never against empty/missing hazards — a valid guide survives
+            # unchanged; a now-ungrounded one is DROPPED to None, degrading to no
+            # local-knowledge line rather than a stale/injected claim).
+            if intel.strategy_guide is not None:
+                intel.strategy_guide = validate_guide(intel.strategy_guide, intel.hazards)
+            hole_intel[int(k)] = intel
         except Exception:
             continue
 
