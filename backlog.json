@@ -210,9 +210,10 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09: the auto-opening posts the question AS the player ('I'm on the tee, about 390\u2026') and live mode doesn't cleanly answer it. Make the caddie OPEN with the recommendation in its own voice (assistant-side briefing), not a synthesized user bubble. Keeps the auto-reco value, kills the fake question. buildOpeningTurnText/opening-turn path + live opening. Small, ship first."
+      "why": "OWNER 2026-07-09: the auto-opening posts the question AS the player ('I'm on the tee, about 390\u2026') and live mode doesn't cleanly answer it. Make the caddie OPEN with the recommendation in its own voice (assistant-side briefing), not a synthesized user bubble. Keeps the auto-reco value, kills the fake question. buildOpeningTurnText/opening-turn path + live opening. Small, ship first.",
+      "evidence": "Landed on bundle #125 (1446ea2). Caddie now opens the conversation itself (assistant-authored greeting) instead of puppeting a fake first-person player question. buildOpeningTurnText->buildOpeningGreetingText (+buildOpeningGreetingInstruction live wrapper); classic path seeds {role:assistant}+tts.speak (no network turn), live path new realtime sendOpener (system item + response.create, no user bubble). Fable-planned; reviewer SHIP; designer APPROVE; gates green (lint/tsc, targeted vitest 79, full 1890, voice 274/274)."
     },
     {
       "id": "caddie-green-slope-spatial",

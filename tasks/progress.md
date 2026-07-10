@@ -11121,3 +11121,27 @@ Builder landed 36cbe5f on integration/next (origin). All 6 gates green locally (
 user-role opener artifact / SSOT / ordering / guards / no test weakened — scrutinize the mockReset deviation) +
 designer (opener copy vs NORTHSTAR calm/voice-first). On BOTH clear → QA verify on pushed head + update PR #125
 checklist (SILENT ride-along), backlog=shipped, progress DONE. BLOCKING → re-dispatch builder, re-review. NO ship/ping.
+
+## CYCLE 58 DONE — caddie-remove-seeded-question landed on bundle #125 (NOTICEABLE, no ship/no ping)
+Caddie now OPENS the conversation itself (assistant-authored greeting) instead of puppeting a fake first-person
+player question. Fable-planned (specs/caddie-remove-seeded-question-plan.md) — authorship/role was the crux, not copy.
+Builder 36cbe5f + doc-fixup 1446ea2 on integration/next.
+- opening-turn.ts: buildOpeningTurnText -> buildOpeningGreetingText (new calm copy) + buildOpeningGreetingInstruction
+  (live wrapper, embeds greeting verbatim = single source of truth).
+- CaddieSheet.tsx classic effect: deterministic seed [{role:assistant}] + setVoiceAnswer + tts.speak, NO network turn,
+  NO setTranscript/askCaddie -> no user bubble, no {role:user} history. All double-fire/honest-idle guards untouched.
+- realtime.ts: new sendOpener (system-role conversation.item.create + response.create, NO onMessage -> assistant bubble).
+  sendText/sendContext untouched.
+- useCaddieLiveSession.ts: sendText(buildOpeningTurnText) -> sendOpener(buildOpeningGreetingInstruction). anchorHole
+  (sendContext) still fires before opener — ordering invariant preserved.
+- Tests re-pointed (NOT weakened): opening-turn.test.ts (new strings + authorship lock no "I'm" + instruction SSOT lock);
+  CaddieSheet.realtime.test.tsx (sendOpener once + sendText.not.called + sendContext-before-sendOpener ordering);
+  CaddieSheet.session.test.tsx (core lock: onUpdateConvHistory gets exactly [{role:assistant}], all 3 network mocks
+  uncalled; deleted old user-bubble-transparency assertion = the bug; legit mockReset isolation fix flagged);
+  CaddieSheet.handsfree.test.tsx (deterministic greeting survives auto re-arm).
+Reviewer SHIP (7/7 from the diff; tests stronger not gamed). Designer APPROVE (calm/yardage-book; "yards" correctly
+dropped; reuses caddie-bubble component). QA gates green: lint/tsc clean, targeted vitest 79/79, full vitest 1890/1890,
+voice smoke 274/274. Frontend-only, zero schema/backend.
+PR #125 checklist updated -> FOUR noticeable + ONE silent. backlog.json caddie-remove-seeded-question=shipped.
+Per cycle instructions: SILENT bundle accumulation — bundle #125 already awaits owner "ship it"; NO merge/ship/ping.
+Head after bookkeeping pending; CI to re-verify strict-green at ship time.
