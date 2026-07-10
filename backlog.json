@@ -51,9 +51,9 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (screenshots): the caddie answers words the ASR INVENTED ('Scars','of God'). BIGGEST win, in our control: extend the grounding doctrine from FACTS to INPUT \u2014 a caddie rule + a plausibility/confidence check so a low-confidence or non-parseable utterance gets 'I didn't catch that, say again?' instead of a confident reply to noise. Both mouths. Eval teeth: a gibberish transcript -> ask-for-repeat, never a fabricated on-topic answer. specs/voice-transcription-reliability-research.md. Fable plan."
+      "why": "RECONCILED 2026-07-10 (verified in code): INPUT_GROUNDING_RULE in routes/caddie.py \u2014 live v1.0.1038 | OWNER 2026-07-09 (screenshots): the caddie answers words the ASR INVENTED ('Scars','of God'). BIGGEST win, in our control: extend the grounding doctrine from FACTS to INPUT \u2014 a caddie rule + a plausibility/confidence check so a low-confidence or non-parseable utterance gets 'I didn't catch that, say again?' instead of a confident reply to noise. Both mouths. Eval teeth: a gibberish transcript -> ask-for-repeat, never a fabricated on-topic answer. specs/voice-transcription-reliability-research.md. Fable plan."
     },
     {
       "id": "caddie-realtime-transcription-vocab-bias",
@@ -94,9 +94,9 @@
       "type": "major",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "TREE SPIKE VERDICT (specs/tree-detection-cv-findings.md): satellite-CV canopy detection DISPROVEN on real Bethpage (tree canopy is LESS green than fairway; bunker-edge false positives) \u2014 NO-GO. But OSM ALREADY has ~43-63 tree nodes + woods polygons per Bethpage hole that the app ALREADY ingests and currently ignores. GO: gate those into hole features as 'tree'/'woods' type \u2192 the caddie answers 'how far to clear the trees' via the existing hazard/carry path (tree line carry along the tee->green line, like hazards). ~small change, NO ML, NO satellite CV, NO training. Honest 'trees not mapped here' fallback where OSM coverage is sparse. Pretrained DeepForest (no training) held in reserve only if OSM coverage proves inadequate on other courses. Fable plan; reuse the polyline/hazard carry frame."
+      "why": "RECONCILED 2026-07-10 (verified in code): hazards.py tree feature \u2014 landed on bundle #125 (awaiting ship) | TREE SPIKE VERDICT (specs/tree-detection-cv-findings.md): satellite-CV canopy detection DISPROVEN on real Bethpage (tree canopy is LESS green than fairway; bunker-edge false positives) \u2014 NO-GO. But OSM ALREADY has ~43-63 tree nodes + woods polygons per Bethpage hole that the app ALREADY ingests and currently ignores. GO: gate those into hole features as 'tree'/'woods' type \u2192 the caddie answers 'how far to clear the trees' via the existing hazard/carry path (tree line carry along the tee->green line, like hazards). ~small change, NO ML, NO satellite CV, NO training. Honest 'trees not mapped here' fallback where OSM coverage is sparse. Pretrained DeepForest (no training) held in reserve only if OSM coverage proves inadequate on other courses. Fable plan; reuse the polyline/hazard carry frame."
     },
     {
       "id": "voice-target-speaker-enrollment-spike",
@@ -152,9 +152,9 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "specs/teetime-real-booking-plan.md S0 (ship first, no external deps). Delete affiliate.py synthesized-slot emission + the mock-fallback substitution in routes/tee_times.py; add private_filter.py + private_clubs.json (Liberty National excluded \u2014 the offender); kill 'Held' everywhere (route-driven 'Found'/'Call'/'Book on course site'); honest-empty when no real data. Tests: private filter, honest-empty, no synthesized slots ever. Owner: 'I want real data.'"
+      "why": "RECONCILED 2026-07-10 (verified in code): affiliate.py deleted; foreup.py live \u2014 shipped | specs/teetime-real-booking-plan.md S0 (ship first, no external deps). Delete affiliate.py synthesized-slot emission + the mock-fallback substitution in routes/tee_times.py; add private_filter.py + private_clubs.json (Liberty National excluded \u2014 the offender); kill 'Held' everywhere (route-driven 'Found'/'Call'/'Book on course site'); honest-empty when no real data. Tests: private filter, honest-empty, no synthesized slots ever. Owner: 'I want real data.'"
     },
     {
       "id": "teetime-s1-foreup-availability",
@@ -242,9 +242,9 @@
       "type": "major",
       "priority": 1,
       "risk": "high",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 ('add a physics component\u2026 write very complex physics equations if we have to'): the caddie said a 300y drive + 4mph downwind + 38ft downhill = 390 (physically absurd; it also adjusted the PIN distance, not the drive). Current model: elevation = yards + feet/3, wind = capped \u00b115% linear \u2014 both toys. Build backend/app/caddie/physics.py: documented ball-flight model (RK4 trajectory OR calibrated closed form \u2014 plan picks), air density (temp/altitude/humidity), wind VECTOR \u00d7 time-of-flight, elevation via fall-time, ROLL modeled separately (downhill drive gains via roll not carry \u2014 THE fix). Output {carry,total,plays_like} with assumptions surfaced; calibrated to references; exposed as get_shot_distance tool both mouths cite. Eval: the exact 300/downwind/downhill case \u2192 315-330 not 390. Fable plan; adversarial review on the calibration. See specs/caddie-physics-engine.md."
+      "why": "RECONCILED 2026-07-10 (verified in code): physics.py live (v1.0.1038, backend deployed) | OWNER 2026-07-09 ('add a physics component\u2026 write very complex physics equations if we have to'): the caddie said a 300y drive + 4mph downwind + 38ft downhill = 390 (physically absurd; it also adjusted the PIN distance, not the drive). Current model: elevation = yards + feet/3, wind = capped \u00b115% linear \u2014 both toys. Build backend/app/caddie/physics.py: documented ball-flight model (RK4 trajectory OR calibrated closed form \u2014 plan picks), air density (temp/altitude/humidity), wind VECTOR \u00d7 time-of-flight, elevation via fall-time, ROLL modeled separately (downhill drive gains via roll not carry \u2014 THE fix). Output {carry,total,plays_like} with assumptions surfaced; calibrated to references; exposed as get_shot_distance tool both mouths cite. Eval: the exact 300/downwind/downhill case \u2192 315-330 not 390. Fable plan; adversarial review on the calibration. See specs/caddie-physics-engine.md."
     },
     {
       "id": "caddie-bend-distance",
@@ -252,9 +252,9 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09: the caddie couldn't answer 'how far to the bend in the fairway?'. FREE from existing data: the hole polyline (now stored) \u2014 the dogleg = max-deviation vertex from the tee\u2192green chord; compute along-path distance to it; expose as intel + a tool answer ('bends right at ~250'). No ML. See specs/caddie-physics-engine.md."
+      "why": "RECONCILED 2026-07-10 (verified in code): extract_hole_bend in hazards.py \u2014 landed | OWNER 2026-07-09: the caddie couldn't answer 'how far to the bend in the fairway?'. FREE from existing data: the hole polyline (now stored) \u2014 the dogleg = max-deviation vertex from the tee\u2192green chord; compute along-path distance to it; expose as intel + a tool answer ('bends right at ~250'). No ML. See specs/caddie-physics-engine.md."
     },
     {
       "id": "caddie-tree-detection-cv",
@@ -272,9 +272,9 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (screenshot): the affiliate provider synthesizes ONE estimated slot per course (time=window start, estimated=True) but the UI renders 'Found ~6:30 AM\u2026 Held for you' \u2014 NO hold exists (no-fake-data violation). Also Liberty National (PRIVATE) surfaced as bookable. FIX: never say 'Held'; render estimates as 'suggested window \u2014 call to confirm'; filter/flag private clubs (Places types + curated private list). Frontend copy + a private-course guard. Immediate honesty fix, ship first."
+      "why": "RECONCILED 2026-07-10 (verified in code): affiliate synthesized-slot emission gone \u2014 shipped | OWNER 2026-07-09 (screenshot): the affiliate provider synthesizes ONE estimated slot per course (time=window start, estimated=True) but the UI renders 'Found ~6:30 AM\u2026 Held for you' \u2014 NO hold exists (no-fake-data violation). Also Liberty National (PRIVATE) surfaced as bookable. FIX: never say 'Held'; render estimates as 'suggested window \u2014 call to confirm'; filter/flag private clubs (Places types + curated private list). Frontend copy + a private-course guard. Immediate honesty fix, ship first."
     },
     {
       "id": "teetime-partnership-applications",
