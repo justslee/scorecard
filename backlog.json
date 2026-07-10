@@ -2127,6 +2127,16 @@
       "risk": "low",
       "status": "ready",
       "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct \u2014 the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' \u2014 unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5."
+    },
+    {
+      "id": "tree-prod-data-verified",
+      "title": "NOTE: prod tree data verified stocked (trees light up on #125 ship)",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "done",
+      "depends_on": [],
+      "why": "PROD 2026-07-09: Bethpage 1038 tree + 5 woods (18/18 holes), Pebble 128 tree + 3 woods (13/18). The surface-osm-trees feature (#125) works immediately on ship; the fixture gap is CI-coverage only."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
