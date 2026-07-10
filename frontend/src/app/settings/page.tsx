@@ -349,9 +349,9 @@ function ClearCacheButton() {
 function CallerVoicePicker() {
   const [options, setOptions] = useState<CallerVoiceOption[]>([]);
   const [value, setValue] = useState<string>('');
-  const [status, setStatus] = useState<'loading' | 'ready' | 'saving' | 'saved' | 'error'>(
-    'loading',
-  );
+  const [status, setStatus] = useState<
+    'loading' | 'load-error' | 'ready' | 'saving' | 'saved' | 'error'
+  >('loading');
 
   useEffect(() => {
     let cancelled = false;
@@ -363,7 +363,7 @@ function CallerVoicePicker() {
         setStatus('ready');
       })
       .catch(() => {
-        if (!cancelled) setStatus('error');
+        if (!cancelled) setStatus('load-error');
       });
     return () => {
       cancelled = true;
@@ -389,7 +389,7 @@ function CallerVoicePicker() {
     fontFamily: T.mono,
     fontSize: 9,
     letterSpacing: 1.6,
-    color: T.pencilSoft,
+    color: T.pencil,
     textTransform: 'uppercase',
     fontWeight: 500,
     marginBottom: 8,
@@ -406,6 +406,10 @@ function CallerVoicePicker() {
 
   if (status === 'loading') {
     return <p style={body}>Loading the caller voice…</p>;
+  }
+
+  if (status === 'load-error' || options.length === 0) {
+    return <p style={body}>Could not load caller voices — try again.</p>;
   }
 
   return (
@@ -426,7 +430,7 @@ function CallerVoicePicker() {
         style={{
           width: '100%',
           minHeight: 44,
-          padding: '0 12px',
+          padding: '10px 12px',
           borderRadius: 10,
           background: T.paperDeep,
           border: `1px solid ${T.hairline}`,
