@@ -22,6 +22,17 @@ import {
 import { buildTeeTimeQueries } from "@/lib/teetime/query";
 import { readLastKnownArea, acquireArea } from "@/lib/teetime/location";
 import { defaultWindows, nextDefaultWindow, weekdayFromLabel, weekdayName } from "@/lib/teetime/dates";
+import {
+  isRealSlot,
+  asksForDate,
+  formatAskWindows,
+  formatTime12h,
+  groupSlotsByCourse,
+  filterToSelection,
+  slotOptionLabel,
+  emptySelectionNote,
+  type DispatchedAsk,
+} from "@/lib/teetime/options";
 import CourseSearch, { type CourseSelectPayload } from "@/components/CourseSearch";
 import { isFavorite } from "@/lib/course-favorites";
 import { getPlayers, getGolferProfileAsync } from "@/lib/api";
@@ -44,7 +55,7 @@ import { buildKeyterms } from "@/lib/voice/keyterms";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Phase = "prefs" | "searching" | "confirmed";
+type Phase = "prefs" | "searching" | "options" | "confirmed";
 
 interface TimeWindow {
   id: string;
@@ -231,11 +242,13 @@ export default function TeeTimePage() {
     })();
   }, [maxMiles]);
 
-  // Results.
+  // Results. `asks` is the SUBMITTED prefs — a 1:1 projection of the queries
+  // actually dispatched — threaded through Options + Confirmed so the window
+  // shown post-dispatch is never re-derived from live prefs state (bug #2).
   const [slots, setSlots] = useState<TeeTimeSlot[]>([]);
+  const [asks, setAsks] = useState<DispatchedAsk[]>([]);
   const [chosenSlot, setChosenSlot] = useState<TeeTimeSlot | null>(null);
   const [bookingResult, setBookingResult] = useState<BookingResult | null>(null);
-  void slots; // available for future "results list" UI
 
   if (phase === "prefs") {
     return (
@@ -270,11 +283,27 @@ export default function TeeTimePage() {
         group={group}
         maxPriceUsd={maxPriceUsd}
         area={area}
-        bookerName={profileName}
         onBack={() => setPhase("prefs")}
-        onFound={(allSlots, best, result) => {
-          setSlots(allSlots);
-          setChosenSlot(best);
+        onFound={(foundSlots, dispatchedAsks) => {
+          setSlots(foundSlots);
+          setAsks(dispatchedAsks);
+          setPhase("options");
+        }}
+      />
+    );
+  }
+
+  if (phase === "options") {
+    return (
+      <Options
+        accent={accent}
+        slots={slots}
+        asks={asks}
+        bookerName={profileName}
+        partySize={Math.max(1, group.length)}
+        onBack={() => setPhase("prefs")}
+        onPicked={(slot, result) => {
+          setChosenSlot(slot);
           setBookingResult(result);
           setPhase("confirmed");
         }}
@@ -288,7 +317,7 @@ export default function TeeTimePage() {
       slot={chosenSlot}
       bookingResult={bookingResult}
       group={group}
-      windows={windows}
+      asks={asks}
       onBack={() => router.push("/")}
     />
   );
@@ -379,8 +408,16 @@ function Prefs({
     if (parsed.windows.length > 0) {
       setWindows(applyParsedWindows(windows, parsed.windows));
     }
+    // Named courses matching NOTHING on the list keep the current selection
+    // (applyParsedCourses returns `courses` untouched, detectable by `===`) —
+    // never silently deselect everything into an all-nearby dispatch (bug #3
+    // voice hole). The ack says so honestly instead of pretending it worked.
+    let courseMissNote: string | null = null;
     if (parsed.courseNames.length > 0 || parsed.favoritesOnly) {
       const next = applyParsedCourses(courses, parsed.courseNames, parsed.favoritesOnly);
+      if (parsed.courseNames.length > 0 && next === courses) {
+        courseMissNote = `Couldn’t find ${parsed.courseNames.join(", ")} on your list — kept your picks.`;
+      }
       setCourses(next);
       // Widen the drive radius when a named course sits beyond it — the golfer
       // asked for that course; silently filtering it out would be dishonest.
@@ -395,7 +432,7 @@ function Prefs({
     if (parsed.partySize != null) setGroup(applyPartySize(group, parsed.partySize));
     if (parsed.maxPriceUsd != null) setMaxPriceUsd(parsed.maxPriceUsd);
 
-    say(teeTimeAckLine(parsed) ?? "Got it.");
+    say(courseMissNote ?? teeTimeAckLine(parsed) ?? "Got it.");
 
     // Voice-first: a complete request (a day/time) or an explicit go-ahead
     // sends the looper out — speak, and it searches. A short beat lets the
@@ -820,22 +857,25 @@ interface SearchingProps {
   maxPriceUsd: number | null;
   /** Golfer location as "lat,lng" — null when unknown (search runs without it). */
   area: string | null;
-  /** The golfer's real profile name — null when no profile exists yet. */
-  bookerName: string | null;
   onBack: () => void;
-  onFound: (slots: TeeTimeSlot[], chosen: TeeTimeSlot, result: BookingResult) => void;
+  /** `asks` — the queries actually dispatched (1:1 with `queries` below),
+   *  threaded to Options/Confirmed so the window shown never re-derives from
+   *  live prefs state (bug #2). */
+  onFound: (slots: TeeTimeSlot[], asks: DispatchedAsk[]) => void;
 }
 
-function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, area, bookerName, onBack, onFound }: SearchingProps) {
+function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, area, onBack, onFound }: SearchingProps) {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [log, setLog] = useState<LogLine[]>([]);
   const [error, setError] = useState<string | null>(null);
   const done = useRef(false);
 
   const selectedWindows  = windows.filter((w) => w.selected);
-  // Unknown-distance courses (hand-added, no center) are the golfer's explicit
-  // picks — never silently dropped by the radius filter.
-  const selectedCourses  = courses.filter((c) => c.selected && (c.distance == null || c.distance <= maxMiles));
+  // The golfer's explicit picks — a checked box beside a course's name is an
+  // instruction, never silently dropped by the radius filter (bug #3: the
+  // radius already shaped what got LISTED; a shrink must not also un-dispatch
+  // a course the golfer already checked).
+  const selectedCourses  = courses.filter((c) => c.selected);
   const partySize        = Math.max(1, group.length);
 
   // One query per selected window, each on its OWN day's next date.
@@ -872,7 +912,10 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
         return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
       };
 
-      append({ t: nowStr(), text: `Checking ${selectedCourses.length || "nearby"} course${selectedCourses.length !== 1 ? "s" : ""} …`, state: "pending", course: "" });
+      const checkingText = selectedCourses.length > 0
+        ? `Checking your ${selectedCourses.length} pick${selectedCourses.length !== 1 ? "s" : ""} …`
+        : "Checking nearby courses …";
+      append({ t: nowStr(), text: checkingText, state: "pending", course: "" });
 
       let allSlots: TeeTimeSlot[] = [];
       for (const q of queries) {
@@ -897,49 +940,38 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
       const seen = new Set<string>();
       const unique = allSlots.filter((s) => { if (seen.has(s.id)) return false; seen.add(s.id); return true; });
 
-      if (unique.length === 0) {
-        setError("Nothing open nearby. Try a wider window or radius.");
+      // Bug #3 defense-in-depth: when the golfer has an explicit selection,
+      // never let a slot from an unselected course slip through into
+      // Options (e.g. an all-nearby degradation upstream). An honest miss,
+      // never a substitution.
+      const guarded = selectedCourses.length > 0
+        ? filterToSelection(unique, selectedCourses.map((c) => ({ id: c.id, name: c.name })))
+        : unique;
+
+      if (guarded.length === 0) {
+        setError(
+          selectedCourses.length > 0
+            ? emptySelectionNote(selectedCourses.map((c) => c.name))
+            : "Nothing open nearby. Try a wider window or radius.",
+        );
         return;
       }
 
-      // Unknown (null) prices sort last — never preferred over a known price.
-      const best = unique.slice().sort((a, b) =>
-        a.distanceMiles - b.distanceMiles ||
-        (a.priceUsd ?? Number.MAX_SAFE_INTEGER) - (b.priceUsd ?? Number.MAX_SAFE_INTEGER)
-      )[0];
-      // A route entry (routing provider) is a course we found, not a locked
-      // slot — the copy says so. A real slot (foreup: route is undefined) is
-      // still a needs_human deep-link handoff, not a completed booking — "Setting
-      // it up" stays honest without overclaiming a reservation we haven't made.
-      const bestLine = best.route
-        ? `${best.courseName} — closest match. Pulling up how to book.`
-        : `${best.courseName} ${formatTime12h(best.time)} — ${best.players} open. Setting it up.`;
-      append({ t: nowStr(), text: bestLine, state: "ok", course: best.courseName });
+      // Bug #1: stop collapsing to one auto-picked/auto-booked slot — hand
+      // the whole list to the Options screen and let the golfer pick.
+      const groups = groupSlotsByCourse(guarded);
+      const realCount = guarded.filter(isRealSlot).length;
+      const summaryLine = realCount > 0
+        ? `${realCount} time${realCount !== 1 ? "s" : ""} at ${groups.length} course${groups.length !== 1 ? "s" : ""} — take your pick.`
+        : `Found ${groups.length} course${groups.length !== 1 ? "s" : ""} — no online times, here's how to book.`;
+      append({ t: nowStr(), text: summaryLine, state: "win", course: "" });
 
-      let result: BookingResult;
-      try {
-        result = await bookTeeTime(best, { name: bookerName ?? "Guest", partySize });
-      } catch {
-        // No request actually reached the booking service — never fabricate
-        // "sent" copy. Honest needs_human handoff: the CTA still works via
-        // slot.bookingUrl fallback (confirmCopy), stamp reads "Found".
-        result = {
-          status: "needs_human",
-          message: "Couldn't reach the booking service — book directly on the course site.",
-        };
-      }
+      // The ACTUAL dispatched queries — the SUBMITTED prefs (bug #2), never
+      // re-derived from live prefs state downstream.
+      const asks: DispatchedAsk[] = queries.map((q) => ({ date: q.date, start: q.timeWindowStart, end: q.timeWindowEnd }));
 
-      if (result.status === "confirmed") {
-        append({ t: nowStr(), text: `${best.courseName} confirmed — ${best.time}.`, state: "win", course: best.courseName });
-      } else {
-        // The backend's `message` is already golfer-facing copy (routing's
-        // needs_human handoff line, etc.) — never surface the raw status enum.
-        const text = result.message ?? (result.status === "failed" ? "That didn't go through." : "Working on it.");
-        append({ t: nowStr(), text, state: result.status === "failed" ? "miss" : "ok", course: best.courseName });
-      }
-
-      await new Promise<void>((r) => setTimeout(r, 1200));
-      onFound(unique, best, result);
+      await new Promise<void>((r) => setTimeout(r, 900));
+      onFound(guarded, asks);
     };
 
     run();
@@ -1059,6 +1091,164 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
 }
 
 /* ─────────────────────────────────────────────
+   OPTIONS
+   What was actually found — grouped per course, calm and tappable. Real
+   slots render as bookable times; route-entry courses render the ASK
+   ("call for a time in your … window"), never the window as a found time.
+   ───────────────────────────────────────────── */
+
+/** Visible rows per course before a quiet "+ N more" expander (designer's
+ *  call per the plan §7 — protects the calm of a long list). */
+const ROWS_PER_COURSE_CAP = 5;
+
+interface OptionsProps {
+  accent: string;
+  slots: TeeTimeSlot[];
+  /** The ACTUAL dispatched queries — powers the ask line on route entries. */
+  asks: DispatchedAsk[];
+  /** The golfer's real profile name — null when no profile exists yet. */
+  bookerName: string | null;
+  partySize: number;
+  onBack: () => void;
+  /** A tap (real time or route-entry CTA) books it, then hands the picked
+   *  slot + result to Confirmed — mirrors the old auto-book flow, just after
+   *  the golfer's pick instead of before it. */
+  onPicked: (slot: TeeTimeSlot, result: BookingResult) => void;
+}
+
+function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked }: OptionsProps) {
+  const groups = groupSlotsByCourse(slots);
+  const realGroups = groups.filter((g) => g.realSlots.length > 0);
+  const routeGroups = groups.filter((g) => g.realSlots.length === 0 && g.routeEntry);
+  const hasRealSlots = realGroups.length > 0;
+
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // The id of the slot currently being booked — disables the rest of the
+  // list mid-request so a second tap can't fire a second booking.
+  const [picking, setPicking] = useState<string | null>(null);
+
+  const pick = async (slot: TeeTimeSlot) => {
+    if (picking) return;
+    setPicking(slot.id);
+    let result: BookingResult;
+    try {
+      result = await bookTeeTime(slot, { name: bookerName ?? "Guest", partySize });
+    } catch {
+      // No request actually reached the booking service — never fabricate
+      // "sent" copy. Honest needs_human handoff: the CTA still works via
+      // slot.bookingUrl fallback (confirmCopy), stamp reads "Found".
+      result = {
+        status: "needs_human",
+        message: "Couldn't reach the booking service — book directly on the course site.",
+      };
+    }
+    onPicked(slot, result);
+  };
+
+  return (
+    <PaperShell>
+      <TTMasthead
+        accent={accent}
+        onBack={onBack}
+        kicker="Found"
+        title={hasRealSlots ? "Take your pick" : "Here’s how to book"}
+      />
+
+      {groups.length === 0 && (
+        <div style={{ padding: "6px 22px 24px", fontFamily: T.serif, fontStyle: "italic", fontSize: 15, color: T.pencil }}>
+          Nothing to show.
+        </div>
+      )}
+
+      {realGroups.map((g) => {
+        const isOpen = expanded[g.courseId] ?? false;
+        const shown = isOpen ? g.realSlots : g.realSlots.slice(0, ROWS_PER_COURSE_CAP);
+        const hidden = g.realSlots.length - shown.length;
+        return (
+          <Section key={g.courseId} kicker={`${g.distanceMiles} mi`} title={g.courseName}>
+            {g.city && (
+              <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 13, color: T.pencil, marginTop: -6, marginBottom: 8, letterSpacing: -0.1 }}>
+                {g.city}
+              </div>
+            )}
+            <div>
+              {shown.map((slot, i) => (
+                <button
+                  key={slot.id}
+                  onClick={() => void pick(slot)}
+                  disabled={picking != null}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    width: "100%", padding: "12px 2px", border: "none", background: "transparent",
+                    cursor: picking ? "default" : "pointer", textAlign: "left" as const,
+                    borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
+                    opacity: picking && picking !== slot.id ? 0.45 : 1,
+                  }}
+                >
+                  <span style={{ fontFamily: T.mono, fontSize: 14, letterSpacing: -0.1, color: T.ink, fontVariantNumeric: "tabular-nums" }}>
+                    {slotOptionLabel(slot)}
+                  </span>
+                  <svg width="10" height="10" viewBox="0 0 12 12" style={{ color: T.pencilSoft, flexShrink: 0 }}>
+                    <path d="M3 2 L8 6 L3 10" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              ))}
+              {hidden > 0 && (
+                <button
+                  onClick={() => setExpanded((e) => ({ ...e, [g.courseId]: true }))}
+                  style={{ padding: "8px 2px", border: "none", background: "transparent", cursor: "pointer", fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" as const }}
+                >
+                  + {hidden} more
+                </button>
+              )}
+            </div>
+          </Section>
+        );
+      })}
+
+      {routeGroups.length > 0 && (
+        <Section kicker="No online times" title="Call to book">
+          <div>
+            {routeGroups.map((g, i) => {
+              const entry = g.routeEntry!;
+              const askWindow = formatAskWindows(asksForDate(asks, entry.date));
+              const askLine = entry.route === "call"
+                ? `Call for a time in your ${askWindow} window`
+                : `Book on their site — ask for your ${askWindow} window`;
+              return (
+                <button
+                  key={g.courseId}
+                  onClick={() => void pick(entry)}
+                  disabled={picking != null}
+                  style={{
+                    display: "block", width: "100%", padding: "12px 2px", border: "none", background: "transparent",
+                    cursor: picking ? "default" : "pointer", textAlign: "left" as const,
+                    borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
+                    opacity: picking && picking !== entry.id ? 0.45 : 1,
+                  }}
+                >
+                  <div style={{ fontFamily: T.serif, fontSize: 15, color: T.ink, letterSpacing: -0.15 }}>{g.courseName}</div>
+                  <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginTop: 2, letterSpacing: -0.1 }}>{askLine}</div>
+                </button>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+
+      <div style={{ padding: "8px 22px 30px" }}>
+        <button
+          onClick={onBack}
+          style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${T.ink}`, background: "transparent", cursor: "pointer", fontFamily: T.mono, fontSize: 10, letterSpacing: 1.5, color: T.ink, textTransform: "uppercase" as const, fontWeight: 600 }}
+        >
+          ← Adjust prefs
+        </button>
+      </div>
+    </PaperShell>
+  );
+}
+
+/* ─────────────────────────────────────────────
    CONFIRMED
    Data-driven from the real provider result.
    ───────────────────────────────────────────── */
@@ -1068,13 +1258,15 @@ interface ConfirmedProps {
   slot: TeeTimeSlot | null;
   bookingResult: BookingResult | null;
   group: GroupMember[];
-  /** The prefs windows the golfer selected — used when `slot.time` is unknown
-   *  (routing) to show the requested window instead of a fabricated time. */
-  windows: TimeWindow[];
+  /** The queries actually dispatched — the SUBMITTED prefs (bug #2). Used
+   *  when `slot.time` is unknown (routing) to show the window that was
+   *  actually asked for, never re-derived from live prefs state (which can
+   *  hold deselected defaults that win a find-by-date race). */
+  asks: DispatchedAsk[];
   onBack: () => void;
 }
 
-function Confirmed({ accent, slot, bookingResult, group, windows, onBack }: ConfirmedProps) {
+function Confirmed({ accent, slot, bookingResult, group, asks, onBack }: ConfirmedProps) {
   if (!slot) {
     return (
       <PaperShell>
@@ -1097,21 +1289,21 @@ function Confirmed({ accent, slot, bookingResult, group, windows, onBack }: Conf
   // reservation; we never fabricate a confirmation.
   const needsHuman = bookingResult?.status === "needs_human";
   const bookingUrl = bookingResult?.bookingUrl ?? slot.bookingUrl;
-  const copy = confirmCopy(slot, bookingResult);
+
+  // No fabricated tee time (routing): `formatTime12h("")` would read "NaN:NaN".
+  // Show the ask instead — built from the ACTUAL dispatched queries, never
+  // re-derived from live prefs state, so it equals the SUBMITTED prefs by
+  // construction (bug #2). Falls back to every dispatched ask when none
+  // happen to match this slot's date.
+  const hasKnownTime = slot.time !== "";
+  const matchingAsks = asksForDate(asks, slot.date);
+  const askWindow = formatAskWindows(matchingAsks.length > 0 ? matchingAsks : asks);
+  const copy = confirmCopy(slot, bookingResult, { askWindow: askWindow || undefined });
   const { stampWord, looperLine, ctaLabel, subCopy } = copy;
   const telHref = callTelHref(slot);
 
-  // No fabricated tee time (routing): `formatTime12h("")` would read "NaN:NaN".
-  // Show the requested window instead — the window whose date matches this
-  // slot, falling back to the first selected, then the first window.
-  const hasKnownTime = slot.time !== "";
-  const requestedWindow = windows.find((w) => w.date === slot.date)
-    ?? windows.find((w) => w.selected)
-    ?? windows[0];
-  const timeCardKicker = hasKnownTime ? "Tee off" : "Your window";
-  const timeCardFigure = hasKnownTime
-    ? formatTime12h(slot.time)
-    : requestedWindow ? formatWindowRange(requestedWindow.start, requestedWindow.end) : "—";
+  const timeCardKicker = hasKnownTime ? "Tee off" : "Your ask";
+  const timeCardFigure = hasKnownTime ? formatTime12h(slot.time) : (askWindow || "—");
 
   const addToCalendar = () => {
     const ev = {
@@ -1293,26 +1485,8 @@ function formatDateLabel(isoDate: string): string {
   return d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
 }
 
-/** "07:10" → "7:10 AM" */
-function formatTime12h(hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  const period = h < 12 ? "AM" : "PM";
-  const hour   = h % 12 || 12;
-  return `${hour}:${String(m).padStart(2, "0")} ${period}`;
-}
-
-/** "07:00" + "10:00" → "7:00–10:00 AM"; different periods → "11:00 AM–1:00 PM". */
-function formatWindowRange(start: string, end: string): string {
-  const [sh] = start.split(":").map(Number);
-  const [eh] = end.split(":").map(Number);
-  const sPeriod = sh < 12 ? "AM" : "PM";
-  const ePeriod = eh < 12 ? "AM" : "PM";
-  const startLabel = formatTime12h(start);
-  const endLabel = formatTime12h(end);
-  return sPeriod === ePeriod
-    ? `${startLabel.replace(` ${sPeriod}`, "")}–${endLabel}`
-    : `${startLabel}–${endLabel}`;
-}
+// formatTime12h / formatWindowRange moved to lib/teetime/options.ts so
+// Options and Confirmed share exactly one implementation (imported above).
 
 /* ─────────────────────────────────────────────
    Primitives

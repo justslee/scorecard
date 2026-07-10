@@ -90,6 +90,15 @@ describe("applyParsedCourses", () => {
   it("untouched when nothing was spoken", () => {
     expect(applyParsedCourses(COURSES, [], false)).toBe(COURSES);
   });
+
+  it("a spoken name matching NOTHING on the list keeps the current selection — never deselects everything", () => {
+    // Bug #3 voice hole: a misheard/unknown course name used to wipe the
+    // whole selection, which then silently widened the dispatch to every
+    // nearby course.
+    const next = applyParsedCourses(COURSES, ["Bally Golf Club"], false);
+    expect(next).toBe(COURSES);
+    expect(next.map((c) => c.selected)).toEqual([true, true, false]);
+  });
 });
 
 describe("applyPartySize", () => {

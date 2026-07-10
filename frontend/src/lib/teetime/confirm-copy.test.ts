@@ -137,6 +137,39 @@ describe("confirmCopy — needs_human with a real known time (foreup)", () => {
   });
 });
 
+describe("confirmCopy — askWindow threading (results/prefs UX fixes plan §3 Step 4)", () => {
+  it("call route: the looper line names the SUBMITTED ask window", () => {
+    const slot: TeeTimeSlot = { ...BASE_SLOT, route: "call", bookingUrl: undefined, phone: "+14155551234" };
+    const result: BookingResult = { status: "needs_human", bookingUrl: undefined };
+    const copy = confirmCopy(slot, result, { askWindow: "6:30–9:30 AM" });
+    expect(copy.looperLine).toBe("Found Presidio Golf Course. No online booking — call the pro shop for a time in your 6:30–9:30 AM window.");
+    expect(allCopyText(copy)).not.toMatch(/held/i);
+  });
+
+  it("book_on_site route: the looper line names the SUBMITTED ask window", () => {
+    const slot: TeeTimeSlot = { ...BASE_SLOT, route: "book_on_site" };
+    const result: BookingResult = { status: "needs_human", bookingUrl: slot.bookingUrl };
+    const copy = confirmCopy(slot, result, { askWindow: "11:00 AM–2:00 PM" });
+    expect(copy.looperLine).toContain("for a time in your 11:00 AM–2:00 PM window");
+    expect(copy.ctaLabel).toBe("Book on the course site →");
+  });
+
+  it("no askWindow passed → the original route-driven line, unchanged (backward compat)", () => {
+    const slot: TeeTimeSlot = { ...BASE_SLOT, route: "call", bookingUrl: undefined };
+    const result: BookingResult = { status: "needs_human", bookingUrl: undefined };
+    const copy = confirmCopy(slot, result);
+    expect(copy.looperLine).toBe("Found Presidio Golf Course. No online booking — call the pro shop to set it up.");
+  });
+
+  it("a real known time never mentions the ask window even when one is passed", () => {
+    const slot: TeeTimeSlot = { ...BASE_SLOT, time: "07:10", route: undefined, provider: "foreup" };
+    const result: BookingResult = { status: "needs_human", bookingUrl: slot.bookingUrl };
+    const copy = confirmCopy(slot, result, { askWindow: "6:30–9:30 AM" });
+    expect(copy.looperLine).not.toContain("6:30–9:30 AM");
+    expect(copy.looperLine).toContain("7:10 AM");
+  });
+});
+
 describe("confirmCopy — S2 honesty fix: network-failure fallback (page.tsx catch)", () => {
   it("the honest needs_human fallback (no fabricated 'pending'/'sent') stamps Found and keeps a working CTA via slot.bookingUrl", () => {
     // Mirrors the shape page.tsx now produces when bookTeeTime() throws: no

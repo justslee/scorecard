@@ -29,6 +29,17 @@ function formatTime12hOrEmpty(hhmm: string): string {
   return `${hour}:${String(m).padStart(2, "0")} ${period}`;
 }
 
+export interface ConfirmCopyOptions {
+  /**
+   * The SUBMITTED window text ("6:30–9:30 AM" or "… or …" for two windows
+   * sharing a date) — a `formatAskWindows(asksForDate(asks, slot.date))`
+   * projection of the dispatched queries, never re-derived from live prefs
+   * state (results/prefs UX fixes plan, bug #2). Only used on a route entry
+   * (`slot.time === ""`) — a real slot's known time speaks for itself.
+   */
+  askWindow?: string;
+}
+
 /**
  * Derive the Confirmed screen's copy from the slot + booking result.
  *
@@ -37,10 +48,11 @@ function formatTime12hOrEmpty(hhmm: string): string {
  * online booking, phone the pro shop). Real `confirmed` results only ever
  * come from the explicit mock provider on the real path today.
  */
-export function confirmCopy(slot: TeeTimeSlot, bookingResult: BookingResult | null): ConfirmCopy {
+export function confirmCopy(slot: TeeTimeSlot, bookingResult: BookingResult | null, opts: ConfirmCopyOptions = {}): ConfirmCopy {
   const needsHuman = bookingResult?.status === "needs_human";
   const isMock = slot.provider === "mock";
   const bookingUrl = bookingResult?.bookingUrl ?? slot.bookingUrl;
+  const { askWindow } = opts;
 
   const stampWord =
     bookingResult?.status === "confirmed" ? "Booked"
@@ -55,11 +67,15 @@ export function confirmCopy(slot: TeeTimeSlot, bookingResult: BookingResult | nu
       // the real time out loud instead of falling back to the routing copy.
       looperLine = `Found ${formatTime12hOrEmpty(slot.time)} at ${slot.courseName} — they take the reservation, book it on the course site.`;
     } else if (slot.route === "call") {
-      looperLine = `Found ${slot.courseName}. No online booking — call the pro shop to set it up.`;
+      looperLine = askWindow
+        ? `Found ${slot.courseName}. No online booking — call the pro shop for a time in your ${askWindow} window.`
+        : `Found ${slot.courseName}. No online booking — call the pro shop to set it up.`;
     } else {
       // "book_on_site" (or an unset route on a needs_human result — treat as
       // the honest default: we found the course, they take the reservation).
-      looperLine = `Found ${slot.courseName}, ${slot.distanceMiles} mi away. They take the reservation — book on the course site.`;
+      looperLine = askWindow
+        ? `Found ${slot.courseName}, ${slot.distanceMiles} mi away. They take the reservation — book on the course site for a time in your ${askWindow} window.`
+        : `Found ${slot.courseName}, ${slot.distanceMiles} mi away. They take the reservation — book on the course site.`;
     }
   } else {
     const teeTime = formatTime12hOrEmpty(slot.time);
