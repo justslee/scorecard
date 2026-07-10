@@ -541,7 +541,7 @@ class TestVoiceCallProviderWindowDerivation:
         assert result.status in STABLE_STATUSES
 
 
-# ─── Telephony stays a stub ────────────────────────────────────────────────────
+# ─── Telephony gating ───────────────────────────────────────────────────────
 
 
 class TestTelephonyStub:
@@ -557,10 +557,11 @@ class TestTelephonyStub:
         with pytest.raises(RuntimeError, match="missing credentials"):
             telephony.get_live_transport()
 
-    def test_enabled_with_creds_is_still_not_implemented(self, monkeypatch):
+    def test_enabled_with_creds_but_no_public_host(self, monkeypatch):
         monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
         monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC-test")
         monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok-test")
         monkeypatch.setenv("TWILIO_FROM_NUMBER", "+14155550100")
-        with pytest.raises(NotImplementedError, match="owner-gated"):
+        monkeypatch.delenv("VOICE_BOOKING_PUBLIC_HOST", raising=False)
+        with pytest.raises(RuntimeError, match="VOICE_BOOKING_PUBLIC_HOST"):
             telephony.get_live_transport()

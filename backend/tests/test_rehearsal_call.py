@@ -45,6 +45,7 @@ def _clean_env(monkeypatch):
         "VOICE_BOOKING_OWNER_NUMBER", "VOICE_BOOKING_OWNER_NAME",
         "VOICE_BOOKING_REHEARSAL_TZ", "VOICE_BOOKING_ENABLED",
         "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER",
+        "VOICE_BOOKING_PUBLIC_HOST",
     ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(route_mod, "_rehearsal_transport_factory", None)
@@ -178,18 +179,20 @@ async def test_not_enabled_when_voice_booking_disabled(monkeypatch):
     assert resp.transcript == []
 
 
-async def test_not_enabled_when_bridge_unimplemented(monkeypatch):
+async def test_not_enabled_when_public_host_missing(monkeypatch):
+    # The live bridge SHIPPED (specs/teetime-s3b-twilio-bridge-plan.md) — flag +
+    # full Twilio creds now construct a real LiveCallTransport UNLESS the public
+    # wss host Twilio would connect back to is also configured. Still zero
+    # network — get_live_transport only reads env and raises.
     monkeypatch.setenv("VOICE_BOOKING_OWNER_NUMBER", _OWNER_RAW)
     monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC_test")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok_test")
     monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15005550006")
-    # Real get_live_transport now reaches the NotImplementedError (owner-gated
-    # bridge). Still zero network — it never constructs a client.
+    monkeypatch.delenv("VOICE_BOOKING_PUBLIC_HOST", raising=False)
     resp = await route_mod.rehearsal_call(owner_id="owner_1")
     assert resp.status == "not_enabled"
-    reason = (resp.reason or "").lower()
-    assert "owner-gated" in reason or "telephony bridge" in reason
+    assert "VOICE_BOOKING_PUBLIC_HOST" in (resp.reason or "")
 
 
 # ─── Full happy path via the simulator ───────────────────────────────────────

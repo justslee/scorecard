@@ -6,10 +6,13 @@ Slots behind the same TeeTimeProvider ABC as every other provider:
   book()                → phone lookup → compliance gates → run the dialog
                           against the supplied transport → BookingResult
 
-The ONLY transport that ships today is the simulator; the live Twilio bridge
-(telephony.py) is a stub until the owner-gated launch (TCPA attorney + budget).
-Every refusal is a BookingResult — book() never raises at a compliance gate or
-a disabled transport, so the route layer stays boring.
+Default transport (no `transport=` injected) is `telephony.get_live_transport()`
+— the real Twilio ↔ OpenAI Realtime bridge (specs/teetime-s3b-twilio-bridge-plan.md)
+— gated behind VOICE_BOOKING_ENABLED + Twilio credentials + a public wss host;
+until the owner configures all of that it raises a calm RuntimeError, which
+this module maps to a "needs_human" BookingResult. Tests inject a
+SimulatedCallTransport. Every refusal is a BookingResult — book() never raises
+at a compliance gate or a disabled transport, so the route layer stays boring.
 """
 
 from __future__ import annotations

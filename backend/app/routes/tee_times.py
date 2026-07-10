@@ -501,16 +501,22 @@ async def simulate_book_by_call(
 # and the compliance allowlist both come from VOICE_BOOKING_OWNER_NUMBER alone.
 # There is no code path by which a request value becomes a dialed number.
 #
-# HONEST STATUS: nothing dials after this slice — the live Twilio↔Realtime
-# bridge (telephony.get_live_transport) is owner-gated and still NotImplemented.
-# With the gate off (default) the owner gets a structured "not_enabled" reason;
-# with it fully configured, the owner-gated bridge message. See §8 of the plan.
+# HONEST STATUS: the live Twilio↔OpenAI-Realtime bridge has SHIPPED
+# (specs/teetime-s3b-twilio-bridge-plan.md) — telephony.get_live_transport()
+# constructs a real LiveCallTransport once VOICE_BOOKING_ENABLED=1, full
+# Twilio credentials, AND VOICE_BOOKING_PUBLIC_HOST are all configured. Code
+# shipping ≠ the owner turning it on: with any of those unset (the CI/default
+# state) the owner still gets a structured "not_enabled" reason and nothing
+# dials. Fully configured, pressing rehearsal-call places a REAL outbound call
+# to the owner's own verified number.
 #
 # To actually receive a call the owner sets on the backend (all required):
 #   VOICE_BOOKING_ENABLED=1
 #   TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER
 #   VOICE_BOOKING_OWNER_NUMBER=+1XXXXXXXXXX   # his own verified E.164 — the
 #                                             # ONLY number this endpoint can dial
+#   VOICE_BOOKING_PUBLIC_HOST=api.example.com # public TLS host Twilio's media
+#                                             # stream connects back to (wss)
 # Optional: VOICE_BOOKING_OWNER_NAME (spoken in the disclosure),
 #           VOICE_BOOKING_REHEARSAL_TZ (calling-hours time zone).
 
