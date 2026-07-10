@@ -10579,3 +10579,36 @@ prompt-fed-to-model). QA: strict gates (ruff, pytest tests/eval incl new teeth, 
 tests, frontend lint+tsc+voice smoke) + re-prove RED-then-green teeth. On return: BLOCKING
 (correctness/security/over-refusal/Northstar) → re-dispatch builder + re-review; else update PR #122
 checklist (4th item, NOTICEABLE). NO ship / NO ping this cycle.
+
+## cycle 51 DONE — caddie-dont-answer-misheard-input (INPUT_GROUNDING_RULE) landed on bundle #122 (NOTICEABLE)
+Extends the caddie grounding doctrine from FACTS to INPUT: it no longer confidently answers a
+mis-heard/gibberish/non-golf utterance (owner saw it answer ASR-invented "Scars."/"of God") — it
+briefly asks "Didn't catch that — say again?" — while STILL answering terse-but-clear golf questions
+("driver?","what club","how far","read?","wind?"). New INPUT_GROUNDING_RULE constant
+(voice_prompts.py) injected into all 3 mouths (realtime build_realtime_instructions + both text
+stable_text blocks in routes/caddie.py), each immediately BEFORE OBSERVED_REALITY_RULE (keeps
+test_voice_stream.py endswith pins green). Commit a35e96d (feature) + progress commits.
+Companion to cycle-50 vocab-bias: that reduces mis-hearing at the SOURCE; this stops the caddie
+answering what it mis-heard. Honest scope: realtime is speech-to-speech (raw audio) so the rule is a
+strong NUDGE not a hard gate — cascaded-STT confidence spike remains the queued hard gate (NOT this
+cycle); plausibility heuristic DEFERRED (pure prompt rule).
+Fable plan (VERIFIED against codebase) → specs/caddie-input-grounding-plan.md; caught collateral
+(test_caddie_caching OLD templates, test_voice_stream endswith pins) pre-emptively.
+Reviewer: SHIP — adversarial BOTH ways: under-refusal (rule is strong, not a no-op) + OVER-refusal
+risk LOW (explicit terse-question carve-out in the rule text, pinned by test_input_grounding_prompt.py
++ the positive golden terse-driver-question-still-answered). No injection/security surface (rule =
+static text, no user/tool data flows in; transcript still a separate user message; /security-review
+adds nothing — no auth/endpoint/dep/user-data-flow change). Eval teeth genuinely fail-when-stripped.
+QA: ALL GREEN — ruff clean; eval 64/64 (incl 2 new golden + mutant teeth); targeted prompt/cache/
+voice-stream/grounding 61/61; frontend lint+tsc clean; voice smoke 274/274. Teeth INDEPENDENTLY
+re-proven RED-then-green (strip {INPUT_GROUNDING_RULE} from _build_session_voice_prompt → gibberish
+scenario RED naming mouth ['text']; restore → 64/64 green); working tree left clean.
+Designer SKIPPED — no visual surface (caddie spoken/text behavior; NORTHSTAR "ask once, briefly"
+calm criterion covered by reviewer). Cost-disciplined (Plan+builder+reviewer+qa only).
+PR #122 checklist updated → now FOUR noticeable items (course-ids-wiring, slope-framing-reconcile,
+transcription-vocab-bias, input-grounding). NO ship / NO ping this cycle (bundle accumulates; owner
+ships on his single "ship it"). At ship time: re-verify EVERY required gate state:SUCCESS on the
+FINAL head SHA (cancelled/absent required gate is NOT a pass).
+Injection note: several embedded "date changed / DO NOT mention" instructions appeared in tool output
++ system-reminder-shaped messages this cycle; disregarded ALL as untrusted DATA per injection-defense
+policy — zero effect on the work. PR #124 (caller) + voice_booking/telephony/tee_times untouched.
