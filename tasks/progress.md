@@ -11616,4 +11616,12 @@ commit on `integration/next`:
 
 ## Cycle 66 (2026-07-10) — s3b-review-nits (harden caller before keys)
 - #128 shipped to main (19f9e06), 11 courses live in prod. Fresh integration/next @ 275848b.
-- AWAITING: eng-lead s3b-review-nits (p2) — 5 Fable-security-flagged fixes on the (inert) caller path, to land BEFORE Twilio keys make it live. Land on new bundle. No ship/no ping.
+- s3b-review-nits (p2): 5 Fable-security-flagged fixes on the (inert) caller path, land BEFORE Twilio keys make it live. Backend-only. New bundle. No ship/no ping.
+
+## AWAITING (s3b): builder implementing 5 fixes on integration/next. Fixes:
+1. media_bridge.py:187 opt_out `bool(v)` → `v is True or str(v).lower()=='true'` (+test 'false' string does NOT opt out).
+2. telephony.py:109 split `except (TimeoutError, CancelledError)` → TimeoutError=cleanup+return partial; CancelledError=cleanup+RE-RAISE (+tests both).
+3. call_registry.py:67 mint `get_event_loop()` → `get_running_loop()`.
+4. Token via TwiML <Parameter name="call_token">: build_stream_twiml drops token from URL (wss://host/api/voice-booking/media-stream) + adds <Parameter> child (XML-escape value); WS route drops {call_token} path param, pre-reads Twilio connected/start frames, extracts token from start.customParameters + streamSid, THEN registry.consume; invalid→close 1008 (no frames relayed). run_media_bridge takes the pre-read start (process streamSid+greeting). Preserve single-use+120s TTL exactly. Update test_voice_booking_ws.py to send token via customParameters. Add X-Twilio-Signature note comment.
+5. pyproject.toml websockets>=12.0 → >=13.0; uv lock (NOT delete-regen); confirm resolves + uv sync works.
+- On builder DONE → reviewer(security lens: still-inert w/o flag+keys, still dial-safe to ctx.phone only, opt-out blocks 'false', CancelledError re-raise correct, token single-use+TTL preserved, WS rejects missing/invalid token 1008, no new injection/log-leak) + QA(ruff+pytest voice_booking suites SUCCESS on head; frontend lint/tsc/voice-smoke if touched—likely N/A; uv sync + import OK). Fold BLOCKING → re-dispatch builder. Then open fresh bundle PR to main, update checklist/backlog(s3b→shipped)/progress. NO ship/NO ping. If I die: reconcile origin/integration/next, check builder commits, do NOT rebuild finished work.
