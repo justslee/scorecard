@@ -11693,3 +11693,7 @@ commit on `integration/next`:
 - QA (add3134a): PASS on d522d93 — ruff "All checks passed!"; 86/86 touched voice_booking/telephony/media_bridge tests; 1884/1884 broader non-DB; uv sync clean + app.main import ok; frontend untouched (N/A). No DB container started (integration DB tests → CI).
 - Classification: SILENT (backend-only hardening on inert path — not TestFlight-noticeable). Bundle so far = silent-only → NO owner ping, NO ship. Rides the next noticeable change.
 - backlog.json: s3b-review-nits → shipped. Fresh bundle PR opened to main (silent bundle). If I die: reconcile origin/integration/next @ d522d93 — reviewer+QA both green, do NOT rebuild.
+
+## Cycle 67 (2026-07-10) — coverage expansion (owner default: more engines, no redirect)
+- Cycle 66 (s3b-review-nits) shipped-ready on #129. Owner fired loop without redirecting the direction fork → default = more coverage.
+- AWAITING: eng-lead teetime-s4c2-coverage-expansion — probe+seed more NY courses on foreUP/TeeItUp/Chronogolf (+ Teesnap if NY exists), real fixtures only. Grow past 11 courses. Land on #129.
