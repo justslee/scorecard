@@ -788,7 +788,7 @@ export default function CaddieSheet({
       openingGenRef.current++; // invalidate any opening-turn async still awaiting GPS
       return;
     }
-    // Live mode owns the opening turn itself (spoken, via sendText — see
+    // Live mode owns the opening turn itself (spoken, via sendOpener — see
     // useCaddieLiveSession) — the classic text auto-fire must not ALSO run,
     // or the golfer gets a double opening turn and a phantom text mic
     // (specs/caddie-realtime-slice-c1-plan.md §4/§9).
