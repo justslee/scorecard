@@ -11193,3 +11193,10 @@ Head after bookkeeping pending; CI to re-verify strict-green at ship time.
 - Board + PRs: no new owner feedback; #125 still awaits ship-it. Confirmed fcb-caption items already shipped.
 - Scoped the vague p2 stub into a real finding: F/C/B mapped-branch fallback shows fabricated `distance±offset` (a ~40% illustration placeholder) when geometry is null but source isn't card-only → fake yardages on the core surface (no-fake-data violation).
 - AWAITING: eng-lead pass on **fcb-unmapped-paper-fallback-mismatch** (p2): replace the fabricated fallback with honest card-only tiles. Land on #125. No ship/no ping.
+
+## AWAITING (cycle 61 — fcb-unmapped-paper-fallback-mismatch)
+Built + pushed fix on integration/next @ 071e2d4 (helper lib/course/fcb-tiles.ts + test, RoundPageClient tile wiring). Local gates GREEN: lint, tsc, voice 274/274, vitest 12/12.
+Awaiting: reviewer (adversarial 3-paths trace + no-fabrication verify) + designer (NORTHSTAR "—" calm).
+- reviewer SHIP → finalize bookkeeping (backlog→shipped, PR #125 checklist), confirm CI green, report DONE.
+- reviewer BLOCKING → re-dispatch builder on 071e2d4, re-review.
+On resume: reconcile from origin/integration/next log; do NOT rebuild — fix already at 071e2d4.
