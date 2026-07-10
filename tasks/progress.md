@@ -11613,3 +11613,7 @@ commit on `integration/next`:
 - Board: created "Bundle #128: tee-time availability epic — TeeItUp + Chronogolf (11 NY-area courses live)" card → Status Shipped, PR linked, full checklist + owner-test note (Notion page `3991c525-92e0-8152-ab1c-ffd8e84e428d`).
 - `backlog.json`: `teetime-s4a-capability-store-teeitup` and `teetime-s4c-chronogolf-probe-quick18` → `shipped-to-main`, `shipped_to_main_commit: "19f9e06"`, `shipped_pr: ".../pull/128"`, `testflight_version` noted as "no new build — backend-only".
 - Rails reset complete. Next bundle starts clean off `main`@`19f9e06`.
+
+## Cycle 66 (2026-07-10) — s3b-review-nits (harden caller before keys)
+- #128 shipped to main (19f9e06), 11 courses live in prod. Fresh integration/next @ 275848b.
+- AWAITING: eng-lead s3b-review-nits (p2) — 5 Fable-security-flagged fixes on the (inert) caller path, to land BEFORE Twilio keys make it live. Land on new bundle. No ship/no ping.
