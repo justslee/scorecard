@@ -11789,3 +11789,7 @@ Outcomes: both green → update PR #129 checklist (NOTICEABLE addition) + backlo
 - Honest negatives (NOT seeded): Hudson Hills resident-gated, Skyway all-Non-Resident, Monmouth passholder-gated, essex-group teeitup 0-avail, wrong-state collisions. Teesnap SKIPPED (no live NY teesnap.net trivially found).
 - Classification: NOTICEABLE (more courses show real tee times). Bundle #129 now has ≥1 noticeable change. PR #129 title+body updated (checklist). backlog.json: teetime-s4c2-coverage-expansion → shipped (landed_commit a0fb85b).
 - Per this cycle's directive: SILENT — no ship, no owner ping. Bundle #129 rides to the owner on the NEXT ship decision (or when the loop decides to request approval for the accumulated noticeable bundle). Do NOT auto-ship.
+
+## Cycle 68 (2026-07-10) — S4e availability-by-call (complete the ladder)
+- #129 at 28 courses, strict-green, awaiting owner ship. Owner fired loop w/o redirect → build S4e (highest-value substantive remaining; NOT more coverage-grinding).
+- AWAITING: eng-lead S4e — availability-ask dialog mode + user-initiated call CTA + availability_by_call cache + result flow-back + router rung-3 wiring + fix S3 window-from-slot.time bug. Ships DARK (inert until Twilio keys). Land on #129.
