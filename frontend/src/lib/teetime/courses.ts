@@ -65,8 +65,12 @@ const COUNTRY_SEGMENT_RE = /^(u\.?s\.?a\.?|united states(\s+of\s+america)?)$/i;
 const STREET_SUFFIX_RE = /\b(rd|road|ave|avenue|blvd|pkwy|parkway|dr|drive|ln|lane|st|street|hwy|highway)$/i;
 /** Tokens that mark a segment as a golf venue / state park — never a locality.
  *  Deliberately NOT bare "Park": real cities are named "Menlo Park", "Oak
- *  Park", so "Park" alone must survive; only "state park" + golf tokens drop. */
-const VENUE_TOKEN_RE = /\b(golf|course|club|links|state\s+park)\b/i;
+ *  Park", so "Park" alone must survive; only "state park" + golf tokens drop.
+ *  Also deliberately NOT bare "Club": real municipalities "Country Club, FL"
+ *  and "Country Club Hills, IL" contain the whole word — golf venues already
+ *  carry "golf"/"course"/"links", so dropping bare "club" loses no venue but
+ *  protects those towns (reviewer-flagged real-city false-positive). */
+const VENUE_TOKEN_RE = /\b(golf|course|links|state\s+park)\b/i;
 
 /** True when a segment plainly names a venue or street rather than a town. */
 function isVenueOrStreetSegment(seg: string): boolean {
@@ -286,7 +290,10 @@ export function courseOptionFromSelection(
   return {
     id: String(sel.id),
     name: sel.name,
-    muni: muniFromAddress(sel.location),
+    // localityLabel (not bare muniFromAddress) so the add-flow surface inherits
+    // the name-echo dedup too — a searched-and-added "Tenafly" must not render
+    // "Tenafly · Tenafly" on the picker (reviewer-flagged missed surface).
+    muni: localityLabel(sel.name, sel.location),
     distance,
     favorite: sel.favorite ?? false,
     selected: true,

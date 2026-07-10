@@ -90,8 +90,9 @@ describe("muniFromAddress", () => {
   });
 
   it("omits a lone street segment (a road name is not a town)", () => {
-    expect(muniFromAddress("Finley Road")).toBe("");
-    expect(muniFromAddress("100 Skyline Blvd")).toBe(""); // leading number dropped → lone "Skyline Blvd"
+    expect(muniFromAddress("Finley Road")).toBe(""); // whole-word "Road" suffix → street, not a town
+    expect(muniFromAddress("Skyline Blvd")).toBe(""); // street-suffix guard, no leading number involved
+    expect(muniFromAddress("100 Skyline Blvd")).toBe(""); // whole segment starts with a digit → dropped outright
   });
 
   it("keeps a real city even when a street/venue segment precedes it (≥2 segments)", () => {
@@ -108,6 +109,10 @@ describe("muniFromAddress", () => {
     expect(muniFromAddress("Los Angeles")).toBe("Los Angeles");
     expect(muniFromAddress("Menlo Park")).toBe("Menlo Park"); // "Park" alone is NOT a venue token
     expect(muniFromAddress("Oak Park")).toBe("Oak Park");
+    // Real municipalities that contain the whole word "Club" must survive —
+    // bare "club" is NOT a venue token (golf venues carry golf/course/links).
+    expect(muniFromAddress("Country Club Hills")).toBe("Country Club Hills");
+    expect(muniFromAddress("100 Main St, Country Club Hills, IL 60478, USA")).toBe("Country Club Hills");
   });
 });
 
@@ -459,6 +464,14 @@ describe("addCourseOption / courseOptionFromSelection", () => {
   it("leaves distance unknown (null) when the center or origin is missing", () => {
     expect(courseOptionFromSelection({ id: "x", name: "No Center" }, { lat: 40, lng: -73 }).distance).toBeNull();
     expect(courseOptionFromSelection({ id: "x", name: "No Origin", center: { lat: 40, lng: -73 } }, null).distance).toBeNull();
+  });
+
+  it("omits a locality that just echoes the course name on the add-flow surface (no 'Tenafly · Tenafly')", () => {
+    // The add flow goes through localityLabel, so the name-echo dedup applies
+    // here too — not just in toCourseOptions.
+    expect(courseOptionFromSelection({ id: "t", name: "Tenafly", location: "Tenafly, NJ, USA" }, null).muni).toBe("");
+    // A distinct real locality is still kept.
+    expect(courseOptionFromSelection({ id: "b", name: "Bethpage Black", location: "Farmingdale, NY" }, null).muni).toBe("Farmingdale");
   });
 
   it("appends a new course selected", () => {
