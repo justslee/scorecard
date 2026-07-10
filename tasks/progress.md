@@ -10166,3 +10166,29 @@ button returns 'not enabled' note until then.
 - On builder DONE → reviewer (adversarial) + /security-review (open-relay + dial-safety) + qa (STRICT gates).
 - On resume: git log origin/feat/teetime-s3-caller for builder commits; do NOT re-run builder.
 - Do NOT merge; push updates PR #124.
+
+## DONE (S3b builder — feat/teetime-s3-caller, updates PR #124) — commit ef3a31b
+Implemented specs/teetime-s3b-twilio-bridge-plan.md exactly (worktree agent-a594409eae41bedd2):
+- NEW call_registry.py (CallTokenRegistry — 256-bit single-use expiring tokens),
+  media_bridge.py (session config/instructions/tool + the Twilio↔OpenAI bridge loop,
+  disclosure-first greeting sent BEFORE any caller audio), routes/voice_booking_ws.py
+  (public, NOT owner-gated, token-guarded media-stream WS — loud security comment at
+  file top + main.py mount).
+- telephony.py: NotImplementedError deleted; build_stream_twiml + LiveCallTransport +
+  gating ladder (adds required VOICE_BOOKING_PUBLIC_HOST). Dials ONLY
+  normalize_phone(ctx.phone), never a request value; construction is network-free.
+- Deps: twilio>=9.0.0, websockets>=12.0 (pyproject.toml + uv.lock, `uv sync` run).
+- Refreshed stale "stub" docstrings (__init__.py, provider.py, tee_times.py rehearsal
+  HONEST STATUS block).
+- Updated the 2 legacy stub-encoding tests (test_rehearsal_call.py, test_voice_booking.py)
+  to the new missing-public-host behavior — genuine behavior change, not weakened.
+- New tests (all CI-safe, mocked Twilio/OpenAI, NEVER a live dial): test_telephony_bridge.py
+  (13), test_media_bridge.py (12), test_voice_booking_ws.py (3, incl. bad-token/flag-off/
+  single-use WS refusals via FastAPI websocket_connect).
+Gates green locally: ruff clean; 113/113 new+updated suite pass, 1679/1679 full non-DB
+backend suite pass (DATABASE_URL set to a dummy value for import-time collection only —
+no real Postgres touched, no docker); frontend lint/tsc/build/voice-tests(274/274) all green.
+DB-backed integration suite untested locally (policy: no local Postgres) — runs in CI.
+Pushed to feat/teetime-s3-caller (updates PR #124). Do NOT merge.
+Next: reviewer (adversarial diff review) + /security-review (open-relay + dial-safety +
+disclosure-first + secrets hygiene) + qa (STRICT gates) before PR #124 is ready.
