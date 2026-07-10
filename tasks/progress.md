@@ -10373,3 +10373,19 @@ cascaded-stt. On return: SUPPORTED → save plan, dispatch builder on integratio
 record evidence in progress+lessons, pick the honest fallback, no fake capability. Do NOT refactor
 the session builder; keep change LOCALIZED to the transcription-config block (parallel teetime-s3
 effort may also touch this file).
+
+## Fable plan DONE (VERIFIED YES) → specs/caddie-realtime-transcription-vocab-bias-plan.md
+Verification: `prompt` biasing IS supported for gpt-4o-transcribe in the realtime session at
+session.audio.input.transcription.prompt (GA API reference AudioTranscription object; exclusions are
+gpt-realtime-whisper + gpt-4o-transcribe-diarize, NOT our model). Branch 2A. Approach: new pure
+backend/app/caddie/keyterms.py (GOLF_KEYTERMS mirror of frontend + closed-set _HAZARD_TERMS +
+build_transcription_prompt(session)); additive transcription_prompt kwarg threaded route→
+mint_ephemeral_session→build_session_payload; setup route gets golf_baseline_prompt() only. Injection-
+safe: composed ONLY from closed-set constants (unknown club keys/hazard types dropped), placed at
+transcription.prompt (not session.instructions). No PII beyond player's own clubs. 8 DB-free teeth
+tests. NOTICEABLE-leaning (modest). Plan claims spot-checked against codebase: PASS.
+
+## AWAITING: builder on integration/next implementing the plan (localized, additive; do NOT refactor
+the session builder — parallel teetime-s3 may touch realtime_relay.py). On builder return: dispatch
+reviewer (injection-as-data focus) + qa (strict gates) in parallel; iterate on BLOCKING only; update
+PR #122 checklist; NO ship/NO ping this cycle (bundle accumulates).
