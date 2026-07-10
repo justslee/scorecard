@@ -54,13 +54,21 @@ export function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: n
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+/** A whole address segment naming the country — "United States", "United
+ *  States of America", "USA", "U.S.A." (anchored, never a substring match,
+ *  so a real locality is never mistaken for one). */
+const COUNTRY_SEGMENT_RE = /^(u\.?s\.?a\.?|united states(\s+of\s+america)?)$/i;
+
 /** Pull a short city label out of a free-form address. Empty string when unknown. */
 export function muniFromAddress(address?: string): string {
   if (!address) return "";
   const parts = address.split(",").map((p) => p.trim()).filter(Boolean);
-  // Drop street numbers, "CA 94121"-style segments, and country names.
+  // Drop street numbers, "CA 94121"-style segments, and country names —
+  // "USA"/"United States of America" too, not just "United States" (no-fake-
+  // data-adjacent honesty fix: a location label should read as a real
+  // locality or be omitted, never leak a country-name suffix).
   const cityish = parts.filter(
-    (p) => !/^\d/.test(p) && !/^[A-Z]{2}(\s+[\d-]+)?$/.test(p) && !/united states/i.test(p)
+    (p) => !/^\d/.test(p) && !/^[A-Z]{2}(\s+[\d-]+)?$/.test(p) && !COUNTRY_SEGMENT_RE.test(p)
   );
   return cityish.length > 0 ? cityish[cityish.length - 1] : "";
 }

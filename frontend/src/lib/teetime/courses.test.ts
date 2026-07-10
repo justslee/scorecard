@@ -59,6 +59,24 @@ describe("muniFromAddress", () => {
     expect(muniFromAddress(undefined)).toBe("");
     expect(muniFromAddress("")).toBe("");
   });
+
+  it("drops a 'USA' country suffix, not just 'United States' (plan §8 #4)", () => {
+    expect(muniFromAddress("300 Finley Rd, San Francisco, CA 94129, USA")).toBe("San Francisco");
+  });
+
+  it("drops a 'United States of America' country suffix", () => {
+    expect(muniFromAddress("300 Finley Rd, San Francisco, CA 94129, United States of America")).toBe("San Francisco");
+  });
+
+  it("still drops the plain 'United States' suffix (regression)", () => {
+    expect(muniFromAddress("300 Finley Rd, San Francisco, CA 94129, United States")).toBe("San Francisco");
+  });
+
+  it("never mistakes a real locality for a country label (anchored, not substring)", () => {
+    // A town whose name merely CONTAINS a country-ish substring must survive —
+    // the filter matches the WHOLE segment, never a substring.
+    expect(muniFromAddress("100 Main St, Unity, OH 44685, USA")).toBe("Unity");
+  });
 });
 
 describe("toCourseOptions", () => {
