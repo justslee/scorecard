@@ -3,6 +3,43 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — release-manager: bundle #125 SHIPPED to main + TestFlight
+
+Owner replied "Ship it" for PR #125 (`integration/next` -> `main`). Full ship
+executed:
+
+- **Pre-flight re-verified** (not trusted blindly): `integration/next` head
+  unchanged at `6cee98f` since owner approval; PR #125 OPEN/MERGEABLE; both
+  required gates ("Frontend gates", "Backend gate") state:SUCCESS on that
+  exact head.
+- **Merged** `gh pr merge 125 --merge` -> merge commit `56ddb78` on `main`
+  (prior-bundle convention: merge commit, not squash).
+- **Post-merge CI on `main`@`56ddb78` verified GREEN**: Frontend gates
+  SUCCESS, Backend gate SUCCESS, E2E smoke advisory SUCCESS. Backend deploy
+  (SSM) on that SHA also succeeded (no infra flake hit this run).
+- **TestFlight build shipped** via `bash ops/ios/ship.sh` run from `main`@
+  `56ddb78`: archived + distribution-signed + uploaded. **EXPORT SUCCEEDED**
+  on the first attempt (no exit-70 retry needed) — **v1.0.1096** (build
+  `202607100821`), now processing on Apple's side.
+- **Fresh `integration/next` cut** from the new `main` head: old
+  `integration/next` (`6cee98f`) was a direct ancestor of `56ddb78`
+  (fast-forward, no force-push needed) -> fast-forwarded local branch to
+  `56ddb78` and pushed. New `integration/next` head = `56ddb78` (same as
+  `main` until the next item lands).
+- **Board + backlog updated** for the 8 shipped checklist items (see PR #125
+  body): caddie-surface-osm-trees, teetime-show-real-time-options,
+  teetime-prefs-ux-polish, voicetel-timing-immediate-flush (silent),
+  caddie-remove-seeded-question, teetime-muni-pseudolocality-guard,
+  fcb-unmapped-paper-fallback-mismatch, fcb-plays-tile-fabricated-fallback —
+  all marked `shipped-to-main` in `backlog.json` with
+  `shipped_to_main_commit: 56ddb78`, `testflight_version: v1.0.1096`,
+  `shipped_pr` link. "Looper — Product Board" card(s) moved to Shipped with
+  the same PR link + build version.
+- **No new feature work this cycle** — ship + rails reset only.
+
+**Bundle #125 SHIPPED @ 56ddb78 · TestFlight v1.0.1096 (build 202607100821) ·
+fresh integration/next cut @ 56ddb78.**
+
 ## 2026-07-10 — builder: voicetel-timing-immediate-flush landed on the bundle (SILENT, telemetry-only, DONE)
 
 Implemented `specs/voicetel-timing-immediate-flush-plan.md` exactly. One
