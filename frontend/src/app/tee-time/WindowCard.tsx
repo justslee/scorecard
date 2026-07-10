@@ -36,6 +36,9 @@ export interface WindowCardWindow {
 export interface WindowCardProps {
   win: WindowCardWindow;
   accent: string;
+  /** True for a window just added by "Add another window" — opens the date
+   *  calendar once on mount so a fresh window's date is easy to find. */
+  autoOpenCalendar?: boolean;
   onToggle: () => void;
   onEdit: (start: string, end: string) => void;
   onPickDate: (date: string) => void;
@@ -65,8 +68,12 @@ interface DragSession {
   rectWidth: number;
 }
 
-export default function WindowCard({ win, accent, onToggle, onEdit, onPickDate, onDelete }: WindowCardProps) {
-  const [showCalendar, setShowCalendar] = useState(false);
+export default function WindowCard({ win, accent, autoOpenCalendar, onToggle, onEdit, onPickDate, onDelete }: WindowCardProps) {
+  // Initializer, not an effect: a freshly-added window mounts a NEW
+  // WindowCard (new id → new `key`), so this fires exactly once on mount and
+  // can't re-trigger on a later re-render. Existing cards are already
+  // mounted — their state is untouched, so they never auto-open.
+  const [showCalendar, setShowCalendar] = useState(autoOpenCalendar ?? false);
   const dragRef = useRef<DragSession | null>(null);
 
   const startMin = hhmmToMin(win.start);
@@ -150,6 +157,9 @@ export default function WindowCard({ win, accent, onToggle, onEdit, onPickDate, 
               onClick={(e) => { e.stopPropagation(); setShowCalendar((s) => !s); }}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setShowCalendar((s) => !s); } }}
               style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 3,
                 fontFamily: T.mono,
                 fontSize: 8,
                 letterSpacing: 1,
@@ -165,6 +175,14 @@ export default function WindowCard({ win, accent, onToggle, onEdit, onPickDate, 
                 whiteSpace: "nowrap" as const,
               }}
             >
+              {/* Quiet calendar glyph — the date chip's only visual hint
+                  that it's tappable to change the date (owner feedback:
+                  the affordance wasn't discoverable). */}
+              <svg width="8" height="8" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+                <rect x="1.5" y="2" width="9" height="8.5" rx="1" stroke="currentColor" strokeWidth="1" />
+                <path d="M1.5 4.5 H10.5" stroke="currentColor" strokeWidth="1" />
+                <path d="M4 1 V3 M8 1 V3" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+              </svg>
               {formatDateChip(win.date)}
             </div>
           </div>

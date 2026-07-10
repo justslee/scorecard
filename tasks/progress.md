@@ -3,6 +3,116 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — eng-lead: cycle 72 caddie-guide-injection-hardening — DONE, on integration/next (SILENT)
+
+Backend-only SECURITY hardening of the shipped strategy-guide
+web-content-into-LLM surface (findings from the cycle-71 review). Landed
+@ `fe2570f` on `integration/next`; rides bundle PR #130 as SILENT work.
+
+Three fixes, each with a test that goes **RED on the pre-fix code**:
+- **MED-1** — a newline in a guide field broke the single-line "Local
+  knowledge:" DATA framing (multi-line block mimicking a new prompt-section
+  header, injected into BOTH caddie prompts). `format_guide_line` now flattens
+  per-fragment whitespace (`" ".join(frag.split())`); `validate_guide` also
+  rejects any `\n`/`\r`-bearing field (defense-in-depth).
+- **MED-2** — persisted guides (cached FOREVER) were validated only at WRITE
+  time. `/course-intel` (caddie.py:1261) now re-validates at READ time against
+  `intel.hazards`, at loop-body level before the session cache write. BOTH the
+  text mouth (caddie.py:728) and the realtime/voice mouth (voice_prompts.py:159)
+  read `session.hole_intel` populated from that loop → covers BOTH; reviewer
+  confirmed no bypass site. Ungrounded guide → dropped to None (no line, no crash).
+- **LOW-3** — `_MAX_FIELD_CHARS` (240) now applied per `common_mistakes` item.
+- **LOW-1/2 (doc only)** — plan §9/§10 corrected: `injection_pattern` keyword
+  scan is defense-in-depth, NOT a boundary; no content classifier added.
+
+Verification: 7 target tests RED on pre-fix source (stash-verified), 186 offline
+guide/caddie tests GREEN with fix; ruff clean; frontend untouched (lint/tsc/voice
+274/274 still green). **CI on head `d315570`:** Backend gate SUCCESS (ruff +
+pytest incl. route/integration on Postgres — new route test validated in CI) +
+Frontend gate SUCCESS. Reviewer: **SHIP** (adversarial security lens). PR #130
+checklist + backlog updated. SILENT — no owner ship/ping.
+
+Follow-up carded `caddie-guide-session-reload-revalidate` (p3, non-blocking):
+also re-validate guides when hydrating a persisted caddie SESSION blob on reload.
+
+## 2026-07-10 — builder: tee-time setup UX owner-feedback fixes — DONE, on integration/next
+
+Implemented `specs/teetime-setup-ux-owner-feedback-plan.md` (owner testing
+feedback from v1.0.1149), commit `690c1fe` on `integration/next`. All 4 asks,
+frontend-only, NOTICEABLE:
+1. Searching progress log now reports the golfer's PICKS THAT ARE OPEN
+   (filterToSelection + groupSlotsByCourse dedup, applied before counting)
+   instead of the backend's raw 8-course discovery set — fixes the "8 during
+   search vs 5 on Options" confusion the owner traced. Discovery mode
+   (no selection) unchanged. Backend untouched.
+2. "Add another window" auto-opens that window's date calendar once
+   (`justAddedId` + `autoOpenCalendar` prop, mount-time initializer —
+   existing windows never auto-open, verified no double-open).
+3. Quiet inline-SVG calendar glyph beside the date chip (same hit target,
+   same a11y) so the date is discoverably editable.
+4. Window-span cap removed — `MAX_WINDOW_MIN` = full track (900min) instead
+   of a fixed 6h; tests re-pointed to the exact clamp, not weakened, plus a
+   new full-track-span positive test. Noted + fixed one internal
+   inconsistency in the plan's literal test snippet (see commit body).
+
+Gates (all green): `npm run lint` clean, `tsc --noEmit` clean, voice-tests
+smoke 274/274, `vitest src/lib/teetime` 223/223 (9 files). Pushed to
+`origin/integration/next`. Did NOT open a PR (eng-lead owns the bundle PR).
+
+## 2026-07-10 — release-manager: bundle #129 SHIPPED to main + TestFlight
+
+Owner replied "Ship it" — approved bundle PR #129 (`integration/next` → `main`).
+Guarded pre-flight re-verified before touching anything: PR head
+`051e5636` unchanged since approval, both required gates SUCCESS, PR
+OPEN+MERGEABLE, `main` head `19f9e06` as expected.
+
+1. **Merged #129 → main**: `gh pr merge 129 --merge` → merge commit
+   `01dd23bf910856d17ec2e7c3285e803e78f90a18` (fast-forward from `19f9e06`
+   via the merge commit; no force-push anywhere in this run).
+2. **Post-merge main CI green**: both required checks (Frontend gates,
+   Backend gate) SUCCESS on the new main head — no flake, no rerun needed.
+3. **Backend deployed** via the `Deploy backend (SSM)` GH Actions workflow
+   (auto-triggered on push to main) — SSM command status `Success`,
+   `/health` → `{"status":"ok"}` inside that run. Independently re-verified
+   with a fresh SSM probe from this Mac (key-free): `/health` OK; hit
+   `/api/tee-times/search` and `/api/tee-times/availability-call` directly —
+   both correctly 401 "Missing Authorization" (every tee-time route is
+   `require_owner`-gated app-wide per `main.py`, so a raw curl can't reach
+   the "not_enabled" JSON body without a real Clerk token). Confirmed the
+   dark behavior instead via the code path (`main.py` — no
+   `VOICE_BOOKING_ENABLED`/Twilio keys in prod) + CI's
+   `test_availability_call_route.py` (8 passing cases asserting
+   `status="not_enabled"` whenever keys/allowlist are absent).
+   Capability-store smoke check run directly on the box (SSM,
+   `load_all_capabilities()` against the live deployed code): 29 courses
+   loaded, including all 3 named win-courses (Dunwoodie, Maple Moor, Putnam
+   County).
+4. **Cut TestFlight** from the new main (`bash ops/ios/ship.sh`) — there
+   IS a frontend delta this bundle (S4e call-CTA/async UI,
+   `frontend/src/lib/teetime/*`, ~296 insertions), so unlike #128 a new
+   build was required. Upload was clean on the first try (no exit-70
+   retry needed). **v1.0.1149 (build 202607101453)**. Polled the App Store
+   Connect API (JWT minted from the local `.p8`, never printed) — build
+   indexed and reached `processingState=VALID` within ~90s.
+5. **Fresh `integration/next` cut** from new main (`01dd23b`), pushed
+   (fast-forward, branch recreated from `origin/main`).
+6. **Board + backlog**: created the Notion card for bundle #129 (none
+   existed yet — #128's card was the last one, already Shipped) with
+   Status=Shipped, full checklist, PR link, TestFlight version. Backlog
+   `teetime-s4e-availability-by-call`, `teetime-s4c2-coverage-expansion`,
+   `s3b-review-nits` promoted from `shipped`/`shipped` (on
+   `integration/next`) to `shipped-to-main` with
+   `shipped_to_main_commit: 01dd23b`, `testflight_version: v1.0.1149
+   (build 202607101453)`, `shipped_pr: #129`. (`teetime-s4a-*` and
+   `teetime-s4c-*` were already `shipped-to-main` from #128 — untouched.)
+
+**Owner test**: open Tee Time, search Dunwoodie / Maple Moor / Putnam
+County (or any of the other 25 newly-live NY-metro courses) — real
+bookable slots, not the fallback. On a phone-only/locked course the new
+call-CTA appears; tapping it currently reports the call as unavailable
+(`not_enabled`) until Twilio keys land — that is the correct, intended
+dark state, not a bug.
+
 ## 2026-07-10 — builder: S4e — rung-3 availability-by-call (ships dark, DONE)
 
 Implemented `specs/teetime-availability-everywhere-plan.md` §5, §6, §7 as an
@@ -11904,3 +12014,27 @@ next @ 1ed2b71, read children's verdicts, do NOT rebuild.
 - Tee-time ladder COMPLETE (S4a-S4e on #129, 28 courses + AI-call rung dark). Pivoted off tee-time per prior commitment.
 - Investigated non-tee ready work: NO clean high-value build item. voice-language-onboarding=p7/doesn't-help-owner; voice-vad/cascaded-STT=measurement-gated (need owner usage); caddie features mostly shipped.
 - FOUND: caddie-hole-strategy-guides is on main but its LIVE research path was never smoke-tested (silent-failure risk per 'test-critical-flows' memory). Corrected stale backlog status. Verifying it needs owner OK (prod API spend). HOLDING for owner: ship #129 / keys / redirect / OK-the-smoke-test.
+
+## Cycle 70 (2026-07-10) — owner tee-time setup UX feedback (v1.0.1149 testing)
+- #129 SHIPPED (01dd23bf9, TestFlight v1.0.1149, 29 courses live). Owner tested, "worked much better".
+- Owner confirmed Marine Park unreachable = Cloudflare Turnstile (his own screenshot) — validated our probe; no build, rung-3/partnership stands.
+- AWAITING: eng-lead teetime-setup-ux-owner-feedback (p1) — 8-vs-5 count clarity, calendar-on-add-window, obvious date edit, wider window span. Designer pass required. Land on fresh #.
+- PLAN: specs/teetime-setup-ux-owner-feedback-plan.md (plan-lite, frontend-only). 8-vs-5 FINDING: raw per-query results.length logs the backend discovery set (MAX_COURSES=8 nearby public) while Options is trimmed to the golfer's picks via filterToSelection — two sets, one number. Fix = count selection-filtered picks-open, no fabrication.
+- LANDED on integration/next (head 298976b). Builder @ 690c1fe implemented all 4 asks; eng-lead @ 298976b folded designer polish.
+  - (1) COUNT: frontend-only honest fix — per-window route-entry line now counts groupSlotsByCourse(filterToSelection(results, picks)).length so the number = exactly what Options offers. NO backend change. Copy: "{n} of your {N} picks have/has times in {window}" (picks mode); discovery-mode copy unchanged ("open to the public" kept only there, where it's the real differentiator). 0-picks-with-raw-results falls through to honest "Nothing in {window}".
+  - (2) CALENDAR-ON-ADD: justAddedId state + autoOpenCalendar mount initializer on WindowCard; existing windows never re-open (initializer, not effect).
+  - (3) DATE AFFORDANCE: quiet inline-SVG calendar glyph (8x8, gap 3, currentColor=fgSoft) in the date chip; 44pt hit target + role/tabIndex/onKeyDown a11y preserved.
+  - (4) WIDER SPAN: MAX_WINDOW_MIN = TRACK_END-TRACK_START (900min/15h, full track). window-slider tests re-pointed to exact clamps (Math.max/Math.min — NOT weakened) + new "can span the full track" test. applyDrag math verified correct at full width.
+  - REVIEWER (fresh, adversarial, ab558f2): SHIP — all 4 verified by hand, count derived from identical selection/dedup pipeline Options uses (can't fabricate/over-report), calendar initializer can't re-fire, a11y intact, tests exact-clamp not weakened. 1 non-blocking nit (justAddedId never reset — harmless, mount-only read).
+  - QA (a5f0573): PASS on b2d58e4 — lint clean, tsc clean, voice smoke 274/274, teetime vitest 223/223 incl new full-track test; backend ruff clean (no backend files). Playwright E2E skipped (pre-existing infra gap — no per-PR Vercel preview / Clerk test cred).
+  - DESIGNER (Northstar, ac02569): PASS, no blocking. Folded 2 polish: picks-mode copy ("have/has times" vs muddled "open to the public") + glyph 10x10→8x8/gap3. Non-urgent follow-ups noted: on-band tick contrast for very wide unselected windows; auto-open scroll position with 3+ windows on SE-class phone.
+  - Post-polish gates re-run GREEN on 298976b: lint clean, tsc clean, teetime vitest 223/223.
+  - NOTICEABLE bundle. backlog.json: teetime-setup-ux-owner-feedback → shipped (landed_commit 298976b). Fresh bundle PR opened → main. SILENT this cycle per directive — NO ship, NO owner ping; bundle accumulates for the next ship decision.
+
+## Cycle 71 (2026-07-10) — owed security review of strategy-guides web-content-into-LLM surface
+- #130 (window UX) strict-green, awaiting owner ship. Owner threads open: voice-clarification, ship #130. Clean autonomous queue drained (p3/p7/measurement-gated only).
+- Doing the OWED /security-review (CLAUDE.md: major changes must pass it; backlog flagged it before ship but code reached main): verify guide_writer/course_guides/caddie injection mitigations are real in code, not just planned. Read-only unless it finds a fix. No prod spend, no owner needed.
+
+## Cycle 71 result → 72 (2026-07-10)
+- Security review DONE: core mitigations real (no HIGH); found MED-1 (newline breaks DATA framing → fake prompt section into caddie), MED-2 (cached guides never re-validated on read), LOW-3 (per-item cap). Created caddie-guide-injection-hardening (p1).
+- AWAITING: eng-lead fixes MED-1 + MED-2 + LOW-3 with red-pre-fix tests; update plan §9 to not overstate injection_pattern. Land on bundle.

@@ -91,10 +91,10 @@ describe("applyDrag — start handle", () => {
     expect(r.end).toBe(780);
   });
 
-  it("never lets the window exceed the 6h cap", () => {
+  it("never lets the window exceed MAX_WINDOW_MIN", () => {
     const r = applyDrag("start", minToFrac(0), 600, 780);
     expect(r.end - r.start).toBeLessThanOrEqual(MAX_WINDOW_MIN);
-    expect(r.start).toBe(780 - MAX_WINDOW_MIN);
+    expect(r.start).toBe(Math.max(TRACK_START_MIN, 780 - MAX_WINDOW_MIN));
   });
 
   it("never leaves the track", () => {
@@ -114,10 +114,18 @@ describe("applyDrag — end handle", () => {
     expect(r.end).toBe(660); // 600 + MIN_WINDOW_MIN
   });
 
-  it("never lets the window exceed the 6h cap", () => {
+  it("never lets the window exceed MAX_WINDOW_MIN", () => {
     const r = applyDrag("end", minToFrac(TRACK_END_MIN), 600, 780);
     expect(r.end - r.start).toBeLessThanOrEqual(MAX_WINDOW_MIN);
-    expect(r.end).toBe(600 + MAX_WINDOW_MIN);
+    expect(r.end).toBe(Math.min(TRACK_END_MIN, 600 + MAX_WINDOW_MIN));
+  });
+
+  it("can span the full track when dragged from just after the start", () => {
+    // frac 1 = the pointer at the far right edge of the track (as the
+    // band-clamp tests below do), so the window can widen to the full 15h.
+    const r = applyDrag("end", 1, TRACK_START_MIN, TRACK_START_MIN + 60);
+    expect(r.end).toBe(TRACK_END_MIN);
+    expect(r.end - r.start).toBe(900);
   });
 
   it("never leaves the track", () => {

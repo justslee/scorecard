@@ -3,8 +3,9 @@
  * DOM/React, so the gesture logic is unit-testable without a browser.
  *
  * The track spans one day, 06:00–21:00, in 30-minute steps. A window is a
- * [start, end] pair inside that range with a 1h floor and a 6h ceiling — it
- * can never cross midnight because the track itself never leaves the day.
+ * [start, end] pair inside that range with a 1h floor and no practical
+ * ceiling (it can span the full track) — it can never cross midnight because
+ * the track itself never leaves the day.
  */
 
 /** Track domain, in minutes-since-midnight. */
@@ -12,9 +13,10 @@ export const TRACK_START_MIN = 6 * 60;
 export const TRACK_END_MIN = 21 * 60;
 /** Snap grid. */
 export const STEP_MIN = 30;
-/** A window can't be shorter than 1h or longer than 6h. */
+/** A window can't be shorter than 1h; the ceiling is the full track (no
+ *  practical cap — a golfer can widen a window across the whole day). */
 export const MIN_WINDOW_MIN = 60;
-export const MAX_WINDOW_MIN = 6 * 60;
+export const MAX_WINDOW_MIN = TRACK_END_MIN - TRACK_START_MIN;
 
 /** How close (in minutes) a grab has to be to an edge to grab THAT edge
  *  instead of the band — generous so small handle pills stay easy to grab. */
