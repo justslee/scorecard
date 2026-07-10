@@ -11899,3 +11899,8 @@ next @ 1ed2b71, read children's verdicts, do NOT rebuild.
 - SHIPS DARK confirmed: nothing dials without VOICE_BOOKING_ENABLED + Twilio creds + non-empty verified-lines allowlist. Search never triggers a call. CTA visible on TestFlight (degrades to tel: today).
 - Classification: NOTICEABLE affordance (new call-CTA on call-route results) but functionally inert. Bundle #129 already had a noticeable change (s4c2 28 courses); S4e rides along. backlog.json: teetime-s4e-availability-by-call → shipped (landed_commit 2830655). PR #129 checklist updated.
 - Per directive: SILENT this cycle — NO ship, NO owner ping. Bundle #129 accumulates; rides to owner on the next ship decision. head SHA: 2830655.
+
+## Cycle 69 (2026-07-10) — pivot off tee-time; queue genuinely drained
+- Tee-time ladder COMPLETE (S4a-S4e on #129, 28 courses + AI-call rung dark). Pivoted off tee-time per prior commitment.
+- Investigated non-tee ready work: NO clean high-value build item. voice-language-onboarding=p7/doesn't-help-owner; voice-vad/cascaded-STT=measurement-gated (need owner usage); caddie features mostly shipped.
+- FOUND: caddie-hole-strategy-guides is on main but its LIVE research path was never smoke-tested (silent-failure risk per 'test-critical-flows' memory). Corrected stale backlog status. Verifying it needs owner OK (prod API spend). HOLDING for owner: ship #129 / keys / redirect / OK-the-smoke-test.
