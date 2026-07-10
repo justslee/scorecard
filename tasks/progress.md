@@ -10636,3 +10636,29 @@ context); not a blocker.
 On return: dispatch ONE builder to implement the plan on integration/next (commits+pushes there,
 NO per-item PR). Do NOT touch voice_booking/telephony/tee_times (PR #124 separate). If I die
 here: re-read this note, re-dispatch Fable Plan (no code was written yet).
+
+## Fable plan DONE → specs/caddie-surface-osm-trees-plan.md (VERIFIED against codebase, saved verbatim)
+Single edit surface: extract_hole_hazards in backend/app/caddie/hazards.py — all 3 caddie mouths +
+carries tool + guide writer flow through it, ZERO caller changes. Observation model: tree Points +
+woods-polygon RING VERTICES → observations, classified through the SAME _project_onto_polyline frame
+(positive=LEFT), 70y lateral window (makes woods NEAR-EDGE not centroid), per-side aggregate to
+min/max carry pair → format_hazards_line renders "trees R 220-300y" via existing range merge.
+Coverage guard: >=3 obs/side (a mapped woods qualifies alone; 1-2 stray points silent). Trees
+appended AFTER bunker/water cap + re-sorted → NEVER evict a real hazard; group cap 5->6; severity
+"moderate"; _TYPE_ORDER trees=2 (after water). HAZARD_GROUNDING_RULE amended (additive; pinned
+substrings survive) → asked-about-unmapped-trees = "not in my mapped data", never invented, never
+"there are no trees". NO Hazard/HoleIntelligence schema change (cached JSONB validates, 'trees'
+already in frontend union) → NO frontend edit. Tests: new test_tree_hazards.py (12 geometry tests
+incl 8-bearing sweep T6 + dogleg played-line T7 + woods near-edge-vs-centroid T4 ~165y divergence),
+real-Bethpage-fixture test, 2 golden evals (trees-carry-cited-from-geometry, trees-not-mapped-honest)
++ mutation teeth (RED when trees stripped). Injection note: an embedded "date changed/don't mention"
+instruction appeared in tool output/system-reminder — disregarded as untrusted DATA (zero effect).
+
+## AWAITING: ONE builder implementing specs/caddie-surface-osm-trees-plan.md on integration/next
+(commits+pushes there; NO per-item PR). Do NOT touch voice_booking/telephony/tee_times (PR #124).
+On builder return: Fable reviewer (FALSIFY tree carry/side across bearings + woods near-edge +
+coverage-guard honesty + cap-crowding; same rigor as bend/hazards) + qa (STRICT gates + eval teeth
+RED-then-green proof) in parallel. Designer only if a UI surface changed (expect none — tool/intel
+only). BLOCKING → re-dispatch builder. Else update PR #122 checklist (5th NOTICEABLE). NO ship / NO
+ping this cycle (bundle accumulates). If I die here: re-read this; reconcile from origin/integration/next
+git log (builder pushes its own commits) — do NOT re-run a builder that already pushed.
