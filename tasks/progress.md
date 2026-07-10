@@ -11145,3 +11145,7 @@ voice smoke 274/274. Frontend-only, zero schema/backend.
 PR #125 checklist updated -> FOUR noticeable + ONE silent. backlog.json caddie-remove-seeded-question=shipped.
 Per cycle instructions: SILENT bundle accumulation — bundle #125 already awaits owner "ship it"; NO merge/ship/ping.
 Head after bookkeeping pending; CI to re-verify strict-green at ship time.
+
+## Cycle 59 (2026-07-10) — IN PROGRESS
+- Board + PRs checked: no new owner feedback; #125 still awaits ship-it. Reconciled caller item → in_review (=PR #124).
+- AWAITING: eng-lead pass on **teetime-prefs-ux-polish** (p2 minor, owner screenshot): course list shows "· USA" not a city; fix label to real locality or omit country. Land on #125. No ship/no ping.

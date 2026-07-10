@@ -186,11 +186,11 @@
       "type": "major",
       "priority": 2,
       "risk": "high",
-      "status": "ready",
+      "status": "in_review",
       "depends_on": [
         "teetime-s0-kill-fake-data"
       ],
-      "why": "specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool."
+      "why": "RECONCILED 2026-07-10: BUILT as PR #124 (S3 caller + rehearsal harness, double security-SHIP) \u2014 awaits owner merge + Twilio keys, not a fresh build. | specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool."
     },
     {
       "id": "teetime-s4-scraping-adapters",
