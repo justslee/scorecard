@@ -10910,3 +10910,14 @@ Frontend-only, NO backend, do NOT touch voice_booking/telephony (#124). Classify
 Sync clean; no pending "ship it". Per cycle standing rule: no push notifications this cycle.
 ## AWAITING Fable plan (specs/teetime-prefs-ux-polish-plan.md). On return → dispatch ONE builder to implement on
 integration/next; then reviewer (no-regression to selection/options flow) + designer PASS (iOS-sim before/after) + QA strict gates.
+
+## CYCLE 54 — Fable plan VERIFIED + saved (specs/teetime-prefs-ux-polish-plan.md)
+Root cause of clipped header found by trace: "WHERE/N SELECTED" is the mid-page Section (L715), NOT the masthead;
+in full-bleed Capacitor/standalone WKWebView (viewportFit:cover + black-translucent) content scrolls UNDER the
+status bar. Fix = fixed pointer-transparent status-bar scrim in PaperShell (height env(safe-area-inset-top),
+paper@88%+blur) — a port of globals.css .app-header pattern; covers all 4 tee-time phases, invisible on desktop.
+Item2 CourseRow: right col distance-only (aligned), muni→mono subline under name, minHeight44, dividers unchanged.
+Item3 courses.ts L106: guard r.city fallback with COUNTRY_SEGMENT_RE (+2 tests). Item4 (same file): conditional
+route header, distance/city on route rows, minHeight44 on sub-44pt rows. ZERO backend, ZERO logic change to f9953f2.
+## AWAITING builder — implement specs/teetime-prefs-ux-polish-plan.md on integration/next, commit+push, run gates.
+On return → reviewer (no-regression) + designer PASS (iOS-sim) + QA strict; then update PR #125 checklist.
