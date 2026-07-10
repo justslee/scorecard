@@ -12002,3 +12002,7 @@ next @ 1ed2b71, read children's verdicts, do NOT rebuild.
 ## Cycle 71 (2026-07-10) — owed security review of strategy-guides web-content-into-LLM surface
 - #130 (window UX) strict-green, awaiting owner ship. Owner threads open: voice-clarification, ship #130. Clean autonomous queue drained (p3/p7/measurement-gated only).
 - Doing the OWED /security-review (CLAUDE.md: major changes must pass it; backlog flagged it before ship but code reached main): verify guide_writer/course_guides/caddie injection mitigations are real in code, not just planned. Read-only unless it finds a fix. No prod spend, no owner needed.
+
+## Cycle 71 result → 72 (2026-07-10)
+- Security review DONE: core mitigations real (no HIGH); found MED-1 (newline breaks DATA framing → fake prompt section into caddie), MED-2 (cached guides never re-validated on read), LOW-3 (per-item cap). Created caddie-guide-injection-hardening (p1).
+- AWAITING: eng-lead fixes MED-1 + MED-2 + LOW-3 with red-pre-fix tests; update plan §9 to not overstate injection_pattern. Land on bundle.
