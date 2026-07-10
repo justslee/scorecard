@@ -11329,3 +11329,47 @@ disclosure-first + secrets hygiene) + qa (STRICT gates) before PR #124 is ready.
 - OWNER DIRECTIVE (screenshot): tee-time must FETCH real availability for every course, not show a bare "call the pro shop" number. Ladder API→scrape→AI-call. Web scraper approved if best per-course option. → recorded as teetime-availability-everywhere (p1, planning); s4-scraping bumped p1.
 - Owner approved MERGE of caller #124 (keys NOT in yet → merges inert, gated by VOICE_BOOKING_ENABLED until Twilio keys added).
 - Dispatching: (a) release-manager to merge #124 guarded; (b) Fable Plan for the fetch-everywhere ladder.
+
+## Cycle 63+ — DONE: guarded merge of #124 (S3 caller + S3b bridge) to main, INERT
+Owner-approved merge executed exactly per brief (keys NOT in yet condition).
+- Safety verification (all 3 PASS, confirmed in code before touching anything):
+  (a) VOICE_BOOKING_ENABLED gate — router_provider.py (voice route inert unless
+      env=="1"), telephony.get_live_transport() (gating ladder: flag → Twilio
+      creds → VOICE_BOOKING_PUBLIC_HOST), voice_booking_ws.py media_stream route
+      (closes 1008 if flag off, defense-in-depth even though a token couldn't
+      exist without the flag either). (b) No boot crash without TWILIO_*/
+      VOICE_BOOKING_* env — all env reads are runtime os.getenv() inside
+      functions, never module-level; `twilio`/`websockets` imports are lazy
+      (inside _twilio_client_factory / _default_openai_ws), not at import time;
+      main.py just registers the WS router unconditionally (no env needed).
+      (c) Dial-safety allowlist — /rehearsal-call dials ONLY
+      VOICE_BOOKING_OWNER_NUMBER (require_owner-gated, no request body), and
+      the compliance allowlist passed is `{owner_number}` alone.
+- feat/teetime-s3-caller was based on pre-#125 main (mergeable=UNKNOWN/CONFLICTING).
+  Merged origin/main into it (worktree agent-a594409eae41bedd2) → 3 conflicts:
+  tee_times.py (kept both new imports — main's resolve_selectors + this branch's
+  voice_booking imports), tee-time/page.tsx (main's #125 refactor moved the
+  actual booking call from Searching's auto-book to Options.pick() — adopted
+  main's flow and re-threaded timeWindowStart/timeWindowEnd into the new
+  booking call site via asksForDate(asks, slot.date) so phone-call route
+  entries still carry the golfer's honest requested window), progress.md
+  (append-only log, concatenated). Pushed (79d7490) — gates SUCCESS (Frontend +
+  Backend), PR mergeable=MERGEABLE.
+- Merged PR #124 → main: commit **9cd7394**. Post-merge main CI: both required
+  gates SUCCESS (Backend, Frontend) + `deploy` job SUCCESS. Deploy verified —
+  `/health` green after `uv sync` (installs twilio/websockets) + restart with
+  the new code; no boot crash from missing Twilio env (confirms safety check b
+  in prod, not just locally).
+- No TestFlight cut (per task scope — backend-only feature). Frontend DOES
+  carry one visible change: a new "Rehearsal call" section on the existing
+  /settings page (owner-only app, so only the owner ever sees it) — the button
+  is inert (returns "not enabled" until keys are set), no dial risk either way.
+- Synced integration/next: merged origin/main into it (2416f32) — it only had
+  silent bookkeeping commits ahead of old main, so the merge carried the caller
+  code forward cleanly (1 progress.md conflict, concatenated). Local gates
+  green (ruff, tsc) on the synced head.
+- backlog.json: teetime-s3-ai-caller-plus-rehearsal + teetime-s3b-twilio-bridge
+  → status shipped-to-main-inert (both note blocks list the exact Twilio env
+  the owner needs to add). s3b-review-nits depends_on ["#124 merged"] cleared
+  (unblocked, ready to build).
+- Board: card recorded (see below) — Shipped-to-main-INERT, awaiting keys.

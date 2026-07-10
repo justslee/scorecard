@@ -59,10 +59,8 @@
       "priority": 2,
       "risk": "low",
       "status": "ready",
-      "depends_on": [
-        "#124 merged"
-      ],
-      "why": "Fable security review of S3b (SHIP) flagged 3 non-blocking nits to fix before heavy live use: (1) media_bridge opt_out_requested uses bool() so a stringified 'false' from the model reads True and would suppress a real pro-shop number \u2014 use `v is True or str(v).lower()=='true'`; (2) telephony timeout except swallows asyncio.CancelledError \u2014 split TimeoutError (return partial) from CancelledError (re-raise after cleanup); (3) call_registry asyncio.get_event_loop() -> get_running_loop(). All localized to the S3b files; land after #124 merges (branch is worktree-locked now). | 2nd Fable security review (SHIP, mutation-verified) added: (4) pass the call token via TwiML <Parameter> (arrives in start.customParameters) instead of the URL path so it doesn't land in uvicorn/Twilio access logs \u2014 defense-in-depth; add the X-Twilio-Signature-validation comment note; (5) raise websockets floor to >=13.0 (additional_headers needs the new asyncio client; uv.lock resolves 16 so it works today but a future resolution could break the OpenAI handshake). Also noted: future /book path interpolates course_name into call instructions \u2014 bounded (can't alter the dialed number) but a prompt-steer surface to remember when the allowlist is first populated."
+      "depends_on": [],
+      "why": "Fable security review of S3b (SHIP) flagged 3 non-blocking nits to fix before heavy live use: (1) media_bridge opt_out_requested uses bool() so a stringified 'false' from the model reads True and would suppress a real pro-shop number \u2014 use `v is True or str(v).lower()=='true'`; (2) telephony timeout except swallows asyncio.CancelledError \u2014 split TimeoutError (return partial) from CancelledError (re-raise after cleanup); (3) call_registry asyncio.get_event_loop() -> get_running_loop(). All localized to the S3b files; land after #124 merges (branch is worktree-locked now). | 2nd Fable security review (SHIP, mutation-verified) added: (4) pass the call token via TwiML <Parameter> (arrives in start.customParameters) instead of the URL path so it doesn't land in uvicorn/Twilio access logs \u2014 defense-in-depth; add the X-Twilio-Signature-validation comment note; (5) raise websockets floor to >=13.0 (additional_headers needs the new asyncio client; uv.lock resolves 16 so it works today but a future resolution could break the OpenAI handshake). Also noted: future /book path interpolates course_name into call instructions \u2014 bounded (can't alter the dialed number) but a prompt-steer surface to remember when the allowlist is first populated. UNBLOCKED 2026-07-10: #124 merged to main (9cd7394, guarded/inert) \u2014 dep satisfied, ready to build."
     },
     {
       "id": "caddie-dont-answer-misheard-input",
@@ -101,11 +99,12 @@
       "type": "major",
       "priority": 1,
       "risk": "high",
-      "status": "ready",
-      "depends_on": [
-        "#124 merged"
-      ],
-      "why": "S3 (PR #124) built the full rehearsal harness (trigger, endpoint, dialog, disclosure, safety, tests \u2014 reviewer/security SHIP) EXCEPT telephony.get_live_transport() which is still NotImplementedError \u2014 so nothing actually DIALS. S3b implements the Twilio\u2194OpenAI-Realtime audio bridge (outbound Twilio call \u2194 the realtime booking session) so the owner's rehearsal call actually rings his phone. Owner-gated: VOICE_BOOKING_ENABLED + Twilio creds + his verified number. This is the last mile; after it + creds, the owner taps Settings\u2192Rehearsal call and plays pro shop live. Fable plan; security review (live outbound telephony, the dial-safety invariant must hold end-to-end); the existing text simulator stays the CI-safe test (no live dial in CI)."
+      "status": "shipped-to-main-inert",
+      "depends_on": [],
+      "why": "S3 (PR #124) built the full rehearsal harness (trigger, endpoint, dialog, disclosure, safety, tests \u2014 reviewer/security SHIP) EXCEPT telephony.get_live_transport() which is still NotImplementedError \u2014 so nothing actually DIALS. S3b implements the Twilio\u2194OpenAI-Realtime audio bridge (outbound Twilio call \u2194 the realtime booking session) so the owner's rehearsal call actually rings his phone. Owner-gated: VOICE_BOOKING_ENABLED + Twilio creds + his verified number. This is the last mile; after it + creds, the owner taps Settings\u2192Rehearsal call and plays pro shop live. Fable plan; security review (live outbound telephony, the dial-safety invariant must hold end-to-end); the existing text simulator stays the CI-safe test (no live dial in CI).",
+      "shipped_to_main_commit": "9cd7394",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/124",
+      "note": "SHIPPED-TO-MAIN-INERT 2026-07-10 (owner-approved, keys NOT in yet). telephony.get_live_transport() is implemented (media_bridge.py, call_registry.py, voice_booking_ws.py) but VOICE_BOOKING_ENABLED defaults off and no Twilio env is set in prod \u2014 the live bridge is code-complete but dormant. No TestFlight cut (backend-only; no frontend-visible change from S3b itself). Owner turns it on by setting: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, VOICE_BOOKING_OWNER_NUMBER, VOICE_BOOKING_PUBLIC_HOST, VOICE_BOOKING_ENABLED=1 in AWS Secrets Manager / prod .env."
     },
     {
       "id": "caddie-surface-osm-trees",
@@ -228,11 +227,14 @@
       "type": "major",
       "priority": 2,
       "risk": "high",
-      "status": "in_review",
+      "status": "shipped-to-main-inert",
       "depends_on": [
         "teetime-s0-kill-fake-data"
       ],
-      "why": "RECONCILED 2026-07-10: BUILT as PR #124 (S3 caller + rehearsal harness, double security-SHIP) \u2014 awaits owner merge + Twilio keys, not a fresh build. | specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool."
+      "why": "RECONCILED 2026-07-10: BUILT as PR #124 (S3 caller + rehearsal harness, double security-SHIP) \u2014 awaits owner merge + Twilio keys, not a fresh build. | specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool.",
+      "shipped_to_main_commit": "9cd7394",
+      "shipped_pr": "https://github.com/justslee/scorecard/pull/124",
+      "note": "SHIPPED-TO-MAIN-INERT 2026-07-10 (owner-approved merge, explicit condition: keys NOT in yet). Merged to main gated OFF \u2014 VOICE_BOOKING_ENABLED default off, no Twilio env in prod, dial-safety allowlist (VOICE_BOOKING_OWNER_NUMBER only) intact. Post-merge main CI: both required gates SUCCESS (9cd7394); deploy verified \u2014 /health green after restart with the new deps/routes, no boot crash from missing TWILIO_*/VOICE_BOOKING_* env. Frontend DOES carry a visible change (new 'Rehearsal call' section on the existing /settings page, owner-only) \u2014 no TestFlight cut per this task's scope (backend-only feature; the button itself is inert and returns 'not enabled' until keys are set). Owner turns it on: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, VOICE_BOOKING_OWNER_NUMBER, VOICE_BOOKING_PUBLIC_HOST, VOICE_BOOKING_ENABLED=1 in AWS Secrets Manager / prod .env."
     },
     {
       "id": "teetime-s4-scraping-adapters",
