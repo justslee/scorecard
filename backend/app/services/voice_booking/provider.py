@@ -6,10 +6,13 @@ Slots behind the same TeeTimeProvider ABC as every other provider:
   book()                → phone lookup → compliance gates → run the dialog
                           against the supplied transport → BookingResult
 
-The ONLY transport that ships today is the simulator; the live Twilio bridge
-(telephony.py) is a stub until the owner-gated launch (TCPA attorney + budget).
-Every refusal is a BookingResult — book() never raises at a compliance gate or
-a disabled transport, so the route layer stays boring.
+Default transport (no `transport=` injected) is `telephony.get_live_transport()`
+— the real Twilio ↔ OpenAI Realtime bridge (specs/teetime-s3b-twilio-bridge-plan.md)
+— gated behind VOICE_BOOKING_ENABLED + Twilio credentials + a public wss host;
+until the owner configures all of that it raises a calm RuntimeError, which
+this module maps to a "needs_human" BookingResult. Tests inject a
+SimulatedCallTransport. Every refusal is a BookingResult — book() never raises
+at a compliance gate or a disabled transport, so the route layer stays boring.
 """
 
 from __future__ import annotations
@@ -65,7 +68,30 @@ class VoiceCallProvider(TeeTimeProvider):
         return []
 
     async def book(self, slot: TeeTimeSlot, details: BookingDetails) -> BookingResult:
-        phone = await self._phone_lookup(slot.course_name, slot.city or None)
+        # Prefer the phone already discovered on the routed slot (Places /OSM);
+        # only fall back to a fresh Places lookup when the slot carries none.
+        phone = slot.phone or await self._phone_lookup(slot.course_name, slot.city or None)
+
+        # Resolve the acceptance window. A routed slot carries time="" by design
+        # (S0: never fabricate a time), so fall back to the golfer's REQUESTED
+        # search window (honest, from the query). A real slot time (mock/foreup)
+        # becomes a 2-hour acceptance window so the agent may take a nearby
+        # alternative. Never guess: with no time anywhere, refuse before the
+        # gates so _window_end never sees "" (int("") would raise).
+        if slot.time:
+            window_start = slot.time
+            window_end = _window_end(slot.time)
+        else:
+            window_start = details.time_window_start or ""
+            window_end = details.time_window_end or ""
+        if not window_start:
+            return BookingResult(
+                status="needs_human",
+                message=f"No requested time window for a phone booking — "
+                f"call {slot.course_name} to book.",
+                booking_url=slot.booking_url,
+            )
+
         ctx = VoiceBookingContext(
             course_id=slot.course_id,
             course_name=slot.course_name,
@@ -73,12 +99,8 @@ class VoiceCallProvider(TeeTimeProvider):
             golfer_name=details.name,
             callback_number=details.phone or "",
             date=slot.date,
-            # A slot time becomes a 2-hour acceptance window — the agent may
-            # take a nearby alternative. TODO(S3): routing slots carry
-            # time="" (unreachable from _get_provider today, no provider
-            # feeds this path) — a future caller must pass the window, not "".
-            time_window_start=slot.time,
-            time_window_end=_window_end(slot.time),
+            time_window_start=window_start,
+            time_window_end=window_end,
             party_size=details.party_size,
             max_price_usd=slot.price_usd,
         )

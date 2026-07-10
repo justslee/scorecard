@@ -97,6 +97,11 @@ export interface BookingDetails {
   email?: string;
   phone?: string;
   partySize: number;
+  /** The golfer's requested search window (24-h "HH:MM"). Sent on booking so the
+   *  AI phone-call route can ask the pro shop for a time when the routed slot
+   *  itself carries none (`slot.time === ""`). Never a fabricated time. */
+  timeWindowStart?: string;
+  timeWindowEnd?: string;
 }
 
 /**
@@ -115,4 +120,41 @@ export interface BookingResult {
   message?: string;
   /** URL the user should visit if status is needs_human / not_supported. */
   bookingUrl?: string;
+}
+
+// ─── Owner rehearsal call ──────────────────────────────────────────────────────
+// Mirrors backend RehearsalCallResponse (backend/app/routes/tee_times.py). The
+// owner triggers a self-call rehearsal of the AI pro-shop booking agent — keep
+// these shapes in sync with the Pydantic models.
+
+/** One line of the rehearsed call transcript. */
+export interface RehearsalCallTurn {
+  speaker: string; // "agent" | "shop"
+  text: string;
+}
+
+/** Structured outcome of the rehearsed call (null until it runs to completion). */
+export interface RehearsalCallOutcome {
+  result: string; // booked | no_availability | voicemail | no_answer | card_required | unclear
+  date: string | null;
+  time: string | null;
+  partySize: number | null;
+  confirmationNumber: string | null;
+  costUsd: number | null;
+  detail: string | null;
+}
+
+export interface RehearsalCallResponse {
+  /** "completed" — ran end to end; "refused" — a compliance gate blocked it;
+   *  "not_enabled" — live calling is disabled / the bridge isn't shipped yet. */
+  status: "completed" | "refused" | "not_enabled";
+  /** Gate / compliance / gating explanation when status is not "completed". */
+  reason?: string | null;
+  /** Masked callee (last 4), display only — never used to dial. */
+  calleeNumber?: string | null;
+  /** The agent's mandatory AI-disclosure opener, previewed. */
+  disclosure?: string | null;
+  transcript: RehearsalCallTurn[];
+  outcome?: RehearsalCallOutcome | null;
+  result?: BookingResult | null;
 }

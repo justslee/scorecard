@@ -486,7 +486,62 @@ class TestVoiceCallProvider:
         assert _window_end("22:30") == "23:59"
 
 
-# ─── Telephony stays a stub ────────────────────────────────────────────────────
+class _CapturingTransport:
+    """Records the VoiceBookingContext it was handed; books nothing."""
+
+    def __init__(self):
+        self.ctx = None
+
+    async def run_call(self, ctx):
+        self.ctx = ctx
+        return [], CallOutcome(result="unclear", detail="captured")
+
+
+async def _lookup_boom(*_a, **_k):
+    raise AssertionError("phone_lookup must not run when the slot carries a phone")
+
+
+class TestVoiceCallProviderWindowDerivation:
+    """specs/teetime-s3-caller-plan.md §2.2 — a routed slot carries time="",
+    so the window comes from the golfer's requested search window; with none,
+    the provider refuses BEFORE the gates (never lets _window_end see "")."""
+
+    async def test_empty_slot_time_uses_requested_window_from_details(self):
+        cap = _CapturingTransport()
+        details = BookingDetails(
+            name="Justin", party_size=2, phone="+1 415-555-0199",
+            time_window_start="09:00", time_window_end="11:00",
+        )
+        result = await _provider(transport=cap).book(_slot(time=""), details)
+        assert cap.ctx is not None
+        assert cap.ctx.time_window_start == "09:00"
+        assert cap.ctx.time_window_end == "11:00"
+        assert result.status in STABLE_STATUSES
+
+    async def test_empty_slot_time_and_no_window_refuses_before_gates(self):
+        cap = _CapturingTransport()
+        details = BookingDetails(name="Justin", party_size=2, phone="+1 415-555-0199")
+        result = await _provider(transport=cap).book(_slot(time=""), details)
+        assert result.status == "needs_human"
+        assert "No requested time window" in (result.message or "")
+        assert cap.ctx is None                     # gates/transport never reached
+
+    async def test_slot_phone_preferred_over_lookup(self):
+        cap = _CapturingTransport()
+        slot = _slot(time="")
+        slot.phone = "+1 415-555-0132"             # already-known verified line
+        details = BookingDetails(
+            name="Justin", party_size=2, phone="+1 415-555-0199",
+            time_window_start="09:00", time_window_end="11:00",
+        )
+        provider = _provider(transport=cap, phone_lookup=_lookup_boom)
+        result = await provider.book(slot, details)
+        assert cap.ctx is not None                  # lookup never ran; still booked-path
+        assert cap.ctx.phone == "+1 415-555-0132"
+        assert result.status in STABLE_STATUSES
+
+
+# ─── Telephony gating ───────────────────────────────────────────────────────
 
 
 class TestTelephonyStub:
@@ -502,10 +557,11 @@ class TestTelephonyStub:
         with pytest.raises(RuntimeError, match="missing credentials"):
             telephony.get_live_transport()
 
-    def test_enabled_with_creds_is_still_not_implemented(self, monkeypatch):
+    def test_enabled_with_creds_but_no_public_host(self, monkeypatch):
         monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
         monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC-test")
         monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok-test")
         monkeypatch.setenv("TWILIO_FROM_NUMBER", "+14155550100")
-        with pytest.raises(NotImplementedError, match="owner-gated"):
+        monkeypatch.delenv("VOICE_BOOKING_PUBLIC_HOST", raising=False)
+        with pytest.raises(RuntimeError, match="VOICE_BOOKING_PUBLIC_HOST"):
             telephony.get_live_transport()
