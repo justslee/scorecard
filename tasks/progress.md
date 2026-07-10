@@ -10154,7 +10154,7 @@ fixture backend/tests/fixtures/plays_like_parity.json pinned by BOTH backend pyt
 vitest. Files: tools.py, RoundPageClient.tsx, frontend/src/lib/caddie/api.ts,
 frontend/src/lib/caddie/fcb-labels.ts, backend/tests/test_caddie_tools.py.
 
-## AWAITING: builder implementing specs/physics-tiles-coherence-plan.md on integration/next
+## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
 Dispatched ONE builder to implement the plan (NOT re-plan), commit+push to integration/next.
 On return: reviewer (parity — construct a fixture hole/conditions, assert tile==caddie; the
 divergence is the whole bug) + qa (STRICT gates) + designer (PLAYS tile user-facing, calm).
@@ -10236,7 +10236,7 @@ plays_like verbatim, no double-count, security clean). But 3 BLOCKING:
    elevChange!==0) → two tiles contradict on 1-2ft holes. Give PLAYS the same/shared deadband.
 Non-blocking (defer/optional): caption wrap check on 375px; value-swap transition on PLAYS.
 
-## AWAITING: builder ROUND 2 fixing the 3 blocking items on integration/next
+## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
 Re-dispatched builder. Guard: do NOT weaken/re-pin the golden evals; if the wind reconciliation
 is genuinely ambiguous (honesty goal vs evals, needs a product call) STOP and flag — don't guess.
 On return: re-run reviewer(parity+fallback) + qa(strict, incl. tests/eval) + designer(deadband).
@@ -10300,7 +10300,7 @@ ruff, lint, tsc, voice smoke, build; backend DB tests via CI only — no local P
 update PR #121 checklist. Do NOT ship (owner bundling). If Fable plan flags a deeper issue,
 reconsider scope before building.
 
-## AWAITING: builder implementing osm distance-sort (specs/teetime-osm-distance-sort-plan.md)
+## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
 Fable plan saved. Dispatched ONE builder on integration/next. Plan: add math + _haversine_m +
 pure _sort_by_distance to osm.py; sort by (dist,name) only when lat AND lng present; cap via new
 _MAX_COURSE_RESULTS=15 / _MAX_GEOMETRY_RESULTS=25; SAME fix to search_osm_with_geometry; new
@@ -10385,7 +10385,7 @@ INVESTIGATION (provenance — matters because a naive filter could REGRESS to al
 - Classify: NOTICEABLE (selecting a course will actually narrow results — a visible behavior
   change) but rides #121 (already approval-eligible); NO SHIP this cycle.
 
-## AWAITING: builder implementing specs/teetime-show-real-time-options-plan.md on integration/next (bugs #1-3 core + optional #4 label; #5 deferred). Next → reviewer + qa + designer on the pushed head.
+## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
 Dispatched Plan agent on FABLE to design the safe wiring: exact ID-provenance reconciliation
 (UI selected id ↔ routing course_id, incl. mapped-UUID + undefined-OSM-id cases), filter
 semantics (empty=all, mock-parity), the GUARD proving no always-zero regression (test with
@@ -10438,7 +10438,7 @@ det-UUID-match + pre-cap + private-still-excluded; new test_tee_time_selection.p
 (unselected capability course → foreUP never called); golf-api-nearby.test.ts realistic id-less
 fixture. Classify NOTICEABLE (selecting a course actually narrows results) — rides #121, NO SHIP.
 
-## AWAITING: builder implementing specs/teetime-course-ids-wiring-plan.md on integration/next
+## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
 Dispatched ONE builder on integration/next (commits the item there + pushes; NO per-item PR).
 Implements the plan EXACTLY (does not re-plan). On builder return → reviewer (adversarial
 correctness — a filter bug surfaces the WRONG or ZERO courses to the owner) + qa (ruff + targeted
@@ -10605,7 +10605,7 @@ safe: composed ONLY from closed-set constants (unknown club keys/hazard types dr
 transcription.prompt (not session.instructions). No PII beyond player's own clubs. 8 DB-free teeth
 tests. NOTICEABLE-leaning (modest). Plan claims spot-checked against codebase: PASS.
 
-## AWAITING: builder on integration/next implementing the plan (localized, additive; do NOT refactor
+## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
 the session builder — parallel teetime-s3 may touch realtime_relay.py). On builder return: dispatch
 reviewer (injection-as-data focus) + qa (strict gates) in parallel; iterate on BLOCKING only; update
 PR #122 checklist; NO ship/NO ping this cycle (bundle accumulates).
@@ -10670,7 +10670,7 @@ Eval TEETH: eval harness backend/tests/eval/ — Tier1 prompt_contains_rule(INPU
 mouths=[text,realtime]) proven RED via mutation in test_harness_has_teeth.py then green; + a Tier2
 (live, non-CI) judge property for gibberish→ask-again on a new golden scenario ("Scars.").
 
-## AWAITING: builder implementing specs/teetime-show-real-time-options-plan.md on integration/next (bugs #1-3 core + optional #4 label; #5 deferred). Next → reviewer + qa + designer on the pushed head.
+## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
 implement it on integration/next; then reviewer (adversarial both ways) + qa (strict gates + eval
 teeth) in parallel. NOTICEABLE — rides bundle PR #122, update checklist. NO ship/NO ping this cycle.
 
@@ -10870,4 +10870,4 @@ Owner sent tee-time screenshots (spec: specs/teetime-results-ux-fixes.md). THREE
 (2) displayed window != submitted prefs (plumbing prefs→dispatch→result).
 (3) found course NOT selected — dispatch/search must honor selected course ids; honest-empty if none.
 Sync clean; no pending "ship it". Riding bundle PR #125.
-## AWAITING: builder implementing specs/teetime-show-real-time-options-plan.md on integration/next (bugs #1-3 core + optional #4 label; #5 deferred). Next → reviewer + qa + designer on the pushed head.
+## AWAITING: reviewer + qa + designer on head f9953f2/9f0577e (integration/next). SHIP-all → update PR #125 checklist, notify owner (bundle now 2 noticeable). BLOCKING → re-dispatch builder.
