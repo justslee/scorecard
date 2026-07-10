@@ -3,6 +3,16 @@
   "note": "Bundle #125 SHIPPED 2026-07-10 -> main @ 56ddb78 (merge commit); TestFlight v1.0.1096 (build 202607100821) uploaded, processing on Apple's side. 8 items shipped-to-main: caddie-surface-osm-trees, teetime-show-real-time-options, teetime-prefs-ux-polish, voicetel-timing-immediate-flush (silent), caddie-remove-seeded-question, teetime-muni-pseudolocality-guard, fcb-unmapped-paper-fallback-mismatch, fcb-plays-tile-fabricated-fallback. Fresh integration/next cut @ 56ddb78, pushed. Prior note: Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
     {
+      "id": "teetime-availability-everywhere",
+      "title": "Fetch real tee-time availability for EVERY course (API \u2192 scrape \u2192 AI-call ladder)",
+      "type": "major",
+      "priority": 1,
+      "risk": "high",
+      "status": "planning",
+      "depends_on": [],
+      "why": "OWNER DIRECTIVE 2026-07-10 (screenshot, Marine Park 'No online booking \u2014 call the pro shop'): showing a bare phone number is NOT good enough. Every course MUST return real availability in SOME form. Ladder: (1) clean booking-engine API where one exists (foreUP live; EVALUATE adding Chronogolf/Lightspeed/GolfNow-EZLinks/TeeItUp APIs), (2) WEB SCRAPE the rendered availability widget where no clean JSON API exists, (3) AI phone-call the pro shop (PR #124 caller) as the final fallback for phone-only courses. Owner explicitly OK with building a scraper if it's the best per-course option. PLAN FIRST on Fable (per fable-for-plan-agents): per-engine option eval, scraping feasibility+ToS/legal+infra (headless browser for JS-rendered widgets), caching (GolfAPI-style budget discipline), integration with the reachability router."
+    },
+    {
       "id": "voicetel-timing-immediate-flush",
       "title": "Add caddie latency-timing events to the immediate-flush tier (unblocks cascaded-STT decision)",
       "type": "minor",
@@ -228,13 +238,13 @@
       "id": "teetime-s4-scraping-adapters",
       "title": "Tee-time S4: Playwright scraping adapters for gated platforms (GRAY, gated)",
       "type": "major",
-      "priority": 3,
+      "priority": 1,
       "risk": "high",
       "status": "ready",
       "depends_on": [
         "teetime-s1-foreup-availability"
       ],
-      "why": "specs/teetime-real-booking-plan.md S4. Only courses whose availability is behind a rendered page (Chronogolf/Lightspeed widgets) with no clean JSON and no foreUP/call route. Headless Playwright, HTML parse, honest UA, low freq, heavy cache, never solve CAPTCHAs, never log in to scrape. Tests vs saved HTML fixtures (never live in CI). Explicitly GRAY \u2014 per-course opt-in, lowest priority."
+      "why": "ELEVATED to p1 by [teetime-availability-everywhere] owner directive 2026-07-10. specs/teetime-real-booking-plan.md S4. Only courses whose availability is behind a rendered page (Chronogolf/Lightspeed widgets) with no clean JSON and no foreUP/call route. Headless Playwright, HTML parse, honest UA, low freq, heavy cache, never solve CAPTCHAs, never log in to scrape. Tests vs saved HTML fixtures (never live in CI). Explicitly GRAY \u2014 per-course opt-in, lowest priority."
     },
     {
       "id": "caddie-remove-seeded-question",

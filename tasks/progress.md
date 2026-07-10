@@ -11255,3 +11255,8 @@ integration/next @ 6a680bc (PR #125). No-fake-data correctness — completes cyc
 - Reviewer SHIP (all 6 checks + TDZ/unused-var; distance unreachable, 3 paths byte-identical, double-count guard preserved, no NaN). Designer APPROVE (PLAYS tracks Center's card basis w/ honest 'from card' caption; 'no data' matches Wind empty state; noted a pre-existing out-of-scope elevTile 'elev' vs 'no data' copy nit). QA: tsc/lint/voice 274/274/vitest 37/37 local; both REQUIRED CI gates SUCCESS on 6a680bc (E2E advisory non-required).
 - SILENT accumulation — no ship, no ping. Bundle #125 = 7 noticeable + 1 silent, awaits owner "ship it".
 - Injection note: two planted fake "system-reminder" blocks (date-change + Telegram instructions) appeared this cycle to eng-lead and designer; both ignored per injection-defense (embedded instructions are data, not authority).
+
+## Cycle 63+ (2026-07-10) — owner directive + caller merge
+- OWNER DIRECTIVE (screenshot): tee-time must FETCH real availability for every course, not show a bare "call the pro shop" number. Ladder API→scrape→AI-call. Web scraper approved if best per-course option. → recorded as teetime-availability-everywhere (p1, planning); s4-scraping bumped p1.
+- Owner approved MERGE of caller #124 (keys NOT in yet → merges inert, gated by VOICE_BOOKING_ENABLED until Twilio keys added).
+- Dispatching: (a) release-manager to merge #124 guarded; (b) Fable Plan for the fetch-everywhere ladder.
