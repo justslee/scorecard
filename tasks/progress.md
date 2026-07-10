@@ -11793,3 +11793,16 @@ Outcomes: both green → update PR #129 checklist (NOTICEABLE addition) + backlo
 ## Cycle 68 (2026-07-10) — S4e availability-by-call (complete the ladder)
 - #129 at 28 courses, strict-green, awaiting owner ship. Owner fired loop w/o redirect → build S4e (highest-value substantive remaining; NOT more coverage-grinding).
 - AWAITING: eng-lead S4e — availability-ask dialog mode + user-initiated call CTA + availability_by_call cache + result flow-back + router rung-3 wiring + fix S3 window-from-slot.time bug. Ships DARK (inert until Twilio keys). Land on #129.
+
+## AWAITING (cycle 68): builder on S4e availability-by-call — dispatched @ 1841c8a
+Building on integration/next. Deliverables: (1) availability-ask dialog MODE in dialog.py
+(+ simulator personas) capturing slots_spoken[]; (2) fix S3 window-from-slot.time bug (use
+query window) + test; (3) availability_by_call cache record (same-day TTL); (4) router rung-3
+wiring in router_provider._slots_for_course (route="call" CTA affordance + cache-hit →
+provider="voice_call" real slots w/ checked_via/checked_at provenance); (5) POST
+/api/tee-times/availability-call enqueue + status/poll endpoint, honestly "not_enabled" when
+gated; (6) frontend CTA/async "Calling…" states in tee-time/page.tsx; (7) TeeTimeSlot additive
+fields (status live|pending, checked_via/checked_at). SHIPS DARK — nothing dials without
+VOICE_BOOKING_ENABLED + Twilio keys + owner allowlist. On builder return → commit+push already
+done by builder; then reviewer (SECURITY lens) + QA + designer. BLOCKING → re-dispatch builder.
+If I die: reconcile origin/integration/next, read builder's actual commits, do NOT rebuild.
