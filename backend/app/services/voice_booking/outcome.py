@@ -6,6 +6,8 @@ status set (confirmed | pending | failed | needs_human | not_supported) that
 the routes and UI already understand — never invent a new status.
 
   booked          → confirmed  (with confirmation number + honest message)
+  availability    → pending    (mode="availability" only: a spoken-times
+                                 report, never a booking — see slots_spoken)
   no_availability → failed     (the shop said no; nothing was booked)
   voicemail       → needs_human (never leave a booking on a machine)
   no_answer       → needs_human
@@ -46,6 +48,19 @@ def to_booking_result(outcome: CallOutcome, ctx: VoiceBookingContext) -> Booking
             confirmation_number=outcome.confirmation_number,
             message=message,
         )
+
+    if outcome.result == "availability":
+        # mode="availability": a spoken-times report, never a booking. The
+        # router (router_provider.py) reads outcome.slots_spoken directly for
+        # the real work — this mapping only exists so `to_booking_result` has
+        # an honest answer if ever called on an ask-mode outcome (dev/QA
+        # surfaces, simulator harness).
+        n = len(outcome.slots_spoken)
+        message = (
+            f"{ctx.course_name} phone check: {n} time(s) offered for {ctx.date}."
+            if n else f"{ctx.course_name} phone check: nothing offered for {ctx.date}."
+        )
+        return BookingResult(status="pending", message=message)
 
     if outcome.result == "no_availability":
         detail = outcome.detail or "no availability in the requested window"

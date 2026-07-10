@@ -4,9 +4,9 @@ import { useEffect, useState, useRef, useCallback, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
-import { searchTeeTimes, bookTeeTime } from "@/lib/teetime/client";
+import { searchTeeTimes, bookTeeTime, requestAvailabilityCall, getAvailabilityCallStatus } from "@/lib/teetime/client";
 import { confirmCopy, callTelHref } from "@/lib/teetime/confirm-copy";
-import type { TeeTimeSlot, TeeTimeQuery, BookingResult } from "@/lib/teetime/types";
+import type { TeeTimeSlot, TeeTimeQuery, BookingResult, AvailabilityCallStatus } from "@/lib/teetime/types";
 import {
   reconcileCourseOptions,
   createCourseFetchSession,
@@ -1105,6 +1105,174 @@ function Searching({ accent, windows, courses, maxMiles, group, maxPriceUsd, are
  *  call per the plan §7 — protects the calm of a long list). */
 const ROWS_PER_COURSE_CAP = 5;
 
+/* ─────────────────────────────────────────────
+   CALL-TO-ASK CTA (S4e — availability-by-call, rung 3)
+   "No online times — we can call the pro shop" → "Calling the pro shop…"
+   (async, polled) → phone-confirmed times (tappable, same booking flow) or
+   an honest "nothing by phone" line with the real tel: link. Ships dark:
+   the backend answers status="not_enabled" whenever Twilio keys aren't
+   configured (always true today) and this degrades straight to the SAME
+   honest tel: link the app has always shown — never a stuck spinner, never
+   a fabricated time.
+   ───────────────────────────────────────────── */
+
+type CallAskState =
+  | { kind: "idle" }
+  | { kind: "calling" }
+  | { kind: "resolved"; status: AvailabilityCallStatus };
+
+function CallAvailabilityCTA({
+  entry, askWindow, partySize, disabled, onSpokenSlotPicked,
+}: {
+  entry: TeeTimeSlot;
+  askWindow: DispatchedAsk | undefined;
+  partySize: number;
+  disabled: boolean;
+  onSpokenSlotPicked: (slot: TeeTimeSlot) => void;
+}) {
+  const [state, setState] = useState<CallAskState>({ kind: "idle" });
+  const telHref = callTelHref(entry);
+
+  const start = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled || state.kind === "calling" || !askWindow) return;
+    setState({ kind: "calling" });
+    let resp: AvailabilityCallStatus;
+    try {
+      resp = await requestAvailabilityCall({
+        courseId: entry.courseId,
+        courseName: entry.courseName,
+        phone: entry.phone,
+        date: entry.date,
+        timeWindowStart: askWindow.start,
+        timeWindowEnd: askWindow.end,
+        partySize,
+      });
+    } catch {
+      // Couldn't even reach the endpoint — honest fallback, never a stuck spinner.
+      setState({ kind: "idle" });
+      if (telHref) window.location.href = telHref;
+      return;
+    }
+    if (resp.status !== "pending") {
+      // "not_enabled" (the dark/default posture, or a compliance refusal) —
+      // degrade to today's honest tel: link. Nothing was dialed.
+      setState({ kind: "idle" });
+      if (telHref) window.location.href = telHref;
+      return;
+    }
+    let latest = resp;
+    for (let i = 0; i < 40 && latest.status === "pending"; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        latest = await getAvailabilityCallStatus(resp.id);
+      } catch {
+        break;
+      }
+    }
+    setState({ kind: "resolved", status: latest });
+  };
+
+  const stillWaiting =
+    state.kind === "calling" || (state.kind === "resolved" && state.status.status === "pending");
+
+  if (stillWaiting) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px 2px" }}>
+        <div style={{ display: "flex", gap: 2 }}>
+          {[0, 1, 2].map((i) => (
+            <motion.span
+              key={i}
+              animate={{ opacity: [0.2, 1, 0.2] }}
+              transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.15 }}
+              style={{ width: 2, height: 2, borderRadius: 99, background: T.pencil, display: "inline-block" }}
+            />
+          ))}
+        </div>
+        <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, letterSpacing: -0.1 }}>
+          Calling the pro shop&hellip;
+        </div>
+      </div>
+    );
+  }
+
+  if (state.kind === "resolved") {
+    const { status } = state;
+    const spoken = status.status === "completed" && status.outcome === "availability" ? status.slotsSpoken : [];
+    if (spoken.length > 0) {
+      const calledAtLabel = status.calledAt
+        ? new Date(status.calledAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        : null;
+      return (
+        <div style={{ marginTop: 4 }}>
+          <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12, color: T.pencil, marginBottom: 2, letterSpacing: -0.1 }}>
+            Confirmed by phone{calledAtLabel ? ` at ${calledAtLabel}` : ""}:
+          </div>
+          {spoken.map((s, idx) => (
+            <button
+              key={`${s.time}-${idx}`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onSpokenSlotPicked({
+                  ...entry,
+                  id: `${entry.courseId}-${entry.date}-call-${idx}`,
+                  time: s.time,
+                  priceUsd: s.priceUsd,
+                  provider: "voice_call",
+                  route: "call",
+                  status: "live",
+                  checkedVia: "voice_call",
+                  checkedAt: status.calledAt ?? undefined,
+                });
+              }}
+              disabled={disabled}
+              style={{
+                display: "flex", justifyContent: "space-between", width: "100%", minHeight: 36,
+                padding: "6px 2px", border: "none", background: "transparent",
+                cursor: disabled ? "default" : "pointer", textAlign: "left" as const,
+                fontFamily: T.mono, fontSize: 13, color: T.ink, fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              <span>{formatTime12h(s.time)}</span>
+              {s.priceUsd != null && <span style={{ color: T.pencilSoft }}>${Math.round(s.priceUsd)}</span>}
+            </button>
+          ))}
+        </div>
+      );
+    }
+    // voicemail / no_answer / unclear / verified nothing in the window —
+    // honest empty, still a real phone CTA. Never a fabricated time.
+    return (
+      <a
+        href={telHref ?? undefined}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          display: "block", marginTop: 4, fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5,
+          color: T.pencil, textDecoration: "underline", letterSpacing: -0.1,
+        }}
+      >
+        Nothing by phone in that window — call {entry.phone ?? "the pro shop"} yourself
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={telHref ?? undefined}
+      onClick={(e) => void start(e)}
+      style={{
+        display: "inline-block", marginTop: 4, fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1,
+        color: T.pencilSoft, textTransform: "uppercase" as const, textDecoration: "underline",
+        cursor: "pointer",
+      }}
+    >
+      No online times — we can call the pro shop
+    </a>
+  );
+}
+
 interface OptionsProps {
   accent: string;
   slots: TeeTimeSlot[];
@@ -1237,36 +1405,49 @@ function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked 
             <div>
               {routeGroups.map((g, i) => {
                 const entry = g.routeEntry!;
+                const dispatchedAsk = asksForDate(asks, entry.date)[0];
                 const askWindow = formatAskWindows(asksForDate(asks, entry.date));
                 const askLine = entry.route === "call"
                   ? `Call for a time in your ${askWindow} window`
                   : `Book on their site — ask for your ${askWindow} window`;
                 const cityLabel = localityLabel(g.courseName, g.city);
+                const canAskByCall = entry.route === "call" && !!entry.phone;
                 return (
-                  <button
-                    key={g.courseId}
-                    onClick={() => void pick(entry)}
-                    disabled={picking != null}
-                    style={{
-                      display: "block", width: "100%", minHeight: 44, padding: "12px 2px", border: "none", background: "transparent",
-                      cursor: picking ? "default" : "pointer", textAlign: "left" as const,
-                      borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
-                      opacity: picking && picking !== entry.id ? 0.45 : 1,
-                    }}
-                  >
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "baseline" }}>
-                      <div style={{ fontFamily: T.serif, fontSize: 15, color: T.ink, letterSpacing: -0.15 }}>{g.courseName}</div>
-                      <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase" as const, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
-                        {g.distanceMiles} mi
+                  <div key={g.courseId} style={{ borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}` }}>
+                    <button
+                      onClick={() => void pick(entry)}
+                      disabled={picking != null}
+                      style={{
+                        display: "block", width: "100%", minHeight: 44, padding: "12px 2px", border: "none", background: "transparent",
+                        cursor: picking ? "default" : "pointer", textAlign: "left" as const,
+                        opacity: picking && picking !== entry.id ? 0.45 : 1,
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "baseline" }}>
+                        <div style={{ fontFamily: T.serif, fontSize: 15, color: T.ink, letterSpacing: -0.15 }}>{g.courseName}</div>
+                        <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase" as const, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
+                          {g.distanceMiles} mi
+                        </div>
                       </div>
-                    </div>
-                    {cityLabel && (
-                      <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginTop: 2, letterSpacing: -0.1 }}>
-                        {cityLabel}
+                      {cityLabel && (
+                        <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginTop: 2, letterSpacing: -0.1 }}>
+                          {cityLabel}
+                        </div>
+                      )}
+                      <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginTop: 2, letterSpacing: -0.1 }}>{askLine}</div>
+                    </button>
+                    {canAskByCall && (
+                      <div style={{ padding: "0 2px 10px" }}>
+                        <CallAvailabilityCTA
+                          entry={entry}
+                          askWindow={dispatchedAsk}
+                          partySize={partySize}
+                          disabled={picking != null}
+                          onSpokenSlotPicked={(slot) => void pick(slot)}
+                        />
                       </div>
                     )}
-                    <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginTop: 2, letterSpacing: -0.1 }}>{askLine}</div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

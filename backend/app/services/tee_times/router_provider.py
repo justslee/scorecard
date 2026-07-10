@@ -34,6 +34,17 @@ whole surface to exact S0 behavior with one env var (unchanged). S4a adds
 `TEETIME_ENGINES` (comma-separated platform allowlist, default = all
 registered adapters) as the per-engine generalization of the same idea: an
 engine not in the allowlist behaves exactly like "no adapter" (step 3 above).
+
+S4e (specs/teetime-availability-everywhere-plan.md §5, §6) adds rung 3: any
+of the above steps that resolves to an S0 route entry with `route == "call"`
+(a known phone, no cleaner rung) is checked against the `availability_by_call`
+cache — a PRIOR user-initiated ask-mode phone call for this exact
+course/date/window/party (POST /api/tee-times/availability-call). This is a
+READ ONLY check: nothing here ever places a call, and a miss (or a call that
+couldn't confirm anything — voicemail/no_answer/unclear) returns the exact
+same honest "call" entry as before. Only kicks in while the foreUP kill
+switch is on (`TEETIME_FOREUP_ENABLED=0` still reverts to byte-identical S0,
+per the original invariant above).
 """
 
 from __future__ import annotations
@@ -45,6 +56,11 @@ from app.services.voice_booking.provider import VoiceCallProvider
 
 from .adapters.chronogolf import ChronogolfProvider
 from .adapters.teeitup import TeeItUpProvider
+from .availability_call_cache import (
+    AvailabilityCallCacheStore,
+    FileAvailabilityCallCacheStore,
+    availability_cache_key,
+)
 from .base import BookingDetails, BookingResult, TeeTimeProvider, TeeTimeQuery, TeeTimeSlot
 from .capability_store import CourseBookingCapability, load_all_capabilities, match_capability
 from .foreup import ForeUpProvider
@@ -97,6 +113,7 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         engines_enabled: set[str] | None = None,
         voice: TeeTimeProvider | None = None,
         voice_enabled: bool | None = None,
+        availability_cache: AvailabilityCallCacheStore | None = None,
     ) -> None:
         super().__init__(find_courses)
         self._foreup = foreup or ForeUpProvider()
@@ -137,6 +154,10 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
             if voice_enabled is not None
             else os.getenv("VOICE_BOOKING_ENABLED") == "1"
         )
+        # S4e rung-3 (read-only cache of prior user-initiated availability-ask
+        # calls). Defaults to the file-backed store shared with the trigger
+        # endpoint (routes/tee_times.py) — injectable for tests.
+        self._availability_cache = availability_cache or FileAvailabilityCallCacheStore()
 
     @property
     def name(self) -> str:
@@ -156,7 +177,9 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
             cap = None
 
         if cap is None:
-            return await super()._slots_for_course(course, query, distance)
+            return await self._with_availability_cache(
+                course, query, await super()._slots_for_course(course, query, distance)
+            )
 
         if cap.is_private:
             return []  # capability fact record supersedes the name-list filter
@@ -167,7 +190,9 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         ):
             # No adapter for this platform, or the engine is disabled via
             # TEETIME_ENGINES — behave exactly like "no capability match".
-            return await super()._slots_for_course(course, query, distance)
+            return await self._with_availability_cache(
+                course, query, await super()._slots_for_course(course, query, distance)
+            )
 
         try:
             real_slots = await adapter.slots_for_capability(
@@ -193,6 +218,81 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         entry.phone = cap.phone or entry.phone
         entry.route = "book_on_site"
         return [entry]
+
+    async def _with_availability_cache(
+        self, course: dict, query: TeeTimeQuery, entries: list[TeeTimeSlot]
+    ) -> list[TeeTimeSlot]:
+        """S4e rung-3 (plan §6): an S0 `route == "call"` entry (known phone,
+        no reachable clean engine) is checked against the `availability_by_call`
+        cache — a prior user-initiated ask-mode call for this EXACT
+        course/date/window/party. Read-only: this NEVER places a call.
+
+          - no cache hit, or the call couldn't confirm anything (voicemail /
+            no_answer / unclear / an "availability" outcome with zero times
+            spoken) -> the entry is returned UNCHANGED (today's honest "call"
+            CTA — the frontend's retry/poll affordance still applies).
+          - outcome == "no_availability" -> verified empty for this exact
+            window -> omit the course, same as a live-API verified empty.
+          - outcome == "availability" with spoken times -> real TeeTimeSlots,
+            provider="voice_call", route="call" RETAINED (so booking can still
+            hand off / re-confirm by phone), status="live",
+            checked_via="voice_call", checked_at=<called_at> so the UI can
+            label "confirmed by phone at 2:14 PM".
+
+        Entries that are NOT a call route (book_on_site, or no phone) pass
+        through unchanged — there's nothing for rung 3 to add."""
+        if len(entries) != 1:
+            return entries
+        entry = entries[0]
+        if entry.route != "call" or not entry.phone:
+            return entries
+
+        key = availability_cache_key(
+            entry.course_id, query.date, query.time_window_start,
+            query.time_window_end, query.party_size,
+        )
+        try:
+            record = self._availability_cache.get(key)
+        except Exception:
+            log.warning("router_provider: availability_call_cache read failed", exc_info=True)
+            return entries
+        if record is None:
+            return entries
+
+        if record.outcome == "no_availability":
+            return []  # verified empty for this window — don't imply availability
+
+        if record.outcome == "availability" and record.slots_spoken:
+            return [
+                TeeTimeSlot(
+                    id=f"{entry.course_id}-{query.date}-call-{i}",
+                    course_id=entry.course_id,
+                    course_name=entry.course_name,
+                    city=entry.city,
+                    date=query.date,
+                    time=spoken.time,
+                    players=query.party_size,
+                    price_usd=spoken.price_usd,
+                    cart_included=False,
+                    distance_miles=entry.distance_miles,
+                    rating=entry.rating,
+                    designer=entry.designer,
+                    provider="voice_call",
+                    holes=entry.holes,
+                    booking_url=entry.booking_url,
+                    route="call",
+                    phone=entry.phone,
+                    status="live",
+                    checked_via="voice_call",
+                    checked_at=record.called_at,
+                )
+                for i, spoken in enumerate(record.slots_spoken)
+            ]
+
+        # voicemail / no_answer / unclear / not_enabled, or "availability"
+        # with zero slots spoken — couldn't confirm anything specific. Honest
+        # empty via the unchanged call CTA (route=="call" + phone + retry).
+        return entries
 
     async def book(self, slot: TeeTimeSlot, details: BookingDetails) -> BookingResult:
         # A real-inventory slot (provider == a platform key, e.g. "foreup" /

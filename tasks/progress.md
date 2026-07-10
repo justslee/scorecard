@@ -3,6 +3,79 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: S4e — rung-3 availability-by-call (ships dark, DONE)
+
+Implemented `specs/teetime-availability-everywhere-plan.md` §5, §6, §7 as an
+EXTENSION of the existing voice_booking caller (#124) — not a rewrite. One
+commit on `integration/next`, backend + frontend.
+
+1. **Availability-ASK dialog mode.** `VoiceBookingContext.mode: "book"|
+   "availability"` (default "book" — byte-identical for every existing
+   caller). `BookingDialog._handle_negotiating_availability` collects EVERY
+   spoken time in the window (never confirms/books one) into
+   `CallOutcome(result="availability", slots_spoken=[...])`; ends on an
+   explicit "that's everything" signal, an explicit "nothing at all" signal
+   (`result="no_availability"`), or a bounded-retry safety valve. Two new
+   simulator personas (`lists_three_times`, `no_availability_ask`) in a
+   SEPARATE `AVAILABILITY_PERSONAS` registry so book-mode's `PERSONA_NAMES`
+   iteration (used by `/book-by-call/simulate`) is untouched.
+   `SimulatedCallTransport` now dispatches on `ctx.mode`.
+2. **S3 window-bug check.** The `provider.py` book() path was ALREADY fixed
+   (pre-existing `TestVoiceCallProviderWindowDerivation` tests, from #124) —
+   verified, not re-fixed. The NEW availability-call endpoint builds its
+   `VoiceBookingContext` window directly from the request's
+   `date/timeWindowStart/timeWindowEnd` (never from any `TeeTimeSlot.time`),
+   so the same bug class structurally cannot occur there — added
+   `TestWindowComesOnlyFromTheRequestQuery` to prove it.
+3. **`availability_by_call` cache** — new
+   `services/tee_times/availability_call_cache.py`, same injectable
+   file-backed-store pattern as `search_cache.py`, 12h (same-day) TTL, keyed
+   on (course, date, window, party). Router-only READS it; only the trigger
+   endpoint writes it.
+4. **Router rung-3 wiring** — `RoutedTeeTimeProvider._with_availability_cache`
+   intercepts only `route=="call"` entries (known phone, no cleaner rung):
+   cache hit `outcome=="availability"` → real `TeeTimeSlot`s
+   (`provider="voice_call"`, `route="call"` retained,
+   `checked_via`/`checked_at` provenance); `no_availability` → omit
+   (verified empty); voicemail/no_answer/unclear/miss → unchanged honest
+   "call" entry. The existing cap-degrade branch (forces
+   `route="book_on_site"`, locked by `TestCouldntCheckDegradesToRouteEntry`)
+   and the `TEETIME_FOREUP_ENABLED=0` kill switch are proven to NEVER consult
+   the cache — S0/S1/S4a/S4c ladder stays byte-identical.
+5. **User-initiated trigger** — `POST /api/tee-times/availability-call`
+   (enqueue) + `GET /api/tee-times/availability-call/{id}` (poll). Gated
+   exactly like `rehearsal-call`: `telephony.get_live_transport()` (
+   VOICE_BOOKING_ENABLED + Twilio creds) AND a NEW
+   `VOICE_BOOKING_VERIFIED_LINES` allowlist (empty by default → refused).
+   With no keys/creds (CI/default) returns `not_enabled` immediately and
+   enqueues nothing — a search never reaches this endpoint (structural test:
+   `search_tee_times`'s source has zero reference to it).
+6. **Frontend CTA** — `CallAvailabilityCTA` in `tee-time/page.tsx`: "No
+   online times — we can call the pro shop" → POST → "pending" polls
+   `GET .../{id}` every 3s (40 tries) → resolves to tappable phone-confirmed
+   times (feeds back into the existing `pick()`/booking flow) or an honest
+   "nothing by phone" line with the real tel: link. `not_enabled` (today's
+   only reachable state) degrades straight to `window.location.href =
+   telHref` — never a spinner that can't resolve.
+7. **Additive `TeeTimeSlot` fields** — `status: "live"|"pending"`,
+   `checked_via`, `checked_at` in `base.py` + `TeeTimeSlotOut` +
+   `frontend/src/lib/teetime/types.ts`; `book_tee_time` rehydration reads
+   them via `.get()` with defaults (booking rehydration untouched for every
+   existing shape).
+
+Gates: `ruff check .` clean; backend
+`test_voice_booking.py test_tee_time_router.py test_tee_time_routing.py
+test_rehearsal_call.py` (164 total, all pre-existing, all pass unchanged) +
+4 new test files (51 new tests); full non-DB backend suite 1936/1936 pass.
+Frontend `npm run lint` + `npx tsc --noEmit` + `npx tsx voice-tests/runner.ts
+--smoke` (274/274) all clean; `npx vitest run` 1922/1922 pass. Confirmed:
+nothing dials without VOICE_BOOKING_ENABLED + Twilio creds +
+VOICE_BOOKING_VERIFIED_LINES; search never triggers a call (read-only cache
+consult only). NOTICEABLE: a new "No online times — we can call the pro
+shop" CTA appears under call-route results (previously just the plain row);
+tapping it today degrades straight to the same tel: link as before (dark),
+so behavior is unchanged but the new affordance is visible on TestFlight.
+
 ## 2026-07-10 — builder: s3b-review-nits — 5 hardening fixes on inert caller path (SILENT, DONE)
 
 Implemented `specs/s3b-review-nits-plan.md` exactly: 5 localized
