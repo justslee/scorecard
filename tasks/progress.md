@@ -10428,3 +10428,15 @@ tests. NOTICEABLE-leaning (modest). Plan claims spot-checked against codebase: P
 the session builder — parallel teetime-s3 may touch realtime_relay.py). On builder return: dispatch
 reviewer (injection-as-data focus) + qa (strict gates) in parallel; iterate on BLOCKING only; update
 PR #122 checklist; NO ship/NO ping this cycle (bundle accumulates).
+
+## Builder DONE — 2af38c1 (feature) + daa3810 (progress) on integration/next. All gates green:
+ruff clean; 34 passed (test_transcription_prompt + test_realtime_payload + test_realtime_tools);
+frontend lint+tsc clean; voice smoke 274/274. Teeth proven via git stash -u → module/tests absent →
+RED, restored green. One minimal deviation: added `*, transcription_prompt=None` to the two
+fake_mint stubs in test_realtime_tools.py (additive kwarg threading; no assertions touched). G4 live
+mint deferred to CI/staging (no local OPENAI key; additive field, rejection would be a loud 400).
+
+## AWAITING: reviewer (injection-as-DATA + PII + correctness; run /security-review + /code-review —
+noticeable + prompt-fed-to-model + PII surface) AND qa (strict gates) on head daa3810, in parallel.
+On return: BLOCKING (correctness/security/Northstar) → re-dispatch builder + re-review; else update
+PR #122 checklist (3rd noticeable item) + progress. NO ship / NO ping this cycle (bundle accumulates).
