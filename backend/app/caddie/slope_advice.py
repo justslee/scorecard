@@ -39,6 +39,15 @@ Severity gating
 ---------------
 Only ``moderate`` and ``severe`` slopes produce advice; ``flat`` and ``mild``
 return ``None`` to avoid noise.
+
+Framing contract
+----------------
+The lateral (left-to-right / right-to-left) strings deliberately reuse
+``green_geometry.GreenRead``'s vocabulary: the HIGH side is where to AIM the
+approach (safer margin, feeds above the hole), the LOW / fall side is where a
+MISS leaves the uphill putt. Same physical tilt, two purposes (approach vs.
+putt), one shared naming — so the two modules never sound like they disagree.
+This pairing is pinned by ``tests/test_green_geometry.py`` Sec.6d.
 """
 
 from typing import Optional
@@ -86,9 +95,10 @@ def slope_miss_advice(
     elif rel <= 135:
         # Drops toward the golfer's RIGHT.
         # Left side is high, right side is low.
+        # framing contract: aim = high side; uphill-putt leave = fall/low side
         return (
             f"Green tilts {qualifier} left to right — "
-            "favor the left / high side to control your approach angle"
+            "aim left, the high side; a miss right sits below the hole and leaves the uphill putt"
         )
     elif rel <= 225:
         # Drops toward the FRONT (near side, toward the golfer).
@@ -100,7 +110,8 @@ def slope_miss_advice(
     else:
         # Drops toward the golfer's LEFT (225° < rel ≤ 315°).
         # Right side is high, left side is low.
+        # framing contract: aim = high side; uphill-putt leave = fall/low side
         return (
             f"Green tilts {qualifier} right to left — "
-            "favor the right / high side"
+            "aim right, the high side; a miss left sits below the hole and leaves the uphill putt"
         )

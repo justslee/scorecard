@@ -3,6 +3,104 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE: caddie-input-grounding (INPUT_GROUNDING_RULE) implemented + pushed to integration/next (a35e96d)
+
+Builder implemented specs/caddie-input-grounding-plan.md in full, exactly to plan (no
+deviations, no re-planning). Pushed commit a35e96d on integration/next — no per-item PR
+(bundle PR already open).
+
+What shipped: new `INPUT_GROUNDING_RULE` constant in `backend/app/caddie/voice_prompts.py`
+(right after `OBSERVED_REALITY_RULE`, incident-dated comment for the 2026-07-09 "Scars."
+transcript incident — owner saw the caddie confidently answer ASR-invented gibberish).
+Extends the grounding doctrine from FACTS to INPUT: never answer a question you didn't
+clearly hear — ask the player to repeat, briefly and once — while explicitly protecting
+terse-but-clear golf questions ("driver?", "what club", "how far") from over-refusal (both
+directions of the balance are contractual per the plan). Injected at all THREE caddie
+"mouths" immediately BEFORE `OBSERVED_REALITY_RULE`: `build_realtime_instructions`'s
+Behavior block, and both `stable_text` blocks in `routes/caddie.py`
+(`_build_session_voice_prompt`, `_build_voice_prompt`) + the import at line 34. Placement
+before `OBSERVED_REALITY_RULE` keeps the existing `endswith` pins in `test_voice_stream.py`
+green untouched.
+
+Eval harness teeth (backend/tests/eval/): `checks.py` `_RULE_TEXT` + import,
+`schema.py` `_VALID_RULE_NAMES` + new `Tier2JudgeProperty.ASKS_TO_REPEAT_ON_UNINTELLIGIBLE`,
+two golden scenarios appended to `golden/caddie_advice.jsonl` (negative:
+`gibberish-transcript-asks-to-repeat` — "Scars." must trigger a repeat-ask, never a club
+call; positive/adversarial twin: `terse-driver-question-still-answered` — "Driver?" at 240y
+must still get a direct club answer, proving no over-refusal), README judge-property list
+updated. Two new mutant tests in `test_harness_has_teeth.py` (both-mouth strip + a
+single-mouth realtime-only mutant asserting the failure detail names `['realtime']`).
+Collateral fixed per plan §7: `test_caddie_caching.py` OLD templates
+(`_OLD_SESSION_TEMPLATE`/`_OLD_STATELESS_TEMPLATE`) + both `.format()` calls + import — these
+would have gone red without the update. New `backend/tests/test_input_grounding_prompt.py`
+mirrors `test_epistemic_humility_prompt.py` (constant non-empty + balance wording pin,
+realtime inclusion, Behavior-block ordering pin, routes-import + double-interpolation pin).
+
+Manual RED-then-green mutation drill performed (plan §6c, required evidence): deleted the
+`{INPUT_GROUNDING_RULE}` line from `_build_session_voice_prompt`'s `stable_text`, ran
+`uv run pytest tests/eval -x` → RED:
+`prompt_contains_rule: INPUT_GROUNDING_RULE missing from mouth(s): ['text']` on
+`test_scenario_tier1_checks_pass[gibberish-transcript-asks-to-repeat]` — exactly the failure
+the plan predicted. Restored the line, re-ran the full gate set, confirmed green again.
+
+Gates (all green):
+- `backend && ruff check .` → All checks passed!
+- `backend && uv run pytest tests/eval` → 64 passed (Tier1 + new teeth)
+- `backend && uv run pytest tests/test_input_grounding_prompt.py tests/test_epistemic_humility_prompt.py tests/test_caddie_caching.py tests/test_voice_stream.py tests/test_realtime_grounding.py` → 61 passed
+- `frontend && npm run lint` → clean; `npx tsc --noEmit` → clean; `npx tsx voice-tests/runner.ts --smoke` → pass=274 fail=0 (unaffected, as expected — pure backend prompt/eval change)
+- No docker/local Postgres used; DB-backed backend integration tests deferred to CI per instructions.
+
+Realtime honesty (kept in code comment + commit message): the realtime path is
+speech-to-speech (responds to raw audio) — this prompt rule is a strong NUDGE, not a hard
+gate. The plausibility-signal heuristic (plan §5) and the cascaded-STT confidence gate (plan
+§4, avenue #3 of the transcription-reliability research) are explicitly deferred, separate,
+queued spikes — not attempted this cycle. `guide_writer.py` intentionally NOT touched (not a
+mouth — offline per-hole guide writer never receives a live player utterance). Nothing under
+voice_booking/telephony/tee_times touched (PR #124's area).
+
+Classification: **silent** (prompt/eval-harness change; not a new user-visible surface, though
+the owner may notice the caddie behaving differently on garbled audio going forward). Rides
+the open bundle (no new PR opened).
+
+## DONE: caddie-realtime-transcription-vocab-bias (2A) implemented + pushed to integration/next (2af38c1)
+
+Builder implemented specs/caddie-realtime-transcription-vocab-bias-plan.md in full, exactly to
+plan (no deviations, no re-planning). Pushed commit 2af38c1 on integration/next (head was
+2bea037, ff-only, no per-item PR — bundle PR #122 already open).
+
+What shipped: new `backend/app/caddie/keyterms.py` — `GOLF_KEYTERMS` (exact 24-term mirror of
+`frontend/src/lib/voice/keyterms.ts`, comment cross-ref added there), `_HAZARD_TERMS` closed
+map, `MAX_TRANSCRIPTION_PROMPT_CHARS=600`, `golf_baseline_prompt()`, and
+`build_transcription_prompt(session)` (most-specific-first: player's own clubs via
+`CLUB_DISPLAY_NAMES` with unknown keys DROPPED not `.get(k,k)`-fallback'd, then this-hole
+hazards, then golf baseline; `None` session → `None` prompt). `realtime_relay.py` gets an
+additive keyword-only `transcription_prompt` kwarg on both `build_session_payload` and
+`mint_ephemeral_session` — absent/falsy leaves the transcription dict byte-identical to today's
+`{model, language}`. `routes/realtime.py`: round route computes
+`build_transcription_prompt(session)` post current_hole-override; setup route passes
+`golf_baseline_prompt()`. Injection-safety load-bearing: prompt composed entirely from
+closed-set constants, lands at `transcription.prompt` only — never `session.instructions`.
+
+Consequential mechanical fix (not scope creep): updated the two pre-existing `fake_mint` stubs
+in `tests/test_realtime_tools.py` to accept the new `transcription_prompt=None` keyword — the
+additive kwarg is real (route now passes it), so the old stubs would TypeError without this;
+no assertions were touched/weakened, just the mock signature.
+
+Gates (all green):
+- `backend && ruff check .` → All checks passed!
+- `backend && uv run python -m pytest tests/test_transcription_prompt.py tests/test_realtime_payload.py tests/test_realtime_tools.py -q` → 34 passed
+- `frontend && npm run lint` → clean; `npx tsc --noEmit` → clean; `npx tsx voice-tests/runner.ts --smoke` → pass=274 fail=0
+- Teeth proven: `git stash -u` (all 6 changed/new files) then re-ran `test_transcription_prompt.py`
+  → "file or directory not found" (module + test file don't exist pre-change) — confirmed RED,
+  then `git stash pop` restored cleanly; ruff + full suite re-verified green after restore.
+- G4 (live mint 200 + echoed `transcription.prompt`): no `OPENAI_API_KEY` in local shell env and
+  `.env*` is off-limits — deferred to CI/staging per plan §5 (additive field; a rejection would
+  be a loud 400, not silent). Not blocking.
+
+Classification (plan §6): **noticeable-leaning, modest** — owner should feel fewer misheard
+*domain* words (club names, scoring terms, hazards) in LIVE mode; will not eliminate all
+invented words from wind/partner noise. Rides bundle PR #122 (no new PR opened).
+
 ## 2026-07-09 cycle 46 — PICK: caddie-bend-distance (NOTICEABLE, rides bundle #121)
 
 Step 0 done: PR #121 OPEN + STRICT-green on 06c7bb0 (S2 booking-handoff silent + physics
@@ -57,6 +155,46 @@ should pass unchanged).
 
 NEXT: eng-lead review (reviewer/qa/designer-not-needed per dispatch note above), then update
 PR #121 checklist (+ caddie-bend-distance NOTICEABLE). Do NOT ship — owner said keep bundling.
+
+## DONE: teetime-course-ids-wiring implemented + pushed to integration/next (65f3c42)
+Builder implemented specs/teetime-course-ids-wiring-plan.md in full, exactly to plan (one
+noted necessary test update, see below). Pushed on integration/next (head was 8cfe9c3 →
+65f3c42, ff-only, no per-item PR).
+
+What shipped: `course_ids` (courseIds on the tee-time page) now actually filters the real
+routing/router provider — previously parsed but never consulted, so a course selection was a
+silent no-op (or, for a multi-select CSV edge case, filtered everything out). New
+`backend/app/services/tee_times/selection.py` (pure `candidate_ids`/`matches_selection` —
+id-set match else name+proximity, mirrors `capability_store`'s shape — plus `resolve_selectors`,
+one DB lookup, never raises). Filter runs in `routing.py` after private-club exclusion and
+before the MAX_COURSES cap. `courses_mapped.courses_by_ids` new batch lookup (UUID-pre-filtered).
+`/api/courses/nearby` now `attach_stable_ids`s its OSM results (previously only `/search` did),
+fixing OSM-leg rows whose `id` was silently `undefined` at runtime. Frontend:
+`id: c.id ?? c.osm_id ?? ""` (skip empty-id rows), `CourseSearchApiResponse.id` optional,
+`courseIds` filters empties. No wire/shared-shape change — `types.ts`/`models.py` untouched
+(confirmed in diff).
+
+Import-cycle care: `selection.py`'s DB helper (`courses_mapped.courses_by_ids`) is imported
+LAZILY inside `resolve_selectors`, not at module level — `courses_mapped.py` pulls in
+`app.db.engine` at import time, which raises without `DATABASE_URL`. A naive top-level import
+would have made importing `base.py`/`routing.py` (and therefore every DB-free routing/router/
+mock provider test) require a DB. Verified DB-free import + full non-DB suite pass without
+`DATABASE_URL` set.
+
+One necessary test update (not a weakened assertion — flagging per policy): 
+`test_course_search.py::test_hits_are_cached_and_requested_on_the_interactive_budget` asserted
+the OLD buggy `/nearby` raw-dict shape (no `id`) that this plan's ground truth (§0) identifies
+as the bug being fixed; updated it to assert the new `attach_stable_ids`'d shape (with a UUID
+`id` now present), which is the plan's own §4.1 requirement, not a scope change.
+
+Gates green: backend `ruff check .` clean; `pytest tests/ -k "tee_time or selection"` — 209
+passed, 12 skipped (Postgres integration tests self-skip, no local DB per policy); full backend
+suite 1660 passed, 83 skipped. Frontend: lint clean, tsc clean, `vitest run
+golf-api-nearby.test.ts teetime/courses.test.ts` 46 passed, voice-tests smoke 274 passed.
+
+NEXT: eng-lead review; rides the same bundle as caddie-bend-distance (owner said keep
+bundling, don't ship yet). This item is NOTICEABLE (selecting specific courses on the
+tee-time page now actually restricts results — previously silently ignored).
 
 ## AWAITING: reviewer + qa on caddie-bend-distance (item commit dee66d8) on integration/next
 Dispatched concurrently: (1) reviewer as a FABLE FALSIFIER — attacks the turn-cross direction +
@@ -10133,3 +10271,394 @@ realistic osm_id-shaped ids + a mapped-only-selection case), any minimal fronten
 the exact gates. On plan return → checkpoint, dispatch ONE builder on integration/next, then
 reviewer + qa. NO SHIP (owner bundling). If plan flags this is bigger than a bounded cross-stack
 fix → reconsider scope / mark needs-owner-decision rather than forcing it onto the bundle.
+
+---
+
+## 2026-07-09 — SHIPPED: #121 physics tile coherence + bend distance + booking-handoff + distance-sort
+
+Owner "ship it". Merge 608ae56 → main (STRICT gate all-SUCCESS; final head-
+check guard confirmed no unreviewed WIP slipped in — the #119 collision
+handled correctly this time). Deploy verified by SHA + health ok. TestFlight
+v1.0.1006 (build 202607091849). Four fixes:
+- Physics tile coherence (NOTICEABLE): the PLAYS tile consumes the same
+  physics engine the caddie cites — one number everywhere (2 review rounds,
+  3 blockers fixed).
+- Bend distance (NOTICEABLE): get_bend from the hole polyline's dogleg
+  vertex; direction = turn-cross not deviation-sign; Fable geometry SHIP
+  (8-bearing falsification, real Bethpage-4 fixture).
+- S2 booking-handoff (SILENT): foreUP booking = deep-link handoff; pinned
+  no-auto-charge / no-stored-card / no-fake-confirmation invariants.
+- OSM distance-sort (SILENT): sort by true distance BEFORE the top-N cap —
+  the closest course can't be dropped (18 Mile Creek at 15mi default).
+Twenty-five ships this run. Cycle 48 (course-ids-wiring) was mid-flight
+"awaiting Fable plan" at ship time; guarded ship aborted-if-head-moved,
+head was docs-only, shipped clean; cycle 48's work rides the next bundle.
+NEXT (owner-gated): S3 AI caller + "call me" rehearsal (owner present);
+tree-CV spike (own effort). Autonomous queue near a natural pause.
+
+## Fable plan DONE → specs/teetime-course-ids-wiring-plan.md (verdict: BOUNDED, one builder, one PR)
+Fable verified the provenance: OSM-leg selected id is confirmed `undefined` at runtime
+(/api/courses/nearby returns raw osm_id-keyed dicts, never attach_stable_ids; frontend maps
+`id: c.id`). Mapped-leg ids = courses UUIDs (write-through = deterministic_course_id("osm-way/N"),
+derivable; homegrown-ingested = slug-key UUIDs, NOT derivable → only name+proximity reconciles).
+No cell matches today → a naive filter = guaranteed zero (the regression to avoid).
+Plan: (a) backend candidate-id-set filter {id ∪ osm_id ∪ det-UUID} in RoutingTeeTimeProvider.
+search_availability BEFORE the MAX_COURSES cap (covers router + foreUP by inheritance; empty=all,
+mock parity) + route-resolved name+proximity selector fallback (new selection.py, reuses
+private_filter.normalize + MATCH_RADIUS_MILES=1.0) so default pre-selected mapped favorites don't
+zero out; un-reconcilable selections DROP honestly (no fabricated slots) + a log line; CSV parse
+guard. (b) frontend id fix: golf-api.ts:873 `id: c.id ?? c.osm_id ?? ""` + type honesty +
+`.filter(Boolean)` at page.tsx:844 + one backend line adding attach_stable_ids to /api/courses/
+nearby. NO shared-type change (types.ts/models.py untouched; course_selectors is backend-internal).
+MANDATORY regression-guard test: test_tee_time_routing.py TestCourseSelectionFilter (id-less
+osm_id dicts, course_ids=["way/102"] → that kept, others dropped) + empty=all + mapped-UUID-drop +
+det-UUID-match + pre-cap + private-still-excluded; new test_tee_time_selection.py; router test
+(unselected capability course → foreUP never called); golf-api-nearby.test.ts realistic id-less
+fixture. Classify NOTICEABLE (selecting a course actually narrows results) — rides #121, NO SHIP.
+
+## AWAITING: builder implementing specs/teetime-course-ids-wiring-plan.md on integration/next
+Dispatched ONE builder on integration/next (commits the item there + pushes; NO per-item PR).
+Implements the plan EXACTLY (does not re-plan). On builder return → reviewer (adversarial
+correctness — a filter bug surfaces the WRONG or ZERO courses to the owner) + qa (ruff + targeted
+pytest -k tee_time; frontend lint/tsc/vitest golf-api-nearby+courses; voice smoke). NO local
+Postgres — DB-backed selector tests run in CI. Then designer (user-facing behavior change) if
+gates green. Update PR #121 checklist (NOTICEABLE item), progress note. NO SHIP (owner bundling).
+If builder pushes then work is on integration/next — reconcile from git log, do NOT rebuild.
+
+## AWAITING: reviewer (correctness/security) + qa (gates) on course-ids-wiring 65f3c42 (bundle #121)
+Builder pushed 65f3c42 (impl) + d39c74e (progress) on integration/next. Local reconciled to
+d39c74e (ff). Diff (8cfe9c3..d39c74e): new selection.py + courses_by_ids + filter in routing.py
+before MAX_COURSES cap + attach_stable_ids on /api/courses/nearby + frontend id fallback; 4 test
+files; NO types.ts/models.py change. Builder gates green: ruff clean, backend 1660 passed/83
+skipped (209 passed/12 skipped on -k tee_time|selection; Postgres DB tests self-skip locally),
+frontend lint/tsc clean, vitest 46 passed, voice 274/274.
+Two builder deviations to VET in review: (1) lazy import of courses_by_ids inside resolve_selectors
+(avoids pulling app.db.engine into DB-free provider tests — matches existing course_finder pattern);
+(2) updated test_course_search.py assertion that encoded the OLD raw /nearby shape (pre-fix bug the
+plan §4.1 explicitly changes) — reviewer MUST confirm this is fixing a bug-assertion, not masking a
+regression. Reviewer focus: no always-zero regression (candidate-id match {id∪osm_id∪det-UUID});
+name+proximity false-positive bound; honest-drop (no fabricated slots); frontend id-fallback side
+effects. qa: ruff + pytest -k tee_time|selection + frontend lint/tsc/vitest + voice smoke (no local
+Postgres). On green + reviewer SHIP → designer (NOTICEABLE behavior change) → update PR #121
+checklist → progress. NO SHIP (owner bundling). If BLOCKING → re-dispatch builder. Reconcile from
+git log on resume; work is already pushed — do NOT rebuild.
+
+## cycle 48 DONE — course-ids-wiring landed on bundle #121 (NOTICEABLE)
+teetime-course-ids-not-wired-real-provider shipped to integration/next at 65f3c42 (impl) +
+d39c74e/580ee70 (progress). Selecting specific courses on the tee-time page now genuinely
+restricts the REAL search results (was a silent no-op — course_ids only honored by mock, never
+by routing.py/router_provider.py). Fix: new services/tee_times/selection.py (candidate-id set
+{id∪osm_id∪det-UUID} + route-resolved name+proximity selector fallback, resolve_selectors never
+raises) + courses_by_ids (parameterized, UUID-prefiltered) + filter in
+RoutingTeeTimeProvider.search_availability after private-filter/before MAX_COURSES cap (empty=all,
+mock parity; un-reconcilable selection DROPPED honestly, no fabricated slot, zero-after-filter
+logged) + /api/courses/nearby now attach_stable_ids + frontend golf-api.ts id fallback +
+.filter(Boolean). NO shared-type change (types.ts/models.py untouched).
+Reviewer (opus, /code-review): SHIP — EMPIRICALLY falsified the guard (neutered filter → mandatory
+test_selected_osm_id_keeps_only_that_course +4 go RED; non-tautological), verified no always-zero
+regression, honest-drop/no-fail-open, foreUP-not-called-when-unselected, name-match bounded, SQL
+safe (id=ANY(:ids) + uuid prefilter), no import cycle, scope clean. Non-blocking notes only
+(attach_stable_ids mutates-in-place = benign/idempotent; DB-down+slug-favorite degenerate case =
+plan's accepted risk-2). QA: 7/7 green (ruff; pytest 209p/12s -k tee_time|selection, full 1660p/83s;
+frontend lint/tsc/vitest 46p; voice 274/274). Postgres selector tests self-skip locally → CI verifies.
+DESIGNER: SKIPPED — functional/behavior change with NO visual surface delta (id fallback +
+.filter(Boolean); no new component/restyle/copy). Documented; cost-disciplined.
+PR #121 checklist updated (now 3 NOTICEABLE: physics-tiles-coherence, caddie-bend-distance*, this;
++ 2 SILENT: S2 booking-handoff, osm-distance-sort). backlog.json → done-on-bundle-121.
+NO SHIP — owner is bundling; bundle stays approval-eligible on the earlier physics NOTICEABLE
+item, NOT shipped this cycle. NO push notification (routine bundle accumulation; owner directed
+"keep bundling, don't ship yet").
+CI NOTE: at cycle close, GitHub had NOT yet propagated the cycle-48 pushes (8cfe9c3→65f3c42→
+d39c74e→580ee70) into the PR head — last CI run was on 7523ae3 (SUCCESS, but PRE-builder-code).
+The builder's code (65f3c42) is UNVERIFIED-BY-CI as of cycle close (verified locally: reviewer +
+QA green). AT SHIP TIME the release-manager MUST pin strict-green (Frontend+Backend state:SUCCESS)
+on the FINAL head SHA before merge — do NOT trust the 7523ae3 run. Monitor set to confirm CI
+triggers on the head.
+
+## AWAITING: CI to trigger + go strict-green on integration/next head (580ee70+) — verify at ship, not blocking this cycle
+Not shipping this cycle. Bundle #121 carries builder code (65f3c42) not yet CI-run. Next cycle /
+ship cycle: confirm every REQUIRED gate (Frontend + Backend) is state:SUCCESS on the PR's FINAL
+head SHA (gh pr checks 121 --json bucket,state,name + gh pr view 121 --json headRefOid — assert
+they match) BEFORE any merge. A cancelled/absent required gate is NOT a pass.
+
+## 2026-07-09 cycle 49 — PICK: caddie-slope-framing-reconcile (rides bundle #122)
+Step 0: no owner ship-it/feedback on the open bundle. PR #122 (integration/next → main) has no
+comments/reviews; #119 card stale-shipped, no new comments. Sync clean: main==origin/main==608ae56,
+merged into integration/next 6c7abca (up to date).
+
+Parallel in-flight (DO NOT TOUCH): feat/teetime-s3-caller, spike/tree-detection-cv. Voice cards
+Queued (owner). Pick honestly among small/isolated: chose caddie-slope-framing-reconcile (P3 minor,
+low risk, ready) — NOT in the in-flight areas.
+
+The nit (Fable reviewer on dfe0159): slope_advice.py (surfaced via aim_point.py approach advice)
+frames the SAME green slope as green_read (get_green_read tool) from opposite ends — when slope
+drops to the golfer's LEFT, slope_advice says "favor the RIGHT/high side" (approach-angle framing)
+while green_read says "leave LEFT/low side for the uphill putt" (putt framing). Same geometry
+(cross-consistency test pins which side is HIGH), but if both surface in one caddie answer the
+spoken lateral cues read as contradictory (aim right vs miss left). Reconcile the spoken framing so
+the two modules never emit contradictory-sounding lateral guidance. Pure prose/logic; NO geometry
+change (the green_read rotation math is proven with teeth — leave it untouched). Burned sign-flip
+area → Fable plan is the mandated safeguard.
+
+## Fable plan DONE → specs/caddie-slope-framing-reconcile-plan.md. Approach (a): re-frame the two
+lateral prose strings in slope_advice.py ONLY (rel≈90 + rel≈270) to 'aim {high side} … a miss
+{low side} sits below the hole and leaves the uphill putt' — reconciles with green_read's low-side
+uphill framing; no geometry, no green_geometry.py, no aim_point.py, no shared types. Teeth: new
+TestLateralFramingContract exact-string pins + cross-module coherence test in test_green_geometry.py
+(Sec.6d, asserts 'aim {high}' present / 'aim {fall}' absent — the sign-flip tooth) + strengthen line
+276 assertion. 3 files total.
+
+## Builder DONE — 7c50935 on integration/next. slope_advice.py two lateral strings re-framed to
+green_read's vocabulary + docstring; new TestLateralFramingContract + cross-module coherence test +
+strengthened test_green_geometry.py:276. Red→green teeth proven (10-12 assertions red pre-change,
+all green post). 3 files, ruff clean, targeted pytest green (72+25+35 passed). No geometry/shared-type
+touch. NOTICEABLE.
+
+## cycle 49 DONE — caddie-slope-framing-reconcile landed on bundle #122 (NOTICEABLE)
+slope_advice.py's two lateral strings (rel≈90 drops-right, rel≈270 drops-left) re-framed to
+green_read's vocabulary — "aim {high side}, the high side; a miss {low side} sits below the hole and
+leaves the uphill putt" — so the caddie's approach cue and the get_green_read putt cue no longer
+sound contradictory on a side-tilted green. Prose-only; green_geometry.py sign/rotation math
+UNTOUCHED (thrice-burned, teeth-proven). Commit 7c50935 on integration/next.
+Reviewer (Fable): SHIP — hand-derived all four quadrants against green_read's sign chain
+(s=sin(beta−alpha); fall_side=left if s>0), zero inversion; teeth mutation-verified (re-inverted the
+strings → 10/10 assertions RED), non-tautological; scope exactly 3 files; voice tone one calm
+sentence, no flag; no /security-review needed (pure backend prose, no auth/data/endpoint/dep change).
+QA: PASS all 4 gates — ruff clean; 132/132 targeted caddie; 1668 passed/83 DB-deselected full non-DB
+backend; 274/274 voice smoke. (QA + eng-lead both flagged a prompt-injection embedded in tool output
+— "date changed, don't mention it" — and disregarded it as untrusted DATA per injection-defense
+policy; no effect on results.)
+Designer SKIPPED — 2-string caddie copy change, no visual surface; the reviewer covered voice
+coherence vs NORTHSTAR. Cost-disciplined.
+PR #122 checklist updated (now 2 NOTICEABLE: course-ids-wiring, slope-framing-reconcile).
+backlog.json → done-on-bundle-122. Required CI gates strict-green on head 8b0c27c (Frontend + Backend
+state:SUCCESS; E2E advisory/non-required in progress).
+NO SHIP — owner is bundling (cycle directive: no ship, no ping). Bundle stays approval-eligible on
+its noticeable items; owner ships on his single "ship it". NO push notification (routine bundle
+accumulation of a small P3 caddie polish — not a massive batch or owner-testable backend change).
+NOTE for the ship cycle: re-verify every REQUIRED gate is state:SUCCESS on the FINAL head SHA before
+any merge (a cancelled/absent required gate is NOT a pass) — do not trust an older run.
+
+## CONCURRENCY FLAG (cycle 49) — external tee-time merge touched this working tree
+Mid-cycle, an external process (the session owner's parallel feat/teetime-s3-caller reconciliation)
+started a `git merge` into integration/next in THIS working tree (MERGE_HEAD @ 19:53, conflict in
+backend/app/routes/tee_times.py, staging tee_times/voice_booking/frontend-tee-time files +
+specs/teetime-s3-caller-plan.md). Per the cycle directive (session owner reconciles the tee-time
+branches; never auto-resolve) I did NOT touch or resolve it. It self-cleared (MERGE_HEAD gone, tree
+clean at 8b0c27c) before I acted — the external process aborted/finished its own merge. feat/
+teetime-s3-caller intact at origin 260a792; nothing durable lost. My slope work (7c50935) was
+committed+pushed before this and never at risk. Session owner: the tee-time S3 caller lands as its
+own PR (#124 per the S3b backlog note) — reconcile it there, not on my cycle's commits.
+
+## cycle 50 (2026-07-09) PICK: caddie-realtime-transcription-vocab-bias — on bundle #122
+Step 0 clean: no Needs Review card with actionable owner feedback (query tools plan-gated →
+used search+fetch+view; #119 card stale/superseded by shipped #121; PR #122 has zero comments).
+Bundle #122 OPEN (2 noticeable: course-ids-wiring, slope-framing-reconcile). main synced (608ae56),
+integration/next head 5a4b4d7, clean tree.
+PICK: thread a golf/context BIASING prompt into the OpenAI Realtime input-transcription config
+(gpt-4o-transcribe) so the live transcript stops inventing words outdoors ("Scars","of God").
+Current config = just {model, language:en} at realtime_relay.py:124 — no vocab biasing (keyterms
+are wired ONLY to the Deepgram sheet path). Source of biasing = GOLF_KEYTERMS + player club names
+(session.club_distances) + current-hole/course terms, threaded from the mint route
+(routes/realtime.py → mint_ephemeral_session → build_session_payload).
+
+## AWAITING: Fable Plan agent (specs/caddie-realtime-transcription-vocab-bias-plan.md).
+FIRST it must VERIFY vs CURRENT OpenAI Realtime docs whether input transcription for
+gpt-4o-transcribe accepts a `prompt` biasing field. IF supported → plan the threading (compact
+prompt, no PII beyond player's own clubs, biasing DATA not instructions). IF NOT → honest report +
+pivot to the small available win (confidence-gate / verify keyterms applied) or mark blocked-needs-
+cascaded-stt. On return: SUPPORTED → save plan, dispatch builder on integration/next; UNSUPPORTED →
+record evidence in progress+lessons, pick the honest fallback, no fake capability. Do NOT refactor
+the session builder; keep change LOCALIZED to the transcription-config block (parallel teetime-s3
+effort may also touch this file).
+
+## Fable plan DONE (VERIFIED YES) → specs/caddie-realtime-transcription-vocab-bias-plan.md
+Verification: `prompt` biasing IS supported for gpt-4o-transcribe in the realtime session at
+session.audio.input.transcription.prompt (GA API reference AudioTranscription object; exclusions are
+gpt-realtime-whisper + gpt-4o-transcribe-diarize, NOT our model). Branch 2A. Approach: new pure
+backend/app/caddie/keyterms.py (GOLF_KEYTERMS mirror of frontend + closed-set _HAZARD_TERMS +
+build_transcription_prompt(session)); additive transcription_prompt kwarg threaded route→
+mint_ephemeral_session→build_session_payload; setup route gets golf_baseline_prompt() only. Injection-
+safe: composed ONLY from closed-set constants (unknown club keys/hazard types dropped), placed at
+transcription.prompt (not session.instructions). No PII beyond player's own clubs. 8 DB-free teeth
+tests. NOTICEABLE-leaning (modest). Plan claims spot-checked against codebase: PASS.
+
+## AWAITING: builder on integration/next implementing the plan (localized, additive; do NOT refactor
+the session builder — parallel teetime-s3 may touch realtime_relay.py). On builder return: dispatch
+reviewer (injection-as-data focus) + qa (strict gates) in parallel; iterate on BLOCKING only; update
+PR #122 checklist; NO ship/NO ping this cycle (bundle accumulates).
+
+## Builder DONE — 2af38c1 (feature) + daa3810 (progress) on integration/next. All gates green:
+ruff clean; 34 passed (test_transcription_prompt + test_realtime_payload + test_realtime_tools);
+frontend lint+tsc clean; voice smoke 274/274. Teeth proven via git stash -u → module/tests absent →
+RED, restored green. One minimal deviation: added `*, transcription_prompt=None` to the two
+fake_mint stubs in test_realtime_tools.py (additive kwarg threading; no assertions touched). G4 live
+mint deferred to CI/staging (no local OPENAI key; additive field, rejection would be a loud 400).
+
+## AWAITING: reviewer (injection-as-DATA + PII + correctness; run /security-review + /code-review —
+noticeable + prompt-fed-to-model + PII surface) AND qa (strict gates) on head daa3810, in parallel.
+On return: BLOCKING (correctness/security/Northstar) → re-dispatch builder + re-review; else update
+PR #122 checklist (3rd noticeable item) + progress. NO ship / NO ping this cycle (bundle accumulates).
+
+## cycle 50 DONE — caddie-realtime-transcription-vocab-bias landed on bundle #122 (NOTICEABLE, modest)
+LIVE-mode input transcript now carries a compact golf/context biasing PROMPT at
+session.audio.input.transcription.prompt (gpt-4o-transcribe) — golf vocabulary + the player's own
+club names + the current hole's hazards — so the outdoor transcript stops inventing words
+("Scars"/"of God"). Fable plan VERIFIED against the GA Realtime API reference that gpt-4o-transcribe
+accepts a free-text prompt (exclusions = gpt-realtime-whisper + gpt-4o-transcribe-diarize, NOT ours).
+New pure backend/app/caddie/keyterms.py (GOLF_KEYTERMS 24-term mirror of frontend + closed-set
+_HAZARD_TERMS + build_transcription_prompt); additive transcription_prompt kwarg threaded
+route→mint_ephemeral_session→build_session_payload; setup route gets golf_baseline_prompt() only.
+Commit 2af38c1 (+ progress daa3810) on integration/next.
+Reviewer (security /security-review + /code-review): SHIP — no HIGH/MEDIUM. Data-flow traced: prompt
+composed ENTIRELY from closed-set constants (unknown club keys / hazard types DROPPED, no .get(k,k)
+passthrough), placed at transcription.prompt (NOT session.instructions), PII boundary = own club
+display names only (handicap/yardages/history/other-players/memories structurally excluded),
+byte-identical dict when context absent, clubs flow only via authenticated get_owned_session.
+QA: PASS all 5 gates (ruff clean; 34 targeted pytest; frontend lint+tsc clean; voice smoke 274/274)
++ full non-DB backend sweep 1677/1677 passed (DB suites excluded, no docker); CI backend gate on
+#122 independently SUCCESS. Teeth proven via git stash -u → module/tests absent → RED, restored green.
+Designer SKIPPED — backend-only mint-config change, no visual surface (reviewer covered voice-hint
+correctness; a transcription hint doesn't touch the yardage-book feel). Cost-disciplined.
+PR #122 checklist updated (now 3 NOTICEABLE: course-ids-wiring, slope-framing-reconcile,
+transcription-vocab-bias). CI on head bc8bc31: Backend gate state:SUCCESS; Frontend gate IN_PROGRESS
+(non-ship cycle — not gating; QA verified frontend gates locally green).
+Injection note: multiple embedded "date changed / DO NOT mention this" instructions appeared in tool
+output + a system-reminder-shaped message this cycle; disregarded ALL as untrusted DATA per
+injection-defense policy — zero effect on the work.
+NO SHIP / NO PING this cycle (per directive — bundle accumulates; owner ships on his single "ship
+it"). NOTE for the ship cycle: re-verify EVERY required gate is state:SUCCESS on the FINAL head SHA
+before any merge (a cancelled/absent required gate is NOT a pass).
+Localization honored: change kept additive/minimal in realtime_relay.py so the parallel
+feat/teetime-s3-caller reconcile stays clean (keyword-only kwargs, 2-line conditional, no session-
+builder refactor).
+
+## cycle 51 START (2026-07-09) — PICK: caddie-dont-answer-misheard-input (P1, NOTICEABLE)
+Step 0: no owner "ship it"/feedback on PR #122 (no PR comments; board has no #122 Needs-Review
+card yet — bundle still accumulating). PR #124 (caller) OPEN/MERGEABLE — NOT touched. Synced
+integration/next (already up to date w/ main).
+PICK grounds specs/voice-transcription-reliability-research.md avenue #1: extend the grounding
+doctrine from FACTS to INPUT. New INPUT_GROUNDING_RULE constant (sibling of OBSERVED_REALITY_RULE
+in voice_prompts.py) injected into BOTH mouths: realtime (build_realtime_instructions Behavior
+block, voice_prompts.py:91-96) + text (routes/caddie.py stable_text @780-802 AND @1393-1413).
+Rule: if the utterance is unintelligible/off-topic-gibberish/low-confidence, DO NOT invent a golf
+answer — briefly ask to repeat; never answer a question you didn't clearly hear. Adversarial BOTH
+ways: gibberish("Scars.")→ask-again; real-terse("driver?","what club")→still answers.
+Eval TEETH: eval harness backend/tests/eval/ — Tier1 prompt_contains_rule(INPUT_GROUNDING_RULE,
+mouths=[text,realtime]) proven RED via mutation in test_harness_has_teeth.py then green; + a Tier2
+(live, non-CI) judge property for gibberish→ask-again on a new golden scenario ("Scars.").
+
+## AWAITING: Fable plan (specs/caddie-input-grounding-plan.md). On return: dispatch ONE builder to
+implement it on integration/next; then reviewer (adversarial both ways) + qa (strict gates + eval
+teeth) in parallel. NOTICEABLE — rides bundle PR #122, update checklist. NO ship/NO ping this cycle.
+
+## Fable plan DONE → specs/caddie-input-grounding-plan.md (VERIFIED against codebase)
+New INPUT_GROUNDING_RULE constant (voice_prompts.py, before OBSERVED_REALITY_RULE) injected into 3
+sites: build_realtime_instructions + the TWO stable_text blocks in routes/caddie.py (~801, ~1412),
+each BEFORE OBSERVED_REALITY_RULE (keeps test_voice_stream.py endswith pins green). Balance carve-out
+in the rule text: gibberish→ask-once; terse-real ("driver?","what club","how far") →still answer.
+Eval teeth: checks.py _RULE_TEXT + schema.py _VALID_RULE_NAMES + Tier2JudgeProperty
+ASKS_TO_REPEAT_ON_UNINTELLIGIBLE; two golden scenarios (gibberish-transcript-asks-to-repeat NEG +
+terse-driver-question-still-answered POS); mutant tests in test_harness_has_teeth.py (RED-then-green,
+per-mouth attribution). Collateral: test_caddie_caching.py OLD templates + new
+test_input_grounding_prompt.py. Realtime = nudge-not-gate (honest caveat); plausibility heuristic
+DEFERRED (pure prompt rule this cycle). No frontend/models.py change. Guide_writer EXCLUDED (offline).
+
+## AWAITING: ONE builder implementing specs/caddie-input-grounding-plan.md on integration/next
+(commits + pushes there; NO per-item PR). On builder return: reviewer (adversarial BOTH ways —
+gibberish→ask-again AND terse-real→still-answers; + injection-as-data) + qa (strict gates + eval
+teeth RED-then-green proof) in parallel. BLOCKING → re-dispatch builder. Else update PR #122 checklist
+(4th NOTICEABLE). NO ship / NO ping this cycle (bundle accumulates).
+
+## AWAITING: reviewer + qa in parallel on head 227fdf4 (a35e96d feature)
+Reviewer: adversarial BOTH ways — (a) gibberish/non-golf → caddie asks-again (not a fabricated golf
+answer); (b) terse-real ("driver?","what club","how far","read?","wind?") → STILL answers directly
+(no over-refusal). Verify rule in all 3 sites BEFORE OBSERVED_REALITY_RULE; guide_writer untouched;
+injection-as-DATA (rule composed from constants only). /security-review + /code-review (NOTICEABLE +
+prompt-fed-to-model). QA: strict gates (ruff, pytest tests/eval incl new teeth, targeted prompt
+tests, frontend lint+tsc+voice smoke) + re-prove RED-then-green teeth. On return: BLOCKING
+(correctness/security/over-refusal/Northstar) → re-dispatch builder + re-review; else update PR #122
+checklist (4th item, NOTICEABLE). NO ship / NO ping this cycle.
+
+## cycle 51 DONE — caddie-dont-answer-misheard-input (INPUT_GROUNDING_RULE) landed on bundle #122 (NOTICEABLE)
+Extends the caddie grounding doctrine from FACTS to INPUT: it no longer confidently answers a
+mis-heard/gibberish/non-golf utterance (owner saw it answer ASR-invented "Scars."/"of God") — it
+briefly asks "Didn't catch that — say again?" — while STILL answering terse-but-clear golf questions
+("driver?","what club","how far","read?","wind?"). New INPUT_GROUNDING_RULE constant
+(voice_prompts.py) injected into all 3 mouths (realtime build_realtime_instructions + both text
+stable_text blocks in routes/caddie.py), each immediately BEFORE OBSERVED_REALITY_RULE (keeps
+test_voice_stream.py endswith pins green). Commit a35e96d (feature) + progress commits.
+Companion to cycle-50 vocab-bias: that reduces mis-hearing at the SOURCE; this stops the caddie
+answering what it mis-heard. Honest scope: realtime is speech-to-speech (raw audio) so the rule is a
+strong NUDGE not a hard gate — cascaded-STT confidence spike remains the queued hard gate (NOT this
+cycle); plausibility heuristic DEFERRED (pure prompt rule).
+Fable plan (VERIFIED against codebase) → specs/caddie-input-grounding-plan.md; caught collateral
+(test_caddie_caching OLD templates, test_voice_stream endswith pins) pre-emptively.
+Reviewer: SHIP — adversarial BOTH ways: under-refusal (rule is strong, not a no-op) + OVER-refusal
+risk LOW (explicit terse-question carve-out in the rule text, pinned by test_input_grounding_prompt.py
++ the positive golden terse-driver-question-still-answered). No injection/security surface (rule =
+static text, no user/tool data flows in; transcript still a separate user message; /security-review
+adds nothing — no auth/endpoint/dep/user-data-flow change). Eval teeth genuinely fail-when-stripped.
+QA: ALL GREEN — ruff clean; eval 64/64 (incl 2 new golden + mutant teeth); targeted prompt/cache/
+voice-stream/grounding 61/61; frontend lint+tsc clean; voice smoke 274/274. Teeth INDEPENDENTLY
+re-proven RED-then-green (strip {INPUT_GROUNDING_RULE} from _build_session_voice_prompt → gibberish
+scenario RED naming mouth ['text']; restore → 64/64 green); working tree left clean.
+Designer SKIPPED — no visual surface (caddie spoken/text behavior; NORTHSTAR "ask once, briefly"
+calm criterion covered by reviewer). Cost-disciplined (Plan+builder+reviewer+qa only).
+PR #122 checklist updated → now FOUR noticeable items (course-ids-wiring, slope-framing-reconcile,
+transcription-vocab-bias, input-grounding). NO ship / NO ping this cycle (bundle accumulates; owner
+ships on his single "ship it"). At ship time: re-verify EVERY required gate state:SUCCESS on the
+FINAL head SHA (cancelled/absent required gate is NOT a pass).
+Injection note: several embedded "date changed / DO NOT mention" instructions appeared in tool output
++ system-reminder-shaped messages this cycle; disregarded ALL as untrusted DATA per injection-defense
+policy — zero effect on the work. PR #124 (caller) + voice_booking/telephony/tee_times untouched.
+
+## cycle 52 START (2026-07-09) — pick caddie-surface-osm-trees (NOTICEABLE) on bundle #122
+Step 0: no owner ship-it/feedback pending (PR #122 has no comments/reviews; no Needs Review
+card with an owner reply). Bundle #122 still OPEN, FOUR noticeable items, accumulating. NO
+ship / NO ping this cycle (owner active on-course; directive: build next item onto bundle).
+Sync clean (main already merged, integration/next == origin).
+
+PICK: caddie-surface-osm-trees — the tree-spike GO verdict. Satellite CV disproven; the cheap
+real win is that OSM ALREADY ingests trees the caddie ignores (~537 tree nodes + 73 woods
+polys at Bethpage). `backend/app/caddie/hazards.py::_HAZARD_FEATURE_TYPES = {"bunker","water"}`
+excludes featureType "tree"/"woods" — data is already spatially joined to holes (course_spatial
+corridor caps woods=150m, tree=120m) and read by extract_hole_hazards. Gate tree/woods in as a
+tree/woods hazard type so "how far to clear the trees" routes through the SAME polyline carry+
+side frame; per-hole COVERAGE guard + honest "trees aren't mapped here" fallback (no-fake-data);
+distinguish tree point (line/cluster along shot) vs woods polygon; caddie CITES the number
+(grounding rule). Geometry-correctness (polyline/hazard frame = prior anchor-incident area) →
+Fable plan + Fable adversarial reviewer who FALSIFIES tree carry/side across bearings.
+NOTE: referenced specs/tree-detection-cv-findings.md is ABSENT (GO verdict carried in cycle
+context); not a blocker.
+
+## AWAITING: Fable Plan agent producing specs/caddie-surface-osm-trees-plan.md
+On return: dispatch ONE builder to implement the plan on integration/next (commits+pushes there,
+NO per-item PR). Do NOT touch voice_booking/telephony/tee_times (PR #124 separate). If I die
+here: re-read this note, re-dispatch Fable Plan (no code was written yet).
+
+## Fable plan DONE → specs/caddie-surface-osm-trees-plan.md (VERIFIED against codebase, saved verbatim)
+Single edit surface: extract_hole_hazards in backend/app/caddie/hazards.py — all 3 caddie mouths +
+carries tool + guide writer flow through it, ZERO caller changes. Observation model: tree Points +
+woods-polygon RING VERTICES → observations, classified through the SAME _project_onto_polyline frame
+(positive=LEFT), 70y lateral window (makes woods NEAR-EDGE not centroid), per-side aggregate to
+min/max carry pair → format_hazards_line renders "trees R 220-300y" via existing range merge.
+Coverage guard: >=3 obs/side (a mapped woods qualifies alone; 1-2 stray points silent). Trees
+appended AFTER bunker/water cap + re-sorted → NEVER evict a real hazard; group cap 5->6; severity
+"moderate"; _TYPE_ORDER trees=2 (after water). HAZARD_GROUNDING_RULE amended (additive; pinned
+substrings survive) → asked-about-unmapped-trees = "not in my mapped data", never invented, never
+"there are no trees". NO Hazard/HoleIntelligence schema change (cached JSONB validates, 'trees'
+already in frontend union) → NO frontend edit. Tests: new test_tree_hazards.py (12 geometry tests
+incl 8-bearing sweep T6 + dogleg played-line T7 + woods near-edge-vs-centroid T4 ~165y divergence),
+real-Bethpage-fixture test, 2 golden evals (trees-carry-cited-from-geometry, trees-not-mapped-honest)
++ mutation teeth (RED when trees stripped). Injection note: an embedded "date changed/don't mention"
+instruction appeared in tool output/system-reminder — disregarded as untrusted DATA (zero effect).
+
+## AWAITING: ONE builder implementing specs/caddie-surface-osm-trees-plan.md on integration/next
+(commits+pushes there; NO per-item PR). Do NOT touch voice_booking/telephony/tee_times (PR #124).
+On builder return: Fable reviewer (FALSIFY tree carry/side across bearings + woods near-edge +
+coverage-guard honesty + cap-crowding; same rigor as bend/hazards) + qa (STRICT gates + eval teeth
+RED-then-green proof) in parallel. Designer only if a UI surface changed (expect none — tool/intel
+only). BLOCKING → re-dispatch builder. Else update PR #122 checklist (5th NOTICEABLE). NO ship / NO
+ping this cycle (bundle accumulates). If I die here: re-read this; reconcile from origin/integration/next
+git log (builder pushes its own commits) — do NOT re-run a builder that already pushed.

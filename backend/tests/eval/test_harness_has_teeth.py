@@ -21,7 +21,7 @@ import pathlib  # noqa: E402
 from app.caddie.guide_writer import validate_guide  # noqa: E402
 from app.caddie.hazards import HAZARD_GROUNDING_RULE  # noqa: E402
 from app.caddie.types import Hazard, HoleStrategyGuide  # noqa: E402
-from app.caddie.voice_prompts import OBSERVED_REALITY_RULE  # noqa: E402
+from app.caddie.voice_prompts import INPUT_GROUNDING_RULE, OBSERVED_REALITY_RULE  # noqa: E402
 
 from tests.eval import checks as checks_mod  # noqa: E402
 from tests.eval.schema import (  # noqa: E402
@@ -73,6 +73,39 @@ async def test_prompt_contains_rule_goes_red_on_hazard_grounding_mutant(monkeypa
     )
     mutant_result = checks_mod.TIER1_CHECKS[check.check.value](mutant_ctx, check)
     assert not mutant_result.passed
+
+
+async def test_prompt_contains_rule_goes_red_on_input_grounding_mutant(monkeypatch):
+    """`prompt = prompt.replace(INPUT_GROUNDING_RULE, "")` reproduces the
+    Scars-transcript incident prompt — the check must PASS on the real
+    assembled prompt and FAIL on the mutant, in BOTH mouths."""
+    scenario = _scenario("gibberish-transcript-asks-to-repeat")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(check=Tier1CheckName.PROMPT_CONTAINS_RULE, rule="INPUT_GROUNDING_RULE", mouths=["text", "realtime"])
+    assert checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed  # sanity: real prompts contain it
+    mutant_ctx = dataclasses.replace(
+        ctx,
+        text_prompt=ctx.text_prompt.replace(INPUT_GROUNDING_RULE, ""),
+        realtime_prompt=ctx.realtime_prompt.replace(INPUT_GROUNDING_RULE, ""),
+    )
+    assert not checks_mod.TIER1_CHECKS[check.check.value](mutant_ctx, check).passed
+
+
+async def test_prompt_contains_rule_goes_red_on_input_grounding_single_mouth_mutant(monkeypatch):
+    """Single-mouth variant: strip INPUT_GROUNDING_RULE from realtime only —
+    proves per-mouth attribution (the failure detail must name only
+    ['realtime'], not both)."""
+    scenario = _scenario("gibberish-transcript-asks-to-repeat")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(check=Tier1CheckName.PROMPT_CONTAINS_RULE, rule="INPUT_GROUNDING_RULE", mouths=["text", "realtime"])
+    assert checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed
+
+    mutant_ctx = dataclasses.replace(
+        ctx, realtime_prompt=ctx.realtime_prompt.replace(INPUT_GROUNDING_RULE, ""),
+    )
+    result = checks_mod.TIER1_CHECKS[check.check.value](mutant_ctx, check)
+    assert not result.passed
+    assert "['realtime']" in result.detail
 
 
 async def test_prompt_contains_rule_goes_red_when_constant_emptied(monkeypatch):

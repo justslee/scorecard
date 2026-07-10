@@ -55,6 +55,7 @@ class Tier2JudgeProperty(str, Enum):
     RESPECTS_PLAYS_LIKE = "respects_plays_like"
     DEFERS_TO_OBSERVED_REALITY = "defers_to_observed_reality"
     APPROPRIATELY_CONCISE_AND_CALM = "appropriately_concise_and_calm"
+    ASKS_TO_REPEAT_ON_UNINTELLIGIBLE = "asks_to_repeat_on_unintelligible"
 
 
 # Which extra params each check name requires — enforced at load time so a
@@ -86,7 +87,7 @@ _TIER2_DET_REQUIRED_FIELDS: dict[Tier2DeterministicCheckName, tuple[str, ...]] =
 
 _VALID_RULE_NAMES = {
     "HAZARD_GROUNDING_RULE", "OBSERVED_REALITY_RULE", "PHYSICS_GROUNDING_RULE",
-    "GREEN_GROUNDING_RULE", "BEND_GROUNDING_RULE",
+    "GREEN_GROUNDING_RULE", "BEND_GROUNDING_RULE", "INPUT_GROUNDING_RULE",
 }
 _VALID_MOUTHS = {"text", "realtime"}
 

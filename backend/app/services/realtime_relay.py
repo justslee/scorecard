@@ -57,6 +57,7 @@ def build_session_payload(
     model: str = OPENAI_REALTIME_MODEL,
     transcribe_model: str = OPENAI_REALTIME_TRANSCRIBE_MODEL,
     vad_type: str = OPENAI_REALTIME_VAD,
+    transcription_prompt: Optional[str] = None,
 ) -> dict:
     """Build the Realtime session object sent to OpenAI at mint time.
 
@@ -72,6 +73,10 @@ def build_session_payload(
                           "gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1".
         vad_type:         "server_vad" (default, energy-based) or "semantic_vad"
                           (semantic classifier; uses eagerness instead of thresholds).
+        transcription_prompt: Optional free-text vocabulary/context hint for the
+                          transcriber (app/caddie/keyterms.py). Omitted when
+                          falsy, so the transcription dict stays exactly
+                          {"model", "language"} as before this field existed.
 
     Returns:
         Full payload dict suitable for POST to /v1/realtime/client_secrets.
@@ -103,6 +108,16 @@ def build_session_payload(
     # Realtime schema (developers.openai.com client_secrets Python SDK reference,
     # 2025). Allowed types: "near_field" (phone / headset) | "far_field" (laptop).
     # "near_field" is correct for a mobile app where the phone is held to the ear.
+    transcription: dict = {"model": transcribe_model, "language": "en"}
+    # transcription.prompt confirmed at session.audio.input.transcription.prompt
+    # in the GA Realtime API reference (AudioTranscription object, 2025): free
+    # text for gpt-4o-transcribe (list-of-keywords semantics for whisper-1; not
+    # supported for gpt-realtime-whisper). A hint for the transcriber only —
+    # never merged into session.instructions. Omitted when falsy so the dict
+    # stays exactly {"model", "language"} as before this field existed.
+    if transcription_prompt:
+        transcription["prompt"] = transcription_prompt
+
     return {
         "session": {
             "type": "realtime",
@@ -121,7 +136,7 @@ def build_session_payload(
                     # the wrong language (owner repro: a reply chip in Korean).
                     # Owner direction 2026-07-06: default English; a per-user
                     # language setting comes later with onboarding.
-                    "transcription": {"model": transcribe_model, "language": "en"},
+                    "transcription": transcription,
                     "turn_detection": turn_detection,
                 },
                 # speed: brisk on-course delivery (owner ask); realtime
@@ -138,6 +153,8 @@ async def mint_ephemeral_session(
     instructions: str,
     voice_id: Optional[str],
     tools: Optional[list[dict]] = None,
+    *,
+    transcription_prompt: Optional[str] = None,
 ) -> dict:
     """Mint a 60s OpenAI Realtime ephemeral session.
 
@@ -147,7 +164,9 @@ async def mint_ephemeral_session(
     if not OPENAI_API_KEY:
         raise HTTPException(500, "OPENAI_API_KEY not configured")
 
-    payload = build_session_payload(instructions, voice_id, tools)
+    payload = build_session_payload(
+        instructions, voice_id, tools, transcription_prompt=transcription_prompt
+    )
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json",

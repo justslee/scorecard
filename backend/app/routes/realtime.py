@@ -16,6 +16,7 @@ from app.caddie.session import sessions, get_owned_session
 from app.caddie.personalities import load_personality, personality_visible
 from app.caddie.voice_prompts import build_realtime_instructions
 from app.caddie.setup_voice import SETUP_TOOLS, build_setup_instructions
+from app.caddie.keyterms import build_transcription_prompt, golf_baseline_prompt
 from app.caddie import memory as memory_mod
 from app.services.realtime_relay import mint_ephemeral_session, DEFAULT_TOOLS
 from app.services.rate_limit import caddie_rate_limited_user
@@ -86,6 +87,7 @@ async def start_setup_session(
         instructions=instructions,
         voice_id=personality.voice_id,
         tools=SETUP_TOOLS,
+        transcription_prompt=golf_baseline_prompt(),
     )
     client_secret, expires_at = _client_secret_from_mint(mint)
 
@@ -120,6 +122,12 @@ async def start_realtime_session(
     if request.current_hole is not None:
         session.current_hole = request.current_hole
 
+    # Vocabulary/context biasing for the input transcript (specs/caddie-
+    # realtime-transcription-vocab-bias-plan.md) — player's own clubs + this
+    # hole's hazards + golf vocab, computed from the same in-memory session
+    # (no extra DB reads).
+    transcription_prompt = build_transcription_prompt(session)
+
     # Visibility gate (matches session_voice / talk_to_caddie): never render
     # another user's private persona prompt into the returned instructions.
     persona_id = (
@@ -135,6 +143,7 @@ async def start_realtime_session(
         instructions=instructions,
         voice_id=personality.voice_id,
         tools=DEFAULT_TOOLS,
+        transcription_prompt=transcription_prompt,
     )
 
     client_secret, expires_at = _client_secret_from_mint(mint)

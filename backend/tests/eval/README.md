@@ -21,7 +21,8 @@ with **expected PROPERTIES** (never exact text), split into two tiers.
   (sentence count, markdown, club selection, forbidden/required phrases), then an LLM judge
   (a **different model** than the candidate) grades a handful of soft properties
   (`grounded_in_hole`, `respects_plays_like`, `defers_to_observed_reality`,
-  `appropriately_concise_and_calm`) as binary pass/fail with a reason.
+  `appropriately_concise_and_calm`, `asks_to_repeat_on_unintelligible`) as binary pass/fail
+  with a reason.
 
 ## Running it
 
@@ -70,7 +71,7 @@ Append one line to `golden/caddie_advice.jsonl` (see the existing lines for the 
   `Tier2DeterministicCheckName` / `Tier2JudgeProperty` enums) — a typo'd or unknown check name is
   a load-time `ValidationError`, not a silent no-op.
 - Assertions about the RULES reference the imported constants (`HAZARD_GROUNDING_RULE`,
-  `OBSERVED_REALITY_RULE`), never copied prompt strings, EXCEPT the handful of verbatim
+  `OBSERVED_REALITY_RULE`, `INPUT_GROUNDING_RULE`), never copied prompt strings, EXCEPT the handful of verbatim
   product-contract literals (`"2-3 short sentences"`, `"never use markdown"`,
   `"the COMPLETE list — there are NO others"`, `"NONE mapped"`) — these are checked with
   `prompt_contains_literal` / `ground_truth_block_complete` on purpose. This means: **when you
