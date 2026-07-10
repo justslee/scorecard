@@ -11011,3 +11011,10 @@ Evidence gathered (branch==main for the two files; no code diverged yet):
   intended per-leg flush (behavior change, not test-gaming).
 ## AWAITING Fable plan — specs/voicetel-timing-immediate-flush-plan.md. On return → dispatch builder
 on integration/next; then reviewer + qa; SILENT, rides bundle #125.
+
+## CYCLE 56 — Fable plan VERIFIED + saved (specs/voicetel-timing-immediate-flush-plan.md). Corrects the premise:
+headline already immediate-flushes at markFirstAudio (6fcb40d, live all 3 days) — real gap is the EARLIER legs
+(eos_to_transcript / transcript_to_first_token) only riding markFirstAudio's flush. FIX = 2 guarded safeFlush()
+calls in markTranscript()/markFirstToken() via the existing injectable flush seam; KEEP terminal flush at markFirstAudio.
+Files: caddie-turn-timing.ts + its 2 test files ONLY. No change to CaddieSheet.tsx / useVoiceCaddie.ts / telemetry.ts / backend.
+## AWAITING builder — implement the plan on integration/next, commit+push, run all 6 gates. On return → reviewer + qa.
