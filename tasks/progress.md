@@ -12183,3 +12183,8 @@ both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
 - AWAITING reviewer (SECURITY lens) on dbb8550. SHIP → QA gates + open/update bundle PR, backlog→shipped.
   BLOCKING → re-dispatch builder, re-review. SILENT (infra/config; enables a major capability but
   inert until owner adds FROM_NUMBER + OWNER_NUMBER + PUBLIC_HOST + ENABLED=1 + redeploy). No ship/ping.
+
+- REVIEWER: SHIP — all 4 telephony invariants PASS (fully gated: WARN+construction run only after ENABLED+creds+PUBLIC_HOST; dial-safe: run_call untouched, dials only normalize_phone(ctx.phone); no secret logging: WARN is a constant string, zero interpolation of sid/token; backward-compatible: standard name wins). Tests genuine (fail vs pre-fix), no coverage gap. Non-blocking nit only (`from_number or ""` dead-defensive).
+- QA (local, DB-free scope): backend ruff clean; telephony+voice_booking suites 103/103 pass. DB-backed rehearsal/media tests deferred to CI (no local Postgres — never spin a container). Frontend UNTOUCHED (0 files vs main) → its lint/tsc/voice-smoke unaffected.
+- BOOKKEEPING: backlog `voice-booking-twilio-cred-aliases` → `done-on-bundle` (dbb8550, PR #132, not-on-main, inert until owner secrets+redeploy). Bundle PR #132 checklist updated (item = silent infra/config). Still SILENT bundle — no noticeable change, NO owner ship/ping.
+- AWAITING CI on PR #132 head after this bookkeeping push — require Frontend + Backend gates state:SUCCESS pinned to the pushed head SHA (fast ~10s Backend container-init fail = infra flake → `gh run rerun <id> --failed`).

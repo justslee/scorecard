@@ -8,7 +8,8 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "done-on-bundle",
+      "landed_on": "integration/next @ dbb8550 (bundle PR #132); reviewer SHIP (all 4 telephony invariants PASS); NOT yet merged to main. Inert until owner adds TWILIO_FROM_NUMBER + VOICE_BOOKING_OWNER_NUMBER + VOICE_BOOKING_PUBLIC_HOST + VOICE_BOOKING_ENABLED=1 and redeploys.",
       "depends_on": [],
       "why": "Owner added TWILIO_CLIENT_ID (=Account SID) + TWILIO_CLIENT_KEY (=Auth Token) to looper/prod secrets (2026-07-10) \u2014 non-standard names. telephony.py get_live_transport reads TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN (line 171-173) + _TWILIO_ENV_VARS missing-check. Adapt: account_sid = TWILIO_ACCOUNT_SID or TWILIO_CLIENT_ID; auth_token = TWILIO_AUTH_TOKEN or TWILIO_CLIENT_KEY; update the missing-check to accept EITHER name per credential. Keep Client(account_sid,auth_token) (Account SID + Auth Token, not API Key). Add a NON-crashing WARN log if resolved account_sid doesn't start 'AC' (likely an API-Key SID mistake) \u2014 log the PREFIX-mismatch FACT only, NEVER the secret value. Still fully gated (VOICE_BOOKING_ENABLED + all creds + PUBLIC_HOST) + dial-safe. Tests: CLIENT_ID/KEY-only env builds transport w/ correct creds; standard names still work; missing-check accepts either. Security review (telephony credential gate). Unblocks the live caller once owner also adds TWILIO_FROM_NUMBER + VOICE_BOOKING_OWNER_NUMBER + VOICE_BOOKING_PUBLIC_HOST + VOICE_BOOKING_ENABLED=1."
     },
