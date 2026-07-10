@@ -52,6 +52,7 @@ import type { WeatherConditions } from "@/lib/caddie/types";
 import { bearingDeg, relativeWind, compassFrom } from "@/lib/map/wind";
 import { shouldRefreshOnDemand, WeatherRefreshScheduler } from "@/lib/map/weather-freshness";
 import { computeFCBDistances } from "@/lib/course/course-coordinates";
+import { buildFcbTiles } from "@/lib/course/fcb-tiles";
 import { fcbSourceCaption } from "@/lib/caddie/fcb-labels";
 import { usePhysicsPlaysLike } from "@/lib/caddie/use-physics-plays-like";
 import { playsTileDisplay, ELEV_DEADBAND_FT } from "@/lib/caddie/plays-tile";
@@ -1158,17 +1159,17 @@ export default function RoundPage() {
   // TODO(fcb §4.5): line-vs-card hint held pending designer sign-off on the
   // card-yardage source (`distance` here is a derived display value, not the
   // literal scorecard yardage — see specs/fcb-caption-visibility-plan.md §4.5).
-  const fcbTiles: { k: string; v: number | string; color: string }[] = showCardOnly
-    ? [
-        { k: "Front", v: "—", color: "#a8553f" },
-        { k: "Center", v: cardYards ?? "—", color: T.ink },
-        { k: "Back", v: "—", color: "#5d7285" },
-      ]
-    : [
-        { k: "Front", v: fcb?.front ?? distance - 12, color: "#a8553f" },
-        { k: "Center", v: fcb?.center ?? distance, color: T.ink },
-        { k: "Back", v: fcb?.back ?? distance + 14, color: "#5d7285" },
-      ];
+  // Tile VALUES via the pure helper — collapses every "no real F/C/B geometry"
+  // state to the honest card-only tiles instead of the old fabricated
+  // `distance ± offset` numbers (no-fake-data; see lib/course/fcb-tiles.ts).
+  // `showCardOnly` above still drives the plays/physics/caption inputs below
+  // unchanged; only the F/C/B tile fabrication is fixed here.
+  const fcbTileValues = buildFcbTiles({ fcb, fcbSource, cardYards });
+  const fcbTiles: { k: string; v: number | string; color: string }[] = [
+    { k: "Front", v: fcbTileValues.front, color: "#a8553f" },
+    { k: "Center", v: fcbTileValues.center, color: T.ink },
+    { k: "Back", v: fcbTileValues.back, color: "#5d7285" },
+  ];
   // One reconciled header ladder (spec §fix.2/§fix.3): the scorecard yardage
   // is authoritative when known; else the anchored tee→green geometry; the
   // mock illustration number is the LAST resort, and only on the paper
