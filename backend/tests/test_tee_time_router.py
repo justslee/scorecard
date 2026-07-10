@@ -291,6 +291,39 @@ class TestBookDispatch:
         assert _provider().name == "router"
 
 
+class TestCourseSelectionFilter:
+    """course_ids wiring through the router provider
+    (specs/teetime-course-ids-wiring-plan.md §6): a selected capability
+    course still gets real foreUP slots; an unselected one is filtered
+    BEFORE `_slots_for_course` ever runs, so foreUP is never called for it
+    (quota win)."""
+
+    async def test_selected_capability_course_still_yields_foreup_slots(self):
+        fake = FakeForeUp()
+        fake.result = lambda cap, query: [_real_slot(cap, query, "10:00")]
+        provider = _provider(foreup=fake)
+        query = _query(course_ids=["gplaces-18mile"])
+        slots = await provider.search_availability(query)
+
+        matched = [s for s in slots if s.course_name == "18 Mile Creek Golf Course"]
+        assert len(matched) == 1
+        assert matched[0].provider == "foreup"
+        assert fake.calls  # foreUP WAS consulted for the selected course
+
+    async def test_unselected_capability_course_never_calls_foreup(self):
+        fake = FakeForeUp()
+        fake.result = lambda cap, query: [_real_slot(cap, query, "10:00")]
+        provider = _provider(foreup=fake)
+        # Select only the plain public course — 18 Mile Creek is filtered
+        # out before the capability lookup ever runs.
+        query = _query(course_ids=["gplaces-plain"])
+        slots = await provider.search_availability(query)
+
+        assert "18 Mile Creek Golf Course" not in {s.course_name for s in slots}
+        assert "Plain Public Course" in {s.course_name for s in slots}
+        assert fake.calls == []
+
+
 class TestNeverRaises:
     async def test_finder_that_raises_returns_empty(self):
         async def boom(_query):

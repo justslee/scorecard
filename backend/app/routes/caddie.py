@@ -31,7 +31,7 @@ from app.caddie.hazards import (
 )
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.guide_writer import format_guide_line
-from app.caddie.voice_prompts import OBSERVED_REALITY_RULE, TOOL_USE_RULE
+from app.caddie.voice_prompts import INPUT_GROUNDING_RULE, OBSERVED_REALITY_RULE, TOOL_USE_RULE
 from app.caddie import tools as caddie_tools
 from app.caddie.tool_loop import run_caddie_turn
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -799,6 +799,7 @@ or known tendencies when relevant.
 {PHYSICS_GROUNDING_RULE}
 {GREEN_GROUNDING_RULE}
 {TOOL_USE_RULE}
+{INPUT_GROUNDING_RULE}
 {OBSERVED_REALITY_RULE}"""
 
     # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
@@ -1410,6 +1411,7 @@ golf-focused. Never break character.
 {PHYSICS_GROUNDING_RULE}
 {GREEN_GROUNDING_RULE}
 {TOOL_USE_RULE}
+{INPUT_GROUNDING_RULE}
 {OBSERVED_REALITY_RULE}"""
 
     # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildHoleContextText, buildOpeningTurnText } from './opening-turn';
+import { buildHoleContextText, buildOpeningGreetingText, buildOpeningGreetingInstruction } from './opening-turn';
 
 describe('buildHoleContextText', () => {
   it('states the hole, par, and yards as ground truth, and directs tool calls to that hole', () => {
@@ -33,13 +33,55 @@ describe('buildHoleContextText', () => {
   });
 });
 
-describe('buildOpeningTurnText — unchanged by this plan (sanity check only)', () => {
-  it('still produces the natural spoken line, no hole identity baked in', () => {
-    expect(buildOpeningTurnText({ distanceYards: 150 })).toBe(
-      "I'm about 150 yards from the pin. What should I hit or do on this next shot?",
+describe('buildOpeningGreetingText — caddie-authored opener', () => {
+  it('produces the non-tee greeting, in the caddie\'s own voice', () => {
+    expect(buildOpeningGreetingText({ distanceYards: 150 })).toBe(
+      'About 150 to the pin from here. Want a read on the shot?',
     );
-    expect(buildOpeningTurnText({ distanceYards: 231, fromTee: true })).toBe(
-      "I'm on the tee, about 231 yards to the pin. What should I hit off the tee?",
+  });
+
+  it('produces the tee greeting, in the caddie\'s own voice', () => {
+    expect(buildOpeningGreetingText({ distanceYards: 231, fromTee: true })).toBe(
+      "You're on the tee — about 231 to the pin. Want a read on the tee shot?",
+    );
+  });
+
+  it('authorship lock: never fabricates a first-person player line', () => {
+    expect(buildOpeningGreetingText({ distanceYards: 150 })).not.toContain("I'm");
+    expect(buildOpeningGreetingText({ distanceYards: 231, fromTee: true })).not.toContain("I'm");
+  });
+
+  it('always includes the distance', () => {
+    expect(buildOpeningGreetingText({ distanceYards: 150 })).toContain('150');
+    expect(buildOpeningGreetingText({ distanceYards: 231, fromTee: true })).toContain('231');
+  });
+});
+
+describe('buildOpeningGreetingInstruction — live-mode wrapper', () => {
+  it('contains the greeting verbatim (single-source-of-truth lock)', () => {
+    const shot = { distanceYards: 150 };
+    expect(buildOpeningGreetingInstruction(shot)).toContain(buildOpeningGreetingText(shot));
+  });
+
+  it('contains the tee greeting verbatim', () => {
+    const shot = { distanceYards: 231, fromTee: true };
+    expect(buildOpeningGreetingInstruction(shot)).toContain(buildOpeningGreetingText(shot));
+  });
+
+  it('instructs the model to speak in its own voice', () => {
+    expect(buildOpeningGreetingInstruction({ distanceYards: 150 })).toMatch(/your own voice/i);
+  });
+
+  it('states the player has not spoken yet', () => {
+    expect(buildOpeningGreetingInstruction({ distanceYards: 150 })).toMatch(/has not said anything/i);
+  });
+
+  it('differs between tee and non-tee only via the embedded greeting', () => {
+    const nonTee = buildOpeningGreetingInstruction({ distanceYards: 150 });
+    const tee = buildOpeningGreetingInstruction({ distanceYards: 150, fromTee: true });
+    expect(nonTee).not.toBe(tee);
+    expect(nonTee.replace(buildOpeningGreetingText({ distanceYards: 150 }), '')).toBe(
+      tee.replace(buildOpeningGreetingText({ distanceYards: 150, fromTee: true }), ''),
     );
   });
 });

@@ -643,74 +643,46 @@ describe("CaddieSheet — persona picker", () => {
 });
 
 describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-shot-reco-plan.md)", () => {
-  it("(a) fires exactly once on fresh open: embeds distance, streams, updates history, speaks once, and (e) completes the same lifecycle as a normal reply", async () => {
-    const stream = deferredStream();
-    sessionVoiceStreamMock.mockImplementationOnce(stream.mockImpl);
+  it("(a) fires exactly once on fresh open: seeds the caddie-authored greeting deterministically, no network turn, no fabricated user line, and (e) completes the same lifecycle as a normal reply", async () => {
     const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 147 });
     const props = renderSheet({ resolveOpeningShot });
 
-    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
-    expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
-    expect(sessionVoiceStreamMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        round_id: "round-123",
-        personality_id: "strategist",
-        hole_number: 3,
-        transcript: expect.stringContaining("147"),
-      }),
-      expect.objectContaining({ onToken: expect.any(Function) }),
-    );
-    const [payload] = sessionVoiceStreamMock.mock.calls[0];
-    expect((payload as { transcript: string }).transcript).toContain("What should I hit or do on this next shot");
-    // Regression lock (specs/caddie-opening-reco-from-tee-plan.md): the GPS
-    // path must never use the tee phrasing — that would fabricate a position.
-    expect((payload as { transcript: string }).transcript).not.toEqual(expect.stringContaining("on the tee"));
+    await waitFor(() => expect(resolveOpeningShot).toHaveBeenCalledTimes(1));
+
+    const greeting = "About 147 to the pin from here. Want a read on the shot?";
+    expect(await screen.findByText(greeting)).toBeTruthy();
+
+    // Core defect lock: no network turn for the opener, and no fabricated
+    // user line in the seeded history — an assistant-only greeting.
+    expect(sessionVoiceStreamMock).not.toHaveBeenCalled();
     expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
     expect(talkToCaddieMock).not.toHaveBeenCalled();
+    expect(props.onUpdateConvHistory).toHaveBeenCalledWith([{ role: "assistant", content: greeting }]);
 
-    act(() => {
-      stream.pushToken("Smooth 8-iron. ");
-      stream.pushToken("Center of the green.");
-      stream.resolve("Smooth 8-iron. Center of the green.");
-    });
-
-    expect(await screen.findByText("Smooth 8-iron. Center of the green.")).toBeTruthy();
-    expect(props.onUpdateConvHistory).toHaveBeenCalledWith([
-      { role: "user", content: expect.stringContaining("147") },
-      { role: "assistant", content: "Smooth 8-iron. Center of the green." },
-    ]);
     expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
-    expect(ttsSpeakSpy).toHaveBeenCalledWith("Smooth 8-iron. Center of the green.", "strategist");
-    expect(ttsEnqueueSpy).not.toHaveBeenCalled(); // "Smooth 8-iron." (14 chars) merges rather than pipelines
+    expect(ttsSpeakSpy).toHaveBeenCalledWith(greeting, "strategist");
+    expect(ttsEnqueueSpy).not.toHaveBeenCalled();
 
     // (e) same completion lifecycle as a normal reply: follow-up mounts, mic re-arms.
     expect(await screen.findByText("Ask follow-up")).toBeTruthy();
     expect(await screen.findByLabelText("Start recording")).toBeTruthy();
   });
 
-  it("(a-tee) fromTee:true resolves to the honest from-the-tee phrasing (specs/caddie-opening-reco-from-tee-plan.md)", async () => {
-    const stream = deferredStream();
-    sessionVoiceStreamMock.mockImplementationOnce(stream.mockImpl);
+  it("(a-tee) fromTee:true resolves to the honest from-the-tee greeting (specs/caddie-opening-reco-from-tee-plan.md)", async () => {
     const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 365, fromTee: true });
-    renderSheet({ resolveOpeningShot });
+    const props = renderSheet({ resolveOpeningShot });
 
-    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
-    expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
-    const [payload] = sessionVoiceStreamMock.mock.calls[0];
-    const transcript = (payload as { transcript: string }).transcript;
-    expect(transcript).toContain("365");
-    expect(transcript).toContain("on the tee");
-    expect(transcript).toContain("off the tee");
-    expect(transcript).not.toEqual(expect.stringContaining("yards from the pin"));
+    await waitFor(() => expect(resolveOpeningShot).toHaveBeenCalledTimes(1));
 
-    // Transparency: the user bubble renders the same honest tee wording.
-    expect(await screen.findByText(/on the tee, about 365 yards to the pin/)).toBeTruthy();
+    const greeting = "You're on the tee — about 365 to the pin. Want a read on the tee shot?";
+    expect(await screen.findByText(greeting)).toBeTruthy();
+    expect(screen.queryByText(/from here/)).toBeNull();
 
-    act(() => {
-      stream.pushToken("Smooth 3-wood off the tee.");
-      stream.resolve("Smooth 3-wood off the tee.");
-    });
-    expect(await screen.findByText("Smooth 3-wood off the tee.")).toBeTruthy();
+    // No network mocks called for the opener; history has no user role.
+    expect(sessionVoiceStreamMock).not.toHaveBeenCalled();
+    expect(talkToCaddieStreamMock).not.toHaveBeenCalled();
+    expect(talkToCaddieMock).not.toHaveBeenCalled();
+    expect(props.onUpdateConvHistory).toHaveBeenCalledWith([{ role: "assistant", content: greeting }]);
   });
 
   it("(b) does not fire with no active session — sheet opens idle", async () => {
@@ -750,19 +722,20 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
   });
 
   it("(c-i) does not re-fire on a re-render after the opening turn resolved", async () => {
-    sessionVoiceStreamMock.mockImplementationOnce((_params, opts) => emitTokensSync(opts, ["Smooth 7."]));
     const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 130 });
     const props = buildProps({ resolveOpeningShot });
     const { rerender } = render(<CaddieSheet {...props} />);
 
-    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
-    expect(await screen.findByText("Smooth 7.")).toBeTruthy();
+    await waitFor(() => expect(resolveOpeningShot).toHaveBeenCalledTimes(1));
+    const greeting = "About 130 to the pin from here. Want a read on the shot?";
+    expect(await screen.findByText(greeting)).toBeTruthy();
 
     rerender(<CaddieSheet {...props} accent="#000000" />);
     await act(async () => {
       await Promise.resolve();
     });
-    expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1);
+    expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText(greeting)).toHaveLength(1);
     expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
   });
 
@@ -784,8 +757,6 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
   });
 
   it("(c2) fires exactly once under React.StrictMode double-effect invoke", async () => {
-    const stream = deferredStream();
-    sessionVoiceStreamMock.mockImplementationOnce(stream.mockImpl);
     const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 120 });
     const props = buildProps({ resolveOpeningShot });
 
@@ -795,26 +766,30 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
       </React.StrictMode>,
     );
 
-    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
-    act(() => {
-      stream.pushToken("Smooth 6.");
-      stream.resolve("Smooth 6.");
-    });
-    expect(await screen.findByText("Smooth 6.")).toBeTruthy();
-    expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1);
+    const greeting = "About 120 to the pin from here. Want a read on the shot?";
+    expect(await screen.findByText(greeting)).toBeTruthy();
+    expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
+    expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText(greeting)).toHaveLength(1);
   });
 
-  it("(d) a suppressError failure yields no TTS and no error bubble — sheet reverts to idle", async () => {
+  it("(d) the opener makes zero backend calls, even with the session stream primed to reject", async () => {
     sessionVoiceStreamMock.mockRejectedValueOnce(new Error("network gone"));
     const resolveOpeningShot = vi.fn().mockResolvedValue({ distanceYards: 165 });
     renderSheet({ resolveOpeningShot });
 
-    await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
-    // Idle prompt only renders when `error` is null (phase computation) — this
-    // proves the failure was swallowed, not merely that SOME state settled.
-    expect(await screen.findByText(/Ask anything/)).toBeTruthy();
+    await waitFor(() => expect(resolveOpeningShot).toHaveBeenCalledTimes(1));
+    const greeting = "About 165 to the pin from here. Want a read on the shot?";
+    expect(await screen.findByText(greeting)).toBeTruthy();
+    // No network turn for the opener at all — the primed rejection never fires.
+    expect(sessionVoiceStreamMock).not.toHaveBeenCalled();
     expect(screen.queryByText("network gone")).toBeNull();
-    expect(ttsSpeakSpy).not.toHaveBeenCalled();
+    expect(ttsSpeakSpy).toHaveBeenCalledTimes(1);
+    expect(ttsSpeakSpy).toHaveBeenCalledWith(greeting, "strategist");
+    // The primed rejection is never consumed (no network call) — vi.clearAllMocks()
+    // (beforeEach) does not drop a queued mockRejectedValueOnce implementation, so
+    // reset explicitly here to avoid leaking it into the next test.
+    sessionVoiceStreamMock.mockReset();
   });
 
   it("(f) does not stomp a user turn started while the GPS fix is still pending", async () => {
@@ -825,7 +800,7 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
     const resolveOpeningShot = vi.fn(() => gps.promise);
     const userStream = deferredStream();
     sessionVoiceStreamMock.mockImplementationOnce(userStream.mockImpl);
-    renderSheet({ resolveOpeningShot });
+    const props = renderSheet({ resolveOpeningShot });
 
     await waitFor(() => expect(resolveOpeningShot).toHaveBeenCalledTimes(1));
 
@@ -837,9 +812,8 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
       expect.objectContaining({ onToken: expect.any(Function) }),
     );
 
-    // NOW the GPS fix resolves — the auto opening turn must NOT fire a
-    // second askCaddie call, must NOT abort the user's in-flight stream, and
-    // must NOT overwrite their transcript with the canned question.
+    // NOW the GPS fix resolves — the auto opening turn must NOT seed a
+    // greeting over the in-flight/answered user turn.
     act(() => {
       gps.resolve({ distanceYards: 147 });
     });
@@ -851,7 +825,10 @@ describe("CaddieSheet — auto opening shot recommendation (specs/caddie-auto-sh
     });
 
     expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1); // no second (auto) call
-    expect(screen.queryByText(/yards from the pin/)).toBeNull(); // auto question never shown
+    expect(screen.queryByText(/About 147 to the pin/)).toBeNull(); // greeting never rendered
+    expect(props.onUpdateConvHistory).not.toHaveBeenCalledWith([
+      { role: "assistant", content: "About 147 to the pin from here. Want a read on the shot?" },
+    ]); // opener never seeded
     expect(screen.getByText("what's the wind?", { exact: false })).toBeTruthy(); // user's transcript intact
 
     // The user's own turn is untouched by the abort and completes normally.

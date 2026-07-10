@@ -57,7 +57,7 @@ import { getSheetTtsEnabled, setSheetTtsEnabled } from "@/lib/voice/tts-pref";
 import { createCaddieTurnTimer } from "@/lib/voice/caddie-turn-timing";
 import { getCaddieLiveMode } from "@/lib/voice/live-mode-pref";
 import { useCaddieLiveSession } from "@/hooks/useCaddieLiveSession";
-import { buildOpeningTurnText } from "@/lib/caddie/opening-turn";
+import { buildOpeningGreetingText } from "@/lib/caddie/opening-turn";
 import type { RealtimeMessage, RealtimeStatus } from "@/lib/voice/realtime";
 import type {
   CaddieRecommendation,
@@ -773,13 +773,14 @@ export default function CaddieSheet({
   );
 
   /**
-   * Auto opening shot recommendation (specs/caddie-auto-shot-reco-plan.md).
-   * On a fresh sheet-open during an active session, resolve the golfer's live
-   * GPS distance-to-pin (owned by the parent) and fire the SAME `askCaddie`
-   * path with a default question embedding it — no typing/speaking required.
-   * Every fallback branch (no session, no GPS fix, no green coords,
-   * implausible distance, call failure) leaves the sheet in its existing
-   * idle state — never a fabricated recommendation.
+   * Auto opening shot recommendation (specs/caddie-auto-shot-reco-plan.md;
+   * specs/caddie-remove-seeded-question-plan.md). On a fresh sheet-open
+   * during an active session, resolve the golfer's live GPS distance-to-pin
+   * (owned by the parent) and seed a deterministic, caddie-authored greeting
+   * — no typing/speaking required, and no network turn. Every fallback
+   * branch (no session, no GPS fix, no green coords, implausible distance)
+   * leaves the sheet in its existing idle state — never a fabricated
+   * recommendation, and never a fabricated player question.
    */
   useEffect(() => {
     if (!open) {
@@ -787,7 +788,7 @@ export default function CaddieSheet({
       openingGenRef.current++; // invalidate any opening-turn async still awaiting GPS
       return;
     }
-    // Live mode owns the opening turn itself (spoken, via sendText — see
+    // Live mode owns the opening turn itself (spoken, via sendOpener — see
     // useCaddieLiveSession) — the classic text auto-fire must not ALSO run,
     // or the golfer gets a double opening turn and a phantom text mic
     // (specs/caddie-realtime-slice-c1-plan.md §4/§9).
@@ -816,9 +817,14 @@ export default function CaddieSheet({
       // (specs/caddie-auto-shot-reco-plan.md deviation — reviewer-caught).
       if (streamAbortRef.current || recorderRef.current || convHistoryRef.current.length > 0) return;
       if (!shot) return; // no GPS fix → stay idle (open as today)
-      const q = buildOpeningTurnText(shot);
-      setTranscript(q); // existing state → shows in the user bubble (transparency)
-      await askCaddie(q, { suppressError: true }); // identical streaming path; honest-idle on failure
+      // Caddie-authored greeting; no network turn, no fabricated user line
+      // (specs/caddie-remove-seeded-question-plan.md §3.2).
+      const greeting = buildOpeningGreetingText(shot);
+      const seeded: VoiceCaddieMessage[] = [{ role: "assistant", content: greeting }];
+      convHistoryRef.current = seeded; // next askCaddie sees it immediately (ref-mirror pattern, matches askCaddie)
+      onUpdateConvHistory(seeded);
+      setVoiceAnswer(greeting); // renders the caddie answer card (phase → "answered"); transcript stays "" so no quoted user line
+      tts.speak(greeting, personaId); // spoken once; onPlaybackEnd re-arms the hands-free loop exactly as after any reply
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sessionActive, roundId, convHistory.length, liveActive]);

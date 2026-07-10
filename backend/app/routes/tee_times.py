@@ -61,6 +61,7 @@ from app.services.tee_times.search_cache import (
     SearchCacheStore,
     query_cache_key,
 )
+from app.services.tee_times.selection import resolve_selectors
 from app.services.voice_booking import telephony
 from app.services.voice_booking.compliance import (
     SuppressionList,
@@ -253,10 +254,14 @@ async def search_tee_times(
         time_window_end=timeWindowEnd,
         party_size=partySize,
         area=area,
-        course_ids=[c.strip() for c in courseIds.split(",")] if courseIds else [],
+        course_ids=(
+            [c for c in (s.strip() for s in courseIds.split(",")) if c] if courseIds else []
+        ),
         max_distance_miles=maxDistanceMiles,
         max_price_usd=maxPriceUsd,
     )
+    if query.course_ids:
+        query.course_selectors = await resolve_selectors(query.course_ids)
     echo_query = {
         "date": date,
         "timeWindowStart": timeWindowStart,

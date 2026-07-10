@@ -21,7 +21,12 @@
  * The headline `caddie.eos_to_first_audio` is flushed IMMEDIATELY at
  * markFirstAudio() (rather than waiting for the batch timer/visibilitychange)
  * so it survives an iOS background before the batch would otherwise fire
- * (the known "voicetel flush-drop" — §3 of the plan).
+ * (the known "voicetel flush-drop" — §3 of the plan). The two earlier legs
+ * (`caddie.eos_to_transcript`, `caddie.transcript_to_first_token`) flush
+ * immediately too, right after each is emitted — they must survive an iOS
+ * WKWebView suspend even when first audio is NEVER marked (e.g. `onSpeakStart`
+ * doesn't fire), so a turn's earlier progress isn't lost just because it never
+ * reaches the terminal mark (specs/voicetel-timing-immediate-flush-plan.md).
  */
 
 import { voiceEvent, flushVoiceEvents } from "@/lib/voice/telemetry";
@@ -108,7 +113,10 @@ export function createCaddieTurnTimer(opts: CaddieTurnTimerOptions): CaddieTurnT
       const t = now();
       tTranscript = t;
       const ms = leg(tEos, t);
-      if (ms !== null) safeEmit("caddie.eos_to_transcript", ms);
+      if (ms !== null) {
+        safeEmit("caddie.eos_to_transcript", ms);
+        safeFlush();
+      }
     } catch {
       /* telemetry must never break the caller */
     }
@@ -120,7 +128,10 @@ export function createCaddieTurnTimer(opts: CaddieTurnTimerOptions): CaddieTurnT
       const t = now();
       tFirstToken = t;
       const ms = leg(tTranscript, t);
-      if (ms !== null) safeEmit("caddie.transcript_to_first_token", ms);
+      if (ms !== null) {
+        safeEmit("caddie.transcript_to_first_token", ms);
+        safeFlush();
+      }
     } catch {
       /* telemetry must never break the caller */
     }

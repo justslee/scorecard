@@ -418,7 +418,13 @@ export interface CourseSearchResult {
  *  older callers of this type (searchNearbyDetailed's OSM leg) just ignore them. */
 interface CourseSearchApiResponse {
   courses?: Array<{
-    id: string;
+    /** Optional: OSM hits from an old cached `/nearby` payload (pre-
+     *  attach_stable_ids deploy) may carry no `id`, only `osm_id`. */
+    id?: string;
+    /** OSM's own id ("way/123" / "relation/123") — present alongside `id`
+     *  once /api/courses/nearby attaches a stable id, and alone on stale
+     *  cached payloads mid-deploy. */
+    osm_id?: string;
     name?: string;
     address?: string;
     center?: { lat: number; lng: number };
@@ -551,7 +557,10 @@ export async function searchAllCourses(
     );
     appendLeg(
       (data.courses || []).map((c) => ({
-        id: c.id,
+        // /api/courses/search always attach_stable_ids's its results
+        // server-side; `?? c.osm_id ?? ''` is defensive only (mirrors the
+        // /nearby leg's fallback for a stale/mid-deploy payload shape).
+        id: c.id ?? c.osm_id ?? '',
         name: c.name ?? '',
         address: c.address,
         center: c.center,
@@ -865,12 +874,17 @@ export async function searchNearbyDetailed(
     .then((data) => {
       const osmResults: CourseSearchResult[] = [];
       for (const c of data.courses || []) {
+        // `c.id ?? c.osm_id` covers a 15-min-old cached /nearby payload that
+        // predates the backend's attach_stable_ids fix; an unidentifiable
+        // row (neither present) is skipped so it can never be selected.
+        const id = c.id ?? c.osm_id ?? '';
+        if (!id) continue;
         const isDupe = results.some(
           (r) => r.name.toLowerCase() === c.name?.toLowerCase()
         );
         if (!isDupe) {
           const r: CourseSearchResult = {
-            id: c.id,
+            id,
             name: c.name ?? '',
             address: c.address,
             center: c.center,

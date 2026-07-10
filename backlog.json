@@ -1,7 +1,123 @@
 {
-  "updated": "2026-07-09",
+  "updated": "2026-07-10",
   "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
+    {
+      "id": "voicetel-timing-immediate-flush",
+      "title": "Add caddie latency-timing events to the immediate-flush tier (unblocks cascaded-STT decision)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "done",
+      "depends_on": [],
+      "why": "PROD 2026-07-10: only 1 eos_to_first_audio event + 0 caddie-rt in 3 days \u2014 the caddie latency-timing telemetry is being DROPPED on iOS (cycle-19's flush fix made FAILURE events immediate but not the timing events). This blocks the cascaded-STT go/no-go (spike #126 needs caddie-turn-cascaded vs caddie-rt-speechToSpeech p90 latency). FIX: put the eos_to_first_audio / stage-timing events in the immediate-flush tier (extend the cycle-19 flush logic) so real latency data reaches prod. Small telemetry change. Then the cascaded-STT decision has data.",
+      "progress": "2026-07-10 cycle 56 DONE on integration/next (2d4b4c9), rides bundle PR #125 (SILENT). Fable plan CORRECTED the premise: the headline eos_to_first_audio ALREADY immediate-flushes at markFirstAudio() (6fcb40d, live the whole 3-day window) \u2014 the real gap was the EARLIER legs (eos_to_transcript / transcript_to_first_token) only riding markFirstAudio's single flush, which on iOS often never fires (useSheetTTS onSpeakStart) before WKWebView suspend, losing the whole turn. Fix = 2 guarded safeFlush() calls in markTranscript()/markFirstToken() (caddie-turn-timing.ts) so each leg POSTs the moment it's computed; markFirstAudio keeps its terminal flush (audio legs + RT headline). Guards/clamps/idempotence untouched; \u22643 POSTs/classic turn, human-paced, non-timing telemetry still batches. Reviewer SHIP (clamped legs never POST, PII-safe {ms}-only pinned by test, throw-isolated), QA 6/6 gates. Unblocks #126: once owner uses live caddie on next TestFlight build, prod gets caddie-turn vs caddie-rt p90. Follow-up (same class): eos_to_transcript volume WITHOUT matching eos_to_first_audio would itself diagnose iOS onSpeakStart never firing."
+    },
+    {
+      "id": "teetime-show-real-time-options",
+      "title": "Tee-time: show actual bookable TIME OPTIONS (not the window); correct window; respect selection",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "done-on-bundle-125",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09 (screenshots): the result shows 'YOUR WINDOW 6:00-9:30' (the search range) instead of the times found \u2014 'show me my options'. Also the window shown != submitted, and the found course (Forest Park) was NOT in the selected 4. FIX (specs/teetime-results-ux-fixes.md): (1) foreUP courses -> list the real bookable times to pick (data already flows from S1), call-route courses -> honestly frame the window as the ask we'll make, never as a found time; (2) the result window must reflect the SUBMITTED prefs, not a default; (3) the dispatch/'go find us one' path must honor the selected course ids (same class as #122 course-ids-wiring but on the DISPATCH path) \u2014 never substitute an unselected course; honest 'nothing in your selected courses' instead. Fable plan; reviewer (honest presentation, no-fake-data \u2014 a window shown as a found time is a violation). Do NOT touch voice_booking/telephony (#124)."
+    },
+    {
+      "id": "teetime-prefs-ux-polish",
+      "title": "Tee-time prefs polish: location labels ('USA' bug), courses-header safe-area, list grouping",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "shipped",
+      "depends_on": [],
+      "why": "SHIPPED cycle 59 (code 1d2d0ae, head c1be4be, both gates SUCCESS): results/route/confirmation locality runs through muniFromAddress \u2014 omits bare country instead of '\u00b7 USA'. [bookkeeping corrected cycle 60: eng-lead reported this update but it didn't persist; code was real & green.] | OWNER 2026-07-09 (screenshots): 'Marine Park Golf Course \u00b7 USA' shows USA not a city (label bug \u2014 show real locality or omit); the Courses header ('WHERE'/'4 SELECTED') is clipped behind the status bar (top safe-area inset); the nearby list grouping/dividers read as 'broken'. Designer pass, calm yardage-book. specs/teetime-results-ux-fixes.md. UPDATE cycle 53: the 'USA' label bug (#4) was FIXED alongside teetime-show-real-time-options (9f0577e, muniFromAddress drops USA/United States of America). UPDATE cycle 59: the '\u00b7 USA' leak also existed on the RESULTS + CONFIRMATION render paths (tee-time/page.tsx g.city / slot.city fed by backend slot.city = raw course.address, foreup.py:211 / routing.py:112) \u2014 FIXED by normalizing those 3 render sites with muniFromAddress (drops country, extracts locality, dangling-'\u00b7 ' guard on the confirmation stamp). REMAINING here: #5 header safe-area/viewport-fit + nearby-list grouping polish (needs on-device screenshot verification). Plus cycle-53 designer/reviewer follow-ups: route-entry section header can contradict a book_on_site row's own copy in a mixed batch (make conditional); add distance/city to route-entry rows; harden filterToSelection Sets vs falsy id/name; sub-44pt tap targets across the tee-time flow."
+    },
+    {
+      "id": "s3b-review-nits",
+      "title": "S3b caller: 3 non-blocking review nits (opt_out coercion, CancelledError, get_running_loop)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [
+        "#124 merged"
+      ],
+      "why": "Fable security review of S3b (SHIP) flagged 3 non-blocking nits to fix before heavy live use: (1) media_bridge opt_out_requested uses bool() so a stringified 'false' from the model reads True and would suppress a real pro-shop number \u2014 use `v is True or str(v).lower()=='true'`; (2) telephony timeout except swallows asyncio.CancelledError \u2014 split TimeoutError (return partial) from CancelledError (re-raise after cleanup); (3) call_registry asyncio.get_event_loop() -> get_running_loop(). All localized to the S3b files; land after #124 merges (branch is worktree-locked now). | 2nd Fable security review (SHIP, mutation-verified) added: (4) pass the call token via TwiML <Parameter> (arrives in start.customParameters) instead of the URL path so it doesn't land in uvicorn/Twilio access logs \u2014 defense-in-depth; add the X-Twilio-Signature-validation comment note; (5) raise websockets floor to >=13.0 (additional_headers needs the new asyncio client; uv.lock resolves 16 so it works today but a future resolution could break the OpenAI handshake). Also noted: future /book path interpolates course_name into call instructions \u2014 bounded (can't alter the dialed number) but a prompt-steer surface to remember when the allowlist is first populated."
+    },
+    {
+      "id": "caddie-dont-answer-misheard-input",
+      "title": "Caddie: never confidently answer a misheard/gibberish transcript (input grounding)",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "shipped",
+      "depends_on": [],
+      "why": "RECONCILED 2026-07-10 (verified in code): INPUT_GROUNDING_RULE in routes/caddie.py \u2014 live v1.0.1038 | OWNER 2026-07-09 (screenshots): the caddie answers words the ASR INVENTED ('Scars','of God'). BIGGEST win, in our control: extend the grounding doctrine from FACTS to INPUT \u2014 a caddie rule + a plausibility/confidence check so a low-confidence or non-parseable utterance gets 'I didn't catch that, say again?' instead of a confident reply to noise. Both mouths. Eval teeth: a gibberish transcript -> ask-for-repeat, never a fabricated on-topic answer. specs/voice-transcription-reliability-research.md. Fable plan."
+    },
+    {
+      "id": "caddie-realtime-transcription-vocab-bias",
+      "title": "Bias the realtime transcription with golf vocab + hole/club context",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "done-on-bundle-122",
+      "depends_on": [],
+      "why": "OWNER 2026-07-09: realtime transcript has no vocabulary biasing (GOLF_KEYTERMS + player clubs + hole context are wired only to the Deepgram sheet path). Feed a biasing prompt/context to gpt-4o-transcribe in the realtime session IF supported (verify \u2014 some transcribe models don't accept a prompt); reduces 'Scars'-type inventions. specs/voice-transcription-reliability-research.md.",
+      "progress": "2026-07-09 cycle 50 DONE on integration/next (2af38c1), rides bundle PR #122. Fable plan VERIFIED gpt-4o-transcribe DOES accept a free-text prompt in the GA Realtime session (exclusions = gpt-realtime-whisper + gpt-4o-transcribe-diarize). Threaded a compact biasing prompt (golf vocab + player's own clubs + this-hole hazards) into session.audio.input.transcription.prompt via new pure backend/app/caddie/keyterms.py + additive kwarg through mint path; setup route gets golf baseline only. Injection-safe (closed-set constants only, transcription field not instructions), no PII beyond own clubs, byte-identical payload when absent. Reviewer SHIP (no HIGH/MEDIUM), QA all gates + 1677 non-DB backend green, 8 teeth tests. Honest scope: biases an 8-12% WER model, does NOT gate wind/partner-noise inventions \u2014 confidence-gate (caddie-input-grounding) + caddie-cascaded-stt-spike remain the bigger levers."
+    },
+    {
+      "id": "caddie-cascaded-stt-spike",
+      "title": "Spike: cascaded STT (Deepgram nova-3 + keyterms + confidence) feeding the live caddie as text",
+      "type": "major",
+      "priority": 2,
+      "risk": "high",
+      "status": "blocked",
+      "depends_on": [],
+      "why": "SPIKE DONE (PR #126, FEASIBLE conditional-go, hybrid Option C recommended). BLOCKED on the go/no-go latency read: prod has ~0 usable eos_to_first_audio data (iOS telemetry drop). Unblock via voicetel-timing-immediate-flush, then read caddie-turn vs caddie-rt p90; <1.5-2s delta -> build hybrid, 3s+ -> stay put (vocab-bias+input-grounding already shipped may be enough). Confidence-gate code ready behind a flag in #126. OWNER 2026-07-09 (reliability): the SOTA reliability architecture \u2014 route the live transcript through our own Deepgram nova-3 (already used for the sheet WITH keyterms), gate on confidence, THEN the caddie responds to TEXT ('treat speech as rendering not reasoning' \u2014 our own agent-architecture study). Garbled input caught BEFORE a reply. Trades some latency for reliability+observability vs the current speech-to-speech. Spike: measure the latency delta + reliability gain on real outdoor audio. specs/voice-transcription-reliability-research.md. Fable plan."
+    },
+    {
+      "id": "teetime-s3b-twilio-bridge",
+      "title": "S3b: Twilio\u2194Realtime live-transport bridge (makes 'call me' actually dial)",
+      "type": "major",
+      "priority": 1,
+      "risk": "high",
+      "status": "ready",
+      "depends_on": [
+        "#124 merged"
+      ],
+      "why": "S3 (PR #124) built the full rehearsal harness (trigger, endpoint, dialog, disclosure, safety, tests \u2014 reviewer/security SHIP) EXCEPT telephony.get_live_transport() which is still NotImplementedError \u2014 so nothing actually DIALS. S3b implements the Twilio\u2194OpenAI-Realtime audio bridge (outbound Twilio call \u2194 the realtime booking session) so the owner's rehearsal call actually rings his phone. Owner-gated: VOICE_BOOKING_ENABLED + Twilio creds + his verified number. This is the last mile; after it + creds, the owner taps Settings\u2192Rehearsal call and plays pro shop live. Fable plan; security review (live outbound telephony, the dial-safety invariant must hold end-to-end); the existing text simulator stays the CI-safe test (no live dial in CI)."
+    },
+    {
+      "id": "caddie-surface-osm-trees",
+      "title": "Surface existing OSM trees/woods to the caddie (the tree-spike GO)",
+      "type": "major",
+      "priority": 2,
+      "risk": "low",
+      "status": "shipped",
+      "depends_on": [],
+      "why": "RECONCILED 2026-07-10 (verified in code): hazards.py tree feature \u2014 landed on bundle #125 (awaiting ship) | TREE SPIKE VERDICT (specs/tree-detection-cv-findings.md): satellite-CV canopy detection DISPROVEN on real Bethpage (tree canopy is LESS green than fairway; bunker-edge false positives) \u2014 NO-GO. But OSM ALREADY has ~43-63 tree nodes + woods polygons per Bethpage hole that the app ALREADY ingests and currently ignores. GO: gate those into hole features as 'tree'/'woods' type \u2192 the caddie answers 'how far to clear the trees' via the existing hazard/carry path (tree line carry along the tee->green line, like hazards). ~small change, NO ML, NO satellite CV, NO training. Honest 'trees not mapped here' fallback where OSM coverage is sparse. Pretrained DeepForest (no training) held in reserve only if OSM coverage proves inadequate on other courses. Fable plan; reuse the polyline/hazard carry frame."
+    },
+    {
+      "id": "voice-target-speaker-enrollment-spike",
+      "title": "Spike: target-speaker filtering (voice enrollment + on-device TSVAD)",
+      "type": "major",
+      "priority": 2,
+      "risk": "high",
+      "status": "researched",
+      "depends_on": [],
+      "why": "SPIKE DONE (PR #127): Tier-1 mic constraints (echoCancel/noiseSuppress/autoGain + backend near_field) ALREADY SHIPPED (~70% of the value, no code win left). Tier-2 TSVAD = FEASIBLE/medium as a NATIVE Core ML Capacitor plugin (WKWebView can't do threaded WASM); Personal-VAD arch, named pretrained models; pure tested SpeakerGate core committed unwired. GO when prioritized (sequence after voice-reliability). Tier-3 VoiceFilter = defer. OWNER 2026-07-09 (hands-free + only-owner's-voice): the real answer is a one-time voice ENROLLMENT (~5-10s -> speaker embedding) + a Target-Speaker VAD gate that opens the mic-to-model only when the enrolled owner speaks \u2014 rejects partners without breaking hands-free. Spike: which on-device (Core ML) TSVAD/speaker-embedding model, latency budget vs the realtime speech-to-speech path (preprocessing fights sub-second latency \u2014 on-device is the sweet spot), enrollment UX. NOT train-from-scratch (pretrained models exist). Full VoiceFilter extraction only if TSVAD gating insufficient. Fable plan. specs/voice-target-speaker-research.md."
+    },
+    {
+      "id": "voice-reject-distant-voices-tuning",
+      "title": "Voice: reject distant/background voices (mic constraints + VAD threshold)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "shipped",
+      "depends_on": [],
+      "why": "RECONCILED 2026-07-10 (PR #127 spike): Tier-1 mic constraints (echoCancel/noiseSuppress/autoGain + backend near_field) verified ALREADY ON at every getUserMedia site \u2014 nothing to build. Remaining lever tracked as [voice-vad-threshold-ab]. | OWNER 2026-07-09: caddie can pick up partners'/background voices. TIER 1 (free, do now): confirm echoCancellation/noiseSuppression/autoGainControl ON in the mic getUserMedia constraints; A/B a higher server_vad energy threshold so only close speech (owner holding the phone) triggers. Partial but real, zero ML. specs/voice-target-speaker-research.md."
+    },
     {
       "id": "multi-tee-anchor-reconciliation",
       "title": "Multi-tee holes: 'from the tee' F/C/B \u2260 card yardage (anchor to the played tee)",
@@ -27,8 +143,21 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
-      "note": "Designer watch-item from multi-tee (c682f7f). Pre-existing, out of scope for #119 (fix scoped to mapped-course rounds). On a round with NO mappedCourse/roundAnchor, headerYards falls back to hole.yards (e.g. 400) while the Center tile falls back to distance (hole.yards-60% ~160) captioned 'from the tee' (the illustration mock, not real geometry). Same original bug class still reachable on unmapped rounds. Close next: honest header/tile reconciliation on the paper-fallback path too."
+      "status": "shipped",
+      "shipped_commit": "31c2067",
+      "shipped_note": "SHIPPED 2026-07-10 (cycle 61) on integration/next @ 31c2067. Reachable, persistent, user-visible bug CONFIRMED (reviewer+designer): a round with a course-center anchor (round.courseLat/Lng -> roundAnchor truthy) but no mappedCourse -> useHoleCoordinates(null) -> mapCoords=[] -> anchoredCoords=[] -> holeCoordsForTiles null -> fcb null, teeAnchor null -> resolveFcbSource(null,false)='tee' -> showCardOnly false -> the else branch rendered fabricated distance +/- offset F/C/B for every hole, and DistancesCard renders because roundAnchor is truthy (plus a load-window flash on mapped rounds). FIX: extracted pure buildFcbTiles + effectiveFcbSource (frontend/src/lib/course/fcb-tiles.ts, tested) -> every 'no real geometry' state (fcbSource==='card' || fcb==null) collapses to honest card-only tiles (Front/Back '—', Center=cardYards ?? '—'); caption derives from the SAME condition so it reads 'from the card', never 'from the tee' over '—' tiles. Three working paths (GPS 'you', from-tee, card-only) byte-identical. Reviewer verdict SHIP; designer APPROVE after caption fold. Follow-up (out of scope, tracked separately as fcb-plays-tile-fabricated-fallback): the PLAYS tile still derives from `distance` in the same bug state.",
+      "note": "Designer watch-item from multi-tee (c682f7f). Pre-existing, out of scope for #119 (fix scoped to mapped-course rounds). On a round with NO mappedCourse/roundAnchor, headerYards falls back to hole.yards (e.g. 400) while the Center tile falls back to distance (hole.yards-60% ~160) captioned 'from the tee' (the illustration mock, not real geometry). Same original bug class still reachable on unmapped rounds. Close next: honest header/tile reconciliation on the paper-fallback path too.",
+      "why": "SCOPED 2026-07-10 (was an unspecced stub): RoundPageClient F/C/B mapped-branch fallback renders `distance \u00b1 offset` when fcb (fcbLive ?? fcbFromTee) is null but fcbSource !== 'card' (RoundPageClient.tsx ~1167-1171). `distance` (~line 1086) = Math.max(80, hole.yards - round(hole.yards*0.6)) \u2014 a ~40% ILLUSTRATION PLACEHOLDER, not a real yardage. Reachable when the tee-anchor resolves a non-card source but holeCoordsForTiles.tee is null (partial-mapping / anchor-vs-tiles mismatch): the tiles then show fabricated F/C/B that disagree with the card \u2014 a NO-FAKE-DATA violation on the core yardage surface. FIX: never fabricate \u2014 when fcb is null, present honest card-only tiles (Center=cardYards, Front/Back='\u2014') regardless of source; delete the distance\u00b1offset fallback. Keep the 3 working paths (GPS 'you', from-tee, card-only) byte-identical. Unit-test the fcb-null-non-card state."
+    },
+    {
+      "id": "fcb-plays-tile-fabricated-fallback",
+      "title": "PLAYS tile still derives from the ~40% illustration `distance` in the anchor-only/unmapped fallback state",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "shipped",
+      "shipped_note": "SHIPPED 2026-07-10 (cycle 62) on integration/next @ 6a680bc (PR #125). Widened the plays/physics/caption card-only decision to effectiveCardOnly = effectiveFcbSource(fcbSource, fcb) === 'card' (the SAME condition the F/C/B tiles use) and extracted the basis selection into a pure, tested helper playsBasis (frontend/src/lib/caddie/plays-basis.ts) that deliberately does NOT receive `distance` — so the illustration placeholder can never leak into the plays number. In the anchor-only/fcb-null/source-'tee' state the plays basis is now cardYards (never distance); degenerate card-only with no scorecard yardage -> null -> tile shows '—'/'no data' (coherent with the '—' F/C/B center). showCardOnly removed entirely (all 4 uses widened); `distance` now feeds only the HoleCard illustration. Three working paths (GPS / genuine from-tee / real card-only) byte-identical; physics double-count guard preserved (physicsBasisYards never = holeIntel.effectiveYards). 8 headless playsBasis tests. Reviewer SHIP (all 6 adversarial checks + TDZ/unused-var clean), designer APPROVE, QA: tsc/lint/voice 274 + vitest 37 green locally, both required CI gates SUCCESS on head. SILENT accumulation on #125.",
+      "why": "FOLLOW-UP flagged by BOTH reviewer and designer on fcb-unmapped-paper-fallback-mismatch (cycle 61, 31c2067). That fix made the F/C/B tiles + caption honest when fcb is null, but deliberately left `showCardOnly = fcbSource === 'card'` (line ~1156) untouched per scope. So in the SAME bug state (fcb null, fcbSource 'tee' — anchor-only unmapped round), the PLAYS tile still feeds off playsBase = holeIntel?.effectiveYards || (fcbFromTee?.center ?? distance) = `distance` (RoundPageClient.tsx ~1224), the ~40% illustration placeholder, so the plays-like number is fabricated while F/C/B read '—'/card — incoherent and a residual no-fake-data leak. FIX: widen the plays/physics/caption card-only condition to the same `effectiveFcbSource(fcbSource, fcb) === 'card'` (or `fcb == null`) the tiles now use, so playsBase/physicsBasisYards/playsTile.fromCard/playsSubLabel all report honest card basis (cardYards) in this state. Verify plays tile shows a card-basis label, not a distance-derived plays-like, on an anchor-only round."
     },
     {
       "id": "teetime-s0-kill-fake-data",
@@ -36,9 +165,9 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "specs/teetime-real-booking-plan.md S0 (ship first, no external deps). Delete affiliate.py synthesized-slot emission + the mock-fallback substitution in routes/tee_times.py; add private_filter.py + private_clubs.json (Liberty National excluded \u2014 the offender); kill 'Held' everywhere (route-driven 'Found'/'Call'/'Book on course site'); honest-empty when no real data. Tests: private filter, honest-empty, no synthesized slots ever. Owner: 'I want real data.'"
+      "why": "RECONCILED 2026-07-10 (verified in code): affiliate.py deleted; foreup.py live \u2014 shipped | specs/teetime-real-booking-plan.md S0 (ship first, no external deps). Delete affiliate.py synthesized-slot emission + the mock-fallback substitution in routes/tee_times.py; add private_filter.py + private_clubs.json (Liberty National excluded \u2014 the offender); kill 'Held' everywhere (route-driven 'Found'/'Call'/'Book on course site'); honest-empty when no real data. Tests: private filter, honest-empty, no synthesized slots ever. Owner: 'I want real data.'"
     },
     {
       "id": "teetime-s1-foreup-availability",
@@ -70,11 +199,11 @@
       "type": "major",
       "priority": 2,
       "risk": "high",
-      "status": "ready",
+      "status": "in_review",
       "depends_on": [
         "teetime-s0-kill-fake-data"
       ],
-      "why": "specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool."
+      "why": "RECONCILED 2026-07-10: BUILT as PR #124 (S3 caller + rehearsal harness, double security-SHIP) \u2014 awaits owner merge + Twilio keys, not a fresh build. | specs/teetime-real-booking-plan.md S3 + specs/teetime-rehearsal-call-harness.md. Wire the router 'voice_call' route to the existing voice_booking scaffold (disclosure already implemented; live dialing stays gated on VOICE_BOOKING_ENABLED + Twilio + attorney sign-off). PLUS the owner's rehearsal harness: POST /api/tee-times/rehearsal-call places an outbound Twilio call to the OWNER'S OWN verified number (allowlist of one) bridged to the real booking agent against a test course, so the owner role-plays the pro shop and hears the exact script \u2014 zero external risk, the real audio/latency/barge-in path. Owner: 'call me when I tell it to so I can mimic being the pro shop.' Keep the text simulator as the CI-safe test. Fable plan; the rehearsal harness is S3's verification tool."
     },
     {
       "id": "teetime-s4-scraping-adapters",
@@ -94,9 +223,10 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09: the auto-opening posts the question AS the player ('I'm on the tee, about 390\u2026') and live mode doesn't cleanly answer it. Make the caddie OPEN with the recommendation in its own voice (assistant-side briefing), not a synthesized user bubble. Keeps the auto-reco value, kills the fake question. buildOpeningTurnText/opening-turn path + live opening. Small, ship first."
+      "why": "OWNER 2026-07-09: the auto-opening posts the question AS the player ('I'm on the tee, about 390\u2026') and live mode doesn't cleanly answer it. Make the caddie OPEN with the recommendation in its own voice (assistant-side briefing), not a synthesized user bubble. Keeps the auto-reco value, kills the fake question. buildOpeningTurnText/opening-turn path + live opening. Small, ship first.",
+      "evidence": "Landed on bundle #125 (1446ea2). Caddie now opens the conversation itself (assistant-authored greeting) instead of puppeting a fake first-person player question. buildOpeningTurnText->buildOpeningGreetingText (+buildOpeningGreetingInstruction live wrapper); classic path seeds {role:assistant}+tts.speak (no network turn), live path new realtime sendOpener (system item + response.create, no user bubble). Fable-planned; reviewer SHIP; designer APPROVE; gates green (lint/tsc, targeted vitest 79, full 1890, voice 274/274)."
     },
     {
       "id": "caddie-green-slope-spatial",
@@ -114,7 +244,7 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle-122",
       "depends_on": [
         "caddie-green-slope-spatial"
       ],
@@ -126,9 +256,9 @@
       "type": "major",
       "priority": 1,
       "risk": "high",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 ('add a physics component\u2026 write very complex physics equations if we have to'): the caddie said a 300y drive + 4mph downwind + 38ft downhill = 390 (physically absurd; it also adjusted the PIN distance, not the drive). Current model: elevation = yards + feet/3, wind = capped \u00b115% linear \u2014 both toys. Build backend/app/caddie/physics.py: documented ball-flight model (RK4 trajectory OR calibrated closed form \u2014 plan picks), air density (temp/altitude/humidity), wind VECTOR \u00d7 time-of-flight, elevation via fall-time, ROLL modeled separately (downhill drive gains via roll not carry \u2014 THE fix). Output {carry,total,plays_like} with assumptions surfaced; calibrated to references; exposed as get_shot_distance tool both mouths cite. Eval: the exact 300/downwind/downhill case \u2192 315-330 not 390. Fable plan; adversarial review on the calibration. See specs/caddie-physics-engine.md."
+      "why": "RECONCILED 2026-07-10 (verified in code): physics.py live (v1.0.1038, backend deployed) | OWNER 2026-07-09 ('add a physics component\u2026 write very complex physics equations if we have to'): the caddie said a 300y drive + 4mph downwind + 38ft downhill = 390 (physically absurd; it also adjusted the PIN distance, not the drive). Current model: elevation = yards + feet/3, wind = capped \u00b115% linear \u2014 both toys. Build backend/app/caddie/physics.py: documented ball-flight model (RK4 trajectory OR calibrated closed form \u2014 plan picks), air density (temp/altitude/humidity), wind VECTOR \u00d7 time-of-flight, elevation via fall-time, ROLL modeled separately (downhill drive gains via roll not carry \u2014 THE fix). Output {carry,total,plays_like} with assumptions surfaced; calibrated to references; exposed as get_shot_distance tool both mouths cite. Eval: the exact 300/downwind/downhill case \u2192 315-330 not 390. Fable plan; adversarial review on the calibration. See specs/caddie-physics-engine.md."
     },
     {
       "id": "caddie-bend-distance",
@@ -136,9 +266,9 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09: the caddie couldn't answer 'how far to the bend in the fairway?'. FREE from existing data: the hole polyline (now stored) \u2014 the dogleg = max-deviation vertex from the tee\u2192green chord; compute along-path distance to it; expose as intel + a tool answer ('bends right at ~250'). No ML. See specs/caddie-physics-engine.md."
+      "why": "RECONCILED 2026-07-10 (verified in code): extract_hole_bend in hazards.py \u2014 landed | OWNER 2026-07-09: the caddie couldn't answer 'how far to the bend in the fairway?'. FREE from existing data: the hole polyline (now stored) \u2014 the dogleg = max-deviation vertex from the tee\u2192green chord; compute along-path distance to it; expose as intel + a tool answer ('bends right at ~250'). No ML. See specs/caddie-physics-engine.md."
     },
     {
       "id": "caddie-tree-detection-cv",
@@ -146,9 +276,9 @@
       "type": "major",
       "priority": 3,
       "risk": "high",
-      "status": "ready",
+      "status": "wont_do",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 ('can't you detect trees from the satellite map?'): trees aren't in OSM. Feasibility (research in specs/caddie-physics-engine.md): canopy segmentation on the satellite tile is a SOLVED CV task \u2014 pretrained tree-canopy/land-cover models, no custom training to start. POC: run a pretrained segmentation over each hole's tile at ingest, extract canopy polygons near the fairway corridor, store as 'tree' features \u2192 caddie gets tree carry/clearance via the hazard path; honest 'trees aren't mapped' fallback until coverage real; one inference/hole at ingest, cached. Spike first (feasibility + accuracy on Bethpage before UX). Fable plan."
+      "why": "RECONCILED 2026-07-10: satellite-CV canopy detection DISPROVEN on real Bethpage (spike #123, specs/tree-detection-cv-findings.md) \u2014 canopy is LESS green than fairway. Superseded by OSM tree lines (shipped, #125). Do not pursue CV. | OWNER 2026-07-09 ('can't you detect trees from the satellite map?'): trees aren't in OSM. Feasibility (research in specs/caddie-physics-engine.md): canopy segmentation on the satellite tile is a SOLVED CV task \u2014 pretrained tree-canopy/land-cover models, no custom training to start. POC: run a pretrained segmentation over each hole's tile at ingest, extract canopy polygons near the fairway corridor, store as 'tree' features \u2192 caddie gets tree carry/clearance via the hazard path; honest 'trees aren't mapped' fallback until coverage real; one inference/hole at ingest, cached. Spike first (feasibility + accuracy on Bethpage before UX). Fable plan."
     },
     {
       "id": "teetime-kill-fake-held",
@@ -156,9 +286,9 @@
       "type": "major",
       "priority": 1,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (screenshot): the affiliate provider synthesizes ONE estimated slot per course (time=window start, estimated=True) but the UI renders 'Found ~6:30 AM\u2026 Held for you' \u2014 NO hold exists (no-fake-data violation). Also Liberty National (PRIVATE) surfaced as bookable. FIX: never say 'Held'; render estimates as 'suggested window \u2014 call to confirm'; filter/flag private clubs (Places types + curated private list). Frontend copy + a private-course guard. Immediate honesty fix, ship first."
+      "why": "RECONCILED 2026-07-10 (verified in code): affiliate synthesized-slot emission gone \u2014 shipped | OWNER 2026-07-09 (screenshot): the affiliate provider synthesizes ONE estimated slot per course (time=window start, estimated=True) but the UI renders 'Found ~6:30 AM\u2026 Held for you' \u2014 NO hold exists (no-fake-data violation). Also Liberty National (PRIVATE) surfaced as bookable. FIX: never say 'Held'; render estimates as 'suggested window \u2014 call to confirm'; filter/flag private clubs (Places types + curated private list). Frontend copy + a private-course guard. Immediate honesty fix, ship first."
     },
     {
       "id": "teetime-partnership-applications",
@@ -2031,8 +2161,8 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
-      "notes": "QA (cycle 43): TeeTimeQuery.course_ids is threaded into the search-cache key but never filtered on in routing.py/router_provider.py \u2014 only mock.py honors it. Selecting courses in the UI is a no-op on the real discovery path. Pre-existing, not from S1."
+      "status": "done-on-bundle-121",
+      "notes": "QA (cycle 43): TeeTimeQuery.course_ids is threaded into the search-cache key but never filtered on in routing.py/router_provider.py \u2014 only mock.py honors it. Selecting courses in the UI is a no-op on the real discovery path. Pre-existing, not from S1. | DONE cycle 48 (65f3c42 on integration/next). Wired course_ids into RoutingTeeTimeProvider via candidate-id set + name/proximity selector fallback; /api/courses/nearby now attach_stable_ids; frontend id fallback. NOTICEABLE (selection now restricts real results). Reviewer SHIP (guard empirically falsified), QA 7/7 green. Rides bundle #121; NO SHIP (owner bundling)."
     },
     {
       "id": "teetime-searching-copy-polish",
@@ -2042,6 +2172,36 @@
       "risk": "low",
       "status": "ready",
       "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct \u2014 the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' \u2014 unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5."
+    },
+    {
+      "id": "tree-prod-data-verified",
+      "title": "NOTE: prod tree data verified stocked (trees light up on #125 ship)",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "done",
+      "depends_on": [],
+      "why": "PROD 2026-07-09: Bethpage 1038 tree + 5 woods (18/18 holes), Pebble 128 tree + 3 woods (13/18). The surface-osm-trees feature (#125) works immediately on ship; the fixture gap is CI-coverage only."
+    },
+    {
+      "id": "voice-vad-threshold-ab",
+      "title": "A/B raise server_vad threshold 0.5\u21920.6-0.7 (distant voices fall below trigger)",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Voice target-speaker spike (PR #127): the only remaining Tier-1 lever after the already-shipped mic constraints \u2014 raise server_vad energy threshold so distant partner voices don't trigger the caddie. Behavior-change A/B (too high = misses the owner's soft speech), so measure, don't ship blind. specs/voice-target-speaker-spike-report.md."
+    },
+    {
+      "id": "teetime-muni-pseudolocality-guard",
+      "title": "Harden muniFromAddress: never surface a pseudo-locality (venue/street name or course-name echo)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "shipped",
+      "depends_on": [],
+      "why": "SHIPPED cycle 60 (code 1e75611 + reviewer follow-ups): muniFromAddress drops lone venue/street pseudo-localities; localityLabel/muniEchoesName token-dedup kills name-echo ('Course \u00b7 Course') at build + all 4 render sites incl. add-flow. Reviewer SHIP (no real-city regression); folded 2 fixes (add-flow dedup, bare-'club' real-city protect). teetime 222, gates green. | Reviewer flag (cycle 59, non-blocking): muniFromAddress returns the LAST surviving comma-segment, so an address with no real city (single-segment venue name, or a segment that just repeats the course name) can surface a pseudo-locality \u2014 e.g. 'Marine Park Golf Course \u00b7 Marine Park Golf Course'. Visible + brushes no-fake-data. Now on the confirmation path. Add a name/muni dedup guard at the build/render sites + lock tests; omit over fabricate; MUST NOT regress real single-word cities (Brooklyn). specs: extend courses.test.ts."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."

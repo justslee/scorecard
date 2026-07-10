@@ -171,6 +171,7 @@ const realtimeMock = vi.hoisted(() => {
     stop = vi.fn();
     sendText = vi.fn();
     sendContext = vi.fn();
+    sendOpener = vi.fn();
     setEvents = vi.fn((e: Events) => {
       this.events = e;
     });
@@ -326,7 +327,7 @@ describe("CaddieSheet live mode — cold-mint path", () => {
 });
 
 describe("CaddieSheet live mode — opening turn", () => {
-  it("sends the opening turn once connected, via the buildOpeningTurnText string; honest-idle when no shot resolves", async () => {
+  it("sends the opening turn once connected, via sendOpener wrapping the greeting; never a fabricated user turn; honest-idle when no shot resolves", async () => {
     const resolveOpeningShot = vi.fn(async () => ({ distanceYards: 150 }));
     renderSheet({ resolveOpeningShot });
     await flush();
@@ -335,16 +336,18 @@ describe("CaddieSheet live mode — opening turn", () => {
     act(() => client.emitStatus("connected"));
     await flush();
 
-    expect(client.sendText).toHaveBeenCalledTimes(1);
-    expect(client.sendText).toHaveBeenCalledWith(
-      "I'm about 150 yards from the pin. What should I hit or do on this next shot?",
+    expect(client.sendOpener).toHaveBeenCalledTimes(1);
+    expect(client.sendOpener).toHaveBeenCalledWith(
+      expect.stringContaining("About 150 to the pin from here. Want a read on the shot?"),
     );
+    // Authorship lock — no fabricated user turn goes through sendText.
+    expect(client.sendText).not.toHaveBeenCalled();
   });
 
-  it("opening turn carries the hole: connect silently re-anchors (sendContext) BEFORE the spoken opening turn (sendText)", async () => {
+  it("opening turn carries the hole: connect silently re-anchors (sendContext) BEFORE the spoken opener (sendOpener)", async () => {
     // specs/caddie-stale-hole-live-plan.md §3.4/§3.6/§7 — the connect-time
     // re-anchor is sent first (silent, no response.create), then the spoken
-    // opening turn. Uses buildProps' default holeNumber:3/holePar:4/holeYards:401.
+    // opener. Uses buildProps' default holeNumber:3/holePar:4/holeYards:401.
     const resolveOpeningShot = vi.fn(async () => ({ distanceYards: 150 }));
     renderSheet({ resolveOpeningShot });
     await flush();
@@ -358,13 +361,13 @@ describe("CaddieSheet live mode — opening turn", () => {
     expect(contextText).toContain("hole 3");
     expect(contextText).toContain("par 4");
     expect(contextText).toContain("401");
-    // The existing sendText assertion (unchanged) plus ordering: sendContext
-    // fires strictly before sendText on the same client.
-    expect(client.sendText).toHaveBeenCalledWith(
-      "I'm about 150 yards from the pin. What should I hit or do on this next shot?",
+    // The existing sendOpener assertion (unchanged) plus ordering: sendContext
+    // fires strictly before sendOpener on the same client.
+    expect(client.sendOpener).toHaveBeenCalledWith(
+      expect.stringContaining("About 150 to the pin from here. Want a read on the shot?"),
     );
     expect(client.sendContext.mock.invocationCallOrder[0]).toBeLessThan(
-      client.sendText.mock.invocationCallOrder[0],
+      client.sendOpener.mock.invocationCallOrder[0],
     );
   });
 
@@ -413,6 +416,7 @@ describe("CaddieSheet live mode — opening turn", () => {
     act(() => client.emitStatus("connected"));
     await flush();
 
+    expect(client.sendOpener).not.toHaveBeenCalled();
     expect(client.sendText).not.toHaveBeenCalled();
   });
 });
@@ -566,7 +570,7 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
     act(() => first.emitStatus("connected"));
     await flush();
-    expect(first.sendText).toHaveBeenCalledTimes(1); // opening turn fired once
+    expect(first.sendOpener).toHaveBeenCalledTimes(1); // opening turn fired once
 
     act(() => {
       first.emitMessage({ id: "old-1", role: "user", text: "What club from 150?", partial: false, order: 1 });
@@ -607,14 +611,14 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
       "Take one more club.",
     ]);
 
-    expect(first.sendText).toHaveBeenCalledTimes(1); // still just the one opening turn
-    expect(second.sendText).not.toHaveBeenCalled(); // no re-greet on the reconnect client
+    expect(first.sendOpener).toHaveBeenCalledTimes(1); // still just the one opening turn
+    expect(second.sendOpener).not.toHaveBeenCalled(); // no re-greet on the reconnect client
     expect(resolveOpeningShot).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Tap-to-talk mode")).toBeNull();
     expect(screen.getByLabelText("Mute")).toBeTruthy(); // still the live footer, not classic mic
   });
 
-  it("drop -> reconnect re-anchors silently: second client's sendContext fires on its connect, sendText does NOT (no re-greet)", async () => {
+  it("drop -> reconnect re-anchors silently: second client's sendContext fires on its connect, sendOpener does NOT (no re-greet)", async () => {
     // specs/caddie-stale-hole-live-plan.md §3.4/§7 — a reconnect mints a
     // fresh (possibly stale) server session; the connect-time anchor still
     // silently re-anchors it, with no spoken re-greet.
@@ -635,7 +639,7 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     await flush();
 
     expect(second.sendContext).toHaveBeenCalledTimes(1); // silent re-anchor
-    expect(second.sendText).not.toHaveBeenCalled(); // no re-greet
+    expect(second.sendOpener).not.toHaveBeenCalled(); // no re-greet
   });
 
   it("drop -> reconnect FAIL -> classic fallback: mic usable, transcript preserved, no re-greet", async () => {
@@ -723,7 +727,7 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     const first = realtimeMock.FakeRealtimeCaddieClient.instances[0];
     act(() => first.emitStatus("connected"));
     await flush();
-    expect(first.sendText).toHaveBeenCalledTimes(1);
+    expect(first.sendOpener).toHaveBeenCalledTimes(1);
 
     act(() => {
       first.emitMessage({ id: "old-1", role: "user", text: "What club from 150?", partial: false, order: 1 });
@@ -744,7 +748,7 @@ describe("CaddieSheet live mode — Slice D reconnect", () => {
     // The live transcript stays visible — resting, not fallen back.
     expect(screen.getByText("What club from 150?")).toBeTruthy();
     expect(screen.getByText("Smooth 7-iron.")).toBeTruthy();
-    expect(first.sendText).toHaveBeenCalledTimes(1); // not re-fired
+    expect(first.sendOpener).toHaveBeenCalledTimes(1); // not re-fired
   });
 });
 
@@ -816,7 +820,7 @@ describe("CaddieSheet live mode — Slice E idle suspend/resume", () => {
     const second = instances[1];
     expect(second.start).toHaveBeenCalledTimes(1);
     expect(second.attachMic).toHaveBeenCalledTimes(1);
-    expect(second.sendText).not.toHaveBeenCalled(); // no re-greet
+    expect(second.sendOpener).not.toHaveBeenCalled(); // no re-greet
     expect(resolveOpeningShot).toHaveBeenCalledTimes(1); // still just the one opening turn
     expect(voiceEventSpy).toHaveBeenCalledWith("caddie", "live_resume");
 
@@ -842,7 +846,7 @@ describe("CaddieSheet live mode — Slice E idle suspend/resume", () => {
     expect(screen.queryByText("Paused — tap to resume")).toBeNull();
   });
 
-  it("resume re-anchors silently: the resumed client's sendContext fires on its connect, sendText does NOT (no re-greet)", async () => {
+  it("resume re-anchors silently: the resumed client's sendContext fires on its connect, sendOpener does NOT (no re-greet)", async () => {
     // specs/caddie-stale-hole-live-plan.md §3.4/§7 — Slice E resume mints a
     // fresh (possibly stale) server session too; the connect-time anchor
     // silently corrects it.
@@ -868,7 +872,7 @@ describe("CaddieSheet live mode — Slice E idle suspend/resume", () => {
     await flush();
 
     expect(second.sendContext).toHaveBeenCalledTimes(1);
-    expect(second.sendText).not.toHaveBeenCalled(); // no re-greet
+    expect(second.sendOpener).not.toHaveBeenCalled(); // no re-greet
   });
 
   it("resume does not double-attach mic (double-tap guard)", async () => {

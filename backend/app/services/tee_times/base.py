@@ -19,6 +19,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Literal
 
+from .selection import CourseSelector
+
 
 # ─── Shared data models ────────────────────────────────────────────────────────
 
@@ -32,6 +34,11 @@ class TeeTimeQuery:
     course_ids: list[str] = field(default_factory=list)
     max_distance_miles: float | None = None
     max_price_usd: float | None = None
+    # Backend-internal (never set by a route param directly): resolved by the
+    # route from course_ids (selection.resolve_selectors) before the provider
+    # is called. Providers must treat None as "derive id-only selectors from
+    # course_ids" (specs/teetime-course-ids-wiring-plan.md §3.4).
+    course_selectors: list[CourseSelector] | None = None
 
 
 @dataclass

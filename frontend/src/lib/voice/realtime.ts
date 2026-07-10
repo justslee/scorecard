@@ -412,6 +412,22 @@ export class RealtimeCaddieClient {
     }
   }
 
+  /** Inject the caddie-authored opening greeting: a system-role instruction item
+   *  plus response.create so the model SPEAKS the opener in its own voice.
+   *  Unlike sendText: role is system (never fabricates a player turn) and NO
+   *  local onMessage is emitted — the assistant bubble comes from the model's
+   *  own transcript events. Unlike sendContext: it does trigger a response. */
+  sendOpener(text: string): void {
+    this.idle.touch();
+    if (this.dc?.readyState === 'open') {
+      this.dc.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: { type: 'message', role: 'system', content: [{ type: 'input_text', text }] },
+      }));
+      this.dc.send(JSON.stringify({ type: 'response.create' }));
+    }
+  }
+
   /** Toggle mic mute (audio still flows from server, but server VAD won't pick up the user). */
   setMuted(muted: boolean): void {
     // Unmuting = the player is (about to be) talking — that's activity.

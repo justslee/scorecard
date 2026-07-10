@@ -421,6 +421,11 @@ async def nearby_courses(
         radius_m=radius,
         interactive=True,
     )
+    # Unify wire ids with /api/courses/search: OSM hits carry osm_id, not id,
+    # so give them the deterministic write-through UUID (specs/teetime-
+    # course-ids-wiring-plan.md §4.1) — otherwise a selection made here can
+    # never be reconciled by the tee-time route's selection filter.
+    results = course_finder.attach_stable_ids(results)
     if results:
         _nearby_cache.set(key, results)
     return {"courses": results}

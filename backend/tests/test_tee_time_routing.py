@@ -15,6 +15,8 @@ from app.services.tee_times.routing import (
     _parse_latlng,
 )
 from app.services.tee_times.base import BookingDetails, TeeTimeQuery, TeeTimeSlot
+from app.services.tee_times.selection import CourseSelector
+from app.services.course_finder import deterministic_course_id
 
 
 def _query(**overrides) -> TeeTimeQuery:
@@ -224,3 +226,82 @@ class TestHelpers:
     def test_haversine_sf_to_la_roughly_right(self):
         d = _haversine_miles(37.7749, -122.4194, 34.0522, -118.2437)
         assert 330 < d < 360
+
+
+class TestCourseSelectionFilter:
+    """Wiring `TeeTimeQuery.course_ids` into the real provider loop
+    (specs/teetime-course-ids-wiring-plan.md §6). The filter runs AFTER the
+    private-club exclusion and BEFORE the MAX_COURSES cap."""
+
+    async def test_selected_osm_id_keeps_only_that_course(self):
+        # Realistic OSM-shaped dicts — NO "id" key, only "osm_id" (the actual
+        # search_golf_courses shape). A naive `course_id in course_ids` filter
+        # (built from `course.get("id") or course.get("osm_id")`) would work
+        # here too, but this is the MANDATORY no-always-zero regression guard —
+        # it must keep passing as candidate_ids grows more sources.
+        courses = [
+            {"osm_id": "way/101", "name": "Course One", "center": {"lat": 37.79, "lng": -122.46}},
+            {"osm_id": "way/102", "name": "Course Two", "center": {"lat": 37.80, "lng": -122.47}},
+            {"osm_id": "way/103", "name": "Course Three", "center": {"lat": 37.81, "lng": -122.48}},
+        ]
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(courses))
+        slots = await provider.search_availability(_query(course_ids=["way/102"]))
+        assert {s.course_name for s in slots} == {"Course Two"}
+
+    async def test_empty_course_ids_returns_all(self):
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
+        slots = await provider.search_availability(_query(course_ids=[]))
+        assert len(slots) == 2
+
+    async def test_mapped_only_uuid_selection_drops_honestly(self):
+        import uuid
+
+        unresolvable = str(uuid.uuid4())
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
+        slots = await provider.search_availability(_query(course_ids=[unresolvable]))
+        assert slots == []
+
+    async def test_deterministic_uuid_selection_matches(self):
+        courses = [{"osm_id": "way/102", "name": "Course Two", "center": {"lat": 37.80, "lng": -122.47}}]
+        det_uuid = deterministic_course_id("osm-way/102")
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(courses))
+        slots = await provider.search_availability(_query(course_ids=[det_uuid]))
+        assert {s.course_name for s in slots} == {"Course Two"}
+
+    async def test_selector_name_and_proximity_matches(self):
+        # Homegrown-mapped selection: the id the golfer selected (a slug-keyed
+        # DB UUID) has no derivable relationship to the discovered course's
+        # own id — only the resolved name+center selector rescues it.
+        course = {"osm_id": "way/999", "name": "Homegrown Municipal", "center": {"lat": 40.745, "lng": -73.456}}
+        near_selector = [CourseSelector(id="unrelated-uuid", name="Homegrown Municipal", lat=40.7451, lng=-73.4561)]
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder([course]))
+        query = _query(course_ids=["unrelated-uuid"])
+        query.course_selectors = near_selector
+        slots = await provider.search_availability(query)
+        assert {s.course_name for s in slots} == {"Homegrown Municipal"}
+
+    async def test_selector_name_match_far_center_is_dropped(self):
+        course = {"osm_id": "way/999", "name": "Homegrown Municipal", "center": {"lat": 40.745, "lng": -73.456}}
+        far_selector = [CourseSelector(id="unrelated-uuid", name="Homegrown Municipal", lat=10.0, lng=10.0)]
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder([course]))
+        query = _query(course_ids=["unrelated-uuid"])
+        query.course_selectors = far_selector
+        slots = await provider.search_availability(query)
+        assert slots == []
+
+    async def test_selection_filter_runs_before_cap(self):
+        # 9 courses; select the farthest (index 8) — a filter-after-cap bug
+        # would drop it since only 8 courses survive the cap.
+        many = [
+            {"id": f"c{i}", "name": f"Course {i}", "center": {"lat": 37.79 + i * 0.01, "lng": -122.46}}
+            for i in range(9)
+        ]
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(many))
+        slots = await provider.search_availability(_query(course_ids=["c8"]))
+        assert {s.course_name for s in slots} == {"Course 8"}
+
+    async def test_selected_private_course_still_excluded(self):
+        courses = [*_COURSES, _LIBERTY]
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder(courses))
+        slots = await provider.search_availability(_query(course_ids=["gplaces-liberty"]))
+        assert slots == []

@@ -44,6 +44,38 @@ Math convention (pinned — see test_hazards.py::test_left_is_positive_cross):
     of the turn cross says "right" on every dogleg-left hole, the sign-flip
     incident class this repo has been burned by twice. See
     test_hazards.py::TestExtractHoleBend for the pinned example.
+
+Trees/woods (OSM ``featureType in {"tree", "woods"}``, gated into
+``extract_hole_hazards`` 2026-07-09): a single centroid is the wrong shape for
+tree data — hundreds of ``"tree"`` Points would be noise, and a ``"woods"``
+polygon's centroid sits deep inside the stand (often 50-100+ y past the real
+tree line, and on the wrong side of the played line for a stand wrapping a
+dogleg corner). Instead tree/woods features are reduced to OBSERVATION
+POINTS — each ``"tree"`` Point is one observation; each ``"woods"`` Polygon
+contributes every OUTER-RING VERTEX as an observation (the OSM boundary
+literally traces the tree line, so the ring IS the leading edge; the closing
+duplicate vertex is deduped). Every observation is classified through the
+EXACT SAME frame as a bunker/water centroid (the ``_classify`` closure below —
+same played-polyline-or-chord math, same reversed-way exposure, same
+dogleg/chord-mirror exposure). Two filters make woods handling near-EDGE by
+construction rather than centroid: observations behind the tee are DROPPED
+(not clamped to 0 like bunkers — with many observations per feature this
+loses nothing and keeps a range's start meaningful), and observations more
+than ``_TREE_MAX_LATERAL_YARDS`` (70y) from the line are dropped, which
+discards a big stand's deep/far-side ring vertices and keeps only the edge
+FACING the played line. Surviving observations are grouped by ``line_side``
+(same 10y deadband); a side only SPEAKS with ``>= _TREE_MIN_OBS`` (3)
+observations — the coverage guard that keeps 1-2 stray volunteer-mapped tree
+points silent while any real mapped woods polygon (>=4 ring vertices)
+qualifies on its own. A qualifying side emits its min-carry observation as a
+``Hazard(type="trees")``, plus a max-carry entry when the spread is
+``>= _TREE_RANGE_MIN_SPREAD_YARDS`` (30y) — ``format_hazards_line``'s
+existing (type, side) grouping renders the pair as a range (``trees R
+220-300y``) with zero new formatter logic. Tree entries are computed
+SEPARATELY from the bunker/water pass and appended AFTER it has been sorted
+and capped — a tree line can structurally never evict a bunker or water
+hazard from the extraction result. See test_tree_hazards.py for the pinned
+observation-model tests (T1-T12).
 """
 
 from __future__ import annotations
@@ -68,12 +100,25 @@ _DEFAULT_CAP: int = 5
 _BEND_MIN_DEVIATION_YARDS: float = 15.0
 
 _HAZARD_FEATURE_TYPES: frozenset[str] = frozenset({"bunker", "water"})
-_SEVERITY_BY_TYPE: dict[str, str] = {"water": "death", "bunker": "moderate"}
+_SEVERITY_BY_TYPE: dict[str, str] = {"water": "death", "bunker": "moderate", "trees": "moderate"}
 _SIDE_ABBREV: dict[str, str] = {"left": "L", "right": "R", "center": "C"}
-# bunker before water; "center" sorts after left/right within the same type
-# only insofar as it appears later in extract order — grouping is by
-# (type, side) so ordering here just controls type precedence.
-_TYPE_ORDER: dict[str, int] = {"bunker": 0, "water": 1}
+# bunker before water before trees; "center" sorts after left/right within the
+# same type only insofar as it appears later in extract order — grouping is
+# by (type, side) so ordering here just controls type precedence. Trees sort
+# LAST so a tree line can never outrank a real water hazard in the spoken line.
+_TYPE_ORDER: dict[str, int] = {"bunker": 0, "water": 1, "trees": 2}
+
+# ── Tree/woods observation model (module docstring "Trees/woods" paragraph) ──
+_TREE_FEATURE_TYPES: frozenset[str] = frozenset({"tree", "woods"})
+_TREE_MIN_OBS: int = 3
+_TREE_MAX_LATERAL_YARDS: float = 70.0
+_TREE_RANGE_MIN_SPREAD_YARDS: float = 30.0
+_TREE_ENTRY_CAP_PER_SIDE: int = 2
+
+# format_hazards_line's group cap (bunker/water/trees combined). Named
+# constant (was a literal 5) so the trees-headroom decision is documented at
+# the definition site — see module docstring "decision 6" in the plan.
+_FORMAT_GROUP_CAP: int = 6
 
 
 HAZARD_GROUNDING_RULE = (
@@ -82,7 +127,11 @@ HAZARD_GROUNDING_RULE = (
     "given for the hole, do not invent one: speak generally about where to miss "
     '("trouble left", "keep it right-center", "bail out short") and never state '
     'a specific feature with a distance (e.g. never "a bunker at 260 on the '
-    'left") unless it is in the data.'
+    'left") unless it is in the data. Tree lines and woods appear in the '
+    'hazard data as "trees" entries whose yardage is where the tree line runs '
+    "along or across the hole. If the player asks about trees and no "
+    '"trees" entry is in the hazard data for this hole, say the trees are '
+    "not in your mapped data — never estimate a tree-line distance."
 )
 
 BEND_GROUNDING_RULE = (
@@ -423,7 +472,8 @@ def extract_hole_hazards(
     cap: int = _DEFAULT_CAP,
     polyline: Optional[list] = None,
 ) -> list[Hazard]:
-    """Extract real bunker/water hazards from a hole's stored GeoJSON FeatureCollection.
+    """Extract real bunker/water/tree hazards from a hole's stored GeoJSON
+    FeatureCollection.
 
     Carry/side are classified against the hole's PLAYED polyline (the
     ``golf=hole`` way) whenever one is available — either passed explicitly
@@ -437,14 +487,18 @@ def extract_hole_hazards(
             per-hole shape returned by ``courses_mapped.get_course()``.
         tee, green: optional ``{"lat", "lng"}`` fallback points, used only when
             the FeatureCollection itself has no derivable tee/green geometry.
-        cap: max hazards returned (nearest-first).
+        cap: max bunker/water hazards returned (nearest-first) — tree-line
+            entries are computed separately and are NOT subject to this cap
+            (see module docstring "Trees/woods" paragraph).
         polyline: optional explicit played-line override — GeoJSON-style
             ``[[lon, lat], ...]`` (≥2 vertices). Defaults to the
             FeatureCollection's own hole LineString, then the chord.
 
     Returns:
-        Hazard list sorted by carry_yards ascending, capped at `cap`. Empty
-        when tee or green cannot be derived from any source.
+        Bunker/water sorted nearest-first and capped at `cap`, plus up to 6
+        aggregated tree-line entries (``type="trees"``, at most 2 per side);
+        the combined list is sorted by carry_yards ascending. Empty when tee
+        or green cannot be derived from any source.
     """
     feature_list: list[dict] = (features or {}).get("features") or []
 
@@ -482,6 +536,17 @@ def extract_hole_hazards(
         else:
             tee_along_m = tee_projected[0]
 
+    # Shared per-point classifier — project-onto-polyline-else-chord, the
+    # SAME frame for bunkers/water AND the tree observation pass below (module
+    # docstring "Trees/woods" paragraph). Returns (carry_m, lateral_m) in the
+    # tee-anchored local frame; carry_m is UNCLAMPED (behind-tee is negative)
+    # so callers choose their own clamp/drop policy.
+    def _classify(hx: float, hy: float) -> tuple[float, float]:
+        projected = _project_onto_polyline(path_xy, hx, hy) if path_xy else None
+        if projected is not None:
+            return projected[0] - tee_along_m, projected[1]
+        return ux * hx + uy * hy, ux * hy - uy * hx  # positive lateral = LEFT
+
     hazards: list[Hazard] = []
     for f in feature_list:
         props = f.get("properties") or {}
@@ -494,13 +559,7 @@ def extract_hole_hazards(
         h_lon, h_lat = pt
         hx, hy = _xy_m(tee_lat, tee_lon, h_lat, h_lon)
 
-        projected = _project_onto_polyline(path_xy, hx, hy) if path_xy else None
-        if projected is not None:
-            carry_m = projected[0] - tee_along_m
-            lateral_m = projected[1]
-        else:
-            carry_m = ux * hx + uy * hy
-            lateral_m = ux * hy - uy * hx  # positive = LEFT of tee→green travel
+        carry_m, lateral_m = _classify(hx, hy)
 
         carry_yards = max(0, _round_to_5(carry_m * _YARDS_PER_METER))
         lateral_yards = lateral_m * _YARDS_PER_METER
@@ -527,20 +586,157 @@ def extract_hole_hazards(
         )
 
     hazards.sort(key=lambda hz: hz.carry_yards)
-    return hazards[:cap]
+    hazards = hazards[:cap]
+
+    # Tree/woods pass — computed SEPARATELY and appended AFTER the bunker/
+    # water cap, so a tree line can never evict a bunker or water hazard
+    # (module docstring "Trees/woods" paragraph; decision 6 in the plan).
+    tree_hazards = _extract_tree_line_hazards(feature_list, tee_lat, tee_lon, gx, gy, _classify)
+    combined = hazards + tree_hazards
+    combined.sort(key=lambda hz: hz.carry_yards)
+    return combined
+
+
+def _tree_observations(feature_list: list[dict]) -> list[tuple[float, float]]:
+    """Return ``(lon, lat)`` OBSERVATION points for tree/woods features.
+
+    - ``featureType == "tree"`` (Point): the point itself is one observation.
+    - ``featureType == "woods"`` (Polygon): every outer-ring vertex is an
+      observation — the closing (repeated) vertex is deduped, matching
+      ``course_spatial._ring_centroid``'s own dedupe convention.
+    """
+    observations: list[tuple[float, float]] = []
+    for f in feature_list:
+        props = f.get("properties") or {}
+        if props.get("featureType") not in _TREE_FEATURE_TYPES:
+            continue
+        geom = f.get("geometry") or {}
+        gtype = geom.get("type")
+        coords = geom.get("coordinates")
+        if gtype == "Point" and coords and len(coords) >= 2:
+            observations.append((float(coords[0]), float(coords[1])))
+        elif gtype == "Polygon" and coords and coords[0]:
+            ring = coords[0]
+            vertices = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+            for c in vertices:
+                if c and len(c) >= 2:
+                    observations.append((float(c[0]), float(c[1])))
+    return observations
+
+
+def _tree_hazard(
+    side: str,
+    obs: tuple[float, float, float, float, float, float],
+    carry_yards: int,
+    gx: float,
+    gy: float,
+) -> Hazard:
+    """Build a single ``type="trees"`` Hazard from one observation tuple
+    ``(carry_m, lateral_yards, hx, hy, lat, lon)`` — lat/lng/distance_from_green
+    come from THIS observation (the min- or max-carry one), matching the
+    bunker/water entries' per-point provenance."""
+    _carry_m, _lateral_yards, hx, hy, lat, lon = obs
+    distance_from_green = math.hypot(hx - gx, hy - gy) * _YARDS_PER_METER
+    return Hazard(
+        type="trees",
+        side=side,
+        distance_from_green=round(distance_from_green),
+        penalty_severity=_SEVERITY_BY_TYPE.get("trees", "moderate"),
+        lat=lat,
+        lng=lon,
+        carry_yards=carry_yards,
+        line_side=side,
+    )
+
+
+def _extract_tree_line_hazards(
+    feature_list: list[dict],
+    tee_lat: float,
+    tee_lon: float,
+    gx: float,
+    gy: float,
+    classify,
+) -> list[Hazard]:
+    """Aggregate tree/woods OBSERVATIONS into at most two "tree line" entries
+    per qualifying side (module docstring "Trees/woods" paragraph, plan §1):
+
+    1. Collect observations (``_tree_observations``), classify each through
+       the SAME ``classify`` closure as bunkers/water.
+    2. Drop observations behind the tee (``carry_m < 0``) and observations
+       more than ``_TREE_MAX_LATERAL_YARDS`` off the line — this is what
+       makes woods handling near-EDGE rather than centroid.
+    3. Group survivors by ``line_side`` (same 10y deadband). A side QUALIFIES
+       iff it has ``>= _TREE_MIN_OBS`` observations — the coverage guard.
+    4. Emit the min-carry observation as one ``Hazard``, plus the max-carry
+       observation as a second entry ONLY when the spread is
+       ``>= _TREE_RANGE_MIN_SPREAD_YARDS`` — capped at
+       ``_TREE_ENTRY_CAP_PER_SIDE`` entries per side.
+
+    Returns an UNSORTED, UNCAPPED-at-the-hole-level list — the caller
+    (``extract_hole_hazards``) appends it after the bunker/water cap and
+    re-sorts the combined list by carry_yards.
+    """
+    observations: list[tuple[float, float, float, float, float, float]] = []
+    # (carry_m, lateral_yards, hx, hy, lat, lon)
+    for lon, lat in _tree_observations(feature_list):
+        hx, hy = _xy_m(tee_lat, tee_lon, lat, lon)
+        carry_m, lateral_m = classify(hx, hy)
+        if carry_m < 0:
+            continue  # behind the tee — dropped, not clamped (module docstring)
+        lateral_yards = lateral_m * _YARDS_PER_METER
+        if abs(lateral_yards) > _TREE_MAX_LATERAL_YARDS:
+            continue
+        observations.append((carry_m, lateral_yards, hx, hy, lat, lon))
+
+    if not observations:
+        return []
+
+    groups: dict[str, list[tuple[float, float, float, float, float, float]]] = {
+        "left": [], "right": [], "center": [],
+    }
+    for obs in observations:
+        lateral_yards = obs[1]
+        if lateral_yards > _LATERAL_DEADBAND_YARDS:
+            side = "left"
+        elif lateral_yards < -_LATERAL_DEADBAND_YARDS:
+            side = "right"
+        else:
+            side = "center"
+        groups[side].append(obs)
+
+    hazards: list[Hazard] = []
+    for side in ("left", "right", "center"):
+        side_obs = groups[side]
+        if len(side_obs) < _TREE_MIN_OBS:
+            continue
+        side_obs.sort(key=lambda o: o[0])
+        near, far = side_obs[0], side_obs[-1]
+        near_carry_yards = max(0, _round_to_5(near[0] * _YARDS_PER_METER))
+        far_carry_yards = max(0, _round_to_5(far[0] * _YARDS_PER_METER))
+
+        entries = [_tree_hazard(side, near, near_carry_yards, gx, gy)]
+        if far_carry_yards - near_carry_yards >= _TREE_RANGE_MIN_SPREAD_YARDS:
+            entries.append(_tree_hazard(side, far, far_carry_yards, gx, gy))
+        hazards.extend(entries[:_TREE_ENTRY_CAP_PER_SIDE])
+
+    return hazards
 
 
 def format_hazards_line(hole_number: int, hazards: list[Hazard]) -> str:
     """Compact spoken-style hazard line for a hole, e.g.:
 
-        "Hole 4 hazards: bunker L 245y, water R 190-230y"
+        "Hole 4 hazards: bunker L 245y, water R 190-230y, trees R 220-300y"
 
     Hazards sharing a (type, line_side) are merged into a single entry — a
     single hazard renders as ``bunker L 245y``, multiple as a range
-    ``bunker L 230-260y``. Groups sort bunker-before-water, nearer-first, and
-    are capped at 5. Returns "" for an empty hazard list — the caller should
-    omit the line entirely, which triggers the generic-language directive in
-    HAZARD_GROUNDING_RULE.
+    ``bunker L 230-260y`` (a tree line's min/max-carry pair renders the same
+    way, no dedicated tree formatter). Groups sort bunker-before-water-
+    before-trees, nearer-first, and are capped at ``_FORMAT_GROUP_CAP`` (6) —
+    type order sorts first, so bunker/water groups always occupy the front;
+    a tree group can only fill trailing slots and can never displace a
+    bunker/water group. Returns "" for an empty hazard list — the caller
+    should omit the line entirely, which triggers the generic-language
+    directive in HAZARD_GROUNDING_RULE.
     """
     if not hazards:
         return ""
@@ -555,7 +751,7 @@ def format_hazards_line(hole_number: int, hazards: list[Hazard]) -> str:
         groups[key].append(hz.carry_yards)
 
     order.sort(key=lambda k: (_TYPE_ORDER.get(k[0], 99), min(groups[k])))
-    order = order[:5]
+    order = order[:_FORMAT_GROUP_CAP]
 
     parts: list[str] = []
     for ftype, side in order:

@@ -243,6 +243,40 @@ class TestRelativeDirectionMath:
 # ── determinism ───────────────────────────────────────────────────────────────
 
 
+class TestLateralFramingContract:
+    """The lateral strings share green_read's vocabulary: aim = HIGH side,
+    uphill-putt leave = LOW/fall side. Exact-string pins — a wording drift or a
+    side flip fails loudly. (Reconcile: caddie-slope-framing-reconcile.)"""
+
+    def test_moderate_left_to_right_exact(self):
+        s = _slope(direction=90.0, severity="moderate")
+        assert slope_miss_advice(s, approach_bearing_deg=0.0) == (
+            "Green tilts moderately left to right — "
+            "aim left, the high side; a miss right sits below the hole and leaves the uphill putt"
+        )
+
+    def test_severe_left_to_right_exact(self):
+        s = _slope(direction=90.0, severity="severe")
+        assert slope_miss_advice(s, approach_bearing_deg=0.0) == (
+            "Green tilts hard left to right — "
+            "aim left, the high side; a miss right sits below the hole and leaves the uphill putt"
+        )
+
+    def test_moderate_right_to_left_exact(self):
+        s = _slope(direction=270.0, severity="moderate")
+        assert slope_miss_advice(s, approach_bearing_deg=0.0) == (
+            "Green tilts moderately right to left — "
+            "aim right, the high side; a miss left sits below the hole and leaves the uphill putt"
+        )
+
+    def test_severe_right_to_left_exact(self):
+        s = _slope(direction=270.0, severity="severe")
+        assert slope_miss_advice(s, approach_bearing_deg=0.0) == (
+            "Green tilts hard right to left — "
+            "aim right, the high side; a miss left sits below the hole and leaves the uphill putt"
+        )
+
+
 class TestDeterminism:
     """Same inputs always produce identical output."""
 

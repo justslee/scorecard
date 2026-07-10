@@ -49,6 +49,25 @@ OBSERVED_REALITY_RULE = (
     "in front of them."
 )
 
+# Input-grounding rule (Scars-transcript incident, 2026-07-09): on-course ASR
+# invents words ("Scars.", "of God") and the caddie gamely answered them. The
+# grounding doctrine extends from FACTS to INPUT: never answer what you didn't
+# clearly hear. Shared by BOTH mouths — build_realtime_instructions below and
+# the two stable_text blocks in routes/caddie.py — so wording never drifts.
+# Realtime caveat: the speech-to-speech model hears raw AUDIO; this rule is a
+# strong nudge, not a hard gate (the hard gate is the queued cascaded-STT spike).
+INPUT_GROUNDING_RULE = (
+    "Your ears follow the same rule as your facts: never answer a question you "
+    "did not clearly hear. On-course audio garbles — if the player's words come "
+    "through as gibberish, an off-topic non-sequitur, or a fragment with no "
+    "plausible golf meaning, do NOT invent a golf answer for it. Ask them to "
+    "repeat, briefly and once (\"Didn't catch that — say again?\"), then move on. "
+    "This applies ONLY to unintelligible or clearly non-golf noise. Terse golf "
+    "questions are normal out here — \"driver?\", \"what club\", \"how far\", "
+    "\"read?\", \"wind?\" are real, clear questions: answer them directly and "
+    "never ask the player to repeat something you understood."
+)
+
 # Text-mouth tool instruction (caddie-tool-loop-parity): the classic text
 # caddie now carries the same six tools the Realtime orb has (canonical
 # registry in app/caddie/tools.py). Appended to BOTH text builders'
@@ -92,6 +111,7 @@ def build_realtime_instructions(
         + "\n" + BEND_GROUNDING_RULE
         + "\n" + PHYSICS_GROUNDING_RULE
         + "\n" + GREEN_GROUNDING_RULE
+        + "\n" + INPUT_GROUNDING_RULE
         + "\n" + OBSERVED_REALITY_RULE
     )
 
