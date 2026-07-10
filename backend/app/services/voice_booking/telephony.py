@@ -22,6 +22,7 @@ import asyncio
 import logging
 import os
 from typing import Callable
+from xml.sax.saxutils import quoteattr
 
 from .call_registry import CallTokenRegistry, registry as _default_registry
 from .compliance import normalize_phone
@@ -35,17 +36,25 @@ _TWILIO_ENV_VARS = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMB
 def build_stream_twiml(public_host: str, call_token: str) -> str:
     """Build the TwiML Twilio plays into the call: bidirectional media stream
     back to our WS route, carrying ONLY the host + single-use token — never a
-    secret. `<Connect><Stream>` (not `<Start>`) — bidirectional audio."""
+    secret. `<Connect><Stream>` (not `<Start>`) — bidirectional audio.
+
+    The call token is carried as a `<Parameter>` inside `<Stream>`, NOT in the
+    wss URL — Twilio delivers it in the `start` event's `customParameters`
+    once the stream connects. This keeps the token out of the wss URL, so it
+    never lands in uvicorn/Twilio access logs."""
     host = public_host.strip()
     for prefix in ("https://", "http://", "wss://", "ws://"):
         if host.startswith(prefix):
             host = host[len(prefix) :]
     host = host.rstrip("/")
-    url = f"wss://{host}/api/voice-booking/media-stream/{call_token}"
+    url = f"wss://{host}/api/voice-booking/media-stream"
+    token_value = quoteattr(call_token)  # returns its own quote characters
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response><Connect><Stream "
-        f'url="{url}"/></Connect></Response>'
+        f'url="{url}">'
+        f'<Parameter name="call_token" value={token_value}/>'
+        "</Stream></Connect></Response>"
     )
 
 
@@ -106,21 +115,32 @@ class LiveCallTransport:
             transcript, outcome = await asyncio.wait_for(
                 pending.future, self._call_timeout_seconds
             )
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            self._registry.discard(token)
-            try:
-                client = self._twilio_client_factory()
-                await asyncio.to_thread(
-                    lambda: client.calls(call_sid).update(status="completed")
-                )
-            except Exception:
-                pass  # best-effort hangup — swallow errors
+        except asyncio.TimeoutError:
+            await self._discard_and_hangup(token, call_sid)
             return (
                 list(pending.transcript),
                 CallOutcome(result="unclear", detail="call timed out"),
             )
+        except asyncio.CancelledError:
+            # The task running run_call was itself cancelled (e.g. server
+            # shutdown) — clean up the same way as a timeout, but NEVER
+            # swallow the cancellation: re-raise so it propagates normally.
+            await self._discard_and_hangup(token, call_sid)
+            raise
 
         return transcript, outcome
+
+    async def _discard_and_hangup(self, token: str, call_sid: str) -> None:
+        """Shared cleanup for both the timeout and cancellation paths: discard
+        the single-use token and best-effort hang up the live call."""
+        self._registry.discard(token)
+        try:
+            client = self._twilio_client_factory()
+            await asyncio.to_thread(
+                lambda: client.calls(call_sid).update(status="completed")
+            )
+        except Exception:
+            pass  # best-effort hangup — swallow errors
 
 
 def get_live_transport() -> LiveCallTransport:

@@ -20,6 +20,8 @@ import type {
   BookingDetails,
   BookingResult,
   RehearsalCallResponse,
+  AvailabilityCallRequest,
+  AvailabilityCallStatus,
 } from "./types";
 import { getActiveProvider } from "./registry";
 
@@ -111,4 +113,29 @@ export async function placeRehearsalCall(): Promise<RehearsalCallResponse> {
   return fetchAPI<RehearsalCallResponse>("/api/tee-times/rehearsal-call", {
     method: "POST",
   });
+}
+
+// ─── Availability-by-call — S4e rung 3 ─────────────────────────────────────────
+// User-initiated ONLY: call these from a tap on the "No online times — we can
+// call the pro shop" CTA, NEVER as a side effect of search. Ships dark: with
+// no Twilio keys the backend always answers status="not_enabled" and nothing
+// is dialed — the caller must degrade to the honest tel: link on that status
+// (see callTelHref in confirm-copy.ts).
+
+/** Enqueue an availability-ASK call for one course/date/window/party. */
+export async function requestAvailabilityCall(
+  req: AvailabilityCallRequest
+): Promise<AvailabilityCallStatus> {
+  return fetchAPI<AvailabilityCallStatus>("/api/tee-times/availability-call", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+}
+
+/** Poll the status of a previously enqueued availability-ASK call. */
+export async function getAvailabilityCallStatus(id: string): Promise<AvailabilityCallStatus> {
+  return fetchAPI<AvailabilityCallStatus>(
+    `/api/tee-times/availability-call/${encodeURIComponent(id)}`
+  );
 }

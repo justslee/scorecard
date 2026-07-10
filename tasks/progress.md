@@ -3,6 +3,137 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: S4e — rung-3 availability-by-call (ships dark, DONE)
+
+Implemented `specs/teetime-availability-everywhere-plan.md` §5, §6, §7 as an
+EXTENSION of the existing voice_booking caller (#124) — not a rewrite. One
+commit on `integration/next`, backend + frontend.
+
+1. **Availability-ASK dialog mode.** `VoiceBookingContext.mode: "book"|
+   "availability"` (default "book" — byte-identical for every existing
+   caller). `BookingDialog._handle_negotiating_availability` collects EVERY
+   spoken time in the window (never confirms/books one) into
+   `CallOutcome(result="availability", slots_spoken=[...])`; ends on an
+   explicit "that's everything" signal, an explicit "nothing at all" signal
+   (`result="no_availability"`), or a bounded-retry safety valve. Two new
+   simulator personas (`lists_three_times`, `no_availability_ask`) in a
+   SEPARATE `AVAILABILITY_PERSONAS` registry so book-mode's `PERSONA_NAMES`
+   iteration (used by `/book-by-call/simulate`) is untouched.
+   `SimulatedCallTransport` now dispatches on `ctx.mode`.
+2. **S3 window-bug check.** The `provider.py` book() path was ALREADY fixed
+   (pre-existing `TestVoiceCallProviderWindowDerivation` tests, from #124) —
+   verified, not re-fixed. The NEW availability-call endpoint builds its
+   `VoiceBookingContext` window directly from the request's
+   `date/timeWindowStart/timeWindowEnd` (never from any `TeeTimeSlot.time`),
+   so the same bug class structurally cannot occur there — added
+   `TestWindowComesOnlyFromTheRequestQuery` to prove it.
+3. **`availability_by_call` cache** — new
+   `services/tee_times/availability_call_cache.py`, same injectable
+   file-backed-store pattern as `search_cache.py`, 12h (same-day) TTL, keyed
+   on (course, date, window, party). Router-only READS it; only the trigger
+   endpoint writes it.
+4. **Router rung-3 wiring** — `RoutedTeeTimeProvider._with_availability_cache`
+   intercepts only `route=="call"` entries (known phone, no cleaner rung):
+   cache hit `outcome=="availability"` → real `TeeTimeSlot`s
+   (`provider="voice_call"`, `route="call"` retained,
+   `checked_via`/`checked_at` provenance); `no_availability` → omit
+   (verified empty); voicemail/no_answer/unclear/miss → unchanged honest
+   "call" entry. The existing cap-degrade branch (forces
+   `route="book_on_site"`, locked by `TestCouldntCheckDegradesToRouteEntry`)
+   and the `TEETIME_FOREUP_ENABLED=0` kill switch are proven to NEVER consult
+   the cache — S0/S1/S4a/S4c ladder stays byte-identical.
+5. **User-initiated trigger** — `POST /api/tee-times/availability-call`
+   (enqueue) + `GET /api/tee-times/availability-call/{id}` (poll). Gated
+   exactly like `rehearsal-call`: `telephony.get_live_transport()` (
+   VOICE_BOOKING_ENABLED + Twilio creds) AND a NEW
+   `VOICE_BOOKING_VERIFIED_LINES` allowlist (empty by default → refused).
+   With no keys/creds (CI/default) returns `not_enabled` immediately and
+   enqueues nothing — a search never reaches this endpoint (structural test:
+   `search_tee_times`'s source has zero reference to it).
+6. **Frontend CTA** — `CallAvailabilityCTA` in `tee-time/page.tsx`: "No
+   online times — we can call the pro shop" → POST → "pending" polls
+   `GET .../{id}` every 3s (40 tries) → resolves to tappable phone-confirmed
+   times (feeds back into the existing `pick()`/booking flow) or an honest
+   "nothing by phone" line with the real tel: link. `not_enabled` (today's
+   only reachable state) degrades straight to `window.location.href =
+   telHref` — never a spinner that can't resolve.
+7. **Additive `TeeTimeSlot` fields** — `status: "live"|"pending"`,
+   `checked_via`, `checked_at` in `base.py` + `TeeTimeSlotOut` +
+   `frontend/src/lib/teetime/types.ts`; `book_tee_time` rehydration reads
+   them via `.get()` with defaults (booking rehydration untouched for every
+   existing shape).
+
+Gates: `ruff check .` clean; backend
+`test_voice_booking.py test_tee_time_router.py test_tee_time_routing.py
+test_rehearsal_call.py` (164 total, all pre-existing, all pass unchanged) +
+4 new test files (51 new tests); full non-DB backend suite 1936/1936 pass.
+Frontend `npm run lint` + `npx tsc --noEmit` + `npx tsx voice-tests/runner.ts
+--smoke` (274/274) all clean; `npx vitest run` 1922/1922 pass. Confirmed:
+nothing dials without VOICE_BOOKING_ENABLED + Twilio creds +
+VOICE_BOOKING_VERIFIED_LINES; search never triggers a call (read-only cache
+consult only). NOTICEABLE: a new "No online times — we can call the pro
+shop" CTA appears under call-route results (previously just the plain row);
+tapping it today degrades straight to the same tel: link as before (dark),
+so behavior is unchanged but the new affordance is visible on TestFlight.
+
+## 2026-07-10 — builder: s3b-review-nits — 5 hardening fixes on inert caller path (SILENT, DONE)
+
+Implemented `specs/s3b-review-nits-plan.md` exactly: 5 localized
+security/robustness fixes on the still owner-gated (inert without
+VOICE_BOOKING_ENABLED=1 + Twilio creds) AI-caller telephony path, landing
+before the owner's Twilio keys go live. Backend-only, one commit on
+`integration/next` (5af0315):
+
+1. `media_bridge.outcome_from_tool_args` — `bool(args.get("opt_out_requested"))`
+   read a model-emitted stringified `"false"` as truthy, which would have
+   silently suppressed a REAL pro-shop number. Added `_coerce_opt_out(v)` =
+   `v is True or str(v).strip().lower() == "true"`. Test:
+   `test_outcome_from_tool_args_opt_out_coerces_stringified_bools`.
+2. `telephony.LiveCallTransport.run_call` — split the combined
+   `except (TimeoutError, CancelledError)` into separate handlers; a
+   cancelled task still runs the discard+hangup cleanup (factored into
+   `_discard_and_hangup`) but now re-raises `CancelledError` instead of
+   swallowing it. Tests:
+   `test_run_call_timeout_returns_partial_transcript_unclear` (existing,
+   still green), `test_run_call_cancellation_reraises_and_cleans_up` (new).
+3. `call_registry.mint` — `asyncio.get_event_loop()` →
+   `get_running_loop()`. Converted the 5 tests that called `mint()` outside
+   a running loop (`test_place_call_dials_only_ctx_phone`,
+   `TestCallTokenRegistry.*`) to `async def` (pytest-asyncio auto mode) —
+   assertions unchanged.
+4. Call token now travels in a TwiML `<Stream><Parameter name="call_token">`
+   instead of the wss URL path (`xml.sax.saxutils.quoteattr`-escaped), so it
+   never lands in uvicorn/Twilio access logs. `voice_booking_ws.media_stream`
+   is now tokenless (`/api/voice-booking/media-stream`) — reads Twilio's
+   `start` frame first (bounded to 10 pre-start frames), extracts
+   `call_token` from `customParameters` (missing → 1008, no audio relayed
+   before validation), then validates via the same single-use/TTL
+   `registry.consume()`. `run_media_bridge` gained an `initial_start` param
+   so the already-consumed start frame is processed exactly once (no
+   double-processing). Noted `X-Twilio-Signature` validation as an explicit
+   out-of-scope TODO. Rewrote `test_voice_booking_ws.py` for the tokenless
+   route + `customParameters`-carried token (added
+   `test_missing_call_token_in_start_refused`); same 1008-refusal/no-frames
+   assertions preserved. Updated `test_build_stream_twiml_shape` /
+   `_strips_scheme_and_trailing_slash` + added
+   `test_build_stream_twiml_escapes_token_value`.
+5. `websockets>=12.0` → `>=13.0` in `pyproject.toml` (OpenAI Realtime
+   handshake needs `additional_headers`, new in the asyncio client since
+   13.0). `uv lock` confirmed no-op resolution (already resolved 16.0);
+   `uv sync` + `python -c "import app.main"` succeed.
+
+Gating ladder (VOICE_BOOKING_ENABLED / Twilio creds / public host) and
+dial-safety (dials ONLY `ctx.phone`) are UNCHANGED.
+
+Gates: `ruff check .` clean. `pytest tests/test_voice_booking.py
+tests/test_voice_booking_ws.py tests/test_telephony_bridge.py
+tests/test_media_bridge.py -q` → **86 passed**. Broader sanity:
+`pytest tests/ --ignore=tests/integration -q` → **1884 passed**, 1967 tests
+collect cleanly with zero import errors. No local Postgres was started
+(DB-backed integration tests run in CI per policy). Zero frontend files
+touched. Silent (backend-only hardening on an inert path) — rides along in
+the bundle, no owner approval needed for this item alone.
+
 ## 2026-07-10 — builder: S4a (tee-time availability-everywhere) landed on the bundle (NOTICEABLE, DONE)
 
 Implemented `specs/teetime-availability-everywhere-plan.md` §2a/§3/§6 (S4a —
@@ -11601,3 +11732,175 @@ commit on `integration/next`:
 - One test re-scoped (NOT weakened): test_tee_time_capability_store_generalized.py — S4a's "8 rows all teeitup" fixed-count → platform-filtered (still exactly 8 teeitup) + strict 3-row Chronogolf parallel checks. eng-lead confirmed: deliverable legitimately grows the shared seed file; coverage strengthened.
 - Coverage: 11 NY-area courses now return REAL availability (8 TeeItUp NYC munis + 3 Chronogolf NY-metro: Rock Spring/Pleasantville/Beaver Brook). Quick18 skipped (none trivially reachable).
 - backlog.json: teetime-s4c-chronogolf-probe-quick18 → shipped. PR #128 checklist + title updated (S4a + S4c). Bundle now has 2 NOTICEABLE items (S4a 8 munis, S4c +3 courses). No merge to main; no owner ping (loop owns notify). S4c code landed at f4d0fa2.
+
+## Bundle #128 SHIPPED TO MAIN (2026-07-10) — release-manager: owner "Ship it" → merged, deployed, verified
+- Pre-flight re-verified independently: `integration/next` head unchanged at `2941e62` (matched the owner-approved head exactly), PR #128 OPEN/MERGEABLE/CLEAN, both required gates (Frontend gates, Backend gate) state:SUCCESS on that head.
+- Merged `gh pr merge 128 --merge` → merge commit **`19f9e06754d3de4efe6a97d75a3311a156602900`** on `main` (parent `9cd7394`).
+- Post-merge main CI verified GREEN independently via the check-runs API on `19f9e06`: E2E smoke advisory, Frontend gates, Backend gate, and the auto-triggered "Deploy backend (SSM)" workflow — all `success`. No infra flake.
+- Backend deploy: the repo's existing push-to-main "Deploy backend (SSM)" workflow (`.github/workflows/deploy.yml`) fired automatically on the merge (`i-0826ae70df62d9fe8`) — `git pull --ff-only` (`9cd7394..19f9e06`), `alembic upgrade head`, `systemctl restart scorecard-api`, then `curl -fsS http://localhost:8000/health` → `{"status":"ok"}`. SSM command status `Success`.
+- Prod smoke check (light, no external-engine hammering): ran `load_all_capabilities()` on the box via one SSM command — confirmed **8 TeeItUp golf-nyc rows** (Douglaston, Van Cortlandt, Kissena, Silver Lake, Forest Park, South Shore, La Tourette, Clearview Park) + **3 Chronogolf rows** (Rock Spring Golf Club at West Orange, Pleasantville Country Club, Beaver Brook Country Club) all loaded in-process, zero calls to the external booking engines.
+- **TestFlight decision: NO new build.** `frontend/` diff vs `main` is empty — the adapters feed the already-shipped tee-time UI, no frontend change in this bundle. The win is live purely via the backend deploy, testable on the owner's current **TestFlight v1.0.1096**: open Tee Time and search South Shore, Clearview Park, or Rock Spring — results should show real bookable slots, not the fallback state.
+- `integration/next` reset to `main`@`19f9e06` and pushed (fast-forward, no force needed — `2941e62` is an ancestor of the merge commit).
+- Board: created "Bundle #128: tee-time availability epic — TeeItUp + Chronogolf (11 NY-area courses live)" card → Status Shipped, PR linked, full checklist + owner-test note (Notion page `3991c525-92e0-8152-ab1c-ffd8e84e428d`).
+- `backlog.json`: `teetime-s4a-capability-store-teeitup` and `teetime-s4c-chronogolf-probe-quick18` → `shipped-to-main`, `shipped_to_main_commit: "19f9e06"`, `shipped_pr: ".../pull/128"`, `testflight_version` noted as "no new build — backend-only".
+- Rails reset complete. Next bundle starts clean off `main`@`19f9e06`.
+
+## Cycle 66 (2026-07-10) — s3b-review-nits (harden caller before keys)
+- #128 shipped to main (19f9e06), 11 courses live in prod. Fresh integration/next @ 275848b.
+- s3b-review-nits (p2): 5 Fable-security-flagged fixes on the (inert) caller path, land BEFORE Twilio keys make it live. Backend-only. New bundle. No ship/no ping.
+
+## AWAITING (s3b): builder implementing 5 fixes on integration/next. Fixes:
+1. media_bridge.py:187 opt_out `bool(v)` → `v is True or str(v).lower()=='true'` (+test 'false' string does NOT opt out).
+2. telephony.py:109 split `except (TimeoutError, CancelledError)` → TimeoutError=cleanup+return partial; CancelledError=cleanup+RE-RAISE (+tests both).
+3. call_registry.py:67 mint `get_event_loop()` → `get_running_loop()`.
+4. Token via TwiML <Parameter name="call_token">: build_stream_twiml drops token from URL (wss://host/api/voice-booking/media-stream) + adds <Parameter> child (XML-escape value); WS route drops {call_token} path param, pre-reads Twilio connected/start frames, extracts token from start.customParameters + streamSid, THEN registry.consume; invalid→close 1008 (no frames relayed). run_media_bridge takes the pre-read start (process streamSid+greeting). Preserve single-use+120s TTL exactly. Update test_voice_booking_ws.py to send token via customParameters. Add X-Twilio-Signature note comment.
+5. pyproject.toml websockets>=12.0 → >=13.0; uv lock (NOT delete-regen); confirm resolves + uv sync works.
+## s3b-review-nits LANDED on integration/next (2026-07-10, cycle 66) — reviewer CLEAN + QA PASS
+- Builder @ 5af0315 (progress d522d93): 5 fixes on the inert, owner-gated AI-caller path.
+  1. media_bridge.py _coerce_opt_out — `bool('false')` truthiness bug fixed (`v is True or str(v).strip().lower()=='true'`); stringified 'false' no longer suppresses a real pro-shop number. Test: test_outcome_from_tool_args_opt_out_coerces_stringified_bools.
+  2. telephony.py run_call — split except: TimeoutError→partial "call timed out"; CancelledError→_discard_and_hangup then re-raise (never swallowed). Test: test_run_call_cancellation_reraises_and_cleans_up.
+  3. call_registry.py mint — get_event_loop()→get_running_loop() (5 tests → async, assertions unchanged).
+  4. Token via TwiML <Parameter name="call_token"> (quoteattr-escaped) → read from start.customParameters; wss URL now tokenless (log-hygiene). WS route pre-reads start frame (bounded 10 frames), consumes token (single-use+120s TTL unchanged), invalid→1008 no frames relayed. run_media_bridge gained initial_start (start processed once, greet-first/disclosure-verbatim preserved). Tests rewritten to customParameters + test_missing_call_token_in_start_refused + test_build_stream_twiml_escapes_token_value.
+  5. pyproject websockets>=13.0 (additional_headers); uv lock no-op (resolves 16), uv sync + import ok.
+- Reviewer (a4aa1365, adversarial security lens): CLEAN, no BLOCKING. Verdict: all 5 correct; token-via-Parameter preserves single-use+TTL exactly, rejects missing/invalid/replayed/expired with uniform 1008 relaying zero audio, no XML-injection (quoteattr), no new log-leak (token out of URL). Still INERT (gating ladder unchanged; WS closes 1008 flag-off before touching registry) + DIAL-SAFE (only normalize_phone(ctx.phone), refuses None). Tests not weakened. One NON-BLOCKING nit: pre-start read bounded by frame-count(10) not wall-clock — recorded as follow-up TODO for when keys go live (wrap receive_json in asyncio.wait_for), alongside X-Twilio-Signature. Reviewer: "ship-safe as an inert hardening slice."
+- QA (add3134a): PASS on d522d93 — ruff "All checks passed!"; 86/86 touched voice_booking/telephony/media_bridge tests; 1884/1884 broader non-DB; uv sync clean + app.main import ok; frontend untouched (N/A). No DB container started (integration DB tests → CI).
+- Classification: SILENT (backend-only hardening on inert path — not TestFlight-noticeable). Bundle so far = silent-only → NO owner ping, NO ship. Rides the next noticeable change.
+- backlog.json: s3b-review-nits → shipped. Fresh bundle PR opened to main (silent bundle). If I die: reconcile origin/integration/next @ d522d93 — reviewer+QA both green, do NOT rebuild.
+
+## Cycle 67 (2026-07-10) — coverage expansion (owner default: more engines, no redirect)
+- Cycle 66 (s3b-review-nits) shipped-ready on #129. Owner fired loop without redirecting the direction fork → default = more coverage.
+- AWAITING: eng-lead teetime-s4c2-coverage-expansion — probe+seed more NY courses on foreUP/TeeItUp/Chronogolf (+ Teesnap if NY exists), real fixtures only. Grow past 11 courses. Land on #129.
+
+## Cycle 67 (2026-07-10) — coverage expansion: eng-lead recon + builder dispatch
+Engines RE-VERIFIED live today (all 3 intact):
+- TeeItUp golf-nyc facility 5044 (Douglaston) → 78 real teetimes for +3. Endpoint OK.
+- Chronogolf rock-spring (club 10038 / course 11517 / aff 40974) → real slots. Endpoint OK.
+- foreUP 18 Mile Creek (schedule 4467, api_key=no_limits) → real times. Endpoint OK.
+Recon findings (de-risk the builder):
+- DISCOVERY LEVER: `GET https://phx-api-be-east-1b.kenna.io/facilities` with header `x-be-alias:<tenant>` enumerates a WHOLE TeeItUp tenant's facilities at once (id,name,address). Highest-yield vector once a tenant alias is known.
+- golf-nyc tenant EXHAUSTED: has 9 facilities; 8 real courses already seeded, 9th (id 16016) is "Flushing Meadows Pitch and Putt" (marginal, likely skip).
+- essex-group tenant (Essex County NJ, plan §hyp) = DEAD END for verified-real: 3 facilities (Francis Byrne 5962, Hendricks Field 5965, Weequahic 5966) all return HTTP 200 but ZERO teetimes across every date +1..+10 → resident-gated, no public availability. Do NOT seed (fails "verified returns real availability"). Honest negative result.
+- CAUTION: tests/test_tee_time_capability_store_generalized.py hard-asserts exact counts (8 teeitup, 3 chronogolf) + exact name sets against the SHIPPED seed. Adding rows REQUIRES re-scoping those assertions to the new verified counts/names (same as S4c re-scoped S4a) — NOT weakening (keep platform_ids-present, probe_status=verified, real-coords checks).
+- SHIP path: seeded rows must go in checked-in `backend/data/booking_capabilities_seed.json` (validated file is gitignored/script-only).
+
+## AWAITING (cycle 67): builder on teetime-s4c2-coverage-expansion @ integration/next.
+Task: web-research + live-probe NY-metro public courses on foreUP / Chronogolf / other TeeItUp tenants; seed only rows verified to return REAL availability (non-empty on >=1 probed date); capture >=1 new fixture/engine; update exact-count test assertions to new verified set; skip Teesnap unless a live NY teesnap.net course found. Commit+push after build.
+Outcomes: SHIP-clean → reviewer+QA; BLOCKING → re-dispatch builder. Reconcile from origin/integration/next on resume.
+
+## teetime-s4c2-coverage-expansion LANDED (2026-07-10, cycle 67) — builder @ a0fb85b, AWAITING reviewer+QA
+Live-probed candidate NY-metro courses on the 3 known-good engines; seeded ONLY rows that
+returned real, non-empty availability on >=1 date. 17 new courses, 11 -> 28 total.
+- **TeeItUp (+12, 8->20):** discovered 2 new tenants via `GET /facilities` enumeration
+  (highest-yield lever): `westchester-county` (6 facilities enumerated, 5 seeded — Dunwoodie,
+  Maple Moor, Mohansic, Saxon Woods, Sprain Lake; Hudson Hills id 3252 REJECTED: HTTP 200,
+  zero teetimes every probed date, resident-gated) and `somerset-group-v2` (6 enumerated, 5
+  seeded — Green Knoll, Neshanic Valley, Quail Brook, Spooky Brook, Warren Brook; Neshanic
+  Valley Academy Course id 10158 skipped as marginal/no phone). Plus 2 single-course tenants:
+  `middle-island-country-club` (Long Island NY, real availability up to 79 slots/day) and
+  `whitneyfarmsgolfcourse` (Monroe CT, Fairfield County — part of the NY-Newark-Jersey City
+  CSA, flagged honestly as CT in the seed comment).
+- **Chronogolf (+1, 3->4):** Putnam County Golf Course (Mahopac NY) — verified NOT
+  resident-gated (checked every bookable slot's `restrictions` field, zero carried a
+  residency restriction). REJECTED Skyway Golf Course (Jersey City) as an honest negative:
+  `out_of_capacity` was `false` (looks bookable) on 13 slots but EVERY one carried a
+  "Non-Resident" restriction string — real-looking availability that a general NY-metro
+  golfer using the app could never actually book. This is the Chronogolf-schema version of
+  the essex-group dead end; same rejection standard applied.
+- **foreUP (+4, new to the generalized seed file, foreup_ny_seed.json untouched):** the 3
+  Essex County NJ courses that were the essex-group TeeItUp dead end (Weequahic, Francis A.
+  Byrne, Hendricks Field) turned out to have migrated to a REAL, non-gated foreUP booking
+  system — same physical courses, honestly re-verified on the engine that actually works
+  (a genuinely useful correction, not a re-litigation of the earlier honest-negative call,
+  which was correct for the TeeItUp channel at the time). Plus Rockland Lake State Park
+  Championship Golf Course (Congers NY).
+- **Data-quality catch:** cross-checked every new row's lat/lng against an independent
+  geocoding source rather than trusting the engine's facility record blindly — caught
+  TeeItUp's somerset-group-v2 data giving Quail Brook and Spooky Brook (two different,
+  non-adjacent addresses) an IDENTICAL placeholder lat/lng; corrected both to real,
+  independently-geocoded coordinates before seeding.
+- Tests: `test_tee_time_capability_store_generalized.py` re-scoped (not weakened, same
+  pattern as S4c on S4a) — counts/name-sets updated to new totals (teeitup 8->20, chronogolf
+  3->4, +new "4 generalized foreup rows" check); every per-row quality check (platform_ids
+  present, probe_status=="verified", real coords, booking_url shape) unchanged/strengthened;
+  lat/lng sanity bounds widened from an NYC-only box to admit real Long Island / Fairfield
+  County CT extents (a legitimate widen, not a loosen — still rejects placeholder/garbage
+  coords).
+- Fixtures captured (raw, live, verbatim): `teeitup_westchestercounty_times.json`,
+  `teeitup_somersetgroup_times.json`, `chronogolf_putnamcounty_times.json`,
+  `foreup_rocklandlake_times.json`.
+- Teesnap: not attempted (no live NY teesnap.net course trivially found in this pass, and
+  budget was fully used on the 3 known-good engines' expansion — consistent with earlier
+  cycles skipping it honestly rather than forcing it).
+- Gates (local, no Postgres): `ruff check .` clean; targeted tee-time suites 109 passed;
+  full tee-time suite 272 passed/12 pg-skip; full backend suite **1885 passed, 83 skipped**
+  (same pg-gated integration tests, auto-skip). Frontend untouched (confirmed zero diff).
+  JSON valid (`python3 -m json.tool` clean).
+- **Classified NOTICEABLE**: 17 more NY-metro courses now show real bookable tee times
+  instead of the S0 fallback — testable on TestFlight once merged (backend-only, no new
+  frontend build needed, same pattern as bundle #128).
+
+## AWAITING (S4c2): reviewer + QA on a0fb85b. Focus: honest-empty/resident-gating judgment
+calls (Hudson Hills, Neshanic Valley Academy, Skyway rejection reasoning), no wrong-course
+lat/lng (esp. the Quail Brook/Spooky Brook correction — verify the corrected coords are
+actually right, not just different), foreUP rows correctly added to the generalized seed
+file (not foreup_ny_seed.json), essex-group TeeItUp tenant still absent/never seeded, S0/S1/
+S4a/S4c byte-identical elsewhere, no live network calls in tests (fixture/MockTransport-only).
+On results → fold BLOCKING (re-dispatch builder), else update backlog + bundle PR checklist.
+If I die: reconcile origin/integration/next @ a0fb85b, do NOT rebuild.
+
+## AWAITING (cycle 67): reviewer + QA on a0fb85b (seed=6650456 head).
+Builder landed 17 new verified-real courses (11→28): teeitup 20, chronogolf 4, foreup 4.
+Eng-lead independent live spot-checks PASSED (no fabrication, correct mapping):
+Dunwoodie TeeItUp westchester-county 5814→7 times; Green Knoll somerset-group-v2 7092 name-match; Putnam Chronogolf 19798/28120/149215→84 slots course_id-match no-resident; Rockland Lake foreUP 2442→42 slots exact course_name match.
+Outcomes: both green → update PR #129 checklist (NOTICEABLE addition) + backlog shipped + DONE. BLOCKING → re-dispatch builder. SILENT bundle — no ship/ping this cycle.
+
+## teetime-s4c2-coverage-expansion LANDED on integration/next (cycle 67, 2026-07-10) — reviewer CLEAN + QA PASS
+- Builder @ a0fb85b: coverage 11→28 live-verified NY-metro courses. teeitup 8→20, chronogolf 3→4, foreup +4 (generalized seed). 4 real fixtures. Count assertions re-scoped (not weakened).
+- Eng-lead independent live spot-checks PASSED: Dunwoodie(teeitup wc 5814→7), Green Knoll(somerset 7092 name-match), Putnam(chronogolf 19798/28120/149215→84, no-resident), Rockland Lake(foreup 2442→42, exact course_name). No fabrication, no wrong-course.
+- Reviewer (a3dc49a2, fresh adversarial, independent live-probe of a DIFFERENT sample): CLEAN. All 12 new teeitup + 4 foreup + Putnam chronogolf return real slots; foreUP course_name field authoritatively matches seed names; reverse-geocode confirms correct town/county/state; Quail/Spooky now distinct correct coords (~2.6mi apart); tests re-scoped not weakened (lng bound -73.0→-72.5 justified by real Middle Island -72.94); no app code-path change; JSON valid. Non-blocking: 4 fixtures are inert provenance snapshots (fine).
+- QA (ad0962b9): PASS on f1c13c3 — ruff clean; pytest 1885 passed / 83 pg-skip / 0 fail (tee-time suites 166/166); seed JSON valid 28 rows; frontend untouched (frontend/E2E gates N/A). No DB container (CI runs pg tests).
+- Honest negatives (NOT seeded): Hudson Hills resident-gated, Skyway all-Non-Resident, Monmouth passholder-gated, essex-group teeitup 0-avail, wrong-state collisions. Teesnap SKIPPED (no live NY teesnap.net trivially found).
+- Classification: NOTICEABLE (more courses show real tee times). Bundle #129 now has ≥1 noticeable change. PR #129 title+body updated (checklist). backlog.json: teetime-s4c2-coverage-expansion → shipped (landed_commit a0fb85b).
+- Per this cycle's directive: SILENT — no ship, no owner ping. Bundle #129 rides to the owner on the NEXT ship decision (or when the loop decides to request approval for the accumulated noticeable bundle). Do NOT auto-ship.
+
+## Cycle 68 (2026-07-10) — S4e availability-by-call (complete the ladder)
+- #129 at 28 courses, strict-green, awaiting owner ship. Owner fired loop w/o redirect → build S4e (highest-value substantive remaining; NOT more coverage-grinding).
+- AWAITING: eng-lead S4e — availability-ask dialog mode + user-initiated call CTA + availability_by_call cache + result flow-back + router rung-3 wiring + fix S3 window-from-slot.time bug. Ships DARK (inert until Twilio keys). Land on #129.
+
+## AWAITING (cycle 68): builder on S4e availability-by-call — dispatched @ 1841c8a
+Building on integration/next. Deliverables: (1) availability-ask dialog MODE in dialog.py
+(+ simulator personas) capturing slots_spoken[]; (2) fix S3 window-from-slot.time bug (use
+query window) + test; (3) availability_by_call cache record (same-day TTL); (4) router rung-3
+wiring in router_provider._slots_for_course (route="call" CTA affordance + cache-hit →
+provider="voice_call" real slots w/ checked_via/checked_at provenance); (5) POST
+/api/tee-times/availability-call enqueue + status/poll endpoint, honestly "not_enabled" when
+gated; (6) frontend CTA/async "Calling…" states in tee-time/page.tsx; (7) TeeTimeSlot additive
+fields (status live|pending, checked_via/checked_at). SHIPS DARK — nothing dials without
+VOICE_BOOKING_ENABLED + Twilio keys + owner allowlist. On builder return → commit+push already
+done by builder; then reviewer (SECURITY lens) + QA + designer. BLOCKING → re-dispatch builder.
+If I die: reconcile origin/integration/next, read builder's actual commits, do NOT rebuild.
+
+## AWAITING (cycle 68): reviewer+QA+designer on S4e @ 1ed2b71
+Builder landed S4e (availability-by-call, ships dark). 17 files, 51 new tests, builder gates
+green (1936 backend / 1922 vitest / 274 voice-smoke). Reviewer=SECURITY lens (still-inert/
+dial-safe, no-fabricated-times, window-fix, not-prompt-steerable, cache TTL, ladder byte-
+identical, tests not weakened). QA=all gates SUCCESS on 1ed2b71. Designer=CTA/async states
+calm+honest. On all-green → update PR #129 checklist + backlog shipped + progress; commit+push;
+SILENT (no ship/ping). BLOCKING → re-dispatch builder. If I die: reconcile origin/integration/
+next @ 1ed2b71, read children's verdicts, do NOT rebuild.
+
+## teetime-s4e-availability-by-call LANDED on integration/next (cycle 68, 2026-07-10) — reviewer CLEAN + QA PASS + designer no-blocking. SHIPS DARK.
+- Builder @ 1ed2b71: availability-ask dialog MODE (dialog.py + 2 personas, book mode byte-identical) capturing CallOutcome.slots_spoken[]; availability_by_call same-day(12h) TTL cache (availability_call_cache.py, injectable); router rung-3 wiring (cache-hit→voice_call real slots w/ checked_via/checked_at; no_availability→omit; voicemail/no_answer→honest empty); POST/GET /api/tee-times/availability-call (not_enabled when gated, before any job); TeeTimeSlot additive status/checked_via/checked_at; frontend CallAvailabilityCTA. 51 new backend tests. 17 files.
+- S3 window bug: already fixed in #124 (verified); new endpoint builds window from QUERY (date/timeWindowStart/End), never slot.time — structurally can't regress (TestWindowComesOnlyFromTheRequestQuery).
+- Eng-lead designer-polish @ 2830655: 44px touch targets on call-CTA + spoken-slot rows (was 36/no-min vs app's 44 convention); dim(0.45)+tel: fallback on disabled/missing-askWindow tap (was silent no-op); label fontSize 12→12.5 align. Frontend lint/tsc clean, vitest teetime 222 pass.
+- Reviewer (SECURITY, fresh, ae86743): CLEAN — no HIGH/MEDIUM. No unauthorized dial path (get_live_transport gate + empty-by-default VOICE_BOOKING_VERIFIED_LINES allowlist refuses before job creation; hostile phase="+1999…" test proves no bypass). No request value→dialed number unchecked. No injection (json.dumps key, fixed cache path, no SQL/eval/subprocess). Not prompt-steerable (dialog parses only into SpokenSlot; transport dials ctx.phone exclusively). No fabricated data/XSS (React-escaped; spoken slots only when outcome==availability). Cache read-only on search; kill-switch/cap-degrade never consult it. Depends(current_user_id) appropriate (blast radius contained by allowlist+telephony gating).
+- QA (a122f93): local gates all GREEN on 1ed2b71 — ruff clean; 164/164 targeted; 1936 broad non-DB (0 fail); frontend lint/tsc clean; voice-smoke 274/274; vitest 1922 (teetime 222); build ✓. Matches CI PR#129 Frontend+Backend gates SUCCESS. E2E-preview BLOCKED (no per-PR Vercel preview + no CLERK_SECRET_KEY test cred) — PRE-EXISTING infra gap (todo.md item D + advisory-e2e continue-on-error), NOT an S4e defect; handed to eng-lead/release-manager for infra, not builder.
+- Designer (ac896be): polish-needed, NO blocking Northstar violation, NO fabricated data. Honesty invariant holds (not_enabled/network-fail both degrade to real tel: link; slotsSpoken 1:1 backend; price null-safe; never stuck spinner). Polish items (44px targets + silent no-op) folded in by eng-lead above.
+- SHIPS DARK confirmed: nothing dials without VOICE_BOOKING_ENABLED + Twilio creds + non-empty verified-lines allowlist. Search never triggers a call. CTA visible on TestFlight (degrades to tel: today).
+- Classification: NOTICEABLE affordance (new call-CTA on call-route results) but functionally inert. Bundle #129 already had a noticeable change (s4c2 28 courses); S4e rides along. backlog.json: teetime-s4e-availability-by-call → shipped (landed_commit 2830655). PR #129 checklist updated.
+- Per directive: SILENT this cycle — NO ship, NO owner ping. Bundle #129 accumulates; rides to owner on the next ship decision. head SHA: 2830655.
+
+## Cycle 69 (2026-07-10) — pivot off tee-time; queue genuinely drained
+- Tee-time ladder COMPLETE (S4a-S4e on #129, 28 courses + AI-call rung dark). Pivoted off tee-time per prior commitment.
+- Investigated non-tee ready work: NO clean high-value build item. voice-language-onboarding=p7/doesn't-help-owner; voice-vad/cascaded-STT=measurement-gated (need owner usage); caddie features mostly shipped.
+- FOUND: caddie-hole-strategy-guides is on main but its LIVE research path was never smoke-tested (silent-failure risk per 'test-critical-flows' memory). Corrected stale backlog status. Verifying it needs owner OK (prod API spend). HOLDING for owner: ship #129 / keys / redirect / OK-the-smoke-test.

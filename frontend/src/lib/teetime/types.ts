@@ -87,6 +87,16 @@ export interface TeeTimeSlot {
    *  `route === "call"` entries. Undefined when unknown; never render a
    *  tappable-looking call button without a real number behind it. */
   phone?: string;
+  /** S4e (specs/teetime-availability-everywhere-plan.md §6): "live" (every
+   *  slot today, default) or "pending" (a rung-2b in-flight scrape —
+   *  reserved for a later slice). Never render "pending" as a real time. */
+  status?: "live" | "pending";
+  /** Provenance for a phone-confirmed slot (provider === "voice_call"): which
+   *  channel verified this. Undefined for every other provider. */
+  checkedVia?: string;
+  /** ISO-8601 timestamp of the call/probe that confirmed this slot — powers
+   *  copy like "confirmed by phone at 2:14 PM". Undefined when unknown. */
+  checkedAt?: string;
 }
 
 // ─── Booking ──────────────────────────────────────────────────────────────────
@@ -157,4 +167,42 @@ export interface RehearsalCallResponse {
   transcript: RehearsalCallTurn[];
   outcome?: RehearsalCallOutcome | null;
   result?: BookingResult | null;
+}
+
+// ─── Availability-by-call — S4e rung 3 ─────────────────────────────────────────
+// Mirrors backend AvailabilityCallStatusOut (backend/app/routes/tee_times.py).
+// User-initiated ONLY (a search never triggers this) — the "No online times —
+// we can call the pro shop" CTA. Ships dark: with no Twilio keys the endpoint
+// always returns status="not_enabled" and nothing is dialed.
+
+export interface AvailabilityCallRequest {
+  courseId: string;
+  courseName: string;
+  phone?: string;
+  date: string;              // YYYY-MM-DD
+  timeWindowStart: string;   // "HH:MM" 24h — the golfer's REQUESTED window
+  timeWindowEnd: string;
+  partySize: number;
+  golferName?: string;
+  callbackNumber?: string;
+}
+
+export interface AvailabilityCallSpokenSlot {
+  time: string;
+  priceUsd: number | null;
+}
+
+export interface AvailabilityCallStatus {
+  id: string;
+  /** "pending" — the call is in flight; "completed" — resolved (see
+   *  outcome/slotsSpoken); "not_enabled" — live calling is disabled/
+   *  unconfigured, or the compliance gate refused the number. Nothing was
+   *  dialed in the "not_enabled" case — degrade to the honest tel: link. */
+  status: "pending" | "completed" | "not_enabled";
+  reason?: string | null;
+  /** CallOutcome.result once completed: "availability" | "no_availability" |
+   *  "voicemail" | "no_answer" | "unclear". */
+  outcome?: string | null;
+  slotsSpoken: AvailabilityCallSpokenSlot[];
+  calledAt?: string | null;
 }

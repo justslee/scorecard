@@ -77,24 +77,34 @@ def _app() -> FastAPI:
     return app
 
 
+_MEDIA_STREAM_PATH = "/api/voice-booking/media-stream"
+
+
+def _start_frame(stream_sid: str, call_token: str | None) -> dict:
+    start: dict = {"streamSid": stream_sid}
+    if call_token is not None:
+        start["customParameters"] = {"call_token": call_token}
+    return {"event": "start", "start": start}
+
+
 def test_bad_token_refused(monkeypatch):
     monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
     monkeypatch.setattr(ws_route_mod, "_openai_ws_factory", _exploding_factory)
     client = TestClient(_app())
-    with client.websocket_connect(
-        "/api/voice-booking/media-stream/totally-random-guessed-token"
-    ) as session:
+    with client.websocket_connect(_MEDIA_STREAM_PATH) as session:
+        session.send_json({"event": "connected"})
+        session.send_json(_start_frame("MZ1", "totally-random-guessed-token"))
         msg = session.receive()
         assert msg["type"] == "websocket.close"
         assert msg["code"] == 1008
 
 
-def test_flag_off_refused(monkeypatch):
+async def test_flag_off_refused(monkeypatch):
     monkeypatch.delenv("VOICE_BOOKING_ENABLED", raising=False)
     monkeypatch.setattr(ws_route_mod, "_openai_ws_factory", _exploding_factory)
     token, pending = call_registry.mint(_ctx())
     client = TestClient(_app())
-    with client.websocket_connect(f"/api/voice-booking/media-stream/{token}") as session:
+    with client.websocket_connect(_MEDIA_STREAM_PATH) as session:
         msg = session.receive()
         assert msg["type"] == "websocket.close"
         assert msg["code"] == 1008
@@ -102,7 +112,19 @@ def test_flag_off_refused(monkeypatch):
     assert call_registry.consume(token) is pending
 
 
-def test_token_single_use_via_route(monkeypatch):
+def test_missing_call_token_in_start_refused(monkeypatch):
+    monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
+    monkeypatch.setattr(ws_route_mod, "_openai_ws_factory", _exploding_factory)
+    client = TestClient(_app())
+    with client.websocket_connect(_MEDIA_STREAM_PATH) as session:
+        session.send_json({"event": "connected"})
+        session.send_json(_start_frame("MZ1", call_token=None))  # no customParameters
+        msg = session.receive()
+        assert msg["type"] == "websocket.close"
+        assert msg["code"] == 1008
+
+
+async def test_token_single_use_via_route(monkeypatch):
     monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
     token, pending = call_registry.mint(_ctx())
     fake_openai_ws = FakeOpenAIWS([])
@@ -111,16 +133,18 @@ def test_token_single_use_via_route(monkeypatch):
     )
     client = TestClient(_app())
 
-    with client.websocket_connect(f"/api/voice-booking/media-stream/{token}") as session:
+    with client.websocket_connect(_MEDIA_STREAM_PATH) as session:
         session.send_json({"event": "connected"})
-        session.send_json({"event": "start", "start": {"streamSid": "MZ1"}})
+        session.send_json(_start_frame("MZ1", token))
         session.send_json({"event": "stop"})
 
     assert pending.future.done()
 
     # Same token again — already consumed → refused, no bridge entered.
     monkeypatch.setattr(ws_route_mod, "_openai_ws_factory", _exploding_factory)
-    with client.websocket_connect(f"/api/voice-booking/media-stream/{token}") as session2:
+    with client.websocket_connect(_MEDIA_STREAM_PATH) as session2:
+        session2.send_json({"event": "connected"})
+        session2.send_json(_start_frame("MZ1", token))
         msg = session2.receive()
         assert msg["type"] == "websocket.close"
         assert msg["code"] == 1008

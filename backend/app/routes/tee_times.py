@@ -33,10 +33,11 @@ TODO(Phase 3): import GolfNowProvider, wire when GOLFNOW_API_KEY is set.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -46,6 +47,13 @@ from sqlalchemy import select
 from app.db.engine import async_session
 from app.db.models import TeeTimeBooking as TeeTimeBookingORM
 from app.services.clerk_auth import current_user_id, require_owner
+from app.services.tee_times.availability_call_cache import (
+    AvailabilityCallCacheStore,
+    AvailabilityCallRecord,
+    FileAvailabilityCallCacheStore,
+    SpokenSlotRecord,
+    availability_cache_key,
+)
 from app.services.tee_times.foreup import ForeUpProvider
 from app.services.tee_times.router_provider import RoutedTeeTimeProvider
 from app.services.tee_times.base import (
@@ -149,6 +157,13 @@ class TeeTimeSlotOut(BaseModel):
     # The pro shop's phone number, when known — powers a real `tel:` link on
     # "call"-route entries. See base.TeeTimeSlot.
     phone: str | None = None
+    # S4e (specs/teetime-availability-everywhere-plan.md §6): "live" (default,
+    # unchanged) or "pending" (rung-2b in-flight scrape — reserved, S4d).
+    status: Literal["live", "pending"] = "live"
+    # Provenance for a phone-confirmed slot (provider=="voice_call"): which
+    # channel verified this and when. See base.TeeTimeSlot.
+    checkedVia: str | None = None
+    checkedAt: str | None = None
 
     @classmethod
     def from_svc(cls, s: SvcSlot) -> "TeeTimeSlotOut":
@@ -171,6 +186,9 @@ class TeeTimeSlotOut(BaseModel):
             estimated=s.estimated,
             route=s.route,
             phone=s.phone,
+            status=s.status,
+            checkedVia=s.checked_via,
+            checkedAt=s.checked_at,
         )
 
 
@@ -336,6 +354,9 @@ async def book_tee_time(req: BookRequest, owner_id: str = Depends(current_user_i
             estimated=bool(slot_data.get("estimated", False)),
             route=slot_data.get("route"),
             phone=slot_data.get("phone"),
+            status=slot_data.get("status", "live"),
+            checked_via=slot_data.get("checkedVia"),
+            checked_at=slot_data.get("checkedAt"),
         )
         details = SvcBookingDetails(
             name=details_data["name"],
@@ -671,4 +692,204 @@ async def rehearsal_call(owner_id: str = Depends(require_owner)) -> RehearsalCal
             message=result.message,
             bookingUrl=result.booking_url,
         ),
+    )
+
+
+# ─── Availability-by-call — S4e rung 3 (specs/teetime-availability-everywhere ──
+# -plan.md §5, §6): the user-initiated "call the pro shop and ASK what they
+# have" trigger. NEVER placed as a side effect of search — only a tap on the
+# "No online times — we can call the pro shop" CTA reaches this endpoint.
+#
+# POST /api/tee-times/availability-call — enqueue an ask-mode call.
+# GET  /api/tee-times/availability-call/{id} — poll its status.
+#
+# DIAL-SAFETY: exactly the rehearsal-call posture. The transport comes from
+# `telephony.get_live_transport()` (VOICE_BOOKING_ENABLED + full Twilio
+# credentials + VOICE_BOOKING_PUBLIC_HOST) — unset in CI/default, so this
+# raises and the endpoint returns an honest "not_enabled" status with NOTHING
+# enqueued and NOTHING dialed. Even once the transport is live, the number is
+# still gated by `check_call_allowed` against the owner-verified-lines
+# allowlist (VOICE_BOOKING_VERIFIED_LINES — empty by default, so every course
+# number is refused until the owner explicitly verifies it). A request value
+# can influence WHICH course's known number is dialed (that's the point — the
+# golfer picked a result), but it can never bypass the allowlist: an
+# unverified number is refused before any transport call, same as book().
+#
+# The call itself is awaited inside a background task created here (never
+# inside the request handler) so POST returns immediately with a job id +
+# status="pending"; the frontend polls GET until "completed" (or, in the
+# same request, "not_enabled" when dark/refused).
+
+_availability_jobs: dict[str, dict[str, Any]] = {}
+_availability_cache_store: AvailabilityCallCacheStore = FileAvailabilityCallCacheStore()
+
+# Injectable for tests ONLY (a SimulatedCallTransport) — same pattern as
+# `_rehearsal_transport_factory`. None means the real, owner-gated
+# telephony.get_live_transport(). Production NEVER sets this.
+_availability_call_transport_factory: Callable[[], Any] | None = None
+# Injectable clock for the compliance calling-hours gate — None means "real
+# now()" (production). Tests set a fixed datetime for determinism.
+_availability_call_now_override: datetime | None = None
+
+
+def _voice_booking_verified_lines() -> set[str]:
+    """Owner-verified pro-shop landlines allowed to be dialed for an
+    availability-ask call (VOICE_BOOKING_VERIFIED_LINES, comma-separated).
+    Empty by default — every number is refused until the owner explicitly
+    verifies it (same posture as VoiceCallProvider's default allowlist)."""
+    raw = os.getenv("VOICE_BOOKING_VERIFIED_LINES", "")
+    return {n.strip() for n in raw.split(",") if n.strip()}
+
+
+class AvailabilityCallRequest(BaseModel):
+    courseId: str
+    courseName: str
+    phone: str | None = None
+    date: str                        # YYYY-MM-DD
+    timeWindowStart: str             # "HH:MM" 24h — the golfer's REQUESTED window
+    timeWindowEnd: str
+    partySize: int
+    # The golfer's own name/callback — spoken in the mandatory AI disclosure
+    # ("calling on behalf of <golferName>... reach them at <callbackNumber>").
+    # Falls back to the owner's configured identity when unset (matches the
+    # rehearsal-call demo posture) — but a real callback number is required
+    # by the compliance gate either way; no number -> refused before any dial.
+    golferName: str | None = None
+    callbackNumber: str | None = None
+
+
+class SpokenSlotOut(BaseModel):
+    time: str
+    priceUsd: float | None = None
+
+
+class AvailabilityCallStatusOut(BaseModel):
+    id: str
+    # "pending" — the call is in flight; "completed" — it resolved (see
+    # outcome/slotsSpoken); "not_enabled" — live calling is disabled/
+    # unconfigured, OR the compliance gate refused the number. Nothing was
+    # dialed in the "not_enabled" case.
+    status: Literal["pending", "completed", "not_enabled"]
+    reason: str | None = None
+    outcome: str | None = None       # CallOutcome.result once completed
+    slotsSpoken: list[SpokenSlotOut] = []
+    calledAt: str | None = None
+
+
+async def _run_availability_call(job_id: str, transport: Any, ctx: VoiceBookingContext) -> None:
+    """Runs the ask-mode call against `transport`, stores the terminal status
+    for GET to read, and writes the availability_by_call cache record (plan
+    §5) so the NEXT search renders these times without re-dialing. Never
+    raises out to the caller — a transport failure resolves to an honest
+    "unclear" status rather than leaving the job stuck at "pending" forever."""
+    try:
+        transcript, outcome = await transport.run_call(ctx)
+    except Exception:
+        log.exception("availability-call: transport raised for job=%s", job_id)
+        _availability_jobs[job_id] = {
+            "status": "completed", "outcome": "unclear",
+            "reason": "the call failed unexpectedly", "slotsSpoken": [], "calledAt": None,
+        }
+        return
+
+    for turn in transcript:                      # text-only log; no audio ever
+        log.info("availability-call [%s] %s", turn.speaker, turn.text)
+
+    called_at = datetime.now(timezone.utc).isoformat()
+    slots_out = [
+        {"time": s.time, "priceUsd": s.price_usd} for s in outcome.slots_spoken
+    ]
+    record = AvailabilityCallRecord(
+        course_id=ctx.course_id,
+        course_name=ctx.course_name,
+        date=ctx.date,
+        window_start=ctx.time_window_start,
+        window_end=ctx.time_window_end,
+        party_size=ctx.party_size,
+        outcome=outcome.result,          # type: ignore[arg-type]
+        slots_spoken=tuple(
+            SpokenSlotRecord(time=s.time, price_usd=s.price_usd) for s in outcome.slots_spoken
+        ),
+        transcript_ref=job_id,
+        called_at=called_at,
+    )
+    key = availability_cache_key(
+        ctx.course_id, ctx.date, ctx.time_window_start, ctx.time_window_end, ctx.party_size,
+    )
+    try:
+        _availability_cache_store.set(key, record)
+    except Exception:
+        log.exception("availability-call: cache write failed for job=%s", job_id)
+
+    _availability_jobs[job_id] = {
+        "status": "completed", "outcome": outcome.result,
+        "slotsSpoken": slots_out, "calledAt": called_at,
+    }
+
+
+@router.post("/availability-call", response_model=AvailabilityCallStatusOut)
+async def request_availability_call(
+    req: AvailabilityCallRequest, _owner_id: str = Depends(current_user_id)
+) -> AvailabilityCallStatusOut:
+    """User-initiated ONLY — a search never reaches this endpoint. Ships dark:
+    with no Twilio keys / VOICE_BOOKING_ENABLED (the CI/default state) this
+    returns status="not_enabled" immediately and enqueues nothing."""
+    factory = _availability_call_transport_factory or telephony.get_live_transport
+    try:
+        transport = factory()
+    except (RuntimeError, NotImplementedError) as exc:
+        return AvailabilityCallStatusOut(id="", status="not_enabled", reason=str(exc))
+
+    ctx = VoiceBookingContext(
+        course_id=req.courseId,
+        course_name=req.courseName,
+        phone=req.phone,
+        golfer_name=req.golferName or os.getenv("VOICE_BOOKING_OWNER_NAME") or "the golfer",
+        callback_number=(
+            req.callbackNumber or os.getenv("VOICE_BOOKING_OWNER_NUMBER") or ""
+        ),
+        date=req.date,
+        time_window_start=req.timeWindowStart,
+        time_window_end=req.timeWindowEnd,
+        party_size=req.partySize,
+        mode="availability",
+    )
+
+    # Reuse the SAME compliance gates as every other outbound call (dial-
+    # safety invariant): a request value (course phone, window, party) can
+    # never itself become a dial — the number must ALSO be on the
+    # owner-verified-lines allowlist (empty by default -> refused).
+    gate = check_call_allowed(
+        ctx,
+        verified_lines=_voice_booking_verified_lines(),
+        suppression=SuppressionList(),
+        now=_availability_call_now_override,
+    )
+    if not gate.allowed:
+        return AvailabilityCallStatusOut(id="", status="not_enabled", reason=gate.reason)
+
+    job_id = str(uuid.uuid4())
+    _availability_jobs[job_id] = {"status": "pending"}
+    # `_task` is a private bookkeeping key (never surfaced in the response
+    # model) — tests await it directly for determinism instead of polling.
+    _availability_jobs[job_id]["_task"] = asyncio.ensure_future(
+        _run_availability_call(job_id, transport, ctx)
+    )
+    return AvailabilityCallStatusOut(id=job_id, status="pending")
+
+
+@router.get("/availability-call/{job_id}", response_model=AvailabilityCallStatusOut)
+async def get_availability_call(
+    job_id: str, _owner_id: str = Depends(current_user_id)
+) -> AvailabilityCallStatusOut:
+    job = _availability_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown availability-call job")
+    return AvailabilityCallStatusOut(
+        id=job_id,
+        status=job["status"],
+        reason=job.get("reason"),
+        outcome=job.get("outcome"),
+        slotsSpoken=[SpokenSlotOut(**s) for s in job.get("slotsSpoken", [])],
+        calledAt=job.get("calledAt"),
     )

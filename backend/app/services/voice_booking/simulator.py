@@ -6,7 +6,7 @@ with NO telephony — this is how the agent's logic is validated (and demoed to
 the owner via POST /api/tee-times/book-by-call/simulate) without placing a
 single real call. Same dialog + IVR + outcome code the live bridge will use.
 
-Personas:
+Personas (mode="book"):
   friendly        — pleasant booker, offers a time in-window, confirms with a number
   busy_hold       — puts the agent on hold first, then books
   voicemail       — machine answers → hang up → needs_human
@@ -14,11 +14,15 @@ Personas:
   no_availability — fully booked → failed, nothing invented
   card_required   — insists on a card to hold → agent declines → needs_human
   no_answer       — nobody picks up → needs_human
+
+Availability-ASK personas (mode="availability", S4e):
+  lists_three_times  — reads off three times across turns, then signals done
+  no_availability_ask — fully booked → outcome "no_availability", zero slots
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from app.services.tee_times.base import BookingResult
 
@@ -132,6 +136,42 @@ PERSONAS = {
 PERSONA_NAMES = tuple(PERSONAS.keys())
 
 
+# ─── Availability-ASK personas (S4e, mode="availability") ──────────────────
+# Kept in a SEPARATE registry from the book-mode PERSONAS above: mixing them
+# would let an ask-mode script accidentally run through book-mode's dialog
+# state machine (or vice versa) via the shared `/book-by-call/simulate`
+# endpoint's persona validation. `SimulatedCallTransport` looks each persona
+# name up in whichever registry has it (mode-agnostic at the transport layer;
+# the DIALOG still branches on `ctx.mode`, which is what actually matters).
+
+def _lists_three_times() -> _ScriptedPersona:
+    return _ScriptedPersona(
+        opening_line="Good morning, pro shop, this is Jamie.",
+        script=[
+            "We've got 7:20 open, that's $75 a player.",
+            "Also 8:40, same price.",
+            "And 9:15 if you want it too.",
+            "That's everything we have in that window.",
+        ],
+    )
+
+
+def _no_availability_ask() -> _ScriptedPersona:
+    return _ScriptedPersona(
+        opening_line="Pro shop, this is Casey.",
+        script=[
+            "Sorry, we're fully booked that day, nothing available in that window.",
+        ],
+    )
+
+
+AVAILABILITY_PERSONAS = {
+    "lists_three_times": _lists_three_times,
+    "no_availability_ask": _no_availability_ask,
+}
+AVAILABILITY_PERSONA_NAMES = tuple(AVAILABILITY_PERSONAS.keys())
+
+
 def default_context() -> VoiceBookingContext:
     """A fictional but realistic booking ask (555 numbers are reserved)."""
     return VoiceBookingContext(
@@ -148,6 +188,12 @@ def default_context() -> VoiceBookingContext:
     )
 
 
+def availability_context(**overrides) -> VoiceBookingContext:
+    """`default_context()` with `mode="availability"` — the fictional
+    availability-ASK context used by AVAILABILITY_PERSONAS."""
+    return replace(default_context(), mode="availability", **overrides)
+
+
 @dataclass
 class SimulationResult:
     persona: str
@@ -156,16 +202,20 @@ class SimulationResult:
     booking_result: BookingResult
 
 
-def run_simulation(
-    persona_name: str, ctx: VoiceBookingContext | None = None
+def _run_persona(
+    persona_name: str,
+    factory,
+    registry_names: tuple[str, ...],
+    context: VoiceBookingContext,
 ) -> SimulationResult:
-    """Drive one full simulated call and return its transcript + outcomes."""
-    factory = PERSONAS.get(persona_name)
+    """Shared drive loop: feed the persona's opening + scripted replies into a
+    fresh BookingDialog(context) until it resolves. `context.mode` decides
+    which state-machine branch the dialog runs — the drive loop itself is
+    identical for book and availability modes."""
     if factory is None:
         raise ValueError(
-            f"unknown persona '{persona_name}' — expected one of {PERSONA_NAMES}"
+            f"unknown persona '{persona_name}' — expected one of {registry_names}"
         )
-    context = ctx or default_context()
     persona = factory()
     dialog = BookingDialog(context)
 
@@ -198,20 +248,55 @@ def run_simulation(
     )
 
 
+def run_simulation(
+    persona_name: str, ctx: VoiceBookingContext | None = None
+) -> SimulationResult:
+    """Drive one full simulated BOOK-mode call and return its transcript +
+    outcomes. Untouched behavior (S4e is additive)."""
+    return _run_persona(
+        persona_name, PERSONAS.get(persona_name), PERSONA_NAMES, ctx or default_context()
+    )
+
+
+def run_availability_simulation(
+    persona_name: str, ctx: VoiceBookingContext | None = None
+) -> SimulationResult:
+    """Drive one full simulated AVAILABILITY-ASK call (mode="availability",
+    S4e) against `AVAILABILITY_PERSONAS` and return its transcript + outcomes."""
+    return _run_persona(
+        persona_name,
+        AVAILABILITY_PERSONAS.get(persona_name),
+        AVAILABILITY_PERSONA_NAMES,
+        ctx or availability_context(),
+    )
+
+
 class SimulatedCallTransport:
     """The ONLY call transport that ships today — VoiceCallProvider.book()
-    runs the dialog against it. The live Twilio transport (telephony.py) is a
-    stub until the owner-gated launch."""
+    and the S4e availability-call trigger both run the dialog against it. The
+    live Twilio transport (telephony.py) is a stub until the owner-gated
+    launch.
+
+    `persona` is looked up in whichever registry has it (PERSONAS for
+    book-mode names, AVAILABILITY_PERSONAS for ask-mode names) — the
+    constructor accepts either, and `run_call` dispatches on `ctx.mode` so a
+    caller building this transport doesn't need to know which registry its
+    persona lives in."""
 
     def __init__(self, persona: str = "friendly") -> None:
-        if persona not in PERSONAS:
+        if persona not in PERSONAS and persona not in AVAILABILITY_PERSONAS:
             raise ValueError(
-                f"unknown persona '{persona}' — expected one of {PERSONA_NAMES}"
+                f"unknown persona '{persona}' — expected one of "
+                f"{PERSONA_NAMES + AVAILABILITY_PERSONA_NAMES}"
             )
         self.persona = persona
 
     async def run_call(
         self, ctx: VoiceBookingContext
     ) -> tuple[list[CallTurn], CallOutcome]:
-        sim = run_simulation(self.persona, ctx)
+        sim = (
+            run_availability_simulation(self.persona, ctx)
+            if ctx.mode == "availability"
+            else run_simulation(self.persona, ctx)
+        )
         return sim.transcript, sim.outcome

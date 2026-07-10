@@ -73,6 +73,16 @@ class TeeTimeSlot:
     # None when unknown; the UI must never render a tappable-looking button
     # without a real number behind it.
     phone: str | None = None
+    # S4e (specs/teetime-availability-everywhere-plan.md §6): "live" is every
+    # slot today (default, unchanged). "pending" is reserved for a rung-2b
+    # in-flight scrape ("checking live availability…") — `time=""`, no price,
+    # explicitly a STATE, never a slot. Additive/default-compatible.
+    status: Literal["live", "pending"] = "live"
+    # Provenance for a phone-confirmed slot (provider == "voice_call"): which
+    # channel verified this and when, so the UI can label "confirmed by phone
+    # at 2:14 PM". None for every other provider.
+    checked_via: str | None = None
+    checked_at: str | None = None   # ISO-8601 UTC of the call/probe
 
 
 @dataclass

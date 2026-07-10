@@ -152,6 +152,15 @@ def build_call_session_update(
     }
 
 
+def _coerce_opt_out(v: Any) -> bool:
+    """The model may emit `opt_out_requested` as an actual bool OR as a
+    stringified `"true"`/`"false"` — `bool("false")` is truthy in Python,
+    which would silently suppress a REAL pro-shop number. Only `True` or a
+    case-insensitive `"true"` string count as opt-out; everything else (incl.
+    `"false"`, `False`, `0`, `None`/absent) is False."""
+    return v is True or str(v).strip().lower() == "true"
+
+
 def outcome_from_tool_args(args: dict[str, Any]) -> CallOutcome:
     """Defensive mapping from the model's tool-call arguments to a CallOutcome.
     Unknown `result` values coerce to "unclear"; extraneous keys are dropped;
@@ -184,7 +193,7 @@ def outcome_from_tool_args(args: dict[str, Any]) -> CallOutcome:
         confirmation_number=_str("confirmation_number"),
         cost_usd=cost_usd,
         detail=_str("detail"),
-        opt_out_requested=bool(args.get("opt_out_requested", False)),
+        opt_out_requested=_coerce_opt_out(args.get("opt_out_requested", False)),
     )
 
 
@@ -203,14 +212,29 @@ class OpenAIWSLike(Protocol):
 # ─── The bridge loop ────────────────────────────────────────────────────────
 
 async def _forward_twilio_to_openai(
-    twilio_ws: TwilioWSLike, openai_ws: OpenAIWSLike, pending: PendingCall, state: dict[str, Any]
+    twilio_ws: TwilioWSLike,
+    openai_ws: OpenAIWSLike,
+    pending: PendingCall,
+    state: dict[str, Any],
+    *,
+    initial_start: dict[str, Any] | None = None,
 ) -> None:
     """Consume Twilio events until `stop`/disconnect; forward `media` frames to
     OpenAI untranscoded. Captures streamSid on `start` and — synchronously,
     BEFORE the loop continues to any `media` event — sends the forced,
     disclosure-first greeting (greets-first ordering is guaranteed by doing
-    this inline rather than racing a second task)."""
+    this inline rather than racing a second task).
+
+    `initial_start`, when provided, is a `start` event ALREADY consumed off
+    the socket by the caller (the route reads it first to extract the
+    call_token from `customParameters` before the bridge starts) — it is
+    processed exactly like an inline `start` event, BEFORE the receive loop,
+    and is never re-read from the socket."""
     from starlette.websockets import WebSocketDisconnect
+
+    if initial_start is not None:
+        state["stream_sid"] = initial_start.get("start", {}).get("streamSid")
+        await _send_forced_greeting(openai_ws, pending.ctx)
 
     while True:
         try:
@@ -336,10 +360,19 @@ async def _forward_openai_to_twilio(
 
 
 async def run_media_bridge(
-    twilio_ws: TwilioWSLike, openai_ws: OpenAIWSLike, pending: PendingCall
+    twilio_ws: TwilioWSLike,
+    openai_ws: OpenAIWSLike,
+    pending: PendingCall,
+    *,
+    initial_start: dict[str, Any] | None = None,
 ) -> None:
     """The full bridge for ONE call. Resolves `pending.future` exactly once,
-    guarded on `.done()` (the run_call timeout and this bridge can race)."""
+    guarded on `.done()` (the run_call timeout and this bridge can race).
+
+    `initial_start`: the `start` event the caller already consumed off the
+    socket (to extract the call_token from `customParameters` BEFORE the
+    token is validated / any audio is relayed) — passed through so it's
+    processed exactly once, first, instead of being re-read from the socket."""
     assert compliance.STORE_AUDIO is False  # posture check — never storing audio
 
     state: dict[str, Any] = {"stream_sid": None, "outcome": None}
@@ -349,7 +382,9 @@ async def run_media_bridge(
 
     tasks = [
         asyncio.ensure_future(
-            _forward_twilio_to_openai(twilio_ws, openai_ws, pending, state)
+            _forward_twilio_to_openai(
+                twilio_ws, openai_ws, pending, state, initial_start=initial_start
+            )
         ),
         asyncio.ensure_future(
             _forward_openai_to_twilio(twilio_ws, openai_ws, pending, state)

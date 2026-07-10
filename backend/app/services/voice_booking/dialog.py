@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from . import compliance, ivr
-from .types import CallOutcome, CallTurn, VoiceBookingContext
+from .types import CallOutcome, CallTurn, SpokenSlot, VoiceBookingContext
 
 # Safety valves: a call that hasn't resolved by then ends as `unclear`.
 MAX_TURNS = 20
@@ -65,6 +65,12 @@ _CONFIRMED_PHRASES = (
 _OPT_OUT_PHRASES = (
     "don't call", "do not call", "take us off", "remove this number",
     "stop calling",
+)
+# mode="availability" only: the shop signals it has read out everything it
+# has (distinct from _NO_AVAILABILITY_PHRASES, which means "nothing at all").
+_NO_MORE_PHRASES = (
+    "that's everything", "that's all we have", "that's all i have",
+    "nothing else", "that's it for", "that's the only one", "that's all",
 )
 
 _TIME_RE = re.compile(
@@ -151,6 +157,8 @@ class BookingDialog:
         self._ask_attempts = 0
         self._card_pushbacks = 0
         self._turns = 0
+        # mode="availability" only: every time offered so far, in order.
+        self._slots_spoken: list[SpokenSlot] = []
 
     @property
     def done(self) -> bool:
@@ -222,15 +230,22 @@ class BookingDialog:
         # A human answered. Disclosure FIRST (compliance), then the ask.
         self.state = "negotiating"
         ctx = self.ctx
-        opener = (
-            compliance.disclosure_line(ctx)
-            + f" Could I book a tee time at {ctx.course_name} on {ctx.date}, "
+        ask = (
+            f" Do you have any tee times at {ctx.course_name} on {ctx.date}, "
+            f"anytime between {_fmt_12h(ctx.time_window_start)} and "
+            f"{_fmt_12h(ctx.time_window_end)}, for a party of {ctx.party_size}?"
+            if ctx.mode == "availability"
+            else
+            f" Could I book a tee time at {ctx.course_name} on {ctx.date}, "
             f"anytime between {_fmt_12h(ctx.time_window_start)} and "
             f"{_fmt_12h(ctx.time_window_end)}, for a party of {ctx.party_size}?"
         )
+        opener = compliance.disclosure_line(ctx) + ask
         return self._say(opener)
 
     def _handle_negotiating(self, shop_text: str) -> AgentAction:
+        if self.ctx.mode == "availability":
+            return self._handle_negotiating_availability(shop_text)
         ctx = self.ctx
         if _contains(shop_text, _NO_AVAILABILITY_PHRASES):
             return self._end(
@@ -280,6 +295,67 @@ class BookingDialog:
             fail_detail="conversation did not converge on a time",
             fail_result="unclear",
         )
+
+    def _handle_negotiating_availability(self, shop_text: str) -> AgentAction:
+        """mode="availability": collect EVERY offered time in the window —
+        never confirm/hold one. Ends on an explicit "that's everything"
+        signal, an explicit "nothing at all" signal, or after
+        MAX_ASK_ATTEMPTS unproductive prompts (the same bounded-retry shape
+        as book mode's `_ask_again`)."""
+        ctx = self.ctx
+
+        if _contains(shop_text, _NO_MORE_PHRASES) or (
+            _contains(shop_text, _NO_AVAILABILITY_PHRASES) and self._slots_spoken
+        ):
+            return self._end_availability(
+                farewell="Great, thank you so much for checking!"
+            )
+        if _contains(shop_text, _NO_AVAILABILITY_PHRASES):
+            return self._end(
+                "no_availability", "no availability in the requested window",
+                farewell="Understood — thanks for checking. Have a good one!",
+            )
+
+        offered = parse_offered_time(
+            shop_text, ctx.time_window_start, ctx.time_window_end
+        )
+        price = parse_price(shop_text)
+
+        if offered is not None and ctx.time_window_start <= offered <= ctx.time_window_end:
+            self._slots_spoken.append(SpokenSlot(time=offered, price_usd=price))
+            self._ask_attempts = 0   # a real answer resets the bounded-retry count
+            priced = f" for ${price:.0f}" if price is not None else ""
+            return self._say(
+                f"Got it — {_fmt_12h(offered)}{priced}. "
+                "Do you have anything else in that window?"
+            )
+
+        self._ask_attempts += 1
+        if self._ask_attempts > MAX_ASK_ATTEMPTS:
+            return self._end_availability(
+                farewell="Alright — thanks so much for checking!"
+            )
+        return self._say(
+            f"Just to confirm, I'm looking for anything between "
+            f"{_fmt_12h(ctx.time_window_start)} and {_fmt_12h(ctx.time_window_end)} "
+            f"on {ctx.date}, for {ctx.party_size} players."
+        )
+
+    def _end_availability(self, farewell: str | None = None) -> AgentAction:
+        self.state = "ended"
+        self.outcome = CallOutcome(
+            result="availability",
+            date=self.ctx.date,
+            party_size=self.ctx.party_size,
+            slots_spoken=list(self._slots_spoken),
+            detail=(
+                f"{len(self._slots_spoken)} time(s) offered" if self._slots_spoken
+                else "no times offered"
+            ),
+        )
+        if farewell is None:
+            return AgentAction(kind="hangup")
+        return self._say(farewell)
 
     def _handle_confirming(self, shop_text: str) -> AgentAction:
         ctx = self.ctx

@@ -281,6 +281,33 @@ def test_outcome_from_tool_args_opt_out_roundtrips():
     assert outcome.opt_out_requested is True
 
 
+def test_outcome_from_tool_args_opt_out_coerces_stringified_bools():
+    # A stringified "false" must NOT be truthy — bool("false") is True in
+    # plain Python, which would silently suppress a REAL pro-shop number.
+    assert outcome_from_tool_args(
+        {"result": "unclear", "opt_out_requested": "false"}
+    ).opt_out_requested is False
+    assert outcome_from_tool_args(
+        {"result": "unclear", "opt_out_requested": "False"}
+    ).opt_out_requested is False
+    assert outcome_from_tool_args(
+        {"result": "unclear", "opt_out_requested": "true"}
+    ).opt_out_requested is True
+    assert outcome_from_tool_args(
+        {"result": "unclear", "opt_out_requested": "True"}
+    ).opt_out_requested is True
+    assert outcome_from_tool_args(
+        {"result": "unclear", "opt_out_requested": True}
+    ).opt_out_requested is True
+    assert outcome_from_tool_args(
+        {"result": "unclear", "opt_out_requested": False}
+    ).opt_out_requested is False
+    assert outcome_from_tool_args(
+        {"result": "unclear", "opt_out_requested": 0}
+    ).opt_out_requested is False
+    assert outcome_from_tool_args({"result": "unclear"}).opt_out_requested is False
+
+
 def test_outcome_from_tool_args_missing_optionals_are_none():
     outcome = outcome_from_tool_args({"result": "no_availability"})
     assert outcome.date is None

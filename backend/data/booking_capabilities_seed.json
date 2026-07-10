@@ -1,5 +1,5 @@
 {
-  "_comment": "Curated multi-platform capability rows (S4a/S4c, specs/teetime-availability-everywhere-plan.md §2a) — the generalized sibling of foreup_ny_seed.json. Loaded by load_all_capabilities (capability_store.py). Matching (match_capability) is exact-normalized-name (or alias) equality plus <=1.0 mi proximity, or an exact course_id. Fail-loud on malformed JSON: a broken edit must fail CI, not silently drop the real-data path. The first 8 rows are NYC Parks munis on the golf-nyc TeeItUp tenant, verified live via a direct GET to phx-api-be-east-1b.kenna.io (no auth) on 2026-07-10 — see specs/teetime-availability-everywhere-plan.md §3. The last 3 rows (S4c) are NJ/NY-metro Chronogolf marketplace clubs, verified live via www.chronogolf.com/marketplace/v2/clubs/<slug> (id lookup) + www.chronogolf.com/marketplace/clubs/<club_id>/teetimes (availability), no auth, on 2026-07-10.",
+  "_comment": "Curated multi-platform capability rows (S4a/S4c/S4c2, specs/teetime-availability-everywhere-plan.md §2a) — the generalized sibling of foreup_ny_seed.json. Loaded by load_all_capabilities (capability_store.py). Matching (match_capability) is exact-normalized-name (or alias) equality plus <=1.0 mi proximity, or an exact course_id. Fail-loud on malformed JSON: a broken edit must fail CI, not silently drop the real-data path. Rows 1-8 are NYC Parks munis on the golf-nyc TeeItUp tenant, verified live via a direct GET to phx-api-be-east-1b.kenna.io (no auth) on 2026-07-10 — see specs/teetime-availability-everywhere-plan.md §3. Rows 9-11 (S4c) are NJ/NY-metro Chronogolf marketplace clubs, verified live via www.chronogolf.com/marketplace/v2/clubs/<slug> (id lookup) + www.chronogolf.com/marketplace/clubs/<club_id>/teetimes (availability), no auth, on 2026-07-10. Rows 12-23 (S4c2, coverage expansion) are 2 more TeeItUp tenants (westchester-county: 5 real courses of 6 enumerated — Hudson Hills returned zero teetimes on every probed date, resident-gated, excluded; somerset-group-v2: 5 of 6 — the Neshanic Valley Academy Course excluded as marginal/no phone) plus 2 single-course TeeItUp tenants (Middle Island Country Club, Long Island NY; Chris Bargas Golf Club at Whitney Farms, Monroe CT — Fairfield County, part of the NY-Newark-Jersey City combined statistical area). Row 24 (S4c2) is 1 more Chronogolf club (Putnam County Golf Course) verified NOT resident-gated (0 of its bookable slots carried a residency restriction, unlike the rejected Skyway Golf Course candidate whose every 'bookable' slot was Non-Resident-restricted). Rows 25-28 (S4c2) are 4 NEW foreUP courses (added to this generalized file, not foreup_ny_seed.json, which stays untouched per its own docstring) — 3 Essex County NJ courses that migrated off the resident-gated TeeItUp essex-group tenant (recorded as a dead end in an earlier cycle) onto a real, non-gated foreUP booking system, plus Rockland Lake State Park Championship Golf Course (Congers, NY). Every S4c2 row's lat/lng was cross-checked against an independent geocoding source, not just the booking engine's own facility record — TeeItUp's somerset-group-v2 facility data carried an identical placeholder lat/lng for Quail Brook and Spooky Brook Golf Courses (two different, non-adjacent addresses); both were corrected to their real, independently-geocoded coordinates before seeding.",
   "courses": [
     {
       "platform": "teeitup",
@@ -200,6 +200,313 @@
       "lat": 40.634559,
       "lng": -74.885144,
       "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "westchester-county",
+        "facility_id": "5814"
+      },
+      "booking_url": "https://westchester-county.book.teeitup.com/",
+      "phone": "+19142313490",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Dunwoodie Golf Course",
+      "lat": 40.942896,
+      "lng": -73.880073,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "westchester-county",
+        "facility_id": "3253"
+      },
+      "booking_url": "https://westchester-county.book.teeitup.com/",
+      "phone": "+19149959200",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Maple Moor Golf Course",
+      "lat": 41.009329,
+      "lng": -73.74735,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "westchester-county",
+        "facility_id": "5815"
+      },
+      "booking_url": "https://westchester-county.book.teeitup.com/",
+      "phone": "+19148625283",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Mohansic Golf Course",
+      "lat": 41.28942,
+      "lng": -73.79286,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "westchester-county",
+        "facility_id": "3255"
+      },
+      "booking_url": "https://westchester-county.book.teeitup.com/",
+      "phone": "+19142313461",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Saxon Woods Golf Course",
+      "lat": 40.989587,
+      "lng": -73.799444,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "westchester-county",
+        "facility_id": "5816"
+      },
+      "booking_url": "https://westchester-county.book.teeitup.com/",
+      "phone": "+19147799827",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Sprain Lake Golf Course",
+      "lat": 40.96589,
+      "lng": -73.84672,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "somerset-group-v2",
+        "facility_id": "7092"
+      },
+      "booking_url": "https://somerset-group-v2.book.teeitup.golf/",
+      "phone": "+18443604230",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Green Knoll Golf Course",
+      "lat": 40.60149,
+      "lng": -74.63433,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "somerset-group-v2",
+        "facility_id": "7083"
+      },
+      "booking_url": "https://somerset-group-v2.book.teeitup.golf/",
+      "phone": "+19083698200",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Neshanic Valley Golf Course",
+      "lat": 40.526,
+      "lng": -74.714,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "somerset-group-v2",
+        "facility_id": "7084"
+      },
+      "booking_url": "https://somerset-group-v2.book.teeitup.golf/",
+      "phone": "+17325609199",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Quail Brook Golf Course",
+      "lat": 40.507001,
+      "lng": -74.5037454,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "somerset-group-v2",
+        "facility_id": "7094"
+      },
+      "booking_url": "https://somerset-group-v2.book.teeitup.golf/",
+      "phone": "+17328732242",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Spooky Brook Golf Course",
+      "lat": 40.5051237,
+      "lng": -74.5573979,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "somerset-group-v2",
+        "facility_id": "7093"
+      },
+      "booking_url": "https://somerset-group-v2.book.teeitup.golf/",
+      "phone": "+19087548402",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Warren Brook Golf Course",
+      "lat": 40.613833,
+      "lng": -74.492517,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "middle-island-country-club",
+        "facility_id": "4953"
+      },
+      "booking_url": "https://middle-island-country-club.book.teeitup.golf/",
+      "phone": "+16319243000",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Middle Island Country Club",
+      "lat": 40.884183,
+      "lng": -72.942137,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "teeitup",
+      "channel": "api",
+      "platform_ids": {
+        "alias": "whitneyfarmsgolfcourse",
+        "facility_id": "13427"
+      },
+      "booking_url": "https://whitneyfarmsgolfcourse.book.teeitup.golf/",
+      "phone": "(203) 268-0707",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Chris Bargas Golf Club at Whitney Farms",
+      "lat": 41.3409,
+      "lng": -73.23444,
+      "aliases": ["Whitney Farms Golf Course"],
+      "course_id": null
+    },
+    {
+      "platform": "chronogolf",
+      "channel": "scrape_http",
+      "platform_ids": {
+        "club_id": "19798",
+        "course_id": "28120",
+        "affiliation_type_id": "149215"
+      },
+      "booking_url": "https://www.chronogolf.com/club/putnam-county-golf-course",
+      "phone": "(845) 808-1880",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Putnam County Golf Course",
+      "lat": 41.38836400596462,
+      "lng": -73.76341817283428,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "foreup",
+      "channel": "api",
+      "platform_ids": {
+        "booking_id": "22527",
+        "schedule_id": "11077"
+      },
+      "booking_url": "https://foreupsoftware.com/index.php/booking/22527/11077",
+      "phone": "(973) 926-2520",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Weequahic Golf Course",
+      "lat": 40.72587,
+      "lng": -74.183206,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "foreup",
+      "channel": "api",
+      "platform_ids": {
+        "booking_id": "22528",
+        "schedule_id": "11078"
+      },
+      "booking_url": "https://foreupsoftware.com/index.php/booking/22528/11078",
+      "phone": "(973) 736-2306",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Francis A. Byrne Golf Course",
+      "lat": 40.7914480229,
+      "lng": -74.2700577249,
+      "aliases": ["Francis Byrne Golf Course"],
+      "course_id": null
+    },
+    {
+      "platform": "foreup",
+      "channel": "api",
+      "platform_ids": {
+        "booking_id": "22526",
+        "schedule_id": "11075"
+      },
+      "booking_url": "https://foreupsoftware.com/index.php/booking/22526/11075",
+      "phone": "(973) 751-0178",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Hendricks Field Golf Course",
+      "lat": 40.7949157,
+      "lng": -74.1703352,
+      "aliases": [],
+      "course_id": null
+    },
+    {
+      "platform": "foreup",
+      "channel": "api",
+      "platform_ids": {
+        "booking_id": "19767",
+        "schedule_id": "2442"
+      },
+      "booking_url": "https://foreupsoftware.com/index.php/booking/19767/2442",
+      "phone": "(845) 268-6250",
+      "is_private": false,
+      "verified_at": "2026-07-10T16:56:18Z",
+      "probe_status": "verified",
+      "name": "Rockland Lake State Park Championship Golf Course",
+      "lat": 41.1475505,
+      "lng": -73.9279382,
+      "aliases": ["Rockland Lake State Park Golf Course", "Championship Course at Rockland Lake State Park"],
       "course_id": null
     }
   ]

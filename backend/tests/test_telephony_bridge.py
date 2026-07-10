@@ -41,15 +41,29 @@ def _ctx(**overrides) -> VoiceBookingContext:
 def test_build_stream_twiml_shape():
     xml = telephony.build_stream_twiml("api.example.com", "tok123")
     assert "<Connect>" in xml
-    assert '<Stream url="wss://api.example.com/api/voice-booking/media-stream/tok123"' in xml
+    # Token travels in a <Parameter>, NOT in the wss URL (keeps it out of
+    # uvicorn/Twilio access logs).
+    assert '<Stream url="wss://api.example.com/api/voice-booking/media-stream"' in xml
+    assert "/media-stream/tok123" not in xml  # never in the URL path
+    assert '<Parameter name="call_token" value="tok123"/>' in xml
     for secret_marker in ("TWILIO_", "AUTH_TOKEN", "sid", "SID"):
         assert secret_marker not in xml
 
 
 def test_build_stream_twiml_strips_scheme_and_trailing_slash():
     xml = telephony.build_stream_twiml("https://api.example.com/", "tok123")
-    assert "wss://api.example.com/api/voice-booking/media-stream/tok123" in xml
+    assert 'url="wss://api.example.com/api/voice-booking/media-stream"' in xml
     assert "https://" not in xml
+
+
+def test_build_stream_twiml_escapes_token_value():
+    # Defense in depth: even though tokens are secrets.token_urlsafe output
+    # (never XML-special chars), the Parameter value must still be properly
+    # escaped/quoted.
+    xml = telephony.build_stream_twiml("api.example.com", 'tok"<&>\'')
+    assert '<Parameter name="call_token" value=' in xml
+    assert "<&>" not in xml  # raw special chars must not appear unescaped
+    assert "&amp;" in xml or "&#38;" in xml
 
 
 # ─── Dial construction / dial-safety ───────────────────────────────────────
@@ -62,15 +76,19 @@ class _FakeCall:
 class _FakeCallsResource:
     def __init__(self):
         self.create_kwargs: dict | None = None
+        self.update_kwargs: dict | None = None
+        self.last_update_sid: str | None = None
 
     def create(self, **kwargs):
         self.create_kwargs = kwargs
         return _FakeCall()
 
     def __call__(self, sid):
+        self.last_update_sid = sid
         return self
 
     def update(self, **kwargs):
+        self.update_kwargs = kwargs
         return None
 
 
@@ -79,7 +97,7 @@ class _FakeTwilioClient:
         self.calls = _FakeCallsResource()
 
 
-def test_place_call_dials_only_ctx_phone():
+async def test_place_call_dials_only_ctx_phone():
     client = _FakeTwilioClient()
     transport = telephony.LiveCallTransport(
         twilio_client_factory=lambda: client,
@@ -164,29 +182,59 @@ async def test_run_call_timeout_returns_partial_transcript_unclear():
     assert registry_.consume(registry_.last_token) is None
 
 
+async def test_run_call_cancellation_reraises_and_cleans_up():
+    # A cancelled run_call task (e.g. server shutdown while awaiting the
+    # pending future) must NOT swallow CancelledError — it must re-raise,
+    # after still discarding the token and attempting the hangup.
+    client = _FakeTwilioClient()
+    registry_ = _CapturingRegistry()
+    transport = telephony.LiveCallTransport(
+        twilio_client_factory=lambda: client,
+        public_host="api.example.com",
+        from_number="+15005550006",
+        registry_=registry_,
+        call_timeout_seconds=5.0,  # long — we cancel before this fires
+    )
+
+    task = asyncio.ensure_future(transport.run_call(_ctx()))
+    await asyncio.sleep(0.01)
+    assert client.calls.create_kwargs is not None
+    assert registry_.last_pending is not None
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # Cleanup still ran: token discarded (single-use consume now fails) and
+    # a best-effort hangup was attempted against the call SID.
+    assert registry_.consume(registry_.last_token) is None
+    assert client.calls.update_kwargs == {"status": "completed"}
+    assert client.calls.last_update_sid == "CA_fake_sid"
+
+
 # ─── CallTokenRegistry ──────────────────────────────────────────────────────
 
 
 class TestCallTokenRegistry:
-    def test_token_valid_once(self):
+    async def test_token_valid_once(self):
         reg = CallTokenRegistry()
         token, pending = reg.mint(_ctx())
         assert reg.consume(token) is pending
         assert reg.consume(token) is None
 
-    def test_expired_token_refused(self):
+    async def test_expired_token_refused(self):
         clock = {"t": 0.0}
         reg = CallTokenRegistry(connect_ttl_seconds=10.0, now=lambda: clock["t"])
         token, _pending = reg.mint(_ctx())
         clock["t"] = 10.1
         assert reg.consume(token) is None
 
-    def test_random_token_refused(self):
+    async def test_random_token_refused(self):
         reg = CallTokenRegistry()
         reg.mint(_ctx())
         assert reg.consume("totally-made-up-token") is None
 
-    def test_token_bound_to_ctx(self):
+    async def test_token_bound_to_ctx(self):
         reg = CallTokenRegistry()
         ctx = _ctx(course_name="Bound Course")
         token, _pending = reg.mint(ctx)

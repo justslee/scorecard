@@ -6,7 +6,12 @@
  */
 
 export type { TeeTimeQuery, TeeTimeSlot, BookingDetails, BookingResult } from "./types";
+export type {
+  AvailabilityCallRequest,
+  AvailabilityCallStatus,
+  AvailabilityCallSpokenSlot,
+} from "./types";
 export type { TeeTimeProvider } from "./provider";
 export { registerProvider, getProvider, getActiveProvider } from "./registry";
-export { searchTeeTimes, bookTeeTime } from "./client";
+export { searchTeeTimes, bookTeeTime, requestAvailabilityCall, getAvailabilityCallStatus } from "./client";
 export type { SearchResponse, BookResponse } from "./client";
