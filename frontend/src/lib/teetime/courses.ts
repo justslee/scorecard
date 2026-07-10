@@ -103,7 +103,8 @@ export function toCourseOptions(
     if (!r.name || !r.center) continue;
     const nameKey = r.name.toLowerCase();
     const favorite = favIds.has(r.id) || favNames.has(nameKey);
-    const muni = muniFromAddress(r.address) || r.city || "";
+    const rawCity = (r.city ?? "").trim();
+    const muni = muniFromAddress(r.address) || (COUNTRY_SEGMENT_RE.test(rawCity) ? "" : rawCity);
     // Junk rows: an all-generic name ("Golf Course") identifies nothing —
     // skip it UNLESS something else identifies it: the golfer favorited it,
     // or it carries a place ("Golf Course · Tenafly" is honest). Legit

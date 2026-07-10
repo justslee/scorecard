@@ -589,6 +589,7 @@ function Prefs({
           <button
             onClick={addWindow}
             style={{
+              minHeight: 44,
               padding: "10px 12px",
               borderRadius: 10,
               border: `1px dashed ${T.hairline}`,
@@ -662,6 +663,7 @@ function Prefs({
                     gridTemplateColumns: "28px 1fr auto",
                     gap: 10,
                     alignItems: "center",
+                    minHeight: 44,
                     padding: "9px 14px",
                     width: "100%",
                     border: "none",
@@ -741,7 +743,7 @@ function Prefs({
 
           {courses.some((c) => c.favorite) && (
             <>
-              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 4 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500, marginBottom: 6 }}>
                 Your favorites
               </div>
               {courses.filter((c) => c.favorite).map((c, i) => (
@@ -752,7 +754,7 @@ function Prefs({
 
           {courses.some((c) => !c.favorite) && (
             <>
-              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500, marginTop: courses.some((c) => c.favorite) ? 14 : 0, marginBottom: 4 }}>
+              <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1.3, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500, marginTop: courses.some((c) => c.favorite) ? 14 : 0, marginBottom: 6 }}>
                 {courses.some((c) => c.favorite) ? "Open to" : "Nearby"}
               </div>
               {courses.filter((c) => !c.favorite).map((c, i) => (
@@ -766,6 +768,7 @@ function Prefs({
             style={{
               marginTop: courses.length > 0 ? 8 : 0,
               width: "100%",
+              minHeight: 44,
               padding: "10px 12px",
               borderRadius: 10,
               border: `1px dashed ${T.hairline}`,
@@ -1179,7 +1182,7 @@ function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked 
                   disabled={picking != null}
                   style={{
                     display: "flex", justifyContent: "space-between", alignItems: "center",
-                    width: "100%", padding: "12px 2px", border: "none", background: "transparent",
+                    width: "100%", minHeight: 44, padding: "12px 2px", border: "none", background: "transparent",
                     cursor: picking ? "default" : "pointer", textAlign: "left" as const,
                     borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
                     opacity: picking && picking !== slot.id ? 0.45 : 1,
@@ -1196,7 +1199,7 @@ function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked 
               {hidden > 0 && (
                 <button
                   onClick={() => setExpanded((e) => ({ ...e, [g.courseId]: true }))}
-                  style={{ padding: "8px 2px", border: "none", background: "transparent", cursor: "pointer", fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" as const }}
+                  style={{ width: "100%", minHeight: 44, padding: "8px 2px", border: "none", background: "transparent", cursor: "pointer", textAlign: "left" as const, fontFamily: T.mono, fontSize: 9.5, letterSpacing: 1.2, color: T.pencilSoft, textTransform: "uppercase" as const }}
                 >
                   + {hidden} more
                 </button>
@@ -1206,35 +1209,52 @@ function Options({ accent, slots, asks, bookerName, partySize, onBack, onPicked 
         );
       })}
 
-      {routeGroups.length > 0 && (
-        <Section kicker="No online times" title="Call to book">
-          <div>
-            {routeGroups.map((g, i) => {
-              const entry = g.routeEntry!;
-              const askWindow = formatAskWindows(asksForDate(asks, entry.date));
-              const askLine = entry.route === "call"
-                ? `Call for a time in your ${askWindow} window`
-                : `Book on their site — ask for your ${askWindow} window`;
-              return (
-                <button
-                  key={g.courseId}
-                  onClick={() => void pick(entry)}
-                  disabled={picking != null}
-                  style={{
-                    display: "block", width: "100%", padding: "12px 2px", border: "none", background: "transparent",
-                    cursor: picking ? "default" : "pointer", textAlign: "left" as const,
-                    borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
-                    opacity: picking && picking !== entry.id ? 0.45 : 1,
-                  }}
-                >
-                  <div style={{ fontFamily: T.serif, fontSize: 15, color: T.ink, letterSpacing: -0.15 }}>{g.courseName}</div>
-                  <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginTop: 2, letterSpacing: -0.1 }}>{askLine}</div>
-                </button>
-              );
-            })}
-          </div>
-        </Section>
-      )}
+      {routeGroups.length > 0 && (() => {
+        const routeKinds = new Set(routeGroups.map((g) => g.routeEntry!.route));
+        const routeTitle =
+          routeKinds.size > 1 ? "Book direct"
+          : routeKinds.has("call") ? "Call to book"
+          : "Book on their site";
+        return (
+          <Section kicker="No listed times" title={routeTitle}>
+            <div>
+              {routeGroups.map((g, i) => {
+                const entry = g.routeEntry!;
+                const askWindow = formatAskWindows(asksForDate(asks, entry.date));
+                const askLine = entry.route === "call"
+                  ? `Call for a time in your ${askWindow} window`
+                  : `Book on their site — ask for your ${askWindow} window`;
+                return (
+                  <button
+                    key={g.courseId}
+                    onClick={() => void pick(entry)}
+                    disabled={picking != null}
+                    style={{
+                      display: "block", width: "100%", minHeight: 44, padding: "12px 2px", border: "none", background: "transparent",
+                      cursor: picking ? "default" : "pointer", textAlign: "left" as const,
+                      borderTop: i === 0 ? "none" : `1px dashed ${T.hairlineSoft}`,
+                      opacity: picking && picking !== entry.id ? 0.45 : 1,
+                    }}
+                  >
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "baseline" }}>
+                      <div style={{ fontFamily: T.serif, fontSize: 15, color: T.ink, letterSpacing: -0.15 }}>{g.courseName}</div>
+                      <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase" as const, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
+                        {g.distanceMiles} mi
+                      </div>
+                    </div>
+                    {g.city && (
+                      <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginTop: 2, letterSpacing: -0.1 }}>
+                        {g.city}
+                      </div>
+                    )}
+                    <div style={{ fontFamily: T.serif, fontStyle: "italic", fontSize: 12.5, color: T.pencil, marginTop: 2, letterSpacing: -0.1 }}>{askLine}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+        );
+      })()}
 
       <div style={{ padding: "8px 22px 30px" }}>
         <button
@@ -1495,6 +1515,21 @@ function formatDateLabel(isoDate: string): string {
 function PaperShell({ children }: { children: ReactNode }) {
   return (
     <div style={{ minHeight: "100vh", background: `${PAPER_NOISE}, ${T.paper}`, backgroundBlendMode: "multiply", fontFamily: T.sans, color: T.ink }}>
+      {/* Status-bar scrim — content scrolls under the transparent iOS status bar
+          (viewport-fit=cover / Capacitor full-bleed). Mirrors .app-header's paper
+          wash + blur (globals.css). Height is 0 in a desktop browser → invisible. */}
+      <div
+        aria-hidden
+        style={{
+          position: "fixed", top: 0, left: 0, right: 0,
+          height: "env(safe-area-inset-top, 0px)",
+          zIndex: 40,                        // under CourseSearch (50) and LooperSheet (60)
+          background: "rgba(244,241,234,0.88)",   // T.paper @ 88%, matches .app-header
+          backdropFilter: "blur(10px)",
+          WebkitBackdropFilter: "blur(10px)",
+          pointerEvents: "none",
+        }}
+      />
       <div style={{ maxWidth: 420, margin: "0 auto", paddingBottom: "calc(88px + env(safe-area-inset-bottom, 0px))" }}>{children}</div>
     </div>
   );
@@ -1583,7 +1618,7 @@ function CourseRow({ c, accent, onToggle, first }: { c: CourseOption; accent: st
   return (
     <button
       onClick={onToggle}
-      style={{ display: "grid", gridTemplateColumns: "26px 1fr auto", gap: 10, alignItems: "center", padding: "13px 2px", width: "100%", border: "none", background: "transparent", cursor: "pointer", textAlign: "left" as const, borderTop: first ? "none" : `1px dashed ${T.hairlineSoft}` }}
+      style={{ display: "grid", gridTemplateColumns: "26px 1fr auto", gap: 10, alignItems: "center", minHeight: 44, padding: "12px 2px", width: "100%", border: "none", background: "transparent", cursor: "pointer", textAlign: "left" as const, borderTop: first ? "none" : `1px dashed ${T.hairlineSoft}` }}
     >
       <div style={{ width: 21, height: 21, borderRadius: 4, border: `1.5px solid ${c.selected ? T.ink : T.hairline}`, background: c.selected ? T.ink : T.paper, display: "flex", alignItems: "center", justifyContent: "center" }}>
         {c.selected && (
@@ -1592,16 +1627,23 @@ function CourseRow({ c, accent, onToggle, first }: { c: CourseOption; accent: st
           </svg>
         )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-        <div style={{ fontFamily: T.serif, fontStyle: c.favorite ? "italic" : "normal", fontSize: 15, color: T.ink, letterSpacing: -0.15, lineHeight: 1.1 }}>{c.name}</div>
-        {c.favorite && (
-          <svg width="9" height="9" viewBox="0 0 10 10" style={{ flexShrink: 0 }}>
-            <path d="M5 1 L6.2 3.8 L9 4 L6.8 6 L7.5 9 L5 7.5 L2.5 9 L3.2 6 L1 4 L3.8 3.8 Z" fill={accent} />
-          </svg>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <div style={{ fontFamily: T.serif, fontStyle: c.favorite ? "italic" : "normal", fontSize: 15, color: T.ink, letterSpacing: -0.15, lineHeight: 1.1 }}>{c.name}</div>
+          {c.favorite && (
+            <svg width="9" height="9" viewBox="0 0 10 10" style={{ flexShrink: 0 }}>
+              <path d="M5 1 L6.2 3.8 L9 4 L6.8 6 L7.5 9 L5 7.5 L2.5 9 L3.2 6 L1 4 L3.8 3.8 Z" fill={accent} />
+            </svg>
+          )}
+        </div>
+        {c.muni && (
+          <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase" as const, fontWeight: 500, marginTop: 2 }}>
+            {c.muni}
+          </div>
         )}
       </div>
-      <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase" as const, fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>
-        {[c.distance != null ? `${c.distance}mi` : null, c.muni || null].filter(Boolean).join(" · ")}
+      <div style={{ fontFamily: T.mono, fontSize: 8.5, letterSpacing: 1, color: T.pencilSoft, textTransform: "uppercase" as const, fontVariantNumeric: "tabular-nums", fontWeight: 500, textAlign: "right" as const }}>
+        {c.distance != null ? `${c.distance} mi` : ""}
       </div>
     </button>
   );

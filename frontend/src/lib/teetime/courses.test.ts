@@ -187,6 +187,22 @@ describe("toCourseOptions", () => {
     );
     expect(options.filter((o) => o.name === "Bravo Golf Club")).toHaveLength(1);
   });
+
+  it("guards the raw provider 'city' fallback — a country-only value never leaks as a muni (item 3)", () => {
+    const options = toCourseOptions(
+      [result({ id: "usa-city", name: "Presidio Golf Course", address: undefined, city: "USA" })],
+      ORIGIN,
+    );
+    expect(options.find((o) => o.id === "usa-city")?.muni).toBe("");
+  });
+
+  it("keeps a real provider 'city' field as the muni fallback when there's no address", () => {
+    const options = toCourseOptions(
+      [result({ id: "brooklyn", name: "Presidio Golf Course", address: undefined, city: "Brooklyn" })],
+      ORIGIN,
+    );
+    expect(options.find((o) => o.id === "brooklyn")?.muni).toBe("Brooklyn");
+  });
 });
 
 describe("radiusMetersForMiles", () => {
