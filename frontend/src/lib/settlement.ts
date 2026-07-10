@@ -366,6 +366,22 @@ export function computeTournamentSettlement(rounds: Round[]): SettlementLedger {
 }
 
 /**
+ * True when any round has at least one money game (a game with pointValue > 0).
+ *
+ * Mirrors the exact filter `computeNetSettlement` uses (format !== 'settlement'
+ * && pointValue > 0) so the two can never diverge. Used by callers that need to
+ * distinguish "no money games at all" (never a settlement) from "money games
+ * exist but nothing is scored yet" (settlement pending).
+ */
+export function hasMoneyGames(rounds: Round[]): boolean {
+  return rounds.some((round) =>
+    (round.games ?? []).some(
+      (g) => g.format !== 'settlement' && (g.settings?.pointValue ?? 0) > 0
+    )
+  );
+}
+
+/**
  * Pull the persisted FinalizedSettlement out of a round's games array.
  * Returns null when the round has not been settled yet.
  */

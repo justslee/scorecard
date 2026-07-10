@@ -7,7 +7,7 @@ import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getTournamentAsync, getRoundsAsync } from "@/lib/storage-api";
 import { calculateTotals } from "@/lib/types";
 import type { Tournament, Round, Game } from "@/lib/types";
-import { computeTournamentSettlement } from "@/lib/settlement";
+import { computeTournamentSettlement, hasMoneyGames } from "@/lib/settlement";
 
 type Tab = "leaderboard" | "rounds" | "games";
 type LbMode = "gross" | "toPar";
@@ -399,6 +399,7 @@ export default function TournamentPageClient() {
   const tournamentGames: Game[] = tournament.games ?? [];
   const hasGames = tournamentGames.length > 0;
   const tournamentSettlement = computeTournamentSettlement(memberRounds);
+  const hasMoneyGame = hasMoneyGames(memberRounds);
 
   // Sort standings: nulls last, then ascending by selected mode
   const sortedStandings = [...standings].sort((a, b) => {
@@ -1390,7 +1391,11 @@ export default function TournamentPageClient() {
                       padding: "8px 0",
                     }}
                   >
-                    Settle-up appears once rounds are scored.
+                    {!hasMoneyGame
+                      ? "No money games in this tournament."
+                      : !hasScores
+                      ? "Settle-up appears once rounds are scored."
+                      : "All square — nothing to settle."}
                   </div>
                 ) : (
                   <div>

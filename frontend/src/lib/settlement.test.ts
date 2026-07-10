@@ -20,6 +20,7 @@ import {
   computeTournamentSettlement,
   minimizeTransfers,
   getPersistedSettlement,
+  hasMoneyGames,
 } from './settlement';
 import type { Round, Game, Score, HoleInfo, Player } from './types';
 
@@ -893,5 +894,61 @@ describe('computeTournamentSettlement', () => {
     expect(ledger.isEmpty).toBe(true);
     expect(ledger.transfers).toEqual([]);
     expect(ledger.netByPlayer).toEqual({});
+  });
+});
+
+// ─── hasMoneyGames ──────────────────────────────────────────────────────────────
+
+describe('hasMoneyGames', () => {
+  it('is true when a round has a money game (pointValue > 0)', () => {
+    const round = makeRound({
+      games: [makeGame({ format: 'skins', settings: { pointValue: 5 } })],
+    });
+
+    expect(hasMoneyGames([round])).toBe(true);
+  });
+
+  it('is false when the round has only a non-money game (pointValue 0 / unset, e.g. bestBall)', () => {
+    const zeroPointValue = makeRound({
+      id: 'r1',
+      games: [makeGame({ id: 'g1', format: 'bestBall', settings: { pointValue: 0 } })],
+    });
+    const unsetPointValue = makeRound({
+      id: 'r2',
+      games: [makeGame({ id: 'g2', format: 'bestBall', settings: {} })],
+    });
+
+    expect(hasMoneyGames([zeroPointValue])).toBe(false);
+    expect(hasMoneyGames([unsetPointValue])).toBe(false);
+  });
+
+  it('is false for an empty rounds array', () => {
+    expect(hasMoneyGames([])).toBe(false);
+  });
+
+  it('does not count a "settlement"-format game as a money game', () => {
+    const round = makeRound({
+      games: [
+        makeGame({
+          format: 'settlement',
+          settings: { pointValue: 5, transfers: [], finalizedAt: '2026-01-01T00:00:00Z' },
+        }),
+      ],
+    });
+
+    expect(hasMoneyGames([round])).toBe(false);
+  });
+
+  it('is true when rounds are mixed — one money round and one non-money round', () => {
+    const moneyRound = makeRound({
+      id: 'r1',
+      games: [makeGame({ id: 'g1', format: 'skins', settings: { pointValue: 5 } })],
+    });
+    const nonMoneyRound = makeRound({
+      id: 'r2',
+      games: [makeGame({ id: 'g2', format: 'bestBall', settings: { pointValue: 0 } })],
+    });
+
+    expect(hasMoneyGames([moneyRound, nonMoneyRound])).toBe(true);
   });
 });
