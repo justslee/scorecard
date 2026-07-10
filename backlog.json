@@ -2405,11 +2405,11 @@
       "id": "teetime-s4d-playwright-worker-pending-ux",
       "title": "S4d: rung-2b headless scraper (Playwright worker) + 'checking\u2026' pending UX",
       "type": "major",
-      "priority": 3,
+      "priority": 9,
       "risk": "high",
-      "status": "ready",
+      "status": "deferred",
       "depends_on": [],
-      "why": "NOTE 2026-07-10: EZLinks/Cloudflare-Turnstile sites are NOT scrapable politely even with a headless browser (probe confirmed Chromium never clears Turnstile) \u2014 do NOT target them with S4d. S4d headless is only for JS-rendered widgets WITHOUT anti-bot gates. Re-scope S4d's target engine after S4a/S4c reveal which engines actually need a browser. The only slice with deploy-image impact (~400MB Chromium, gated TEETIME_SCRAPER_ENABLED default off). In-process asyncio worker + bounded queue off the request path; TeeTimeSlot gains status live|pending; poll endpoint; frontend pending row; first browser-scraped engine (Club Prophet or hostile EZLinks). Plan \u00a74b,\u00a76,\u00a77. Depends on S4a."
+      "why": "DEFERRED per Fable verdict (specs/teetime-headless-scraper-plan.md \u00a77): NO bucket-(c) target in NY-metro \u2014 every remaining engine is httpx-addable (CPS/Quick18/Teesnap) or anti-bot-walled (EZLinks\u2192rung3, browser can't pass Turnstile politely). ~400MB Chromium would fetch ZERO extra courses = headless-for-its-own-sake. Fully specced+gated; reopen ONLY if the coverage flywheel finds a JS-render-gated, non-anti-bot engine with no replayable XHR. | NOTE 2026-07-10: EZLinks/Cloudflare-Turnstile sites are NOT scrapable politely even with a headless browser (probe confirmed Chromium never clears Turnstile) \u2014 do NOT target them with S4d. S4d headless is only for JS-rendered widgets WITHOUT anti-bot gates. Re-scope S4d's target engine after S4a/S4c reveal which engines actually need a browser. The only slice with deploy-image impact (~400MB Chromium, gated TEETIME_SCRAPER_ENABLED default off). In-process asyncio worker + bounded queue off the request path; TeeTimeSlot gains status live|pending; poll endpoint; frontend pending row; first browser-scraped engine (Club Prophet or hostile EZLinks). Plan \u00a74b,\u00a76,\u00a77. Depends on S4a."
     },
     {
       "id": "teetime-s4e-availability-by-call",
@@ -2461,6 +2461,36 @@
       "status": "shelved",
       "depends_on": [],
       "why": "Owner chose Option B (preset) over this 2026-07-10. Full plan ON SHELF: specs/voice-clone-caller-plan.md \u00a77 (V1 enrollment \u2192 V2 ElevenLabs cloned-TTS \u2192 V3 split bridge behind flag \u2192 V4 latency harness). ~3-4 cycles. Pull off the shelf only if owner later wants his ACTUAL voice for its own sake. Fable verdict: buildable + cheaper/call but adds latency + a vendor holding his voiceprint + buys nothing on a disclosed-AI call."
+    },
+    {
+      "id": "teetime-h1-clubprophet-adapter",
+      "title": "H1: Club Prophet (CPS) httpx adapter \u2014 biggest remaining NY coverage win",
+      "type": "major",
+      "priority": 2,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Fable scraper plan \u00a76/H1: CPS availability is a REPLAYABLE JSON API (not a real browser need) \u2014 token dance: connect/token/short w/ public env.js creds \u2192 resolve onlineApi host from server-settings \u2192 SearchTeetimes(date,players). Live-verify + capture fixture, adapters/clubprophet.py under fetch_discipline.py, 1-2 NY-metro seed rows, register in ADAPTERS. Brittle part = token/config indirection (schema-guard+breaker handle drift). Highest-value cheap adapter."
+    },
+    {
+      "id": "teetime-h2-quick18-adapter",
+      "title": "H2: Quick18 HTML-lite adapter (cheapest \u2014 server-rendered matrix)",
+      "type": "major",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Fable scraper plan \u00a76/H2: Quick18 = server-rendered HTML, no JS. Plain GET searchmatrix?teedate= + selectolax/bs4 parse of table.matrixTable / a.sexybutton.teebutton (open slot). Live-verify NY course + fixture. Smallest valuable adapter in the epic."
+    },
+    {
+      "id": "teetime-h3-teesnap-adapter",
+      "title": "H3: Teesnap httpx adapter (conditional on XSRF/cookie capture)",
+      "type": "major",
+      "priority": 3,
+      "risk": "medium",
+      "status": "ready",
+      "depends_on": [],
+      "why": "Fable scraper plan \u00a76/H3: Teesnap = Laravel/CloudFront (NOT Cloudflare challenge), React widget \u2192 customer JSON API, XSRF-TOKEN+laravel_session cookies. Discover a live NY facility subdomain, capture the availability JSON path, confirm cookie/XSRF replay over httpx \u2192 adapter+fixture. If a real bot-block appears \u2192 reclassify rung-3, no headless."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
