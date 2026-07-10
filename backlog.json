@@ -1,7 +1,17 @@
 {
-  "updated": "2026-07-09",
+  "updated": "2026-07-10",
   "note": "Cycle 39 (2026-07-09): Bethpage 7/11 honest-empty DIAGNOSED offline (no prod SSM) -> root cause (c) validator over-strict: carry check keys off bunker CENTROID +-25y but hole-7 cross-bunker spans 103-280y (178y wide), so grounded numbered guides keep rejecting; geometry (a) + on-hole OSM (b) both correct. Carded bethpage-7-11-geometry-audit as decision-needed (do NOT inline-fix the anti-injection validator). Retro cycle 37 (2026-07-09): lessons distilled to tasks/lessons.md (bent-test/Fable-catch, injection standing rule, ship.sh absolute-cd, checkpoint-before-await, wins). #115/#116 riders promoted done-on-bundle\u2192done-shipped-main. #117 (tool-loop-parity NOTICEABLE + advice-eval-harness silent) on integration/next AWAITING owner ship-it. Post-ship queue: Bethpage 4/7/11 guide recovery (needs deployed validator). GolfAPI-universe blocked on 401 key (owner-action).",
   "items": [
+    {
+      "id": "voicetel-timing-immediate-flush",
+      "title": "Add caddie latency-timing events to the immediate-flush tier (unblocks cascaded-STT decision)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "PROD 2026-07-10: only 1 eos_to_first_audio event + 0 caddie-rt in 3 days \u2014 the caddie latency-timing telemetry is being DROPPED on iOS (cycle-19's flush fix made FAILURE events immediate but not the timing events). This blocks the cascaded-STT go/no-go (spike #126 needs caddie-turn-cascaded vs caddie-rt-speechToSpeech p90 latency). FIX: put the eos_to_first_audio / stage-timing events in the immediate-flush tier (extend the cycle-19 flush logic) so real latency data reaches prod. Small telemetry change. Then the cascaded-STT decision has data."
+    },
     {
       "id": "teetime-show-real-time-options",
       "title": "Tee-time: show actual bookable TIME OPTIONS (not the window); correct window; respect selection",
@@ -61,9 +71,9 @@
       "type": "major",
       "priority": 2,
       "risk": "high",
-      "status": "ready",
+      "status": "blocked",
       "depends_on": [],
-      "why": "OWNER 2026-07-09 (reliability): the SOTA reliability architecture \u2014 route the live transcript through our own Deepgram nova-3 (already used for the sheet WITH keyterms), gate on confidence, THEN the caddie responds to TEXT ('treat speech as rendering not reasoning' \u2014 our own agent-architecture study). Garbled input caught BEFORE a reply. Trades some latency for reliability+observability vs the current speech-to-speech. Spike: measure the latency delta + reliability gain on real outdoor audio. specs/voice-transcription-reliability-research.md. Fable plan."
+      "why": "SPIKE DONE (PR #126, FEASIBLE conditional-go, hybrid Option C recommended). BLOCKED on the go/no-go latency read: prod has ~0 usable eos_to_first_audio data (iOS telemetry drop). Unblock via voicetel-timing-immediate-flush, then read caddie-turn vs caddie-rt p90; <1.5-2s delta -> build hybrid, 3s+ -> stay put (vocab-bias+input-grounding already shipped may be enough). Confidence-gate code ready behind a flag in #126. OWNER 2026-07-09 (reliability): the SOTA reliability architecture \u2014 route the live transcript through our own Deepgram nova-3 (already used for the sheet WITH keyterms), gate on confidence, THEN the caddie responds to TEXT ('treat speech as rendering not reasoning' \u2014 our own agent-architecture study). Garbled input caught BEFORE a reply. Trades some latency for reliability+observability vs the current speech-to-speech. Spike: measure the latency delta + reliability gain on real outdoor audio. specs/voice-transcription-reliability-research.md. Fable plan."
     },
     {
       "id": "teetime-s3b-twilio-bridge",
