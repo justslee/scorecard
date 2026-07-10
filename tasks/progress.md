@@ -3,6 +3,64 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: teetime-show-real-time-options landed on the bundle #125 (NOTICEABLE, frontend-only, DONE)
+
+Implemented `specs/teetime-show-real-time-options-plan.md` exactly (all 5
+steps) — the three linked P1 tee-time results/prefs bugs from owner
+screenshots. Two commits on `integration/next`:
+
+- **f9953f2** — core fix (bugs #1–#3). New `prefs → searching → options →
+  confirmed` phase (was `prefs → searching → confirmed`): Searching no
+  longer collapses the full slot list to one auto-picked/auto-booked `best`
+  and no longer books before the golfer sees anything. A new Options screen
+  groups what was actually found per course — real bookable times as tappable
+  rows ("6:10 AM · 2 spots · $24", ~5/course cap + "+ N more"), no-online-time
+  courses under a quiet "No online times" section framed as the ASK ("Call
+  for a time in your 6:30–9:30 window") — never the search window presented
+  as a found time (bug #1). Tapping a row books it directly (eng-lead
+  decision: no confirm sheet) and lands on Confirmed. Bug #2 (displayed
+  window ≠ submitted prefs): killed the `windows.find(w => w.date ===
+  slot.date)` re-derivation race entirely — Options/Confirmed now consume
+  `asks: DispatchedAsk[]`, a 1:1 projection of the queries actually
+  dispatched, threaded start-to-finish. Bug #3 (unselected course returned):
+  dispatch now sends every checked course regardless of the drive-radius
+  slider (a checked box is explicit, the radius already shaped the list),
+  plus a defense-in-depth `filterToSelection` guard (id-or-normalized-name,
+  mirrors the backend's `matches_selection` tolerance) drops any slot from an
+  unselected course before Options ever sees it — honest `emptySelectionNote`
+  instead of substituting. Closed the matching voice hole in
+  `applyParsedCourses`: a spoken course name matching nothing keeps the
+  current selection instead of wiping it (which used to silently widen the
+  next dispatch to an all-nearby search).
+- **9f0577e** — P2 stretch (plan §8 #4): `muniFromAddress` now drops "USA"/
+  "United States of America" address suffixes too, not just "United States"
+  (was a substring test, now anchored to the whole segment so a real
+  locality can never be mistaken for a country label).
+
+New `frontend/src/lib/teetime/options.ts` (leaf module, pure, unit-tested —
+32 cases in `options.test.ts`): `isRealSlot`, `groupSlotsByCourse`,
+`filterToSelection`, `asksForDate`/`formatAskWindows`, `slotOptionLabel`,
+`emptySelectionNote`; `formatTime12h`/`formatWindowRange` moved out of
+page.tsx here so Options + Confirmed share one implementation.
+`confirmCopy` gained an optional `askWindow` (confirm-copy.ts/.test.ts).
+4 new courses.test.ts cases for the P2 fix.
+
+Gates all green: `npm run lint`, `npx tsc --noEmit`, `npm run build`,
+`npx vitest run src/lib/teetime` (205 passed across 9 files),
+`npx tsx voice-tests/runner.ts --smoke` (274/274), `backend ruff check .`
+(clean), and the plan's no-regression backend pytest list —
+`test_tee_time_routing/router/selection/search_cache/foreup.py` — 102 passed
+locally (pure unit tests, no DB required; the full DB-backed integration
+suite still runs in CI per policy). No backend code touched, as scoped.
+
+Try it: `/tee-time` → set prefs with a selection → Dispatch → the new Options
+list replaces the old auto-book flow; tap a row to book.
+
+Risk: low — frontend-only UI/dispatch change behind the existing tee-time
+flow; backend contract unchanged (types.ts ↔ models.py already in parity per
+the plan, no additions needed). NOTICEABLE (visible on TestFlight — the
+results screen changes from "one auto-picked slot" to a real pick-list).
+
 ## DONE: caddie-surface-osm-trees implemented + pushed to integration/next (5ade0fd)
 
 Builder implemented specs/caddie-surface-osm-trees-plan.md in full. Gates OSM
