@@ -12237,3 +12237,21 @@ both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
 - REVIEWS on db5aa67: reviewer=SHIP (aggregation sum-then-minimize-once correct, reuses per-format math, honest empty, round-scoped fns untouched, 39/39 genuine tests; 1 copy nit). qa=PASS all 5 gates @ f4adc32 (lint, tsc, voice 274/274, settlement 39/39, games 99/99). designer=APPROVE (calm/yardage-book, no SaaS drift; 3 nits).
 - FOLD (honesty-critical): empty-state copy is ambiguous — when a tournament has ONLY non-money games (no pointValue), isEmpty is true forever, so "appears once rounds are scored" mispromises. Since this item EXISTS to fix Games-tab honesty, distinguish 3 states. Dispatching builder for the copy refinement + hasMoneyGames helper + tests. Leaving pure-style nits (EmptyState reuse, trailing divider) as-is.
 - AWAITING builder on the copy-refinement fold. Clean → re-run gates on new head, update bundle PR #132 checklist (NOTICEABLE), backlog→done-on-bundle, CI green.
+
+- BUILT (a2dbd14): copy-refinement fold DONE, on `integration/next`. Added
+  `hasMoneyGames(rounds)` to `frontend/src/lib/settlement.ts` — mirrors
+  `computeNetSettlement`'s exact `format !== 'settlement' && pointValue > 0`
+  filter so the two can never diverge. `TournamentPageClient.tsx` now computes
+  `hasMoneyGame` (reusing existing `hasScores`) and splits the single empty-state
+  string into 3 honest cases: no money games → "No money games in this
+  tournament."; money games + unscored → "Settle-up appears once rounds are
+  scored." (unchanged); money games + scored + net≈0 → "All square — nothing to
+  settle." Copy-only, same serif-italic styling; no other exported fn touched.
+  +5 tests (`describe('hasMoneyGames')` — money game true, non-money/zero/unset
+  pointValue false, empty rounds false, settlement-format game excluded,
+  mixed money+non-money rounds true). Gates: lint clean, `tsc --noEmit` clean,
+  voice-tests smoke 274/274, `vitest run src/lib/settlement` 44/44 passed
+  (was 39, +5). Backend untouched, no DB container. Pushed to
+  `integration/next`. Classification: **noticeable** (user-facing copy fix on
+  the Games-tab Settle-up panel just shipped in db5aa67).
+- AWAITING reviewer/qa/designer re-pass on a2dbd14, then bundle PR #132 update.
