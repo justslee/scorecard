@@ -45,6 +45,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.db.engine import async_session
+from app.db.models import GolferProfile as GolferProfileORM
 from app.db.models import TeeTimeBooking as TeeTimeBookingORM
 from app.services.clerk_auth import current_user_id, require_owner
 from app.services.tee_times.availability_call_cache import (
@@ -71,6 +72,11 @@ from app.services.tee_times.search_cache import (
 )
 from app.services.tee_times.selection import resolve_selectors
 from app.services.voice_booking import telephony
+from app.services.voice_booking.caller_voice import (
+    ALLOWED_CALLER_VOICES,
+    PICKER_VOICES,
+    resolve_caller_voice,
+)
 from app.services.voice_booking.compliance import (
     SuppressionList,
     check_call_allowed,
@@ -587,6 +593,7 @@ def _build_rehearsal_context(
     owner_name: str,
     tz: str,
     today: date | None = None,
+    caller_voice: str | None = None,
 ) -> VoiceBookingContext:
     """Build the TEST booking context for a rehearsal call. Pure given `today`.
 
@@ -594,6 +601,11 @@ def _build_rehearsal_context(
     are all the owner's own number — a self-call. A concrete sample ask
     (next Saturday morning, 1 player, 7–11am) gives the agent something real
     to say and role-play against.
+
+    `caller_voice`: the owner's saved caller-voice pick (or None), fed through
+    to ctx.caller_voice so a rehearsal call audibly reflects the picker
+    (routes/tee_times.py's caller-voice endpoints) — resolved to an actual
+    Realtime voice name by caller_voice.resolve_caller_voice() in the bridge.
     """
     when = _next_saturday(today or date.today())
     return VoiceBookingContext(
@@ -608,6 +620,7 @@ def _build_rehearsal_context(
         party_size=1,
         max_price_usd=None,
         course_tz=tz,
+        caller_voice=caller_voice,
     )
 
 
@@ -633,7 +646,26 @@ async def rehearsal_call(owner_id: str = Depends(require_owner)) -> RehearsalCal
 
     owner_name = os.getenv("VOICE_BOOKING_OWNER_NAME") or "the Looper owner"
     tz = os.getenv("VOICE_BOOKING_REHEARSAL_TZ") or "America/New_York"
-    ctx = _build_rehearsal_context(owner_number, owner_name, tz)
+
+    # Feed the owner's saved caller-voice pick through so a rehearsal call
+    # audibly reflects the picker (GET/PUT /api/tee-times/caller-voice).
+    # Best-effort: a DB hiccup here must not break a working rehearsal call —
+    # falls back to None, which resolve_caller_voice() turns into the
+    # env/default (same posture as book_tee_time's best-effort persist step).
+    saved_caller_voice: str | None = None
+    try:
+        async with async_session() as db:
+            result = await db.execute(
+                select(GolferProfileORM).where(GolferProfileORM.user_id == owner_id)
+            )
+            profile_row = result.scalar_one_or_none()
+        saved_caller_voice = profile_row.caller_voice if profile_row else None
+    except Exception:
+        log.exception("rehearsal-call: failed to read saved caller_voice for owner=%s", owner_id)
+
+    ctx = _build_rehearsal_context(
+        owner_number, owner_name, tz, caller_voice=saved_caller_voice
+    )
     disclosure = disclosure_line(ctx)
     masked = _mask_number(owner_number)
 
@@ -692,6 +724,98 @@ async def rehearsal_call(owner_id: str = Depends(require_owner)) -> RehearsalCal
             message=result.message,
             bookingUrl=result.booking_url,
         ),
+    )
+
+
+# ─── Caller voice picker — Option B (specs/voice-clone-caller-plan.md §2B/§3) ──
+#
+# No voice CLONING on the OpenAI Realtime live-call path (no custom voices);
+# instead the owner picks the best natural PRESET voice from a calm subset,
+# persisted on their golfer_profiles row. Owner-gated (require_owner) — this
+# is a single-owner preference, not a per-golfer setting. Values are always
+# validated against ALLOWED_CALLER_VOICES; an arbitrary string is never stored
+# or passed to the Realtime API.
+
+class CallerVoiceOptionOut(BaseModel):
+    voice: str
+    label: str
+
+
+class CallerVoiceResponse(BaseModel):
+    # The RESOLVED voice a call would use right now (owner-pref → env →
+    # default — see caller_voice.resolve_caller_voice).
+    voice: str
+    # The raw saved preference, or null if the owner never set one.
+    saved: str | None
+    options: list[CallerVoiceOptionOut]
+
+
+class CallerVoiceUpdateRequest(BaseModel):
+    voice: str
+
+
+def _caller_voice_options() -> list[CallerVoiceOptionOut]:
+    return [CallerVoiceOptionOut(voice=v["voice"], label=v["label"]) for v in PICKER_VOICES]
+
+
+@router.get("/caller-voice", response_model=CallerVoiceResponse)
+async def get_caller_voice(owner_id: str = Depends(require_owner)) -> CallerVoiceResponse:
+    """Return the owner's saved caller-voice pick + the resolved effective
+    voice + the picker options. No row / null column → saved=null, voice
+    resolves to the env/default (same precedence the live call uses)."""
+    async with async_session() as db:
+        result = await db.execute(
+            select(GolferProfileORM).where(GolferProfileORM.user_id == owner_id)
+        )
+        row = result.scalar_one_or_none()
+
+    saved = row.caller_voice if row else None
+    return CallerVoiceResponse(
+        voice=resolve_caller_voice(saved),
+        saved=saved,
+        options=_caller_voice_options(),
+    )
+
+
+@router.put("/caller-voice", response_model=CallerVoiceResponse)
+async def set_caller_voice(
+    req: CallerVoiceUpdateRequest, owner_id: str = Depends(require_owner)
+) -> CallerVoiceResponse:
+    """Persist the owner's caller-voice pick. Rejects anything outside
+    ALLOWED_CALLER_VOICES with 422 — never stores/passes an arbitrary string."""
+    if req.voice not in ALLOWED_CALLER_VOICES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown voice '{req.voice}' — expected one of {sorted(ALLOWED_CALLER_VOICES)}",
+        )
+
+    async with async_session() as db:
+        result = await db.execute(
+            select(GolferProfileORM).where(GolferProfileORM.user_id == owner_id)
+        )
+        row = result.scalar_one_or_none()
+
+        if row is None:
+            # Minimal upsert row — mirrors routes/profile.py's PUT create path.
+            row = GolferProfileORM(
+                id=str(uuid.uuid4()),
+                user_id=owner_id,
+                owner_id=owner_id,
+                caller_voice=req.voice,
+            )
+            db.add(row)
+        else:
+            row.caller_voice = req.voice
+            row.updated_at = datetime.now(timezone.utc)
+
+        await db.commit()
+
+    # req.voice is already allowlist-validated above — no need to re-read the
+    # (possibly expired-on-commit) ORM attribute.
+    return CallerVoiceResponse(
+        voice=resolve_caller_voice(req.voice),
+        saved=req.voice,
+        options=_caller_voice_options(),
     )
 
 

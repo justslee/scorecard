@@ -169,6 +169,25 @@ export interface RehearsalCallResponse {
   result?: BookingResult | null;
 }
 
+// ─── Caller voice picker (Option B) ─────────────────────────────────────────
+// Mirrors backend CallerVoiceResponse/CallerVoiceOptionOut (routes/tee_times.py).
+// No voice CLONING on the OpenAI Realtime live-call path — the owner instead
+// picks the best natural PRESET voice from a calm subset. NO live audio
+// preview here; the owner hears it on their next rehearsal call.
+
+export interface CallerVoiceOption {
+  voice: string;
+  label: string;
+}
+
+export interface CallerVoiceResponse {
+  /** The RESOLVED voice a call would use right now (owner-pref -> env -> default). */
+  voice: string;
+  /** The raw saved preference, or null if the owner never set one. */
+  saved: string | null;
+  options: CallerVoiceOption[];
+}
+
 // ─── Availability-by-call — S4e rung 3 ─────────────────────────────────────────
 // Mirrors backend AvailabilityCallStatusOut (backend/app/routes/tee_times.py).
 // User-initiated ONLY (a search never triggers this) — the "No online times —

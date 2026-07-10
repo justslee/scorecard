@@ -27,13 +27,13 @@ from typing import Any, Protocol
 
 from . import compliance
 from .call_registry import PendingCall
+from .caller_voice import resolve_caller_voice
 from .types import CallOutcome, CallResult, CallTurn, VoiceBookingContext
 
 log = logging.getLogger(__name__)
 
 OPENAI_REALTIME_MODEL_DEFAULT = "gpt-realtime"
 OPENAI_REALTIME_TRANSCRIBE_MODEL_DEFAULT = "gpt-4o-transcribe"
-OPENAI_REALTIME_DEFAULT_VOICE_DEFAULT = "sage"
 
 _VALID_RESULTS: tuple[CallResult, ...] = (
     "booked",
@@ -123,11 +123,17 @@ def build_call_session_update(
     *,
     model: str = OPENAI_REALTIME_MODEL_DEFAULT,
     transcribe_model: str = OPENAI_REALTIME_TRANSCRIBE_MODEL_DEFAULT,
-    voice: str = OPENAI_REALTIME_DEFAULT_VOICE_DEFAULT,
+    voice: str | None = None,
 ) -> dict[str, Any]:
     """Pure function — the full session.update payload sent to OpenAI FIRST,
     before any audio is forwarded. μ-law both directions (phone audio; both
-    Twilio and OpenAI pass it through untranscoded)."""
+    Twilio and OpenAI pass it through untranscoded).
+
+    `voice`: an explicit override, for tests only — leave unset (None) in
+    production so the effective voice flows through
+    caller_voice.resolve_caller_voice(ctx.caller_voice), which is the single
+    source of truth for the owner-pref → env → default precedence."""
+    effective_voice = voice if voice is not None else resolve_caller_voice(ctx.caller_voice)
     return {
         "type": "session.update",
         "session": {
@@ -143,7 +149,7 @@ def build_call_session_update(
                 },
                 "output": {
                     "format": {"type": "audio/pcmu"},
-                    "voice": voice,
+                    "voice": effective_voice,
                 },
             },
             "tools": [RECORD_BOOKING_OUTCOME_TOOL],

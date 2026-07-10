@@ -54,6 +54,11 @@ class VoiceBookingContext:
     # byte-identical book-mode behavior. S4e's availability-ask trigger is the
     # only caller that ever sets "availability".
     mode: DialogMode = "book"
+    # The owner's saved preset-voice pick (caller_voice.py), or None — resolved
+    # to an actual Realtime voice name by caller_voice.resolve_caller_voice()
+    # in media_bridge.build_call_session_update. DEFAULT None so every existing
+    # caller is byte-identical (falls through to env/default).
+    caller_voice: str | None = None
 
 
 @dataclass

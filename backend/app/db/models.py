@@ -248,6 +248,10 @@ class GolferProfile(Base):
     play_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     handicap_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     strokes_gained: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # Added by migration 013 — the owner's saved AI-caller preset voice name
+    # (caller_voice.py ALLOWED_CALLER_VOICES), or None (falls through to the
+    # env/default via caller_voice.resolve_caller_voice()).
+    caller_voice: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
