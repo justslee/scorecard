@@ -2267,9 +2267,9 @@
       "type": "major",
       "priority": 2,
       "risk": "high",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
-      "why": "Add adapters/chronogolf.py (marketplace JSON), generalize validate_foreup_courses.py \u2192 probe_booking_capability.py with website fingerprinting (\u00a72b), Quick18 HTML parse if trivially reachable. File the Lightspeed Partner API + refresh GolfNow/Supreme partnership applications as a rider. Plan \u00a71,\u00a72b,\u00a73. Depends on S4a."
+      "why": "SHIPPED 2026-07-10 on integration/next @ f4d0fa2 (bundle PR #128). Chronogolf LIVE-verified (real endpoint marketplace/clubs/<club_id>/teetimes?...&affiliation_type_ids[]=<default> \u2014 NOT the plan's guess; Cloudflare present but honest UA NOT blocked). adapters/chronogolf.py (honest: out_of_capacity is-False filter, cheapest green_fee in DOLLARS not cents, players=party_size documented-not-a-count, single-player restriction honored), registered in router ADAPTERS. +3 live-verified NY-metro seed rows (Rock Spring GC West Orange NJ, Pleasantville CC Westchester NY, Beaver Brook CC Annandale NJ) \u2192 11 NY-area courses now have real availability (8 TeeItUp + 3 Chronogolf). Generalized validate_foreup_courses.py \u2192 probe_booking_capability.py (fingerprint+id-extract+probe+capture-fixture; old foreUP script untouched). Partnership-apps checklist \u2192 specs/teetime-partnership-applications.md (Lightspeed Partner API, GolfNow/TeeOff affiliate, foreUP vendor, Supreme Golf). Quick18 SKIPPED (no live trivially-reachable NY-metro course found). Reviewer: security clean (no SSRF/injection/secret surface); honesty invariants eng-lead-verified; QA green (ruff clean, 1880 passed/83 pg-skip, S0/S1/S4a 177 byte-identical, no live net, frontend untouched). Plan \u00a71,\u00a72b,\u00a73."
     },
     {
       "id": "teetime-s4d-playwright-worker-pending-ux",
