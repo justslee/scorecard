@@ -10158,3 +10158,11 @@ button returns 'not enabled' note until then.
   call-token registry, realtime instructions), then reviewer + /security-review + QA.
 - On resume: check specs/teetime-s3b-twilio-bridge-plan.md exists, then git log for builder commits.
 - Do NOT merge; push updates PR #124.
+
+## AWAITING (S3b builder — feat/teetime-s3-caller, updates PR #124)
+- Fable plan committed: specs/teetime-s3b-twilio-bridge-plan.md (12202e2).
+- Builder implementing: call_registry.py, media_bridge.py, voice_booking_ws.py (public token-guarded WS),
+  telephony.py rewrite, pyproject deps (twilio+websockets), 3 new test files + 2 legacy test updates.
+- On builder DONE → reviewer (adversarial) + /security-review (open-relay + dial-safety) + qa (STRICT gates).
+- On resume: git log origin/feat/teetime-s3-caller for builder commits; do NOT re-run builder.
+- Do NOT merge; push updates PR #124.

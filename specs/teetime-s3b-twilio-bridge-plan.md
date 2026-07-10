@@ -179,7 +179,7 @@ Pure string builder (plain XML f-string; no twilio import needed). `<Connect>` (
 
 ```python
 class LiveCallTransport:
-    def __init__(self, *, twilio_client_factory, openai_ws_factory,
+    def __init__(self, *, twilio_client_factory,
                  public_host: str, from_number: str,
                  registry: CallTokenRegistry = registry,
                  call_timeout_seconds: float = 300.0) -> None: ...
@@ -210,10 +210,10 @@ class LiveCallTransport:
    — partial transcript, honest outcome.
 6. Return `(transcript, outcome)`.
 
-Both `twilio_client_factory` and `openai_ws_factory` are INJECTED so tests never touch
-the network; `openai_ws_factory` is not used by the transport itself — it is installed
-into the WS route's module hook at construction time is NOT the design (module global,
-§5.5); the transport only needs Twilio.
+`twilio_client_factory` is INJECTED so tests never touch the network. The transport
+itself never talks to OpenAI — the OpenAI WS factory is a separate module-level hook in
+`voice_booking_ws.py` (`_openai_ws_factory`, §5.4), monkeypatchable in tests the same
+way `tee_times._rehearsal_transport_factory` is.
 
 ```python
 def get_live_transport():
@@ -228,7 +228,7 @@ New gating ladder (replaces the `NotImplementedError` terminal):
    TLS host Twilio connects to for the media stream)")`.
 4. Else → construct and return
    `LiveCallTransport(twilio_client_factory=<lazy `from twilio.rest import Client`;
-   Client(sid, token)>, openai_ws_factory=None, public_host=…, from_number=…)`.
+   Client(sid, token)>, public_host=…, from_number=…)`.
    Construction performs NO network I/O (twilio's `Client(...)` is offline), so the
    route's `factory()` call stays dial-free; the ONLY dial is inside `run_call`.
 
