@@ -3,6 +3,12 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING (cycle 85 — CI strict-green on head 65c2932)
+All work + bookkeeping landed @65c2932 (pushed). Reviewer SHIP, designer PASS. AWAITING: PR #133 CI —
+Frontend gate + Backend gate must BOTH show state:SUCCESS on head 65c2932 (pending==0 AND no cancel/skip).
+On SUCCESS → cycle done, STOP (SILENT, no ship/ping). On FAIL → read the failing gate, fix, re-push, re-verify.
+Do NOT merge (owner approves the bundle). Reconcile from origin on resume.
+
 ## Cycle 85 (2026-07-11) — caddie orb on course-detail pages: DONE (on integration/next, PR #133)
 Closed the ONLY real gap the cycle-84 orb-wiring audit found: /courses/[id] hid the orb (plan §1 lists
 /courses(/*) as SHOW; owner: "omnipresent... everywhere it belongs"). NOTICEABLE — rides bundle #133.
