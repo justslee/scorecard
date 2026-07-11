@@ -14075,3 +14075,12 @@ Builder implements the plan on integration/next, commits+pushes, does NOT open a
 Mandatory deterministic money tests. Next: reviewer (fresh) → qa (gates SUCCESS on head SHA) →
 designer (BLOCKING, stake field/label copy changes). Then update PR#135 checklist + backlog.json
 follow-up (match-play opponent-picker UI, team-assignment UI, wolf 3-player). Do NOT ship/ping.
+
+## AWAITING — reviewer + qa + designer on 1a37556 (branch integration/next @ c972c82)
+Builder landed 1a37556: SETTLEABLE_FORMATS single-source, STAKE_GAME_IDS={skins,match,nassau,wolf},
+picker hides stake for non-settling formats + disables roster-unmet rows, buildRoundGames skips
+(never truncates), read-side "$X/pt" chips gated. Gates green locally (lint/tsc/voice 278/vitest
+2208/build/ruff). Builder flagged pre-existing computeWolf lone-mode non-zero-sum-per-hole
+(games.ts:827-843, locked by games.test.ts:937-960) — out of scope, worked around in test.
+Outcomes: reviewer SHIP + qa PASS + designer APPROVE → update PR#135 checklist + backlog follow-up.
+Any BLOCKING → re-dispatch builder. Do NOT ship/ping (bundle keeps accumulating).
