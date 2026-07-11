@@ -3,6 +3,32 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## tournament-live-leaderboard — DONE, builder (2026-07-11, NOTICEABLE — scores now catch up on foreground)
+Implemented specs/tournament-live-leaderboard-plan.md exactly on `integration/next` @dc542df
+(off 5bfcbb2). When the tournament page regains foreground/visibility, it silently refetches
+member rounds + recomputes standings so scores entered elsewhere (another device/tab) appear —
+flowing through the existing FLIP re-sort motion + order-change haptics. No polling, no new UI
+chrome, no backend change.
+- `TournamentPageClient.tsx`: refactored `load()` into `fetchAndApply({initial})`. The
+  `initial:true` path is byte-for-byte the prior behavior (`setLoading`/`setNotFound`). The
+  silent (`initial:false`) path never touches `loading`/`notFound`, never blanks the list, and
+  keeps the last good state on a `null`/degraded/thrown fetch. `reqIdRef` (bumped in the `[id]`
+  effect's cleanup) + `refreshInFlightRef` single-flight guard staleness/races; a new
+  `visibilitychange` → visible listener (mirrors RoundPageClient's weather foreground catch-up,
+  reading a `latestRef` so it never closes over stale state) triggers the silent refresh, gated
+  by a 15s throttle.
+- New `frontend/src/lib/leaderboard-refresh.ts` (pure, no React): `shouldRefreshLeaderboard`
+  (15s min interval, mirrors but does NOT import `weather-freshness.ts`) + `isPlausibleRefresh`
+  (skips a commit when storage-api's local-cache fallback returns 0 members for a tournament
+  that previously had them — an API hiccup, not a real mass deletion). 9 deterministic table
+  tests in `leaderboard-refresh.test.ts` (null timestamp, just-under/at threshold, 4 plausibility
+  quadrants) — all pass.
+- Zero changes to `tournament-standings.ts`, `settlement.ts`, `types.ts`, `models.py`, or the
+  backend — pure client wiring over existing `Tournament`/`Round` shapes.
+- Gates: `npm run lint` clean, `tsc --noEmit` clean, voice-tests smoke 278/278, `vitest run`
+  2186/2186, `npm run build` succeeds, backend `ruff check .` no-op (untouched). No local
+  Postgres used — DB-backed tests deferred to CI as instructed.
+
 ## tournament-per-round-format — DONE, builder (2026-07-11, NOTICEABLE — new picker UI + populated settlement)
 Implemented specs/tournament-per-round-format-plan.md exactly on `integration/next` @5bfcbb2
 (off a6c515c). Lets the golfer pick a game format + stake per TOURNAMENT round (not just a
