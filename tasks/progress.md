@@ -12878,3 +12878,7 @@ unranked ("—" rank, sorted last, "—" total, "No hcp" caption) — never scra
   build ok. Backend untouched. PR #133 checklist updated (3 noticeable items). Backlog:
   tournament-net-handicap-leaderboard → shipped (targeted edit, diff-verified single line).
 SILENT — no ship/ping (owner approves the whole bundle later). Head after bookkeeping below.
+
+## Cycle 84 (2026-07-11) — orb wiring QA audit (My-Card-copy bug class)
+- Queue drained of non-speculative high-value work; but the My Card copy bug (registered converse context whose copy CaddieOrbSheet didn't read → silent generic fallback) shipped in v1.1.0 → evidence the rapid orb build has wiring gaps. Aligns with owner's #1 'test critical flows' memory.
+- AWAITING: eng-lead — audit orb context wiring across ALL contexts (tee-time task, tournament task, round surface, my-card converse, general) for the same class (registered-but-not-fully-honored → silent wrong fallback / broken dispatch); verify copy renders + dispatch produces correct output + confidence gate + fall-through + orb visibility per page; FIX any found. Land on #133.
