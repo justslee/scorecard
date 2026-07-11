@@ -632,6 +632,18 @@ def _format_yardage_line(
             if tee_name and yardage_basis in ("tee-card", "tee-geom")
             else ""
         )
+        # Tee-box GEOMETRY on a par 4/5 is straight-line tee-to-green — it
+        # understates a doglegged/routed hole, so state it as a FLOOR, never a
+        # confident exact number (spec §5). This keeps the caddie's spoken
+        # grounding in agreement with the frontend "at least …" caption
+        # (hole-yardage.ts:yardageCaption) — no surface states an understated
+        # number as if it were exact.
+        if yardage_basis == "tee-geom" and par is not None and par != 3:
+            return (
+                f"{hole_label}{par_label} — at least {hole_yards} yards{tee_clause} "
+                f"(straight-line tee-to-green; the routed hole may play longer). "
+                f"Do not quote any other tee's yardage."
+            )
         return (
             f"{hole_label}{par_label} — {hole_yards} yards{tee_clause}. "
             f"Do not quote any other tee's yardage."
