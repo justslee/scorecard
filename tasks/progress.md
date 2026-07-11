@@ -13208,9 +13208,15 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 - NOTICEABLE (core caddie-trust fix). Backend touched → CI DB tests + local docker Postgres.
 - Builder DONE: 4 slices landed @ 275dee3/de9a12f/b9c6f29/2eb7dea, head 14dee9b. No file
   overlap with the parallel course/tee-time A0 commits interleaved on the branch (verified).
-- AWAITING: reviewer (adversarial) + QA (gates, DB via docker if image local else CI) in
-  parallel on head 14dee9b. Then designer (header + basis caption). BLOCKING → re-dispatch
-  builder; green → update PR #133 + backlog + progress. Reconcile from origin on resume.
+- Reviewer: SHIP. Criteria 1-7 confirmed (mock-178 banned from caddie surfaces; resolver
+  honest-null; untagged-box ordinal pick correct; surfaces agree; provenance labeled; fields
+  additive; tests not weakened). One non-blocking gap → FOLDED @007fa0a: backend
+  _format_yardage_line now states par-4/5 tee-geom as a FLOOR ("at least N …"), matching the
+  frontend caption (spec §5); new test_yardage_line.py locks it (2067 passed, +6).
+- QA: all gates PASS on 14dee9b; PR #133 all 3 required CI checks SUCCESS. DB tests via CI
+  (no local Postgres, per standing rule). Bethpage/hole-yardage/tee-anchor fixtures green.
+- AWAITING: designer (header yardage + basis caption). Then bookkeeping (PR #133 + backlog +
+  progress) + confirm CI SUCCESS on new head 007fa0a. Reconcile from origin on resume.
 
 ## Cycle 89 (2026-07-11) — OWNER: course-selection UX (named-course bug + map search)
 - Owner (A) BUG: in Pittsburgh (GPS), asked caddie for a tee time at "Marine Park" (NY) → it searched Pittsburgh courses instead of the named course. Need named-course resolution + caddie clarification (disambiguation), not GPS-fallback.
