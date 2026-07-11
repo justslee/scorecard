@@ -94,7 +94,7 @@
       "type": "major",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
+      "status": "shipped",
       "depends_on": [],
       "why": "AUDIT: computeStandings (TournamentPageClient.tsx:96-134) is GROSS strokes only — no handicaps, no games/format factored. Add a Net mode (alongside Gross/To-Par) using player handicaps. User-facing."
     },

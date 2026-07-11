@@ -12858,3 +12858,23 @@ handicap not 0-fabrication; guard covers Net; tie-aware re-rank) + designer (Net
 presentation + "No hcp" honest state, calm yardage-book). BLOCKING → re-dispatch builder.
 Green+designer-ok → confirm CI strict-green on head, update PR #133 checklist + backlog
 (TARGETED edit, dup keys) + progress. SILENT — no ship/ping. Reconcile from origin on resume.
+
+## Cycle 83 (2026-07-11) — tournament NET/handicap leaderboard: DONE
+Landed on integration/next (#133) as NOTICEABLE. Net = gross − Math.round(course handicap),
+per-round allocation summed over scored rounds; handicap from round.players[].handicap ONLY
+(estimateHandicapFromRounds is owner-only, unusable per-field). Honest missing-handicap:
+unranked ("—" rank, sorted last, "—" total, "No hcp" caption) — never scratch 0.
+- Builder @3c5db4e: extracted pure helpers → src/lib/tournament-standings.ts (behavior-
+  preserving), added Net mode + 8 tests. Gross/To-Par byte-identical behavior.
+- Reviewer: SHIP (extraction faithful, net math + null-handling correct, guard covers Net,
+  tie-aware re-rank). Added its suggested some-but-not-all-rounds allocation test.
+- Designer: POLISH → found a REAL honesty bug the reviewer missed — backend serialises unset
+  handicap as null (not undefined), so `p.handicap !== undefined` stored null and
+  Math.round(null)===0 fabricated a scratch golfer for every un-handicapped player. Fixed
+  @f9c7725: `!= null` in the load effect + `== null` guard in standings.ts + mode-aware
+  leader-callout gate (no "Leading … NET —" for an unranked field) + "Net" total-column
+  label in net mode + explicit-null regression test.
+- Gates green on f9c7725: lint clean, tsc 0, voice 277/277, vitest 2048/2048 (11 net tests),
+  build ok. Backend untouched. PR #133 checklist updated (3 noticeable items). Backlog:
+  tournament-net-handicap-leaderboard → shipped (targeted edit, diff-verified single line).
+SILENT — no ship/ping (owner approves the whole bundle later). Head after bookkeeping below.
