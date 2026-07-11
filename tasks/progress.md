@@ -13513,3 +13513,13 @@ Lesson candidate: version must never sort below the last-shipped; VERSION file i
   invariant (NO Places/GolfAPI on path; OSM-only geo-cell-cached write-through), pin cap + zoom-out.
 - On plan: builder on integration/next (pytest RED->GREEN incl budget-invariant + degraded-not-empty),
   then reviewer (fresh) + qa (SHA-pinned CI SUCCESS). No designer (no UI). Do NOT ship/ping.
+
+## AWAITING (cycle 96 update) — builder running on B1
+- Plan landed: specs/course-selection-b1-plan.md (fable authored, saved by lead — plan agent is read-only).
+  Contract: GET /api/courses/in-bounds?swLat&swLng&neLat&neLng; {courses,degraded,zoomIn};
+  DB ST_MakeEnvelope leg always runs (honesty floor) + OSM 0.05deg geo-cells (cold-only, cap 4,
+  positive-cache, write-through) + dedupe_by_name + attach_stable_ids; 40-pin cap; area>0.25sqdeg->zoomIn.
+- Builder dispatched on integration/next. On completion: reviewer (fresh, budget-invariant +
+  degraded-not-empty + injection/param validation) + qa (ruff + pytest DB-free local; CI SHA-pinned
+  SUCCESS for DB-backed). No designer (backend-only). Then PR #134 checklist (B1 SILENT/infra —
+  enables NOTICEABLE B2) + progress. Do NOT ship/ping.
