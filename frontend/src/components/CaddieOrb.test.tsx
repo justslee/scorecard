@@ -6,13 +6,55 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/tee-time" }));
 vi.mock("@/lib/haptics", () => ({ haptic: vi.fn() }));
 
+// motion.button's `animate` prop drives the confirming pulse (§6) — forward
+// it as an inspectable data attribute so the test can assert on the actual
+// keyframes the component computed, without depending on framer-motion's
+// real animation runtime (jsdom has no rAF).
+vi.mock("framer-motion", () => {
+  const passthroughTags = new Set(["div", "button"]);
+  // Memoized per tag — the Proxy's `get` trap fires on EVERY JSX access
+  // (`<motion.button>` re-reads `motion.button` every render); creating a
+  // fresh component function there would give React a new component
+  // IDENTITY each render, forcing an unmount+remount instead of an update
+  // (stale DOM node references in tests, state never visibly flushed).
+  const cache = new Map<string, React.ForwardRefExoticComponent<Record<string, unknown>>>();
+  const motion = new Proxy(
+    {},
+    {
+      get: (_target, tag: string) => {
+        if (!passthroughTags.has(tag)) return undefined;
+        const cached = cache.get(tag);
+        if (cached) return cached;
+        const Passthrough = React.forwardRef((props: Record<string, unknown>, ref: React.Ref<unknown>) => {
+          const { initial: _initial, animate, transition, ...rest } = props;
+          return React.createElement(tag, {
+            ...rest,
+            ref,
+            "data-animate": JSON.stringify(animate),
+            "data-transition": JSON.stringify(transition),
+          });
+        });
+        Passthrough.displayName = `motion.${tag}`;
+        cache.set(tag, Passthrough);
+        return Passthrough;
+      },
+    },
+  );
+  return {
+    motion,
+    AnimatePresence: ({ children }: { children?: React.ReactNode }) =>
+      React.createElement(React.Fragment, null, children),
+  };
+});
+
 import CaddieOrb from "./CaddieOrb";
 import { onLooperOpen, type LooperOpenDetail } from "@/lib/looper-bus";
+import { setCaddieOrbState } from "@/lib/caddie-context";
 
 // jsdom in this repo doesn't ship window.localStorage — stub a minimal
 // in-memory implementation so the one-time-intro guard in CaddieOrb (which
@@ -86,5 +128,18 @@ describe("CaddieOrb", () => {
     vi.advanceTimersByTime(400);
     fireEvent(orb, new MouseEvent("pointerup", { bubbles: true }));
     expect(received).toEqual([]);
+  });
+
+  it("confirming orb state pulses the orb, then returns to rest on idle", () => {
+    render(<CaddieOrb />);
+    const orb = screen.getByLabelText("Talk to your caddie");
+    expect(JSON.parse(orb.getAttribute("data-animate")!)).toEqual({ scale: 1, opacity: 1 });
+
+    act(() => setCaddieOrbState("confirming"));
+    expect(JSON.parse(orb.getAttribute("data-animate")!)).toEqual({ scale: [1, 1.12, 1], opacity: 1 });
+    expect(JSON.parse(orb.getAttribute("data-transition")!)).toEqual({ duration: 0.5, ease: "easeOut" });
+
+    act(() => setCaddieOrbState("idle"));
+    expect(JSON.parse(orb.getAttribute("data-animate")!)).toEqual({ scale: 1, opacity: 1 });
   });
 });

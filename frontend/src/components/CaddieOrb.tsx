@@ -20,6 +20,7 @@ import { shouldShowCaddieOrb } from '@/components/nav/shouldShowCaddieOrb';
 import { shouldShowTabBar } from '@/components/nav/shouldShowTabBar';
 import { openLooper, looperContextForPath } from '@/lib/looper-bus';
 import { haptic } from '@/lib/haptics';
+import { onCaddieOrbState } from '@/lib/caddie-context';
 
 /** Long-press threshold — past this, the orb opens the caddie already listening. */
 const ORB_HOLD_MS = 350;
@@ -64,6 +65,15 @@ export default function CaddieOrb() {
   const downAt = useRef<{ x: number; y: number } | null>(null);
 
   const [showIntro, setShowIntro] = useState(false);
+
+  // Confirming beat (specs/orb-s2-context-contract-teetime-plan.md §6) — a
+  // one-shot success pulse when the host (CaddieOrbSheet) applies a task and
+  // arms the page's own dispatch. Additive only: no pointer/placement/
+  // visibility change. The sheet covers the orb while open (z 61 vs 50), so
+  // this pulse mainly lands visibly as the sheet slides away during the
+  // 1400ms beat / phase change; the haptic (fired by the host) is primary.
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => onCaddieOrbState((s) => setConfirming(s === 'confirming')), []);
 
   // One-time "Your caddie moved here" caption — first render where the orb
   // is shown, then never again. Guarded to useEffect for SSR safety.
@@ -136,8 +146,8 @@ export default function CaddieOrb() {
       <motion.button
         aria-label="Talk to your caddie"
         initial={{ scale: 0.85, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={T.springSoft}
+        animate={{ scale: confirming ? [1, 1.12, 1] : 1, opacity: 1 }}
+        transition={confirming ? { duration: 0.5, ease: 'easeOut' } : T.springSoft}
         onPointerDown={(e) => {
           heldFired.current = false;
           downAt.current = { x: e.clientX, y: e.clientY };
