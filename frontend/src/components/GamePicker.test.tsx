@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 //
 // GamePicker — money-honesty regression (tournament-settlement-honesty-
-// plan.md §5). Locks in:
+// plan.md §5, reviewer BLOCKING #2). Locks in:
 //   - a non-stake-taking format (stableford) never renders a stake row, and
-//     shows the quiet "points only" note once selected;
+//     shows the honest, format-agnostic "no money" note once selected — the
+//     old copy ("Points game — no money settlement") was factually wrong for
+//     stroke/vegas/bb/scr, none of which are points games;
+//   - the note is format-agnostic: it also renders for stroke (a non-points,
+//     non-stake format, and the /round/new DEFAULT selection);
 //   - a stake-taking format (skins) DOES render the stake row;
 //   - an unmet-roster-requirement format (match play with rosterSize=3)
 //     renders disabled with the honest sub-copy and never fires onToggle.
@@ -51,7 +55,7 @@ describe("GamePicker — stake honesty (STAKE_GAME_IDS)", () => {
     // The four flat-rate stake buttons only ever appear inside a stake row.
     expect(screen.queryByText("$2")).toBeNull();
     expect(screen.queryByText("$10")).toBeNull();
-    expect(screen.getByText("Points game — no money settlement")).toBeTruthy();
+    expect(screen.getByText("No money on this one — nothing to settle.")).toBeTruthy();
   });
 
   it("skins selected: renders the $ stake row", () => {
@@ -61,14 +65,21 @@ describe("GamePicker — stake honesty (STAKE_GAME_IDS)", () => {
     expect(screen.getByText("$5")).toBeTruthy();
     expect(screen.getByText("$10")).toBeTruthy();
     expect(screen.getByText("$20")).toBeTruthy();
-    expect(screen.queryByText("Points game — no money settlement")).toBeNull();
+    expect(screen.queryByText("No money on this one — nothing to settle.")).toBeNull();
   });
 
-  it('"No stakes" selected shows neither a stake row nor the points-only note', () => {
+  it('"No stakes" selected shows neither a stake row nor the no-money note', () => {
     renderPicker({ selected: [{ id: "none", stake: "" }] });
 
     expect(screen.queryByText("$2")).toBeNull();
-    expect(screen.queryByText("Points game — no money settlement")).toBeNull();
+    expect(screen.queryByText("No money on this one — nothing to settle.")).toBeNull();
+  });
+
+  it("stroke selected: renders no $ stake row and shows the honest no-money note — stroke is the /round/new default and isn't a points game, so the copy must be format-agnostic", () => {
+    renderPicker({ selected: [{ id: "stroke", stake: "" }] });
+
+    expect(screen.queryByText("$2")).toBeNull();
+    expect(screen.getByText("No money on this one — nothing to settle.")).toBeTruthy();
   });
 });
 

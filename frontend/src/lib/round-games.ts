@@ -37,7 +37,7 @@ export const GAME_OPTIONS: GameOption[] = [
   { id: "skins", l: "Skins", sub: "Low score on a hole takes the pot.", tag: "$ per hole" },
   { id: "nassau", l: "Nassau", sub: "Three bets: front 9, back 9, overall.", tag: "$20·20·20" },
   { id: "stable", l: "Stableford", sub: "Points per hole. Aggressive rewarded.", tag: "Net" },
-  { id: "wolf", l: "Wolf", sub: "Rotating lone wolf. Partners or go alone.", tag: "3–4 ply" },
+  { id: "wolf", l: "Wolf", sub: "Rotating lone wolf. Partners or go alone.", tag: "Foursome" },
   { id: "vegas", l: "Vegas", sub: "Team scores combined into two-digit numbers.", tag: "Pairs" },
   { id: "bbb", l: "Bingo Bango Bongo", sub: "First on green, closest, first to hole.", tag: "Any size" },
   { id: "bb", l: "Best ball", sub: "Two-player team, best net score wins.", tag: "Teams" },
@@ -86,12 +86,16 @@ export const STAKE_GAME_IDS: ReadonlySet<GameId> = new Set(
 );
 
 /**
- * Exact roster size a format needs to settle correctly (not a minimum — an
+ * Exact roster size a format needs to compute correctly (not a minimum — an
  * over- or under-sized roster silently drops players). Below/above this, the
  * engine silently drops players (matchPlay: games.ts:739-741 only ever reads
  * playerIds[0]/[1]; wolf: games.ts:806-809 cycles a 4-player order and falls
- * back to round.players.slice(0,4)) — a truncated money game must be
- * unrepresentable, not just mislabeled.
+ * back to round.players.slice(0,4)) — a truncated game must be unrepresentable,
+ * not just mislabeled. Match is also a `STAKE_GAME_IDS` member, so for match
+ * this doubles as a money guard; wolf is no longer in `STAKE_GAME_IDS` (it
+ * settles no money — see `SETTLEABLE_FORMATS` in settlement.ts), but the
+ * requirement stays: a roster ≠ 4 still silently drops players from wolf's
+ * points leaderboard, so this keeps that display honest too.
  */
 export const ROSTER_REQUIREMENT: Partial<Record<GameId, number>> = {
   match: 2,

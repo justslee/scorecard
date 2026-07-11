@@ -108,10 +108,9 @@ export default function GamePicker({
                 marginBottom: 4,
                 borderRadius: 12,
                 border: `1px solid ${active ? T.ink : "transparent"}`,
-                background: active ? T.paperDeep : "transparent",
+                background: active ? T.paperDeep : rosterUnmet ? T.hairlineSoft : "transparent",
                 cursor: rosterUnmet ? "default" : "pointer",
                 textAlign: "left",
-                opacity: rosterUnmet ? 0.5 : 1,
               }}
             >
               <div
@@ -145,6 +144,7 @@ export default function GamePicker({
                           padding: "1px 5px",
                           borderRadius: 3,
                           textTransform: "uppercase",
+                          opacity: rosterUnmet ? 0.5 : 1,
                         }}
                       >
                         {g.tag}
@@ -177,6 +177,7 @@ export default function GamePicker({
                       justifyContent: "center",
                       fontSize: 11,
                       fontFamily: T.mono,
+                      opacity: rosterUnmet ? 0.5 : 1,
                     }}
                   >
                     {"✓"}
@@ -246,8 +247,13 @@ export default function GamePicker({
                 </div>
               )}
 
-              {/* Points-only format — quiet italic note so the absent stake
-                  reads as intent, not omission (no toast, no chrome). */}
+              {/* Non-stake format (points-only OR unconstructible, e.g. stroke,
+                  stableford, vegas, best ball, scramble) — quiet italic note
+                  so the absent stake reads as intent, not omission (no toast,
+                  no chrome). Copy is deliberately format-agnostic: it must be
+                  true for every non-STAKE_GAME_IDS format, not just points
+                  games (reviewer BLOCKING #2 — the old "Points game" wording
+                  was factually wrong for stroke/vegas/bb/scr). */}
               {active && !takesStake && g.id !== "none" && (
                 <div
                   style={{
@@ -260,7 +266,7 @@ export default function GamePicker({
                     color: T.pencilSoft,
                   }}
                 >
-                  Points game — no money settlement
+                  No money on this one — nothing to settle.
                 </div>
               )}
             </div>

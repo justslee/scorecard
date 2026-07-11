@@ -2,8 +2,9 @@
  * Unit tests for settlement computation (lib/settlement.ts).
  *
  * Covers:
- *  - computeGameNetWinnings per format (skins, wolf, nassau, matchPlay, threePoint,
- *    vegas, hammer, rabbit, defender)
+ *  - computeGameNetWinnings per format (skins, nassau, matchPlay, threePoint,
+ *    vegas, hammer, rabbit, defender) — wolf is points-only (not settleable,
+ *    see the "wolf settles honestly empty" describe block below)
  *  - zero-sum invariant: sum of all nets == 0
  *  - computeNetSettlement across multiple games (including mixed skins + vegas)
  *  - minimizeTransfers: single game, multi-game, ties, already-settled
@@ -21,10 +22,11 @@ import {
   minimizeTransfers,
   getPersistedSettlement,
   hasMoneyGames,
+  SETTLEABLE_FORMATS,
 } from './settlement';
 import { buildRoundGames } from './round-games';
 import type { GameId } from './round-games';
-import type { Round, Game, Score, HoleInfo, Player } from './types';
+import type { Round, Game, GameFormat, Score, HoleInfo, Player } from './types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -227,33 +229,60 @@ describe('computeGameNetWinnings — non-settleable formats settle honestly empt
   });
 });
 
-// ─── computeGameNetWinnings — Wolf ────────────────────────────────────────────
+// ─── computeGameNetWinnings — Wolf (points-only; NOT in SETTLEABLE_FORMATS) ──
+// Adversarial review found computeWolf is NOT zero-sum: lone mode credits only
+// the wolf player (±pointValue) and debits no one; partner mode credits only
+// the winning pair and debits no one. A single lone-wolf win with
+// pointValue:2 used to return {p1:6} — money invented from nothing. Wolf is
+// points-only now (tournament-settlement-honesty-plan.md follow-up); it must
+// settle honestly EMPTY, exactly like stableford, never an invented ledger.
 
-describe('computeGameNetWinnings — wolf', () => {
-  it('zero-sum: wolf points * pointValue', () => {
-    // Build a round where wolf has known totals
+describe('computeGameNetWinnings — wolf settles honestly empty (points-only, no longer a money format)', () => {
+  it('a decided lone-wolf win with pointValue set returns {} (not the old fabricated ±pointValue record)', () => {
     const round = makeRound({
       players: makePlayers(['p1', 'p2', 'p3', 'p4']),
       scores: [
-        // Hole 1: p1 is wolf; uniform scores — lone wolf: no choice provided
-        ...makePlayers(['p1', 'p2', 'p3', 'p4']).map((_, i) => ({
-          playerId: ['p1', 'p2', 'p3', 'p4'][i],
-          holeNumber: 1,
-          strokes: 4,
-        })),
+        { playerId: 'p1', holeNumber: 1, strokes: 3 }, // wolf beats the field
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+        { playerId: 'p3', holeNumber: 1, strokes: 5 },
+        { playerId: 'p4', holeNumber: 1, strokes: 5 },
       ],
     });
-    // With no wolfHoleChoices, wolf gets no points (no lone wolf declared).
     const game = makeGame({
       playerIds: ['p1', 'p2', 'p3', 'p4'],
       format: 'wolf',
       settings: {
         pointValue: 2,
         wolfOrderPlayerIds: ['p1', 'p2', 'p3', 'p4'],
+        wolfHoleChoices: { 1: { mode: 'lone' } },
       },
     });
-    const net = computeGameNetWinnings(round, game);
-    expect(sumNet(net)).toBe(0);
+    expect(computeGameNetWinnings(round, game)).toEqual({});
+  });
+
+  it('a wolf-only round is isEmpty and reports no money games', () => {
+    const round = makeRound({
+      players: makePlayers(['p1', 'p2', 'p3', 'p4']),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 },
+        { playerId: 'p2', holeNumber: 1, strokes: 5 },
+        { playerId: 'p3', holeNumber: 1, strokes: 5 },
+        { playerId: 'p4', holeNumber: 1, strokes: 5 },
+      ],
+      games: [
+        makeGame({
+          playerIds: ['p1', 'p2', 'p3', 'p4'],
+          format: 'wolf',
+          settings: {
+            pointValue: 2,
+            wolfOrderPlayerIds: ['p1', 'p2', 'p3', 'p4'],
+            wolfHoleChoices: { 1: { mode: 'lone' } },
+          },
+        }),
+      ],
+    });
+    expect(computeNetSettlement(round).isEmpty).toBe(true);
+    expect(hasMoneyGames([round])).toBe(false);
   });
 });
 
@@ -1085,6 +1114,180 @@ describe('hasMoneyGames', () => {
   });
 });
 
+// ─── SETTLEABLE_FORMATS property test — zero-sum insurance ───────────────────
+// tournament-settlement-honesty-plan.md BLOCKING #1b (adversarial reviewer):
+// the wolf bug slipped past review because its "displayed==settled" test was
+// hand-engineered around a balanced win+loss pair, making sumNet == 0 by
+// construction rather than by proof. This test iterates the exhaustive
+// SETTLEABLE_FORMATS source of truth with a REAL decided round per format
+// (never a hand-balanced pair) so a future non-zero-sum format can never be
+// silently certified — a missing fixture for a set member fails loudly.
+
+const SETTLEABLE_FORMAT_FIXTURES: Partial<
+  Record<GameFormat, () => { round: Round; game: Game }>
+> = {
+  skins: () => {
+    const playerIds = ['p1', 'p2', 'p3'];
+    const scores: Score[] = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 5 },
+      { playerId: 'p3', holeNumber: 1, strokes: 5 },
+      ...Array.from({ length: 17 }, (_, i) => [
+        { playerId: 'p1', holeNumber: i + 2, strokes: 4 },
+        { playerId: 'p2', holeNumber: i + 2, strokes: 4 },
+        { playerId: 'p3', holeNumber: i + 2, strokes: 4 },
+      ]).flat(),
+    ];
+    const round = makeRound({ players: makePlayers(playerIds), scores });
+    const game = makeGame({ playerIds, format: 'skins', settings: { pointValue: 5 } });
+    return { round, game };
+  },
+  nassau: () => {
+    const playerIds = ['p1', 'p2'];
+    const scores: Score[] = [...uniformScores('p1', 3), ...uniformScores('p2', 5)];
+    const round = makeRound({ players: makePlayers(playerIds), scores });
+    const game = makeGame({
+      playerIds,
+      format: 'nassau',
+      settings: { pointValue: 10, nassauMode: 'stroke', nassauScope: 'individual' },
+    });
+    return { round, game };
+  },
+  matchPlay: () => {
+    const playerIds = ['p1', 'p2'];
+    const scores: Score[] = [...uniformScores('p1', 3), ...uniformScores('p2', 5)];
+    const round = makeRound({ players: makePlayers(playerIds), scores });
+    const game = makeGame({
+      playerIds,
+      format: 'matchPlay',
+      settings: {
+        pointValue: 20,
+        matchPlayMode: 'individual',
+        matchPlayPlayers: { player1Id: 'p1', player2Id: 'p2' },
+      },
+    });
+    return { round, game };
+  },
+  threePoint: () => {
+    const playerIds = ['p1', 'p2', 'p3', 'p4'];
+    const scores: Score[] = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 3 },
+      { playerId: 'p3', holeNumber: 1, strokes: 4 },
+      { playerId: 'p4', holeNumber: 1, strokes: 4 },
+    ];
+    const round = makeRound({ players: makePlayers(playerIds), scores });
+    const game: Game = {
+      id: 'g1',
+      roundId: 'r1',
+      format: 'threePoint',
+      name: 'Three-Point',
+      playerIds,
+      teams: [
+        { id: 'tA', name: 'Team A', playerIds: ['p1', 'p2'] },
+        { id: 'tB', name: 'Team B', playerIds: ['p3', 'p4'] },
+      ],
+      settings: {
+        pointValue: 10,
+        threePointPairs: {
+          teamAPlayer1Id: 'p1',
+          teamAPlayer2Id: 'p2',
+          teamBPlayer1Id: 'p3',
+          teamBPlayer2Id: 'p4',
+        },
+      },
+    };
+    return { round, game };
+  },
+  vegas: () => {
+    const playerIds = ['p1', 'p2', 'p3', 'p4'];
+    const scores: Score[] = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 5 },
+      { playerId: 'p3', holeNumber: 1, strokes: 4 },
+      { playerId: 'p4', holeNumber: 1, strokes: 5 },
+    ];
+    const round = makeRound({ players: makePlayers(playerIds), scores });
+    const game: Game = {
+      id: 'g1',
+      roundId: 'r1',
+      format: 'vegas',
+      name: 'Vegas',
+      playerIds,
+      teams: [
+        { id: 'tA', name: 'Team A', playerIds: ['p1', 'p2'] },
+        { id: 'tB', name: 'Team B', playerIds: ['p3', 'p4'] },
+      ],
+      settings: { pointValue: 1 },
+    };
+    return { round, game };
+  },
+  hammer: () => {
+    const playerIds = ['p1', 'p2', 'p3'];
+    const scores: Score[] = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 4 },
+      { playerId: 'p3', holeNumber: 1, strokes: 5 },
+    ];
+    const round = makeRound({ players: makePlayers(playerIds), scores });
+    const game = makeGame({ playerIds, format: 'hammer', settings: { pointValue: 5 } });
+    return { round, game };
+  },
+  rabbit: () => {
+    const playerIds = ['p1', 'p2', 'p3'];
+    const scores: Score[] = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 4 },
+      { playerId: 'p3', holeNumber: 1, strokes: 4 },
+      ...Array.from({ length: 8 }, (_, i) => [
+        { playerId: 'p1', holeNumber: i + 2, strokes: 4 },
+        { playerId: 'p2', holeNumber: i + 2, strokes: 4 },
+        { playerId: 'p3', holeNumber: i + 2, strokes: 4 },
+      ]).flat(),
+      { playerId: 'p1', holeNumber: 10, strokes: 4 },
+      { playerId: 'p2', holeNumber: 10, strokes: 3 },
+      { playerId: 'p3', holeNumber: 10, strokes: 4 },
+      ...Array.from({ length: 8 }, (_, i) => [
+        { playerId: 'p1', holeNumber: i + 11, strokes: 4 },
+        { playerId: 'p2', holeNumber: i + 11, strokes: 4 },
+        { playerId: 'p3', holeNumber: i + 11, strokes: 4 },
+      ]).flat(),
+    ];
+    const round = makeRound({ players: makePlayers(playerIds), scores });
+    const game = makeGame({ playerIds, format: 'rabbit', settings: { pointValue: 10 } });
+    return { round, game };
+  },
+  defender: () => {
+    const playerIds = ['p1', 'p2', 'p3'];
+    const scores: Score[] = [
+      { playerId: 'p1', holeNumber: 1, strokes: 3 },
+      { playerId: 'p2', holeNumber: 1, strokes: 4 },
+      { playerId: 'p3', holeNumber: 1, strokes: 5 },
+    ];
+    const round = makeRound({ players: makePlayers(playerIds), scores });
+    const game = makeGame({ playerIds, format: 'defender', settings: { pointValue: 5 } });
+    return { round, game };
+  },
+};
+
+describe('SETTLEABLE_FORMATS property test — every member is zero-sum on a real decided round', () => {
+  for (const format of SETTLEABLE_FORMATS) {
+    it(`${format}: sum(computeGameNetWinnings) === 0 on a decided multi-hole round (not a hand-balanced pair)`, () => {
+      const fixture = SETTLEABLE_FORMAT_FIXTURES[format];
+      expect(
+        fixture,
+        `no zero-sum fixture registered for SETTLEABLE_FORMATS member "${format}" — add one, don't skip it`
+      ).toBeDefined();
+      const { round, game } = fixture!();
+      const net = computeGameNetWinnings(round, game);
+      // A decided round must produce a real ledger, not an accidental no-op —
+      // an empty record here would make the zero-sum assertion vacuous.
+      expect(Object.keys(net).length).toBeGreaterThan(0);
+      expect(sumNet(net)).toBe(0);
+    });
+  }
+});
+
 // ─── Displayed == settled ─────────────────────────────────────────────────────
 // tournament-settlement-honesty-plan.md §5: every STAKE_GAME_IDS id, built by
 // the SAME `buildRoundGames` the picker uses, with pointValue > 0 and a
@@ -1136,45 +1339,15 @@ describe('Displayed == settled — buildRoundGames output settles for every STAK
     expect(net['p1']).toBeGreaterThan(0);
   });
 
-  it('wolf: builder-produced game (4-player roster) with pointValue > 0 and decided lone-wolf holes → non-empty, zero-sum net', () => {
-    // computeWolf's "lone" mode (games.ts:827-843) credits ONLY the current
-    // wolf player per hole (+3 win / -3 loss) — it does not debit the other
-    // three, so a SINGLE decided hole is never zero-sum by construction (this
-    // is pre-existing engine behavior, locked by games.test.ts:937-960; out
-    // of scope for this plan, which touches roster/stake honesty, not the
-    // wolf point formula). Two holes with an equal-and-opposite decided
-    // result (hole 1: p1-as-wolf wins; hole 2: p2-as-wolf loses) is enough to
-    // prove displayed==settled without touching per-format math.
+  it('wolf: builder-produced game (4-player roster) never carries a stake — wolf is points-only, not a STAKE_GAME_IDS member', () => {
+    // Wolf is deliberately excluded from STAKE_GAME_IDS (see
+    // "computeGameNetWinnings — wolf settles honestly empty" above): its
+    // engine is not zero-sum, so it must never display a stake it can't
+    // honor. A builder-produced wolf game gets pointValue undefined
+    // regardless of what stake string was typed in the picker.
     const playerIds = ['p1', 'p2', 'p3', 'p4'];
-    const scores: Score[] = [
-      // Hole 1: wolf = order[0] = p1, wins lone (3 < best-of-others 5).
-      { playerId: 'p1', holeNumber: 1, strokes: 3 },
-      { playerId: 'p2', holeNumber: 1, strokes: 5 },
-      { playerId: 'p3', holeNumber: 1, strokes: 5 },
-      { playerId: 'p4', holeNumber: 1, strokes: 5 },
-      // Hole 2: wolf = order[1] = p2, loses lone (5 > best-of-others 3).
-      { playerId: 'p1', holeNumber: 2, strokes: 3 },
-      { playerId: 'p2', holeNumber: 2, strokes: 5 },
-      { playerId: 'p3', holeNumber: 2, strokes: 4 },
-      { playerId: 'p4', holeNumber: 2, strokes: 4 },
-    ];
-    const round = makeRound({ players: makePlayers(playerIds), scores });
     const [game] = buildRoundGames([{ id: 'wolf' as GameId, stake: '$2' }], playerIds);
     expect(game).toBeDefined(); // 4-player roster satisfies wolf's requirement — not skipped
-    // wolfHoleChoices is live in-round data recorded via GameResults.tsx —
-    // buildRoundGames only constructs the game shell; set it here the way an
-    // actual round would before it settles.
-    game.settings = {
-      ...game.settings,
-      wolfOrderPlayerIds: playerIds,
-      wolfHoleChoices: { 1: { mode: 'lone' }, 2: { mode: 'lone' } },
-    };
-    round.games = [game];
-
-    const net = computeGameNetWinnings(round, game);
-    expect(Object.keys(net).length).toBeGreaterThan(0);
-    expect(sumNet(net)).toBe(0);
-    expect(net['p1']).toBeGreaterThan(0);
-    expect(net['p2']).toBeLessThan(0);
+    expect(game.settings.pointValue).toBeUndefined();
   });
 });

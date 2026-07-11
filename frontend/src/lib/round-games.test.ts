@@ -165,7 +165,7 @@ describe("buildRoundGames", () => {
   });
 
   it("emits pointValue === undefined for every non-stake id even when a $5 stake is selected — stableford settles $0, consistently", () => {
-    const nonStakeIds: GameId[] = ["stable", "bbb", "bb", "scr", "vegas", "stroke", "quota", "none"];
+    const nonStakeIds: GameId[] = ["stable", "bbb", "bb", "scr", "vegas", "wolf", "stroke", "quota", "none"];
     for (const id of nonStakeIds) {
       const games = buildRoundGames(
         [{ id, stake: "$5" }],
@@ -180,8 +180,8 @@ describe("buildRoundGames", () => {
 });
 
 describe("STAKE_GAME_IDS", () => {
-  it("equals exactly {skins, match, nassau, wolf}", () => {
-    expect(new Set(STAKE_GAME_IDS)).toEqual(new Set(["skins", "match", "nassau", "wolf"]));
+  it("equals exactly {skins, match, nassau} — wolf is NOT a member (its engine fabricates money, tournament-settlement-honesty-plan.md follow-up)", () => {
+    expect(new Set(STAKE_GAME_IDS)).toEqual(new Set(["skins", "match", "nassau"]));
   });
 
   it("every member's mapped GameFormat is in SETTLEABLE_FORMATS — the two sets can never drift silently", () => {

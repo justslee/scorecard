@@ -32,10 +32,16 @@ import { computeGameResults } from './games';
  * `round-games.ts` (write side: which picker formats are allowed to take a
  * stake at all). Never let a format take a stake without a branch here, and
  * never add a branch here without adding the format to this set.
+ *
+ * `wolf` is deliberately NOT a member: the lone-wolf branch credited only the
+ * wolf player (±pointValue) and debited no one, and partner-mode credited
+ * only the winning pair — neither is zero-sum, so wolf was fabricating money
+ * (a single lone-wolf win with pointValue:2 returned a +$6 record with no
+ * debits). Wolf is points-only until the engine is fixed to true zero-sum
+ * transfers (deferred follow-up) — see tournament-settlement-honesty-plan.md.
  */
 export const SETTLEABLE_FORMATS: ReadonlySet<GameFormat> = new Set([
   'skins',
-  'wolf',
   'nassau',
   'matchPlay',
   'threePoint',
@@ -125,14 +131,6 @@ export function computeGameNetWinnings(round: Round, game: Game): Record<string,
     if (byPlayer.length > 0) {
       const last = byPlayer[byPlayer.length - 1];
       net[last.playerId] = r2(-runningSum);
-    }
-  }
-
-  // ─── Wolf ───────────────────────────────────────────────────────────────
-  // Wolf totals are already zero-sum in points (direct point transfers).
-  if (game.format === 'wolf' && results.wolf) {
-    for (const pid of playerIds) {
-      net[pid] = r2((results.wolf.totals[pid] ?? 0) * pointValue);
     }
   }
 
