@@ -3,6 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## course-intel-static-persistence — Gap A + Gap B closure (2026-07-11) — DONE (silent, on integration/next @f682f85)
+Implemented specs/course-intel-static-persistence-plan.md (v2) exactly — the item was ~90%
+already built; this closed the two verified gaps only.
+- **Gap A (headline fix):** `create_mapped`/`put_mapped` (routes/courses_mapped.py) now
+  schedule `_precompute_course_elevations` BEFORE `_precompute_course_guides` (guides read
+  elevation props for research context) — previously only `/session/start` fired it, so a
+  freshly-mapped course could race its first course-intel open.
+- **Gap B:** added content-addressed `elevation_coords_key` (quantized tee/green center
+  coords, 6dp) stamped only by the precompute job. The skip logic now requires an exact key
+  match instead of "has tee_elevation_ft" — so a re-map (upsert_course delete+reinsert
+  round-tripping stale props via the editor) is detected and resampled, while an unmoved
+  course stays a zero-3DEP-call skip forever. `_elevation_patch` also stamps
+  `elevation_computed_at` (observability only).
+- **No schema change, no Alembic migration** — both new keys live inside the existing
+  `hole_features.properties` JSONB (plan's explicit ruling, section 3).
+- Moved `_feature_center`/`_green_persisted_elevation`/`_precompute_course_elevations`
+  verbatim `routes/caddie.py` → new `app/services/course_elevation.py` (import hygiene,
+  mirrors `course_guides.py`) so the CRUD route doesn't cross-import the caddie route.
+- Tests: updated `test_precompute_elevation.py` (moved import) + new key-match/missing/
+  mismatched/determinism cases; new `test_mapping_precompute_wiring.py` (non-DB, asserts
+  elevation-then-guides scheduling order + no-op on upsert-None); extended
+  `tests/integration/test_courses_mapped_db.py` with idempotency-via-key, a
+  remap-invalidation round-trip, and graceful-degrade-on-empty-sampler.
+- Verified: `ruff check .` clean; non-DB pytest 2060 passed/92 skipped; DB integration suite
+  against a real `postgis/postgis:16-3.4` docker container — **92 passed** (10/10 in
+  `test_courses_mapped_db.py`, all new cases green); frontend no-regression (lint clean,
+  `tsc --noEmit` clean, voice-tests 277/277). Docker container torn down after the run.
+- SILENT, backend-only — no API-shape change, no ship, no owner ping.
+
 ## Cycle 78 RETRO + BACKLOG GROOMING (2026-07-11) — DONE (silent, on integration/next)
 Retrospective over bundles #128–#133 (TestFlight → v1.1.0) + repaired the corrupted backlog.
 - **Grooming:** `backlog.json` was 212 items with ship-reports stuffed into `status`, ~100 lost
