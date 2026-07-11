@@ -13473,3 +13473,12 @@ Lesson candidate: version must never sort below the last-shipped; VERSION file i
   On completion: reviewer (adversarial, fresh) + qa (gates, SHA-pinned SUCCESS). No designer
   (no visual surface change per plan §8). Then update PR #134 checklist (NOTICEABLE).
   Do NOT ship/ping this cycle.
+
+## AWAITING (cycle 95 update) — reviewer + qa running on d09f6e6
+- Builder DONE @ d09f6e6 (7b16ce6 code + progress). Local gates all green per builder:
+  ruff clean, 2025 passed/92 skipped, voice smoke 278/0, tsc+lint clean.
+- Reviewer (adversarial, fresh) + QA (gates, CI SHA-pin) dispatched on d09f6e6.
+  Reviewer specifically scrutinizing the 2 sanctioned test edits (test_caddie_caching.py,
+  test_voice_stream.py) for weakening — red-line check.
+  SHIP + PASS -> update PR #134 checklist (NOTICEABLE), progress. BLOCKING -> re-dispatch builder.
+  No designer (no visual change per plan §8). Do NOT ship/ping this cycle.
