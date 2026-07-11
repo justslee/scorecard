@@ -12371,3 +12371,41 @@ both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
 - FRONTEND-ONLY lane. A SEPARATE eng-lead runs backend teetime-h1-clubprophet-adapter on the same branch — rebase before every push; keep BOTH sides on any backlog/progress/PR-checklist conflict.
 - Item: orb-s2-context-contract-teetime (p0). Deep-read done: parseTeeTimePrefs (UNTOUCHED) already returns `confidence` (0.2 no-signal; 0.55+0.1*signals) + `hasTeeTimeSignal` → host's two gates map cleanly (hasSignal=false → fall-through to conversation; hasSignal && confidence<0.6 → correction UI, no dispatch). applyParsed is page-local glue (refactor into the context's apply); parsers/voice-prefs libs stay byte-identical → voice-smoke green by construction.
 - AWAITING Plan(fable) on specs/orb-s2-context-contract-teetime-plan.md — the contract types (CaddiePageContext union + TaskParse/TaskAck), CaddieOrbSheet host lanes, exact tee-time migration + private-hosting deletion list. Then dispatch builder on the plan. Checkpoint before await; clean tree.
+
+## 2026-07-10 — eng-lead: teetime-h1-clubprophet-adapter (CPS) landed on integration/next (BACKEND-ONLY)
+
+Item: `teetime-h1-clubprophet-adapter` (H1, specs/teetime-headless-scraper-plan.md §6/H1).
+NOTICEABLE (more NY courses return real times). Ran IN PARALLEL with the orb S1 cycle —
+touched ZERO frontend files.
+
+LIVE-VERIFY (the crux): reverse-engineered the CPS `onlineresweb` flow from the live Angular
+bundle + ran it end-to-end against a real NY-metro course, Harbor Links GC
+(`harborlinksgc.cps.golf`, Port Washington, Nassau County, Long Island). Confirmed:
+- public config `GET {site}/onlineresweb/Home/Configuration` -> `authorityBaseUrl`, `onlineApi`.
+- short-lived browse token: `POST {authorityBaseUrl}/myconnect/token/short` form `client_id=onlinereswebshortlived`
+  (CPS's OWN public env.js short-lived client id — NO login, NO secret of ours). The plan's
+  `connect/token/short` guess was WRONG; live is `myconnect/token/short`. Token `expires_in=600`.
+- pre-search handshake: `POST {onlineApi}/RegisterTransactionId {transactionId:<uuid4>}` -> true;
+  header `x-componentid: 1` required on every onlineApi call (missing -> hard 400).
+- availability: `GET {onlineApi}/TeeTimes?searchDate&holes=18&numberOfPlayer&courseIds&teeOffTimeMin=0&teeOffTimeMax=24&searchTimeType=0&transactionId`
+  (Bearer token). `teeOffTimeMax` must be an INTEGER hour. Response `{isSuccess, content}`;
+  `content` = array of slots OR `{messageKey:"NO_TEETIMES"}`. Got 69 REAL bookable slots on
+  2026-07-16 ($27-$71 greens fees). Fixtures captured (no live net in CI).
+
+Delivered: `backend/app/services/tee_times/adapters/clubprophet.py` (3-call dance under
+fetch_discipline.py; own per-host limiter/breaker/single-flight/cache; honest normalize —
+local `startTime`, `players=maxPlayer` real ceiling, cheapest `displayPrice` in DOLLARS,
+`price_usd=None` never $0; schema-guard: content list|NO_TEETIMES -> parse/empty, anything else
+-> None + breaker; SSRF guard requiring https `*.cps.golf`; never raises). Registered
+`clubprophet` in `ADAPTERS` + router constructor param. 1 live-verified seed row (Harbor Links,
+coords cross-checked vs OSM Nominatim 40.8267871,-73.6711179) -> NY-area real-availability
+courses now 30. Fixtures `clubprophet_harborlinks_times.json` (real 69-slot) + `_empty.json`
+(real NO_TEETIMES). 47 new tests via MockTransport; full 328-test tee-time suite green;
+S0/S1/S4a/S4c byte-identical; ruff clean.
+
+## AWAITING
+Awaiting reviewer (adversarial correctness+security) + qa (ruff+pytest tee-time suites) on the
+clubprophet adapter, pushed to origin/integration/next. On SHIP + green -> update bundle PR
+checklist (NOTICEABLE) and stop (SILENT, no owner ping — the bundle already needs an owner
+ship-it; this rides it). On BLOCKING -> re-fix on integration/next, re-review. Reconcile from
+branch state, not memory; the fixtures + adapter are already committed+pushed.

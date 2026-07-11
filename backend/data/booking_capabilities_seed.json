@@ -1,5 +1,5 @@
 {
-  "_comment": "Curated multi-platform capability rows (S4a/S4c/S4c2, specs/teetime-availability-everywhere-plan.md §2a) — the generalized sibling of foreup_ny_seed.json. Loaded by load_all_capabilities (capability_store.py). Matching (match_capability) is exact-normalized-name (or alias) equality plus <=1.0 mi proximity, or an exact course_id. Fail-loud on malformed JSON: a broken edit must fail CI, not silently drop the real-data path. Rows 1-8 are NYC Parks munis on the golf-nyc TeeItUp tenant, verified live via a direct GET to phx-api-be-east-1b.kenna.io (no auth) on 2026-07-10 — see specs/teetime-availability-everywhere-plan.md §3. Rows 9-11 (S4c) are NJ/NY-metro Chronogolf marketplace clubs, verified live via www.chronogolf.com/marketplace/v2/clubs/<slug> (id lookup) + www.chronogolf.com/marketplace/clubs/<club_id>/teetimes (availability), no auth, on 2026-07-10. Rows 12-23 (S4c2, coverage expansion) are 2 more TeeItUp tenants (westchester-county: 5 real courses of 6 enumerated — Hudson Hills returned zero teetimes on every probed date, resident-gated, excluded; somerset-group-v2: 5 of 6 — the Neshanic Valley Academy Course excluded as marginal/no phone) plus 2 single-course TeeItUp tenants (Middle Island Country Club, Long Island NY; Chris Bargas Golf Club at Whitney Farms, Monroe CT — Fairfield County, part of the NY-Newark-Jersey City combined statistical area). Row 24 (S4c2) is 1 more Chronogolf club (Putnam County Golf Course) verified NOT resident-gated (0 of its bookable slots carried a residency restriction, unlike the rejected Skyway Golf Course candidate whose every 'bookable' slot was Non-Resident-restricted). Rows 25-28 (S4c2) are 4 NEW foreUP courses (added to this generalized file, not foreup_ny_seed.json, which stays untouched per its own docstring) — 3 Essex County NJ courses that migrated off the resident-gated TeeItUp essex-group tenant (recorded as a dead end in an earlier cycle) onto a real, non-gated foreUP booking system, plus Rockland Lake State Park Championship Golf Course (Congers, NY). Every S4c2 row's lat/lng was cross-checked against an independent geocoding source, not just the booking engine's own facility record — TeeItUp's somerset-group-v2 facility data carried an identical placeholder lat/lng for Quail Brook and Spooky Brook Golf Courses (two different, non-adjacent addresses); both were corrected to their real, independently-geocoded coordinates before seeding.",
+  "_comment": "Curated multi-platform capability rows (S4a/S4c/S4c2, specs/teetime-availability-everywhere-plan.md §2a) — the generalized sibling of foreup_ny_seed.json. Loaded by load_all_capabilities (capability_store.py). Matching (match_capability) is exact-normalized-name (or alias) equality plus <=1.0 mi proximity, or an exact course_id. Fail-loud on malformed JSON: a broken edit must fail CI, not silently drop the real-data path. Rows 1-8 are NYC Parks munis on the golf-nyc TeeItUp tenant, verified live via a direct GET to phx-api-be-east-1b.kenna.io (no auth) on 2026-07-10 — see specs/teetime-availability-everywhere-plan.md §3. Rows 9-11 (S4c) are NJ/NY-metro Chronogolf marketplace clubs, verified live via www.chronogolf.com/marketplace/v2/clubs/<slug> (id lookup) + www.chronogolf.com/marketplace/clubs/<club_id>/teetimes (availability), no auth, on 2026-07-10. Rows 12-23 (S4c2, coverage expansion) are 2 more TeeItUp tenants (westchester-county: 5 real courses of 6 enumerated — Hudson Hills returned zero teetimes on every probed date, resident-gated, excluded; somerset-group-v2: 5 of 6 — the Neshanic Valley Academy Course excluded as marginal/no phone) plus 2 single-course TeeItUp tenants (Middle Island Country Club, Long Island NY; Chris Bargas Golf Club at Whitney Farms, Monroe CT — Fairfield County, part of the NY-Newark-Jersey City combined statistical area). Row 24 (S4c2) is 1 more Chronogolf club (Putnam County Golf Course) verified NOT resident-gated (0 of its bookable slots carried a residency restriction, unlike the rejected Skyway Golf Course candidate whose every 'bookable' slot was Non-Resident-restricted). Rows 25-28 (S4c2) are 4 NEW foreUP courses (added to this generalized file, not foreup_ny_seed.json, which stays untouched per its own docstring) — 3 Essex County NJ courses that migrated off the resident-gated TeeItUp essex-group tenant (recorded as a dead end in an earlier cycle) onto a real, non-gated foreUP booking system, plus Rockland Lake State Park Championship Golf Course (Congers, NY). Every S4c2 row's lat/lng was cross-checked against an independent geocoding source, not just the booking engine's own facility record — TeeItUp's somerset-group-v2 facility data carried an identical placeholder lat/lng for Quail Brook and Spooky Brook Golf Courses (two different, non-adjacent addresses); both were corrected to their real, independently-geocoded coordinates before seeding. Row 29 (H1, specs/teetime-headless-scraper-plan.md §6/H1) is the first Club Prophet (CPS) course — Harbor Links Golf Course (Championship Course, courseId 1), Port Washington, Nassau County, Long Island NY (NY-metro). Verified live end-to-end 2026-07-10 against harborlinksgc.cps.golf/onlineresweb: public config (Home/Configuration) -> short-lived browse token (myconnect/token/short, public env.js client_id, NO login) -> RegisterTransactionId -> GET onlineApi/TeeTimes returned real bookable times (69 slots on 2026-07-16, greens fees $27-$71). authority_base_url/online_api are pre-resolved from the live config; lat/lng cross-checked against OpenStreetMap Nominatim (40.8267871,-73.6711179), not just the booking engine's own record.",
   "courses": [
     {
       "platform": "teeitup",
@@ -507,6 +507,26 @@
       "lat": 41.1475505,
       "lng": -73.9279382,
       "aliases": ["Rockland Lake State Park Golf Course", "Championship Course at Rockland Lake State Park"],
+      "course_id": null
+    },
+    {
+      "platform": "clubprophet",
+      "channel": "scrape_http",
+      "platform_ids": {
+        "host": "harborlinksgc.cps.golf",
+        "authority_base_url": "https://harborlinksgc.cps.golf/identityapi",
+        "online_api": "https://harborlinksgc.cps.golf/onlineres/onlineapi/api/v1/onlinereservation",
+        "course_id": "1"
+      },
+      "booking_url": "https://harborlinksgc.cps.golf/onlineresweb/",
+      "phone": "(516) 767-4816",
+      "is_private": false,
+      "verified_at": "2026-07-10T21:00:00Z",
+      "probe_status": "verified",
+      "name": "Harbor Links Golf Course",
+      "lat": 40.8267871,
+      "lng": -73.6711179,
+      "aliases": ["Harbor Links Golf Course - Championship", "Harbor Links", "Harbor Links Championship Course"],
       "course_id": null
     }
   ]

@@ -55,6 +55,7 @@ import os
 from app.services.voice_booking.provider import VoiceCallProvider
 
 from .adapters.chronogolf import ChronogolfProvider
+from .adapters.clubprophet import ClubProphetProvider
 from .adapters.teeitup import TeeItUpProvider
 from .availability_call_cache import (
     AvailabilityCallCacheStore,
@@ -80,6 +81,7 @@ ADAPTERS: dict[str, TeeTimeProvider] = {
     "foreup": ForeUpProvider(),
     "teeitup": TeeItUpProvider(),
     "chronogolf": ChronogolfProvider(),
+    "clubprophet": ClubProphetProvider(),
 }
 
 
@@ -107,6 +109,7 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         foreup: ForeUpProvider | None = None,
         teeitup: TeeItUpProvider | None = None,
         chronogolf: ChronogolfProvider | None = None,
+        clubprophet: ClubProphetProvider | None = None,
         adapters: dict[str, TeeTimeProvider] | None = None,
         capabilities=None,
         foreup_enabled: bool | None = None,
@@ -119,6 +122,7 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         self._foreup = foreup or ForeUpProvider()
         self._teeitup = teeitup or TeeItUpProvider()
         self._chronogolf = chronogolf or ChronogolfProvider()
+        self._clubprophet = clubprophet or ClubProphetProvider()
         # Platform -> adapter, seeded from the module registry (so any future
         # adapter added to ADAPTERS is picked up automatically) then
         # overridden with THIS instance's own foreup/teeitup/chronogolf
@@ -129,6 +133,7 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
             "foreup": self._foreup,
             "teeitup": self._teeitup,
             "chronogolf": self._chronogolf,
+            "clubprophet": self._clubprophet,
             **(adapters or {}),
         }
         self._capabilities = capabilities or load_all_capabilities
