@@ -3,6 +3,24 @@
   "note": "Cycle 78 retro/grooming (2026-07-11): statuses normalized to enum; ~150 shipped/superseded items archived to backlog-archive.json. This file = LIVE queue only. Terminal record + all ship SHAs/PRs/TestFlight versions preserved in backlog-archive.json (see resolution fields).",
   "items": [
     {
+      "id": "course-selection-ux",
+      "title": "OWNER: named-course-from-elsewhere bug (Marine Park from Pittsburgh) + map-based course search",
+      "type": "epic",
+      "priority": 1,
+      "risk": "medium",
+      "status": "planning",
+      "why": "OWNER 2026-07-11: (A) BUG \u2014 named 'Marine Park' (NY) but searched GPS-nearby Pittsburgh; parser only hears on-screen GPS-list courses, drops the name, dispatches anyway. (B) FEATURE \u2014 map-based course search (DB bbox + cached OSM markers, golf-only, budget-aware) vs the bland checklist. Plan specs/course-selection-ux-plan.md. Slices A0 (stop-the-lie: extract unresolved name + gate dispatch + honest ack) \u2192 A1 (backend selector-centered discovery) \u2192 A2 (voice resolution via unified search) \u2192 A3 (clarify turn) \u2192 B1 (/api/courses/in-bounds) \u2192 B2 (map mode) \u2192 B3 (polish). BUG A0 first."
+    },
+    {
+      "id": "caddie-yardage-gps-selected-tee",
+      "title": "OWNER BUG P0: caddie grounds on mock 178, not GPS/selected-tee (Bethpage hole 3) \u2014 argues wrong yardage",
+      "type": "major",
+      "priority": 0,
+      "risk": "medium",
+      "status": "ready",
+      "why": "OWNER 2026-07-11 (screenshots): caddie says '178 on the card' (a MOCK ILLUSTRATION constant, HoleIllustration.tsx:20) but owner plays 231 from Black tees; GPS active but unused; caddie ARGUES. Plan specs/caddie-yardage-gps-selected-tee-plan.md. FIX (4 slices): (1) shared resolveHoleYardage (GPS-to-green\u2192selected-tee-card\u2192tee-geom\u2192real-card\u2192null), ban mock from caddie surfaces; (2) capture/hydrate selected-tee yards + tee-anchor untagged-ordinal/back-most; (3) plumb GPS+basis to caddie grounding (+ request fields, prompt provenance formatter); (4) YARDAGE_GROUNDING_RULE so caddie adopts player's number, never 'on the card'. Bethpage-hole-3 231-vs-178 fixture RED today. Core caddie-trust bug."
+    },
+    {
       "id": "orb-on-course-detail",
       "title": "Show + wire the caddie orb on course-detail pages (close the omnipresence gap)",
       "type": "minor",
