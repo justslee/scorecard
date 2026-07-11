@@ -12802,3 +12802,7 @@ builder → reviewer (fresh) + QA gates (lint/tsc/voice-smoke/build/vitest) + de
 preview). BLOCKING → re-dispatch builder. Green+designer-ok → update PR #133 + backlog
 (TARGETED edit) + progress. Reconcile from origin/integration/next on resume — do NOT re-run
 a finished builder.
+
+## Cycle 83 (2026-07-11) — tournament NET/handicap leaderboard
+- Motion/haptics DONE + strict-green on #133 (64a4537). No owner feedback on v1.1.0; loop keeps firing → continue tournament build-out.
+- AWAITING: eng-lead tournament-net-handicap-leaderboard — add a NET mode (handicap-aware) alongside Gross/To-Par on the tournament leaderboard (computeStandings is gross-only). Uses player handicaps. Frontend. Designer pass. Land on #133. Motion cycle already landed so non-colliding.
