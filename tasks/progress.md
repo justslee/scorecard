@@ -13972,6 +13972,9 @@ silent refresh, new pure lib/leaderboard-refresh.ts (shouldRefreshLeaderboard + 
 + test, refactor load()->fetchAndApply({initial}) with race/unmount guards; standings math reused
 (untouched). OUT: polling, capacitor appStateChange, any new UI chrome, backend/type changes.
 
-## AWAITING: builder implementing specs/tournament-live-leaderboard-plan.md on integration/next.
-On builder return -> reviewer(adversarial) + qa(gates) + designer(user-facing). If I die: check
-git log origin/integration/next for the builder's commit; do NOT rebuild if already pushed.
+Builder DONE @dc542df (all gates green locally). leaderboard-refresh.ts (pure) + 9 tests +
+TournamentPageClient fetchAndApply refactor. NOTICEABLE.
+
+## AWAITING: reviewer(adversarial) + qa(gates) + designer(user-facing) on dc542df.
+SHIP+PASS+APPROVE -> update PR #135 checklist (item 2), progress, DONE. BLOCKING -> re-dispatch
+builder, re-review. If I die: reviews not yet run; re-dispatch all three on origin head dc542df.
