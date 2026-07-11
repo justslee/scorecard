@@ -12590,3 +12590,7 @@ repro-green at 22:04 ET: full suite 2140 passed, ruff clean.
 - Pushed to integration/next @ e057031. AWAITING: re-review (reviewer+designer on the fix delta only, do
   NOT rebuild) → if all-clear, PR #132 checklist update (NOTICEABLE item), backlog s3→shipped + unblock
   s4. NO ship/ping yet (still pre-approval bundle work, silent).
+
+## Cycle 80 (2026-07-10) — ORB S4 (My Card stats coaching)
+- #132 strict-green (e9ac91e), 9+ noticeable items, awaiting owner ship (owner keeps building over shipping — honored). S3 landed green.
+- AWAITING: eng-lead orb-s4-mycard-coaching — stats-grounding.ts (real stats block, thin→honest) + /profile kind:converse + optional stats_context on VoiceCaddieRequest + prompt block (both mouths). /security-review (new user-data→prompt). Backend touched → run DB tests properly (calling-hours flake lesson). Land on #132.
