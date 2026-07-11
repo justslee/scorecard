@@ -12476,3 +12476,13 @@ repro-green at 22:04 ET: full suite 2140 passed, ruff clean.
   Frontend still green) → update PR #132 checklist (SILENT — CI/test hygiene, 0 courses), done.
   BLOCKING → re-fix on integration/next, re-review. Reconcile from branch (git log
   origin/integration/next), do NOT rebuild. Local Postgres container `pg_ci_repro` is up.
+
+## DONE (backend-gate-fix RESOLVED — bundle #132 UNBLOCKED): reviewer SHIP + qa PASS on 42435f7.
+  Reviewer (fresh, adversarial): SHIP — root cause correct + fixed at the right layer, seam is a
+  faithful mirror of _availability_call_now_override, NO test weakened (12→12; refusal still covered
+  by test_compliance_refusal_short_circuits), prod never sets the override (byte-identical), adapters
+  untouched. QA: repro-green vs real Postgres — 5/5 previously-red rehearsal tests PASS, ruff clean,
+  full suite 2140 passed / 0 failed / 0 skipped (90 integration tests confirmed RUNNING against
+  Postgres, not skipped); CI Backend + Frontend + E2E all state:SUCCESS on head 0c1e334 (no flake this
+  run). PR #132 checklist updated (SILENT item). Local pg_ci_repro container removed. NO owner ping
+  (silent CI/test hygiene). Bundle #132 backend gate is GREEN — unblocked for the next noticeable ship.
