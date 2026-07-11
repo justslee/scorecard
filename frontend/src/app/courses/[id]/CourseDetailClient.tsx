@@ -302,7 +302,7 @@ export default function CourseDetailClient() {
         style={{
           maxWidth: 420,
           margin: "0 auto",
-          paddingBottom: "calc(32px + env(safe-area-inset-bottom, 0px))",
+          paddingBottom: "calc(88px + env(safe-area-inset-bottom, 0px))",
         }}
       >
         {/* ── Header ── */}
