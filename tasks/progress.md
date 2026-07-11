@@ -13248,3 +13248,7 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 - Reviewer: SHIP (all 6 properties held; 1 non-blocking cosmetic note folded — trailing-connector trim). Gates GREEN on head: lint, tsc (isolated clean tree), vitest 48/48, voice-smoke 278/278, next build; CI Frontend+Backend+E2E SUCCESS on prior head 487b579 (fold re-triggered CI on ea6e6d3 — confirm SUCCESS before treating bundle-final).
 - NOTICEABLE (stops a wrong-course tee-time dispatch; honest ack). PR #133 checklist updated. Backlog course-selection-ux.a0_status set.
 - Remaining slices: A1 (backend selector-centered discovery), A2 (voice resolution via unified search — makes it search the RIGHT course), A3 (clarify turn), B1-B3 (map search). A0 only STOPS the lie.
+
+## Cycle 91 (2026-07-11) — course-selection A1 (backend selector-centered discovery)
+- Yardage P0 fix DONE + strict-green (ef7e08f). Marine Park A0 (stop-the-lie) done. No owner feedback.
+- AWAITING: eng-lead course-selection A1 — when resolved selectors carry centers (selection.py), discover around each selector center (~5km, osm.py) and merge with / (when all selected are beyond GPS radius) replace GPS discovery; distance stays honest from GPS origin; skip distance>max prune for selector-matched. Also fixes hand-add-far-course-then-search dead end. Backend-only. Real-Postgres tests. Plan §A.2.4. Land on #133.
