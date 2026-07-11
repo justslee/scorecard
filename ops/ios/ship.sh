@@ -63,13 +63,24 @@ TEAM_ID="${TEAM_ID:-X3F694PQ8B}"
 
 # Monotonic build number (Apple requires a higher CFBundleVersion each upload).
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
-# Human-readable release version (CFBundleShortVersionString) so each TestFlight
-# release is distinguishable. MUST be 1.0.N (not 0.1.N): early builds shipped as
-# "1.0", and TestFlight sorts by version string — a 0.1.x version sorts BELOW "1.0",
-# so those builds were buried under the old "1.0" entry and looked like they never
-# arrived. 1.0.N (N = git commit count) is monotonic AND always above "1.0".
-# Override for a real milestone:  MARKETING_VERSION=1.1.0 bash ops/ios/ship.sh
-MARKETING_VERSION="${MARKETING_VERSION:-1.0.$(git -C "$REPO" rev-list --count HEAD 2>/dev/null || echo 0)}"
+# Human-readable release version (CFBundleShortVersionString). TestFlight sorts
+# builds by this string, so it MUST never sort below a version already uploaded —
+# otherwise the new build hides UNDER the older entry and looks like it never
+# arrived. This bit us twice: a 0.1.x default buried under "1.0", then a
+# 1.0.<commit-count> default (v1.0.1312) buried under the "1.1.0" milestone.
+# Fix: the VERSION file at the repo root is the single source of truth. Bump it
+# per release (patch for a fix bundle, minor for a milestone) so it always moves
+# up. Falls back to the old 1.0.N scheme only if VERSION is missing.
+# Override ad hoc:  MARKETING_VERSION=1.2.0 bash ops/ios/ship.sh
+_version_file="$REPO/VERSION"
+if [ -n "${MARKETING_VERSION:-}" ]; then
+  :  # explicit override wins
+elif [ -f "$_version_file" ]; then
+  MARKETING_VERSION="$(tr -d ' \t\r\n' < "$_version_file")"
+else
+  MARKETING_VERSION="1.0.$(git -C "$REPO" rev-list --count HEAD 2>/dev/null || echo 0)"
+  echo "WARN: no VERSION file — falling back to $MARKETING_VERSION (may sort below a prior milestone)"
+fi
 ARCHIVE="/tmp/Looper-${BUILD_NUMBER}.xcarchive"
 
 [ -f "$ASC_KEY_PATH" ] || { echo "ERROR: ASC key not found at $ASC_KEY_PATH"; exit 1; }
