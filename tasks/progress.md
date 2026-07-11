@@ -3,6 +3,60 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-11 — release-manager: Bundle #132 SHIPPED to main (owner "Ship it")
+
+Milestone bundle (62 commits) approved by the owner and merged to `main`.
+
+- **Merge:** PR #132 → `main`, `gh pr merge --merge`, retitled to "Bundle #132:
+  omnipresent caddie orb (voice-first setup + tee-time dispatch + stats
+  coaching) · tournament settlement · 30-course tee-time coverage". Merge
+  commit `00d7508d3557e4a93dd1e47fd55627462398c029`. Pre-flight confirmed head
+  `a3b90a2` OPEN + MERGEABLE, both required gates SUCCESS before merging — no
+  drift from the brief's expected head.
+- **Post-merge main CI:** both gates (Frontend, Backend) SUCCESS on
+  `00d7508` — no infra flake this time, no rerun needed. The auto-triggered
+  "Deploy backend (SSM)" workflow also completed `success`.
+- **Backend deploy + smoke:** `/health` → `200 {"status":"ok"}`.
+  `load_all_capabilities()` confirms **30 courses** loaded (matches the
+  bundle's "30-course tee-time coverage" claim exactly — Club Prophet +
+  Quick18 adapters registered). Caller confirmed **inert**: SSM probe on
+  `i-0826ae70df62d9fe8` (prod EC2, `scorecard-api.service`, env file
+  `/home/ubuntu/scorecard/backend/.env`) shows zero `TWILIO_*` /
+  `VOICE_BOOKING_ENABLED` matches — `get_live_transport()` will raise before
+  ever dialing. `/api/tee-times/search` alive + correctly auth-gated (401
+  missing bearer).
+- **TestFlight:** `bash ops/ios/ship.sh` (`MARKETING_VERSION=1.1.0`) from
+  fresh `main`. First attempt failed on a stale `/tmp/looper-spm` SPM package
+  cache (`Package.swift doesn't exist in file system`) — moved the cache dir
+  aside (not deleted; guard hook blocks `rm -rf` patterns) and retried; clean
+  archive + upload. **v1.1.0 (build 202607110136)** uploaded, App Store
+  Connect API confirms `processingState: VALID`.
+- **Fresh integration/next:** local branch recreated from new `main`
+  (`a3b90a2` confirmed an ancestor of `00d7508`, so a plain fast-forward push
+  worked — no force-push needed) and pushed. Head now `00d7508`, identical to
+  `main`.
+- **Backlog:** `backlog.json` updated surgically via targeted `Edit` calls
+  (NOT a JSON load/dump round-trip — that approach was tried first and
+  silently collapsed duplicate `"why"` keys across ~40 unrelated items file-
+  wide; reverted before committing). Marked shipped-to-main (`00d7508`, PR
+  #132): `orb-s1-move-and-nav`, `orb-s2-context-contract-teetime`,
+  `orb-s3-setup-wiring`, `orb-s4-mycard-coaching` (was still `ready` — its
+  eng-lead hadn't marked it; noted "designer pass pending → fast-follow",
+  reviewer had already SHIP'd on correctness + security),
+  `tournament-cumulative-settlement`, `voice-booking-twilio-cred-aliases`,
+  `caddie-guide-session-reload-revalidate`, `teetime-h1-clubprophet-adapter`,
+  `teetime-h2-quick18-adapter` (unseeded — no NY-metro Quick18 course exists;
+  adapter ships ready for future coverage).
+- **Board:** Product Board card #132 → Shipped (retitled, PR link +
+  TestFlight v1.1.0 build 202607110136 + feature list).
+- **How the owner tests it:** talk to the orb — search tee times by voice,
+  set up a tournament or round by voice, ask My Card "what should I work on."
+
+Lesson for next time: never round-trip a hand-maintained JSON file through
+`json.load`/`json.dump` for a small edit — Python's parser silently keeps
+only the last value on duplicate keys, and this file has them scattered
+throughout from prior agent edits. Use targeted string edits instead.
+
 ## 2026-07-10 — builder: orb-s4-mycard-coaching DONE, on integration/next (commit 98b9de5)
 
 Item: slice S4 of `specs/omnipresent-caddie-orb-plan.md` — the My Card
