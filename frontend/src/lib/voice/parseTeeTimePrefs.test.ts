@@ -194,6 +194,19 @@ describe("extractUnresolvedCourseNames — the Marine-Park-from-Pittsburgh bug",
     ]);
   });
 
+  it("cuts a trailing connector so the ack reads cleanly", () => {
+    // "on"/"at" as mid-phrase connectors must not bleed into the captured name.
+    // (extractUnresolvedCourseNames operates on the already-lowercased transcript.)
+    expect(
+      extractUnresolvedCourseNames("out at marine park on saturday", PITTSBURGH),
+    ).toEqual(["marine park"]);
+    expect(
+      parseTeeTimePrefsLocally("get me out at Marine Park on Saturday morning", {
+        courses: PITTSBURGH,
+      }).unresolvedCourseNames,
+    ).toEqual(["marine park"]);
+  });
+
   it("is conservative — no false positives on generic phrases", () => {
     // Bare "on <day>" / "at the muni" / "at the club" are not course names.
     expect(extractUnresolvedCourseNames("play somewhere on saturday", PITTSBURGH)).toEqual([]);

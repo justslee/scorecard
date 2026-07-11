@@ -212,6 +212,10 @@ const COURSE_STOP_WORDS = new Set([
   "dollars", "bucks", "favorites", "favorite", "favourites", "favourite",
   "only", "just", "or", "for", "and", "with", "this", "next", "sometime",
   "some", "somewhere", "please",
+  // Connectors that also serve as lead words — never part of a name mid-phrase,
+  // so "Marine Park on Saturday" / "the muni at noon" cut cleanly (the ack reads
+  // "Marine Park", not "Marine Park on"). Only ever shortens a capture.
+  "on", "at",
 ]);
 
 // Leading course keys ("at Marine Park", "over at the muni"). Deliberately
