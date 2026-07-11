@@ -13897,13 +13897,30 @@ green: lint clean, tsc clean, voice-smoke 278/278, vitest 63/63 (round-games 9/9
 Files: round-games.ts(+test), GamePicker.tsx (shared), round/new/page.tsx refactor (byte-equiv),
 NewTournamentRoundClient.tsx (picker card+sheet), TournamentPageClient.tsx (settle-up gate fix).
 
-## AWAITING — reviewer + qa + designer on 5bfcbb2 (tournament per-round formats)
-Head = 1de9285e1fa1509efd9e0488a66f970dcab7994c. Waiting on 3 parallel children:
-- reviewer: adversarial correctness — settlement/aggregation money attribution, buildRoundGames
-  exactness, NO /round/new regression (byte-equiv refactor), settle-up gate change, state races.
-- qa: gates on the pushed SHA (lint/tsc/voice-smoke/vitest/build) all SUCCESS.
-- designer: BLOCKING (user-facing) — new Game·Optional card + sheet must match calm yardage-book
-  feel, no SaaS/celebration.
-On outcomes: BLOCKING issue → re-dispatch builder, re-review. All green → open the FRESH bundle
-PR (integration/next→main) with checklist, mark slice NOTICEABLE, update progress. Do NOT ship/
-ping (owner approval handled separately by the caller). Do NOT re-ship #134.
+## Cycle 98 RESOLVED — tournament per-round formats GREEN (2026-07-11)
+All three reviews on head 1de9285 / 550c890 (code-identical, only progress.md differs):
+- reviewer: SHIP — buildRoundGames byte-equivalent to the original /round/new inline block
+  (diffed origin/main:page.tsx:391-405 vs round-games.ts:72-92); settlement.ts untouched, zero-sum
+  + attribution preserved (full tournament roster as playerIds, ids line up with standings);
+  settle-up gate stays honest-empty for non-money round games; team formats correctly excluded;
+  no /round/new regression; no injection surface. 53 tests green, tsc clean.
+- qa: PASS — lint clean, tsc clean, voice-smoke 278/278, vitest 63/63 (round-games 9/9), build
+  19/19 routes, backend ruff clean. Playwright E2E deferred (no live preview backend here).
+- designer: APPROVE — Game·Optional card matches Course-card grammar exactly; sheet chrome
+  pixel-identical to /round/new; one calm haptic('light') on toggle, no new celebration; copy
+  in-voice; team/dead options excluded from the tournament picker. No ship-blockers.
+
+FOLLOW-UPS (non-blocking, for a later cycle — captured, not shipped this slice):
+- stableford is offered with a $5 default stake but settles $0 (no stableford branch in
+  computeGameNetWinnings) → the "$5/pt" label on a $0-net format can mislead. Consider not
+  defaulting a stake for stableford (honesty; ties to the no-fake-data lesson). Non-money-incorrect.
+- match play with a >2-player tournament roster settles only playerIds[0] vs [1] (games.ts:739-741
+  fallback); others net $0. Parity with /round/new, zero-sum holds; more visible at tournament
+  roster sizes. Needs a team/opponent-selection UI (future slice, same as team formats).
+- designer polish: round-game rows list the full roster (always "everyone") → noisy for 8+ players;
+  "None — stroke play" vs picker "No stakes" label drift; picker option order (none-first) diverges
+  from /round/new; tournamentGames/roundGames row markup duplication (extract a <GameRow>).
+
+Bundle now has a TestFlight-NOTICEABLE change (new tournament game picker + activated settlement).
+Opening the fresh bundle PR (integration/next -> main). NOT shipping/pinging — caller handles
+owner approval separately. Next open PR = the bundle; this slice is its first checklist item.
