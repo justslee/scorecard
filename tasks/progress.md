@@ -13892,8 +13892,18 @@ already persists round.games at rounds.py:320-334; found + planned a fix for the
 Settle-up gate that only fires for tournament-level games; team formats deferred, offers
 none/skins/match/nassau/stableford).
 
-## AWAITING — builder on tournament per-round-format slice
-Waiting on: builder implementing specs/tournament-per-round-format-plan.md on integration/next
-(commits + pushes; no per-item PR). On return: reviewer (aggregate/settlement + no /round/new
-regression) + qa (gates on pushed SHA) + designer (BLOCKING, yardage-book calm). Spec committed
-@ current head; branch clean. Do NOT re-ship #134; do NOT re-run Plan.
+Builder DONE — pushed 5bfcbb2 (impl) + 1de9285 (progress) to integration/next. All local gates
+green: lint clean, tsc clean, voice-smoke 278/278, vitest 63/63 (round-games 9/9), build OK.
+Files: round-games.ts(+test), GamePicker.tsx (shared), round/new/page.tsx refactor (byte-equiv),
+NewTournamentRoundClient.tsx (picker card+sheet), TournamentPageClient.tsx (settle-up gate fix).
+
+## AWAITING — reviewer + qa + designer on 5bfcbb2 (tournament per-round formats)
+Head = 1de9285e1fa1509efd9e0488a66f970dcab7994c. Waiting on 3 parallel children:
+- reviewer: adversarial correctness — settlement/aggregation money attribution, buildRoundGames
+  exactness, NO /round/new regression (byte-equiv refactor), settle-up gate change, state races.
+- qa: gates on the pushed SHA (lint/tsc/voice-smoke/vitest/build) all SUCCESS.
+- designer: BLOCKING (user-facing) — new Game·Optional card + sheet must match calm yardage-book
+  feel, no SaaS/celebration.
+On outcomes: BLOCKING issue → re-dispatch builder, re-review. All green → open the FRESH bundle
+PR (integration/next→main) with checklist, mark slice NOTICEABLE, update progress. Do NOT ship/
+ping (owner approval handled separately by the caller). Do NOT re-ship #134.
