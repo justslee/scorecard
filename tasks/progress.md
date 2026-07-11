@@ -13289,3 +13289,60 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 - Marine-Park-from-Pittsburgh now CLOSED end-to-end: spoken 'marine park' → resolveSpokenCourse → Brooklyn 'one' → added+selected, GPS preselect deselected, honest ~320mi, dispatched:true → A1 backend discovers around the Brooklyn center → Brooklyn search. Proven by the caddie-task E2E test.
 - SILENT cycle per task — NO ship, NO owner ping; rides bundle #133 to a later consolidated ship. A3 (multi-turn clarify) + B1-B3 (map) remain.
 - CI on #133: rechecking to strict-green on head after push.
+
+## 2026-07-11 — release-manager: bundle #133 SHIPPED to main + TestFlight v1.0.1312
+Owner replied "Ship it" — approved bundle PR #133 (`integration/next` → `main`). Guarded
+pre-flight re-verified before touching anything: PR head `431346c` unchanged since approval,
+both required gates SUCCESS on that head (Frontend gates, Backend gate; E2E smoke advisory
+also SUCCESS), PR OPEN+MERGEABLE, `main` head `00d7508` as expected.
+
+1. **Merged #133 → main** (retitled, since the PR title was stale): `gh pr merge 133 --merge`
+   → merge commit `4bb474eb463568bcb1457a1907a7ec5a5c79ee3b`.
+2. **Post-merge main CI green**: both required checks (Frontend gates, Backend gate) SUCCESS
+   on the new main head, plus the auto-triggered `Deploy backend (SSM)` workflow SUCCESS —
+   no flake, no rerun needed.
+3. **Backend deployed** via the `Deploy backend (SSM)` GH Actions workflow (auto-triggered on
+   push to main, instance `i-0826ae70df62d9fe8`) — `/health` → `{"status":"ok"}` externally
+   (`https://api.looperapp.org/health`). Caller stays INERT: key-free SSM probe on-box
+   counted 0 `TWILIO_*`/`VOICE_BOOKING_ENABLED` keys in prod `backend/.env`; independently,
+   `/api/tee-times/search` and `/api/tee-times/availability-call` both correctly reject
+   unauthenticated curls (401/405 — every tee-time route is `require_owner`-gated app-wide),
+   consistent with CI's `not_enabled` route tests.
+4. **Cut TestFlight from new main** via `bash ops/ios/ship.sh` (checked out `main`@`4bb474e`
+   into the working tree — same repo, not a worktree, so branch ops were sequenced AFTER the
+   build finished to avoid racing the archive/export). Build succeeded: **v1.0.1312 (build
+   202607111242)** — "EXPORT SUCCEEDED" / "Upload succeeded", now processing on Apple's side.
+5. **Recut `integration/next`** off the new main head: `git branch -f integration/next
+   4bb474e` (old local branch was stale at `431346c`), pushed. New head =
+   `4bb474eb463568bcb1457a1907a7ec5a5c79ee3b` (== main, fresh bundle starts empty). Stray
+   stashes (`stash@{0..2}`, pre-existing pbxproj/mount-caddie/old-main WIP) left untouched
+   per instruction.
+6. **Board + backlog**: Product Board card #133 → Shipped (merge SHA `4bb474e`, TestFlight
+   `v1.0.1312`/build `202607111242`, fix list). `backlog.json` targeted-edited (no
+   json.load/dump — see the duplicate-key lesson) to mark terminal with the merge SHA:
+   `caddie-yardage-gps-selected-tee` (status→shipped), `course-selection-ux` a2_status,
+   `orb-on-course-detail` (status→shipped), `orb-s5-polish.resting_depth_glow_status`,
+   `tournament-net-handicap-leaderboard` (status→shipped), `tournament-leaderboard-motion-
+   haptics` (status→shipped), `course-intel-static-persistence` (status→shipped). Diff
+   checked: exactly those 7 items touched, valid JSON, no key collapse. ("My Card copy fix"
+   already shipped earlier in v1.1.0 — not a live backlog.json item, no edit needed there.)
+
+**What shipped in #133** (bundle: caddie yardage honesty (GPS/selected-tee) + named-course
+search fix + orb depth/glow + tournament net/animations + course-intel speed): caddie now
+grounds yardage on GPS-to-green/selected-tee distance instead of the mock 178 constant and
+adopts the player's stated number instead of arguing (Bethpage hole 3 fixture RED→GREEN);
+a named course spoken from elsewhere (Marine Park from Pittsburgh) now resolves through the
+real unified search and searches ITS location, not GPS-nearby (A0 stop-the-lie + A1 backend
+selector-centered discovery + A2 voice resolution, all landed); caddie orb resting state now
+reads as a pressed ink medallion with inset emboss + soft ambient halo (no pulse — calm, not
+SaaS "AI thinking"); tournament leaderboard gets motion/haptics (FLIP re-sort, leader
+crossfade, overtake sweep) + a handicap-aware NET leaderboard mode; course-intel
+elevation/green-slope now persists once per course (speed only, no migration); orb shown +
+wired on course-detail pages (omnipresence gap closed); course-intel guide-injection
+hardening + strategy-guides prod live-smoke verified; regression guards added throughout.
+Both backend (caddie grounding, tee-time routing, course-intel elevation) and frontend
+(37-file delta: yardage UI, orb glow, course search, tournament motion) changed.
+
+DONE — bundle #133 shipped to main (`4bb474e`) + TestFlight v1.0.1312 (build 202607111242);
+backend live + healthy + caller inert; fresh `integration/next` cut at `4bb474e`; board +
+backlog recorded.
