@@ -3,15 +3,38 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING (cycle 85 — builder folding designer BLOCKER on 5a29ebb)
-Reviewer: SHIP (correct, in-scope, 48/48 tests, dead-mic regression meaningful, no double-mic, no
-weakened tests). Designer: POLISH + ONE BLOCKER — the fixed orb (bottom:12px+safe, 54px tall, 0
-clearance on this route since no tab bar + not isSetupCtaRoute) OVERLAPS the in-flow "Start a round
-here" CTA at rest-scroll-bottom because CourseDetailClient.tsx:~305 paddingBottom is only
-calc(32px+safe); /players (page.tsx:201) + /profile (page.tsx:294) use calc(88px+safe) to clear it.
-FIX (designer-prescribed, established pattern): bump CourseDetailClient.tsx outer paddingBottom to the
-88px pattern. Re-dispatching builder to apply + re-run ALL gates + prove with a bottom screenshot.
-Then update PR #133 + backlog (TARGETED edit, dup keys) + progress. SILENT — no ship/ping. Reconcile from origin on resume.
+## Cycle 85 (2026-07-11) — caddie orb on course-detail pages: DONE (on integration/next, PR #133)
+Closed the ONLY real gap the cycle-84 orb-wiring audit found: /courses/[id] hid the orb (plan §1 lists
+/courses(/*) as SHOW; owner: "omnipresent... everywhere it belongs"). NOTICEABLE — rides bundle #133.
+- FIX (Option B — scope via the context SIGNAL, no pathname coupling in the host):
+  * looper-bus.ts `looperContextForPath` scopes context "courses" to the LIST route only (/courses,
+    trailing-slash tolerant); /courses/[id] → "general". So the host legacy-courses-floor guard
+    (CaddieOrbSheet.tsx:127 `if(!ctx && detail.context==="courses")return`, UNCHANGED code — comment
+    only) now only ever fires on the list page; a detail-page orb falls through to the general converse
+    sheet (ask the caddie anything, incl. about this course) — NOT a dead mic.
+  * shouldShowCaddieOrb.ts adds "/courses/" to SHOW_PREFIXES → detail pages SHOW.
+  * No bespoke course-detail task context this slice (deferred follow-up if warranted).
+- WHAT THE GUARD DID / WHY SAFE: the guard stops the HOST double-handling a summon on the courses LIST
+  page, which owns its own bus listener (app/courses/page.tsx:34 → opens its own voice search on
+  context==="courses"). On the list page ctx is null (list uses the bus directly, not the registry) and
+  context==="courses", so the host bails. Scoping "courses" to the list route keeps that intact and only
+  removes the accidental swallow on detail pages. No list-page regression, no double-mic (detail subtree
+  registers no competing listener — reviewer + designer confirmed).
+- Regression test (would have caught the dead mic): CaddieOrbSheet.test.tsx drives the REAL
+  looperContextForPath("/courses/pebble-beach") through openLooper and asserts the sheet OPENS (Close
+  Looper present). Goes RED if detail pages revert to "courses" (guard would swallow → no Close Looper).
+  Existing "legacy courses floor" test (context:"courses" → host renders nothing) UNCHANGED, still green.
+- Builder @5a29ebb (feature). Reviewer: SHIP (correct, in-scope, 48/48 tests, dead-mic regression proven
+  meaningful, no weakened tests, no double-mic). Designer: POLISH + 1 BLOCKER — fixed orb (bottom:12px+safe,
+  54px, 0 clearance here: no tab bar + not isSetupCtaRoute) overlapped the in-flow "Start a round here" CTA
+  because CourseDetailClient.tsx paddingBottom was calc(32px+safe); /players + /profile use calc(88px+safe).
+  Folded @f0c0ae4: bumped to 88px (established pattern) — screenshot-verified no overlap; all gates re-green.
+- Files: frontend/src/lib/looper-bus.ts(+test), frontend/src/components/nav/shouldShowCaddieOrb.ts(+test),
+  frontend/src/components/CaddieOrbSheet.tsx(comment only)(+test), frontend/src/app/courses/[id]/CourseDetailClient.tsx.
+- Gates green on head (both commits): lint clean, tsc 0, voice 277/277, vitest 2055/2055, build ok. Backend untouched.
+- Bookkeeping: PR #133 checklist + backlog.json (new item orb-on-course-detail, shipped-to-bundle, TARGETED
+  edit + json-parse-verified 212 items) + this note. SILENT — no ship/ping; rides #133 to the owner's next
+  bundle review. Head SHA recorded after the bookkeeping commit below. CI strict-green verify below.
 
 ## 2026-07-11 — builder: orb-on-course-detail DONE, on integration/next (commit 5a29ebb)
 
