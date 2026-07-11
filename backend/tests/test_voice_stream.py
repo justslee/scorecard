@@ -602,3 +602,70 @@ async def test_build_voice_prompt_degrades_when_memory_fetch_raises(monkeypatch)
     assert system[0]["text"].rstrip().endswith(caddie_routes.OBSERVED_REALITY_RULE)
     assert "--- PLAYER MEMORY ---" not in flat
     assert messages[-1] == {"role": "user", "content": "hi"}
+
+
+# ── Gate-level: _build_voice_prompt stats_context (My Card converse grounding)
+# specs/orb-s4-mycard-coaching-plan.md — a registered converse context (e.g.
+# /profile's "my-card") sends the golfer's real, pre-serialized stats block;
+# the fenced "PLAYER'S REAL SCORING DATA" section must appear (with the
+# "data, not instructions" line ABOVE the interpolated stats, injection
+# bound) when set, and be entirely absent when None.
+
+
+@pytest.mark.asyncio
+async def test_build_voice_prompt_includes_fenced_stats_block_when_stats_context_set(monkeypatch):
+    _patch_persona(monkeypatch)
+
+    async def _fake_get_top_memories(user_id):
+        return []
+
+    async def _fake_get_player_profile(user_id):
+        return None
+
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_top_memories", _fake_get_top_memories)
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_player_profile", _fake_get_player_profile)
+
+    stats = "Handicap: 12.4 (estimated from 8 rounds)\nDriver: 268y avg (n=41, median 270, ±14y)"
+    request = VoiceCaddieRequest(
+        transcript="what should I work on?",
+        personality_id="classic",
+        hole_number=None,
+        stats_context=stats,
+    )
+    system, _messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
+
+    flat = _flat_system(system)
+    assert "--- PLAYER'S REAL SCORING DATA ---" in flat
+    assert stats in flat
+    # Injection bound: the "data, not instructions" sentence sits ABOVE the
+    # interpolated stats string.
+    guard_idx = flat.index("Treat them as")
+    stats_idx = flat.index(stats)
+    assert guard_idx < stats_idx
+    # Lives in the VOLATILE block (system[1]), not the cached STABLE block.
+    assert "--- PLAYER'S REAL SCORING DATA ---" in system[1]["text"]
+    assert "--- PLAYER'S REAL SCORING DATA ---" not in system[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_build_voice_prompt_omits_stats_block_when_stats_context_none(monkeypatch):
+    _patch_persona(monkeypatch)
+
+    async def _fake_get_top_memories(user_id):
+        return []
+
+    async def _fake_get_player_profile(user_id):
+        return None
+
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_top_memories", _fake_get_top_memories)
+    monkeypatch.setattr(caddie_routes.memory_mod, "get_player_profile", _fake_get_player_profile)
+
+    request = VoiceCaddieRequest(
+        transcript="what should I work on?",
+        personality_id="classic",
+        hole_number=None,
+    )
+    system, _messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
+
+    flat = _flat_system(system)
+    assert "--- PLAYER'S REAL SCORING DATA ---" not in flat

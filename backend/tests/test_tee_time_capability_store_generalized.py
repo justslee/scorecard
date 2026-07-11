@@ -165,9 +165,12 @@ class TestShippedGeneralizedSeed:
         assert "foreup" in platforms
         assert "teeitup" in platforms
         assert "chronogolf" in platforms
+        assert "clubprophet" in platforms
 
         legacy = load_capabilities()
-        assert len(caps) == len(legacy) + 20 + 4 + 4
+        # generalized rows = 20 teeitup (S4a) + 4 chronogolf + 4 foreup (S4c2)
+        # + 1 clubprophet (H1: Harbor Links CPS).
+        assert len(caps) == len(legacy) + 20 + 4 + 4 + 1
 
         teeitup_caps = [c for c in caps if c.platform == "teeitup"]
         assert len(teeitup_caps) == 20

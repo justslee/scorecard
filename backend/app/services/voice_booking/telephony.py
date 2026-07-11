@@ -30,7 +30,26 @@ from .types import CallOutcome, CallTurn, VoiceBookingContext
 
 log = logging.getLogger(__name__)
 
-_TWILIO_ENV_VARS = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER")
+# Twilio credential env NAMES. The owner stored his creds in looper/prod under
+# non-standard names (TWILIO_CLIENT_ID = Account SID, TWILIO_CLIENT_KEY = Auth
+# Token), so each credential accepts the STANDARD name first, then an alias as a
+# fallback. FROM_NUMBER has no alias (the owner will add that exact name).
+# NOTE: Client(account_sid, auth_token) still takes an Account SID + Auth Token
+# pair — these aliases only change which env NAME supplies each value, never the
+# credential TYPE.
+_TWILIO_ACCOUNT_SID_VARS = ("TWILIO_ACCOUNT_SID", "TWILIO_CLIENT_ID")
+_TWILIO_AUTH_TOKEN_VARS = ("TWILIO_AUTH_TOKEN", "TWILIO_CLIENT_KEY")
+_TWILIO_FROM_NUMBER_VARS = ("TWILIO_FROM_NUMBER",)
+
+
+def _first_env(names: tuple[str, ...]) -> str | None:
+    """Return the first non-empty env value among `names` (standard name wins,
+    alias is the fallback), or None if none is set."""
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return None
 
 
 def build_stream_twiml(public_host: str, call_token: str) -> str:
@@ -156,11 +175,26 @@ def get_live_transport() -> LiveCallTransport:
     """
     if os.getenv("VOICE_BOOKING_ENABLED") != "1":
         raise RuntimeError("voice booking disabled")
-    missing = [v for v in _TWILIO_ENV_VARS if not os.getenv(v)]
+
+    # Resolve each credential from its standard name first, then its alias. The
+    # missing-check validates the RESOLVED values (not fixed names) so a deploy
+    # that supplies EITHER accepted name for the SID/token passes.
+    account_sid = _first_env(_TWILIO_ACCOUNT_SID_VARS)
+    auth_token = _first_env(_TWILIO_AUTH_TOKEN_VARS)
+    from_number = _first_env(_TWILIO_FROM_NUMBER_VARS)
+
+    missing = []
+    if not account_sid:
+        missing.append(" or ".join(_TWILIO_ACCOUNT_SID_VARS))
+    if not auth_token:
+        missing.append(" or ".join(_TWILIO_AUTH_TOKEN_VARS))
+    if not from_number:
+        missing.append(" or ".join(_TWILIO_FROM_NUMBER_VARS))
     if missing:
         raise RuntimeError(
             f"voice booking disabled — missing credentials: {', '.join(missing)}"
         )
+
     public_host = os.getenv("VOICE_BOOKING_PUBLIC_HOST")
     if not public_host:
         raise RuntimeError(
@@ -168,9 +202,17 @@ def get_live_transport() -> LiveCallTransport:
             "TLS host Twilio connects to for the media stream)"
         )
 
-    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-    from_number = os.getenv("TWILIO_FROM_NUMBER")
+    # Debuggability guard (non-crashing): a Twilio Account SID starts "AC"; an
+    # API Key SID starts "SK". If the resolved value is not AC-prefixed, the
+    # owner likely pasted an API Key rather than the Account SID, and REST auth
+    # will fail. Log ONLY the prefix-mismatch FACT — never the value or any part
+    # of it.
+    if not account_sid.startswith("AC"):
+        log.warning(
+            "voice_booking: resolved Twilio account SID is not AC-prefixed — "
+            "expected an AC-prefixed Account SID; this may be an API Key SID "
+            "(SK…) and REST auth will fail. (Credential value not logged.)"
+        )
 
     def _twilio_client_factory():
         from twilio.rest import Client  # lazy import — offline, no network

@@ -7,6 +7,7 @@ import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getTournamentAsync, getRoundsAsync } from "@/lib/storage-api";
 import { calculateTotals } from "@/lib/types";
 import type { Tournament, Round, Game } from "@/lib/types";
+import { computeTournamentSettlement, hasMoneyGames } from "@/lib/settlement";
 
 type Tab = "leaderboard" | "rounds" | "games";
 type LbMode = "gross" | "toPar";
@@ -397,6 +398,8 @@ export default function TournamentPageClient() {
   const hasScores = standings.some((s) => s.totalStrokes !== null);
   const tournamentGames: Game[] = tournament.games ?? [];
   const hasGames = tournamentGames.length > 0;
+  const tournamentSettlement = computeTournamentSettlement(memberRounds);
+  const hasMoneyGame = hasMoneyGames(memberRounds);
 
   // Sort standings: nulls last, then ascending by selected mode
   const sortedStandings = [...standings].sort((a, b) => {
@@ -1361,6 +1364,92 @@ export default function TournamentPageClient() {
                   )}
                 </div>
               ))
+            )}
+
+            {hasGames && (
+              <div style={{ marginTop: 28 }}>
+                <div
+                  style={{
+                    fontFamily: T.mono,
+                    fontSize: 9,
+                    letterSpacing: 1.4,
+                    color: T.pencil,
+                    textTransform: "uppercase",
+                    marginBottom: 10,
+                  }}
+                >
+                  Settle up
+                </div>
+
+                {tournamentSettlement.isEmpty ? (
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontStyle: "italic",
+                      fontSize: 14,
+                      color: T.pencilSoft,
+                      padding: "8px 0",
+                    }}
+                  >
+                    {!hasMoneyGame
+                      ? "No money games in this tournament."
+                      : !hasScores
+                      ? "Settle-up appears once rounds are scored."
+                      : "All square — nothing to settle."}
+                  </div>
+                ) : (
+                  <div>
+                    {tournamentSettlement.transfers.map((t, i) => {
+                      const fromName =
+                        standings.find((s) => s.playerId === t.fromPlayerId)?.name ??
+                        tournament.playerNamesById?.[t.fromPlayerId] ??
+                        t.fromPlayerId;
+                      const toName =
+                        standings.find((s) => s.playerId === t.toPlayerId)?.name ??
+                        tournament.playerNamesById?.[t.toPlayerId] ??
+                        t.toPlayerId;
+                      return (
+                        <div
+                          key={`${t.fromPlayerId}-${t.toPlayerId}-${i}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "baseline",
+                            justifyContent: "space-between",
+                            padding: "10px 0",
+                            borderBottom:
+                              i < tournamentSettlement.transfers.length - 1
+                                ? `1px dashed ${T.hairline}`
+                                : "none",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontFamily: T.serif,
+                              fontStyle: "italic",
+                              fontSize: 15,
+                              color: T.ink,
+                            }}
+                          >
+                            {fromName} pays {toName}
+                          </div>
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 13,
+                              letterSpacing: 0.4,
+                              color: T.pencil,
+                              flexShrink: 0,
+                              marginLeft: 12,
+                            }}
+                          >
+                            ${t.amount.toFixed(2)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}

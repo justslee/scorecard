@@ -17,8 +17,10 @@ import { describe, it, expect } from 'vitest';
 import {
   computeGameNetWinnings,
   computeNetSettlement,
+  computeTournamentSettlement,
   minimizeTransfers,
   getPersistedSettlement,
+  hasMoneyGames,
 } from './settlement';
 import type { Round, Game, Score, HoleInfo, Player } from './types';
 
@@ -781,5 +783,172 @@ describe('getPersistedSettlement', () => {
       ],
     });
     expect(getPersistedSettlement(round)).toBeNull();
+  });
+});
+
+// ─── computeTournamentSettlement ───────────────────────────────────────────────
+
+/**
+ * Build a single-round matchPlay round (p1 vs p2) where `winnerId` wins
+ * every hole, so the loser pays `pointValue` to the winner for that round.
+ */
+function matchPlayRound(id: string, pointValue: number, winnerId: 'p1' | 'p2'): Round {
+  const loserId = winnerId === 'p1' ? 'p2' : 'p1';
+  const scores: Score[] = [...uniformScores(winnerId, 3), ...uniformScores(loserId, 4)];
+  return makeRound({
+    id,
+    players: makePlayers(['p1', 'p2']),
+    scores,
+    games: [
+      makeGame({
+        id: `${id}-g`,
+        roundId: id,
+        playerIds: ['p1', 'p2'],
+        format: 'matchPlay',
+        settings: {
+          pointValue,
+          matchPlayMode: 'individual',
+          matchPlayPlayers: { player1Id: 'p1', player2Id: 'p2' },
+        },
+      }),
+    ],
+  });
+}
+
+describe('computeTournamentSettlement', () => {
+  it('sums cumulative net across rounds where it differs from any single round, and minimizes ONCE (not per-round)', () => {
+    // Round 1: p1 wins $10; Round 2: p1 wins $15 → cumulative p1:+25, p2:-25.
+    // Any single round (10 or 15) differs from the true cumulative (25).
+    const rounds = [matchPlayRound('r1', 10, 'p1'), matchPlayRound('r2', 15, 'p1')];
+
+    const ledger = computeTournamentSettlement(rounds);
+
+    expect(ledger.isEmpty).toBe(false);
+    expect(ledger.netByPlayer['p1']).toBe(25);
+    expect(ledger.netByPlayer['p2']).toBe(-25);
+
+    // Sum-then-minimize-once → exactly ONE transfer of $25.
+    // Minimize-per-round-then-concat would wrongly produce TWO transfers
+    // (p2→p1 $10 and p2→p1 $15).
+    expect(ledger.transfers).toHaveLength(1);
+    expect(ledger.transfers[0]).toMatchObject({
+      fromPlayerId: 'p2',
+      toPlayerId: 'p1',
+      amount: 25,
+    });
+  });
+
+  it('cancels opposing per-round debts to fewer transfers than minimize-per-round-then-concat', () => {
+    // Round 1: p2 wins $10 (p1 owes p2). Round 2: p1 wins $10 (p2 owes p1).
+    // Cumulative net is exactly zero for both players.
+    const rounds = [matchPlayRound('r1', 10, 'p2'), matchPlayRound('r2', 10, 'p1')];
+
+    const ledger = computeTournamentSettlement(rounds);
+
+    expect(ledger.netByPlayer['p1']).toBe(0);
+    expect(ledger.netByPlayer['p2']).toBe(0);
+
+    // Sum-then-minimize-once → ZERO transfers needed.
+    // Minimize-per-round-then-concat would wrongly produce TWO transfers
+    // (p1→p2 $10 in round 1, p2→p1 $10 in round 2) even though nothing is owed.
+    expect(ledger.transfers).toEqual([]);
+  });
+
+  it('is empty when no round has money results (game-less, zero pointValue, or unscored)', () => {
+    const gameLessRound = makeRound({ id: 'r1', games: [] });
+    const zeroPointValueRound = makeRound({
+      id: 'r2',
+      games: [makeGame({ id: 'g2', roundId: 'r2', settings: { pointValue: 0 } })],
+    });
+    const unscoredRound = makeRound({
+      id: 'r3',
+      scores: [],
+      games: [makeGame({ id: 'g3', roundId: 'r3', format: 'skins', settings: { pointValue: 5 } })],
+    });
+
+    const ledger = computeTournamentSettlement([
+      gameLessRound,
+      zeroPointValueRound,
+      unscoredRound,
+    ]);
+
+    expect(ledger.isEmpty).toBe(true);
+    expect(ledger.transfers).toEqual([]);
+  });
+
+  it('preserves the zero-sum invariant on the cumulative net across multiple rounds and formats', () => {
+    const rounds = [
+      matchPlayRound('r1', 12, 'p1'),
+      matchPlayRound('r2', 7, 'p2'),
+      matchPlayRound('r3', 3, 'p1'),
+    ];
+
+    const ledger = computeTournamentSettlement(rounds);
+
+    expect(sumNet(ledger.netByPlayer)).toBe(0);
+  });
+
+  it('returns isEmpty=true and no transfers for an empty rounds array', () => {
+    const ledger = computeTournamentSettlement([]);
+
+    expect(ledger.isEmpty).toBe(true);
+    expect(ledger.transfers).toEqual([]);
+    expect(ledger.netByPlayer).toEqual({});
+  });
+});
+
+// ─── hasMoneyGames ──────────────────────────────────────────────────────────────
+
+describe('hasMoneyGames', () => {
+  it('is true when a round has a money game (pointValue > 0)', () => {
+    const round = makeRound({
+      games: [makeGame({ format: 'skins', settings: { pointValue: 5 } })],
+    });
+
+    expect(hasMoneyGames([round])).toBe(true);
+  });
+
+  it('is false when the round has only a non-money game (pointValue 0 / unset, e.g. bestBall)', () => {
+    const zeroPointValue = makeRound({
+      id: 'r1',
+      games: [makeGame({ id: 'g1', format: 'bestBall', settings: { pointValue: 0 } })],
+    });
+    const unsetPointValue = makeRound({
+      id: 'r2',
+      games: [makeGame({ id: 'g2', format: 'bestBall', settings: {} })],
+    });
+
+    expect(hasMoneyGames([zeroPointValue])).toBe(false);
+    expect(hasMoneyGames([unsetPointValue])).toBe(false);
+  });
+
+  it('is false for an empty rounds array', () => {
+    expect(hasMoneyGames([])).toBe(false);
+  });
+
+  it('does not count a "settlement"-format game as a money game', () => {
+    const round = makeRound({
+      games: [
+        makeGame({
+          format: 'settlement',
+          settings: { pointValue: 5, transfers: [], finalizedAt: '2026-01-01T00:00:00Z' },
+        }),
+      ],
+    });
+
+    expect(hasMoneyGames([round])).toBe(false);
+  });
+
+  it('is true when rounds are mixed — one money round and one non-money round', () => {
+    const moneyRound = makeRound({
+      id: 'r1',
+      games: [makeGame({ id: 'g1', format: 'skins', settings: { pointValue: 5 } })],
+    });
+    const nonMoneyRound = makeRound({
+      id: 'r2',
+      games: [makeGame({ id: 'g2', format: 'bestBall', settings: { pointValue: 0 } })],
+    });
+
+    expect(hasMoneyGames([moneyRound, nonMoneyRound])).toBe(true);
   });
 });

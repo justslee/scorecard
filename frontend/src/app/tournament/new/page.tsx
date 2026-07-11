@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { tournamentHref } from "@/lib/round-url";
 import { useRouter } from "next/navigation";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import { createTournament, createPlayer, getPlayers } from "@/lib/api";
 import { saveTournament, saveSavedPlayer, getSavedPlayers } from "@/lib/storage";
 import type { SavedPlayer } from "@/lib/types";
+import { useCaddiePageContext } from "@/hooks/useCaddiePageContext";
+import type { TaskParse, TaskAck } from "@/lib/caddie-context";
+import { buildKeyterms } from "@/lib/voice/keyterms";
+import { parseVoiceTranscript } from "@/lib/voice/pipeline";
+import type { VoiceParseResultValidated } from "@/lib/voice/schemas";
+import { tournamentTaskParse, tournamentPrefillFromParse } from "@/lib/tournament-prefill";
 
 const NUM_ROUNDS = [1, 2, 3, 4] as const;
 
@@ -69,6 +75,58 @@ export default function TournamentSetupPage() {
   const removeCustom = (id: string) => {
     setCustomPlayers((prev) => prev.filter((p) => p.id !== id));
   };
+
+  // ── Voice — through the omnipresent caddie-orb contract ──
+  // The orb summons the SHARED sheet host (CaddieOrbSheet, mounted in the
+  // root layout); this page registers what its own deterministic tournament
+  // parser understood (specs/omnipresent-caddie-orb-plan.md §4). Creation
+  // STAYS a human tap — apply() only fills the form; it never calls
+  // handleCreate. Filling the form by hand remains the fallback.
+  const apply = useCallback((p: TaskParse): TaskAck => {
+    const result = p.payload as VoiceParseResultValidated;
+    const plan = tournamentPrefillFromParse(result, apiPlayers, []);
+    if (plan.name) setName(plan.name);
+    setNumRounds(plan.numRounds);
+    if (plan.selectedIds.length > 0) {
+      setSelectedIds((prev) => new Set([...prev, ...plan.selectedIds]));
+    }
+    if (plan.customPlayerNames.length > 0) {
+      setCustomPlayers((prev) => {
+        const existingLower = new Set([
+          ...apiPlayers.map((sp) => sp.name.toLowerCase()),
+          ...prev.map((cp) => cp.name.toLowerCase()),
+        ]);
+        const newOnes = plan.customPlayerNames
+          .filter((n) => !existingLower.has(n.toLowerCase()))
+          .map((n) => ({ id: crypto.randomUUID(), name: n }));
+        return newOnes.length > 0 ? [...prev, ...newOnes] : prev;
+      });
+    }
+    // Tournament creation is a human tap on "Create tournament" — the
+    // visibly-filled form + this ack line IS the confirmation, never a
+    // confirming beat / auto-dispatch.
+    return { line: plan.ackLine, dispatched: false };
+  }, [apiPlayers]);
+
+  useCaddiePageContext({
+    id: "tournament-setup",
+    kind: "task",
+    copy: {
+      title: "Set up your tournament",
+      hint: "Tell me the name, how many rounds, and who’s playing.",
+      nudge: "Want to start a tournament? Say the name, the rounds, and who’s in.",
+    },
+    // Bias STT toward the roster on screen — "Justin" beats "Justine".
+    getKeyterms: () => buildKeyterms(apiPlayers.map((p) => p.name)),
+    parse: async (transcript) => {
+      const result = await parseVoiceTranscript({
+        transcript,
+        known: { players: apiPlayers.map((p) => p.name) },
+      });
+      return tournamentTaskParse(transcript, result);
+    },
+    apply,
+  });
 
   // ── validation ────────────────────────────────────────────────────────────
   const totalPlayers = selectedIds.size + customPlayers.length;

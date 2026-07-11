@@ -556,6 +556,11 @@ async def simulate_book_by_call(
 # owner-gated telephony.get_live_transport(). Production NEVER sets this, so the
 # sole live-dial gate remains telephony.get_live_transport().
 _rehearsal_transport_factory: Callable[[], Any] | None = None
+# Injectable clock for the compliance calling-hours gate — None means "real
+# now()" (production). Tests set a fixed within-hours datetime for determinism,
+# so the suite doesn't flake when it happens to run outside 8am–9pm ET (same
+# pattern as `_availability_call_now_override`). Production NEVER sets this.
+_rehearsal_call_now_override: datetime | None = None
 
 _REHEARSAL_COURSE_NAME = "Rehearsal Pro Shop"
 
@@ -674,7 +679,7 @@ async def rehearsal_call(owner_id: str = Depends(require_owner)) -> RehearsalCal
         ctx,
         verified_lines={owner_number},
         suppression=SuppressionList(),
-        now=None,
+        now=_rehearsal_call_now_override,
     )
     if not gate.allowed:
         return RehearsalCallResponse(

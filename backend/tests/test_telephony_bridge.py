@@ -254,7 +254,13 @@ class TestGetLiveTransportGating:
 
     def test_missing_twilio_creds(self, monkeypatch):
         monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
-        for var in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"):
+        for var in (
+            "TWILIO_ACCOUNT_SID",
+            "TWILIO_AUTH_TOKEN",
+            "TWILIO_FROM_NUMBER",
+            "TWILIO_CLIENT_ID",
+            "TWILIO_CLIENT_KEY",
+        ):
             monkeypatch.delenv(var, raising=False)
         with pytest.raises(RuntimeError, match="missing credentials"):
             telephony.get_live_transport()
@@ -278,3 +284,153 @@ class TestGetLiveTransportGating:
         assert isinstance(transport, telephony.LiveCallTransport)
         # Construction is network-free: the twilio client factory is a lazy
         # closure, never invoked here, and run_call is never called.
+
+
+# ─── Twilio credential-name aliases (owner used TWILIO_CLIENT_ID/KEY) ─────────
+
+
+def _clear_twilio_env(monkeypatch):
+    for var in (
+        "TWILIO_ACCOUNT_SID",
+        "TWILIO_AUTH_TOKEN",
+        "TWILIO_FROM_NUMBER",
+        "TWILIO_CLIENT_ID",
+        "TWILIO_CLIENT_KEY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
+def _capture_client_creds(monkeypatch):
+    """Monkeypatch twilio.rest.Client so invoking the lazy factory records the
+    (account_sid, auth_token) it is constructed with — no network, no real
+    Client. Returns a dict that the factory populates when called."""
+    import twilio.rest
+
+    captured: dict = {}
+
+    def _fake_client(account_sid, auth_token, *args, **kwargs):
+        captured["account_sid"] = account_sid
+        captured["auth_token"] = auth_token
+        return object()
+
+    monkeypatch.setattr(twilio.rest, "Client", _fake_client)
+    return captured
+
+
+class TestTwilioCredentialAliases:
+    def test_alias_only_builds_with_resolved_creds(self, monkeypatch):
+        # Owner's real setup: only the CLIENT_ID/CLIENT_KEY aliases are set.
+        _clear_twilio_env(monkeypatch)
+        monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
+        monkeypatch.setenv("TWILIO_CLIENT_ID", "AC-alias-sid")
+        monkeypatch.setenv("TWILIO_CLIENT_KEY", "alias-tok")
+        monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15005550006")
+        monkeypatch.setenv("VOICE_BOOKING_PUBLIC_HOST", "api.example.com")
+
+        transport = telephony.get_live_transport()
+        assert isinstance(transport, telephony.LiveCallTransport)
+
+        captured = _capture_client_creds(monkeypatch)
+        transport._twilio_client_factory()
+        assert captured["account_sid"] == "AC-alias-sid"
+        assert captured["auth_token"] == "alias-tok"
+        assert transport._from_number == "+15005550006"
+
+    def test_standard_names_still_work(self, monkeypatch):
+        _clear_twilio_env(monkeypatch)
+        monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC-std-sid")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "std-tok")
+        monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15005550006")
+        monkeypatch.setenv("VOICE_BOOKING_PUBLIC_HOST", "api.example.com")
+
+        transport = telephony.get_live_transport()
+        captured = _capture_client_creds(monkeypatch)
+        transport._twilio_client_factory()
+        assert captured["account_sid"] == "AC-std-sid"
+        assert captured["auth_token"] == "std-tok"
+
+    def test_standard_name_wins_over_alias(self, monkeypatch):
+        _clear_twilio_env(monkeypatch)
+        monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC-std-sid")
+        monkeypatch.setenv("TWILIO_CLIENT_ID", "AC-alias-sid")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "std-tok")
+        monkeypatch.setenv("TWILIO_CLIENT_KEY", "alias-tok")
+        monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15005550006")
+        monkeypatch.setenv("VOICE_BOOKING_PUBLIC_HOST", "api.example.com")
+
+        transport = telephony.get_live_transport()
+        captured = _capture_client_creds(monkeypatch)
+        transport._twilio_client_factory()
+        # Standard name wins when both are set.
+        assert captured["account_sid"] == "AC-std-sid"
+        assert captured["auth_token"] == "std-tok"
+
+    def test_partial_sid_only_still_refused(self, monkeypatch):
+        # SID present (via alias) but NO token under either name → refuse.
+        _clear_twilio_env(monkeypatch)
+        monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
+        monkeypatch.setenv("TWILIO_CLIENT_ID", "AC-alias-sid")
+        monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15005550006")
+        monkeypatch.setenv("VOICE_BOOKING_PUBLIC_HOST", "api.example.com")
+        with pytest.raises(RuntimeError, match="missing credentials") as exc:
+            telephony.get_live_transport()
+        # The message names the missing token and BOTH accepted names for it.
+        assert "TWILIO_AUTH_TOKEN" in str(exc.value)
+        assert "TWILIO_CLIENT_KEY" in str(exc.value)
+
+    def test_missing_message_names_both_accepted_names(self, monkeypatch):
+        _clear_twilio_env(monkeypatch)
+        monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
+        with pytest.raises(RuntimeError) as exc:
+            telephony.get_live_transport()
+        msg = str(exc.value)
+        for name in (
+            "TWILIO_ACCOUNT_SID",
+            "TWILIO_CLIENT_ID",
+            "TWILIO_AUTH_TOKEN",
+            "TWILIO_CLIENT_KEY",
+            "TWILIO_FROM_NUMBER",
+        ):
+            assert name in msg
+
+    def test_non_ac_prefix_warns_without_leaking_secret(self, monkeypatch, caplog):
+        import logging
+
+        _clear_twilio_env(monkeypatch)
+        monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
+        # An API Key SID (SK…) mistakenly supplied as the account SID.
+        secret_sid = "SK-super-secret-sid-value"
+        secret_tok = "super-secret-auth-token"
+        monkeypatch.setenv("TWILIO_CLIENT_ID", secret_sid)
+        monkeypatch.setenv("TWILIO_CLIENT_KEY", secret_tok)
+        monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15005550006")
+        monkeypatch.setenv("VOICE_BOOKING_PUBLIC_HOST", "api.example.com")
+
+        with caplog.at_level(logging.WARNING):
+            telephony.get_live_transport()
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("AC-prefixed" in r.getMessage() for r in warnings)
+        # The WARN must never leak the credential value or any part of it.
+        full_log = " ".join(r.getMessage() for r in caplog.records)
+        assert secret_sid not in full_log
+        assert secret_tok not in full_log
+        assert "SK-super" not in full_log
+
+    def test_ac_prefix_does_not_warn(self, monkeypatch, caplog):
+        import logging
+
+        _clear_twilio_env(monkeypatch)
+        monkeypatch.setenv("VOICE_BOOKING_ENABLED", "1")
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC-good-sid")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+        monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15005550006")
+        monkeypatch.setenv("VOICE_BOOKING_PUBLIC_HOST", "api.example.com")
+
+        with caplog.at_level(logging.WARNING):
+            telephony.get_live_transport()
+        assert not any(
+            "AC-prefixed" in r.getMessage() for r in caplog.records
+        )

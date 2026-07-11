@@ -163,6 +163,43 @@ export const curatedCorpus: VoiceScenario[] = [
     expectedEffect: { type: "tournament", tournament: { numRounds: 3 } },
     tags: ["setup", "tournament"],
   },
+  // orb-s3 (specs/omnipresent-caddie-orb-plan.md §4): phrasings the newly-
+  // wired /tournament/new caddie task invites. Mirrored 1:1 (same utterances,
+  // same numRounds-only assertion) into the LIVE smoke corpus,
+  // voice-tests/corpus/seed-utterances.jsonl (seed:setup:029-031) — this
+  // curatedCorpus export is not currently imported by runner.ts (the smoke
+  // gate reads the JSONL corpus), so these entries are documentation/parity
+  // only until a future slice wires curatedCorpus in. Do not rely on these
+  // alone to gate CI.
+  {
+    id: "curated:setup:tournament-with-course",
+    endpoint: "parse-voice",
+    context: {
+      mode: "command-lane",
+      screen: "setup",
+      knownPlayers: P.duo,
+      knownCourses: ["Bethpage Black"],
+    },
+    utterance: "3 round tournament at Bethpage with Justin, Sam",
+    expectedEffect: { type: "tournament", tournament: { numRounds: 3 } },
+    tags: ["setup", "tournament"],
+  },
+  {
+    id: "curated:setup:tournament-named-four-rounds",
+    endpoint: "parse-voice",
+    context: { mode: "command-lane", screen: "setup", knownPlayers: P.four },
+    utterance: "set up the club championship, 4 rounds, with Justin Jack Mike Sam",
+    expectedEffect: { type: "tournament", tournament: { numRounds: 4 } },
+    tags: ["setup", "tournament"],
+  },
+  {
+    id: "curated:setup:tournament-two-day-duo",
+    endpoint: "parse-voice",
+    context: { mode: "command-lane", screen: "setup", knownPlayers: P.duo },
+    utterance: "start a 2 day tournament with Justin and Jack",
+    expectedEffect: { type: "tournament", tournament: { numRounds: 2 } },
+    tags: ["setup", "tournament"],
+  },
 
   // -------------------- Scoring / parse-voice-scores --------------------
   {

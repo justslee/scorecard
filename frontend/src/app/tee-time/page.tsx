@@ -40,19 +40,13 @@ import { getPlayers, getGolferProfileAsync } from "@/lib/api";
 import { getSavedPlayers } from "@/lib/storage";
 import type { SavedPlayer } from "@/lib/types";
 import { buildTeeTimeICS, icsFilename, downloadICS } from "@/lib/teetime/ics";
-import { parseTeeTimePrefs, hasTeeTimeSignal } from "@/lib/voice/parseTeeTimePrefs";
+import { parseTeeTimePrefs } from "@/lib/voice/parseTeeTimePrefs";
 import type { TeeTimePrefsParseResultValidated } from "@/lib/voice/schemas";
-import {
-  applyParsedWindows,
-  applyParsedCourses,
-  applyPartySize,
-  teeTimeAckLine,
-} from "@/lib/teetime/voice-prefs";
 import WindowCard from "./WindowCard";
-import { LooperSheetShell } from "@/components/LooperSheet";
-import { useLooperDictation } from "@/hooks/useLooperDictation";
-import { onLooperOpen } from "@/lib/looper-bus";
 import { buildKeyterms } from "@/lib/voice/keyterms";
+import { useCaddiePageContext } from "@/hooks/useCaddiePageContext";
+import type { TaskParse, TaskAck } from "@/lib/caddie-context";
+import { teeTimeTaskParse, planTeeTimeApply } from "@/lib/teetime/caddie-task";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -385,125 +379,59 @@ function Prefs({
     setShowCourseSearch(false);
   };
 
-  // ── Voice ("Hold to talk") ──
-  // Voice: the Looper orb (tab island) summons the sheet below; live
-  // dictation → the deterministic tee-time intent parser. Filling the form
-  // by hand remains the fallback.
-  const [voiceLines, setVoiceLines] = useState<Array<{ who: "looper" | "you"; text: string }>>([
-    { who: "looper", text: "What do you have in mind for this weekend? I'll rustle one up." },
-  ]);
+  // ── Voice — through the omnipresent caddie-orb contract ──
+  // The orb (tab island) summons the SHARED sheet host (CaddieOrbSheet,
+  // mounted in the root layout); this page just registers what its own
+  // deterministic tee-time parser understands (specs/orb-s2-context-
+  // contract-teetime-plan.md §7). Filling the form by hand remains the
+  // fallback.
   const dispatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (dispatchTimerRef.current) clearTimeout(dispatchTimerRef.current);
   }, []);
 
-  /** Append a looper line, keeping the exchange short (calm, not a chat log). */
-  const say = useCallback((text: string) => {
-    setVoiceLines((ls) => [...ls, { who: "looper" as const, text }].slice(-4));
-  }, []);
-
-  const applyParsed = useCallback((parsed: TeeTimePrefsParseResultValidated) => {
-    if (!hasTeeTimeSignal(parsed)) {
-      const example = courses[0] ? `“Saturday morning at ${courses[0].name}”` : "“Saturday morning, early”";
-      say(`Didn’t quite get that — try ${example}, or fill it in below.`);
-      return;
-    }
-
-    if (parsed.windows.length > 0) {
-      setWindows(applyParsedWindows(windows, parsed.windows));
-    }
-    // Named courses matching NOTHING on the list keep the current selection
-    // (applyParsedCourses returns `courses` untouched, detectable by `===`) —
-    // never silently deselect everything into an all-nearby dispatch (bug #3
-    // voice hole). The ack says so honestly instead of pretending it worked.
-    let courseMissNote: string | null = null;
-    if (parsed.courseNames.length > 0 || parsed.favoritesOnly) {
-      const next = applyParsedCourses(courses, parsed.courseNames, parsed.favoritesOnly);
-      if (parsed.courseNames.length > 0 && next === courses) {
-        courseMissNote = `Couldn’t find ${parsed.courseNames.join(", ")} on your list — kept your picks.`;
-      }
-      setCourses(next);
-      // Widen the drive radius when a named course sits beyond it — the golfer
-      // asked for that course; silently filtering it out would be dishonest.
-      const farthest = Math.max(0, ...next.filter((c) => c.selected && c.distance != null).map((c) => c.distance ?? 0));
-      if (parsed.courseNames.length > 0 && farthest > maxMiles) {
-        setMaxMiles(Math.min(50, Math.ceil(farthest)));
-      }
-    }
-    if (parsed.maxDistanceMiles != null) {
-      setMaxMiles(Math.max(1, Math.min(50, Math.round(parsed.maxDistanceMiles))));
-    }
-    if (parsed.partySize != null) setGroup(applyPartySize(group, parsed.partySize));
-    if (parsed.maxPriceUsd != null) setMaxPriceUsd(parsed.maxPriceUsd);
-
-    say(courseMissNote ?? teeTimeAckLine(parsed) ?? "Got it.");
-
-    // Voice-first: a complete request (a day/time) or an explicit go-ahead
-    // sends the looper out — speak, and it searches. A short beat lets the
-    // acknowledgement land first.
-    if (parsed.windows.length > 0 || parsed.dispatch) {
+  /** Merge a confirmed parse into prefs state; return the honest ack. Called
+   *  by the host ONLY when hasSignal && confidence >= TASK_CONFIDENCE_FLOOR —
+   *  same computation as the old private applyParsed, factored into
+   *  caddie-task.ts so it's provable-parity-tested against the real libs. */
+  const apply = useCallback((p: TaskParse): TaskAck => {
+    const parsed = p.payload as TeeTimePrefsParseResultValidated;
+    const plan = planTeeTimeApply(parsed, { windows, courses, maxMiles, group });
+    if (plan.windows) setWindows(plan.windows);
+    if (plan.courses) setCourses(plan.courses);
+    if (plan.maxMiles != null) setMaxMiles(plan.maxMiles);
+    if (plan.group) setGroup(plan.group);
+    if (plan.maxPriceUsd != null) setMaxPriceUsd(plan.maxPriceUsd);
+    if (plan.dispatched) {
+      // Voice-first: a complete request (a day/time) or an explicit go-ahead
+      // sends the looper out — speak, and it searches. A short beat lets the
+      // acknowledgement land first. The SAME beat the tap flow uses.
+      if (dispatchTimerRef.current) clearTimeout(dispatchTimerRef.current);
       dispatchTimerRef.current = setTimeout(onDispatch, 1400);
     }
-  }, [windows, setWindows, courses, setCourses, maxMiles, setMaxMiles, group, setGroup, setMaxPriceUsd, onDispatch, say]);
+    return { line: plan.line, dispatched: plan.dispatched };
+  }, [windows, setWindows, courses, setCourses, maxMiles, setMaxMiles, group, setGroup, setMaxPriceUsd, onDispatch]);
 
-  // ── The Looper sheet (summoned by the tab-island orb) ────────────────────
-  const [looperOpen, setLooperOpen] = useState(false);
-  const [looperThinking, setLooperThinking] = useState(false);
-  const looperMicRef = useRef<() => void>(() => {});
-  const dictation = useLooperDictation({
-    surface: "tee-time",
+  useCaddiePageContext({
+    id: "tee-time",
+    kind: "task",
+    copy: {
+      title: "Where are we playing?",
+      hint: "What do you have in mind for this weekend? I'll rustle one up.",
+      nudge: "Want me to set that tee-time search up? Just say when and where.",
+    },
     // Bias STT toward the course names on screen — "Bethpage" beats "bath page".
     getKeyterms: () => buildKeyterms(courses.map((c) => c.name)),
-    onUtteranceEnd: () => looperMicRef.current(),
-  });
-  const dictationRef = useRef(dictation);
-  dictationRef.current = dictation;
-
-  useEffect(() => {
-    return onLooperOpen((detail) => {
-      if (detail.context !== "tee-time") return;
-      setLooperOpen(true);
-      if (detail.listening) {
-        setTimeout(() => void dictationRef.current.start(), 60);
-      }
-    });
-  }, []);
-
-  const closeLooper = useCallback(() => {
-    dictation.cancel();
-    setLooperThinking(false);
-    setLooperOpen(false);
-  }, [dictation]);
-
-  /** Tap: start listening, or stop → parse → apply (the same deterministic
-   *  tee-time intent pipeline the hold-to-talk bar used). */
-  const handleLooperMic = useCallback(async () => {
-    if (!dictation.listening) {
-      await dictation.start();
-      return;
-    }
-    setLooperThinking(true);
-    const heard = await dictation.stopAndResolve();
-    if (!heard) {
-      setLooperThinking(false);
-      say("Didn’t catch that — tap the mic and tell me when and where.");
-      return;
-    }
-    setVoiceLines((ls) => [...ls, { who: "you" as const, text: heard }].slice(-4));
-    try {
+    parse: async (transcript) => {
       const parsed = await parseTeeTimePrefs({
-        transcript: heard,
+        transcript,
         known: { courses: courses.map((c) => c.name) },
       });
-      applyParsed(parsed);
-    } catch {
-      say("Lost that one — mind saying it again? Or fill it in below.");
-    } finally {
-      setLooperThinking(false);
-    }
-  }, [dictation, courses, applyParsed, say]);
-  looperMicRef.current = () => void handleLooperMic();
+      return teeTimeTaskParse(transcript, parsed);
+    },
+    apply,
+  });
 
   const toggleWin = (id: string) => setWindows(windows.map((w) => (w.id === id ? { ...w, selected: !w.selected } : w)));
   const toggleCourse = (id: string) => {
@@ -565,19 +493,11 @@ function Prefs({
     <PaperShell>
       <TTMasthead accent={accent} onBack={onBack} kicker="Dispatch" title="Find me a tee time" />
 
-      {/* Voice moved to the Looper orb in the tab island (specs/looper-orb-plan.md)
-          — the sheet below carries the whole exchange; the page body stays calm. */}
-      <LooperSheetShell
-        open={looperOpen}
-        onClose={closeLooper}
-        title="Where are we playing?"
-        emptyHint={voiceLines[0]?.text ?? "Tell me when and where."}
-        turns={voiceLines.slice(1).map((l) => ({ role: l.who === "you" ? "user" as const : "looper" as const, text: l.text }))}
-        phase={dictation.listening ? "listening" : looperThinking ? "thinking" : "idle"}
-        interim={dictation.interim}
-        error={dictation.micError}
-        onMicTap={() => void handleLooperMic()}
-      />
+      {/* Voice moved to the omnipresent caddie orb (specs/orb-s2-context-
+          contract-teetime-plan.md) — the shared sheet host (CaddieOrbSheet,
+          mounted in the root layout) carries the whole exchange while this
+          page's contract registration (above) is active; the page body
+          stays calm. */}
 
       {/* ── When ── */}
       <Section kicker="When" title="Windows" aside={<Kicker>{winCount} selected</Kicker>}>

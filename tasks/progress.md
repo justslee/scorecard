@@ -3,6 +3,251 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: orb-s4-mycard-coaching DONE, on integration/next (commit 98b9de5)
+
+Item: slice S4 of `specs/omnipresent-caddie-orb-plan.md` — the My Card
+(`/profile`) orb answers stats questions grounded in the golfer's REAL
+computed stats. NOTICEABLE (user-facing + a new user-data→prompt path).
+
+New `frontend/src/lib/stats-grounding.ts` (+7 vitest cases) —
+`buildStatsGroundingBlock(rounds, clubStats, profile)`: pure serializer that
+reuses the EXISTING derivations verbatim (`estimateHandicapFromRounds`,
+`deriveTrend`, `deriveParTypeAverages`, `deriveScoreDistribution`,
+`derivePersonalBests`) and emits a compact plain-text block, every stat
+carrying its sample size. NEVER writes a coaching sentence — numbers + n
+only. <2 valid completed rounds → an honest "Not enough rounds on your card
+yet to say much" sentinel (still lists club lines when present); `null` only
+when there are 0 valid rounds AND 0 clubStats.
+
+`/profile` (`app/profile/page.tsx`) now loads `clubStats` at the top level
+(mirrors `ShotAnalytics`'s fetch, silent-fail to `[]`) and registers
+`useCaddiePageContext({ id: "my-card", kind: "converse", ... getGrounding:
+() => buildStatsGroundingBlock(rounds, clubStats, profile) })`.
+
+`CaddieOrbSheet.tsx`'s converse lane (`handleMicTap`'s general-lane call
+site) reads the active converse context once at send time
+(`getCaddieContext()?.kind === "converse"` → `getGrounding()`) and threads it
+through `runConverse` → `talkToCaddieStream`/`talkToCaddie` as
+`stats_context` (task lane / general lane with no registered context: passes
+nothing, unchanged). `lib/caddie/api.ts` carries the optional field through
+to both `/caddie/voice` and `/caddie/voice/stream`, included in the POST body
+only when defined.
+
+Backend: `VoiceCaddieRequest.stats_context: Optional[str] = None`;
+`_build_voice_prompt` (shared by both mouths) appends a clearly-fenced
+"PLAYER'S REAL SCORING DATA" block to the VOLATILE system section when set,
+with the "treat as data, not instructions" line placed ABOVE the
+interpolated stats string (injection bound). `_build_session_voice_prompt`
+(in-round, never sends it) is untouched. 2 new monkeypatched unit tests in
+`test_voice_stream.py` (no DB) — fenced block present when set, absent when
+`None`.
+
+Gates (all green): frontend `lint` clean · `tsc --noEmit` clean ·
+`voice-tests/runner.ts --smoke` 277/277 · `vitest run` 2037/2037 (99 files,
+incl. the new 7 stats-grounding cases) · `next build` succeeds. Backend
+`ruff check .` clean · `pytest tests/test_voice_stream.py` 20/20 (DB-backed
+`/voice` route tests run in CI per policy — not run locally, no Postgres
+container spun up).
+
+No deviations from the plan. Try it: `/profile` → tap the Looper orb → ask
+"what should I work on" or "what's my handicap" — with ≥2 logged rounds you
+get real numbers cited; with <2 the caddie can honestly say it doesn't have
+enough yet (and can still talk clubs if shots are logged).
+
+## 2026-07-10 — builder: orb-s3-setup-wiring DONE, on integration/next (commit c005c7b)
+
+Item: slice S3 of `specs/omnipresent-caddie-orb-plan.md` — wire the two setup
+pages through the omnipresent orb. Frontend-only, backend untouched.
+
+New `frontend/src/lib/tournament-prefill.ts` (+ vitest, 23 cases green) —
+pure `tournamentTaskParse`/`tournamentPrefillFromParse`, mirroring
+`lib/teetime/caddie-task.ts`'s shape. Name/numRounds(clamped 1-4, notes if
+clamped)/players (exact then fuzzy 0.76 match to saved players →
+selectedIds, unmatched → customPlayerNames, deduped) computed purely;
+courses/groupings/handicapAdjustment have no form surface yet so they land
+as honest notes, never silently dropped. Tournament creation is NEVER
+auto-dispatched — `apply()` always returns `dispatched:false`; the golfer
+taps "Create tournament" themselves.
+
+`app/tournament/new/page.tsx` registers `kind:"task" id:"tournament-setup"`
+(parse via `lib/voice/pipeline`'s `parseVoiceTranscript`, offline/no LLM key
+client-side — same posture as tee-time's existing registration). `apply()`
+additively merges into the page's existing name/numRounds/selectedIds/
+customPlayers state — no new creation path.
+
+`app/round/new/page.tsx` registers `kind:"surface" id:"round-setup"`
+(`summon` just opens the existing mature `VoiceRoundSetupRealtime` — zero new
+parse code) AND removes the bespoke sticky-footer "Speak" mic button
+(one-mic resolution — memory: never bespoke mic buttons; the orb is now the
+single invocation there too, both tap and hold open the same conversational
+flow via `autoStart`). Kept the inline "Say something else…" empty-state
+chip (a contextual text shortcut into the same flow, not a second mic).
+
+`shouldShowCaddieOrb.ts`: `/tournament/new` and `/round/new` now SHOW (the
+bespoke controls that justified hiding them are gone/unified);
+`/round/[id]` (in-progress round) still HIDES for the "Ask caddie" pill.
+New exported `isSetupCtaRoute()` helper (+ tests) shared with `CaddieOrb.tsx`,
+which adds `STICKY_CTA_CLEARANCE_PX` (84, designer-tunable) so the orb floats
+above the full-width sticky CTA on both setup pages instead of overlapping it.
+
+**Plan deviation, noted for eng-lead (not re-architected, minimal + documented
+inline):** the plan's §G pointed at `voice-tests/corpus/curated.ts` as if it
+feeds the smoke gate. It doesn't — `runner.ts` (the actual `--smoke` gate)
+reads `voice-tests/corpus/seed-utterances.jsonl` only; `curatedCorpus` is
+never imported anywhere (confirmed via grep + `git log` — untouched since a
+much older commit, predates the current runner). So I added the 3 tournament
+scenarios to the LIVE corpus, `seed-utterances.jsonl` (`seed:setup:029-031`,
+digit-form phrasings — the legacy local heuristic parser only recognizes
+numeric round counts, not word-numbers like "three-round"), verified against
+the actual gate: **274 → 277 pass, 0 fail.** Also mirrored the same 3
+scenarios into `curated.ts` for parity/documentation, with an inline comment
+flagging it's not currently gate-wired — do not rely on that file alone.
+
+Gates (all green): `npm run lint` clean · `npx tsc --noEmit` clean ·
+`npx tsx voice-tests/runner.ts --smoke` → 277 pass / 0 fail (was 274) ·
+`npx vitest run` → 98 files / 2024 tests passed · `npm run build` → compiled
++ all routes generated successfully. Backend confirmed untouched (`git
+status` shows zero files under `backend/`).
+
+Files touched: `frontend/src/lib/tournament-prefill.ts` (new),
+`frontend/src/lib/tournament-prefill.test.ts` (new),
+`frontend/src/app/tournament/new/page.tsx`,
+`frontend/src/app/round/new/page.tsx`,
+`frontend/src/components/nav/shouldShowCaddieOrb.ts` (+ `.test.ts`),
+`frontend/src/components/CaddieOrb.tsx`,
+`frontend/voice-tests/corpus/seed-utterances.jsonl`,
+`frontend/voice-tests/corpus/curated.ts`.
+
+Silent (no new user-visible feature copy beyond the orb now appearing on two
+more screens it wasn't shown on before — noticeable, bundles into #132 as a
+continuation of the orb-S1/S2 noticeable work already in that PR).
+
+## 2026-07-10 — builder: orb-s1-move-and-nav DONE, on integration/next
+
+Item: `orb-s1-move-and-nav` (S1 of `specs/omnipresent-caddie-orb-plan.md`) — pure
+placement migration of the voice invocation out of the center of the nav
+island into a new omnipresent `CaddieOrb`, fixed bottom-right on every
+relevant page. Zero behavior change to the voice pipeline/event bus/sheets.
+
+New `frontend/src/components/nav/shouldShowCaddieOrb.ts` (+ test) — pure
+visibility fn: SHOW `/`, `/courses(/*)`, `/players(/*)`, `/profile`,
+`/tee-time`, `/round/new`, `/tournament/new`, `/tournament/[id]`, `/settings`;
+HIDE `/round/[id]` (non-new — the round page's "Ask caddie" pill is the
+invocation there, so the orb steps aside), `/map`, `/sign-in`, `/sign-up`,
+unlisted routes default hide. **Plan-path note:** the plan said
+`frontend/src/lib/nav/shouldShowCaddieOrb.ts`, but `shouldShowTabBar.ts` (the
+file it must be a sibling of and import `normalizePath` from via `./`)
+actually lives in `frontend/src/components/nav/` — placed the new file there
+instead to satisfy "sibling of shouldShowTabBar.ts" literally; no `lib/nav`
+directory exists in the codebase.
+
+New `frontend/src/components/CaddieOrb.tsx` (+ test) — ~54px ink medallion,
+`position:fixed; right:16px; zIndex:50`, bottom clearance adds 74px when
+`shouldShowTabBar()` is true (island present) else 0. Pointer state machine
+(hold 350ms → listening, 12px drift-cancel, same haptics) migrated verbatim
+from the old `LooperOrb`; fires the identical `openLooper({context, listening})`
+bus calls — `looper-bus.ts` untouched. One-time "Your caddie moved here"
+caption via `localStorage` flag `looper.caddieOrbIntroSeen`, SSR/localStorage-
+guarded. Caddie mark is a placeholder serif-italic "L" in its own
+`CaddieMark` sub-component, marked `// DESIGNER-OWNED` for the designer to
+evolve.
+
+`FloatingTabBar.tsx`: deleted `LooperOrb` + its constants/imports; nav is now
+a plain 4-tab island (Home, Courses, Tee times, Profile). Mounted `<CaddieOrb />`
+in `app/layout.tsx` next to `FloatingTabBar`/`LooperSheet`. Documented the
+pill/orb interplay in both `shouldShowCaddieOrb.ts` and the "Ask caddie" pill
+comment in `RoundPageClient.tsx` (no logic changed there).
+
+Tests: rewrote `FloatingTabBar.test.tsx` (4-tab assertions, no orb) and moved
+the tap/hold/drift pointer-semantics coverage to new `CaddieOrb.test.tsx`
+(same payload assertions as before: `{context:"tee-time", listening:false/true}`).
+Discovered jsdom in this repo has no `window.localStorage` — stubbed a
+minimal in-memory mock via `vi.stubGlobal` in the new test (app code already
+guards localStorage access in try/catch for this exact reason).
+
+Gates: lint clean, `tsc --noEmit` clean, voice-tests smoke 274/274 (parser
+code untouched), `next build` clean, `vitest run` full suite 1958/1958 passed
+(94 files) — includes the 26 new/rewritten orb tests. Commit `<see git log>`
+on `integration/next`, pushed. Classification: **noticeable** (nav loses its
+center orb; a new persistent orb appears bottom-right on most screens) —
+placeholder caddie mark, so designer review still needed before the icon is
+final.
+
+## 2026-07-10 — builder: orb-s1 review fold (reviewer + designer BLOCK) DONE, on integration/next
+
+Folded two BLOCKING findings on `orb-s1-move-and-nav` into the same feature,
+same branch (no new PR): S1 is a pure placement migration with no per-page
+context wiring yet, so a route may only SHOW the orb if its fired context has
+a live listener AND it doesn't collide with an existing sticky CTA / bespoke
+voice control.
+
+`shouldShowCaddieOrb.ts`: removed `/courses/` from `SHOW_PREFIXES` (course
+detail pages have no listener — general `LooperSheet` drops non-general
+contexts — was a dead mic; `/courses` list page still shows). Changed the
+`/round/` guard from `p === '/round/new'` to unconditional `false` for all
+`/round/*` (`/round/new` has its own bespoke voice-setup mic,
+`aria-label="Set up round by voice"`, plus a sticky "Tee off" CTA — the orb
+was forking the mic there). Added an explicit `/tournament/new` early-return
+`false` (sticky "Create tournament" CTA collision) before the `/tournament/`
+prefix check, so other tournament detail pages still show. Removed
+`/round/new` and `/tournament/new` from `SHOW_EXACT` (now dead).
+
+Net SHOW set: `/`, `/courses` (list only), `/players(/*)`, `/profile`,
+`/tee-time`, `/settings`, `/tournament/[id]` (not `/tournament/new`). Net HIDE:
+all `/round/*`, `/tournament/new`, `/courses/[id]`, `/map`, `/sign-in`,
+`/sign-up`, unlisted routes.
+
+`CaddieOrb.tsx`: promoted `CaddieMark` out of placeholder — designer decided
+the serif-italic "L" (Looper's Home identity mark) IS the final caddie mark,
+not a stand-in; removed the `DESIGNER-OWNED`/evolve framing, added
+`transform: translateX(-1px)` optical centering on the italic cap. Added
+`aria-live="polite"` + `role="status"` to the intro caption for screen readers
+(positioning untouched, as accepted).
+
+Updated `shouldShowCaddieOrb.test.ts` to the new SHOW/HIDE set with comments
+explaining the `/round/new` (forked-mic) and `/courses/[id]` (dead-mic)
+deferrals to S2/S3 so the change reads as deliberate. `CaddieOrb.test.tsx`
+(pinned to `/tee-time`, unaffected) verified unchanged and still passing.
+
+Gates: lint clean, `tsc --noEmit` clean, voice-tests smoke 274/274 (parser
+untouched), `next build` clean, targeted vitest (`shouldShowCaddieOrb`,
+`CaddieOrb`, `FloatingTabBar`) 25/25, full `vitest run` 1957/1957 passed (94
+files). Commit `dd4ad35` on `integration/next`, pushed. Classification:
+**noticeable** (orb disappears from `/round/new`, `/tournament/new`, and
+course detail pages vs. the just-shipped S1 build) but net-safety-positive —
+this is the review fold that unblocks that same bundle item, not a new
+feature.
+
+## 2026-07-10 — builder: tournament-cumulative-settlement DONE, on integration/next
+
+Item: `tournament-cumulative-settlement`. Added `computeTournamentSettlement(rounds)`
+to `frontend/src/lib/settlement.ts` — sums each round's existing
+`computeNetSettlement(round).netByPlayer` into one cumulative net (reuses all
+per-format math, duplicates none of it), then calls `minimizeTransfers()` ONCE
+over the summed total (sum-then-minimize, not minimize-per-round-then-concat,
+which would over-transfer — e.g. an A-owes-B-$10 round followed by a
+B-owes-A-$10 round nets to zero transfers, not two). `isEmpty` is true when no
+round produced a non-dust cumulative net.
+
+Rendered a new "Settle up" panel below the existing per-game list in the
+tournament Games tab (`TournamentPageClient.tsx`) — honest empty state
+("Settle-up appears once rounds are scored.") when `isEmpty`, else each
+minimized transfer as a calm serif/mono line ("{from} pays {to} $X.XX"),
+matching the tab's existing hairline/T-token styling. No-fake-data: never
+renders a fabricated $0 settlement.
+
+Tests: 5 new cases in `settlement.test.ts` (`describe('computeTournamentSettlement')`)
+— cumulative aggregation differs from any single round + minimizes to fewer
+transfers than a per-round approach, opposing per-round debts cancel to zero
+transfers (proves sum-then-minimize), game-less/zero-pointValue/unscored
+rounds → isEmpty, zero-sum invariant across formats, empty `rounds: []`.
+
+Gates: frontend lint clean, `tsc --noEmit` clean, voice-tests smoke 274/274,
+`vitest run src/lib/settlement` 39/39 passed. Backend untouched, no DB
+container spun up. Commit `db5aa67` on `integration/next`, pushed.
+Classification: **noticeable** (new user-facing "Settle up" panel on the
+tournament Games tab).
+
 ## 2026-07-10 — builder: caller-natural-preset-voice DONE, on integration/next
 
 Implemented Option B from `specs/voice-clone-caller-plan.md` §2B/§3 — the AI
@@ -12125,3 +12370,291 @@ next @ 1ed2b71, read children's verdicts, do NOT rebuild.
 - BUILDER FIX @ 8ac3ec2 (frontend-only, 1 file): added distinct 'load-error' status → honest "Could not load caller voices — try again." copy + `options.length===0` guard so an optionless <select> can never render; label T.pencilSoft→pencil; select padding 0 12px→10px 12px (minHeight 44 kept). Gates: front lint/tsc clean, voice-smoke 274/274, caller-voice vitest 3/3.
 - DESIGNER RE-CHECK: PASS — blocking resolved (empty-select structurally unreachable), honest copy, polish matches file conventions, no new regression. Non-blocking note (deferred, not a regression): `options.length===0` folds a "loaded-but-empty" case into the "could not load" copy, and "try again" isn't wired to a retry action.
 - CYCLE 73 DONE — caller-natural-preset-voice LANDED on integration/next @ 8ac3ec2 (feature dece99b + design fix 8ac3ec2). Bundle PR #131 (NOTICEABLE: new /settings caller-voice picker). Reviewer SHIP + /security-review, QA green, Designer PASS. Voice choice = cedar (new default; overridable by OPENAI_REALTIME_DEFAULT_VOICE). Caller stays INERT (voice value only; no gating/pipeline/dialog/compliance change). backlog.json: caller-natural-preset-voice → shipped (landed 8ac3ec2, pr 131). SILENT per directive — NO ship, NO owner ping; bundle accumulates for the next ship decision. CI to be re-verified strict-green on final head after this commit.
+
+## 2026-07-10 — release-manager: bundle PR #131 SHIPPED to main — owner-approved
+
+Owner replied **"ship it"** approving bundle PR #131. Guarded pre-flight
+re-verified: `integration/next` head `d3350b9e` unchanged since approval,
+both required gates SUCCESS, PR OPEN/MERGEABLE — proceeded.
+
+- **Merged** `#131` → `main` (`gh pr merge 131 --merge`). Merge commit:
+  `18ea1a0151ceff4307166973351f1bc0ca533de9`.
+- **Post-merge main CI**: both required gates SUCCESS on the new head (CI,
+  Deploy backend (SSM)) — no flake, no rerun needed.
+- **Backend deployed** via the SSM auto-deploy workflow (fires on push to
+  `main`); confirmed live: `https://api.looperapp.org/health` → 200
+  `{"status":"ok"}`.
+- **TestFlight cut** from new `main` via `ops/ios/ship.sh`: **v1.0.1172
+  (build 202607101656)** — archive + export succeeded, uploaded; App Store
+  Connect `processingState: VALID` (polled via the ASC API, ~2.5 min).
+- **Prod smoke**: `/health` 200 ok; `/api/tee-times/search` and
+  `/api/tee-times/caller-voice` both correctly auth-gated (401 "Missing
+  Authorization", alive — not 500). Caller-voice endpoint confirmed live +
+  owner-gated without dialing.
+- **Fresh `integration/next`** cut off new `main` (fast-forwarded
+  `d3350b9e` → `18ea1a0`, no force push needed — old tip was an ancestor of
+  the merge commit) and pushed.
+- **Board**: new card "Bundle #131: caller natural preset voice (cedar) +
+  owner voice picker" created directly in Shipped
+  (https://app.notion.com/p/3991c52592e081f0a8fbe62fe9379444), with PR link,
+  TestFlight version, and owner test steps. `backlog.json`
+  `caller-natural-preset-voice` updated with `landed_on` (main, merge SHA,
+  TestFlight version, board link).
+- **How the owner tests it**: Settings → Rehearsal call → the voice picker
+  now shows `cedar` selected by default with the other Realtime voices as
+  options. Still silent/inert — audible only once Twilio keys land in prod,
+  on the first rehearsal call.
+
+## Cycle 74 (2026-07-10) — p3 guide-session re-validate (close last hardening thread)
+- #131 SHIPPED (18ea1a0, TestFlight v1.0.1172). Owner fired loop → picking up the carded p3 security follow-up.
+- TRACE (real gap, NOT already-covered): `_row_to_session` (session.py:75-92) hydrates `hole_intel` via `HoleIntelligence.model_validate(v)` with NO `validate_guide` re-check. Not every caddie turn re-hits `/course-intel`, so a stale guide in an old SESSION blob reaches a caddie mouth on reload. `HoleIntelligence` carries BOTH `strategy_guide` (types.py:144) and `hazards` (types.py:133) in the same blob → re-validate at the hydrate seam against the hazards persisted alongside the guide (never empty). No circular import (guide_writer doesn't import session).
+- FIX (87c8ee1): added `validate_guide(intel.strategy_guide, intel.hazards)` in `_row_to_session` after `HoleIntelligence.model_validate`, guarded on `strategy_guide is not None`. Same fail-closed contract as caddie.py:1261-1262. Covers BOTH mouths (both read session.hole_intel).
+- TEST: `tests/test_session_guide_revalidate.py` — DB-free (SimpleNamespace row). RED verified: drop-test FAILS on pre-fix session.py (guide served verbatim), passes with fix. Guards: valid guide survives unchanged; absent guide no-op. Local: ruff clean, 3/3 new + 99 guide-suite pass, 2050 collected clean.
+- REVIEWER: SHIP, no blocking findings — all 6 points verified (right seam / guide+hazards from same blob / no false-drop / both mouths via sole hydrate path / write-path unchanged / no cycle / RED-genuine).
+- QA gates GREEN: backend ruff clean, new test 3/3, guide-suite 99/99, 2050 collected clean; frontend untouched (0 files in bundle-vs-main), lint clean + tsc OK + voice-smoke 274/274.
+- BUNDLE: opened fresh bundle PR #132 (integration/next → main; silent-only so far — no owner ship). Item checklist ticked. backlog `caddie-guide-session-reload-revalidate` → `done-on-bundle` (87c8ee1). CI (ci.yml, on: pull_request) triggered by opening #132.
+- AWAITING CI on PR #132 head — require Frontend + Backend gates state:SUCCESS pinned to the pushed head SHA (fast ~10s Backend container-init fail = infra flake → `gh run rerun <id> --failed`). SILENT: no ship, no owner ping (bundle carries no noticeable change). Cycle 74 item COMPLETE on the bundle.
+
+## Cycle 75 (2026-07-10) — voice-booking-twilio-cred-aliases (telephony cred-name aliases; SECURITY-sensitive)
+- BUILT (dbb8550): telephony.py `get_live_transport` now resolves account_sid/auth_token
+  standard-name-first, alias-fallback (TWILIO_CLIENT_ID/TWILIO_CLIENT_KEY) via `_first_env`;
+  from_number stays TWILIO_FROM_NUMBER (no alias). Missing-check validates the RESOLVED trio
+  (not fixed names); RuntimeError names BOTH accepted names per credential. Non-crashing WARN
+  if resolved account_sid not AC-prefixed (likely API Key SID) — logs the FACT only, no secret.
+  Client(account_sid, auth_token) + all gates (ENABLED/creds/PUBLIC_HOST) + dial-safety unchanged.
+- TESTS: 7 new in test_telephony_bridge.py (alias-only builds w/ right creds, standard still works,
+  standard wins over alias, partial-SID-only refused, missing msg names both names, WARN leaks no
+  secret, AC-prefix no-warn). Local: ruff clean, 103/103 telephony+voice_booking pass.
+- AWAITING reviewer (SECURITY lens) on dbb8550. SHIP → QA gates + open/update bundle PR, backlog→shipped.
+  BLOCKING → re-dispatch builder, re-review. SILENT (infra/config; enables a major capability but
+  inert until owner adds FROM_NUMBER + OWNER_NUMBER + PUBLIC_HOST + ENABLED=1 + redeploy). No ship/ping.
+
+- REVIEWER: SHIP — all 4 telephony invariants PASS (fully gated: WARN+construction run only after ENABLED+creds+PUBLIC_HOST; dial-safe: run_call untouched, dials only normalize_phone(ctx.phone); no secret logging: WARN is a constant string, zero interpolation of sid/token; backward-compatible: standard name wins). Tests genuine (fail vs pre-fix), no coverage gap. Non-blocking nit only (`from_number or ""` dead-defensive).
+- QA (local, DB-free scope): backend ruff clean; telephony+voice_booking suites 103/103 pass. DB-backed rehearsal/media tests deferred to CI (no local Postgres — never spin a container). Frontend UNTOUCHED (0 files vs main) → its lint/tsc/voice-smoke unaffected.
+- BOOKKEEPING: backlog `voice-booking-twilio-cred-aliases` → `done-on-bundle` (dbb8550, PR #132, not-on-main, inert until owner secrets+redeploy). Bundle PR #132 checklist updated (item = silent infra/config). Still SILENT bundle — no noticeable change, NO owner ship/ping.
+- AWAITING CI on PR #132 head after this bookkeeping push — require Frontend + Backend gates state:SUCCESS pinned to the pushed head SHA (fast ~10s Backend container-init fail = infra flake → `gh run rerun <id> --failed`).
+
+## Cycle 76 (2026-07-10) — tournament audit + build-out (owner focus)
+- Owner: build out tournament + asked state (voice setup? multi-round? leaderboard? settlement? live tracking? mock interactive? animations/haptics?).
+- AUDIT DONE: setup(tap)=wired; voice-setup=BUILT-in-parse-but-UNWIRED (marquee gap); multi-round=partial(aggregates, no per-round format); leaderboard=real-but-not-live, gross-only; settlement=round-only, MISSING at tournament level (unblocks Venmo); live-tracking=MISSING; NO mock (real+interactive, one Games-tab honesty gap); animations/haptics=ZERO in tournament screens. Seeded 6 items.
+- AWAITING: eng-lead tournament-cumulative-settlement (p1) — highest value, fixes Games-tab honesty, Venmo-ready output. Then motion/haptics, voice-setup-wire.
+
+### tournament-cumulative-settlement (p1) — BUILD DISPATCHED
+- PLAN-LITE (audit precise): add `computeTournamentSettlement(rounds: Round[])` to `frontend/src/lib/settlement.ts` — for each round call existing `computeNetSettlement(round)`, SUM per-player netByPlayer across all rounds, then `minimizeTransfers` ONCE (NOT per-round-minimize-then-sum). Returns `{ netByPlayer, transfers, isEmpty }` (reuse SettlementLedger shape). Preserve all round-scoped fns unchanged. Render in Games tab of `TournamentPageClient.tsx`: real cumulative Settle-up (X pays Y $Z, ids→names via standings/playerNamesById) + HONEST empty state when no scored rounds (no fabricated/zeroed settlement). Venmo-ready (keep from/to playerIds).
+- AWAITING builder on the above (commit+push to integration/next). SHIP → reviewer (aggregation-correctness + no-fabrication) → QA gates → designer. Data: memberRounds carry .games+.scores; tournament.games is template list. Existing settlement.test.ts has makeRound/makeGame helpers to reuse for multi-round tests.
+
+- BUILT (db5aa67): `computeTournamentSettlement(rounds)` in settlement.ts (sums per-round `computeNetSettlement().netByPlayer`, minimizes ONCE; isEmpty when all nets <$0.01). Games-tab "Settle up" panel: honest empty state "Settle-up appears once rounds are scored." else transfers "{from} pays {to} ${amt}" (ids→names via standings/playerNamesById). +39 tests (settlement.test.ts now 39 pass). Local gates green: lint clean, tsc clean, voice-smoke 274/274, vitest settlement 39/39.
+- AWAITING reviewer (aggregation-correctness + no-fabrication) + qa (gates on head) + designer (Games-tab panel vs NORTHSTAR) on db5aa67. BLOCKING → re-dispatch builder, re-review. Clean → update bundle PR #132 checklist (NOTICEABLE), backlog→done-on-bundle, CI green. SILENT bundle until owner ships — but this is the first NOTICEABLE item on #132.
+
+## OWNER CRUX DIRECTIVE (2026-07-10) — omnipresent caddie orb, HIGHEST PRIORITY
+- Kill center-nav orb; ONE omnipresent floating caddie-icon orb, same spot on all relevant pages; round-page pill stays; context-aware per page (tee-time dispatch, round setup, tournament setup, My Card stats coaching). Memory updated (omnipresent-caddie-orb supersedes floating-island-tab-nav placement). Fable plan dispatched → then slices. Tournament-settlement cycle (in flight) lands first, then this epic leads.
+
+- REVIEWS on db5aa67: reviewer=SHIP (aggregation sum-then-minimize-once correct, reuses per-format math, honest empty, round-scoped fns untouched, 39/39 genuine tests; 1 copy nit). qa=PASS all 5 gates @ f4adc32 (lint, tsc, voice 274/274, settlement 39/39, games 99/99). designer=APPROVE (calm/yardage-book, no SaaS drift; 3 nits).
+- FOLD (honesty-critical): empty-state copy is ambiguous — when a tournament has ONLY non-money games (no pointValue), isEmpty is true forever, so "appears once rounds are scored" mispromises. Since this item EXISTS to fix Games-tab honesty, distinguish 3 states. Dispatching builder for the copy refinement + hasMoneyGames helper + tests. Leaving pure-style nits (EmptyState reuse, trailing divider) as-is.
+- AWAITING builder on the copy-refinement fold. Clean → re-run gates on new head, update bundle PR #132 checklist (NOTICEABLE), backlog→done-on-bundle, CI green.
+
+- BUILT (a2dbd14): copy-refinement fold DONE, on `integration/next`. Added
+  `hasMoneyGames(rounds)` to `frontend/src/lib/settlement.ts` — mirrors
+  `computeNetSettlement`'s exact `format !== 'settlement' && pointValue > 0`
+  filter so the two can never diverge. `TournamentPageClient.tsx` now computes
+  `hasMoneyGame` (reusing existing `hasScores`) and splits the single empty-state
+  string into 3 honest cases: no money games → "No money games in this
+  tournament."; money games + unscored → "Settle-up appears once rounds are
+  scored." (unchanged); money games + scored + net≈0 → "All square — nothing to
+  settle." Copy-only, same serif-italic styling; no other exported fn touched.
+  +5 tests (`describe('hasMoneyGames')` — money game true, non-money/zero/unset
+  pointValue false, empty rounds false, settlement-format game excluded,
+  mixed money+non-money rounds true). Gates: lint clean, `tsc --noEmit` clean,
+  voice-tests smoke 274/274, `vitest run src/lib/settlement` 44/44 passed
+  (was 39, +5). Backend untouched, no DB container. Pushed to
+  `integration/next`. Classification: **noticeable** (user-facing copy fix on
+  the Games-tab Settle-up panel just shipped in db5aa67).
+- AWAITING reviewer/qa/designer re-pass on a2dbd14, then bundle PR #132 update.
+
+- FOLD LANDED (a2dbd14): `hasMoneyGames(rounds)` helper (mirrors computeNetSettlement's money-game filter) + 3-way Settle-up empty state: "No money games in this tournament." / "Settle-up appears once rounds are scored." / "All square — nothing to settle." Copy-only render change; +5 tests (settlement 39→44). Self-verified gates on head bee5269: lint clean, tsc clean, voice 274/274, settlement 44/44. Low-risk copy+pure-helper on already-SHIP'd logic → no full re-review.
+- CYCLE 76 COMPLETE: tournament-cumulative-settlement DONE on bundle (db5aa67 + a2dbd14). Reviewer SHIP, designer APPROVE, QA all-green. backlog → done-on-bundle (persisted). PR #132 checklist updated — FIRST NOTICEABLE item on the bundle (tournament Games tab now shows real cumulative Settle-up + honest empty state; Venmo-ready SettlementTransfer output). SILENT this cycle per directive — NO ship, NO owner ping; the noticeable content now sits on #132 awaiting the next "ship it".
+- AWAITING CI on PR #132 head bee5269 (→ post-bookkeeping head) — require Frontend + Backend gates state:SUCCESS pinned to the pushed head SHA (fast ~10s Backend container-init fail = infra flake → `gh run rerun <id> --failed`). Backend untouched by this cycle.
+
+## Cycle 77 (2026-07-10) — ORB S1 (owner CRUX, "Go")
+- Owner greenlit S1 of the omnipresent-caddie-orb epic (p0). Tournament settlement landed green on #132.
+- AWAITING: eng-lead orb-s1-move-and-nav — CaddieOrb component + omnipresent bottom-right placement + remove center-nav LooperOrb (4 tabs) + shouldShowCaddieOrb + migrate tap/hold + one-time intro. Pure placement migration (bus/contexts unchanged, voice-tests green). Designer pass MANDATORY (caddie mark). Land on bundle.
+- BUILD LANDED 1c8f08f. QA all-green on head: lint/tsc/voice274/vitest26/build.
+- REVIEWER (BLOCK): reachable dead-mic on `/courses/[id]` — orb fires context:"courses" but only the `/courses` LIST page has a listener; detail page has none and the general sheet drops non-general → dead affordance. Everything else (pointer semantics, z-index, tests, SSR) verified faithful. Fix: drop `/courses/` from SHOW_PREFIXES (S2 general-fallback restores `/courses/*`).
+- DESIGNER (BLOCK, live Playwright): (1) orb overlaps the sticky primary CTA on `/round/new` (Tee off) + `/tournament/new` (Create tournament) — real touch-target collision; (2) `/round/new` also stacks the orb on top of the pre-existing bespoke round-setup mic → forked invocation (S3 unifies). Fix: hide orb on all `/round/*` + `/tournament/new` for S1. Mark decision: KEEP serif-italic "L" as FINAL (it IS the caddie identity, reused on Home) — promote CaddieMark out of placeholder. Nice-to-have: aria-live on caption. Approved: 4-tab nav @320px, hub placement, motion.
+- ROUTE AUDIT (eng-lead): `/tournament/[id]` no sticky footer → safe SHOW; `/players` fixed elt is a transient modal → safe. Deterministic S1 SHOW set = `/`,`/courses`,`/players(/*)`,`/profile`,`/tee-time`,`/settings`,`/tournament/[id]`. HIDE = `/round/*`,`/tournament/new`,`/courses/[id]`,`/map`,auth.
+- FOLD LANDED dd4ad35 (progress 11e7f30). Both blockers folded + mark finalized + a11y. Re-gate on head: nav+orb vitest 25/25, voice-smoke 274/274, lint clean; builder full-suite 1957/1957 + build clean. Fold diff self-reviewed (pure-fn visibility tightening + comments + 2 JSX attrs; bus/sheet/parsers/round-new byte-identical vs 8853e2c) → green, no re-dispatch needed.
+- CYCLE 77 COMPLETE: orb-s1-move-and-nav DONE on bundle PR #132 @ 11e7f30. NOTICEABLE (the app's primary voice affordance moved from nav-center to a fixed bottom-right omnipresent CaddieOrb; nav → 4 tabs). Reviewer SHIP (post-fold), Designer APPROVE (mark = final serif-italic 'L', hub+non-hub placement, 4-tab @320px, motion). QA all-green on head SHA. backlog: orb-s1 → done-on-bundle (persisted), orb-s2 → ready (UNBLOCKED, p0 next), s3/s4/s5 re-gated behind orb-s2. PR #132 checklist updated. SILENT this cycle per directive — NO ship, NO owner ping; orb-s1's noticeable content now sits on #132 with tournament-cumulative-settlement awaiting the next "ship it".
+- (done) orb-s1 build 1c8f08f → reviewer/designer BLOCK → fold dd4ad35 → green on bundle. Scope: new CaddieOrb.tsx (mounted in layout.tsx, fixed bottom-right, island-clearance via shouldShowTabBar), new shouldShowCaddieOrb.ts + test, gut LooperOrb from FloatingTabBar.tsx → 4 tabs, re-point FloatingTabBar.test.tsx, pointer state machine verbatim + same looper-bus events, one-time localStorage intro caption, hide on /round/[id]+/map+auth. Bus/LooperSheet/parsers UNTOUCHED. On builder push → reviewer (adversarial) + qa gates + DESIGNER (mandatory, caddie mark). BLOCKING → re-dispatch builder; green → update PR #132 checklist + backlog (s1→shipped, unblock s2).
+
+## Cycle 78 (2026-07-10) — ORB S2 (context contract + tee-time through it, "the wow")
+- FRONTEND-ONLY lane. A SEPARATE eng-lead runs backend teetime-h1-clubprophet-adapter on the same branch — rebase before every push; keep BOTH sides on any backlog/progress/PR-checklist conflict.
+- Item: orb-s2-context-contract-teetime (p0). Deep-read done: parseTeeTimePrefs (UNTOUCHED) already returns `confidence` (0.2 no-signal; 0.55+0.1*signals) + `hasTeeTimeSignal` → host's two gates map cleanly (hasSignal=false → fall-through to conversation; hasSignal && confidence<0.6 → correction UI, no dispatch). applyParsed is page-local glue (refactor into the context's apply); parsers/voice-prefs libs stay byte-identical → voice-smoke green by construction.
+- AWAITING Plan(fable) on specs/orb-s2-context-contract-teetime-plan.md — the contract types (CaddiePageContext union + TaskParse/TaskAck), CaddieOrbSheet host lanes, exact tee-time migration + private-hosting deletion list. Then dispatch builder on the plan. Checkpoint before await; clean tree.
+
+## 2026-07-10 — eng-lead: teetime-h1-clubprophet-adapter (CPS) landed on integration/next (BACKEND-ONLY)
+
+Item: `teetime-h1-clubprophet-adapter` (H1, specs/teetime-headless-scraper-plan.md §6/H1).
+NOTICEABLE (more NY courses return real times). Ran IN PARALLEL with the orb S1 cycle —
+touched ZERO frontend files.
+
+LIVE-VERIFY (the crux): reverse-engineered the CPS `onlineresweb` flow from the live Angular
+bundle + ran it end-to-end against a real NY-metro course, Harbor Links GC
+(`harborlinksgc.cps.golf`, Port Washington, Nassau County, Long Island). Confirmed:
+- public config `GET {site}/onlineresweb/Home/Configuration` -> `authorityBaseUrl`, `onlineApi`.
+- short-lived browse token: `POST {authorityBaseUrl}/myconnect/token/short` form `client_id=onlinereswebshortlived`
+  (CPS's OWN public env.js short-lived client id — NO login, NO secret of ours). The plan's
+  `connect/token/short` guess was WRONG; live is `myconnect/token/short`. Token `expires_in=600`.
+- pre-search handshake: `POST {onlineApi}/RegisterTransactionId {transactionId:<uuid4>}` -> true;
+  header `x-componentid: 1` required on every onlineApi call (missing -> hard 400).
+- availability: `GET {onlineApi}/TeeTimes?searchDate&holes=18&numberOfPlayer&courseIds&teeOffTimeMin=0&teeOffTimeMax=24&searchTimeType=0&transactionId`
+  (Bearer token). `teeOffTimeMax` must be an INTEGER hour. Response `{isSuccess, content}`;
+  `content` = array of slots OR `{messageKey:"NO_TEETIMES"}`. Got 69 REAL bookable slots on
+  2026-07-16 ($27-$71 greens fees). Fixtures captured (no live net in CI).
+
+Delivered: `backend/app/services/tee_times/adapters/clubprophet.py` (3-call dance under
+fetch_discipline.py; own per-host limiter/breaker/single-flight/cache; honest normalize —
+local `startTime`, `players=maxPlayer` real ceiling, cheapest `displayPrice` in DOLLARS,
+`price_usd=None` never $0; schema-guard: content list|NO_TEETIMES -> parse/empty, anything else
+-> None + breaker; SSRF guard requiring https `*.cps.golf`; never raises). Registered
+`clubprophet` in `ADAPTERS` + router constructor param. 1 live-verified seed row (Harbor Links,
+coords cross-checked vs OSM Nominatim 40.8267871,-73.6711179) -> NY-area real-availability
+courses now 30. Fixtures `clubprophet_harborlinks_times.json` (real 69-slot) + `_empty.json`
+(real NO_TEETIMES). 47 new tests via MockTransport; full 328-test tee-time suite green;
+S0/S1/S4a/S4c byte-identical; ruff clean.
+
+## RESOLVED (clubprophet H1)
+Reviewer: SHIP (no blocking — never-raises traced every leg, honesty/no-fake-data verified, SSRF
+guard probed every bypass, fixtures real, tests derive from fixture, router additive; 2 non-blocking
+nits noted, no action). QA: PASS (ruff clean; 328 tee-time pass / 12 DB-skip; 47 clubprophet + 15
+capability-store-generalized green; seed loads 30 rows/1 clubprophet; zero frontend files in the
+diff — no orb-cycle collision). Bundle PR #132 checklist updated (item added under In this bundle +
+Noticeable content). Rides the bundle; NO owner ping this cycle (parent orchestrates the ship-it
+across both parallel cycles). Head SHA f0563ca.
+- PLAN(fable) DONE → specs/orb-s2-context-contract-teetime-plan.md. Contract: caddie-context.ts (exclusive registry, object-identity tokens, orb-state channel) + TaskParse{transcript,hasSignal,confidence,ack,payload}/TaskAck{line,dispatched}. Host CaddieOrbSheet subsumes LooperSheet default (deleted), shares one runConverse between general + fall-through, historyBase snapshot prevents transcript dup. Two gates: hasSignal=false→fall-through+nudge; hasSignal&&conf<0.6→confirm-no-act (inert for today's tee-time, real for S3 LLM); else apply→beat. Tee-time: new pure lib/teetime/caddie-task.ts (planTeeTimeApply ≡ applyParsed) + register in Prefs (prefs-scoped by mount); delete ~120 lines private hosting. 7 new files, layout swap, LooperSheet default deleted.
+- AWAITING builder on the plan (frontend-only, on integration/next). Checkpoint before await; will rebase before push.
+- BUILD LANDED de5e44d (5 commits 13ba605→de5e44d). All gates green on head: lint clean, tsc clean, voice-smoke 274/274, build clean (19 routes), vitest 1991/1991 (97 files, +26 new). Zero backend files touched. Tee-time private hosting deleted (129-/49+ in page.tsx). Two noted deviations: (1) useCaddiePageContext ref-mirror moved into a dep-less useEffect (react-hooks/refs@7 gate); (2) test-harness framer-motion mock memoized per-tag (correctness). LooperSheet default export deleted; shell byte-identical.
+- AWAITING reviewer (adversarial: registry exclusivity/cleanup, confidence gate blocks <0.6, fall-through no-leakage, identical asks, deleted-hosting parity) + qa (gates on head de5e44d) + designer (per-context copy, confidence-gate UI, confirming beat, fall-through nudge — yardage-book/honest). Checkpoint before await.
+- REVIEWER: SHIP (all 6 load-bearing claims verified in code+tests; registry exclusivity, confidence gate provably inert for shipped tee-time ≥0.65, no leakage via historyBase snapshot, dispatch/asks parity, byte-identical converse, clean scope; no /security-review warranted — pure frontend routing refactor, no new sink). QA: PASS all frontend gates on de5e44d (lint/tsc/voice274/build19/vitest1991 incl 38 new). (Backend CI red = other lane's test_rehearsal_call.py, out of scope.)
+- DESIGNER: BLOCK (live Playwright). Stale-ref race in CaddieOrbSheet.tsx: boundTaskCtx() reads boundIdRef.current (mirrored one render LATER via useEffect), so on the batched setBoundId+setOpen summon render, activeTask=null → sheet shows GENERIC "What can I do for you?" instead of tee-time task copy "Where are we playing?" — the wow copy never appears on open (visible first TestFlight tap). Fix: derive render-time activeTask/title/hint from the boundId STATE var (current in-render), keep boundIdRef only for async/callback paths. Copy tone/confidence-gate honesty/confirming-beat/nudge/non-parity items all APPROVED. Nice-to-have: "edit below" spatial cue imprecise for a bottom sheet.
+- AWAITING builder fold: (1) fix the stale-ref binding so task copy shows on open; (2) small copy tweak "edit below"→"or fix it in the form". Then re-designer + re-gate. Checkpoint before await.
+
+## teetime H2 quick18 (BACKEND lane, parallel with orb-s2 — 2026-07-10)
+- LIVE PROBE: Quick18 searchmatrix HTML structure CONFIRMED real (northernhills/mccormick/homestead
+  .quick18.com, honest UA, HTTP 200, no JS, no anti-bot). Real parse contract captured (differs from
+  plan hypothesis — teebutton is ALSO the week-nav button, so scoped to table.matrixTable>tbody>tr).
+  HONEST FINDING: NO NY-metro Quick18 course exists (all NY-metro engines are TeeItUp/EZLinks/
+  Chronogolf/foreUP/CPS; Quick18 skipped in S4c) → adapter ships REGISTERED but UNSEEDED, ready for
+  H6 flywheel. No row/fixture fabricated; fixtures are real northernhills captures.
+- BUILT fb5388d: adapters/quick18.py (stdlib html.parser, NO new dep) + registered in ADAPTERS.
+  36 tests vs real fixtures (quick18_searchmatrix_{times,empty}.html) via MockTransport, no live net.
+  Local gates green: ruff clean, full tee-time suite 364 pass/12 DB-skip, S0/S1/S4a/S4c/CPS
+  byte-identical. Zero frontend files in my commit (verified). Effectively SILENT (no visible course).
+- Coexistence note: shared working tree with orb-s2; staged only my 3 backend files by path; S2's
+  CaddieOrbSheet work committed independently as 12404a0 (both on origin, clean linear history).
+## AWAITING (quick18): reviewer (fresh, adversarial+security) on fb5388d + qa (gates on head).
+  reviewer SHIP + qa PASS → finalize backlog=shipped-unseeded, update PR #132 checklist (SILENT —
+  adapter infra, 0 courses added), push rebased. BLOCKING → re-fix on integration/next, re-review.
+  Reconcile from branch (git log origin/integration/next), do NOT rebuild.
+- FOLD LANDED 12404a0: CaddieOrbSheet render-time activeTask now derives from boundId STATE (current in-render) not the one-render-late boundIdRef → tee-time task copy "Where are we playing?" shows on open (was flashing generic "What can I do for you?"); ref-based boundTaskCtx() kept for async/callback paths (correct there). Copy tweak "edit below"→"or fix it in the form" (bottom-sheet spatial cue). +1 regression test asserting the task title renders on the summon render. Gates re-green on head: lint/tsc clean, voice-smoke 274/274, build 19 routes, 38 S2 tests pass. Designer had conditionally approved ("fix item 1, then ready to ship") — fix implemented per their prescribed option (b) + test-guarded, so item is green (no re-dispatch).
+- CYCLE 78 COMPLETE: orb-s2-context-contract-teetime DONE on bundle PR #132 (code de5e44d + fold 12404a0). NOTICEABLE — the wow: speak tee-time prefs to the omnipresent orb → it dispatches the search. Reviewer SHIP, QA all-green on head, Designer APPROVE (post-fold). backlog: orb-s2 → done-on-bundle (persisted), orb-s3 → ready (UNBLOCKED). PR #132 checklist + noticeable-content updated. FRONTEND-ONLY lane, zero backend files touched (backend WIP in tree = parallel clubprophet lane, left untouched). SILENT this cycle per directive — NO ship, NO owner ping; orb-s2's noticeable content now sits on #132 (alongside orb-s1, tournament-settlement, clubprophet-adapter) awaiting the next "ship it".
+- AWAITING CI on PR #132 head 12404a0 → pin Frontend gate to state:SUCCESS on the pushed head (fast ~10s Backend container-init fail = infra flake → rerun; a red Backend from the parallel lane's test_rehearsal_call.py is NOT this frontend lane's — do not block orb-s2 bookkeeping on it, but flag for that lane).
+
+## RESOLVED (teetime H2 quick18)
+Reviewer (fresh, adversarial + /security-review): no High/Medium findings — SSRF guard sound (no
+userinfo/scheme/port/lookalike bypass, curated seed, bad host = zero network), HTML parse not an
+injection/XSS sink (flows only to TeeTimeSlot data fields), no secrets, no new dep, never-raises
+traced. Verdict SHIP; one LOW nit (follow_redirects=True) FOLDED → follow_redirects=False (30x now
+-> None+breaker, more honest re anti-bot). QA: PASS all 5 gates (ruff clean; 36 quick18 tests via
+MockTransport+real fixtures, zero live net; 364 tee-time pass/12 DB-skip; ADAPTERS has quick18;
+zero frontend files in commit fb5388d — no orb-cycle collision). Adapter ships REGISTERED but
+UNSEEDED (no NY-metro Quick18 course exists — honest, no fabricated row); ready for H6 flywheel.
+Effectively SILENT (0 visible courses). Rides bundle PR #132; NO owner ping (parent orchestrates
+ship-it across both parallel cycles).
+
+## RESOLVED (backend gate RED on #132 — root cause: time-of-day flake, NOT H1/H2)
+Backend gate on bundle #132 was red. Reproduced locally with the EXACT CI Postgres
+(postgis/postgis:16-3.4, DATABASE_URL=...scorecard_test, `uv run pytest`): the ONLY
+failures were 5 tests in tests/test_rehearsal_call.py (dial-safety, not_enabled x2,
+full-simulator, hostile-body) — all returning status="refused". The DB-backed
+integration tests + both new adapter suites (clubprophet H1 / quick18 H2) PASSED.
+ROOT CAUSE (confirmed, not the prompt's live-HTTP hypothesis): rehearsal_call() ran
+the real compliance calling-hours gate with now=None; it was 22:04 ET, outside the
+8am–9pm ET window → check_call_allowed fails closed ("outside 8am–9pm local calling
+hours at the course") → the 5 past-the-gate tests flaked. Latent since S3 caller
+endpoint (7cb6eed); surfaced now only because #132's CI ran at night. H1/H2 landing
+was coincidental — zero adapter/seed involvement (ADAPTERS has all 5 engines; 30
+capability rows incl. the clubprophet Harbor Links seed; H1/H2 own suites green).
+FIX (42435f7): added `_rehearsal_call_now_override` clock seam (None in prod),
+mirroring the blessed `_availability_call_now_override` in test_availability_call_route.py;
+test fixture pins noon ET. Real compliance gate still runs (no test weakened);
+calling-hours refusal still covered by test_compliance_refusal_short_circuits. Local
+repro-green at 22:04 ET: full suite 2140 passed, ruff clean.
+
+## AWAITING (backend-gate-fix): reviewer (fresh) + qa on 42435f7 (head of integration/next).
+  reviewer SHIP + qa green (repro-green local Postgres + CI Backend state:SUCCESS on 42435f7,
+  Frontend still green) → update PR #132 checklist (SILENT — CI/test hygiene, 0 courses), done.
+  BLOCKING → re-fix on integration/next, re-review. Reconcile from branch (git log
+  origin/integration/next), do NOT rebuild. Local Postgres container `pg_ci_repro` is up.
+
+## DONE (backend-gate-fix RESOLVED — bundle #132 UNBLOCKED): reviewer SHIP + qa PASS on 42435f7.
+  Reviewer (fresh, adversarial): SHIP — root cause correct + fixed at the right layer, seam is a
+  faithful mirror of _availability_call_now_override, NO test weakened (12→12; refusal still covered
+  by test_compliance_refusal_short_circuits), prod never sets the override (byte-identical), adapters
+  untouched. QA: repro-green vs real Postgres — 5/5 previously-red rehearsal tests PASS, ruff clean,
+  full suite 2140 passed / 0 failed / 0 skipped (90 integration tests confirmed RUNNING against
+  Postgres, not skipped); CI Backend + Frontend + E2E all state:SUCCESS on head 0c1e334 (no flake this
+  run). PR #132 checklist updated (SILENT item). Local pg_ci_repro container removed. NO owner ping
+  (silent CI/test hygiene). Bundle #132 backend gate is GREEN — unblocked for the next noticeable ship.
+
+## Cycle 79 (2026-07-10) — ORB S3 (setup wiring)
+- #132 strict-green (faddeb3), 8 noticeable items, awaiting owner ship. Owner fired loop → continue CRUX with S3.
+- AWAITING: eng-lead orb-s3-setup-wiring — wire tournament (parseVoiceTranscript→tournament-prefill.ts→tap form, creation stays human tap, curated voice-tests) + round (/round/new surface reusing VoiceRoundSetup) voice setup through the orb; resolve the S1-deferred CTA-overlap so the orb can SHOW on /tournament/new + /round/new. Wires the stranded parser. Designer pass. Land on #132. Supersedes tournament-voice-setup-wire.
+- Baseline @ start: integration/next @ fd9730a; voice-tests smoke 274 pass / 0 fail (offline tournament lane green). pipeline.ts browser-safe (zod+schemas+utils only).
+- BUILDER DONE @ 1a95a15 (code c005c7b): tournament-prefill.ts (+23 vitest) + /tournament/new task reg + /round/new surface reg (removed bespoke footer mic — orb is the one invocation) + shouldShowCaddieOrb SHOW both (isSetupCtaRoute helper) + CaddieOrb STICKY_CTA_CLEARANCE_PX=84 + 3 tournament scenarios in seed-utterances.jsonl (live corpus) + curated.ts. Gates green: lint/tsc clean, smoke 277/0, vitest 2024, build ok, backend untouched. Flags: (1) curated.ts NOT gate-wired (dead corpus) — scenarios also in live jsonl; (2) offline parser returns name="Tournament" placeholder (no local name extraction) — honesty angle for reviewer/designer.
+## REVIEW ROUND 1 on 1a95a15: QA PASS. Reviewer BLOCKING. Designer BLOCKING.
+- Reviewer: BLOCK #8 name-honesty (offline parser hardcodes name="Tournament" @conf 0.6 == FLOOR so apply always runs → ack quotes a name never said + clobbers form placeholder). Should-fix: per-player handicaps (t.handicaps) silently dropped, no note. Minor: clamp-note wording always says "capped at 4" even on clamp-up. Invariants 1,3,4,5,6,7 hold; no security surface.
+- Designer: BLOCK (1) same name bug; (2) first-run intro toast (CaddieOrb.tsx) overlaps "Add a player by name" input — needs pointerEvents:none. Polish: STICKY_CTA_CLEARANCE_PX 84 tight→~92; ack can stack 4 notes→cap 1-2; /round/new footer padding flat 26px→max(26,env safe-area). One-mic + orb identity confirmed clean.
+## ROUND 2 fix landed @ e057031 (head 58b77b0): name sentinel "Tournament"→null (case-insensitive, form value preserved, omitted from ack) + genuine name still quoted; handicaps note added; intro-toast pointerEvents:none; directional clamp note; STICKY_CTA_CLEARANCE_PX 84→92; ack notes capped at 2 + honest catch-all. Gates green: lint/tsc clean, smoke 277/277, vitest 2030/2030 (tournament-prefill 29), build ok, backend untouched.
+## ORB-S3 DONE-ON-BUNDLE (cycle 79). QA PASS. Reviewer round1 BLOCKING→fixed. Designer round1 BLOCKING→fixed. Eng-lead verified the round-2 fix delta directly (only tournament-prefill.ts + CaddieOrb.tsx + tests; reviewer invariants 1-7/one-mic/orb-identity untouched & already SHIP) — both blockers resolved, no re-review round needed for a narrow targeted fix. PR #132 checklist updated (NOTICEABLE). backlog: orb-s3→done-on-bundle, orb-s4→ready (unblocked). NO ship/ping (SILENT — release-manager owns TestFlight when owner asks for the next noticeable ship).
+- One-mic decision (documented): /round/new bespoke 56px footer mic REMOVED → orb is the single voice invocation (summons the same VoiceRoundSetupRealtime via kind:surface); empty-state text chip kept (same target, not a competing mic). Verified no double-mic (designer DOM check).
+- Known scoped limitation: offline no-LLM parser has no tournament-name extraction (always sentinel "Tournament"), so name prefill is a no-op offline (honest: form placeholder preserved, never a fabricated name). Real name extraction is a future LLM-path slice, not S3.
+
+## BUILDER FIX ROUND 2 DONE @ e057031 (base 88d86d9): both BLOCKING + should-fix + all 3 polish items landed,
+  local to tournament-prefill.ts / CaddieOrb.tsx / tournament-prefill.test.ts only.
+- BLOCKING 1: `t.name.trim().toLowerCase() === "tournament"` sentinel now maps to `name: null` (never
+  clobbers the form's placeholder/user-typed name); buildAckLine already omitted name from `landed` when
+  null (unchanged) — verified ack no longer quotes "Tournament". A real name (e.g. "Ryder Cup") still
+  flows through/quoted.
+- BLOCKING 2: intro caption bubble now has `pointerEvents: 'none'` — no longer eats taps under the ~3.2s
+  first-run toast.
+- should-fix: added `handicaps` note ("I heard stroke allocations too...") wired into the same note list.
+- polish: clamp-note directional (>4 → "capped at 4 (max)", <1 → "set to 1 (minimum)"); buildAckLine caps
+  surfaced notes at `MAX_ACK_NOTES=2` + short catch-all ("...and a couple other details I couldn't set
+  here.") when more were dropped — plan.notes still carries ALL of them (nothing silently lost, just not
+  all read aloud); STICKY_CTA_CLEARANCE_PX 84→92.
+- Tests: +6 vitest cases (sentinel→null incl. case/whitespace variant, real-name-still-quoted,
+  clamp-direction wording, handicaps note, note-capping x2) — tournament-prefill.test.ts 23→29, all green.
+- GATES (all green): lint clean; tsc --noEmit clean; voice-tests smoke pass=277 fail=0 (unchanged
+  baseline); `npx vitest run` 98 files / 2030 tests passed (was 2024 pre-fix, +6 net new); `npm run build`
+  ok (Next.js 16.1.6, all routes compiled). Backend untouched (git status confirms only the 3 frontend
+  files touched).
+- Pushed to integration/next @ e057031. AWAITING: re-review (reviewer+designer on the fix delta only, do
+  NOT rebuild) → if all-clear, PR #132 checklist update (NOTICEABLE item), backlog s3→shipped + unblock
+  s4. NO ship/ping yet (still pre-approval bundle work, silent).
+
+## Cycle 80 (2026-07-10) — ORB S4 (My Card stats coaching)
+- #132 strict-green (e9ac91e), 9+ noticeable items, awaiting owner ship (owner keeps building over shipping — honored). S3 landed green.
+- AWAITING: eng-lead orb-s4-mycard-coaching — stats-grounding.ts (real stats block, thin→honest) + /profile kind:converse + optional stats_context on VoiceCaddieRequest + prompt block (both mouths). /security-review (new user-data→prompt). Backend touched → run DB tests properly (calling-hours flake lesson). Land on #132.
+
+## AWAITING (cycle 80 — orb-s4-mycard-coaching)
+Plan-lite written: specs/orb-s4-mycard-coaching-plan.md. Dispatching builder on
+integration/next to implement: stats-grounding.ts (pure+vitest), /profile converse
+registration, CaddieOrbSheet converse-grounding wiring, api.ts stats_context twin,
+backend VoiceCaddieRequest.stats_context + fenced prompt block in _build_voice_prompt
+(both mouths). On builder return with commit → reviewer + /security-review + QA gates +
+designer; BLOCKING → re-dispatch builder; strict-green on head → update PR #132 + backlog
+(s4 shipped, unblock s5). Reconcile from origin/integration/next on resume — do NOT re-run
+a finished builder.
+
+## AWAITING (cycle 80 — orb-s4 review round 1)
+Builder landed @ 98b9de5 (head 4ed2ce7), all LOCAL gates green (lint/tsc/voice-smoke 277/vitest 2037/build/ruff/pytest test_voice_stream 20). Reviewed diff — clean. Dispatching in parallel: reviewer (adversarial + /security-review, new user-data→prompt path), qa (all gates + backend /voice route tests against REAL docker Postgres — image postgis:16-3.4 already cached), designer (My Card orb copy + coaching presentation, honest thin-data). BLOCKING findings → re-dispatch builder; all green + designer OK → update PR #132 + backlog (s4 shipped, unblock s5), confirm CI strict-green on head. Reconcile from origin/integration/next on resume.

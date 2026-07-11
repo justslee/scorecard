@@ -282,6 +282,10 @@ class VoiceCaddieRequest(BaseModel):
     handicap: Optional[float] = None
     current_recommendation: Optional[dict] = None
     conversation_history: list[dict] = []
+    # Real, pre-serialized player stats (handicap/trend/par-type/clubs — see
+    # frontend lib/stats-grounding.ts) for a registered converse context (My
+    # Card). Optional/defaulted — /session/voice never sends it.
+    stats_context: Optional[str] = None
 
 
 class VoiceCaddieResponse(BaseModel):

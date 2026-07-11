@@ -2,7 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Geist, Geist_Mono } from "next/font/google";
 import AuthProvider from "@/components/AuthProvider";
 import FloatingTabBar from "@/components/nav/FloatingTabBar";
-import LooperSheet from "@/components/LooperSheet";
+import CaddieOrb from "@/components/CaddieOrb";
+import CaddieOrbSheet from "@/components/CaddieOrbSheet";
 import "./globals.css";
 
 const serif = Instrument_Serif({
@@ -62,7 +63,8 @@ export default function RootLayout({
         <AuthProvider>
           {children}
           <FloatingTabBar />
-          <LooperSheet />
+          <CaddieOrb />
+          <CaddieOrbSheet />
         </AuthProvider>
       </body>
     </html>

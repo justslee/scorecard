@@ -1,0 +1,358 @@
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Search</title>
+    <link href="/content/css/base?v=b6Ct3qvhU5oNQf146x-0kVhIL2slNGgrlMoTl3P5nNk1" rel="stylesheet"/>
+
+    <link href="/content/css/sb/sb?v=OdPAwzTwpnR6ssquS8qkHf3YDS-e1d9HrHGmgV-BlH81" rel="stylesheet"/>
+
+    <script src="/bundles/desktopjs?v=cS2zYUPqaGuirFslJDBhMRD2AM4XksK7z4m8WMdCSJE1"></script>
+
+    <link href="/content/themes/base/jquery?v=2JPqR5Lxz3TxmZURe7mnEaYCedZwi1-k_mzrhNXoCvU1" rel="stylesheet"/>
+
+    <link href="/content/ws/2092/css/site?ver=638501024652147285" rel="Stylesheet" type="text/css" />
+
+    
+    <script type="text/javascript">
+        $(document).ready(function () {
+            $("#SearchForm_Date").datepicker({
+            buttonImage: '/Content/css/be_icon_calendar.gif',
+            buttonImageOnly: true,
+            buttonText: 'Launch Datepicker',
+            showOn: 'both',
+            changeMonth: true,
+            changeYear: true,
+            minDate: 0,
+            maxDate: 760,
+            dateFormat: 'm/d/y',
+            onSelect: function (date) {
+                $("form").submit();
+            }
+            });
+
+        });
+        var scrollLoaded = false;
+        $(window).scroll(function () {
+            if (!scrollLoaded) {
+                scrollLoaded = true;
+                var isInIframe = (window.location != window.parent.location) ? true : false;
+                if (!isInIframe) {
+                    var element = $(".matrixTable")[0];
+                    new FixedHeader(element);
+                }
+            }
+
+        });
+
+    </script>
+    <style>
+        .waitlist-drawer__header {
+            background: #035634; /* FACILITY COLOR */
+          }
+    </style>
+
+</head>
+<body id="be_step_search" data-srv="w03">
+    <script type="text/javascript">
+        $(document).ready(function () {
+            $("#be_logo").click(function () {
+                location.href = "https://www.rochestermn.gov/government/departments/parks-and-recreation/municipal-golf/northern-hills-golf-course";
+            });
+        });
+    </script>
+    <div id="be_container">
+                <div id="fb-root">
+        </div>
+
+        <div id="be_header">
+            <div id="be_header_customer">
+            </div>
+            <div class="be_clear"></div>
+            <div id="be_logo">
+                <div id="be_coursename">Northern Hills Golf Course</div>
+            </div>
+            <div id="be_courseaddress">
+                        4721 West Circle Drive NW<br />
+        Rochester, MN 55901
+
+                <div id="be_coursephone">
+                        <div class="phoneNumber">
+                            507-281-6170
+                        </div>
+                </div>
+            </div>
+            <div id="be_websitetitle">Course Web Site</div>
+            <div class="be_clear"></div>
+                <table id="be_tabs" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td class="be_tab be_tab_1 be_tab_first         be_tab_active
+"><a href="/teetimes/searchmatrix?teedate=20260710"><div>Tee Times</div></a></td>
+                        <td class="be_tab be_tab_2         
+"><a href="/account"><div>My Account</div></a></td>
+                                                <td class="be_tab be_tab_4         
+ be_tab_last"><a href="/messages"><div>Specials</div></a></td>
+                    </tr>
+                </table>
+        </div>
+        <div class="be_clear"></div>
+
+        <div id="be_content">
+            <div id="be_top">
+
+    <div id="be_search_messages">
+        <div class="be_search_message_subject">
+ Welcome to Rochester Golf   
+</div>
+<div class="be_search_message_body">
+<ul>
+<li>Cart Reservations – Motorized carts must be reserved when booking tee time. The last daily tee time that cart reservations will be taken for will be 2 hours prior to sunset.  At discretion of Golf Shop Staff. </li>
+<li>Carts based on availability and course conditions if you have any questions please contact the golf shop.</li>
+<li>Tee Times for single player bookings are not allowed. Singles may be paired with or join open groups.</li>
+<li>Twosomes should be expected to be paired up with another twosome or single player.</li>
+
+<li>Book <a href="https://northernhillsseasonpass.quick18.com/"><u>Daily Guest</u></a>, <a href="https://northernhillsseasonpass.quick18.com/"><u>Season Pass</u></a>, or <a href="https://northernhillspatronpass.quick18.com/"><u>Patron Card</u></a></li>
+
+
+</ul>
+
+<br/><a href="https://www.sagacitygolf.com/app/rochester/?utm_source=q18-booking-engine&utm_medium=website&utm_campaign=app-promotion-rochester" target="_blank"><img src="https://www.sagacitygolf.com/wp-content/uploads/2025/05/rochester-app-promotion-website-550.png" width="550" alt="Download our app!"></a>
+</div>
+
+
+    </div>
+
+    <div id="be_teetimesearch-form">
+            <form action="/teetimes/searchmatrix?teedate=20250101" method="post"><div class="validation-summary-valid" data-valmsg-summary="true"><ul><li style="display:none"></li>
+</ul></div>        <div id="be_search_txt">Tee Time Search:</div>
+<input data-val="true" data-val-number="The field CourseId must be a number." data-val-required="The CourseId field is required." id="SearchForm_CourseId" name="SearchForm.CourseId" type="hidden" value="0" />        <table id="be_tee_time_search_tbl">
+        <tr>
+            <td class="be_searchtbl_col1 besearchtbl_from_txt">Date:</td>
+            <td class="be_searchtbl_col2">
+             <input type="text" class="be_searchtbl_from_input" id="SearchForm_Date" name="SearchForm.Date" value="7/10/2026" /></td>
+        </tr>
+        <tr>
+            <td class="be_searchtbl_col1 besearchtbl_times_txt">Time:</td>
+            <td class="be_searchtbl_col2">
+                <select class="be_searchtbl_times_input" id="SearchForm_TimeOfDay" name="SearchForm.TimeOfDay"><option selected="selected" value="Any">Any</option>
+<option value="Morning">Morning</option>
+<option value="Afternoon">Afternoon</option>
+</select>
+            </td>
+            <td class="be_searchtbl_col1 besearchtbl_players_txt">Players:</td>
+            <td  class="be_searchtbl_col2">
+                <select class="be_searchtbl_players_input" data-val="true" data-val-number="The field Players must be a number." data-val-required="The Players field is required." id="SearchForm_Players" name="SearchForm.Players"><option selected="selected" value="0">Any</option>
+<option value="1">1</option>
+<option value="2">2</option>
+<option value="3">3</option>
+<option value="4">4</option>
+</select>
+            </td>
+        </tr>
+        <tr>
+            <td></td>
+            <td colspan="3">
+                <button type="submit" class="sexybutton sexyorange"><span><span><span class="ok">Search Tee Times</span></span></span></button>
+            </td>
+        </tr>
+        </table>
+</form>
+
+
+    </div>
+    <div class="be_clear"></div>
+</div>
+<div id="searchMatrix">
+    <div id="searchMatrixDayHeader">
+                    <div class="calendarMatrix">
+                <ol>
+
+                    <li class="matrixWeekButton">
+                        <div class="matrixNextWeek">
+                            &nbsp; 
+                        </div>
+                    </li>
+                
+                    <li class="matrixDay">
+                        <div class="matrixHeader">Jul</div>
+                        <div class="matrixBody">6</div>
+                        <div class="matrixFooter">
+                            <div class="matrixDayOfWeek">Mon</div>
+                        </div>
+                    </li>
+                    <li class="matrixDay">
+                        <div class="matrixHeader">Jul</div>
+                        <div class="matrixBody">7</div>
+                        <div class="matrixFooter">
+                            <div class="matrixDayOfWeek">Tue</div>
+                        </div>
+                    </li>
+                    <li class="matrixDay">
+                        <div class="matrixHeader">Jul</div>
+                        <div class="matrixBody">8</div>
+                        <div class="matrixFooter">
+                            <div class="matrixDayOfWeek">Wed</div>
+                        </div>
+                    </li>
+                    <li class="matrixDay">
+                        <div class="matrixHeader">Jul</div>
+                        <div class="matrixBody">9</div>
+                        <div class="matrixFooter">
+                            <div class="matrixDayOfWeek">Thu</div>
+                        </div>
+                    </li>
+                    <li class="matrixToday">
+                        <div class="matrixHeader">        <a href="/teetimes/searchmatrix?teedate=20260710">Jul</a>
+</div>
+                        <div class="matrixBody">        <a href="/teetimes/searchmatrix?teedate=20260710">10</a>
+</div>
+                        <div class="matrixFooter">
+                            <div class="matrixDayOfWeek">        <a href="/teetimes/searchmatrix?teedate=20260710">Fri</a>
+</div>
+                        </div>
+                    </li>
+                    <li class="matrixDay">
+                        <div class="matrixHeader">        <a href="/teetimes/searchmatrix?teedate=20260711">Jul</a>
+</div>
+                        <div class="matrixBody">        <a href="/teetimes/searchmatrix?teedate=20260711">11</a>
+</div>
+                        <div class="matrixFooter">
+                            <div class="matrixDayOfWeek">        <a href="/teetimes/searchmatrix?teedate=20260711">Sat</a>
+</div>
+                        </div>
+                    </li>
+                    <li class="matrixDay">
+                        <div class="matrixHeader">        <a href="/teetimes/searchmatrix?teedate=20260712">Jul</a>
+</div>
+                        <div class="matrixBody">        <a href="/teetimes/searchmatrix?teedate=20260712">12</a>
+</div>
+                        <div class="matrixFooter">
+                            <div class="matrixDayOfWeek">        <a href="/teetimes/searchmatrix?teedate=20260712">Sun</a>
+</div>
+                        </div>
+                    </li>
+                    <li class="matrixWeekButton">
+                        <div class="matrixNextWeek">
+                            <a class="sexybutton teebutton" href="/teetimes/searchmatrix?teedate=20260713"><span><span><span class="search">Next</span></span></span></a>
+                        </div>
+                    </li>
+                </ol>
+            </div>
+
+        <div class="be_clear"></div>
+    </div>
+    <div>
+        <table class="matrixTable" border="1">
+            <thead>
+                <tr>
+                    <th class="mtrxHdrTeeTimes">Tee Time</th>
+                                        <th class="matrixHdrPlayers">Players</th>
+                        <th class="matrixHdrSched">18 Holes</th>
+                        <th class="matrixHdrSched">18 Holes with Cart</th>
+                        <th class="matrixHdrSched">9 Holes</th>
+                        <th class="matrixHdrSched">9 Holes with Cart</th>
+                        <th class="matrixHdrSched">$78 Special with Cart</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+
+    </div>
+
+    <div class="be_clear"></div>
+</div>
+<div class="be_clear"></div>
+
+
+
+        </div>
+
+        <div id="be_footer">
+            <div class="be_footer_links">
+<a href="https://www.sagacitygolf.com/privacy-policy/">Privacy Policy</a>            </div>
+            <div class="be_footer_poweredby"><a>Tee Times Powered By Sagacity Golf</a></div>
+            <div class="be_clear"></div>
+        </div>
+    <div class="be_clear"></div>
+</div>
+
+
+    <script>
+        (function () {
+            const triggers = document.querySelectorAll('.js-open-waitlist');
+            const drawer = document.getElementById('waitlistDrawer');
+            const overlay = document.getElementById('waitlistOverlay');
+            const closeButton = document.getElementById('waitlistClose');
+
+            if (!drawer || !overlay || !closeButton || !triggers.length) return;
+
+            let lastFocused = null;
+
+            function openDrawer(event) {
+                lastFocused = event.currentTarget;
+                drawer.classList.add('waitlist-drawer--open');
+                overlay.classList.add('waitlist-overlay--open');
+                drawer.setAttribute('aria-hidden', 'false');
+                document.body.style.overflow = 'hidden';
+                closeButton.focus();
+            }
+
+            function closeDrawer() {
+                drawer.classList.remove('waitlist-drawer--open');
+                overlay.classList.remove('waitlist-overlay--open');
+                drawer.setAttribute('aria-hidden', 'true');
+                document.body.style.overflow = '';
+
+                if (lastFocused && typeof lastFocused.focus === 'function') {
+                    lastFocused.focus();
+                }
+            }
+
+            triggers.forEach(function (button) {
+                button.addEventListener('click', openDrawer);
+            });
+
+            closeButton.addEventListener('click', closeDrawer);
+            overlay.addEventListener('click', closeDrawer);
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    closeDrawer();
+                }
+            });
+        })();
+    </script>
+
+<script type="text/javascript">
+    $(document).ready(
+        function () {
+            try {
+                if (parent.socket) {
+                    parent.socket.postMessage(document.body.clientHeight || document.body.offsetHeight || document.body.scrollHeight);
+                    $.ajax({
+                        type: "POST",
+                        url: "/XDM/Set/On"
+                    })
+                }
+            }
+            catch (e) {
+                return;
+            }
+
+        });
+</script>
+
+
+
+
+    <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-5V2P4W4');</script>
+    <!-- End Google Tag Manager -->
+</body>
+</html>

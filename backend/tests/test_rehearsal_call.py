@@ -20,7 +20,8 @@ error paths (which only read env and raise — no network).
 from __future__ import annotations
 
 import inspect
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -49,6 +50,17 @@ def _clean_env(monkeypatch):
     ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(route_mod, "_rehearsal_transport_factory", None)
+    # Pin the compliance calling-hours clock to a fixed within-hours instant
+    # (noon ET) so these tests are deterministic regardless of the wall-clock
+    # time the suite runs at. Without this the real 8am–9pm gate refuses when
+    # CI happens to run at night, flaking every past-the-gate assertion. Mirrors
+    # `_availability_call_now_override` in test_availability_call_route.py. The
+    # dedicated calling-hours-refusal path is still covered by
+    # test_compliance_refusal_short_circuits (which overrides the gate itself).
+    monkeypatch.setattr(
+        route_mod, "_rehearsal_call_now_override",
+        datetime(2026, 7, 6, 12, 0, tzinfo=ZoneInfo("America/New_York")),
+    )
     yield
 
 
