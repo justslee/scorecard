@@ -13143,3 +13143,7 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 - Bookkeeping: PR #133 checklist +1 silent item; backlog course-intel-static-persistence →
   done-on-bundle (resolution field, status enum, spec path set). SILENT — no ship/ping; rides
   bundle #133 and merges with the next noticeable change on the owner's single "ship it".
+
+## Cycle 87 (2026-07-11) — strategy-guides prod live-smoke (owner OK'd)
+- Owner said "smoke test the guides" → bounded prod smoke of caddie-hole-strategy-guides (shipped on main, live research path NEVER verified against a real key → silent-failure risk).
+- AWAITING: verification agent (SSM on-box, key-free, bounded ONE hole/ONE course) — does research_hole_guide (web_search + messages.parse + pause_turn) actually produce a valid grounded guide in prod, or is it silently broken? VERIFY-only; if broken → fix next cycle.
