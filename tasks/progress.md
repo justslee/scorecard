@@ -12564,3 +12564,26 @@ repro-green at 22:04 ET: full suite 2140 passed, ruff clean.
 - Reviewer: BLOCK #8 name-honesty (offline parser hardcodes name="Tournament" @conf 0.6 == FLOOR so apply always runs → ack quotes a name never said + clobbers form placeholder). Should-fix: per-player handicaps (t.handicaps) silently dropped, no note. Minor: clamp-note wording always says "capped at 4" even on clamp-up. Invariants 1,3,4,5,6,7 hold; no security surface.
 - Designer: BLOCK (1) same name bug; (2) first-run intro toast (CaddieOrb.tsx) overlaps "Add a player by name" input — needs pointerEvents:none. Polish: STICKY_CTA_CLEARANCE_PX 84 tight→~92; ack can stack 4 notes→cap 1-2; /round/new footer padding flat 26px→max(26,env safe-area). One-mic + orb identity confirmed clean.
 ## AWAITING BUILDER FIX (round 2): name sentinel→null + omit from ack; add handicaps note; pointerEvents:none on intro toast; clamp-note direction; clearance→92; ack note cap. Then re-run gates. On resume: git log origin/integration/next; if builder pushed the fix, go to re-review (reviewer+designer on the fix delta only), do NOT rebuild. All-clear → PR #132 checklist (NOTICEABLE), backlog s3→shipped + unblock s4, cycle 79 done. NO ship/ping (SILENT).
+
+## BUILDER FIX ROUND 2 DONE @ e057031 (base 88d86d9): both BLOCKING + should-fix + all 3 polish items landed,
+  local to tournament-prefill.ts / CaddieOrb.tsx / tournament-prefill.test.ts only.
+- BLOCKING 1: `t.name.trim().toLowerCase() === "tournament"` sentinel now maps to `name: null` (never
+  clobbers the form's placeholder/user-typed name); buildAckLine already omitted name from `landed` when
+  null (unchanged) — verified ack no longer quotes "Tournament". A real name (e.g. "Ryder Cup") still
+  flows through/quoted.
+- BLOCKING 2: intro caption bubble now has `pointerEvents: 'none'` — no longer eats taps under the ~3.2s
+  first-run toast.
+- should-fix: added `handicaps` note ("I heard stroke allocations too...") wired into the same note list.
+- polish: clamp-note directional (>4 → "capped at 4 (max)", <1 → "set to 1 (minimum)"); buildAckLine caps
+  surfaced notes at `MAX_ACK_NOTES=2` + short catch-all ("...and a couple other details I couldn't set
+  here.") when more were dropped — plan.notes still carries ALL of them (nothing silently lost, just not
+  all read aloud); STICKY_CTA_CLEARANCE_PX 84→92.
+- Tests: +6 vitest cases (sentinel→null incl. case/whitespace variant, real-name-still-quoted,
+  clamp-direction wording, handicaps note, note-capping x2) — tournament-prefill.test.ts 23→29, all green.
+- GATES (all green): lint clean; tsc --noEmit clean; voice-tests smoke pass=277 fail=0 (unchanged
+  baseline); `npx vitest run` 98 files / 2030 tests passed (was 2024 pre-fix, +6 net new); `npm run build`
+  ok (Next.js 16.1.6, all routes compiled). Backend untouched (git status confirms only the 3 frontend
+  files touched).
+- Pushed to integration/next @ e057031. AWAITING: re-review (reviewer+designer on the fix delta only, do
+  NOT rebuild) → if all-clear, PR #132 checklist update (NOTICEABLE item), backlog s3→shipped + unblock
+  s4. NO ship/ping yet (still pre-approval bundle work, silent).
