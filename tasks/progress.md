@@ -13928,3 +13928,19 @@ owner approval separately. Next open PR = the bundle; this slice is its first ch
 Bundle PR opened: https://github.com/justslee/scorecard/pull/135 (integration/next -> main).
 First checklist item = tournament per-round formats (NOTICEABLE). CI will run on the PR; not
 merging this cycle — caller handles owner approval separately (no ship/ping per brief).
+
+## Cycle 99 (2026-07-11) — Live-tracking tournament leaderboard
+No preempting owner feedback: PR #135 has no comments; v1.1.2 cards #134/#133 have no Notion
+comments. Nothing to pull in — continuing tournament build-out, accumulating on #135 (no ship/ping).
+
+SLICE PICKED: Live-tracking tournament leaderboard (NOTICEABLE, highest value — owner explicitly
+listed "live tracking"). Today TournamentPageClient loads member rounds once on mount ([id] dep);
+the leaderboard is a snapshot. Make it refetch member rounds + recompute standings on foreground/
+visibility regain (reuse the established visibilitychange pattern from RoundPageClient.tsx:702 and
+the existing FLIP re-sort motion + order-change haptics). No polling, no spinner on refresh (only
+initial load shows the skeleton). Reuses already-locked standings math (tournament-standings.ts) —
+no new money math; settlement.ts untouched.
+
+## AWAITING: Plan agent (fable) producing the live-leaderboard implementation plan.
+On plan return -> write specs/tournament-live-leaderboard-plan.md, then dispatch builder on
+integration/next. If I die: branch is clean at this commit; re-dispatch Plan (no code written yet).
