@@ -2107,7 +2107,11 @@ export default function RoundPage() {
             pointerEvents: scoreOpen || voiceOpen || caddieOpen || scanOpen ? "none" : "auto",
           }}
         >
-          {/* Ask Caddie — ghost pill (#11: flexShrink:1 so it compresses on 320px) */}
+          {/* Ask Caddie — ghost pill (#11: flexShrink:1 so it compresses on 320px)
+              Pill/orb interplay (specs/omnipresent-caddie-orb-plan.md §1): this
+              pill IS the caddie invocation on the round page —
+              shouldShowCaddieOrb('/round/[id]') is false, so the omnipresent
+              CaddieOrb hides here on purpose. One mic, never two. */}
           <motion.button
             aria-label="Ask caddie"
             onClick={() => {

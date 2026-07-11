@@ -3,6 +3,57 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: orb-s1-move-and-nav DONE, on integration/next
+
+Item: `orb-s1-move-and-nav` (S1 of `specs/omnipresent-caddie-orb-plan.md`) — pure
+placement migration of the voice invocation out of the center of the nav
+island into a new omnipresent `CaddieOrb`, fixed bottom-right on every
+relevant page. Zero behavior change to the voice pipeline/event bus/sheets.
+
+New `frontend/src/components/nav/shouldShowCaddieOrb.ts` (+ test) — pure
+visibility fn: SHOW `/`, `/courses(/*)`, `/players(/*)`, `/profile`,
+`/tee-time`, `/round/new`, `/tournament/new`, `/tournament/[id]`, `/settings`;
+HIDE `/round/[id]` (non-new — the round page's "Ask caddie" pill is the
+invocation there, so the orb steps aside), `/map`, `/sign-in`, `/sign-up`,
+unlisted routes default hide. **Plan-path note:** the plan said
+`frontend/src/lib/nav/shouldShowCaddieOrb.ts`, but `shouldShowTabBar.ts` (the
+file it must be a sibling of and import `normalizePath` from via `./`)
+actually lives in `frontend/src/components/nav/` — placed the new file there
+instead to satisfy "sibling of shouldShowTabBar.ts" literally; no `lib/nav`
+directory exists in the codebase.
+
+New `frontend/src/components/CaddieOrb.tsx` (+ test) — ~54px ink medallion,
+`position:fixed; right:16px; zIndex:50`, bottom clearance adds 74px when
+`shouldShowTabBar()` is true (island present) else 0. Pointer state machine
+(hold 350ms → listening, 12px drift-cancel, same haptics) migrated verbatim
+from the old `LooperOrb`; fires the identical `openLooper({context, listening})`
+bus calls — `looper-bus.ts` untouched. One-time "Your caddie moved here"
+caption via `localStorage` flag `looper.caddieOrbIntroSeen`, SSR/localStorage-
+guarded. Caddie mark is a placeholder serif-italic "L" in its own
+`CaddieMark` sub-component, marked `// DESIGNER-OWNED` for the designer to
+evolve.
+
+`FloatingTabBar.tsx`: deleted `LooperOrb` + its constants/imports; nav is now
+a plain 4-tab island (Home, Courses, Tee times, Profile). Mounted `<CaddieOrb />`
+in `app/layout.tsx` next to `FloatingTabBar`/`LooperSheet`. Documented the
+pill/orb interplay in both `shouldShowCaddieOrb.ts` and the "Ask caddie" pill
+comment in `RoundPageClient.tsx` (no logic changed there).
+
+Tests: rewrote `FloatingTabBar.test.tsx` (4-tab assertions, no orb) and moved
+the tap/hold/drift pointer-semantics coverage to new `CaddieOrb.test.tsx`
+(same payload assertions as before: `{context:"tee-time", listening:false/true}`).
+Discovered jsdom in this repo has no `window.localStorage` — stubbed a
+minimal in-memory mock via `vi.stubGlobal` in the new test (app code already
+guards localStorage access in try/catch for this exact reason).
+
+Gates: lint clean, `tsc --noEmit` clean, voice-tests smoke 274/274 (parser
+code untouched), `next build` clean, `vitest run` full suite 1958/1958 passed
+(94 files) — includes the 26 new/rewritten orb tests. Commit `<see git log>`
+on `integration/next`, pushed. Classification: **noticeable** (nav loses its
+center orb; a new persistent orb appears bottom-right on most screens) —
+placeholder caddie mark, so designer review still needed before the icon is
+final.
+
 ## 2026-07-10 — builder: tournament-cumulative-settlement DONE, on integration/next
 
 Item: `tournament-cumulative-settlement`. Added `computeTournamentSettlement(rounds)`

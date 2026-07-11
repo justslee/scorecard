@@ -1,66 +1,32 @@
 // @vitest-environment jsdom
-// The Looper orb in the tab island (specs/looper-orb-plan.md): tap summons,
-// long-press summons already-listening, drift cancels.
+// The floating tab island (specs/omnipresent-caddie-orb-plan.md, slice S1):
+// plain 4-tab bar — Home, Courses, Tee times, Profile. The caddie voice
+// invocation no longer lives here; it moved to the omnipresent CaddieOrb
+// (see CaddieOrb.test.tsx for the tap/hold/drift pointer semantics, which
+// migrated verbatim).
 
 import React from "react";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { render, screen, cleanup } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/tee-time" }));
 vi.mock("@/lib/haptics", () => ({ haptic: vi.fn() }));
 
 import FloatingTabBar from "./FloatingTabBar";
-import { onLooperOpen, type LooperOpenDetail } from "@/lib/looper-bus";
 
-describe("FloatingTabBar — the Looper orb", () => {
-  let received: LooperOpenDetail[];
-  let off: () => void;
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    received = [];
-    off = onLooperOpen((d) => received.push(d));
-  });
+describe("FloatingTabBar — 4-tab island", () => {
   afterEach(() => {
-    off();
-    vi.useRealTimers();
     cleanup();
   });
 
-  it("renders the orb and no Partners tab", () => {
+  it("renders exactly the 4 tabs, no orb, no Partners tab", () => {
     render(<FloatingTabBar />);
-    expect(screen.getByLabelText("Talk to Looper")).toBeTruthy();
-    expect(screen.queryByLabelText("Partners")).toBeNull();
     expect(screen.getByLabelText("Home")).toBeTruthy();
+    expect(screen.getByLabelText("Courses")).toBeTruthy();
     expect(screen.getByLabelText("Tee times")).toBeTruthy();
-  });
-
-  it("tap summons Looper for the current page's context, not listening", () => {
-    render(<FloatingTabBar />);
-    const orb = screen.getByLabelText("Talk to Looper");
-    fireEvent.pointerDown(orb, { clientX: 10, clientY: 10 });
-    fireEvent.pointerUp(orb);
-    expect(received).toEqual([{ context: "tee-time", listening: false }]);
-  });
-
-  it("long-press summons already listening (and pointer-up after doesn't double-fire)", () => {
-    render(<FloatingTabBar />);
-    const orb = screen.getByLabelText("Talk to Looper");
-    fireEvent.pointerDown(orb, { clientX: 10, clientY: 10 });
-    vi.advanceTimersByTime(400);
-    fireEvent.pointerUp(orb);
-    expect(received).toEqual([{ context: "tee-time", listening: true }]);
-  });
-
-  it("finger drift cancels the press entirely", () => {
-    render(<FloatingTabBar />);
-    const orb = screen.getByLabelText("Talk to Looper");
-    // jsdom's synthetic pointer events drop clientX/Y — construct MouseEvents
-    // (which carry coordinates) with pointer event types instead.
-    fireEvent(orb, new MouseEvent("pointerdown", { clientX: 10, clientY: 10, bubbles: true }));
-    fireEvent(orb, new MouseEvent("pointermove", { clientX: 10, clientY: 40, bubbles: true })); // scrolling
-    vi.advanceTimersByTime(400);
-    fireEvent(orb, new MouseEvent("pointerup", { bubbles: true }));
-    expect(received).toEqual([]);
+    expect(screen.getByLabelText("Profile")).toBeTruthy();
+    expect(screen.queryByLabelText("Partners")).toBeNull();
+    expect(screen.queryByLabelText("Talk to Looper")).toBeNull();
+    expect(screen.queryByLabelText("Talk to your caddie")).toBeNull();
   });
 });

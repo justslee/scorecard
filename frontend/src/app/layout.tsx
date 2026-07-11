@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Geist, Geist_Mono } from "next/font/google";
 import AuthProvider from "@/components/AuthProvider";
 import FloatingTabBar from "@/components/nav/FloatingTabBar";
+import CaddieOrb from "@/components/CaddieOrb";
 import LooperSheet from "@/components/LooperSheet";
 import "./globals.css";
 
@@ -62,6 +63,7 @@ export default function RootLayout({
         <AuthProvider>
           {children}
           <FloatingTabBar />
+          <CaddieOrb />
           <LooperSheet />
         </AuthProvider>
       </body>
