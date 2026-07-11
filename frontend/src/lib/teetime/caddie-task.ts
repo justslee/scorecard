@@ -209,10 +209,12 @@ export function planTeeTimeApply(
     courseMissNote == null &&
     (parsed.windows.length > 0 || parsed.dispatch);
 
-  // A resolved course that will be searched now says so; one added without a
-  // day/time is simply added (honest — nothing was dispatched).
+  // A resolved course that will be searched appends the caddie's ONE canonical
+  // action tag ("On it." — voice-prefs.ts, honest about the ~1.4s dispatch beat
+  // the page arms); one added without a day/time is simply added, nothing
+  // dispatched, so no action tag.
   const resolvedLine = resolvedNote
-    ? `${resolvedNote}${dispatched ? " Looking there now." : ""}`
+    ? `${resolvedNote}${dispatched ? " On it." : ""}`
     : null;
 
   const line =

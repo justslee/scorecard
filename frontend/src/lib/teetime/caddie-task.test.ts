@@ -219,7 +219,7 @@ describe("planTeeTimeApply — A2: the resolved course wins", () => {
     expect(plan.line).toContain("Marine Park");
     expect(plan.line).toContain("Brooklyn");
     expect(plan.line.toLowerCase()).toContain("mi away");
-    expect(plan.line).toContain("Looking there");
+    expect(plan.line).toContain("On it."); // the caddie's one canonical action tag
   });
 
   it("touched list: the golfer's OWN selections survive the resolved add", () => {
@@ -245,7 +245,7 @@ describe("planTeeTimeApply — A2: the resolved course wins", () => {
     );
     expect(plan.dispatched).toBe(false);
     expect(plan.line).toContain("Found Marine Park");
-    expect(plan.line).not.toContain("Looking there");
+    expect(plan.line).not.toContain("On it."); // added, not dispatched — no action tag
   });
 
   it('resolution "none" → honest "couldn\'t find", no dispatch even with a window', () => {

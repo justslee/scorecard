@@ -125,6 +125,15 @@ export async function resolveSpokenCourse(
 
   // A UNIQUE exact facility-name match dominates — even if weaker prefix hits
   // sit alongside it. Two+ exact matches are genuinely ambiguous facilities.
+  //
+  // NOTE (defensive-only in prod): searchAllCourses dedupes its legs by
+  // courseNameKey (name only, no city/id — golf-api.ts), so two DISTINCT
+  // facilities with byte-identical names (e.g. two municipal "Lincoln Park Golf
+  // Course"s in different cities) already collapse to one row before we see
+  // them → this exact.length>=2 branch effectively fires only on the injected
+  // test input. That matches typed search's own semantics (it too surfaces one
+  // such row), so it's not a regression; true same-name/different-city
+  // disambiguation needs a city-aware dedupe key and is deferred to A3.
   const exact = placeable.filter((r) => isExactFacilityMatch(r.name, query));
   if (exact.length === 1) return { kind: "one", course: toResolvedCourse(exact[0]) };
   if (exact.length >= 2) return ambiguousOf(exact, origin);
