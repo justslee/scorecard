@@ -15,6 +15,7 @@ without adding latency to this one. See specs/course-search-v2-plan.md.
 
 import asyncio
 import logging
+import math
 import os
 import time
 from pathlib import Path
@@ -71,6 +72,79 @@ def _nearby_cache_key(lat: float, lng: float, radius_m: int) -> str:
     from (roughly) the same spot hit the same cell, without needing an exact
     coordinate match. Pure/no I/O — unit-testable in isolation."""
     return f"nearby:{round(lat, NEARBY_CELL_DECIMALS)}:{round(lng, NEARBY_CELL_DECIMALS)}:{radius_m}"
+
+
+# ── /api/courses/in-bounds (course-selection B1) ────────────────────────────
+# Positive-only quantized geo-cell cache for the viewport-bbox OSM fill leg.
+# DEDICATED file — never share a JSON namespace with `_search_cache` (keyed by
+# normalized name query) or `_nearby_cache` (keyed by GPS point + radius);
+# in-bounds is keyed by fixed ~0.05° geo-cell so overlapping/panned viewports
+# reuse each other's warm cells.
+_in_bounds_cache: SearchCacheStore = FileSearchCacheStore(
+    path=Path(__file__).parent.parent.parent / "data" / "in_bounds_search_cache.json"
+)
+
+# ~5.5 km N–S per cell.
+IN_BOUNDS_CELL_DEG = 0.05
+# Per-request cap on COLD-cell OSM fetches (concurrent, via asyncio.gather).
+# Bounds wall time (~one interactive OSM budget, not N×) and is polite to the
+# public overpass-api.de mirror (a handful of parallel slots per IP). Skipped
+# cold cells simply warm on a later pan — the DB leg keeps that area honest
+# meanwhile via any previously write-through'd course.
+IN_BOUNDS_MAX_COLD_CELLS = 4
+# Cap on returned pins (spec §B.1 "Cap ~40 pins"), applied after merge/dedupe.
+# DB pins are listed before OSM pins so truncation drops far OSM extras, never
+# central DB courses.
+IN_BOUNDS_MAX_PINS = 40
+# Viewport area (sq degrees) above which pins are meaningless and every leg is
+# skipped entirely — see the handler docstring for the derivation.
+IN_BOUNDS_MAX_AREA_SQDEG = 0.25
+
+
+def _in_bounds_cell_key(ilat: int, ilng: int) -> str:
+    """Versioned per-cell cache key ("v1") so a future cell-scheme change
+    can't silently collide with stale entries. Pure/no I/O."""
+    return f"inbounds:v1:{ilat}:{ilng}"
+
+
+def _cells_for_bbox(sw_lat: float, sw_lng: float, ne_lat: float, ne_lng: float) -> list[tuple[int, int]]:
+    """Every integer ``(ilat, ilng)`` cell index intersecting the bbox, sorted
+    by cell-center distance to the bbox center ascending — so the cold-cell
+    fanout cap spends its budget on the middle of the viewport first. Integer
+    floor-indices (not rounded floats) avoid float-formatting/`-0.0`
+    collisions. Pure/no I/O — unit-testable in isolation."""
+    ilat_min = math.floor(sw_lat / IN_BOUNDS_CELL_DEG)
+    ilat_max = math.floor(ne_lat / IN_BOUNDS_CELL_DEG)
+    ilng_min = math.floor(sw_lng / IN_BOUNDS_CELL_DEG)
+    ilng_max = math.floor(ne_lng / IN_BOUNDS_CELL_DEG)
+    c_lat = (sw_lat + ne_lat) / 2
+    c_lng = (sw_lng + ne_lng) / 2
+
+    scored: list[tuple[float, int, int]] = []
+    for ilat in range(ilat_min, ilat_max + 1):
+        for ilng in range(ilng_min, ilng_max + 1):
+            cell_lat = (ilat + 0.5) * IN_BOUNDS_CELL_DEG
+            cell_lng = (ilng + 0.5) * IN_BOUNDS_CELL_DEG
+            dist_sq = (cell_lat - c_lat) ** 2 + (cell_lng - c_lng) ** 2
+            scored.append((dist_sq, ilat, ilng))
+    scored.sort(key=lambda t: t[0])
+    return [(ilat, ilng) for _, ilat, ilng in scored]
+
+
+def _validate_in_bounds_bbox(sw_lat: float, sw_lng: float, ne_lat: float, ne_lng: float) -> None:
+    """Semantic bbox validation (FastAPI already coerced these to floats, but
+    accepts ``nan``/``inf`` as valid floats — that's ours to reject)."""
+    for v in (sw_lat, sw_lng, ne_lat, ne_lng):
+        if not math.isfinite(v):
+            raise HTTPException(400, "bbox values must be finite numbers")
+    if sw_lat < -90 or ne_lat > 90 or sw_lng < -180 or ne_lng > 180:
+        raise HTTPException(400, "bbox values out of range")
+    if sw_lat >= ne_lat:
+        raise HTTPException(400, "swLat must be < neLat")
+    if sw_lng >= ne_lng:
+        # Intentionally rejects antimeridian-crossing boxes — out of B1 scope,
+        # see specs/course-selection-b1-plan.md §7.
+        raise HTTPException(400, "swLng must be < neLng")
 
 
 # ── Leg helpers ────────────────────────────────────────────────────────────────
@@ -177,6 +251,26 @@ async def _list_local_courses(q: str) -> list[dict]:
     from app.services import courses_mapped
 
     rows = await courses_mapped.list_courses(search=q)
+    return [
+        {
+            "id": r["id"],
+            "name": r.get("name"),
+            "address": r.get("address"),
+            "center": r.get("location"),
+            "source": "local",
+        }
+        for r in rows
+    ]
+
+
+async def _db_courses_in_bounds(sw_lat: float, sw_lng: float, ne_lat: float, ne_lng: float) -> list[dict]:
+    """Ranked-by-center-proximity DB bbox lookup — the /in-bounds honesty
+    floor. Lazily imports services/courses_mapped for the same reason as
+    :func:`_list_local_courses`: the module (and its unit tests) stay
+    collectible/runnable WITHOUT a live DATABASE_URL."""
+    from app.services import courses_mapped
+
+    rows = await courses_mapped.courses_in_bounds(sw_lat, sw_lng, ne_lat, ne_lng, limit=60)
     return [
         {
             "id": r["id"],
@@ -429,3 +523,127 @@ async def nearby_courses(
     if results:
         _nearby_cache.set(key, results)
     return {"courses": results}
+
+
+async def _fetch_in_bounds_cell(ilat: int, ilng: int) -> tuple[int, int, Optional[list[dict]]]:
+    """Fetch one cold geo-cell's OSM golf-course centers. Never raises to the
+    caller — a failure is classified by returning ``None`` for ``hits`` so
+    the handler can flag ``degraded`` without failing the whole request (the
+    "honesty floor" — see the handler docstring)."""
+    cell_lat = (ilat + 0.5) * IN_BOUNDS_CELL_DEG
+    cell_lng = (ilng + 0.5) * IN_BOUNDS_CELL_DEG
+    try:
+        hits = await search_golf_courses(
+            lat=cell_lat, lng=cell_lng, radius_m=4000, interactive=True,
+        )
+    except Exception as exc:
+        log.warning(
+            "in_bounds_courses: cold cell (%d,%d) OSM fetch failed: %s", ilat, ilng, exc,
+        )
+        return ilat, ilng, None
+    return ilat, ilng, hits
+
+
+@router.get("/in-bounds")
+async def in_bounds_courses(
+    swLat: float = Query(...),
+    swLng: float = Query(...),
+    neLat: float = Query(...),
+    neLng: float = Query(...),
+    background_tasks: BackgroundTasks = None,  # type: ignore[assignment]
+):
+    """Viewport bounding-box course PINS — course-selection B1 (backend-only
+    slice of specs/course-selection-ux-plan.md §B.1; the map UI is a later
+    B2 cycle). Real course centers only, cache-first and budget-safe.
+
+    Auth: none — like ``/nearby`` and ``/search-osm``, this path NEVER calls a
+    paid API (Google Places / GolfAPI), so it needs no Clerk gate.
+
+    Three legs, in order:
+      1. DB bbox (PostGIS ``ST_Intersects`` / ``ST_MakeEnvelope``) — ALWAYS
+         runs; the honesty floor. Ordered center-proximity-first.
+      2. OSM fill on ~0.05° geo-cells, COLD cells only (positive-only cache,
+         dedicated ``in_bounds_search_cache.json``, write-through to the DB).
+         A fully-warm viewport makes ZERO external calls. Cold-cell fanout is
+         capped at ``IN_BOUNDS_MAX_COLD_CELLS`` (4) per request, run
+         concurrently, closest-to-center cells first; cells beyond the cap
+         are simply skipped this request and warm on a later pan.
+      3. Merge (DB first, so a name tie keeps the canonical DB row) → dedupe
+         by normalized (trimmed, lower-cased) name → attach stable ids → cap
+         at ``IN_BOUNDS_MAX_PINS`` (40) → schedule a non-blocking write-through
+         of this request's fresh OSM hits.
+
+    BUDGET: this path NEVER calls Google Places, GolfAPI, or Mapbox — OSM
+    only, geo-cell-cached. (Enforced by construction: no import of those
+    legs is even reachable from this handler.)
+
+    ``zoomIn: true`` — viewport area > ``IN_BOUNDS_MAX_AREA_SQDEG`` (0.25
+    sq°, ~0.5°×0.5° ≈ a full metro area, the largest box where individual
+    pins stay meaningful). Beyond it the box would span 100+ geo-cells
+    (fanout explosion / hundreds of pins); the honest response is "zoom in"
+    — ``courses: []`` and NO leg runs (not even the DB leg).
+
+    ``degraded: true`` — a cold-cell OSM fetch RAISED (timeout/transport
+    error) this request; DB pins are still returned, never an empty list.
+    Documented residual limitation: ``search_golf_courses`` swallows most
+    Overpass flakiness (timeout/429/5xx) into a plain ``[]`` inside
+    ``_post_with_retry`` — indistinguishable from a genuinely empty cell at
+    this seam, so most real flakiness will NOT raise and therefore will NOT
+    set ``degraded``. Accepted for B1: the DB leg always returns real pins,
+    empty cells are never cached (so they retry next request), and the
+    write-through flywheel steadily shrinks OSM dependence. A cell that
+    returns ``[]`` without raising is classified "empty", not "degraded",
+    and is never cached (positive-only — the no-fake-data law: an empty
+    result here is indistinguishable from a masked failure, so caching it
+    would risk hiding a real course for the cache's TTL).
+
+    Antimeridian-crossing boxes (``swLng > neLng``) are rejected with 400 by
+    the ``swLng >= neLng`` validation check — out of B1 scope, no golf-market
+    pressure there and splitting into two envelopes doubles every leg.
+    """
+    bg = background_tasks if background_tasks is not None else BackgroundTasks()
+
+    _validate_in_bounds_bbox(swLat, swLng, neLat, neLng)
+
+    area = (neLat - swLat) * (neLng - swLng)
+    if area > IN_BOUNDS_MAX_AREA_SQDEG:
+        return {"courses": [], "degraded": False, "zoomIn": True}
+
+    db_pins = await _db_courses_in_bounds(swLat, swLng, neLat, neLng)
+
+    warm_hits: list[dict] = []
+    cold_cells: list[tuple[int, int]] = []
+    for ilat, ilng in _cells_for_bbox(swLat, swLng, neLat, neLng):
+        cached = _in_bounds_cache.get(_in_bounds_cell_key(ilat, ilng))
+        if cached is not None:
+            warm_hits.extend(cached)
+        else:
+            cold_cells.append((ilat, ilng))
+
+    cold_cells = cold_cells[:IN_BOUNDS_MAX_COLD_CELLS]
+
+    degraded = False
+    fresh_hits: list[dict] = []
+    if cold_cells:
+        fetched = await asyncio.gather(
+            *[_fetch_in_bounds_cell(ilat, ilng) for ilat, ilng in cold_cells]
+        )
+        for ilat, ilng, hits in fetched:
+            if hits is None:
+                degraded = True
+                continue
+            if not hits:
+                continue
+            hits = course_finder.attach_stable_ids(hits)
+            _in_bounds_cache.set(_in_bounds_cell_key(ilat, ilng), hits)
+            fresh_hits.extend(hits)
+
+    merged = db_pins + warm_hits + fresh_hits
+    deduped = course_finder.dedupe_by_name(merged)
+    course_finder.attach_stable_ids(deduped)
+    courses = deduped[:IN_BOUNDS_MAX_PINS]
+
+    if fresh_hits:
+        bg.add_task(_write_through_courses, course_finder.external_course_rows(fresh_hits))
+
+    return {"courses": courses, "degraded": degraded, "zoomIn": False}
