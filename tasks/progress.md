@@ -13993,3 +13993,22 @@ Non-blocking follow-ups carried: stableford $5-default-stake settles $0 (label h
 play >2 roster settles only first two (needs opponent/team UI); live-leaderboard silent path logs
 via console.error where comment says console.warn (log-level nit); optional native appStateChange
 trigger if device QA shows a missed foreground event.
+
+## Cycle 100 — Tournament settlement HONESTY (money correctness) [[no-fake-data-fallbacks]]
+Item: fix two flagged honesty gaps so the app never offers money it won't honor.
+1. Stableford stake mirage — picker defaults stableford to $5 (round-games consumers) and shows
+   "Stableford $5", but settlement.ts explicitly skips stableford (no monetary result) → settles
+   $0. Same root class also affects stroke/quota/bbb/bb/scr (stake shown, no settleable game);
+   tournament picker only exposes `stable` of these. Grounded: settlement.ts:13, round-games.ts
+   buildRoundGames:88, NewTournamentRoundClient:1276 (default '$5'), summary line 805.
+2. Match-play >2 roster — computeMatchPlay (games.ts:740-741) uses only playerIds[0]/[1];
+   buildRoundGames passes ALL round players → players 3+ silently net $0. Honest guardrail now
+   (prevent/label), full opponent-picker UI deferred as owner follow-up.
+
+## AWAITING — fable Plan agent → specs/tournament-settlement-honesty-plan.md
+Branch integration/next @ 4a17226 (clean). No owner v1.1.2 feedback preempting (checked board
+cards #134/#132, PR #135 comments — none). Keep accumulating PR #135; do NOT ship/ping.
+Next after plan lands: dispatch builder (deterministic money-math tests mandatory) → reviewer
+(fresh, adversarial: zero-sum, no dropped player, displayed==settled stake) → qa (gates SUCCESS on
+head SHA) → designer (BLOCKING if stake field/labels change). Land on integration/next, update PR
+#135 checklist, record deferred match-play-roster UI follow-up in backlog.json (targeted edit).
