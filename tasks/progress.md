@@ -13039,3 +13039,7 @@ SILENT — no ship/ping (owner approves the whole bundle later). Head after book
 ## Cycle 85 (2026-07-11) — orb on course-detail pages (audit-found omnipresence gap)
 - Orb wiring audit (cycle 84) was CLEAN + added 2 regression guards; found ONE real gap: orb hidden on /courses/[id] (plan intended SHOW; "omnipresent everywhere it belongs"). #133 strict-green.
 - AWAITING: eng-lead — show the orb on course-detail pages: update shouldShowCaddieOrb to SHOW /courses/[id]; scope the CaddieOrbSheet.tsx:127 legacy-courses-floor guard to the LIST page only so the detail-page orb uses the general converse fallback + actually works (not a dead mic). Verify orb shows+works on detail, no regression to list, no dead mic. Designer check + regression test. Land on #133.
+
+## Cycle 86 (2026-07-11) — course-intel static persistence (owner P1, surfaced by grooming)
+- Retro groomed the backlog (212→52 usable); surfaced a real buried owner P1.
+- AWAITING: eng-lead course-intel-static-persistence — compute static per-course intel (per-hole elevation deltas + green slope) ONCE, persist on the mapped course record (+ Alembic migration, NEW not edited-guarded), serve instantly from course-intel (skip recompute latency). Backend-only, silent, kills the "elevation takes a while" wait. DB test → docker Postgres (DB-only-in-CI lesson). Land on #133.
