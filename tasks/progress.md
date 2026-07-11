@@ -12594,3 +12594,13 @@ repro-green at 22:04 ET: full suite 2140 passed, ruff clean.
 ## Cycle 80 (2026-07-10) — ORB S4 (My Card stats coaching)
 - #132 strict-green (e9ac91e), 9+ noticeable items, awaiting owner ship (owner keeps building over shipping — honored). S3 landed green.
 - AWAITING: eng-lead orb-s4-mycard-coaching — stats-grounding.ts (real stats block, thin→honest) + /profile kind:converse + optional stats_context on VoiceCaddieRequest + prompt block (both mouths). /security-review (new user-data→prompt). Backend touched → run DB tests properly (calling-hours flake lesson). Land on #132.
+
+## AWAITING (cycle 80 — orb-s4-mycard-coaching)
+Plan-lite written: specs/orb-s4-mycard-coaching-plan.md. Dispatching builder on
+integration/next to implement: stats-grounding.ts (pure+vitest), /profile converse
+registration, CaddieOrbSheet converse-grounding wiring, api.ts stats_context twin,
+backend VoiceCaddieRequest.stats_context + fenced prompt block in _build_voice_prompt
+(both mouths). On builder return with commit → reviewer + /security-review + QA gates +
+designer; BLOCKING → re-dispatch builder; strict-green on head → update PR #132 + backlog
+(s4 shipped, unblock s5). Reconcile from origin/integration/next on resume — do NOT re-run
+a finished builder.
