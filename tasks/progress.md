@@ -13552,3 +13552,14 @@ Lesson candidate: version must never sort below the last-shipped; VERSION file i
   degraded-not-empty + injection/param validation) + qa (ruff + pytest DB-free local; CI SHA-pinned
   SUCCESS for DB-backed). No designer (backend-only). Then PR #134 checklist (B1 SILENT/infra —
   enables NOTICEABLE B2) + progress. Do NOT ship/ping.
+
+## AWAITING (cycle 96 update) — reviewer + qa running on 3c9a903
+- Builder DONE: code @c7a3252 (+218 course_search.py, +33 courses_mapped.py, +414 unit tests,
+  +97 integration tests), progress @3c9a903. Builder local: ruff clean, 64 targeted + 2112
+  non-integration suite green, 3 DB-backed auto-skip locally (run in CI).
+- Reviewer (fresh, adversarial) on 3c9a903: budget invariant (no Places/GolfAPI/Mapbox on path),
+  degraded-not-empty honesty, bbox param validation/injection, cache-key collisions, dedupe.
+- QA on 3c9a903: ruff + DB-free pytest local; CI SHA-pinned SUCCESS (Frontend advisory since
+  backend-only; Backend gate must be SUCCESS on the pushed head for the DB-backed integration tests).
+- SHIP + PASS -> update PR #134 checklist (B1 SILENT/infra, enables NOTICEABLE B2) + progress.
+  BLOCKING -> re-dispatch builder. No designer. Do NOT ship/ping this cycle.
