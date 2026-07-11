@@ -26,7 +26,8 @@ import {
   addCourseOption,
   type CourseOption,
 } from "@/lib/teetime/courses";
-import type { SpokenCourseResolution } from "@/lib/teetime/course-resolve";
+import type { ResolvedCandidate, ResolvedCourse, SpokenCourseResolution } from "@/lib/teetime/course-resolve";
+import type { PendingCourseClarify, ClarifyReplyMatch } from "@/lib/teetime/course-clarify";
 
 /**
  * The opaque payload the tee-time task hands the host through TaskParse and
@@ -39,19 +40,30 @@ export interface TeeTimeTaskPayload {
   /** null = no spoken-course resolution attempted (no unresolved name, or more
    *  than one — A2 resolves a single spoken name). */
   resolution: SpokenCourseResolution | null;
+  /** A3: non-null when this utterance was routed (by `routeClarifyReply`) as
+   *  the reply to an outstanding ambiguous-course question. null = no clarify
+   *  turn in play. */
+  clarify: { pending: PendingCourseClarify; match: ClarifyReplyMatch } | null;
 }
 
-/** parsed (+ optional spoken-course resolution) → the contract's TaskParse. Pure. */
+/** parsed (+ optional spoken-course resolution / clarify routing) → the
+ *  contract's TaskParse. Pure.
+ *
+ *  A clarify turn ALWAYS carries signal at a confident-enough level to reach
+ *  the apply gate — the matcher is deterministic (it already decided
+ *  picked/ambiguous/none), so a re-ask or bail must run in the task lane,
+ *  never gate (b)'s confirm-only path and never the converse fall-through. */
 export function teeTimeTaskParse(
   transcript: string,
   parsed: TeeTimePrefsParseResultValidated,
   resolution: SpokenCourseResolution | null = null,
+  clarify: { pending: PendingCourseClarify; match: ClarifyReplyMatch } | null = null,
 ): TaskParse {
-  const payload: TeeTimeTaskPayload = { parsed, resolution };
+  const payload: TeeTimeTaskPayload = { parsed, resolution, clarify };
   return {
     transcript,
-    hasSignal: hasTeeTimeSignal(parsed),
-    confidence: parsed.confidence,
+    hasSignal: clarify != null ? true : hasTeeTimeSignal(parsed),
+    confidence: clarify != null ? Math.max(parsed.confidence, 0.9) : parsed.confidence,
     ack: teeTimeConfirmEcho(parsed),
     payload,
   };
@@ -85,6 +97,14 @@ export interface TeeTimeApplyPlan {
   maxPriceUsd: number | null;
   line: string;                        // unresolvedNote ?? resolvedLine ?? courseMissNote ?? teeTimeAckLine(parsed) ?? "Got it."
   dispatched: boolean;                 // false whenever a named course is unresolved / missed (A2: true once resolved to one)
+  /** A3: non-null while an ambiguous-course question is outstanding. Every
+   *  branch computes this (normal branches → null) — the page assigns it
+   *  unconditionally, so any applied turn that isn't itself an ask clears a
+   *  stale pending. */
+  pendingClarify: PendingCourseClarify | null;
+  /** A3: true → the host reopens the mic for one hands-free follow-up turn.
+   *  Only ever true alongside `dispatched:false`. */
+  expectReply: boolean;
 }
 
 /** Title-case a spoken (lowercase) course name for an honest ack — "marine
@@ -105,6 +125,76 @@ function joinNames(names: string[]): string {
   return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
+/** Join localities as "A", "A, or B", or "A, B, or C" — a spoken question
+ *  reads naturally with "or" between the choices. */
+function joinOr(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? "";
+  if (parts.length === 2) return `${parts[0]}, or ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, or ${parts[parts.length - 1]}`;
+}
+
+/** The honest label for a candidate in spoken copy — its real locality, or
+ *  (never fabricated) the course name itself when there's no honest
+ *  locality to show. */
+function candidateLabel(c: ResolvedCandidate): string {
+  return c.localityLabel || c.name;
+}
+
+/**
+ * Shared A2/A3 add-flow: place a resolved course onto the list, honoring the
+ * touched/untouched GPS-preselect rule, and return the honest "Found …" note.
+ * Used both by A2's single-resolution auto-add and A3's clarify pick — a
+ * clarify pick is synthesized into the SAME `ResolvedCourse` shape so the two
+ * paths share one implementation (no drift between them).
+ */
+function applyResolvedCourseAdd(
+  resolved: ResolvedCourse,
+  baseCourses: CourseOption[],
+  current: { origin?: { lat: number; lng: number } | null; touched?: boolean },
+): { courses: CourseOption[]; note: string } {
+  const option = courseOptionFromSelection(
+    {
+      id: resolved.id,
+      name: resolved.name,
+      location: resolved.location,
+      center: resolved.center,
+      favorite: false,
+    },
+    current.origin ?? null,
+  );
+  const base = current.touched
+    ? baseCourses
+    : baseCourses.map((c) => (c.selected ? { ...c, selected: false } : c));
+  const courses = addCourseOption(base, option);
+
+  const where = option.muni ? ` in ${option.muni}` : "";
+  const far =
+    option.distance != null
+      ? ` — ${option.distance < 10 ? option.distance.toFixed(1) : Math.round(option.distance)} mi away`
+      : "";
+  const note = `Found ${displayCourseName(resolved.name)}${where}${far}.`;
+  return { courses, note };
+}
+
+/** A3: the initial clarify ask, naming the real localities so the golfer can
+ *  answer with a place, not a guess ("Marine Park — Brooklyn, NY, or Old
+ *  Bridge, NJ. Which one?"). */
+function ambiguousAskLine(name: string, candidates: ResolvedCandidate[]): string {
+  const localities = joinOr(candidates.map(candidateLabel));
+  return `I found a few courses called ${displayCourseName(name)} — ${localities}. Which one?`;
+}
+
+/** A3: the honest re-ask after a reply that matched none or several
+ *  candidates — repeats the real choices, never guesses. */
+function clarifyReAskLine(candidates: ResolvedCandidate[]): string {
+  const localities = joinOr(candidates.map(candidateLabel));
+  return `Sorry — which one: ${localities}? You can say "the first one."`;
+}
+
+/** A3: the graceful bail once the 2-ask budget is spent — never a fake pick. */
+const CLARIFY_BAIL_LINE =
+  "No worries — I’ll leave it for now. You can add it from the course list, or name the area again anytime.";
+
 export function planTeeTimeApply(
   parsed: TeeTimePrefsParseResultValidated,
   current: {
@@ -122,6 +212,10 @@ export function planTeeTimeApply(
   /** A2: the async resolution of a single spoken course name, when the utterance
    *  named a course we couldn't match on-screen. null = none attempted. */
   resolution: SpokenCourseResolution | null = null,
+  /** A3: non-null when this utterance was routed as the reply to an
+   *  outstanding ambiguous-course question (`routeClarifyReply`). null = no
+   *  clarify turn in play — the normal A0/A2 path runs unchanged. */
+  clarify: { pending: PendingCourseClarify; match: ClarifyReplyMatch } | null = null,
 ): TeeTimeApplyPlan {
   const windows =
     parsed.windows.length > 0 ? applyParsedWindows(current.windows, parsed.windows) : null;
@@ -155,6 +249,52 @@ export function planTeeTimeApply(
   const group = parsed.partySize != null ? applyPartySize(current.group, parsed.partySize) : null;
   const maxPriceUsd = parsed.maxPriceUsd ?? null;
 
+  // A3 — a clarify reply that PICKED a candidate: the pick IS the resolution.
+  // Skip the unresolvedCourseNames gate entirely (a repeated/locality-tagged
+  // name in the reply must not re-trip A0's honest-miss gate) and reuse the
+  // A2 add-flow via the synthesized ResolvedCourse. Dispatch iff the ORIGINAL
+  // turn was armed (had a window/go-ahead) or this reply adds one.
+  if (clarify?.match.kind === "picked") {
+    const candidate = clarify.match.candidate;
+    const syntheticCourse: ResolvedCourse = {
+      id: candidate.id,
+      name: candidate.name,
+      center: candidate.center,
+      location: candidate.address,
+    };
+    const added = applyResolvedCourseAdd(syntheticCourse, courses ?? current.courses, current);
+    courses = added.courses;
+    const dispatched = clarify.pending.armed || parsed.windows.length > 0 || parsed.dispatch;
+    const line = `${added.note}${dispatched ? " On it." : ""}`;
+    return {
+      windows, courses, maxMiles, group, maxPriceUsd, line, dispatched,
+      pendingClarify: null, expectReply: false,
+    };
+  }
+
+  // A3 — a clarify reply that matched NOTHING or SEVERAL candidates: one
+  // honest re-ask, then a graceful bail. Hard budget: 2 asks total (the
+  // initial ask + one re-ask). Never dispatches a guess.
+  if (clarify) {
+    const pending = clarify.pending;
+    if (pending.attempts + 1 < 2) {
+      return {
+        windows, courses, maxMiles, group, maxPriceUsd,
+        line: clarifyReAskLine(pending.candidates),
+        dispatched: false,
+        pendingClarify: { ...pending, attempts: pending.attempts + 1 },
+        expectReply: true,
+      };
+    }
+    return {
+      windows, courses, maxMiles, group, maxPriceUsd,
+      line: CLARIFY_BAIL_LINE,
+      dispatched: false,
+      pendingClarify: null,
+      expectReply: false,
+    };
+  }
+
   // A2 — the resolved course wins. When the utterance named exactly one course
   // we couldn't place on-screen and the unified search resolved it to a single
   // real facility, ADD it and select it. When the golfer hasn't yet touched the
@@ -168,28 +308,26 @@ export function planTeeTimeApply(
 
   let resolvedNote: string | null = null;
   if (resolvedOne) {
-    const option = courseOptionFromSelection(
-      {
-        id: resolvedOne.id,
-        name: resolvedOne.name,
-        location: resolvedOne.location,
-        center: resolvedOne.center,
-        favorite: false,
-      },
-      current.origin ?? null,
-    );
-    const base0 = courses ?? current.courses;
-    const base = current.touched
-      ? base0
-      : base0.map((c) => (c.selected ? { ...c, selected: false } : c));
-    courses = addCourseOption(base, option);
+    const added = applyResolvedCourseAdd(resolvedOne, courses ?? current.courses, current);
+    courses = added.courses;
+    resolvedNote = added.note;
+  }
 
-    const where = option.muni ? ` in ${option.muni}` : "";
-    const far =
-      option.distance != null
-        ? ` — ${option.distance < 10 ? option.distance.toFixed(1) : Math.round(option.distance)} mi away`
-        : "";
-    resolvedNote = `Found ${displayCourseName(resolvedOne.name)}${where}${far}.`;
+  // A3 — a single spoken name resolved to 2+ real candidates: ASK which one,
+  // holding them as pending page state instead of dispatching a guess. Empty
+  // candidates (defensive) keeps the old generic line and never sets pending.
+  let pendingClarify: PendingCourseClarify | null = null;
+  let expectReply = false;
+  let ambiguousAsk: string | null = null;
+  if (unresolvedNames.length === 1 && !resolvedOne && resolution?.kind === "ambiguous" && resolution.candidates.length > 0) {
+    ambiguousAsk = ambiguousAskLine(unresolvedNames[0], resolution.candidates);
+    pendingClarify = {
+      name: unresolvedNames[0],
+      candidates: resolution.candidates,
+      armed: parsed.windows.length > 0 || parsed.dispatch,
+      attempts: 0,
+    };
+    expectReply = true;
   }
 
   // A0 — stop the lie: a sentence that NAMES a course we can't place must never
@@ -201,7 +339,7 @@ export function planTeeTimeApply(
   // single resolution.
   const unresolvedNote =
     unresolvedNames.length > 0 && !resolvedOne
-      ? unresolvedCourseLine(unresolvedNames, resolution)
+      ? (ambiguousAsk ?? unresolvedCourseLine(unresolvedNames, resolution))
       : null;
 
   const dispatched =
@@ -220,7 +358,10 @@ export function planTeeTimeApply(
   const line =
     unresolvedNote ?? resolvedLine ?? courseMissNote ?? teeTimeAckLine(parsed) ?? "Got it.";
 
-  return { windows, courses, maxMiles, group, maxPriceUsd, line, dispatched };
+  return {
+    windows, courses, maxMiles, group, maxPriceUsd, line, dispatched,
+    pendingClarify, expectReply,
+  };
 }
 
 /**

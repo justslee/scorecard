@@ -465,6 +465,131 @@ describe("CaddieOrbSheet — reset-on-open only on closed→open", () => {
   });
 });
 
+describe("CaddieOrbSheet — A3: expectReply mic-reopen (fake timers)", () => {
+  // Dedicated beforeEach/afterEach scoped to THIS describe only — fake timers
+  // must never leak into the other describes in this shared file
+  // (tasks/lessons.md 2026-07-07, the CaddieSheet.session.test.tsx incident).
+
+  /** Drains pending microtasks (async continuations past a mocked `await`)
+   *  without ever touching a real timer — safe under `vi.useFakeTimers()`. */
+  async function flush(times = 8) {
+    for (let i = 0; i < times; i++) {
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+  }
+
+  /** A fake-timer-safe stand-in for the shared `speak()` helper (which uses
+   *  `waitFor`'s real-timer polling — unsafe once fake timers are active). */
+  async function speakFake(transcript: string) {
+    H.stopAndResolveFn.mockResolvedValueOnce(transcript);
+    fireEvent.click(screen.getByLabelText("Start talking"));
+    await flush();
+    fireEvent.click(screen.getByLabelText("Stop and send"));
+    await flush();
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  it("expectReply:true && dispatched:false → dictation.start() fires again ~900ms later while the sheet stays open", async () => {
+    const applySpy = vi.fn((): TaskAck => ({ line: "Which one?", dispatched: false, expectReply: true }));
+    registerTask({ apply: applySpy });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "tee-time", listening: false }));
+    await flush();
+
+    await speakFake("the brooklyn one");
+    await flush();
+    expect(screen.getByText("Which one?")).toBeTruthy();
+
+    const startsBefore = H.startFn.mock.calls.length;
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+    });
+    await flush();
+
+    expect(H.startFn.mock.calls.length).toBe(startsBefore + 1);
+  });
+
+  it("sheet closed BEFORE the 900ms beat → no restart (gen/open guard makes the race inert)", async () => {
+    const applySpy = vi.fn((): TaskAck => ({ line: "Which one?", dispatched: false, expectReply: true }));
+    registerTask({ apply: applySpy });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "tee-time", listening: false }));
+    await flush();
+
+    await speakFake("the brooklyn one");
+    await flush();
+
+    const startsBefore = H.startFn.mock.calls.length;
+    act(() => {
+      fireEvent.click(screen.getByLabelText("Close Looper"));
+    });
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+    });
+    await flush();
+
+    expect(H.startFn.mock.calls.length).toBe(startsBefore);
+  });
+
+  it("context unregistered BEFORE the 900ms beat (host's unmount hygiene closes the sheet) → no restart", async () => {
+    const applySpy = vi.fn((): TaskAck => ({ line: "Which one?", dispatched: false, expectReply: true }));
+    registerTask({ apply: applySpy });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "tee-time", listening: false }));
+    await flush();
+
+    await speakFake("the brooklyn one");
+    await flush();
+
+    const startsBefore = H.startFn.mock.calls.length;
+    act(() => cleanupCtx?.());
+    cleanupCtx = null;
+    await flush();
+
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+    });
+    await flush();
+
+    expect(H.startFn.mock.calls.length).toBe(startsBefore);
+  });
+
+  it("expectReply absent (undefined) → byte-identical to today: no reopen after the same 900ms window", async () => {
+    const applySpy = vi.fn((): TaskAck => ({ line: "Got it.", dispatched: false }));
+    registerTask({ apply: applySpy });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "tee-time", listening: false }));
+    await flush();
+
+    await speakFake("just some prefs");
+    await flush();
+
+    const startsBefore = H.startFn.mock.calls.length;
+    await act(async () => {
+      vi.advanceTimersByTime(900);
+    });
+    await flush();
+
+    expect(H.startFn.mock.calls.length).toBe(startsBefore);
+  });
+});
+
 describe("CaddieOrbSheet — no cross-page leakage guard", () => {
   it("getCaddieContext reflects the exclusive registry the host reads", () => {
     expect(getCaddieContext()).toBeNull();
