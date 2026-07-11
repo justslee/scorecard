@@ -12742,3 +12742,7 @@ grounding lane untouched, registry semantics unchanged, regression test genuine)
 rolling bundle PR #133 (integration/next → main; #132 already shipped so this is the fresh
 bundle's first item). CI strict-green on head: Frontend gates SUCCESS, Backend gate SUCCESS
 (E2E advisory non-required). S4 designer gap CLOSED. SILENT — no ship/ping (per task scope).
+
+## Cycle 82 (2026-07-11) — tournament leaderboard motion/haptics (owner-requested animations)
+- v1.1.0 shipped (orb milestone); #133 (My Card copy fix) strict-green awaiting next ship. No owner feedback yet.
+- AWAITING: eng-lead tournament-leaderboard-motion-haptics — FLIP leaderboard re-sort + overtake haptic + leader crossfade + tab pill + settlement-reveal stagger (audit opportunity list). Calm NORTHSTAR motion (serves clarity, not flash). Designer pass. Land on #133. NOTE: use TARGETED backlog.json edits, never json round-trip (dup keys).
