@@ -13482,3 +13482,22 @@ Lesson candidate: version must never sort below the last-shipped; VERSION file i
   test_voice_stream.py) for weakening — red-line check.
   SHIP + PASS -> update PR #134 checklist (NOTICEABLE), progress. BLOCKING -> re-dispatch builder.
   No designer (no visual change per plan §8). Do NOT ship/ping this cycle.
+
+## DONE (cycle 95) — caddie reachability shot-context landed on integration/next (NOTICEABLE)
+- Item: OWNER-FEEDBACK caddie bug. Out-of-reach par-4 tee shots now give LANDING-ZONE advice
+  (which side, driving-zone hazards only, leave-yardage), never pin-relative aim. Reachable
+  shots keep flag aim byte-identical. Root cause was aim_point.py calling compute_aim_point
+  unconditionally with no reachability concept — fixed via is_green_reachable branch.
+- Plan: specs/caddie-shot-context-reachability-plan.md (fable). Builder: 7b16ce6.
+- Reviewer: SHIP (reachable path byte-identical, no fabrication/flag-leak, boundaries correct,
+  2 test edits are legit terminal-rule re-points NOT weakenings).
+- QA: local PASS (ruff clean, 317 pytest, 278/278 voice, tsc+lint clean).
+- CI PR #134 head c13f907: Frontend gate SUCCESS + Backend gate SUCCESS (both required green;
+  E2E smoke advisory only). Verified head SHA matches origin/PR head.
+- No designer (no visual surface change per plan §8).
+- PR #134 checklist updated: item added as NOTICEABLE #2 in the bundle.
+- Residual risk: holes with no geometry/hazard data degrade to honest generic ("Middle of the
+  fairway; leaves about N in") — no fabricated hazard, and no leave when distance unknown
+  (distance is a required engine arg + gated upstream). Verified by T11 + reviewer trace.
+- Did NOT ship/ping this cycle (per brief — owner handles approval separately). Bundle #134
+  now has 2 noticeable items awaiting the owner's single "ship it".
