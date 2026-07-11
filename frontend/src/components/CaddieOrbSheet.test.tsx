@@ -211,10 +211,16 @@ describe("CaddieOrbSheet — gate (b): low confidence blocks dispatch", () => {
 
     render(<CaddieOrbSheet />);
     act(() => openLooper({ context: "tee-time", listening: false }));
+
+    // Regression guard (designer BLOCK, orb-s2): the sheet must greet with the
+    // TASK's own copy on the very first summon render — not the generic
+    // converse title. Reads `boundId` state, not the one-render-late ref.
+    expect(await screen.findByText("Where are we playing?")).toBeTruthy();
+
     await speak("saturday-ish ok");
 
     expect(
-      await screen.findByText("Here's what I got — Saturday-ish. Say it again to correct, or edit below."),
+      await screen.findByText("Here's what I got — Saturday-ish. Say it again to correct, or fix it in the form."),
     ).toBeTruthy();
     expect(ctx.apply).not.toHaveBeenCalled();
     expect(hapticMock).toHaveBeenCalledWith("warning");

@@ -268,7 +268,7 @@ export default function CaddieOrbSheet() {
         // GATE (b): confirm, don't act.
         appendTurn({
           role: "looper",
-          text: `Here's what I got — ${parse.ack}. Say it again to correct, or edit below.`,
+          text: `Here's what I got — ${parse.ack}. Say it again to correct, or fix it in the form.`,
         });
         haptic("warning");
         setThinking(false);
@@ -300,9 +300,19 @@ export default function CaddieOrbSheet() {
   const phase: LooperPhase =
     dictation.listening ? "listening" : thinking && streamingText == null ? "thinking" : "idle";
 
+  // Render-time task lookup MUST read the `boundId` STATE var, not
+  // `boundIdRef` — the ref is mirrored one render late (via effect), so on the
+  // batched setBoundId+setOpen summon render it is still stale and the sheet
+  // would flash the generic converse copy instead of the task's own greeting
+  // ("Where are we playing?"). `boundId` state is current in the render it is
+  // read in; the registry (`getCaddieContext`) is module state, also current.
+  // The ref-based `boundTaskCtx()` stays for the async/callback paths, where
+  // at least one render has passed so the ref is up to date.
   // A fall-through keeps the task title for the session (the sheet was
   // summoned on that page); boundId only resets on close/summon.
-  const activeTask = boundTaskCtx();
+  const activeCtx = getCaddieContext();
+  const activeTask: CaddieTaskContext | null =
+    boundId != null && activeCtx?.kind === "task" && activeCtx.id === boundId ? activeCtx : null;
 
   return (
     <LooperSheetShell
