@@ -6,19 +6,23 @@ import { roundHref } from "@/lib/round-url";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getTournamentAsync, getRoundsAsync } from "@/lib/storage-api";
-import { calculateTotals } from "@/lib/types";
 import type { Tournament, Round, Game } from "@/lib/types";
 import { computeTournamentSettlement, hasMoneyGames } from "@/lib/settlement";
 import { haptic } from "@/lib/haptics";
+import {
+  computeStandings,
+  sortStandings,
+  tieRankLabel,
+  formatToPar,
+  formatDate,
+  playerInitial,
+  suffix,
+  hasCrossing,
+  type LbMode,
+  type PlayerStanding,
+} from "@/lib/tournament-standings";
 
 type Tab = "leaderboard" | "rounds" | "games";
-type LbMode = "gross" | "toPar";
-
-// Yardage-book palette — warm ink tones, same as RoundPageClient
-const PLAYER_COLORS = [
-  "#1a2a1a", "#3a4a8a", "#6b3a1a", "#3a6a4a",
-  "#6a3a3a", "#6a6a3a", "#3a6a6a", "#5a3a6a",
-];
 
 // ── Leaderboard column layout (px) ─────────────────────────────────────────
 // Chosen so that 3 rounds fit without horizontal scrolling on a 390px iPhone
@@ -62,152 +66,11 @@ const settlementItemVariants = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: T.ease } },
 };
 
-// ── Player standing shape ───────────────────────────────────────────────────
-type PlayerStanding = {
-  playerId: string;
-  name: string;
-  initial: string;
-  color: string;
-  /** Total strokes per member round (null = player has no scores in that round). */
-  roundTotals: (number | null)[];
-  /** Score-to-par per member round (null = no scores). */
-  roundToPar: (number | null)[];
-  /** Sum of strokes across all rounds with scores (null if none). */
-  totalStrokes: number | null;
-  /** Sum of to-par across all rounds with scores (null if none). */
-  totalToPar: number | null;
-};
-
-// ── Pure helpers ────────────────────────────────────────────────────────────
-
-function playerInitial(name: string): string {
-  return (name.trim().charAt(0) || "?").toUpperCase();
-}
-
-function formatDate(isoString: string): string {
-  try {
-    return new Date(isoString).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return isoString.slice(0, 10);
-  }
-}
-
-/**
- * Compute per-player standings across member rounds.
- *
- * Player name resolution priority:
- *  1. playerNamesById (from backend — reflects the players table)
- *  2. round.players (authoritative per-round copy; covers guests not in the players table)
- *  3. playerId as last resort
- *
- * If tournament.playerIds is empty (pre-player-tracking data), union from round players.
- */
-function computeStandings(
-  playerIds: string[],
-  playerNames: Record<string, string>,
-  rounds: Round[]
-): PlayerStanding[] {
-  return playerIds.map((pid, idx) => {
-    const name = playerNames[pid] ?? pid;
-    const roundTotals: (number | null)[] = [];
-    const roundToPar: (number | null)[] = [];
-    let totalStrokes = 0;
-    let totalToPar = 0;
-    let hasSomeScore = false;
-
-    for (const r of rounds) {
-      const t = calculateTotals(r.scores, r.holes, pid);
-      if (t.playedHoles > 0) {
-        roundTotals.push(t.total);
-        roundToPar.push(t.toPar);
-        totalStrokes += t.total;
-        totalToPar += t.toPar;
-        hasSomeScore = true;
-      } else {
-        roundTotals.push(null);
-        roundToPar.push(null);
-      }
-    }
-
-    return {
-      playerId: pid,
-      name,
-      initial: playerInitial(name),
-      color: PLAYER_COLORS[idx % PLAYER_COLORS.length],
-      roundTotals,
-      roundToPar,
-      totalStrokes: hasSomeScore ? totalStrokes : null,
-      totalToPar: hasSomeScore ? totalToPar : null,
-    };
-  });
-}
-
-function formatToPar(v: number | null): string {
-  if (v === null) return "—";
-  if (v > 0) return `+${v}`;
-  if (v === 0) return "E";
-  return `${v}`;
-}
-
-/**
- * Tie-aware rank label for position idx in a sorted standings list.
- *
- * Returns "T1"/"T2" when multiple players share the same total;
- * plain "1"/"2" when the position is unique; "—" when the player has no scores.
- */
-function tieRankLabel(
-  sorted: PlayerStanding[],
-  idx: number,
-  mode: LbMode
-): string {
-  const s = sorted[idx];
-  const myTotal = mode === "gross" ? s.totalStrokes : s.totalToPar;
-  if (myTotal === null) return "—";
-
-  // Count players with a strictly better (lower) total
-  const betterCount = sorted.filter((other) => {
-    const ot = mode === "gross" ? other.totalStrokes : other.totalToPar;
-    return ot !== null && ot < myTotal;
-  }).length;
-
-  // Count players tied at the same total (including self)
-  const sameCount = sorted.filter((other) => {
-    const ot = mode === "gross" ? other.totalStrokes : other.totalToPar;
-    return ot === myTotal;
-  }).length;
-
-  const rank = betterCount + 1;
-  return sameCount > 1 ? `T${rank}` : `${rank}`;
-}
-
-function suffix(n: number): string {
-  if (n === 1) return "st";
-  if (n === 2) return "nd";
-  if (n === 3) return "rd";
-  return "th";
-}
-
-/**
- * True if any pair of players in `ids` has swapped relative order vs
- * `prevRank` — i.e. one player crossed another (an "overtake"), not just
- * a player entering/leaving the ranked set.
- */
-function hasCrossing(ids: string[], prevRank: Map<string, number>): boolean {
-  for (let i = 0; i < ids.length; i++) {
-    for (let j = i + 1; j < ids.length; j++) {
-      const aOld = prevRank.get(ids[i]);
-      const bOld = prevRank.get(ids[j]);
-      if (aOld !== undefined && bOld !== undefined && aOld > bOld) return true;
-    }
-  }
-  return false;
-}
-
 // ── Page ────────────────────────────────────────────────────────────────────
+// Pure standings/rank helpers (PlayerStanding, computeStandings, tieRankLabel,
+// formatToPar, formatDate, playerInitial, suffix, hasCrossing) live in
+// src/lib/tournament-standings.ts so vitest can import them without pulling
+// in framer-motion — see the import block above.
 
 export default function TournamentPageClient() {
   const router = useRouter();
@@ -272,6 +135,19 @@ export default function TournamentPageClient() {
             ...(t.playerNamesById ?? {}),
           };
 
+          // Resolve per-player handicap the same way as names: first defined
+          // `handicap` found on a round-player record for that id. Only
+          // round.players[].handicap is used (see tournament-standings.ts
+          // header) — never estimateHandicapFromRounds (owner-only).
+          const playerHandicaps: Record<string, number> = {};
+          for (const r of members) {
+            for (const p of r.players) {
+              if (playerHandicaps[p.id] === undefined && p.handicap !== undefined) {
+                playerHandicaps[p.id] = p.handicap;
+              }
+            }
+          }
+
           // If tournament has no explicit playerIds, union from member rounds.
           const effectivePlayerIds =
             t.playerIds.length > 0
@@ -281,7 +157,12 @@ export default function TournamentPageClient() {
                 );
 
           setStandings(
-            computeStandings(effectivePlayerIds, resolvedNames, members)
+            computeStandings(
+              effectivePlayerIds,
+              resolvedNames,
+              playerHandicaps,
+              members
+            )
           );
         }
       } catch (e) {
@@ -298,18 +179,7 @@ export default function TournamentPageClient() {
   // Sort standings: nulls last, then ascending by selected mode.
   // Hoisted above the loading/not-found early returns so the haptics effects
   // below (which depend on it) can be declared unconditionally per hook rules.
-  const sortedStandings = [...standings].sort((a, b) => {
-    if (lbMode === "gross") {
-      if (a.totalStrokes === null && b.totalStrokes === null) return 0;
-      if (a.totalStrokes === null) return 1;
-      if (b.totalStrokes === null) return -1;
-      return a.totalStrokes - b.totalStrokes;
-    }
-    if (a.totalToPar === null && b.totalToPar === null) return 0;
-    if (a.totalToPar === null) return 1;
-    if (b.totalToPar === null) return -1;
-    return a.totalToPar - b.totalToPar;
-  });
+  const sortedStandings = sortStandings(standings, lbMode);
   const leader = sortedStandings[0] ?? null;
   const orderSignature = sortedStandings.map((s) => s.playerId).join(",");
   const leaderId = leader?.playerId ?? null;
@@ -764,7 +634,11 @@ export default function TournamentPageClient() {
                   color: T.paperMid,
                 }}
               >
-                {lbMode === "gross" ? "STROKES" : "TO PAR"}
+                {lbMode === "gross"
+                  ? "STROKES"
+                  : lbMode === "toPar"
+                  ? "TO PAR"
+                  : "NET"}
               </div>
               <div
                 style={{
@@ -776,7 +650,9 @@ export default function TournamentPageClient() {
               >
                 {lbMode === "gross"
                   ? leader.totalStrokes
-                  : formatToPar(leader.totalToPar)}
+                  : lbMode === "toPar"
+                  ? formatToPar(leader.totalToPar)
+                  : leader.totalNet ?? "—"}
               </div>
             </div>
           </div>
@@ -841,6 +717,7 @@ export default function TournamentPageClient() {
                 [
                   { k: "gross" as LbMode, l: "Gross" },
                   { k: "toPar" as LbMode, l: "To Par" },
+                  { k: "net" as LbMode, l: "Net" },
                 ] as { k: LbMode; l: string }[]
               ).map((m) => (
                 <button
@@ -978,10 +855,21 @@ export default function TournamentPageClient() {
                 {/* Body rows */}
                 {sortedStandings.map((s, idx) => {
                   const perRound =
-                    lbMode === "gross" ? s.roundTotals : s.roundToPar;
+                    lbMode === "gross"
+                      ? s.roundTotals
+                      : lbMode === "toPar"
+                      ? s.roundToPar
+                      : s.roundNet;
                   const total =
-                    lbMode === "gross" ? s.totalStrokes : s.totalToPar;
-                  const ranked = s.totalStrokes !== null;
+                    lbMode === "gross"
+                      ? s.totalStrokes
+                      : lbMode === "toPar"
+                      ? s.totalToPar
+                      : s.totalNet;
+                  // Ranked status per the active mode — net mode is unranked
+                  // (rank label "—") for a player with no handicap, even if
+                  // they have gross/toPar scores.
+                  const ranked = total !== null;
                   // Fix #5: tie-aware rank label ("T1"/"T2" for ties)
                   const rankLabel = tieRankLabel(sortedStandings, idx, lbMode);
 
@@ -1057,18 +945,40 @@ export default function TournamentPageClient() {
                         >
                           {s.initial}
                         </div>
-                        <div
-                          style={{
-                            fontFamily: T.sans,
-                            fontSize: 13,
-                            fontWeight: 500,
-                            color: T.ink,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {s.name}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontFamily: T.sans,
+                              fontSize: 13,
+                              fontWeight: 500,
+                              color: T.ink,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {s.name}
+                          </div>
+                          {lbMode === "net" && (
+                            // Subtle HCP indicator — only in Net mode, so a
+                            // "—" total reads as "no handicap" rather than
+                            // "no score". Calm/minimal per the yardage-book
+                            // feel: tiny mono caption, no chip/badge chrome.
+                            <div
+                              style={{
+                                fontFamily: T.mono,
+                                fontSize: 8,
+                                letterSpacing: 0.8,
+                                color: T.pencilSoft,
+                                marginTop: 1,
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              {s.handicap !== null
+                                ? `Hcp ${s.handicap}`
+                                : "No hcp"}
+                            </div>
+                          )}
                         </div>
                       </div>
 
