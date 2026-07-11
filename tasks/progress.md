@@ -13261,3 +13261,7 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 - QA: ruff clean, 69/69 DB-free pytest (routing+selection+router), Marine-Park honest-distance test passes, backend-only diff confirmed. CI on PR #133: Backend gate SUCCESS + Frontend gate SUCCESS on head; E2E smoke is advisory (non-required).
 - SILENT slice (backend-only; no app-visible change on its own — A2 voice resolution is the slice that makes the app search the RIGHT named course and completes the fix). NOT pinging owner per task. Rides bundle #133. PR #133 checklist + backlog a1_status updated.
 - NEXT: A2 (frontend voice resolution — resolve the spoken name → course via the unified search, single-hit auto-add+select, honest widen), then A3 (clarify turn), B1-B3 (map search).
+
+## Cycle 92 (2026-07-11) — course-selection A2 (voice resolution — closes the Marine Park bug)
+- Yardage P0 DONE+green. Marine Park A0 (stop-lie) + A1 (backend selector-centered discovery) DONE+green.
+- AWAITING: eng-lead course-selection A2 — new course-resolve.ts on searchAllCourses; a spoken unresolved course name (unresolvedCourseNames) resolves via the ONE unified search: single dominant hit → auto-add+select+deselect-GPS-preselects+honest-distance-widen, then dispatch the RIGHT search (Brooklyn from Pittsburgh); "none" → honest no-dispatch line. (A3 clarify for ambiguous = follow-up.) Frontend, async parse, timeout-bounded. Plan §A.2.2/§A.2.3. Land on #133.
