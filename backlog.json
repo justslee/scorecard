@@ -9,8 +9,8 @@
       "priority": 3,
       "risk": "low",
       "status": "done-on-bundle",
-      "why": "Cycle-84 orb-wiring audit latent note: /courses/[id] hid the orb but specs/omnipresent-caddie-orb-plan.md §1 lists /courses(/*) as SHOW and the owner directive is 'omnipresent... everywhere it belongs.' Simply showing it would hit the legacy-courses-floor guard (dead mic), so this needed BOTH: show it AND scope that guard to the list page. General converse is the honest default on a detail page (no bespoke task context this slice).",
-      "resolution": "shipped-to-bundle (integration/next, PR #133). NOTICEABLE — orb now visible + usable on /courses/[id]. Cycle 85 (2026-07-11). Closes the ONLY real gap the cycle-84 orb-wiring audit found (detail pages hid the orb; plan §1 lists /courses(/*) as SHOW). FIX (Option B — scope via the context SIGNAL, no pathname coupling in the host): looperContextForPath (looper-bus.ts) scopes context 'courses' to the LIST route only (/courses, trailing-slash tolerant); /courses/[id] → 'general', so the host's legacy-courses-floor guard (CaddieOrbSheet.tsx:127, unchanged code — comment only) now only ever fires on the list page and a detail-page orb falls through to the general converse sheet (ask the caddie anything incl. about this course) — NOT a dead mic. shouldShowCaddieOrb adds /courses/ to SHOW_PREFIXES. Designer BLOCKER folded: bumped CourseDetailClient.tsx bottom padding 32px→88px (the established /players + /profile orb-clearance pattern) so the fixed orb clears the in-flow 'Start a round here' CTA (screenshot-verified no overlap). NO bespoke course-detail task context this cycle (deferred follow-up if warranted). Commits @5a29ebb (feature) + @f0c0ae4 (clearance). Reviewer: SHIP (correct, in-scope, 48/48 tests, dead-mic regression test proven meaningful, no double-mic, no weakened tests). Designer: PASS after the padding fix. Gates green on head: lint clean, tsc 0, voice 277/277, vitest 2055/2055, build ok. Backend untouched. SILENT — no ship/ping; rides bundle #133."
+      "why": "Cycle-84 orb-wiring audit latent note: /courses/[id] hid the orb but specs/omnipresent-caddie-orb-plan.md \u00a71 lists /courses(/*) as SHOW and the owner directive is 'omnipresent... everywhere it belongs.' Simply showing it would hit the legacy-courses-floor guard (dead mic), so this needed BOTH: show it AND scope that guard to the list page. General converse is the honest default on a detail page (no bespoke task context this slice).",
+      "resolution": "shipped-to-bundle (integration/next, PR #133). NOTICEABLE \u2014 orb now visible + usable on /courses/[id]. Cycle 85 (2026-07-11). Closes the ONLY real gap the cycle-84 orb-wiring audit found (detail pages hid the orb; plan \u00a71 lists /courses(/*) as SHOW). FIX (Option B \u2014 scope via the context SIGNAL, no pathname coupling in the host): looperContextForPath (looper-bus.ts) scopes context 'courses' to the LIST route only (/courses, trailing-slash tolerant); /courses/[id] \u2192 'general', so the host's legacy-courses-floor guard (CaddieOrbSheet.tsx:127, unchanged code \u2014 comment only) now only ever fires on the list page and a detail-page orb falls through to the general converse sheet (ask the caddie anything incl. about this course) \u2014 NOT a dead mic. shouldShowCaddieOrb adds /courses/ to SHOW_PREFIXES. Designer BLOCKER folded: bumped CourseDetailClient.tsx bottom padding 32px\u219288px (the established /players + /profile orb-clearance pattern) so the fixed orb clears the in-flow 'Start a round here' CTA (screenshot-verified no overlap). NO bespoke course-detail task context this cycle (deferred follow-up if warranted). Commits @5a29ebb (feature) + @f0c0ae4 (clearance). Reviewer: SHIP (correct, in-scope, 48/48 tests, dead-mic regression test proven meaningful, no double-mic, no weakened tests). Designer: PASS after the padding fix. Gates green on head: lint clean, tsc 0, voice 277/277, vitest 2055/2055, build ok. Backend untouched. SILENT \u2014 no ship/ping; rides bundle #133."
     },
     {
       "id": "orb-s5-polish",
@@ -22,17 +22,17 @@
       "depends_on": [
         "orb-s2-context-contract-teetime"
       ],
-      "why": "Orb epic S5 (§6). Orb idle/listening/thinking/confirming motion+haptics tuning (framer-motion T.springSoft, lib/haptics — no new motion language); voiceEvent telemetry on orb summon/task-dispatch/fall-through (measures discoverability risk); per-page bottom-inset audit (orb vs page CTAs); copy pass. Designer."
+      "why": "Orb epic S5 (\u00a76). Orb idle/listening/thinking/confirming motion+haptics tuning (framer-motion T.springSoft, lib/haptics \u2014 no new motion language); voiceEvent telemetry on orb summon/task-dispatch/fall-through (measures discoverability risk); per-page bottom-inset audit (orb vs page CTAs); copy pass. Designer."
     },
     {
       "id": "omnipresent-caddie-orb",
-      "title": "EPIC: omnipresent context-aware caddie orb (THE CRUX) — replaces center-nav orb",
+      "title": "EPIC: omnipresent context-aware caddie orb (THE CRUX) \u2014 replaces center-nav orb",
       "type": "epic",
       "priority": 0,
       "risk": "high",
       "status": "planning",
       "depends_on": [],
-      "why": "OWNER 2026-07-10 (verbatim: 'That is the CRUX of this app... highest priority'): kill the center-nav orb; ONE omnipresent floating orb across all relevant pages, SAME location everywhere, CADDIE icon (not mic). Round-page floating pill STAYS. Orb is CONTEXT-AWARE per page: tee-time → listens days/where/who and DISPATCHES the search; start round → voice round setup; start tournament → voice tournament setup (the stranded parse layer from the audit gets wired HERE); My Card → stats Q&A / what-to-work-on coaching. Fable plan first (specs/omnipresent-caddie-orb-plan.md), then sequenced slices. Supersedes floating-island-tab-nav placement; keeps its one-invocation rule."
+      "why": "OWNER 2026-07-10 (verbatim: 'That is the CRUX of this app... highest priority'): kill the center-nav orb; ONE omnipresent floating orb across all relevant pages, SAME location everywhere, CADDIE icon (not mic). Round-page floating pill STAYS. Orb is CONTEXT-AWARE per page: tee-time \u2192 listens days/where/who and DISPATCHES the search; start round \u2192 voice round setup; start tournament \u2192 voice tournament setup (the stranded parse layer from the audit gets wired HERE); My Card \u2192 stats Q&A / what-to-work-on coaching. Fable plan first (specs/omnipresent-caddie-orb-plan.md), then sequenced slices. Supersedes floating-island-tab-nav placement; keeps its one-invocation rule."
     },
     {
       "id": "tournament-live-tracking",
@@ -42,7 +42,7 @@
       "risk": "high",
       "status": "ready",
       "depends_on": [],
-      "why": "AUDIT: NO live tracking — useEffect([id]) loads once; REST+localStorage only; two phones don't see each other's scores without reload. Largest lift: polling or SSE so standings update live. Backend + staging-testable → owner-ping-worthy when ready."
+      "why": "AUDIT: NO live tracking \u2014 useEffect([id]) loads once; REST+localStorage only; two phones don't see each other's scores without reload. Largest lift: polling or SSE so standings update live. Backend + staging-testable \u2192 owner-ping-worthy when ready."
     },
     {
       "id": "tournament-per-round-format-course",
@@ -52,7 +52,7 @@
       "risk": "medium",
       "status": "ready",
       "depends_on": [],
-      "why": "AUDIT: setup collects only a round COUNT; Tournament schema (models.py:182, db/models.py:263) has no per-round course/format fields. Extend setup to configure N rounds each with course+format; add schema fields (+ Alembic migration — guarded). Backend + frontend."
+      "why": "AUDIT: setup collects only a round COUNT; Tournament schema (models.py:182, db/models.py:263) has no per-round course/format fields. Extend setup to configure N rounds each with course+format; add schema fields (+ Alembic migration \u2014 guarded). Backend + frontend."
     },
     {
       "id": "tournament-net-handicap-leaderboard",
@@ -62,7 +62,7 @@
       "risk": "low",
       "status": "done-on-bundle",
       "depends_on": [],
-      "why": "AUDIT: computeStandings (TournamentPageClient.tsx:96-134) is GROSS strokes only — no handicaps, no games/format factored. Add a Net mode (alongside Gross/To-Par) using player handicaps. User-facing."
+      "why": "AUDIT: computeStandings (TournamentPageClient.tsx:96-134) is GROSS strokes only \u2014 no handicaps, no games/format factored. Add a Net mode (alongside Gross/To-Par) using player handicaps. User-facing."
     },
     {
       "id": "tournament-leaderboard-motion-haptics",
@@ -72,18 +72,18 @@
       "risk": "low",
       "status": "done-on-bundle",
       "depends_on": [],
-      "why": "AUDIT: ZERO framer-motion/haptics in all 3 tournament screens (owner explicitly asked where to add). Opportunities: FLIP layout re-sort of leaderboard rows on standings change (haptic light on moved row); leader crossfade+haptic success on new leader; overtake underline sweep+haptic medium; tab-bar layoutId pill slide+selection haptic; round active→final stamp; settlement reveal stagger. Designer pass (NORTHSTAR calm — motion serves clarity, not flash). Files: TournamentPageClient.tsx.",
+      "why": "AUDIT: ZERO framer-motion/haptics in all 3 tournament screens (owner explicitly asked where to add). Opportunities: FLIP layout re-sort of leaderboard rows on standings change (haptic light on moved row); leader crossfade+haptic success on new leader; overtake underline sweep+haptic medium; tab-bar layoutId pill slide+selection haptic; round active\u2192final stamp; settlement reveal stagger. Designer pass (NORTHSTAR calm \u2014 motion serves clarity, not flash). Files: TournamentPageClient.tsx.",
       "resolution": "done-on-bundle-133 (motion+haptics landed 32c0ab8; strict-green)"
     },
     {
       "id": "teetime-availability-everywhere",
-      "title": "Fetch real tee-time availability for EVERY course (API → scrape → AI-call ladder)",
+      "title": "Fetch real tee-time availability for EVERY course (API \u2192 scrape \u2192 AI-call ladder)",
       "type": "epic",
       "priority": 1,
       "risk": "high",
       "status": "planning",
       "depends_on": [],
-      "why": "PLAN: specs/teetime-availability-everywhere-plan.md (Fable). KEY FINDING: Marine Park was NEVER phone-only — its site links a live EZLinks online-booking portal; the dead-end was a capability-DETECTION gap (we only know foreUP), not missing data. Ladder = 4 rungs: API → widget-XHR replay → headless render → AI-call → honest-empty. Sequenced S4a-S4f below. Most of the epic is engine-adapter breadth + per-course capability detection, NOT exotic scraping. OWNER DIRECTIVE 2026-07-10 (screenshot, Marine Park 'No online booking — call the pro shop'): showing a bare phone number is NOT good enough. Every course MUST return real availability in SOME form. Ladder: (1) clean booking-engine API where one exists (foreUP live; EVALUATE adding Chronogolf/Lightspeed/GolfNow-EZLinks/TeeItUp APIs), (2) WEB SCRAPE the rendered availability widget where no clean JSON API exists, (3) AI phone-call the pro shop (PR #124 caller) as the final fallback for phone-only courses. Owner explicitly OK with building a scraper if it's the best per-course option. PLAN FIRST on Fable (per fable-for-plan-agents): per-engine option eval, scraping feasibility+ToS/legal+infra (headless browser for JS-rendered widgets), caching (GolfAPI-style budget discipline), integration with the reachability router."
+      "why": "PLAN: specs/teetime-availability-everywhere-plan.md (Fable). KEY FINDING: Marine Park was NEVER phone-only \u2014 its site links a live EZLinks online-booking portal; the dead-end was a capability-DETECTION gap (we only know foreUP), not missing data. Ladder = 4 rungs: API \u2192 widget-XHR replay \u2192 headless render \u2192 AI-call \u2192 honest-empty. Sequenced S4a-S4f below. Most of the epic is engine-adapter breadth + per-course capability detection, NOT exotic scraping. OWNER DIRECTIVE 2026-07-10 (screenshot, Marine Park 'No online booking \u2014 call the pro shop'): showing a bare phone number is NOT good enough. Every course MUST return real availability in SOME form. Ladder: (1) clean booking-engine API where one exists (foreUP live; EVALUATE adding Chronogolf/Lightspeed/GolfNow-EZLinks/TeeItUp APIs), (2) WEB SCRAPE the rendered availability widget where no clean JSON API exists, (3) AI phone-call the pro shop (PR #124 caller) as the final fallback for phone-only courses. Owner explicitly OK with building a scraper if it's the best per-course option. PLAN FIRST on Fable (per fable-for-plan-agents): per-engine option eval, scraping feasibility+ToS/legal+infra (headless browser for JS-rendered widgets), caching (GolfAPI-style budget discipline), integration with the reachability router."
     },
     {
       "id": "caddie-cascaded-stt-spike",
@@ -93,7 +93,7 @@
       "risk": "high",
       "status": "blocked",
       "depends_on": [],
-      "why": "SPIKE DONE (PR #126, FEASIBLE conditional-go, hybrid Option C recommended). BLOCKED on the go/no-go latency read: prod has ~0 usable eos_to_first_audio data (iOS telemetry drop). Unblock via voicetel-timing-immediate-flush, then read caddie-turn vs caddie-rt p90; <1.5-2s delta -> build hybrid, 3s+ -> stay put (vocab-bias+input-grounding already shipped may be enough). Confidence-gate code ready behind a flag in #126. OWNER 2026-07-09 (reliability): the SOTA reliability architecture — route the live transcript through our own Deepgram nova-3 (already used for the sheet WITH keyterms), gate on confidence, THEN the caddie responds to TEXT ('treat speech as rendering not reasoning' — our own agent-architecture study). Garbled input caught BEFORE a reply. Trades some latency for reliability+observability vs the current speech-to-speech. Spike: measure the latency delta + reliability gain on real outdoor audio. specs/voice-transcription-reliability-research.md. Fable plan."
+      "why": "SPIKE DONE (PR #126, FEASIBLE conditional-go, hybrid Option C recommended). BLOCKED on the go/no-go latency read: prod has ~0 usable eos_to_first_audio data (iOS telemetry drop). Unblock via voicetel-timing-immediate-flush, then read caddie-turn vs caddie-rt p90; <1.5-2s delta -> build hybrid, 3s+ -> stay put (vocab-bias+input-grounding already shipped may be enough). Confidence-gate code ready behind a flag in #126. OWNER 2026-07-09 (reliability): the SOTA reliability architecture \u2014 route the live transcript through our own Deepgram nova-3 (already used for the sheet WITH keyterms), gate on confidence, THEN the caddie responds to TEXT ('treat speech as rendering not reasoning' \u2014 our own agent-architecture study). Garbled input caught BEFORE a reply. Trades some latency for reliability+observability vs the current speech-to-speech. Spike: measure the latency delta + reliability gain on real outdoor audio. specs/voice-transcription-reliability-research.md. Fable plan."
     },
     {
       "id": "voice-target-speaker-enrollment-spike",
@@ -103,7 +103,7 @@
       "risk": "high",
       "status": "planning",
       "depends_on": [],
-      "why": "SPIKE DONE (PR #127): Tier-1 mic constraints (echoCancel/noiseSuppress/autoGain + backend near_field) ALREADY SHIPPED (~70% of the value, no code win left). Tier-2 TSVAD = FEASIBLE/medium as a NATIVE Core ML Capacitor plugin (WKWebView can't do threaded WASM); Personal-VAD arch, named pretrained models; pure tested SpeakerGate core committed unwired. GO when prioritized (sequence after voice-reliability). Tier-3 VoiceFilter = defer. OWNER 2026-07-09 (hands-free + only-owner's-voice): the real answer is a one-time voice ENROLLMENT (~5-10s -> speaker embedding) + a Target-Speaker VAD gate that opens the mic-to-model only when the enrolled owner speaks — rejects partners without breaking hands-free. Spike: which on-device (Core ML) TSVAD/speaker-embedding model, latency budget vs the realtime speech-to-speech path (preprocessing fights sub-second latency — on-device is the sweet spot), enrollment UX. NOT train-from-scratch (pretrained models exist). Full VoiceFilter extraction only if TSVAD gating insufficient. Fable plan. specs/voice-target-speaker-research.md."
+      "why": "SPIKE DONE (PR #127): Tier-1 mic constraints (echoCancel/noiseSuppress/autoGain + backend near_field) ALREADY SHIPPED (~70% of the value, no code win left). Tier-2 TSVAD = FEASIBLE/medium as a NATIVE Core ML Capacitor plugin (WKWebView can't do threaded WASM); Personal-VAD arch, named pretrained models; pure tested SpeakerGate core committed unwired. GO when prioritized (sequence after voice-reliability). Tier-3 VoiceFilter = defer. OWNER 2026-07-09 (hands-free + only-owner's-voice): the real answer is a one-time voice ENROLLMENT (~5-10s -> speaker embedding) + a Target-Speaker VAD gate that opens the mic-to-model only when the enrolled owner speaks \u2014 rejects partners without breaking hands-free. Spike: which on-device (Core ML) TSVAD/speaker-embedding model, latency budget vs the realtime speech-to-speech path (preprocessing fights sub-second latency \u2014 on-device is the sweet spot), enrollment UX. NOT train-from-scratch (pretrained models exist). Full VoiceFilter extraction only if TSVAD gating insufficient. Fable plan. specs/voice-target-speaker-research.md."
     },
     {
       "id": "fcb-header-tile-drift-clamp",
@@ -112,8 +112,8 @@
       "priority": 3,
       "risk": "low",
       "status": "needs-owner-input",
-      "note": "Designer watch-item from multi-tee (c682f7f): in the NORMAL non-card-only state, header prefers cardYards exactly while the Center tile prefers anchored geometry center — a golfer can still see e.g. 178y header next to a 181 tile. Honest (real GPS vs scorecard differ a couple yards) and the 'from the tee' caption explains it, but two stacked near-equal numbers is the pattern the owner flagged. Add a '<=X yd, don't render both' clamp or a quiet designer note. Not a bug; polish.",
-      "why": "SCOPED 2026-07-10 — NOT a clean bug, a DESIGN QUESTION (do not autonomously build). Header shows cardYards (scorecard hole length from the selected tee, RoundPageClient ~1194); Center tile shows fcbFromTee.center (straight-line tee→green geometry). On a from-tee non-live hole these differ by design — on a dogleg the card follows the fairway while geometry is straight-line, so a small 'drift' is EXPECTED and arguably correct. A 'clamp' that snaps the tile to the card would HIDE the real straight-line-to-green number (useful info). Needs owner/designer call: (a) is the drift actually confusing on-device (validate on a real TestFlight screenshot — the multi-tee anchor fix already resolved the phantom 178/232 case), (b) if so, prefer a caption/label clarification over clamping the number. Deferred pending that decision."
+      "note": "Designer watch-item from multi-tee (c682f7f): in the NORMAL non-card-only state, header prefers cardYards exactly while the Center tile prefers anchored geometry center \u2014 a golfer can still see e.g. 178y header next to a 181 tile. Honest (real GPS vs scorecard differ a couple yards) and the 'from the tee' caption explains it, but two stacked near-equal numbers is the pattern the owner flagged. Add a '<=X yd, don't render both' clamp or a quiet designer note. Not a bug; polish.",
+      "why": "SCOPED 2026-07-10 \u2014 NOT a clean bug, a DESIGN QUESTION (do not autonomously build). Header shows cardYards (scorecard hole length from the selected tee, RoundPageClient ~1194); Center tile shows fcbFromTee.center (straight-line tee\u2192green geometry). On a from-tee non-live hole these differ by design \u2014 on a dogleg the card follows the fairway while geometry is straight-line, so a small 'drift' is EXPECTED and arguably correct. A 'clamp' that snaps the tile to the card would HIDE the real straight-line-to-green number (useful info). Needs owner/designer call: (a) is the drift actually confusing on-device (validate on a real TestFlight screenshot \u2014 the multi-tee anchor fix already resolved the phantom 178/232 case), (b) if so, prefer a caption/label clarification over clamping the number. Deferred pending that decision."
     },
     {
       "id": "teetime-partnership-applications",
@@ -123,29 +123,29 @@
       "risk": "low",
       "status": "blocked",
       "depends_on": [],
-      "why": "OWNER-ACTION (parallel, free): apply to GolfNow affiliate (affiliate.gnsvc.com / business-partnership form), Supreme Golf affiliate, and foreUP's vendor API program. Any approval upgrades Route 1 from scraping to sanctioned API. Blocked on the owner submitting the forms (needs a business identity/positioning) — the agent can draft the applications but the owner sends them."
+      "why": "OWNER-ACTION (parallel, free): apply to GolfNow affiliate (affiliate.gnsvc.com / business-partnership form), Supreme Golf affiliate, and foreUP's vendor API program. Any approval upgrades Route 1 from scraping to sanctioned API. Blocked on the owner submitting the forms (needs a business identity/positioning) \u2014 the agent can draft the applications but the owner sends them."
     },
     {
       "id": "bethpage-7-11-geometry-audit",
-      "title": "Bethpage 7/11 guide-validation conflict: DIAGNOSED — carry-tolerance vs bunker footprint (decision needed)",
+      "title": "Bethpage 7/11 guide-validation conflict: DIAGNOSED \u2014 carry-tolerance vs bunker footprint (decision needed)",
       "type": "minor",
       "priority": 2,
       "risk": "medium",
       "status": "needs-owner-input",
       "depends_on": [],
-      "why": "INVESTIGATION 2026-07-09 (cycle 39, OFFLINE from committed fixture tests/fixtures/bethpage_overpass.json — same data prod ingested; no prod SSM needed). Holes 7 & 11 were persistently honest-empty (research ~4x each fails validate_guide). ROOT CAUSE = (c) validator over-strict, NOT (a) geometry or (b) OSM. EVIDENCE: (a) ruled out — extract_hole_hazards gives correct sides/carries matching reality: hole 7 par-5 dogleg-right (polyline 346->36->55deg) bunkers R 170/430/520 + L 355/525; hole 11 par-4 bunkers both sides L 245/415 R 270/325/420. All normal/correct non-numbered guide phrasings PASS the validator. (b) ruled out on-hole — 7/11 have ONLY bunkers, nearest water 395-431y OFF the played line (not in play); a water/OB mention is therefore a CORRECT rejection (OSM has no 'ob' polygon type so any OB phrase always rejects — expected). (c) CONFIRMED + reproduced: _side_and_carry_supported() checks a claimed carry vs each bunker's CENTROID +-25y, but Bethpage bunkers are large — hole 7's right cross-bunker centroid=170y actually SPANS 103-280y (178y wide). A web-researched guide naturally citing any carry in the real footprint (220/240/250/260) but >25y from centroid -> WHOLE guide REJECTED (demonstrated: all four reject). That is why grounded, reasonable numbered advice keeps failing = the persistence pattern. DECISION NEEDED (genuine product/risk call, not an obvious fix): (c1) widen the carry check to the bunker's surveyed near->far carry SPAN (recovers guides on big-bunker holes) — but this loosens the grounding/anti-laundering control that had a bypass closed just days ago (5e4b861 carry-tie-break laundering), so it REQUIRES the full adversarial treatment: Fable plan + eval-harness teeth (each new accept-case proven RED pre-fix) + adversarial review proving no false number laundering re-opens; vs (c2) accept status quo — honest-empty is SAFE and correct (caddie falls back to the grounded generic hazard line); large-bunker holes simply get no cached prose guide. Recommend (c1) as a properly-reviewed future build item IF cached guides on such holes are wanted; otherwise close as working-as-designed. Optional confirmation: an on-box research pass capturing the exact rejected text would pin which number/phrase fired in prod, but the local reproduction already demonstrates the mechanism — not worth an unattended prod SSM action. FILES: backend/app/caddie/guide_writer.py (_side_and_carry_supported, _has_side_flip, _CARRY_TOLERANCE_YARDS=25); backend/app/caddie/hazards.py (extract_hole_hazards, centroid-based carry). FORBIDDEN to inline-fix per tasks/lessons.md (geometry/validation change without full adversarial treatment).",
-      "resolution": "diagnosed — decision needed (do NOT inline-fix: validator is the anti-injection/grounding control)"
+      "why": "INVESTIGATION 2026-07-09 (cycle 39, OFFLINE from committed fixture tests/fixtures/bethpage_overpass.json \u2014 same data prod ingested; no prod SSM needed). Holes 7 & 11 were persistently honest-empty (research ~4x each fails validate_guide). ROOT CAUSE = (c) validator over-strict, NOT (a) geometry or (b) OSM. EVIDENCE: (a) ruled out \u2014 extract_hole_hazards gives correct sides/carries matching reality: hole 7 par-5 dogleg-right (polyline 346->36->55deg) bunkers R 170/430/520 + L 355/525; hole 11 par-4 bunkers both sides L 245/415 R 270/325/420. All normal/correct non-numbered guide phrasings PASS the validator. (b) ruled out on-hole \u2014 7/11 have ONLY bunkers, nearest water 395-431y OFF the played line (not in play); a water/OB mention is therefore a CORRECT rejection (OSM has no 'ob' polygon type so any OB phrase always rejects \u2014 expected). (c) CONFIRMED + reproduced: _side_and_carry_supported() checks a claimed carry vs each bunker's CENTROID +-25y, but Bethpage bunkers are large \u2014 hole 7's right cross-bunker centroid=170y actually SPANS 103-280y (178y wide). A web-researched guide naturally citing any carry in the real footprint (220/240/250/260) but >25y from centroid -> WHOLE guide REJECTED (demonstrated: all four reject). That is why grounded, reasonable numbered advice keeps failing = the persistence pattern. DECISION NEEDED (genuine product/risk call, not an obvious fix): (c1) widen the carry check to the bunker's surveyed near->far carry SPAN (recovers guides on big-bunker holes) \u2014 but this loosens the grounding/anti-laundering control that had a bypass closed just days ago (5e4b861 carry-tie-break laundering), so it REQUIRES the full adversarial treatment: Fable plan + eval-harness teeth (each new accept-case proven RED pre-fix) + adversarial review proving no false number laundering re-opens; vs (c2) accept status quo \u2014 honest-empty is SAFE and correct (caddie falls back to the grounded generic hazard line); large-bunker holes simply get no cached prose guide. Recommend (c1) as a properly-reviewed future build item IF cached guides on such holes are wanted; otherwise close as working-as-designed. Optional confirmation: an on-box research pass capturing the exact rejected text would pin which number/phrase fired in prod, but the local reproduction already demonstrates the mechanism \u2014 not worth an unattended prod SSM action. FILES: backend/app/caddie/guide_writer.py (_side_and_carry_supported, _has_side_flip, _CARRY_TOLERANCE_YARDS=25); backend/app/caddie/hazards.py (extract_hole_hazards, centroid-based carry). FORBIDDEN to inline-fix per tasks/lessons.md (geometry/validation change without full adversarial treatment).",
+      "resolution": "diagnosed \u2014 decision needed (do NOT inline-fix: validator is the anti-injection/grounding control)"
     },
     {
       "id": "fcb-line-vs-card-hint",
-      "title": "PLAYS/Center 'line vs card' dogleg hint (HELD — designer leans no)",
+      "title": "PLAYS/Center 'line vs card' dogleg hint (HELD \u2014 designer leans no)",
       "type": "minor",
       "priority": 3,
       "risk": "low",
       "status": "deferred",
       "depends_on": [],
       "spec": "specs/fcb-caption-visibility-plan.md",
-      "why": "Plan §4.5 (line-vs-card hint) built as a pure tested helper (lineVsCardHint in fcb-labels.ts) but intentionally NOT rendered. Designer recommendation (2026-07-08): DON'T add it as spec'd — the card already carries 7 microlabels and a second explanatory tag tips it toward annotated-dashboard (NORTHSTAR risk). If ever revisited, the comparison base MUST change: compare fcb.center to hole.yards (the real scorecard number), NOT the derived `distance` display placeholder (RoundPageClient.tsx:1058 = Math.max(80, hole.yards - round(hole.yards*0.6))), or the 'line' tag misfires on nearly every hole (fake-signal risk). Keep held pending owner ask."
+      "why": "Plan \u00a74.5 (line-vs-card hint) built as a pure tested helper (lineVsCardHint in fcb-labels.ts) but intentionally NOT rendered. Designer recommendation (2026-07-08): DON'T add it as spec'd \u2014 the card already carries 7 microlabels and a second explanatory tag tips it toward annotated-dashboard (NORTHSTAR risk). If ever revisited, the comparison base MUST change: compare fcb.center to hole.yards (the real scorecard number), NOT the derived `distance` display placeholder (RoundPageClient.tsx:1058 = Math.max(80, hole.yards - round(hole.yards*0.6))), or the 'line' tag misfires on nearly every hole (fake-signal risk). Keep held pending owner ask."
     },
     {
       "id": "search-speed-and-golfapi-verify",
@@ -155,8 +155,8 @@
       "risk": "medium",
       "status": "blocked",
       "depends_on": [],
-      "why": "OWNER 2026-07-09: (a) nearby search takes a long time — reduce results shown and/or make the geo search more efficient (geo-indexed query, cached area results, smaller page); (b) use the GolfAPI to fetch the course universe ONCE ('I believe this is just one API call — do not spend a lot of calls') and use it as a VERIFY step so junk rows like 'Golf Course' or 'Pebble Beach 9th Hole' never surface. CONSTRAINTS: the GolfAPI key currently 401s (owner must fix the account first — BLOCKED for the universe half until then); the plan MUST verify the exact call count for a universe dump from GolfAPI docs BEFORE any call is spent (pagination risk; hard budget cap 45/mo); store the universe permanently (one-time cost); verify layer = fuzzy-match Places/OSM results against the canonical list, downrank non-matches (never hard-drop mapped/known-good courses). The latency half (a) is UNBLOCKED — build now.",
-      "resolution": "partly-shipped — LATENCY half done-shipped-main (#114 5d20ec7, two-phase progressive nearby + geo-cell cache, TestFlight v1.0.888); UNIVERSE/verify half BLOCKED on the GolfAPI 401 key fix (owner-action) + docs-verified call count before spend"
+      "why": "OWNER 2026-07-09: (a) nearby search takes a long time \u2014 reduce results shown and/or make the geo search more efficient (geo-indexed query, cached area results, smaller page); (b) use the GolfAPI to fetch the course universe ONCE ('I believe this is just one API call \u2014 do not spend a lot of calls') and use it as a VERIFY step so junk rows like 'Golf Course' or 'Pebble Beach 9th Hole' never surface. CONSTRAINTS: the GolfAPI key currently 401s (owner must fix the account first \u2014 BLOCKED for the universe half until then); the plan MUST verify the exact call count for a universe dump from GolfAPI docs BEFORE any call is spent (pagination risk; hard budget cap 45/mo); store the universe permanently (one-time cost); verify layer = fuzzy-match Places/OSM results against the canonical list, downrank non-matches (never hard-drop mapped/known-good courses). The latency half (a) is UNBLOCKED \u2014 build now.",
+      "resolution": "partly-shipped \u2014 LATENCY half done-shipped-main (#114 5d20ec7, two-phase progressive nearby + geo-cell cache, TestFlight v1.0.888); UNIVERSE/verify half BLOCKED on the GolfAPI 401 key fix (owner-action) + docs-verified call count before spend"
     },
     {
       "id": "glasses-shot-tracking-spike",
@@ -168,11 +168,11 @@
       "depends_on": [
         "owner-acquires-rayban-meta"
       ],
-      "why": "OWNER TABLED 2026-07-09 (revisit on his word; research preserved in specs/glasses-shot-tracking-research.md). OWNER 2026-07-09 thesis, researched (specs/glasses-shot-tracking-research.md): continuous-vision tracking INFEASIBLE (60-90min battery, 1-min clip caps, thermal shutoffs) but TRIGGERED-CLIP design is plausible — IMU/impact-audio trigger -> 5-10s 720p clip via Meta Wearables DAT (dev preview; 12MP cam + 5-mic + speakers accessible to OUR phone app) -> on-phone swing/ball classification, fused with GPS displacement. ~5-7 min total camera/round = inside battery. Replaces vocal confirmation with VISUAL — the owner's objection to phone-only sensing dissolves. Putts = first sensor with a real chance, but trigger reliability unproven. SHIPPING gated on Meta opening publishing (their 2026 date); PROTOTYPING possible now. STEP 0 ($0, today): owner pairs Ray-Ban Metas as BT audio with the live caddie — phone-free conversation works without any code. Spike = diagnostic-only, measure trigger precision/recall + battery on owner rounds before any UX."
+      "why": "OWNER TABLED 2026-07-09 (revisit on his word; research preserved in specs/glasses-shot-tracking-research.md). OWNER 2026-07-09 thesis, researched (specs/glasses-shot-tracking-research.md): continuous-vision tracking INFEASIBLE (60-90min battery, 1-min clip caps, thermal shutoffs) but TRIGGERED-CLIP design is plausible \u2014 IMU/impact-audio trigger -> 5-10s 720p clip via Meta Wearables DAT (dev preview; 12MP cam + 5-mic + speakers accessible to OUR phone app) -> on-phone swing/ball classification, fused with GPS displacement. ~5-7 min total camera/round = inside battery. Replaces vocal confirmation with VISUAL \u2014 the owner's objection to phone-only sensing dissolves. Putts = first sensor with a real chance, but trigger reliability unproven. SHIPPING gated on Meta opening publishing (their 2026 date); PROTOTYPING possible now. STEP 0 ($0, today): owner pairs Ray-Ban Metas as BT audio with the live caddie \u2014 phone-free conversation works without any code. Spike = diagnostic-only, measure trigger precision/recall + battery on owner rounds before any UX."
     },
     {
       "id": "caddie-realtime-conversation",
-      "title": "Ask Caddie runs on the Realtime engine — hands-free like round setup",
+      "title": "Ask Caddie runs on the Realtime engine \u2014 hands-free like round setup",
       "type": "major",
       "priority": 1,
       "risk": "high",
@@ -181,17 +181,17 @@
       "why": "Owner 2026-07-08 (explicit direction, twice): 'the caddie still requires me to click before and after I'm talking instead of following the start round model where it detects for me.' Root: the sheet's Deepgram live path keeps failing on his iPhone -> fallback recorder has no VAD -> manual taps. DIRECTION: route the in-round Ask Caddie conversation through the OpenAI Realtime session (server VAD, same as setup; a warm session already exists for the round page orb). Sheet becomes the live transcript/answer view; the auto opening reco becomes the first spoken turn (compose with caddie-opening-reco-from-tee); barge-in native. NEEDS A FULL OPUS PLAN: session/tool grounding parity (hazards, memory, profile via session context), warm-path invariants (pinning tests untouchable), cost per round, fallback to the sheet path when Realtime can't connect, exit/mute affordances. Supersedes further Deepgram-sheet conversational patches.",
       "spec": "specs/caddie-realtime-conversation-plan.md",
       "slices": {
-        "A": "DONE (34c1222): Backend grounding parity for the Realtime mint (conversation history, green slope, last rec, recent shots) — guarded, byte-identical when absent; improves the live orb today. Reviewer CLEAN + QA PASS.",
+        "A": "DONE (34c1222): Backend grounding parity for the Realtime mint (conversation history, green slope, last rec, recent shots) \u2014 guarded, byte-identical when absent; improves the live orb today. Reviewer CLEAN + QA PASS.",
         "B": "Live-mode transcript-view shell in CaddieSheet behind caddie-live-mode flag (default off), mocked client in tests. Additive UI.",
-        "C": "C1 SHIPPED (#110, ac9bec0, TestFlight v1.0.840): flag-gated (?liveMode=1, default OFF) Realtime transport in the Ask Caddie sheet — continuous listen + opening turn via sendText + mute/close + honest pre-connect fallback. Double-reviewed. Owner on-device verification pending -> drives flag default flip (Slice E).",
-        "D": "DONE (f303c91, on integration/next bundle PR #111; SILENT, flag default OFF): live-session resilience — post-connected drop -> ONE quiet cold-mint reconnect (transcript preserved, no re-greet); reconnect fail -> classic tap-to-talk fallback in-place with conversation seeded (never a dead sheet); in-flight start() resurrection guard; bounded 1/activation; idle-vs-drop classification; cross-client transcript ordering. Opus plan specs/caddie-realtime-slice-d-plan.md. Gates green (voice 274/274, vitest 1686, pinning 104/104 unmodified); reviewer CLEAN.",
+        "C": "C1 SHIPPED (#110, ac9bec0, TestFlight v1.0.840): flag-gated (?liveMode=1, default OFF) Realtime transport in the Ask Caddie sheet \u2014 continuous listen + opening turn via sendText + mute/close + honest pre-connect fallback. Double-reviewed. Owner on-device verification pending -> drives flag default flip (Slice E).",
+        "D": "DONE (f303c91, on integration/next bundle PR #111; SILENT, flag default OFF): live-session resilience \u2014 post-connected drop -> ONE quiet cold-mint reconnect (transcript preserved, no re-greet); reconnect fail -> classic tap-to-talk fallback in-place with conversation seeded (never a dead sheet); in-flight start() resurrection guard; bounded 1/activation; idle-vs-drop classification; cross-client transcript ordering. Opus plan specs/caddie-realtime-slice-d-plan.md. Gates green (voice 274/274, vitest 1686, pinning 104/104 unmodified); reviewer CLEAN.",
         "E": "Cost/idle polish, telemetry, flag default flip after owner device sign-off.",
-        "A2": "CONDITIONAL/LEAN interim: sentence-level TTS pipelining on the CLASSIC sheet path (synth+play sentence 1 while rest streams) — cuts ~1-2s off first-voice. BUILD only if Slice C wont land device-verified within ~2 cycles; durable (classic path is the permanent fallback), not throwaway. SKIP if C imminent. See plan 6.5.4.",
+        "A2": "CONDITIONAL/LEAN interim: sentence-level TTS pipelining on the CLASSIC sheet path (synth+play sentence 1 while rest streams) \u2014 cuts ~1-2s off first-voice. BUILD only if Slice C wont land device-verified within ~2 cycles; durable (classic path is the permanent fallback), not throwaway. SKIP if C imminent. See plan 6.5.4.",
         "telemetry": "Stage-timing voicetel events (eos_to_transcript, transcript_to_first_token, first_token_to_first_audio, eos_to_first_audio headline) so the budget is visible on-device. Headline event must flush immediately (iOS voicetel flush-drop). See plan 6.5.3."
       },
       "classification": "noticeable (Slice C is the owner-visible hands-free change; A/B are enablers, A improves the live caddie today)",
       "top_metric": "END-TO-END LATENCY: <=~1.5-2.0s from end-of-speech to caddie VOICE start (owner 2026-07-07: long pause between speaking, transcript, text, then voice). See plan 6.5.",
-      "resolution": "in-progress (Slices A+A2+telemetry shipped; C1 SHIPPED #110 flag-gated live mode v1.0.840; D landed on bundle #111 — live-session resilience, silent. Remaining: owner on-device verify of C1 -> Slice E flag default flip)"
+      "resolution": "in-progress (Slices A+A2+telemetry shipped; C1 SHIPPED #110 flag-gated live mode v1.0.840; D landed on bundle #111 \u2014 live-session resilience, silent. Remaining: owner on-device verify of C1 -> Slice E flag default flip)"
     },
     {
       "id": "tee-time-real",
@@ -209,7 +209,7 @@
     },
     {
       "id": "mount-gps-shot-tracking",
-      "title": "Re-mount GPS map + shot-tracking + pin controls (caddie companion) — follow-up",
+      "title": "Re-mount GPS map + shot-tracking + pin controls (caddie companion) \u2014 follow-up",
       "type": "major",
       "priority": 28,
       "risk": "medium",
@@ -232,7 +232,7 @@
       "id": "clerk-native-applications",
       "priority": 52,
       "status": "needs-owner-input",
-      "title": "Enable \"Native Applications\" in Clerk dashboard (native_api_disabled — the session blocker)",
+      "title": "Enable \"Native Applications\" in Clerk dashboard (native_api_disabled \u2014 the session blocker)",
       "rationale": "Deep-fix found native mode fails with native_api_disabled until Native Applications is enabled in Clerk: https://dashboard.clerk.com/last-active?path=native-applications -> Configure -> Native applications -> Enable. One-time, no rebuild. Combined with the code fix (x-mobile + always-set auth header) this should make the session persist.",
       "classification": "owner-action",
       "why": "Deep-fix found native mode fails with native_api_disabled until Native Applications is enabled in Clerk: https://dashboard.clerk.com/last-active?path=native-applications -> Configure -> Native applications -> Enable. One-time, no rebuild. Combined with the code fix (x-mobile + always-set auth header) this should make the session persist."
@@ -245,10 +245,10 @@
       "rationale": "Final part of clerk-jwt-keychain. Replace @capacitor/preferences (UserDefaults, plaintext, backup-exposed) with @aparajita/capacitor-secure-storage using kSecAttrAccessibleWhenUnlockedThisDeviceOnly so the Clerk JWT is encrypted at rest + excluded from device/iCloud backups. Thanks to native-token-store.ts this is a single-file backend swap (+ add the plugin + cap sync). NOTE: adds a native dependency (SPM/pod) and the actual Keychain persistence can only be fully verified on a real device/sim sign-in -> bundle with other device-verifiable changes or verify via a credentialed sim run before shipping. REQUIRED before App Store / wider release; NOT beta-blocking (owner-only TestFlight).",
       "classification": "silent",
       "review_followups": [
-        "LOW (TOCTOU, reviewer 2026-06-28): an in-flight FAPI response can re-persist the JWT just after clearNativeToken() on sign-out. Security-nil (Clerk destroys the session server-side; re-persisted token is revoked). Fix when doing the Keychain swap: gate setNativeToken on a module-level 'signed out' flag that clearNativeToken sets and a sign-in transition (false->true) resets — taking care NOT to suppress the re-sign-in token write (it happens during the sign_in FAPI exchange, before isSignedIn flips).",
-        "LOW (cold-start stale token, reviewer 2026-06-28): if sign-out happens while the app is killed, the stale (already server-invalid) JWT isn't cleared until it's injected and rejected. Fix: in nativeOnAfterResponse, clearNativeToken() on a FAPI authentication-failure error code — but first confirm the EXACT Clerk FAPI error code via a credentialed run so a valid token is never wrongly wiped."
+        "LOW (TOCTOU, reviewer 2026-06-28): an in-flight FAPI response can re-persist the JWT just after clearNativeToken() on sign-out. Security-nil (Clerk destroys the session server-side; re-persisted token is revoked). Fix when doing the Keychain swap: gate setNativeToken on a module-level 'signed out' flag that clearNativeToken sets and a sign-in transition (false->true) resets \u2014 taking care NOT to suppress the re-sign-in token write (it happens during the sign_in FAPI exchange, before isSignedIn flips).",
+        "LOW (cold-start stale token, reviewer 2026-06-28): if sign-out happens while the app is killed, the stale (already server-invalid) JWT isn't cleared until it's injected and rejected. Fix: in nativeOnAfterResponse, clearNativeToken() on a FAPI authentication-failure error code \u2014 but first confirm the EXACT Clerk FAPI error code via a credentialed run so a valid token is never wrongly wiped."
       ],
-      "defer_note": "Auth/JWT storage swap + new native dependency (@aparajita/capacitor-secure-storage) + needs /security-review. Login breakage on real builds went uncaught before (see memory qa-test-critical-flows). Build in an ATTENDED session so login can be device-verified before ship — not unattended loop work.",
+      "defer_note": "Auth/JWT storage swap + new native dependency (@aparajita/capacitor-secure-storage) + needs /security-review. Login breakage on real builds went uncaught before (see memory qa-test-critical-flows). Build in an ATTENDED session so login can be device-verified before ship \u2014 not unattended loop work.",
       "why": "Final part of clerk-jwt-keychain. Replace @capacitor/preferences (UserDefaults, plaintext, backup-exposed) with @aparajita/capacitor-secure-storage using kSecAttrAccessibleWhenUnlockedThisDeviceOnly so the Clerk JWT is encrypted at rest + excluded from device/iCloud backups. Thanks to native-token-store.ts this is a single-file backend swap (+ add the plugin + cap sync). NOTE: adds a native dependency (SPM/pod) and the actual Keychain persistence can only be fully verified on a real device/sim sign-in -> bundle with other device-verifiable changes or verify via a credentialed sim run before shipping. REQUIRED before App Store / wider release; NOT beta-blocking (owner-only TestFlight)."
     },
     {
@@ -257,8 +257,8 @@
       "status": "planning",
       "classification": "epic",
       "title": "EPIC: Map/GPS + caddie intelligence (plays-like, DECADE-style management)",
-      "rationale": "Owner strategic direction (2026-06-28). Caddie that gives plays-like yardages + 'hit this club' using contours/slope + weather/wind, plus a DECADE-style expected-strokes course-management optimizer we build ourselves. Strategy: LICENSE the commodity layer (catalog, scorecard, F/C/B points, hazard/green polygons), BUILD the terrain intelligence (USGS 3DEP/NAIP, free) + the management engine + clean API; LICENSE-OR-SKIP green-reading (needs survey-grade data). KEY FINDING from planning: most caddie math ALREADY EXISTS (backend/app/caddie/strokes_gained.py, dispersion.py, club_selection.py plays-like, services/weather.py, services/elevation.py) — gaps are a true optimizer, a 3DEP precompute pipeline, tactical slope advice, and on-course UX. See phased cards tagged epic=map-gps-caddie-intelligence.",
-      "why": "Owner strategic direction (2026-06-28). Caddie that gives plays-like yardages + 'hit this club' using contours/slope + weather/wind, plus a DECADE-style expected-strokes course-management optimizer we build ourselves. Strategy: LICENSE the commodity layer (catalog, scorecard, F/C/B points, hazard/green polygons), BUILD the terrain intelligence (USGS 3DEP/NAIP, free) + the management engine + clean API; LICENSE-OR-SKIP green-reading (needs survey-grade data). KEY FINDING from planning: most caddie math ALREADY EXISTS (backend/app/caddie/strokes_gained.py, dispersion.py, club_selection.py plays-like, services/weather.py, services/elevation.py) — gaps are a true optimizer, a 3DEP precompute pipeline, tactical slope advice, and on-course UX. See phased cards tagged epic=map-gps-caddie-intelligence."
+      "rationale": "Owner strategic direction (2026-06-28). Caddie that gives plays-like yardages + 'hit this club' using contours/slope + weather/wind, plus a DECADE-style expected-strokes course-management optimizer we build ourselves. Strategy: LICENSE the commodity layer (catalog, scorecard, F/C/B points, hazard/green polygons), BUILD the terrain intelligence (USGS 3DEP/NAIP, free) + the management engine + clean API; LICENSE-OR-SKIP green-reading (needs survey-grade data). KEY FINDING from planning: most caddie math ALREADY EXISTS (backend/app/caddie/strokes_gained.py, dispersion.py, club_selection.py plays-like, services/weather.py, services/elevation.py) \u2014 gaps are a true optimizer, a 3DEP precompute pipeline, tactical slope advice, and on-course UX. See phased cards tagged epic=map-gps-caddie-intelligence.",
+      "why": "Owner strategic direction (2026-06-28). Caddie that gives plays-like yardages + 'hit this club' using contours/slope + weather/wind, plus a DECADE-style expected-strokes course-management optimizer we build ourselves. Strategy: LICENSE the commodity layer (catalog, scorecard, F/C/B points, hazard/green polygons), BUILD the terrain intelligence (USGS 3DEP/NAIP, free) + the management engine + clean API; LICENSE-OR-SKIP green-reading (needs survey-grade data). KEY FINDING from planning: most caddie math ALREADY EXISTS (backend/app/caddie/strokes_gained.py, dispersion.py, club_selection.py plays-like, services/weather.py, services/elevation.py) \u2014 gaps are a true optimizer, a 3DEP precompute pipeline, tactical slope advice, and on-course UX. See phased cards tagged epic=map-gps-caddie-intelligence."
     },
     {
       "id": "caddie-licensed-hazard-polygons",
@@ -302,8 +302,8 @@
       "headless": "yes",
       "area": "backend+data",
       "title": "Per-hole elevation profile precompute + store",
-      "rationale": "Sample tee→green line + green grid from the COG into a hole_elevation_profiles table; replaces live USGS EPQS for profiled courses (EPQS stays fallback). Enables cheap plays-like lookups.",
-      "why": "Sample tee→green line + green grid from the COG into a hole_elevation_profiles table; replaces live USGS EPQS for profiled courses (EPQS stays fallback). Enables cheap plays-like lookups."
+      "rationale": "Sample tee\u2192green line + green grid from the COG into a hole_elevation_profiles table; replaces live USGS EPQS for profiled courses (EPQS stays fallback). Enables cheap plays-like lookups.",
+      "why": "Sample tee\u2192green line + green grid from the COG into a hole_elevation_profiles table; replaces live USGS EPQS for profiled courses (EPQS stays fallback). Enables cheap plays-like lookups."
     },
     {
       "id": "dem-target-playslike",
@@ -331,7 +331,7 @@
       "size": "M",
       "headless": "no",
       "area": "frontend",
-      "title": "Tap-to-target on the map → live plays-like + recommendation",
+      "title": "Tap-to-target on the map \u2192 live plays-like + recommendation",
       "rationale": "Add aim-point selection in GPSMapView.tsx; on tap, compute bearing/distance and call recommend with the target so plays-like + optimizer target render on the map. Device-tested (map/GPS).",
       "why": "Add aim-point selection in GPSMapView.tsx; on tap, compute bearing/distance and call recommend with the target so plays-like + optimizer target render on the map. Device-tested (map/GPS)."
     },
@@ -444,14 +444,14 @@
       "classification": "noticeable",
       "build": "build (backend-heavy)",
       "size": "M/L",
-      "headless": "NO (needs 2 real accounts — owner device test)",
+      "headless": "NO (needs 2 real accounts \u2014 owner device test)",
       "area": "backend+frontend",
       "title": "Real cross-account friend graph (Friendship model + relax owner-only gate)",
-      "rationale": "Friendship table + endpoints; link by clerk_user_id; accept/decline. CRITICAL: the app is single-owner gated — main.py applies require_owner to EVERY router. Real social requires relaxing this for new social routes (use current_user_id with per-row authz). This gate change is the security-review hotspot — MUST pass /security-review + /code-review. Gates A5/A6. DECISION NEEDED from owner: open the app beyond owner-only?",
+      "rationale": "Friendship table + endpoints; link by clerk_user_id; accept/decline. CRITICAL: the app is single-owner gated \u2014 main.py applies require_owner to EVERY router. Real social requires relaxing this for new social routes (use current_user_id with per-row authz). This gate change is the security-review hotspot \u2014 MUST pass /security-review + /code-review. Gates A5/A6. DECISION NEEDED from owner: open the app beyond owner-only?",
       "depends_on": [
         "social-invite-surfaces"
       ],
-      "why": "Friendship table + endpoints; link by clerk_user_id; accept/decline. CRITICAL: the app is single-owner gated — main.py applies require_owner to EVERY router. Real social requires relaxing this for new social routes (use current_user_id with per-row authz). This gate change is the security-review hotspot — MUST pass /security-review + /code-review. Gates A5/A6. DECISION NEEDED from owner: open the app beyond owner-only?"
+      "why": "Friendship table + endpoints; link by clerk_user_id; accept/decline. CRITICAL: the app is single-owner gated \u2014 main.py applies require_owner to EVERY router. Real social requires relaxing this for new social routes (use current_user_id with per-row authz). This gate change is the security-review hotspot \u2014 MUST pass /security-review + /code-review. Gates A5/A6. DECISION NEEDED from owner: open the app beyond owner-only?"
     },
     {
       "id": "social-phone-matching",
@@ -464,11 +464,11 @@
       "headless": "NO (device + real contacts + iOS permission)",
       "area": "frontend+backend+native",
       "title": "Phone-number friend matching (privacy-preserving)",
-      "rationale": "Capacitor contacts plugin (net-new) + explicit consent screen + client-side E.164 normalize + HMAC-SHA256 hash (never upload raw numbers) → POST /api/partners/match against hashes of opted-in users. Per-user 'discoverable by phone' toggle (default off). NSContactsUsageDescription + Apple privacy manifest. Privacy/legal (TCPA) — highest-risk card.",
+      "rationale": "Capacitor contacts plugin (net-new) + explicit consent screen + client-side E.164 normalize + HMAC-SHA256 hash (never upload raw numbers) \u2192 POST /api/partners/match against hashes of opted-in users. Per-user 'discoverable by phone' toggle (default off). NSContactsUsageDescription + Apple privacy manifest. Privacy/legal (TCPA) \u2014 highest-risk card.",
       "depends_on": [
         "social-friend-graph"
       ],
-      "why": "Capacitor contacts plugin (net-new) + explicit consent screen + client-side E.164 normalize + HMAC-SHA256 hash (never upload raw numbers) → POST /api/partners/match against hashes of opted-in users. Per-user 'discoverable by phone' toggle (default off). NSContactsUsageDescription + Apple privacy manifest. Privacy/legal (TCPA) — highest-risk card."
+      "why": "Capacitor contacts plugin (net-new) + explicit consent screen + client-side E.164 normalize + HMAC-SHA256 hash (never upload raw numbers) \u2192 POST /api/partners/match against hashes of opted-in users. Per-user 'discoverable by phone' toggle (default off). NSContactsUsageDescription + Apple privacy manifest. Privacy/legal (TCPA) \u2014 highest-risk card."
     },
     {
       "id": "social-push-invites",
@@ -481,11 +481,11 @@
       "headless": "NO (device + APNs)",
       "area": "frontend+backend+native",
       "title": "Push-delivered invites (rare-by-design)",
-      "rationale": "Capacitor push plugin + APNs; push ONLY for accepted/tee-time-found invite moments (strict trigger list — notifications are rare by design per CLAUDE.md). Device-token store + send. Do last.",
+      "rationale": "Capacitor push plugin + APNs; push ONLY for accepted/tee-time-found invite moments (strict trigger list \u2014 notifications are rare by design per CLAUDE.md). Device-token store + send. Do last.",
       "depends_on": [
         "social-friend-graph"
       ],
-      "why": "Capacitor push plugin + APNs; push ONLY for accepted/tee-time-found invite moments (strict trigger list — notifications are rare by design per CLAUDE.md). Device-token store + send. Do last."
+      "why": "Capacitor push plugin + APNs; push ONLY for accepted/tee-time-found invite moments (strict trigger list \u2014 notifications are rare by design per CLAUDE.md). Device-token store + send. Do last."
     },
     {
       "id": "course-identity-unify",
@@ -493,16 +493,16 @@
       "status": "deferred",
       "epic": "course-search-reviews",
       "classification": "silent",
-      "build": "build (heavy migration — owner applies)",
+      "build": "build (heavy migration \u2014 owner applies)",
       "size": "L",
       "headless": "backend tests yes; full path device",
       "area": "backend+data",
       "title": "Unify course identity (GolfAPI / scoring_courses / mapped PostGIS)",
-      "rationale": "Reconcile the 4 course systems so reviews + GPS + scoring share one course id. Already flagged in specs/real-data-wiring-plan.md. Touches supabase/migrations (guard-protected — owner applies). Sequence LAST; B1–B4 deliberately avoid depending on it by keying reviews on golfApiCourseId.",
+      "rationale": "Reconcile the 4 course systems so reviews + GPS + scoring share one course id. Already flagged in specs/real-data-wiring-plan.md. Touches supabase/migrations (guard-protected \u2014 owner applies). Sequence LAST; B1\u2013B4 deliberately avoid depending on it by keying reviews on golfApiCourseId.",
       "depends_on": [
         "course-review-model"
       ],
-      "why": "Reconcile the 4 course systems so reviews + GPS + scoring share one course id. Already flagged in specs/real-data-wiring-plan.md. Touches supabase/migrations (guard-protected — owner applies). Sequence LAST; B1–B4 deliberately avoid depending on it by keying reviews on golfApiCourseId."
+      "why": "Reconcile the 4 course systems so reviews + GPS + scoring share one course id. Already flagged in specs/real-data-wiring-plan.md. Touches supabase/migrations (guard-protected \u2014 owner applies). Sequence LAST; B1\u2013B4 deliberately avoid depending on it by keying reviews on golfApiCourseId."
     },
     {
       "id": "ratelimit-live-token",
@@ -565,7 +565,7 @@
       "risk": "low",
       "status": "needs-spec",
       "depends_on": [],
-      "why": "Seeded 2026-07-07 (retro). Now that opt-in TTS sheet replies shipped (voice-tts-sheet-replies, #102) with ONE default voice, the natural next step toward the 'personal caddie' Northstar is mapping each persona to a distinct gpt-4o-mini-tts voice + delivery so 'Classic on the bag' and a brasher persona actually SOUND different. Small, additive to the existing /api/voice/speak proxy + useSheetTTS (persona already threaded). Keep it calm/voice-first; owner may want to pick/preview a voice per persona. Candidate — needs a short spec + owner nod on which personas/voices.",
+      "why": "Seeded 2026-07-07 (retro). Now that opt-in TTS sheet replies shipped (voice-tts-sheet-replies, #102) with ONE default voice, the natural next step toward the 'personal caddie' Northstar is mapping each persona to a distinct gpt-4o-mini-tts voice + delivery so 'Classic on the bag' and a brasher persona actually SOUND different. Small, additive to the existing /api/voice/speak proxy + useSheetTTS (persona already threaded). Keep it calm/voice-first; owner may want to pick/preview a voice per persona. Candidate \u2014 needs a short spec + owner nod on which personas/voices.",
       "spec": ""
     },
     {
@@ -574,11 +574,11 @@
       "type": "major",
       "priority": 1,
       "risk": "medium",
-      "status": "ready",
+      "status": "done-shipped-verified",
       "depends_on": [],
-      "why": "RECONCILED 2026-07-10: code IS on main (guide_writer.py + course_guides.py, diff-vs-main empty). Two activation paths: (1) on-demand — caddie.py start_session line ~324 seeds guides for a cold course on first play (RUNS in prod if prod ANTHROPIC_API_KEY + web_search work); (2) run_guide_backfill env-gated, EMPTY allowlist default → dormant unless GUIDE_BACKFILL_COURSES set. BLOCKING GAP (owner's 'test-critical-flows' memory): the live research path (web_search_20260209 + messages.parse + pause_turn continuation) was NEVER smoke-tested against a live key — and it's best-effort, so a failure is SILENT (guides never appear, no error). NEEDS: a bounded prod live-smoke (one hole/one course via SSM on-box, ~small API spend — OWNER OK since it spends prod budget) to confirm guides actually generate + are grounded; if broken, fix. Security/code review of the web-content-into-LLM surface (plan §9) also owed. | OWNER UNPAUSED 2026-07-09: 'Maybe a tiny bit of context added there would help to understand the shot and hole better.' Confirmed today the caddie has NO researched course knowledge (only our geometry/hazards/weather/player context). PHASE 1 (build): an LLM writer researches each hole (web search + our stored geometry as GROUND TRUTH — the guide may never contradict real hazards/yardage; HAZARD_GR",
+      "why": "RECONCILED 2026-07-10: code IS on main (guide_writer.py + course_guides.py, diff-vs-main empty). Two activation paths: (1) on-demand \u2014 caddie.py start_session line ~324 seeds guides for a cold course on first play (RUNS in prod if prod ANTHROPIC_API_KEY + web_search work); (2) run_guide_backfill env-gated, EMPTY allowlist default \u2192 dormant unless GUIDE_BACKFILL_COURSES set. BLOCKING GAP (owner's 'test-critical-flows' memory): the live research path (web_search_20260209 + messages.parse + pause_turn continuation) was NEVER smoke-tested against a live key \u2014 and it's best-effort, so a failure is SILENT (guides never appear, no error). NEEDS: a bounded prod live-smoke (one hole/one course via SSM on-box, ~small API spend \u2014 OWNER OK since it spends prod budget) to confirm guides actually generate + are grounded; if broken, fix. Security/code review of the web-content-into-LLM surface (plan \u00a79) also owed. | OWNER UNPAUSED 2026-07-09: 'Maybe a tiny bit of context added there would help to understand the shot and hole better.' Confirmed today the caddie has NO researched course knowledge (only our geometry/hazards/weather/player context). PHASE 1 (build): an LLM writer researches each hole (web search + our stored geometry as GROUND TRUTH \u2014 the guide may never contradict real hazards/yardage; HAZARD_GR",
       "spec": "",
-      "resolution": "shipped-main-UNVERIFIED-live"
+      "resolution": "PROD LIVE-SMOKE VERIFIED 2026-07-11 (owner OK'd): research_hole_guide\u2192validate_guide runs end-to-end vs prod key (claude-sonnet-5 + web_search + messages.parse + pause_turn); 37 guides already persisted (Bethpage Black 18 + Pebble 19); fresh Bethpage-7 smoke returned a real grounded guide (cites real bunkers/trees at correct dists/sides), validate_guide PASSED. NOT silently broken \u2014 healthy. One low-pri follow-up: pause_turn continuation re-serialization warnings (see guide-pauseturn-reserialize-hardening)."
     },
     {
       "id": "course-intel-static-persistence",
@@ -590,7 +590,7 @@
       "depends_on": [],
       "why": "Owner ask (2026-07-08): elevation deltas + green slope are static per course. Compute once EVER per course, persist on the mapped course record (backend), serve instantly to course-intel. Kills the owner's 'elevation takes a while' wait. Backend-only (course record); no app-visible change beyond speed.",
       "spec": "specs/course-intel-static-persistence-plan.md",
-      "resolution": "shipped-to-bundle (integration/next, PR #133). SILENT (backend-only; observable change = SPEED). Cycle 86 (2026-07-11). KEY FINDING on trace: ~90% was ALREADY BUILT in prior commits 0200576 + 9c5e338 — static per-hole intel (tee/green elevation, delta_ft, plays_like_yards, green_slope) is persisted in hole_features.properties JSONB, read instantly by build_hole_intelligence (ZERO USGS/3DEP on hit), bulk-precomputed (_precompute_course_elevations, 2 batched 3DEP calls), backfilled-on-demand, and honest (USGS-None persists nothing, no fabricated zeros). Weather stays DYNAMIC (correct). Fable plan v2 (specs/course-intel-static-persistence-plan.md) RULED against a new courses.static_intel column + Alembic migration: static intel is per-HOLE and already lives correctly per-feature; a course-level column would duplicate a 2nd source of truth (worse). NO migration. This cycle closed the two remaining gaps: (A) elevation precompute is now wired into create_mapped/put_mapped (was only /session/start → raced the first course-intel open on a fresh course), ordered BEFORE guides; (B) content-addressed invalidation — a new elevation_coords_key (tee+green centers @6dp) stamped into the JSONB by the precompute; the skip now requires an exact key match (was 'has tee_elevation_ft'), so a geometry re-map recomputes stale elevation. Also stamps elevation_computed_at (observability). Precompute + 2 helpers moved verbatim caddie.py → NEW app/services/course_elevation.py (import hygiene, no cycle). Request-path write-back stays KEYLESS (samples client coords it can't vouch for → treated as needs-revalidation). Read/hot path UNCHANGED. Commits: plan @d2d322d, feature @f682f85, head @efb32f4. Reviewer (fresh, adversarial): SHIP — static-only, invalidation deterministic (no lng/lat transposition, both sides from one _feature_center pipeline), write-back keyless, no read-path regression, no fabrication, no new concurrency hazard, tests faithfully encode spec (no weakened assertions), ruff clean. QA gates green on head: ruff clean, non-DB pytest 2060 passed/92 skipped, REAL docker Postgres (postgis:16-3.4) integration 92 passed incl mapped-course-db 10/10 (3 new precompute cases: idempotency-via-key, remap-invalidation round-trip, graceful-degrade), frontend lint/tsc clean + voice 277/277 (frontend untouched). Rides bundle #133 — no ship/ping (owner approves the whole bundle on next noticeable change)."
+      "resolution": "shipped-to-bundle (integration/next, PR #133). SILENT (backend-only; observable change = SPEED). Cycle 86 (2026-07-11). KEY FINDING on trace: ~90% was ALREADY BUILT in prior commits 0200576 + 9c5e338 \u2014 static per-hole intel (tee/green elevation, delta_ft, plays_like_yards, green_slope) is persisted in hole_features.properties JSONB, read instantly by build_hole_intelligence (ZERO USGS/3DEP on hit), bulk-precomputed (_precompute_course_elevations, 2 batched 3DEP calls), backfilled-on-demand, and honest (USGS-None persists nothing, no fabricated zeros). Weather stays DYNAMIC (correct). Fable plan v2 (specs/course-intel-static-persistence-plan.md) RULED against a new courses.static_intel column + Alembic migration: static intel is per-HOLE and already lives correctly per-feature; a course-level column would duplicate a 2nd source of truth (worse). NO migration. This cycle closed the two remaining gaps: (A) elevation precompute is now wired into create_mapped/put_mapped (was only /session/start \u2192 raced the first course-intel open on a fresh course), ordered BEFORE guides; (B) content-addressed invalidation \u2014 a new elevation_coords_key (tee+green centers @6dp) stamped into the JSONB by the precompute; the skip now requires an exact key match (was 'has tee_elevation_ft'), so a geometry re-map recomputes stale elevation. Also stamps elevation_computed_at (observability). Precompute + 2 helpers moved verbatim caddie.py \u2192 NEW app/services/course_elevation.py (import hygiene, no cycle). Request-path write-back stays KEYLESS (samples client coords it can't vouch for \u2192 treated as needs-revalidation). Read/hot path UNCHANGED. Commits: plan @d2d322d, feature @f682f85, head @efb32f4. Reviewer (fresh, adversarial): SHIP \u2014 static-only, invalidation deterministic (no lng/lat transposition, both sides from one _feature_center pipeline), write-back keyless, no read-path regression, no fabrication, no new concurrency hazard, tests faithfully encode spec (no weakened assertions), ruff clean. QA gates green on head: ruff clean, non-DB pytest 2060 passed/92 skipped, REAL docker Postgres (postgis:16-3.4) integration 92 passed incl mapped-course-db 10/10 (3 new precompute cases: idempotency-via-key, remap-invalidation round-trip, graceful-degrade), frontend lint/tsc clean + voice 277/277 (frontend untouched). Rides bundle #133 \u2014 no ship/ping (owner approves the whole bundle on next noticeable change)."
     },
     {
       "id": "teetime-searching-copy-polish",
@@ -599,48 +599,48 @@
       "priority": 3,
       "risk": "low",
       "status": "ready",
-      "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct — the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' — unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5.",
-      "why": " | SCOPED 2026-07-10: cosmetic copy on the tee-time 'searching…' state; no recorded defect, needs a concrete before/after from the owner or a designer pass to be worth a cycle. Low value solo."
+      "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct \u2014 the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' \u2014 unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5.",
+      "why": " | SCOPED 2026-07-10: cosmetic copy on the tee-time 'searching\u2026' state; no recorded defect, needs a concrete before/after from the owner or a designer pass to be worth a cycle. Low value solo."
     },
     {
       "id": "voice-vad-threshold-ab",
-      "title": "A/B raise server_vad threshold 0.5→0.6-0.7 (distant voices fall below trigger)",
+      "title": "A/B raise server_vad threshold 0.5\u21920.6-0.7 (distant voices fall below trigger)",
       "type": "minor",
       "priority": 3,
       "risk": "low",
       "status": "ready",
       "depends_on": [],
-      "why": "Voice target-speaker spike (PR #127): the only remaining Tier-1 lever after the already-shipped mic constraints — raise server_vad energy threshold so distant partner voices don't trigger the caddie. Behavior-change A/B (too high = misses the owner's soft speech), so measure, don't ship blind. specs/voice-target-speaker-spike-report.md."
+      "why": "Voice target-speaker spike (PR #127): the only remaining Tier-1 lever after the already-shipped mic constraints \u2014 raise server_vad energy threshold so distant partner voices don't trigger the caddie. Behavior-change A/B (too high = misses the owner's soft speech), so measure, don't ship blind. specs/voice-target-speaker-spike-report.md."
     },
     {
       "id": "teetime-s4d-playwright-worker-pending-ux",
-      "title": "S4d: rung-2b headless scraper (Playwright worker) + 'checking…' pending UX",
+      "title": "S4d: rung-2b headless scraper (Playwright worker) + 'checking\u2026' pending UX",
       "type": "major",
       "priority": 9,
       "risk": "high",
       "status": "deferred",
       "depends_on": [],
-      "why": "DEFERRED per Fable verdict (specs/teetime-headless-scraper-plan.md §7): NO bucket-(c) target in NY-metro — every remaining engine is httpx-addable (CPS/Quick18/Teesnap) or anti-bot-walled (EZLinks→rung3, browser can't pass Turnstile politely). ~400MB Chromium would fetch ZERO extra courses = headless-for-its-own-sake. Fully specced+gated; reopen ONLY if the coverage flywheel finds a JS-render-gated, non-anti-bot engine with no replayable XHR. | NOTE 2026-07-10: EZLinks/Cloudflare-Turnstile sites are NOT scrapable politely even with a headless browser (probe confirmed Chromium never clears Turnstile) — do NOT target them with S4d. S4d headless is only for JS-rendered widgets WITHOUT anti-bot gates. Re-scope S4d's target engine after S4a/S4c reveal which engines actually need a browser. The only slice with deploy-image impact (~400MB Chromium, gated TEETIME_SCRAPER_ENABLED default off). In-process asyncio worker + bounded queue off the request path; TeeTimeSlot gains status live|pending; poll endpoint; frontend pending row; first browser-scraped engine (Club Prophet or hostile EZLinks). Plan §4b,§6,§7. Depends on S4a."
+      "why": "DEFERRED per Fable verdict (specs/teetime-headless-scraper-plan.md \u00a77): NO bucket-(c) target in NY-metro \u2014 every remaining engine is httpx-addable (CPS/Quick18/Teesnap) or anti-bot-walled (EZLinks\u2192rung3, browser can't pass Turnstile politely). ~400MB Chromium would fetch ZERO extra courses = headless-for-its-own-sake. Fully specced+gated; reopen ONLY if the coverage flywheel finds a JS-render-gated, non-anti-bot engine with no replayable XHR. | NOTE 2026-07-10: EZLinks/Cloudflare-Turnstile sites are NOT scrapable politely even with a headless browser (probe confirmed Chromium never clears Turnstile) \u2014 do NOT target them with S4d. S4d headless is only for JS-rendered widgets WITHOUT anti-bot gates. Re-scope S4d's target engine after S4a/S4c reveal which engines actually need a browser. The only slice with deploy-image impact (~400MB Chromium, gated TEETIME_SCRAPER_ENABLED default off). In-process asyncio worker + bounded queue off the request path; TeeTimeSlot gains status live|pending; poll endpoint; frontend pending row; first browser-scraped engine (Club Prophet or hostile EZLinks). Plan \u00a74b,\u00a76,\u00a77. Depends on S4a."
     },
     {
       "id": "teetime-s4f-coverage-flywheel",
-      "title": "S4f: coverage flywheel — auto-probe on honest-empty telemetry + coverage metric + drift canary",
+      "title": "S4f: coverage flywheel \u2014 auto-probe on honest-empty telemetry + coverage metric + drift canary",
       "type": "major",
       "priority": 4,
       "risk": "medium",
       "status": "ready",
       "depends_on": [],
-      "why": "Bundle-rider. Log searched courses with no capability row → feed the probe script; '% of searched courses returning real availability' metric; monthly re-probe sweep; per-engine schema-drift canary. Plan §2b,§9."
+      "why": "Bundle-rider. Log searched courses with no capability row \u2192 feed the probe script; '% of searched courses returning real availability' metric; monthly re-probe sweep; per-engine schema-drift canary. Plan \u00a72b,\u00a79."
     },
     {
       "id": "caller-voice-clone-pipeline",
-      "title": "[SHELVED] Voice-clone caller pipeline (Option A) — owner's actual voice via ElevenLabs split bridge",
+      "title": "[SHELVED] Voice-clone caller pipeline (Option A) \u2014 owner's actual voice via ElevenLabs split bridge",
       "type": "epic",
       "priority": 9,
       "risk": "high",
       "status": "deferred",
       "depends_on": [],
-      "why": "Owner chose Option B (preset) over this 2026-07-10. Full plan ON SHELF: specs/voice-clone-caller-plan.md §7 (V1 enrollment → V2 ElevenLabs cloned-TTS → V3 split bridge behind flag → V4 latency harness). ~3-4 cycles. Pull off the shelf only if owner later wants his ACTUAL voice for its own sake. Fable verdict: buildable + cheaper/call but adds latency + a vendor holding his voiceprint + buys nothing on a disclosed-AI call."
+      "why": "Owner chose Option B (preset) over this 2026-07-10. Full plan ON SHELF: specs/voice-clone-caller-plan.md \u00a77 (V1 enrollment \u2192 V2 ElevenLabs cloned-TTS \u2192 V3 split bridge behind flag \u2192 V4 latency harness). ~3-4 cycles. Pull off the shelf only if owner later wants his ACTUAL voice for its own sake. Fable verdict: buildable + cheaper/call but adds latency + a vendor holding his voiceprint + buys nothing on a disclosed-AI call."
     },
     {
       "id": "teetime-h3-teesnap-adapter",
@@ -650,8 +650,17 @@
       "risk": "medium",
       "status": "ready",
       "depends_on": [],
-      "why": "Fable scraper plan §6/H3: Teesnap = Laravel/CloudFront (NOT Cloudflare challenge), React widget → customer JSON API, XSRF-TOKEN+laravel_session cookies. Discover a live NY facility subdomain, capture the availability JSON path, confirm cookie/XSRF replay over httpx → adapter+fixture. If a real bot-block appears → reclassify rung-3, no headless."
+      "why": "Fable scraper plan \u00a76/H3: Teesnap = Laravel/CloudFront (NOT Cloudflare challenge), React widget \u2192 customer JSON API, XSRF-TOKEN+laravel_session cookies. Discover a live NY facility subdomain, capture the availability JSON path, confirm cookie/XSRF replay over httpx \u2192 adapter+fixture. If a real bot-block appears \u2192 reclassify rung-3, no headless."
+    },
+    {
+      "id": "guide-pauseturn-reserialize-hardening",
+      "title": "Harden guide_writer pause_turn continuation re-serialization (low-pri)",
+      "type": "minor",
+      "priority": 5,
+      "risk": "low",
+      "status": "ready",
+      "why": "Prod smoke (2026-07-11) noted: guide_writer.py:278 re-serializes assistant content via model_dump(mode='json') in the pause_turn continuation loop; when the model returns code_execution/text_editor_code_execution server-tool blocks (not web_search), pydantic emits PydanticSerializationUnexpectedValue warnings. NON-FATAL (the smoke hole finished first-turn), but a hole needing a real pause_turn continuation with those block types may not re-serialize cleanly. Fix: resume with the SDK block objects directly rather than a manual model_dump. Low priority."
     }
   ],
-  "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style — rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm — not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home · Partners · Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
+  "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."
 }
