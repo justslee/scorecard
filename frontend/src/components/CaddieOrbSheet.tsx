@@ -41,6 +41,11 @@ export default function CaddieOrbSheet() {
   const [streamingText, setStreamingText] = useState<string | null>(null);
 
   const streamAbortRef = useRef<AbortController | null>(null);
+  // A3: the one hands-free follow-up mic-reopen after a task ack that asks a
+  // clarify question (TaskAck.expectReply). Cleared on close()/a manual mic
+  // tap so a superseded/closed session can never reopen the mic underneath
+  // the golfer.
+  const expectReplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const answerBuffer = useStreamBuffer((chunk) => {
     setStreamingText((prev) => (prev ?? "") + chunk);
   });
@@ -104,6 +109,10 @@ export default function CaddieOrbSheet() {
     streamAbortRef.current = null;
     answerBuffer.cancel();
     setStreamingText(null);
+    if (expectReplyTimerRef.current) {
+      clearTimeout(expectReplyTimerRef.current);
+      expectReplyTimerRef.current = null;
+    }
     setOpen(false);
     setThinking(false);
     setError(null);
@@ -235,6 +244,12 @@ export default function CaddieOrbSheet() {
   // ── Mic handler — lanes + gates ──
   const handleMicTap = useCallback(async () => {
     setError(null);
+    // A manual tap (or onUtteranceEnd's auto-send, which routes through this
+    // same handler) supersedes any pending auto-reopen from a prior turn.
+    if (expectReplyTimerRef.current) {
+      clearTimeout(expectReplyTimerRef.current);
+      expectReplyTimerRef.current = null;
+    }
     if (!dictation.listening) {
       await dictation.start();
       return;
@@ -302,6 +317,15 @@ export default function CaddieOrbSheet() {
         haptic("success");
         setCaddieOrbState("confirming");
         setTimeout(() => setCaddieOrbState("idle"), 900);
+      }
+      if (ack.expectReply && !ack.dispatched) {
+        // A3: one hands-free follow-up turn — the clarify answer. Gen + open
+        // guards make a close/unregister/dispatch race in the intervening
+        // 900ms inert (a stale/closed session must never reopen the mic).
+        expectReplyTimerRef.current = setTimeout(() => {
+          if (sessionRef.current !== gen || !openRef.current) return;
+          if (!dictationRef.current.listening) void dictationRef.current.start();
+        }, 900);
       }
       setThinking(false);
       return;

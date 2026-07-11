@@ -137,7 +137,10 @@ CADDIE_TOOLS: list[dict] = [
         "name": "get_recommendation",
         "description": (
             "Get a DECADE-style club + aim recommendation for the current shot. "
-            "Always call this before suggesting a club, distance, or aim line."
+            "Always call this before suggesting a club, distance, or aim line. "
+            "If the result has shot_kind 'positioning', the green is out of "
+            "reach on this swing — give landing-zone advice and state the "
+            "leave_yards; never a pin-relative aim."
         ),
         "input_schema": {
             "type": "object",

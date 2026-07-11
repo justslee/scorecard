@@ -56,6 +56,15 @@ import {
 } from "@/lib/course-search-helpers";
 import { useLooperDictation } from "@/hooks/useLooperDictation";
 import { buildKeyterms } from "@/lib/voice/keyterms";
+import CourseScoutMap from "@/components/CourseScoutMap";
+import { pinToSearchResult } from "@/lib/course/pin-payload";
+import type { InBoundsCourse } from "@/lib/golf-api";
+
+// Map mode toggle is gated on the Google Maps key — absent key ⇒ the toggle
+// node never renders and the surface is byte-identical to today (mirrors
+// GoogleSatelliteMap.tsx's key gate; deliberately NOT mapRendererFor, which
+// also folds in the satellite-vs-paper user pref, unrelated here).
+const hasMapsKey = (process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? "").trim().length > 0;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -130,6 +139,31 @@ function MicIcon() {
   );
 }
 
+/** Folded-map glyph — shown in list mode (tap to switch to the map). */
+function MapModeIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
+      <line x1="9" y1="3" x2="9" y2="18" />
+      <line x1="15" y1="6" x2="15" y2="21" />
+    </svg>
+  );
+}
+
+/** List-lines glyph — shown in map mode (tap to switch back to the list). */
+function ListModeIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  );
+}
+
 function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg
@@ -150,8 +184,11 @@ function StarIcon({ filled }: { filled: boolean }) {
 // Payload mappers
 // ---------------------------------------------------------------------------
 
-/** Map a CourseSearchResult to the onSelectCourse payload. */
-function resultToPayload(r: CourseSearchResult): CourseSelectPayload {
+/** Map a CourseSearchResult to the onSelectCourse payload. Exported for the
+ *  B2 map-pin identity parity test (pin-payload.test.ts) — the SAME mapper
+ *  the list path uses, so a course added from the map is byte-identical to
+ *  the same course added from the list (specs/course-selection-b2-plan.md §2.3). */
+export function resultToPayload(r: CourseSearchResult): CourseSelectPayload {
   const id = r.source === "golfapi" ? (r.golfApiCourseId ?? r.id) : r.id;
   const clubId = r.golfApiClubId ?? r.id;
   const location =
@@ -354,6 +391,15 @@ function CourseRow({
 export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, voiceSearch = false, autoVoice = false }: CourseSearchProps) {
   const [query, setQuery] = useState("");
 
+  // Map⇄List mode (B2). Always starts "list" — the frame's framer-motion
+  // entry animation runs once at mount, before the map could ever mount, so
+  // no transform is ever animating on a map ancestor while the native view
+  // is attaching (see specs/course-selection-b2-plan.md §1).
+  const [mode, setMode] = useState<"list" | "map">("list");
+  // Mount GPS fix, lifted for CourseScoutMap's initialCenter (the existing
+  // one-shot GPS effect below already resolves `pos` for the nearby list).
+  const [gpsCenter, setGpsCenter] = useState<{ lat: number; lng: number } | null>(null);
+
   // Search results (query mode)
   const [searchResults, setSearchResults] = useState<CourseSearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -446,6 +492,7 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
   useEffect(() => {
     GPSWatcher.getCurrentPosition().then(
       async (pos) => {
+        setGpsCenter(pos);
         let anyRowRendered = false;
         let outcome: Awaited<ReturnType<typeof searchNearbyDetailed>> | null = null;
         try {
@@ -565,6 +612,30 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
   const idle = dedupeIdleSections(favorites, recent, nearby);
 
   // ---------------------------------------------------------------------------
+  // Map mode (B2) — derived props for CourseScoutMap
+  // ---------------------------------------------------------------------------
+
+  // GPS fix, else the first idle-section center, else a last-resort placeholder
+  // (a map centered somewhere honest with zero fake pins is acceptable — the
+  // camera-idle loop tells the truth about what's actually there).
+  const initialCenter =
+    gpsCenter ?? idle.nearby[0]?.center ?? favorites[0]?.center ?? { lat: 40.7128, lng: -74.006 };
+
+  // Typed/voice query top hit — camera pans here when it changes. Never
+  // reshuffles markers (course-search-ux-requirements: no-reshuffle law).
+  const topHit = searchResults[0];
+  const panTarget =
+    mode === "map" && query.length >= 2 && topHit?.center
+      ? { id: topHit.id, center: topHit.center }
+      : null;
+
+  /** The single B2 identity seam: a pin added from the map runs through the
+   *  SAME resultToPayload the list/voice paths use (specs/course-selection-b2-plan.md §2.3). */
+  function handleAddPin(pin: InBoundsCourse) {
+    onSelectCourse(resultToPayload(pinToSearchResult(pin)));
+  }
+
+  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
@@ -590,12 +661,16 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
           zIndex: 50,
           display: "flex",
           flexDirection: "column",
-          background: `${PAPER_NOISE}, ${T.paper}`,
-          backgroundBlendMode: "multiply",
+          // Map mode: the outer frame goes transparent (§1) — the map fills
+          // the region below the header; list mode keeps the opaque paper.
+          background: mode === "map" ? "transparent" : `${PAPER_NOISE}, ${T.paper}`,
+          backgroundBlendMode: mode === "map" ? undefined : "multiply",
           overflow: "hidden",
         }}
       >
-        {/* Fixed top search bar */}
+        {/* Fixed top search bar — carries its own paper background in map
+            mode (the outer frame is transparent there), so it stays visually
+            identical either way. */}
         <div
           style={{
             flexShrink: 0,
@@ -604,6 +679,8 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
             gap: 10,
             padding: "max(14px, env(safe-area-inset-top)) 14px 12px",
             borderBottom: `1px solid ${T.hairline}`,
+            background: mode === "map" ? `${PAPER_NOISE}, ${T.paper}` : undefined,
+            backgroundBlendMode: mode === "map" ? "multiply" : undefined,
           }}
         >
           <button
@@ -707,6 +784,32 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
               <MicIcon />
             </button>
           )}
+
+          {/* Map⇄List toggle — gated on the Google Maps key; absent key ⇒ no
+              toggle node at all (byte-identical surface to today, same rule
+              as the mic button above). */}
+          {hasMapsKey && (
+            <button
+              onClick={() => setMode((m) => (m === "list" ? "map" : "list"))}
+              aria-label={mode === "list" ? "Map view" : "List view"}
+              data-testid="course-search-mode-toggle"
+              style={{
+                width: 40,
+                height: 40,
+                flexShrink: 0,
+                borderRadius: 99,
+                border: `1px solid ${mode === "map" ? T.ink : T.hairline}`,
+                background: mode === "map" ? T.ink : "transparent",
+                color: mode === "map" ? T.paper : T.pencil,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {mode === "list" ? <MapModeIcon /> : <ListModeIcon />}
+            </button>
+          )}
         </div>
 
         {/* Error */}
@@ -731,7 +834,12 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
         )}
 
         {/* Scrollable content — the ONLY region that grows with results.
-            The outer frame above never resizes, regardless of row count. */}
+            The outer frame above never resizes, regardless of row count.
+            List-mode only; map mode renders CourseScoutMap in its place
+            below — the list subtree is simply not rendered, so its state
+            (favorites/recent/nearby/searchResults/session) survives the
+            round-trip untouched (specs/course-selection-b2-plan.md §1). */}
+        {mode === "list" && (
         <div
           data-testid="course-search-scroll-region"
           style={{
@@ -941,6 +1049,17 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
             </>
           )}
         </div>
+        )}
+
+        {mode === "map" && (
+          <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+            <CourseScoutMap
+              onAddPin={handleAddPin}
+              initialCenter={initialCenter}
+              panTarget={panTarget}
+            />
+          </div>
+        )}
       </motion.div>
     </AnimatePresence>
   );

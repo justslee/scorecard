@@ -446,7 +446,7 @@ const SOURCE_LABELS: Partial<Record<CourseSearchResult['source'], string>> = {
   osm: 'OSM',
 };
 
-function sourceLabelFor(source: string): string {
+export function sourceLabelFor(source: string): string {
   return SOURCE_LABELS[source as CourseSearchResult['source']] ?? source.toUpperCase();
 }
 
@@ -457,7 +457,7 @@ const KNOWN_SOURCES = new Set<CourseSearchResult['source']>([
   'golfapi', 'osm', 'mapped', 'local', 'google_places',
 ]);
 
-function normalizeSource(source: string | undefined): CourseSearchResult['source'] {
+export function normalizeSource(source: string | undefined): CourseSearchResult['source'] {
   return source && KNOWN_SOURCES.has(source as CourseSearchResult['source'])
     ? (source as CourseSearchResult['source'])
     : 'local';
@@ -913,4 +913,101 @@ export async function searchNearby(
   radiusMeters = 25000
 ): Promise<CourseSearchResult[]> {
   return (await searchNearbyDetailed(lat, lng, radiusMeters)).results;
+}
+
+// ===== Viewport (map) course pins — course-selection B1/B2 =====
+
+/** One pin from GET /api/courses/in-bounds (course-selection B1). */
+export interface InBoundsCourse {
+  id: string;                          // stable UUID (attach_stable_ids) or DB id — always present on the wire
+  name: string;
+  address?: string | null;
+  center: { lat: number; lng: number };
+  source: string;                      // "local" | "osm" (defensive: string)
+  osm_id?: string;                     // OSM passthrough, unused by B2
+}
+
+export interface InBoundsResponse {
+  courses: InBoundsCourse[];
+  degraded: boolean;
+  zoomIn: boolean;
+}
+
+export interface BBox {
+  swLat: number;
+  swLng: number;
+  neLat: number;
+  neLng: number;
+}
+
+/** Raw wire shape of a single /in-bounds course row — every field optional,
+ *  since the client can't trust the wire (stale cache / malformed row). */
+interface RawInBoundsCourse {
+  id?: string;
+  name?: string;
+  address?: string | null;
+  center?: { lat?: number; lng?: number };
+  source?: string;
+  osm_id?: string;
+}
+
+interface RawInBoundsResponse {
+  courses?: RawInBoundsCourse[];
+  degraded?: boolean;
+  zoomIn?: boolean;
+}
+
+/**
+ * Fetch course pins in a map viewport bbox — course-selection B2's ONLY data
+ * source (no Places/GolfAPI/Mapbox is reachable from this function — budget
+ * invariant, see specs/course-selection-b2-plan.md §4).
+ *
+ * Defensively normalizes the payload: drops any row missing a non-empty
+ * `id`/`name` or a finite `center` (never render a pin without a real
+ * center — no-fake-data-fallbacks). `degraded`/`zoomIn` are Boolean-coerced.
+ * A thrown/aborted fetch propagates to the caller (the scout coordinator
+ * treats it as a failed fetch) rather than being papered over here.
+ *
+ * Combines the caller's `signal` with an internal 10s timeout — covers the
+ * worst cold-cell case (up to 4 concurrent OSM fetches, ~5.5s each).
+ */
+export async function fetchCoursesInBounds(
+  bbox: BBox,
+  signal?: AbortSignal
+): Promise<InBoundsResponse> {
+  const { swLat, swLng, neLat, neLng } = bbox;
+  const params = new URLSearchParams({
+    swLat: String(swLat),
+    swLng: String(swLng),
+    neLat: String(neLat),
+    neLng: String(neLng),
+  });
+  const combinedSignal = combineSignals(signal, AbortSignal.timeout(10000));
+
+  const data = await fetchAPI<RawInBoundsResponse>(
+    `/api/courses/in-bounds?${params.toString()}`,
+    { signal: combinedSignal }
+  );
+
+  const courses: InBoundsCourse[] = (data.courses ?? []).flatMap((c) => {
+    const lat = c.center?.lat;
+    const lng = c.center?.lng;
+    if (!c.id || !c.name || typeof lat !== 'number' || typeof lng !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return [];
+    }
+    return [{
+      id: c.id,
+      name: c.name,
+      address: c.address ?? undefined,
+      center: { lat, lng },
+      source: c.source ?? 'local',
+      osm_id: c.osm_id,
+    }];
+  });
+
+  return {
+    courses,
+    degraded: Boolean(data.degraded),
+    zoomIn: Boolean(data.zoomIn),
+  };
 }

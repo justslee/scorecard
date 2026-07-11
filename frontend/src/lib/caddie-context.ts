@@ -44,6 +44,11 @@ export interface TaskAck {
    *  setTimeout(onDispatch) beat the tap flow uses). The host only plays the
    *  confirming beat (haptic + orb pulse); it owns no dispatch machinery. */
   dispatched: boolean;
+  /** true → the host reopens the mic for one hands-free follow-up turn after
+   *  speaking `line` (A3: the clarify question's answer). Only meaningful
+   *  with `dispatched:false`. Optional — other registrants (tournament setup)
+   *  need no change. */
+  expectReply?: boolean;
 }
 
 export interface CaddieTaskContext {

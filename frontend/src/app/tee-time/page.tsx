@@ -47,6 +47,7 @@ import { useCaddiePageContext } from "@/hooks/useCaddiePageContext";
 import type { TaskParse, TaskAck } from "@/lib/caddie-context";
 import { teeTimeTaskParse, planTeeTimeApply, type TeeTimeTaskPayload } from "@/lib/teetime/caddie-task";
 import { resolveSpokenCourse, type SpokenCourseResolution } from "@/lib/teetime/course-resolve";
+import { routeClarifyReply, type PendingCourseClarify } from "@/lib/teetime/course-clarify";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -394,6 +395,11 @@ function Prefs({
   // contract-teetime-plan.md §7). Filling the form by hand remains the
   // fallback.
   const dispatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A3: the outstanding ambiguous-course question, if any. A ref — nothing
+  // renders from it; the registered ctx delegates through refs already. It
+  // dies with Prefs on unmount, and the host's context-unmount hygiene closes
+  // the sheet, so pending can never wedge the sheet open.
+  const pendingClarifyRef = useRef<PendingCourseClarify | null>(null);
 
   useEffect(() => () => {
     if (dispatchTimerRef.current) clearTimeout(dispatchTimerRef.current);
@@ -404,20 +410,25 @@ function Prefs({
    *  same computation as the old private applyParsed, factored into
    *  caddie-task.ts so it's provable-parity-tested against the real libs. */
   const apply = useCallback((p: TaskParse): TaskAck => {
-    const { parsed, resolution } = p.payload as TeeTimeTaskPayload;
+    const { parsed, resolution, clarify } = p.payload as TeeTimeTaskPayload;
     const plan = planTeeTimeApply(
       parsed,
       { windows, courses, maxMiles, group, origin: parseArea(area), touched: coursesTouchedRef.current },
       resolution,
+      clarify,
     );
     if (plan.windows) setWindows(plan.windows);
     if (plan.courses) setCourses(plan.courses);
     // A voice-resolved course is the golfer touching the list — a later utterance
     // then preserves this pick instead of re-deselecting it as a GPS preselect.
     if (resolution?.kind === "one") coursesTouchedRef.current = true;
+    if (clarify?.match.kind === "picked") coursesTouchedRef.current = true;
     if (plan.maxMiles != null) setMaxMiles(plan.maxMiles);
     if (plan.group) setGroup(plan.group);
     if (plan.maxPriceUsd != null) setMaxPriceUsd(plan.maxPriceUsd);
+    // Unconditional — any applied turn that isn't itself an ask clears a
+    // stale pending (the staleness story: normal branches always null this).
+    pendingClarifyRef.current = plan.pendingClarify;
     if (plan.dispatched) {
       // Voice-first: a complete request (a day/time) or an explicit go-ahead
       // sends the looper out — speak, and it searches. A short beat lets the
@@ -425,7 +436,7 @@ function Prefs({
       if (dispatchTimerRef.current) clearTimeout(dispatchTimerRef.current);
       dispatchTimerRef.current = setTimeout(onDispatch, 1400);
     }
-    return { line: plan.line, dispatched: plan.dispatched };
+    return { line: plan.line, dispatched: plan.dispatched, expectReply: plan.expectReply };
   }, [windows, setWindows, courses, setCourses, maxMiles, setMaxMiles, group, setGroup, setMaxPriceUsd, onDispatch, area, coursesTouchedRef]);
 
   useCaddiePageContext({
@@ -436,13 +447,30 @@ function Prefs({
       hint: "What do you have in mind for this weekend? I'll rustle one up.",
       nudge: "Want me to set that tee-time search up? Just say when and where.",
     },
-    // Bias STT toward the course names on screen — "Bethpage" beats "bath page".
-    getKeyterms: () => buildKeyterms(courses.map((c) => c.name)),
+    // Bias STT toward the course names on screen — "Bethpage" beats "bath
+    // page" — plus, while a clarify question is pending, the candidates'
+    // localities/names so the reply ("the Brooklyn one") is heard cleanly.
+    getKeyterms: () => {
+      const pending = pendingClarifyRef.current;
+      const pendingTerms = pending
+        ? pending.candidates.flatMap((c) => [c.localityLabel, c.name].filter(Boolean))
+        : [];
+      return buildKeyterms([...courses.map((c) => c.name), ...pendingTerms]);
+    },
     parse: async (transcript) => {
       const parsed = await parseTeeTimePrefs({
         transcript,
         known: { courses: courses.map((c) => c.name) },
       });
+      // A3: while a clarify question is pending, the reply is FIRST checked
+      // against the outstanding candidates. A route means this utterance is
+      // the clarify answer (a pick, or a miss to re-ask/bail) — never
+      // re-resolve on a clarify turn (this plus the matcher's name-repeat→
+      // ambiguous rule kills the loop).
+      const route = routeClarifyReply(transcript, parsed, pendingClarifyRef.current);
+      if (route) {
+        return teeTimeTaskParse(transcript, parsed, null, route);
+      }
       // A2: a course was named but matched nothing on-screen — resolve that
       // single spoken name through the unified search (the same path typed
       // search uses) so the RIGHT course gets selected + searched, not GPS.

@@ -125,6 +125,39 @@ async def nearby_courses(lat: float, lng: float, radius_meters: float = 50000) -
     return [_list_item(r) for r in rows]
 
 
+# ── In-bounds (viewport bbox, PostGIS) ─────────────────────────────────────────
+async def courses_in_bounds(
+    sw_lat: float, sw_lng: float, ne_lat: float, ne_lng: float, limit: int = 60
+) -> list[dict]:
+    """Courses whose location falls inside the given lat/lng bounding box, the
+    DB leg of GET /api/courses/in-bounds (course-selection B1) — the honesty
+    floor that always runs regardless of OSM-cache warmth.
+
+    Ordered nearest-to-bbox-center-first so a store-side ``limit`` truncation
+    (default 60, above the route's 40-pin cap) drops the farthest rows, not
+    arbitrary ones.
+    """
+    sql = """
+        select id::text as id, name, address,
+               ST_X(location::geometry) as lng, ST_Y(location::geometry) as lat,
+               updated_at
+        from public.courses
+        where location is not null
+          and ST_Intersects(location::geometry,
+                            ST_MakeEnvelope(:sw_lng, :sw_lat, :ne_lng, :ne_lat, 4326))
+        order by location::geometry <-> ST_SetSRID(ST_MakePoint(:c_lng, :c_lat), 4326)
+        limit :limit
+    """
+    params = {
+        "sw_lat": sw_lat, "sw_lng": sw_lng, "ne_lat": ne_lat, "ne_lng": ne_lng,
+        "c_lat": (sw_lat + ne_lat) / 2, "c_lng": (sw_lng + ne_lng) / 2,
+        "limit": limit,
+    }
+    async with async_session() as db:
+        rows = (await db.execute(text(sql), params)).mappings().all()
+    return [_list_item(r) for r in rows]
+
+
 # ── Batch lookup by id (tee-time course-selection resolution) ─────────────────
 async def courses_by_ids(ids: list[str]) -> list[dict]:
     """Fetch id/name/lat/lng for a batch of mapped courses.

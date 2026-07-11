@@ -3,7 +3,8 @@
 
 import { describe, it, expect } from "vitest";
 import { teeTimeTaskParse, teeTimeConfirmEcho, planTeeTimeApply, type TeeTimeTaskPayload } from "./caddie-task";
-import type { SpokenCourseResolution } from "./course-resolve";
+import type { ResolvedCandidate, SpokenCourseResolution } from "./course-resolve";
+import type { PendingCourseClarify, ClarifyReplyMatch } from "./course-clarify";
 import { TeeTimePrefsParseResultSchema } from "@/lib/voice/schemas";
 import type { TeeTimePrefsParseResultValidated } from "@/lib/voice/schemas";
 import { parseTeeTimePrefsLocally } from "@/lib/voice/parseTeeTimePrefs";
@@ -264,7 +265,7 @@ describe("planTeeTimeApply — A2: the resolved course wins", () => {
     expect(plan.line.toLowerCase()).toContain("find");
   });
 
-  it('resolution "ambiguous" → asks which area, no dispatched guess', () => {
+  it('resolution "ambiguous" with EMPTY candidates (defensive) → old generic line, no dispatched guess, no pending', () => {
     const parsed = parsedFixture({
       windows: [{ day: "saturday", period: "morning" }],
       unresolvedCourseNames: ["marine park"],
@@ -277,6 +278,9 @@ describe("planTeeTimeApply — A2: the resolved course wins", () => {
     expect(plan.dispatched).toBe(false);
     expect(plan.line.toLowerCase()).toContain("a few courses");
     expect(plan.line.toLowerCase()).toContain("which area");
+    // A3 (RED 11): empty candidates is defensive-only — never sets pending.
+    expect(plan.pendingClarify).toBeNull();
+    expect(plan.expectReply).toBe(false);
   });
 
   it('resolution "unreachable" → honest "couldn\'t reach", no dispatch', () => {
@@ -292,6 +296,154 @@ describe("planTeeTimeApply — A2: the resolved course wins", () => {
     expect(plan.dispatched).toBe(false);
     expect(plan.line.toLowerCase()).toContain("couldn");
     expect(plan.line.toLowerCase()).toContain("reach");
+  });
+});
+
+describe("planTeeTimeApply — A3: clarify turn", () => {
+  const PITTSBURGH = { lat: 40.44, lng: -79.99 };
+  const BROOKLYN = { lat: 40.6, lng: -73.9 };
+  const NJ = { lat: 40.42, lng: -74.36 };
+
+  const CANDIDATES: ResolvedCandidate[] = [
+    {
+      id: "mp-bk",
+      name: "Marine Park Golf Course",
+      localityLabel: "Brooklyn, NY",
+      center: BROOKLYN,
+      address: "2880 Flatbush Ave, Brooklyn, NY",
+    },
+    {
+      id: "mp-nj",
+      name: "Marine Park Golf Club",
+      localityLabel: "Old Bridge, NJ",
+      center: NJ,
+      address: "1 Golf Club Dr, Old Bridge, NJ",
+    },
+  ];
+
+  const GPS_COURSES: CourseOption[] = [
+    { id: "c1", name: "Schenley", muni: "Pittsburgh", distance: 3, favorite: false, selected: false },
+    { id: "c2", name: "Bob O'Connor", muni: "Pittsburgh", distance: 5, favorite: true, selected: true },
+  ];
+
+  it("RED 1: ambiguous resolution with real candidates → asks + holds pending, dispatched:false, expectReply:true", () => {
+    const parsed = parsedFixture({
+      windows: [{ day: "saturday", period: "morning" }],
+      unresolvedCourseNames: ["marine park"],
+    });
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH },
+      { kind: "ambiguous", candidates: CANDIDATES },
+    );
+    expect(plan.dispatched).toBe(false);
+    expect(plan.pendingClarify).not.toBeNull();
+    expect(plan.pendingClarify!.candidates).toEqual(CANDIDATES);
+    expect(plan.pendingClarify!.armed).toBe(true); // the original turn had a window
+    expect(plan.pendingClarify!.attempts).toBe(0);
+    expect(plan.expectReply).toBe(true);
+    expect(plan.line).toContain("Brooklyn");
+    expect(plan.line).toContain("Old Bridge");
+  });
+
+  it("RED 2: a clarify pick (the Brooklyn one) → added+selected via the shared A2 add-flow, GPS preselect deselected, honest distance, dispatched (armed)", () => {
+    const parsed = parsedFixture({}); // the reply itself carries no windows/dispatch
+    const pending: PendingCourseClarify = { name: "marine park", candidates: CANDIDATES, armed: true, attempts: 0 };
+    const match: ClarifyReplyMatch = { kind: "picked", candidate: CANDIDATES[0] };
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH, touched: false },
+      null,
+      { pending, match },
+    );
+    const added = plan.courses!.find((c) => c.name === "Marine Park Golf Course");
+    expect(added).toBeDefined();
+    expect(added!.selected).toBe(true);
+    // The GPS auto-preselect is no longer selected — same A2 rule.
+    expect(plan.courses!.find((c) => c.id === "c2")!.selected).toBe(false);
+    expect(added!.distance!).toBeGreaterThan(50); // honest real distance
+    expect(plan.maxMiles).toBeNull(); // never fake-widened
+    expect(plan.dispatched).toBe(true); // armed by the ORIGINAL turn, not this reply
+    expect(plan.pendingClarify).toBeNull();
+    expect(plan.expectReply).toBe(false);
+    expect(plan.line).toContain("Marine Park Golf Course");
+    expect(plan.line).toContain("Brooklyn");
+    expect(plan.line.toLowerCase()).toContain("mi away");
+    expect(plan.line).toContain("On it.");
+  });
+
+  it("RED 2b: a clarify pick when the ORIGINAL turn was NOT armed and this reply adds no window either → added, not dispatched", () => {
+    const parsed = parsedFixture({});
+    const pending: PendingCourseClarify = { name: "marine park", candidates: CANDIDATES, armed: false, attempts: 0 };
+    const match: ClarifyReplyMatch = { kind: "picked", candidate: CANDIDATES[0] };
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH, touched: false },
+      null,
+      { pending, match },
+    );
+    expect(plan.dispatched).toBe(false);
+    expect(plan.line).not.toContain("On it.");
+    expect(plan.line).toContain("Found Marine Park");
+  });
+
+  it("RED 6: no-match reply → one honest re-ask naming both localities, attempts→1, expectReply:true, dispatched:false", () => {
+    const parsed = parsedFixture({});
+    const pending: PendingCourseClarify = { name: "marine park", candidates: CANDIDATES, armed: true, attempts: 0 };
+    const match: ClarifyReplyMatch = { kind: "none" };
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH },
+      null,
+      { pending, match },
+    );
+    expect(plan.dispatched).toBe(false);
+    expect(plan.line).toContain("Brooklyn");
+    expect(plan.line).toContain("Old Bridge");
+    expect(plan.pendingClarify).not.toBeNull();
+    expect(plan.pendingClarify!.attempts).toBe(1);
+    expect(plan.expectReply).toBe(true);
+  });
+
+  it("RED 7: bounded bail — the SAME miss at attempts:1 spends the 2-ask budget, pending clears, no dispatch", () => {
+    const parsed = parsedFixture({});
+    const pending: PendingCourseClarify = { name: "marine park", candidates: CANDIDATES, armed: true, attempts: 1 };
+    const match: ClarifyReplyMatch = { kind: "ambiguous" };
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH },
+      null,
+      { pending, match },
+    );
+    expect(plan.dispatched).toBe(false);
+    expect(plan.pendingClarify).toBeNull();
+    expect(plan.expectReply).toBe(false);
+    expect(plan.line.toLowerCase()).toContain("no worries");
+  });
+
+  it('RED 8: "yes"/"go ahead" while pending can NOT dispatch a guess — routed to the clarify lane (match:none), plan re-asks instead of dispatching', () => {
+    const parsed = parsedFixture({ dispatch: true }); // BARE_YES_RE/DISPATCH_RE territory
+    const pending: PendingCourseClarify = { name: "marine park", candidates: CANDIDATES, armed: true, attempts: 0 };
+    const match: ClarifyReplyMatch = { kind: "none" }; // "yeah go ahead" matches no candidate
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH },
+      null,
+      { pending, match },
+    );
+    expect(plan.dispatched).toBe(false);
+    expect(plan.expectReply).toBe(true);
+  });
+
+  it("RED 9: a normal (non-clarify) applied turn ALWAYS clears pending — pendingClarify:null, expectReply:false", () => {
+    // Mirrors the stale-state bail: routeClarifyReply returned null (topic
+    // change) at the page level, so apply is called with clarify:null; this
+    // proves every normal branch nulls pendingClarify unconditionally.
+    const parsed = parsedFixture({ windows: [{ day: "sunday", period: "afternoon" }] });
+    const plan = planTeeTimeApply(parsed, { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP });
+    expect(plan.dispatched).toBe(true);
+    expect(plan.pendingClarify).toBeNull();
+    expect(plan.expectReply).toBe(false);
   });
 });
 

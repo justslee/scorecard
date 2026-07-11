@@ -51,7 +51,13 @@ export interface ResolvedCandidate {
   name: string;
   /** Honest short locality ("Brooklyn, NY"), "" when none — never invented. */
   localityLabel: string;
-  center?: { lat: number; lng: number };
+  /** Required — candidates are only ever built from a PlaceableResult, which
+   *  guarantees a real center; the optional type was a lie that would force a
+   *  guard downstream (A3). */
+  center: { lat: number; lng: number };
+  /** Free-form location text (address) — feeds a clarify pick into
+   *  courseOptionFromSelection with the same honest input the "one" path uses. */
+  address?: string;
 }
 
 export type SpokenCourseResolution =
@@ -180,6 +186,7 @@ function ambiguousOf(
       name: r.name,
       localityLabel: localityLabel(r.name, r.address),
       center: r.center,
+      address: r.address,
     }));
   return { kind: "ambiguous", candidates };
 }

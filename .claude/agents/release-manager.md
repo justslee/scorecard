@@ -24,6 +24,14 @@ build and point him at how to test (staging). Then:
    **TestFlight Internal** — private to the owner's Apple ID, never public). One-command; no
    Xcode clicking. Use a monotonic build number. (Xcode Cloud via a `release/*` branch is the
    fallback if local signing is unavailable.)
+   - **BUMP `VERSION` FIRST (root `VERSION` file = the marketing version source of truth).**
+     TestFlight sorts by version string, so a new build MUST have a version ≥ every build already
+     uploaded or it hides UNDER the older entry and looks like it never arrived (this bit us: a
+     `1.0.<commit-count>` default `v1.0.1312` was buried below the `1.1.0` milestone → owner "didn't
+     see the new version"). Bump `VERSION` per release — **patch** for a fix/polish bundle (1.1.1 →
+     1.1.2), **minor** for a milestone (→ 1.2.0) — commit it with the ship. `ship.sh` reads `VERSION`
+     by default; never rely on the legacy `1.0.N` fallback. Verify the version you're about to upload
+     sorts above the last one before building.
 2. **Wait for processing:** poll App Store Connect for the new build to finish processing.
 3. **Record on the board.** Move/locate the bundle's card (Status → "Needs Review", build
    number if any + a checklist of EVERYTHING in the bundle: headline items first, silent work
