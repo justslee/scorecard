@@ -13501,3 +13501,15 @@ Lesson candidate: version must never sort below the last-shipped; VERSION file i
   (distance is a required engine arg + gated upstream). Verified by T11 + reviewer trace.
 - Did NOT ship/ping this cycle (per brief — owner handles approval separately). Bundle #134
   now has 2 noticeable items awaiting the owner's single "ship it".
+
+## AWAITING (cycle 96) — Plan agent (fable) on course-search B1
+- Caddie reachability bookkeeping CONFIRMED complete (no re-run): PR #134 item [x] NOTICEABLE #2,
+  progress DONE (cycle 95), no dedicated backlog.json line (owner-feedback item). Nothing to redo.
+- Now driving: course-search B1 = GET /api/courses/in-bounds (backend-only, SILENT/infra —
+  enables the NOTICEABLE B2 map UI next cycle). Spec: specs/course-selection-ux-plan.md Part B §B.1.
+- Branch: integration/next @ daa2925 (synced origin/main, clean).
+- Dispatched Plan (fable) -> specs/course-selection-b1-plan.md: endpoint contract, geo-cell
+  cache key scheme (~0.05deg), dedupe/stable-id path, degraded-not-empty semantics, budget
+  invariant (NO Places/GolfAPI on path; OSM-only geo-cell-cached write-through), pin cap + zoom-out.
+- On plan: builder on integration/next (pytest RED->GREEN incl budget-invariant + degraded-not-empty),
+  then reviewer (fresh) + qa (SHA-pinned CI SUCCESS). No designer (no UI). Do NOT ship/ping.
