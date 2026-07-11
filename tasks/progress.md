@@ -14162,3 +14162,13 @@ note → format-agnostic "No money on this one — nothing to settle."; (C) Wolf
 "Foursome" (round-games.ts:40). (D nit) disabled-row: fade border/bg/icon only, keep text
 legible (sunlight). Then re-review (reviewer) + re-run gates (qa). Follow-up to backlog: wolf
 true-transfer engine + re-add to money set. Do NOT ship/ping.
+
+## AWAITING — re-review on 2e17261 (branch integration/next @ b0bb7a5)
+Builder iteration 2e17261: wolf removed from SETTLEABLE_FORMATS+STAKE_GAME_IDS (now {skins,match,
+nassau}), dead wolf branch+false comment deleted, wolf tests→honest-empty, NEW zero-sum property
+test over SETTLEABLE_FORMATS (8 fixtures), copy note→"No money on this one — nothing to settle.",
+wolf tag→"Foursome", disabled-row opacity spares label+sub-copy. Gates green 2218/2218 local.
+Re-dispatched: reviewer (confirm wolf honestly-empty + property test is real not tautological + no
+regression) + qa (gates SUCCESS on b0bb7a5) + designer (confirm 2 copy fixes + opacity APPROVE).
+All green → update PR#135 checklist + backlog follow-up (wolf true-transfer engine), commit, DONE.
+Any BLOCKING → back to builder. Do NOT ship/ping.
