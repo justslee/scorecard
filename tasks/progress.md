@@ -13215,8 +13215,17 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
   frontend caption (spec §5); new test_yardage_line.py locks it (2067 passed, +6).
 - QA: all gates PASS on 14dee9b; PR #133 all 3 required CI checks SUCCESS. DB tests via CI
   (no local Postgres, per standing rule). Bethpage/hole-yardage/tee-anchor fixtures green.
-- AWAITING: designer (header yardage + basis caption). Then bookkeeping (PR #133 + backlog +
-  progress) + confirm CI SUCCESS on new head 007fa0a. Reconcile from origin on resume.
+- Designer: SHIP header caption as-is (calm/honest/consistent, no new design language, no
+  internal basis strings leak). One real cross-surface gap folded @6591d9b: OfflineCaddieCard
+  now carries the honest yardageCaption ("at least …" floor + tee name) instead of bare
+  "{yards} yards" — the off-grid surface no longer disagrees with the header on how honest a
+  number is. Frontend gates re-run green (lint/tsc/voice 278/vitest 350 caddie+components/build).
+- CYCLE 90 DONE (NOTICEABLE — core caddie-trust fix). caddie-yardage-gps-selected-tee →
+  done-on-bundle in backlog (resolution field). PR #133 checklist +1 (the caddie item). Head
+  6591d9b. Mock 178 reaches NO caddie surface (grep-verified); all surfaces agree; caddie
+  adopts the player's number; Bethpage hole 3 grounds on 231/GPS not 178. Rides bundle #133;
+  merges with the owner's next "ship it" (bundle already has noticeable items — NOT pinging
+  this cycle per task instruction: SILENT, no ship/ping). Confirm CI strict-green on 6591d9b.
 
 ## Cycle 89 (2026-07-11) — OWNER: course-selection UX (named-course bug + map search)
 - Owner (A) BUG: in Pittsburgh (GPS), asked caddie for a tee time at "Marine Park" (NY) → it searched Pittsburgh courses instead of the named course. Need named-course resolution + caddie clarification (disambiguation), not GPS-fallback.
