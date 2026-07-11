@@ -13152,3 +13152,8 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 - Owner screenshots: caddie grounded on 178 (card) but he plays 231 from his tees; GPS active but not used; caddie ARGUES the wrong number. Recurring (multi-tee-anchor resolved to ~174 card, not selected tee).
 - Owner's fix spec: use GPS-to-green-center when on the hole, ELSE the SELECTED-tee distance — never the scorecard default. Apply to caddie grounding + sheet header + F/C/B/plays.
 - AWAITING: Fable diagnosis+plan (specs/caddie-yardage-gps-selected-tee-plan.md) → then build. Core/recurring → Fable first.
+
+## Cycle 89 (2026-07-11) — OWNER: course-selection UX (named-course bug + map search)
+- Owner (A) BUG: in Pittsburgh (GPS), asked caddie for a tee time at "Marine Park" (NY) → it searched Pittsburgh courses instead of the named course. Need named-course resolution + caddie clarification (disambiguation), not GPS-fallback.
+- Owner (B) FEATURE: replace the "bland checklist" — add MAP-based course search when adding a course (pan/zoom, markers on ONLY golf courses in the current viewport) for scanning when unsure where to play.
+- AWAITING: Fable plan (specs/course-selection-ux-plan.md) — diagnose (A) + fix; design (B) map search + markers source (budget-aware per golfapi-budget) + better-than-checklist UX; sequence bug-fix FIRST. Ground in course-search-ux-requirements + next-epic-course-search-db memories.
