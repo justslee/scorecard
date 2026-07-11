@@ -3,6 +3,14 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING (cycle 85 — reviewer + designer on 5a29ebb)
+Builder DONE @ 5a29ebb (+progress b59ba46). eng-lead verified diff matches plan exactly + all gates
+green. AWAITING: reviewer (fresh, adversarial — orb shows AND works general converse not dead mic on
+/courses/[id]; guard change no list-page/other regression; no double-mic; the regression test would
+catch the dead mic) + designer (live preview: orb placement on course-detail, no collide with the
+in-flow "Start a round here" CTA, calm). BLOCKING → re-dispatch builder. Green+designer-ok → update
+PR #133 + backlog (TARGETED edit, dup keys) + progress. SILENT — no ship/ping. Reconcile from origin on resume.
+
 ## 2026-07-11 — builder: orb-on-course-detail DONE, on integration/next (commit 5a29ebb)
 
 Item: show + wire the caddie orb on course-detail pages (`/courses/[id]`) as a
