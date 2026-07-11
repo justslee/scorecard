@@ -175,6 +175,7 @@ def test_elevation_patch_omits_green_slope_when_none():
     assert patch["tee_elevation_ft"] == 96.0
     assert patch["green_elevation_ft"] == 125.4
     assert patch["plays_like_yards"] == 9.8
+    assert isinstance(patch["elevation_computed_at"], str) and patch["elevation_computed_at"]
 
 
 def test_elevation_patch_includes_green_slope_when_present():
@@ -193,6 +194,7 @@ def test_elevation_patch_includes_green_slope_when_present():
     }
     patch = courses_mapped._elevation_patch(profile)
     assert patch["green_slope"] == slope
+    assert isinstance(patch["elevation_computed_at"], str) and patch["elevation_computed_at"]
 
 
 # ══════════════════════════════════════════════════════════════════════════════

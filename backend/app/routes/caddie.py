@@ -52,8 +52,10 @@ from app.caddie import learning as learning_mod
 from app.caddie.types import PlayerStatistics, PlayerTendencies
 from app.services import courses_mapped
 from app.services.course_guides import _precompute_course_guides
-from app.services.elevation import sample_course_elevations
-from app.services.course_spatial import _ring_centroid
+from app.services.course_elevation import (
+    _green_persisted_elevation,
+    _precompute_course_elevations,
+)
 from app.services.clerk_auth import current_user_id, optional_user_id
 from app.services.rate_limit import caddie_rate_limited_user
 
@@ -123,19 +125,6 @@ async def _resolve_mapped_course_id(course_name: str) -> str | None:
     return None
 
 
-def _green_persisted_elevation(stored_hole: Optional[dict]) -> Optional[dict]:
-    """Pull the green feature's persisted elevation subset from a stored hole
-    (as returned by `courses_mapped.get_course`), or None when absent."""
-    if not stored_hole:
-        return None
-    feats = (stored_hole.get("features") or {}).get("features") or []
-    for f in feats:
-        props = f.get("properties") or {}
-        if props.get("featureType") == "green" and props.get("tee_elevation_ft") is not None:
-            return props  # full props dict; build_hole_intelligence reads only elevation keys
-    return None
-
-
 def _green_persisted_guide(stored_hole: Optional[dict]) -> Optional[dict]:
     """Pull the green feature's persisted `strategy_guide` dict from a stored
     hole (as returned by `courses_mapped.get_course`), or None when absent."""
@@ -147,82 +136,6 @@ def _green_persisted_guide(stored_hole: Optional[dict]) -> Optional[dict]:
         if props.get("featureType") == "green" and props.get("strategy_guide") is not None:
             return props.get("strategy_guide")
     return None
-
-
-def _feature_center(feats: list[dict], feature_type: str) -> Optional[tuple[float, float]]:
-    """(lng, lat) centre of the first WELL-FORMED feature of `feature_type`.
-
-    A malformed feature (missing/invalid geometry) must not blind the whole
-    hole: skip it and keep scanning later same-type features rather than
-    returning None on the first bad one.
-    """
-    for f in feats:
-        if (f.get("properties") or {}).get("featureType") != feature_type:
-            continue
-        geom = f.get("geometry") or {}
-        coords = geom.get("coordinates")
-        gtype = geom.get("type")
-        try:
-            if gtype == "Point":
-                return (coords[0], coords[1])
-            if gtype == "Polygon":
-                lon, lat = _ring_centroid(coords[0])
-                return (lon, lat)
-            if gtype == "MultiPolygon":
-                lon, lat = _ring_centroid(coords[0][0])
-                return (lon, lat)
-        except (TypeError, IndexError, KeyError):
-            continue  # malformed feature — keep scanning remaining same-type features
-    return None
-
-
-async def _precompute_course_elevations(course_id: str) -> None:
-    """Seed per-hole elevation into green-feature properties so the 2nd
-    course-intel open shows elevation instantly. Best-effort: never raises."""
-    try:
-        course = await courses_mapped.get_course(course_id)
-        if not course:
-            return
-
-        # Build the minimal LineString hole list sample_course_elevations
-        # expects (tee = coords[0], green = coords[-1]), deriving tee/green
-        # centres from stored polygon features. Only holes MISSING persisted
-        # elevation are sampled (idempotent + avoids re-hitting USGS).
-        synth_holes: list[dict] = []
-        SYNTH_NAME = "precompute"
-        for h in course.get("holes", []):
-            feats = (h.get("features") or {}).get("features") or []
-            green_c = _feature_center(feats, "green")
-            tee_c = _feature_center(feats, "tee")
-            if green_c is None or tee_c is None:
-                continue  # absent != zero — cannot sample; skip
-            if _green_persisted_elevation(h) is not None:
-                continue  # already persisted — idempotent skip
-            synth_holes.append({
-                "type": "Feature",
-                "properties": {"course_name": SYNTH_NAME, "ref": h["number"]},
-                "geometry": {
-                    "type": "LineString",
-                    "coordinates": [
-                        [tee_c[0], tee_c[1]],      # [lng, lat] tee   -> coords[0]
-                        [green_c[0], green_c[1]],  # [lng, lat] green -> coords[-1]
-                    ],
-                },
-            })
-
-        if not synth_holes:
-            return  # nothing to do — zero USGS calls
-
-        profiles = await sample_course_elevations(synth_holes, SYNTH_NAME)  # 2 batched calls
-        for hole_number, profile in profiles.items():  # omit-on-missing already applied
-            try:
-                await courses_mapped.update_green_feature_properties(
-                    course_id, hole_number, courses_mapped._elevation_patch(profile)
-                )
-            except Exception:
-                log.warning("precompute write-back failed hole %s", hole_number, exc_info=True)
-    except Exception:
-        log.warning("elevation precompute failed course=%s", course_id, exc_info=True)
 
 
 def _first_text(message) -> str:

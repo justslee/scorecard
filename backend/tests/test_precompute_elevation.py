@@ -1,20 +1,26 @@
-"""Non-DB unit tests for the `/session/start` elevation precompute job
-(`app.routes.caddie._precompute_course_elevations` + `_feature_center`).
+"""Non-DB unit tests for the elevation precompute job
+(`app.services.course_elevation._precompute_course_elevations` +
+`_feature_center` + `elevation_coords_key`).
 
-Covers the non-DB half of plan item (d): synth-hole construction skips holes
-lacking a tee/green feature and skips holes that already carry persisted
-elevation (idempotent), including the zero-sample early return (no
-`sample_course_elevations` call at all when nothing is computable).
+specs/course-intel-static-persistence-plan.md (v2). Covers:
+  - synth-hole construction skips holes lacking a tee/green feature
+  - content-addressed invalidation (`elevation_coords_key`): matching key ->
+    skip (zero sampler calls); missing key -> resample; mismatched key ->
+    resample + patch carries the fresh key
+  - `elevation_coords_key` quantization determinism
+  - the zero-sample early return (no `sample_course_elevations` call at all
+    when nothing is computable)
 
-No network, no database — `courses_mapped.get_course` / `update_green_feature_properties`
-and `sample_course_elevations` are all monkeypatched.
+No network, no database — `courses_mapped.get_course` /
+`update_green_feature_properties` and `sample_course_elevations` are all
+monkeypatched.
 
 Import note
 -----------
-`app.routes.caddie` transitively imports `app.db.engine` (raises at import
-time without DATABASE_URL) and `app.db.models`. We stub DATABASE_URL to a
-dummy asyncpg URL (not a real connection — the async engine is lazy), same
-pattern as `tests/test_realtime_tools.py`.
+`app.services.course_elevation` transitively imports `app.services.courses_mapped`
+-> `app.db.engine` (raises at import time without DATABASE_URL). We stub
+DATABASE_URL to a dummy asyncpg URL (not a real connection — the async engine
+is lazy), same pattern as `tests/test_realtime_tools.py`.
 """
 
 from __future__ import annotations
@@ -26,7 +32,7 @@ os.environ.setdefault("LOOPER_SECRETS_DISABLED", "1")
 
 import pytest  # noqa: E402
 
-import app.routes.caddie as caddie_routes  # noqa: E402
+import app.services.course_elevation as course_elevation  # noqa: E402
 
 
 def _point_feature(feature_type: str, lng: float, lat: float, **extra_props) -> dict:
@@ -48,12 +54,12 @@ def _make_course(holes: list[dict]) -> dict:
 
 def test_feature_center_point():
     feats = [_point_feature("green", -73.45, 40.71)]
-    assert caddie_routes._feature_center(feats, "green") == (-73.45, 40.71)
+    assert course_elevation._feature_center(feats, "green") == (-73.45, 40.71)
 
 
 def test_feature_center_absent_returns_none():
     feats = [_point_feature("tee", -73.45, 40.70)]
-    assert caddie_routes._feature_center(feats, "green") is None
+    assert course_elevation._feature_center(feats, "green") is None
 
 
 def test_feature_center_polygon_uses_ring_centroid():
@@ -63,7 +69,7 @@ def test_feature_center_polygon_uses_ring_centroid():
         "properties": {"featureType": "green"},
         "geometry": {"type": "Polygon", "coordinates": [ring]},
     }]
-    center = caddie_routes._feature_center(feats, "green")
+    center = course_elevation._feature_center(feats, "green")
     assert center is not None
     lon, lat = center
     assert -73.0 <= lon <= -72.999
@@ -71,12 +77,37 @@ def test_feature_center_polygon_uses_ring_centroid():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# _precompute_course_elevations — synth-hole construction + skip logic
+# elevation_coords_key — quantization determinism
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_elevation_coords_key_deterministic_and_quantized():
+    tee = (-73.4514999, 40.7000001)
+    green = (-73.4524999, 40.7100004)
+    key_a = course_elevation.elevation_coords_key(tee, green)
+    key_b = course_elevation.elevation_coords_key(tee, green)
+    assert key_a == key_b
+    assert key_a == "-73.451500,40.700000;-73.452500,40.710000"
+
+
+def test_elevation_coords_key_differs_when_centers_move():
+    tee = (-73.4514999, 40.7000001)
+    green = (-73.4524999, 40.7100004)
+    moved_green = (-73.4530000, 40.7100004)
+    assert (
+        course_elevation.elevation_coords_key(tee, green)
+        != course_elevation.elevation_coords_key(tee, moved_green)
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# _precompute_course_elevations — synth-hole construction + invalidation
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 @pytest.mark.asyncio
-async def test_precompute_skips_holes_missing_tee_or_green_and_already_persisted(monkeypatch):
+async def test_precompute_skips_holes_missing_tee_or_green_and_matching_key(monkeypatch):
+    matching_key = course_elevation.elevation_coords_key((-73.461, 40.700), (-73.462, 40.710))
     holes = [
         {  # hole 1 — computable: has tee + green, no persisted elevation.
             "number": 1,
@@ -85,13 +116,14 @@ async def test_precompute_skips_holes_missing_tee_or_green_and_already_persisted
                 _point_feature("green", -73.452, 40.710),
             ]},
         },
-        {  # hole 2 — already persisted: skip (idempotent).
+        {  # hole 2 — already persisted, key matches current centers: skip.
             "number": 2,
             "features": {"type": "FeatureCollection", "features": [
                 _point_feature("tee", -73.461, 40.700),
                 _point_feature(
                     "green", -73.462, 40.710,
                     tee_elevation_ft=100.0, green_elevation_ft=110.0,
+                    elevation_coords_key=matching_key,
                 ),
             ]},
         },
@@ -129,47 +161,161 @@ async def test_precompute_skips_holes_missing_tee_or_green_and_already_persisted
         write_calls.append((course_id, hole_number, patch))
         return True
 
-    monkeypatch.setattr(caddie_routes.courses_mapped, "get_course", fake_get_course)
-    monkeypatch.setattr(caddie_routes, "sample_course_elevations", fake_sample_course_elevations)
+    monkeypatch.setattr(course_elevation.courses_mapped, "get_course", fake_get_course)
+    monkeypatch.setattr(course_elevation, "sample_course_elevations", fake_sample_course_elevations)
     monkeypatch.setattr(
-        caddie_routes.courses_mapped,
+        course_elevation.courses_mapped,
         "update_green_feature_properties",
         fake_update_green_feature_properties,
     )
 
-    await caddie_routes._precompute_course_elevations("course-1")
+    await course_elevation._precompute_course_elevations("course-1")
 
-    # Only hole 1 was sampled — hole 2 (already persisted) and hole 3 (no tee)
+    # Only hole 1 was sampled — hole 2 (matching key) and hole 3 (no tee)
     # were excluded from the batch entirely.
     assert len(sample_calls) == 1
     synth_refs = {f["properties"]["ref"] for f in sample_calls[0]}
     assert synth_refs == {1}
 
-    # Write-back happened for the one computable hole, using _elevation_patch.
-    assert write_calls == [(
-        "course-1",
-        1,
-        {
-            "tee_elevation_ft": 90.0,
-            "green_elevation_ft": 100.0,
-            "delta_ft": 10.0,
-            "plays_like_yards": 3.3,
-        },
-    )]
+    # Write-back happened for the one computable hole, stamped with its key.
+    expected_key = course_elevation.elevation_coords_key((-73.451, 40.700), (-73.452, 40.710))
+    assert len(write_calls) == 1
+    written_course_id, written_hole_number, written_patch = write_calls[0]
+    assert written_course_id == "course-1"
+    assert written_hole_number == 1
+    assert written_patch["tee_elevation_ft"] == 90.0
+    assert written_patch["green_elevation_ft"] == 100.0
+    assert written_patch["delta_ft"] == 10.0
+    assert written_patch["plays_like_yards"] == 3.3
+    assert written_patch["elevation_coords_key"] == expected_key
+    assert isinstance(written_patch["elevation_computed_at"], str)
 
 
 @pytest.mark.asyncio
-async def test_precompute_zero_sample_early_return_when_nothing_computable(monkeypatch):
-    """All holes already persisted or missing tee/green -> zero USGS calls:
-    sample_course_elevations must not be called at all."""
+async def test_precompute_resamples_when_key_missing(monkeypatch):
+    """Persisted elevation with NO `elevation_coords_key` (legacy / write-back
+    / ingest-seeded data) must be resampled, not trusted."""
     holes = [
-        {  # already persisted
+        {
             "number": 1,
             "features": {"type": "FeatureCollection", "features": [
                 _point_feature("tee", -73.451, 40.700),
                 _point_feature(
                     "green", -73.452, 40.710,
                     tee_elevation_ft=90.0, green_elevation_ft=95.0,
+                    # no elevation_coords_key
+                ),
+            ]},
+        },
+    ]
+    course = _make_course(holes)
+
+    async def fake_get_course(course_id):
+        return course
+
+    sample_calls: list[list[dict]] = []
+
+    async def fake_sample(synth_holes, target_course_name):
+        sample_calls.append(synth_holes)
+        return {1: {
+            "tee_elevation_ft": 91.0,
+            "green_elevation_ft": 96.0,
+            "net_change_ft": 5.0,
+            "plays_like_yards": 1.7,
+            "green_slope": None,
+        }}
+
+    write_calls: list[tuple] = []
+
+    async def fake_write(course_id, hole_number, patch):
+        write_calls.append((course_id, hole_number, patch))
+        return True
+
+    monkeypatch.setattr(course_elevation.courses_mapped, "get_course", fake_get_course)
+    monkeypatch.setattr(course_elevation, "sample_course_elevations", fake_sample)
+    monkeypatch.setattr(course_elevation.courses_mapped, "update_green_feature_properties", fake_write)
+
+    await course_elevation._precompute_course_elevations("course-1")
+
+    assert len(sample_calls) == 1
+    assert len(write_calls) == 1
+    _, hole_number, patch = write_calls[0]
+    assert hole_number == 1
+    expected_key = course_elevation.elevation_coords_key((-73.451, 40.700), (-73.452, 40.710))
+    assert patch["elevation_coords_key"] == expected_key
+
+
+@pytest.mark.asyncio
+async def test_precompute_resamples_and_restamps_when_key_mismatched(monkeypatch):
+    """A re-map moved the green -> persisted key no longer matches the
+    CURRENT stored centers -> resample + overwrite with the new key."""
+    stale_key = course_elevation.elevation_coords_key((-73.999, 41.000), (-73.998, 41.001))
+    holes = [
+        {
+            "number": 1,
+            "features": {"type": "FeatureCollection", "features": [
+                _point_feature("tee", -73.451, 40.700),
+                _point_feature(
+                    "green", -73.452, 40.710,
+                    tee_elevation_ft=90.0, green_elevation_ft=95.0,
+                    elevation_coords_key=stale_key,
+                ),
+            ]},
+        },
+    ]
+    course = _make_course(holes)
+
+    async def fake_get_course(course_id):
+        return course
+
+    sample_calls: list[list[dict]] = []
+
+    async def fake_sample(synth_holes, target_course_name):
+        sample_calls.append(synth_holes)
+        return {1: {
+            "tee_elevation_ft": 200.0,
+            "green_elevation_ft": 210.0,
+            "net_change_ft": 10.0,
+            "plays_like_yards": 3.3,
+            "green_slope": None,
+        }}
+
+    write_calls: list[tuple] = []
+
+    async def fake_write(course_id, hole_number, patch):
+        write_calls.append((course_id, hole_number, patch))
+        return True
+
+    monkeypatch.setattr(course_elevation.courses_mapped, "get_course", fake_get_course)
+    monkeypatch.setattr(course_elevation, "sample_course_elevations", fake_sample)
+    monkeypatch.setattr(course_elevation.courses_mapped, "update_green_feature_properties", fake_write)
+
+    await course_elevation._precompute_course_elevations("course-1")
+
+    assert len(sample_calls) == 1
+    assert len(write_calls) == 1
+    _, hole_number, patch = write_calls[0]
+    assert hole_number == 1
+    new_key = course_elevation.elevation_coords_key((-73.451, 40.700), (-73.452, 40.710))
+    assert patch["elevation_coords_key"] == new_key
+    assert patch["elevation_coords_key"] != stale_key
+    assert patch["tee_elevation_ft"] == 200.0
+
+
+@pytest.mark.asyncio
+async def test_precompute_zero_sample_early_return_when_nothing_computable(monkeypatch):
+    """All holes already persisted with a matching key or missing tee/green
+    -> zero USGS calls: sample_course_elevations must not be called at all."""
+    matching_key = course_elevation.elevation_coords_key((-73.451, 40.700), (-73.452, 40.710))
+    holes = [
+        {  # already persisted, key matches current centers
+            "number": 1,
+            "features": {"type": "FeatureCollection", "features": [
+                _point_feature("tee", -73.451, 40.700),
+                _point_feature(
+                    "green", -73.452, 40.710,
+                    tee_elevation_ft=90.0, green_elevation_ft=95.0,
+                    elevation_coords_key=matching_key,
                 ),
             ]},
         },
@@ -191,12 +337,12 @@ async def test_precompute_zero_sample_early_return_when_nothing_computable(monke
     def fail_write(*_args, **_kwargs):
         raise AssertionError("update_green_feature_properties must not be called")
 
-    monkeypatch.setattr(caddie_routes.courses_mapped, "get_course", fake_get_course)
-    monkeypatch.setattr(caddie_routes, "sample_course_elevations", fail_sample)
-    monkeypatch.setattr(caddie_routes.courses_mapped, "update_green_feature_properties", fail_write)
+    monkeypatch.setattr(course_elevation.courses_mapped, "get_course", fake_get_course)
+    monkeypatch.setattr(course_elevation, "sample_course_elevations", fail_sample)
+    monkeypatch.setattr(course_elevation.courses_mapped, "update_green_feature_properties", fail_write)
 
     # Must not raise.
-    await caddie_routes._precompute_course_elevations("course-1")
+    await course_elevation._precompute_course_elevations("course-1")
 
 
 @pytest.mark.asyncio
@@ -206,6 +352,6 @@ async def test_precompute_is_resilient_to_get_course_failure(monkeypatch):
     async def raise_get_course(course_id):
         raise RuntimeError("db exploded")
 
-    monkeypatch.setattr(caddie_routes.courses_mapped, "get_course", raise_get_course)
+    monkeypatch.setattr(course_elevation.courses_mapped, "get_course", raise_get_course)
 
-    await caddie_routes._precompute_course_elevations("course-1")  # must not raise
+    await course_elevation._precompute_course_elevations("course-1")  # must not raise

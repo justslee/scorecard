@@ -20,6 +20,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.services import courses_mapped as store
+from app.services.course_elevation import _precompute_course_elevations
 from app.services.course_guides import _precompute_course_guides
 from app.services.golfapi_cache import FileCacheStore
 
@@ -69,11 +70,14 @@ async def create_mapped(body: CourseIn, background_tasks: BackgroundTasks = None
     if not body.id or not body.name:
         raise HTTPException(400, "Missing id or name")
     course = await store.upsert_course(body.model_dump())
-    # PRIMARY strategy-guide precompute trigger — fires AFTER the response is
-    # sent, never blocks course creation. Best-effort + idempotent (see
-    # `_precompute_course_guides`); guides are cached before any user plays.
+    # PRIMARY elevation + strategy-guide precompute triggers — fire AFTER the
+    # response is sent, never block course creation. Best-effort + idempotent.
+    # Elevation MUST run before guides: `_precompute_course_guides` reads
+    # `delta_ft`/`green_slope` off the green props for research context, and
+    # BackgroundTasks run in the order they're added.
     if course:
         bg = background_tasks if background_tasks is not None else BackgroundTasks()
+        bg.add_task(_precompute_course_elevations, course["id"])
         bg.add_task(_precompute_course_guides, course["id"])
     return {"course": course}
 
@@ -107,11 +111,14 @@ async def put_mapped(course_id: str, body: CourseIn, background_tasks: Backgroun
     data = body.model_dump()
     data["id"] = course_id  # path id wins, mirroring the old route
     course = await store.upsert_course(data)
-    # PRIMARY strategy-guide precompute trigger (re-map case). Idempotent —
-    # SKIPS holes that already have a guide, so a re-map of an already-guided
-    # course is a cheap all-skip pass with ZERO LLM calls.
+    # PRIMARY elevation + strategy-guide precompute triggers (re-map case).
+    # Elevation is content-addressed (`elevation_coords_key`) — a moved green
+    # is resampled, an unmoved one is a cheap all-skip pass with ZERO 3DEP
+    # calls. Guides are idempotent on their own persisted-guide check. Order
+    # matters: elevation before guides (guides read delta_ft/green_slope).
     if course:
         bg = background_tasks if background_tasks is not None else BackgroundTasks()
+        bg.add_task(_precompute_course_elevations, course["id"])
         bg.add_task(_precompute_course_guides, course["id"])
     return {"course": course}
 
