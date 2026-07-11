@@ -13941,6 +13941,11 @@ the existing FLIP re-sort motion + order-change haptics). No polling, no spinner
 initial load shows the skeleton). Reuses already-locked standings math (tournament-standings.ts) —
 no new money math; settlement.ts untouched.
 
-## AWAITING: Plan agent (fable) producing the live-leaderboard implementation plan.
-On plan return -> write specs/tournament-live-leaderboard-plan.md, then dispatch builder on
-integration/next. If I die: branch is clean at this commit; re-dispatch Plan (no code written yet).
+Plan (fable) done -> specs/tournament-live-leaderboard-plan.md. Scope: visibilitychange-only
+silent refresh, new pure lib/leaderboard-refresh.ts (shouldRefreshLeaderboard + isPlausibleRefresh)
++ test, refactor load()->fetchAndApply({initial}) with race/unmount guards; standings math reused
+(untouched). OUT: polling, capacitor appStateChange, any new UI chrome, backend/type changes.
+
+## AWAITING: builder implementing specs/tournament-live-leaderboard-plan.md on integration/next.
+On builder return -> reviewer(adversarial) + qa(gates) + designer(user-facing). If I die: check
+git log origin/integration/next for the builder's commit; do NOT rebuild if already pushed.
