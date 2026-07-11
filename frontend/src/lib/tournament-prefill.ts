@@ -93,7 +93,15 @@ export function tournamentPrefillFromParse(
     };
   }
 
-  const name = t.name.trim().length > 0 ? t.name.trim() : null;
+  // The offline no-LLM parser always emits the literal sentinel "Tournament"
+  // when it heard no actual name (lib/voice/pipeline.ts parseVoiceLocalBasic)
+  // — never a real transcription. Treat that sentinel the same as "no name
+  // heard": leave the form's own name (placeholder or user-typed) untouched
+  // rather than clobbering it with a name the golfer never said. A genuinely
+  // different name (e.g. from a future LLM-backed extractor) still flows
+  // through and gets quoted normally.
+  const rawName = t.name.trim();
+  const name = rawName.length > 0 && rawName.toLowerCase() !== "tournament" ? rawName : null;
 
   const numRoundsRequested = t.numRounds;
   const numRounds = Math.max(1, Math.min(4, numRoundsRequested)) as 1 | 2 | 3 | 4;
@@ -113,8 +121,15 @@ export function tournamentPrefillFromParse(
   if (t.handicapAdjustment) {
     notes.push("I heard a handicap adjustment — that isn’t settable on this form yet; noted.");
   }
+  if (t.handicaps && Object.keys(t.handicaps).length > 0) {
+    notes.push("I heard stroke allocations too — those aren’t settable on this form yet; noted.");
+  }
   if (numRoundsClamped) {
-    notes.push(`I heard ${numRoundsRequested} rounds — capped at 4 (max).`);
+    notes.push(
+      numRoundsRequested > 4
+        ? `I heard ${numRoundsRequested} rounds — capped at 4 (max).`
+        : `I heard ${numRoundsRequested} rounds — set to 1 (minimum).`,
+    );
   }
 
   const ackLine = buildAckLine({
@@ -170,6 +185,13 @@ function matchPlayers(
   return { selectedIds, customPlayerNames };
 }
 
+/** Keep the ack calm (Northstar: quiet, not a wall of caveats) — surface at
+ *  most this many note sentences; anything beyond gets a single short
+ *  catch-all rather than stacking every caveat into one run-on paragraph.
+ *  Nothing is silently dropped from the golfer's perspective — the
+ *  catch-all still acknowledges more was heard. */
+const MAX_ACK_NOTES = 2;
+
 function buildAckLine(args: {
   name: string | null;
   numRounds: number;
@@ -184,6 +206,12 @@ function buildAckLine(args: {
   }
 
   const lead = `Filled it in — ${landed.join(", ")}.`;
-  const noteText = args.notes.length > 0 ? ` ${args.notes.join(" ")}` : "";
+
+  const shownNotes = args.notes.slice(0, MAX_ACK_NOTES);
+  const droppedCount = args.notes.length - shownNotes.length;
+  const catchAll =
+    droppedCount > 0 ? " …and a couple other details I couldn’t set here." : "";
+  const noteText = shownNotes.length > 0 ? ` ${shownNotes.join(" ")}${catchAll}` : "";
+
   return `${lead}${noteText} Tap Create when you’re ready.`;
 }

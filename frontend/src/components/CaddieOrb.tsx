@@ -33,7 +33,7 @@ const ISLAND_CLEARANCE_PX = 74;
  *  sticky bottom CTA (`/round/new`'s "Tee off", `/tournament/new`'s "Create
  *  tournament") — neither shows the tab island, so without this the orb
  *  would sit on top of the CTA. Exact px is designer-tuned later (S5). */
-const STICKY_CTA_CLEARANCE_PX = 84;
+const STICKY_CTA_CLEARANCE_PX = 92;
 
 const INTRO_SEEN_KEY = 'looper.caddieOrbIntroSeen';
 
@@ -148,6 +148,10 @@ export default function CaddieOrb() {
               padding: '6px 14px',
               whiteSpace: 'nowrap',
               boxShadow: '0 4px 14px rgba(26,42,26,0.14)',
+              // Purely informational (role="status") — must never intercept
+              // touches. Without this it overlays inputs/CTAs beneath it for
+              // ~3.2s on first run and silently swallows taps.
+              pointerEvents: 'none',
             }}
           >
             Your caddie moved here

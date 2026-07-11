@@ -107,14 +107,47 @@ describe("tournamentPrefillFromParse — name", () => {
     expect(plan.name).toBeNull();
     expect(plan.ackLine).toMatch(/didn.t catch/i);
   });
+
+  it('parser sentinel "Tournament" -> null name (never a real name), and the ack does not quote it', () => {
+    // The offline no-LLM parser always emits this literal sentinel when it
+    // heard no actual name (lib/voice/pipeline.ts parseVoiceLocalBasic) — it
+    // is never a real transcription, so treating it as a name would clobber
+    // the form's own placeholder/user-typed value with something the golfer
+    // never said.
+    const plan = tournamentPrefillFromParse(
+      tournamentResult({ name: "Tournament", numRounds: 2, playerNames: ["Justin", "Sam"] }),
+      SAVED,
+      [],
+    );
+    expect(plan.name).toBeNull();
+    expect(plan.ackLine).not.toMatch(/["“]Tournament["”]/);
+    expect(plan.ackLine).toMatch(/2 rounds/);
+  });
+
+  it('parser sentinel is case/whitespace-insensitive ("  tournament  ") -> null name', () => {
+    const plan = tournamentPrefillFromParse(
+      tournamentResult({ name: "  tournament  " }),
+      SAVED,
+      [],
+    );
+    expect(plan.name).toBeNull();
+  });
+
+  it("a genuinely different name (e.g. a future LLM-extracted name) still flows through and is quoted", () => {
+    const plan = tournamentPrefillFromParse(tournamentResult({ name: "Ryder Cup" }), SAVED, []);
+    expect(plan.name).toBe("Ryder Cup");
+    expect(plan.ackLine).toMatch(/Ryder Cup/);
+  });
 });
 
 describe("tournamentPrefillFromParse — numRounds clamp", () => {
-  it("0 clamps up to 1 (defensive — schema wouldn't allow 0, but never trust blindly)", () => {
+  it("0 clamps up to 1 (defensive — schema wouldn't allow 0, but never trust blindly) — note says minimum, not max", () => {
     const plan = tournamentPrefillFromParse(tournamentResult({ numRounds: 0 }), SAVED, []);
     expect(plan.numRounds).toBe(1);
     expect(plan.numRoundsRequested).toBe(0);
     expect(plan.numRoundsClamped).toBe(true);
+    expect(plan.notes.some((n) => /set to 1 \(minimum\)/.test(n))).toBe(true);
+    expect(plan.notes.some((n) => /capped at 4/.test(n))).toBe(false);
   });
 
   it("5 clamps down to 4 and the ack/notes say so", () => {
@@ -218,9 +251,59 @@ describe("tournamentPrefillFromParse — honest notes for fields with no form su
     expect(plan.notes.some((n) => /handicap/i.test(n))).toBe(true);
   });
 
+  it("handicaps (per-player stroke allocations) -> a note, never silently dropped", () => {
+    const plan = tournamentPrefillFromParse(
+      tournamentResult({ handicaps: { Justin: 2 } }),
+      SAVED,
+      [],
+    );
+    expect(plan.notes.length).toBeGreaterThan(0);
+    expect(plan.notes.some((n) => /stroke/i.test(n))).toBe(true);
+  });
+
   it("none of the no-surface fields present -> no notes", () => {
     const plan = tournamentPrefillFromParse(tournamentResult({}), SAVED, []);
     expect(plan.notes).toEqual([]);
+  });
+});
+
+describe("tournamentPrefillFromParse — ack note capping (keep it calm, no wall of caveats)", () => {
+  it("more than 2 notes -> ack surfaces only the first 2 plus a brief catch-all, but plan.notes keeps ALL of them (nothing silently dropped)", () => {
+    const plan = tournamentPrefillFromParse(
+      tournamentResult({
+        courses: ["Pebble Beach"],
+        groupings: [["Justin", "Jack"]],
+        handicapAdjustment: { type: "half-divergence", description: "" },
+        handicaps: { Justin: 2 },
+        numRounds: 5,
+      }),
+      SAVED,
+      [],
+    );
+    // All five no-surface signals are represented in the full notes list.
+    expect(plan.notes.length).toBe(5);
+    // The ack surfaces at most 2 note sentences plus a short catch-all —
+    // never a run-on paragraph of every caveat.
+    expect(plan.ackLine).toMatch(/Pebble Beach/);
+    expect(plan.ackLine).toMatch(/grouping/i);
+    expect(plan.ackLine).not.toMatch(/handicap adjustment/i);
+    expect(plan.ackLine).not.toMatch(/stroke/i);
+    expect(plan.ackLine).toMatch(/other details/i);
+  });
+
+  it("exactly 2 notes -> both shown, no catch-all needed", () => {
+    const plan = tournamentPrefillFromParse(
+      tournamentResult({
+        courses: ["Pebble Beach"],
+        groupings: [["Justin", "Jack"]],
+      }),
+      SAVED,
+      [],
+    );
+    expect(plan.notes.length).toBe(2);
+    expect(plan.ackLine).toMatch(/Pebble Beach/);
+    expect(plan.ackLine).toMatch(/grouping/i);
+    expect(plan.ackLine).not.toMatch(/other details/i);
   });
 });
 
