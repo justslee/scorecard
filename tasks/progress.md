@@ -13206,10 +13206,11 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 ## Cycle 90 (2026-07-11) — OWNER P0: caddie yardage GPS+selected-tee (BUILD the Fable plan)
 - Executing specs/caddie-yardage-gps-selected-tee-plan.md (4 slices), commit+push per slice.
 - NOTICEABLE (core caddie-trust fix). Backend touched → CI DB tests + local docker Postgres.
-- AWAITING: builder implementing 4 slices on integration/next. On builder return → reviewer
-  (mock-178 reaches no caddie surface; resolver priority honest-null; untagged-box tee pick;
-  all surfaces agree; provenance prompt; additive backend fields) → QA gates (real Postgres) →
-  designer (header + basis caption). Reconcile from origin/integration/next on resume.
+- Builder DONE: 4 slices landed @ 275dee3/de9a12f/b9c6f29/2eb7dea, head 14dee9b. No file
+  overlap with the parallel course/tee-time A0 commits interleaved on the branch (verified).
+- AWAITING: reviewer (adversarial) + QA (gates, DB via docker if image local else CI) in
+  parallel on head 14dee9b. Then designer (header + basis caption). BLOCKING → re-dispatch
+  builder; green → update PR #133 + backlog + progress. Reconcile from origin on resume.
 
 ## Cycle 89 (2026-07-11) — OWNER: course-selection UX (named-course bug + map search)
 - Owner (A) BUG: in Pittsburgh (GPS), asked caddie for a tee time at "Marine Park" (NY) → it searched Pittsburgh courses instead of the named course. Need named-course resolution + caddie clarification (disambiguation), not GPS-fallback.
