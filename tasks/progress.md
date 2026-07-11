@@ -13265,3 +13265,7 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 ## Cycle 92 (2026-07-11) — course-selection A2 (voice resolution — closes the Marine Park bug)
 - Yardage P0 DONE+green. Marine Park A0 (stop-lie) + A1 (backend selector-centered discovery) DONE+green.
 - AWAITING: eng-lead course-selection A2 — new course-resolve.ts on searchAllCourses; a spoken unresolved course name (unresolvedCourseNames) resolves via the ONE unified search: single dominant hit → auto-add+select+deselect-GPS-preselects+honest-distance-widen, then dispatch the RIGHT search (Brooklyn from Pittsburgh); "none" → honest no-dispatch line. (A3 clarify for ambiguous = follow-up.) Frontend, async parse, timeout-bounded. Plan §A.2.2/§A.2.3. Land on #133.
+
+## Cycle 93 (2026-07-11) — orb visual depth/glow (owner S5 feel-feedback)
+- Owner: "orb is a little boring visually. Without doing too much maybe add some depth or some kind of glow."
+- AWAITING: eng-lead (designer-led) — subtle depth/glow on CaddieOrb medallion, NORTHSTAR calm (NOT flashy/neon), theme-aware (light+dark), prefers-reduced-motion respected if animated. Small frontend (CaddieOrb.tsx). Parallel to A2 (non-colliding: CaddieOrb vs course-resolve/caddie-task) — rebase before push. This is orb-s5 polish, owner-directed. Land on #133.
