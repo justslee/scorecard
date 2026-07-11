@@ -13713,3 +13713,38 @@ note above (still applies — targets the new head).
 - On return: fold BLOCKING issues -> builder; else update PR #134 checklist (B2 NOTICEABLE) + progress.
   Do NOT ship/ping. If native-sim tap stays unverifiable in this env, record as ship-gate residual
   (owner exercises it on TestFlight) — not a code defect; reviewer's gating audit is the code-side mitigation.
+
+## DONE (cycle 97) — course-search B2 map UI landed on integration/next (NOTICEABLE)
+- Item: course-selection Part B, slice B2 = the map-based course search UI (owner's "map based search,
+  markers on just the golf courses"). Landed @ e374a28 (feature 796f6d8). Frontend-only.
+- What shipped: Map<->List toggle inside the shared CourseSearch.tsx (list default; toggle gated on
+  NEXT_PUBLIC_GOOGLE_MAPS_KEY -> no key = no toggle, byte-identical to today). New CourseScoutMap.tsx
+  (@capacitor/google-maps, MapType.Normal roadmap, disableDefaultUI, quiet ink golf-flag PNG markers,
+  onMapReady-gated per GoogleSatelliteMap precedent, 13s timeout->honest error, never fitBounds,
+  destroy-on-unmount + StrictMode-safe). Pure scout-viewport.ts coordinator (debounce 600ms, bbox->0.05deg
+  cells matching backend floor index, covered-cell skip, per-fetch AbortController + generation guard,
+  pin dedupe by id, coverage-marked only on clean !degraded && !zoomIn success). pin-payload.ts:
+  pin->pinToSearchResult->resultToPayload byte-parity with list/voice paths (B.3 identity). Honest
+  zoomIn/degraded/empty/error one-liners; no fabricated pins. Budget: ONLY B1 /in-bounds (no Places/
+  GolfAPI/Mapbox — grep-confirmed).
+- Plan: specs/course-selection-b2-plan.md (fable). Reviewer: SHIP (7 crux points traced in source:
+  onMapReady-gating, abort/gen races, no-reshuffle, identity parity, budget invariant, honesty,
+  key-gating; builder's pendingPinsRef accumulator scrutinized & sound; no security review warranted;
+  3 non-blocking nits: lastPanIdRef not reset on panTarget->null, emptyHonest async flash, card subline
+  richness). Designer: APPROVE (ink flags/roadmap-no-chrome/yardage-book card & round-button toggle all
+  reuse T.* idioms, no SaaS drift; non-blocking: reuse buildRowSubline for card, confirm native tile
+  calmness on TestFlight). QA: deterministic gates ALL PASS on head — lint clean, tsc clean, vitest
+  2168/2168 (incl 27 new B2), voice-smoke 278/278, next build ok, ruff clean.
+- CI PR #134 head a3b1fc4 (== origin, feature at e374a28): Frontend SUCCESS · Backend SUCCESS · E2E
+  advisory SUCCESS. pending 0, fail 0, none cancelled.
+- RESIDUAL / PRE-SHIP GATE (honest): native GMSMapView map render + pin + tap-to-Add NOT verified
+  interactively — the agent sandbox has no Accessibility/Screen-Recording TCC, so no simulator touch
+  injection (osascript/cliclick blocked, simctl has no touch API, no deep-link route). Independently hit
+  by builder AND qa. Debug build LAUNCHES CLEAN on iPhone 17 (zero crashes, 3 runs) and code mirrors the
+  proven GoogleSatelliteMap onMapReady discipline, but the owner must exercise map mode on the TestFlight
+  build (or a TCC-enabled Mac session) before this bundle merges. Recorded on the PR #134 checklist.
+- 3 non-blocking nits (lastPanIdRef null-reset, emptyHonest flash, card subline via buildRowSubline)
+  deferred to B3 polish — not worth a re-build cycle (cost discipline). B3 also: viewport persistence,
+  favorites star on map, pin-cap/zoom copy.
+- Did NOT ship/ping — silent accumulation continues per the standing note. Bundle #134 now: 3 NOTICEABLE
+  (A3, caddie reachability, B2 map UI) + 1 SILENT (B1). Owner has NOT been asked to approve yet.
