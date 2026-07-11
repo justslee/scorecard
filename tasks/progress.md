@@ -3,6 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## course-selection-b1 — DONE, builder (2026-07-11, SILENT — backend-only, no frontend wiring yet)
+Implemented specs/course-selection-b1-plan.md exactly on `integration/next` @c7a3252 (off 354f261).
+New `GET /api/courses/in-bounds?swLat&swLng&neLat&neLng` in `backend/app/routes/course_search.py`
++ `courses_mapped.courses_in_bounds(...)` store fn (mirrors `nearby_courses`). Three legs: (1) DB
+`ST_Intersects`/`ST_MakeEnvelope` bbox query — ALWAYS runs, the honesty floor; (2) OSM fill on
+~0.05° geo-cells, COLD cells only, positive-only cache in a NEW dedicated
+`data/in_bounds_search_cache.json`, ≤4 concurrent cold fetches/request (closest-to-center first),
+write-through to DB; (3) merge (DB-first) → `dedupe_by_name` → `attach_stable_ids` → cap 40 pins.
+Response `{"courses":[...], "degraded": bool, "zoomIn": bool}`. `zoomIn:true` when bbox area >0.25
+sq° — no leg runs. `degraded:true` only when a cold-cell OSM fetch RAISES (never on a fake/empty
+list — no-fake-data law); documented residual: `search_golf_courses` swallows most Overpass
+flakiness into a plain `[]` inside `_post_with_retry`, indistinguishable from genuine-empty at
+that seam, so most real flakiness won't set `degraded` (out of B1 scope, noted in the handler
+docstring). Semantic 400 validation (non-finite / out-of-range / inverted / antimeridian-crossing
+boxes). BUDGET invariant: this path never imports/calls Google Places, GolfAPI, or Mapbox —
+test-asserted with raise-on-call spies (T6).
+- New `backend/tests/test_course_in_bounds.py` — 18 DB-free unit tests (T1-T11 from the plan:
+  cell-key/enumeration purity, 400 validation, cold/warm-cell behavior, positive-only cache, the
+  budget-invariant spy test, the degraded-not-empty test, pin cap, zoomIn, fanout cap, cross-source
+  dedupe). All RED→GREEN. `tests/test_course_search.py` (46) reran clean — no regression.
+- New `backend/tests/integration/test_courses_in_bounds_db.py` — 3 DB-backed tests (bbox
+  include/exclude, limit+center-ordering, write-through round-trip). Auto-skip locally (no
+  Postgres on this machine — confirmed via `--collect-only` + a live run showing `3 skipped`,
+  never a container spin-up); will run for real in CI's postgis-backed backend gate.
+- `ruff check .` clean; full non-integration suite `pytest tests/ --ignore=tests/integration` —
+  2112 passed.
+- No deviation from the plan. Frontend has no changes yet (by design — B1 is backend-only; B2 is
+  the map UI wiring, a separate later cycle per the plan's shared-type sync note).
+
 ## caddie-shot-context-reachability — DONE, builder (2026-07-11, NOTICEABLE — backend caddie reasoning)
 Implemented specs/caddie-shot-context-reachability-plan.md exactly on `integration/next` @7b16ce6
 (off 33606cd). Owner incident 2026-07-06: on a ~400y par 4, blue tees, the caddie said "aim about
