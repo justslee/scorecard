@@ -14198,3 +14198,16 @@ NOTICEABLE items. backlog.json: +tournament-money-format-completion (wolf true-t
 opponent picker, team-assignment UI — all gated on [[no-fake-data-fallbacks]]) and
 +player-autocomplete-overlap (pre-existing bug). NOT shipping/pinging this cycle (per caller
 brief) — owner separately testing v1.1.2; bundle keeps accumulating for the next "ship it".
+
+## AWAITING — cycle 101 (player-autocomplete-overlap)
+- Sync clean: integration/next @ 1bb0744, main up-to-date, feature 2e17261 present. No owner
+  v1.1.2 feedback (checked board + PR #135 comments — none preempts). Picked backlog item
+  `player-autocomplete-overlap` (P4, minor, ready).
+- Root cause CONFIRMED: PlayerAutocomplete.tsx overlays (suggestions L285-416 + "no matches"
+  L419-460) are position:absolute zIndex:60 top:calc(100%+6px) — they float over the Done button
+  (round/new/page.tsx L1576, only ~16px below in flow) and intercept taps. "No matches" popover has
+  no onClick so tap is swallowed → Done unreachable while a row shows. PlayerAutocomplete has ONE
+  consumer (the player-picker sheet).
+- Awaiting: Plan agent (fable) → specs/player-autocomplete-overlap-plan.md. On return: dispatch
+  builder to implement on integration/next; then reviewer + qa + designer(BLOCKING); land; update
+  PR #135 checklist + backlog item status; do NOT ship/ping (bundle keeps accumulating).
