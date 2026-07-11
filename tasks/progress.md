@@ -37,6 +37,15 @@ Files touched: `frontend/src/app/tournament/[id]/TournamentPageClient.tsx` only.
 Pushed to `integration/next` at `32c0ab8`. No PR opened (bundle PR owned by
 eng-lead).
 
+**Follow-up fix (same day, commit `3ce5996`):** reviewer caught a phantom
+haptic — the gross↔toPar mode toggle re-sorts the same data (tie-break order
+can differ), which changed `orderSignature` and tripped the move/overtake
+haptics on a pure view toggle. Fixed by tracking `mode` in the `prevOrderRef`
+baseline: on an `lbMode` change the ref rebases silently (no haptic) so the
+next real standings change is measured correctly. All other haptic paths
+unchanged. Gates re-run all green (lint, tsc, voice-smoke 277/277, vitest
+2038/2038, build). Pushed to `integration/next` at `3ce5996`.
+
 ## 2026-07-11 — release-manager: Bundle #132 SHIPPED to main (owner "Ship it")
 
 Milestone bundle (62 commits) approved by the owner and merged to `main`.
