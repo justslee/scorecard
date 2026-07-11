@@ -20,6 +20,7 @@ export default function OfflineCaddieCard({
   holeNumber,
   par,
   yards,
+  yardsCaption,
   intel,
   lastRecommendation,
 }: {
@@ -31,6 +32,12 @@ export default function OfflineCaddieCard({
    *  is known (no GPS fix, no selected-tee data, no card snapshot). Never the
    *  mock illustration constant. */
   yards: number | null;
+  /** Honest basis caption for the resolved number (yardageCaption) — carries the
+   *  same provenance the sheet header shows: "231 yds · black tees", the "at
+   *  least …" floor on a par-4/5 tee-geom, "204 to the green" for GPS. Passed in
+   *  (not recomputed) so the offline fallback can never disagree with the header
+   *  on how honest a number is (designer finding, spec: all surfaces agree). */
+  yardsCaption: string;
   /** Cached intel for this hole (hazards, plays-like); null = round data only. */
   intel: CachedHoleIntel | null;
   lastRecommendation: CachedRecommendation | null;
@@ -107,7 +114,7 @@ export default function OfflineCaddieCard({
             </div>
 
             <div style={{ fontFamily: T.sans, fontSize: 13, color: T.pencil, marginBottom: 14 }}>
-              {yards != null ? `${yards} yards` : "— yards unknown"}
+              {yards != null ? yardsCaption : "— yards unknown"}
               {playsLike !== null && (
                 <span style={{ color: T.inkSoft }}>
                   {" "}· plays like {playsLike}

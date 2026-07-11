@@ -2274,6 +2274,7 @@ export default function RoundPage() {
         holeNumber={currentHole}
         par={holePar}
         yards={resolvedYardage.yards}
+        yardsCaption={yardsCaption}
         intel={offlineBundle?.holes.find((h) => h.holeNumber === currentHole) ?? null}
         lastRecommendation={offlineBundle?.lastRecommendation ?? null}
       />
