@@ -3,18 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING — cycle 94 (2026-07-11): course-selection A3 (clarify turn)
-Fresh `integration/next` @72c1016 off main @4bb474e (bundle #133 shipped, TestFlight v1.0.1312).
-No open bundle PR yet. Orb CRUX audited this cycle = FULLY DEPLOYED (all 4 contexts wired; only
-courses-list legacy-bus registration remains, functional + explicitly deferred) → orb DONE, not
-reopened. Pulled the next sequenced slice of the priority-1 course-selection epic: **A3 — clarify
-turn for AMBIGUOUS spoken course names** (builds on A2 shipped @719f16e). resolveSpokenCourse
-already returns `{kind:"ambiguous", candidates}`; A3 wires: `expectReply?` on TaskAck (orb keeps
-mic open), pending-candidate state in tee-time page, follow-up parse ("the Brooklyn one"/ordinal/
-locality → select that candidate → add+select+dispatch). Frontend-only, offline-testable, NOTICEABLE.
-- Plan agent (fable) dispatched → specs/course-selection-a3-plan.md.
-- On resume: reconcile from `git log origin/integration/next`. If plan committed but no builder
-  commit → dispatch builder on the plan. If builder pushed → run reviewer+qa, don't rebuild.
+## course-selection A3 (clarify turn) — DONE, builder (2026-07-11, NOTICEABLE)
+Implemented specs/course-selection-a3-plan.md exactly on `integration/next` @eae4896 (off
+d54ead4, the plan commit). resolveSpokenCourse's `{kind:"ambiguous", candidates}` branch used to
+just ask-and-forget; now the caddie holds the real candidates as pending page state, asks which
+one ("Brooklyn, NY, or Old Bridge, NJ?"), reopens the mic ~900ms later for one hands-free
+follow-up, and matches the reply via ordinal ("the first one")/locality token ("the Brooklyn
+one")/bare-name-repeat (ambiguous, never a guess) — staged, pure, offline-tested. A pick reuses
+the SAME A2 add-flow (extracted `applyResolvedCourseAdd`) and dispatches iff the original turn
+was armed. A bare "yes" while pending can NOT dispatch a guess (closes the exact A0 hole); no
+match gets one honest re-ask then a graceful bail (2-ask budget).
+- NEW `frontend/src/lib/teetime/course-clarify.ts` (+ test, 20 tests): `matchClarifyReply` +
+  `routeClarifyReply`, pure.
+- `course-resolve.ts`: `ResolvedCandidate` gains `address?`, `center` now required.
+- `caddie-task.ts`: `planTeeTimeApply` gains a `clarify` param; `TeeTimeApplyPlan` gains
+  `pendingClarify`/`expectReply`; shared A2/A3 add-flow helper.
+- `caddie-context.ts`: `TaskAck.expectReply?` (optional, no other registrant needs a change).
+- `tee-time/page.tsx`: `pendingClarifyRef`, routes clarify replies before A2 resolve, threads
+  `expectReply` back, biases STT keyterms toward pending candidates.
+- `CaddieOrbSheet.tsx` (+ test): gen/open-guarded 900ms mic-reopen on `expectReply &&
+  !dispatched`, cleared on close()/manual mic tap.
+- **Deviation** (flagged for reviewer): `routeClarifyReply`'s plan signature omitted the raw
+  transcript (`routeClarifyReply(parsed, pending)`), but matching "the first one"/"the Brooklyn
+  one" needs the actual spoken words, which `parsed` doesn't carry. Added `transcript` as the
+  first param (matching `matchClarifyReply`'s own convention) — minimal, additive.
+- Gates all green: lint, tsc --noEmit, voice-tests --smoke (278/278), targeted vitest (80/80),
+  full vitest suite (2146/2146, 104 files), `next build`. RED confirmed before GREEN for all 3
+  new/changed test files (stashed the implementation, reran, restored).
+- Commit: `eae4896`, pushed to `origin/integration/next`. Next: eng-lead routes to reviewer/qa
+  or continues the bundle.
 
 ## caddie-yardage-gps-selected-tee — OWNER P0 bug fix, all 4 slices (2026-07-11) — DONE (on integration/next @2eb7dea, NOTICEABLE)
 Implemented specs/caddie-yardage-gps-selected-tee-plan.md exactly (4 commits, one per slice,
