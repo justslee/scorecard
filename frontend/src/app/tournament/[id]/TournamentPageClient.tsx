@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { roundHref } from "@/lib/round-url";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
@@ -8,6 +9,7 @@ import { getTournamentAsync, getRoundsAsync } from "@/lib/storage-api";
 import { calculateTotals } from "@/lib/types";
 import type { Tournament, Round, Game } from "@/lib/types";
 import { computeTournamentSettlement, hasMoneyGames } from "@/lib/settlement";
+import { haptic } from "@/lib/haptics";
 
 type Tab = "leaderboard" | "rounds" | "games";
 type LbMode = "gross" | "toPar";
@@ -48,6 +50,16 @@ const FORMAT_LABELS: Record<string, string> = {
   trash: "Trash",
   chicago: "Chicago",
   defender: "Defender",
+};
+
+// ── Settlement reveal stagger (motion variants) ─────────────────────────────
+const settlementContainerVariants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.06 } },
+};
+const settlementItemVariants = {
+  hidden: { opacity: 0, y: 6 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: T.ease } },
 };
 
 // ── Player standing shape ───────────────────────────────────────────────────
@@ -179,6 +191,22 @@ function suffix(n: number): string {
   return "th";
 }
 
+/**
+ * True if any pair of players in `ids` has swapped relative order vs
+ * `prevRank` — i.e. one player crossed another (an "overtake"), not just
+ * a player entering/leaving the ranked set.
+ */
+function hasCrossing(ids: string[], prevRank: Map<string, number>): boolean {
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const aOld = prevRank.get(ids[i]);
+      const bOld = prevRank.get(ids[j]);
+      if (aOld !== undefined && bOld !== undefined && aOld > bOld) return true;
+    }
+  }
+  return false;
+}
+
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export default function TournamentPageClient() {
@@ -197,6 +225,11 @@ export default function TournamentPageClient() {
   const [notFound, setNotFound] = useState(false);
   const [tab, setTab] = useState<Tab>("leaderboard");
   const [lbMode, setLbMode] = useState<LbMode>("gross");
+
+  // Motion/haptics: NORTHSTAR-calm — subtle, purposeful, disabled visually
+  // under prefers-reduced-motion. Presentation only, never touches the
+  // standings/settlement math below.
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     // Skip the static prerender placeholder — real id arrives on the client
@@ -261,6 +294,90 @@ export default function TournamentPageClient() {
 
     load();
   }, [id]);
+
+  // Sort standings: nulls last, then ascending by selected mode.
+  // Hoisted above the loading/not-found early returns so the haptics effects
+  // below (which depend on it) can be declared unconditionally per hook rules.
+  const sortedStandings = [...standings].sort((a, b) => {
+    if (lbMode === "gross") {
+      if (a.totalStrokes === null && b.totalStrokes === null) return 0;
+      if (a.totalStrokes === null) return 1;
+      if (b.totalStrokes === null) return -1;
+      return a.totalStrokes - b.totalStrokes;
+    }
+    if (a.totalToPar === null && b.totalToPar === null) return 0;
+    if (a.totalToPar === null) return 1;
+    if (b.totalToPar === null) return -1;
+    return a.totalToPar - b.totalToPar;
+  });
+  const leader = sortedStandings[0] ?? null;
+  const orderSignature = sortedStandings.map((s) => s.playerId).join(",");
+  const leaderId = leader?.playerId ?? null;
+
+  // Tournament-level settlement — hoisted for the same reason (the
+  // settle-up-appeared haptic effect below needs it before any early return).
+  const tournamentSettlement = computeTournamentSettlement(memberRounds);
+
+  // ── Leaderboard re-sort haptics — fire ONLY on real order/leader changes ──
+  // Never on tab switch, mode toggle, or any re-render with the same order:
+  // deps are the derived signature strings, and we early-return when unchanged.
+  const prevOrderRef = useRef<{ signature: string; leaderId: string | null } | null>(
+    null
+  );
+  useEffect(() => {
+    const prev = prevOrderRef.current;
+    if (prev === null) {
+      // First mount / first real standings — just record, fire nothing.
+      prevOrderRef.current = { signature: orderSignature, leaderId };
+      return;
+    }
+    if (prev.signature === orderSignature) {
+      // No change — do nothing.
+      return;
+    }
+
+    const prevIds = prev.signature ? prev.signature.split(",") : [];
+    const newIds = orderSignature ? orderSignature.split(",") : [];
+    const prevRank = new Map(prevIds.map((pid, i) => [pid, i]));
+
+    const newLeaderEmerged =
+      prev.leaderId !== null && leaderId !== null && leaderId !== prev.leaderId;
+
+    let anyMovedUp = false;
+    for (const pid of newIds) {
+      const oldIdx = prevRank.get(pid);
+      const newIdx = newIds.indexOf(pid);
+      if (oldIdx !== undefined && newIdx < oldIdx) {
+        anyMovedUp = true;
+        break;
+      }
+    }
+    const overtakeDetected = anyMovedUp && hasCrossing(newIds, prevRank);
+
+    // At most one haptic per recompute — never spam.
+    if (newLeaderEmerged) {
+      haptic("success");
+    } else if (overtakeDetected) {
+      haptic("medium");
+    } else if (anyMovedUp) {
+      haptic("light");
+    }
+
+    prevOrderRef.current = { signature: orderSignature, leaderId };
+  }, [orderSignature, leaderId]);
+
+  // ── Settle-up-appeared haptic — fires once per appearance, not per render ─
+  const settlementShownRef = useRef(false);
+  const settlementVisible =
+    !tournamentSettlement.isEmpty && tournamentSettlement.transfers.length > 0;
+  useEffect(() => {
+    if (settlementVisible && !settlementShownRef.current) {
+      haptic("light");
+      settlementShownRef.current = true;
+    } else if (!settlementVisible) {
+      settlementShownRef.current = false;
+    }
+  }, [settlementVisible]);
 
   // ── Not found ─────────────────────────────────────────────────────────────
   if (!loading && notFound) {
@@ -398,24 +515,9 @@ export default function TournamentPageClient() {
   const hasScores = standings.some((s) => s.totalStrokes !== null);
   const tournamentGames: Game[] = tournament.games ?? [];
   const hasGames = tournamentGames.length > 0;
-  const tournamentSettlement = computeTournamentSettlement(memberRounds);
   const hasMoneyGame = hasMoneyGames(memberRounds);
-
-  // Sort standings: nulls last, then ascending by selected mode
-  const sortedStandings = [...standings].sort((a, b) => {
-    if (lbMode === "gross") {
-      if (a.totalStrokes === null && b.totalStrokes === null) return 0;
-      if (a.totalStrokes === null) return 1;
-      if (b.totalStrokes === null) return -1;
-      return a.totalStrokes - b.totalStrokes;
-    }
-    if (a.totalToPar === null && b.totalToPar === null) return 0;
-    if (a.totalToPar === null) return 1;
-    if (b.totalToPar === null) return -1;
-    return a.totalToPar - b.totalToPar;
-  });
-
-  const leader = sortedStandings[0] ?? null;
+  // sortedStandings / leader / tournamentSettlement are hoisted above (before
+  // the early returns) so the order/settlement haptics effects can see them.
 
   return (
     <div
@@ -607,54 +709,40 @@ export default function TournamentPageClient() {
               gap: 14,
             }}
           >
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 99,
-                background: leader.color,
-                border: `1.5px solid ${T.paperFaint}`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontFamily: T.serif,
-                fontStyle: "italic",
-                fontSize: 18,
-                color: T.paper,
-                flexShrink: 0,
-              }}
-            >
-              {leader.initial}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            {reduce ? (
               <div
                 style={{
-                  fontFamily: T.mono,
-                  fontSize: 9,
-                  letterSpacing: 1.4,
-                  color: T.paperMid,
-                  textTransform: "uppercase",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  flex: 1,
+                  minWidth: 0,
                 }}
               >
-                Leading
+                <LeaderAvatar leader={leader} />
+                <LeaderName leader={leader} />
               </div>
-              <div
-                style={{
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 16,
-                  letterSpacing: -0.2,
-                  lineHeight: 1.3,
-                  color: T.paper,
-                  marginTop: 2,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {leader.name}
-              </div>
-            </div>
+            ) : (
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={leader.playerId}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.35, ease: T.ease }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 14,
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  <LeaderAvatar leader={leader} />
+                  <LeaderName leader={leader} />
+                </motion.div>
+              </AnimatePresence>
+            )}
             <div style={{ textAlign: "right", flexShrink: 0 }}>
               <div
                 style={{
@@ -694,14 +782,19 @@ export default function TournamentPageClient() {
           {(["leaderboard", "rounds", "games"] as Tab[]).map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => {
+                if (t !== tab) haptic("light");
+                setTab(t);
+              }}
               style={{
+                position: "relative",
+                overflow: "hidden",
                 flex: 1,
                 padding: "12px 10px",
                 borderRadius: 10,
                 cursor: "pointer",
                 border: `1px solid ${tab === t ? T.ink : T.hairline}`,
-                background: tab === t ? T.ink : "transparent",
+                background: "transparent",
                 color: tab === t ? T.paper : T.pencil,
                 fontFamily: T.mono,
                 fontSize: 9.5,
@@ -710,7 +803,19 @@ export default function TournamentPageClient() {
                 minHeight: 44,
               }}
             >
-              {t}
+              {tab === t && (
+                <motion.div
+                  layoutId="tourney-tab-pill"
+                  transition={reduce ? { duration: 0 } : T.springSoft}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background: T.ink,
+                    borderRadius: 9,
+                  }}
+                />
+              )}
+              <span style={{ position: "relative" }}>{t}</span>
             </button>
           ))}
         </div>
@@ -869,8 +974,10 @@ export default function TournamentPageClient() {
                   const rankLabel = tieRankLabel(sortedStandings, idx, lbMode);
 
                   return (
-                    <div
+                    <motion.div
                       key={s.playerId}
+                      layout={reduce ? false : "position"}
+                      transition={T.springSoft}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -1003,7 +1110,7 @@ export default function TournamentPageClient() {
                           ? formatToPar(total)
                           : total}
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })}
               </div>
@@ -1398,7 +1505,11 @@ export default function TournamentPageClient() {
                       : "All square — nothing to settle."}
                   </div>
                 ) : (
-                  <div>
+                  <motion.div
+                    variants={reduce ? undefined : settlementContainerVariants}
+                    initial={reduce ? false : "hidden"}
+                    animate={reduce ? false : "show"}
+                  >
                     {tournamentSettlement.transfers.map((t, i) => {
                       const fromName =
                         standings.find((s) => s.playerId === t.fromPlayerId)?.name ??
@@ -1409,8 +1520,9 @@ export default function TournamentPageClient() {
                         tournament.playerNamesById?.[t.toPlayerId] ??
                         t.toPlayerId;
                       return (
-                        <div
+                        <motion.div
                           key={`${t.fromPlayerId}-${t.toPlayerId}-${i}`}
+                          variants={reduce ? undefined : settlementItemVariants}
                           style={{
                             display: "flex",
                             alignItems: "baseline",
@@ -1444,10 +1556,10 @@ export default function TournamentPageClient() {
                           >
                             ${t.amount.toFixed(2)}
                           </div>
-                        </div>
+                        </motion.div>
                       );
                     })}
-                  </div>
+                  </motion.div>
                 )}
               </div>
             )}
@@ -1464,6 +1576,64 @@ export default function TournamentPageClient() {
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────
+
+function LeaderAvatar({ leader }: { leader: PlayerStanding }) {
+  return (
+    <div
+      style={{
+        width: 44,
+        height: 44,
+        borderRadius: 99,
+        background: leader.color,
+        border: `1.5px solid ${T.paperFaint}`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: T.serif,
+        fontStyle: "italic",
+        fontSize: 18,
+        color: T.paper,
+        flexShrink: 0,
+      }}
+    >
+      {leader.initial}
+    </div>
+  );
+}
+
+function LeaderName({ leader }: { leader: PlayerStanding }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div
+        style={{
+          fontFamily: T.mono,
+          fontSize: 9,
+          letterSpacing: 1.4,
+          color: T.paperMid,
+          textTransform: "uppercase",
+        }}
+      >
+        Leading
+      </div>
+      <div
+        style={{
+          fontFamily: T.serif,
+          fontStyle: "italic",
+          fontSize: 16,
+          letterSpacing: -0.2,
+          lineHeight: 1.3,
+          color: T.paper,
+          marginTop: 2,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {leader.name}
+      </div>
+    </div>
+  );
+}
 
 function Meta({
   k,
