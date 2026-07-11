@@ -3,6 +3,74 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-10 — builder: orb-s3-setup-wiring DONE, on integration/next (commit c005c7b)
+
+Item: slice S3 of `specs/omnipresent-caddie-orb-plan.md` — wire the two setup
+pages through the omnipresent orb. Frontend-only, backend untouched.
+
+New `frontend/src/lib/tournament-prefill.ts` (+ vitest, 23 cases green) —
+pure `tournamentTaskParse`/`tournamentPrefillFromParse`, mirroring
+`lib/teetime/caddie-task.ts`'s shape. Name/numRounds(clamped 1-4, notes if
+clamped)/players (exact then fuzzy 0.76 match to saved players →
+selectedIds, unmatched → customPlayerNames, deduped) computed purely;
+courses/groupings/handicapAdjustment have no form surface yet so they land
+as honest notes, never silently dropped. Tournament creation is NEVER
+auto-dispatched — `apply()` always returns `dispatched:false`; the golfer
+taps "Create tournament" themselves.
+
+`app/tournament/new/page.tsx` registers `kind:"task" id:"tournament-setup"`
+(parse via `lib/voice/pipeline`'s `parseVoiceTranscript`, offline/no LLM key
+client-side — same posture as tee-time's existing registration). `apply()`
+additively merges into the page's existing name/numRounds/selectedIds/
+customPlayers state — no new creation path.
+
+`app/round/new/page.tsx` registers `kind:"surface" id:"round-setup"`
+(`summon` just opens the existing mature `VoiceRoundSetupRealtime` — zero new
+parse code) AND removes the bespoke sticky-footer "Speak" mic button
+(one-mic resolution — memory: never bespoke mic buttons; the orb is now the
+single invocation there too, both tap and hold open the same conversational
+flow via `autoStart`). Kept the inline "Say something else…" empty-state
+chip (a contextual text shortcut into the same flow, not a second mic).
+
+`shouldShowCaddieOrb.ts`: `/tournament/new` and `/round/new` now SHOW (the
+bespoke controls that justified hiding them are gone/unified);
+`/round/[id]` (in-progress round) still HIDES for the "Ask caddie" pill.
+New exported `isSetupCtaRoute()` helper (+ tests) shared with `CaddieOrb.tsx`,
+which adds `STICKY_CTA_CLEARANCE_PX` (84, designer-tunable) so the orb floats
+above the full-width sticky CTA on both setup pages instead of overlapping it.
+
+**Plan deviation, noted for eng-lead (not re-architected, minimal + documented
+inline):** the plan's §G pointed at `voice-tests/corpus/curated.ts` as if it
+feeds the smoke gate. It doesn't — `runner.ts` (the actual `--smoke` gate)
+reads `voice-tests/corpus/seed-utterances.jsonl` only; `curatedCorpus` is
+never imported anywhere (confirmed via grep + `git log` — untouched since a
+much older commit, predates the current runner). So I added the 3 tournament
+scenarios to the LIVE corpus, `seed-utterances.jsonl` (`seed:setup:029-031`,
+digit-form phrasings — the legacy local heuristic parser only recognizes
+numeric round counts, not word-numbers like "three-round"), verified against
+the actual gate: **274 → 277 pass, 0 fail.** Also mirrored the same 3
+scenarios into `curated.ts` for parity/documentation, with an inline comment
+flagging it's not currently gate-wired — do not rely on that file alone.
+
+Gates (all green): `npm run lint` clean · `npx tsc --noEmit` clean ·
+`npx tsx voice-tests/runner.ts --smoke` → 277 pass / 0 fail (was 274) ·
+`npx vitest run` → 98 files / 2024 tests passed · `npm run build` → compiled
++ all routes generated successfully. Backend confirmed untouched (`git
+status` shows zero files under `backend/`).
+
+Files touched: `frontend/src/lib/tournament-prefill.ts` (new),
+`frontend/src/lib/tournament-prefill.test.ts` (new),
+`frontend/src/app/tournament/new/page.tsx`,
+`frontend/src/app/round/new/page.tsx`,
+`frontend/src/components/nav/shouldShowCaddieOrb.ts` (+ `.test.ts`),
+`frontend/src/components/CaddieOrb.tsx`,
+`frontend/voice-tests/corpus/seed-utterances.jsonl`,
+`frontend/voice-tests/corpus/curated.ts`.
+
+Silent (no new user-visible feature copy beyond the orb now appearing on two
+more screens it wasn't shown on before — noticeable, bundles into #132 as a
+continuation of the orb-S1/S2 noticeable work already in that PR).
+
 ## 2026-07-10 — builder: orb-s1-move-and-nav DONE, on integration/next
 
 Item: `orb-s1-move-and-nav` (S1 of `specs/omnipresent-caddie-orb-plan.md`) — pure
