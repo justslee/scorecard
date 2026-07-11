@@ -216,6 +216,13 @@ class CaddieRecommendation(BaseModel):
     expected_score: Optional[float] = None
     personality_advice: Optional[str] = None
     competition_legal: bool = False  # True = USGA-conforming mode; all distance adjustments zeroed
+    # Reachability classification (specs/caddie-shot-context-reachability-plan.md).
+    # "approach" = today's flag-relative aim path (unchanged). "positioning" = the
+    # green is out of reach on this swing; aim_point speaks landing-zone advice
+    # instead of a pin-relative one. Defaulted so cached session.last_recommendation
+    # JSONB from older rounds still validates (additive-field convention).
+    shot_kind: str = "approach"  # "approach" | "positioning"
+    leave_yards: Optional[int] = None  # positioning only: approach distance the drive leaves
 
 
 # ── Caddie Personality ──

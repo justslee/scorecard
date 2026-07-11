@@ -86,6 +86,20 @@ YARDAGE_GROUNDING_RULE = (
     "hedge for a number you're unsure of."
 )
 
+# Positioning-shot rule (owner incident 2026-07-06, ~400y par 4: "Aim about
+# 9 yards left of the flag" off the tee — the green was out of reach, so the
+# flag was irrelevant). Shared by BOTH mouths so wording never drifts.
+POSITIONING_SHOT_RULE = (
+    "When the recommendation marks a shot as a positioning shot (shot_kind "
+    "'positioning', or its aim says the green is out of reach), the flag does "
+    "not exist for that swing: never give a pin-relative aim ('X yards left of "
+    "the flag', 'take dead aim at the pin') and never reason from the pin "
+    "position. Talk landing zone instead — which side of the fairway to favor, "
+    "what's in play at the shot's own distance, and the approach it leaves "
+    "(speak the engine's leave number; if none is provided, do not invent "
+    "one). Pin-relative aim returns only on a shot the engine marks reachable."
+)
+
 # Text-mouth tool instruction (caddie-tool-loop-parity): the classic text
 # caddie now carries the same six tools the Realtime orb has (canonical
 # registry in app/caddie/tools.py). Appended to BOTH text builders'
@@ -132,6 +146,7 @@ def build_realtime_instructions(
         + "\n" + INPUT_GROUNDING_RULE
         + "\n" + OBSERVED_REALITY_RULE
         + "\n" + YARDAGE_GROUNDING_RULE
+        + "\n" + POSITIONING_SHOT_RULE
     )
 
     return "\n\n".join(parts)

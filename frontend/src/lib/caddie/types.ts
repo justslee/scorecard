@@ -34,6 +34,13 @@ export interface CaddieRecommendation {
   /** True when the backend produced a USGA-conforming recommendation
    *  (no environmental distance adjustments; target_yards == raw_yards). */
   competition_legal?: boolean;
+  /** "positioning" = the green is out of reach on this swing; aim_point
+   *  speaks landing-zone advice instead of a pin-relative one. Defaulted
+   *  server-side to "approach" (today's flag-relative path) — optional here
+   *  so older cached recommendations still validate. */
+  shot_kind?: 'approach' | 'positioning';
+  /** positioning only: the approach distance the drive leaves. */
+  leave_yards?: number | null;
 }
 
 export interface WeatherConditions {

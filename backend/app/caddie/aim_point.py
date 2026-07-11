@@ -4,6 +4,7 @@ from typing import Optional
 from app.caddie.types import (
     AimPoint,
     MissSide,
+    Hazard,
     HoleIntelligence,
     PlayerStatistics,
     CaddieRecommendation,
@@ -14,11 +15,17 @@ from app.caddie.club_selection import (
     compute_adjustments,
     normalize_club_distances,
     CLUB_DISPLAY_NAMES,
+    DEFAULT_CLUB_DISTANCES,
 )
 from app.caddie.strokes_gained import expected_strokes, personal_lookup
 from app.caddie.slope_advice import slope_miss_advice
 from app.caddie.shot_line_advice import shot_line_advice
-from app.caddie.decade_advice import decade_aim_advice
+from app.caddie.decade_advice import (
+    decade_aim_advice,
+    decade_landing_advice,
+    drive_zone_hazards,
+    cross_hazard_line,
+)
 
 # ── Reasoning priority cap ────────────────────────────────────────────────────
 #
@@ -244,6 +251,108 @@ def compute_miss_side(
     )
 
 
+# ── Reachability classification (positioning shots) ────────────────────────
+#
+# specs/caddie-shot-context-reachability-plan.md §1 (owner incident
+# 2026-07-06: "aim 9y left of the flag" on a 400y par-4 tee shot — the green
+# was never in reach, so any pin-relative aim was wrong golf reasoning).
+# When the best club in the bag can't reach the green (plus a front-edge
+# margin), the shot is a POSITIONING shot: the flag doesn't exist for this
+# swing — see compute_positioning_aim / compute_positioning_miss_side below.
+
+# Distance-to-green is (nearly always) to the CENTER of the green; a ball
+# finishing on the front edge has still reached it. Half a typical green
+# depth; overridden by the hole's real measured depth when mapped.
+GREEN_REACH_MARGIN_YDS: int = 15
+
+
+def is_green_reachable(
+    adjusted_yards: int,
+    clubs: dict[str, int],
+    green_depth_yards: Optional[float] = None,
+) -> bool:
+    """Can ANY club in the bag reach the green on this swing?
+
+    `adjusted_yards` is already the physics plays-like distance
+    (`compute_adjustments`, anchored to this player's bag) — the same number
+    `select_club` compares against — so wind/elevation move the reachability
+    verdict for free, and `get_recommendation` can never disagree with
+    itself about it within a turn. Bag fallback is `DEFAULT_CLUB_DISTANCES`,
+    the same fallback `select_club` has always used — never a fabricated
+    number. Margin = front-edge allowance: `green_depth_yards / 2` when the
+    green is mapped, else `GREEN_REACH_MARGIN_YDS`.
+    """
+    distances = clubs or DEFAULT_CLUB_DISTANCES
+    max_reach = max(distances.values())
+    margin = (green_depth_yards / 2.0) if green_depth_yards else GREEN_REACH_MARGIN_YDS
+    return max_reach + margin >= adjusted_yards
+
+
+def compute_positioning_miss_side(zone: list[Hazard]) -> MissSide:
+    """Sibling of `compute_miss_side`, but over the driving-zone hazards
+    (`drive_zone_hazards` — the tee-anchored `carry_yards` frame) instead of
+    green-side hazards. Prefers the lateral side with less risk in THIS
+    shot's landing window; no in-zone hazard data degrades to an honest
+    generic (nothing fabricated).
+    """
+    if not zone:
+        return MissSide(
+            preferred="short",
+            description="No mapped trouble in the driving zone — worst case is a longer approach",
+            avoid="Don't chase distance you don't need",
+        )
+
+    def severity_score(hzds: list[Hazard]) -> float:
+        scores = {"mild": 1, "moderate": 2, "severe": 3, "death": 5}
+        if not hzds:
+            return 0
+        return max(scores.get(h.penalty_severity, 0) for h in hzds)
+
+    left = [h for h in zone if h.line_side.lower() == "left"]
+    right = [h for h in zone if h.line_side.lower() == "right"]
+    left_score = severity_score(left)
+    right_score = severity_score(right)
+
+    if left_score <= right_score:
+        preferred, worst_side, worst_hazards = "left", "right", right
+    else:
+        preferred, worst_side, worst_hazards = "right", "left", left
+
+    if worst_hazards:
+        types_desc = ", ".join(sorted({h.type for h in worst_hazards}))
+        avoid = f"Don't miss {worst_side} — {types_desc}"
+        description = f"Favor the {preferred} side off the tee — {worst_side} has trouble in the driving zone"
+    else:
+        avoid = f"Don't miss {worst_side}"
+        description = f"Favor the {preferred} side off the tee"
+
+    return MissSide(preferred=preferred, description=description, avoid=avoid)
+
+
+def compute_positioning_aim(
+    leave_yards: int,
+    landing_advice: Optional[str] = None,
+) -> AimPoint:
+    """Composes the positioning-shot AimPoint description shown in
+    CaddiePanel and spoken via the "Last recommendation" prompt lines.
+
+    `landing_advice` is the (already-computed, possibly `None`)
+    `decade_landing_advice` string — passed in rather than recomputed so the
+    optimizer runs exactly once per recommendation. Only the directional
+    clause ("favor the right half of the fairway") is folded into the aim
+    description; the hazard specifics ride along separately as their own
+    P1 reasoning line. `lat`/`lng`/`bearing` stay `None`, same as today's
+    reachable path.
+    """
+    if landing_advice:
+        side_clause = landing_advice.split(" — ", 1)[0]
+        side_clause = side_clause[0].lower() + side_clause[1:]
+    else:
+        side_clause = "middle of the fairway"
+    description = f"Positioning shot — green's out of reach. {side_clause}; leaves about {leave_yards} in."
+    return AimPoint(description=description)
+
+
 def generate_recommendation(
     hole: HoleIntelligence,
     distance_yards: int,
@@ -290,14 +399,35 @@ def generate_recommendation(
     bias = "moderate" if is_tee_shot else "conservative"
     club, club_dist = select_club(adjusted_yards, clubs, bias=bias)
 
-    # Aim point
-    aim = compute_aim_point(hole, player_stats, handicap)
+    # Reachability classification (specs/caddie-shot-context-reachability-plan.md).
+    # Reachable → today's flag-relative path, byte-identical. Not reachable →
+    # positioning shot: the flag doesn't exist for this swing, landing-zone
+    # advice instead (owner incident 2026-07-06: pin-relative aim on an
+    # unreachable 400y tee shot).
+    reachable = is_green_reachable(adjusted_yards, clubs, hole.green_depth_yards)
+    max_reach = max((clubs or DEFAULT_CLUB_DISTANCES).values())
+    leave_yards: Optional[int] = None
+    if not reachable:
+        leave_yards = round(max(0, adjusted_yards - club_dist) / 5) * 5
 
-    # Miss side
-    miss = compute_miss_side(hole, player_stats)
-
-    # Pin traffic light
-    pin_light = classify_pin_position(hole)
+    # Aim point / miss side / pin light — branch on reachability.
+    zone: list[Hazard] = []
+    landing_advice: Optional[str] = None
+    pin_light: Optional[str] = None
+    if reachable:
+        aim = compute_aim_point(hole, player_stats, handicap)
+        miss = compute_miss_side(hole, player_stats)
+        pin_light = classify_pin_position(hole)
+    else:
+        # Driving-zone window around THIS shot's expected advance — not the
+        # green-side frame. classify_pin_position is skipped: pin light is a
+        # green concept and doesn't apply when the green isn't in play.
+        zone = drive_zone_hazards(hole.hazards, float(club_dist))
+        landing_advice = decade_landing_advice(
+            hole.hazards, float(club_dist), float(leave_yards), handicap=handicap,
+        )
+        aim = compute_positioning_aim(leave_yards, landing_advice)
+        miss = compute_positioning_miss_side(zone)
 
     # Build reasoning as (priority, text) tuples; see prioritize_reasoning for
     # the full priority scheme.  Order of appends within a priority is preserved
@@ -323,11 +453,40 @@ def generate_recommendation(
     display_name = CLUB_DISPLAY_NAMES.get(club, club)
     _r.append((0, f"{display_name} ({club_dist}y) — best fit for {adjusted_yards}y"))
 
-    # P1 — safety-critical: pin traffic-light warning
-    if pin_light == "red":
-        _r.append((1, "Red light pin — play to the center, don't short-side yourself"))
-    elif pin_light == "yellow":
-        _r.append((1, "Yellow light pin — aim between pin and center"))
+    if reachable:
+        # P1 — safety-critical: pin traffic-light warning
+        if pin_light == "red":
+            _r.append((1, "Red light pin — play to the center, don't short-side yourself"))
+        elif pin_light == "yellow":
+            _r.append((1, "Yellow light pin — aim between pin and center"))
+    else:
+        # P1 — positioning-shot call-out (the fix for the incident: never a
+        # pin-relative aim when the green is out of reach on this swing).
+        _r.append((
+            1,
+            f"Green's out of reach ({adjusted_yards}y; your longest club is {max_reach}y)"
+            f" — positioning shot, leaves about {leave_yards} in",
+        ))
+        # P1 — driving-zone DECADE landing advice + any dead-ahead cross hazard.
+        if landing_advice:
+            _r.append((1, landing_advice))
+        cross_line = cross_hazard_line(zone, float(club_dist))
+        if cross_line:
+            _r.append((1, cross_line))
+        # P2 — fairway-bend-in-window line (honest reuse of HoleBend; omitted
+        # when bend is None, per the unmapped-vs-straight discipline in hazards.py).
+        bend = hole.bend
+        if (
+            bend is not None
+            and not bend.straight
+            and bend.distance_yards is not None
+            and (club_dist - 60) <= bend.distance_yards <= (club_dist + 60)
+        ):
+            _r.append((
+                2,
+                f"Fairway bends {bend.direction} at ~{bend.distance_yards}"
+                " — that corner is your landing zone",
+            ))
 
     # P2 — miss-tendency note (directly affects where to aim)
     if player_stats and player_stats.tendencies.miss_direction != "balanced":
@@ -346,26 +505,32 @@ def generate_recommendation(
             f" in {h.times_played} rounds",
         ))
 
-    # P2 — green-slope tactical advice (affects where to miss)
-    # Additive only; does NOT affect club, target, or miss_side.
-    slope_advice = slope_miss_advice(hole.green_slope, shot_bearing)
-    if slope_advice:
-        _r.append((2, slope_advice))
+    if reachable:
+        # P2 — green-slope tactical advice (affects where to miss). Slope is a
+        # green-frame concept — skipped on the positioning path.
+        # Additive only; does NOT affect club, target, or miss_side.
+        slope_advice = slope_miss_advice(hole.green_slope, shot_bearing)
+        if slope_advice:
+            _r.append((2, slope_advice))
 
-    # P3 — shot-line terrain advice (terrain SHAPE color)
-    # Fires only when a pre-sampled elevation profile is attached (via
-    # hole.shot_line_profile_ft, populated by the route handler).
-    # Additive only; does NOT affect club, target, or miss_side.
-    sl_advice = shot_line_advice(hole.shot_line_profile_ft or [], distance_yards)
-    if sl_advice:
-        _r.append((3, sl_advice))
+        # P3 — shot-line terrain advice (terrain SHAPE color)
+        # Fires only when a pre-sampled elevation profile is attached (via
+        # hole.shot_line_profile_ft, populated by the route handler). Terminal
+        # terrain/green color — skipped on the positioning path so the
+        # "zero flag/green-frame reference" gate stays clean.
+        # Additive only; does NOT affect club, target, or miss_side.
+        sl_advice = shot_line_advice(hole.shot_line_profile_ft or [], distance_yards)
+        if sl_advice:
+            _r.append((3, sl_advice))
 
-    # P1 — DECADE expected-strokes aim advice (safety-critical lateral shift)
-    # Additive only; does NOT affect club, target, aim_point, or miss_side.
-    # Handicap forwarded so dispersion is personalised.
-    d_advice = decade_aim_advice(hole.hazards, float(distance_yards), handicap=handicap)
-    if d_advice:
-        _r.append((1, d_advice))
+        # P1 — DECADE expected-strokes aim advice (safety-critical lateral shift)
+        # Additive only; does NOT affect club, target, aim_point, or miss_side.
+        # Handicap forwarded so dispersion is personalised. This is the
+        # incident sentence class ("aim ~9y left of the flag") — never fires
+        # on the positioning path (the landing-zone advice above replaces it).
+        d_advice = decade_aim_advice(hole.hazards, float(distance_yards), handicap=handicap)
+        if d_advice:
+            _r.append((1, d_advice))
 
     # Expected score — pulls from personal_sg first, falls back to PGA baseline.
     # Gate the reasoning text on the actual lookup outcome rather than the
@@ -394,12 +559,15 @@ def generate_recommendation(
     reasoning = prioritize_reasoning(_r)
 
     # Aggressiveness
-    if pin_light == "red" or len([h for h in hole.hazards if h.penalty_severity == "death"]) >= 2:
-        aggressiveness = "conservative"
-    elif pin_light == "green" and not hole.hazards:
-        aggressiveness = "aggressive"
+    if reachable:
+        if pin_light == "red" or len([h for h in hole.hazards if h.penalty_severity == "death"]) >= 2:
+            aggressiveness = "conservative"
+        elif pin_light == "green" and not hole.hazards:
+            aggressiveness = "aggressive"
+        else:
+            aggressiveness = "moderate"
     else:
-        aggressiveness = "moderate"
+        aggressiveness = "conservative" if any(h.penalty_severity == "death" for h in zone) else "moderate"
 
     # Confidence based on data quality
     confidence = 0.5
@@ -425,4 +593,6 @@ def generate_recommendation(
         aggressiveness=aggressiveness,
         expected_score=round(exp_score, 2),
         competition_legal=competition_legal,
+        shot_kind="positioning" if not reachable else "approach",
+        leave_yards=leave_yards if not reachable else None,
     )

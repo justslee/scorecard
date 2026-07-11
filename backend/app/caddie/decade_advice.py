@@ -413,3 +413,167 @@ def decade_aim_advice(
         f"The percentages favor aiming ~{n_yards}y {aim_direction} of the flag"
         f" — the {dangerous_side} is the danger side."
     )
+
+
+# ── Landing-zone DECADE engine (positioning shots — out-of-reach tee/layup) ───
+#
+# specs/caddie-shot-context-reachability-plan.md §2. When the green is out of
+# reach on this swing, a pin-relative frame is meaningless — the relevant
+# question is "what's in play at THIS shot's own landing distance". This
+# section reuses the same optimizer/dispersion/LandingArea machinery as
+# `decade_aim_advice` above, but centres the coordinate plane on the expected
+# LANDING point (tee-anchored `carry_yards` frame from hazards.py) instead of
+# the pin. The words "flag" and "pin" are structurally unreachable from this
+# code path.
+
+# Driving-zone window around the expected advance: ~±2-3 sigma_long of an
+# amateur full shot plus roll variance. A hazard outside it isn't in play on
+# THIS swing.
+DRIVE_ZONE_SHORT_YDS: float = 50.0   # window behind the landing point
+DRIVE_ZONE_LONG_YDS: float = 30.0    # window past it
+_FAIRWAY_HALF_WIDTH_YDS: float = 16.0  # hazards.py's 10y deadband + fairway shoulder
+
+
+def drive_zone_hazards(hazards: list[Hazard], expected_advance_yds: float) -> list[Hazard]:
+    """Hazards in play at THIS shot's distance — the `carry_yards` frame
+    (the tee-anchored along-played-line number `hazards.py` computed), never
+    `distance_from_green`. `carry_yards <= 0` entries (green-frame-only /
+    degenerate, e.g. unmapped holes or course_intel-style hazards) are
+    excluded, not guessed at.
+    """
+    return [
+        h for h in hazards
+        if h.carry_yards > 0
+        and expected_advance_yds - DRIVE_ZONE_SHORT_YDS
+            <= h.carry_yards <= expected_advance_yds + DRIVE_ZONE_LONG_YDS
+    ]
+
+
+def _build_landing_classify(
+    zone: list[Hazard],
+    expected_advance_yds: float,
+) -> Callable[[float, float], LandingArea]:
+    """Build a ``ClassifyFn`` centred on the LANDING target, not the pin.
+
+    Origin (0, 0) = the landing target on the hole line at
+    `expected_advance_yds` (the `carry_yards` frame IS the played
+    polyline/bend line from `hazards.py::_project_onto_polyline`, so "along
+    the hole line" comes for free). `+x` = right of the shot line, `+y` =
+    further along the hole line (toward the green).
+
+    Left/right hazards (`line_side`) are half-planes at
+    `|x| > _FAIRWAY_HALF_WIDTH_YDS`; center hazards are a band
+    `|x| <= _FAIRWAY_HALF_WIDTH_YDS` and `|y - (carry - advance)| <= 15`.
+    Default: FAIRWAY within the half-width, ROUGH outside — the same
+    deliberate half-plane simplification `build_classify_point` documents
+    above for the pin frame; more severe hazards win when regions overlap.
+    """
+    sorted_zone = sorted(
+        zone,
+        key=lambda h: _SEVERITY_ORDER.get(h.penalty_severity, 0),
+        reverse=True,
+    )
+
+    _Entry = tuple[LandingArea, str, float]
+    entries: list[_Entry] = []
+    for h in sorted_zone:
+        area = _hazard_to_area(h)
+        side = h.line_side.lower()
+        y_offset = h.carry_yards - expected_advance_yds
+        entries.append((area, side, y_offset))
+
+    def classify_point(x: float, y: float) -> LandingArea:
+        for area, side, y_offset in entries:
+            if side == "left" and x < -_FAIRWAY_HALF_WIDTH_YDS:
+                return area
+            if side == "right" and x > _FAIRWAY_HALF_WIDTH_YDS:
+                return area
+            if side == "center" and abs(x) <= _FAIRWAY_HALF_WIDTH_YDS and abs(y - y_offset) <= 15.0:
+                return area
+
+        if abs(x) <= _FAIRWAY_HALF_WIDTH_YDS:
+            return LandingArea.FAIRWAY
+        return LandingArea.ROUGH
+
+    return classify_point
+
+
+def decade_landing_advice(
+    hazards: list[Hazard],
+    expected_advance_yds: float,
+    leave_yds: float,
+    handicap: Optional[float] = None,
+) -> Optional[str]:
+    """Expected-strokes landing-zone insight for a positioning (out-of-reach)
+    shot — the driving-zone analogue of `decade_aim_advice`.
+
+    Runs `optimize_aim` over a lateral grid of candidates (landing target
+    ± 12 yds in 3-yd steps) with dispersion scaled to the drive distance,
+    against a landing-frame classifier (`_build_landing_classify`). The pin
+    is placed at ``(0, leave_yds)`` so `expected_strokes_from` prices the
+    resulting approach correctly (fairway-at-leave vs rough-at-leave vs
+    water+drop). When the optimal lateral offset deviates from center by
+    more than `AIM_THRESHOLD_YDS`, a concise advice string is returned;
+    otherwise `None` (the driving zone has no in-play hazard worth calling
+    out — the caller falls back to "middle of the fairway"). The words
+    "flag" and "pin" are unreachable from this function.
+    """
+    zone = drive_zone_hazards(hazards, expected_advance_yds)
+    if not zone:
+        return None
+
+    if handicap is not None:
+        sigma_lat, sigma_long = dispersion_for_handicap(handicap, expected_advance_yds)
+    else:
+        sigma_lat = max(SIGMA_LAT_FRACTION * expected_advance_yds, MIN_SIGMA_YDS)
+        sigma_long = max(SIGMA_LONG_FRACTION * expected_advance_yds, MIN_SIGMA_YDS)
+    dispersion = Dispersion(sigma_long=sigma_long, sigma_lat=sigma_lat)
+
+    candidate_aims = [(dx, 0.0) for dx in _CANDIDATE_OFFSETS_YDS]
+    classify_point = _build_landing_classify(zone, expected_advance_yds)
+    pin = (0.0, leave_yds)
+
+    result = optimize_aim(candidate_aims, dispersion, classify_point, pin)
+    offset_x = result.aim[0]
+
+    if abs(offset_x) < AIM_THRESHOLD_YDS:
+        return None
+
+    aim_direction = "right" if offset_x > 0 else "left"
+    dangerous_side = "left" if offset_x > 0 else "right"
+    lateral_hazards = [h for h in zone if h.line_side.lower() == dangerous_side]
+
+    if lateral_hazards:
+        worst = max(
+            lateral_hazards,
+            key=lambda h: _SEVERITY_ORDER.get(h.penalty_severity, 0),
+        )
+        hazard_desc = _friendly_hazard_name(worst)
+        return (
+            f"Favor the {aim_direction} half of the fairway — {hazard_desc} at "
+            f"~{int(round(worst.carry_yards))} on the {dangerous_side}."
+        )
+
+    return f"Favor the {aim_direction} half of the fairway — {dangerous_side} is the tighter side."
+
+
+def cross_hazard_line(zone: list[Hazard], expected_advance_yds: float) -> Optional[str]:
+    """Advisory-only line for a hazard crossing the fairway dead ahead in the
+    driving zone (`line_side == "center"`), independent of the lateral aim
+    advice. Severe/death only, and only within a tight carry window around
+    the expected advance — club change stays out of scope (matches the
+    repo's additive-advice tradition; `decade_aim_advice` never changes club
+    either).
+    """
+    candidates = [
+        h for h in zone
+        if h.line_side.lower() == "center"
+        and h.penalty_severity in ("severe", "death")
+        and (expected_advance_yds - 15.0) <= h.carry_yards <= (expected_advance_yds + 25.0)
+    ]
+    if not candidates:
+        return None
+    worst = max(candidates, key=lambda h: _SEVERITY_ORDER.get(h.penalty_severity, 0))
+    name = _friendly_hazard_name(worst)
+    name = name[0].upper() + name[1:]
+    return f"{name} crosses at ~{int(round(worst.carry_yards))} — driver brings it in play."

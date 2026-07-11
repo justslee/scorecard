@@ -28,6 +28,7 @@ from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
 from app.caddie.voice_prompts import (
     INPUT_GROUNDING_RULE,
     OBSERVED_REALITY_RULE,
+    POSITIONING_SHOT_RULE,
     TOOL_USE_RULE,
     YARDAGE_GROUNDING_RULE,
 )
@@ -160,9 +161,12 @@ async def test_voice_prompt_stable_before_volatile_ordering(monkeypatch):
 # additive line from caddie-green-slope-spatial step 4 — {bend_rule} —
 # the deliberate additive line from caddie-bend-distance — and
 # {input_grounding_rule} — the deliberate additive line from
-# caddie-input-grounding (Scars-transcript incident, 2026-07-09) — all
-# referenced via the imported constants so wording edits don't rot this
-# guard. Everything else must stay identical.)
+# caddie-input-grounding (Scars-transcript incident, 2026-07-09) — and
+# {positioning_rule} — the deliberate additive line from
+# caddie-shot-context-reachability (owner incident 2026-07-06: pin-relative
+# aim on an unreachable tee shot) — all referenced via the imported
+# constants so wording edits don't rot this guard. Everything else must
+# stay identical.)
 
 
 _OLD_SESSION_TEMPLATE = """{persona}
@@ -192,7 +196,8 @@ or known tendencies when relevant.
 {tool_rule}
 {input_grounding_rule}
 {observed_reality_rule}
-{yardage_rule}"""
+{yardage_rule}
+{positioning_rule}"""
 
 
 _OLD_STATELESS_TEMPLATE = """{persona}
@@ -220,7 +225,8 @@ golf-focused. Never break character.
 {tool_rule}
 {input_grounding_rule}
 {observed_reality_rule}
-{yardage_rule}"""
+{yardage_rule}
+{positioning_rule}"""
 
 
 def _normalized_line_set(text: str) -> set[str]:
@@ -259,6 +265,7 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
         input_grounding_rule=INPUT_GROUNDING_RULE,
         observed_reality_rule=OBSERVED_REALITY_RULE,
         yardage_rule=YARDAGE_GROUNDING_RULE,
+        positioning_rule=POSITIONING_SHOT_RULE,
     )
     assert _normalized_line_set(new_flat) == _normalized_line_set(old_flat)
 
@@ -289,6 +296,7 @@ async def test_voice_prompt_content_identical_to_old_template_modulo_order(monke
         input_grounding_rule=INPUT_GROUNDING_RULE,
         observed_reality_rule=OBSERVED_REALITY_RULE,
         yardage_rule=YARDAGE_GROUNDING_RULE,
+        positioning_rule=POSITIONING_SHOT_RULE,
     )
     assert _normalized_line_set(new_flat) == _normalized_line_set(old_flat)
 
