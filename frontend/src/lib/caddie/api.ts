@@ -473,6 +473,15 @@ export async function sessionVoice(params: {
   transcript: string;
   personality_id: string;
   hole_number: number;
+  /** Live GPS distance to the middle of the green — outranks `hole_yards`
+   *  server-side (specs/caddie-yardage-gps-selected-tee-plan.md §2.3). */
+  distance_to_green_yards?: number;
+  /** Resolved yardage (lib/caddie/hole-yardage.ts) — NEVER the mock
+   *  illustration constant. */
+  hole_yards?: number;
+  /** Provenance of `hole_yards`: 'gps' | 'tee-card' | 'tee-geom' | 'card'. */
+  yardage_basis?: string;
+  tee_name?: string;
 }): Promise<{ response: string }> {
   return postWithTimeout('/caddie/session/voice', params, {
     timeoutMs: SESSION_VOICE_TIMEOUT_MS, // retries defaults to 0 → fail fast into the component's talkToCaddie fallback
@@ -676,6 +685,13 @@ export async function talkToCaddie(params: {
   par?: number;
   yards?: number;
   distance_yards?: number;
+  /** Live GPS distance to the middle of the green, from where the player
+   *  stands NOW (specs/caddie-yardage-gps-selected-tee-plan.md §2.3) —
+   *  outranks `yards` server-side. */
+  distance_to_green_yards?: number;
+  /** Provenance of `yards`: 'gps' | 'tee-card' | 'tee-geom' | 'card'. */
+  yardage_basis?: string;
+  tee_name?: string;
   wind_speed_mph?: number;
   wind_direction?: number;
   club_distances?: Record<string, number>;
@@ -694,6 +710,9 @@ export async function talkToCaddie(params: {
     par: params.par,
     yards: params.yards,
     distance_yards: params.distance_yards,
+    distance_to_green_yards: params.distance_to_green_yards,
+    yardage_basis: params.yardage_basis,
+    tee_name: params.tee_name,
     wind_speed_mph: params.wind_speed_mph || 0,
     wind_direction: params.wind_direction || 0,
     club_distances: params.club_distances || {},
@@ -952,7 +971,21 @@ export async function streamCaddieReply(
 
 /** Streaming twin of sessionVoice — 3-tier CaddieSheet ladder, tier 1. */
 export async function sessionVoiceStream(
-  params: { round_id: string; transcript: string; personality_id: string; hole_number: number },
+  params: {
+    round_id: string;
+    transcript: string;
+    personality_id: string;
+    hole_number: number;
+    /** Live GPS distance to the middle of the green — outranks `hole_yards`
+     *  server-side (specs/caddie-yardage-gps-selected-tee-plan.md §2.3). */
+    distance_to_green_yards?: number;
+    /** Resolved yardage (lib/caddie/hole-yardage.ts) — NEVER the mock
+     *  illustration constant. */
+    hole_yards?: number;
+    /** Provenance of `hole_yards`: 'gps' | 'tee-card' | 'tee-geom' | 'card'. */
+    yardage_basis?: string;
+    tee_name?: string;
+  },
   opts: { onToken: (delta: string) => void; onStatus?: (label: string) => void; signal?: AbortSignal },
 ): Promise<string> {
   return streamCaddieReply("/caddie/session/voice/stream", params, {
@@ -973,6 +1006,12 @@ export async function talkToCaddieStream(
     par?: number;
     yards?: number;
     distance_yards?: number;
+    /** Live GPS distance to the middle of the green — outranks `yards`
+     *  server-side (specs/caddie-yardage-gps-selected-tee-plan.md §2.3). */
+    distance_to_green_yards?: number;
+    /** Provenance of `yards`: 'gps' | 'tee-card' | 'tee-geom' | 'card'. */
+    yardage_basis?: string;
+    tee_name?: string;
     wind_speed_mph?: number;
     wind_direction?: number;
     club_distances?: Record<string, number>;
@@ -995,6 +1034,9 @@ export async function talkToCaddieStream(
       par: params.par,
       yards: params.yards,
       distance_yards: params.distance_yards,
+      distance_to_green_yards: params.distance_to_green_yards,
+      yardage_basis: params.yardage_basis,
+      tee_name: params.tee_name,
       wind_speed_mph: params.wind_speed_mph || 0,
       wind_direction: params.wind_direction || 0,
       club_distances: params.club_distances || {},

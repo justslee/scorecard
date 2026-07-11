@@ -112,7 +112,11 @@ async def test_session_voice_prompt_stable_before_volatile_ordering(monkeypatch)
     assert HAZARD_GROUNDING_RULE in system[0]["text"]
     assert "--- CURRENT SITUATION ---" not in system[0]["text"]
     assert system[1]["text"].startswith("--- CURRENT SITUATION ---")
-    assert "Current hole: #4" in system[1]["text"]
+    # Reworded by specs/caddie-yardage-gps-selected-tee-plan.md §2.4 — the
+    # yardage-context line now leads with "Hole N, ..." instead of the old
+    # bare "Current hole: #N"; no yardage signal here → honest "unknown".
+    assert "Hole 4," in system[1]["text"]
+    assert "yardage unknown" in system[1]["text"]
 
 
 @pytest.mark.asyncio
@@ -236,7 +240,10 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
     old_flat = _OLD_SESSION_TEMPLATE.format(
         persona="Classic system prompt.",
         memory_section="",
-        context="Current hole: #4",
+        # Reworded by specs/caddie-yardage-gps-selected-tee-plan.md §2.4 — no
+        # yardage signal on this request → the shared formatter's honest
+        # "unknown" branch, never the old bare "Current hole: #4".
+        context="Hole 4, Par unknown — yardage unknown. Ask the player or say so; never guess.",
         hazard_rule=HAZARD_GROUNDING_RULE,
         bend_rule=BEND_GROUNDING_RULE,
         physics_rule=PHYSICS_GROUNDING_RULE,
@@ -252,14 +259,20 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
 async def test_voice_prompt_content_identical_to_old_template_modulo_order(monkeypatch):
     _patch_voice_prompt_deps(monkeypatch)
 
-    request = VoiceCaddieRequest(transcript="hi", personality_id="classic", hole_number=1, par=4, yards=400)
+    request = VoiceCaddieRequest(
+        transcript="hi", personality_id="classic", hole_number=1, par=4,
+        yards=400, yardage_basis="card",
+    )
     system, _messages, _persona_id = await caddie_routes._build_voice_prompt(request, "user-1")
 
     new_flat = system[0]["text"] + "\n" + system[1]["text"]
     old_flat = _OLD_STATELESS_TEMPLATE.format(
         persona="Classic system prompt.",
         memory_section="",
-        context="Current hole: #1, Par 4, 400 yards",
+        # Reworded by specs/caddie-yardage-gps-selected-tee-plan.md §2.4 — the
+        # shared yardage-context formatter's provenance-labeled "card" wording,
+        # never the old bare "Current hole: #1, Par 4, 400 yards".
+        context="Hole 1, Par 4 — 400 yards. Do not quote any other tee's yardage.",
         hazard_rule=HAZARD_GROUNDING_RULE,
         bend_rule=BEND_GROUNDING_RULE,
         physics_rule=PHYSICS_GROUNDING_RULE,

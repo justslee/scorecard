@@ -422,7 +422,10 @@ async def test_build_session_voice_prompt_downgrades_invisible_persona_to_classi
     assert persona_id == "classic"
     assert loaded_ids == ["classic"]
     assert "Classic system prompt." in _flat_system(system)
-    assert "Current hole: #4" in _flat_system(system)
+    # Reworded by specs/caddie-yardage-gps-selected-tee-plan.md §2.4 — the
+    # yardage-context line now leads with "Hole N, ..." instead of the old
+    # bare "Current hole: #N".
+    assert "Hole 4," in _flat_system(system)
     assert messages[-1] == {"role": "user", "content": "what club?"}
 
 

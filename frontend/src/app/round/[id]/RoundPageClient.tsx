@@ -60,6 +60,7 @@ import { playsBasis } from "@/lib/caddie/plays-basis";
 import { yardsDistance } from "@/lib/course/hole-projection";
 import { applyTeeAnchors, resolveFcbSource, namesMatch } from "@/lib/course/tee-anchor";
 import { resolveHoleYardage, yardageCaption } from "@/lib/caddie/hole-yardage";
+import type { HoleData } from "@/lib/courses/types";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
@@ -97,6 +98,28 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
       }
     );
   });
+}
+
+/**
+ * The mapped course's real per-tee card yardage for one hole, matched
+ * against the round's selected teeName (spec: caddie-yardage-gps-selected-
+ * tee-plan.md §2.2) — the same tolerant `namesMatch` tee-anchor.ts uses for
+ * OSM tag matching. Honestly undefined when the course isn't mapped, has no
+ * recorded per-tee card for this hole, or no tee is selected — never a
+ * fabricated number.
+ */
+function selectedTeeCardYardsFor(
+  courseHoles: HoleData[],
+  teeName: string | null | undefined,
+  holeNumber: number
+): number | undefined {
+  if (!teeName) return undefined;
+  const holeData = courseHoles.find((h) => h.number === holeNumber);
+  if (!holeData) return undefined;
+  for (const [key, y] of Object.entries(holeData.yardages)) {
+    if (namesMatch(key, teeName)) return y;
+  }
+  return undefined;
 }
 
 /** Build a per-player score array: { [playerId]: (number|null)[] } indexed hole 0…holeCount-1. */
@@ -762,7 +785,13 @@ export default function RoundPage() {
               front: c.front,
               back: c.back,
               par: round.holes[c.holeNumber - 1]?.par,
-              yards: round.holes[c.holeNumber - 1]?.yards,
+              // Selected-tee card snapshot beats the bare round.holes yards
+              // (spec §2.4 "course-intel yards input") — keeps hole_intel's
+              // elevation/effective-yards math coherent with the resolved
+              // yardage every other surface reads.
+              yards:
+                selectedTeeCardYardsFor(courseHoles, round.teeName, c.holeNumber) ??
+                round.holes[c.holeNumber - 1]?.yards,
               handicap: round.holes[c.holeNumber - 1]?.handicap,
             })),
             anchor?.lat,
@@ -813,7 +842,7 @@ export default function RoundPage() {
         // Silent — recommendations degrade gracefully without intel.
       }
     })();
-  }, [caddieSessionActive, mapCoordsLoaded, anchoredCoords, mappedCourse, round, roundId, applyWeather]);
+  }, [caddieSessionActive, mapCoordsLoaded, anchoredCoords, mappedCourse, round, roundId, applyWeather, courseHoles]);
 
   const hole = HOLES[currentHole - 1] ?? HOLES[0];
   // Prefer round's par data (authoritative); fall back to illustration constant.
@@ -1198,15 +1227,8 @@ export default function RoundPage() {
   // independent of `round.holes[i].yards`, which the standard round/new flow
   // never populates. Honestly null when the course isn't mapped, has no
   // recorded per-tee card, or the round has no selected tee.
-  const selectedTeeCardYards = (() => {
-    if (!round?.teeName) return null;
-    const holeData = courseHoles.find((h) => h.number === currentHole);
-    if (!holeData) return null;
-    for (const [key, yards] of Object.entries(holeData.yardages)) {
-      if (namesMatch(key, round.teeName)) return yards;
-    }
-    return null;
-  })();
+  const selectedTeeCardYards =
+    selectedTeeCardYardsFor(courseHoles, round?.teeName, currentHole) ?? null;
   // ONE shared resolver (spec §2.1) — GPS-to-green (live, gated on-hole) beats
   // the selected tee's card yards, beats its mapped geometry, beats a bare
   // scorecard snapshot, beats honest null. Every caddie/grounding surface
@@ -2275,6 +2297,8 @@ export default function RoundPage() {
         holePar={holePar}
         holeYards={resolvedYardage.yards}
         yardsCaption={yardsCaption}
+        yardageBasis={resolvedYardage.basis}
+        teeName={round?.teeName ?? null}
         convHistory={caddieHistory}
         onUpdateConvHistory={setCaddieHistory}
         roundId={roundId}

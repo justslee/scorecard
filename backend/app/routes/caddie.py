@@ -196,6 +196,23 @@ class SessionVoiceRequest(BaseModel):
     transcript: str
     personality_id: str = "classic"
     hole_number: int = 1
+    # Additive/backward-compatible (specs/caddie-yardage-gps-selected-tee-plan.md
+    # §2.4) — an older build omitting these keeps working; the prompt just
+    # falls back to par-only / "yardage unknown", never a fabricated number.
+    # Live GPS distance to the middle of the green, from where the player
+    # stands NOW (already on-hole gated by the caller) — the highest-trust
+    # source, outranks everything below.
+    distance_to_green_yards: Optional[int] = None
+    # The resolved hole yardage (frontend lib/caddie/hole-yardage.ts) when
+    # GPS isn't available — from the golfer's selected tee (card or
+    # geometry) or a real card snapshot. NEVER the mock illustration
+    # constant.
+    hole_yards: Optional[int] = None
+    # Provenance of `hole_yards`: 'gps' | 'tee-card' | 'tee-geom' | 'card' —
+    # drives the "from the {tee} tees" / "on the card" wording so the caddie
+    # never claims a source it doesn't have.
+    yardage_basis: Optional[str] = None
+    tee_name: Optional[str] = None
 
 
 # ── Session endpoints ──
@@ -576,6 +593,47 @@ async def session_recommend(request: SessionRecommendRequest, user_id: str = Dep
 # ── Session-aware voice ──
 
 
+def _format_yardage_line(
+    *,
+    hole_number: Optional[int],
+    par: Optional[int],
+    distance_to_green_yards: Optional[int],
+    hole_yards: Optional[int],
+    yardage_basis: Optional[str],
+    tee_name: Optional[str] = None,
+) -> str:
+    """Shared yardage-context line for BOTH `_build_session_voice_prompt` and
+    `_build_voice_prompt` (specs/caddie-yardage-gps-selected-tee-plan.md
+    §2.4) — the ONE place this wording lives, so the two mouths can't drift.
+
+    Labels PROVENANCE so the model never claims a stored number is "on the
+    card" unless it really is, and never has grounds to argue with a live
+    GPS/tee reality the player states. No-fake-data: never fabricates a
+    number — honest "yardage unknown" when nothing is known (never the old
+    400 default, never the mock illustration constant).
+    """
+    hole_label = f"Hole {hole_number}, " if hole_number is not None else ""
+    par_label = f"Par {par}" if par is not None else "Par unknown"
+
+    if distance_to_green_yards is not None:
+        return (
+            f"{hole_label}{par_label} — Distance to the middle of the green, GPS from where "
+            f"the player stands NOW: {distance_to_green_yards} yards. This is the player's "
+            f"real number — use it."
+        )
+    if hole_yards is not None and yardage_basis in ("tee-card", "tee-geom", "card"):
+        tee_clause = (
+            f" from the {tee_name} tees (the tees this player is playing)"
+            if tee_name and yardage_basis in ("tee-card", "tee-geom")
+            else ""
+        )
+        return (
+            f"{hole_label}{par_label} — {hole_yards} yards{tee_clause}. "
+            f"Do not quote any other tee's yardage."
+        )
+    return f"{hole_label}{par_label} — yardage unknown. Ask the player or say so; never guess."
+
+
 async def _build_session_voice_prompt(
     request: SessionVoiceRequest, user_id: str,
 ) -> tuple[list[dict], list[dict], str]:
@@ -613,24 +671,38 @@ async def _build_session_voice_prompt(
         memories = await memory_mod.get_top_memories(session.user_id)
         memories_block = memory_mod.render_memories_for_prompt(memories)
 
-    # Build rich context from session state
+    hole_intel = session.hole_intel.get(request.hole_number)
+
+    # Build rich context from session state. The yardage line is the ONE
+    # ground-truth number (spec §2.4) — GPS-to-green beats the golfer's
+    # selected tee beats a bare card snapshot beats honest "unknown".
+    # `hole_intel.yards` is demoted below to elevation/effective-delta math
+    # ONLY — it is never spoken here as a competing yardage claim, since it
+    # may be stale/mock-derived on an older cached session.
     context_parts = [
-        f"Current hole: #{request.hole_number}",
+        _format_yardage_line(
+            hole_number=request.hole_number,
+            par=hole_intel.par if hole_intel else None,
+            distance_to_green_yards=request.distance_to_green_yards,
+            hole_yards=request.hole_yards,
+            yardage_basis=request.yardage_basis,
+            tee_name=request.tee_name,
+        )
     ]
 
-    hole_intel = session.hole_intel.get(request.hole_number)
     if hole_intel:
-        if hole_intel.yards is not None:
-            line = f"Par {hole_intel.par}, {hole_intel.yards} yards (effective: {hole_intel.effective_yards})"
-            # Spell the elevation out so the caddie factors uphill/downhill
-            # into advice (owner ask) — a bare 'effective' number gets ignored.
-            elev = hole_intel.elevation_change_ft
-            if elev and abs(elev) >= 5:
-                direction = "uphill" if elev > 0 else "downhill"
-                line += f" — plays {direction} {abs(round(elev))}ft, treat it as {hole_intel.effective_yards}"
-            context_parts.append(line)
-        else:
-            context_parts.append(f"Par {hole_intel.par}")
+        # Elevation/effective-delta math ONLY (spec §2.4) — `hole_intel.yards`
+        # itself is never spoken here as a competing headline number (that's
+        # owned by the yardage line above); the effective/plays-like figure
+        # is still stated concretely, as an elevation-adjusted DELTA on top
+        # of that ground truth, not a rival claim about the base yardage.
+        elev = hole_intel.elevation_change_ft
+        if elev and abs(elev) >= 5 and hole_intel.effective_yards is not None:
+            direction = "uphill" if elev > 0 else "downhill"
+            context_parts.append(
+                f"Elevation: plays {direction} {abs(round(elev))}ft — treat it as "
+                f"{hole_intel.effective_yards} yards for club selection."
+            )
         if hole_intel.hazards:
             hazards_line = format_hazards_line(request.hole_number, hole_intel.hazards)
             if hazards_line:
@@ -743,6 +815,11 @@ async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(cad
     ctx = caddie_tools.ToolContext(
         session=session, round_id=request.round_id,
         user_id=user_id, default_hole=request.hole_number,
+        # This turn's resolved yardage — get_recommendation reads it instead
+        # of a fake default when the model omits distance_yards (spec §2.4).
+        current_yardage=request.distance_to_green_yards
+        if request.distance_to_green_yards is not None
+        else request.hole_yards,
     )
 
     try:
@@ -895,6 +972,9 @@ async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depe
     ctx = caddie_tools.ToolContext(
         session=session, round_id=request.round_id,
         user_id=user_id, default_hole=request.hole_number,
+        current_yardage=request.distance_to_green_yards
+        if request.distance_to_green_yards is not None
+        else request.hole_yards,
     )
 
     return StreamingResponse(
@@ -1276,7 +1356,16 @@ async def _build_voice_prompt(
     # hole_number None = off-course general chat (the Looper orb outside a
     # round): no hole context line — the caddie must not pretend to be on one.
     context_parts = (
-        [f"Current hole: #{request.hole_number}, Par {request.par}, {request.yards} yards"]
+        [
+            _format_yardage_line(
+                hole_number=request.hole_number,
+                par=request.par,
+                distance_to_green_yards=request.distance_to_green_yards,
+                hole_yards=request.yards,
+                yardage_basis=request.yardage_basis,
+                tee_name=request.tee_name,
+            )
+        ]
         if request.hole_number is not None
         else ["Off-course chat — the player is not currently on a hole."]
     )

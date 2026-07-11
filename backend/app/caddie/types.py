@@ -274,8 +274,21 @@ class VoiceCaddieRequest(BaseModel):
     # handler omits the hole-context line entirely rather than inventing one.
     hole_number: Optional[int] = 1
     par: int = 4
-    yards: int = 400
+    # No-fake-data (specs/caddie-yardage-gps-selected-tee-plan.md): honest
+    # None when the caller doesn't know the yardage yet — NEVER a fabricated
+    # 400 default. `_build_voice_prompt` labels provenance via `yardage_basis`
+    # and omits the yardage line entirely when this is None.
+    yards: Optional[int] = None
     distance_yards: Optional[int] = None
+    # Live GPS distance to the middle of the green, from where the player
+    # stands NOW (already on-hole gated by the caller) — outranks `yards`.
+    distance_to_green_yards: Optional[int] = None
+    # Provenance of `yards`: 'gps' | 'tee-card' | 'tee-geom' | 'card' | None —
+    # see frontend lib/caddie/hole-yardage.ts. Drives the "from the {tee}
+    # tees" / "on the card" wording so the caddie never claims a source it
+    # doesn't have.
+    yardage_basis: Optional[str] = None
+    tee_name: Optional[str] = None
     wind_speed_mph: float = 0.0
     wind_direction: int = 0
     club_distances: dict[str, int] = {}
