@@ -56,6 +56,7 @@ from app.services.voice_booking.provider import VoiceCallProvider
 
 from .adapters.chronogolf import ChronogolfProvider
 from .adapters.clubprophet import ClubProphetProvider
+from .adapters.quick18 import Quick18Provider
 from .adapters.teeitup import TeeItUpProvider
 from .availability_call_cache import (
     AvailabilityCallCacheStore,
@@ -82,6 +83,7 @@ ADAPTERS: dict[str, TeeTimeProvider] = {
     "teeitup": TeeItUpProvider(),
     "chronogolf": ChronogolfProvider(),
     "clubprophet": ClubProphetProvider(),
+    "quick18": Quick18Provider(),
 }
 
 
