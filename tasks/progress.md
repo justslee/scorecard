@@ -12820,3 +12820,31 @@ reviewer (fresh) + QA gates (lint/tsc/voice-smoke/build/vitest w/ new net tests)
 BLOCKING → re-dispatch builder. Green+designer-ok → update PR #133 + backlog (TARGETED edit,
 dup keys — never json round-trip) + progress. Reconcile from origin/integration/next on
 resume; do NOT re-run a finished builder. SILENT — no ship/ping.
+
+## Cycle 83 (2026-07-11) — tournament NET/handicap leaderboard: BUILDER DONE, pushed 3c5db4e
+Implemented per plan-lite, frontend-only. LbMode gained "net"; PlayerStanding gained
+handicap/roundNet/totalNet. Extracted pure helpers (computeStandings, sortStandings,
+tieRankLabel, formatToPar/Date, playerInitial, suffix, hasCrossing) from
+TournamentPageClient.tsx into NEW src/lib/tournament-standings.ts (framer-motion-free, so
+vitest can import directly — no component-render workaround needed) and the client now
+imports from there. playerHandicaps map built in the load useEffect the same way as
+resolvedNames (first defined round.players[].handicap per id) and passed as computeStandings'
+3rd arg. Net formula = chicago convention only: handicap=Math.round(raw), roundNet=gross-hcp,
+totalNet=totalStrokes-hcp*roundsWithScore; totalNet=null (never 0) when handicap is
+missing OR player has no scores — sorted last, rank "—". Added a small "Hcp N"/"No hcp"
+caption under the player name, net-mode-only, to disambiguate "—" (no hcp) from "—" (no
+score). Confirmed (did not touch) the phantom-haptic guard: `prev.mode !== lbMode` in the
+prevOrderRef effect already treats ANY cross-mode switch — including Gross/ToPar↔Net — as a
+silent rebase (no haptic), since it's a plain 3-way string-union inequality check.
+Gross/toPar branches only had net cases ADDED alongside, never altered.
+New tests: src/lib/tournament-standings.test.ts (8 cases) — net total+per-round math,
+2-round allocation sum, missing-hcp→null (unranked, proven NOT 0), no-scores→null,
+net re-rank with nulls-last, tie-aware T-label + "—" for unranked, unique-rank no-T-prefix,
+and an explicit gross/toPar-unchanged-by-playerHandicaps equivalence check.
+Gates (all green): lint clean · tsc 0 errors · voice-smoke 277/277 · vitest 2046/2046 (100
+files, incl. new file 8/8) · next build ok. Backend untouched (git diff confirms only 3
+frontend files changed). Pushed to integration/next @ 3c5db4e.
+AWAITING: reviewer (fresh) + QA gates + designer pass (3-pill fit, calm Hcp caption, honest
+"—" reads correctly) on PR #133. BLOCKING → re-dispatch builder. Green+designer-ok → update
+PR #133 + backlog (TARGETED edit) + progress. SILENT — no ship/ping (frontend-only leaderboard
+mode is arguably noticeable on TestFlight; eng-lead to classify against #133's bundle).
