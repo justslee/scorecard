@@ -13104,3 +13104,15 @@ regression, import-move clean) + QA (ruff + non-DB pytest + REAL docker Postgres
 frontend no-regression). BLOCKING → re-dispatch builder. Green → update PR #133 checklist +
 backlog (course-intel-static-persistence → shipped/done-on-bundle, resolution field, status
 enum) + progress. SILENT — no ship/ping. Reconcile from origin/integration/next on resume.
+
+## AWAITING (cycle 86 — reviewer on efb32f4, static-intel gap closure)
+Builder DONE @efb32f4 (feature f682f85). Gap A (precompute wired into create/put_mapped before
+guides) + Gap B (content-addressed elevation_coords_key invalidation) + elevation_computed_at
+stamp; precompute moved to app/services/course_elevation.py. Builder gates ALL green: ruff clean,
+non-DB pytest 2060 passed/92 skipped, REAL docker Postgres integration 92 passed (mapped-course-db
+10/10 incl 3 new precompute cases), frontend lint/tsc clean + voice 277/277. AWAITING reviewer
+(fresh, adversarial — static-only, invalidation determinism + lng/lat order, keyless write-back
+not stamped, no read-path regression, best-effort/no-fabrication, import-move clean). BLOCKING →
+re-dispatch builder. SHIP → update PR #133 checklist + backlog (course-intel-static-persistence →
+shipped-on-bundle, resolution field, status enum) + progress. SILENT — no ship/ping. Reconcile
+from origin/integration/next on resume. No designer (backend-only, no UI).
