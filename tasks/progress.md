@@ -14084,3 +14084,15 @@ picker hides stake for non-settling formats + disables roster-unmet rows, buildR
 (games.ts:827-843, locked by games.test.ts:937-960) — out of scope, worked around in test.
 Outcomes: reviewer SHIP + qa PASS + designer APPROVE → update PR#135 checklist + backlog follow-up.
 Any BLOCKING → re-dispatch builder. Do NOT ship/ping (bundle keeps accumulating).
+
+## Review results (partial) on 1a37556
+- qa: PASS — 6/6 local gates (lint/tsc/voice 278/vitest 2208 incl. 75/75 money tests/build/ruff).
+  E2E deferred (no preview backend).
+- designer: BLOCKING — 2 copy fixes: (1) GamePicker.tsx "Points game — no money settlement" note
+  is wrong for stroke/vegas/bb/scr (shows on /round/new default stroke screen, contradicts "Lowest
+  total wins") → make format-agnostic e.g. "No money on this one — nothing to settle."; (2)
+  round-games.ts:40 Wolf tag "3–4 ply" contradicts new "Wolf needs a foursome." → change tag to
+  "Foursome"/"4 ply". Non-blocking nit: disabled-row opacity 0.5 fades explanatory sub-copy —
+  fade border/bg/icon only, keep text legible (sunlight Northstar).
+- reviewer: AWAITING.
+Plan: batch designer blockers (+opacity nit) with any reviewer blockers → single builder pass.
