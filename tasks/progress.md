@@ -13975,6 +13975,21 @@ silent refresh, new pure lib/leaderboard-refresh.ts (shouldRefreshLeaderboard + 
 Builder DONE @dc542df (all gates green locally). leaderboard-refresh.ts (pure) + 9 tests +
 TournamentPageClient fetchAndApply refactor. NOTICEABLE.
 
-## AWAITING: reviewer(adversarial) + qa(gates) + designer(user-facing) on dc542df.
-SHIP+PASS+APPROVE -> update PR #135 checklist (item 2), progress, DONE. BLOCKING -> re-dispatch
-builder, re-review. If I die: reviews not yet run; re-dispatch all three on origin head dc542df.
+GREEN — reviewer SHIP + qa PASS + designer APPROVE on dc542df:
+- reviewer: SHIP — money-math/standings verbatim-preserved & untouched (only 3 frontend files
+  changed); race/single-flight/staleness/unmount guards correct; silent path never blanks a good
+  board nor flashes skeleton (all setLoading/setNotFound gated if(initial)); haptics no-op on
+  no-change refresh; leaderboard-refresh boundaries tested; no security surface.
+- qa: PASS — lint / tsc / voice-smoke 278/278 / vitest 2186/2186 (leaderboard-refresh 9/9) /
+  build emits /tournament/[id] / backend ruff clean & untouched. Playwright E2E deferred to CI.
+- designer: APPROVE — zero JSX/new chrome; skeleton/notFound structurally unreachable from silent
+  path; FLIP/haptics untouched, provably silent on a no-op. Calm, no SaaS live-indicator.
+
+PR #135 checklist updated: item 2 = tournament live leaderboard (NOTICEABLE). Bundle now has 2
+NOTICEABLE items (per-round game formats + live leaderboard). NOT shipping/pinging this cycle —
+caller handles owner approval; owner is separately testing v1.1.2. Bundle keeps accumulating.
+
+Non-blocking follow-ups carried: stableford $5-default-stake settles $0 (label honesty); match
+play >2 roster settles only first two (needs opponent/team UI); live-leaderboard silent path logs
+via console.error where comment says console.warn (log-level nit); optional native appStateChange
+trigger if device QA shows a missed foreground event.
