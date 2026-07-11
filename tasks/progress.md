@@ -13116,3 +13116,30 @@ not stamped, no read-path regression, best-effort/no-fabrication, import-move cl
 re-dispatch builder. SHIP → update PR #133 checklist + backlog (course-intel-static-persistence →
 shipped-on-bundle, resolution field, status enum) + progress. SILENT — no ship/ping. Reconcile
 from origin/integration/next on resume. No designer (backend-only, no UI).
+
+## Cycle 86 (2026-07-11) — course-intel static persistence (owner P1): DONE
+Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). Kills the owner's
+"elevation takes a while" wait. Fable plan v2 @d2d322d; feature @f682f85; head @efb32f4.
+- TRACE FINDING: ~90% was ALREADY BUILT (commits 0200576 + 9c5e338). Static per-hole intel
+  (tee/green elevation, delta_ft, plays_like_yards, green_slope) already persisted in
+  hole_features.properties JSONB, read instantly (ZERO USGS on hit), bulk-precomputed,
+  backfilled-on-demand, honest (no fabricated zeros). Weather correctly stays DYNAMIC.
+- SCHEMA RULING (Fable, on record): NO courses.static_intel column + NO Alembic migration —
+  static intel is per-HOLE, already lives correctly per-feature; a course-level column would be
+  a duplicate 2nd source of truth (worse). Deliberate deviation from the prescriptive prompt.
+- Closed 2 gaps: (A) elevation precompute wired into create_mapped/put_mapped (was only
+  /session/start → raced first course-intel open), ordered before guides; (B) content-addressed
+  invalidation — elevation_coords_key (tee+green centers @6dp) stamped by precompute; skip now
+  requires exact key match (was "has tee_elevation_ft") → geometry re-map recomputes stale
+  elevation. Also stamps elevation_computed_at. Request-path write-back stays KEYLESS. Read/hot
+  path UNCHANGED. Precompute + 2 helpers moved caddie.py → NEW app/services/course_elevation.py.
+- Reviewer (fresh, adversarial): SHIP — static-only, invalidation deterministic (no lng/lat
+  transposition), write-back keyless, no read-path regression, no fabrication, no new concurrency
+  hazard, tests faithfully encode spec (no weakened assertions), ruff clean.
+- QA gates green on head: ruff clean, non-DB pytest 2060 passed/92 skipped, REAL docker Postgres
+  (postgis:16-3.4) integration 92 passed incl mapped-course-db 10/10 (3 new precompute cases:
+  idempotency-via-key, remap-invalidation round-trip, graceful-degrade), frontend lint/tsc clean
+  + voice 277/277 (frontend untouched). No designer (backend-only, no UI).
+- Bookkeeping: PR #133 checklist +1 silent item; backlog course-intel-static-persistence →
+  done-on-bundle (resolution field, status enum, spec path set). SILENT — no ship/ping; rides
+  bundle #133 and merges with the next noticeable change on the owner's single "ship it".
