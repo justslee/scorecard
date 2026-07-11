@@ -13406,3 +13406,13 @@ so it hid under v1.1.0. NOT a build failure — the upload succeeded. Fixes:
   reads it by default (legacy 1.0.N only as a warned fallback); release-manager doctrine now bumps
   VERSION per release. Committed `d64150a` on integration/next (rides bundle #134, silent infra).
 Lesson candidate: version must never sort below the last-shipped; VERSION file is now the guard.
+
+## AWAITING (cycle 95 — caddie reachability shot-context)
+- Item: OWNER-FEEDBACK caddie bug — out-of-reach par-4 tee shot must give LANDING-ZONE
+  advice (side of fairway, driving-zone hazards, leave-yardage), never flag-relative aim.
+  Root cause CONFIRMED: aim_point.py:294 calls compute_aim_point() unconditionally;
+  is_tee_shot (line 289) only nudges club bias, no reachability check, no landing-zone target.
+- Awaiting: Plan agent (fable) -> specs/caddie-shot-context-reachability-plan.md.
+  Next: write spec, dispatch builder on integration/next, then reviewer+qa.
+- Branch state: integration/next @ 9426c7a (synced with origin/main, clean).
+- NOTICEABLE (caddie advice quality) -> PR #134 checklist. Do NOT ship/ping this cycle.
