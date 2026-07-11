@@ -13594,3 +13594,17 @@ Lesson candidate: version must never sort below the last-shipped; VERSION file i
   progressively (by design, not degraded). Cell-cache 24h TTL staleness mitigated by always-live DB leg.
 - Did NOT ship/ping (owner chose to keep accumulating bundle #134, not shipping yet). Bundle #134 now:
   2 NOTICEABLE (A3, caddie reachability) + 1 SILENT (B1). NEXT CYCLE: B2 (the map UI the owner wants to see).
+
+## AWAITING (cycle 97) — course-search B2 map UI: Plan (fable) dispatched
+- Item: course-selection Part B, slice B2 = the NOTICEABLE map-based course search UI. Spec
+  §B.2 in specs/course-selection-ux-plan.md. Map mode toggle inside CourseSearch.tsx (shared
+  surface) + new CourseScoutMap.tsx (@capacitor/google-maps, roadmap, quiet ink flag markers),
+  camera-idle debounced GET /api/courses/in-bounds (B1), tap marker -> yardage-book card -> Add
+  via same CourseSelectPayload/onSelectCourse contract as list/voice paths.
+- Branch: integration/next @ 41ebcee (== origin). B1 contract live: {courses[{id,name,address,
+  center,source}],degraded,zoomIn}. Native gotchas: gate every native call on onMapReady
+  (google-maps-onmapready-crash); TEST IN SIM (ios-simulator-map-testing); no Maps key -> toggle
+  hidden. Budget: this path calls ONLY B1 /in-bounds — no Places/GolfAPI.
+- Plan (fable) -> specs/course-selection-b2-plan.md. On plan return: builder on integration/next,
+  then reviewer + qa + designer (BLOCKING, user-facing). Land B2 as NOTICEABLE on #134.
+- Did NOT ship/ping. Silent accumulation on bundle #134.
