@@ -68,6 +68,24 @@ INPUT_GROUNDING_RULE = (
     "never ask the player to repeat something you understood."
 )
 
+# Yardage-agreement rule (specs/caddie-yardage-gps-selected-tee-plan.md §2.4;
+# owner incident 2026-07-11, Bethpage Black hole 3, GPS active: the caddie
+# insisted on a stale 178y mock number — "on the card, trust that" — and
+# argued when the owner corrected it to 231, the Black tees he was actually
+# playing). Shared by BOTH mouths — build_realtime_instructions below and the
+# two stable_text blocks in routes/caddie.py — so wording never drifts.
+YARDAGE_GROUNDING_RULE = (
+    "The yardage in CURRENT SITUATION (GPS-to-green, or the golfer's selected "
+    "tee) is ground truth for THIS turn — the same rule as OBSERVED REALITY "
+    "above, applied to distance. If the player states a different yardage "
+    "than that — a rangefinder reading, a tee sign, or simply a correction — "
+    "ADOPT their number immediately and use it for the rest of this answer. "
+    "NEVER defend a stored number against the golfer's own reality, and "
+    "NEVER argue or double down. Only call a number \"on the card\" when it "
+    "genuinely came from THIS player's own tee card — never as a generic "
+    "hedge for a number you're unsure of."
+)
+
 # Text-mouth tool instruction (caddie-tool-loop-parity): the classic text
 # caddie now carries the same six tools the Realtime orb has (canonical
 # registry in app/caddie/tools.py). Appended to BOTH text builders'
@@ -113,6 +131,7 @@ def build_realtime_instructions(
         + "\n" + GREEN_GROUNDING_RULE
         + "\n" + INPUT_GROUNDING_RULE
         + "\n" + OBSERVED_REALITY_RULE
+        + "\n" + YARDAGE_GROUNDING_RULE
     )
 
     return "\n\n".join(parts)

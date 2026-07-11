@@ -25,7 +25,12 @@ from app.caddie.hazards import BEND_GROUNDING_RULE, HAZARD_GROUNDING_RULE
 from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.session import RoundSession
 from app.caddie.types import CaddiePersonality, VoiceCaddieRequest
-from app.caddie.voice_prompts import INPUT_GROUNDING_RULE, OBSERVED_REALITY_RULE, TOOL_USE_RULE
+from app.caddie.voice_prompts import (
+    INPUT_GROUNDING_RULE,
+    OBSERVED_REALITY_RULE,
+    TOOL_USE_RULE,
+    YARDAGE_GROUNDING_RULE,
+)
 from app.routes import caddie as caddie_routes
 
 
@@ -186,7 +191,8 @@ or known tendencies when relevant.
 {green_rule}
 {tool_rule}
 {input_grounding_rule}
-{observed_reality_rule}"""
+{observed_reality_rule}
+{yardage_rule}"""
 
 
 _OLD_STATELESS_TEMPLATE = """{persona}
@@ -213,7 +219,8 @@ golf-focused. Never break character.
 {green_rule}
 {tool_rule}
 {input_grounding_rule}
-{observed_reality_rule}"""
+{observed_reality_rule}
+{yardage_rule}"""
 
 
 def _normalized_line_set(text: str) -> set[str]:
@@ -251,6 +258,7 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
         tool_rule=TOOL_USE_RULE,
         input_grounding_rule=INPUT_GROUNDING_RULE,
         observed_reality_rule=OBSERVED_REALITY_RULE,
+        yardage_rule=YARDAGE_GROUNDING_RULE,
     )
     assert _normalized_line_set(new_flat) == _normalized_line_set(old_flat)
 
@@ -280,6 +288,7 @@ async def test_voice_prompt_content_identical_to_old_template_modulo_order(monke
         tool_rule=TOOL_USE_RULE,
         input_grounding_rule=INPUT_GROUNDING_RULE,
         observed_reality_rule=OBSERVED_REALITY_RULE,
+        yardage_rule=YARDAGE_GROUNDING_RULE,
     )
     assert _normalized_line_set(new_flat) == _normalized_line_set(old_flat)
 

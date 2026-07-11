@@ -577,12 +577,14 @@ async def test_build_voice_prompt_no_memory_no_profile_stays_clean(monkeypatch):
 
     flat = _flat_system(system)
     assert "Classic system prompt." in flat
-    # OBSERVED_REALITY_RULE (appended right after HAZARD_GROUNDING_RULE,
-    # hazard-side-flip fix item 4) closes the STABLE block (system[0]), which
-    # carries the cache breakpoint — the volatile CURRENT SITUATION block
-    # (system[1]) renders after it.
+    # YARDAGE_GROUNDING_RULE (appended last, specs/caddie-yardage-gps-
+    # selected-tee-plan.md §2.4) now closes the STABLE block (system[0]),
+    # which carries the cache breakpoint — the volatile CURRENT SITUATION
+    # block (system[1]) renders after it. OBSERVED_REALITY_RULE (hazard-
+    # side-flip fix item 4) still lands right before it.
     assert caddie_routes.HAZARD_GROUNDING_RULE in system[0]["text"]
-    assert system[0]["text"].rstrip().endswith(caddie_routes.OBSERVED_REALITY_RULE)
+    assert caddie_routes.OBSERVED_REALITY_RULE in system[0]["text"]
+    assert system[0]["text"].rstrip().endswith(caddie_routes.YARDAGE_GROUNDING_RULE)
     assert "--- PLAYER MEMORY ---" not in flat
     assert "handicap" not in flat.lower()
 
@@ -602,7 +604,8 @@ async def test_build_voice_prompt_degrades_when_memory_fetch_raises(monkeypatch)
     flat = _flat_system(system)
     assert "Classic system prompt." in flat
     assert caddie_routes.HAZARD_GROUNDING_RULE in system[0]["text"]
-    assert system[0]["text"].rstrip().endswith(caddie_routes.OBSERVED_REALITY_RULE)
+    assert caddie_routes.OBSERVED_REALITY_RULE in system[0]["text"]
+    assert system[0]["text"].rstrip().endswith(caddie_routes.YARDAGE_GROUNDING_RULE)
     assert "--- PLAYER MEMORY ---" not in flat
     assert messages[-1] == {"role": "user", "content": "hi"}
 

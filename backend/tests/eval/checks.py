@@ -38,7 +38,7 @@ from app.caddie.physics import PHYSICS_GROUNDING_RULE, elevation_only_plays_like
 from app.caddie.session import RoundSession
 from app.caddie.tools import carries_payload, shot_distance_payload
 from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, HoleStrategyGuide, WeatherConditions
-from app.caddie.voice_prompts import INPUT_GROUNDING_RULE, OBSERVED_REALITY_RULE
+from app.caddie.voice_prompts import INPUT_GROUNDING_RULE, OBSERVED_REALITY_RULE, YARDAGE_GROUNDING_RULE
 
 from tests.eval.schema import HoleSituation, Scenario, Tier1Check, Tier1CheckName, Tier2DeterministicCheck, Tier2DeterministicCheckName
 
@@ -177,6 +177,7 @@ _RULE_TEXT: dict[str, str] = {
     "GREEN_GROUNDING_RULE": GREEN_GROUNDING_RULE,
     "BEND_GROUNDING_RULE": BEND_GROUNDING_RULE,
     "INPUT_GROUNDING_RULE": INPUT_GROUNDING_RULE,
+    "YARDAGE_GROUNDING_RULE": YARDAGE_GROUNDING_RULE,
 }
 
 
