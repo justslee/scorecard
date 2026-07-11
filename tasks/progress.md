@@ -3,6 +3,56 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## caddie-yardage-gps-selected-tee — OWNER P0 bug fix, all 4 slices (2026-07-11) — DONE (on integration/next @2eb7dea, NOTICEABLE)
+Implemented specs/caddie-yardage-gps-selected-tee-plan.md exactly (4 commits, one per slice,
+each pushed independently so nothing was lost on a crash). Fixes the literal owner bug:
+caddie sheet header showed "HOLE 3 · PAR 3 · 178 YDS" (Bethpage Black hole 3) — the MOCK
+illustration constant, leaking via `?? hole.yards` fallbacks — and the caddie argued when
+corrected to 231 (the Black tees actually being played). GPS live + green mapped, neither used.
+- **Slice 1** (`275dee3`): new `frontend/src/lib/caddie/hole-yardage.ts` — the ONE shared
+  resolver (GPS-to-green > selected-tee card > selected-tee geometry > card snapshot > honest
+  null). Replaced the `round.holes[i]?.yards ?? hole.yards` mock leak at RoundPageClient's
+  CaddieSheet/OfflineCaddieCard props. Header now shows the resolved number + honest basis
+  caption. `holeYards` threaded as `number | null` throughout.
+- **Slice 2** (`de9a12f`): `tee-anchor.ts` untagged-box ordinal pick (`ordinalTeePick`) — count-
+  match ordinal align + safe endpoints, so 5 untagged OSM tee boxes + teeName "Black" resolves
+  to the back-most (232y) box instead of an arbitrary legacy pick. `useHoleCoordinates` now
+  surfaces `courseHoles` (incl. per-tee `yardages`); RoundPageClient hydrates
+  `selectedTeeCardYards` for real (231 for Bethpage Black hole 3). `round/new` snapshots the
+  selected tee's real per-hole yardages into `round.holes` + `teeId` at creation (mapped courses
+  only; falls back honestly).
+- **Slice 3** (`b9c6f29`): backend `SessionVoiceRequest`/`VoiceCaddieRequest` gain optional
+  `distance_to_green_yards`/`hole_yards`/`yardage_basis`/`tee_name` (additive); dropped the fake
+  `yards: int = 400` default. New shared `_format_yardage_line` (caddie.py) labels provenance in
+  both prompt builders; `hole_intel.yards` demoted to elevation-delta math only. Tool default
+  (`get_recommendation`) reads the request-carried resolved yardage via a new `ToolContext
+  .current_yardage`, honestly erroring instead of defaulting to 400 when nothing is known.
+  CaddieSheet/useCaddieLiveSession plumb the resolved number + basis into every voice request;
+  live session re-anchors on a GPS-acquired/lost basis flip, not just hole change.
+- **Slice 4** (`2eb7dea`): new `YARDAGE_GROUNDING_RULE` (voice_prompts.py) in both mouths — GPS/
+  selected-tee number is ground truth, adopt the player's correction immediately, never argue,
+  never say "on the card" unless real. New golden eval fixture (agree-not-argue, tier1 CI-
+  enforced + tier2_judge on-demand).
+- **Critical test:** `frontend/src/lib/caddie/bethpage-hole3.test.ts` — confirmed RED on pre-fix
+  `tee-anchor.ts` (temporary stash-and-rerun: source fell to `'legacy'` instead of `'ordinal'`,
+  the assertion failed) and GREEN after; resolver never returns 178 for the real Bethpage inputs
+  in any of GPS/tee-card/tee-geom basis.
+- **Verified — mock never reaches a caddie surface:** grep confirms `hole.yards` (mock) only
+  feeds the paper-illustration `distance` calc and `headerYards`' true-paper-only fallback (both
+  gated `!(mappedCourse || roundAnchor)`); CaddieSheet/OfflineCaddieCard always receive
+  `resolvedYardage.yards`.
+- **Gates:** frontend `npm run lint` + `tsc --noEmit` + voice-tests smoke 278/278 + vitest
+  2100/2100 + `npm run build` all clean; backend `ruff check .` clean + pytest 2061 passed/92
+  skipped (Postgres integration tests — expected without a local DB, CI covers them).
+- **Known adjacent smell, NOT fixed (flagged, not in the 4-slice plan):** `/caddie/recommend`
+  and `/session/recommend` (`RecommendationRequest`/`SessionRecommendRequest`.yards, and the
+  frontend `fetchRecommendation`'s `params.yards || 400`) still default to a fake 400 — this is
+  the TAP/manual-distance flow (golfer types a distance explicitly), a different code path from
+  the voice-grounding bug this plan targeted. Left alone to avoid scope creep beyond the plan;
+  worth its own follow-up item.
+- **Noticeable** (TestFlight): the caddie sheet header and voice replies now show the golfer's
+  real, correct yardage and agree when corrected, instead of showing/arguing a stale mock number.
+
 ## course-intel-static-persistence — Gap A + Gap B closure (2026-07-11) — DONE (silent, on integration/next @f682f85)
 Implemented specs/course-intel-static-persistence-plan.md (v2) exactly — the item was ~90%
 already built; this closed the two verified gaps only.
