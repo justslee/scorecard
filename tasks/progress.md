@@ -12712,3 +12712,12 @@ a finished builder.
 
 ## AWAITING (cycle 80 — orb-s4 review round 1)
 Builder landed @ 98b9de5 (head 4ed2ce7), all LOCAL gates green (lint/tsc/voice-smoke 277/vitest 2037/build/ruff/pytest test_voice_stream 20). Reviewed diff — clean. Dispatching in parallel: reviewer (adversarial + /security-review, new user-data→prompt path), qa (all gates + backend /voice route tests against REAL docker Postgres — image postgis:16-3.4 already cached), designer (My Card orb copy + coaching presentation, honest thin-data). BLOCKING findings → re-dispatch builder; all green + designer OK → update PR #132 + backlog (s4 shipped, unblock s5), confirm CI strict-green on head. Reconcile from origin/integration/next on resume.
+
+## Cycle (2026-07-11) — ORB S4 deferred DESIGNER pass (closing the gap)
+S4 shipped to main (v1.1.0) with correctness+security review passed but its DESIGNER pass
+never completed (prior eng-lead stalled). Running it now on integration/next @ 5d65aca.
+AWAITING: designer agent (a795...) on My Card coaching (orb placement /profile 390+320px,
+converse copy "Your card"/hint, coaching-answer calm, thin-data honest state, motion/haptic).
+On return: APPROVE as-is → record honestly, no code change, DONE. POLISH → fold frontend-only,
+commit+push, light reviewer + QA gates (lint/tsc/voice-smoke/build/vitest), confirm strict-green.
+SILENT — no ship/ping. Reconcile from origin/integration/next on resume.
