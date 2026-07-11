@@ -12418,3 +12418,21 @@ across both parallel cycles). Head SHA f0563ca.
 - REVIEWER: SHIP (all 6 load-bearing claims verified in code+tests; registry exclusivity, confidence gate provably inert for shipped tee-time ≥0.65, no leakage via historyBase snapshot, dispatch/asks parity, byte-identical converse, clean scope; no /security-review warranted — pure frontend routing refactor, no new sink). QA: PASS all frontend gates on de5e44d (lint/tsc/voice274/build19/vitest1991 incl 38 new). (Backend CI red = other lane's test_rehearsal_call.py, out of scope.)
 - DESIGNER: BLOCK (live Playwright). Stale-ref race in CaddieOrbSheet.tsx: boundTaskCtx() reads boundIdRef.current (mirrored one render LATER via useEffect), so on the batched setBoundId+setOpen summon render, activeTask=null → sheet shows GENERIC "What can I do for you?" instead of tee-time task copy "Where are we playing?" — the wow copy never appears on open (visible first TestFlight tap). Fix: derive render-time activeTask/title/hint from the boundId STATE var (current in-render), keep boundIdRef only for async/callback paths. Copy tone/confidence-gate honesty/confirming-beat/nudge/non-parity items all APPROVED. Nice-to-have: "edit below" spatial cue imprecise for a bottom sheet.
 - AWAITING builder fold: (1) fix the stale-ref binding so task copy shows on open; (2) small copy tweak "edit below"→"or fix it in the form". Then re-designer + re-gate. Checkpoint before await.
+
+## teetime H2 quick18 (BACKEND lane, parallel with orb-s2 — 2026-07-10)
+- LIVE PROBE: Quick18 searchmatrix HTML structure CONFIRMED real (northernhills/mccormick/homestead
+  .quick18.com, honest UA, HTTP 200, no JS, no anti-bot). Real parse contract captured (differs from
+  plan hypothesis — teebutton is ALSO the week-nav button, so scoped to table.matrixTable>tbody>tr).
+  HONEST FINDING: NO NY-metro Quick18 course exists (all NY-metro engines are TeeItUp/EZLinks/
+  Chronogolf/foreUP/CPS; Quick18 skipped in S4c) → adapter ships REGISTERED but UNSEEDED, ready for
+  H6 flywheel. No row/fixture fabricated; fixtures are real northernhills captures.
+- BUILT fb5388d: adapters/quick18.py (stdlib html.parser, NO new dep) + registered in ADAPTERS.
+  36 tests vs real fixtures (quick18_searchmatrix_{times,empty}.html) via MockTransport, no live net.
+  Local gates green: ruff clean, full tee-time suite 364 pass/12 DB-skip, S0/S1/S4a/S4c/CPS
+  byte-identical. Zero frontend files in my commit (verified). Effectively SILENT (no visible course).
+- Coexistence note: shared working tree with orb-s2; staged only my 3 backend files by path; S2's
+  CaddieOrbSheet work committed independently as 12404a0 (both on origin, clean linear history).
+## AWAITING (quick18): reviewer (fresh, adversarial+security) on fb5388d + qa (gates on head).
+  reviewer SHIP + qa PASS → finalize backlog=shipped-unseeded, update PR #132 checklist (SILENT —
+  adapter infra, 0 courses added), push rebased. BLOCKING → re-fix on integration/next, re-review.
+  Reconcile from branch (git log origin/integration/next), do NOT rebuild.
