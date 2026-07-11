@@ -3,6 +3,56 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## caddie-shot-context-reachability — DONE, builder (2026-07-11, NOTICEABLE — backend caddie reasoning)
+Implemented specs/caddie-shot-context-reachability-plan.md exactly on `integration/next` @7b16ce6
+(off 33606cd). Owner incident 2026-07-06: on a ~400y par 4, blue tees, the caddie said "aim about
+9 yards left of the flag" off the tee — the green was never in reach, so any pin-relative aim was
+wrong golf reasoning. `generate_recommendation` now classifies reachability
+(`is_green_reachable`: best club carry + a front-edge margin — `green_depth_yards/2` or
+`GREEN_REACH_MARGIN_YDS=15` — vs the physics plays-like `adjusted_yards`) and branches:
+- **Reachable** (par 3s, drivable par 4s, normal approaches): today's flag-relative aim path,
+  byte-identical (T4 pins byte-equality against the legacy `compute_aim_point`).
+- **Not reachable** ("positioning shot"): landing-zone DECADE advice — new
+  `decade_landing_advice`/`drive_zone_hazards`/`_build_landing_classify`/`cross_hazard_line` in
+  `decade_advice.py` (REUSES `optimize_aim`/`Dispersion`/`LandingArea`, no parallel optimizer) +
+  `compute_positioning_miss_side`/`compute_positioning_aim` in `aim_point.py`. Speaks which side
+  of the fairway to favor, driving-zone-only hazards (never green-side ones — carry_yards frame),
+  a fairway-bend-in-window line, and `leave_yards` (what the drive leaves for the next shot). No
+  geometry/hazard data degrades to an honest "middle of the fairway; leaves about Ny in" — never
+  a fabricated hazard or leave (leave is always computed from the required `distance_yards` arg).
+- `CaddieRecommendation` gains defaulted `shot_kind`/`leave_yards` (mirrored optional in
+  `frontend/src/lib/caddie/types.ts`, no UI change — `CaddiePanel.tsx:1053` already renders
+  `aim_point.description` as-is). `tools.py::get_recommendation` description addendum tells the
+  LLM to speak landing-zone advice + `leave_yards`, never a pin-relative aim, when `shot_kind`
+  is `"positioning"`.
+- New `POSITIONING_SHOT_RULE` prompt guard (`voice_prompts.py`) wired into
+  `build_realtime_instructions` AND both `stable_text` blocks in `routes/caddie.py`; registered
+  in the eval harness (`schema.py`/`checks.py`) + one golden fixture reproducing the incident in
+  `caddie_advice.jsonl`.
+- New `backend/tests/test_positioning_shot.py` (T1-T15, 19 tests) + `test_positioning_prompt.py`
+  (4 tests) per plan §7 — all RED->GREEN.
+- **Sanctioned test updates** (not weakened — same established per-rule-addition pattern the repo
+  already uses for bend/input-grounding/observed-reality/yardage rules): updated the two
+  "brain-regression guard" golden-template tests in `test_caddie_caching.py` (added
+  `{positioning_rule}` to both `_OLD_*_TEMPLATE`s + the format-kwarg + the doc comment) and the
+  stable-block terminal-rule assertions in `test_voice_stream.py` (now assert
+  `POSITIONING_SHOT_RULE` — not `YARDAGE_GROUNDING_RULE` — closes the block, since a new rule was
+  deliberately appended after it).
+- Gates all green: `ruff check .` clean; pure-engine pytest selection 217/217 (incl. the 8 files
+  named in the plan's gate list); full local backend suite (minus DB-integration tests, which run
+  in CI) 2025 passed, 92 skipped; `tests/eval` 69/69; frontend `tsc --noEmit` clean, `npm run
+  lint` clean; voice-tests smoke 278/278.
+- Commit: `7b16ce6`, pushed to `origin/integration/next`. No deviations from the plan beyond
+  implementation-detail choices already covered by "no parallel optimizer" (e.g.
+  `compute_positioning_aim` takes the already-computed `decade_landing_advice` string as a param
+  instead of recomputing it, so the optimizer runs exactly once per recommendation).
+- Risk: backend-only caddie reasoning change, no new dependency/endpoint; the reachable path is
+  the #1 regression risk and is explicitly pinned byte-identical by T4 + all pre-existing 150y-based
+  suites (test_aim_point.py, test_decade_advice.py, test_slope_advice.py, test_competition_legal.py,
+  test_reasoning_priority.py) staying green untouched. Noticeable on TestFlight: yes — a golfer
+  hitting an unreachable tee shot now hears landing-zone advice instead of a pin-relative aim.
+  Next: eng-lead routes to reviewer/QA or continues the bundle.
+
 ## cycle 94 COMPLETE — A3 clarify turn LANDED + REVIEWED on `integration/next` (NOTICEABLE)
 Orb CRUX audited = FULLY DEPLOYED → DONE, not reopened. Pulled priority-1 course-selection A3.
 Plan (fable) @d54ead4; builder @eae4896. Review verdicts on 6bfe54a all GREEN:
