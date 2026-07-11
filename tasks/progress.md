@@ -3,13 +3,15 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING (cycle 85 — reviewer + designer on 5a29ebb)
-Builder DONE @ 5a29ebb (+progress b59ba46). eng-lead verified diff matches plan exactly + all gates
-green. AWAITING: reviewer (fresh, adversarial — orb shows AND works general converse not dead mic on
-/courses/[id]; guard change no list-page/other regression; no double-mic; the regression test would
-catch the dead mic) + designer (live preview: orb placement on course-detail, no collide with the
-in-flow "Start a round here" CTA, calm). BLOCKING → re-dispatch builder. Green+designer-ok → update
-PR #133 + backlog (TARGETED edit, dup keys) + progress. SILENT — no ship/ping. Reconcile from origin on resume.
+## AWAITING (cycle 85 — builder folding designer BLOCKER on 5a29ebb)
+Reviewer: SHIP (correct, in-scope, 48/48 tests, dead-mic regression meaningful, no double-mic, no
+weakened tests). Designer: POLISH + ONE BLOCKER — the fixed orb (bottom:12px+safe, 54px tall, 0
+clearance on this route since no tab bar + not isSetupCtaRoute) OVERLAPS the in-flow "Start a round
+here" CTA at rest-scroll-bottom because CourseDetailClient.tsx:~305 paddingBottom is only
+calc(32px+safe); /players (page.tsx:201) + /profile (page.tsx:294) use calc(88px+safe) to clear it.
+FIX (designer-prescribed, established pattern): bump CourseDetailClient.tsx outer paddingBottom to the
+88px pattern. Re-dispatching builder to apply + re-run ALL gates + prove with a bottom screenshot.
+Then update PR #133 + backlog (TARGETED edit, dup keys) + progress. SILENT — no ship/ping. Reconcile from origin on resume.
 
 ## 2026-07-11 — builder: orb-on-course-detail DONE, on integration/next (commit 5a29ebb)
 
