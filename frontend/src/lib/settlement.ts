@@ -8,8 +8,10 @@
  *   2. `computeNetSettlement`    → sums across ALL money games in a round.
  *   3. `minimizeTransfers`       → greedy O(n log n) debt minimization (≤ n−1 transfers).
  *
- * Supported formats: skins, wolf, nassau (individual scope), matchPlay, threePoint,
- * vegas, hammer, rabbit, defender.
+ * Supported formats: see `SETTLEABLE_FORMATS` below — the single source of truth for
+ * "this format moves money," consumed by both this module (write side) and
+ * `round-games.ts` (the picker/builder, so a stake is never offered for a format that
+ * settles $0 — [[no-fake-data-fallbacks]]).
  * Formats without a clear monetary result (bestBall, scramble, stableford, chicago,
  * bingoBangoBongo, trash) are skipped; they can be added later without changing the
  * API surface.
@@ -18,10 +20,30 @@
  * (to within floating-point rounding, which we cap at 2 decimal places).
  */
 
-import { Round, Game } from './types';
+import { Round, Game, GameFormat } from './types';
 import { computeGameResults } from './games';
 
 // ─── Public types ──────────────────────────────────────────────────────────────
+
+/**
+ * The exhaustive set of formats `computeGameNetWinnings` actually settles.
+ * Single source of truth for "this format moves money" — consumed here (read
+ * side: early-return + moneyGames/hasMoneyGames filters) and by
+ * `round-games.ts` (write side: which picker formats are allowed to take a
+ * stake at all). Never let a format take a stake without a branch here, and
+ * never add a branch here without adding the format to this set.
+ */
+export const SETTLEABLE_FORMATS: ReadonlySet<GameFormat> = new Set([
+  'skins',
+  'wolf',
+  'nassau',
+  'matchPlay',
+  'threePoint',
+  'vegas',
+  'hammer',
+  'rabbit',
+  'defender',
+]);
 
 /** A single minimized transfer that settles debt between two players. */
 export interface SettlementTransfer {
@@ -66,6 +88,7 @@ function r2(n: number): number {
 export function computeGameNetWinnings(round: Round, game: Game): Record<string, number> {
   const pointValue = game.settings?.pointValue ?? 0;
   if (pointValue <= 0) return {};
+  if (!SETTLEABLE_FORMATS.has(game.format)) return {};
 
   const results = computeGameResults(round, game);
 
@@ -302,7 +325,7 @@ export function minimizeTransfers(netByPlayer: Record<string, number>): Settleme
  */
 export function computeNetSettlement(round: Round): SettlementLedger {
   const moneyGames = (round.games ?? []).filter(
-    (g) => g.format !== 'settlement' && (g.settings?.pointValue ?? 0) > 0
+    (g) => SETTLEABLE_FORMATS.has(g.format) && (g.settings?.pointValue ?? 0) > 0
   );
 
   if (moneyGames.length === 0) {
@@ -368,7 +391,7 @@ export function computeTournamentSettlement(rounds: Round[]): SettlementLedger {
 /**
  * True when any round has at least one money game (a game with pointValue > 0).
  *
- * Mirrors the exact filter `computeNetSettlement` uses (format !== 'settlement'
+ * Mirrors the exact filter `computeNetSettlement` uses (format ∈ SETTLEABLE_FORMATS
  * && pointValue > 0) so the two can never diverge. Used by callers that need to
  * distinguish "no money games at all" (never a settlement) from "money games
  * exist but nothing is scored yet" (settlement pending).
@@ -376,7 +399,7 @@ export function computeTournamentSettlement(rounds: Round[]): SettlementLedger {
 export function hasMoneyGames(rounds: Round[]): boolean {
   return rounds.some((round) =>
     (round.games ?? []).some(
-      (g) => g.format !== 'settlement' && (g.settings?.pointValue ?? 0) > 0
+      (g) => SETTLEABLE_FORMATS.has(g.format) && (g.settings?.pointValue ?? 0) > 0
     )
   );
 }

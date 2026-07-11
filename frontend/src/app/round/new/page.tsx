@@ -23,7 +23,7 @@ import { anchorFromSelectedCourse } from "@/lib/round-anchor";
 import { haptic } from "@/lib/haptics";
 import { fetchMappedCourse } from "@/lib/courses/mapped-course-api";
 import { namesMatch } from "@/lib/course/tee-anchor";
-import { buildRoundGames, GAME_OPTIONS, GameId } from "@/lib/round-games";
+import { buildRoundGames, GAME_OPTIONS, STAKE_GAME_IDS, gameSelectableForRoster, GameId } from "@/lib/round-games";
 import GamePicker from "@/components/GamePicker";
 
 // ---------------------------------------------------------------------------
@@ -103,8 +103,12 @@ export default function RoundSetupPage() {
   const [walking, setWalking] = useState(true);
   // Selected formats with per-format stakes — several side games can run at
   // once (owner request 2026-07-01: multi-select, define bets in the sheet).
+  // Default is stroke play with NO stake: "stroke" has no engine format
+  // (buildRoundGames skips it), so a $5 default here was a pure mirage — the
+  // very first thing a golfer saw was a stake on a format that settles
+  // nothing (tournament-settlement-honesty-plan.md §1, Bug 1).
   const [selectedGames, setSelectedGames] = useState<{ id: GameId; stake: string }[]>([
-    { id: "stroke", stake: "$5" },
+    { id: "stroke", stake: "" },
   ]);
   const [sides, setSides] = useState<SideId[]>([]);
 
@@ -130,6 +134,19 @@ export default function RoundSetupPage() {
         setSavedPlayers(getSavedPlayers());
       });
   }, []);
+
+  // Prune a selected game whose roster requirement a player edit just broke
+  // (e.g. picking match play 1v1, then adding a 3rd player) — the builder
+  // would silently skip it anyway; the picker should reflect that immediately
+  // rather than show a phantom selection (tournament-settlement-honesty-
+  // plan.md §3, defense-in-depth belongs at both the UI and builder layers).
+  useEffect(() => {
+    const namedCount = players.filter((p) => p.name.trim().length > 0).length;
+    setSelectedGames((prev) => {
+      const next = prev.filter((s) => gameSelectableForRoster(s.id, namedCount));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [players]);
 
   // Build the course candidate set for voice disambiguation from localStorage.
   // Favorites + recently-played — both are synchronous reads, no network needed.
@@ -413,6 +430,7 @@ export default function RoundSetupPage() {
 
   // Derived readiness: at least one named player.
   const isReady = players.some((p) => p.name.trim().length > 0);
+  const namedPlayerCount = players.filter((p) => p.name.trim().length > 0).length;
 
   const gameLabel =
     selectedGames.length === 0
@@ -1188,15 +1206,19 @@ export default function RoundSetupPage() {
                 <GamePicker
                   accent={accent}
                   selected={selectedGames}
+                  rosterSize={namedPlayerCount}
                   onToggle={(id: GameId) => {
                     haptic("light");
                     setSelectedGames((prev) => {
                       if (prev.some((s) => s.id === id)) {
                         return prev.filter((s) => s.id !== id);
                       }
+                      // Default stake only for formats settlement.ts actually
+                      // settles — anything else stays stakeless so the picker
+                      // never advertises money it won't pay out.
                       const withDefault = {
                         id,
-                        stake: id === "nassau" ? "$20" : "$5",
+                        stake: !STAKE_GAME_IDS.has(id) ? "" : id === "nassau" ? "$20" : "$5",
                       };
                       // "No stakes" is exclusive of everything else.
                       if (id === "none") return [withDefault];

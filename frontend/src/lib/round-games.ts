@@ -8,6 +8,7 @@
  */
 
 import type { Game, GameFormat } from "./types";
+import { SETTLEABLE_FORMATS } from "./settlement";
 
 export type GameId =
   | "stroke"
@@ -65,9 +66,59 @@ export const TOURNAMENT_GAME_OPTIONS: GameOption[] = TOURNAMENT_GAME_IDS.map(
 );
 
 /**
+ * Formats that ARE settled by `settlement.ts` (`SETTLEABLE_FORMATS`) but that
+ * the picker cannot construct a working stake for — vegas requires two
+ * `teams` and no team-assignment UI exists anywhere (see plan §1/§2). Until
+ * that UI ships, vegas stays picker-visible but never takes a stake.
+ */
+export const TEAM_ONLY_FORMATS: ReadonlySet<GameId> = new Set(["vegas"]);
+
+/**
+ * Ids whose format is BOTH settled by `settlement.ts` AND constructible by
+ * this picker (no teams needed) — the only ids allowed to display/write a
+ * stake ([[no-fake-data-fallbacks]]: a mirage stake elsewhere settles $0).
+ * Derived, not hand-maintained, so it can never drift from SETTLEABLE_FORMATS.
+ */
+export const STAKE_GAME_IDS: ReadonlySet<GameId> = new Set(
+  (Object.keys(GAME_ID_TO_FORMAT) as GameId[]).filter(
+    (id) => SETTLEABLE_FORMATS.has(GAME_ID_TO_FORMAT[id]!) && !TEAM_ONLY_FORMATS.has(id)
+  )
+);
+
+/**
+ * Exact roster size a format needs to settle correctly (not a minimum — an
+ * over- or under-sized roster silently drops players). Below/above this, the
+ * engine silently drops players (matchPlay: games.ts:739-741 only ever reads
+ * playerIds[0]/[1]; wolf: games.ts:806-809 cycles a 4-player order and falls
+ * back to round.players.slice(0,4)) — a truncated money game must be
+ * unrepresentable, not just mislabeled.
+ */
+export const ROSTER_REQUIREMENT: Partial<Record<GameId, number>> = {
+  match: 2,
+  wolf: 4,
+};
+
+/** True when `rosterSize` satisfies `id`'s exact roster requirement (no requirement = always true). */
+export function gameSelectableForRoster(id: GameId, rosterSize: number): boolean {
+  const required = ROSTER_REQUIREMENT[id];
+  if (required === undefined) return true;
+  return rosterSize === required;
+}
+
+/**
  * Build the Game[] payload for a round from the picker's selection state.
  * Identical semantics to the old inline block in `app/round/new/page.tsx`
  * (390-405) — do not drift.
+ *
+ * Money-honesty guards ([[no-fake-data-fallbacks]], tournament-settlement-
+ * honesty-plan.md §3):
+ *   - `settings.pointValue` is written ONLY for `STAKE_GAME_IDS` members — a
+ *     format settlement.ts doesn't settle (e.g. stableford) never carries a
+ *     stake, so it never displays one it won't honor.
+ *   - A game whose format has a roster requirement (`ROSTER_REQUIREMENT`) that
+ *     `playerIds` doesn't satisfy is SKIPPED entirely — never emitted, never
+ *     silently truncated. A truncated match/wolf must be unrepresentable at
+ *     this boundary regardless of upstream UI state.
  */
 export function buildRoundGames(
   selected: { id: GameId; stake: string }[],
@@ -78,7 +129,10 @@ export function buildRoundGames(
   for (const sel of selected) {
     const format = GAME_ID_TO_FORMAT[sel.id];
     if (!format) continue; // "none" / "stroke" / "quota" have no engine format
-    const stakeValue = parseFloat(sel.stake.replace("$", "")) || 0;
+    if (!gameSelectableForRoster(sel.id, playerIds.length)) continue; // unmet roster — skip, never truncate
+    const stakeValue = STAKE_GAME_IDS.has(sel.id)
+      ? parseFloat(sel.stake.replace("$", "")) || 0
+      : 0;
     gameObjects.push({
       id: newId(),
       roundId: "", // placeholder — backend assigns its own roundId FK

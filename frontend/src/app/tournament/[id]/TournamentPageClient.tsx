@@ -7,7 +7,7 @@ import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getTournamentAsync, getRoundsAsync } from "@/lib/storage-api";
 import type { Tournament, Round, Game } from "@/lib/types";
-import { computeTournamentSettlement, hasMoneyGames } from "@/lib/settlement";
+import { computeTournamentSettlement, hasMoneyGames, SETTLEABLE_FORMATS } from "@/lib/settlement";
 import { haptic } from "@/lib/haptics";
 import {
   shouldRefreshLeaderboard,
@@ -1485,7 +1485,7 @@ export default function TournamentPageClient() {
                         {FORMAT_LABELS[g.format] ?? g.format}
                       </div>
                     </div>
-                    {g.settings?.pointValue != null && (
+                    {g.settings?.pointValue != null && SETTLEABLE_FORMATS.has(g.format) && (
                       <div
                         style={{
                           fontFamily: T.mono,
@@ -1568,7 +1568,7 @@ export default function TournamentPageClient() {
                           {FORMAT_LABELS[g.format] ?? g.format}
                         </div>
                       </div>
-                      {g.settings?.pointValue != null && (
+                      {g.settings?.pointValue != null && SETTLEABLE_FORMATS.has(g.format) && (
                         <div
                           style={{
                             fontFamily: T.mono,

@@ -9,8 +9,16 @@
  */
 
 import { T } from "@/components/yardage/tokens";
-import { GAME_OPTIONS } from "@/lib/round-games";
+import { GAME_OPTIONS, STAKE_GAME_IDS, gameSelectableForRoster } from "@/lib/round-games";
 import type { GameId, GameOption } from "@/lib/round-games";
+
+/** Calm, honest sub-copy shown in place of the format's normal blurb when the
+ *  current roster can't support it — never a toast/warning, just a quieter
+ *  fact (tournament-settlement-honesty-plan.md §2, Bug 2). */
+const ROSTER_UNMET_COPY: Partial<Record<GameId, string>> = {
+  match: "Match play is 1v1 — opponent picker coming.",
+  wolf: "Wolf needs a foursome.",
+};
 
 export default function GamePicker({
   accent,
@@ -19,6 +27,7 @@ export default function GamePicker({
   onStakeFor,
   onDone,
   options = GAME_OPTIONS,
+  rosterSize,
 }: {
   accent: string;
   selected: { id: GameId; stake: string }[];
@@ -26,6 +35,11 @@ export default function GamePicker({
   onStakeFor: (g: GameId, s: string) => void;
   onDone: () => void;
   options?: GameOption[];
+  /** Current named-player count; unmet-roster-requirement formats (see
+   *  ROSTER_REQUIREMENT) render disabled with honest sub-copy instead of
+   *  silently accepting a selection the builder will later skip. Omit to
+   *  disable no rows (all requirements treated as met). */
+  rosterSize?: number;
 }) {
   const stakes = ["$2", "$5", "$10", "$20"];
   return (
@@ -71,14 +85,21 @@ export default function GamePicker({
         {options.map((g) => {
           const sel = selected.find((s) => s.id === g.id);
           const active = sel !== undefined;
-          const takesStake = g.id !== "none";
+          const takesStake = STAKE_GAME_IDS.has(g.id);
+          const rosterUnmet =
+            rosterSize !== undefined && !gameSelectableForRoster(g.id, rosterSize);
           return (
             <div
               key={g.id}
               role="button"
-              tabIndex={0}
-              onClick={() => onToggle(g.id)}
+              tabIndex={rosterUnmet ? -1 : 0}
+              aria-disabled={rosterUnmet}
+              onClick={() => {
+                if (rosterUnmet) return;
+                onToggle(g.id);
+              }}
               onKeyDown={(e) => {
+                if (rosterUnmet) return;
                 if (e.key === "Enter" || e.key === " ") onToggle(g.id);
               }}
               style={{
@@ -88,8 +109,9 @@ export default function GamePicker({
                 borderRadius: 12,
                 border: `1px solid ${active ? T.ink : "transparent"}`,
                 background: active ? T.paperDeep : "transparent",
-                cursor: "pointer",
+                cursor: rosterUnmet ? "default" : "pointer",
                 textAlign: "left",
+                opacity: rosterUnmet ? 0.5 : 1,
               }}
             >
               <div
@@ -139,7 +161,7 @@ export default function GamePicker({
                       marginTop: 1,
                     }}
                   >
-                    {g.sub}
+                    {rosterUnmet ? ROSTER_UNMET_COPY[g.id] ?? g.sub : g.sub}
                   </div>
                 </div>
                 {active && (
@@ -221,6 +243,24 @@ export default function GamePicker({
                       outline: "none",
                     }}
                   />
+                </div>
+              )}
+
+              {/* Points-only format — quiet italic note so the absent stake
+                  reads as intent, not omission (no toast, no chrome). */}
+              {active && !takesStake && g.id !== "none" && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTop: `1px dashed ${T.hairline}`,
+                    fontFamily: T.serif,
+                    fontStyle: "italic",
+                    fontSize: 11.5,
+                    color: T.pencilSoft,
+                  }}
+                >
+                  Points game — no money settlement
                 </div>
               )}
             </div>

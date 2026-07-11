@@ -11,7 +11,7 @@ import { createRound, getCourses as apiGetCourses } from '@/lib/api';
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from '@/components/yardage/tokens';
 import { haptic } from '@/lib/haptics';
 import GamePicker from '@/components/GamePicker';
-import { buildRoundGames, TOURNAMENT_GAME_OPTIONS, GameId } from '@/lib/round-games';
+import { buildRoundGames, TOURNAMENT_GAME_OPTIONS, STAKE_GAME_IDS, gameSelectableForRoster, GameId } from '@/lib/round-games';
 
 // ── Inline icon — no lucide-react ────────────────────────────────────────────
 
@@ -244,6 +244,20 @@ export default function NewTournamentRoundPage() {
       .catch(() => setTournamentNotFound(true))
       .finally(() => setTournamentLoading(false));
   }, [tournamentId]);
+
+  // Prune a selected game whose roster requirement the tournament roster
+  // doesn't meet (e.g. match play needs exactly 2, tournament has 8 players)
+  // — the builder would silently skip it anyway; reflect that immediately
+  // rather than show a phantom selection (tournament-settlement-honesty-
+  // plan.md §3).
+  useEffect(() => {
+    if (!tournament) return;
+    const rosterSize = tournament.playerIds.length;
+    setSelectedGames((prev) => {
+      const next = prev.filter((s) => gameSelectableForRoster(s.id, rosterSize));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [tournament]);
 
   // ── Load courses: try API first, fall back to local cache ───────────────
   useEffect(() => {
@@ -802,7 +816,12 @@ export default function NewTournamentRoundPage() {
                     : selectedGames
                         .map((sel) => {
                           const label = TOURNAMENT_GAME_OPTIONS.find((g) => g.id === sel.id)?.l ?? sel.id;
-                          return sel.id === 'none' ? label : `${label} ${sel.stake}`;
+                          // Only stake-taking formats ever show a $ suffix —
+                          // displayed stake == settled stake, always
+                          // (tournament-settlement-honesty-plan.md §3).
+                          return sel.id === 'none' || !STAKE_GAME_IDS.has(sel.id)
+                            ? label
+                            : `${label} ${sel.stake}`;
                         })
                         .join(' + ')}
                 </span>
@@ -1265,15 +1284,19 @@ export default function NewTournamentRoundPage() {
                 accent={DEFAULT_ACCENT}
                 options={TOURNAMENT_GAME_OPTIONS}
                 selected={selectedGames}
+                rosterSize={tournament.playerIds.length}
                 onToggle={(id: GameId) => {
                   haptic('light');
                   setSelectedGames((prev) => {
                     if (prev.some((s) => s.id === id)) {
                       return prev.filter((s) => s.id !== id);
                     }
+                    // Default stake only for formats settlement.ts actually
+                    // settles — anything else stays stakeless so the picker
+                    // never advertises money it won't pay out.
                     const withDefault = {
                       id,
-                      stake: id === 'nassau' ? '$20' : '$5',
+                      stake: !STAKE_GAME_IDS.has(id) ? '' : id === 'nassau' ? '$20' : '$5',
                     };
                     // "No stakes" is exclusive of everything else.
                     if (id === 'none') return [withDefault];
