@@ -13395,3 +13395,14 @@ Both backend (caddie grounding, tee-time routing, course-intel elevation) and fr
 DONE — bundle #133 shipped to main (`4bb474e`) + TestFlight v1.0.1312 (build 202607111242);
 backend live + healthy + caller inert; fresh `integration/next` cut at `4bb474e`; board +
 backlog recorded.
+
+## 2026-07-11 — TestFlight version-sort fix (owner: "don't see the new version")
+Owner reported the shipped build was invisible in TestFlight. Root cause: ship.sh's default
+marketing version `1.0.<commit-count>` = `v1.0.1312` sorts BELOW the `1.1.0` milestone build,
+so it hid under v1.1.0. NOT a build failure — the upload succeeded. Fixes:
+- Re-cut the SAME #133 code as **v1.1.1 (build 202607111411)** from an isolated worktree at
+  main@`4bb474e` (didn't disturb the running eng-lead) → sorts to the top of TestFlight. Uploaded OK.
+- Durable: added root `VERSION` file (=1.1.1) as the marketing-version source of truth; ship.sh
+  reads it by default (legacy 1.0.N only as a warned fallback); release-manager doctrine now bumps
+  VERSION per release. Committed `d64150a` on integration/next (rides bundle #134, silent infra).
+Lesson candidate: version must never sort below the last-shipped; VERSION file is now the guard.
