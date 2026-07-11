@@ -13416,3 +13416,10 @@ Lesson candidate: version must never sort below the last-shipped; VERSION file i
   Next: write spec, dispatch builder on integration/next, then reviewer+qa.
 - Branch state: integration/next @ 9426c7a (synced with origin/main, clean).
 - NOTICEABLE (caddie advice quality) -> PR #134 checklist. Do NOT ship/ping this cycle.
+
+## AWAITING (cycle 95 update) — builder running
+- Plan landed: specs/caddie-shot-context-reachability-plan.md @ 5fde015 (fable authored).
+- Builder dispatched on integration/next @ 5fde015. Awaiting builder commit(s).
+  On completion: reviewer (adversarial, fresh) + qa (gates, SHA-pinned SUCCESS). No designer
+  (no visual surface change per plan §8). Then update PR #134 checklist (NOTICEABLE).
+  Do NOT ship/ping this cycle.
