@@ -12806,3 +12806,17 @@ a finished builder.
 ## Cycle 83 (2026-07-11) — tournament NET/handicap leaderboard
 - Motion/haptics DONE + strict-green on #133 (64a4537). No owner feedback on v1.1.0; loop keeps firing → continue tournament build-out.
 - AWAITING: eng-lead tournament-net-handicap-leaderboard — add a NET mode (handicap-aware) alongside Gross/To-Par on the tournament leaderboard (computeStandings is gross-only). Uses player handicaps. Frontend. Designer pass. Land on #133. Motion cycle already landed so non-colliding.
+
+## Cycle 83 (2026-07-11) — tournament NET/handicap leaderboard: PLAN-LITE done, builder dispatched
+Handicap-data trace: per-player handicap lives on `round.players[].handicap` (Player.handicap,
+types.ts:42) — the ONLY per-player source. `estimateHandicapFromRounds` is OWNER-ONLY
+(getOwnerPlayerId) → unusable per-field. Reuse the chicago convention (games.ts:1200,
+`Math.round(handicap)`, full-handicap subtraction) — NO new formula, NO hole-by-hole alloc.
+Honest missing-hcp rule: no handicap → totalNet=null, unranked (rank "—", sorted last, "—"
+total) — never handicap=0. Net = per-round (gross−hcp) summed. Spec:
+specs/tournament-net-handicap-leaderboard-plan.md.
+AWAITING: builder implements the plan on integration/next, commits+pushes. On return:
+reviewer (fresh) + QA gates (lint/tsc/voice-smoke/build/vitest w/ new net tests) + designer.
+BLOCKING → re-dispatch builder. Green+designer-ok → update PR #133 + backlog (TARGETED edit,
+dup keys — never json round-trip) + progress. Reconcile from origin/integration/next on
+resume; do NOT re-run a finished builder. SILENT — no ship/ping.
