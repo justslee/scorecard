@@ -12486,3 +12486,7 @@ repro-green at 22:04 ET: full suite 2140 passed, ruff clean.
   Postgres, not skipped); CI Backend + Frontend + E2E all state:SUCCESS on head 0c1e334 (no flake this
   run). PR #132 checklist updated (SILENT item). Local pg_ci_repro container removed. NO owner ping
   (silent CI/test hygiene). Bundle #132 backend gate is GREEN — unblocked for the next noticeable ship.
+
+## Cycle 79 (2026-07-10) — ORB S3 (setup wiring)
+- #132 strict-green (faddeb3), 8 noticeable items, awaiting owner ship. Owner fired loop → continue CRUX with S3.
+- AWAITING: eng-lead orb-s3-setup-wiring — wire tournament (parseVoiceTranscript→tournament-prefill.ts→tap form, creation stays human tap, curated voice-tests) + round (/round/new surface reusing VoiceRoundSetup) voice setup through the orb; resolve the S1-deferred CTA-overlap so the orb can SHOW on /tournament/new + /round/new. Wires the stranded parser. Designer pass. Land on #132. Supersedes tournament-voice-setup-wire.
