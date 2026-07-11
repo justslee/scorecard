@@ -3,6 +3,13 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING — cycle 94: A3 review on `integration/next` @6bfe54a (builder DONE below)
+Orb CRUX audited = FULLY DEPLOYED → DONE, not reopened. Pulled priority-1 course-selection A3.
+Plan (fable) @d54ead4; builder landed @eae4896 (progress @6bfe54a); all gates green (see below).
+Awaiting reviewer (correctness+security) + qa (re-run gates) + designer (user-facing, BLOCKING) on
+6bfe54a. All PASS → open/refresh bundle PR to main, mark NOTICEABLE, decide owner ping. BLOCKING →
+re-dispatch builder on 6bfe54a, re-review. Do NOT rebuild the passed work.
+
 ## course-selection A3 (clarify turn) — DONE, builder (2026-07-11, NOTICEABLE)
 Implemented specs/course-selection-a3-plan.md exactly on `integration/next` @eae4896 (off
 d54ead4, the plan commit). resolveSpokenCourse's `{kind:"ambiguous", candidates}` branch used to
