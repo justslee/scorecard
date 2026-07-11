@@ -13147,3 +13147,8 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 ## Cycle 87 (2026-07-11) — strategy-guides prod live-smoke (owner OK'd)
 - Owner said "smoke test the guides" → bounded prod smoke of caddie-hole-strategy-guides (shipped on main, live research path NEVER verified against a real key → silent-failure risk).
 - AWAITING: verification agent (SSM on-box, key-free, bounded ONE hole/ONE course) — does research_hole_guide (web_search + messages.parse + pause_turn) actually produce a valid grounded guide in prod, or is it silently broken? VERIFY-only; if broken → fix next cycle.
+
+## Cycle 88 (2026-07-11) — OWNER BUG: caddie yardage 178 vs 231 (Bethpage hole 3)
+- Owner screenshots: caddie grounded on 178 (card) but he plays 231 from his tees; GPS active but not used; caddie ARGUES the wrong number. Recurring (multi-tee-anchor resolved to ~174 card, not selected tee).
+- Owner's fix spec: use GPS-to-green-center when on the hole, ELSE the SELECTED-tee distance — never the scorecard default. Apply to caddie grounding + sheet header + F/C/B/plays.
+- AWAITING: Fable diagnosis+plan (specs/caddie-yardage-gps-selected-tee-plan.md) → then build. Core/recurring → Fable first.
