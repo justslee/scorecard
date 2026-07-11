@@ -12848,3 +12848,13 @@ AWAITING: reviewer (fresh) + QA gates + designer pass (3-pill fit, calm Hcp capt
 "—" reads correctly) on PR #133. BLOCKING → re-dispatch builder. Green+designer-ok → update
 PR #133 + backlog (TARGETED edit) + progress. SILENT — no ship/ping (frontend-only leaderboard
 mode is arguably noticeable on TestFlight; eng-lead to classify against #133's bundle).
+
+## AWAITING (cycle 83 — reviewer + designer on 6b74fb7)
+Builder DONE @ 3c5db4e (+progress 6b74fb7). Extracted pure helpers to
+src/lib/tournament-standings.ts (behavior-preserving), added Net mode + 8 tests. Builder
+gates all green (lint/tsc 0/voice 277/vitest 2046/build ok). AWAITING: reviewer (fresh,
+adversarial — verify the helper EXTRACTION didn't change gross/toPar behavior; net uses real
+handicap not 0-fabrication; guard covers Net; tie-aware re-rank) + designer (Net pill + net
+presentation + "No hcp" honest state, calm yardage-book). BLOCKING → re-dispatch builder.
+Green+designer-ok → confirm CI strict-green on head, update PR #133 checklist + backlog
+(TARGETED edit, dup keys) + progress. SILENT — no ship/ping. Reconcile from origin on resume.
