@@ -17,7 +17,9 @@ Plan (fable) @d54ead4; builder @eae4896. Review verdicts on 6bfe54a all GREEN:
   (wire useSheetTTS onPlaybackEnd into the 900ms reopen before spoken-replies default on).
 Bundle now contains 1 NOTICEABLE change (first item on this fresh integration/next). Per cycle
 brief: NOT pinging/shipping this cycle — silent accumulation; owner approval deferred. Bundle
-PR opened to main (checklist: A3 noticeable). Next: B1 (/api/courses/in-bounds) or accumulate.
+PR #134 opened to main (https://github.com/justslee/scorecard/pull/134, checklist: A3 noticeable).
+Next: B1 (/api/courses/in-bounds) or accumulate. Owner should be asked to approve #134 on a
+following cycle (bundle is approval-eligible now).
 Non-blocking follow-ups filed: designer copy nits; TTS onPlaybackEnd before TTS-default-on.
 
 ## course-selection A3 (clarify turn) — DONE, builder (2026-07-11, NOTICEABLE)
