@@ -13165,3 +13165,7 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 - Owner (A) BUG: in Pittsburgh (GPS), asked caddie for a tee time at "Marine Park" (NY) → it searched Pittsburgh courses instead of the named course. Need named-course resolution + caddie clarification (disambiguation), not GPS-fallback.
 - Owner (B) FEATURE: replace the "bland checklist" — add MAP-based course search when adding a course (pan/zoom, markers on ONLY golf courses in the current viewport) for scanning when unsure where to play.
 - AWAITING: Fable plan (specs/course-selection-ux-plan.md) — diagnose (A) + fix; design (B) map search + markers source (budget-aware per golfapi-budget) + better-than-checklist UX; sequence bug-fix FIRST. Ground in course-search-ux-requirements + next-epic-course-search-db memories.
+
+## Cycle 90 (2026-07-11) — course-selection A0 (stop-the-lie) parallel to yardage fix
+- Yardage P0 fix in flight (round-caddie area). A0 (tee-time voice-parse area) is non-colliding → parallel lane.
+- AWAITING: eng-lead course-selection A0 — extract unresolvedCourseNames in parseTeeTimePrefs; gate dispatch (dispatched=false when a named course is unresolved/missed); honest ack ("I don't know Marine Park — nothing on your list matches"), NO wrong-course dispatch. Marine-Park-from-Pittsburgh fixture RED→GREEN. Ships alone. Rebase-before-push (parallel).
