@@ -3,6 +3,55 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## tournament-settlement-honesty — DONE, builder (2026-07-11, NOTICEABLE — stake picker changed)
+Implemented `specs/tournament-settlement-honesty-plan.md` exactly on `integration/next` @1a37556
+(off b5c28b1). Two [[no-fake-data-fallbacks]] money mirages: (1) stableford/bbb/bb/scr/vegas/quota
+showed a $ stake in the picker but `settlement.ts` never paid them out — a stableford-$5 game
+returned a fabricated all-zeros ledger instead of an honest "no money game" state; (2) match play
+(and wolf) with the wrong roster size silently dropped players 3+/non-4 from a money game the
+engine can't settle for more than 2 (wolf: not-exactly-4).
+- `settlement.ts`: exported `SETTLEABLE_FORMATS` (the exact 9 formats `computeGameNetWinnings`
+  settles) as the single source of truth; early-return `{}` for non-members; gated the
+  `moneyGames` filter and `hasMoneyGames` on it. **No per-format money math changed** — zero-sum
+  invariants byte-identical for all 9.
+- `round-games.ts`: derived `STAKE_GAME_IDS` = `{skins, match, nassau, wolf}` (settled ∩
+  picker-constructible; vegas excluded — team-only, no team-assignment UI exists); added
+  `ROSTER_REQUIREMENT {match:2, wolf:4}` + `gameSelectableForRoster`; `buildRoundGames` now only
+  writes `pointValue` for `STAKE_GAME_IDS` and SKIPS (never truncates) a game whose roster
+  requirement isn't met.
+- `GamePicker.tsx`: `takesStake` keys off `STAKE_GAME_IDS`; new optional `rosterSize` prop
+  disables unmet-requirement rows with calm sub-copy ("Match play is 1v1 — opponent picker
+  coming." / "Wolf needs a foursome."); quiet italic "Points game — no money settlement" note in
+  selected no-stake cards. Yardage tokens only, no new chrome.
+- Both round-creation consumers (`round/new/page.tsx`, `NewTournamentRoundClient.tsx`): default
+  stake only for stake-taking ids (round/new's stroke-play default drops its old mirage `$5`→`""`);
+  pass `rosterSize`; prune an invalid selection on a roster edit; summary stake suffix only for
+  stake-taking ids. **Deliberately breaks PR #135's byte-equivalent `/round/new` lock** — that lock
+  was preserving the dishonest default; `round-games.test.ts` updated intentionally per the plan,
+  not deleted.
+- Read-side honesty: `TournamentPageClient.tsx` "$X / pt" chips and `LeaderboardSheet.tsx` "· $X"
+  tab suffix now gate on `SETTLEABLE_FORMATS` — legacy persisted stableford-$5 rows stop
+  advertising money. `GameLeaderboards.tsx` checked — already honest (no `betSuffix` passed for
+  non-settleable format cards), no change needed.
+- Tests: `round-games.test.ts` (+8 new/updated — `STAKE_GAME_IDS` ⊆ `SETTLEABLE_FORMATS` drift
+  guard, matchPlay/wolf roster-skip, non-stake `pointValue===undefined` matrix), `settlement.test.ts`
+  (+ stableford-honesty block, threePoint zero-sum block — was untested, + displayed==settled block
+  for all 4 `STAKE_GAME_IDS` via `buildRoundGames`; the wolf case needed 2 holes with an
+  equal-and-opposite lone-wolf result since `computeWolf`'s lone mode only credits the current wolf
+  per hole and isn't zero-sum on a single hole — pre-existing engine behavior, out of scope, left
+  untouched), new `GamePicker.test.tsx` (stake-row visibility + roster-disabled behavior).
+- Gates: `npm run lint` clean, `tsc --noEmit` clean, voice-tests smoke 278/278, `vitest run`
+  2208/2208 (75 new/updated in the 3 touched suites), `npm run build` succeeds, backend
+  `ruff check .` clean (no backend files touched — no `types.ts`/`models.py` change). No local
+  Postgres used.
+- Flag for eng-lead: `computeWolf`'s "lone" mode (`games.ts:827-843`) credits only the current wolf
+  player per hole (±3), never debits the other three — so `settlement.ts`'s "wolf totals are
+  already zero-sum" comment is optimistic; a SINGLE decided lone-wolf hole is never zero-sum by
+  construction (locked pre-existing behavior, `games.test.ts:937-960`). Money still nets to zero
+  across enough holes/results in practice, and this is unrelated to the mirage/roster bugs this
+  plan targeted, so I left it untouched and worked around it in the new test — flagging in case
+  it's worth its own follow-up plan.
+
 ## tournament-live-leaderboard — DONE, builder (2026-07-11, NOTICEABLE — scores now catch up on foreground)
 Implemented specs/tournament-live-leaderboard-plan.md exactly on `integration/next` @dc542df
 (off 5bfcbb2). When the tournament page regains foreground/visibility, it silently refetches
