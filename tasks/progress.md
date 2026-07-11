@@ -14096,3 +14096,28 @@ Any BLOCKING → re-dispatch builder. Do NOT ship/ping (bundle keeps accumulatin
   fade border/bg/icon only, keep text legible (sunlight Northstar).
 - reviewer: AWAITING.
 Plan: batch designer blockers (+opacity nit) with any reviewer blockers → single builder pass.
+
+## reviewer verdict on 1a37556: BLOCKING (money) + partial SHIP-quality
+- SHIP-quality: stableford stake-mirage kill + match/wolf roster-drop PREVENTION correct &
+  faithfully tested (early-return additive, per-format math byte-identical, builder guard
+  authoritative, prune effects in both consumers, drift guard real).
+- BLOCKING: wolf certified settleable/zero-sum but computeWolf FABRICATES points (lone win
+  wolf+3 debits no one; partner +1/+1 debits no one). Falsified: lone-wolf win pointValue:2 →
+  {p1:6,...} sum=+$6. New wolf "displayed==settled" test engineered around a balanced pair to
+  hide it. settlement.ts:132 comment "Wolf totals already zero-sum" is FALSE.
+
+## DECISION (eng-lead): take the plan's escape hatch — wolf points-only NOW, engine fix deferred
+Making computeWolf true-transfer (partner-mode pot distribution) is a real design question →
+its own plan, not a reactive fix. Honest now = drop wolf from money set.
+
+## AWAITING — builder ITERATION on 1a37556 (batch: 1 reviewer blocker + 2 designer blockers + 2 nits)
+Fixes: (A) reviewer — remove 'wolf' from SETTLEABLE_FORMATS (settlement.ts) + STAKE_GAME_IDS
+(round-games.ts); wolf becomes points-only (no stake, no fabricated money); keep
+ROSTER_REQUIREMENT.wolf=4 for display correctness; remove now-dead wolf settlement branch +
+false zero-sum comment; update wolf tests to honest-empty ({}) like stableford; STAKE_GAME_IDS
+invariant → {skins,match,nassau}. (A2) add per-format zero-sum PROPERTY test over
+SETTLEABLE_FORMATS on decided scores (prevents recurrence). (B) designer — GamePicker no-stake
+note → format-agnostic "No money on this one — nothing to settle."; (C) Wolf tag "3–4 ply" →
+"Foursome" (round-games.ts:40). (D nit) disabled-row: fade border/bg/icon only, keep text
+legible (sunlight). Then re-review (reviewer) + re-run gates (qa). Follow-up to backlog: wolf
+true-transfer engine + re-add to money set. Do NOT ship/ping.
