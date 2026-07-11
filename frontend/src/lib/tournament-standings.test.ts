@@ -128,6 +128,55 @@ describe("computeStandings — net handicap math", () => {
     expect(p2.totalNet).toBe(80); // 90 - 10
   });
 
+  it("treats an EXPLICIT null handicap as no-handicap (never a fabricated scratch 0)", () => {
+    // The backend serialises an unset handicap as literal `null` (not omitted),
+    // so a null can reach the map. It must resolve to null ("no hcp"), NOT
+    // Math.round(null) === 0 which would rank an un-handicapped player as scratch.
+    const round = makeRound({
+      players: makePlayers(["p1"]),
+      scores: makeScores("p1", Array<number>(18).fill(4)), // 72 gross
+    });
+    const standings = computeStandings(
+      ["p1"],
+      { p1: "Null Handicap" },
+      // Cast: the runtime value from the API can be null even though the map
+      // type is Record<string, number>; this asserts the defensive `== null` guard.
+      { p1: null } as unknown as Record<string, number>,
+      [round]
+    );
+    const s = standings[0];
+    expect(s.handicap).toBeNull(); // NOT 0
+    expect(s.totalNet).toBeNull(); // unranked, not 72
+    expect(s.roundNet).toEqual([null]);
+  });
+
+  it("allocates the handicap only for rounds the player actually scored (some-but-not-all)", () => {
+    // p1 has handicap 10 and scores only in round 1 (90 gross); round 2 has no scores.
+    // Net must be 90 - 10*1 = 80 (allocation counts ONLY the scored round), NOT
+    // 90 - 10*2 (would over-allocate) and NOT null (they do have a scored round).
+    const r1 = makeRound({
+      id: "r1",
+      players: makePlayers(["p1"]),
+      scores: makeScores("p1", Array<number>(18).fill(5)), // 90 total
+    });
+    const r2 = makeRound({
+      id: "r2",
+      players: makePlayers(["p1"]),
+      scores: [], // p1 did not play round 2
+    });
+    const standings = computeStandings(
+      ["p1"],
+      { p1: "Player One" },
+      { p1: 10 },
+      [r1, r2]
+    );
+    const s = standings[0];
+    expect(s.handicap).toBe(10);
+    expect(s.roundTotals).toEqual([90, null]);
+    expect(s.roundNet).toEqual([80, null]); // 90 - 10 in R1; null in the unplayed R2
+    expect(s.totalNet).toBe(80); // 90 - 10*1 — allocation over the single scored round
+  });
+
   it("totalNet is null when the player has a handicap but no scores at all", () => {
     const round = makeRound({
       players: makePlayers(["p1"]),

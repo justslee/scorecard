@@ -87,8 +87,11 @@ export function computeStandings(
   return playerIds.map((pid, idx) => {
     const name = playerNames[pid] ?? pid;
     const rawHandicap = playerHandicaps[pid];
+    // `== null` catches both a missing key AND an explicit null (the backend
+    // serialises an unset handicap as null) — a missing handicap must stay
+    // null ("no hcp"), never Math.round(null) === 0 (a fabricated scratch).
     const handicap =
-      rawHandicap === undefined ? null : Math.round(rawHandicap);
+      rawHandicap == null ? null : Math.round(rawHandicap);
 
     const roundTotals: (number | null)[] = [];
     const roundToPar: (number | null)[] = [];

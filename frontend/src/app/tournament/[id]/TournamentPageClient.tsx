@@ -139,10 +139,14 @@ export default function TournamentPageClient() {
           // `handicap` found on a round-player record for that id. Only
           // round.players[].handicap is used (see tournament-standings.ts
           // header) — never estimateHandicapFromRounds (owner-only).
+          // NOTE: the backend serialises an unset handicap as `null` (not
+          // omitted), so we filter with `!= null` — a null must be treated as
+          // "no handicap" (honest "—"), never stored as a value (which would
+          // later Math.round(null) === 0 and fabricate a scratch golfer).
           const playerHandicaps: Record<string, number> = {};
           for (const r of members) {
             for (const p of r.players) {
-              if (playerHandicaps[p.id] === undefined && p.handicap !== undefined) {
+              if (playerHandicaps[p.id] === undefined && p.handicap != null) {
                 playerHandicaps[p.id] = p.handicap;
               }
             }
@@ -578,7 +582,14 @@ export default function TournamentPageClient() {
 
         {/* ── Leader callout (when scores exist) ────────────────────────── */}
         {/* Fix #7: T.paperFaint / T.paperMid replace raw rgba strings */}
-        {hasScores && leader && leader.totalStrokes !== null && (
+        {/* Gate on the ACTIVE mode's total: in Net mode, when no player has a
+            handicap the leader has a null net and nobody is ranked — don't
+            fabricate a "Leading … NET —" callout for an unranked field. */}
+        {hasScores &&
+          leader &&
+          (lbMode === "net"
+            ? leader.totalNet !== null
+            : leader.totalStrokes !== null) && (
           <div
             style={{
               margin: "0 22px 14px",
@@ -848,7 +859,7 @@ export default function TournamentPageClient() {
                       justifyContent: "flex-end",
                     }}
                   >
-                    Total
+                    {lbMode === "net" ? "Net" : "Total"}
                   </div>
                 </div>
 
