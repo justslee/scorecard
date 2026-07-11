@@ -8,7 +8,7 @@ import { T, PAPER_NOISE, DEFAULT_ACCENT, CADDIES } from "@/components/yardage/to
 import { saveRound as localSaveRound, getSavedPlayers } from "@/lib/storage";
 import { createDefaultCourse } from "@/lib/types";
 import { createRound, getPlayers } from "@/lib/api";
-import type { Player, Round, Game, GameFormat, SavedPlayer, HoleInfo } from "@/lib/types";
+import type { Player, Round, Game, SavedPlayer, HoleInfo } from "@/lib/types";
 import { matchPlayerNames } from "@/lib/player-match";
 import { fuzzyBestMatch } from "@/lib/voice/utils";
 import { listFavorites } from "@/lib/course-favorites";
@@ -23,24 +23,12 @@ import { anchorFromSelectedCourse } from "@/lib/round-anchor";
 import { haptic } from "@/lib/haptics";
 import { fetchMappedCourse } from "@/lib/courses/mapped-course-api";
 import { namesMatch } from "@/lib/course/tee-anchor";
+import { buildRoundGames, GAME_OPTIONS, GameId } from "@/lib/round-games";
+import GamePicker from "@/components/GamePicker";
 
 // ---------------------------------------------------------------------------
 // Local types
 // ---------------------------------------------------------------------------
-
-type GameId =
-  | "stroke"
-  | "match"
-  | "skins"
-  | "nassau"
-  | "stable"
-  | "wolf"
-  | "vegas"
-  | "bbb"
-  | "bb"
-  | "scr"
-  | "quota"
-  | "none";
 
 type TeeId = "black" | "blue" | "white" | "gold" | "red";
 type SideId = "snake" | "presses" | "greenies" | "sandies";
@@ -63,21 +51,6 @@ interface SelectedCourse {
 // Static option lists
 // ---------------------------------------------------------------------------
 
-const GAME_OPTIONS: { id: GameId; l: string; sub: string; tag: string | null }[] = [
-  { id: "stroke", l: "Stroke play", sub: "Classic. Lowest total wins.", tag: "Solo OK" },
-  { id: "match", l: "Match play", sub: "Hole by hole. First to close it out wins.", tag: "1v1" },
-  { id: "skins", l: "Skins", sub: "Low score on a hole takes the pot.", tag: "$ per hole" },
-  { id: "nassau", l: "Nassau", sub: "Three bets: front 9, back 9, overall.", tag: "$20·20·20" },
-  { id: "stable", l: "Stableford", sub: "Points per hole. Aggressive rewarded.", tag: "Net" },
-  { id: "wolf", l: "Wolf", sub: "Rotating lone wolf. Partners or go alone.", tag: "3–4 ply" },
-  { id: "vegas", l: "Vegas", sub: "Team scores combined into two-digit numbers.", tag: "Pairs" },
-  { id: "bbb", l: "Bingo Bango Bongo", sub: "First on green, closest, first to hole.", tag: "Any size" },
-  { id: "bb", l: "Best ball", sub: "Two-player team, best net score wins.", tag: "Teams" },
-  { id: "scr", l: "Scramble", sub: "Everyone tees off, team plays best ball.", tag: "Teams" },
-  { id: "quota", l: "Quota", sub: "Beat your handicap points total.", tag: "Solo OK" },
-  { id: "none", l: "No stakes", sub: "Just a round.", tag: null },
-];
-
 const TEE_OPTIONS: { id: TeeId; l: string; c: string; yds: number }[] = [
   { id: "black", l: "Black · Championship", c: "#1a1a1a", yds: 7244 },
   { id: "blue", l: "Blue · Back", c: "#3a4a8a", yds: 6845 },
@@ -92,19 +65,6 @@ const SIDES: { id: SideId; l: string; sub: string }[] = [
   { id: "greenies", l: "Greenies", sub: "Closest-to-pin on par 3s" },
   { id: "sandies", l: "Sandies", sub: "Par after bunker shot" },
 ];
-
-/** Maps the local GameId to the canonical GameFormat type on the backend. */
-const GAME_ID_TO_FORMAT: Partial<Record<GameId, GameFormat>> = {
-  match: "matchPlay",
-  skins: "skins",
-  nassau: "nassau",
-  stable: "stableford",
-  wolf: "wolf",
-  vegas: "vegas",
-  bbb: "bingoBangoBongo",
-  bb: "bestBall",
-  scr: "scramble",
-};
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -389,20 +349,7 @@ export default function RoundSetupPage() {
 
     // Build game objects for the round (sent to backend; backend assigns roundId).
     // One per selected format, each with its own stake.
-    const gameObjects: Game[] = [];
-    for (const sel of selectedGames) {
-      const gameFormat = GAME_ID_TO_FORMAT[sel.id];
-      if (!gameFormat) continue; // "none" has no engine format
-      const stakeValue = parseFloat(sel.stake.replace("$", "")) || 0;
-      gameObjects.push({
-        id: crypto.randomUUID(),
-        roundId: "", // placeholder — backend assigns its own roundId FK
-        format: gameFormat,
-        name: GAME_OPTIONS.find((g) => g.id === sel.id)?.l ?? sel.id,
-        playerIds: deduped.map((p) => p.id),
-        settings: { pointValue: stakeValue > 0 ? stakeValue : undefined },
-      });
-    }
+    const gameObjects: Game[] = buildRoundGames(selectedGames, deduped.map((p) => p.id));
 
     try {
       // POST /api/rounds — the backend assigns its own UUID as the round id.
@@ -1777,245 +1724,6 @@ function MiniStat({ k, v }: { k: string; v: number | string }) {
         }}
       >
         {v}
-      </div>
-    </div>
-  );
-}
-
-function GamePicker({
-  accent,
-  selected,
-  onToggle,
-  onStakeFor,
-  onDone,
-}: {
-  accent: string;
-  selected: { id: GameId; stake: string }[];
-  onToggle: (g: GameId) => void;
-  onStakeFor: (g: GameId, s: string) => void;
-  onDone: () => void;
-}) {
-  const stakes = ["$2", "$5", "$10", "$20"];
-  return (
-    <div style={{ overflow: "auto", padding: "0 0 10px" }}>
-      <div style={{ padding: "0 22px 4px" }}>
-        <div
-          style={{
-            fontFamily: T.mono,
-            fontSize: 9.5,
-            letterSpacing: 1.5,
-            color: T.pencil,
-            textTransform: "uppercase",
-          }}
-        >
-          Pick your games
-        </div>
-        <div
-          style={{
-            fontFamily: T.serif,
-            fontStyle: "italic",
-            fontSize: 22,
-            color: T.ink,
-            letterSpacing: -0.3,
-          }}
-        >
-          The formats
-        </div>
-        <div
-          style={{
-            fontFamily: T.serif,
-            fontSize: 12.5,
-            color: T.pencil,
-            letterSpacing: -0.1,
-            marginTop: 2,
-          }}
-        >
-          Stack several &mdash; or say:{" "}
-          <span style={{ color: accent }}>&ldquo;skins at ten&rdquo;</span>,{" "}
-          <span style={{ color: accent }}>&ldquo;wolf, no money&rdquo;</span>
-        </div>
-      </div>
-      <div style={{ padding: "8px 14px 0" }}>
-        {GAME_OPTIONS.map((g) => {
-          const sel = selected.find((s) => s.id === g.id);
-          const active = sel !== undefined;
-          const takesStake = g.id !== "none";
-          return (
-            <div
-              key={g.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => onToggle(g.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") onToggle(g.id);
-              }}
-              style={{
-                width: "100%",
-                padding: "12px",
-                marginBottom: 4,
-                borderRadius: 12,
-                border: `1px solid ${active ? T.ink : "transparent"}`,
-                background: active ? T.paperDeep : "transparent",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr auto",
-                  gap: 10,
-                  alignItems: "center",
-                }}
-              >
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span
-                      style={{
-                        fontFamily: T.serif,
-                        fontSize: 17,
-                        color: T.ink,
-                        letterSpacing: -0.2,
-                      }}
-                    >
-                      {g.l}
-                    </span>
-                    {g.tag && (
-                      <span
-                        style={{
-                          fontFamily: T.mono,
-                          fontSize: 8,
-                          letterSpacing: 1,
-                          color: T.pencil,
-                          border: `1px solid ${T.hairline}`,
-                          padding: "1px 5px",
-                          borderRadius: 3,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        {g.tag}
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: T.serif,
-                      fontStyle: "italic",
-                      fontSize: 12.5,
-                      color: T.pencil,
-                      letterSpacing: -0.1,
-                      marginTop: 1,
-                    }}
-                  >
-                    {g.sub}
-                  </div>
-                </div>
-                {active && (
-                  <div
-                    style={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: 99,
-                      background: accent,
-                      color: T.paper,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 11,
-                      fontFamily: T.mono,
-                    }}
-                  >
-                    {"✓"}
-                  </div>
-                )}
-              </div>
-
-              {/* Per-format stake — inline in the selected card, so several
-                  games and their bets are defined in one visit. */}
-              {active && takesStake && sel && (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  style={{
-                    display: "flex",
-                    gap: 5,
-                    marginTop: 10,
-                    paddingTop: 10,
-                    borderTop: `1px dashed ${T.hairline}`,
-                    alignItems: "center",
-                  }}
-                >
-                  {stakes.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => onStakeFor(g.id, s)}
-                      style={{
-                        flex: 1,
-                        padding: "7px 0",
-                        borderRadius: 10,
-                        border: `1px solid ${sel.stake === s ? T.ink : T.hairline}`,
-                        background: sel.stake === s ? T.ink : "transparent",
-                        color: sel.stake === s ? T.paper : T.ink,
-                        fontFamily: T.serif,
-                        fontSize: 14,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                  <input
-                    value={stakes.includes(sel.stake) ? "" : sel.stake}
-                    onChange={(e) => {
-                      const raw = e.target.value.replace(/[^0-9$]/g, "");
-                      onStakeFor(g.id, raw.startsWith("$") ? raw : `$${raw}`);
-                    }}
-                    placeholder="$…"
-                    inputMode="numeric"
-                    style={{
-                      width: 52,
-                      padding: "7px 6px",
-                      borderRadius: 10,
-                      border: `1px solid ${
-                        !stakes.includes(sel.stake) && sel.stake !== ""
-                          ? T.ink
-                          : T.hairline
-                      }`,
-                      background: "transparent",
-                      color: T.ink,
-                      fontFamily: T.serif,
-                      fontSize: 14,
-                      textAlign: "center",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Done — multi-select never auto-closes */}
-      <div style={{ padding: "10px 22px 0" }}>
-        <button
-          onClick={onDone}
-          style={{
-            width: "100%",
-            padding: "14px",
-            borderRadius: 99,
-            border: "none",
-            background: accent,
-            color: T.paper,
-            fontFamily: T.sans,
-            fontSize: 14,
-            fontWeight: 500,
-            cursor: "pointer",
-            letterSpacing: -0.1,
-          }}
-        >
-          Done
-        </button>
       </div>
     </div>
   );

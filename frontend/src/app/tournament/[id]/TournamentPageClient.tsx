@@ -402,6 +402,12 @@ export default function TournamentPageClient() {
   const tournamentGames: Game[] = tournament.games ?? [];
   const hasGames = tournamentGames.length > 0;
   const hasMoneyGame = hasMoneyGames(memberRounds);
+  // Per-round games (specs/tournament-per-round-format-plan.md §4) — each
+  // tournament round can carry its own format; "settlement" is a synthetic
+  // persisted-settlement game row, not a real game, so it's excluded here.
+  const roundGames = memberRounds.flatMap((r) =>
+    (r.games ?? []).filter((g) => g.format !== "settlement")
+  );
   // sortedStandings / leader / tournamentSettlement are hoisted above (before
   // the early returns) so the order/settlement haptics effects can see them.
 
@@ -1326,87 +1332,187 @@ export default function TournamentPageClient() {
         {/* ── Games tab ─────────────────────────────────────────────────── */}
         {tab === "games" && (
           <div style={{ padding: "0 22px 40px" }}>
-            {!hasGames ? (
+            {!hasGames && roundGames.length === 0 ? (
               <EmptyState text="No games set up yet." />
             ) : (
-              tournamentGames.map((g: Game) => (
-                <div
-                  key={g.id}
-                  style={{
-                    padding: "14px 0",
-                    borderBottom: `1px dashed ${T.hairline}`,
-                  }}
-                >
+              <>
+                {tournamentGames.map((g: Game) => (
                   <div
+                    key={g.id}
                     style={{
-                      display: "flex",
-                      alignItems: "baseline",
-                      justifyContent: "space-between",
-                      marginBottom: 4,
+                      padding: "14px 0",
+                      borderBottom: `1px dashed ${T.hairline}`,
                     }}
                   >
                     <div
                       style={{
-                        fontFamily: T.serif,
-                        fontStyle: "italic",
-                        fontSize: 22,
-                        letterSpacing: -0.3,
-                        color: T.ink,
+                        display: "flex",
+                        alignItems: "baseline",
+                        justifyContent: "space-between",
+                        marginBottom: 4,
                       }}
                     >
-                      {g.name}
+                      <div
+                        style={{
+                          fontFamily: T.serif,
+                          fontStyle: "italic",
+                          fontSize: 22,
+                          letterSpacing: -0.3,
+                          color: T.ink,
+                        }}
+                      >
+                        {g.name}
+                      </div>
+                      {/* Fix #4: human-readable format label instead of raw camelCase */}
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 9,
+                          letterSpacing: 1.2,
+                          color: T.pencil,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {FORMAT_LABELS[g.format] ?? g.format}
+                      </div>
                     </div>
-                    {/* Fix #4: human-readable format label instead of raw camelCase */}
-                    <div
-                      style={{
-                        fontFamily: T.mono,
-                        fontSize: 9,
-                        letterSpacing: 1.2,
-                        color: T.pencil,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      {FORMAT_LABELS[g.format] ?? g.format}
-                    </div>
+                    {g.settings?.pointValue != null && (
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 9,
+                          letterSpacing: 1.2,
+                          color: T.pencilSoft,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        ${g.settings.pointValue} / pt
+                      </div>
+                    )}
+                    {g.playerIds.length > 0 && (
+                      <div
+                        style={{
+                          fontFamily: T.serif,
+                          fontStyle: "italic",
+                          fontSize: 13,
+                          color: T.pencil,
+                          marginTop: 4,
+                        }}
+                      >
+                        {g.playerIds
+                          .map(
+                            (pid) =>
+                              standings.find((s) => s.playerId === pid)?.name ??
+                              tournament.playerNamesById?.[pid] ??
+                              pid
+                          )
+                          .join(", ")}
+                      </div>
+                    )}
                   </div>
-                  {g.settings?.pointValue != null && (
+                ))}
+
+                {/* Per-round games (specs/tournament-per-round-format-plan.md §4) —
+                    each tournament round can carry its own format; the settlement
+                    engine already reads these, this just surfaces them. */}
+                {roundGames.map((g: Game) => {
+                  const round = memberRounds.find((r) =>
+                    (r.games ?? []).some((rg) => rg.id === g.id)
+                  );
+                  const roundIndex = round ? memberRounds.indexOf(round) + 1 : undefined;
+                  return (
                     <div
+                      key={g.id}
                       style={{
-                        fontFamily: T.mono,
-                        fontSize: 9,
-                        letterSpacing: 1.2,
-                        color: T.pencilSoft,
-                        textTransform: "uppercase",
+                        padding: "14px 0",
+                        borderBottom: `1px dashed ${T.hairline}`,
                       }}
                     >
-                      ${g.settings.pointValue} / pt
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "baseline",
+                          justifyContent: "space-between",
+                          marginBottom: 4,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontFamily: T.serif,
+                            fontStyle: "italic",
+                            fontSize: 22,
+                            letterSpacing: -0.3,
+                            color: T.ink,
+                          }}
+                        >
+                          {g.name}
+                        </div>
+                        <div
+                          style={{
+                            fontFamily: T.mono,
+                            fontSize: 9,
+                            letterSpacing: 1.2,
+                            color: T.pencil,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          {FORMAT_LABELS[g.format] ?? g.format}
+                        </div>
+                      </div>
+                      {g.settings?.pointValue != null && (
+                        <div
+                          style={{
+                            fontFamily: T.mono,
+                            fontSize: 9,
+                            letterSpacing: 1.2,
+                            color: T.pencilSoft,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          ${g.settings.pointValue} / pt
+                        </div>
+                      )}
+                      {g.playerIds.length > 0 && (
+                        <div
+                          style={{
+                            fontFamily: T.serif,
+                            fontStyle: "italic",
+                            fontSize: 13,
+                            color: T.pencil,
+                            marginTop: 4,
+                          }}
+                        >
+                          {g.playerIds
+                            .map(
+                              (pid) =>
+                                standings.find((s) => s.playerId === pid)?.name ??
+                                tournament.playerNamesById?.[pid] ??
+                                pid
+                            )
+                            .join(", ")}
+                        </div>
+                      )}
+                      {/* Sub-line naming the round this format belongs to. */}
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 8.5,
+                          letterSpacing: 1,
+                          color: T.pencilSoft,
+                          marginTop: 4,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {round?.courseName ?? "Round"}
+                        {roundIndex ? ` · Round ${roundIndex}` : ""}
+                      </div>
                     </div>
-                  )}
-                  {g.playerIds.length > 0 && (
-                    <div
-                      style={{
-                        fontFamily: T.serif,
-                        fontStyle: "italic",
-                        fontSize: 13,
-                        color: T.pencil,
-                        marginTop: 4,
-                      }}
-                    >
-                      {g.playerIds
-                        .map(
-                          (pid) =>
-                            standings.find((s) => s.playerId === pid)?.name ??
-                            tournament.playerNamesById?.[pid] ??
-                            pid
-                        )
-                        .join(", ")}
-                    </div>
-                  )}
-                </div>
-              ))
+                  );
+                })}
+              </>
             )}
 
-            {hasGames && (
+            {(hasGames || roundGames.length > 0) && (
               <div style={{ marginTop: 28 }}>
                 <div
                   style={{
