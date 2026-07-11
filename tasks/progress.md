@@ -3,12 +3,22 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING — cycle 94: A3 review on `integration/next` @6bfe54a (builder DONE below)
+## cycle 94 COMPLETE — A3 clarify turn LANDED + REVIEWED on `integration/next` (NOTICEABLE)
 Orb CRUX audited = FULLY DEPLOYED → DONE, not reopened. Pulled priority-1 course-selection A3.
-Plan (fable) @d54ead4; builder landed @eae4896 (progress @6bfe54a); all gates green (see below).
-Awaiting reviewer (correctness+security) + qa (re-run gates) + designer (user-facing, BLOCKING) on
-6bfe54a. All PASS → open/refresh bundle PR to main, mark NOTICEABLE, decide owner ping. BLOCKING →
-re-dispatch builder on 6bfe54a, re-review. Do NOT rebuild the passed work.
+Plan (fable) @d54ead4; builder @eae4896. Review verdicts on 6bfe54a all GREEN:
+- **Reviewer: SHIP**, zero blocking — A0/honesty invariant holds (bare-yes can't dispatch),
+  loop/wedge safe (2-ask budget, gen/open-guarded mic-reopen), matcher staging correct,
+  confidence:0.9 bypass guarded by hasNonDispatchSignal, no injection/ReDoS surface, tests
+  not weakened. transcript-param deviation cleared as structurally required + additive.
+- **QA: PASS** all 5 gates, numbers exact — lint/tsc clean, voice-smoke 278/278, full vitest
+  2146/2146 (80 targeted A3, no skips), build ok.
+- **Designer: PASS** — copy calm/honest/never-fabricates, hands-free reopen session-gated,
+  TTS-overlap risk inert (ttsEnabled default off). Non-blocking nits + one deferred follow-up
+  (wire useSheetTTS onPlaybackEnd into the 900ms reopen before spoken-replies default on).
+Bundle now contains 1 NOTICEABLE change (first item on this fresh integration/next). Per cycle
+brief: NOT pinging/shipping this cycle — silent accumulation; owner approval deferred. Bundle
+PR opened to main (checklist: A3 noticeable). Next: B1 (/api/courses/in-bounds) or accumulate.
+Non-blocking follow-ups filed: designer copy nits; TTS onPlaybackEnd before TTS-default-on.
 
 ## course-selection A3 (clarify turn) — DONE, builder (2026-07-11, NOTICEABLE)
 Implemented specs/course-selection-a3-plan.md exactly on `integration/next` @eae4896 (off
