@@ -114,7 +114,7 @@
       "type": "major",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle-133 (motion+haptics landed 32c0ab8; strict-green)",
       "depends_on": [],
       "why": "AUDIT: ZERO framer-motion/haptics in all 3 tournament screens (owner explicitly asked where to add). Opportunities: FLIP layout re-sort of leaderboard rows on standings change (haptic light on moved row); leader crossfade+haptic success on new leader; overtake underline sweep+haptic medium; tab-bar layoutId pill slide+selection haptic; round active→final stamp; settlement reveal stagger. Designer pass (NORTHSTAR calm — motion serves clarity, not flash). Files: TournamentPageClient.tsx."
     },
