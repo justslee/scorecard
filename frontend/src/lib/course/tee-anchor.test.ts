@@ -19,6 +19,8 @@ import {
   attachTeeBoxes,
   applyTeeAnchors,
   resolveFcbSource,
+  ordinalTeePick,
+  namesMatch,
   type TeeBox,
 } from './tee-anchor';
 import { yardsDistance } from './hole-projection';
@@ -498,7 +500,131 @@ describe('applyTeeAnchors', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 9. GPS override precedence (spec §fix.4) — live position ALWAYS wins
+// 9. Untagged-box ordinal (specs/caddie-yardage-gps-selected-tee-plan.md §2.2)
+// ---------------------------------------------------------------------------
+
+describe('ordinalTeePick', () => {
+  const yardages = [232, 207, 174, 159, 136];
+  const boxes = yardages.map((y) => box(y));
+
+  it('count-match ordinal align: 5 untagged boxes, "Black" → the longest (index 0)', () => {
+    expect(ordinalTeePick(boxes, 'Black')).toEqual(boxes[0]);
+  });
+
+  it('count-match ordinal align: 5 untagged boxes, "Red" → the shortest (index 4)', () => {
+    expect(ordinalTeePick(boxes, 'Red')).toEqual(boxes[4]);
+  });
+
+  it('count-match ordinal align: 5 untagged boxes, "White" → the middle box (index 2)', () => {
+    expect(ordinalTeePick(boxes, 'White')).toEqual(boxes[2]);
+  });
+
+  it('safe endpoint: box count does not match the 5-name ordinal, but "Black"/"tips" still resolves the longest', () => {
+    const threeBoxes = [box(400), box(350), box(300)];
+    expect(ordinalTeePick(threeBoxes, 'Black')).toEqual(threeBoxes[0]);
+    expect(ordinalTeePick(threeBoxes, 'Tips')).toEqual(threeBoxes[0]);
+  });
+
+  it('safe endpoint: box count mismatch, "Red"/"forward" resolves the shortest', () => {
+    const threeBoxes = [box(400), box(350), box(300)];
+    expect(ordinalTeePick(threeBoxes, 'Red')).toEqual(threeBoxes[2]);
+    expect(ordinalTeePick(threeBoxes, 'Forward')).toEqual(threeBoxes[2]);
+  });
+
+  it('ambiguous middle tee with no count match → null, never a guess', () => {
+    const threeBoxes = [box(400), box(350), box(300)];
+    expect(ordinalTeePick(threeBoxes, 'White')).toBeNull();
+    expect(ordinalTeePick(threeBoxes, 'Gold')).toBeNull();
+  });
+
+  it('no teeName / empty boxes → null', () => {
+    expect(ordinalTeePick(boxes, '')).toBeNull();
+    expect(ordinalTeePick([], 'Black')).toBeNull();
+  });
+});
+
+describe('resolveTeeAnchor — untagged-box ordinal step (Bethpage hole 3, no card yards at all)', () => {
+  it('5 untagged boxes, teeName "Black", NO card yards → ordinal picks the 232y box, not the arbitrary legacy point', () => {
+    const yardages = [232, 207, 174, 159, 136];
+    const boxes = yardages.map((y) => box(y));
+
+    const anchor = resolveTeeAnchor({
+      currentTee: pointAtYards(GREEN, 999), // an arbitrary legacy point — must NOT win
+      green: GREEN,
+      boxes,
+      teeName: 'Black',
+      cardYards: null,
+      par: 3,
+    });
+
+    expect(anchor.source).toBe('ordinal');
+    expect(anchor.tee).toEqual(boxes[0].point);
+  });
+
+  it('a valid card-nearest pick still outranks the ordinal step when both are available', () => {
+    const yardages = [232, 207, 174, 159, 136];
+    const boxes = yardages.map((y) => box(y));
+
+    const anchor = resolveTeeAnchor({
+      currentTee: null,
+      green: GREEN,
+      boxes,
+      teeName: 'Black',
+      cardYards: 174, // deliberately contradicts "Black" — card-nearest still wins (step 2 before step 3)
+      par: 3,
+    });
+
+    expect(anchor.source).toBe('card');
+    expect(anchor.tee).toEqual(boxes[2].point); // the 174y box
+  });
+
+  it('a single untagged box is still resolved by the existing "single" step, not ordinal', () => {
+    const soleBox = [box(232)];
+    const anchor = resolveTeeAnchor({
+      currentTee: null,
+      green: GREEN,
+      boxes: soleBox,
+      teeName: 'Black',
+      cardYards: null,
+      par: 3,
+    });
+    expect(anchor.source).toBe('single');
+    expect(anchor.tee).toEqual(soleBox[0].point);
+  });
+
+  it('ambiguous middle-tee ordinal (no count match) falls through to the existing honest fallback (legacy, keeping the incoming tee)', () => {
+    const threeBoxes = [box(400), box(350), box(300)];
+    const legacyTee = pointAtYards(GREEN, 350);
+    const anchor = resolveTeeAnchor({
+      currentTee: legacyTee,
+      green: GREEN,
+      boxes: threeBoxes,
+      teeName: 'White',
+      cardYards: null,
+      par: 4,
+    });
+    expect(anchor.source).toBe('legacy');
+    expect(anchor.tee).toEqual(legacyTee);
+  });
+});
+
+describe('namesMatch (exported for mapped-course per-tee card yardage hydration, spec §2.2)', () => {
+  it('case-insensitive equality', () => {
+    expect(namesMatch('Black', 'black')).toBe(true);
+  });
+
+  it('mutual substring tolerance', () => {
+    expect(namesMatch('White · Middle', 'white')).toBe(true);
+    expect(namesMatch('white', 'White · Middle')).toBe(true);
+  });
+
+  it('no match', () => {
+    expect(namesMatch('Black', 'Red')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. GPS override precedence (spec §fix.4) — live position ALWAYS wins
 // ---------------------------------------------------------------------------
 
 describe('resolveFcbSource — live GPS bypasses the anchor entirely', () => {

@@ -58,7 +58,7 @@ import { usePhysicsPlaysLike } from "@/lib/caddie/use-physics-plays-like";
 import { playsTileDisplay, ELEV_DEADBAND_FT } from "@/lib/caddie/plays-tile";
 import { playsBasis } from "@/lib/caddie/plays-basis";
 import { yardsDistance } from "@/lib/course/hole-projection";
-import { applyTeeAnchors, resolveFcbSource } from "@/lib/course/tee-anchor";
+import { applyTeeAnchors, resolveFcbSource, namesMatch } from "@/lib/course/tee-anchor";
 import { resolveHoleYardage, yardageCaption } from "@/lib/caddie/hole-yardage";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
@@ -341,6 +341,7 @@ export default function RoundPage() {
     allCoords: mapCoords,
     courseCenter: mapCenter,
     loaded: mapCoordsLoaded,
+    courseHoles,
   } = useHoleCoordinates(mappedCourse?.id ?? null);
 
   // Anchor "from the tee" geometry to the PLAYER'S selected tee, not an
@@ -1188,13 +1189,24 @@ export default function RoundPage() {
   ];
   // Selected-tee geometry yards — the resolved (named/card/ordinal) tee box's
   // straight-line distance to the green, from the SAME anchor the F/C/B tiles
-  // use (fcbFromTee). Slice 2 (specs/caddie-yardage-gps-selected-tee-plan.md)
-  // adds a real per-tee CARD source (`selectedTeeCardYards`, mapped
-  // `CourseData.holes[].yardages[teeName]`) that outranks this geometry —
-  // until then it's honestly null and the resolver falls through to geometry
-  // or the round's own card snapshot.
+  // use (fcbFromTee).
   const selectedTeeGeomYards = fcbFromTee?.center ?? null;
-  const selectedTeeCardYards: number | null = null;
+  // Selected-tee CARD yards — the mapped course's real per-tee scorecard
+  // yardage (CourseData.holes[].yardages, keyed by tee name), matched against
+  // the round's teeName the same tolerant way tee-anchor matches OSM tags
+  // (spec §2.2). This is what resolves Bethpage hole 3 to 231 for "Black" —
+  // independent of `round.holes[i].yards`, which the standard round/new flow
+  // never populates. Honestly null when the course isn't mapped, has no
+  // recorded per-tee card, or the round has no selected tee.
+  const selectedTeeCardYards = (() => {
+    if (!round?.teeName) return null;
+    const holeData = courseHoles.find((h) => h.number === currentHole);
+    if (!holeData) return null;
+    for (const [key, yards] of Object.entries(holeData.yardages)) {
+      if (namesMatch(key, round.teeName)) return yards;
+    }
+    return null;
+  })();
   // ONE shared resolver (spec §2.1) — GPS-to-green (live, gated on-hole) beats
   // the selected tee's card yards, beats its mapped geometry, beats a bare
   // scorecard snapshot, beats honest null. Every caddie/grounding surface

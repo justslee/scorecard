@@ -15,16 +15,23 @@ import { fetchMappedCourse, mappedCourseToCoordinates } from "@/lib/courses/mapp
 import { getCourseCoordinates } from "@/lib/course/course-coordinates";
 import { attachTeeBoxes } from "@/lib/course/tee-anchor";
 import type { CourseCoordinates } from "@/lib/golf-api";
+import type { HoleData } from "@/lib/courses/types";
 
 export interface HoleCoordinatesState {
   allCoords: CourseCoordinates[];
   courseCenter: { lat: number; lng: number } | null;
   loaded: boolean;
+  /** The mapped course's per-hole data, including `yardages` (tee name ->
+   *  card yardage) — surfaced so callers can hydrate a golfer's SELECTED tee
+   *  card yardage (specs/caddie-yardage-gps-selected-tee-plan.md §2.2), not
+   *  just geometry. Empty until loaded. */
+  courseHoles: HoleData[];
 }
 
 export function useHoleCoordinates(courseId: string | null): HoleCoordinatesState {
   const [allCoords, setAllCoords] = useState<CourseCoordinates[]>([]);
   const [courseCenter, setCourseCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [courseHoles, setCourseHoles] = useState<HoleData[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -34,6 +41,7 @@ export function useHoleCoordinates(courseId: string | null): HoleCoordinatesStat
         if (!cancelled) {
           setAllCoords([]);
           setCourseCenter(null);
+          setCourseHoles([]);
           setLoaded(false);
         }
         return;
@@ -52,6 +60,7 @@ export function useHoleCoordinates(courseId: string | null): HoleCoordinatesStat
           ? attachTeeBoxes(coords, course)
           : mappedCourseToCoordinates(course);
         setAllCoords(effective);
+        setCourseHoles(course.holes ?? []);
         if (course.location) setCourseCenter(course.location);
         setLoaded(true);
       } catch {
@@ -64,5 +73,5 @@ export function useHoleCoordinates(courseId: string | null): HoleCoordinatesStat
     };
   }, [courseId]);
 
-  return { allCoords, courseCenter, loaded };
+  return { allCoords, courseCenter, loaded, courseHoles };
 }

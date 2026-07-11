@@ -21,6 +21,8 @@ import PlayerAutocomplete from "@/components/PlayerAutocomplete";
 import { takeCourseForRound } from "@/lib/course-handoff";
 import { anchorFromSelectedCourse } from "@/lib/round-anchor";
 import { haptic } from "@/lib/haptics";
+import { fetchMappedCourse } from "@/lib/courses/mapped-course-api";
+import { namesMatch } from "@/lib/course/tee-anchor";
 
 // ---------------------------------------------------------------------------
 // Local types
@@ -348,12 +350,42 @@ export default function RoundSetupPage() {
     // Build default course hole layout (scoring-course data; GolfAPI holes added later).
     const courseName = selectedCourse?.name ?? "New Round";
     const defaultCourse = createDefaultCourse(courseName);
-    const holeList: HoleInfo[] =
+    let holeList: HoleInfo[] =
       holes === 9 ? defaultCourse.holes.slice(0, 9) : defaultCourse.holes;
     // For the backend courseId, use a stable slug from GolfAPI id or a generated UUID.
     const courseId = selectedCourse?.id ? String(selectedCourse.id) : defaultCourse.id;
     const teeLabel =
       TEE_OPTIONS.find((t) => t.id === tee)?.l.split(" · ")[0] ?? "White";
+
+    // Snapshot the golfer's SELECTED tee's real per-hole card yardages when
+    // the course is mapped (specs/caddie-yardage-gps-selected-tee-plan.md
+    // §2.2) — mirrors the tournament flow's `selectedTee.holes` snapshot
+    // (NewTournamentRoundClient.tsx). This is what lets the caddie ground on
+    // the golfer's actual tee ("231 yds · black tees") instead of the pars-
+    // only default. Never blocks tee-off: an unmapped course, a fetch
+    // failure, or no recorded yardage for this tee just keeps the honest
+    // pars-only default (no fabricated yards).
+    if (selectedCourse?.source === "mapped" && selectedCourse.id) {
+      try {
+        const mapped = await fetchMappedCourse(String(selectedCourse.id));
+        const snapshot: HoleInfo[] = mapped.holes
+          .filter((h) => holes !== 9 || h.number <= 9)
+          .sort((a, b) => a.number - b.number)
+          .map((h) => {
+            let yards: number | undefined;
+            for (const [key, y] of Object.entries(h.yardages)) {
+              if (namesMatch(key, teeLabel)) {
+                yards = y;
+                break;
+              }
+            }
+            return { number: h.number, par: h.par, yards, handicap: h.handicap };
+          });
+        if (snapshot.length > 0) holeList = snapshot;
+      } catch {
+        // Offline / fetch failure — keep the pars-only default.
+      }
+    }
 
     // Build game objects for the round (sent to backend; backend assigns roundId).
     // One per selected format, each with its own stake.
@@ -380,6 +412,7 @@ export default function RoundSetupPage() {
         // Course anchor: lets the round screen render the satellite map directly
         // instead of re-resolving the course by name (paper-drawing fallback bug).
         ...anchorFromSelectedCourse(selectedCourse),
+        teeId: tee,
         teeName: teeLabel,
         players: deduped,
         ownerPlayerId,
@@ -413,6 +446,7 @@ export default function RoundSetupPage() {
         id: fallbackId,
         courseId,
         courseName,
+        teeId: tee,
         teeName: teeLabel,
         date: new Date().toISOString(),
         players: deduped,
