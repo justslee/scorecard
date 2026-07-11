@@ -3,6 +3,40 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-11 — builder: tournament-leaderboard-motion-haptics DONE, on integration/next (commit 32c0ab8)
+
+Item: `tournament-leaderboard-motion-haptics` — frontend-only, presentation-only
+motion/haptics slice for `frontend/src/app/tournament/[id]/TournamentPageClient.tsx`
+(owner asked "where can we add animations and haptics"). NOTICEABLE (visible
+motion + haptics on the tournament screens the owner can feel on TestFlight).
+No standings/settlement math touched — sort logic and
+`computeTournamentSettlement` are hoisted verbatim (byte-for-byte), not changed.
+
+Implemented all 5 items from the plan:
+1. Leaderboard rows FLIP to new rank (`layout="position"`, not full `layout` —
+   avoids breaking the sticky rank/player/total columns).
+2. Haptics fire ONLY on real order-signature changes (never per-render, tab
+   switch, or mode toggle — guarded via a ref + derived signature string dep):
+   light on a plain move up, medium (capped at one) on a detected crossing
+   between two players, success once when the leader changes.
+3. Leader callout crossfades avatar+name on a new leader (AnimatePresence,
+   opacity-only, 0.35s ease, no bounce).
+4. Tab bar active-fill is now a shared `layoutId` pill (same pattern as
+   `LeaderboardSheet`'s `lb-tab-underline`) sliding between tabs; haptic light
+   only when switching to a different tab.
+5. Settle-up transfer lines stagger in (staggerChildren 0.06, opacity+y6) with
+   one haptic light the first time the list appears (ref-guarded, not per-render).
+
+`useReducedMotion()` disables all visual motion (FLIP, crossfade, pill slide,
+stagger) under `prefers-reduced-motion`; haptics still fire (non-visual).
+
+Gates (all green): `npm run lint` clean, `tsc --noEmit` clean, voice-tests
+smoke 277/277, `vitest run` 2038/2038 (99 files), `next build` succeeds.
+
+Files touched: `frontend/src/app/tournament/[id]/TournamentPageClient.tsx` only.
+Pushed to `integration/next` at `32c0ab8`. No PR opened (bundle PR owned by
+eng-lead).
+
 ## 2026-07-11 — release-manager: Bundle #132 SHIPPED to main (owner "Ship it")
 
 Milestone bundle (62 commits) approved by the owner and merged to `main`.
