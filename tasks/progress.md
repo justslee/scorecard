@@ -52,6 +52,47 @@ engine can't settle for more than 2 (wolf: not-exactly-4).
   plan targeted, so I left it untouched and worked around it in the new test — flagging in case
   it's worth its own follow-up plan.
 
+## tournament-settlement-honesty — reviewer BLOCKING fixes, builder (2026-07-11, NOTICEABLE — wolf no longer shows a stake)
+Iterated on @1a37556 per adversarial-review findings on `integration/next` @2e17261 (off 2a14a89).
+The reviewer's flagged wolf follow-up (see prior entry above) turned out to be a real money bug,
+not just a note: `computeWolf` is NOT zero-sum — lone mode credits only the current wolf player
+(±pointValue) and debits no one; partner mode credits only the winning pair and debits no one. A
+lone-wolf win with pointValue:2 returned `{p1:6}` with zero debits — money invented from nothing.
+The old "displayed==settled" wolf test hid this by hand-balancing a win+loss pair across 2 holes
+so sumNet happened to net to 0.
+- **Fix (plan's escape hatch, not a re-plan):** removed `'wolf'` from `SETTLEABLE_FORMATS`
+  (`settlement.ts`) and deleted the dead wolf branch + its false "already zero-sum" comment.
+  `STAKE_GAME_IDS` is derived from `SETTLEABLE_FORMATS`, so it now resolves to exactly
+  `{skins, match, nassau}` — no hand-maintenance, confirmed by the updated invariant test.
+- Kept `ROSTER_REQUIREMENT.wolf = 4` — the wolf ENGINE still drops players for rosters != 4 on the
+  points leaderboard (games.ts:806-809), so the requirement is now a display-honesty guard, not a
+  money guard. Wolf renders the same honest no-stake note as any other non-settleable format.
+- Updated the wolf tests to the new honest behavior (not weakened — converted to assert honest-
+  empty, same as the stableford tests): `computeGameNetWinnings` returns `{}` for a wolf game with
+  pointValue, `computeNetSettlement(...).isEmpty === true`, `hasMoneyGames === false`.
+- **New insurance (reviewer's non-blocking suggestion, adopted):** a property test in
+  `settlement.test.ts` iterates `SETTLEABLE_FORMATS` (the exhaustive set, not a hand-picked
+  subset) and asserts zero-sum on a REAL decided multi-hole round for every member — this is what
+  would have caught the wolf bug at review time instead of adversarial review catching it after.
+- **Copy fixes (designer BLOCKING):** GamePicker's no-stake note said "Points game — no money
+  settlement" but rendered for stroke/vegas/bb/scr too (none are points games; stroke is the
+  `/round/new` default) — replaced with format-agnostic "No money on this one — nothing to
+  settle." (matches the existing "No money games in this tournament." idiom); added a stroke test.
+  Wolf's tag said "3–4 ply" contradicting its own "needs a foursome" disabled copy — now "Foursome".
+- **NIT fix (sunlight legibility, adopted):** GamePicker no longer dims the entire disabled card
+  (was `opacity: 0.5` on everything including the sub-copy explaining WHY it's disabled); only
+  border/background/check-icon dim now, label + sub-copy stay full opacity.
+- Files: `frontend/src/lib/settlement.ts`, `frontend/src/lib/settlement.test.ts`,
+  `frontend/src/lib/round-games.ts`, `frontend/src/lib/round-games.test.ts`,
+  `frontend/src/components/GamePicker.tsx`, `frontend/src/components/GamePicker.test.tsx`.
+- Gates: lint clean, `tsc --noEmit` clean, voice-tests 278/278, `vitest run` 2218/2218 (109 files;
+  85/85 across the 3 touched test files), `npm run build` clean, backend `ruff check .` clean (no
+  backend files touched). No local Postgres used.
+- Confirmed for eng-lead: `STAKE_GAME_IDS === {skins, match, nassau}`; wolf now returns honestly-
+  empty from `computeGameNetWinnings`/`computeNetSettlement`/`hasMoneyGames`. True zero-sum wolf
+  transfers remain a deferred follow-up per the plan (owner-shaped: needs a point-transfer redesign
+  for lone/partner modes, not just a display fix).
+
 ## tournament-live-leaderboard — DONE, builder (2026-07-11, NOTICEABLE — scores now catch up on foreground)
 Implemented specs/tournament-live-leaderboard-plan.md exactly on `integration/next` @dc542df
 (off 5bfcbb2). When the tournament page regains foreground/visibility, it silently refetches
