@@ -12451,3 +12451,28 @@ zero frontend files in commit fb5388d — no orb-cycle collision). Adapter ships
 UNSEEDED (no NY-metro Quick18 course exists — honest, no fabricated row); ready for H6 flywheel.
 Effectively SILENT (0 visible courses). Rides bundle PR #132; NO owner ping (parent orchestrates
 ship-it across both parallel cycles).
+
+## RESOLVED (backend gate RED on #132 — root cause: time-of-day flake, NOT H1/H2)
+Backend gate on bundle #132 was red. Reproduced locally with the EXACT CI Postgres
+(postgis/postgis:16-3.4, DATABASE_URL=...scorecard_test, `uv run pytest`): the ONLY
+failures were 5 tests in tests/test_rehearsal_call.py (dial-safety, not_enabled x2,
+full-simulator, hostile-body) — all returning status="refused". The DB-backed
+integration tests + both new adapter suites (clubprophet H1 / quick18 H2) PASSED.
+ROOT CAUSE (confirmed, not the prompt's live-HTTP hypothesis): rehearsal_call() ran
+the real compliance calling-hours gate with now=None; it was 22:04 ET, outside the
+8am–9pm ET window → check_call_allowed fails closed ("outside 8am–9pm local calling
+hours at the course") → the 5 past-the-gate tests flaked. Latent since S3 caller
+endpoint (7cb6eed); surfaced now only because #132's CI ran at night. H1/H2 landing
+was coincidental — zero adapter/seed involvement (ADAPTERS has all 5 engines; 30
+capability rows incl. the clubprophet Harbor Links seed; H1/H2 own suites green).
+FIX (42435f7): added `_rehearsal_call_now_override` clock seam (None in prod),
+mirroring the blessed `_availability_call_now_override` in test_availability_call_route.py;
+test fixture pins noon ET. Real compliance gate still runs (no test weakened);
+calling-hours refusal still covered by test_compliance_refusal_short_circuits. Local
+repro-green at 22:04 ET: full suite 2140 passed, ruff clean.
+
+## AWAITING (backend-gate-fix): reviewer (fresh) + qa on 42435f7 (head of integration/next).
+  reviewer SHIP + qa green (repro-green local Postgres + CI Backend state:SUCCESS on 42435f7,
+  Frontend still green) → update PR #132 checklist (SILENT — CI/test hygiene, 0 courses), done.
+  BLOCKING → re-fix on integration/next, re-review. Reconcile from branch (git log
+  origin/integration/next), do NOT rebuild. Local Postgres container `pg_ci_repro` is up.
