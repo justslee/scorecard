@@ -3,7 +3,45 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING (cycle 85 — builder on orb-on-course-detail)
+## 2026-07-11 — builder: orb-on-course-detail DONE, on integration/next (commit 5a29ebb)
+
+Item: show + wire the caddie orb on course-detail pages (`/courses/[id]`) as a
+functional general-converse mic — closes the omnipresence gap the audit found.
+NOTICEABLE (orb now visible + usable on course-detail pages on TestFlight).
+
+Implemented exactly the eng-lead plan below (Option B — scope via the context
+SIGNAL, not pathname coupling in the host):
+- `looperContextForPath` (frontend/src/lib/looper-bus.ts) scopes `"courses"`
+  to the LIST route only (`/courses`, trailing-slash tolerant); any deeper
+  `/courses/[id]` path now resolves to `"general"`.
+- `shouldShowCaddieOrb` (frontend/src/components/nav/shouldShowCaddieOrb.ts)
+  adds `/courses/` to `SHOW_PREFIXES` so the orb shows on detail pages.
+- `CaddieOrbSheet.tsx`'s legacy-courses-floor guard (line ~127) is UNCHANGED
+  code — only its comment was updated to document it now scopes to the list
+  page only (detail pages fall through to the general converse sheet).
+- Added a regression test in `CaddieOrbSheet.test.tsx` that drives the REAL
+  `looperContextForPath("/courses/pebble-beach")` through `openLooper` and
+  asserts the sheet opens (`Close Looper` present) — would go RED if someone
+  reverts detail pages back to context `"courses"` (dead-mic regression).
+- Updated `looper-bus.test.ts` and `shouldShowCaddieOrb.test.ts` expectations
+  to match (no assertions weakened — new/changed cases reflect the new,
+  intended routing, and the existing "legacy courses floor" test is
+  unchanged and still passes, documenting list-page behavior).
+
+Gates (all green): `npm run lint` clean; `npx tsc --noEmit` clean;
+`npx tsx voice-tests/runner.ts --smoke` → pass=277 fail=0; `npx vitest run`
+→ 100 files / 2055 tests passed; `npm run build` → compiled + all routes
+generated successfully (including `/courses/[id]`).
+
+Files: frontend/src/lib/looper-bus.ts(+test),
+frontend/src/components/nav/shouldShowCaddieOrb.ts(+test),
+frontend/src/components/CaddieOrbSheet.tsx(comment only)+test.
+
+NOTICEABLE — rides the open bundle PR (#133) toward the next owner review;
+no separate ping (per notification policy, only ping on approval-request /
+massive-bundle / blocker, not routine per-item completion).
+
+## (superseded) cycle 85 planning note — orb-on-course-detail
 Plan-lite DONE (eng-lead traced the guard). Dispatching builder to implement on integration/next.
 DESIGN DECISION (Option B — scope the guard via the context SIGNAL, not pathname coupling):
 - The legacy-courses-floor guard (CaddieOrbSheet.tsx:127 `if(!ctx && detail.context==="courses") return`)
