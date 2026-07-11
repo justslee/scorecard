@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { T } from '@/components/yardage/tokens';
-import { shouldShowCaddieOrb } from '@/components/nav/shouldShowCaddieOrb';
+import { shouldShowCaddieOrb, isSetupCtaRoute } from '@/components/nav/shouldShowCaddieOrb';
 import { shouldShowTabBar } from '@/components/nav/shouldShowTabBar';
 import { openLooper, looperContextForPath } from '@/lib/looper-bus';
 import { haptic } from '@/lib/haptics';
@@ -29,6 +29,11 @@ const ORB_DRIFT_PX = 12;
 
 /** Extra clearance above the safe-area inset when the floating tab island is on screen. */
 const ISLAND_CLEARANCE_PX = 74;
+/** Extra clearance above the safe-area inset on setup pages with a full-width
+ *  sticky bottom CTA (`/round/new`'s "Tee off", `/tournament/new`'s "Create
+ *  tournament") — neither shows the tab island, so without this the orb
+ *  would sit on top of the CTA. Exact px is designer-tuned later (S5). */
+const STICKY_CTA_CLEARANCE_PX = 84;
 
 const INTRO_SEEN_KEY = 'looper.caddieOrbIntroSeen';
 
@@ -58,7 +63,14 @@ function CaddieMark() {
 export default function CaddieOrb() {
   const pathname = usePathname();
   const show = shouldShowCaddieOrb(pathname);
-  const clearance = shouldShowTabBar(pathname) ? ISLAND_CLEARANCE_PX : 0;
+  // Tab island beats setup-CTA clearance when (hypothetically) both apply —
+  // they don't today (setup pages never show the tab bar), but the priority
+  // is explicit rather than accidental.
+  const clearance = shouldShowTabBar(pathname)
+    ? ISLAND_CLEARANCE_PX
+    : isSetupCtaRoute(pathname)
+      ? STICKY_CTA_CLEARANCE_PX
+      : 0;
 
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heldFired = useRef(false);

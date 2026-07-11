@@ -15,6 +15,7 @@ import { listFavorites } from "@/lib/course-favorites";
 import { getRecentCourses } from "@/lib/golf-api";
 import VoiceRoundSetupRealtime from "@/components/VoiceRoundSetupRealtime";
 import { warmSession } from "@/lib/voice/warm-session";
+import { useCaddiePageContext } from "@/hooks/useCaddiePageContext";
 import CourseSearch from "@/components/CourseSearch";
 import PlayerAutocomplete from "@/components/PlayerAutocomplete";
 import { takeCourseForRound } from "@/lib/course-handoff";
@@ -215,6 +216,17 @@ export default function RoundSetupPage() {
       warmSession.teardown();
     };
   }, []);
+
+  // Voice — through the omnipresent caddie-orb contract (specs/omnipresent-
+  // caddie-orb-plan.md §4). This page owns a mature conversational voice
+  // surface already (VoiceRoundSetupRealtime); the orb just opens it — zero
+  // new parse code. Both tap and hold funnel into the SAME flow the bespoke
+  // mic used to open (removed below — one standardized voice invocation).
+  useCaddiePageContext({
+    id: "round-setup",
+    kind: "surface",
+    summon: () => setShowVoiceSetup(true),
+  });
 
   // --- Voice setup callback ---
   const handleVoiceSetup = useCallback(
@@ -1059,7 +1071,16 @@ export default function RoundSetupPage() {
           <div style={{ height: 90 }} />
         </div>
 
-        {/* ── Sticky footer ── */}
+        {/* ── Sticky footer ──
+            One-mic resolution (specs/omnipresent-caddie-orb-plan.md §S3): the
+            bespoke "Speak" mic that used to live here was a second, competing
+            voice invocation alongside the omnipresent orb (which now summons
+            this exact same VoiceRoundSetupRealtime flow via its "round-setup"
+            surface registration above). Removed — the orb is the ONE
+            standardized invocation everywhere (memory: never bespoke mic
+            buttons). The empty-state "Say something else…" chip above stays:
+            it's a contextual text shortcut into the same flow, not a second
+            mic control. */}
         <div
           style={{
             padding: "10px 22px 26px",
@@ -1072,67 +1093,6 @@ export default function RoundSetupPage() {
             bottom: 0,
           }}
         >
-          {/* Mic button — opens VoiceRoundSetup. order:2 places it on the RIGHT
-              (after the Tee off CTA) while keeping DOM/reading order sensible. */}
-          <div
-            style={{
-              order: 2,
-              flexShrink: 0,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 3,
-            }}
-          >
-            <button
-              onClick={() => setShowVoiceSetup(true)}
-              // Belt alongside the page-wide first-interaction listener above —
-              // guarantees the mic's own tap always at least attempts a warm
-              // preload even if some other trigger got swallowed.
-              onPointerDown={() => warmSession.warm({ kind: "setup", personalityId: "classic" })}
-              style={{
-                position: "relative",
-                width: 56,
-                height: 56,
-                borderRadius: 99,
-                border: "none",
-                background: T.ink,
-                color: T.paper,
-                // Accent ring for visual weight
-                boxShadow: `0 0 0 3px ${accent}33, 0 8px 20px rgba(26,42,26,0.22)`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-              }}
-              aria-label="Set up round by voice"
-            >
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-              >
-                <rect x="9" y="3" width="6" height="12" rx="3" />
-                <path d="M5 11a7 7 0 0 0 14 0" />
-                <path d="M12 18v3" />
-              </svg>
-            </button>
-            <div
-              style={{
-                fontFamily: T.mono,
-                fontSize: 7.5,
-                letterSpacing: 1.3,
-                color: T.pencilSoft,
-                textTransform: "uppercase",
-              }}
-            >
-              Speak
-            </div>
-          </div>
-
           {/* Tee off button + disabled hint */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
             <button

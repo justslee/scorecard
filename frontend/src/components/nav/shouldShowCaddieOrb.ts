@@ -2,17 +2,20 @@
 // §1). Sibling of shouldShowTabBar.ts — reuses the same trailing-slash
 // normalization so the two rules read consistently.
 //
-// S1 is a PURE PLACEMENT MIGRATION: the orb only fires the existing
-// `openLooper` bus event with `looperContextForPath` — it has no per-page
-// context wiring yet (that lands in S2/S3). So a route may only SHOW here if
-// (a) the context it fires has a live listener today, and (b) it doesn't
-// collide with a sticky CTA or an existing bespoke voice control on that page.
+// S3 status: the orb now has LIVE page contexts on `/tournament/new`
+// (kind:"task", tournament-prefill) and `/round/new` (kind:"surface", opens
+// the existing VoiceRoundSetupRealtime) — both setup pages SHOW. The
+// one-mic collision that used to gate `/round/new` off is resolved: its
+// bespoke sticky-footer mic was removed (app/round/new/page.tsx), the orb IS
+// the invocation there now. The sticky-CTA overlap on both setup pages is
+// solved by orb clearance (CaddieOrb.tsx's `STICKY_CTA_CLEARANCE_PX`, driven
+// by `isSetupCtaRoute` below), not by hiding the orb.
 //
-// Pill/orb interplay: on `/round/[id]` the floating "Ask caddie" pill in
-// RoundPageClient.tsx (~line 2110) IS the caddie invocation for that page —
-// the orb hides there so there is never a second mic on screen. Every other
-// hub/task page shows the orb as usual, EXCEPT the setup pages below, which
-// have their own pre-existing voice control / sticky CTA until S3 unifies them.
+// Pill/orb interplay: on `/round/[id]` (an in-progress round) the floating
+// "Ask caddie" pill in RoundPageClient.tsx (~line 2110) IS the caddie
+// invocation for that page — the orb still hides there so there is never a
+// second mic on screen. `/round/new` (setup, before the pill exists) is
+// carved out of the `/round/` HIDE rule below so it can show.
 import { normalizePath } from './shouldShowTabBar';
 
 // Exact-match SHOW routes.
@@ -30,23 +33,24 @@ const SHOW_EXACT = [
 // `/courses` handling below.
 const SHOW_PREFIXES = ['/players/', '/tournament/'] as const;
 
+/** Setup pages with a full-width sticky bottom CTA the orb must float above
+ *  (see CaddieOrb.tsx's `STICKY_CTA_CLEARANCE_PX`). Exported so the orb's
+ *  clearance logic and this visibility rule share one normalized route list. */
+export function isSetupCtaRoute(pathname: string): boolean {
+  const p = normalizePath(pathname);
+  return p === '/round/new' || p === '/tournament/new';
+}
+
 export function shouldShowCaddieOrb(pathname: string): boolean {
   if (!pathname) return false;
   const p = normalizePath(pathname);
 
-  // Every `/round/*` route hides the orb. `/round/[id]` already has its own
-  // "Ask caddie" pill (see header). `/round/new` has its own bespoke
-  // voice-setup mic (app/round/new/page.tsx ~line 1087,
-  // aria-label="Set up round by voice") AND a sticky "Tee off" CTA — until S3
-  // wires the orb to that same `openVoiceSetup` flow, showing it here would
-  // stack a second, forked mic on top of the existing one.
+  // `/round/new` (setup, its own registered "round-setup" surface) SHOWS;
+  // every other `/round/*` route (an in-progress round) still HIDES — the
+  // "Ask caddie" pill there is the invocation, so this must be checked
+  // BEFORE the broader `/round/` prefix rule below.
+  if (p === '/round/new') return true;
   if (p.startsWith('/round/')) return false;
-
-  // `/tournament/new` has its own sticky "Create tournament" CTA (~line 632)
-  // that the low-right orb would overlap. Checked before the `/tournament/`
-  // prefix below so other tournament detail pages (no sticky footer) still
-  // show normally.
-  if (p === '/tournament/new') return false;
 
   if ((SHOW_EXACT as readonly string[]).includes(p)) return true;
 

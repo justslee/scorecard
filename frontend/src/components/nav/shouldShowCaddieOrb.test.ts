@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldShowCaddieOrb } from './shouldShowCaddieOrb';
+import { shouldShowCaddieOrb, isSetupCtaRoute } from './shouldShowCaddieOrb';
 
 describe('shouldShowCaddieOrb', () => {
   it.each(['/', '/courses', '/players', '/profile', '/tee-time', '/settings'])(
@@ -14,10 +14,13 @@ describe('shouldShowCaddieOrb', () => {
     ['/players/42', true],
     ['/tournament/xyz', true],
     ['/round/abc123', false],
-    // forked mic: /round/new has its own bespoke voice-setup mic + sticky
-    // "Tee off" CTA — deferred to S3, which unifies them
-    ['/round/new', false],
-    ['/tournament/new', false], // sticky "Create tournament" CTA collision
+    // S3: /round/new now has a registered "round-setup" surface (opens the
+    // same VoiceRoundSetupRealtime the removed bespoke mic used to) — SHOWS.
+    ['/round/new', true],
+    ['/round/new/', true],
+    // S3: /tournament/new now has a registered "tournament-setup" task —
+    // SHOWS (sticky-CTA overlap solved by orb clearance, not by hiding it).
+    ['/tournament/new', true],
   ] as const)('dynamic route %s -> %s', (path, expected) => {
     expect(shouldShowCaddieOrb(path)).toBe(expected);
   });
@@ -37,4 +40,20 @@ describe('shouldShowCaddieOrb', () => {
     expect(shouldShowCaddieOrb('/courses/')).toBe(true);
     expect(shouldShowCaddieOrb('/tee-time/')).toBe(true);
   });
+});
+
+describe('isSetupCtaRoute', () => {
+  it.each(['/round/new', '/round/new/', '/tournament/new', '/tournament/new/'])(
+    'returns true for setup CTA route %s',
+    (path) => {
+      expect(isSetupCtaRoute(path)).toBe(true);
+    }
+  );
+
+  it.each(['/round/abc123', '/tournament/xyz', '/', '/courses', ''])(
+    'returns false for non-setup route %s',
+    (path) => {
+      expect(isSetupCtaRoute(path)).toBe(false);
+    }
+  );
 });
