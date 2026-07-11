@@ -13924,3 +13924,7 @@ FOLLOW-UPS (non-blocking, for a later cycle — captured, not shipped this slice
 Bundle now has a TestFlight-NOTICEABLE change (new tournament game picker + activated settlement).
 Opening the fresh bundle PR (integration/next -> main). NOT shipping/pinging — caller handles
 owner approval separately. Next open PR = the bundle; this slice is its first checklist item.
+
+Bundle PR opened: https://github.com/justslee/scorecard/pull/135 (integration/next -> main).
+First checklist item = tournament per-round formats (NOTICEABLE). CI will run on the PR; not
+merging this cycle — caller handles owner approval separately (no ship/ping per brief).
