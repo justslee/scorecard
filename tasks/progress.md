@@ -13821,3 +13821,29 @@ didn't carry as of bundle #133's ship. The call path stays inert only because
 #134 board card for visibility; not a regression from this bundle's own changes (this bundle
 didn't touch `.env` or the voice_booking module), just an observation from the routine
 post-deploy probe.
+
+---
+
+## Cycle 98 — tournament per-round game-format slice (2026-07-11)
+**No preempting owner feedback**: board #134 card has no comments; no owner reply/feedback on
+the shipped v1.1.2 (cards #134/#132 comment threads empty). Only open PRs are unrelated spikes
+(#123/#126/#127). Fresh `integration/next` @ 052f4ff off main 8a33dd0; no open bundle PR yet.
+
+**Slice pulled (highest value/effort)**: per-round game-format selection in the TOURNAMENT
+round-creation flow. Verified gap: `/round/new` has a GamePicker (formats + stakes →
+`round.games`), but `NewTournamentRoundClient.tsx` `handleStartRound` creates tournament rounds
+with NO games. Consequence: (1) the owner's explicit "multi-round where each round is a
+different format" is impossible; (2) the already-built + tested cumulative settlement
+(`computeTournamentSettlement`, settlement.ts) is DEAD UI for tournaments — it reads round.games
+which are never populated. Wiring per-round formats activates both. Reuses proven engine
+(games.ts, settlement.ts already tested). NOTICEABLE (new picker UI + populated settlement).
+Plan: extract game-object construction from round/new into a shared pure helper
+(buildRoundGames) with deterministic unit tests (format map, stakes→pointValue, player
+population, "none" skip), refactor round/new to use it, add the picker to the tournament flow.
+
+## AWAITING — Plan agent (fable) on tournament per-round-format slice
+Waiting on: Plan agent producing specs/tournament-per-round-format-plan.md.
+On return: dispatch builder to implement the plan on integration/next → reviewer (aggregate/
+settlement correctness, no single-round regression) + qa (gates on pushed SHA) + designer
+(BLOCKING, yardage-book calm). Branch state is clean @ 052f4ff; no code written yet, so a
+resume just re-runs Plan. Do NOT re-ship #134.
