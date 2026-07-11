@@ -54,6 +54,51 @@ center orb; a new persistent orb appears bottom-right on most screens) —
 placeholder caddie mark, so designer review still needed before the icon is
 final.
 
+## 2026-07-10 — builder: orb-s1 review fold (reviewer + designer BLOCK) DONE, on integration/next
+
+Folded two BLOCKING findings on `orb-s1-move-and-nav` into the same feature,
+same branch (no new PR): S1 is a pure placement migration with no per-page
+context wiring yet, so a route may only SHOW the orb if its fired context has
+a live listener AND it doesn't collide with an existing sticky CTA / bespoke
+voice control.
+
+`shouldShowCaddieOrb.ts`: removed `/courses/` from `SHOW_PREFIXES` (course
+detail pages have no listener — general `LooperSheet` drops non-general
+contexts — was a dead mic; `/courses` list page still shows). Changed the
+`/round/` guard from `p === '/round/new'` to unconditional `false` for all
+`/round/*` (`/round/new` has its own bespoke voice-setup mic,
+`aria-label="Set up round by voice"`, plus a sticky "Tee off" CTA — the orb
+was forking the mic there). Added an explicit `/tournament/new` early-return
+`false` (sticky "Create tournament" CTA collision) before the `/tournament/`
+prefix check, so other tournament detail pages still show. Removed
+`/round/new` and `/tournament/new` from `SHOW_EXACT` (now dead).
+
+Net SHOW set: `/`, `/courses` (list only), `/players(/*)`, `/profile`,
+`/tee-time`, `/settings`, `/tournament/[id]` (not `/tournament/new`). Net HIDE:
+all `/round/*`, `/tournament/new`, `/courses/[id]`, `/map`, `/sign-in`,
+`/sign-up`, unlisted routes.
+
+`CaddieOrb.tsx`: promoted `CaddieMark` out of placeholder — designer decided
+the serif-italic "L" (Looper's Home identity mark) IS the final caddie mark,
+not a stand-in; removed the `DESIGNER-OWNED`/evolve framing, added
+`transform: translateX(-1px)` optical centering on the italic cap. Added
+`aria-live="polite"` + `role="status"` to the intro caption for screen readers
+(positioning untouched, as accepted).
+
+Updated `shouldShowCaddieOrb.test.ts` to the new SHOW/HIDE set with comments
+explaining the `/round/new` (forked-mic) and `/courses/[id]` (dead-mic)
+deferrals to S2/S3 so the change reads as deliberate. `CaddieOrb.test.tsx`
+(pinned to `/tee-time`, unaffected) verified unchanged and still passing.
+
+Gates: lint clean, `tsc --noEmit` clean, voice-tests smoke 274/274 (parser
+untouched), `next build` clean, targeted vitest (`shouldShowCaddieOrb`,
+`CaddieOrb`, `FloatingTabBar`) 25/25, full `vitest run` 1957/1957 passed (94
+files). Commit `dd4ad35` on `integration/next`, pushed. Classification:
+**noticeable** (orb disappears from `/round/new`, `/tournament/new`, and
+course detail pages vs. the just-shipped S1 build) but net-safety-positive —
+this is the review fold that unblocks that same bundle item, not a new
+feature.
+
 ## 2026-07-10 — builder: tournament-cumulative-settlement DONE, on integration/next
 
 Item: `tournament-cumulative-settlement`. Added `computeTournamentSettlement(rounds)`
