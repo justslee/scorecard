@@ -13563,3 +13563,34 @@ Lesson candidate: version must never sort below the last-shipped; VERSION file i
   backend-only; Backend gate must be SUCCESS on the pushed head for the DB-backed integration tests).
 - SHIP + PASS -> update PR #134 checklist (B1 SILENT/infra, enables NOTICEABLE B2) + progress.
   BLOCKING -> re-dispatch builder. No designer. Do NOT ship/ping this cycle.
+
+## DONE (cycle 96) — course-search B1 /api/courses/in-bounds landed on integration/next (SILENT/infra)
+- Item: course-selection epic Part B, slice B1 = map-search BACKEND. Backend-only; enables the
+  NOTICEABLE B2 map UI (owner's "map based search, markers on just the golf courses") NEXT cycle.
+- Contract as built: GET /api/courses/in-bounds?swLat&swLng&neLat&neLng -> {courses[],degraded,zoomIn}.
+  Three legs: (1) DB ST_MakeEnvelope/ST_Intersects bbox — always runs, honesty floor; (2) OSM fill on
+  0.05deg geo-cells, cold-only, <=4 concurrent, positive-only cache (dedicated in_bounds_search_cache.json)
+  + write-through; (3) merge->dedupe_by_name->attach_stable_ids->cap 40. Area>0.25sqdeg -> zoomIn (no legs).
+  Semantic bbox validation -> 400 (inverted/out-of-range/non-finite/antimeridian).
+- Plan: specs/course-selection-b1-plan.md (fable; saved by lead — plan agent read-only). Builder: c7a3252.
+- Tests RED->GREEN: 18 DB-free unit (test_course_in_bounds.py) incl T6 budget-invariant (spies on
+  Places/GolfAPI/Mapbox raise AssertionError; cold+warm both zero-violation) and T7 degraded-not-empty
+  (OSM raise -> DB pins + degraded:true, not empty/500, nothing cached); + 3 DB-backed integration
+  (test_courses_in_bounds_db.py, run in CI postgis, auto-skip local).
+- Reviewer (fresh, adversarial): SHIP. Traced full reachable surface — budget invariant holds (no
+  Places/GolfAPI/Mapbox reachable, warm=zero external calls), degraded-not-empty + positive-only cache
+  verified, bound SQL params + correct ST_MakeEnvelope arg order (no lat/lng swap), cache-key distinct
+  from _nearby_cache no float aliasing, DB-first dedupe/cap correct, tests not weakened, no security
+  blocker. 2 non-blocking nits (FileSearchCacheStore per-get file-parse latency on a huge cold viewport;
+  FE types unchanged by design).
+- QA: PASS. Local ruff clean, 18 + 2112 non-integration green, 3 DB tests skip cleanly (no container).
+  CI PR #134 head 8b22081 (SHA matches origin/integration/next): Backend gate SUCCESS (runs the postgis
+  integration tests — validates I1-I3), Frontend gate SUCCESS, E2E advisory SUCCESS. No CANCELLED/flake.
+- No designer (backend-only, no UI).
+- PR #134 checklist: B1 added as SILENT/infra item; gates line updated to head 8b22081.
+- Residual risk (honest): silent Overpass empty (timeouts swallowed to [] inside osm._post_with_retry)
+  can't set degraded — mitigated by always-live DB leg + never-negative-cache (retries next request) +
+  write-through flywheel; documented in handler docstring + plan §4. Cold cells beyond cap 4 warm
+  progressively (by design, not degraded). Cell-cache 24h TTL staleness mitigated by always-live DB leg.
+- Did NOT ship/ping (owner chose to keep accumulating bundle #134, not shipping yet). Bundle #134 now:
+  2 NOTICEABLE (A3, caddie reachability) + 1 SILENT (B1). NEXT CYCLE: B2 (the map UI the owner wants to see).
