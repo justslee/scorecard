@@ -13608,3 +13608,12 @@ Lesson candidate: version must never sort below the last-shipped; VERSION file i
 - Plan (fable) -> specs/course-selection-b2-plan.md. On plan return: builder on integration/next,
   then reviewer + qa + designer (BLOCKING, user-facing). Land B2 as NOTICEABLE on #134.
 - Did NOT ship/ping. Silent accumulation on bundle #134.
+
+## UPDATE (cycle 97) — B2 plan (fable) landed: specs/course-selection-b2-plan.md
+- Plan verdict: full-screen map region (not in-sheet overlay) to dodge opaque-frame occlusion;
+  new fetchCoursesInBounds client; pure scout-viewport.ts coordinator (debounce+bbox->cells+
+  covered-skip+abort+gen-guard, unit-tested); pin-payload.ts parity (pin->pinToSearchResult->
+  resultToPayload, byte-identical to list path); CourseScoutMap.tsx (@capacitor/google-maps,
+  MapType.Normal roadmap, onMapReady-gated, ink flag PNG markers, append-only, tap card+Add);
+  toggle in CourseSearch.tsx gated on NEXT_PUBLIC_GOOGLE_MAPS_KEY (no key -> no toggle). Sim
+  verification REQUIRED (§6). Now dispatching builder on integration/next.
