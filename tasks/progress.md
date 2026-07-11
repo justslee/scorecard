@@ -3,6 +3,19 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING — cycle 94 (2026-07-11): course-selection A3 (clarify turn)
+Fresh `integration/next` @72c1016 off main @4bb474e (bundle #133 shipped, TestFlight v1.0.1312).
+No open bundle PR yet. Orb CRUX audited this cycle = FULLY DEPLOYED (all 4 contexts wired; only
+courses-list legacy-bus registration remains, functional + explicitly deferred) → orb DONE, not
+reopened. Pulled the next sequenced slice of the priority-1 course-selection epic: **A3 — clarify
+turn for AMBIGUOUS spoken course names** (builds on A2 shipped @719f16e). resolveSpokenCourse
+already returns `{kind:"ambiguous", candidates}`; A3 wires: `expectReply?` on TaskAck (orb keeps
+mic open), pending-candidate state in tee-time page, follow-up parse ("the Brooklyn one"/ordinal/
+locality → select that candidate → add+select+dispatch). Frontend-only, offline-testable, NOTICEABLE.
+- Plan agent (fable) dispatched → specs/course-selection-a3-plan.md.
+- On resume: reconcile from `git log origin/integration/next`. If plan committed but no builder
+  commit → dispatch builder on the plan. If builder pushed → run reviewer+qa, don't rebuild.
+
 ## caddie-yardage-gps-selected-tee — OWNER P0 bug fix, all 4 slices (2026-07-11) — DONE (on integration/next @2eb7dea, NOTICEABLE)
 Implemented specs/caddie-yardage-gps-selected-tee-plan.md exactly (4 commits, one per slice,
 each pushed independently so nothing was lost on a crash). Fixes the literal owner bug:
