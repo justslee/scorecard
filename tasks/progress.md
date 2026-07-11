@@ -12439,3 +12439,15 @@ across both parallel cycles). Head SHA f0563ca.
 - FOLD LANDED 12404a0: CaddieOrbSheet render-time activeTask now derives from boundId STATE (current in-render) not the one-render-late boundIdRef → tee-time task copy "Where are we playing?" shows on open (was flashing generic "What can I do for you?"); ref-based boundTaskCtx() kept for async/callback paths (correct there). Copy tweak "edit below"→"or fix it in the form" (bottom-sheet spatial cue). +1 regression test asserting the task title renders on the summon render. Gates re-green on head: lint/tsc clean, voice-smoke 274/274, build 19 routes, 38 S2 tests pass. Designer had conditionally approved ("fix item 1, then ready to ship") — fix implemented per their prescribed option (b) + test-guarded, so item is green (no re-dispatch).
 - CYCLE 78 COMPLETE: orb-s2-context-contract-teetime DONE on bundle PR #132 (code de5e44d + fold 12404a0). NOTICEABLE — the wow: speak tee-time prefs to the omnipresent orb → it dispatches the search. Reviewer SHIP, QA all-green on head, Designer APPROVE (post-fold). backlog: orb-s2 → done-on-bundle (persisted), orb-s3 → ready (UNBLOCKED). PR #132 checklist + noticeable-content updated. FRONTEND-ONLY lane, zero backend files touched (backend WIP in tree = parallel clubprophet lane, left untouched). SILENT this cycle per directive — NO ship, NO owner ping; orb-s2's noticeable content now sits on #132 (alongside orb-s1, tournament-settlement, clubprophet-adapter) awaiting the next "ship it".
 - AWAITING CI on PR #132 head 12404a0 → pin Frontend gate to state:SUCCESS on the pushed head (fast ~10s Backend container-init fail = infra flake → rerun; a red Backend from the parallel lane's test_rehearsal_call.py is NOT this frontend lane's — do not block orb-s2 bookkeeping on it, but flag for that lane).
+
+## RESOLVED (teetime H2 quick18)
+Reviewer (fresh, adversarial + /security-review): no High/Medium findings — SSRF guard sound (no
+userinfo/scheme/port/lookalike bypass, curated seed, bad host = zero network), HTML parse not an
+injection/XSS sink (flows only to TeeTimeSlot data fields), no secrets, no new dep, never-raises
+traced. Verdict SHIP; one LOW nit (follow_redirects=True) FOLDED → follow_redirects=False (30x now
+-> None+breaker, more honest re anti-bot). QA: PASS all 5 gates (ruff clean; 36 quick18 tests via
+MockTransport+real fixtures, zero live net; 364 tee-time pass/12 DB-skip; ADAPTERS has quick18;
+zero frontend files in commit fb5388d — no orb-cycle collision). Adapter ships REGISTERED but
+UNSEEDED (no NY-metro Quick18 course exists — honest, no fabricated row); ready for H6 flywheel.
+Effectively SILENT (0 visible courses). Rides bundle PR #132; NO owner ping (parent orchestrates
+ship-it across both parallel cycles).

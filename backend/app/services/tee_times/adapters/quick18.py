@@ -555,8 +555,13 @@ class Quick18Provider(TeeTimeProvider):
 
         url = _searchmatrix_url(host, query_date)
         headers = {"User-Agent": USER_AGENT, "Accept": "text/html"}
+        # follow_redirects=False (defense-in-depth + honesty): the searchmatrix
+        # page answers 200 directly (live-verified). A 30x means the page moved
+        # or an interstitial/anti-bot challenge intervened — NOT availability —
+        # so we let it fall through the non-200 branch to None + breaker rather
+        # than silently chase a redirect off the .quick18.com allowlist.
         async with httpx.AsyncClient(
-            timeout=REQUEST_TIMEOUT_S, transport=self._transport, follow_redirects=True
+            timeout=REQUEST_TIMEOUT_S, transport=self._transport, follow_redirects=False
         ) as client:
             try:
                 resp = await client.get(url, headers=headers)
