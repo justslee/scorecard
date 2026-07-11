@@ -31,9 +31,10 @@ const ISLAND_CLEARANCE_PX = 74;
 
 const INTRO_SEEN_KEY = 'looper.caddieOrbIntroSeen';
 
-// DESIGNER-OWNED: caddie mark — evolve from the L-medallion into the caddie
-// glyph per designer review. Kept as its own sub-component so the mark can
-// be swapped without touching placement/interaction code.
+// Final caddie mark: the serif-italic "L" — Looper's identity mark, already
+// used on Home. This IS the caddie glyph (Looper = caddie), not a
+// placeholder; a new symbol would break identity continuity. Kept as its own
+// sub-component so placement/interaction code can change independently of it.
 function CaddieMark() {
   return (
     <span
@@ -43,6 +44,9 @@ function CaddieMark() {
         fontStyle: 'italic',
         fontSize: 24,
         lineHeight: 1,
+        // Optical centering: the italic serif cap reads slightly right-heavy
+        // in a perfect circle.
+        transform: 'translateX(-1px)',
       }}
     >
       L
@@ -105,6 +109,8 @@ export default function CaddieOrb() {
       <AnimatePresence>
         {showIntro && (
           <motion.div
+            role="status"
+            aria-live="polite"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
