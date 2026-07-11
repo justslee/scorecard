@@ -13617,3 +13617,11 @@ Lesson candidate: version must never sort below the last-shipped; VERSION file i
   MapType.Normal roadmap, onMapReady-gated, ink flag PNG markers, append-only, tap card+Add);
   toggle in CourseSearch.tsx gated on NEXT_PUBLIC_GOOGLE_MAPS_KEY (no key -> no toggle). Sim
   verification REQUIRED (§6). Now dispatching builder on integration/next.
+
+## AWAITING (cycle 97) — builder on B2 map UI (integration/next @ c9ec58d)
+- Builder implementing specs/course-selection-b2-plan.md on integration/next; commits+pushes there.
+- On builder return: reconcile from origin/integration/next (git log, check pushed head), then
+  dispatch reviewer (adversarial: onMapReady gating, abort races, no-reshuffle, identity-parity vs
+  list/voice, budget=only /in-bounds) + qa (lint/tsc/test/voice-smoke/build all SUCCESS on pushed
+  head + sim smoke) + designer (BLOCKING, user-facing yardage-book feel). Fold BLOCKING issues back
+  to builder. Then update PR #134 checklist (B2 = NOTICEABLE) + progress. Do NOT ship/ping.
