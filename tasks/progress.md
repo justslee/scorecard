@@ -3,6 +3,32 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING (cycle 85 — builder on orb-on-course-detail)
+Plan-lite DONE (eng-lead traced the guard). Dispatching builder to implement on integration/next.
+DESIGN DECISION (Option B — scope the guard via the context SIGNAL, not pathname coupling):
+- The legacy-courses-floor guard (CaddieOrbSheet.tsx:127 `if(!ctx && detail.context==="courses") return`)
+  exists so the host does NOT double-handle a summon on the courses LIST page, which owns its own
+  bus listener (app/courses/page.tsx:34 — `if(detail.context!=="courses")return; setVoiceSummoned`).
+  On the list page ctx is null (list uses the bus directly, not the registry) AND detail.context==="courses",
+  so the host bails, letting the list page open its own voice search. Correct, must not break.
+- Root of the dead-mic trap: `looperContextForPath` (looper-bus.ts:19) returns "courses" for ANY
+  /courses prefix — so a detail-page orb would summon context:"courses", hit the guard (ctx null on
+  detail too, no registration), and be SWALLOWED → dead mic.
+- FIX: scope "courses" to the LIST route only in looperContextForPath (`/courses` + trailing-slash →
+  "courses"; `/courses/[id]` → "general"). Now the guard's ONLY trigger fires on the list page only
+  (= "applies to list page only"); detail-page orb summons context:"general" → falls through to case 3
+  → general converse sheet (ask the caddie anything, incl. about this course). No pathname coupling in
+  the host, existing guard test stays valid. NO bespoke course-detail task context this cycle.
+- Also: shouldShowCaddieOrb SHOW `/courses/[id]` (add `/courses/` prefix); update its test (was
+  `/courses/pebble-beach`→false "deferred to S2", now →true). Detail page has NO bespoke mic (grep clean)
+  and its CTA is an in-flow button (not sticky) → no double-mic, no orb/CTA collision.
+- Regression test that would have caught the dead mic (CaddieOrbSheet.test.tsx): feed the REAL
+  looperContextForPath("/courses/[id]") into the host → assert the sheet OPENS (Close Looper present),
+  not swallowed. Goes RED if looperContextForPath reverts detail→"courses". Plus looper-bus + shouldShow tests.
+Files: looper-bus.ts(+test), shouldShowCaddieOrb.ts(+test), CaddieOrbSheet.tsx(guard comment only)+test.
+BLOCKING review → re-dispatch builder. Green+designer-ok → update PR #133 + backlog(TARGETED edit) + progress.
+SILENT — no ship/ping (rides bundle #133). Reconcile from origin on resume.
+
 ## 2026-07-11 — builder: tournament-leaderboard-motion-haptics DONE, on integration/next (commit 32c0ab8)
 
 Item: `tournament-leaderboard-motion-haptics` — frontend-only, presentation-only
