@@ -13169,3 +13169,9 @@ Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). 
 ## Cycle 90 (2026-07-11) — course-selection A0 (stop-the-lie) parallel to yardage fix
 - Yardage P0 fix in flight (round-caddie area). A0 (tee-time voice-parse area) is non-colliding → parallel lane.
 - AWAITING: eng-lead course-selection A0 — extract unresolvedCourseNames in parseTeeTimePrefs; gate dispatch (dispatched=false when a named course is unresolved/missed); honest ack ("I don't know Marine Park — nothing on your list matches"), NO wrong-course dispatch. Marine-Park-from-Pittsburgh fixture RED→GREEN. Ships alone. Rebase-before-push (parallel).
+
+## Cycle 90 (2026-07-11) — course-selection A0 BUILT + pushed (awaiting reviewer)
+- Landed on integration/next @ 3d94d0a (parent 275dee3 = yardage lane's committed slice 1; my commit adds ONLY the 6 tee-time-parse files, zero overlap with the yardage WIP in the shared tree).
+- Built: `unresolvedCourseNames` on the schema; conservative `\b(?:over at|out at|at|on)` capture in parseTeeTimePrefs bounded by the prefs vocabulary + a distinctive-word requirement (no false positives on "at the muni", "on saturday"); LLM-pass dropped names map in too; caddie-task `dispatched=false` whenever a named course is unresolved OR a listed-name miss exists; honest ack names the course. Marine-Park-from-Pittsburgh fixture RED→GREEN (parse + plan) + corpus case seed:teetime:010.
+- Gates GREEN on 3d94d0a (isolated worktree, clean of the yardage WIP): lint, tsc, vitest 47/47, voice-smoke 278/278, next build. NOTICEABLE (stops a wrong-course dispatch).
+- AWAITING: fresh reviewer on the A0 diff (conservative capture / dispatch-gating / pure-offline / voice-tests green). SHIP verdict → update PR #133 checklist + backlog A0-done + progress, confirm strict-green on head. BLOCKING → fold + re-review, rebase-before-push. A1/A2/A3/B remain (A0 only stops the lie; A2 makes it search the right course).
