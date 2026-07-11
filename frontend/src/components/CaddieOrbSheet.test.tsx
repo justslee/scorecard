@@ -126,7 +126,7 @@ vi.mock("@/hooks/useLooperDictation", () => ({
 
 import CaddieOrbSheet from "./CaddieOrbSheet";
 import { talkToCaddie, talkToCaddieStream } from "@/lib/caddie/api";
-import { openLooper } from "@/lib/looper-bus";
+import { openLooper, looperContextForPath } from "@/lib/looper-bus";
 import {
   registerCaddieContext,
   onCaddieOrbState,
@@ -421,6 +421,13 @@ describe("CaddieOrbSheet — legacy courses floor", () => {
       await Promise.resolve();
     });
     expect(screen.queryByLabelText("Close Looper")).toBeNull();
+  });
+
+  it("course-detail summon (real looperContextForPath) opens the general sheet — not swallowed by the legacy courses floor", async () => {
+    render(<CaddieOrbSheet />);
+    const ctx = looperContextForPath("/courses/pebble-beach"); // resolves to "general"
+    act(() => openLooper({ context: ctx, listening: false }));
+    expect(await screen.findByLabelText("Close Looper")).toBeTruthy();
   });
 });
 

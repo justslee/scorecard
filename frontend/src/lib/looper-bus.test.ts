@@ -6,7 +6,9 @@ describe("looperContextForPath", () => {
   it("maps routes to contexts", () => {
     expect(looperContextForPath("/tee-time")).toBe("tee-time");
     expect(looperContextForPath("/courses")).toBe("courses");
-    expect(looperContextForPath("/courses/view")).toBe("courses");
+    expect(looperContextForPath("/courses/")).toBe("courses");
+    expect(looperContextForPath("/courses/view")).toBe("general");
+    expect(looperContextForPath("/courses/pebble-beach")).toBe("general");
     expect(looperContextForPath("/")).toBe("general");
     expect(looperContextForPath("/players")).toBe("general");
     expect(looperContextForPath("/profile")).toBe("general");

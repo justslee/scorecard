@@ -121,9 +121,14 @@ export default function CaddieOrbSheet() {
         return;
       }
 
-      // 2) LEGACY floor — the courses hub still consumes its own bus summons
-      //    (app/courses/page.tsx). Until a future slice migrates it to a
-      //    "courses" surface registration, the host must not double-handle it.
+      // 2) LEGACY floor — the courses LIST page still consumes its own bus
+      //    summons (app/courses/page.tsx). `looperContextForPath` (lib/
+      //    looper-bus.ts) scopes `context: "courses"` to that list route
+      //    only, so this guard now only ever fires there — course DETAIL
+      //    pages summon `context: "general"` and fall through to lane 3
+      //    below (the general converse sheet), not swallowed here. Until a
+      //    future slice migrates the list page to a "courses" surface
+      //    registration, the host must not double-handle its summons.
       if (!ctx && detail.context === "courses") return;
 
       // 3) TASK or CONVERSE or GENERAL — open the sheet, bound to the context.

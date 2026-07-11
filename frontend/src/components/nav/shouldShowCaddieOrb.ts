@@ -29,9 +29,7 @@ const SHOW_EXACT = [
 ] as const;
 
 // Prefix SHOW routes — dynamic detail pages under these hubs also show the orb.
-// NOTE: `/courses/` (detail pages) is deliberately NOT here — see the
-// `/courses` handling below.
-const SHOW_PREFIXES = ['/players/', '/tournament/'] as const;
+const SHOW_PREFIXES = ['/players/', '/tournament/', '/courses/'] as const;
 
 /** Setup pages with a full-width sticky bottom CTA the orb must float above
  *  (see CaddieOrb.tsx's `STICKY_CTA_CLEARANCE_PX`). Exported so the orb's
@@ -56,8 +54,10 @@ export function shouldShowCaddieOrb(pathname: string): boolean {
 
   // `/courses` (the list page, exact match above) has a live `context:
   // "courses"` listener in app/courses/page.tsx. Course DETAIL pages
-  // (`/courses/[id]`) do not — the layout's general LooperSheet drops any
-  // non-general context, so firing there today would be a dead mic. S2's
-  // page-context general fallback restores `/courses/*`; until then, hide.
+  // (`/courses/[id]`, matched via the `/courses/` prefix below) now SHOW
+  // too: `looperContextForPath` (lib/looper-bus.ts) scopes the "courses"
+  // context to the list route only, so a detail-page summon resolves to
+  // "general" and opens the general converse sheet instead of being
+  // swallowed by the host's legacy-courses-floor guard.
   return SHOW_PREFIXES.some((prefix) => p.startsWith(prefix));
 }
