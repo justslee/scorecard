@@ -14,6 +14,8 @@ import type { ParTypeRow, ScoreDistRow, TrendResult } from "@/lib/profile-stats"
 import { derivePersonalBests } from "@/lib/personal-bests";
 import { fetchShotStats, sortClubStats, dispersionLabel, formatClubName } from "@/lib/shot-stats";
 import type { ClubStat } from "@/lib/shot-stats";
+import { buildStatsGroundingBlock } from "@/lib/stats-grounding";
+import { useCaddiePageContext } from "@/hooks/useCaddiePageContext";
 
 // ── Bag club config — ordered for display (matches GolferProfile.clubDistances keys)
 // The caddie (CaddiePanel) normalises these same camelCase keys to short keys
@@ -174,6 +176,9 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<GolferProfile | null>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [loading, setLoading] = useState(true);
+  // Loaded at the top level (not just inside <ShotAnalytics>) so the My Card
+  // caddie converse context (below) can ground on real club distances too.
+  const [clubStats, setClubStats] = useState<ClubStat[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -191,6 +196,36 @@ export default function ProfilePage() {
       .catch((e) => console.error("[profile] load error:", e))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchShotStats()
+      .then((raw) => {
+        if (!cancelled) setClubStats(sortClubStats(raw));
+      })
+      .catch(() => {
+        // Silent fail — no shots logged or not authenticated; stats grounding
+        // just omits club lines (buildStatsGroundingBlock is defensive).
+        if (!cancelled) setClubStats([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Register the My Card converse context (specs/orb-s4-mycard-coaching-plan.md).
+  // Real stats only — buildStatsGroundingBlock is a pure serializer, never
+  // fabricated coaching. Rebuilt every render; the hook delegates through a
+  // ref, so getGrounding always sees the latest rounds/clubStats/profile.
+  useCaddiePageContext({
+    id: "my-card",
+    kind: "converse",
+    copy: {
+      title: "Your card",
+      hint: "Ask about your game — what to work on, trends, your clubs.",
+    },
+    getGrounding: () => buildStatsGroundingBlock(rounds, clubStats, profile),
+  });
 
   // ── Edit state (identity/masthead + handicap only) ─────────────────
   const [editing, setEditing] = useState(false);

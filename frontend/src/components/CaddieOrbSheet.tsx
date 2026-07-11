@@ -157,7 +157,12 @@ export default function CaddieOrbSheet() {
   //    the task fall-through go through this; there is no second copy of the
   //    stream→JSON ladder anywhere. ──
   const runConverse = useCallback(
-    async (gen: number, finalText: string, historyBase: LooperTurn[], opts?: { nudge?: string }) => {
+    async (
+      gen: number,
+      finalText: string,
+      historyBase: LooperTurn[],
+      opts?: { nudge?: string; statsContext?: string | null },
+    ) => {
       streamAbortRef.current?.abort();
       const controller = new AbortController();
       streamAbortRef.current = controller;
@@ -173,10 +178,17 @@ export default function CaddieOrbSheet() {
 
         // 2-tier ladder — stream first; fall to stateless JSON only on a
         // pre-first-byte failure (BeforeFirstByteError). Verbatim from LooperSheet.
+        const statsContext = opts?.statsContext ?? undefined;
         let responseText: string;
         try {
           responseText = await talkToCaddieStream(
-            { transcript: finalText, personality_id: "classic", hole_number: null, conversation_history: history },
+            {
+              transcript: finalText,
+              personality_id: "classic",
+              hole_number: null,
+              conversation_history: history,
+              stats_context: statsContext,
+            },
             { onToken: (delta) => answerBuffer.push(delta), signal: controller.signal },
           );
         } catch (err) {
@@ -188,6 +200,7 @@ export default function CaddieOrbSheet() {
             personality_id: "classic",
             hole_number: null, // off-course — never pretend to be on a hole
             conversation_history: history,
+            stats_context: statsContext,
           });
           responseText = res.response;
         }
@@ -289,7 +302,12 @@ export default function CaddieOrbSheet() {
     }
 
     // ── CONVERSE LANE (general in S2; my-card in S4) ──
-    await runConverse(gen, heard, historyBase);
+    // A registered converse context (e.g. /profile's "my-card") grounds the
+    // reply in the golfer's real stats; captured once at send time (not
+    // per-token) — general lane (no converse ctx) passes nothing, unchanged.
+    const ctx = getCaddieContext();
+    const statsContext = ctx?.kind === "converse" ? ctx.getGrounding() : undefined;
+    await runConverse(gen, heard, historyBase, { statsContext });
   }, [dictation, boundTaskCtx, appendTurn, runConverse]);
 
   micTapRef.current = () => void handleMicTap();

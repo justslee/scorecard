@@ -682,6 +682,10 @@ export async function talkToCaddie(params: {
   handicap?: number;
   current_recommendation?: CaddieRecommendation;
   conversation_history?: VoiceCaddieMessage[];
+  /** Real, pre-serialized stats block for a registered converse context
+   *  (e.g. /profile's "my-card") — omitted from the POST body when
+   *  null/undefined (specs/orb-s4-mycard-coaching-plan.md). */
+  stats_context?: string;
 }): Promise<{ response: string; follow_up?: string }> {
   return postWithTimeout('/caddie/voice', {
     transcript: params.transcript,
@@ -696,6 +700,7 @@ export async function talkToCaddie(params: {
     handicap: params.handicap,
     current_recommendation: params.current_recommendation,
     conversation_history: params.conversation_history || [],
+    ...(params.stats_context ? { stats_context: params.stats_context } : {}),
   }, {
     timeoutMs: VOICE_REPLY_TIMEOUT_MS,
     retries: VOICE_REPLY_RETRIES,
@@ -974,6 +979,10 @@ export async function talkToCaddieStream(
     handicap?: number;
     current_recommendation?: CaddieRecommendation;
     conversation_history?: VoiceCaddieMessage[];
+    /** Real, pre-serialized stats block for a registered converse context
+     *  (e.g. /profile's "my-card") — omitted from the POST body when
+     *  null/undefined (specs/orb-s4-mycard-coaching-plan.md). */
+    stats_context?: string;
   },
   opts: { onToken: (delta: string) => void; onStatus?: (label: string) => void; signal?: AbortSignal },
 ): Promise<string> {
@@ -992,6 +1001,7 @@ export async function talkToCaddieStream(
       handicap: params.handicap,
       current_recommendation: params.current_recommendation,
       conversation_history: params.conversation_history || [],
+      ...(params.stats_context ? { stats_context: params.stats_context } : {}),
     },
     {
       onToken: opts.onToken,
