@@ -97,6 +97,46 @@ _(none yet — the first weekly retro will populate this)_
   gate-on-structured-fields (never scraped output) have held clean since #104. Keep all three
   standing.
 
+## Session lessons (2026-07-11 — retro cycle 78; bundles #128–#133, TestFlight → v1.1.0)
+- **The designer pass is load-bearing, not ceremony — never ship a user-facing slice without
+  it.** This run the designer pass caught real shipped-or-nearly bugs the other gates and
+  review missed: the My Card coaching copy showed a fabricated fallback string, and the new
+  omnipresent orb overlapped sticky CTAs on `/round/new` + `/tournament/new` and stacked on the
+  pre-existing round-setup mic. Voice/type gates + adversarial review are blind to "renders but
+  looks/reads wrong." The one time a user-facing slice merged under a rushed "ship it" without a
+  clean designer pass, it shipped a copy bug (fast-followed). Rule: any orb/CTA/copy/layout
+  change gets a designer review on the live build before it rides a bundle to the owner; a
+  pending designer pass is a blocking item, not a fast-follow you hope to catch later.
+- **DB/route failures only surface in CI — reproduce them with docker Postgres, and don't
+  blame recent changes (or parallelism) for a coincidental flake.** The backend-lane work ran
+  cleanly in parallel with the frontend orb epic; the one scare — #132's Backend gate going red
+  — was NOT the parallelism. It was a latent **time-of-day flake**: `test_rehearsal_call.py`
+  hit the voice-booking calling-hours gate with the real wall clock and failed because CI ran
+  after 9pm ET (the tests had nothing to do with the tee-time adapters landing in the same
+  window). Root cause: agents skip DB/route tests locally (no local Postgres), so these paths
+  ONLY execute in CI — a red backend gate is easy to mis-attribute to whatever just merged.
+  Rule: before blaming a recent change, reproduce with a real Postgres (`postgis/postgis:16-3.4`,
+  run migrations); and any test past a time/clock/env gate MUST pin the seam (see
+  [[calling-hours-test-clock-flake]]), never assert a non-refused outcome on the real clock.
+- **Keep `backlog.json` a legible LIVE queue — status is an enum, ship detail is a record,
+  terminal work is archived.** The backlog rotted to 212 items where whole multi-paragraph
+  ship-reports were stored AS `status` values and ~100 `why` fields had been silently lost to
+  repeated `json.load`/`json.dump` round-trips collapsing duplicate keys (see
+  [[backlog-json-duplicate-keys]]). Long-done work buried the ~50 live items, and shipped work
+  sat mislabeled `ready`. Groomed cycle 78: statuses normalized to a 10-value enum, verbose
+  ship detail moved to a `resolution` field (SHAs/PR#/TestFlight versions preserved), 160
+  terminal items archived to `backlog-archive.json`. Standing hygiene going forward: `status` is
+  one enum token only; ship facts go in `resolution`/`shipped_*`; archive terminal items each
+  cycle instead of letting the record accrete. A backlog you can't read is a backlog nobody
+  re-prioritizes.
+- **Wins to keep:** (1) parallel backend + frontend lanes composed cleanly — the failure was a
+  coincidence, not the model; keep splitting independent backend/frontend work across lanes.
+  (2) CI infra flakes (Postgres "Initialize containers" boot, TestFlight export exit-70) are
+  **retry-not-fix** — tell them apart by tiny duration + the failing step name, re-run, and only
+  ship on `state:SUCCESS` per head SHA ([[ci-backend-container-init-flake]]). (3) Fable for
+  implementation plans + the "every eval check proven RED pre-fix" rule keep paying off — the
+  orb epic's regression guards were proven red under injected regressions before merge.
+
 - **A CANCELLED required gate is NOT a pass — "green" means SUCCESS, not "not-failed."** #118
   (physics engine) merged while the PR-head Backend gate was CANCELLED: the gate check asked
   fail-count==0 AND pending==0, and CANCELLED is a THIRD state that satisfied both (it's not

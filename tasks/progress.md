@@ -3,6 +3,37 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## Cycle 78 RETRO + BACKLOG GROOMING (2026-07-11) — DONE (silent, on integration/next)
+Retrospective over bundles #128–#133 (TestFlight → v1.1.0) + repaired the corrupted backlog.
+- **Grooming:** `backlog.json` was 212 items with ship-reports stuffed into `status`, ~100 lost
+  `why` fields (dup-key collapse), and long-done work burying the live queue. Normalized `status`
+  to a 10-value enum, moved verbose ship detail into a `resolution` field (all SHAs/PR#/TestFlight
+  versions preserved), restored 23 active items' `why` from their surviving `rationale`, and split
+  the file: **52 active** items stay in `backlog.json` (the LIVE queue); **160 terminal** items
+  (shipped-to-main / superseded / wont_do) archived to new **`backlog-archive.json`** (durable
+  record + full prior progress ledger). Validated: 52+160=212, both JSON parse, zero ship SHAs
+  lost (pre/post diff), no terminal status left in active, every active item has a real `why`.
+- **LIVE queue now readable (52 active):** 9 ready · 9 blocked · 10 needs-spec · 7 needs-owner-input
+  · 5 planning · 9 deferred · 3 done-on-bundle (open #133). Top ready/actionable: caddie-hole-
+  strategy-guides (P1, code on main, needs prod live-smoke via SSM + sec review — owner OK'd spend),
+  course-intel-static-persistence (P1 silent, clear owner ask), tournament-per-round-format-course
+  (P3, schema+migration), teetime-h3-teesnap-adapter, teetime-s4f-coverage-flywheel, tournament-
+  live-tracking (P4, backend, staging-testable). Owner-gated: caddie-realtime-conversation (P1 —
+  needs owner on-device C1 verify → flag flip, then a full opus plan), bethpage-7-11-geometry-audit
+  (decision needed), rotate-clerk-sk + clerk-native-applications (owner dashboard actions),
+  green-reading-license + social-friend-graph (product decisions). Blocked: search-speed-and-golfapi-
+  verify (P1, universe half blocked on owner GolfAPI 401 key fix), course-location-disambiguation
+  (on course-search-db epic), social-phone/push (on friend-graph).
+- **Lessons captured** → `tasks/lessons.md` (cycle-78 block): designer pass is load-bearing (caught
+  My Card copy + orb/CTA overlaps; the one rushed skip shipped a bug); DB/route failures only show
+  in CI (reproduce with docker Postgres — #132's red backend gate was a coincidental calling-hours
+  time-of-day flake, NOT the parallel lanes); backlog hygiene (status=enum, ship detail=resolution,
+  archive terminal). Memory `backlog-json-duplicate-keys` updated → trap RESOLVED (file de-duplicated,
+  now canonical). Other run memories verified accurate (ci-backend-container-init-flake, calling-
+  hours-test-clock-flake, omnipresent-caddie-orb, ship-gate-verification, fable-for-plan-agents).
+- Backlog files are not imported by the app (no gate run needed); `git diff --stat` + JSON validation
+  clean. SILENT — no ship, no owner ping.
+
 ## AWAITING (cycle 85 — CI strict-green on head 65c2932)
 All work + bookkeeping landed @65c2932 (pushed). Reviewer SHIP, designer PASS. AWAITING: PR #133 CI —
 Frontend gate + Backend gate must BOTH show state:SUCCESS on head 65c2932 (pending==0 AND no cancel/skip).
