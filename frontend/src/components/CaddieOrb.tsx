@@ -201,10 +201,23 @@ export default function CaddieOrb() {
           width: 54,
           height: 54,
           borderRadius: 999,
-          background: T.ink,
+          // S5 resting-depth/glow treatment (owner feedback): a subtle radial
+          // ink gradient + a layered shadow stack read as a raised dome
+          // instead of a flat disc. The ambient halo is ONE static layer in
+          // this shadow list (no extra DOM, no animation) — it must NOT
+          // pulse, since a breathing glow reads as a SaaS "AI thinking"
+          // indicator, which NORTHSTAR rules out. State-change motion stays
+          // owned entirely by the `confirming` scale pulse above; there is
+          // nothing here to gate on prefers-reduced-motion.
+          background: `radial-gradient(circle at 32% 26%, ${T.inkSoft} 0%, ${T.ink} 62%)`,
           color: T.paper,
           border: `1px solid ${T.hairline}`,
-          boxShadow: '0 6px 18px rgba(26,42,26,0.28), 0 1px 0 rgba(255,255,255,0.25) inset',
+          boxShadow: [
+            '0 6px 18px rgba(26,42,26,0.28)',           // unchanged — elevation off the page
+            '0 0 16px rgba(244,241,234,0.12)',          // ambient halo — T.paper @ 12%, 0 spread (invisible on paper, a soft aura over dark map surfaces)
+            'inset 0 1px 1px rgba(244,241,234,0.35)',   // paper-toned top rim highlight (was pure white)
+            'inset 0 -2px 3px rgba(0,0,0,0.28)',        // bottom inner shadow — completes the raised-dome read
+          ].join(', '),
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
