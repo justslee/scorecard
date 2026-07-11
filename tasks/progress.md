@@ -3,6 +3,52 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## tournament-per-round-format — DONE, builder (2026-07-11, NOTICEABLE — new picker UI + populated settlement)
+Implemented specs/tournament-per-round-format-plan.md exactly on `integration/next` @5bfcbb2
+(off a6c515c). Lets the golfer pick a game format + stake per TOURNAMENT round (not just a
+single-round-wide setting), so each round in a tournament can play a different format AND the
+already-tested-but-dormant `computeTournamentSettlement` (frontend/src/lib/settlement.ts) gets
+real data for the first time.
+- New `frontend/src/lib/round-games.ts` — pure module: `GameId`/`GameOption`/`GAME_OPTIONS`/
+  `GAME_ID_TO_FORMAT` moved verbatim out of `round/new/page.tsx`, plus `TOURNAMENT_GAME_IDS`/
+  `TOURNAMENT_GAME_OPTIONS` (only none/skins/match/nassau/stableford — team formats and wolf/bbb/
+  quota/stroke intentionally excluded per plan §5, no team-setup UI exists yet) and
+  `buildRoundGames(selected, playerIds, newId)` — the exact stake-parse/format-map semantics from
+  the old inline block, with an injectable id generator (wrapper arrow, never unbound
+  `crypto.randomUUID`) so the full `Game[]` shape is asserted in tests.
+- New `frontend/src/lib/round-games.test.ts` — 9 vitest cases (mapping table, stroke/none/quota
+  → nothing, stake parsing incl. `"$12.50"→12.5`/`"$0"→undefined`, playerIds passthrough,
+  `roundId===""`, label sourcing, order preserved, TOURNAMENT_GAME_OPTIONS contents).
+- New `frontend/src/components/GamePicker.tsx` — the picker cut verbatim out of `round/new/
+  page.tsx` (was a local function), now props-driven with one new `options?: GameOption[]` prop
+  (default `GAME_OPTIONS`) so the tournament flow can pass the smaller `TOURNAMENT_GAME_OPTIONS`
+  set without a fork.
+- `round/new/page.tsx` — byte-equivalent refactor onto the shared modules (deleted the local
+  `GameId`/`GAME_OPTIONS`/`GAME_ID_TO_FORMAT`/`GamePicker`; `gameObjects` build is now one
+  `buildRoundGames(...)` call). Confirmed via `tsc`/lint/build all green and the diff showing pure
+  deletions + one substituted call, no logic drift.
+- `NewTournamentRoundClient.tsx` — new optional "Game · Optional" paper card between Course and
+  Groups (default empty = today's no-games behavior, strictly opt-in), a bottom sheet reusing the
+  established `AnimatePresence`/`motion.div`/`T.springSoft` pattern hosting
+  `<GamePicker options={TOURNAMENT_GAME_OPTIONS}>` with the same toggle reducer as `/round/new`
+  (none exclusive, nassau→$20 else $5 default stake, `haptic("light")` on toggle), wired into
+  `createRound({ ..., games: buildRoundGames(selectedGames, players.map(p => p.id)) })`.
+- `TournamentPageClient.tsx` — two edits: (1) `roundGames` computed from `memberRounds[].games`
+  (excluding the synthetic `"settlement"` ledger format), rendered in the Games tab under the
+  existing tournament-games rows with a mono sub-line naming the round (courseName · round
+  index); (2) fixed the Settle-up gate from `{hasGames && (` to `{(hasGames || roundGames.length
+  > 0) && (` — previously a round with only per-round games (no tournament-level games) could
+  never surface Settle-up even though the settlement math already read `memberRounds[].games`.
+  Settlement math, reveal stagger, haptics all untouched per plan.
+- Gates: `npm run lint` clean, `npx tsc --noEmit` clean, voice-smoke 278/278, vitest
+  round-games.test.ts + settlement.test.ts + tournament-standings.test.ts → 63/63 passed,
+  `npm run build` green (Next.js 16 static export, all 19 routes generated).
+- No deviation from the plan. One judgment call within the plan's stated intent: the tournament
+  card's selection label shows `label + stake` per plan §4's example ("Skins $5 + Nassau $20"),
+  except the exclusive "None" selection is shown as bare "No stakes" (no stake suffix) since the
+  picker itself hides the stake row for that id — avoids a nonsensical "No stakes $5" render;
+  functionally inert either way since `buildRoundGames` always skips unmapped `none`.
+
 ## course-selection-b1 — DONE, builder (2026-07-11, SILENT — backend-only, no frontend wiring yet)
 Implemented specs/course-selection-b1-plan.md exactly on `integration/next` @c7a3252 (off 354f261).
 New `GET /api/courses/in-bounds?swLat&swLng&neLat&neLng` in `backend/app/routes/course_search.py`
