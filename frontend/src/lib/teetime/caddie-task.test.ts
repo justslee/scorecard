@@ -139,6 +139,43 @@ describe("planTeeTimeApply ≡ old applyParsed", () => {
   });
 });
 
+describe("planTeeTimeApply — A0: unresolved named course stops the lie", () => {
+  it("named-but-unresolved course → dispatched:false + honest ack naming it, EVEN with a window", () => {
+    // The Marine-Park-from-Pittsburgh bug: a day/time was heard, which used to
+    // arm the 1400ms dispatch and search the wrong city. It must not now.
+    const parsed = parsedFixture({
+      windows: [{ day: "saturday", period: "morning" }],
+      unresolvedCourseNames: ["marine park"],
+    });
+    const plan = planTeeTimeApply(parsed, { windows: WINDOWS, courses: COURSES, maxMiles: 15, group: GROUP });
+    expect(plan.dispatched).toBe(false);
+    expect(plan.line).toContain("Marine Park");
+    // Not the window ack ("Saturday morning — on it.") — an honest "don't know".
+    expect(plan.line.toLowerCase()).toContain("don");
+    expect(plan.line).not.toContain("on it.");
+  });
+
+  it("dispatch confirmation cannot override an unresolved named course", () => {
+    const parsed = parsedFixture({ dispatch: true, unresolvedCourseNames: ["marine park"] });
+    const plan = planTeeTimeApply(parsed, { windows: WINDOWS, courses: COURSES, maxMiles: 15, group: GROUP });
+    expect(plan.dispatched).toBe(false);
+    expect(plan.line).toContain("Marine Park");
+  });
+
+  it("multiple unresolved names read naturally", () => {
+    const parsed = parsedFixture({ unresolvedCourseNames: ["marine park", "dyker beach"] });
+    const plan = planTeeTimeApply(parsed, { windows: WINDOWS, courses: COURSES, maxMiles: 15, group: GROUP });
+    expect(plan.line).toContain("Marine Park and Dyker Beach");
+    expect(plan.dispatched).toBe(false);
+  });
+
+  it("no unresolved name → dispatch behaves exactly as before", () => {
+    const parsed = parsedFixture({ windows: [{ day: "saturday", period: "morning" }] });
+    const plan = planTeeTimeApply(parsed, { windows: WINDOWS, courses: COURSES, maxMiles: 15, group: GROUP });
+    expect(plan.dispatched).toBe(true);
+  });
+});
+
 describe("identical asks", () => {
   it("plan output fed through buildTeeTimeQueries matches the old direct-application path", () => {
     const transcript = "Saturday morning at Presidio, party of 4";

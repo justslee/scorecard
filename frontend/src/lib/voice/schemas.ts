@@ -136,6 +136,14 @@ export const TeeTimePrefsParseResultSchema = z
       .default([]),
     /** Course names, already resolved against the caller's known-courses list. */
     courseNames: z.array(z.string().min(1)).default([]),
+    /**
+     * Spoken course names that named a course we could NOT place — a course the
+     * golfer asked for that matches nothing on their listed courses (e.g. "Marine
+     * Park" heard from a Pittsburgh prefs list). Non-empty ⇒ the apply must NOT
+     * dispatch a substitute (GPS-nearby) search that ignores the named course; it
+     * acks honestly instead. Resolving these via search is a later slice (A2).
+     */
+    unresolvedCourseNames: z.array(z.string().min(1)).default([]),
     /** "just my favorites" — restrict to favorited courses. */
     favoritesOnly: z.boolean().default(false),
     partySize: z.number().int().min(1).max(8).optional(),

@@ -62,8 +62,26 @@ export interface TeeTimeApplyPlan {
   maxMiles: number | null;
   group: VoicePrefMember[] | null;
   maxPriceUsd: number | null;
-  line: string;                        // courseMissNote ?? teeTimeAckLine(parsed) ?? "Got it."
-  dispatched: boolean;                 // parsed.windows.length > 0 || parsed.dispatch
+  line: string;                        // unresolvedNote ?? courseMissNote ?? teeTimeAckLine(parsed) ?? "Got it."
+  dispatched: boolean;                 // false whenever a named course is unresolved / missed
+}
+
+/** Title-case a spoken (lowercase) course name for an honest ack — "marine
+ *  park" → "Marine Park". Pure; leaves already-capitalized input alone. */
+function displayCourseName(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** Join names as "A", "A and B", or "A, B and C". */
+function joinNames(names: string[]): string {
+  const parts = names.map(displayCourseName);
+  if (parts.length <= 1) return parts.join("");
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
 export function planTeeTimeApply(
@@ -102,8 +120,20 @@ export function planTeeTimeApply(
   const group = parsed.partySize != null ? applyPartySize(current.group, parsed.partySize) : null;
   const maxPriceUsd = parsed.maxPriceUsd ?? null;
 
-  const line = courseMissNote ?? teeTimeAckLine(parsed) ?? "Got it.";
-  const dispatched = parsed.windows.length > 0 || parsed.dispatch;
+  // A0 — stop the lie: a sentence that NAMES a course we can't place must never
+  // dispatch a search that ignores it (the Marine-Park-from-Pittsburgh bug). An
+  // unresolved name — or a total miss on a listed name — gates the dispatch and
+  // acks honestly instead. (Resolving the named course via search is slice A2.)
+  const unresolvedNote =
+    parsed.unresolvedCourseNames.length > 0
+      ? `I don’t know a course called ${joinNames(parsed.unresolvedCourseNames)} — nothing on your list matches. Want to add it, or search the list?`
+      : null;
+
+  const line = unresolvedNote ?? courseMissNote ?? teeTimeAckLine(parsed) ?? "Got it.";
+  const dispatched =
+    unresolvedNote == null &&
+    courseMissNote == null &&
+    (parsed.windows.length > 0 || parsed.dispatch);
 
   return { windows, courses, maxMiles, group, maxPriceUsd, line, dispatched };
 }
