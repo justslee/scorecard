@@ -1,24 +1,22 @@
 "use client";
 
-// The Looper sheet (specs/looper-orb-plan.md).
+// The Looper sheet shell (specs/looper-orb-plan.md,
+// specs/orb-s2-context-contract-teetime-plan.md §5).
 //
 // `LooperSheetShell` is the shared surface — header, conversation, live
 // dictation line, thinking pulse, tap-to-talk mic — used by every Looper
-// context. The default export is the GENERAL context (Home/Partners/Profile):
-// brain = the stateless /caddie/voice endpoint with hole_number null
-// (off-course chat — the caddie never pretends to be on a hole). Tee-time
-// hosts its own shell instance wired to the tee-time intent parser.
+// context. The brain that used to live here as this file's default export
+// (the GENERAL context: Home/Partners/Profile, stateless /caddie/voice with
+// hole_number null) now lives in `CaddieOrbSheet`, the single generic sheet
+// host mounted in app/layout.tsx — it subsumes the general lane AND every
+// registered page task/converse context. The round-page `CaddieSheet`
+// remains a separate surface (on-hole session brain, not this shell).
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
 import { PulseDot } from "@/components/yardage/Voice";
-import { useLooperDictation } from "@/hooks/useLooperDictation";
 import { useSheetTTS } from "@/hooks/useSheetTTS";
-import { buildKeyterms } from "@/lib/voice/keyterms";
-import { talkToCaddie, talkToCaddieStream, BeforeFirstByteError } from "@/lib/caddie/api";
-import { useStreamBuffer } from "@/lib/caddie/stream-buffer";
-import { onLooperOpen } from "@/lib/looper-bus";
 import { useBodyScrollLock } from "@/lib/sheet";
 import { haptic } from "@/lib/haptics";
 import { getSheetTtsEnabled, setSheetTtsEnabled } from "@/lib/voice/tts-pref";
@@ -437,164 +435,3 @@ export function LooperSheetShell({
   );
 }
 
-// ── The general context (default export, mounted in the root layout) ────────
-
-export default function LooperSheet() {
-  const [open, setOpen] = useState(false);
-  const [thinking, setThinking] = useState(false);
-  const [turns, setTurns] = useState<LooperTurn[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  // Streaming caddie reply (specs/voice-streaming-replies-plan.md) — a live,
-  // still-growing partial answer rendered via LooperSheetShell's
-  // `streamingTurn` prop. Only the FULL text is ever committed into `turns`
-  // (on completion), so the shell's existing "speak newly appended looper
-  // turn once" watcher keeps working unchanged.
-  const [streamingText, setStreamingText] = useState<string | null>(null);
-  const streamAbortRef = useRef<AbortController | null>(null);
-  const answerBuffer = useStreamBuffer((chunk) => {
-    setStreamingText((prev) => (prev ?? "") + chunk);
-  });
-  // Auto-send: Deepgram's end-of-speech triggers the same path as tapping
-  // the mic to send (ref indirection — the handler is defined below).
-  const micTapRef = useRef<() => void>(() => {});
-  const dictation = useLooperDictation({
-    surface: "looper-general",
-    getKeyterms: () => buildKeyterms(),
-    onUtteranceEnd: () => micTapRef.current(),
-  });
-  const openGenRef = useRef(0);
-  const turnsRef = useRef<LooperTurn[]>([]);
-  useEffect(() => {
-    turnsRef.current = turns;
-  }, [turns]);
-
-  // Keep a stable ref to dictation.start for the summon effect.
-  const dictationRef = useRef(dictation);
-  dictationRef.current = dictation;
-
-  useEffect(() => {
-    return onLooperOpen((detail) => {
-      if (detail.context !== "general") return;
-      setOpen((wasOpen) => {
-        if (!wasOpen) {
-          openGenRef.current++;
-          setTurns([]);
-          setThinking(false);
-          setError(null);
-          streamAbortRef.current?.abort();
-          streamAbortRef.current = null;
-          answerBuffer.cancel();
-          setStreamingText(null);
-        }
-        return true;
-      });
-      if (detail.listening) {
-        setTimeout(() => void dictationRef.current.start(), 60);
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const close = useCallback(() => {
-    openGenRef.current++;
-    dictation.cancel();
-    streamAbortRef.current?.abort();
-    streamAbortRef.current = null;
-    answerBuffer.cancel();
-    setStreamingText(null);
-    setOpen(false);
-    setThinking(false);
-    setError(null);
-  }, [dictation, answerBuffer]);
-
-  const handleMicTap = useCallback(async () => {
-    setError(null);
-    if (!dictation.listening) {
-      await dictation.start();
-      return;
-    }
-    const gen = openGenRef.current;
-    setThinking(true);
-    const finalText = await dictation.stopAndResolve();
-    if (openGenRef.current !== gen) return;
-    if (!finalText) {
-      setThinking(false);
-      setError("No speech detected. Tap the mic to try again.");
-      return;
-    }
-    setTurns((t) => [...t, { role: "user", text: finalText }]);
-
-    // A new question supersedes whatever the previous one was still doing.
-    streamAbortRef.current?.abort();
-    const controller = new AbortController();
-    streamAbortRef.current = controller;
-    answerBuffer.cancel();
-    setStreamingText(null);
-    const isStale = () => openGenRef.current !== gen || streamAbortRef.current !== controller;
-
-    try {
-      const history = turnsRef.current.map((t) => ({
-        role: t.role === "looper" ? ("assistant" as const) : ("user" as const),
-        content: t.text,
-      }));
-
-      // 2-tier ladder — talkToCaddieStream (live) → talkToCaddie (JSON,
-      // existing calm-copy path). Advances only on a pre-first-token failure;
-      // once a token has rendered, any further failure is terminal.
-      let responseText: string;
-      try {
-        responseText = await talkToCaddieStream(
-          { transcript: finalText, personality_id: "classic", hole_number: null, conversation_history: history },
-          { onToken: (delta) => answerBuffer.push(delta), signal: controller.signal },
-        );
-      } catch (err) {
-        if (!(err instanceof BeforeFirstByteError)) throw err;
-        answerBuffer.cancel();
-        setStreamingText(null);
-        const res = await talkToCaddie({
-          transcript: finalText,
-          personality_id: "classic",
-          hole_number: null, // off-course — never pretend to be on a hole
-          conversation_history: history,
-        });
-        responseText = res.response;
-      }
-
-      if (isStale()) return;
-      answerBuffer.flush();
-      setStreamingText(null);
-      setTurns((t) => [...t, { role: "looper", text: responseText }]);
-    } catch {
-      if (!isStale()) {
-        answerBuffer.cancel();
-        setStreamingText(null);
-        setError("Looper couldn't answer that one. Try again.");
-      }
-    } finally {
-      if (!isStale()) setThinking(false);
-    }
-  }, [dictation, answerBuffer]);
-
-  micTapRef.current = () => void handleMicTap();
-
-  // While a reply is streaming in, the growing `streamingTurn` speaks for
-  // itself — suppress the separate "thinking…" pulse so the two don't show
-  // at once (quiet, not busy — NORTHSTAR).
-  const phase: LooperPhase =
-    dictation.listening ? "listening" : thinking && streamingText == null ? "thinking" : "idle";
-
-  return (
-    <LooperSheetShell
-      open={open}
-      onClose={close}
-      title="What can I do for you?"
-      emptyHint="Tee times, courses, your game — ask me anything."
-      turns={turns}
-      phase={phase}
-      interim={dictation.interim}
-      error={error ?? dictation.micError}
-      onMicTap={() => void handleMicTap()}
-      streamingTurn={streamingText}
-    />
-  );
-}
