@@ -12746,3 +12746,16 @@ bundle's first item). CI strict-green on head: Frontend gates SUCCESS, Backend g
 ## Cycle 82 (2026-07-11) — tournament leaderboard motion/haptics (owner-requested animations)
 - v1.1.0 shipped (orb milestone); #133 (My Card copy fix) strict-green awaiting next ship. No owner feedback yet.
 - AWAITING: eng-lead tournament-leaderboard-motion-haptics — FLIP leaderboard re-sort + overtake haptic + leader crossfade + tab pill + settlement-reveal stagger (audit opportunity list). Calm NORTHSTAR motion (serves clarity, not flash). Designer pass. Land on #133. NOTE: use TARGETED backlog.json edits, never json round-trip (dup keys).
+
+## AWAITING (cycle 82 — builder: tournament motion/haptics)
+Branch integration/next @ a4eff6e (clean). Dispatching builder to implement plan-lite:
+leaderboard FLIP re-sort (layout by playerId + moved-row haptic light), overtake emphasis
+(medium), leader crossfade (success), tab pill layoutId (light), settlement stagger (light once).
+Frontend-only, presentation only — NO standings-math/settlement-computation change.
+haptics.ts has NO 'selection' type → use 'light' for tab/settlement. prefers-reduced-motion
+disables visual motion (useReducedMotion). Haptics fire only on real order-signature change
+(prevRef compare), never first-mount/per-render. On builder return: commit already pushed by
+builder → reviewer (fresh) + QA gates (lint/tsc/voice-smoke/build/vitest) + designer (live
+preview). BLOCKING → re-dispatch builder. Green+designer-ok → update PR #133 + backlog
+(TARGETED edit) + progress. Reconcile from origin/integration/next on resume — do NOT re-run
+a finished builder.
