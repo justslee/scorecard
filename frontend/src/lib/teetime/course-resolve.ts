@@ -112,7 +112,9 @@ export async function resolveSpokenCourse(
   } finally {
     if (timer) clearTimeout(timer);
   }
-  if (raced === TIMEOUT) return { kind: "unreachable" };
+  // Array.isArray narrows the race result away from the timeout sentinel (a
+  // plain === on two object types doesn't narrow the union).
+  if (!Array.isArray(raced)) return { kind: "unreachable" };
 
   // searchAllCourses has already prefix-gated (every hit prefix-matches the
   // query) and deduped by facility name. We additionally require a real center
