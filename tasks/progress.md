@@ -14012,3 +14012,17 @@ Next after plan lands: dispatch builder (deterministic money-math tests mandator
 (fresh, adversarial: zero-sum, no dropped player, displayed==settled stake) → qa (gates SUCCESS on
 head SHA) → designer (BLOCKING if stake field/labels change). Land on integration/next, update PR
 #135 checklist, record deferred match-play-roster UI follow-up in backlog.json (targeted edit).
+
+## UPDATE — fable plan landed → specs/tournament-settlement-honesty-plan.md
+Fix chosen: Bug1 = HONEST-LABEL (single source of truth SETTLEABLE_FORMATS in settlement.ts;
+STAKE_GAME_IDS={skins,match,nassau,wolf} in round-games.ts; picker hides stake for non-settling
+formats; buildRoundGames never writes pointValue for them; read-side display gated too). Bug2 =
+PREVENT (ROSTER_REQUIREMENT {match:2,wolf:4}; picker disables + honest copy; buildRoundGames
+skips, never truncates). Plan also caught vegas (team-only/unconstructible → $0) and wolf roster≠4
+silent-drop — same class, folded in. Voice path verified clean (no change). Deliberately breaks
+PR#135 /round/new byte-equivalence (was locking dishonest behavior) — tests updated intentionally.
+## AWAITING — builder on specs/tournament-settlement-honesty-plan.md (branch integration/next @ 711fd41+spec)
+Builder implements the plan on integration/next, commits+pushes, does NOT open a per-item PR.
+Mandatory deterministic money tests. Next: reviewer (fresh) → qa (gates SUCCESS on head SHA) →
+designer (BLOCKING, stake field/label copy changes). Then update PR#135 checklist + backlog.json
+follow-up (match-play opponent-picker UI, team-assignment UI, wolf 3-player). Do NOT ship/ping.
