@@ -63,6 +63,26 @@ _LIBERTY = {
     "rating": 4.9,
 }
 
+# Marine-Park-from-Pittsburgh fixture (specs/course-selection-ux-plan.md
+# §A2.5): a golfer in Pittsburgh explicitly selects Marine Park, ~350mi away
+# in Brooklyn — used by TestSelectorCenteredDiscovery below.
+_PITTSBURGH = (40.44, -79.99)
+_BROOKLYN = (40.60, -73.92)
+
+_PITTSBURGH_COURSE = {
+    "id": "gplaces-pgh",
+    "name": "Pittsburgh Muni",
+    "address": "Pittsburgh, PA",
+    "center": {"lat": _PITTSBURGH[0], "lng": _PITTSBURGH[1]},
+}
+
+_MARINE_PARK = {
+    "id": "marine-park-uuid",
+    "name": "Marine Park Golf Course",
+    "address": "Brooklyn, NY",
+    "center": {"lat": _BROOKLYN[0], "lng": _BROOKLYN[1]},
+}
+
 
 def _fake_finder(courses, origin=_ORIGIN):
     async def find(_query):
@@ -305,3 +325,115 @@ class TestCourseSelectionFilter:
         provider = RoutingTeeTimeProvider(find_courses=_fake_finder(courses))
         slots = await provider.search_availability(_query(course_ids=["gplaces-liberty"]))
         assert slots == []
+
+
+class TestSelectorCenteredDiscovery:
+    """A1 (specs/course-selection-ux-plan.md §A2.4): `course_ids` used to
+    only FILTER whatever the GPS-radius discovery already found — a
+    selected/named course outside that radius matched 0 discovered courses
+    and was silently dropped (the "Marine Park from Pittsburgh" bug). Now a
+    selector with a resolved center outside the GPS set triggers one extra
+    `_find_courses` call centered on it, additively merged in."""
+
+    async def test_marine_park_from_pittsburgh_is_discovered_with_honest_distance(self):
+        # RED before A1: `_find_courses` was only ever invoked with the
+        # original query (area="40.44,-79.99" — Pittsburgh); this fake finder
+        # only returns Marine Park when asked about a point near Brooklyn, so
+        # on pre-A1 code it is NEVER discovered — 0 slots emit.
+        calls: list[str | None] = []
+
+        async def find(query):
+            calls.append(query.area)
+            origin = _parse_latlng(query.area)
+            if origin is None:
+                return [], None
+            lat, lng = origin
+            if _haversine_miles(lat, lng, *_PITTSBURGH) < 20:
+                return [_PITTSBURGH_COURSE], _PITTSBURGH
+            if _haversine_miles(lat, lng, *_BROOKLYN) < 20:
+                return [_MARINE_PARK], _BROOKLYN
+            return [], None
+
+        provider = RoutingTeeTimeProvider(find_courses=find)
+        query = _query(
+            area="40.44,-79.99",
+            course_ids=["marine-park-uuid"],
+            course_selectors=[
+                CourseSelector(
+                    id="marine-park-uuid", name="Marine Park Golf Course",
+                    lat=_BROOKLYN[0], lng=_BROOKLYN[1],
+                ),
+            ],
+        )
+
+        slots = await provider.search_availability(query)
+
+        assert {s.course_name for s in slots} == {"Marine Park Golf Course"}
+        # Honest ~350mi from the golfer's REAL GPS origin (Pittsburgh) — NOT
+        # ~0/nearby, which is what silently reusing the sub-query's own
+        # Brooklyn-centered origin would produce.
+        assert 300 < slots[0].distance_miles < 340
+
+        # The widening call actually fired around Brooklyn (in addition to
+        # the original Pittsburgh call) — proves discovery, not luck.
+        brooklyn_calls = [
+            a for a in calls
+            if _parse_latlng(a) is not None and _haversine_miles(*_parse_latlng(a), *_BROOKLYN) < 1
+        ]
+        assert len(brooklyn_calls) == 1
+
+    async def test_selected_course_within_gps_radius_skips_extra_discovery(self):
+        # Presidio is discovered at distance 0 from the GPS origin — already
+        # inside the radius, so selector-centered discovery must be a no-op:
+        # exactly one finder call, and the result equals selecting the same
+        # course with no `course_selectors` (id-only selector) at all.
+        calls: list[str | None] = []
+
+        async def find(query):
+            calls.append(query.area)
+            return _COURSES, _ORIGIN
+
+        provider = RoutingTeeTimeProvider(find_courses=find)
+        query = _query(
+            course_ids=["gplaces-abc123"],
+            course_selectors=[
+                CourseSelector(
+                    id="gplaces-abc123", name="Presidio Golf Course",
+                    lat=_ORIGIN[0], lng=_ORIGIN[1],
+                ),
+            ],
+        )
+
+        slots = await provider.search_availability(query)
+
+        assert len(calls) == 1  # no widening call — already inside the GPS radius
+        assert {s.course_name for s in slots} == {"Presidio Golf Course"}
+
+        baseline_provider = RoutingTeeTimeProvider(find_courses=_fake_finder(_COURSES))
+        baseline = await baseline_provider.search_availability(
+            _query(course_ids=["gplaces-abc123"])
+        )
+        assert [s.course_id for s in slots] == [s.course_id for s in baseline]
+
+    async def test_selected_far_course_skips_distance_prune_unselected_still_pruned(self):
+        far = {
+            "id": "far-course",
+            "name": "Far Course",
+            "center": {"lat": 34.0, "lng": -118.0},  # ~362mi from the SF origin
+        }
+        provider = RoutingTeeTimeProvider(find_courses=_fake_finder([*_COURSES, far]))
+
+        # Selected: the honest ~362mi distance does NOT prune it, even
+        # though it's well outside max_distance_miles.
+        selected_slots = await provider.search_availability(
+            _query(course_ids=["far-course"], max_distance_miles=50.0)
+        )
+        assert {s.course_name for s in selected_slots} == {"Far Course"}
+        assert selected_slots[0].distance_miles > 300
+
+        # Same course, same distance, same max_distance_miles — with no
+        # selection at all the ordinary distance prune still applies exactly
+        # as before (additive-merge discipline: unselected discovery is
+        # untouched by this change).
+        unselected_slots = await provider.search_availability(_query(max_distance_miles=50.0))
+        assert "Far Course" not in {s.course_name for s in unselected_slots}

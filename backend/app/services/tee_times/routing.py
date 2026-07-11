@@ -15,9 +15,22 @@ window:
   - `phone` = the pro shop's number (Places nationalPhoneNumber / OSM phone
     tag) when known — powers a real `tel:` link for `route == "call"` entries.
 
-Pipeline: discover -> dedupe_by_name -> private filter -> cap at
-MAX_COURSES -> sort by (distance, name). The private filter (private_filter.py)
-runs BEFORE the cap so a private club never consumes a result slot.
+Pipeline: discover -> selector-centered discovery -> dedupe_by_name ->
+private filter -> cap at MAX_COURSES -> sort by (distance, name). The
+private filter (private_filter.py) runs BEFORE the cap so a private club
+never consumes a result slot.
+
+Selector-centered discovery (specs/course-selection-ux-plan.md §A2.4): when
+the golfer explicitly selected/named a course whose resolved center sits
+OUTSIDE the GPS-radius discovery set, one extra `_find_courses` call is run
+centered on that selector and the result is ADDITIVELY MERGED in — fixes
+the "Marine Park from Pittsburgh" bug, where `course_ids` used to only
+FILTER a GPS-radius set that never contained the named course. Distance
+stays honest: always measured from the golfer's real GPS origin, never the
+selector's own search center. Invariant: a pure "near me" search (no
+`course_ids`/selectors) is unaffected BYTE-FOR-BYTE — the widening is a
+strict no-op unless a selector center sits outside both the GPS radius and
+the already-discovered set.
 
 book() never completes a reservation: it returns `needs_human` with the
 booking URL (or a call instruction) so the golfer finishes on the course's
@@ -32,6 +45,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+from dataclasses import replace
 from typing import Awaitable, Callable
 
 from app.services import course_finder
@@ -55,6 +69,12 @@ MAX_COURSES = 8
 # Nearby-search radius when the query has no explicit distance preference.
 DEFAULT_RADIUS_MILES = 15.0
 _METERS_PER_MILE = 1609.344
+
+# Selector-centered discovery radius (miles) — `_radius_meters` below clamps
+# a 5_000 m floor, so 3.1 mi (~4_989 m) yields the same ~5 km "around" radius
+# `osm.py search_golf_courses` uses. Deliberately tight: this is a targeted
+# "is the named course actually near this point" probe, not a wide sweep.
+SELECTOR_DISCOVERY_RADIUS_MILES = 3.1
 
 # A course finder returns (courses, origin): normalized course dicts
 # ({id, name, address?, center{lat,lng}, website?, phone?, rating?}) plus the
@@ -89,6 +109,15 @@ def _haversine_miles(lat1: float, lng1: float, lat2: float, lng2: float) -> floa
 def _radius_meters(max_distance_miles: float | None) -> int:
     miles = max_distance_miles if max_distance_miles else DEFAULT_RADIUS_MILES
     return int(max(5_000, min(50_000, miles * _METERS_PER_MILE)))
+
+
+def _selectors_for_query(query: TeeTimeQuery) -> list[CourseSelector]:
+    """The same course_ids -> selector fallback the selection filter has
+    always used, built ONCE so selector-centered discovery and the filter
+    itself see the identical list (never recomputed twice, never drift)."""
+    if not query.course_ids:
+        return []
+    return query.course_selectors or [CourseSelector(id=i) for i in query.course_ids]
 
 
 def build_route_entry(course: dict, query: TeeTimeQuery, distance: float) -> TeeTimeSlot | None:
@@ -182,6 +211,48 @@ class RoutingTeeTimeProvider(TeeTimeProvider):
         entry = build_route_entry(course, query, distance)
         return [entry] if entry else []
 
+    async def _discover_selector_courses(
+        self,
+        query: TeeTimeQuery,
+        courses: list[dict],
+        origin: tuple[float, float] | None,
+        selectors: list[CourseSelector],
+    ) -> list[dict]:
+        """Additive-merge selector-centered discovery. For each selector
+        with a resolved center, run one extra `_find_courses` call centered
+        on it UNLESS the center is already covered — inside the GPS radius,
+        or already matched by a discovered course. Returns `courses`
+        unchanged (same list, no dedupe pass) when nothing was added, so a
+        pure "near me" search (empty `selectors`) never even calls this."""
+        radius_miles = query.max_distance_miles or DEFAULT_RADIUS_MILES
+        extra: list[dict] = []
+        for sel in selectors:
+            if sel.lat is None or sel.lng is None:
+                continue
+            if origin is not None and _haversine_miles(origin[0], origin[1], sel.lat, sel.lng) <= radius_miles:
+                continue  # already inside the GPS-radius discovery set
+            if any(matches_selection(c, [sel]) for c in courses):
+                continue  # already discovered (e.g. named-area search covers it)
+
+            sub_query = replace(
+                query,
+                area=f"{sel.lat},{sel.lng}",
+                max_distance_miles=SELECTOR_DISCOVERY_RADIUS_MILES,
+                course_ids=[],
+                course_selectors=None,
+            )
+            try:
+                sel_courses, _sub_origin = await self._find_courses(sub_query)
+            except Exception:
+                continue  # never raise — skip this selector, keep going
+            # Discard the sub-query's own origin: distance stays honest,
+            # always measured from the golfer's real GPS `origin` above.
+            extra.extend(sel_courses)
+
+        if not extra:
+            return courses
+        return course_finder.dedupe_by_name([*courses, *extra])
+
     async def search_availability(self, query: TeeTimeQuery) -> list[TeeTimeSlot]:
         try:
             courses, origin = await self._find_courses(query)
@@ -189,12 +260,13 @@ class RoutingTeeTimeProvider(TeeTimeProvider):
             # Contract: never raise — no courses means no slots.
             return []
 
+        selectors = _selectors_for_query(query)
+        if selectors:
+            courses = await self._discover_selector_courses(query, courses, origin, selectors)
+
         courses = exclude_private(courses)
 
         if query.course_ids:
-            selectors = query.course_selectors or [
-                CourseSelector(id=i) for i in query.course_ids
-            ]
             filtered = [c for c in courses if matches_selection(c, selectors)]
             if courses and not filtered:
                 log.info(
@@ -211,12 +283,21 @@ class RoutingTeeTimeProvider(TeeTimeProvider):
             if not course_id or not name:
                 continue
 
+            # A course the golfer explicitly selected/named must never be
+            # dropped by the distance prune — the whole point of selector-
+            # centered discovery is finding it even when it's far away.
+            is_selected = bool(selectors) and matches_selection(course, selectors)
+
             distance = 0.0
             if origin is not None and center.get("lat") is not None:
                 distance = round(
                     _haversine_miles(origin[0], origin[1], center["lat"], center["lng"]), 1
                 )
-                if query.max_distance_miles is not None and distance > query.max_distance_miles:
+                if (
+                    not is_selected
+                    and query.max_distance_miles is not None
+                    and distance > query.max_distance_miles
+                ):
                     continue
 
             slots.extend(await self._slots_for_course(course, query, distance))
