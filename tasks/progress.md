@@ -13841,9 +13841,13 @@ Plan: extract game-object construction from round/new into a shared pure helper
 (buildRoundGames) with deterministic unit tests (format map, stakes→pointValue, player
 population, "none" skip), refactor round/new to use it, add the picker to the tournament flow.
 
-## AWAITING — Plan agent (fable) on tournament per-round-format slice
-Waiting on: Plan agent producing specs/tournament-per-round-format-plan.md.
-On return: dispatch builder to implement the plan on integration/next → reviewer (aggregate/
-settlement correctness, no single-round regression) + qa (gates on pushed SHA) + designer
-(BLOCKING, yardage-book calm). Branch state is clean @ 052f4ff; no code written yet, so a
-resume just re-runs Plan. Do NOT re-ship #134.
+Plan agent (fable) DONE — specs/tournament-per-round-format-plan.md written (verified backend
+already persists round.games at rounds.py:320-334; found + planned a fix for the tournament
+Settle-up gate that only fires for tournament-level games; team formats deferred, offers
+none/skins/match/nassau/stableford).
+
+## AWAITING — builder on tournament per-round-format slice
+Waiting on: builder implementing specs/tournament-per-round-format-plan.md on integration/next
+(commits + pushes; no per-item PR). On return: reviewer (aggregate/settlement + no /round/new
+regression) + qa (gates on pushed SHA) + designer (BLOCKING, yardage-book calm). Spec committed
+@ current head; branch clean. Do NOT re-ship #134; do NOT re-run Plan.
