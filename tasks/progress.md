@@ -13700,3 +13700,16 @@ overlay-on-scroll punch-through, per plan §1) and cold-Overpass latency on a ge
 Did NOT ship/ping — bundle #134 accumulation continues (now 2 NOTICEABLE + 1 SILENT + B2
 NOTICEABLE pending review/QA/designer). NEXT: reviewer + qa + designer on 796f6d8 per the AWAITING
 note above (still applies — targets the new head).
+
+## AWAITING (cycle 97) — reviewer + qa + designer on B2 @ e374a28 (feature 796f6d8)
+- Builder DONE: all deterministic frontend gates green (lint/tsc clean; npm test 2168 pass incl 27 new;
+  voice-smoke 278/278; build SUCCESS). Sim: real Debug build launches clean on iPhone 17, but tap-driven
+  native map NOT verified (sandbox TCC blocks osascript/cliclick/screencapture; simctl has no touch API).
+  Builder substituted a non-native Chromium web-fallback run confirming map render + ink pins + tap->card
+  ->Add parity payload. Native GMSMapView onMapReady/SIGTRAP path = TOP residual, unverified interactively.
+- Dispatched: reviewer (adversarial: onMapReady gating vs GoogleSatelliteMap precedent, abort/gen races,
+  no-reshuffle, identity parity, budget=only /in-bounds), qa (re-run gates on pushed head + attempt native
+  sim tap smoke), designer (BLOCKING: quiet ink markers/no SaaS chrome vs NORTHSTAR; review screenshots+code).
+- On return: fold BLOCKING issues -> builder; else update PR #134 checklist (B2 NOTICEABLE) + progress.
+  Do NOT ship/ping. If native-sim tap stays unverifiable in this env, record as ship-gate residual
+  (owner exercises it on TestFlight) — not a code defect; reviewer's gating audit is the code-side mitigation.
