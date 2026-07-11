@@ -2,7 +2,8 @@
 // applyParsed (specs/orb-s2-context-contract-teetime-plan.md §9).
 
 import { describe, it, expect } from "vitest";
-import { teeTimeTaskParse, teeTimeConfirmEcho, planTeeTimeApply } from "./caddie-task";
+import { teeTimeTaskParse, teeTimeConfirmEcho, planTeeTimeApply, type TeeTimeTaskPayload } from "./caddie-task";
+import type { SpokenCourseResolution } from "./course-resolve";
 import { TeeTimePrefsParseResultSchema } from "@/lib/voice/schemas";
 import type { TeeTimePrefsParseResultValidated } from "@/lib/voice/schemas";
 import { parseTeeTimePrefsLocally } from "@/lib/voice/parseTeeTimePrefs";
@@ -45,7 +46,10 @@ describe("teeTimeTaskParse", () => {
     const p = teeTimeTaskParse("Saturday morning, party of 4", parsed);
     expect(p.hasSignal).toBe(true);
     expect(p.confidence).toBe(parsed.confidence);
-    expect(p.payload).toBe(parsed);
+    // Payload is the { parsed, resolution } wrapper (A2); parsed passes through
+    // by identity, resolution null when none was attempted.
+    expect((p.payload as TeeTimeTaskPayload).parsed).toBe(parsed);
+    expect((p.payload as TeeTimeTaskPayload).resolution).toBeNull();
   });
 
   it("no-signal fixture: hasSignal false, confidence 0.2", () => {
@@ -173,6 +177,121 @@ describe("planTeeTimeApply — A0: unresolved named course stops the lie", () =>
     const parsed = parsedFixture({ windows: [{ day: "saturday", period: "morning" }] });
     const plan = planTeeTimeApply(parsed, { windows: WINDOWS, courses: COURSES, maxMiles: 15, group: GROUP });
     expect(plan.dispatched).toBe(true);
+  });
+});
+
+describe("planTeeTimeApply — A2: the resolved course wins", () => {
+  const PITTSBURGH = { lat: 40.44, lng: -79.99 };
+  const BROOKLYN = { lat: 40.6, lng: -73.9 };
+  const marinePark: SpokenCourseResolution = {
+    kind: "one",
+    course: { id: "mp", name: "Marine Park Golf Course", center: BROOKLYN, location: "Brooklyn, NY" },
+  };
+  // The on-screen list is GPS-preselected around Pittsburgh (Harding is a
+  // favorite → selected); the golfer has NOT touched it (touched:false).
+  const GPS_COURSES: CourseOption[] = [
+    { id: "c1", name: "Schenley", muni: "Pittsburgh", distance: 3, favorite: false, selected: false },
+    { id: "c2", name: "Bob O'Connor", muni: "Pittsburgh", distance: 5, favorite: true, selected: true },
+  ];
+
+  it("Marine Park from Pittsburgh: resolved-one → added+selected, GPS preselect deselected, dispatched:true", () => {
+    const parsed = parsedFixture({
+      windows: [{ day: "saturday", period: "morning" }],
+      unresolvedCourseNames: ["marine park"],
+    });
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH, touched: false },
+      marinePark,
+    );
+    // The whole point of the bug fix: a Brooklyn search gets dispatched.
+    expect(plan.dispatched).toBe(true);
+    const added = plan.courses!.find((c) => c.name === "Marine Park Golf Course");
+    expect(added).toBeDefined();
+    expect(added!.selected).toBe(true);
+    // The GPS auto-preselect is no longer selected — the search targets the
+    // course the golfer actually named, not the Pittsburgh preselect.
+    expect(plan.courses!.find((c) => c.id === "c2")!.selected).toBe(false);
+    // Honest distance: the real ~320 mi, never a ≤50-mile pretense, and maxMiles
+    // is NOT silently widened to a fake ≤50 number.
+    expect(added!.distance!).toBeGreaterThan(50);
+    expect(plan.maxMiles).toBeNull();
+    expect(plan.line).toContain("Marine Park");
+    expect(plan.line).toContain("Brooklyn");
+    expect(plan.line.toLowerCase()).toContain("mi away");
+    expect(plan.line).toContain("Looking there");
+  });
+
+  it("touched list: the golfer's OWN selections survive the resolved add", () => {
+    const touchedCourses: CourseOption[] = [
+      { id: "c1", name: "Schenley", muni: "Pittsburgh", distance: 3, favorite: false, selected: true },
+    ];
+    const parsed = parsedFixture({ unresolvedCourseNames: ["marine park"] });
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: touchedCourses, maxMiles: 15, group: GROUP, origin: PITTSBURGH, touched: true },
+      marinePark,
+    );
+    expect(plan.courses!.find((c) => c.id === "c1")!.selected).toBe(true);
+    expect(plan.courses!.find((c) => c.name === "Marine Park Golf Course")!.selected).toBe(true);
+  });
+
+  it("resolved but no day/time → added (not dispatched), honest 'Found …' line", () => {
+    const parsed = parsedFixture({ unresolvedCourseNames: ["marine park"] });
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH, touched: false },
+      marinePark,
+    );
+    expect(plan.dispatched).toBe(false);
+    expect(plan.line).toContain("Found Marine Park");
+    expect(plan.line).not.toContain("Looking there");
+  });
+
+  it('resolution "none" → honest "couldn\'t find", no dispatch even with a window', () => {
+    const parsed = parsedFixture({
+      windows: [{ day: "saturday", period: "morning" }],
+      unresolvedCourseNames: ["marine park"],
+    });
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH },
+      { kind: "none" },
+    );
+    expect(plan.dispatched).toBe(false);
+    expect(plan.line).toContain("Marine Park");
+    expect(plan.line.toLowerCase()).toContain("couldn");
+    expect(plan.line.toLowerCase()).toContain("find");
+  });
+
+  it('resolution "ambiguous" → asks which area, no dispatched guess', () => {
+    const parsed = parsedFixture({
+      windows: [{ day: "saturday", period: "morning" }],
+      unresolvedCourseNames: ["marine park"],
+    });
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH },
+      { kind: "ambiguous", candidates: [] },
+    );
+    expect(plan.dispatched).toBe(false);
+    expect(plan.line.toLowerCase()).toContain("a few courses");
+    expect(plan.line.toLowerCase()).toContain("which area");
+  });
+
+  it('resolution "unreachable" → honest "couldn\'t reach", no dispatch', () => {
+    const parsed = parsedFixture({
+      windows: [{ day: "saturday", period: "morning" }],
+      unresolvedCourseNames: ["marine park"],
+    });
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows: WINDOWS, courses: GPS_COURSES, maxMiles: 15, group: GROUP, origin: PITTSBURGH },
+      { kind: "unreachable" },
+    );
+    expect(plan.dispatched).toBe(false);
+    expect(plan.line.toLowerCase()).toContain("couldn");
+    expect(plan.line.toLowerCase()).toContain("reach");
   });
 });
 
