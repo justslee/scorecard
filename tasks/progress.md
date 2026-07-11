@@ -13748,3 +13748,76 @@ note above (still applies — targets the new head).
   favorites star on map, pin-cap/zoom copy.
 - Did NOT ship/ping — silent accumulation continues per the standing note. Bundle #134 now: 3 NOTICEABLE
   (A3, caddie reachability, B2 map UI) + 1 SILENT (B1). Owner has NOT been asked to approve yet.
+
+## 2026-07-11 — release-manager: bundle #134 SHIPPED to main + TestFlight v1.1.2
+Owner replied "Ship it" — approved bundle PR #134 (`integration/next` → `main`). Guarded
+pre-flight re-verified before touching anything: PR head `8dd572b` unchanged since approval,
+all three gates SUCCESS on that head (Frontend gates, Backend gate, E2E smoke advisory), PR
+OPEN+MERGEABLE, `main` head `4bb474e` as expected.
+
+1. **Bumped VERSION 1.1.1 → 1.1.2** and committed to `integration/next` (`c67e8b1`, plain
+   fast-forward push) BEFORE building — this is the fix bundle #133 shipped for the "owner
+   didn't see the new version" TestFlight-sort bug, so it had to actually be exercised here.
+   Re-verified all three gates re-ran and passed SUCCESS on the new head (`c67e8b1`) before
+   merging — the push retriggered CI, so this was NOT a stale-gate merge.
+2. **Merged #134 → main**: `gh pr merge 134 --merge` → merge commit
+   `8a33dd061fcb407d0f9c4b58507737c18da02ecc`.
+3. **Post-merge main CI green**: both required checks (Frontend gates, Backend gate) SUCCESS
+   on the new main head, plus the auto-triggered `Deploy backend (SSM)` workflow SUCCESS —
+   no flake, no rerun needed.
+4. **Backend deployed** via the `Deploy backend (SSM)` GH Actions workflow (auto-triggered on
+   push to main, instance `i-0826ae70df62d9fe8`) — `/health` → `{"status":"ok"}` externally
+   (`https://api.looperapp.org/health`). Caller stays INERT: key-free SSM probe found
+   `VOICE_BOOKING_ENABLED` unset in prod `backend/.env`, so `get_live_transport()` raises at
+   the first gate before any Twilio credential is read. **Note for the owner**: unlike bundle
+   #133 (0 `TWILIO_*` keys present), this probe found `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`
+   now present in prod `.env` — functionally inert either way (the `VOICE_BOOKING_ENABLED`
+   gate is checked first and short-circuits), but the credential presence changed since the
+   last ship and is worth a look. `/api/courses/in-bounds` and `/api/tee-times/search` both
+   correctly reject unauthenticated curls (401 — `require_owner`-gated app-wide).
+5. **Cut TestFlight from new main** via `bash ops/ios/ship.sh` (checked out `main`@`8a33dd0`
+   into the working tree). Build succeeded: **v1.1.2 (build 202607111719)** — "Uploaded v1.1.2
+   (build 202607111719) to TestFlight". Polled App Store Connect (JWT ES256, key
+   `QG927KHTXR`) — `processingState: VALID`, not expired, confirmed within ~2 minutes.
+6. **Recut `integration/next`** off the new main head: `git merge origin/main --ff-only`
+   (local was at `c67e8b1`, fast-forwarded to `8a33dd0`), pushed. New head =
+   `8a33dd061fcb407d0f9c4b58507737c18da02ecc` (== main, fresh bundle starts empty).
+7. **Board + backlog**: Product Board card created fresh (none existed for #134 yet) —
+   "Bundle #134: caddie shot-context (out-of-reach tee shots) + map-based course search +
+   ambiguous-course clarify turn" → Shipped (merge SHA `8a33dd061`, TestFlight
+   `v1.1.2`/build `202607111719`, headline + silent riders + how-to-test). `backlog.json`
+   targeted-edited (no json.load/dump — duplicate-key lesson) to mark terminal with the merge
+   SHA: `course-selection-ux` a3_status (→ shipped bundle #134, "Remaining: B3" only), new
+   `b1_status` and `b2_status` keys added (both were DONE-but-unrecorded in backlog.json —
+   B1 @c7a3252, B2 @796f6d8, now marked shipped @8a33dd0). Diff checked: exactly those 3
+   status strings touched/added on the one `course-selection-ux` item, valid JSON (55 items,
+   same count as before), no key collapse. The caddie shot-context fix has no backlog line —
+   it's owner-feedback (the "aim 9 left of the flag on a 400y par 4" bug), not a backlog item.
+
+**What shipped in #134** (bundle: caddie shot-context + map-based course search +
+ambiguous-course clarify turn): on an out-of-reach tee shot the caddie now gives landing-zone
++ leave-yardage advice instead of pin-relative aim (fixes the owner-reported 400y-par-4 "aim
+9 left of the flag" bug; reachable shots byte-identical); course search gained a Map⇄List
+toggle with quiet ink golf-flag markers for real courses in the viewport and tap-to-add,
+backed by the new budget-safe cache-first `/api/courses/in-bounds` (B1, silent) route; the
+caddie now asks which course when a spoken name is ambiguous (A3), completing the
+Marine-Park-from-Pittsburgh voice-resolution arc started in bundle #133. Silent riders: B1
+backend, the VERSION-as-source-of-truth TestFlight sort fix (bumped 1.1.1→1.1.2 this ship).
+Both backend (caddie engine, in-bounds route) and frontend (20-file delta) changed.
+
+**Verification evidence**: PR #134 checks (`gh pr checks 134`) — Frontend/Backend/E2E all
+SUCCESS on both the pre-VERSION-bump head and the post-bump head. Post-merge main CI run
+`29168443461` — 3 jobs, all SUCCESS. Deploy run `29168443476` — SUCCESS, on-box
+`curl -fsS http://localhost:8000/health` embedded in the SSM command succeeded (script has
+`set -eu`, so a failing health check would have failed the whole command + set `SSM status`
+to non-Success). ASC build-processing poll (`poll_build.py`, ES256 JWT against
+`api.appstoreconnect.apple.com`) — `VALID` after 7 polls (~2 min).
+
+**Open item flagged, not blocking**: prod `backend/.env` now carries Twilio credentials it
+didn't carry as of bundle #133's ship. The call path stays inert only because
+`VOICE_BOOKING_ENABLED` is unset — if that flag is ever flipped without also verifying the
+`VOICE_BOOKING_PUBLIC_HOST` and dial-safety invariants in
+`backend/app/services/voice_booking/telephony.py`, the caller would go live. Recorded on the
+#134 board card for visibility; not a regression from this bundle's own changes (this bundle
+didn't touch `.env` or the voice_booking module), just an observation from the routine
+post-deploy probe.
