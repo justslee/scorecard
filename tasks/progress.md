@@ -13043,3 +13043,23 @@ SILENT — no ship/ping (owner approves the whole bundle later). Head after book
 ## Cycle 86 (2026-07-11) — course-intel static persistence (owner P1, surfaced by grooming)
 - Retro groomed the backlog (212→52 usable); surfaced a real buried owner P1.
 - AWAITING: eng-lead course-intel-static-persistence — compute static per-course intel (per-hole elevation deltas + green slope) ONCE, persist on the mapped course record (+ Alembic migration, NEW not edited-guarded), serve instantly from course-intel (skip recompute latency). Backend-only, silent, kills the "elevation takes a while" wait. DB test → docker Postgres (DB-only-in-CI lesson). Land on #133.
+
+## AWAITING (cycle 86 — Fable Plan on course-intel-static-persistence)
+KEY FINDING on trace: this item is ~90% ALREADY BUILT (commits 0200576 + 9c5e338).
+Static intel (per-hole elevation delta + green slope) is ALREADY persisted per-hole in
+hole_features.properties JSONB, read instantly (zero USGS on hit) by
+course_intel.build_hole_intelligence, bulk-precomputed by
+caddie.py::_precompute_course_elevations (2 batched 3DEP calls, idempotent, best-effort),
+backfilled-on-demand, and honest (no fabrication on USGS None). Weather stays dynamic (correct).
+REMAINING GAPS: (A) elevation precompute NOT wired into course mapping (create_mapped/put_mapped
+only precompute GUIDES, not elevations — only /session/start triggers it → races first
+course-intel open on a fresh course); (B) no version/invalidation stamp → a geometry re-map
+keeps stale elevation (skip = "has tee_elevation_ft").
+SCHEMA DECISION escalated to Fable: task prescribes a new courses.static_intel column +
+Alembic migration, but static intel is per-HOLE and already lives correctly in
+hole_features.properties → a course-level column duplicates a second source of truth (worse).
+Leaning: NO migration; version/computed-at stamp inside existing JSONB patch. Fable rules on it.
+AWAITING: Plan agent (fable) → specs/course-intel-static-persistence-plan.md. On return:
+dispatch builder to implement the plan on integration/next, then reviewer + QA (docker Postgres
+DB tests — DB-only-in-CI lesson), update PR #133 + backlog + progress. SILENT — no ship/ping.
+Reconcile from origin/integration/next on resume.
