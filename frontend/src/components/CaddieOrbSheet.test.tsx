@@ -126,13 +126,14 @@ vi.mock("@/hooks/useLooperDictation", () => ({
 
 import CaddieOrbSheet from "./CaddieOrbSheet";
 import { talkToCaddie, talkToCaddieStream } from "@/lib/caddie/api";
-import { openLooper } from "@/lib/looper-bus";
+import { openLooper, looperContextForPath } from "@/lib/looper-bus";
 import {
   registerCaddieContext,
   onCaddieOrbState,
   getCaddieContext,
   type CaddieTaskContext,
   type CaddieSurfaceContext,
+  type CaddieConverseContext,
   type TaskParse,
   type TaskAck,
 } from "@/lib/caddie-context";
@@ -184,6 +185,21 @@ function registerSurface(overrides: Partial<CaddieSurfaceContext> = {}): CaddieS
     id: "courses",
     kind: "surface",
     summon: vi.fn(),
+    ...overrides,
+  };
+  cleanupCtx = registerCaddieContext(ctx);
+  return ctx;
+}
+
+function registerConverse(overrides: Partial<CaddieConverseContext> = {}): CaddieConverseContext {
+  const ctx: CaddieConverseContext = {
+    id: "my-card",
+    kind: "converse",
+    copy: {
+      title: "Your card",
+      hint: "Ask about your game — what to work on, trends, your clubs.",
+    },
+    getGrounding: vi.fn(() => null),
     ...overrides,
   };
   cleanupCtx = registerCaddieContext(ctx);
@@ -314,6 +330,62 @@ describe("CaddieOrbSheet — general lane parity", () => {
     expect(await screen.findByText("Sure thing.")).toBeTruthy();
   });
 
+  it("registered converse (my-card) greets with its OWN title + hint, not the generic copy", async () => {
+    // Regression guard (designer BLOCK, orb-s4): a kind:"converse" context
+    // (e.g. /profile's "my-card") must render its registered copy in the sheet.
+    // Before the fix the sheet only read copy off task contexts, so the golfer
+    // saw the generic "What can I do for you?" on his own stats page.
+    registerConverse();
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+
+    expect(await screen.findByText("Your card")).toBeTruthy();
+    expect(
+      await screen.findByText("Ask about your game — what to work on, trends, your clubs."),
+    ).toBeTruthy();
+  });
+
+  it("converse (my-card): threads getGrounding() into the request as stats_context", async () => {
+    // Regression guard (cycle 84 orb-wiring audit): the my-card converse
+    // context's whole value is grounding the caddie in the golfer's REAL
+    // stats. The host must pass getGrounding()'s output through to the model as
+    // `stats_context`. If this wire silently breaks, the caddie answers with no
+    // numbers and no error — the exact silent-wrong-behavior sibling of the
+    // My-Card COPY bug. Pin it end-to-end through the real converse lane.
+    const grounding = "GROUNDING BLOCK — driver avg 262y (n=14), 3 rounds.";
+    registerConverse({ getGrounding: vi.fn(() => grounding) });
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Work on your wedges.");
+      return "Work on your wedges.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("what should I practice");
+
+    await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
+    const [params] = talkToCaddieStreamMock.mock.calls[0];
+    expect(params.stats_context).toBe(grounding);
+  });
+
+  it("general lane (no converse ctx): sends NO stats_context (honest — no stats to cite)", async () => {
+    // The converse of the guard above: with no registered converse context the
+    // host must NOT invent a grounding block — general Q&A stays ungrounded.
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Sure.");
+      return "Sure.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("tell me a golf fact");
+
+    await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
+    const [params] = talkToCaddieStreamMock.mock.calls[0];
+    expect(params.stats_context).toBeUndefined();
+  });
+
   it("BeforeFirstByteError falls back to talkToCaddie", async () => {
     talkToCaddieStreamMock.mockImplementationOnce(async () => {
       throw new MockBeforeFirstByteError();
@@ -349,6 +421,13 @@ describe("CaddieOrbSheet — legacy courses floor", () => {
       await Promise.resolve();
     });
     expect(screen.queryByLabelText("Close Looper")).toBeNull();
+  });
+
+  it("course-detail summon (real looperContextForPath) opens the general sheet — not swallowed by the legacy courses floor", async () => {
+    render(<CaddieOrbSheet />);
+    const ctx = looperContextForPath("/courses/pebble-beach"); // resolves to "general"
+    act(() => openLooper({ context: ctx, listening: false }));
+    expect(await screen.findByLabelText("Close Looper")).toBeTruthy();
   });
 });
 

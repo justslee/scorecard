@@ -12,6 +12,7 @@ dependency is needed.
 import json
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -491,15 +492,18 @@ async def update_green_feature_properties(
 def _elevation_patch(profile: dict) -> dict:
     """Map a `compute_hole_elevation_profile`-shaped dict to the persisted
     patch shape, applying the `net_change_ft -> delta_ft` alias and the
-    omit-green_slope-when-None rule. Exact mirror of
-    `osm_ingest.embed_elevation_in_green_features`'s field mapping — kept in
-    ONE place so the request write-back and the precompute job never drift.
+    omit-green_slope-when-None rule. Supersets (no longer mirrors exactly)
+    `osm_ingest.embed_elevation_in_green_features`'s field mapping by also
+    stamping `elevation_computed_at` — ingest stays unstamped by design and
+    gets re-validated + stamped by the first precompute pass. Kept in ONE
+    place so the request write-back and the precompute job never drift.
     """
     patch = {
         "tee_elevation_ft":   profile["tee_elevation_ft"],
         "green_elevation_ft": profile["green_elevation_ft"],
         "delta_ft":           profile["net_change_ft"],
         "plays_like_yards":   profile.get("plays_like_yards", 0.0),
+        "elevation_computed_at": datetime.now(timezone.utc).isoformat(),
     }
     if profile.get("green_slope") is not None:
         patch["green_slope"] = profile["green_slope"]

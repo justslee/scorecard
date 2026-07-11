@@ -1,22 +1,28 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { roundHref } from "@/lib/round-url";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getTournamentAsync, getRoundsAsync } from "@/lib/storage-api";
-import { calculateTotals } from "@/lib/types";
 import type { Tournament, Round, Game } from "@/lib/types";
 import { computeTournamentSettlement, hasMoneyGames } from "@/lib/settlement";
+import { haptic } from "@/lib/haptics";
+import {
+  computeStandings,
+  sortStandings,
+  tieRankLabel,
+  formatToPar,
+  formatDate,
+  playerInitial,
+  suffix,
+  hasCrossing,
+  type LbMode,
+  type PlayerStanding,
+} from "@/lib/tournament-standings";
 
 type Tab = "leaderboard" | "rounds" | "games";
-type LbMode = "gross" | "toPar";
-
-// Yardage-book palette — warm ink tones, same as RoundPageClient
-const PLAYER_COLORS = [
-  "#1a2a1a", "#3a4a8a", "#6b3a1a", "#3a6a4a",
-  "#6a3a3a", "#6a6a3a", "#3a6a6a", "#5a3a6a",
-];
 
 // ── Leaderboard column layout (px) ─────────────────────────────────────────
 // Chosen so that 3 rounds fit without horizontal scrolling on a 390px iPhone
@@ -50,136 +56,21 @@ const FORMAT_LABELS: Record<string, string> = {
   defender: "Defender",
 };
 
-// ── Player standing shape ───────────────────────────────────────────────────
-type PlayerStanding = {
-  playerId: string;
-  name: string;
-  initial: string;
-  color: string;
-  /** Total strokes per member round (null = player has no scores in that round). */
-  roundTotals: (number | null)[];
-  /** Score-to-par per member round (null = no scores). */
-  roundToPar: (number | null)[];
-  /** Sum of strokes across all rounds with scores (null if none). */
-  totalStrokes: number | null;
-  /** Sum of to-par across all rounds with scores (null if none). */
-  totalToPar: number | null;
+// ── Settlement reveal stagger (motion variants) ─────────────────────────────
+const settlementContainerVariants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.06 } },
+};
+const settlementItemVariants = {
+  hidden: { opacity: 0, y: 6 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: T.ease } },
 };
 
-// ── Pure helpers ────────────────────────────────────────────────────────────
-
-function playerInitial(name: string): string {
-  return (name.trim().charAt(0) || "?").toUpperCase();
-}
-
-function formatDate(isoString: string): string {
-  try {
-    return new Date(isoString).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return isoString.slice(0, 10);
-  }
-}
-
-/**
- * Compute per-player standings across member rounds.
- *
- * Player name resolution priority:
- *  1. playerNamesById (from backend — reflects the players table)
- *  2. round.players (authoritative per-round copy; covers guests not in the players table)
- *  3. playerId as last resort
- *
- * If tournament.playerIds is empty (pre-player-tracking data), union from round players.
- */
-function computeStandings(
-  playerIds: string[],
-  playerNames: Record<string, string>,
-  rounds: Round[]
-): PlayerStanding[] {
-  return playerIds.map((pid, idx) => {
-    const name = playerNames[pid] ?? pid;
-    const roundTotals: (number | null)[] = [];
-    const roundToPar: (number | null)[] = [];
-    let totalStrokes = 0;
-    let totalToPar = 0;
-    let hasSomeScore = false;
-
-    for (const r of rounds) {
-      const t = calculateTotals(r.scores, r.holes, pid);
-      if (t.playedHoles > 0) {
-        roundTotals.push(t.total);
-        roundToPar.push(t.toPar);
-        totalStrokes += t.total;
-        totalToPar += t.toPar;
-        hasSomeScore = true;
-      } else {
-        roundTotals.push(null);
-        roundToPar.push(null);
-      }
-    }
-
-    return {
-      playerId: pid,
-      name,
-      initial: playerInitial(name),
-      color: PLAYER_COLORS[idx % PLAYER_COLORS.length],
-      roundTotals,
-      roundToPar,
-      totalStrokes: hasSomeScore ? totalStrokes : null,
-      totalToPar: hasSomeScore ? totalToPar : null,
-    };
-  });
-}
-
-function formatToPar(v: number | null): string {
-  if (v === null) return "—";
-  if (v > 0) return `+${v}`;
-  if (v === 0) return "E";
-  return `${v}`;
-}
-
-/**
- * Tie-aware rank label for position idx in a sorted standings list.
- *
- * Returns "T1"/"T2" when multiple players share the same total;
- * plain "1"/"2" when the position is unique; "—" when the player has no scores.
- */
-function tieRankLabel(
-  sorted: PlayerStanding[],
-  idx: number,
-  mode: LbMode
-): string {
-  const s = sorted[idx];
-  const myTotal = mode === "gross" ? s.totalStrokes : s.totalToPar;
-  if (myTotal === null) return "—";
-
-  // Count players with a strictly better (lower) total
-  const betterCount = sorted.filter((other) => {
-    const ot = mode === "gross" ? other.totalStrokes : other.totalToPar;
-    return ot !== null && ot < myTotal;
-  }).length;
-
-  // Count players tied at the same total (including self)
-  const sameCount = sorted.filter((other) => {
-    const ot = mode === "gross" ? other.totalStrokes : other.totalToPar;
-    return ot === myTotal;
-  }).length;
-
-  const rank = betterCount + 1;
-  return sameCount > 1 ? `T${rank}` : `${rank}`;
-}
-
-function suffix(n: number): string {
-  if (n === 1) return "st";
-  if (n === 2) return "nd";
-  if (n === 3) return "rd";
-  return "th";
-}
-
 // ── Page ────────────────────────────────────────────────────────────────────
+// Pure standings/rank helpers (PlayerStanding, computeStandings, tieRankLabel,
+// formatToPar, formatDate, playerInitial, suffix, hasCrossing) live in
+// src/lib/tournament-standings.ts so vitest can import them without pulling
+// in framer-motion — see the import block above.
 
 export default function TournamentPageClient() {
   const router = useRouter();
@@ -197,6 +88,11 @@ export default function TournamentPageClient() {
   const [notFound, setNotFound] = useState(false);
   const [tab, setTab] = useState<Tab>("leaderboard");
   const [lbMode, setLbMode] = useState<LbMode>("gross");
+
+  // Motion/haptics: NORTHSTAR-calm — subtle, purposeful, disabled visually
+  // under prefers-reduced-motion. Presentation only, never touches the
+  // standings/settlement math below.
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     // Skip the static prerender placeholder — real id arrives on the client
@@ -239,6 +135,23 @@ export default function TournamentPageClient() {
             ...(t.playerNamesById ?? {}),
           };
 
+          // Resolve per-player handicap the same way as names: first defined
+          // `handicap` found on a round-player record for that id. Only
+          // round.players[].handicap is used (see tournament-standings.ts
+          // header) — never estimateHandicapFromRounds (owner-only).
+          // NOTE: the backend serialises an unset handicap as `null` (not
+          // omitted), so we filter with `!= null` — a null must be treated as
+          // "no handicap" (honest "—"), never stored as a value (which would
+          // later Math.round(null) === 0 and fabricate a scratch golfer).
+          const playerHandicaps: Record<string, number> = {};
+          for (const r of members) {
+            for (const p of r.players) {
+              if (playerHandicaps[p.id] === undefined && p.handicap != null) {
+                playerHandicaps[p.id] = p.handicap;
+              }
+            }
+          }
+
           // If tournament has no explicit playerIds, union from member rounds.
           const effectivePlayerIds =
             t.playerIds.length > 0
@@ -248,7 +161,12 @@ export default function TournamentPageClient() {
                 );
 
           setStandings(
-            computeStandings(effectivePlayerIds, resolvedNames, members)
+            computeStandings(
+              effectivePlayerIds,
+              resolvedNames,
+              playerHandicaps,
+              members
+            )
           );
         }
       } catch (e) {
@@ -261,6 +179,91 @@ export default function TournamentPageClient() {
 
     load();
   }, [id]);
+
+  // Sort standings: nulls last, then ascending by selected mode.
+  // Hoisted above the loading/not-found early returns so the haptics effects
+  // below (which depend on it) can be declared unconditionally per hook rules.
+  const sortedStandings = sortStandings(standings, lbMode);
+  const leader = sortedStandings[0] ?? null;
+  const orderSignature = sortedStandings.map((s) => s.playerId).join(",");
+  const leaderId = leader?.playerId ?? null;
+
+  // Tournament-level settlement — hoisted for the same reason (the
+  // settle-up-appeared haptic effect below needs it before any early return).
+  const tournamentSettlement = computeTournamentSettlement(memberRounds);
+
+  // ── Leaderboard re-sort haptics — fire ONLY on real order/leader changes ──
+  // Never on tab switch, mode toggle, or any re-render with the same order:
+  // deps are the derived signature strings, and we early-return when unchanged.
+  // The gross↔toPar toggle re-sorts the SAME data and legitimately changes
+  // orderSignature (e.g. tie-breaks differ) — that's a view change, not a
+  // standings transition, so it must never buzz. We track `mode` in the ref;
+  // on a mode change we rebase the baseline silently (no haptic) so the next
+  // REAL change is measured against the correct pre-toggle order.
+  const prevOrderRef = useRef<{
+    signature: string;
+    leaderId: string | null;
+    mode: LbMode;
+  } | null>(null);
+  useEffect(() => {
+    const prev = prevOrderRef.current;
+    if (prev === null) {
+      // First mount / first real standings — just record, fire nothing.
+      prevOrderRef.current = { signature: orderSignature, leaderId, mode: lbMode };
+      return;
+    }
+    if (prev.mode !== lbMode) {
+      // Pure view toggle (gross ↔ toPar) — rebase silently, no haptic.
+      prevOrderRef.current = { signature: orderSignature, leaderId, mode: lbMode };
+      return;
+    }
+    if (prev.signature === orderSignature) {
+      // No change — do nothing.
+      return;
+    }
+
+    const prevIds = prev.signature ? prev.signature.split(",") : [];
+    const newIds = orderSignature ? orderSignature.split(",") : [];
+    const prevRank = new Map(prevIds.map((pid, i) => [pid, i]));
+
+    const newLeaderEmerged =
+      prev.leaderId !== null && leaderId !== null && leaderId !== prev.leaderId;
+
+    let anyMovedUp = false;
+    for (const pid of newIds) {
+      const oldIdx = prevRank.get(pid);
+      const newIdx = newIds.indexOf(pid);
+      if (oldIdx !== undefined && newIdx < oldIdx) {
+        anyMovedUp = true;
+        break;
+      }
+    }
+    const overtakeDetected = anyMovedUp && hasCrossing(newIds, prevRank);
+
+    // At most one haptic per recompute — never spam.
+    if (newLeaderEmerged) {
+      haptic("success");
+    } else if (overtakeDetected) {
+      haptic("medium");
+    } else if (anyMovedUp) {
+      haptic("light");
+    }
+
+    prevOrderRef.current = { signature: orderSignature, leaderId, mode: lbMode };
+  }, [orderSignature, leaderId, lbMode]);
+
+  // ── Settle-up-appeared haptic — fires once per appearance, not per render ─
+  const settlementShownRef = useRef(false);
+  const settlementVisible =
+    !tournamentSettlement.isEmpty && tournamentSettlement.transfers.length > 0;
+  useEffect(() => {
+    if (settlementVisible && !settlementShownRef.current) {
+      haptic("light");
+      settlementShownRef.current = true;
+    } else if (!settlementVisible) {
+      settlementShownRef.current = false;
+    }
+  }, [settlementVisible]);
 
   // ── Not found ─────────────────────────────────────────────────────────────
   if (!loading && notFound) {
@@ -398,24 +401,9 @@ export default function TournamentPageClient() {
   const hasScores = standings.some((s) => s.totalStrokes !== null);
   const tournamentGames: Game[] = tournament.games ?? [];
   const hasGames = tournamentGames.length > 0;
-  const tournamentSettlement = computeTournamentSettlement(memberRounds);
   const hasMoneyGame = hasMoneyGames(memberRounds);
-
-  // Sort standings: nulls last, then ascending by selected mode
-  const sortedStandings = [...standings].sort((a, b) => {
-    if (lbMode === "gross") {
-      if (a.totalStrokes === null && b.totalStrokes === null) return 0;
-      if (a.totalStrokes === null) return 1;
-      if (b.totalStrokes === null) return -1;
-      return a.totalStrokes - b.totalStrokes;
-    }
-    if (a.totalToPar === null && b.totalToPar === null) return 0;
-    if (a.totalToPar === null) return 1;
-    if (b.totalToPar === null) return -1;
-    return a.totalToPar - b.totalToPar;
-  });
-
-  const leader = sortedStandings[0] ?? null;
+  // sortedStandings / leader / tournamentSettlement are hoisted above (before
+  // the early returns) so the order/settlement haptics effects can see them.
 
   return (
     <div
@@ -594,7 +582,14 @@ export default function TournamentPageClient() {
 
         {/* ── Leader callout (when scores exist) ────────────────────────── */}
         {/* Fix #7: T.paperFaint / T.paperMid replace raw rgba strings */}
-        {hasScores && leader && leader.totalStrokes !== null && (
+        {/* Gate on the ACTIVE mode's total: in Net mode, when no player has a
+            handicap the leader has a null net and nobody is ranked — don't
+            fabricate a "Leading … NET —" callout for an unranked field. */}
+        {hasScores &&
+          leader &&
+          (lbMode === "net"
+            ? leader.totalNet !== null
+            : leader.totalStrokes !== null) && (
           <div
             style={{
               margin: "0 22px 14px",
@@ -607,54 +602,40 @@ export default function TournamentPageClient() {
               gap: 14,
             }}
           >
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 99,
-                background: leader.color,
-                border: `1.5px solid ${T.paperFaint}`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontFamily: T.serif,
-                fontStyle: "italic",
-                fontSize: 18,
-                color: T.paper,
-                flexShrink: 0,
-              }}
-            >
-              {leader.initial}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            {reduce ? (
               <div
                 style={{
-                  fontFamily: T.mono,
-                  fontSize: 9,
-                  letterSpacing: 1.4,
-                  color: T.paperMid,
-                  textTransform: "uppercase",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  flex: 1,
+                  minWidth: 0,
                 }}
               >
-                Leading
+                <LeaderAvatar leader={leader} />
+                <LeaderName leader={leader} />
               </div>
-              <div
-                style={{
-                  fontFamily: T.serif,
-                  fontStyle: "italic",
-                  fontSize: 16,
-                  letterSpacing: -0.2,
-                  lineHeight: 1.3,
-                  color: T.paper,
-                  marginTop: 2,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {leader.name}
-              </div>
-            </div>
+            ) : (
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={leader.playerId}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.35, ease: T.ease }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 14,
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  <LeaderAvatar leader={leader} />
+                  <LeaderName leader={leader} />
+                </motion.div>
+              </AnimatePresence>
+            )}
             <div style={{ textAlign: "right", flexShrink: 0 }}>
               <div
                 style={{
@@ -664,7 +645,11 @@ export default function TournamentPageClient() {
                   color: T.paperMid,
                 }}
               >
-                {lbMode === "gross" ? "STROKES" : "TO PAR"}
+                {lbMode === "gross"
+                  ? "STROKES"
+                  : lbMode === "toPar"
+                  ? "TO PAR"
+                  : "NET"}
               </div>
               <div
                 style={{
@@ -676,7 +661,9 @@ export default function TournamentPageClient() {
               >
                 {lbMode === "gross"
                   ? leader.totalStrokes
-                  : formatToPar(leader.totalToPar)}
+                  : lbMode === "toPar"
+                  ? formatToPar(leader.totalToPar)
+                  : leader.totalNet ?? "—"}
               </div>
             </div>
           </div>
@@ -694,14 +681,19 @@ export default function TournamentPageClient() {
           {(["leaderboard", "rounds", "games"] as Tab[]).map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => {
+                if (t !== tab) haptic("light");
+                setTab(t);
+              }}
               style={{
+                position: "relative",
+                overflow: "hidden",
                 flex: 1,
                 padding: "12px 10px",
                 borderRadius: 10,
                 cursor: "pointer",
                 border: `1px solid ${tab === t ? T.ink : T.hairline}`,
-                background: tab === t ? T.ink : "transparent",
+                background: "transparent",
                 color: tab === t ? T.paper : T.pencil,
                 fontFamily: T.mono,
                 fontSize: 9.5,
@@ -710,7 +702,19 @@ export default function TournamentPageClient() {
                 minHeight: 44,
               }}
             >
-              {t}
+              {tab === t && (
+                <motion.div
+                  layoutId="tourney-tab-pill"
+                  transition={reduce ? { duration: 0 } : T.springSoft}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background: T.ink,
+                    borderRadius: 9,
+                  }}
+                />
+              )}
+              <span style={{ position: "relative" }}>{t}</span>
             </button>
           ))}
         </div>
@@ -724,6 +728,7 @@ export default function TournamentPageClient() {
                 [
                   { k: "gross" as LbMode, l: "Gross" },
                   { k: "toPar" as LbMode, l: "To Par" },
+                  { k: "net" as LbMode, l: "Net" },
                 ] as { k: LbMode; l: string }[]
               ).map((m) => (
                 <button
@@ -854,23 +859,36 @@ export default function TournamentPageClient() {
                       justifyContent: "flex-end",
                     }}
                   >
-                    Total
+                    {lbMode === "net" ? "Net" : "Total"}
                   </div>
                 </div>
 
                 {/* Body rows */}
                 {sortedStandings.map((s, idx) => {
                   const perRound =
-                    lbMode === "gross" ? s.roundTotals : s.roundToPar;
+                    lbMode === "gross"
+                      ? s.roundTotals
+                      : lbMode === "toPar"
+                      ? s.roundToPar
+                      : s.roundNet;
                   const total =
-                    lbMode === "gross" ? s.totalStrokes : s.totalToPar;
-                  const ranked = s.totalStrokes !== null;
+                    lbMode === "gross"
+                      ? s.totalStrokes
+                      : lbMode === "toPar"
+                      ? s.totalToPar
+                      : s.totalNet;
+                  // Ranked status per the active mode — net mode is unranked
+                  // (rank label "—") for a player with no handicap, even if
+                  // they have gross/toPar scores.
+                  const ranked = total !== null;
                   // Fix #5: tie-aware rank label ("T1"/"T2" for ties)
                   const rankLabel = tieRankLabel(sortedStandings, idx, lbMode);
 
                   return (
-                    <div
+                    <motion.div
                       key={s.playerId}
+                      layout={reduce ? false : "position"}
+                      transition={T.springSoft}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -938,18 +956,40 @@ export default function TournamentPageClient() {
                         >
                           {s.initial}
                         </div>
-                        <div
-                          style={{
-                            fontFamily: T.sans,
-                            fontSize: 13,
-                            fontWeight: 500,
-                            color: T.ink,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {s.name}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontFamily: T.sans,
+                              fontSize: 13,
+                              fontWeight: 500,
+                              color: T.ink,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {s.name}
+                          </div>
+                          {lbMode === "net" && (
+                            // Subtle HCP indicator — only in Net mode, so a
+                            // "—" total reads as "no handicap" rather than
+                            // "no score". Calm/minimal per the yardage-book
+                            // feel: tiny mono caption, no chip/badge chrome.
+                            <div
+                              style={{
+                                fontFamily: T.mono,
+                                fontSize: 8,
+                                letterSpacing: 0.8,
+                                color: T.pencilSoft,
+                                marginTop: 1,
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              {s.handicap !== null
+                                ? `Hcp ${s.handicap}`
+                                : "No hcp"}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1003,7 +1043,7 @@ export default function TournamentPageClient() {
                           ? formatToPar(total)
                           : total}
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })}
               </div>
@@ -1398,7 +1438,11 @@ export default function TournamentPageClient() {
                       : "All square — nothing to settle."}
                   </div>
                 ) : (
-                  <div>
+                  <motion.div
+                    variants={reduce ? undefined : settlementContainerVariants}
+                    initial={reduce ? false : "hidden"}
+                    animate={reduce ? false : "show"}
+                  >
                     {tournamentSettlement.transfers.map((t, i) => {
                       const fromName =
                         standings.find((s) => s.playerId === t.fromPlayerId)?.name ??
@@ -1409,8 +1453,9 @@ export default function TournamentPageClient() {
                         tournament.playerNamesById?.[t.toPlayerId] ??
                         t.toPlayerId;
                       return (
-                        <div
+                        <motion.div
                           key={`${t.fromPlayerId}-${t.toPlayerId}-${i}`}
+                          variants={reduce ? undefined : settlementItemVariants}
                           style={{
                             display: "flex",
                             alignItems: "baseline",
@@ -1444,10 +1489,10 @@ export default function TournamentPageClient() {
                           >
                             ${t.amount.toFixed(2)}
                           </div>
-                        </div>
+                        </motion.div>
                       );
                     })}
-                  </div>
+                  </motion.div>
                 )}
               </div>
             )}
@@ -1464,6 +1509,64 @@ export default function TournamentPageClient() {
 }
 
 // ── Sub-components ───────────────────────────────────────────────────────────
+
+function LeaderAvatar({ leader }: { leader: PlayerStanding }) {
+  return (
+    <div
+      style={{
+        width: 44,
+        height: 44,
+        borderRadius: 99,
+        background: leader.color,
+        border: `1.5px solid ${T.paperFaint}`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: T.serif,
+        fontStyle: "italic",
+        fontSize: 18,
+        color: T.paper,
+        flexShrink: 0,
+      }}
+    >
+      {leader.initial}
+    </div>
+  );
+}
+
+function LeaderName({ leader }: { leader: PlayerStanding }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div
+        style={{
+          fontFamily: T.mono,
+          fontSize: 9,
+          letterSpacing: 1.4,
+          color: T.paperMid,
+          textTransform: "uppercase",
+        }}
+      >
+        Leading
+      </div>
+      <div
+        style={{
+          fontFamily: T.serif,
+          fontStyle: "italic",
+          fontSize: 16,
+          letterSpacing: -0.2,
+          lineHeight: 1.3,
+          color: T.paper,
+          marginTop: 2,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {leader.name}
+      </div>
+    </div>
+  );
+}
 
 function Meta({
   k,

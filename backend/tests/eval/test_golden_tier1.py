@@ -71,9 +71,18 @@ async def _build_prompts(scenario: Scenario, monkeypatch):
     session = checks_mod.build_round_session(scenario)
     _patch_session_builder_deps(monkeypatch, session)
 
+    # specs/caddie-yardage-gps-selected-tee-plan.md §2.4: the yardage-context
+    # line is now driven by the request (hole_yards/yardage_basis), not
+    # hole_intel.yards — mirror what a real caller sends post-fix so the
+    # golden set's "150 yards"/"186" literal checks still see the number.
+    # 'card' is the closest analog to these flat synthetic scenarios (a bare
+    # scorecard yardage, no live GPS/selected-tee signal in play).
+    hole_yards = scenario.situation.hole.yards
     request = caddie_routes.SessionVoiceRequest(
         round_id="eval", transcript=scenario.situation.question,
         personality_id="classic", hole_number=scenario.situation.hole.number,
+        hole_yards=hole_yards,
+        yardage_basis="card" if hole_yards is not None else None,
     )
     system_blocks, _messages, _persona_id = await caddie_routes._build_session_voice_prompt(request, "eval-user")
     text_prompt = system_blocks[0]["text"] + "\n\n" + system_blocks[1]["text"]

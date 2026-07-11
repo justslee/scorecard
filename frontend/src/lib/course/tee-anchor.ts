@@ -37,7 +37,7 @@ export interface TeeBox {
   yardsToGreen: number;
 }
 
-export type TeeAnchorSource = 'named' | 'card' | 'single' | 'legacy' | 'card-only';
+export type TeeAnchorSource = 'named' | 'card' | 'ordinal' | 'single' | 'legacy' | 'card-only';
 
 export interface TeeAnchor {
   /** The resolved tee point to anchor geometry to. Null only for source
@@ -88,14 +88,70 @@ export function extractTeeBoxes(
 /**
  * Case-insensitive equality, else mutual-substring match — mirrors
  * `teeColorFor`'s tolerance (lib/map/google-map-helpers.ts) so e.g. a box
- * tagged "White · Middle" matches a round's teeName "white".
+ * tagged "White · Middle" matches a round's teeName "white". Exported so
+ * callers hydrating a mapped course's per-tee CARD yardages (`CourseData
+ * .holes[].yardages`, keyed by tee name) can match a round's `teeName`
+ * against those keys the same tolerant way (spec §2.2).
  */
-function namesMatch(boxName: string, teeName: string): boolean {
+export function namesMatch(boxName: string, teeName: string): boolean {
   const a = boxName.trim().toLowerCase();
   const b = teeName.trim().toLowerCase();
   if (!a || !b) return false;
   if (a === b) return true;
   return a.includes(b) || b.includes(a);
+}
+
+// ── Untagged-box ordinal selection (spec §2.2) ──────────────────────────────
+
+/**
+ * Canonical tee-name order, longest→shortest — mirrors round/new's
+ * TEE_OPTIONS. Used ONLY to align a hole's untagged tee-box geometry (ranked
+ * by yardsToGreen desc) to the golfer's selected tee when there's no OSM/
+ * editor name to go by (the common case pre tag-preservation ingestion).
+ */
+const ORDINAL_TEE_NAMES = ['black', 'blue', 'white', 'gold', 'red'];
+
+/** A golfer's teeName that unambiguously means "the longest tee" even when
+ *  the course's own tee count doesn't line up with ORDINAL_TEE_NAMES. */
+const BACK_MOST_ALIASES = ['black', 'tips', 'championship', 'tournament'];
+/** ...and "the shortest tee". */
+const FORWARD_ALIASES = ['red', 'forward', 'ladies', 'junior'];
+
+/**
+ * Resolve which untagged box the golfer's teeName means, WITHOUT guessing
+ * between look-alike middle tees (spec §2.2, edge case: Bethpage hole 3 —
+ * 5 untagged boxes, teeName "Black"):
+ *   1. Count-match ordinal align — if this hole has exactly as many boxes as
+ *      `ORDINAL_TEE_NAMES` (5) and `teeName` matches one of those names,
+ *      rank the boxes longest→shortest and take the box at that name's
+ *      ordinal index (Black = index 0 = the longest box).
+ *   2. Safe endpoints — otherwise only resolve the unambiguous ends: a
+ *      "black"/"tips"-style name → the single longest box; a
+ *      "red"/"forward"-style name → the single shortest box.
+ *   3. Anything else (an ambiguous middle tee with no count match) → null,
+ *      honest fallthrough to the caller's existing card-nearest/legacy paths
+ *      — never a guess between two similar middle boxes.
+ *
+ * Pure function — no side-effects, no DOM, headless-testable.
+ */
+export function ordinalTeePick(boxes: TeeBox[], teeName: string): TeeBox | null {
+  if (boxes.length === 0) return null;
+  const name = teeName.trim().toLowerCase();
+  if (!name) return null;
+  const sortedDesc = [...boxes].sort((a, b) => b.yardsToGreen - a.yardsToGreen);
+
+  if (boxes.length === ORDINAL_TEE_NAMES.length) {
+    const idx = ORDINAL_TEE_NAMES.indexOf(name);
+    if (idx !== -1) return sortedDesc[idx];
+  }
+
+  if (BACK_MOST_ALIASES.some((a) => a === name || name.includes(a))) {
+    return sortedDesc[0];
+  }
+  if (FORWARD_ALIASES.some((a) => a === name || name.includes(a))) {
+    return sortedDesc[sortedDesc.length - 1];
+  }
+  return null;
 }
 
 // ── Card-nearest selection ──────────────────────────────────────────────────
@@ -187,20 +243,27 @@ function cardPickValid(pick: CardPick | null, cardYards: number, par: number | n
  * Resolve which tee box (if any) the "from the tee" geometry should anchor
  * to for one hole.
  *
- * Selection order (spec §fix.1):
+ * Selection order (spec §fix.1; ordinal step added by
+ * specs/caddie-yardage-gps-selected-tee-plan.md §2.2):
  *   1. Named match — exactly one box's name matches `teeName`.
  *   2. Card-nearest — box whose yardsToGreen is closest to `cardYards`,
  *      accepted only if it ALSO passes the same par-aware reconciliation
- *      guard as steps 1/3/4 below (see `cardPickValid`): par 3 within 8%;
+ *      guard as steps 1/3/4/5 below (see `cardPickValid`): par 3 within 8%;
  *      par 4/5/unknown within the 25% sanity bound AND not more than 8%
  *      longer than the card. A 178y par-3 card must not adopt a 136y box
  *      just because it happens to clear a blanket 25% bound. A pick that
  *      fails falls straight through to the honest `card-only` state.
- *   3. Single box — exactly one box exists and there's no card/name signal
+ *   3. Untagged-box ordinal (`ordinalTeePick`) — every box on this hole is
+ *      untagged (>1 box; a lone box is step 4's job), `teeName` is known,
+ *      and steps 1/2 didn't resolve: count-match ordinal align or a safe
+ *      endpoint. Ambiguous → null, falls through. This is what flips
+ *      Bethpage hole 3 (5 untagged boxes, "Black") to the 232y box instead
+ *      of the arbitrary legacy pick.
+ *   4. Single box — exactly one box exists and there's no card/name signal
  *      to prefer otherwise.
- *   4. Legacy — nothing to choose with; keep the incoming `currentTee`.
+ *   5. Legacy — nothing to choose with; keep the incoming `currentTee`.
  *
- * After steps 1/3/4 (NOT a fresh card pick, which is already validated
+ * After steps 1/3/4/5 (NOT a fresh card pick, which is already validated
  * against the identical guard in step 2), the par-aware >8%/1.08x
  * reconciliation guard (spec §fix.3) checks the result against `cardYards`.
  * A guard failure re-runs the card-nearest step; if that also fails (or
@@ -246,13 +309,24 @@ export function resolveTeeAnchor(opts: {
     source = 'card';
   }
 
-  // 3. Single box — only when there's no card signal to prefer instead.
+  // 3. Untagged-box ordinal (spec §2.2) — every box on this hole is
+  // untagged, teeName is known, and named/card-nearest didn't resolve.
+  // Gated to >1 box: a lone untagged box is step 4's ("single") job.
+  if (!tee && teeName && boxes.length > 1 && boxes.every((b) => b.name == null)) {
+    const picked = ordinalTeePick(boxes, teeName);
+    if (picked) {
+      tee = picked.point;
+      source = 'ordinal';
+    }
+  }
+
+  // 4. Single box — only when there's no card signal to prefer instead.
   if (!tee && boxes.length === 1 && cardYards == null) {
     tee = boxes[0].point;
     source = 'single';
   }
 
-  // 4. Legacy / honest fallback.
+  // 5. Legacy / honest fallback.
   if (!tee) {
     if (cardYards != null && boxes.length > 0 && !cardValid) {
       // A card number exists but nothing satisfies the par-aware guard

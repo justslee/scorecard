@@ -76,7 +76,22 @@ export interface CaddieSheetProps {
   accent: string;
   holeNumber: number;
   holePar: number;
-  holeYards: number;
+  /** Resolved yardage (lib/caddie/hole-yardage.ts) — null when nothing honest
+   *  is known yet (no GPS fix, no selected-tee data, no card snapshot).
+   *  NEVER the mock illustration constant. */
+  holeYards: number | null;
+  /** Honest basis caption for the header ("204 to the green" / "231 yds ·
+   *  black tees" / "—") — parent-computed via `yardageCaption` so every
+   *  surface reads the same provenance label. */
+  yardsCaption?: string;
+  /** Provenance of `holeYards`: 'gps' | 'tee-card' | 'tee-geom' | 'card' |
+   *  null — plumbed into every voice request so the caddie's grounding
+   *  matches the header (specs/caddie-yardage-gps-selected-tee-plan.md
+   *  §2.3/§2.4). 'gps' also drives `distance_to_green_yards`. */
+  yardageBasis?: 'gps' | 'tee-card' | 'tee-geom' | 'card' | null;
+  /** The golfer's selected tee (e.g. "Black") — labels "from the {tee}
+   *  tees" wording; omitted when unknown (legacy rounds). */
+  teeName?: string | null;
   /** Conversation history — owned by parent so it persists across close/reopen. */
   convHistory: VoiceCaddieMessage[];
   onUpdateConvHistory: (history: VoiceCaddieMessage[]) => void;
@@ -210,6 +225,9 @@ export default function CaddieSheet({
   holeNumber,
   holePar,
   holeYards,
+  yardsCaption,
+  yardageBasis = null,
+  teeName = null,
   convHistory,
   onUpdateConvHistory,
   roundId,
@@ -219,6 +237,11 @@ export default function CaddieSheet({
   onSelectPersona,
   resolveOpeningShot,
 }: CaddieSheetProps) {
+  // Live GPS distance to the middle of the green — only meaningful when the
+  // resolver's basis is 'gps' (specs/caddie-yardage-gps-selected-tee-plan.md
+  // §2.3); undefined otherwise so requests never claim a live fix that isn't
+  // real.
+  const distanceToGreenYards = yardageBasis === "gps" ? holeYards ?? undefined : undefined;
   // Controls the swipe-down-to-dismiss drag, started from the grab handle only.
   const dragControls = useDragControls();
   // Lock the page behind the sheet so a swipe on the grab handle can't fall
@@ -240,6 +263,8 @@ export default function CaddieSheet({
     holeNumber,
     holePar,
     holeYards,
+    yardageBasis,
+    teeName,
     resolveOpeningShot,
   });
   // Eligible for live AND hasn't fallen back this activation — gates both
@@ -638,7 +663,10 @@ export default function CaddieSheet({
           personality_id: personaId,
           hole_number: holeNumber,
           par: holePar,
-          yards: holeYards,
+          yards: holeYards ?? undefined,
+          distance_to_green_yards: distanceToGreenYards,
+          yardage_basis: yardageBasis ?? undefined,
+          tee_name: teeName ?? undefined,
           club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
           handicap: profile?.handicap ?? undefined,
           conversation_history: currentHistory,
@@ -655,7 +683,10 @@ export default function CaddieSheet({
             personality_id: personaId,
             hole_number: holeNumber,
             par: holePar,
-            yards: holeYards,
+            yards: holeYards ?? undefined,
+            distance_to_green_yards: distanceToGreenYards,
+            yardage_basis: yardageBasis ?? undefined,
+            tee_name: teeName ?? undefined,
             club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
             handicap: profile?.handicap ?? undefined,
             conversation_history: currentHistory,
@@ -669,7 +700,16 @@ export default function CaddieSheet({
         if (sessionActive && roundId) {
           try {
             responseText = await sessionVoiceStream(
-              { round_id: roundId, transcript: question, personality_id: personaId, hole_number: holeNumber },
+              {
+                round_id: roundId,
+                transcript: question,
+                personality_id: personaId,
+                hole_number: holeNumber,
+                distance_to_green_yards: distanceToGreenYards,
+                hole_yards: holeYards ?? undefined,
+                yardage_basis: yardageBasis ?? undefined,
+                tee_name: teeName ?? undefined,
+              },
               { onToken, onStatus, signal: controller.signal },
             );
           } catch (err) {
@@ -758,6 +798,9 @@ export default function CaddieSheet({
       holeNumber,
       holePar,
       holeYards,
+      yardageBasis,
+      teeName,
+      distanceToGreenYards,
       onUpdateConvHistory,
       tts.speak,
       tts.beginStream,
@@ -1100,7 +1143,7 @@ export default function CaddieSheet({
         hole_number: holeNumber,
         distance_yards: dist,
         par: holePar,
-        yards: holeYards,
+        yards: holeYards ?? undefined,
         club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
         handicap: profile?.handicap ?? undefined,
       });
@@ -1117,7 +1160,7 @@ export default function CaddieSheet({
             hole_number: holeNumber,
             distance_yards: dist,
             par: holePar,
-            yards: holeYards,
+            yards: holeYards ?? undefined,
           });
         } catch {
           rec = await recStateless();
@@ -1403,7 +1446,7 @@ export default function CaddieSheet({
                     textTransform: "uppercase",
                   }}
                 >
-                  Hole {holeNumber} &middot; Par {holePar} &middot; {holeYards} yds
+                  Hole {holeNumber} &middot; Par {holePar} &middot; {yardsCaption ?? (holeYards != null ? `${holeYards} yds` : "—")}
                 </span>
               </div>
             </div>

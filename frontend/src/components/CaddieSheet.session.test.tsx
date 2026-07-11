@@ -422,7 +422,18 @@ describe("CaddieSheet — streaming ladder (specs/voice-streaming-replies-plan.m
 
     await waitFor(() => expect(sessionVoiceStreamMock).toHaveBeenCalledTimes(1));
     expect(sessionVoiceStreamMock).toHaveBeenCalledWith(
-      { round_id: "round-123", transcript: "what club from here?", personality_id: "strategist", hole_number: 3 },
+      {
+        round_id: "round-123",
+        transcript: "what club from here?",
+        personality_id: "strategist",
+        hole_number: 3,
+        // Plumbed by specs/caddie-yardage-gps-selected-tee-plan.md §2.3 — the
+        // resolved yardage + its provenance ride along on every turn.
+        distance_to_green_yards: undefined,
+        hole_yards: 401,
+        yardage_basis: undefined,
+        tee_name: undefined,
+      },
       expect.objectContaining({ onToken: expect.any(Function) }),
     );
     expect(talkToCaddieStreamMock).not.toHaveBeenCalled();

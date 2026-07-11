@@ -109,6 +109,18 @@ export function hasIdentifyingTokens(name: string): boolean {
   return tokenizeCourseName(name).some((t) => !COURSE_QUERY_STOPWORDS.has(t));
 }
 
+/**
+ * The name's *identifying* tokens — tokenizeCourseName minus the golf-generic
+ * stopwords (golf/course/club/links/country/the). "Marine Park Golf Course" →
+ * ["marine","park"]. Used by voice resolution to test whether a search hit is
+ * an EXACT facility-name match for a spoken name (so "Marine Park" resolves to
+ * "Marine Park Golf Course" but never to the different-facility "Marine Park
+ * Ridge", which carries an extra identifying token).
+ */
+export function identifyingTokens(text: string): string[] {
+  return tokenizeCourseName(text).filter((t) => !COURSE_QUERY_STOPWORDS.has(t));
+}
+
 // ---------------------------------------------------------------------------
 // Deduplication
 // ---------------------------------------------------------------------------

@@ -53,6 +53,7 @@ export function hasTeeTimeSignal(r: TeeTimePrefsParseResultValidated): boolean {
   return (
     r.windows.length > 0 ||
     r.courseNames.length > 0 ||
+    r.unresolvedCourseNames.length > 0 ||
     r.favoritesOnly ||
     r.partySize != null ||
     r.maxPriceUsd != null ||
@@ -182,6 +183,89 @@ export function matchKnownCourses(
     if (hit) matched.push(course);
   }
   return matched;
+}
+
+// Generic golf words that can be PART of a course name but never a name on
+// their own (mirrors matchKnownCourses' GENERIC set). A candidate must retain
+// at least one non-generic, ≥3-char word to count as a real course name.
+const GENERIC_COURSE_WORDS = new Set([
+  "golf", "course", "club", "links", "country", "the", "at", "on", "gc", "cc",
+  "municipal", "muni", "national", "resort", "park", "and", "of", "a", "an",
+]);
+
+// Words that TERMINATE an "at <name>" capture — the prefs vocabulary (days,
+// periods, party/price/distance/dispatch markers, common fillers). Everything
+// from the lead word up to the first of these is the candidate course name.
+const COURSE_STOP_WORDS = new Set([
+  // days
+  "sunday", "sundays", "monday", "mondays", "tuesday", "tuesdays", "wednesday",
+  "wednesdays", "thursday", "thursdays", "friday", "fridays", "saturday",
+  "saturdays", "weekend", "weekends", "today", "tomorrow", "tonight",
+  // periods
+  "early", "morning", "mornings", "midday", "noon", "lunch", "lunchtime",
+  "afternoon", "afternoons", "twilight", "evening", "evenings", "dusk",
+  "sunset", "sunrise", "dawn", "daybreak", "first", "thing",
+  // party / price / distance / misc vocabulary
+  "party", "group", "foursome", "threesome", "twosome", "solo", "us",
+  "players", "golfers", "people", "under", "below", "less", "than", "no",
+  "more", "cheaper", "within", "inside", "around", "about", "miles", "mile",
+  "dollars", "bucks", "favorites", "favorite", "favourites", "favourite",
+  "only", "just", "or", "for", "and", "with", "this", "next", "sometime",
+  "some", "somewhere", "please",
+  // Connectors that also serve as lead words — never part of a name mid-phrase,
+  // so "Marine Park on Saturday" / "the muni at noon" cut cleanly (the ack reads
+  // "Marine Park", not "Marine Park on"). Only ever shortens a capture.
+  "on", "at",
+]);
+
+// Leading course keys ("at Marine Park", "over at the muni"). Deliberately
+// conservative: a course name follows one of these words, so a bare course
+// mention with no lead is NOT captured (failure mode = miss, never a wrong
+// search on a false positive).
+const COURSE_LEAD_RE = /\b(?:over at|out at|at|on)\s+([a-z][a-z' ]{2,40})/g;
+
+/**
+ * Pull spoken course names that named a course NOT on the known list — the
+ * silently-dropped name behind the Marine-Park-from-Pittsburgh bug. Pure and
+ * conservative: capture only after an explicit lead word, bound the name by the
+ * prefs vocabulary, require ≥1 distinctive (non-generic, ≥3-char) word, and drop
+ * anything that already resolved to a known course. A false positive must be
+ * cheap — it becomes an honest "I don't know that course" ack, never a search.
+ */
+export function extractUnresolvedCourseNames(
+  lower: string,
+  knownCourses: string[]
+): string[] {
+  const out: string[] = [];
+  for (const m of lower.matchAll(COURSE_LEAD_RE)) {
+    const raw = m[1];
+    const words = raw.split(/\s+/).filter(Boolean);
+    // Cut at the first vocabulary stop word.
+    const nameWords: string[] = [];
+    for (const w of words) {
+      if (COURSE_STOP_WORDS.has(w)) break;
+      nameWords.push(w);
+    }
+    // Trim leading/trailing pure-filler words ("the", "a") without dropping a
+    // generic word that trails a distinctive one ("marine park" keeps "park").
+    while (nameWords.length && (nameWords[0] === "the" || nameWords[0] === "a" || nameWords[0] === "an")) {
+      nameWords.shift();
+    }
+    if (nameWords.length === 0) continue;
+    // Require at least one distinctive word — otherwise it's "the muni", "the
+    // club", etc.: a generic reference we must not treat as a real course name.
+    const hasDistinct = nameWords.some(
+      (w) => w.length >= 3 && !GENERIC_COURSE_WORDS.has(w)
+    );
+    if (!hasDistinct) continue;
+    const name = nameWords.join(" ").trim();
+    if (!name) continue;
+    // Already resolves to a listed course → it's in courseNames, not unresolved.
+    if (matchKnownCourses(name, knownCourses).length > 0) continue;
+    if (fuzzyBestMatch(name, knownCourses, 0.74).match) continue;
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
 }
 
 function extractWindows(lower: string): Array<{ day: TeeTimeDay; period: TeeTimePeriod | null }> {
@@ -324,6 +408,12 @@ export function parseTeeTimePrefsLocally(
   const courseNames = matchKnownCourses(lower, known?.courses ?? []);
   if (courseNames.length) explanations.push("Matched course name(s) against the listed courses.");
 
+  // A named course that matches nothing on the list — do NOT drop it silently
+  // (that dispatched a wrong GPS-nearby search). Surface it so apply acks honestly.
+  const unresolvedCourseNames = extractUnresolvedCourseNames(lower, known?.courses ?? []);
+  if (unresolvedCourseNames.length)
+    explanations.push("Heard a course name that isn't on the listed courses.");
+
   const favoritesOnly = /\b(?:just|only)\s+(?:my\s+|the\s+)?favou?rites?\b|\bfavou?rites?\s+only\b/.test(lower);
   const partySize = extractPartySize(lower);
 
@@ -339,6 +429,7 @@ export function parseTeeTimePrefsLocally(
   const signals =
     windows.length +
     (courseNames.length ? 1 : 0) +
+    (unresolvedCourseNames.length ? 1 : 0) +
     (favoritesOnly ? 1 : 0) +
     (partySize != null ? 1 : 0) +
     (maxPriceUsd != null ? 1 : 0) +
@@ -350,6 +441,7 @@ export function parseTeeTimePrefsLocally(
   return TeeTimePrefsParseResultSchema.parse({
     windows,
     courseNames,
+    unresolvedCourseNames,
     favoritesOnly,
     partySize,
     maxPriceUsd,
@@ -456,18 +548,26 @@ export async function parseTeeTimePrefs(
     const knownCourses = options.known?.courses ?? [];
     let courseNames = parsed.data.courseNames;
     const warnings = [...(parsed.data.warnings ?? [])];
+    // Dropped LLM course names are no longer warnings-only — they carry into
+    // unresolvedCourseNames so apply acks honestly instead of dispatching a
+    // substitute search (same A0 fix as the local path).
+    const unresolvedCourseNames = [...(parsed.data.unresolvedCourseNames ?? [])];
     if (knownCourses.length && courseNames.length) {
       const resolved: string[] = [];
       for (const name of courseNames) {
         const { match } = fuzzyBestMatch(name, knownCourses, 0.74);
         if (match && !resolved.includes(match)) resolved.push(match);
-        else if (!match) warnings.push(`Course "${name}" is not in the listed courses.`);
+        else if (!match) {
+          warnings.push(`Course "${name}" is not in the listed courses.`);
+          if (!unresolvedCourseNames.includes(name)) unresolvedCourseNames.push(name);
+        }
       }
       courseNames = resolved;
     }
     return {
       ...parsed.data,
       courseNames,
+      unresolvedCourseNames,
       warnings: warnings.length ? Array.from(new Set(warnings)) : undefined,
     };
   }

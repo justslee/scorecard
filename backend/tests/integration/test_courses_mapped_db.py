@@ -18,6 +18,8 @@ Covers:
 
 import uuid
 
+import pytest
+
 
 def _seed_course(course_id: str, *, green_geometry: dict, green_props: dict, par: int = 5) -> dict:
     """The exact dict shape `courses_mapped.upsert_course` consumes: one hole
@@ -261,9 +263,28 @@ def _tee_and_green_course(course_id: str, *, green_props: dict) -> dict:
     }
 
 
+def _stub_sample_factory(call_counter: list[int], *, tee_ft=90.0, green_ft=100.0, net_ft=10.0):
+    async def _stub_sample(synth_holes, target_course_name):
+        call_counter[0] += 1
+        assert target_course_name == "precompute"
+        refs = {f["properties"]["ref"] for f in synth_holes}
+        return {
+            ref: {
+                "tee_elevation_ft": tee_ft,
+                "green_elevation_ft": green_ft,
+                "net_change_ft": net_ft,
+                "plays_like_yards": net_ft / 3.0,
+                "green_slope": None,
+            }
+            for ref in refs
+        }
+
+    return _stub_sample
+
+
 class TestPrecomputeBackfill:
     async def test_precompute_writes_through_real_db_and_is_idempotent(self, monkeypatch):
-        import app.routes.caddie as caddie_routes
+        import app.services.course_elevation as course_elevation
         from app.services import courses_mapped
 
         cid = str(uuid.uuid4())
@@ -271,28 +292,13 @@ class TestPrecomputeBackfill:
             _tee_and_green_course(cid, green_props={"existing": 1})
         )
 
-        call_count = 0
-
-        async def _stub_sample(synth_holes, target_course_name):
-            nonlocal call_count
-            call_count += 1
-            assert target_course_name == "precompute"
-            refs = {f["properties"]["ref"] for f in synth_holes}
-            return {
-                ref: {
-                    "tee_elevation_ft": 90.0,
-                    "green_elevation_ft": 100.0,
-                    "net_change_ft": 10.0,
-                    "plays_like_yards": 3.3,
-                    "green_slope": None,
-                }
-                for ref in refs
-            }
-
-        monkeypatch.setattr(caddie_routes, "sample_course_elevations", _stub_sample)
+        call_count = [0]
+        monkeypatch.setattr(
+            course_elevation, "sample_course_elevations", _stub_sample_factory(call_count)
+        )
 
         # First run — should sample and write back.
-        await caddie_routes._precompute_course_elevations(cid)
+        await course_elevation._precompute_course_elevations(cid)
 
         course = await courses_mapped.get_course(cid)
         feats = course["holes"][0]["features"]["features"]
@@ -300,15 +306,17 @@ class TestPrecomputeBackfill:
         assert green["properties"]["delta_ft"] == 10.0
         assert green["properties"]["tee_elevation_ft"] == 90.0
         assert green["properties"]["green_elevation_ft"] == 100.0
-        assert green["properties"]["plays_like_yards"] == 3.3
+        assert green["properties"]["plays_like_yards"] == pytest.approx(10.0 / 3.0)
         assert green["properties"]["existing"] == 1
         assert "green_slope" not in green["properties"]
-        assert call_count == 1
+        assert green["properties"]["elevation_coords_key"]
+        assert call_count[0] == 1
 
-        # Second run — already-persisted elevation filters the hole out, so
-        # the sampler must NOT be called again (zero-sample early return).
-        await caddie_routes._precompute_course_elevations(cid)
-        assert call_count == 1
+        # Second run — the persisted `elevation_coords_key` matches the CURRENT
+        # stored (unmoved) tee/green centers, so the hole is filtered out and
+        # the sampler must NOT be called again (idempotency, zero 3DEP calls).
+        await course_elevation._precompute_course_elevations(cid)
+        assert call_count[0] == 1
 
         course_again = await courses_mapped.get_course(cid)
         feats_again = course_again["holes"][0]["features"]["features"]
@@ -319,3 +327,77 @@ class TestPrecomputeBackfill:
         assert (
             len([f for f in feats_again if f["properties"]["featureType"] == "green"]) == 1
         )
+
+    async def test_remap_with_moved_green_invalidates_and_resamples(self, monkeypatch):
+        """A re-map (`upsert_course` delete+reinsert) that round-trips the
+        STALE elevation props on a MOVED green polygon must be detected by
+        the mismatched `elevation_coords_key` and resampled + overwritten,
+        while unrelated props survive."""
+        import app.services.course_elevation as course_elevation
+        from app.services import courses_mapped
+
+        cid = str(uuid.uuid4())
+        seeded = _tee_and_green_course(cid, green_props={"existing": 1})
+        await courses_mapped.upsert_course(seeded)
+
+        call_count = [0]
+        monkeypatch.setattr(
+            course_elevation, "sample_course_elevations", _stub_sample_factory(call_count)
+        )
+
+        # First precompute pass — seeds elevation + a coords key for the
+        # ORIGINAL green center.
+        await course_elevation._precompute_course_elevations(cid)
+        course = await courses_mapped.get_course(cid)
+        green = _find_green(course["holes"][0]["features"]["features"])
+        old_key = green["properties"]["elevation_coords_key"]
+        assert old_key
+        assert call_count[0] == 1
+
+        # Re-map: upsert_course with the green polygon MOVED, round-tripping
+        # the stale (now-invalid) elevation props exactly like the course
+        # editor round-trip (`get_course` output -> `upsert_course` input).
+        stale_props = dict(green["properties"])
+        moved_course = _tee_and_green_course(cid, green_props=stale_props)
+        moved_course["holes"][0]["features"]["features"][1]["geometry"] = _green_point(
+            -73.500, 40.750  # materially different center
+        )
+        await courses_mapped.upsert_course(moved_course)
+
+        # Second precompute pass — mismatched key -> resample + overwrite.
+        await course_elevation._precompute_course_elevations(cid)
+        assert call_count[0] == 2
+
+        course_after = await courses_mapped.get_course(cid)
+        green_after = _find_green(course_after["holes"][0]["features"]["features"])
+        new_key = green_after["properties"]["elevation_coords_key"]
+        assert new_key != old_key
+        # Unrelated props preserved across the || merge.
+        assert green_after["properties"]["existing"] == 1
+        # Values overwritten by the (identical, deterministic) stub sample.
+        assert green_after["properties"]["tee_elevation_ft"] == 90.0
+        assert green_after["properties"]["delta_ft"] == 10.0
+
+    async def test_precompute_graceful_degrade_when_sampler_returns_empty(self, monkeypatch):
+        """A USGS-miss (sampler returns {}) must leave existing props
+        completely untouched — no fabricated/partial write."""
+        import app.services.course_elevation as course_elevation
+        from app.services import courses_mapped
+
+        cid = str(uuid.uuid4())
+        await courses_mapped.upsert_course(
+            _tee_and_green_course(cid, green_props={"existing": 1})
+        )
+
+        async def _empty_sample(synth_holes, target_course_name):
+            return {}
+
+        monkeypatch.setattr(course_elevation, "sample_course_elevations", _empty_sample)
+
+        await course_elevation._precompute_course_elevations(cid)
+
+        course = await courses_mapped.get_course(cid)
+        green = _find_green(course["holes"][0]["features"]["features"])
+        assert green["properties"]["existing"] == 1
+        assert "tee_elevation_ft" not in green["properties"]
+        assert "elevation_coords_key" not in green["properties"]

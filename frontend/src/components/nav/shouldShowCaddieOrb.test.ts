@@ -10,7 +10,7 @@ describe('shouldShowCaddieOrb', () => {
   );
 
   it.each([
-    ['/courses/pebble-beach', false], // dead mic today: no listener on course detail — deferred to S2
+    ['/courses/pebble-beach', true], // course detail: SHOWs, resolves to the general converse fallback
     ['/players/42', true],
     ['/tournament/xyz', true],
     ['/round/abc123', false],

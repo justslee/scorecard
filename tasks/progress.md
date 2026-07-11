@@ -3,6 +3,316 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## caddie-yardage-gps-selected-tee — OWNER P0 bug fix, all 4 slices (2026-07-11) — DONE (on integration/next @2eb7dea, NOTICEABLE)
+Implemented specs/caddie-yardage-gps-selected-tee-plan.md exactly (4 commits, one per slice,
+each pushed independently so nothing was lost on a crash). Fixes the literal owner bug:
+caddie sheet header showed "HOLE 3 · PAR 3 · 178 YDS" (Bethpage Black hole 3) — the MOCK
+illustration constant, leaking via `?? hole.yards` fallbacks — and the caddie argued when
+corrected to 231 (the Black tees actually being played). GPS live + green mapped, neither used.
+- **Slice 1** (`275dee3`): new `frontend/src/lib/caddie/hole-yardage.ts` — the ONE shared
+  resolver (GPS-to-green > selected-tee card > selected-tee geometry > card snapshot > honest
+  null). Replaced the `round.holes[i]?.yards ?? hole.yards` mock leak at RoundPageClient's
+  CaddieSheet/OfflineCaddieCard props. Header now shows the resolved number + honest basis
+  caption. `holeYards` threaded as `number | null` throughout.
+- **Slice 2** (`de9a12f`): `tee-anchor.ts` untagged-box ordinal pick (`ordinalTeePick`) — count-
+  match ordinal align + safe endpoints, so 5 untagged OSM tee boxes + teeName "Black" resolves
+  to the back-most (232y) box instead of an arbitrary legacy pick. `useHoleCoordinates` now
+  surfaces `courseHoles` (incl. per-tee `yardages`); RoundPageClient hydrates
+  `selectedTeeCardYards` for real (231 for Bethpage Black hole 3). `round/new` snapshots the
+  selected tee's real per-hole yardages into `round.holes` + `teeId` at creation (mapped courses
+  only; falls back honestly).
+- **Slice 3** (`b9c6f29`): backend `SessionVoiceRequest`/`VoiceCaddieRequest` gain optional
+  `distance_to_green_yards`/`hole_yards`/`yardage_basis`/`tee_name` (additive); dropped the fake
+  `yards: int = 400` default. New shared `_format_yardage_line` (caddie.py) labels provenance in
+  both prompt builders; `hole_intel.yards` demoted to elevation-delta math only. Tool default
+  (`get_recommendation`) reads the request-carried resolved yardage via a new `ToolContext
+  .current_yardage`, honestly erroring instead of defaulting to 400 when nothing is known.
+  CaddieSheet/useCaddieLiveSession plumb the resolved number + basis into every voice request;
+  live session re-anchors on a GPS-acquired/lost basis flip, not just hole change.
+- **Slice 4** (`2eb7dea`): new `YARDAGE_GROUNDING_RULE` (voice_prompts.py) in both mouths — GPS/
+  selected-tee number is ground truth, adopt the player's correction immediately, never argue,
+  never say "on the card" unless real. New golden eval fixture (agree-not-argue, tier1 CI-
+  enforced + tier2_judge on-demand).
+- **Critical test:** `frontend/src/lib/caddie/bethpage-hole3.test.ts` — confirmed RED on pre-fix
+  `tee-anchor.ts` (temporary stash-and-rerun: source fell to `'legacy'` instead of `'ordinal'`,
+  the assertion failed) and GREEN after; resolver never returns 178 for the real Bethpage inputs
+  in any of GPS/tee-card/tee-geom basis.
+- **Verified — mock never reaches a caddie surface:** grep confirms `hole.yards` (mock) only
+  feeds the paper-illustration `distance` calc and `headerYards`' true-paper-only fallback (both
+  gated `!(mappedCourse || roundAnchor)`); CaddieSheet/OfflineCaddieCard always receive
+  `resolvedYardage.yards`.
+- **Gates:** frontend `npm run lint` + `tsc --noEmit` + voice-tests smoke 278/278 + vitest
+  2100/2100 + `npm run build` all clean; backend `ruff check .` clean + pytest 2061 passed/92
+  skipped (Postgres integration tests — expected without a local DB, CI covers them).
+- **Known adjacent smell, NOT fixed (flagged, not in the 4-slice plan):** `/caddie/recommend`
+  and `/session/recommend` (`RecommendationRequest`/`SessionRecommendRequest`.yards, and the
+  frontend `fetchRecommendation`'s `params.yards || 400`) still default to a fake 400 — this is
+  the TAP/manual-distance flow (golfer types a distance explicitly), a different code path from
+  the voice-grounding bug this plan targeted. Left alone to avoid scope creep beyond the plan;
+  worth its own follow-up item.
+- **Noticeable** (TestFlight): the caddie sheet header and voice replies now show the golfer's
+  real, correct yardage and agree when corrected, instead of showing/arguing a stale mock number.
+
+## course-intel-static-persistence — Gap A + Gap B closure (2026-07-11) — DONE (silent, on integration/next @f682f85)
+Implemented specs/course-intel-static-persistence-plan.md (v2) exactly — the item was ~90%
+already built; this closed the two verified gaps only.
+- **Gap A (headline fix):** `create_mapped`/`put_mapped` (routes/courses_mapped.py) now
+  schedule `_precompute_course_elevations` BEFORE `_precompute_course_guides` (guides read
+  elevation props for research context) — previously only `/session/start` fired it, so a
+  freshly-mapped course could race its first course-intel open.
+- **Gap B:** added content-addressed `elevation_coords_key` (quantized tee/green center
+  coords, 6dp) stamped only by the precompute job. The skip logic now requires an exact key
+  match instead of "has tee_elevation_ft" — so a re-map (upsert_course delete+reinsert
+  round-tripping stale props via the editor) is detected and resampled, while an unmoved
+  course stays a zero-3DEP-call skip forever. `_elevation_patch` also stamps
+  `elevation_computed_at` (observability only).
+- **No schema change, no Alembic migration** — both new keys live inside the existing
+  `hole_features.properties` JSONB (plan's explicit ruling, section 3).
+- Moved `_feature_center`/`_green_persisted_elevation`/`_precompute_course_elevations`
+  verbatim `routes/caddie.py` → new `app/services/course_elevation.py` (import hygiene,
+  mirrors `course_guides.py`) so the CRUD route doesn't cross-import the caddie route.
+- Tests: updated `test_precompute_elevation.py` (moved import) + new key-match/missing/
+  mismatched/determinism cases; new `test_mapping_precompute_wiring.py` (non-DB, asserts
+  elevation-then-guides scheduling order + no-op on upsert-None); extended
+  `tests/integration/test_courses_mapped_db.py` with idempotency-via-key, a
+  remap-invalidation round-trip, and graceful-degrade-on-empty-sampler.
+- Verified: `ruff check .` clean; non-DB pytest 2060 passed/92 skipped; DB integration suite
+  against a real `postgis/postgis:16-3.4` docker container — **92 passed** (10/10 in
+  `test_courses_mapped_db.py`, all new cases green); frontend no-regression (lint clean,
+  `tsc --noEmit` clean, voice-tests 277/277). Docker container torn down after the run.
+- SILENT, backend-only — no API-shape change, no ship, no owner ping.
+
+## Cycle 78 RETRO + BACKLOG GROOMING (2026-07-11) — DONE (silent, on integration/next)
+Retrospective over bundles #128–#133 (TestFlight → v1.1.0) + repaired the corrupted backlog.
+- **Grooming:** `backlog.json` was 212 items with ship-reports stuffed into `status`, ~100 lost
+  `why` fields (dup-key collapse), and long-done work burying the live queue. Normalized `status`
+  to a 10-value enum, moved verbose ship detail into a `resolution` field (all SHAs/PR#/TestFlight
+  versions preserved), restored 23 active items' `why` from their surviving `rationale`, and split
+  the file: **52 active** items stay in `backlog.json` (the LIVE queue); **160 terminal** items
+  (shipped-to-main / superseded / wont_do) archived to new **`backlog-archive.json`** (durable
+  record + full prior progress ledger). Validated: 52+160=212, both JSON parse, zero ship SHAs
+  lost (pre/post diff), no terminal status left in active, every active item has a real `why`.
+- **LIVE queue now readable (52 active):** 9 ready · 9 blocked · 10 needs-spec · 7 needs-owner-input
+  · 5 planning · 9 deferred · 3 done-on-bundle (open #133). Top ready/actionable: caddie-hole-
+  strategy-guides (P1, code on main, needs prod live-smoke via SSM + sec review — owner OK'd spend),
+  course-intel-static-persistence (P1 silent, clear owner ask), tournament-per-round-format-course
+  (P3, schema+migration), teetime-h3-teesnap-adapter, teetime-s4f-coverage-flywheel, tournament-
+  live-tracking (P4, backend, staging-testable). Owner-gated: caddie-realtime-conversation (P1 —
+  needs owner on-device C1 verify → flag flip, then a full opus plan), bethpage-7-11-geometry-audit
+  (decision needed), rotate-clerk-sk + clerk-native-applications (owner dashboard actions),
+  green-reading-license + social-friend-graph (product decisions). Blocked: search-speed-and-golfapi-
+  verify (P1, universe half blocked on owner GolfAPI 401 key fix), course-location-disambiguation
+  (on course-search-db epic), social-phone/push (on friend-graph).
+- **Lessons captured** → `tasks/lessons.md` (cycle-78 block): designer pass is load-bearing (caught
+  My Card copy + orb/CTA overlaps; the one rushed skip shipped a bug); DB/route failures only show
+  in CI (reproduce with docker Postgres — #132's red backend gate was a coincidental calling-hours
+  time-of-day flake, NOT the parallel lanes); backlog hygiene (status=enum, ship detail=resolution,
+  archive terminal). Memory `backlog-json-duplicate-keys` updated → trap RESOLVED (file de-duplicated,
+  now canonical). Other run memories verified accurate (ci-backend-container-init-flake, calling-
+  hours-test-clock-flake, omnipresent-caddie-orb, ship-gate-verification, fable-for-plan-agents).
+- Backlog files are not imported by the app (no gate run needed); `git diff --stat` + JSON validation
+  clean. SILENT — no ship, no owner ping.
+
+## AWAITING (cycle 85 — CI strict-green on head 65c2932)
+All work + bookkeeping landed @65c2932 (pushed). Reviewer SHIP, designer PASS. AWAITING: PR #133 CI —
+Frontend gate + Backend gate must BOTH show state:SUCCESS on head 65c2932 (pending==0 AND no cancel/skip).
+On SUCCESS → cycle done, STOP (SILENT, no ship/ping). On FAIL → read the failing gate, fix, re-push, re-verify.
+Do NOT merge (owner approves the bundle). Reconcile from origin on resume.
+
+## Cycle 85 (2026-07-11) — caddie orb on course-detail pages: DONE (on integration/next, PR #133)
+Closed the ONLY real gap the cycle-84 orb-wiring audit found: /courses/[id] hid the orb (plan §1 lists
+/courses(/*) as SHOW; owner: "omnipresent... everywhere it belongs"). NOTICEABLE — rides bundle #133.
+- FIX (Option B — scope via the context SIGNAL, no pathname coupling in the host):
+  * looper-bus.ts `looperContextForPath` scopes context "courses" to the LIST route only (/courses,
+    trailing-slash tolerant); /courses/[id] → "general". So the host legacy-courses-floor guard
+    (CaddieOrbSheet.tsx:127 `if(!ctx && detail.context==="courses")return`, UNCHANGED code — comment
+    only) now only ever fires on the list page; a detail-page orb falls through to the general converse
+    sheet (ask the caddie anything, incl. about this course) — NOT a dead mic.
+  * shouldShowCaddieOrb.ts adds "/courses/" to SHOW_PREFIXES → detail pages SHOW.
+  * No bespoke course-detail task context this slice (deferred follow-up if warranted).
+- WHAT THE GUARD DID / WHY SAFE: the guard stops the HOST double-handling a summon on the courses LIST
+  page, which owns its own bus listener (app/courses/page.tsx:34 → opens its own voice search on
+  context==="courses"). On the list page ctx is null (list uses the bus directly, not the registry) and
+  context==="courses", so the host bails. Scoping "courses" to the list route keeps that intact and only
+  removes the accidental swallow on detail pages. No list-page regression, no double-mic (detail subtree
+  registers no competing listener — reviewer + designer confirmed).
+- Regression test (would have caught the dead mic): CaddieOrbSheet.test.tsx drives the REAL
+  looperContextForPath("/courses/pebble-beach") through openLooper and asserts the sheet OPENS (Close
+  Looper present). Goes RED if detail pages revert to "courses" (guard would swallow → no Close Looper).
+  Existing "legacy courses floor" test (context:"courses" → host renders nothing) UNCHANGED, still green.
+- Builder @5a29ebb (feature). Reviewer: SHIP (correct, in-scope, 48/48 tests, dead-mic regression proven
+  meaningful, no weakened tests, no double-mic). Designer: POLISH + 1 BLOCKER — fixed orb (bottom:12px+safe,
+  54px, 0 clearance here: no tab bar + not isSetupCtaRoute) overlapped the in-flow "Start a round here" CTA
+  because CourseDetailClient.tsx paddingBottom was calc(32px+safe); /players + /profile use calc(88px+safe).
+  Folded @f0c0ae4: bumped to 88px (established pattern) — screenshot-verified no overlap; all gates re-green.
+- Files: frontend/src/lib/looper-bus.ts(+test), frontend/src/components/nav/shouldShowCaddieOrb.ts(+test),
+  frontend/src/components/CaddieOrbSheet.tsx(comment only)(+test), frontend/src/app/courses/[id]/CourseDetailClient.tsx.
+- Gates green on head (both commits): lint clean, tsc 0, voice 277/277, vitest 2055/2055, build ok. Backend untouched.
+- Bookkeeping: PR #133 checklist + backlog.json (new item orb-on-course-detail, shipped-to-bundle, TARGETED
+  edit + json-parse-verified 212 items) + this note. SILENT — no ship/ping; rides #133 to the owner's next
+  bundle review. Head SHA recorded after the bookkeeping commit below. CI strict-green verify below.
+
+## 2026-07-11 — builder: orb-on-course-detail DONE, on integration/next (commit 5a29ebb)
+
+Item: show + wire the caddie orb on course-detail pages (`/courses/[id]`) as a
+functional general-converse mic — closes the omnipresence gap the audit found.
+NOTICEABLE (orb now visible + usable on course-detail pages on TestFlight).
+
+Implemented exactly the eng-lead plan below (Option B — scope via the context
+SIGNAL, not pathname coupling in the host):
+- `looperContextForPath` (frontend/src/lib/looper-bus.ts) scopes `"courses"`
+  to the LIST route only (`/courses`, trailing-slash tolerant); any deeper
+  `/courses/[id]` path now resolves to `"general"`.
+- `shouldShowCaddieOrb` (frontend/src/components/nav/shouldShowCaddieOrb.ts)
+  adds `/courses/` to `SHOW_PREFIXES` so the orb shows on detail pages.
+- `CaddieOrbSheet.tsx`'s legacy-courses-floor guard (line ~127) is UNCHANGED
+  code — only its comment was updated to document it now scopes to the list
+  page only (detail pages fall through to the general converse sheet).
+- Added a regression test in `CaddieOrbSheet.test.tsx` that drives the REAL
+  `looperContextForPath("/courses/pebble-beach")` through `openLooper` and
+  asserts the sheet opens (`Close Looper` present) — would go RED if someone
+  reverts detail pages back to context `"courses"` (dead-mic regression).
+- Updated `looper-bus.test.ts` and `shouldShowCaddieOrb.test.ts` expectations
+  to match (no assertions weakened — new/changed cases reflect the new,
+  intended routing, and the existing "legacy courses floor" test is
+  unchanged and still passes, documenting list-page behavior).
+
+Gates (all green): `npm run lint` clean; `npx tsc --noEmit` clean;
+`npx tsx voice-tests/runner.ts --smoke` → pass=277 fail=0; `npx vitest run`
+→ 100 files / 2055 tests passed; `npm run build` → compiled + all routes
+generated successfully (including `/courses/[id]`).
+
+Files: frontend/src/lib/looper-bus.ts(+test),
+frontend/src/components/nav/shouldShowCaddieOrb.ts(+test),
+frontend/src/components/CaddieOrbSheet.tsx(comment only)+test.
+
+NOTICEABLE — rides the open bundle PR (#133) toward the next owner review;
+no separate ping (per notification policy, only ping on approval-request /
+massive-bundle / blocker, not routine per-item completion).
+
+## (superseded) cycle 85 planning note — orb-on-course-detail
+Plan-lite DONE (eng-lead traced the guard). Dispatching builder to implement on integration/next.
+DESIGN DECISION (Option B — scope the guard via the context SIGNAL, not pathname coupling):
+- The legacy-courses-floor guard (CaddieOrbSheet.tsx:127 `if(!ctx && detail.context==="courses") return`)
+  exists so the host does NOT double-handle a summon on the courses LIST page, which owns its own
+  bus listener (app/courses/page.tsx:34 — `if(detail.context!=="courses")return; setVoiceSummoned`).
+  On the list page ctx is null (list uses the bus directly, not the registry) AND detail.context==="courses",
+  so the host bails, letting the list page open its own voice search. Correct, must not break.
+- Root of the dead-mic trap: `looperContextForPath` (looper-bus.ts:19) returns "courses" for ANY
+  /courses prefix — so a detail-page orb would summon context:"courses", hit the guard (ctx null on
+  detail too, no registration), and be SWALLOWED → dead mic.
+- FIX: scope "courses" to the LIST route only in looperContextForPath (`/courses` + trailing-slash →
+  "courses"; `/courses/[id]` → "general"). Now the guard's ONLY trigger fires on the list page only
+  (= "applies to list page only"); detail-page orb summons context:"general" → falls through to case 3
+  → general converse sheet (ask the caddie anything, incl. about this course). No pathname coupling in
+  the host, existing guard test stays valid. NO bespoke course-detail task context this cycle.
+- Also: shouldShowCaddieOrb SHOW `/courses/[id]` (add `/courses/` prefix); update its test (was
+  `/courses/pebble-beach`→false "deferred to S2", now →true). Detail page has NO bespoke mic (grep clean)
+  and its CTA is an in-flow button (not sticky) → no double-mic, no orb/CTA collision.
+- Regression test that would have caught the dead mic (CaddieOrbSheet.test.tsx): feed the REAL
+  looperContextForPath("/courses/[id]") into the host → assert the sheet OPENS (Close Looper present),
+  not swallowed. Goes RED if looperContextForPath reverts detail→"courses". Plus looper-bus + shouldShow tests.
+Files: looper-bus.ts(+test), shouldShowCaddieOrb.ts(+test), CaddieOrbSheet.tsx(guard comment only)+test.
+BLOCKING review → re-dispatch builder. Green+designer-ok → update PR #133 + backlog(TARGETED edit) + progress.
+SILENT — no ship/ping (rides bundle #133). Reconcile from origin on resume.
+
+## 2026-07-11 — builder: tournament-leaderboard-motion-haptics DONE, on integration/next (commit 32c0ab8)
+
+Item: `tournament-leaderboard-motion-haptics` — frontend-only, presentation-only
+motion/haptics slice for `frontend/src/app/tournament/[id]/TournamentPageClient.tsx`
+(owner asked "where can we add animations and haptics"). NOTICEABLE (visible
+motion + haptics on the tournament screens the owner can feel on TestFlight).
+No standings/settlement math touched — sort logic and
+`computeTournamentSettlement` are hoisted verbatim (byte-for-byte), not changed.
+
+Implemented all 5 items from the plan:
+1. Leaderboard rows FLIP to new rank (`layout="position"`, not full `layout` —
+   avoids breaking the sticky rank/player/total columns).
+2. Haptics fire ONLY on real order-signature changes (never per-render, tab
+   switch, or mode toggle — guarded via a ref + derived signature string dep):
+   light on a plain move up, medium (capped at one) on a detected crossing
+   between two players, success once when the leader changes.
+3. Leader callout crossfades avatar+name on a new leader (AnimatePresence,
+   opacity-only, 0.35s ease, no bounce).
+4. Tab bar active-fill is now a shared `layoutId` pill (same pattern as
+   `LeaderboardSheet`'s `lb-tab-underline`) sliding between tabs; haptic light
+   only when switching to a different tab.
+5. Settle-up transfer lines stagger in (staggerChildren 0.06, opacity+y6) with
+   one haptic light the first time the list appears (ref-guarded, not per-render).
+
+`useReducedMotion()` disables all visual motion (FLIP, crossfade, pill slide,
+stagger) under `prefers-reduced-motion`; haptics still fire (non-visual).
+
+Gates (all green): `npm run lint` clean, `tsc --noEmit` clean, voice-tests
+smoke 277/277, `vitest run` 2038/2038 (99 files), `next build` succeeds.
+
+Files touched: `frontend/src/app/tournament/[id]/TournamentPageClient.tsx` only.
+Pushed to `integration/next` at `32c0ab8`. No PR opened (bundle PR owned by
+eng-lead).
+
+**Follow-up fix (same day, commit `3ce5996`):** reviewer caught a phantom
+haptic — the gross↔toPar mode toggle re-sorts the same data (tie-break order
+can differ), which changed `orderSignature` and tripped the move/overtake
+haptics on a pure view toggle. Fixed by tracking `mode` in the `prevOrderRef`
+baseline: on an `lbMode` change the ref rebases silently (no haptic) so the
+next real standings change is measured correctly. All other haptic paths
+unchanged. Gates re-run all green (lint, tsc, voice-smoke 277/277, vitest
+2038/2038, build). Pushed to `integration/next` at `3ce5996`.
+
+## 2026-07-11 — release-manager: Bundle #132 SHIPPED to main (owner "Ship it")
+
+Milestone bundle (62 commits) approved by the owner and merged to `main`.
+
+- **Merge:** PR #132 → `main`, `gh pr merge --merge`, retitled to "Bundle #132:
+  omnipresent caddie orb (voice-first setup + tee-time dispatch + stats
+  coaching) · tournament settlement · 30-course tee-time coverage". Merge
+  commit `00d7508d3557e4a93dd1e47fd55627462398c029`. Pre-flight confirmed head
+  `a3b90a2` OPEN + MERGEABLE, both required gates SUCCESS before merging — no
+  drift from the brief's expected head.
+- **Post-merge main CI:** both gates (Frontend, Backend) SUCCESS on
+  `00d7508` — no infra flake this time, no rerun needed. The auto-triggered
+  "Deploy backend (SSM)" workflow also completed `success`.
+- **Backend deploy + smoke:** `/health` → `200 {"status":"ok"}`.
+  `load_all_capabilities()` confirms **30 courses** loaded (matches the
+  bundle's "30-course tee-time coverage" claim exactly — Club Prophet +
+  Quick18 adapters registered). Caller confirmed **inert**: SSM probe on
+  `i-0826ae70df62d9fe8` (prod EC2, `scorecard-api.service`, env file
+  `/home/ubuntu/scorecard/backend/.env`) shows zero `TWILIO_*` /
+  `VOICE_BOOKING_ENABLED` matches — `get_live_transport()` will raise before
+  ever dialing. `/api/tee-times/search` alive + correctly auth-gated (401
+  missing bearer).
+- **TestFlight:** `bash ops/ios/ship.sh` (`MARKETING_VERSION=1.1.0`) from
+  fresh `main`. First attempt failed on a stale `/tmp/looper-spm` SPM package
+  cache (`Package.swift doesn't exist in file system`) — moved the cache dir
+  aside (not deleted; guard hook blocks `rm -rf` patterns) and retried; clean
+  archive + upload. **v1.1.0 (build 202607110136)** uploaded, App Store
+  Connect API confirms `processingState: VALID`.
+- **Fresh integration/next:** local branch recreated from new `main`
+  (`a3b90a2` confirmed an ancestor of `00d7508`, so a plain fast-forward push
+  worked — no force-push needed) and pushed. Head now `00d7508`, identical to
+  `main`.
+- **Backlog:** `backlog.json` updated surgically via targeted `Edit` calls
+  (NOT a JSON load/dump round-trip — that approach was tried first and
+  silently collapsed duplicate `"why"` keys across ~40 unrelated items file-
+  wide; reverted before committing). Marked shipped-to-main (`00d7508`, PR
+  #132): `orb-s1-move-and-nav`, `orb-s2-context-contract-teetime`,
+  `orb-s3-setup-wiring`, `orb-s4-mycard-coaching` (was still `ready` — its
+  eng-lead hadn't marked it; noted "designer pass pending → fast-follow",
+  reviewer had already SHIP'd on correctness + security),
+  `tournament-cumulative-settlement`, `voice-booking-twilio-cred-aliases`,
+  `caddie-guide-session-reload-revalidate`, `teetime-h1-clubprophet-adapter`,
+  `teetime-h2-quick18-adapter` (unseeded — no NY-metro Quick18 course exists;
+  adapter ships ready for future coverage).
+- **Board:** Product Board card #132 → Shipped (retitled, PR link +
+  TestFlight v1.1.0 build 202607110136 + feature list).
+- **How the owner tests it:** talk to the orb — search tee times by voice,
+  set up a tournament or round by voice, ask My Card "what should I work on."
+
+Lesson for next time: never round-trip a hand-maintained JSON file through
+`json.load`/`json.dump` for a small edit — Python's parser silently keeps
+only the last value on duplicate keys, and this file has them scattered
+throughout from prior agent edits. Use targeted string edits instead.
+
 ## 2026-07-10 — builder: orb-s4-mycard-coaching DONE, on integration/next (commit 98b9de5)
 
 Item: slice S4 of `specs/omnipresent-caddie-orb-plan.md` — the My Card
@@ -12658,3 +12968,324 @@ a finished builder.
 
 ## AWAITING (cycle 80 — orb-s4 review round 1)
 Builder landed @ 98b9de5 (head 4ed2ce7), all LOCAL gates green (lint/tsc/voice-smoke 277/vitest 2037/build/ruff/pytest test_voice_stream 20). Reviewed diff — clean. Dispatching in parallel: reviewer (adversarial + /security-review, new user-data→prompt path), qa (all gates + backend /voice route tests against REAL docker Postgres — image postgis:16-3.4 already cached), designer (My Card orb copy + coaching presentation, honest thin-data). BLOCKING findings → re-dispatch builder; all green + designer OK → update PR #132 + backlog (s4 shipped, unblock s5), confirm CI strict-green on head. Reconcile from origin/integration/next on resume.
+
+## Cycle (2026-07-11) — ORB S4 deferred DESIGNER pass (closing the gap)
+S4 shipped to main (v1.1.0) with correctness+security review passed but its DESIGNER pass
+never completed (prior eng-lead stalled). Running it now on integration/next @ 5d65aca.
+AWAITING: designer agent (a795...) on My Card coaching (orb placement /profile 390+320px,
+converse copy "Your card"/hint, coaching-answer calm, thin-data honest state, motion/haptic).
+On return: APPROVE as-is → record honestly, no code change, DONE. POLISH → fold frontend-only,
+commit+push, light reviewer + QA gates (lint/tsc/voice-smoke/build/vitest), confirm strict-green.
+SILENT — no ship/ping. Reconcile from origin/integration/next on resume.
+
+## Cycle (2026-07-11) — ORB S4 designer pass RESULT
+Designer verdict: NOT a clean approve — found one concrete, small ship-blocker. /profile
+registers a kind:"converse" context with copy {title:"Your card", hint:"Ask about your
+game…"} but CaddieOrbSheet only read .copy off kind:"task" contexts → the My Card orb fell
+back to generic "What can I do for you?". Everything else (orb placement, calm answer
+presentation via LooperSheetShell, haptics/motion consistency, no-fabrication stats
+grounding, thin-data honest state) matched Northstar + existing patterns, no change needed.
+FOLDED @ 973ddf9: wire activeConverse.copy into title/hint fallback in CaddieOrbSheet.tsx
+(+ CaddieConverseContext import) + regression test (converse renders its own copy). Gates
+green: lint clean, tsc 0, voice-smoke 277/277, vitest CaddieOrbSheet 12/12, build ok.
+Backend untouched. AWAITING: light reviewer on the fold delta (973ddf9) — confirm no
+regression to converse lane / stats grounding / context-registry. Then confirm CI
+strict-green on head, update PR #132 checklist. SILENT — no ship/ping.
+
+## Cycle (2026-07-11) — ORB S4 designer pass CLOSED
+Reviewer LGTM on fold 973ddf9 (fallback chain correct + mutually exclusive with task copy,
+grounding lane untouched, registry semantics unchanged, regression test genuine). Opened
+rolling bundle PR #133 (integration/next → main; #132 already shipped so this is the fresh
+bundle's first item). CI strict-green on head: Frontend gates SUCCESS, Backend gate SUCCESS
+(E2E advisory non-required). S4 designer gap CLOSED. SILENT — no ship/ping (per task scope).
+
+## Cycle 82 (2026-07-11) — tournament leaderboard motion/haptics (owner-requested animations)
+- v1.1.0 shipped (orb milestone); #133 (My Card copy fix) strict-green awaiting next ship. No owner feedback yet.
+- AWAITING: eng-lead tournament-leaderboard-motion-haptics — FLIP leaderboard re-sort + overtake haptic + leader crossfade + tab pill + settlement-reveal stagger (audit opportunity list). Calm NORTHSTAR motion (serves clarity, not flash). Designer pass. Land on #133. NOTE: use TARGETED backlog.json edits, never json round-trip (dup keys).
+
+## AWAITING (cycle 82 — builder: tournament motion/haptics)
+Branch integration/next @ a4eff6e (clean). Dispatching builder to implement plan-lite:
+leaderboard FLIP re-sort (layout by playerId + moved-row haptic light), overtake emphasis
+(medium), leader crossfade (success), tab pill layoutId (light), settlement stagger (light once).
+Frontend-only, presentation only — NO standings-math/settlement-computation change.
+haptics.ts has NO 'selection' type → use 'light' for tab/settlement. prefers-reduced-motion
+disables visual motion (useReducedMotion). Haptics fire only on real order-signature change
+(prevRef compare), never first-mount/per-render. On builder return: commit already pushed by
+builder → reviewer (fresh) + QA gates (lint/tsc/voice-smoke/build/vitest) + designer (live
+preview). BLOCKING → re-dispatch builder. Green+designer-ok → update PR #133 + backlog
+(TARGETED edit) + progress. Reconcile from origin/integration/next on resume — do NOT re-run
+a finished builder.
+
+## Cycle 83 (2026-07-11) — tournament NET/handicap leaderboard
+- Motion/haptics DONE + strict-green on #133 (64a4537). No owner feedback on v1.1.0; loop keeps firing → continue tournament build-out.
+- AWAITING: eng-lead tournament-net-handicap-leaderboard — add a NET mode (handicap-aware) alongside Gross/To-Par on the tournament leaderboard (computeStandings is gross-only). Uses player handicaps. Frontend. Designer pass. Land on #133. Motion cycle already landed so non-colliding.
+
+## Cycle 83 (2026-07-11) — tournament NET/handicap leaderboard: PLAN-LITE done, builder dispatched
+Handicap-data trace: per-player handicap lives on `round.players[].handicap` (Player.handicap,
+types.ts:42) — the ONLY per-player source. `estimateHandicapFromRounds` is OWNER-ONLY
+(getOwnerPlayerId) → unusable per-field. Reuse the chicago convention (games.ts:1200,
+`Math.round(handicap)`, full-handicap subtraction) — NO new formula, NO hole-by-hole alloc.
+Honest missing-hcp rule: no handicap → totalNet=null, unranked (rank "—", sorted last, "—"
+total) — never handicap=0. Net = per-round (gross−hcp) summed. Spec:
+specs/tournament-net-handicap-leaderboard-plan.md.
+AWAITING: builder implements the plan on integration/next, commits+pushes. On return:
+reviewer (fresh) + QA gates (lint/tsc/voice-smoke/build/vitest w/ new net tests) + designer.
+BLOCKING → re-dispatch builder. Green+designer-ok → update PR #133 + backlog (TARGETED edit,
+dup keys — never json round-trip) + progress. Reconcile from origin/integration/next on
+resume; do NOT re-run a finished builder. SILENT — no ship/ping.
+
+## Cycle 83 (2026-07-11) — tournament NET/handicap leaderboard: BUILDER DONE, pushed 3c5db4e
+Implemented per plan-lite, frontend-only. LbMode gained "net"; PlayerStanding gained
+handicap/roundNet/totalNet. Extracted pure helpers (computeStandings, sortStandings,
+tieRankLabel, formatToPar/Date, playerInitial, suffix, hasCrossing) from
+TournamentPageClient.tsx into NEW src/lib/tournament-standings.ts (framer-motion-free, so
+vitest can import directly — no component-render workaround needed) and the client now
+imports from there. playerHandicaps map built in the load useEffect the same way as
+resolvedNames (first defined round.players[].handicap per id) and passed as computeStandings'
+3rd arg. Net formula = chicago convention only: handicap=Math.round(raw), roundNet=gross-hcp,
+totalNet=totalStrokes-hcp*roundsWithScore; totalNet=null (never 0) when handicap is
+missing OR player has no scores — sorted last, rank "—". Added a small "Hcp N"/"No hcp"
+caption under the player name, net-mode-only, to disambiguate "—" (no hcp) from "—" (no
+score). Confirmed (did not touch) the phantom-haptic guard: `prev.mode !== lbMode` in the
+prevOrderRef effect already treats ANY cross-mode switch — including Gross/ToPar↔Net — as a
+silent rebase (no haptic), since it's a plain 3-way string-union inequality check.
+Gross/toPar branches only had net cases ADDED alongside, never altered.
+New tests: src/lib/tournament-standings.test.ts (8 cases) — net total+per-round math,
+2-round allocation sum, missing-hcp→null (unranked, proven NOT 0), no-scores→null,
+net re-rank with nulls-last, tie-aware T-label + "—" for unranked, unique-rank no-T-prefix,
+and an explicit gross/toPar-unchanged-by-playerHandicaps equivalence check.
+Gates (all green): lint clean · tsc 0 errors · voice-smoke 277/277 · vitest 2046/2046 (100
+files, incl. new file 8/8) · next build ok. Backend untouched (git diff confirms only 3
+frontend files changed). Pushed to integration/next @ 3c5db4e.
+AWAITING: reviewer (fresh) + QA gates + designer pass (3-pill fit, calm Hcp caption, honest
+"—" reads correctly) on PR #133. BLOCKING → re-dispatch builder. Green+designer-ok → update
+PR #133 + backlog (TARGETED edit) + progress. SILENT — no ship/ping (frontend-only leaderboard
+mode is arguably noticeable on TestFlight; eng-lead to classify against #133's bundle).
+
+## AWAITING (cycle 83 — reviewer + designer on 6b74fb7)
+Builder DONE @ 3c5db4e (+progress 6b74fb7). Extracted pure helpers to
+src/lib/tournament-standings.ts (behavior-preserving), added Net mode + 8 tests. Builder
+gates all green (lint/tsc 0/voice 277/vitest 2046/build ok). AWAITING: reviewer (fresh,
+adversarial — verify the helper EXTRACTION didn't change gross/toPar behavior; net uses real
+handicap not 0-fabrication; guard covers Net; tie-aware re-rank) + designer (Net pill + net
+presentation + "No hcp" honest state, calm yardage-book). BLOCKING → re-dispatch builder.
+Green+designer-ok → confirm CI strict-green on head, update PR #133 checklist + backlog
+(TARGETED edit, dup keys) + progress. SILENT — no ship/ping. Reconcile from origin on resume.
+
+## Cycle 83 (2026-07-11) — tournament NET/handicap leaderboard: DONE
+Landed on integration/next (#133) as NOTICEABLE. Net = gross − Math.round(course handicap),
+per-round allocation summed over scored rounds; handicap from round.players[].handicap ONLY
+(estimateHandicapFromRounds is owner-only, unusable per-field). Honest missing-handicap:
+unranked ("—" rank, sorted last, "—" total, "No hcp" caption) — never scratch 0.
+- Builder @3c5db4e: extracted pure helpers → src/lib/tournament-standings.ts (behavior-
+  preserving), added Net mode + 8 tests. Gross/To-Par byte-identical behavior.
+- Reviewer: SHIP (extraction faithful, net math + null-handling correct, guard covers Net,
+  tie-aware re-rank). Added its suggested some-but-not-all-rounds allocation test.
+- Designer: POLISH → found a REAL honesty bug the reviewer missed — backend serialises unset
+  handicap as null (not undefined), so `p.handicap !== undefined` stored null and
+  Math.round(null)===0 fabricated a scratch golfer for every un-handicapped player. Fixed
+  @f9c7725: `!= null` in the load effect + `== null` guard in standings.ts + mode-aware
+  leader-callout gate (no "Leading … NET —" for an unranked field) + "Net" total-column
+  label in net mode + explicit-null regression test.
+- Gates green on f9c7725: lint clean, tsc 0, voice 277/277, vitest 2048/2048 (11 net tests),
+  build ok. Backend untouched. PR #133 checklist updated (3 noticeable items). Backlog:
+  tournament-net-handicap-leaderboard → shipped (targeted edit, diff-verified single line).
+SILENT — no ship/ping (owner approves the whole bundle later). Head after bookkeeping below.
+
+## Cycle 84 (2026-07-11) — orb wiring QA audit (My-Card-copy bug class)
+- Queue drained of non-speculative high-value work; but the My Card copy bug (registered converse context whose copy CaddieOrbSheet didn't read → silent generic fallback) shipped in v1.1.0 → evidence the rapid orb build has wiring gaps. Aligns with owner's #1 'test critical flows' memory.
+
+### AUDIT RESULT — orb context wiring is SOUND. My-Card copy bug is the ONLY instance of the class; already fixed (CaddieOrbSheet activeConverse fallback task→converse→generic, regression test at CaddieOrbSheet.test.tsx:333). No further always-wrong bugs. Per-context table:
+1. Copy render — FINE. Host reads task→converse→generic (CaddieOrbSheet.tsx:346-351). tee-time/tournament show task copy (boundId state, :333); my-card shows converse copy (fixed); general → generic. All honored.
+2. Task dispatch — FINE. task lane parse→gate→apply for both tee-time (planTeeTimeApply → same asks + 1400ms dispatch) and tournament (tournamentPrefillFromParse → form prefill + honest unmapped-field notes, dispatched:false — human tap). No silent no-op.
+3. Surface (round) — FINE. /round/new registers surface; summon → setShowVoiceSetup(true); page renders VoiceRoundSetupRealtime autoStart. tap+hold intentionally BOTH auto-open (documented: "Both tap and hold funnel into the SAME flow"). `listening` arg intentionally not differentiated for surfaces (courses does the same). Deviates from plan's literal autoStart:listening but consistent + honest — not a bug.
+4. Converse grounding — FINE. converse lane threads getGrounding() as stats_context (CaddieOrbSheet.tsx:309-311); general passes undefined. api.ts:703/1004 forwards stats_context to /voice + /voice/stream. Fall-through (task no-signal) → runConverse with nudge (gate a, tested :248).
+5. Confidence gate — FINE. Host gate `< TASK_CONFIDENCE_FLOOR(0.6)` applies to EVERY task ctx (:281). Tournament local parse emits exactly 0.6 → passes (`<` boundary). tee-time local ≥0.65.
+6. Orb visibility / one-mic — FINE. shouldShowCaddieOrb correct; /round/[id] hides (pill is the mic); course DETAIL pages hide (latent note below); each shown page has exactly one invocation.
+7. Registry hygiene — FINE. exclusive last-writer-wins, identity-guarded unregister, stable delegate (useCaddiePageContext), task-bound sheet closes on nav (:148-155).
+
+### LATENT / LOW-SEVERITY NOTES (not shipped-visible; not fixed — scope/risk):
+- Course DETAIL pages (`/courses/[id]`) hide the orb; plan §1 lists `/courses(/*)` as SHOW. NOT user-visible today (orb hidden = consistent no-op). If shown, the legacy-courses-floor guard (CaddieOrbSheet.tsx:127 `if(!ctx && detail.context==="courses") return`) would swallow it → dead mic. Latent trap, documented; a future slice should show detail pages via general fallback AND scope the floor guard to the list page only.
+- Converse sheet doesn't close on swipe-back nav away from /profile (task-bound does). Unreachable via tap (full-screen backdrop closes on outside tap); via swipe-back it degrades GRACEFULLY to general caddie (grounding drops, title reverts). Acceptable, not fixed (fix risks the calm sheet UX for a narrow edge).
+- dictation telemetry `surface` labels my-card as "looper-general" (converse never binds boundId). Documented design; telemetry-only, not user-facing.
+
+### HARDENING SHIPPED THIS CYCLE (silent QA — no code-behavior change; guards the two highest-value silent-failure wires that lacked integration coverage):
+- (T1) tournament dispatch-gate guard: real utterances through the actual pipeline `parseVoiceTranscript` + `tournamentTaskParse` must yield hasSignal && confidence ≥ TASK_CONFIDENCE_FLOOR — pins the exact "voice tournament setup silently hits the confirm-gate instead of filling the form" invariant (would catch a floor bump or a tournament-confidence drop).
+- (T2) my-card grounding threading: CaddieOrbSheet must pass getGrounding()'s output as stats_context to talkToCaddieStream on a converse ctx, and undefined on general — guards the my-card feature's crux wire (silent-grounding-drop = the sibling of the copy bug).
+
+### CYCLE 84 DONE @10ec82d (integration/next). Reviewer (fresh): SHIP — both regression tests proven RED under injected regressions (floor 0.6→0.65 reddened all 4 T1 cases; forcing statsContext=undefined reddened T2 converse assertion) then reverted clean; no false green, no registry leak (identity-guarded afterEach cleanup); spot-checked audit verdicts #4 (converse grounding threading) + #5 (gate applies to tournament) — both confirmed FINE. Gates green: lint clean, tsc 0, voice 277/277, vitest 2054/2054 (+6), build ok. PR #133 checklist updated (SILENT item — test-only, no product-code change). No backlog follow-up added (audit clean; latent notes above are documented, not queued). SILENT cycle — no ship/ping; the two hardening tests ride the bundle and merge with the next noticeable change on the owner's single "ship it".
+
+## Cycle 85 (2026-07-11) — orb on course-detail pages (audit-found omnipresence gap)
+- Orb wiring audit (cycle 84) was CLEAN + added 2 regression guards; found ONE real gap: orb hidden on /courses/[id] (plan intended SHOW; "omnipresent everywhere it belongs"). #133 strict-green.
+- AWAITING: eng-lead — show the orb on course-detail pages: update shouldShowCaddieOrb to SHOW /courses/[id]; scope the CaddieOrbSheet.tsx:127 legacy-courses-floor guard to the LIST page only so the detail-page orb uses the general converse fallback + actually works (not a dead mic). Verify orb shows+works on detail, no regression to list, no dead mic. Designer check + regression test. Land on #133.
+
+## Cycle 86 (2026-07-11) — course-intel static persistence (owner P1, surfaced by grooming)
+- Retro groomed the backlog (212→52 usable); surfaced a real buried owner P1.
+- AWAITING: eng-lead course-intel-static-persistence — compute static per-course intel (per-hole elevation deltas + green slope) ONCE, persist on the mapped course record (+ Alembic migration, NEW not edited-guarded), serve instantly from course-intel (skip recompute latency). Backend-only, silent, kills the "elevation takes a while" wait. DB test → docker Postgres (DB-only-in-CI lesson). Land on #133.
+
+## AWAITING (cycle 86 — Fable Plan on course-intel-static-persistence)
+KEY FINDING on trace: this item is ~90% ALREADY BUILT (commits 0200576 + 9c5e338).
+Static intel (per-hole elevation delta + green slope) is ALREADY persisted per-hole in
+hole_features.properties JSONB, read instantly (zero USGS on hit) by
+course_intel.build_hole_intelligence, bulk-precomputed by
+caddie.py::_precompute_course_elevations (2 batched 3DEP calls, idempotent, best-effort),
+backfilled-on-demand, and honest (no fabrication on USGS None). Weather stays dynamic (correct).
+REMAINING GAPS: (A) elevation precompute NOT wired into course mapping (create_mapped/put_mapped
+only precompute GUIDES, not elevations — only /session/start triggers it → races first
+course-intel open on a fresh course); (B) no version/invalidation stamp → a geometry re-map
+keeps stale elevation (skip = "has tee_elevation_ft").
+SCHEMA DECISION escalated to Fable: task prescribes a new courses.static_intel column +
+Alembic migration, but static intel is per-HOLE and already lives correctly in
+hole_features.properties → a course-level column duplicates a second source of truth (worse).
+Leaning: NO migration; version/computed-at stamp inside existing JSONB patch. Fable rules on it.
+AWAITING: Plan agent (fable) → specs/course-intel-static-persistence-plan.md. On return:
+dispatch builder to implement the plan on integration/next, then reviewer + QA (docker Postgres
+DB tests — DB-only-in-CI lesson), update PR #133 + backlog + progress. SILENT — no ship/ping.
+Reconcile from origin/integration/next on resume.
+
+## AWAITING (cycle 86 — builder on static-intel gap closure, plan @d2d322d)
+Fable plan v2 written (specs/course-intel-static-persistence-plan.md @d2d322d) — RULED no
+migration; content-addressed elevation_coords_key invalidation inside existing JSONB; move
+precompute to new app/services/course_elevation.py; wire into create_mapped/put_mapped (Gap A);
+stamp elevation_computed_at in _elevation_patch. Builder dispatched to implement + tests +
+docker-Postgres integration run. AWAITING builder push to integration/next. On return:
+reviewer (fresh — static-only, invalidation sound, best-effort/no-fabrication, no live-path
+regression, import-move clean) + QA (ruff + non-DB pytest + REAL docker Postgres integration +
+frontend no-regression). BLOCKING → re-dispatch builder. Green → update PR #133 checklist +
+backlog (course-intel-static-persistence → shipped/done-on-bundle, resolution field, status
+enum) + progress. SILENT — no ship/ping. Reconcile from origin/integration/next on resume.
+
+## AWAITING (cycle 86 — reviewer on efb32f4, static-intel gap closure)
+Builder DONE @efb32f4 (feature f682f85). Gap A (precompute wired into create/put_mapped before
+guides) + Gap B (content-addressed elevation_coords_key invalidation) + elevation_computed_at
+stamp; precompute moved to app/services/course_elevation.py. Builder gates ALL green: ruff clean,
+non-DB pytest 2060 passed/92 skipped, REAL docker Postgres integration 92 passed (mapped-course-db
+10/10 incl 3 new precompute cases), frontend lint/tsc clean + voice 277/277. AWAITING reviewer
+(fresh, adversarial — static-only, invalidation determinism + lng/lat order, keyless write-back
+not stamped, no read-path regression, best-effort/no-fabrication, import-move clean). BLOCKING →
+re-dispatch builder. SHIP → update PR #133 checklist + backlog (course-intel-static-persistence →
+shipped-on-bundle, resolution field, status enum) + progress. SILENT — no ship/ping. Reconcile
+from origin/integration/next on resume. No designer (backend-only, no UI).
+
+## Cycle 86 (2026-07-11) — course-intel static persistence (owner P1): DONE
+Landed on integration/next (#133) as SILENT (backend-only; observable = SPEED). Kills the owner's
+"elevation takes a while" wait. Fable plan v2 @d2d322d; feature @f682f85; head @efb32f4.
+- TRACE FINDING: ~90% was ALREADY BUILT (commits 0200576 + 9c5e338). Static per-hole intel
+  (tee/green elevation, delta_ft, plays_like_yards, green_slope) already persisted in
+  hole_features.properties JSONB, read instantly (ZERO USGS on hit), bulk-precomputed,
+  backfilled-on-demand, honest (no fabricated zeros). Weather correctly stays DYNAMIC.
+- SCHEMA RULING (Fable, on record): NO courses.static_intel column + NO Alembic migration —
+  static intel is per-HOLE, already lives correctly per-feature; a course-level column would be
+  a duplicate 2nd source of truth (worse). Deliberate deviation from the prescriptive prompt.
+- Closed 2 gaps: (A) elevation precompute wired into create_mapped/put_mapped (was only
+  /session/start → raced first course-intel open), ordered before guides; (B) content-addressed
+  invalidation — elevation_coords_key (tee+green centers @6dp) stamped by precompute; skip now
+  requires exact key match (was "has tee_elevation_ft") → geometry re-map recomputes stale
+  elevation. Also stamps elevation_computed_at. Request-path write-back stays KEYLESS. Read/hot
+  path UNCHANGED. Precompute + 2 helpers moved caddie.py → NEW app/services/course_elevation.py.
+- Reviewer (fresh, adversarial): SHIP — static-only, invalidation deterministic (no lng/lat
+  transposition), write-back keyless, no read-path regression, no fabrication, no new concurrency
+  hazard, tests faithfully encode spec (no weakened assertions), ruff clean.
+- QA gates green on head: ruff clean, non-DB pytest 2060 passed/92 skipped, REAL docker Postgres
+  (postgis:16-3.4) integration 92 passed incl mapped-course-db 10/10 (3 new precompute cases:
+  idempotency-via-key, remap-invalidation round-trip, graceful-degrade), frontend lint/tsc clean
+  + voice 277/277 (frontend untouched). No designer (backend-only, no UI).
+- Bookkeeping: PR #133 checklist +1 silent item; backlog course-intel-static-persistence →
+  done-on-bundle (resolution field, status enum, spec path set). SILENT — no ship/ping; rides
+  bundle #133 and merges with the next noticeable change on the owner's single "ship it".
+
+## Cycle 87 (2026-07-11) — strategy-guides prod live-smoke (owner OK'd)
+- Owner said "smoke test the guides" → bounded prod smoke of caddie-hole-strategy-guides (shipped on main, live research path NEVER verified against a real key → silent-failure risk).
+- AWAITING: verification agent (SSM on-box, key-free, bounded ONE hole/ONE course) — does research_hole_guide (web_search + messages.parse + pause_turn) actually produce a valid grounded guide in prod, or is it silently broken? VERIFY-only; if broken → fix next cycle.
+
+## Cycle 88 (2026-07-11) — OWNER BUG: caddie yardage 178 vs 231 (Bethpage hole 3)
+- Owner screenshots: caddie grounded on 178 (card) but he plays 231 from his tees; GPS active but not used; caddie ARGUES the wrong number. Recurring (multi-tee-anchor resolved to ~174 card, not selected tee).
+- Owner's fix spec: use GPS-to-green-center when on the hole, ELSE the SELECTED-tee distance — never the scorecard default. Apply to caddie grounding + sheet header + F/C/B/plays.
+- AWAITING: Fable diagnosis+plan (specs/caddie-yardage-gps-selected-tee-plan.md) → then build. Core/recurring → Fable first.
+
+## Cycle 90 (2026-07-11) — OWNER P0: caddie yardage GPS+selected-tee (BUILD the Fable plan)
+- Executing specs/caddie-yardage-gps-selected-tee-plan.md (4 slices), commit+push per slice.
+- NOTICEABLE (core caddie-trust fix). Backend touched → CI DB tests + local docker Postgres.
+- Builder DONE: 4 slices landed @ 275dee3/de9a12f/b9c6f29/2eb7dea, head 14dee9b. No file
+  overlap with the parallel course/tee-time A0 commits interleaved on the branch (verified).
+- Reviewer: SHIP. Criteria 1-7 confirmed (mock-178 banned from caddie surfaces; resolver
+  honest-null; untagged-box ordinal pick correct; surfaces agree; provenance labeled; fields
+  additive; tests not weakened). One non-blocking gap → FOLDED @007fa0a: backend
+  _format_yardage_line now states par-4/5 tee-geom as a FLOOR ("at least N …"), matching the
+  frontend caption (spec §5); new test_yardage_line.py locks it (2067 passed, +6).
+- QA: all gates PASS on 14dee9b; PR #133 all 3 required CI checks SUCCESS. DB tests via CI
+  (no local Postgres, per standing rule). Bethpage/hole-yardage/tee-anchor fixtures green.
+- Designer: SHIP header caption as-is (calm/honest/consistent, no new design language, no
+  internal basis strings leak). One real cross-surface gap folded @6591d9b: OfflineCaddieCard
+  now carries the honest yardageCaption ("at least …" floor + tee name) instead of bare
+  "{yards} yards" — the off-grid surface no longer disagrees with the header on how honest a
+  number is. Frontend gates re-run green (lint/tsc/voice 278/vitest 350 caddie+components/build).
+- CYCLE 90 DONE (NOTICEABLE — core caddie-trust fix). caddie-yardage-gps-selected-tee →
+  done-on-bundle in backlog (resolution field). PR #133 checklist +1 (the caddie item). Head
+  6591d9b. Mock 178 reaches NO caddie surface (grep-verified); all surfaces agree; caddie
+  adopts the player's number; Bethpage hole 3 grounds on 231/GPS not 178. Rides bundle #133;
+  merges with the owner's next "ship it" (bundle already has noticeable items — NOT pinging
+  this cycle per task instruction: SILENT, no ship/ping). Confirm CI strict-green on 6591d9b.
+
+## Cycle 89 (2026-07-11) — OWNER: course-selection UX (named-course bug + map search)
+- Owner (A) BUG: in Pittsburgh (GPS), asked caddie for a tee time at "Marine Park" (NY) → it searched Pittsburgh courses instead of the named course. Need named-course resolution + caddie clarification (disambiguation), not GPS-fallback.
+- Owner (B) FEATURE: replace the "bland checklist" — add MAP-based course search when adding a course (pan/zoom, markers on ONLY golf courses in the current viewport) for scanning when unsure where to play.
+- AWAITING: Fable plan (specs/course-selection-ux-plan.md) — diagnose (A) + fix; design (B) map search + markers source (budget-aware per golfapi-budget) + better-than-checklist UX; sequence bug-fix FIRST. Ground in course-search-ux-requirements + next-epic-course-search-db memories.
+
+## Cycle 90 (2026-07-11) — course-selection A0 (stop-the-lie) parallel to yardage fix
+- Yardage P0 fix in flight (round-caddie area). A0 (tee-time voice-parse area) is non-colliding → parallel lane.
+- AWAITING: eng-lead course-selection A0 — extract unresolvedCourseNames in parseTeeTimePrefs; gate dispatch (dispatched=false when a named course is unresolved/missed); honest ack ("I don't know Marine Park — nothing on your list matches"), NO wrong-course dispatch. Marine-Park-from-Pittsburgh fixture RED→GREEN. Ships alone. Rebase-before-push (parallel).
+
+## Cycle 90 (2026-07-11) — course-selection A0 BUILT + pushed (awaiting reviewer)
+- Landed on integration/next @ 3d94d0a (parent 275dee3 = yardage lane's committed slice 1; my commit adds ONLY the 6 tee-time-parse files, zero overlap with the yardage WIP in the shared tree).
+- Built: `unresolvedCourseNames` on the schema; conservative `\b(?:over at|out at|at|on)` capture in parseTeeTimePrefs bounded by the prefs vocabulary + a distinctive-word requirement (no false positives on "at the muni", "on saturday"); LLM-pass dropped names map in too; caddie-task `dispatched=false` whenever a named course is unresolved OR a listed-name miss exists; honest ack names the course. Marine-Park-from-Pittsburgh fixture RED→GREEN (parse + plan) + corpus case seed:teetime:010.
+- Gates GREEN on 3d94d0a (isolated worktree, clean of the yardage WIP): lint, tsc, vitest 47/47, voice-smoke 278/278, next build. NOTICEABLE (stops a wrong-course dispatch).
+- AWAITING: fresh reviewer on the A0 diff (conservative capture / dispatch-gating / pure-offline / voice-tests green). SHIP verdict → update PR #133 checklist + backlog A0-done + progress, confirm strict-green on head. BLOCKING → fold + re-review, rebase-before-push. A1/A2/A3/B remain (A0 only stops the lie; A2 makes it search the right course).
+
+## Cycle 90 (2026-07-11) — course-selection A0 LANDED on integration/next
+- DONE @ ea6e6d3 (A0 code @3d94d0a + reviewer fold @ea6e6d3). Parent = yardage lane's committed slice (275dee3); my commits add ONLY the tee-time voice-parse files — zero overlap with the yardage WIP in the shared tree.
+- unresolvedCourseNames extraction (conservative at/on/over-at/out-at capture, prefs-vocabulary-bounded + distinctive-word required — no false positives on "at the muni"/"on saturday"); dispatch gating (dispatched=false whenever a named course is unresolved OR a listed-name miss exists — a sentence that names a course never dispatches a search that ignores it); honest ack names the course; LLM-pass dropped names mapped in. Marine-Park-from-Pittsburgh fixtures RED->GREEN (parse + plan) + corpus seed:teetime:010.
+- Reviewer: SHIP (all 6 properties held; 1 non-blocking cosmetic note folded — trailing-connector trim). Gates GREEN on head: lint, tsc (isolated clean tree), vitest 48/48, voice-smoke 278/278, next build; CI Frontend+Backend+E2E SUCCESS on prior head 487b579 (fold re-triggered CI on ea6e6d3 — confirm SUCCESS before treating bundle-final).
+- NOTICEABLE (stops a wrong-course tee-time dispatch; honest ack). PR #133 checklist updated. Backlog course-selection-ux.a0_status set.
+- Remaining slices: A1 (backend selector-centered discovery), A2 (voice resolution via unified search — makes it search the RIGHT course), A3 (clarify turn), B1-B3 (map search). A0 only STOPS the lie.
+
+## Cycle 91 (2026-07-11) — course-selection A1 (backend selector-centered discovery)
+- Yardage P0 fix DONE + strict-green (ef7e08f). Marine Park A0 (stop-the-lie) done. No owner feedback.
+- AWAITING: eng-lead course-selection A1 — when resolved selectors carry centers (selection.py), discover around each selector center (~5km, osm.py) and merge with / (when all selected are beyond GPS radius) replace GPS discovery; distance stays honest from GPS origin; skip distance>max prune for selector-matched. Also fixes hand-add-far-course-then-search dead end. Backend-only. Real-Postgres tests. Plan §A.2.4. Land on #133.
+- BUILT + pushed @ e212621 (routing.py + test_tee_time_routing.py only; zero frontend). Selector-centered discovery (`_discover_selector_courses`, ~5km via SELECTOR_DISCOVERY_RADIUS_MILES=3.1 + 5km floor), additive-merge (only dedupes when extra found; pure near-me byte-identical), no-prune-for-selected (is_selected gate), honest distance from GPS origin. 3 new tests incl. RED Marine-Park-from-Pittsburgh (~319mi honest). Builder gates: ruff clean, 69/69 pytest (routing+selection+router).
+
+## Cycle 91 (2026-07-11) — course-selection A1 DONE + strict-green on integration/next
+- DONE @ e212621 (A1 code) — backend-only selector-centered discovery for the Marine-Park-from-Pittsburgh bug. When resolved selectors carry centers (selection.py resolve_selectors → CourseSelector.lat/lng), `RoutingTeeTimeProvider.search_availability` discovers OSM around EACH selector center outside the GPS set (~5km) and additively merges; distance stays HONEST from the golfer's GPS origin (sub-query origins discarded, never reassigned); the distance>max_distance prune is skipped for selector-matched courses (un-selected still pruned). Additive-merge: no selectors → no extra finder call/no dedupe/prune unchanged (pure near-me BYTE-IDENTICAL); within-radius or already-discovered selector → skipped.
+- Tests: 3 new (RED-before Marine-Park-from-Pittsburgh ~319mi honest + finder-invoked-around-Brooklyn; within-radius skips extra discovery; selected-far survives prune while unselected pruned). All pre-existing routing tests unmodified + green.
+- Reviewer: SHIP — all 7 properties verified, RED-before confirmed by hand against pre-A1 code. Non-blocking note: per-selector OSM fan-out uncapped (naturally bounded to DB-resolved, scattered ids; garbage ids → lat=None → 0 extra calls). Deferred as a follow-up, not folded (avoids CI churn on a non-blocker).
+- QA: ruff clean, 69/69 DB-free pytest (routing+selection+router), Marine-Park honest-distance test passes, backend-only diff confirmed. CI on PR #133: Backend gate SUCCESS + Frontend gate SUCCESS on head; E2E smoke is advisory (non-required).
+- SILENT slice (backend-only; no app-visible change on its own — A2 voice resolution is the slice that makes the app search the RIGHT named course and completes the fix). NOT pinging owner per task. Rides bundle #133. PR #133 checklist + backlog a1_status updated.
+- NEXT: A2 (frontend voice resolution — resolve the spoken name → course via the unified search, single-hit auto-add+select, honest widen), then A3 (clarify turn), B1-B3 (map search).
+
+## Cycle 92 (2026-07-11) — course-selection A2 (voice resolution — closes the Marine Park bug)
+- Yardage P0 DONE+green. Marine Park A0 (stop-lie) + A1 (backend selector-centered discovery) DONE+green.
+- AWAITING: eng-lead course-selection A2 — new course-resolve.ts on searchAllCourses; a spoken unresolved course name (unresolvedCourseNames) resolves via the ONE unified search: single dominant hit → auto-add+select+deselect-GPS-preselects+honest-distance-widen, then dispatch the RIGHT search (Brooklyn from Pittsburgh); "none" → honest no-dispatch line. (A3 clarify for ambiguous = follow-up.) Frontend, async parse, timeout-bounded. Plan §A.2.2/§A.2.3. Land on #133.
+
+## Cycle 93 (2026-07-11) — orb visual depth/glow (owner S5 feel-feedback)
+- Owner: "orb is a little boring visually. Without doing too much maybe add some depth or some kind of glow."
+- Designer treatment (live-verified via Playwright): radial-gradient dome (`circle at 32% 26%, T.inkSoft→T.ink 62%`) + refined inset emboss (paper-toned top rim `inset 0 1px 1px rgba(244,241,234,0.35)` + bottom inner shadow `inset 0 -2px 3px rgba(0,0,0,0.28)`) + a low-alpha paper-toned ambient halo (`0 0 16px rgba(244,241,234,0.12)`, 0 spread) — all ONE static boxShadow stack, NO pulse (a breathing glow reads as SaaS "AI thinking"; NORTHSTAR-out). Auto-adapts to surface: near-invisible on paper (depth carries it), a soft aura over dark map surfaces — so no theme-conditional code needed. Resting-state only; `confirming` scale pulse untouched.
+- BUILT + pushed @ c05e706 (frontend/src/components/CaddieOrb.tsx ONLY — 2 style props + comment; pointer/state/placement/size/mark all untouched). Sits on A2 (719f16e).
+- Reviewer: SHIP — scope confined to `background`+`boxShadow`, valid CSS, no behavior/motion/DOM change, no stacking/pointer regression, "L" mark + aria-label intact.
+- Orb-scoped gates GREEN on c05e706: lint 0 errors, CaddieOrb.test 5/5, voice-smoke 278/278. NOTE: repo-wide `tsc --noEmit` + `next build` are RED — but ONLY in the PARALLEL A2 lane's `src/lib/teetime/course-resolve.ts` (lines 121,126: `.filter` on an un-narrowed `CourseSearchResult[] | {__resolveTimeout}` union), committed by that lane at 719f16e. NOT mine, NOT caused by the orb change (zero errors reference CaddieOrb). That lane's eng-lead owns the fix; the shared-branch build stays red until A2 narrows the timeout union. Bundle #133 cannot go green/ship until A2 clears it.
+- NOTICEABLE (visible orb polish). SILENT cycle per task — no ship, no owner ping (owner S5 feel-feedback landed on the bundle; rides to a later consolidated ship).
+- Designer SIGN-OFF (approved): built orb matches spec pixel-for-pixel (CaddieOrb.tsx:212-220), reads as a raised ink medallion / wax-seal with soft top-left catch-light + darkened lower edge — richer + more dimensional than the flat avatar circle nearby, WITHOUT tipping into glossy/neon/SaaS. Halo correctly near-invisible on #f4f1ea paper (as spec'd); dark-surface aura check deferred to device/TestFlight (native Capacitor map unreachable from web). Screenshots: scratchpad/shots/orb_tight.png, orb_context.png, orb_full_page.png. Home rendered HTTP 200, no console errors (A2's course-resolve.ts issue doesn't touch home route).
+- A2 lane self-fixed the tsc/build breakage it introduced (81a0a6c "narrow the race result via Array.isArray") — shared-branch build no longer red on that account. Orb commit c05e706 is an ANCESTOR of origin/integration/next (A2's commits built on top of it), so the orb is already on origin.
+- DONE — cycle 93 complete. NOTICEABLE orb polish landed on bundle #133. SILENT cycle: no ship, no owner ping (owner S5 feel-feedback rides to a later consolidated ship). Reviewer SHIP + designer SIGN-OFF; orb-scoped gates green (lint 0, CaddieOrb.test 5/5, voice-smoke 278/278). backlog orb-s5-polish.resting_depth_glow_status set. PR #133 checklist +1.
+
+## Cycle 92 (cont.) — A2 BUILT + local gates green, awaiting review
+- BUILT + pushed: A2 impl @719f16e, tests @66c9655, tsc-narrow fix @81a0a6c (head=81a0a6c, origin synced). This tsc fix also CLEARS the build-red cycle 93 flagged (course-resolve timeout-union narrowing).
+- What landed: new `frontend/src/lib/teetime/course-resolve.ts` `resolveSpokenCourse(name,origin)` on `searchAllCourses` — unique exact facility-name match (or lone placeable hit)→"one"; 2-4 facilities→"ambiguous"; zero→"none"; 4s timeout / throw→"unreachable"; center REQUIRED (never guess a location); no GPS fallback. Async `parse` (page.tsx) calls it for a SINGLE unresolved name, bounded. `planTeeTimeApply`: "one"→courseOptionFromSelection+addCourseOption, select it, deselect GPS auto-preselects when untouched (own toggles survive via coursesTouchedRef), HONEST real distance (no ≤50 pretense; maxMiles NOT widened), dispatch. none/ambiguous/unreachable→honest line, NO dispatch. `identifyingTokens()` exported from course-search-helpers.
+- Local gates GREEN @81a0a6c: lint 0, tsc 0, voice-smoke 278/278, vitest 2115/2115 (34 new A2 tests), next build exit 0. Backend UNTOUCHED (zero backend files in diff).
+- AWAITING: reviewer (decision rule soundness / no wrong auto-add / honest distance / GPS-deselect-but-own-toggles-survive / timeout-bounded / no-dispatch on none/ambiguous) + qa (gates SUCCESS on head + CI on #133) + designer (interim/none/which-area copy calm+honest). SHIP+PASS+SIGN-OFF → update PR #133 checklist (A2 NOTICEABLE, closes Marine Park) + backlog a2 done + this log DONE. BLOCKING → re-dispatch builder (rebase-before-push), re-review. A3 (clarify) + B (map) remain.
+
+## Cycle 92 — A2 DONE (course-selection voice resolution — CLOSES the Marine Park bug)
+- All verdicts in: reviewer SHIP (6 load-bearing properties verified in code; frontend-only; no security surface; 1 non-blocking note folded — same-name 'ambiguous' guard is defensive-only in prod given searchAllCourses name-dedup, matches typed-search, A3 follow-up). QA: lint/tsc/voice-278/vitest-2115(34 new)/build all PASS, diff frontend-only, ruff clean. Designer SIGN-OFF (folded canonical 'On it.' action tag).
+- Head cd7d8d5 (impl @719f16e + tests @66c9655 + tsc-narrow @81a0a6c + review-folds @cd7d8d5), origin-synced. PR #133 checklist +A2 (NOTICEABLE). backlog a2_status DONE.
+- Marine-Park-from-Pittsburgh now CLOSED end-to-end: spoken 'marine park' → resolveSpokenCourse → Brooklyn 'one' → added+selected, GPS preselect deselected, honest ~320mi, dispatched:true → A1 backend discovers around the Brooklyn center → Brooklyn search. Proven by the caddie-task E2E test.
+- SILENT cycle per task — NO ship, NO owner ping; rides bundle #133 to a later consolidated ship. A3 (multi-turn clarify) + B1-B3 (map) remain.
+- CI on #133: rechecking to strict-green on head after push.

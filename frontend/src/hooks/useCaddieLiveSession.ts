@@ -83,7 +83,14 @@ export interface UseCaddieLiveSessionOptions {
    *  so the caddie never answers from a stale minted hole. */
   holeNumber: number;
   holePar: number;
-  holeYards: number;
+  /** Resolved yardage (lib/caddie/hole-yardage.ts) — null when nothing honest
+   *  is known yet. NEVER the mock illustration constant. */
+  holeYards: number | null;
+  /** Provenance of `holeYards` — a flip (e.g. GPS acquired/lost) re-anchors
+   *  the live session even when the hole number hasn't changed
+   *  (specs/caddie-yardage-gps-selected-tee-plan.md §2.3). */
+  yardageBasis?: 'gps' | 'tee-card' | 'tee-geom' | 'card' | null;
+  teeName?: string | null;
   resolveOpeningShot?: () => Promise<OpeningShot | null>;
 }
 
@@ -110,6 +117,8 @@ export function useCaddieLiveSession({
   holeNumber,
   holePar,
   holeYards,
+  yardageBasis = null,
+  teeName = null,
   resolveOpeningShot,
 }: UseCaddieLiveSessionOptions): UseCaddieLiveSessionResult {
   const [liveState, setLiveState] = useState<CaddieLiveState>("connecting");
@@ -129,6 +138,10 @@ export function useCaddieLiveSession({
    *  yet this activation (connect covers it). Guards against a redundant
    *  `sendContext` when the hole-change effect re-runs at the same hole. */
   const anchoredHoleRef = useRef<number | null>(null);
+  /** The yardage basis this activation last re-anchored to (specs/
+   *  caddie-yardage-gps-selected-tee-plan.md §2.3) — a flip at the SAME hole
+   *  (e.g. GPS acquired mid-hole) also triggers a silent re-anchor. */
+  const anchoredBasisRef = useRef<UseCaddieLiveSessionOptions["yardageBasis"]>(null);
 
   // ── Slice D reconnect state machine refs ──────────────────────────────
   /** One reconnect per activation — bounds a flapping signal to a single
@@ -171,10 +184,12 @@ export function useCaddieLiveSession({
    *  callbacks (empty dep arrays) so they always re-anchor to the LATEST
    *  hole, not the one captured at mount (specs/caddie-stale-hole-live-plan.md
    *  §3.3). */
-  const holeContextRef = useRef<HoleContext>({ holeNumber, par: holePar, yards: holeYards });
+  const holeContextRef = useRef<HoleContext>({
+    holeNumber, par: holePar, yards: holeYards, basis: yardageBasis, teeName,
+  });
   useEffect(() => {
-    holeContextRef.current = { holeNumber, par: holePar, yards: holeYards };
-  }, [holeNumber, holePar, holeYards]);
+    holeContextRef.current = { holeNumber, par: holePar, yards: holeYards, basis: yardageBasis, teeName };
+  }, [holeNumber, holePar, holeYards, yardageBasis, teeName]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -258,6 +273,7 @@ export function useCaddieLiveSession({
     if (!clientRef.current || !everConnectedRef.current || !h) return;
     clientRef.current.sendContext(buildHoleContextText(h));
     anchoredHoleRef.current = h.holeNumber;
+    anchoredBasisRef.current = h.basis ?? null;
   }, []);
 
   /** Fires the opening turn exactly once, once BOTH the mic is ready and the
@@ -553,21 +569,25 @@ export function useCaddieLiveSession({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, roundId, personaId]);
 
-  // Re-anchor on every hole change while the live session is connected
-  // (specs/caddie-stale-hole-live-plan.md §3.5). Keyed on `holeNumber` only
-  // (plus stable `anchorHole`/`active`) so it fires exactly once per actual
-  // change; `anchoredHoleRef` makes a re-run at the same hole a no-op, which
-  // also prevents a double-refresh race with the connect-time anchor above
-  // (both converge on the same `anchoredHoleRef` value). If the session
-  // hasn't connected yet, `anchorHole()` early-returns and `anchoredHoleRef`
-  // stays null — the eventual connect anchors the then-current hole read
-  // live from `holeContextRef`, so nothing needs to be queued here.
+  // Re-anchor on every hole change OR yardage-basis flip while the live
+  // session is connected (specs/caddie-stale-hole-live-plan.md §3.5,
+  // extended by specs/caddie-yardage-gps-selected-tee-plan.md §2.3 — a GPS
+  // fix acquired/lost mid-hole re-grounds the caddie even when the hole
+  // number hasn't changed). `anchoredHoleRef`/`anchoredBasisRef` make a
+  // re-run with neither actually changed a no-op, which also prevents a
+  // double-refresh race with the connect-time anchor above (both converge on
+  // the same refs). If the session hasn't connected yet, `anchorHole()`
+  // early-returns and the refs stay null — the eventual connect anchors the
+  // then-current hole/basis read live from `holeContextRef`, so nothing
+  // needs to be queued here.
   useEffect(() => {
     if (!active) return;
     if (anchoredHoleRef.current === null) return; // never anchored yet this activation → connect covers it
-    if (holeNumber === anchoredHoleRef.current) return; // no change → no double-refresh
+    const holeChanged = holeNumber !== anchoredHoleRef.current;
+    const basisChanged = (yardageBasis ?? null) !== (anchoredBasisRef.current ?? null);
+    if (!holeChanged && !basisChanged) return; // neither changed → no double-refresh
     anchorHole();
-  }, [active, holeNumber, anchorHole]);
+  }, [active, holeNumber, yardageBasis, anchorHole]);
 
   const toggleMute = useCallback(() => {
     const next = !muted;

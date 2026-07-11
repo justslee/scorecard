@@ -31,6 +31,31 @@ describe('buildHoleContextText', () => {
     const text = buildHoleContextText({ holeNumber: 1, par: 5, yards: 540 });
     expect(text).not.toContain('\n');
   });
+
+  it('null yards (nothing honest known yet) omits a fabricated number — never falls back to a guess', () => {
+    const text = buildHoleContextText({ holeNumber: 3, par: 3, yards: null });
+    expect(text).toContain('yardage not yet known');
+    expect(text).not.toMatch(/\d+ yards/);
+  });
+
+  it('gps basis labels provenance — "GPS from where the player stands NOW"', () => {
+    const text = buildHoleContextText({ holeNumber: 3, par: 3, yards: 204, basis: 'gps' });
+    expect(text).toContain('204 yards');
+    expect(text).toContain('GPS from where the player stands NOW');
+  });
+
+  it('tee-card/tee-geom basis with a teeName labels "from the {tee} tees"', () => {
+    const text = buildHoleContextText({
+      holeNumber: 3, par: 3, yards: 231, basis: 'tee-card', teeName: 'Black',
+    });
+    expect(text).toContain('231 yards from the Black tees');
+  });
+
+  it('tee-card basis WITHOUT a teeName falls back to a bare number — never claims a tee it can\'t name', () => {
+    const text = buildHoleContextText({ holeNumber: 3, par: 3, yards: 231, basis: 'tee-card', teeName: null });
+    expect(text).toContain('231 yards');
+    expect(text).not.toContain('from the');
+  });
 });
 
 describe('buildOpeningGreetingText — caddie-authored opener', () => {

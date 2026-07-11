@@ -8,6 +8,8 @@ import {
   tournamentPrefillFromParse,
 } from "./tournament-prefill";
 import type { VoiceParseResultValidated } from "@/lib/voice/schemas";
+import { parseVoiceTranscript } from "@/lib/voice/pipeline";
+import { TASK_CONFIDENCE_FLOOR } from "@/lib/caddie-context";
 
 const SAVED = [
   { id: "p1", name: "Justin" },
@@ -69,6 +71,45 @@ describe("tournamentTaskParse", () => {
     const p = tournamentTaskParse("huh", result);
     expect(p.hasSignal).toBe(false);
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// End-to-end dispatch-gate guard (cycle 84 orb-wiring audit).
+//
+// The host (CaddieOrbSheet) only runs a task's apply() when
+// `hasSignal && confidence >= TASK_CONFIDENCE_FLOOR`; below the floor it shows
+// the "here's what I got — say it again to correct" confirm line and NEVER
+// fills the form. The tournament page wires `parseVoiceTranscript` (pipeline,
+// offline local path in tests) → `tournamentTaskParse`. That local path emits
+// exactly `confidence: 0.6`, which sits ON the 0.6 floor — it passes only
+// because the gate is a strict `<`. Nothing pinned that razor-thin
+// relationship, so a floor bump (0.6→0.65) or a drop in the local tournament
+// confidence would SILENTLY route every spoken tournament setup into the
+// confirm-gate — voice tournament creation would look "broken" with zero test
+// failures. This locks the invariant end-to-end.
+describe("tournament dispatch gate — real utterances clear the confidence floor", () => {
+  const UTTERANCES = [
+    "set up a tournament 2 rounds with Justin, Jack, Mike",
+    "create tournament 3 rounds players: Justin, Jack",
+    "tournament 1 day players Justin, Mike",
+    "start a tournament 4 days players: justin, jack, mike",
+  ];
+
+  for (const utterance of UTTERANCES) {
+    it(`"${utterance}" → hasSignal and confidence ≥ the gate floor (apply is never silently blocked)`, async () => {
+      // Offline, deterministic: no `llm` option ⇒ pipeline's local basic parse.
+      const result = await parseVoiceTranscript({
+        transcript: utterance,
+        known: { players: SAVED.map((p) => p.name) },
+      });
+      const parse = tournamentTaskParse(utterance, result);
+
+      expect(parse.hasSignal).toBe(true);
+      // The exact host gate (CaddieOrbSheet.tsx): confidence < FLOOR → confirm,
+      // no apply. Prove these clear it so the form actually fills.
+      expect(parse.confidence).toBeGreaterThanOrEqual(TASK_CONFIDENCE_FLOOR);
+    });
+  }
 });
 
 describe("tournamentConfirmEcho", () => {

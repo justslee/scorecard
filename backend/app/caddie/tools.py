@@ -808,6 +808,13 @@ class ToolContext:
     round_id: Optional[str]
     user_id: str
     default_hole: Optional[int] = None
+    # This turn's resolved yardage (frontend lib/caddie/hole-yardage.ts —
+    # GPS-to-green else the golfer's selected tee else honest None), stashed
+    # by the route handler per request (specs/caddie-yardage-gps-selected-tee
+    # -plan.md §2.4). `get_recommendation` reads this instead of the old fake
+    # `intel.yards or 400` default when the model calls it without an
+    # explicit distance.
+    current_yardage: Optional[int] = None
 
 
 _TOOL_NAMES = {t["name"] for t in CADDIE_TOOLS}
@@ -848,13 +855,33 @@ async def resolve_tool(name: str, args: dict, ctx: ToolContext) -> dict:
         if hn is None:
             return {"error": "get_recommendation requires hole_number"}
         intel = session.hole_intel.get(hn)
+        explicit_distance = _as_int(args.get("distance_yards"))
+        # No-fake-data (specs/caddie-yardage-gps-selected-tee-plan.md §2.4):
+        # the request-carried resolved yardage (this turn's GPS/selected-tee
+        # number, stashed on ctx by the route handler) beats cached
+        # hole_intel.yards, which may be stale/mock-derived on an older
+        # session — NEVER the old fake `400` default.
+        resolved_yards = (
+            explicit_distance
+            if explicit_distance is not None
+            else ctx.current_yardage
+            if ctx.current_yardage is not None
+            else (intel.yards if intel is not None else None)
+        )
+        if resolved_yards is None:
+            return {
+                "error": (
+                    "No distance known for this hole yet — ask the player how far they "
+                    "have, or call get_conditions first."
+                ),
+            }
         return await recommend_payload(
             session,
             round_id,
             hn,
-            distance_yards=_as_int(args.get("distance_yards")),
+            distance_yards=explicit_distance,
             par=intel.par if intel is not None else 4,
-            yards=(intel.yards if intel is not None and intel.yards else 400),
+            yards=resolved_yards,
         )
 
     if name == "record_shot":

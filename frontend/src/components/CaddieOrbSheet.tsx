@@ -25,6 +25,7 @@ import {
   setCaddieOrbState,
   TASK_CONFIDENCE_FLOOR,
   type CaddieTaskContext,
+  type CaddieConverseContext,
   type CaddieTaskId,
 } from "@/lib/caddie-context";
 
@@ -120,9 +121,14 @@ export default function CaddieOrbSheet() {
         return;
       }
 
-      // 2) LEGACY floor — the courses hub still consumes its own bus summons
-      //    (app/courses/page.tsx). Until a future slice migrates it to a
-      //    "courses" surface registration, the host must not double-handle it.
+      // 2) LEGACY floor — the courses LIST page still consumes its own bus
+      //    summons (app/courses/page.tsx). `looperContextForPath` (lib/
+      //    looper-bus.ts) scopes `context: "courses"` to that list route
+      //    only, so this guard now only ever fires there — course DETAIL
+      //    pages summon `context: "general"` and fall through to lane 3
+      //    below (the general converse sheet), not swallowed here. Until a
+      //    future slice migrates the list page to a "courses" surface
+      //    registration, the host must not double-handle its summons.
       if (!ctx && detail.context === "courses") return;
 
       // 3) TASK or CONVERSE or GENERAL — open the sheet, bound to the context.
@@ -331,13 +337,23 @@ export default function CaddieOrbSheet() {
   const activeCtx = getCaddieContext();
   const activeTask: CaddieTaskContext | null =
     boundId != null && activeCtx?.kind === "task" && activeCtx.id === boundId ? activeCtx : null;
+  // A registered converse context (e.g. /profile's "my-card") greets the golfer
+  // with its OWN title + hint. Unlike a task there is no boundId to pin (converse
+  // never binds), so the live registry is the source of truth — the newest
+  // converse registration owns the sheet copy while its page is active.
+  const activeConverse: CaddieConverseContext | null =
+    activeCtx?.kind === "converse" ? activeCtx : null;
 
   return (
     <LooperSheetShell
       open={open}
       onClose={close}
-      title={activeTask?.copy.title ?? "What can I do for you?"}
-      emptyHint={activeTask?.copy.hint ?? "Tee times, courses, your game — ask me anything."}
+      title={activeTask?.copy.title ?? activeConverse?.copy.title ?? "What can I do for you?"}
+      emptyHint={
+        activeTask?.copy.hint ??
+        activeConverse?.copy.hint ??
+        "Tee times, courses, your game — ask me anything."
+      }
       turns={turns}
       phase={phase}
       interim={dictation.interim}

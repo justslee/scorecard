@@ -9,6 +9,7 @@ import {
   parseTeeTimePrefsLocally,
   parseSpokenAmount,
   matchKnownCourses,
+  extractUnresolvedCourseNames,
   hasTeeTimeSignal,
 } from "./parseTeeTimePrefs";
 
@@ -18,6 +19,19 @@ const KNOWN = [
   "Lincoln Park",
   "Sharp Park",
   "Crystal Springs",
+];
+
+// The owner's real bug: 8 GPS-nearby Pittsburgh courses on the prefs screen,
+// none of them the "Marine Park" (Brooklyn) he asked for by name.
+const PITTSBURGH = [
+  "Bob O'Connor Golf Course",
+  "South Park Golf Course",
+  "North Park Golf Course",
+  "Grand View Golf Club",
+  "Shannopin Country Club",
+  "Fox Chapel Golf Club",
+  "Diamond Run Golf Club",
+  "Quicksilver Golf Club",
 ];
 
 describe("parseTeeTimePrefsLocally — happy paths", () => {
@@ -157,6 +171,63 @@ describe("matchKnownCourses", () => {
 
   it("returns nothing when no courses are known", () => {
     expect(matchKnownCourses("presidio saturday", [])).toEqual([]);
+  });
+});
+
+describe("extractUnresolvedCourseNames — the Marine-Park-from-Pittsburgh bug", () => {
+  it("extracts a named course absent from the list (RED before A0)", () => {
+    const r = parseTeeTimePrefsLocally(
+      "get me out at Marine Park Saturday morning",
+      { courses: PITTSBURGH },
+    );
+    // The named course is NOT silently dropped — and it is NOT mistaken for a
+    // listed course (no wrong-city dispatch).
+    expect(r.courseNames).toEqual([]);
+    expect(r.unresolvedCourseNames).toEqual(["marine park"]);
+    expect(r.windows).toEqual([{ day: "saturday", period: "morning" }]);
+    expect(hasTeeTimeSignal(r)).toBe(true);
+  });
+
+  it("keeps the trailing generic word when a distinctive word precedes it", () => {
+    expect(extractUnresolvedCourseNames("at marine park", PITTSBURGH)).toEqual([
+      "marine park",
+    ]);
+  });
+
+  it("cuts a trailing connector so the ack reads cleanly", () => {
+    // "on"/"at" as mid-phrase connectors must not bleed into the captured name.
+    // (extractUnresolvedCourseNames operates on the already-lowercased transcript.)
+    expect(
+      extractUnresolvedCourseNames("out at marine park on saturday", PITTSBURGH),
+    ).toEqual(["marine park"]);
+    expect(
+      parseTeeTimePrefsLocally("get me out at Marine Park on Saturday morning", {
+        courses: PITTSBURGH,
+      }).unresolvedCourseNames,
+    ).toEqual(["marine park"]);
+  });
+
+  it("is conservative — no false positives on generic phrases", () => {
+    // Bare "on <day>" / "at the muni" / "at the club" are not course names.
+    expect(extractUnresolvedCourseNames("play somewhere on saturday", PITTSBURGH)).toEqual([]);
+    expect(extractUnresolvedCourseNames("at the muni around noon", PITTSBURGH)).toEqual([]);
+    expect(extractUnresolvedCourseNames("at the club this weekend", PITTSBURGH)).toEqual([]);
+    expect(extractUnresolvedCourseNames("just my favorites within ten miles", PITTSBURGH)).toEqual([]);
+    // No lead word at all → nothing captured.
+    expect(extractUnresolvedCourseNames("saturday morning party of four", PITTSBURGH)).toEqual([]);
+  });
+
+  it("a KNOWN course after the lead stays resolved, never unresolved", () => {
+    const r = parseTeeTimePrefsLocally("saturday at south park", { courses: PITTSBURGH });
+    expect(r.courseNames).toEqual(["South Park Golf Course"]);
+    expect(r.unresolvedCourseNames).toEqual([]);
+  });
+
+  it("a bare named course with no other signal still surfaces honestly", () => {
+    const r = parseTeeTimePrefsLocally("out at bethpage black", { courses: PITTSBURGH });
+    expect(r.unresolvedCourseNames).toEqual(["bethpage black"]);
+    expect(hasTeeTimeSignal(r)).toBe(true);
+    expect(r.confidence).toBeGreaterThanOrEqual(0.6);
   });
 });
 

@@ -41,12 +41,12 @@ import { getSavedPlayers } from "@/lib/storage";
 import type { SavedPlayer } from "@/lib/types";
 import { buildTeeTimeICS, icsFilename, downloadICS } from "@/lib/teetime/ics";
 import { parseTeeTimePrefs } from "@/lib/voice/parseTeeTimePrefs";
-import type { TeeTimePrefsParseResultValidated } from "@/lib/voice/schemas";
 import WindowCard from "./WindowCard";
 import { buildKeyterms } from "@/lib/voice/keyterms";
 import { useCaddiePageContext } from "@/hooks/useCaddiePageContext";
 import type { TaskParse, TaskAck } from "@/lib/caddie-context";
-import { teeTimeTaskParse, planTeeTimeApply } from "@/lib/teetime/caddie-task";
+import { teeTimeTaskParse, planTeeTimeApply, type TeeTimeTaskPayload } from "@/lib/teetime/caddie-task";
+import { resolveSpokenCourse, type SpokenCourseResolution } from "@/lib/teetime/course-resolve";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -348,6 +348,14 @@ interface PrefsProps {
 
 /** How the voice affordance currently feels: quiet, live, or working. */
 
+/** The golfer's stored area ("lat,lng") → an origin for honest distance, or
+ *  null when unset/malformed (never a guessed origin). */
+function parseArea(area: string | null): { lat: number; lng: number } | null {
+  if (!area) return null;
+  const [lat, lng] = area.split(",").map(Number);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
 function Prefs({
   accent, windows, setWindows, courses, setCourses, courseLoad, area,
   maxMiles, setMaxMiles, group, setGroup, roster, setMaxPriceUsd,
@@ -396,10 +404,17 @@ function Prefs({
    *  same computation as the old private applyParsed, factored into
    *  caddie-task.ts so it's provable-parity-tested against the real libs. */
   const apply = useCallback((p: TaskParse): TaskAck => {
-    const parsed = p.payload as TeeTimePrefsParseResultValidated;
-    const plan = planTeeTimeApply(parsed, { windows, courses, maxMiles, group });
+    const { parsed, resolution } = p.payload as TeeTimeTaskPayload;
+    const plan = planTeeTimeApply(
+      parsed,
+      { windows, courses, maxMiles, group, origin: parseArea(area), touched: coursesTouchedRef.current },
+      resolution,
+    );
     if (plan.windows) setWindows(plan.windows);
     if (plan.courses) setCourses(plan.courses);
+    // A voice-resolved course is the golfer touching the list — a later utterance
+    // then preserves this pick instead of re-deselecting it as a GPS preselect.
+    if (resolution?.kind === "one") coursesTouchedRef.current = true;
     if (plan.maxMiles != null) setMaxMiles(plan.maxMiles);
     if (plan.group) setGroup(plan.group);
     if (plan.maxPriceUsd != null) setMaxPriceUsd(plan.maxPriceUsd);
@@ -411,7 +426,7 @@ function Prefs({
       dispatchTimerRef.current = setTimeout(onDispatch, 1400);
     }
     return { line: plan.line, dispatched: plan.dispatched };
-  }, [windows, setWindows, courses, setCourses, maxMiles, setMaxMiles, group, setGroup, setMaxPriceUsd, onDispatch]);
+  }, [windows, setWindows, courses, setCourses, maxMiles, setMaxMiles, group, setGroup, setMaxPriceUsd, onDispatch, area, coursesTouchedRef]);
 
   useCaddiePageContext({
     id: "tee-time",
@@ -428,7 +443,16 @@ function Prefs({
         transcript,
         known: { courses: courses.map((c) => c.name) },
       });
-      return teeTimeTaskParse(transcript, parsed);
+      // A2: a course was named but matched nothing on-screen — resolve that
+      // single spoken name through the unified search (the same path typed
+      // search uses) so the RIGHT course gets selected + searched, not GPS.
+      // Self-timeout-bounded (~4s → "unreachable"); skipped entirely when no
+      // name is unresolved, so an ordinary utterance never waits on search.
+      let resolution: SpokenCourseResolution | null = null;
+      if (parsed.unresolvedCourseNames.length === 1) {
+        resolution = await resolveSpokenCourse(parsed.unresolvedCourseNames[0], parseArea(area));
+      }
+      return teeTimeTaskParse(transcript, parsed, resolution);
     },
     apply,
   });
