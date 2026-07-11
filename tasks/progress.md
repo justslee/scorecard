@@ -12403,11 +12403,13 @@ courses now 30. Fixtures `clubprophet_harborlinks_times.json` (real 69-slot) + `
 (real NO_TEETIMES). 47 new tests via MockTransport; full 328-test tee-time suite green;
 S0/S1/S4a/S4c byte-identical; ruff clean.
 
-## AWAITING
-Awaiting reviewer (adversarial correctness+security) + qa (ruff+pytest tee-time suites) on the
-clubprophet adapter, pushed to origin/integration/next. On SHIP + green -> update bundle PR
-checklist (NOTICEABLE) and stop (SILENT, no owner ping — the bundle already needs an owner
-ship-it; this rides it). On BLOCKING -> re-fix on integration/next, re-review. Reconcile from
-branch state, not memory; the fixtures + adapter are already committed+pushed.
+## RESOLVED (clubprophet H1)
+Reviewer: SHIP (no blocking — never-raises traced every leg, honesty/no-fake-data verified, SSRF
+guard probed every bypass, fixtures real, tests derive from fixture, router additive; 2 non-blocking
+nits noted, no action). QA: PASS (ruff clean; 328 tee-time pass / 12 DB-skip; 47 clubprophet + 15
+capability-store-generalized green; seed loads 30 rows/1 clubprophet; zero frontend files in the
+diff — no orb-cycle collision). Bundle PR #132 checklist updated (item added under In this bundle +
+Noticeable content). Rides the bundle; NO owner ping this cycle (parent orchestrates the ship-it
+across both parallel cycles). Head SHA f0563ca.
 - PLAN(fable) DONE → specs/orb-s2-context-contract-teetime-plan.md. Contract: caddie-context.ts (exclusive registry, object-identity tokens, orb-state channel) + TaskParse{transcript,hasSignal,confidence,ack,payload}/TaskAck{line,dispatched}. Host CaddieOrbSheet subsumes LooperSheet default (deleted), shares one runConverse between general + fall-through, historyBase snapshot prevents transcript dup. Two gates: hasSignal=false→fall-through+nudge; hasSignal&&conf<0.6→confirm-no-act (inert for today's tee-time, real for S3 LLM); else apply→beat. Tee-time: new pure lib/teetime/caddie-task.ts (planTeeTimeApply ≡ applyParsed) + register in Prefs (prefs-scoped by mount); delete ~120 lines private hosting. 7 new files, layout swap, LooperSheet default deleted.
 - AWAITING builder on the plan (frontend-only, on integration/next). Checkpoint before await; will rebase before push.
