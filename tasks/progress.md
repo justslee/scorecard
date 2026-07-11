@@ -13063,3 +13063,15 @@ AWAITING: Plan agent (fable) → specs/course-intel-static-persistence-plan.md. 
 dispatch builder to implement the plan on integration/next, then reviewer + QA (docker Postgres
 DB tests — DB-only-in-CI lesson), update PR #133 + backlog + progress. SILENT — no ship/ping.
 Reconcile from origin/integration/next on resume.
+
+## AWAITING (cycle 86 — builder on static-intel gap closure, plan @d2d322d)
+Fable plan v2 written (specs/course-intel-static-persistence-plan.md @d2d322d) — RULED no
+migration; content-addressed elevation_coords_key invalidation inside existing JSONB; move
+precompute to new app/services/course_elevation.py; wire into create_mapped/put_mapped (Gap A);
+stamp elevation_computed_at in _elevation_patch. Builder dispatched to implement + tests +
+docker-Postgres integration run. AWAITING builder push to integration/next. On return:
+reviewer (fresh — static-only, invalidation sound, best-effort/no-fabrication, no live-path
+regression, import-move clean) + QA (ruff + non-DB pytest + REAL docker Postgres integration +
+frontend no-regression). BLOCKING → re-dispatch builder. Green → update PR #133 checklist +
+backlog (course-intel-static-persistence → shipped/done-on-bundle, resolution field, status
+enum) + progress. SILENT — no ship/ping. Reconcile from origin/integration/next on resume.
