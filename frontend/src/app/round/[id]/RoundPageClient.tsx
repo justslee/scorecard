@@ -59,6 +59,7 @@ import { playsTileDisplay, ELEV_DEADBAND_FT } from "@/lib/caddie/plays-tile";
 import { playsBasis } from "@/lib/caddie/plays-basis";
 import { yardsDistance } from "@/lib/course/hole-projection";
 import { applyTeeAnchors, resolveFcbSource } from "@/lib/course/tee-anchor";
+import { resolveHoleYardage, yardageCaption } from "@/lib/caddie/hole-yardage";
 import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
@@ -1185,14 +1186,34 @@ export default function RoundPage() {
     { k: "Center", v: fcbTileValues.center, color: T.ink },
     { k: "Back", v: fcbTileValues.back, color: "#5d7285" },
   ];
-  // One reconciled header ladder (spec §fix.2/§fix.3): the scorecard yardage
-  // is authoritative when known; else the anchored tee→green geometry; the
-  // mock illustration number is the LAST resort, and only on the paper
-  // fallback (no mapped course / round anchor) — a mapped-course round must
-  // never fall back to the mock number (that's exactly this incident: a
-  // phantom 178/232 disagreement from two different sources).
-  const headerYards =
-    cardYards ?? fcbFromTee?.center ?? (mappedCourse || roundAnchor ? null : hole.yards);
+  // Selected-tee geometry yards — the resolved (named/card/ordinal) tee box's
+  // straight-line distance to the green, from the SAME anchor the F/C/B tiles
+  // use (fcbFromTee). Slice 2 (specs/caddie-yardage-gps-selected-tee-plan.md)
+  // adds a real per-tee CARD source (`selectedTeeCardYards`, mapped
+  // `CourseData.holes[].yardages[teeName]`) that outranks this geometry —
+  // until then it's honestly null and the resolver falls through to geometry
+  // or the round's own card snapshot.
+  const selectedTeeGeomYards = fcbFromTee?.center ?? null;
+  const selectedTeeCardYards: number | null = null;
+  // ONE shared resolver (spec §2.1) — GPS-to-green (live, gated on-hole) beats
+  // the selected tee's card yards, beats its mapped geometry, beats a bare
+  // scorecard snapshot, beats honest null. Every caddie/grounding surface
+  // (sheet header, offline card, voice requests) reads THIS value — never the
+  // mock illustration constant (`hole.yards`), which is banned from every
+  // surface except the true paper-only fallback below.
+  const resolvedYardage = resolveHoleYardage({
+    fcbLive,
+    selectedTeeCardYards,
+    selectedTeeGeomYards,
+    cardYards,
+    par: holePar,
+  });
+  const yardsCaption = yardageCaption(resolvedYardage, round?.teeName ?? null, holePar);
+  // The mock illustration number is the LAST resort, and only on the true
+  // paper fallback (no mapped course / round anchor at all) — a mapped-course
+  // round must never fall back to the mock number (that's exactly this
+  // incident: a phantom 178/232 disagreement from two different sources).
+  const headerYards = resolvedYardage.yards ?? (mappedCourse || roundAnchor ? null : hole.yards);
   // Per-hole relative wind: same weather, different bearing per hole.
   const holeBearing = holeCoordsForTiles?.tee && holeCoordsForTiles?.green
     ? bearingDeg(holeCoordsForTiles.tee, holeCoordsForTiles.green)
@@ -2218,7 +2239,7 @@ export default function RoundPage() {
         onClose={() => setOfflineCardOpen(false)}
         holeNumber={currentHole}
         par={holePar}
-        yards={round.holes[currentHole - 1]?.yards ?? hole.yards}
+        yards={resolvedYardage.yards}
         intel={offlineBundle?.holes.find((h) => h.holeNumber === currentHole) ?? null}
         lastRecommendation={offlineBundle?.lastRecommendation ?? null}
       />
@@ -2240,7 +2261,8 @@ export default function RoundPage() {
         accent={accent}
         holeNumber={currentHole}
         holePar={holePar}
-        holeYards={round.holes[currentHole - 1]?.yards ?? hole.yards}
+        holeYards={resolvedYardage.yards}
+        yardsCaption={yardsCaption}
         convHistory={caddieHistory}
         onUpdateConvHistory={setCaddieHistory}
         roundId={roundId}

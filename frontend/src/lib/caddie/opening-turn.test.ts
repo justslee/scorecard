@@ -31,6 +31,12 @@ describe('buildHoleContextText', () => {
     const text = buildHoleContextText({ holeNumber: 1, par: 5, yards: 540 });
     expect(text).not.toContain('\n');
   });
+
+  it('null yards (nothing honest known yet) omits a fabricated number — never falls back to a guess', () => {
+    const text = buildHoleContextText({ holeNumber: 3, par: 3, yards: null });
+    expect(text).toContain('yardage not yet known');
+    expect(text).not.toMatch(/\d+ yards/);
+  });
 });
 
 describe('buildOpeningGreetingText — caddie-authored opener', () => {

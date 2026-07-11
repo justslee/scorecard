@@ -83,7 +83,9 @@ export interface UseCaddieLiveSessionOptions {
    *  so the caddie never answers from a stale minted hole. */
   holeNumber: number;
   holePar: number;
-  holeYards: number;
+  /** Resolved yardage (lib/caddie/hole-yardage.ts) — null when nothing honest
+   *  is known yet. NEVER the mock illustration constant. */
+  holeYards: number | null;
   resolveOpeningShot?: () => Promise<OpeningShot | null>;
 }
 

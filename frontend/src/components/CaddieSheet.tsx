@@ -76,7 +76,14 @@ export interface CaddieSheetProps {
   accent: string;
   holeNumber: number;
   holePar: number;
-  holeYards: number;
+  /** Resolved yardage (lib/caddie/hole-yardage.ts) — null when nothing honest
+   *  is known yet (no GPS fix, no selected-tee data, no card snapshot).
+   *  NEVER the mock illustration constant. */
+  holeYards: number | null;
+  /** Honest basis caption for the header ("204 to the green" / "231 yds ·
+   *  black tees" / "—") — parent-computed via `yardageCaption` so every
+   *  surface reads the same provenance label. */
+  yardsCaption?: string;
   /** Conversation history — owned by parent so it persists across close/reopen. */
   convHistory: VoiceCaddieMessage[];
   onUpdateConvHistory: (history: VoiceCaddieMessage[]) => void;
@@ -210,6 +217,7 @@ export default function CaddieSheet({
   holeNumber,
   holePar,
   holeYards,
+  yardsCaption,
   convHistory,
   onUpdateConvHistory,
   roundId,
@@ -638,7 +646,7 @@ export default function CaddieSheet({
           personality_id: personaId,
           hole_number: holeNumber,
           par: holePar,
-          yards: holeYards,
+          yards: holeYards ?? undefined,
           club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
           handicap: profile?.handicap ?? undefined,
           conversation_history: currentHistory,
@@ -655,7 +663,7 @@ export default function CaddieSheet({
             personality_id: personaId,
             hole_number: holeNumber,
             par: holePar,
-            yards: holeYards,
+            yards: holeYards ?? undefined,
             club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
             handicap: profile?.handicap ?? undefined,
             conversation_history: currentHistory,
@@ -1100,7 +1108,7 @@ export default function CaddieSheet({
         hole_number: holeNumber,
         distance_yards: dist,
         par: holePar,
-        yards: holeYards,
+        yards: holeYards ?? undefined,
         club_distances: Object.keys(clubMap).length > 0 ? clubMap : undefined,
         handicap: profile?.handicap ?? undefined,
       });
@@ -1117,7 +1125,7 @@ export default function CaddieSheet({
             hole_number: holeNumber,
             distance_yards: dist,
             par: holePar,
-            yards: holeYards,
+            yards: holeYards ?? undefined,
           });
         } catch {
           rec = await recStateless();
@@ -1403,7 +1411,7 @@ export default function CaddieSheet({
                     textTransform: "uppercase",
                   }}
                 >
-                  Hole {holeNumber} &middot; Par {holePar} &middot; {holeYards} yds
+                  Hole {holeNumber} &middot; Par {holePar} &middot; {yardsCaption ?? (holeYards != null ? `${holeYards} yds` : "—")}
                 </span>
               </div>
             </div>

@@ -44,13 +44,18 @@ export function buildOpeningGreetingInstruction(shot: OpeningShot): string {
 export interface HoleContext {
   holeNumber: number;
   par: number;
-  yards: number;
+  /** Resolved yardage (lib/caddie/hole-yardage.ts) — null when nothing honest
+   *  is known yet. NEVER the mock illustration constant; never a fabricated
+   *  "on the card" number (slice 3 adds full GPS/tee-basis provenance). */
+  yards: number | null;
 }
 
 export function buildHoleContextText(h: HoleContext): string {
+  const yardsClause =
+    h.yards != null ? `, ${h.yards} yards` : ', yardage not yet known';
   return (
     `Course update — ground truth: the player is now on hole ${h.holeNumber}, ` +
-    `par ${h.par}, ${h.yards} yards on the card. Disregard any earlier hole. ` +
+    `par ${h.par}${yardsClause}. Disregard any earlier hole. ` +
     `For live numbers call your tools (get_conditions, get_recommendation) with ` +
     `hole_number ${h.holeNumber}; never answer from a previous hole.`
   );

@@ -27,7 +27,10 @@ export default function OfflineCaddieCard({
   onClose: () => void;
   holeNumber: number;
   par: number;
-  yards: number;
+  /** Resolved yardage (lib/caddie/hole-yardage.ts) — null when nothing honest
+   *  is known (no GPS fix, no selected-tee data, no card snapshot). Never the
+   *  mock illustration constant. */
+  yards: number | null;
   /** Cached intel for this hole (hazards, plays-like); null = round data only. */
   intel: CachedHoleIntel | null;
   lastRecommendation: CachedRecommendation | null;
@@ -104,7 +107,7 @@ export default function OfflineCaddieCard({
             </div>
 
             <div style={{ fontFamily: T.sans, fontSize: 13, color: T.pencil, marginBottom: 14 }}>
-              {yards} yards
+              {yards != null ? `${yards} yards` : "— yards unknown"}
               {playsLike !== null && (
                 <span style={{ color: T.inkSoft }}>
                   {" "}· plays like {playsLike}
