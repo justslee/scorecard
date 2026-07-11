@@ -3,6 +3,24 @@
   "note": "Cycle 78 retro/grooming (2026-07-11): statuses normalized to enum; ~150 shipped/superseded items archived to backlog-archive.json. This file = LIVE queue only. Terminal record + all ship SHAs/PRs/TestFlight versions preserved in backlog-archive.json (see resolution fields).",
   "items": [
     {
+      "id": "tournament-money-format-completion",
+      "title": "Follow-up: complete the deferred money-settling game formats (wolf true-transfer, opponent/team pickers)",
+      "type": "minor",
+      "priority": 4,
+      "risk": "medium",
+      "status": "ready",
+      "why": "Deferred from cycle 100 (tournament-settlement-honesty, @2e17261 on integration/next / PR #135). That cycle made the picker HONEST by only offering a stake for formats that truly settle zero-sum (STAKE_GAME_IDS = {skins, match, nassau}) and PREVENTING silently-truncated games. Three capabilities were intentionally deferred as product/design-shaped, each a real feature the owner may want later: (1) WOLF as a money game -- computeWolf (games.ts ~836-862) is NOT zero-sum today: lone-mode credits the wolf +/-3 and debits no one; partner-mode awards +1/+1 to the winning pair and debits no one (reviewer falsified: a lone-wolf win netted +$6, sum != 0). To re-enable wolf stakes, make the deltas TRUE transfers (lone win: wolf +3, each other -1; lone loss: wolf -3, each other +1; partner: distribute the pot across the losing side -- a real rules decision) then re-add 'wolf' to SETTLEABLE_FORMATS + STAKE_GAME_IDS and add a decided-multi-hole zero-sum test (the new SETTLEABLE_FORMATS property test in settlement.test.ts will enforce it). (2) MATCH-PLAY opponent picker -- match play is restricted to exactly-2 rosters (prevents silent drop of players 3+); a >2 roster needs an opponent-selection UI writing game.settings.matchPlayPlayers (engine already supports it, games.ts:740-741). (3) TEAM-ASSIGNMENT UI -- unlocks stakes for the team formats currently non-settling-by-construction in the picker (vegas is team-only/unconstructible today; bestBall/scramble/threePoint need teams). Each is its own plan+tests; keep [[no-fake-data-fallbacks]]: never re-offer a stake until the format settles zero-sum end-to-end."
+    },
+    {
+      "id": "player-autocomplete-overlap",
+      "title": "Bug (pre-existing): PlayerAutocomplete suggestion row overlaps/blocks the Done button in the add-player sheet",
+      "type": "minor",
+      "priority": 4,
+      "risk": "low",
+      "status": "ready",
+      "why": "Found by QA during cycle-100 local Playwright drive (NOT introduced by PR #135 -- pre-existing, out of that diff's scope). In the standalone add-player sheet (/round/new -> '+ Add' -> name input), typing a new name shows the \"'X' will be added as a new player\" suggestion row from PlayerAutocomplete.tsx (zIndex: 60) which visually overlaps and blocks pointer clicks on the 'Done' button beneath it until the suggestion is tapped or the input cleared. Real repro. Fix: reflow/gate the suggestion popover so it doesn't cover the primary action (or lift Done above it)."
+    },
+    {
       "id": "course-selection-ux",
       "title": "OWNER: named-course-from-elsewhere bug (Marine Park from Pittsburgh) + map-based course search",
       "type": "epic",

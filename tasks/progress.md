@@ -14172,3 +14172,29 @@ Re-dispatched: reviewer (confirm wolf honestly-empty + property test is real not
 regression) + qa (gates SUCCESS on b0bb7a5) + designer (confirm 2 copy fixes + opacity APPROVE).
 All green → update PR#135 checklist + backlog follow-up (wolf true-transfer engine), commit, DONE.
 Any BLOCKING → back to builder. Do NOT ship/ping.
+
+## Cycle 100 GREEN — tournament settlement money HONESTY (NOTICEABLE)
+Head: 2e17261 (feature) on integration/next. All reviews green on the FINAL commit:
+- reviewer: SHIP — wolf money-fabrication blocker CLOSED (wolf removed from SETTLEABLE_FORMATS,
+  guard returns {}, dead branch + false "zero-sum" comment deleted, STAKE_GAME_IDS={skins,match,
+  nassau}); new zero-sum property test over SETTLEABLE_FORMATS proven GENUINE (falsified: fails
+  loudly if a non-zero-sum format re-added; all 8 fixtures move real money); wolf tests assert
+  honest-empty (not bent); no regression; per-format math for 8 settleable formats byte-identical.
+- qa: PASS — lint/tsc clean, voice-smoke 278/278, vitest 2218/2218 (85/85 money-honesty +
+  zero-sum property over 8 formats), build emits /tournament/[id] + /round/new, ruff clean
+  (backend untouched). Deployed-preview E2E: no per-PR preview workflow in repo infra; substituted
+  local Playwright drive on this head — app load + start-round + score-entry + GamePicker copy/tag/
+  opacity fixes all confirmed live. QA flagged pre-existing PlayerAutocomplete overlap bug.
+- designer: APPROVE — no-money note now format-agnostic "No money on this one — nothing to settle."
+  (correct for stroke/vegas/bb/scr default), Wolf tag "Foursome", disabled-row opacity spares
+  label+sub-copy (sunlight-legible); no new chrome/toasts/warning colors.
+
+Iteration trail: 1a37556 (initial) -> reviewer BLOCKING (wolf fabricates money) + designer
+BLOCKING (copy) -> 2e17261 (wolf points-only + copy/opacity) -> reviewer SHIP + qa PASS +
+designer APPROVE.
+
+PR #135 checklist updated: item 3 = settlement money honesty (NOTICEABLE). Bundle now has 3
+NOTICEABLE items. backlog.json: +tournament-money-format-completion (wolf true-transfer, match-play
+opponent picker, team-assignment UI — all gated on [[no-fake-data-fallbacks]]) and
++player-autocomplete-overlap (pre-existing bug). NOT shipping/pinging this cycle (per caller
+brief) — owner separately testing v1.1.2; bundle keeps accumulating for the next "ship it".
