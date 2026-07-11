@@ -321,14 +321,26 @@ export default function TournamentPageClient() {
   // ── Leaderboard re-sort haptics — fire ONLY on real order/leader changes ──
   // Never on tab switch, mode toggle, or any re-render with the same order:
   // deps are the derived signature strings, and we early-return when unchanged.
-  const prevOrderRef = useRef<{ signature: string; leaderId: string | null } | null>(
-    null
-  );
+  // The gross↔toPar toggle re-sorts the SAME data and legitimately changes
+  // orderSignature (e.g. tie-breaks differ) — that's a view change, not a
+  // standings transition, so it must never buzz. We track `mode` in the ref;
+  // on a mode change we rebase the baseline silently (no haptic) so the next
+  // REAL change is measured against the correct pre-toggle order.
+  const prevOrderRef = useRef<{
+    signature: string;
+    leaderId: string | null;
+    mode: LbMode;
+  } | null>(null);
   useEffect(() => {
     const prev = prevOrderRef.current;
     if (prev === null) {
       // First mount / first real standings — just record, fire nothing.
-      prevOrderRef.current = { signature: orderSignature, leaderId };
+      prevOrderRef.current = { signature: orderSignature, leaderId, mode: lbMode };
+      return;
+    }
+    if (prev.mode !== lbMode) {
+      // Pure view toggle (gross ↔ toPar) — rebase silently, no haptic.
+      prevOrderRef.current = { signature: orderSignature, leaderId, mode: lbMode };
       return;
     }
     if (prev.signature === orderSignature) {
@@ -363,8 +375,8 @@ export default function TournamentPageClient() {
       haptic("light");
     }
 
-    prevOrderRef.current = { signature: orderSignature, leaderId };
-  }, [orderSignature, leaderId]);
+    prevOrderRef.current = { signature: orderSignature, leaderId, mode: lbMode };
+  }, [orderSignature, leaderId, lbMode]);
 
   // ── Settle-up-appeared haptic — fires once per appearance, not per render ─
   const settlementShownRef = useRef(false);
