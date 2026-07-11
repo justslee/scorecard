@@ -133,6 +133,7 @@ import {
   getCaddieContext,
   type CaddieTaskContext,
   type CaddieSurfaceContext,
+  type CaddieConverseContext,
   type TaskParse,
   type TaskAck,
 } from "@/lib/caddie-context";
@@ -184,6 +185,21 @@ function registerSurface(overrides: Partial<CaddieSurfaceContext> = {}): CaddieS
     id: "courses",
     kind: "surface",
     summon: vi.fn(),
+    ...overrides,
+  };
+  cleanupCtx = registerCaddieContext(ctx);
+  return ctx;
+}
+
+function registerConverse(overrides: Partial<CaddieConverseContext> = {}): CaddieConverseContext {
+  const ctx: CaddieConverseContext = {
+    id: "my-card",
+    kind: "converse",
+    copy: {
+      title: "Your card",
+      hint: "Ask about your game — what to work on, trends, your clubs.",
+    },
+    getGrounding: vi.fn(() => null),
     ...overrides,
   };
   cleanupCtx = registerCaddieContext(ctx);
@@ -312,6 +328,22 @@ describe("CaddieOrbSheet — general lane parity", () => {
 
     await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("Sure thing.")).toBeTruthy();
+  });
+
+  it("registered converse (my-card) greets with its OWN title + hint, not the generic copy", async () => {
+    // Regression guard (designer BLOCK, orb-s4): a kind:"converse" context
+    // (e.g. /profile's "my-card") must render its registered copy in the sheet.
+    // Before the fix the sheet only read copy off task contexts, so the golfer
+    // saw the generic "What can I do for you?" on his own stats page.
+    registerConverse();
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+
+    expect(await screen.findByText("Your card")).toBeTruthy();
+    expect(
+      await screen.findByText("Ask about your game — what to work on, trends, your clubs."),
+    ).toBeTruthy();
   });
 
   it("BeforeFirstByteError falls back to talkToCaddie", async () => {

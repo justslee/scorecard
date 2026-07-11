@@ -25,6 +25,7 @@ import {
   setCaddieOrbState,
   TASK_CONFIDENCE_FLOOR,
   type CaddieTaskContext,
+  type CaddieConverseContext,
   type CaddieTaskId,
 } from "@/lib/caddie-context";
 
@@ -331,13 +332,23 @@ export default function CaddieOrbSheet() {
   const activeCtx = getCaddieContext();
   const activeTask: CaddieTaskContext | null =
     boundId != null && activeCtx?.kind === "task" && activeCtx.id === boundId ? activeCtx : null;
+  // A registered converse context (e.g. /profile's "my-card") greets the golfer
+  // with its OWN title + hint. Unlike a task there is no boundId to pin (converse
+  // never binds), so the live registry is the source of truth — the newest
+  // converse registration owns the sheet copy while its page is active.
+  const activeConverse: CaddieConverseContext | null =
+    activeCtx?.kind === "converse" ? activeCtx : null;
 
   return (
     <LooperSheetShell
       open={open}
       onClose={close}
-      title={activeTask?.copy.title ?? "What can I do for you?"}
-      emptyHint={activeTask?.copy.hint ?? "Tee times, courses, your game — ask me anything."}
+      title={activeTask?.copy.title ?? activeConverse?.copy.title ?? "What can I do for you?"}
+      emptyHint={
+        activeTask?.copy.hint ??
+        activeConverse?.copy.hint ??
+        "Tee times, courses, your game — ask me anything."
+      }
       turns={turns}
       phase={phase}
       interim={dictation.interim}
