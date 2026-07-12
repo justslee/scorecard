@@ -15598,8 +15598,16 @@ FINDINGS (decisive):
     uv run backend/scripts/audit_course_coverage.py --target Red   (OSM side)
   and re-probe the DB once the looper/prod DATABASE_URL secret is refreshed.
 
-## AWAITING
-Awaiting fresh `reviewer` on commit 9c95dad (data-safety of the audit script + the Red-backfill
-recommendation: ingesting Red cannot corrupt Black; upsert_course idempotent/per-hole; no GolfAPI/
-budget regression). SHIP -> push worktree branch into integration/next, open bundle PR (none open),
-add checklist item. BLOCKING -> fix, re-review. No prod write is performed this cycle (gated).
+## RESOLVED (cycle 115)
+Reviewer SHIP @9c95dad — all 5 data-safety claims verified TRUE against code (distinct Black
+`2b8caab5-...` / Red `269e1f2e-...` UUIDs; upsert_course writes scoped to payload id/hole_ids;
+idempotent; zero GolfAPI on the no-`--golfapi-id` command; `_should_abort_empty` guard active on
+the write path). Non-blocking note: a FUTURE *reduced-geometry* re-ingest could leave stale holes
+(holes are upserted not deleted) — irrelevant to an identical full re-run, not a Black-corruption
+path. Landed on integration/next via fast-forward (e4daff8..78c6955); bundle PR **#139** opened
+(was none) with the audit item on the checklist (SILENT). No owner ping (silent-only bundle).
+
+OWNER ACTION (gated prod write — the actual fix): run against prod
+  `uv run backend/scripts/ingest_osm_course.py --target-course Red --course-key osm-bethpage-red --course-name "Bethpage Red"`
+then verify `uv run backend/scripts/audit_course_coverage.py --target Red` and re-probe the DB once
+the `looper/prod` DATABASE_URL secret password is refreshed.
