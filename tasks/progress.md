@@ -3,6 +3,35 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## caddie-orb-map-mode-ghost — DONE, builder (2026-07-11, small-UX bug fix / silent)
+Implemented `specs/caddie-orb-map-mode-ghost-plan.md` exactly on `integration/next`, commit
+`607899a` (off `a9be422`). This is the follow-up filed at the end of Bundle #135 (z-index
+out-stacking `6ff2b0a` couldn't fix it — CourseSearch's map-mode frame is `background:
+transparent` so an opaque, merely-out-stacked orb still PAINTED over the live native map as a
+dead second orb).
+- **NEW** `frontend/src/lib/fullscreen-overlay.ts` — pure `Set<symbol>` registry (mirrors
+  `caddie-context.ts`): `registerFullscreenOverlay()` / `isFullscreenOverlayActive()` /
+  `onFullscreenOverlayChange()`; notifies subscribers only on boolean `size>0` flips.
+- `CaddieOrb.tsx` — subscribes (`useState(isFullscreenOverlayActive)` + effect), computes
+  `visible = show && !overlayActive`; both the early return AND the one-time intro effect
+  (re-keyed `[show]`→`[visible]`, guard `!show`→`!visible`) switched to `visible` so the
+  `looper.caddieOrbIntroSeen` flag is DEFERRED (never burned) while suppressed.
+- `CourseSearch.tsx` — one mount-scoped `useEffect(() => registerFullscreenOverlay(), [])`
+  (register in BOTH list and map mode — mount-scoped, not mode-scoped); amended the stale z
+  comment (orb no longer needs out-stacking, it's truly absent).
+- Tests: new `fullscreen-overlay.test.ts` (5 pure cases: empty/register-unregister/ref-counting/
+  double-unregister-safety/flip-only-notify), `CaddieOrb.test.tsx` additions (suppression +
+  intro-flag-deferral), `CourseSearch.test.tsx` addition (register-on-mount, survives list⇄map
+  toggle, unregister-on-unmount).
+- Grep-verified `registerFullscreenOverlay` appears ONLY in `fullscreen-overlay.ts`,
+  `CourseSearch.tsx`, and the two test files — CourseSearch is the sole production registrant
+  (omnipresence intact everywhere else; PlayerModal/VRS-backdrop/picker-scrims untouched, still
+  dim/cover the orb as before).
+Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm test` 2226/2226 passed (110 files),
+`npm run build` success, `voice-tests --smoke` 278/278, backend `ruff check .` clean (no backend
+files touched). Pushed to `integration/next`; rides the existing bundle silently (small-UX fix,
+no owner ping per brief).
+
 ## Bundle #135 SHIPPED — 2026-07-11 (owner "Ship #135 now (v1.1.3)")
 Owner-authorized merge to `main`. Pre-flight re-verified before touching anything: `integration/next`
 head `8bb915d` unchanged since approval, PR #135 OPEN+MERGEABLE, both required gates SUCCESS.
