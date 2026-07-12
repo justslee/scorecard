@@ -12,8 +12,13 @@ computeTournamentSettlement tests use identical {p1,p2}; no different-roster-per
 (2) genuinely-mixed-format cumulative (existing "mixed" test is all matchPlay); stableford
 (non-settleable) contributes $0; (3) rounding-drift accumulation over N fractional rounds;
 (4) mixed money + game-less rounds in one tournament; (5) displayed==settled surface.
-Dispatched: Plan (fable) → specs/tournament-coverage-hardening-plan.md.
-AWAITING Plan → then builder (tests + any real-bug fix) on integration/next → reviewer → qa.
+Plan (fable) DONE @0198bb3 — FOUND A REAL MONEY BUG: settlement.ts threePoint branch
+(lines 195-212) has no rounding-residual absorber; odd-cent team net (e.g. $0.25/pt, reachable
+via voice pipeline) fabricates +$0.02/game & under-delivers a winner's displayed net. Fix =
+vegas-style last-member absorber. Plan: RED tests first, then fix, then gaps 1/2/4 + odd-cent
+property. New file frontend/src/lib/settlement.tournament.test.ts (no edits to settlement.test.ts).
+Gap 5 (displayed==settled): no pure seam beyond the fn; conservation invariant covers it. Gap 6: skip.
+AWAITING builder on integration/next (head 0198bb3): implement plan → reviewer → qa.
 On resume: reconcile from origin/integration/next log; do NOT re-run finished children.
 Caller INERT (do NOT ship/ping). Bundle #137 stays accumulating.
 
