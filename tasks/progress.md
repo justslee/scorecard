@@ -14654,3 +14654,8 @@ pass the buggy code too).
   JSON-validated 67 items, diff +11/-1 (the -1 is b2_status gaining a comma), no data loss.
 - NOT shipped/pinged per brief — bundle accumulates (map-markers is NOTICEABLE and joins the prior
   noticeable items for the next owner "ship it"). Concurrent caddie-context-leak lane co-landed @6a68078.
+
+## AWAITING (cycle: passive-shot-tracking spike, 2026-07-12)
+Spike branch `spike/passive-shot-tracking` cut off main @71f8910 (NOT integration/next).
+Step 1: no preempting v1.1.4 owner feedback (no comments on #136/#135/#134 cards, no PR #137 comments).
+Dispatching Plan(fable) to frame the feasibility spike. Next: builder → investigation + gated GPS-delta/motion prototype; reviewer honesty check; qa gates; open SPIKE PR base main. Do NOT ship/ping. Do NOT touch integration/next / PR #137.
