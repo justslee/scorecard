@@ -14702,3 +14702,14 @@ imagery; only road/label overlays are styleable there.
 AWAITING: fable Plan agent → specs/map-paper-tone-plan.md. On plan return → dispatch builder on
 integration/next, then reviewer + qa + designer (designer BLOCKING). Compose (do not replace)
 SCOUT_MAP_STYLES; keep invariant test scope-lock.
+
+## AWAITING update (cycle 108) — builder dispatched
+Plan DONE (fable) → specs/map-paper-tone-plan.md committed @72d8361. Plan made an honesty call:
+GoogleSatelliteMap.tsx NOT touched (MapType.Satellite = kGMSTypeSatellite imagery, no vector
+base/labels — style JSON is a no-op there; a SATELLITE_LABEL_STYLES export would be dead config).
+So the retone applies to CourseScoutMap (MapType.Normal) only, via unchanged SCOUT_MAP_STYLES import.
+Builder running (agent abc067a45deaa518e) on integration/next: scout-map-config.ts (rename
+SCOUT_MAP_STYLES→SCOUT_POI_SUPPRESSION byte-identical; add SCOUT_MAP_BASE_TONE; compose
+SCOUT_MAP_STYLES=[...base,...suppression]) + scout-map-config.test.ts (re-scope + 2 new describe
+blocks incl. hex-format guard). On builder return → reviewer + qa + designer (BLOCKING), then land,
+open FRESH bundle PR (integration/next→main, NOTICEABLE), mark backlog done.
