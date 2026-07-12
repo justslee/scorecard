@@ -29,6 +29,7 @@ import { MessageOrderTracker } from '@/lib/voice/realtime-ordering';
 import { IdleTimer, REALTIME_IDLE_DISCONNECT_MS } from '@/lib/voice/idle-timer';
 import { voiceEvent } from '@/lib/voice/telemetry';
 import { isPrimingEcho } from '@/lib/voice/priming-echo';
+import { isNoInputClarifier, couldBecomeClarifier, NOINPUT_RESOLVE_GRACE_MS } from '@/lib/voice/noinput-clarifier';
 
 // ── Public types ─────────────────────────────────────────────────────────
 
@@ -217,6 +218,25 @@ export class RealtimeCaddieClient {
   // Hands out stable conversation-order keys so the user's turn renders before
   // the reply it triggered, despite the transcript event arriving last.
   private order = new MessageOrderTracker();
+
+  // ── No-input clarifier suppression (specs/caddie-noise-clarification-reply-plan.md) ──
+  // Speech turns whose transcript hasn't been classified yet, oldest→newest.
+  // Consumed at response.created (most-recent wins, list cleared) to correlate
+  // a response with the input turn that triggered it.
+  private pendingSpeechItems: string[] = [];
+  // item_id → 'real' (non-empty, non-echo transcript) | 'noinput' (empty or
+  // priming echo). Written at input_audio_transcription.completed / .failed.
+  private inputClassByItem: Map<string, 'real' | 'noinput'> = new Map();
+  // response_id → the speech item_id that triggered it. Absent = unconditional
+  // (typed text, opener, tool follow-up, unknown) — those are NEVER held.
+  private triggerItemByResponse: Map<string, string> = new Map();
+  // Responses whose deltas are being HELD (not yet emitted) pending input
+  // classification; `timer` is the finalize-grace release timer.
+  private heldResponses: Map<string, { finalized: boolean; timer: ReturnType<typeof setTimeout> | null }> = new Map();
+  // response.create messages WE sent (sendText / sendOpener / tool output)
+  // whose response.created hasn't arrived yet — those are unconditional.
+  private selfTriggeredResponses = 0;
+
   // Cost control: disconnect after 90s with no conversation activity. The
   // connection is an ephemeral burst — a later press simply reconnects.
   private idle = new IdleTimer(() => this.stop(), REALTIME_IDLE_DISCONNECT_MS);
@@ -378,6 +398,10 @@ export class RealtimeCaddieClient {
           content: [{ type: 'input_text', text }],
         },
       }));
+      // A client-triggered response must never be blamed on a stale speech
+      // item (specs/caddie-noise-clarification-reply-plan.md §2.3).
+      this.selfTriggeredResponses += 1;
+      this.pendingSpeechItems = [];
       this.dc!.send(JSON.stringify({ type: 'response.create' }));
     }
     // Surface the typed line in the transcript regardless of channel state (so
@@ -425,6 +449,10 @@ export class RealtimeCaddieClient {
         type: 'conversation.item.create',
         item: { type: 'message', role: 'system', content: [{ type: 'input_text', text }] },
       }));
+      // Same unconditional treatment as sendText — an opener is never a
+      // no-input clarifier candidate.
+      this.selfTriggeredResponses += 1;
+      this.pendingSpeechItems = [];
       this.dc.send(JSON.stringify({ type: 'response.create' }));
     }
   }
@@ -543,6 +571,15 @@ export class RealtimeCaddieClient {
     this.audioEl = null;
     this.partials.clear();
     this.order.reset();
+    // No-input clarifier suppression state — same lifecycle as partials/order.
+    for (const held of this.heldResponses.values()) {
+      if (held.timer) clearTimeout(held.timer);
+    }
+    this.heldResponses.clear();
+    this.pendingSpeechItems = [];
+    this.inputClassByItem.clear();
+    this.triggerItemByResponse.clear();
+    this.selfTriggeredResponses = 0;
   }
 
   private setStatus(status: RealtimeStatus) {
@@ -563,6 +600,19 @@ export class RealtimeCaddieClient {
         // deltas (and before the user transcript that triggered it) arrive.
         const respId = (evt.response as { id?: string } | undefined)?.id;
         if (respId) this.order.orderForResponse(String(respId));
+        // Correlate this response with the speech turn that triggered it
+        // (specs/caddie-noise-clarification-reply-plan.md §2.3) — used by the
+        // no-input clarifier hold below. A client-triggered response
+        // (sendText / sendOpener / tool follow-up) is unconditional.
+        if (respId) {
+          if (this.selfTriggeredResponses > 0) {
+            this.selfTriggeredResponses -= 1;
+          } else {
+            const trigger = this.pendingSpeechItems.pop(); // most recent speech turn
+            this.pendingSpeechItems = []; // stale items must never leak forward
+            if (trigger) this.triggerItemByResponse.set(String(respId), trigger);
+          }
+        }
         break;
       }
       case 'response.audio_transcript.delta':
@@ -577,7 +627,18 @@ export class RealtimeCaddieClient {
           ({ id, role: 'assistant', text: '', partial: true, order: this.order.orderForResponse(id) } as RealtimeMessage);
         const updated: RealtimeMessage = { ...existing, text: existing.text + delta, partial: true };
         this.partials.set(id, updated);
-        this.events.onMessage?.(updated);
+        const trigger = this.triggerItemByResponse.get(id);
+        const cls = trigger ? this.inputClassByItem.get(trigger) : undefined;
+        // Hold ONLY while the correlated speech turn is not yet proven real AND
+        // the text so far still reads as a pure ask-again clarifier. Everything
+        // else emits exactly as before (specs/caddie-noise-clarification-reply-plan.md
+        // §4). Status still goes 'speaking' — audio IS playing either way.
+        if (trigger !== undefined && cls !== 'real' && couldBecomeClarifier(updated.text)) {
+          if (!this.heldResponses.has(id)) this.heldResponses.set(id, { finalized: false, timer: null });
+        } else {
+          if (this.heldResponses.has(id)) this.releaseHeld(id, /* emitFinal */ false); // diverged — flush partial
+          this.events.onMessage?.(updated);
+        }
         this.setStatus('speaking');
         break;
       }
@@ -589,9 +650,35 @@ export class RealtimeCaddieClient {
         const id = String(evt.response_id || evt.item_id || 'assistant-current');
         const existing = this.partials.get(id);
         if (existing) {
-          const final: RealtimeMessage = { ...existing, partial: false };
-          this.partials.delete(id);
-          this.events.onMessage?.(final);
+          const held = this.heldResponses.get(id);
+          if (held && !held.finalized) {
+            // First `done` for a held response — decide now, or arm the
+            // grace timer if the trigger turn's transcript hasn't landed yet
+            // (specs/caddie-noise-clarification-reply-plan.md §4).
+            const trigger = this.triggerItemByResponse.get(id);
+            const cls = trigger ? this.inputClassByItem.get(trigger) : undefined;
+            if (cls === 'noinput' && isNoInputClarifier(existing.text, false)) {
+              this.suppressHeld(id);
+            } else if (cls === undefined) {
+              held.finalized = true;
+              held.timer = setTimeout(() => this.releaseHeld(id, true), NOINPUT_RESOLVE_GRACE_MS);
+            } else {
+              // 'real', or noinput-but-not-a-clarifier — emit final below, as today.
+              this.releaseHeld(id, false);
+              const final: RealtimeMessage = { ...existing, partial: false };
+              this.partials.delete(id);
+              this.events.onMessage?.(final);
+            }
+          } else if (!held) {
+            const final: RealtimeMessage = { ...existing, partial: false };
+            this.partials.delete(id);
+            this.events.onMessage?.(final);
+          }
+          // else: `held.finalized` already true — a second `done` for the
+          // same id (e.g. output_audio_transcript.done then response.done).
+          // Inert: the grace timer is already armed (or the hold already
+          // resolved and `partials`/`heldResponses` were cleared, so
+          // `existing` above would be undefined and we wouldn't be here).
         }
         this.setStatus('connected');
         break;
@@ -604,6 +691,14 @@ export class RealtimeCaddieClient {
         const itemId = evt.item_id ? String(evt.item_id) : undefined;
         const id = itemId ?? `user-${Date.now()}`;
         const text = String(evt.transcript || '');
+        // Classify ONCE, before the existing render logic below — feeds the
+        // no-input clarifier correlation (specs/caddie-noise-clarification-reply-plan.md
+        // §2.3). "Real" = non-empty and not a priming echo.
+        const real = Boolean(text) && !isPrimingEcho(text);
+        if (itemId) {
+          this.inputClassByItem.set(itemId, real ? 'real' : 'noinput');
+          this.resolveHeldFor(itemId); // releases or suppresses any held response
+        }
         if (text && isPrimingEcho(text)) {
           // gpt-4o-transcribe hallucinating transcription.prompt back as the
           // transcript on a VAD false-trigger (specs/caddie-context-leak-plan.md)
@@ -625,11 +720,27 @@ export class RealtimeCaddieClient {
         }
         break;
       }
+      case 'conversation.item.input_audio_transcription.failed': {
+        // A failed transcription may have been a genuine garbled utterance —
+        // err-keep: classify 'real' so any held clarifier releases immediately
+        // instead of waiting out the grace timer.
+        if (!this.opened) break;
+        const itemId = evt.item_id ? String(evt.item_id) : undefined;
+        if (itemId) {
+          this.inputClassByItem.set(itemId, 'real');
+          this.resolveHeldFor(itemId);
+        }
+        break;
+      }
       case 'input_audio_buffer.speech_started': {
         // The user's turn has begun — reserve its order slot now (keyed by the
         // item_id the transcript will carry) so phantom/empty VAD starts can't
         // desync ordering, before the model's response and its late transcript.
         this.order.noteUserTurnStarted(evt.item_id ? String(evt.item_id) : undefined);
+        // Track this speech turn as a candidate trigger for the response it's
+        // about to prompt (specs/caddie-noise-clarification-reply-plan.md §2.3).
+        // No item_id → push nothing; that response becomes unconditional (err-keep).
+        if (evt.item_id) this.pendingSpeechItems.push(String(evt.item_id));
         this.setStatus('listening');
         break;
       }
@@ -667,6 +778,60 @@ export class RealtimeCaddieClient {
     }
   }
 
+  // ── No-input clarifier hold/release/suppress helpers ────────────────────
+  // (specs/caddie-noise-clarification-reply-plan.md §4)
+
+  /** Clear the hold's timer + bookkeeping for `id`, then emit its accumulated
+   *  partial (and a non-partial final if `emitFinal`). Used when a hold
+   *  resolves to real input, diverges from clarifier-shape mid-stream, or the
+   *  grace timer times out — every case where the response should surface. */
+  private releaseHeld(id: string, emitFinal: boolean): void {
+    const held = this.heldResponses.get(id);
+    if (held?.timer) clearTimeout(held.timer);
+    this.heldResponses.delete(id);
+    const msg = this.partials.get(id);
+    if (!msg) return;
+    this.events.onMessage?.(msg);
+    if (emitFinal) {
+      const final: RealtimeMessage = { ...msg, partial: false };
+      this.partials.delete(id);
+      this.events.onMessage?.(final);
+    }
+  }
+
+  /** Clear the hold's timer + bookkeeping for `id`, drop its accumulated
+   *  partial WITHOUT ever emitting it, and log a length-only telemetry
+   *  breadcrumb — the actual suppression (mirrors
+   *  `realtime_priming_echo_dropped`'s privacy posture: never the text itself). */
+  private suppressHeld(id: string): void {
+    const held = this.heldResponses.get(id);
+    if (held?.timer) clearTimeout(held.timer);
+    this.heldResponses.delete(id);
+    const msg = this.partials.get(id);
+    this.partials.delete(id);
+    voiceEvent('caddie', 'realtime_noinput_clarifier_suppressed', { detail: `len=${msg?.text.length ?? 0}` });
+  }
+
+  /** Called when a speech turn's input classifies (transcription.completed or
+   *  .failed). Scans held responses whose trigger is this item and — for any
+   *  that already finalized (their `done` already arrived) — applies the same
+   *  decision the done-case makes: suppress if noinput + clarifier-shaped,
+   *  release otherwise. A held response that hasn't finalized yet (still
+   *  streaming) is left alone; the done case decides once it arrives. */
+  private resolveHeldFor(itemId: string): void {
+    for (const [respId, held] of this.heldResponses) {
+      if (this.triggerItemByResponse.get(respId) !== itemId) continue;
+      if (!held.finalized) continue;
+      const cls = this.inputClassByItem.get(itemId);
+      const msg = this.partials.get(respId);
+      if (cls === 'noinput' && msg && isNoInputClarifier(msg.text, false)) {
+        this.suppressHeld(respId);
+      } else {
+        this.releaseHeld(respId, true);
+      }
+    }
+  }
+
   private async runTool(evt: Record<string, unknown>): Promise<void> {
     const name = String(evt.name || '');
     const callId = String(evt.call_id || '');
@@ -694,6 +859,9 @@ export class RealtimeCaddieClient {
           output: JSON.stringify(output),
         },
       }));
+      // A tool follow-up is never a no-input clarifier candidate either.
+      this.selfTriggeredResponses += 1;
+      this.pendingSpeechItems = [];
       this.dc.send(JSON.stringify({ type: 'response.create' }));
     }
   }
