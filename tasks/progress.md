@@ -14654,3 +14654,37 @@ pass the buggy code too).
   JSON-validated 67 items, diff +11/-1 (the -1 is b2_status gaining a comma), no data loss.
 - NOT shipped/pinged per brief — bundle accumulates (map-markers is NOTICEABLE and joins the prior
   noticeable items for the next owner "ship it"). Concurrent caddie-context-leak lane co-landed @6a68078.
+
+## SHIPPED — bundle #136 -> main @71f8910, TestFlight v1.1.4 build 202607120035 (2026-07-11)
+- Owner replied "Ship it" approving PR #136 (integration/next -> main). Pre-flight re-verified:
+  integration/next head unchanged at 44b776e (matched approval); PR #136 OPEN/MERGEABLE; all 3
+  required gates SUCCESS on that head.
+- VERSION bumped 1.1.3 -> 1.1.4 (patch, fix bundle) and pushed to integration/next as e845fd6 (plain
+  fast-forward; local branch was briefly stale mid-flight — caught before push, reset to the correct
+  approved base, redone cleanly; origin itself never moved). Gates re-verified green on e845fd6.
+- PR #136 retitled ("Bundle #136: caddie context-leak + noise-clarifier fixes + map course-search
+  markers + orb-ghost-on-map (all from v1.1.3 device testing)") and merged to main
+  (`gh pr merge 136 --merge`) -> merge SHA 71f8910f636c5594d06dec95d663130425766cb6.
+- Post-merge main CI: GREEN (Frontend gates, Backend gate, E2E smoke advisory all SUCCESS on 71f8910).
+- Backend deployed via SSM to i-0826ae70df62d9fe8: fast-forwarded 8a33dd0..71f8910, `/health` ->
+  {"status":"ok"}. Confirmed caller stays INERT — VOICE_BOOKING_ENABLED unset in .env (key-free SSM
+  probe, no key values echoed).
+- TestFlight cut from new main via `bash ops/ios/ship.sh`: **v1.1.4 build 202607120035**, upload
+  succeeded cleanly on the first attempt (no exit-70 retry needed). App Store Connect processing
+  polled via the ASC API (JWT, key QG927KHTXR) -> confirmed **processingState=VALID**.
+- Prod smoke: `/health` ok; `/api/reviews/mine` correctly 401 (auth-gated, not 500).
+- Fresh integration/next cut from new main, pushed (fast-forward, head 71f8910 — same as main).
+- 4 bundle items (all NOTICEABLE, from owner's v1.1.3 real-device testing): caddie context-leak fix
+  (STT priming-string no longer renders as a fake user bubble + backend keyterms.py hazard dedupe
+  rider), phantom "didn't catch that" clarifier-bubble suppression (client-only, no VAD/mic change),
+  map course-search markers (highlighted flag + location dot + real in-bounds pins + POI clutter
+  quieted — native-map behavior needs owner real-device confirmation, esp. highlight legibility in a
+  cluster), orb-ghost-on-map (CaddieOrb now truly unmounted over the full-screen map).
+- backlog.json flipped to shipped (targeted edits, diff-checked, JSON-validated — no json.load/dump):
+  caddie-context-leak, caddie-noise-clarification-reply, caddie-orb-map-mode-ghost (status: done ->
+  shipped, resolution appended with merge SHA + TestFlight version), and course-selection-ux's
+  b2_markers_status sub-field (epic itself stays "planning" — B3 polish + map-base-paper-tone-style
+  remain open, both untouched).
+- Board: "Looper — Product Board" Bundle #136 card moved to Shipped with merge SHA, TestFlight
+  version/build, the 4-item list, how-to-test notes, and the known residual (caddie may still SPEAK
+  "say again?" audio on noise — VAD-tuning, owner-gated, not fixed here).
