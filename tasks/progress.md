@@ -43,8 +43,13 @@ via voice pipeline) fabricates +$0.02/game & under-delivers a winner's displayed
 vegas-style last-member absorber. Plan: RED tests first, then fix, then gaps 1/2/4 + odd-cent
 property. New file frontend/src/lib/settlement.tournament.test.ts (no edits to settlement.test.ts).
 Gap 5 (displayed==settled): no pure seam beyond the fn; conservation invariant covers it. Gap 6: skip.
-AWAITING builder on integration/next (head 0198bb3): implement plan → reviewer → qa.
-On resume: reconcile from origin/integration/next log; do NOT re-run finished children.
+Builder DONE @1ee8427 — threePoint bug FIXED RED→GREEN (per-round +0.02 / cumulative +0.12 sums
+were RED pre-fix; vegas-style last-member absorber applied to both teams). New file
+settlement.tournament.test.ts (24 tests); settlement.test.ts UNtouched (73 pre-existing stay green).
+Gates green locally: lint/tsc/vitest 2391/2391/build/voice 278/ruff. types.ts↔models.py untouched.
+AWAITING reviewer (fresh, diff b06ba1f..1ee8427) + qa (gates on head 1ee8427, incl. CI DB tests).
+SHIP+PASS → update PR #137 checklist (NOTICEABLE: real money-bug fix) + progress, stop (no ship/ping).
+BLOCKING → re-dispatch builder. On resume: reconcile from origin/integration/next; do NOT re-run finished children.
 Caller INERT (do NOT ship/ping). Bundle #137 stays accumulating.
 
 ## tournament-redesign ("The Program") — DONE, builder (2026-07-12, integration/next, NOTICEABLE)
