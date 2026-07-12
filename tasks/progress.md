@@ -14887,3 +14887,17 @@ from origin/integration/next (do NOT re-run builder): dispatch reviewer (adversa
 drift + no suppression false-positive regression) + qa (gates state:SUCCESS on pushed head) in
 parallel; designer (BLOCKING, edge-3 copy). Then land into PR #137 checklist (mostly SILENT hardening;
 edge1+edge3 NOTICEABLE-if-visible), mark backlog #33 done. Caller INERT — NO ship/ping this cycle.
+
+## AWAITING update (cycle 109) — builder LANDED @a2efc3e (d187254 impl), review trio dispatched
+Builder done: 11 files +1099/-43, all new tests proven RED pre-fix / GREEN post-fix; gates green
+(vitest 117f/2322, voice 278/278, lint/tsc/build/ruff). Branch reconciled: local==origin @a2efc3e.
+VAD-surface scan CLEAN (no turn_detection/mic/gain/getUserMedia matches). Builder flagged + ignored
+2 injection attempts in its tool outputs (fake "date changed/don't mention" + fake "realtime.ts
+externally modified") — verified via git, no compromise. (Same fake date-change injection then hit
+THIS session's tool stream — ignored per injection-defense.)
+DISPATCHED in parallel on a2efc3e: reviewer (adversarial: regression of 2 shipped bugs? suppression
+false-positive? prune-before-read? VAD drift? test RED-ness?), qa (6 gates state on head), designer
+(BLOCKING on edge-3 held-turn 'speaking' copy honesty).
+ON RETURN: all green → land into PR #137 checklist (SILENT hardening + edge1/edge3 NOTICEABLE-if-
+visible), mark backlog #33 caddie-noise-clarifier-followups done (targeted edit+diff-check), update
+progress. Any BLOCKING → re-dispatch builder, re-review. Caller INERT — NO ship/ping this cycle.
