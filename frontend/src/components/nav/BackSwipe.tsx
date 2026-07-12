@@ -22,6 +22,7 @@ import { normalizePath } from './shouldShowTabBar';
 import { shouldEnableBackSwipe } from './shouldEnableBackSwipe';
 import {
   decideBackSwipe,
+  invalidateSafeAreaLeftCache,
   isDisqualified,
   isEdgeStart,
   readSafeAreaLeft,
@@ -87,6 +88,22 @@ export default function BackSwipe() {
     };
     window.addEventListener('popstate', onPopState, { passive: true });
     return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Rotation invalidates the memoized safe-area-inset-left probe (§9) so the
+  // next touchstart re-reads it instead of using a stale portrait/landscape
+  // value. `resize` is included too — some WebViews fire it without a
+  // dedicated `orientationchange` on rotation.
+  useEffect(() => {
+    const onOrientationChange = () => {
+      invalidateSafeAreaLeftCache();
+    };
+    window.addEventListener('orientationchange', onOrientationChange, { passive: true });
+    window.addEventListener('resize', onOrientationChange, { passive: true });
+    return () => {
+      window.removeEventListener('orientationchange', onOrientationChange);
+      window.removeEventListener('resize', onOrientationChange);
+    };
   }, []);
 
   useEffect(() => {

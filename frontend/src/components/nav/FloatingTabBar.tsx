@@ -120,6 +120,7 @@ export default function FloatingTabBar() {
     // Outer wrapper: fixed, full-width, pointer-events pass-through in the
     // margins so taps on page content behind the bar still work.
     <div
+      data-no-backswipe
       style={{
         position: 'fixed',
         left: 0,

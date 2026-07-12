@@ -14,7 +14,11 @@ describe('isEdgeStart', () => {
     expect(isEdgeStart(80, 59)).toBe(true);
   });
 
-  it('returns false for startX 84 at safeAreaLeft 59', () => {
+  it('returns true for startX 83 at safeAreaLeft 59 (exact boundary: 59 + EDGE_ZONE_PX 24)', () => {
+    expect(isEdgeStart(83, 59)).toBe(true);
+  });
+
+  it('returns false for startX 84 at safeAreaLeft 59 (one past the boundary)', () => {
     expect(isEdgeStart(84, 59)).toBe(false);
   });
 });

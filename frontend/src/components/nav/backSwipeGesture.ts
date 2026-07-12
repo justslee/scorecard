@@ -100,3 +100,12 @@ export function readSafeAreaLeft(): number {
   cachedSafeAreaLeft = Number.isFinite(parsed) ? parsed : 0;
   return cachedSafeAreaLeft;
 }
+
+/**
+ * Reset the memoized safe-area-inset-left value so the next `readSafeAreaLeft()`
+ * call re-probes the DOM. Call this on `orientationchange`/`resize` (see
+ * `BackSwipe.tsx`) so a rotation mid-session is picked up, per the plan (§9).
+ */
+export function invalidateSafeAreaLeftCache(): void {
+  cachedSafeAreaLeft = null;
+}
