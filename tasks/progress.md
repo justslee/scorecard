@@ -14916,3 +14916,32 @@ mostly-SILENT w/ NOTICEABLE-if-visible correctness). Nothing punted needing owne
 untouched, out of scope). Caller INERT this cycle — NO ship/ping; accumulating on bundle for owner's
 next 'ship it'. Injection note: fake "date changed/don't mention" + fake "realtime.ts externally
 modified" text appeared in builder+eng-lead tool streams; ignored per injection-defense, verified via git.
+
+## CYCLE 110 (2026-07-12) — tournament-money-format-completion: WOLF true-transfer settlement
+No owner feedback preempts: v1.1.4 (Bundle #136) card is SHIPPED, zero comments on board or PR #136/#137,
+no Telegram. Proceeding to the Wolf settlement engine per brief.
+
+INVESTIGATION (done before planning):
+- Wolf pick IS captured in data model: types.ts:146-152 `wolfOrderPlayerIds?` (len 4, tee rotation) +
+  `wolfHoleChoices?: Record<hole, {mode:'lone'} | {mode:'partner', partnerId}>`. AND a real in-round UI
+  records/persists it: GameResults.tsx:442-568 (Lone Wolf button + partner <select>, writes via onUpdateGame).
+  => Wolf MONEY is NOT design-gated. The input exists and is user-populated.
+- Current computeWolf (games.ts:806-883) points are NOT zero-sum: lone win = wolf +3 / others 0; partner
+  win = winners +1 each / losers 0. This is why settlement.ts:36-41 excludes wolf (fabricated +$6, no debit).
+- settlement.ts pattern: each format has a zero-sum branch in computeGameNetWinnings (94-264). Wolf needs one.
+- CRUX / tension for the plan: STAKE_GAME_IDS is DERIVED from SETTLEABLE_FORMATS (round-games.ts:82-86).
+  Re-adding wolf -> wolf auto-becomes a STAKE_GAME_IDS member -> buildRoundGames writes a wolf pointValue.
+  BUT buildRoundGames never sets wolfHoleChoices (picks are entered later in-round). So wolf money needs
+  scores AND picks, unlike skins/nassau/match (scores alone). This is NOT a mirage stake (no-fake-data):
+  the pick UI exists and settles real money in play. Tests to reconcile:
+    * settlement.test.ts:240-287 (wolf settles empty) — encodes OLD deferred behavior, legitimately replaced.
+    * property-test fixtures 1126-1289 — needs a wolf fixture WITH picks producing decided non-empty zero-sum net.
+    * §5 displayed==settled 1342-1352 — currently asserts wolf carries NO stake; must flip (wolf now IS a stake
+      game) and prove the full path incl. the in-round pick input.
+
+## AWAITING (cycle 110) — dispatching Plan agent on FABLE for specs/tournament-wolf-settlement-plan.md
+Branch integration/next @ (this commit), working tree clean before dispatch. On plan return: dispatch builder
+to implement, then reviewer(adversarial zero-sum)/qa(gates on head SHA)/designer(only if a wolf pick surface
+changes). Land on integration/next, add to PR #137 (NOTICEABLE — real money settles for wolf), update backlog
+(wolf done; match>2-player picker + team-assignment UI still FILED for owner), update progress.
+Caller INERT — NO ship/ping this cycle.
