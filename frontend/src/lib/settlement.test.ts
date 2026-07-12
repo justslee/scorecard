@@ -3,8 +3,9 @@
  *
  * Covers:
  *  - computeGameNetWinnings per format (skins, nassau, matchPlay, threePoint,
- *    vegas, hammer, rabbit, defender) — wolf is points-only (not settleable,
- *    see the "wolf settles honestly empty" describe block below)
+ *    vegas, hammer, rabbit, defender, wolf) — wolf now settles zero-sum money
+ *    (computeWolf points are zero-sum; see the "computeGameNetWinnings — wolf"
+ *    describe block below)
  *  - zero-sum invariant: sum of all nets == 0
  *  - computeNetSettlement across multiple games (including mixed skins + vegas)
  *  - minimizeTransfers: single game, multi-game, ties, already-settled

@@ -443,7 +443,7 @@ function GameLeaderboardCard({ round, game }: { round: Round; game: Game }) {
                   {playerName(pid)}
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: T.serif, fontSize: 22, color: pts !== 0 ? T.ink : T.pencilSoft, fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ fontFamily: T.serif, fontSize: 22, color: pts > 0 ? T.ink : pts < 0 ? T.errorInk : T.pencilSoft, fontVariantNumeric: 'tabular-nums' }}>
                     {pts > 0 ? '+' : ''}{pts}
                   </div>
                   {winnings !== 0 && (

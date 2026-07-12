@@ -1341,11 +1341,11 @@ function GenericGame({
               style={{
                 fontFamily: T.serif,
                 fontSize: 22,
-                color: pts !== 0 ? T.ink : T.pencilSoft,
+                color: pts > 0 ? T.ink : pts < 0 ? T.errorInk : T.pencilSoft,
                 fontVariantNumeric: "tabular-nums",
               }}
             >
-              {pts}
+              {pts > 0 ? `+${pts}` : pts}
             </div>
           </div>
         ))}

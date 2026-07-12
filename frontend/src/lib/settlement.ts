@@ -179,8 +179,12 @@ export function computeGameNetWinnings(round: Round, game: Game): Record<string,
   // money = points × pointValue, exact at 2dp since totals are integers and
   // pointValue has ≤2 decimal places. No last-player residual absorber is
   // needed here (unlike skins/vegas, which divide a pot): do not add one.
+  // Iterate the wolf's OWN rotation (the keys `totals` is built from) rather than
+  // `playerIds`: they are the same set for a well-formed game, but keying off the
+  // totals' own ids means a permuted or mismatched `wolfOrderPlayerIds` can never
+  // silently drop a player's total and break the zero-sum sum.
   if (game.format === 'wolf' && results.wolf) {
-    for (const pid of playerIds) {
+    for (const pid of results.wolf.orderPlayerIds) {
       net[pid] = r2((net[pid] ?? 0) + r2((results.wolf.totals[pid] ?? 0) * pointValue));
     }
   }

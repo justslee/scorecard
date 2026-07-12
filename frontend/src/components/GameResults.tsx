@@ -485,8 +485,8 @@ export default function GameResults({ round, game, onUpdateGame, readOnly = fals
                   <div style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 500, color: T.ink }}>
                     {playerName(pid)}
                   </div>
-                  <div style={{ fontFamily: T.serif, fontSize: 22, color: pts !== 0 ? T.ink : T.pencilSoft, fontVariantNumeric: 'tabular-nums' }}>
-                    {pts}
+                  <div style={{ fontFamily: T.serif, fontSize: 22, color: pts > 0 ? T.ink : pts < 0 ? T.errorInk : T.pencilSoft, fontVariantNumeric: 'tabular-nums' }}>
+                    {pts > 0 ? `+${pts}` : pts}
                   </div>
                 </div>
               ))}
