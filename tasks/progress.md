@@ -9,9 +9,13 @@ Item: suppress the caddie's "Didn't catch that — say again?" clarifier when a 
 real user input (empty transcript / dropped by isPrimingEcho / noise) — do NOT touch VAD
 thresholds (owner-gated). Plan (fable) saved: `specs/caddie-noise-clarification-reply-plan.md`
 (client-only hold/suppress state machine; pure predicate `isNoInputClarifier`; no VAD change).
-NOW: dispatching builder on integration/next. If I die, reconcile from branch: plan committed,
-no code yet. NEXT: builder → reviewer (adversarial) → qa (gates SUCCESS on head SHA) → designer
-(BLOCKING) → add to PR #136 checklist (NOTICEABLE) → backlog done (targeted edit). SHIP owner-gated.
+Builder LANDED @76d8c95 (pushed to origin/integration/next): new noinput-clarifier.ts +
+noinput-clarifier.test.ts (19) + realtime-noinput.test.ts (10) + realtime.ts wiring. Gates green
+locally: lint/tsc clean, vitest 2288/2288, build ok, voice-smoke 278/278. No VAD/mic/backend change.
+NOW: dispatching reviewer (adversarial) + qa (gates on 76d8c95) + designer (BLOCKING, caddie chat
+surface) concurrently. If I die, reconcile from branch: 76d8c95 is pushed; re-read verdicts, do
+NOT re-run builder. NEXT: if BLOCKING → re-dispatch builder; if all green → add to PR #136
+checklist (NOTICEABLE), backlog done (targeted edit), report. SHIP owner-gated (report inert).
 
 ## map-markers-course-location — DONE, builder (2026-07-11, TOP-PRIORITY owner v1.1.3 bug fix / noticeable)
 Implemented `specs/map-markers-course-location-plan.md` exactly on `integration/next`, commit
