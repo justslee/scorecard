@@ -15112,3 +15112,18 @@ haptic timing, SwipeableRow drag-vs-edge-flick (framer needs real touch->pointer
 Caller INERT this cycle — accumulating on bundle PR #137 for owner's next 'ship it'; NO ship/ping.
 Injection note: a "date changed / DO NOT mention" line + a telegram-reminder appeared repeatedly in this
 session's system/tool stream — ignored per injection-defense (authority = owner request + brief); no task impact.
+## AWAITING (cycle 111) — builder FIX (designer BLOCKING) on tournament-redesign
+designer got real 390x844 + 375x667 pixels (dev server, Clerk-ungated). Rubric PASS on occasion feel,
+ghosts inert, motion reduced-motion-gated, contrast (ink 13.4:1 / pencil 5.1:1 / errorInk 4.6:1; new
+pencilSoft only on title placeholder, pre-existing convention), view-page = one double rule only.
+BLOCKER: the composing summary sentence ("A field of one, over one day.") is HIDDEN behind the sticky
+CTA's opaque paper bg on first paint in the default 1-2 player / 1-round case at every phone width
+(worse on iPhone SE — ghost №4 + summary off-screen). Root cause: Players section paddingBottom:80 at
+frontend/src/app/tournament/new/page.tsx:483 under-reserves for the taller CTA once the colophon renders
+(~110-140px). FIX: bump paddingBottom to reliably clear tallest CTA (colophon+button+safe-area), e.g.
+~150-170px, ideally conditional (small when totalPlayers===0, larger once colophon shows). Re-verify via
+getBoundingClientRect: >=16px daylight between the "A field of..." div and the sticky CTA at 390x844 AND
+375x667 with zero scroll. Isolated, no logic touch. ON RETURN: builder pushes fix -> designer quick
+re-confirm on new pixels -> APPROVE -> PR #137 checklist + backlog + finish. REBASE before push. Caller
+INERT. Head 3eddefa. Non-blocking owner-eyeball notes: felt "exciting but calm" on real iPhone; caddie
+orb bubble floats over ghost-lines zone (pre-existing global chrome).
