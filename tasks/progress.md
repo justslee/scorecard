@@ -14749,3 +14749,21 @@ designer (BLOCKING — judge rendered paper/ink look, markers pop, labels legibl
 On all-green → land, open FRESH bundle PR (integration/next→main, NOTICEABLE), backlog done.
 BLOCKING issues → re-dispatch builder. Do NOT ship/ping (owner confirmation of the actual palette
 is a carried on-device gate, not this pass).
+
+## AWAITING update (cycle 108) — designer BLOCKING, builder iteration dispatched
+Verdicts on a610dc7: reviewer SHIP (7 checks, POI-suppression byte-preserved, 18/18). qa PASS
+(lint/tsc/vitest 2296/build/voice 278/ruff; sim screenshot BLOCKED by Maps-key credential policy →
+carried on-device gate, not a defect). designer BLOCKING (quantitative WCAG math):
+ (1) road.arterial stroke #d9d2c0 vs road.local stroke #dad9d1 = 1.06:1 (~same color) — widen so 3
+     road tiers are distinct by color, not just GMS default line-width.
+ (2) road.highway fill #e2dcce — darken one step toward T.paperEdge #d9d2c0 (plan §7 knob) so top
+     tier is unambiguous.
+ (3) administrative.neighborhood label #958d7d = 2.92:1 (fails WCAG AA + AA-large) — bump to T.pencil
+     #6b6558 (5.13:1). Sunlight legibility (NORTHSTAR mobile-first).
+ (4) carried gate: real-GMS sim/device screenshot once Maps-key access available.
+ NOT regressions (designer downgraded): course-flag pin 8-13:1 pops fine; location-dot-over-water
+ 2.35:1 ≈ stock 2.41:1 (no regression). Nice-to-have (optional): poi.park sage → #d3ddc4.
+ALSO: strengthen the road-ladder unit test to assert a MINIMUM perceptible luminance step (not just
+monotonic) for BOTH fill and stroke ladders, so green tests can't ship a flat hierarchy again.
+Builder iteration dispatched. On return → re-review (designer + quick reviewer/qa on the nudge diff),
+then land + open fresh bundle PR. head before iteration: 57033a5.
