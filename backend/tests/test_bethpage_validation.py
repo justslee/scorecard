@@ -493,6 +493,56 @@ class TestHole4HazardSideRegression:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# IX. Carry-span (contiguous-run) acceptance, real geometry
+# (guide-validator-carry-span-plan.md) — Black hole 7 is a par 5 whose
+# extracted right-side bunker carries genuinely SPLIT into separate clusters
+# (a layup complex and a green-side complex), the exact shape the plan's
+# adversarial case (§2b) is built from. Driven off the ASSEMBLED fixture via
+# `extract_hole_hazards`, same pattern as `hole4_hazards` above.
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.fixture(scope="module")
+def hole7_hazards(assembled: dict) -> list:
+    hole7 = next(h for h in assembled["holes"] if h["number"] == 7)
+    return extract_hole_hazards(hole7["features"], cap=10)
+
+
+class TestHole7CarrySpanRegression:
+    def test_black7_right_bunkers_have_a_genuine_gap(self, hole7_hazards):
+        """Sanity-pin the premise the fabricated-claim test below depends on:
+        the real right-side bunker carries contain at least one adjacent gap
+        > 150y (the plan's probed geometry: {170, 430, 520}y, gaps 260/90) —
+        guards against silent fixture drift ever voiding the next test."""
+        right_carries = sorted(
+            h.carry_yards for h in hole7_hazards if h.type == "bunker" and h.line_side == "right"
+        )
+        assert len(right_carries) >= 2, "hole 7 must have >=2 right-side bunkers in the fixture"
+        gaps = [b - a for a, b in zip(right_carries, right_carries[1:])]
+        assert max(gaps) > 150, f"expected a genuine gap > 150y in {right_carries}, got {gaps}"
+
+    def test_black7_fabricated_mid_gap_right_carry_rejects(self, hole7_hazards):
+        """The reviewer's adversarial case (plan §2b), against the REAL fixture
+        geometry rather than a hand-built one: a fabricated carry placed at
+        the midpoint of the largest right-side gap (derived from the fixture,
+        not hard-coded — if fixture-vs-prod drift ever moves the gap, this
+        still targets a genuinely fabricated number) must still reject."""
+        right_carries = sorted(
+            h.carry_yards for h in hole7_hazards if h.type == "bunker" and h.line_side == "right"
+        )
+        gaps = [
+            (b - a, (a + b) // 2) for a, b in zip(right_carries, right_carries[1:])
+        ]
+        _, fabricated_carry = max(gaps, key=lambda g: g[0])
+
+        guide = HoleStrategyGuide(
+            play_line="Favor the left-center of the fairway off the tee.",
+            miss_side=f"Carry the right bunker at {fabricated_carry} off the tee.",
+        )
+        assert validate_guide(guide, hole7_hazards) is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # VII. Hole 4 bend/dogleg direction lock (caddie-bend-distance)
 # ══════════════════════════════════════════════════════════════════════════════
 #

@@ -399,6 +399,18 @@ _SIDE_OPPOSITION_PATTERN = re.compile(
 _CARRY_TOLERANCE_YARDS = 25
 _MIN_PLAUSIBLE_CARRY = 100  # below this, "hole 12"/"par 4"-style numbers, never a claimed carry
 _MAX_PLAUSIBLE_CARRY = 650
+
+# Contiguous-run span acceptance (guide-validator-carry-span-plan.md). A
+# stored `carry_yards` is a DISCRETE SAMPLE of an extended feature (a bunker
+# polygon's centroid; a tree line's near/far bracket pair) — not the whole
+# feature. Bridging same-(type, side) samples that sit within
+# `_CARRY_BRIDGE_YARDS` of each other into one run before applying the
+# `_CARRY_TOLERANCE_YARDS` margin closes the false-reject gap where a
+# legitimately-grounded carry falls in the sampled gap between two points of
+# ONE real feature. See the plan for the numeric derivation: 60 bridges the
+# smallest observed same-complex cluster gap (55y) while staying well below
+# the smallest observed genuinely-separate gap (90y).
+_CARRY_BRIDGE_YARDS = 60
 _CARRY_NUMBER_PATTERN = re.compile(
     r"\b(\d{2,3})(?!\d)(?:\s*[-–]\s*\d{2,3}(?!\d))?\s*(?:y(?:ds?)?|yards?)?\b"
 )
@@ -413,21 +425,75 @@ def _acceptable_sides(canonical_type: str, sides_by_type: dict[str, set[str]]) -
     return sides | ({"left", "right"} if "center" in sides else set())
 
 
+def _carry_runs(carries: list[int], bridge: Optional[int]) -> list[tuple[int, int]]:
+    """Split SORTED `carries` into maximal contiguous runs and return each
+    run's `(min, max)` span.
+
+    `bridge=None` means "unconditional bridge" — always one run spanning
+    `[carries[0], carries[-1]]` (used for `trees`: `_extract_tree_line_hazards`
+    emits at most a near/far PAIR per side, and those two samples ARE the
+    endpoints of one continuous line — `format_hazards_line` already asserts
+    that same span as a range, e.g. "trees L 145-360y").
+
+    Otherwise, consecutive samples join the same run iff their gap is `<=
+    bridge`; a gap larger than `bridge` starts a new run. A single-sample run
+    yields `(c, c)` — combined with the `_CARRY_TOLERANCE_YARDS` margin in
+    `_side_and_carry_supported`, that reproduces the old per-sample point test
+    exactly for every hazard that has only one sample of its (type, side)."""
+    if not carries:
+        return []
+    if bridge is None:
+        return [(carries[0], carries[-1])]
+    runs: list[tuple[int, int]] = []
+    run_start = run_end = carries[0]
+    for c in carries[1:]:
+        if c - run_end <= bridge:
+            run_end = c
+        else:
+            runs.append((run_start, run_end))
+            run_start = run_end = c
+    runs.append((run_start, run_end))
+    return runs
+
+
 def _side_and_carry_supported(
     canonical_type: str,
     claimed_side: str,
     claimed_carry: int,
     hazards_by_type: dict[str, list[tuple[str, int]]],
 ) -> bool:
-    """True iff a real hazard of this type sits on the claimed side (a
-    'center'/on-line hazard supports EITHER lateral side, mirroring
-    `_acceptable_sides`) AND its surveyed carry_yards is within
-    `_CARRY_TOLERANCE_YARDS` of the claimed number."""
-    return any(
-        (side == claimed_side or side == "center")
-        and abs(carry - claimed_carry) <= _CARRY_TOLERANCE_YARDS
-        for side, carry in hazards_by_type.get(canonical_type, [])
-    )
+    """True iff the claimed carry falls within `_CARRY_TOLERANCE_YARDS` of
+    some CONTIGUOUS RUN of same-(type, claimed-side-or-'center') stored
+    samples (guide-validator-carry-span-plan.md), not merely within
+    `_CARRY_TOLERANCE_YARDS` of a single sample.
+
+    A stored `carry_yards` is a discrete sample of an extended feature (a
+    bunker/water/ob polygon's centroid, or one end of a tree line's near/far
+    bracket) — treating every sample as an isolated point false-rejects a
+    legitimately-grounded carry that falls between two samples of the SAME
+    feature. Per candidate group (the claimed side, plus 'center' — mirroring
+    `_acceptable_sides`: an on-line hazard supports either lateral claim),
+    same-type samples are merged into maximal contiguous runs via
+    `_carry_runs` — `trees` bridge unconditionally (one run per group, the
+    near/far bracket of one line); every other type bridges when consecutive
+    samples are within `_CARRY_BRIDGE_YARDS` of each other. The claim is
+    accepted iff it lands within `_CARRY_TOLERANCE_YARDS` of EITHER end of
+    some run. A single-sample run collapses to the old point-window
+    `[c - _CARRY_TOLERANCE_YARDS, c + _CARRY_TOLERANCE_YARDS]`, so every prior
+    accept still accepts (strict superset — see the plan §2a proof); only a
+    number that falls strictly inside a genuine multi-sample GAP can flip
+    from reject to accept, and only when that gap is bridged."""
+    for group_side in (claimed_side, "center"):
+        carries = sorted(
+            carry for side, carry in hazards_by_type.get(canonical_type, []) if side == group_side
+        )
+        if not carries:
+            continue
+        bridge = None if canonical_type == "trees" else _CARRY_BRIDGE_YARDS
+        for lo, hi in _carry_runs(carries, bridge):
+            if lo - _CARRY_TOLERANCE_YARDS <= claimed_carry <= hi + _CARRY_TOLERANCE_YARDS:
+                return True
+    return False
 
 
 def _has_side_flip(
@@ -454,25 +520,35 @@ def _has_side_flip(
     "clear of") describes the miss direction, not the hazard's location, and
     is excluded from consideration (see `_SIDE_OPPOSITION_PATTERN`).
 
-    CARRY-AWARE EXTENSION (carry-aware-side-validation-plan.md): once a side
-    claim is bound for a hazard-keyword occurrence, this ALSO looks for every
-    plausible yardage number (`_CARRY_NUMBER_PATTERN`, distance to the HAZARD
-    keyword — never to the side word, never "any number in the field") within
-    the same window. No bound number -> the side-only check runs exactly as
-    before. One or more bound numbers -> EVERY one of them must match a real
-    hazard of this type on the claimed side within `_CARRY_TOLERANCE_YARDS`
-    (`_side_and_carry_supported`) or the whole guide rejects — this closes the
-    gap where a real side-set (e.g. bunkers on both left AND right of one
-    hole) let a WRONG number ride along with a real side word. Binding ALL
-    in-window numbers (not just the single nearest) is itself fail-closed
-    against an ambiguity bypass: a "nearest, ties prefer after" pick let a
-    co-located FALSE number equidistant BEFORE the keyword hide behind a TRUE
-    one after it ("The 265-yard right bunker sits 390 off the tee." — both
-    265 and 390 are distance 2 from "bunker"; picking only 390 accepted the
-    false 265 claim). EACH hazard-keyword occurrence still binds its own side
-    and its own number(s) independently, so a truthful "right bunker at 390"
-    elsewhere in the field can never launder a co-located false "left bunker
-    at 390" or "right bunker at 265".
+    CARRY-AWARE EXTENSION (carry-aware-side-validation-plan.md, span rule per
+    guide-validator-carry-span-plan.md): once a side claim is bound for a
+    hazard-keyword occurrence, this ALSO looks for every plausible yardage
+    number (`_CARRY_NUMBER_PATTERN`, distance to the HAZARD keyword — never to
+    the side word, never "any number in the field") within the same window.
+    No bound number -> the side-only check runs exactly as before. One or
+    more bound numbers -> EVERY one of them must fall within
+    `_CARRY_TOLERANCE_YARDS` of a CONTIGUOUS RUN of same-type, claimed-side
+    (or 'center') stored carries (`_side_and_carry_supported`) or the whole
+    guide rejects. Runs, not bare samples, because a stored `carry_yards` is
+    a discrete sample of an extended feature (a bunker/water/ob polygon's
+    centroid, or one end of a tree line's near/far bracket) — same-(type,
+    side) samples within `_CARRY_BRIDGE_YARDS` of each other (unconditionally
+    for `trees`, which stores only the two bracket ends of one line) are
+    merged into one run before the margin is applied, so a legitimately-
+    grounded carry that falls between two samples of the SAME feature is not
+    false-rejected. This still closes the original gap where a real side-set
+    (e.g. bunkers on both left AND right of one hole) let a WRONG number ride
+    along with a real side word — a number outside every run's window is
+    still fabricated and still rejects. Binding ALL in-window numbers (not
+    just the single nearest) is itself fail-closed against an ambiguity
+    bypass: a "nearest, ties prefer after" pick let a co-located FALSE number
+    equidistant BEFORE the keyword hide behind a TRUE one after it ("The
+    265-yard right bunker sits 390 off the tee." — both 265 and 390 are
+    distance 2 from "bunker"; picking only 390 accepted the false 265 claim).
+    EACH hazard-keyword occurrence still binds its own side and its own
+    number(s) independently, so a truthful "right bunker at 390" elsewhere in
+    the field can never launder a co-located false "left bunker at 390" or
+    "right bunker at 265".
     """
     sides_by_type: dict[str, set[str]] = {
         t: {s for s, _ in pairs} for t, pairs in hazards_by_type.items()
@@ -604,12 +680,20 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
        A hazard whose real side is "center" (on-line) accepts either lateral
        claim. CARRY-AWARE: when that side claim also co-occurs with a nearby,
        plausible yardage number (carry-aware-side-validation-plan.md), the
-       (side, carry) PAIR must match a real hazard of this type within
-       `_CARRY_TOLERANCE_YARDS` — this catches a type- and side-plausible but
-       numerically-wrong claim on a hole with hazards of the same type on
-       BOTH sides (e.g. real bunkers left AND right, but the claimed number
-       matches neither). A side claim with no bound number keeps the
-       side-only behavior above verbatim. A side word separated from the
+       (side, carry) PAIR must fall within `_CARRY_TOLERANCE_YARDS` of a
+       CONTIGUOUS RUN of same-type, same-side stored carries
+       (`_side_and_carry_supported`; guide-validator-carry-span-plan.md) —
+       same-side samples of one type within `_CARRY_BRIDGE_YARDS` (60) of
+       each other are treated as one extended feature (bunker/water/ob), and
+       a `trees` side's near/far sample pair bridges unconditionally (it IS
+       the bracket of one continuous line), so a legitimate carry falling
+       BETWEEN two samples of the same real feature is not false-rejected.
+       This still catches a type- and side-plausible but numerically-wrong
+       claim on a hole with hazards of the same type on BOTH sides (e.g. real
+       bunkers left AND right, but the claimed number matches neither run),
+       and still rejects a number that lands in a genuine GAP between two
+       separate features on the same side. A side claim with no bound number
+       keeps the side-only behavior above verbatim. A side word separated from the
        hazard keyword by an opposition phrase ("away from", "avoid",
        "clear of") describes the MISS direction, not the hazard's location,
        and is never checked (a "best miss is right, away from the [left]
