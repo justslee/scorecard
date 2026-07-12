@@ -369,8 +369,11 @@ export default function GoogleSatelliteMap({
       tee: currentHoleData.tee ?? null,
       green: currentHoleData.green,
       par: h.par ?? null,
+      // Inline (in-round) card is small — cap the chip stack at 2 so it
+      // stays lighter than a book page; fullscreen keeps the full 4.
+      maxBunkers: inline ? 2 : 4,
     });
-  }, [mappedHoles, currentHole, currentHoleData]);
+  }, [mappedHoles, currentHole, currentHoleData, inline]);
 
   // Ref mirror so the camera-queue / GPS-tick closures (stable identities,
   // created once) always read the LATEST computed overlays without needing
@@ -493,7 +496,7 @@ export default function GoogleSatelliteMap({
     for (const marker of data.markers) {
       circles.push({
         center: marker.position,
-        radius: 3,
+        radius: 4,
         fillColor: PLATE_FILL_BY_YARDS[marker.yards],
         fillOpacity: 0.92,
         strokeColor: "rgba(26,42,26,0.55)",
@@ -503,7 +506,7 @@ export default function GoogleSatelliteMap({
     for (const bunker of data.bunkers) {
       circles.push({
         center: bunker.nearEdge,
-        radius: 2,
+        radius: 3,
         fillColor: "#f2efe6",
         fillOpacity: 0.9,
         strokeColor: "rgba(26,42,26,0.55)",
@@ -1143,7 +1146,10 @@ export default function GoogleSatelliteMap({
             transition={{ duration: 0.25 }}
             className="absolute right-3 z-20 pointer-events-none"
             style={{
-              top: inline ? 12 : "max(120px, calc(env(safe-area-inset-top) + 108px))",
+              // Inline: 54px clears RoundPageClient's "Hole stats" pill
+              // (top:10, ~34px tall) anchored top-right of the same card —
+              // never paint the chip stack over Par/Yardage/Hcp.
+              top: inline ? 54 : "max(120px, calc(env(safe-area-inset-top) + 108px))",
               display: "flex",
               flexDirection: "column",
               gap: 4,

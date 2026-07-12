@@ -83,6 +83,14 @@ const GREENSIDE_MIN_YARDS = 45;
 const CORRIDOR_MAX_LATERAL_YARDS = 45;
 const BUNKER_CAP = 4;
 const TEE_ZONE_RADIUS_YARDS = 40;
+/** Mechanical honesty guard for plate placement (see
+ *  `greenEndLateralOffsetMeters` / `distanceMarkersFromGreen`): ALL plates
+ *  for a hole are OMITTED, not shown, when the way's green-end is more than
+ *  this many yards off the line collinear with green center — tight enough
+ *  to catch a laterally-offset way-end (still inside the 60y
+ *  GREEN_END_MAX_YARDS guard) that would otherwise silently mislabel, loose
+ *  enough to tolerate normal centerline curvature. */
+const PLATE_HONESTY_TOLERANCE_YARDS = 7;
 
 // ── Internals (exported for tests) ─────────────────────────────────────────────
 
@@ -151,12 +159,46 @@ export function greenFirstCenterline(
 }
 
 /**
+ * Mechanical honesty guard for the green-center offset (see
+ * `distanceMarkersFromGreen`): that offset is a scalar subtraction which
+ * assumes the way's green-end (`centerline[0]`) is COLLINEAR with green
+ * center — i.e. that green center lies on the line the path's first segment
+ * travels, not off to the side of it. Checked once per hole (not per plate,
+ * unlike a straight-line-to-label check on the final position, which would
+ * also flag legitimate dogleg walking — see test 2, where a bend further
+ * down a centerline whose green-end genuinely IS at green center is
+ * correct, expected divergence from the straight-line chord). Returns the
+ * perpendicular (lateral) distance in meters from `greenCenter` to the
+ * infinite line through `centerline[0]`->`centerline[1]`.
+ */
+function greenEndLateralOffsetMeters(centerline: LatLng[], greenCenter: LatLng): number {
+  const a = centerline[0];
+  const b = centerline[1];
+  const midLat = (a.lat + b.lat) / 2;
+  const cosLat = Math.cos((midLat * Math.PI) / 180);
+  const toXY = (p: LatLng): [number, number] => [
+    (p.lng - a.lng) * LAT_M * cosLat,
+    (p.lat - a.lat) * LAT_M,
+  ];
+  const [bx, by] = toXY(b);
+  const [gx, gy] = toXY(greenCenter);
+  const segLen = Math.hypot(bx, by);
+  if (segLen <= 0) return 0; // degenerate first segment — can't judge, don't block
+  return Math.abs(bx * gy - by * gx) / segLen;
+}
+
+/**
  * Walk the centerline from the green end, cumulative float meters; linear
  * lat/lng interpolation inside the segment containing each target distance.
  * A target beyond total path length is OMITTED (a 160y-line hole has no 200
  * plate). Distances measured from GREEN CENTER: the walk starts with an
  * offset = metersBetween(greenCenter, line[0]) so plates are true
  * to-green-CENTER numbers even though the way ends at the green edge/pin.
+ *
+ * Honesty guard (mechanical, R1): if `greenCenter` isn't collinear with the
+ * way's green-end within `PLATE_HONESTY_TOLERANCE_YARDS`, the offset
+ * subtraction below is untrustworthy for every target that shares it — omit
+ * ALL plates for this hole rather than silently mislabel one.
  */
 export function distanceMarkersFromGreen(
   centerline: LatLng[],
@@ -164,6 +206,9 @@ export function distanceMarkersFromGreen(
   distancesYds: readonly number[] = [100, 150, 200],
 ): DistanceMarker[] {
   if (!centerline || centerline.length < 2) return [];
+
+  const lateralOffsetYards = greenEndLateralOffsetMeters(centerline, greenCenter) / METRES_PER_YARD;
+  if (lateralOffsetYards > PLATE_HONESTY_TOLERANCE_YARDS) return [];
 
   const offsetM = metersBetween(greenCenter, centerline[0]);
   const markers: DistanceMarker[] = [];
@@ -252,8 +297,13 @@ export function fairwayBunkerCarries(args: {
   features: GeoJSON.Feature[];
   tee: LatLng;
   green: LatLng;
+  /** Cap on how many bunkers to keep, e.g. a tighter inline-card display cap.
+   *  Defaults to `BUNKER_CAP` (4, fullscreen). Applied at SELECTION time, so
+   *  a lower cap still keeps the "smallest lateral" bunkers — the same
+   *  most-in-play semantics as the default cap, just fewer of them. */
+  maxBunkers?: number;
 }): BunkerCarry[] {
-  const { features, tee, green } = args;
+  const { features, tee, green, maxBunkers = BUNKER_CAP } = args;
 
   // Tee-anchored equirectangular frame (pinned, matches backend `_xy_m`).
   const midLat = (tee.lat + green.lat) / 2;
@@ -359,8 +409,14 @@ export function fairwayBunkerCarries(args: {
     const backYards = Math.max(0, round5(maxCarryM / METRES_PER_YARD));
 
     // ── Fairway / in-tee-shot-range predicate (§4) ──────────────────────
-    if (frontYards < BUNKER_FLOOR_YARDS) continue;
-    if (frontYards > BUNKER_CEILING_YARDS) continue;
+    // Applied to the RAW (unrounded) carry, not the rounded display value
+    // above — a true front carry of 97.6y rounds to a 100y display but is
+    // still genuinely short of the floor, and 332.4y rounds to a 330y
+    // display but is still genuinely past the ceiling. Round only once, for
+    // display, after this predicate has already decided in/out.
+    const rawFrontYards = minCarryM / METRES_PER_YARD;
+    if (rawFrontYards < BUNKER_FLOOR_YARDS) continue;
+    if (rawFrontYards > BUNKER_CEILING_YARDS) continue;
     if (minGreenDistYards < GREENSIDE_MIN_YARDS) continue; // greenside
     if (minAbsLateralYards > CORRIDOR_MAX_LATERAL_YARDS) continue; // out of corridor
 
@@ -380,10 +436,10 @@ export function fairwayBunkerCarries(args: {
     });
   }
 
-  // Cap at 4: keep the 4 with smallest min|lateral| ("most in-play"), then
-  // display sorted ascending by front carry.
+  // Cap: keep the `maxBunkers` with smallest min|lateral| ("most in-play"),
+  // then display sorted ascending by front carry.
   candidates.sort((a, b) => a.minAbsLateralYards - b.minAbsLateralYards);
-  const capped = candidates.slice(0, BUNKER_CAP);
+  const capped = candidates.slice(0, maxBunkers);
   capped.sort((a, b) => a.front - b.front);
 
   return capped.map(({ front, back, side, nearEdge }) => ({ front, back, side, nearEdge }));
@@ -400,6 +456,8 @@ export function computeTeeShotOverlays(args: {
   tee: LatLng | null;
   green: LatLng;
   par: number | null;
+  /** Passed straight through to `fairwayBunkerCarries` — see its docstring. */
+  maxBunkers?: number;
 }): TeeShotOverlays {
   const EMPTY: TeeShotOverlays = { markers: [], bunkers: [] };
 
@@ -411,7 +469,7 @@ export function computeTeeShotOverlays(args: {
   const markers = centerline ? distanceMarkersFromGreen(centerline, args.green) : [];
 
   const bunkers = args.tee
-    ? fairwayBunkerCarries({ features, tee: args.tee, green: args.green })
+    ? fairwayBunkerCarries({ features, tee: args.tee, green: args.green, maxBunkers: args.maxBunkers })
     : [];
 
   return { markers, bunkers };

@@ -226,20 +226,49 @@ describe('5. reversed LineString (tee-first storage order) -> identical plates',
   });
 });
 
+// ── 5b. Plate honesty guard — offset way-end mislabels, must be OMITTED ─────
+
+describe('5b. plate honesty guard — laterally-offset green-end way (collinear assumption broken)', () => {
+  it('a way whose green-end is 40y EAST of green center (still inside the 60y guard) -> every plate omitted, not mislabeled', () => {
+    const green: LatLng = { lat: 40.7, lng: -73.5 };
+    // Stored green-end is 40y EAST of green center, not toward the tee — an
+    // L-shaped/offset way. `greenFirstCenterline`'s 60y guard still passes
+    // (40y < 60y), so this reaches the naive offset-subtraction walk.
+    const greenEdge = eastOf(green, 40);
+    const tee = southOf(greenEdge, 300);
+    const holeFeature = makeHoleLine([tee, greenEdge]); // tee-first
+
+    const centerline = greenFirstCenterline([holeFeature], green);
+    expect(centerline).not.toBeNull();
+    const markers = distanceMarkersFromGreen(centerline!, green);
+
+    // `greenEdge` is 40y laterally offset from green center (not collinear
+    // with the path's own direction) — the honesty guard catches this
+    // up front and omits every plate for the hole. Left unguarded, the
+    // naive walk would place, e.g., a "150" plate ~110y south of
+    // `greenEdge` whose true distance to green center is
+    // sqrt(40^2 + 110^2) ~= 117y — a ~33y mislabel.
+    expect(markers).toEqual([]);
+  });
+});
+
 // ── 6. Bunker front/back — chord and path agree on a straight hole ─────────
 
-describe('6. bunker front/back carry — square ring straddling 230-260y at 15y lateral', () => {
+describe('6. bunker front/back carry — square ring straddling 230-260y at 15-25y lateral', () => {
   it('front 230, back 260, included — identical with and without a straight centerline', () => {
     const tee: LatLng = { lat: 40.6, lng: -73.5 };
     const green = northOf(tee, 450);
     const holeFeature = makeHoleLine([tee, green]);
 
+    // Lateral range 15-25y — kept clear of the 10y LATERAL_DEADBAND_YARDS
+    // edge (R3: a min-carry vertex sitting at exactly 10y lateral makes the
+    // 'C' vs 'L'/'R' assertion fragile to benign floating-point noise).
     const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
     const bunker = makeBunkerPolygon([
-      corner(230, 10),
-      corner(230, 20),
-      corner(260, 20),
-      corner(260, 10),
+      corner(230, 15),
+      corner(230, 25),
+      corner(260, 25),
+      corner(260, 15),
     ]);
 
     const withPath = fairwayBunkerCarries({ features: [holeFeature, bunker], tee, green });
@@ -323,6 +352,44 @@ describe('8. corridor + floor + ceiling exclusion', () => {
     expect(result).toHaveLength(1);
     expect(result[0].front).toBeGreaterThanOrEqual(195);
     expect(result[0].front).toBeLessThanOrEqual(205);
+  });
+});
+
+// ── 8b. Floor/ceiling boundary — applied to RAW carry, not rounded display ──
+
+describe('8b. floor/ceiling predicate uses the RAW carry, not the rounded display value', () => {
+  it('raw front carry 98.5y (rounds to a 100y display) is still excluded — below the 100y floor', () => {
+    const tee: LatLng = { lat: 40.48, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+    const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
+
+    const bunker = makeBunkerPolygon([
+      corner(98.5, 10),
+      corner(98.5, 20),
+      corner(101, 20),
+      corner(101, 10),
+    ]);
+
+    const result = fairwayBunkerCarries({ features: [holeFeature, bunker], tee, green });
+    expect(result).toEqual([]);
+  });
+
+  it('raw front carry 331.5y (rounds to a 330y display) is still excluded — above the 330y ceiling', () => {
+    const tee: LatLng = { lat: 40.46, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+    const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
+
+    const bunker = makeBunkerPolygon([
+      corner(331.5, 10),
+      corner(331.5, 20),
+      corner(334, 20),
+      corner(334, 10),
+    ]);
+
+    const result = fairwayBunkerCarries({ features: [holeFeature, bunker], tee, green });
+    expect(result).toEqual([]);
   });
 });
 
@@ -413,6 +480,42 @@ describe('11. cap at 4 — keeps the 4 smallest-lateral bunkers, sorted ascendin
     const result = fairwayBunkerCarries({ features: [holeFeature, ...bunkers], tee, green });
     expect(result).toHaveLength(4);
     expect(result.map((b) => b.front)).toEqual([150, 210, 240, 270]);
+  });
+
+  it('maxBunkers: 2 (inline display cap) -> keeps only the 2 smallest-lateral bunkers, sorted by front', () => {
+    const tee: LatLng = { lat: 40.3, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+    const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
+
+    // Same fixture as above — the 2 SMALLEST |lateral| are 210(5) and
+    // 150(10); everything else, including 240(20) and 270(15) which survive
+    // the default cap of 4, is dropped at a display cap of 2.
+    const pairs: Array<[number, number]> = [
+      [120, 30],
+      [150, 10],
+      [180, 25],
+      [210, 5],
+      [240, 20],
+      [270, 15],
+    ];
+    const bunkers = pairs.map(([carry, lateral]) =>
+      makeBunkerPolygon([
+        corner(carry - 1, lateral - 1),
+        corner(carry - 1, lateral + 1),
+        corner(carry + 1, lateral + 1),
+        corner(carry + 1, lateral - 1),
+      ])
+    );
+
+    const result = fairwayBunkerCarries({
+      features: [holeFeature, ...bunkers],
+      tee,
+      green,
+      maxBunkers: 2,
+    });
+    expect(result).toHaveLength(2);
+    expect(result.map((b) => b.front)).toEqual([150, 210]);
   });
 });
 
