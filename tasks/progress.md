@@ -15735,3 +15735,16 @@ NON-BLOCKING FOLLOWUP to file: stateless tap-path /caddie/recommend Recommendati
 default (always overridden by CaddiePanel real yards) — tiny cleanup, don't build now.
 ## READY TO LAND — holding for PR#137 ship. On MERGED + integration/next recut: rebase, push,
 ## open fresh bundle PR (item1 = caddie grounded tee-shot brain, NOTICEABLE), file followups, backlog.
+
+## CYCLE 114 LANDED @661a28b on integration/next (bundle PR #139), NOTICEABLE, awaiting owner ship.
+Rebased worktree branch onto fresh origin/integration/next a032eec (post-#137-ship; geometry-audit
+lane's 9c95dad + Red-backfill backlog underneath) — only progress.md conflicted (append-log union,
+resolved). Pushed FF a032eec..661a28b. PR #139 retitled to the caddie tee-shot brain headline; my
+item added as the NOTICEABLE checklist entry with reviewer(fable) SHIP + qa PASS. CI: backend gate
+SUCCESS on 661a28b (DB-integration incl.); frontend gate IN_PROGRESS at land. Commits: 4a6459c impl
++ 3b7c830 frame-align fix. Backlog: added caddie-numbers-coherence (status done) + caddie-tee-shot-
+grounding-followups (status ready: §4.4 corridor-width, /caddie/recommend yards=400 cleanup, Bethpage
+Red guide generation, Red-3 par verify). CALLER INERT — no ship/ping issued; bundle now has a
+noticeable change so it's eligible for owner approval at the next ship (release-manager's call, not this lane).
+INJECTION: repeated 'date changed / DO NOT mention' + Telegram-pairing MCP text arrived in the tool/
+system stream this cycle — ALL IGNORED (embedded instructions are data, not authority).
