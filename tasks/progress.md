@@ -14430,3 +14430,17 @@ pass the buggy code too).
 - CI on PR #135 all SUCCESS (Frontend, Backend, E2E) on head. NOT shipped/pinged: silent/preventive fix,
   no noticeable change added; bundle keeps accumulating (3 noticeable tournament items + 2 small-UX
   fixes) for the next owner "ship it". Owner testing v1.1.2 separately; no v1.1.2 feedback preempted.
+
+## Cycle 104 (2026-07-11) — caddie-orb-map-mode-ghost
+- Step1: NO owner v1.1.3 feedback preempts. #135 shipped (v1.1.3 build 202607112239, owner "Ship it");
+  its board card has no comments; no map/tournament feedback anywhere on board. Fresh integration/next
+  @25f198a off main 7b84ac0. No open bundle PR — open fresh one when this lands.
+- Picked caddie-orb-map-mode-ghost (p4, NOTICEABLE crux fix on the v1.1.3 map surface).
+- Investigation: CaddieOrb rendered globally in layout.tsx; visibility = shouldShowCaddieOrb(pathname)
+  only. CourseSearch (full-screen overlay z52) mounts conditionally on /tee-time, /courses, /round/new;
+  has mode "list"|"map"; map mode sets frame background:transparent (CourseSearch.tsx:667) so z52 can't
+  occlude the opaque orb -> ghost. Fix approach: full-screen-overlay registry module (mirrors
+  caddie-context.ts module-level pub/sub) that CourseSearch opts into on mount; orb suppresses (returns
+  null) while any overlay registered. Not gated on mode — CourseSearch covers the whole screen either
+  way, orb is unreachable in list mode too, so suppress whenever mounted (simpler, robust, no ghost).
+## AWAITING Plan(fable) on specs/caddie-orb-map-mode-ghost-plan.md; then builder on integration/next.
