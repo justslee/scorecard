@@ -15127,3 +15127,17 @@ getBoundingClientRect: >=16px daylight between the "A field of..." div and the s
 re-confirm on new pixels -> APPROVE -> PR #137 checklist + backlog + finish. REBASE before push. Caller
 INERT. Head 3eddefa. Non-blocking owner-eyeball notes: felt "exciting but calm" on real iPhone; caddie
 orb bubble floats over ghost-lines zone (pre-existing global chrome).
+
+## AWAITING (cycle 111) — designer DECISION on summary-placement fix (padding disproven)
+Builder disproved the padding fix and reverted clean (nothing committed). Real cause: the sticky CTA
+(position:sticky;bottom:0, last child of a minHeight:100vh flex column) is viewport-glued from first
+paint whenever content overflows (measured 111px @390x844, 288px @375x667) — so trailing paddingBottom
+is UNREACHABLE dead space at scroll=0 (tested 80/160/400px, byte-identical -30.6 / -45.6px overlap).
+The "A field of..." summary sits behind the CTA and only appears on manual scroll. To show it at scroll=0
+you must either shrink content above (careless per NORTHSTAR) OR RELOCATE the summary. eng-lead's leaning:
+move the composing summary INTO the sticky send-off block, directly above the colophon (send-off zone =
+summary line + colophon + Create) — always visible, calm, strengthens the send-off; ghosts stay in field
+(decorative, scroll-under acceptable). Dispatched designer to make the BLOCKING call + exact placement spec.
+ON RETURN: designer spec -> builder implements -> designer re-confirm pixels -> APPROVE -> PR #137 + backlog.
+REBASE before push (swipe-back lane landed @6ba9418; both lanes intact on branch). Caller INERT. Head:
+origin/integration/next.
