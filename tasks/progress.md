@@ -15339,7 +15339,15 @@ Par-3 handling: TBD by plan (tee shot IS the approach; greenside detail already 
 markers/bunkers or handle minimally). HONESTY: no geometry → NO overlay (silent), never invented.
 
 ## AWAITING (cycle 113)
-Awaiting Explore agent (data-reality synthesis) then dispatching Plan(fable) → specs/tee-shot-yardage-
-overlays-plan.md. No code yet; tree clean. On resume: reconcile from origin/integration/next; if Plan
-committed a spec, dispatch builder on that plan; else re-run Plan(fable). CALLER INERT — do NOT ship/ping;
-keep accumulating PR #137 (currently 6 items @ cdd8ca2).
+Plan(fable) DONE -> specs/tee-shot-yardage-overlays-plan.md committed. DECISIONS: FRONTEND pure module
+frontend/src/lib/map/tee-shot-overlays.ts (no backend/type-sync); plates=native addCircles walked along
+the golf=hole centerline green-first (centerline REQUIRED, no chord fallback -> dogleg honesty; unrounded
+float meters -> round once); bunker front/back = min/max ring-vertex carry, fairway predicate carry in
+[100,330] AND >=45y radial from green center AND min|lateral|<=45y, centroid-only bunkers SKIPPED (no fake
+range), cap 4; visibility = pure predicate (position null OR !gpsOnHole OR dist(pos,tee)<=40y), native
+redraw only on boolean flip; par-3 suppress all; carry TEXT = DOM paper chips (iOS iconUrl can't do
+data-URLs — verified Map.swift:726) styled like the tap-target pill, right edge; par from mapped
+HoleData.par (NO RoundPageClient par threading). 13 pinned vitest.
+Now AWAITING builder on the plan (integration/next). On resume: reconcile from origin/integration/next
+-> git log for the builder's commit; if landed, dispatch reviewer(fresh)+qa+designer; else re-check builder.
+CALLER INERT — do NOT ship/ping; keep accumulating PR #137 (6 items @ cdd8ca2).
