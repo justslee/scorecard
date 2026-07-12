@@ -1165,7 +1165,7 @@ export default function RoundSetupPage() {
                 position: "fixed",
                 inset: 0,
                 background: "rgba(0,0,0,0.35)",
-                zIndex: 40,
+                zIndex: 52, // above CaddieOrb (50) so the scrim dims/blocks it; below LooperSheet (60)
               }}
             />
             <motion.div
@@ -1178,7 +1178,7 @@ export default function RoundSetupPage() {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                zIndex: 41,
+                zIndex: 53,
                 background: T.paper,
                 borderRadius: "20px 20px 0 0",
                 padding: "12px 0 28px",
