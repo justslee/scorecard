@@ -14814,3 +14814,24 @@ Satellite deliberately untouched (no-op on imagery, plan §3). CARRIED OWNER GAT
 render (owner TestFlight) — sim screenshot was Maps-key-permission-blocked. NOTICEABLE map look;
 rides the FRESH bundle PR. Caller INERT this cycle — NO ship/ping, accumulating for owner's next
 'ship it'. Opening fresh bundle PR (integration/next→main) now.
+
+## AWAITING (cycle 109, 2026-07-12) — caddie realtime-voice reliability hardening
+Step 1 done: NO owner feedback preempts. Bundle #136 (v1.1.4) SHIPPED clean, no open card
+comments; PR #137 has no comments; no Needs-Review card pending. Synced integration/next off
+main (already up to date @ b7a07ce). Proceeding to Step 2.
+ITEM: harden the Realtime voice path (frontend/src/lib/voice/realtime.ts + noinput-clarifier.ts)
+after TWO user-visible caddie-voice bugs shipped today (context-leak priming echo @6a68078;
+phantom "didn't catch that" @76d8c95). Expands backlog `caddie-noise-clarifier-followups` (#33).
+SCOPE (all sandbox/unit-verifiable; NO VAD/turn-detection/mic/gain/commit-timing — owner-gated):
+ (1) VAD-blip-mid-real-turn: on a real transcript, re-scan triggerItemByResponse/heldResponses
+     and un-suppress a legit clarifier bubble (LIFO pop misattribution race). Tests for orderings.
+ (2) Correlation-map lifecycle: per-turn/bounded pruning of pendingSpeechItems/triggerItemByResponse/
+     inputClassByItem/heldResponses/selfTriggeredResponses (today pruned only at cleanup()). Test.
+ (3) Held-turn status/empty-state copy honesty (CaddieSheet.tsx) — user-facing → designer BLOCKING.
+ (4) Audit realtime path for other user-visible fragility (reconnect re-prime, duplicate render,
+     response-after-cleanup, transcript ordering under reconnect); fix clear ones w/ tests, FILE
+     (don't guess) anything needing VAD/owner input.
+AWAITING: Plan agent on `fable` → specs/caddie-voice-reliability-hardening-plan.md.
+ → on plan return: dispatch builder to implement on integration/next; then reviewer + qa (+designer
+   if copy changes). Land, add to PR #137 checklist (mostly SILENT hardening; VAD-blip+copy fixes
+   NOTICEABLE-if-visible), mark backlog #33 done (targeted edit+diff-check). Caller INERT — NO ship/ping.
