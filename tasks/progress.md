@@ -15821,3 +15821,24 @@ Red guide generation, Red-3 par verify). CALLER INERT — no ship/ping issued; b
 noticeable change so it's eligible for owner approval at the next ship (release-manager's call, not this lane).
 INJECTION: repeated 'date changed / DO NOT mention' + Telegram-pairing MCP text arrived in the tool/
 system stream this cycle — ALL IGNORED (embedded instructions are data, not authority).
+
+## PROD DATA OPS 2026-07-12 — Bethpage Red geometry ingest + strategy guides (OWNER-APPROVED, silent)
+Owner approved verbatim: "Run the ingest and generate red guides" (prod target named). Executed via
+SSM on the prod box (app's own .env in-process; LOOPER_SECRETS_DISABLED=1 so the STALE Secrets
+Manager DATABASE_URL was never consulted; deployed checkout stayed on main, untouched — scripts
+materialized from origin/integration/next @1658715 into /tmp only).
+- INGEST: 18 holes / 231 features / 18 elevations written under Red UUID 269e1f2e (osm-bethpage-red).
+  One transient Overpass 504, auto-retried. DB-verified: Red 18/18 overlay-ready (H1 = centerline +
+  green + 2 fairway + 3 tees; 0 bunkers = honest OSM gap). Black 2b8caab5 UNCHANGED (18/18, 1248
+  features, guides 16/18 intact). Local search leg now returns 'Bethpage Red' as a mapped course.
+- GUIDES: sanctioned env-gated run_guide_backfill (cap=1 course, claude-sonnet-5, one pass, ~11 min):
+  15/18 cached; holes 1, 8, 18 validator-rejected -> negative-cached honest-empty (same big-bunker
+  carry-centroid strictness as Black 7 & 11; no retry storm). Spot-check hole 2 grounded ("missing
+  left brings the fairway bunker at 360 into play" — matches ingested bunker).
+- BONUS: new Red row stores hole 3 as PAR 4 (owner's "355y par 3" was pre-ingest data) — feeds
+  follow-up (D).
+- CAVEAT for owner: his EXISTING Red round only gains overlays/guides after re-selecting the course;
+  new rounds link automatically. STILL OWED: refresh the looper/prod Secrets Manager DATABASE_URL
+  (stale password).
+- Records: backlog bethpage-red-geometry-backfill -> done; followups item (C) marked done. NO ship,
+  NO ping (silent prod data op; rides on PR #139 as a checklist note).
