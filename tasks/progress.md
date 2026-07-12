@@ -14805,3 +14805,12 @@ build/ruff). reviewer already SHIP on parent a610dc7; qa PASS. designer re-revie
 d29fad4. On designer APPROVE → open FRESH bundle PR (integration/next→main, NOTICEABLE map look),
 add checklist, mark backlog map-base-paper-tone-style done (targeted edit + diff-check). Carried gate:
 real-GMS on-device render (owner TestFlight) — do NOT ship/ping this cycle, accumulate on bundle.
+
+## LANDED (cycle 108, 2026-07-12) — map-base-paper-tone-style @f781873 on integration/next
+ALL VERDICTS GREEN: reviewer SHIP, qa PASS (lint/tsc/vitest 2300/build/voice 278/ruff), designer
+APPROVE (WCAG re-verified: arterial↔local stroke 1.175:1, fill 1.193:1, neighborhood label 5.132:1;
+no pin/dot regression). Backlog map-base-paper-tone-style → done (resolution added, diff-checked).
+Satellite deliberately untouched (no-op on imagery, plan §3). CARRIED OWNER GATE: real-GMS on-device
+render (owner TestFlight) — sim screenshot was Maps-key-permission-blocked. NOTICEABLE map look;
+rides the FRESH bundle PR. Caller INERT this cycle — NO ship/ping, accumulating for owner's next
+'ship it'. Opening fresh bundle PR (integration/next→main) now.
