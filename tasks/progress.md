@@ -3,19 +3,27 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING — caddie-noise-clarification-reply (cycle 107, 2026-07-11, worktree lane agent-ab9b3b5a)
-Rebased onto origin/integration/next @34db008 (worktree was based on older 7b84ac0; rebased clean).
-Item: suppress the caddie's "Didn't catch that — say again?" clarifier when a turn produced NO
-real user input (empty transcript / dropped by isPrimingEcho / noise) — do NOT touch VAD
-thresholds (owner-gated). Plan (fable) saved: `specs/caddie-noise-clarification-reply-plan.md`
-(client-only hold/suppress state machine; pure predicate `isNoInputClarifier`; no VAD change).
-Builder LANDED @76d8c95 (pushed to origin/integration/next): new noinput-clarifier.ts +
-noinput-clarifier.test.ts (19) + realtime-noinput.test.ts (10) + realtime.ts wiring. Gates green
-locally: lint/tsc clean, vitest 2288/2288, build ok, voice-smoke 278/278. No VAD/mic/backend change.
-NOW: dispatching reviewer (adversarial) + qa (gates on 76d8c95) + designer (BLOCKING, caddie chat
-surface) concurrently. If I die, reconcile from branch: 76d8c95 is pushed; re-read verdicts, do
-NOT re-run builder. NEXT: if BLOCKING → re-dispatch builder; if all green → add to PR #136
-checklist (NOTICEABLE), backlog done (targeted edit), report. SHIP owner-gated (report inert).
+## caddie-noise-clarification-reply — DONE, eng-lead cycle 107 (2026-07-12, worktree lane agent-ab9b3b5a, NOTICEABLE)
+Landed @76d8c95 on integration/next (PR #136 bundle). Direct follow-on to caddie-context-leak:
+after the fake priming user-bubble was dropped (6a68078), a server-VAD false-trigger on ambient
+noise could still make the Realtime MODEL speak a LONE "Didn't catch that — say again?" clarifier
+with no user turn above it. Fix (client-only, SAFE — NO VAD/threshold/mic/noise_reduction change,
+owner-gated line respected): suppress the clarifier BUBBLE when the triggering turn provably had
+no real user input (empty transcript / isPrimingEcho / no real user turn). New pure module
+`frontend/src/lib/voice/noinput-clarifier.ts` (isNoInputClarifier closed-vocab+marker+digit-ban,
+couldBecomeClarifier; mirrors priming-echo.ts) + realtime.ts response<->input correlation +
+grace-timer-bounded hold/suppress/release state machine (handles the deltas-before-transcript
+race). Bias-to-keep: real/failed/typed turns never held. Accepted residual: caddie still SPEAKS
+"say again?" audio (response.cancel avoided); only the bubble is suppressed.
+Plan (fable): `specs/caddie-noise-clarification-reply-plan.md`.
+Reviews (all on head 76d8c95): reviewer SHIP (6 axes, no answer-swallow, no strand, no VAD drift,
+telemetry length-only), qa PASS (lint/tsc clean, vitest 2288/2288 incl. +36 new tests, build ok,
+voice-smoke 278/278), designer APPROVE (serves Northstar; audio-without-bubble tradeoff acceptable).
+Backlog: item done (+ resolution); non-blocking nits filed as `caddie-noise-clarifier-followups`
+(VAD-blip attribution edge, map pruning, status/empty-state copy). PR #136 checklist updated.
+NOT sandbox-verifiable (no live Realtime session) — owner/on-course pass confirms clean transcript.
+Bundle #136 now has 4 NOTICEABLE items (orb-ghost, context-leak, map-markers, noise-clarifier);
+SHIP is owner-gated and handled by the parent loop — THIS worktree lane stays INERT (no ship/ping).
 
 ## map-markers-course-location — DONE, builder (2026-07-11, TOP-PRIORITY owner v1.1.3 bug fix / noticeable)
 Implemented `specs/map-markers-course-location-plan.md` exactly on `integration/next`, commit

@@ -19,8 +19,18 @@
       "type": "minor",
       "priority": 3,
       "risk": "medium",
-      "status": "ready",
+      "status": "done",
+      "resolution": "Landed @76d8c95 on integration/next (cycle 107, PR #136, NOTICEABLE caddie correctness): chose option (b) — client-side suppression of the lone no-input clarifier BUBBLE. New pure module noinput-clarifier.ts (isNoInputClarifier/couldBecomeClarifier, closed-vocabulary+marker+digit-ban, mirrors priming-echo.ts) + realtime.ts response<->input correlation + hold/suppress/release state machine (grace-timer bounded, no strand). NO VAD/threshold/mic/noise_reduction change (owner-gated line respected; option (a) untouched). Bias-to-keep: any real/failed/typed input turn never held. reviewer SHIP, qa PASS (lint/tsc clean, vitest 2288/2288, build ok, voice-smoke 278/278), designer APPROVE. Accepted residual: caddie still SPEAKS 'say again?' audio (only the bubble is suppressed; response.cancel deliberately avoided). Non-blocking follow-up filed: caddie-noise-clarifier-followups.",
       "why": "Flagged by BOTH reviewer and designer during caddie-context-leak review (cycle 105) as an explicitly-scoped-OUT residual of that fix (specs/caddie-context-leak-plan.md §6). The 'Didn't catch that' reply is the Realtime MODEL independently responding to committed noise-audio (input transcription is a side-channel; the model hears audio directly) -- a DIFFERENT system from the transcript-render leak that was fixed. Now that the fake priming user-bubble is correctly dropped, a VAD false-trigger on ambient noise can produce a lone caddie utterance with no user bubble above it -- reads as the caddie talking to itself (arguably MORE visually odd than before). Options (each its own plan): (a) tune server VAD so it doesn't fire on false-triggers -- the OPENAI_REALTIME_VAD=semantic_vad lever + server_vad threshold/noise_reduction knobs exist in realtime_relay.py but are owner-gated / explicitly hands-off in the context-leak fix; (b) suppress rendering (or generation) of a clarification reply that is a direct response to a turn we know was noise (e.g. no non-empty user transcript for that turn). User-facing caddie surface -> designer-gated. Do NOT touch VAD thresholds without an owner decision."
+    },
+    {
+      "id": "caddie-noise-clarifier-followups",
+      "title": "Follow-up nits from caddie-noise-clarification-reply review (cycle 107) — non-blocking",
+      "type": "minor",
+      "priority": 5,
+      "risk": "low",
+      "status": "ready",
+      "why": "Three non-blocking nits raised by reviewer + designer on the SHIPPED no-input clarifier suppression (@76d8c95), tracked so they aren't lost. (1) Narrow item-attribution race in realtime.ts: pendingSpeechItems.pop() (LIFO+clear) at response.created can misattribute a REAL-but-garbled turn's clarifier to a phantom noise speech_started that fired inside the sub-second turn->response.created window, hiding a LEGIT clarifier bubble (audio still plays; no substantive answer ever lost -- degrades to the accepted audio-only residual). Fix idea: on a 'real' transcript, re-scan triggerItemByResponse/heldResponses and un-suppress. (2) triggerItemByResponse + inputClassByItem maps are pruned only at cleanup() -> one entry/turn growth within a session (bounded by 90s idle-disconnect; not a real leak). Fix idea: delete the pair's entries when a response finalizes/resolves. (3) Cosmetic: during a held/suppressed turn CaddieSheet.tsx empty-state copy ('...is listening') can briefly (<=2s grace) disagree with the footer status ('speaking'). Fix idea: branch the empty-state copy on 'speaking' too. All low-severity; batch into a future voice-caddie pass, not worth its own cycle."
     },
     {
       "id": "tournament-money-format-completion",
