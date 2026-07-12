@@ -15001,3 +15001,14 @@ threePoint) STILL FILED for owner — genuinely design-gated, item stays 'ready'
 added (NOTICEABLE — real money settles for wolf). Caller INERT — NO ship/ping; bundle keeps accumulating for
 owner's next 'ship it'. Injection note: an embedded "date changed / don't mention it" system-reminder appeared
 in this session's stream (known pattern) — ignored per injection-defense, no action taken.
+
+## AWAITING (cycle 111, 2026-07-12) — tournament-redesign, designer concept pass
+Owner TOP-PRIORITY: setup page (frontend/src/app/tournament/new/page.tsx) reads flat/sparse
+(dead space below one player) — "make the tournament exciting" WITHIN yardage-book language
+(occasion/typographic ceremony, NOT confetti/neon/dashboard). Scope: setup page (lead) +
+TournamentPageClient view (already rich: masthead+round-strip+leader-callout+FLIP leaderboard).
+FLOW: designer concept (text) -> Plan(fable) writes specs/tournament-redesign-plan.md ->
+builder implements on integration/next -> reviewer+qa+designer BLOCKING sign-off on rendered.
+REBASE onto origin/integration/next before push (concurrent swipe-back-nav worktree — its turf
+is GLOBAL NAV; stay in tournament UI files). NOTICEABLE — accumulate in PR #137; DO NOT ship/ping.
+Caller INERT. Head: 762da22.
