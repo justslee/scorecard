@@ -15449,3 +15449,18 @@ Root causes traced pre-plan:
 ## AWAITING: Plan(fable) -> specs/caddie-numbers-coherence-plan.md. Next: builder implements,
 ## then reviewer(fable)+qa. Rebase onto origin/integration/next before push; add to PR #137
 ## as NOTICEABLE. CALLER INERT — no ship/ping, no VAD/mic change.
+
+## CYCLE 114 SCOPE EXTENDED (owner sent 2 more screenshots — Bethpage RED hole 3, black tees)
+Owner: "always says the play off tee is driver; couldn't identify trees; is it using the
+research of the hole?; driver brings in the danger." Evidence: app header PAR 3 / 355y (WRONG —
+should be par4), plays-like 372; app map renders DOGLEG-LEFT corner@226 from tee / 159 to green,
+trees BOTH sides; caddie said "you need driver ... favor left to clear that bunker right" —
+driver blows through 226 corner into trees, "bunker right" FABRICATED (bunkers are greenside),
+never names trees. Extended plan asks (same payload seam):
+ 1. corridor-aware club selection (use HoleIntelligence.bend/centerline+width; club whose landing
+    stays in corridor; kill driver-by-default) — MAY be scoped as a follow-up section if too big.
+ 2. TREES into driving-zone hazard evidence (not just bunkers/water); fabricated hazard impossible.
+ 3. consume cached hole strategy guide in voice+text tee-shot turn (format_guide_line — verify wired).
+ 4. par-data sanity: verify Bethpage Red 3 DB par/yardage; guard par3>~280y as suspect data.
+## AWAITING: Plan(fable) a50acbc107ede29a4 (scope extension sent). Then builder -> reviewer(fable)+qa.
+## Land on integration/next (rebase first), add to PR #137 NOTICEABLE. CALLER INERT.
