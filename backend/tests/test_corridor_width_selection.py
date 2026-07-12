@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import re
 
-from app.caddie.aim_point import generate_recommendation
+from app.caddie import aim_point
+from app.caddie.aim_point import CorridorFit, generate_recommendation
 from app.caddie.types import CorridorSample, Hazard, HoleBend, HoleIntelligence
 
 _BAG: dict[str, int] = {"driver": 280, "3wood": 240, "5wood": 220, "hybrid": 200, "7iron": 160}
@@ -198,3 +199,74 @@ def test_06_reachable_branch_untouched_by_corridor():
     assert rec.shot_kind == "approach"
     assert rec.tee_shot_numbers is None
     assert rec.leave_yards is None
+
+
+# ── 7. Coherence-contract guard: a rounding-tie fit (rejected_club is None)
+#      must NOT swap the club or leave a stale corridor_note ─────────────────
+#
+# `_select_club_fitting_corridor`'s ceiling-skip (aim_point.py, the `total >
+# ceiling_total_yards: continue` branch) never records a rejection — so a
+# sub-yard rounding tie on the current club's own recomputed total can make
+# the walk skip past it and land on a SHORTER club with `rejected_club is
+# None`. That's not a genuine width decision (nothing was actually
+# width-rejected), so the caller must keep the current (post-bend-cap) club
+# untouched — swapping here with no width reason would leave a stale v1
+# bend-cap `corridor_note` naming the OLD club/leave while the club silently
+# changed underneath it. Reproducing the exact physics tie isn't reliable
+# (fable review: could not construct one from a realistic bag), so this pins
+# the guard directly at the integration seam via a monkeypatched
+# `_select_club_fitting_corridor` return — the cleanest deterministic seam.
+def test_07_rounding_tie_fit_does_not_swap_club_or_stale_the_note(monkeypatch):
+    # Bend + hazards -> v1 bend-cap fires first and sets its own corridor_note
+    # naming the bend-capped club (same fixture shape as test_05).
+    hole = _hole(bend=_BEND, hazards=_hazards_both_sides(), corridor=_uniform_corridor(80))
+
+    # Fabricate a `CorridorFit` that looks exactly like the rounding-tie bug:
+    # a DIFFERENT (shorter) club than whatever the bend-cap already chose,
+    # but `rejected_club is None` -> the walk never actually rejected
+    # anything on width, it just ceiling-skipped past the real club.
+    fake_fit = CorridorFit(
+        club="7iron",
+        dist=160,
+        chosen_sample=CorridorSample(
+            distance_yards=160, left_yards=25, right_yards=25, width_yards=50,
+            left_source="trees", right_source="trees",
+        ),
+        rejected_club=None,
+        rejected_total=None,
+        rejected_sample=None,
+    )
+    monkeypatch.setattr(
+        aim_point, "_select_club_fitting_corridor", lambda *args, **kwargs: fake_fit
+    )
+
+    rec = generate_recommendation(hole, 400, _BAG, handicap=15)
+    n = rec.tee_shot_numbers
+    assert n is not None
+
+    # The bend-cap's own club choice survives untouched — the rounding-tie
+    # fit (club="7iron") must NOT have been applied.
+    assert n.club != "7iron"
+    assert n.club == "hybrid"  # same bend-capped club as test_05's fixture
+
+    # No width corridor_note was emitted (nothing was width-rejected).
+    assert not any("pinches the corridor" in line for line in rec.reasoning)
+    # The grounding-only path is also guarded: `fit.chosen_sample` belongs to
+    # the un-applied "7iron", not the kept club, so it must not leak in.
+    assert n.corridor_width_yards is None
+
+    # Any corridor_note that IS present (the v1 bend-cap note) must name the
+    # club actually recommended, never the un-applied rounding-tie candidate
+    # — this is the exact "stale note" failure mode the guard prevents.
+    corridor_note = next(
+        (line for line in rec.reasoning if "runs through the corner" in line), None,
+    )
+    assert corridor_note is not None
+    assert "Hybrid" in corridor_note
+    assert "7 Iron" not in corridor_note
+
+
+# The positive path — a genuine width rejection (`rejected_club` set) still
+# swaps the club and emits the width note — is already covered by
+# `test_02_pinching_hole_both_caps_compose_and_note_numbers_are_payload_only`
+# above; not duplicated here.

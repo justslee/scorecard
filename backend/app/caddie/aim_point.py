@@ -810,7 +810,15 @@ def generate_recommendation(
                 ceiling_total_yards=tee_shot_numbers.drive_total_yards,
             )
             if fit is not None:
-                if fit.club != club:
+                # A rounding-tie candidate (`fit.club != club` but
+                # `fit.rejected_club is None`) is NOT a corridor decision —
+                # the ceiling-skip above never records a rejection, so
+                # nothing was actually width-rejected. Swapping the club
+                # here with no width reason would leave a stale v1 bend-cap
+                # `corridor_note` naming the old club/leave while the club
+                # silently changed. Guard: only swap on a genuine width
+                # rejection.
+                if fit.club != club and fit.rejected_club is not None:
                     old_club_display = CLUB_DISPLAY_NAMES.get(club, club)
                     club, club_dist = fit.club, fit.dist
                     new_club_display = CLUB_DISPLAY_NAMES.get(club, club)
@@ -840,11 +848,19 @@ def generate_recommendation(
                             f"~{tee_shot_numbers.corridor_club_window_yards}-yard zone fits at "
                             f"{tee_shot_numbers.drive_total_yards}, leaves about {tee_shot_numbers.leave_yards}."
                         )
-                if fit.chosen_sample is not None and fit.chosen_sample.width_yards is not None:
+                if (
+                    fit.club == club
+                    and fit.chosen_sample is not None
+                    and fit.chosen_sample.width_yards is not None
+                ):
                     # Grounding numbers for the CHOSEN club, even on the
                     # no-change path (plan §6) — never fabricated, only
                     # populated when the width at this landing distance is
-                    # actually known.
+                    # actually known. `fit.club == club` guards against the
+                    # rounding-tie case above: when the swap was blocked
+                    # (no genuine width rejection), `fit.chosen_sample`
+                    # describes a DIFFERENT club than the one we kept — must
+                    # not attribute its width to `tee_shot_numbers`.
                     tee_shot_numbers.corridor_width_yards = fit.chosen_sample.width_yards
                     tee_shot_numbers.corridor_club_window_yards = round(
                         _club_fit_window_yds(club, handicap)
