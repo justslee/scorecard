@@ -14221,3 +14221,28 @@ brief) — owner separately testing v1.1.2; bundle keeps accumulating for the ne
   drive of the Done button). On return: reviewer (fresh) + qa (gates state:SUCCESS on pushed head)
   + designer (BLOCKING, user-facing sheet). Then update PR #135 checklist + backlog item status +
   progress. Do NOT ship/ping (bundle keeps accumulating; owner testing v1.1.2 separately).
+
+## player-autocomplete-overlap — DONE, builder (2026-07-11, silent — bug fix, no new UI)
+Implemented `specs/player-autocomplete-overlap-plan.md` Option A exactly, on `integration/next`
+@aeb388b (off 9421792). One file, ~8 style-property change, two edits: removed
+`position:'absolute'; zIndex:60; top:'calc(100% + 6px)'; left:0; right:0` and added
+`marginTop:6` on both the suggestions-dropdown style object and the "no matches" popover style
+object in `PlayerAutocomplete.tsx`. Both overlays now render in normal flow and push the Done
+button down instead of floating over it; nothing else touched (root `position:relative` wrapper,
+inner scroll list, keyboard nav, blur timeout, round/new/page.tsx all untouched, matching plan
+§3). No jsdom unit test added (plan's own honest assessment: node env has no hit-testing, would
+pass the buggy code too).
+- Gates (frontend/): `npm run lint` clean, `npx tsc --noEmit` clean, `voice-tests/runner.ts
+  --smoke` 278/278, `npm run build` succeeds (all 19 routes, incl. /round/new).
+- Verification: local dev server (`npm run dev`, no local Postgres used) + a throwaway
+  Playwright drive (not committed — script lived in scratch, deleted after) against
+  `localhost:3000/round/new`, saved-players fallback seeded via `localStorage['scorecard_players']`
+  since no backend was running. Drove real cases: (a) typed "Alex" → suggestions dropdown shows →
+  `boundingBox` overlap check confirms Done no longer overlaps the suggestions card → real
+  `page.click('Done')` succeeds (no pointer-intercept timeout) → sheet header detaches from DOM
+  (closed) ✅; (b) typed a brand-new name → no-match popover shows → same overlap check clean →
+  Done click succeeds → sheet closes ✅; (c) clicking a suggestion still selects the player and
+  auto-closes the sheet ✅. Screenshots confirm visually: suggestion/no-match card sits above Done
+  with a clean gap, no coverage.
+- Commit `aeb388b`, pushed to `integration/next`. Silent item (bug fix restoring an already-broken
+  interaction, no new user-facing capability) — rides along in bundle PR #135, no ping.
