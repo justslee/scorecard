@@ -3,29 +3,27 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING (cycle 102, 2026-07-11) — caddie-orb-sheet-zindex-overlap
-Owner feedback check: card #134 (v1.1.2) already Shipped + owner-approved, empty comment
-thread; no Needs-Review card; PR #135 has no comments → nothing preempts. Proceeding to the
-p3 backlog item `caddie-orb-sheet-zindex-overlap`.
-BUG CONFIRMED IN CODE (not yet fixed): `CaddieOrb` renders at `zIndex:50` fixed bottom-right and
-IS shown on `/round/new` + `/tournament/[id]/round/new` (shouldShowCaddieOrb). Their picker
-bottom sheets use backdrop `zIndex:40` + sheet `zIndex:41` — BELOW the orb — so the orb paints
-over / intercepts taps on the sheet's bottom-right region (handicap badge / add / "this is me").
-The caddie's own LooperSheet is `zIndex:60/61` (correctly above the orb); the picker sheets
-predate the orb and were never lifted. Intended order documented at tee-time/page.tsx:1735.
-Files: frontend/src/app/round/new/page.tsx:1168/1181; frontend/src/app/tournament/[id]/round/new/
-NewTournamentRoundClient.tsx:1247/1260; orb at frontend/src/components/CaddieOrb.tsx:123.
-Likely fix: raise picker backdrop+sheet above the orb (e.g. 40→52 / 41→53), below LooperSheet(60),
-so the orb tucks behind the modal scrim (dimmed, non-interactive). Pure CSS constants; no seam →
-no unit test; verify by visual drive.
-Plan (fable) DONE → specs/caddie-orb-sheet-zindex-plan.md. FIX LANDED @89450fa on integration/next:
-backdrop 40→52 / sheet 41→53 in both frontend/src/app/round/new/page.tsx and
-frontend/src/app/tournament/[id]/round/new/NewTournamentRoundClient.tsx (numeric CSS only). Now
-above orb(50), below LooperSheet(60); scrim dims/covers the orb. Plan §4 flagged 3 same-class z=50
-DOM-order ties (players modal, CourseSearch overlay, VRS backdrop) as a follow-up — NOT fixed here.
-Awaiting: reviewer + qa + designer(BLOCKING) all pinned to head 89450fa. Verdicts →
-SHIP+PASS+APPROVE: update PR#135 checklist, mark backlog item done, file the z=50-ties follow-up.
-BLOCKING → re-edit + re-review. Gate green = every required check state:SUCCESS on 89450fa.
+## caddie-orb-sheet-zindex-overlap — DONE (cycle 102, 2026-07-11, small-UX bug fix / silent)
+Owner feedback check first: card #134 (v1.1.2) already Shipped + owner-approved, empty comment
+thread; no Needs-Review card; PR #135 no comments → nothing preempted. Then fixed the p3 orb-crux
+bug. BUG WAS REAL: `CaddieOrb` (`zIndex:50`, fixed bottom-right, root-layout after content) is
+shown on `/round/new` + `/tournament/[id]/round/new`; their picker sheets sat at backdrop `40` /
+sheet `41` (below the orb), so the orb painted over + intercepted taps on the sheet's lower content
+(this-is-me / handicap badges / GamePicker Done). LooperSheet is already 60/61.
+FIX @89450fa: backdrop 40→52 / sheet 41→53 in frontend/src/app/round/new/page.tsx and
+frontend/src/app/tournament/[id]/round/new/NewTournamentRoundClient.tsx — above orb(50), below
+LooperSheet(60). Scrim now dims/covers the orb (inert; tap there closes the sheet). Pure numeric
+CSS, no seam → no unit test. Plan (fable): specs/caddie-orb-sheet-zindex-plan.md.
+VERDICTS on head d837109 (code 89450fa): reviewer SHIP (no stacking-context trap; z-values correct;
+scope-clean; no bent tests) · qa PASS (lint/tsc/build + voice 278/278 green; Playwright drive
+/round/new phone+wide: orb occluded/dimmed-inert, backdrop-tap closes sheet & doesn't open caddie,
+orb still opens caddie when no sheet open; tournament route code-parity, no local DB) · designer
+APPROVE (reproduced bug via devtools, verified fix live phone+wide; orb identity untouched).
+Landed on integration/next; PR #135 checklist updated (5th item); backlog item marked done; filed
+follow-up `caddie-orb-z50-ties-audit` (3 same-class z=50 DOM-order ties: players modal, CourseSearch
+overlay, VRS backdrop — preventive, none currently broken). Silent/small-UX → rides bundle #135, no
+ping (per brief: keep accumulating #135, do NOT ship/ping). Bundle #135 still has 3 NOTICEABLE
+tournament items + 2 small-UX fixes awaiting the owner's single "ship it".
 
 ## tournament-settlement-honesty — DONE, builder (2026-07-11, NOTICEABLE — stake picker changed)
 Implemented `specs/tournament-settlement-honesty-plan.md` exactly on `integration/next` @1a37556
