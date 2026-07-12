@@ -15464,3 +15464,32 @@ never names trees. Extended plan asks (same payload seam):
  4. par-data sanity: verify Bethpage Red 3 DB par/yardage; guard par3>~280y as suspect data.
 ## AWAITING: Plan(fable) a50acbc107ede29a4 (scope extension sent). Then builder -> reviewer(fable)+qa.
 ## Land on integration/next (rebase first), add to PR #137 NOTICEABLE. CALLER INERT.
+
+## tee-shot-yardage-overlays iteration DONE (head 8de8c0d, on integration/next)
+Builder pass fixing designer BLOCKING (B1/B2) + reviewer hardening (R1/R2/R3) + designer
+polish (P1) from cycle 113's batched punch list:
+ - B1 (blocking): inline chip stack top offset 12->54 so it clears RoundPageClient's
+   "Hole stats" pill (top:10, ~34px tall). PROVEN with a headless-browser (Playwright)
+   render of the two real overlay styles at 390x844 AND 375x667 — 11px clear gap both
+   widths, zero overlap (screenshots in scratchpad, not committed).
+ - B2 (blocking): added optional `maxBunkers` param to fairwayBunkerCarries /
+   computeTeeShotOverlays; GoogleSatelliteMap passes `inline ? 2 : 4` so the inline card
+   shows 2 chips (fullscreen keeps 4), selection logic (smallest-lateral-first) unchanged.
+ - R1: mechanical plate-honesty guard — NOT the literal per-plate straight-line-vs-label
+   check from the punch list (that broke test 2's legitimate dogleg walk, where straight-
+   line-to-green genuinely diverges from along-path distance by design). Implemented
+   instead as a per-hole collinearity check (`greenEndLateralOffsetMeters`): omits ALL
+   plates when the way's green-end is >7y off the line collinear with green center —
+   catches the actual bug (offset-way mislabeling) without false-positiving on doglegs.
+   Noted as a deliberate, minimal deviation from the literal plan wording; math/intent
+   preserved. Pinned test added (offset-way -> all 3 plates omitted).
+ - R2: floor/ceiling (100y/330y) predicate now applied to RAW unrounded front carry, not
+   round5'd display value; 2 new boundary tests (98.5y/331.5y raw, would round to
+   100/330 and wrongly pass under the old rounded check).
+ - R3: test 6's min-carry vertex moved off the exact 10y LATERAL_DEADBAND_YARDS edge
+   (was 10-20y lateral, now 15-25y) so the L/R/C assertion isn't flip-fragile.
+ - P1: plate radius 3m->4m, bunker near-edge dot 2m->3m (near-invisible at zoom 16-17).
+Gates: 25/25 vitest in tee-shot-overlays.test.ts (up from 21), 2416/2416 full vitest,
+lint clean, tsc clean, `next build` clean, 278/278 voice-tests smoke. Backend untouched.
+Pushed to integration/next (8de8c0d). Silent (map overlay refinement, no new surface) —
+rides along in PR #137, no separate ship/ping.
