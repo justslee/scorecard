@@ -12393,7 +12393,7 @@ paper@88%+blur) — a port of globals.css .app-header pattern; covers all 4 tee-
 Item2 CourseRow: right col distance-only (aligned), muni→mono subline under name, minHeight44, dividers unchanged.
 Item3 courses.ts L106: guard r.city fallback with COUNTRY_SEGMENT_RE (+2 tests). Item4 (same file): conditional
 route header, distance/city on route rows, minHeight44 on sub-44pt rows. ZERO backend, ZERO logic change to f9953f2.
-## AWAITING builder — implement specs/teetime-prefs-ux-polish-plan.md on integration/next, commit+push, run gates.
+## AWAITING reviewer+qa+designer on 607899a (head 027c19c). SHIP+PASS+APPROVE -> open fresh bundle PR (NOTICEABLE), update progress+backlog. BLOCKING -> re-dispatch builder. Builder DONE 6 gates green.
 On return → reviewer (no-regression) + designer PASS (iOS-sim) + QA strict; then update PR #125 checklist.
 
 ## AWAITING review (cycle 54) — builder pushed 945de5c (feature) on integration/next; head 8b23bb3.
@@ -12435,7 +12435,7 @@ headline already immediate-flushes at markFirstAudio (6fcb40d, live all 3 days) 
 (eos_to_transcript / transcript_to_first_token) only riding markFirstAudio's flush. FIX = 2 guarded safeFlush()
 calls in markTranscript()/markFirstToken() via the existing injectable flush seam; KEEP terminal flush at markFirstAudio.
 Files: caddie-turn-timing.ts + its 2 test files ONLY. No change to CaddieSheet.tsx / useVoiceCaddie.ts / telemetry.ts / backend.
-## AWAITING builder — implement the plan on integration/next, commit+push, run all 6 gates. On return → reviewer + qa.
+## AWAITING reviewer+qa+designer on 607899a (head 027c19c). SHIP+PASS+APPROVE -> open fresh bundle PR (NOTICEABLE), update progress+backlog. BLOCKING -> re-dispatch builder. Builder DONE 6 gates green.
 
 ## CYCLE 56 — builder DONE. Feature 2d4b4c9 (caddie-turn-timing.ts + 2 test files) on integration/next; head 37790b1.
 All 6 gates green locally (lint/tsc/build/voice 274/vitest 34/ruff). SILENT telemetry-only, zero UI/behavior change.
@@ -12469,7 +12469,7 @@ On plan return → write specs/caddie-remove-seeded-question-plan.md, dispatch b
 Tests to re-point (NOT weaken): opening-turn.test.ts L36-45 (exact first-person strings); CaddieSheet.realtime.test.tsx
 L328-345 (sendText exact string + sendContext-before-opening ordering). SILENT bundle accumulation — no ship/no ping.
 
-## AWAITING builder — caddie-remove-seeded-question (cycle 58)
+## AWAITING reviewer+qa+designer on 607899a (head 027c19c). SHIP+PASS+APPROVE -> open fresh bundle PR (NOTICEABLE), update progress+backlog. BLOCKING -> re-dispatch builder. Builder DONE 6 gates green.
 Fable plan written → specs/caddie-remove-seeded-question-plan.md (committed). Builder dispatched on integration/next.
 Authorship decision: caddie OPENS itself (assistant-authored), no fabricated player utterance. buildOpeningTurnText
 → buildOpeningGreetingText (new copy) + buildOpeningGreetingInstruction (live wrapper). Classic: deterministic seed
@@ -14472,4 +14472,4 @@ pass the buggy code too).
   caddie-context.ts module-level pub/sub) that CourseSearch opts into on mount; orb suppresses (returns
   null) while any overlay registered. Not gated on mode — CourseSearch covers the whole screen either
   way, orb is unreachable in list mode too, so suppress whenever mounted (simpler, robust, no ghost).
-## AWAITING builder on integration/next implementing specs/caddie-orb-map-mode-ghost-plan.md; then reviewer+qa+designer. Plan(fable) DONE.
+## AWAITING reviewer+qa+designer on 607899a (head 027c19c). SHIP+PASS+APPROVE -> open fresh bundle PR (NOTICEABLE), update progress+backlog. BLOCKING -> re-dispatch builder. Builder DONE 6 gates green.
