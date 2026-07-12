@@ -14258,3 +14258,22 @@ pass the buggy code too).
   so no independent ping) + mark backlog player-autocomplete-overlap status "done" (targeted edit +
   diff-check) + progress. Do NOT ship/ping (owner testing v1.1.2 separately; bundle accumulates).
   If any BLOCKING → re-dispatch builder with the specific issue, re-review.
+
+## DONE — cycle 101 (player-autocomplete-overlap) LANDED
+- Fix aeb388b on integration/next (head now this commit). PlayerAutocomplete's two overlays
+  (suggestions + no-match) render in-flow (marginTop:6, dropped position:absolute/zIndex:60/top/
+  left/right) so the /round/new player-picker Done button is never covered.
+- reviewer: SHIP (pure CSS; no keyboard/blur/auto-close/scroll regressions; sole consumer /round/new).
+- qa: PASS — lint/tsc/voice-smoke 278/278/build all green on head 9281721; live Playwright drive:
+  Done reachable + non-overlapping with suggestions AND no-match showing; select-to-close intact.
+- designer: APPROVE — real-tap-on-viewport verified sheet closes + adds new player; calm/on-paper;
+  filed 3 non-blocking nits (2 backlogged: caddie-orb-sheet-zindex-overlap, autocomplete-overlay-
+  collapse-motion; 1 long-list scroll-clip cosmetic).
+- backlog.json (targeted edits, JSON-validated, 59 items, no data loss): player-autocomplete-overlap
+  -> status "done" + resolved note; added caddie-orb-sheet-zindex-overlap (p3) + autocomplete-overlay-
+  collapse-motion (p4).
+- PR #135 checklist updated: item 4 = add-player Done unblocked (small-UX bug fix). Follow-ups
+  section refreshed.
+- NOT shipped/pinged (per brief): owner is testing v1.1.2 (bundle #134) separately — no v1.1.2
+  feedback preempted this cycle (board + PR comments checked, none). Bundle PR #135 keeps
+  accumulating for the next "ship it" (3 noticeable tournament items + this small-UX fix).

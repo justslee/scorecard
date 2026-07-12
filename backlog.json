@@ -17,8 +17,27 @@
       "type": "minor",
       "priority": 4,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
+      "resolved": "aeb388b (cycle 101, integration/next / PR #135) -- both PlayerAutocomplete overlays (suggestions dropdown + no-match popover) now render IN-FLOW: removed position:absolute/zIndex:60/top/left/right, added marginTop:6, so they push the Done button down instead of covering it and intercepting its taps. One file (PlayerAutocomplete.tsx), sole consumer /round/new. Reviewer SHIP, qa PASS (4 gates green on head 9281721 + live Playwright drive: Done reachable and non-overlapping in BOTH suggestions and no-match states; suggestion select-to-close intact), designer APPROVE (verified real tap on device viewport). Plan: specs/player-autocomplete-overlap-plan.md. Small-UX bug fix (restores a broken interaction; rides bundle PR #135, no independent ping).",
       "why": "Found by QA during cycle-100 local Playwright drive (NOT introduced by PR #135 -- pre-existing, out of that diff's scope). In the standalone add-player sheet (/round/new -> '+ Add' -> name input), typing a new name shows the \"'X' will be added as a new player\" suggestion row from PlayerAutocomplete.tsx (zIndex: 60) which visually overlaps and blocks pointer clicks on the 'Done' button beneath it until the suggestion is tapped or the input cleared. Real repro. Fix: reflow/gate the suggestion popover so it doesn't cover the primary action (or lift Done above it)."
+    },
+    {
+      "id": "caddie-orb-sheet-zindex-overlap",
+      "title": "CaddieOrb (zIndex 50) floats above bottom sheets (zIndex 41) and overlaps their content",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "why": "Flagged by designer during cycle-101 review of aeb388b (pre-existing, NOT caused by that diff). On /round/new the omnipresent Looper CaddieOrb (zIndex 50, kept visible here on purpose by shouldShowCaddieOrb.ts -- it's the page's voice invocation) visually overlaps the 'this is me' button and/or the last suggestion row's handicap badge in the player-picker bottom sheet (sheet is zIndex 41). Relevant because the orb is the owner's highest-priority crux ([[omnipresent-caddie-orb]]) -- it should sit cleanly, not clip sheet content. Fix options: raise the picker/bottom-sheet z-index above the orb while a sheet is open, OR hide/dim the orb while a modal sheet is open, OR add sheet-bottom clearance like STICKY_CTA_CLEARANCE_PX. Decide the calm approach; user-facing so designer-gated."
+    },
+    {
+      "id": "autocomplete-overlay-collapse-motion",
+      "title": "PlayerAutocomplete overlays snap (no height transition) when collapsing suggestions->no-match",
+      "type": "minor",
+      "priority": 4,
+      "risk": "low",
+      "status": "ready",
+      "why": "Non-blocking polish flagged by designer during cycle-101 review of the in-flow overlay fix (aeb388b). AnimatePresence animates only opacity/y (0.14s); the height change is an instant reflow, so when a multi-row suggestion list collapses straight to the single-line no-match card (typing fast), the Done button snaps upward (~190px measured with 8 saved players) rather than settling smoothly -- a minor miss against the Northstar quiet-motion brief. Fix: wrap the in-flow overlay container in a `motion.div layout` or animate maxHeight so the reflow is calm. Low priority; the functional bug is already fixed."
     },
     {
       "id": "course-selection-ux",
