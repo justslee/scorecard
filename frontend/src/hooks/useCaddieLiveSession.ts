@@ -191,6 +191,16 @@ export function useCaddieLiveSession({
     holeContextRef.current = { holeNumber, par: holePar, yards: holeYards, basis: yardageBasis, teeName };
   }, [holeNumber, holePar, holeYards, yardageBasis, teeName]);
 
+  /** Stable getter bound to every client this hook creates/adopts
+   *  (`client.setToolContext(...)`) — reads `holeContextRef` live, so
+   *  `get_recommendation` dispatch always carries THIS turn's resolved
+   *  yardage/basis, the same values `anchorHole()` feeds `buildHoleContextText`
+   *  (specs/caddie-numbers-coherence-plan.md §2.1). */
+  const getToolContext = useCallback(
+    () => ({ holeYards: holeContextRef.current.yards, yardageBasis: holeContextRef.current.basis }),
+    [],
+  );
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -442,6 +452,7 @@ export function useCaddieLiveSession({
         { roundId, personalityId: personaId, currentHole: holeContextRef.current.holeNumber },
         events,
       );
+      client.setToolContext(getToolContext);
       clientRef.current = client;
       void (async () => {
         try {
@@ -490,6 +501,7 @@ export function useCaddieLiveSession({
         { roundId, personalityId: personaId, currentHole: holeContextRef.current.holeNumber },
         events,
       );
+      client.setToolContext(getToolContext);
       clientRef.current = client;
       void (async () => {
         try {
@@ -522,6 +534,7 @@ export function useCaddieLiveSession({
       if (warm) {
         clientRef.current = warm;
         warm.setEvents(events);
+        warm.setToolContext(getToolContext);
         warm.emitCurrentStatus(); // paint the current state immediately
         try {
           await warm.attachMic();
@@ -541,6 +554,7 @@ export function useCaddieLiveSession({
         { roundId, personalityId: personaId, currentHole: holeContextRef.current.holeNumber },
         events,
       );
+      client.setToolContext(getToolContext);
       clientRef.current = client;
       try {
         await client.start();

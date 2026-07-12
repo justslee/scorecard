@@ -175,6 +175,7 @@ const realtimeMock = vi.hoisted(() => {
     setEvents = vi.fn((e: Events) => {
       this.events = e;
     });
+    setToolContext = vi.fn();
     emitCurrentStatus = vi.fn(() => {
       this.events.onStatus?.(this.currentStatus);
     });

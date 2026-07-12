@@ -140,7 +140,9 @@ CADDIE_TOOLS: list[dict] = [
             "Always call this before suggesting a club, distance, or aim line. "
             "If the result has shot_kind 'positioning', the green is out of "
             "reach on this swing — give landing-zone advice and state the "
-            "leave_yards; never a pin-relative aim."
+            "leave_yards; never a pin-relative aim. The result's "
+            "tee_shot_numbers block is the only source of yardages for a tee "
+            "shot — its numbers close exactly; speak them verbatim."
         ),
         "input_schema": {
             "type": "object",
@@ -260,13 +262,23 @@ async def recommend_payload(
     hole_number: int,
     distance_yards: Optional[int] = None,
     par: int = 4,
-    yards: int = 400,
+    yards: Optional[int] = None,
     shot_bearing: Optional[float] = None,
     competition_legal: bool = False,
+    yardage_basis: Optional[str] = None,
 ) -> dict:
     """DECADE recommendation from cached session state — lifted verbatim from
     the ``/session/recommend`` route body. Persists via the targeted
-    ``sessions.set_recommendation`` write (never a whole-row update)."""
+    ``sessions.set_recommendation`` write (never a whole-row update).
+
+    No-fake-data (specs/caddie-numbers-coherence-plan.md §2.1 — owner
+    incident: the ``/session/recommend`` HTTP path the realtime orb dispatches
+    through solved a 466y hole as the hardcoded ``yards=400`` default,
+    producing the "leaves about 125" incident). Mirrors the text tool loop's
+    ``resolve_tool`` ladder: the explicit ``distance_yards`` beats the
+    caller-resolved ``yards`` beats the cached hole's own yardage — never a
+    fabricated 400. All three absent is an honest error, not a solved guess.
+    """
     session.current_hole = hole_number
 
     hole_intel = session.hole_intel.get(hole_number)
@@ -278,7 +290,20 @@ async def recommend_payload(
             effective_yards=yards,
         )
 
-    distance = distance_yards or yards
+    distance = (
+        distance_yards
+        if distance_yards is not None
+        else yards
+        if yards is not None
+        else (hole_intel.yards if hole_intel is not None else None)
+    )
+    if distance is None:
+        return {
+            "error": (
+                "No distance known for this hole yet — ask the player how far they "
+                "have, or call get_conditions first."
+            ),
+        }
     club_distances = session.club_distances or {}
 
     rec = generate_recommendation(
@@ -290,6 +315,7 @@ async def recommend_payload(
         player_stats=session.player_stats,
         shot_bearing=shot_bearing or 0.0,
         competition_legal=competition_legal,
+        yardage_basis=yardage_basis,
     )
 
     # Targeted update: only writes last_recommendation + current_hole, so a
@@ -818,6 +844,11 @@ class ToolContext:
     # `intel.yards or 400` default when the model calls it without an
     # explicit distance.
     current_yardage: Optional[int] = None
+    # Provenance of `current_yardage` — 'gps' | 'tee-card' | 'tee-geom' |
+    # 'card' | None (specs/caddie-numbers-coherence-plan.md §2.2). Plumbed
+    # into TeeShotNumbers.yardage_basis so the text mouth's tee-shot numbers
+    # block labels its source the same way the realtime mouth does.
+    current_yardage_basis: Optional[str] = None
 
 
 _TOOL_NAMES = {t["name"] for t in CADDIE_TOOLS}
@@ -885,6 +916,7 @@ async def resolve_tool(name: str, args: dict, ctx: ToolContext) -> dict:
             distance_yards=explicit_distance,
             par=intel.par if intel is not None else 4,
             yards=resolved_yards,
+            yardage_basis=ctx.current_yardage_basis,
         )
 
     if name == "record_shot":

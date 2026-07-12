@@ -40,6 +40,8 @@ from app.caddie.tools import carries_payload, shot_distance_payload
 from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, HoleStrategyGuide, WeatherConditions
 from app.caddie.voice_prompts import (
     INPUT_GROUNDING_RULE,
+    MISS_SIDE_GROUNDING_RULE,
+    NUMBERS_COHERENCE_RULE,
     OBSERVED_REALITY_RULE,
     POSITIONING_SHOT_RULE,
     YARDAGE_GROUNDING_RULE,
@@ -184,6 +186,8 @@ _RULE_TEXT: dict[str, str] = {
     "INPUT_GROUNDING_RULE": INPUT_GROUNDING_RULE,
     "YARDAGE_GROUNDING_RULE": YARDAGE_GROUNDING_RULE,
     "POSITIONING_SHOT_RULE": POSITIONING_SHOT_RULE,
+    "NUMBERS_COHERENCE_RULE": NUMBERS_COHERENCE_RULE,
+    "MISS_SIDE_GROUNDING_RULE": MISS_SIDE_GROUNDING_RULE,
 }
 
 

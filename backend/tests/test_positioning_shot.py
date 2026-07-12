@@ -92,11 +92,16 @@ def test_400y_tee_shot_is_positioning_with_leave():
     rec = generate_recommendation(hole, 400, _STANDARD_BAG, handicap=15)
 
     assert rec.shot_kind == "positioning"
-    assert rec.leave_yards == 150
+    # specs/caddie-numbers-coherence-plan.md §2.2: the leave now speaks the
+    # RAW-closing frame (to_green_yards - the physics-solved drive total),
+    # not the plays-like-minus-stored-bag-number frame — was 150 before this
+    # redefinition; 140 is the exact physics-consistent close for a 250y
+    # stored driver in still air (drive_total ≈259, 400-259=141 → round-5).
+    assert rec.leave_yards == 140
     _assert_no_flag_or_pin(rec)
 
     joined = " ".join(_human_strings(rec))
-    assert "150" in joined
+    assert "140" in joined
     assert "fairway" in rec.aim_point.description.lower()
 
 
@@ -212,7 +217,10 @@ def test_par5_layup_positioning_then_go_zone():
 
     rec_layup = generate_recommendation(hole, 270, bag, handicap=15)
     assert rec_layup.shot_kind == "positioning"
-    assert rec_layup.leave_yards == 40
+    # specs/caddie-numbers-coherence-plan.md §2.2 leave-frame redefinition
+    # (see test_400y_tee_shot_is_positioning_with_leave) — was 40 before;
+    # 30 is the physics-consistent raw close for a 230y stored driver.
+    assert rec_layup.leave_yards == 30
     _assert_no_flag_or_pin(rec_layup)
 
     rec_go = generate_recommendation(hole, 240, bag, handicap=15)
@@ -244,7 +252,9 @@ def test_no_geometry_honest_generic():
     joined = " ".join(_human_strings(rec)).lower()
     for forbidden in ("bunker", "water", "trees", "dogleg", "bend"):
         assert forbidden not in joined
-    assert "150" in joined
+    # specs/caddie-numbers-coherence-plan.md §2.2 leave-frame redefinition —
+    # same 400y/driver-250 shape as test_400y_tee_shot_is_positioning_with_leave.
+    assert "140" in joined
     assert "fairway" in joined
 
 

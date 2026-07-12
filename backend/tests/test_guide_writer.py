@@ -28,6 +28,7 @@ import pytest
 
 from app.caddie.guide_writer import (
     _MAX_FIELD_CHARS,
+    _side_and_carry_supported,
     build_ground_truth_block,
     research_hole_guide,
     validate_guide,
@@ -584,6 +585,166 @@ def test_carry_check_range_binds_first_number():
     via the center hazard at 470 (center accepts either lateral claim)."""
     guide = _guide(miss_side="Bunkers right at 470-495, dead center in play.")
     assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
+# ── Carry-span (contiguous-run) acceptance (guide-validator-carry-span-plan.md) ─
+#
+# A stored `carry_yards` is a DISCRETE SAMPLE of an extended feature — a
+# bunker polygon's centroid, or one end of a tree line's near/far bracket —
+# not the whole feature. Fixtures below hand-pin the probed prod geometry
+# from the plan (RED 1, BLACK 7, BLACK 11) where a legitimately-grounded
+# carry falling in the sampled GAP between two points of the SAME feature
+# previously false-rejected the whole guide.
+
+
+def _black7_right_like_bunkers() -> list[Hazard]:
+    return [
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=170),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=430),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=520),
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=355),
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=525),
+    ]
+
+
+def _black11_right_like_bunkers() -> list[Hazard]:
+    return [
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=270),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=325),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=420),
+    ]
+
+
+def _red1_like_trees_by_type() -> dict[str, list[tuple[str, int]]]:
+    """`hazards_by_type` shape (the input `_side_and_carry_supported` takes
+    directly), not a `Hazard` list — see the note on
+    `test_carry_span_passes_tree_line_mid_span` for why the tree-line cases
+    below call the predicate directly instead of going through
+    `validate_guide`."""
+    return {"trees": [("left", 145), ("left", 360), ("right", 265), ("right", 355)]}
+
+
+def _black7_like_mixed() -> list[Hazard]:
+    return [
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=170),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=430),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=520),
+        Hazard(type="trees", side="right", line_side="right", carry_yards=20),
+        Hazard(type="trees", side="right", line_side="right", carry_yards=480),
+    ]
+
+
+def test_carry_span_passes_within_bridged_bunker_cluster():
+    """BLACK 11-like bunker R {270, 325, 420}: 270->325 is a 55y gap, bridged
+    by `_CARRY_BRIDGE_YARDS` (60) into one run [270, 325] — a claim landing
+    between the two samples of the SAME staggered complex must now pass,
+    where the old per-sample point test rejected it (28y from 270, 27y from
+    325 — both outside the old 25y tolerance)."""
+    guide = _guide(miss_side="Bunkers right at 300 pinch the landing zone.")
+    assert validate_guide(guide, _black11_right_like_bunkers()) is not None
+
+
+def test_carry_span_passes_tree_line_mid_span():
+    """RED 1-like trees L {145, 360}: the near/far bracket of ONE continuous
+    tree line bridges unconditionally into run [145, 360] — a carry falling
+    between the two bracket samples must be accepted, matching what
+    `format_hazards_line` already tells the caddie ("trees L 145-360y").
+
+    Calls `_side_and_carry_supported` DIRECTLY rather than through
+    `validate_guide`: `trees` is not currently a recognized hazard keyword in
+    `_HAZARD_PATTERNS` (`_HAZARD_KEYWORD_TO_TYPE` only covers water/bunker/ob
+    today) — a PRE-EXISTING gap, out of THIS plan's stated scope (`_has_
+    side_flip`'s keyword scan is untouched by this fix), that means a free-
+    text "trees ..." claim never reaches the side/carry check via
+    `validate_guide` at all yet. This test still pins the exact predicate the
+    plan fixes (`_side_and_carry_supported`'s trees-unconditional-bridge
+    rule); see the PR note flagging the keyword gap as a separate follow-up."""
+    hazards_by_type = _red1_like_trees_by_type()
+    assert _side_and_carry_supported("trees", "left", 250, hazards_by_type) is True
+
+
+def test_carry_span_rejects_fabricated_carry_in_genuine_bunker_gap():
+    """THE adversarial case (plan §2b): BLACK 7-like bunker R {170, 430, 520}.
+    Gaps: 430-170 = 260y and 520-430 = 90y — BOTH exceed `_CARRY_BRIDGE_YARDS`
+    (60), so neither bridges; runs stay {170}, {430}, {520} (windows
+    [145,195] ∪ [405,455] ∪ [495,545]). The reviewer's fabricated claim
+    "carry the right bunker at 300" falls squarely in the genuine 260y gap
+    between the first two runs, outside every window -> REJECTS. Tree
+    bridging elsewhere on a hole cannot reopen this gap (see
+    `test_carry_span_tree_bridge_does_not_leak_into_bunker_claims` below)."""
+    guide = _guide(miss_side="Carry the right bunker at 300 off the tee.")
+    assert validate_guide(guide, _black7_right_like_bunkers()) is None
+
+
+def test_carry_span_rejects_fabricated_carry_outside_all_hazards():
+    guide = _guide(miss_side="Carry the right bunker at 600 off the tee.")
+    assert validate_guide(guide, _black7_right_like_bunkers()) is None
+
+
+def test_carry_span_rejects_mid_gap_between_separate_runs():
+    """BLACK 11-like bunker R {270, 325, 420}: the second gap (325->420, 95y)
+    stays split (> 60, so genuinely separate). A claim of 370 sits in that
+    gap — 45y from the 325 run's edge, 50y from the 420 run's edge — and must
+    still reject, proving the fix doesn't just accept everything."""
+    guide = _guide(miss_side="Carry the right bunker at 370 off the tee.")
+    assert validate_guide(guide, _black11_right_like_bunkers()) is None
+
+
+def test_carry_span_tree_bridge_does_not_leak_into_bunker_claims():
+    """`_black7_like_mixed()` adds trees R {20, 480} (bridged span [0, 505])
+    alongside the SAME bunker R {170, 430, 520}. A "bunker" claim must only
+    ever consult `hazards_by_type["bunker"]` — the trees run must never leak
+    into a bunker check, even though the fabricated 300 sits comfortably
+    inside the trees' bridged span. Proves per-type isolation: runs are built
+    within one `hazards_by_type[canonical_type]` group, never merged across
+    types."""
+    guide = _guide(miss_side="Carry the right bunker at 300 off the tee.")
+    assert validate_guide(guide, _black7_like_mixed()) is None
+
+
+def test_carry_span_tree_window_is_bounded():
+    """Tree bridging is span-BOUNDED, not an unconditional accept (plan §2b):
+    RED 1-like trees R {265, 355} -> window [240, 380]. A claimed carry of
+    200 is still below the window and must reject.
+
+    Calls `_side_and_carry_supported` directly — see the note on
+    `test_carry_span_passes_tree_line_mid_span` (trees is not yet a
+    `_HAZARD_PATTERNS` keyword; pre-existing gap out of this plan's scope)."""
+    hazards_by_type = _red1_like_trees_by_type()
+    assert _side_and_carry_supported("trees", "right", 200, hazards_by_type) is False
+
+
+def test_carry_span_wrong_side_and_number_still_rejects():
+    """Regression lock on the original incident class — mirrors, WITHOUT
+    editing, `test_carry_check_rejects_side_with_wrong_distance` above:
+    bunkers L {275} / R {390} / C {470} (`_hole4_like_bunkers`). A real side
+    ('right' IS a real bunker side on this hole) paired with a number that
+    belongs to a DIFFERENT hazard (265 is the LEFT bunker's carry) must still
+    reject under the new run-based predicate, exactly as it did under the
+    old per-sample one."""
+    guide = _guide(miss_side="The right bunker at 265 catches drives off the tee.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is None
+
+
+def test_carry_span_single_sample_window_identical_to_old_tolerance():
+    """A run built from a SINGLE sample collapses to the exact old point
+    window `[c-25, c+25]` (plan §2a: the new predicate is a strict superset
+    of the old one for accepts, byte-identical margin) — single bunker L
+    {245}: 220 and 270 (the ±25 edges) still pass; 195 and 295 (26y away)
+    still reject."""
+    hazards = _left_bunker()  # bunker L {245}
+    assert validate_guide(
+        _guide(miss_side="The left bunker at 220 pinches the drive."), hazards
+    ) is not None
+    assert validate_guide(
+        _guide(miss_side="The left bunker at 270 pinches the drive."), hazards
+    ) is not None
+    assert validate_guide(
+        _guide(miss_side="The left bunker at 195 pinches the drive."), hazards
+    ) is None
+    assert validate_guide(
+        _guide(miss_side="The left bunker at 295 pinches the drive."), hazards
+    ) is None
 
 
 # ── Success-path shape test (reviewer finding: the live writer path had zero

@@ -41,6 +41,34 @@ export interface CaddieRecommendation {
   shot_kind?: 'approach' | 'positioning';
   /** positioning only: the approach distance the drive leaves. */
   leave_yards?: number | null;
+  /** ONE authoritative numbers block for a positioning/tee shot — mirrors
+   *  `backend/app/caddie/types.py::TeeShotNumbers` exactly
+   *  (specs/caddie-numbers-coherence-plan.md §2.2). `null`/absent on
+   *  reachable/approach turns and on any cached recommendation from before
+   *  this field existed. No UI change required for this cycle — CaddiePanel
+   *  keeps rendering `aim_point.description` as today. */
+  tee_shot_numbers?: {
+    hole_number: number;
+    to_green_yards: number;
+    yardage_basis?: string | null;
+    plays_like_yards: number;
+    club: string;
+    club_stored_yards: number;
+    drive_carry_yards?: number | null;
+    drive_total_yards: number;
+    leave_exact_yards: number;
+    leave_yards: number;
+    leave_plays_like_yards?: number | null;
+    /** Corridor-width club selection (specs/corridor-width-club-selection-
+     *  plan.md §5) — additive, populated ONLY on profile-present turns where
+     *  the width rule fired or grounded the chosen club. */
+    corridor_pinch_width_yards?: number | null;
+    corridor_pinch_distance_yards?: number | null;
+    corridor_capped_from_club?: string | null;
+    corridor_capped_from_window_yards?: number | null;
+    corridor_club_window_yards?: number | null;
+    corridor_width_yards?: number | null;
+  } | null;
 }
 
 export interface WeatherConditions {
@@ -120,6 +148,21 @@ export interface HoleIntelligence {
   /** None = centerline unmapped (honest unknown), distinct from a
    *  measured-straight hole (bend.straight === true). */
   bend?: HoleBend | null;
+  /** Per-hole corridor-width profile (danger-to-danger cross-sections every
+   *  10y) — mirrors `backend/app/caddie/types.py::CorridorSample` exactly
+   *  (specs/corridor-width-club-selection-plan.md §5). None = unmapped/
+   *  uncomputable. CaddiePanel round-trips intel back into `/caddie/recommend`,
+   *  so this shape must be declared even though no UI renders it this cycle. */
+  corridor?: Array<{
+    distance_yards: number;
+    left_yards?: number | null;
+    right_yards?: number | null;
+    width_yards?: number | null;
+    left_fairway_yards?: number | null;
+    right_fairway_yards?: number | null;
+    left_source?: string | null;
+    right_source?: string | null;
+  }> | null;
 }
 
 export interface CaddiePersonalityInfo {

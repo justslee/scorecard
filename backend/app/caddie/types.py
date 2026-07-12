@@ -120,6 +120,23 @@ class HoleBend(BaseModel):
     double_dogleg: bool = False
 
 
+class CorridorSample(BaseModel):
+    """One perpendicular cross-section of the playing corridor, sampled along
+    the hole's mapped centerline (hazards.extract_corridor_profile). Additive
+    on HoleIntelligence, defaulted, so cached session hole_intel JSONB
+    predating this field still validates. None-valued sides/widths are honest
+    unknowns — the consumer must never reject a club on an unknown width."""
+
+    distance_yards: int                      # tee-anchored along-path (multiple of 10)
+    left_yards: Optional[int] = None         # centerline -> nearest LEFT danger edge (trees/water)
+    right_yards: Optional[int] = None
+    width_yards: Optional[int] = None        # left+right; None unless BOTH sides known
+    left_fairway_yards: Optional[int] = None  # fairway-edge cross-section (color, never the fit constraint)
+    right_fairway_yards: Optional[int] = None
+    left_source: Optional[str] = None        # "trees" | "water" (winning evidence)
+    right_source: Optional[str] = None
+
+
 class HoleIntelligence(BaseModel):
     hole_number: int
     par: int
@@ -155,6 +172,12 @@ class HoleIntelligence(BaseModel):
     # field still validates. None = centerline unmapped (honest unknown,
     # distinct from a measured-straight hole — see HoleBend.straight).
     bend: Optional[HoleBend] = None
+    # Per-hole corridor-width profile (danger-to-danger cross-sections every
+    # 10y), from app.caddie.hazards.extract_corridor_profile. Additive +
+    # defaulted so cached session hole_intel JSONB predating this field still
+    # validates. None = unmapped/uncomputable (v1 behavior — the corridor-
+    # width club-selection block in aim_point.py never runs).
+    corridor: Optional[list[CorridorSample]] = None
 
 
 # ── Weather ──
@@ -200,6 +223,47 @@ class AimPoint(BaseModel):
     bearing: Optional[float] = None
 
 
+# ── Tee-shot numbers (specs/caddie-numbers-coherence-plan.md §2.2) ──
+
+
+class TeeShotNumbers(BaseModel):
+    """ONE authoritative numbers block for a positioning/tee-shot turn.
+
+    Owner incident (2026-07, Bethpage Black hole 1, 466y par 4): the caddie
+    spoke a leave (125) solved from an unrelated wrong-input distance, a raw
+    bag driver number (300), and a physics carry/total (280/266) — three
+    truthful-in-isolation numbers from three sources that never had to agree.
+    This block is computed ONCE (``compute_tee_shot_numbers``,
+    app/caddie/aim_point.py) and is the only thing either mouth may speak for
+    a tee shot.
+
+    Invariant (tested): to_green_yards - drive_total_yards == leave_exact_yards,
+    EXACTLY, for every instance this engine produces.
+    """
+
+    hole_number: int
+    to_green_yards: int  # the raw distance the engine solved (466) — rec.raw_yards
+    yardage_basis: Optional[str] = None  # 'gps' | 'tee-card' | 'tee-geom' | 'card' | None (provenance label)
+    plays_like_yards: int  # rec.target_yards (physics plays-like of to_green_yards)
+    club: str  # selected club key ("driver")
+    club_stored_yards: int  # the bag number (300) — still-air stored distance
+    drive_carry_yards: Optional[int] = None  # physics carry under today's conditions (266); None in competition_legal
+    drive_total_yards: int  # physics total under today's conditions (276); == stored in competition_legal
+    leave_exact_yards: int  # to_green_yards - drive_total_yards, SIGNED (may be <= 0) — closes EXACTLY
+    leave_yards: int  # round-to-5 of max(0, leave_exact) (the calm, floored spoken number)
+    leave_plays_like_yards: Optional[int] = None  # what that approach plays like (labeled extra, never the primary leave)
+    # Corridor-width club selection (specs/corridor-width-club-selection-plan.md
+    # §5) — additive, populated ONLY on profile-present turns where the width
+    # rule fired or grounded the chosen club. All None on a v1 (corridor-
+    # absent) turn, which is what keeps the no-regression test well-defined.
+    corridor_pinch_width_yards: Optional[int] = None    # danger width at the pinch that rejected the longest club
+    corridor_pinch_distance_yards: Optional[int] = None  # along-path distance of that pinch (== rejected club's total's sample)
+    corridor_capped_from_club: Optional[str] = None     # rejected longest club key ("driver")
+    corridor_capped_from_window_yards: Optional[int] = None  # its ±1.5σ window (rounded)
+    corridor_club_window_yards: Optional[int] = None    # CHOSEN club's ±1.5σ window
+    corridor_width_yards: Optional[int] = None          # danger width at the CHOSEN club's landing distance, when known
+
+
 # ── The Big Recommendation ──
 
 
@@ -223,6 +287,10 @@ class CaddieRecommendation(BaseModel):
     # JSONB from older rounds still validates (additive-field convention).
     shot_kind: str = "approach"  # "approach" | "positioning"
     leave_yards: Optional[int] = None  # positioning only: approach distance the drive leaves
+    # ONE authoritative numbers block for a positioning/tee shot (see
+    # TeeShotNumbers above) — None on reachable/approach turns and on any
+    # cached recommendation from before this field existed (additive).
+    tee_shot_numbers: Optional[TeeShotNumbers] = None
 
 
 # ── Caddie Personality ──
@@ -270,7 +338,11 @@ class RecommendationRequest(BaseModel):
     handicap: Optional[float] = None
     player_stats: Optional[PlayerStatistics] = None
     par: int = 4
-    yards: int = 400
+    # Optional + honest error (specs/corridor-width-club-selection-plan.md
+    # §8): NOT required — a required field would 422 legitimate callers that
+    # send only distance_yards. No fake fallback: `get_recommendation` raises
+    # a 400 when no distance signal is present at all, never a fabricated 400y.
+    yards: Optional[int] = None
     competition_legal: bool = False  # True = USGA-conforming mode; zeroes all environmental distance adjustments
 
 

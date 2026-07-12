@@ -83,7 +83,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-from app.caddie.types import Hazard, HoleBend
+from app.caddie.types import CorridorSample, Hazard, HoleBend
 from app.services.course_spatial import _ring_centroid
 
 # Metres per degree of latitude (WGS-84 mean) — mirrors the equirectangular
@@ -119,6 +119,14 @@ _TREE_ENTRY_CAP_PER_SIDE: int = 2
 # constant (was a literal 5) so the trees-headroom decision is documented at
 # the definition site — see module docstring "decision 6" in the plan.
 _FORMAT_GROUP_CAP: int = 6
+
+# ── Corridor profile (specs/corridor-width-club-selection-plan.md §2) ──────
+_CORRIDOR_SAMPLE_START_YDS: int = 60      # below the shortest club total (~85y stored)
+_CORRIDOR_SAMPLE_STEP_YDS: int = 10
+_CORRIDOR_SAMPLE_MAX_YDS: int = 360       # past any real drive total
+_CORRIDOR_EVIDENCE_WINDOW_YDS: float = 20.0  # ±20y along-path, per §4.4 contract
+_CORRIDOR_MAX_CAST_YDS: float = 100.0     # perpendicular ray cap for fairway-edge cast
+_CORRIDOR_WATER_MIN_OBS: int = 1
 
 
 HAZARD_GROUNDING_RULE = (
@@ -763,3 +771,387 @@ def format_hazards_line(hole_number: int, hazards: list[Hazard]) -> str:
             parts.append(f"{ftype} {abbrev} {yards[0]}-{yards[-1]}y")
 
     return f"Hole {hole_number} hazards: " + ", ".join(parts)
+
+
+# ── Corridor profile (specs/corridor-width-club-selection-plan.md §2) ──────
+#
+# Follow-up to the bend-cap (extract_hole_bend above). Samples perpendicular
+# cross-sections along the hole's mapped centerline every 10y and records,
+# per side, the fairway edge (color only, never the fit constraint — see the
+# plan's Honesty section for the arithmetic proof) AND the danger edge
+# (nearest trees/woods/water evidence — the fit-rule constraint consumed by
+# aim_point.py's corridor-width club selection). Reuses this module's tee/
+# green/polyline/projection primitives so a sample's along-path distance is
+# measured from the SAME tee-anchored origin as hazard carry_yards and the
+# bend distance.
+
+
+def _water_observations(feature_list: list[dict]) -> list[tuple[float, float]]:
+    """Return ``(lon, lat)`` OBSERVATION points for water features — the same
+    ring-vertex-as-observation model as ``_tree_observations`` (module
+    docstring "Trees/woods" paragraph), applied to ``featureType == "water"``
+    polygons (plus Points, on the rare chance a water hazard is ever mapped
+    as one). A water polygon's ring literally traces the pond/hazard edge, so
+    a single in-window vertex is real evidence — unlike trees, no coverage
+    guard is needed here (the caller uses min-obs 1)."""
+    observations: list[tuple[float, float]] = []
+    for f in feature_list:
+        props = f.get("properties") or {}
+        if props.get("featureType") != "water":
+            continue
+        geom = f.get("geometry") or {}
+        gtype = geom.get("type")
+        coords = geom.get("coordinates")
+        if gtype == "Point" and coords and len(coords) >= 2:
+            observations.append((float(coords[0]), float(coords[1])))
+        elif gtype == "Polygon" and coords and coords[0]:
+            ring = coords[0]
+            vertices = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+            for c in vertices:
+                if c and len(c) >= 2:
+                    observations.append((float(c[0]), float(c[1])))
+    return observations
+
+
+def _point_in_ring_xy(px: float, py: float, ring_xy: list[tuple[float, float]]) -> bool:
+    """Even-odd ray-cast point-in-polygon test in the local tee-anchored
+    (east, north) metre frame — mirrors ``course_spatial._point_in_ring``'s
+    algorithm exactly, re-derived here because that function works in
+    lon/lat + cos_lat (a different frame) rather than local metres.
+    ``ring_xy`` must already have its closing vertex deduped."""
+    n = len(ring_xy)
+    if n < 3:
+        return False
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = ring_xy[i]
+        xj, yj = ring_xy[j]
+        if (yi > py) != (yj > py):
+            x_intersect = (xj - xi) * (py - yi) / (yj - yi) + xi
+            if px < x_intersect:
+                inside = not inside
+        j = i
+    return inside
+
+
+def _ray_segment_distance(
+    px: float, py: float, nx: float, ny: float, ax: float, ay: float, bx: float, by: float,
+) -> Optional[float]:
+    """Distance ``t`` (>0) along the ray ``p + t*(nx, ny)`` to its intersection
+    with segment ``a->b``, or ``None`` when the ray and segment are parallel
+    or the intersection falls outside the ray's forward half or the segment's
+    span (``0 <= s < 1``). Solved via Cramer's rule on
+    ``p + t*n = a + s*(b-a)``."""
+    dx, dy = bx - ax, by - ay
+    det = dx * ny - dy * nx
+    if abs(det) < 1e-9:
+        return None
+    rx, ry = ax - px, ay - py
+    t = (dx * ry - dy * rx) / det
+    s = (nx * ry - ny * rx) / det
+    if t > 0.0 and 0.0 <= s < 1.0:
+        return t
+    return None
+
+
+def _cast_ray_to_ring(
+    px: float, py: float, nx: float, ny: float,
+    ring_xy: list[tuple[float, float]], max_t_m: float,
+) -> Optional[float]:
+    """Nearest intersection distance (metres, capped at ``max_t_m``) of the
+    ray ``p + t*(nx, ny)``, ``t > 0``, against every (closed, wrap-around)
+    edge of ``ring_xy``. ``None`` when no edge is hit within the cap."""
+    n_verts = len(ring_xy)
+    best_t: Optional[float] = None
+    for i in range(n_verts):
+        ax, ay = ring_xy[i]
+        bx, by = ring_xy[(i + 1) % n_verts]
+        t = _ray_segment_distance(px, py, nx, ny, ax, ay, bx, by)
+        if t is not None and t <= max_t_m and (best_t is None or t < best_t):
+            best_t = t
+    return best_t
+
+
+def _cumulative_lengths(path_xy: list[tuple[float, float]]) -> list[float]:
+    """Cumulative along-path distance (metres) from ``path_xy[0]`` to each
+    vertex — ``cum[i]`` is the arc length to reach ``path_xy[i]``."""
+    cum = [0.0]
+    for i in range(len(path_xy) - 1):
+        ax, ay = path_xy[i]
+        bx, by = path_xy[i + 1]
+        cum.append(cum[-1] + math.hypot(bx - ax, by - ay))
+    return cum
+
+
+def _sample_point_and_heading(
+    path_xy: list[tuple[float, float]], cum_m: list[float], s_m: float,
+) -> Optional[tuple[float, float, float, float]]:
+    """Point + local unit heading at arc length ``s_m`` from ``path_xy[0]``.
+
+    Walks the path's OWN cumulative arc length (not a nearest-segment
+    projection) so a sample past a dogleg corner lands on — and takes its
+    heading from — the SECOND leg, never the tee->green chord (the module's
+    documented sign/frame exposure — see the docstring and
+    test_corridor_profile.py's dogleg case). Zero-length segments are
+    skipped. Returns ``(px, py, ux, uy)``, or ``None`` when every segment is
+    degenerate.
+    """
+    last_valid: Optional[tuple[int, float, float, float, float, float]] = None
+    for i in range(len(path_xy) - 1):
+        ax, ay = path_xy[i]
+        bx, by = path_xy[i + 1]
+        seg_len = cum_m[i + 1] - cum_m[i]
+        if seg_len <= 0.0:
+            continue
+        last_valid = (i, ax, ay, bx, by, seg_len)
+        if cum_m[i] <= s_m <= cum_m[i + 1]:
+            t = (s_m - cum_m[i]) / seg_len
+            px, py = ax + t * (bx - ax), ay + t * (by - ay)
+            ux, uy = (bx - ax) / seg_len, (by - ay) / seg_len
+            return px, py, ux, uy
+    if last_valid is None:
+        return None
+    # s_m fell outside every segment's own span (e.g. rounding at the very
+    # end of the path) — extrapolate on the last non-degenerate segment.
+    i, ax, ay, bx, by, seg_len = last_valid
+    t = (s_m - cum_m[i]) / seg_len
+    px, py = ax + t * (bx - ax), ay + t * (by - ay)
+    ux, uy = (bx - ax) / seg_len, (by - ay) / seg_len
+    return px, py, ux, uy
+
+
+def _classify_danger_observations(
+    obs_lonlat: list[tuple[float, float]],
+    tee_lat: float,
+    tee_lon: float,
+    path_xy: list[tuple[float, float]],
+    tee_along_m: float,
+) -> list[tuple[float, float]]:
+    """Project raw ``(lon, lat)`` observation points into ``(carry_yds,
+    lateral_yds)`` against the corridor's own polyline — same discipline as
+    ``_extract_tree_line_hazards``'s tree pass: behind-tee observations are
+    DROPPED (not clamped), and observations more than
+    ``_TREE_MAX_LATERAL_YARDS`` off the line are dropped (keeps only the edge
+    FACING the played line)."""
+    out: list[tuple[float, float]] = []
+    for lon, lat in obs_lonlat:
+        hx, hy = _xy_m(tee_lat, tee_lon, lat, lon)
+        projected = _project_onto_polyline(path_xy, hx, hy)
+        if projected is None:
+            continue
+        carry_m, lateral_m = projected[0] - tee_along_m, projected[1]
+        if carry_m < 0:
+            continue
+        lateral_yds = lateral_m * _YARDS_PER_METER
+        if abs(lateral_yds) > _TREE_MAX_LATERAL_YARDS:
+            continue
+        out.append((carry_m * _YARDS_PER_METER, lateral_yds))
+    return out
+
+
+def _side_edge_at(
+    obs: list[tuple[float, float]], d: float, min_obs: int,
+) -> tuple[Optional[float], Optional[float]]:
+    """``(left_edge, right_edge)`` at along-path distance ``d`` from a
+    classified observation list: filter to the ``±_CORRIDOR_EVIDENCE_WINDOW_
+    YDS`` window, group by RAW lateral sign (``lateral == 0`` counts toward
+    BOTH sides — no 10y deadband; the deadband is a speech de-jitter, not
+    geometry), and require ``>= min_obs`` qualifying observations on a side
+    before it's known. Edge value = min |lateral| in the qualifying window."""
+    left_vals = [
+        abs(lat) for carry, lat in obs
+        if abs(carry - d) <= _CORRIDOR_EVIDENCE_WINDOW_YDS and lat >= 0
+    ]
+    right_vals = [
+        abs(lat) for carry, lat in obs
+        if abs(carry - d) <= _CORRIDOR_EVIDENCE_WINDOW_YDS and lat <= 0
+    ]
+    left = min(left_vals) if len(left_vals) >= min_obs else None
+    right = min(right_vals) if len(right_vals) >= min_obs else None
+    return left, right
+
+
+def _combine_edge(
+    tree_val: Optional[float], water_val: Optional[float],
+) -> tuple[Optional[float], Optional[str]]:
+    """Winning danger edge + its source (``"trees"`` | ``"water"``) — the
+    nearer (smaller) of the two when both exist, ``None`` when neither."""
+    candidates: list[tuple[float, str]] = []
+    if tree_val is not None:
+        candidates.append((tree_val, "trees"))
+    if water_val is not None:
+        candidates.append((water_val, "water"))
+    if not candidates:
+        return None, None
+    value, source = min(candidates, key=lambda c: c[0])
+    return value, source
+
+
+def extract_corridor_profile(
+    features: Optional[dict],
+    *,
+    tee: Optional[dict] = None,
+    green: Optional[dict] = None,
+    polyline: Optional[list] = None,
+) -> Optional[list[CorridorSample]]:
+    """Sample the playing corridor's width every 10y along the hole's mapped
+    centerline, from 60y to 360y (or the mapped path's own length, whichever
+    is shorter) — specs/corridor-width-club-selection-plan.md §2.
+
+    Frame setup mirrors ``extract_hole_bend`` exactly: same tee/green
+    derivation, same tee-anchored local metre frame. UNLIKE
+    ``extract_hole_hazards``, there is NO chord fallback — a chord has no
+    bends and no local headings, so a corridor computed from one would be
+    fabricated geometry. No usable polyline (explicit ``polyline=`` arg or a
+    ``featureType == "hole"`` LineString) -> ``None``, honest unknown.
+
+    Each sample records the fairway edge (color; NEVER the fit constraint —
+    see the plan's Honesty section for the arithmetic proof that a fairway-
+    edge rule would cap a 15-handicap driver to an 8-iron on nearly every
+    tee) and the danger edge (nearest tree/woods/water evidence — the actual
+    fit-rule constraint aim_point.py's corridor-width selection consumes).
+
+    All-or-nothing gate: returns ``None`` unless at least one sample has
+    ``width_yards`` (both sides' danger edge) known — a fairway-only profile
+    (no danger evidence anywhere) cannot constrain the fit rule, so it is
+    treated as absent, keeping "profile present <=> the decision may differ"
+    crisp. Within a RETURNED profile, per-distance ``None`` samples are the
+    honest partial-knowledge representation.
+    """
+    feature_list: list[dict] = (features or {}).get("features") or []
+
+    tee_pt, green_pt = _derive_tee_green(feature_list, tee, green)
+    if tee_pt is None or green_pt is None:
+        return None
+
+    tee_lon, tee_lat = tee_pt
+
+    path = None
+    if polyline and len(polyline) >= 2:
+        path = [(float(c[0]), float(c[1])) for c in polyline]
+    if path is None:
+        path = _hole_polyline(feature_list)
+    if path is None:
+        # No mapped centerline -> no bends, no local headings -> never a
+        # fabricated chord-frame corridor (unlike extract_hole_hazards).
+        return None
+
+    path_xy = [_xy_m(tee_lat, tee_lon, lat, lon) for lon, lat in path]
+    tee_projected = _project_onto_polyline(path_xy, 0.0, 0.0)
+    if tee_projected is None:
+        return None  # degenerate polyline (all zero-length segments)
+    tee_along_m = tee_projected[0]
+
+    cum_m = _cumulative_lengths(path_xy)
+    total_len_m = cum_m[-1]
+    path_len_from_tee_yds = (total_len_m - tee_along_m) * _YARDS_PER_METER
+
+    max_d = min(path_len_from_tee_yds, float(_CORRIDOR_SAMPLE_MAX_YDS))
+    if max_d < _CORRIDOR_SAMPLE_START_YDS:
+        return None  # hole too short to sample even one point
+
+    # Fairway rings, projected into the tee-local frame — Polygon -> its
+    # single outer ring; MultiPolygon -> each member's outer ring treated as
+    # an independent polygon (a split fairway's gap naturally yields "not
+    # inside any").
+    fairway_rings: list[list[tuple[float, float]]] = []
+    for f in feature_list:
+        props = f.get("properties") or {}
+        if props.get("featureType") != "fairway":
+            continue
+        geom = f.get("geometry") or {}
+        gtype = geom.get("type")
+        coords = geom.get("coordinates")
+        rings_lonlat: list[list] = []
+        if gtype == "Polygon" and coords and coords[0]:
+            rings_lonlat.append(coords[0])
+        elif gtype == "MultiPolygon" and coords:
+            for member in coords:
+                if member and member[0]:
+                    rings_lonlat.append(member[0])
+        for ring in rings_lonlat:
+            verts = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+            ring_xy = [
+                _xy_m(tee_lat, tee_lon, float(c[1]), float(c[0]))
+                for c in verts if c and len(c) >= 2
+            ]
+            if len(ring_xy) >= 3:
+                fairway_rings.append(ring_xy)
+
+    tree_obs = _classify_danger_observations(
+        _tree_observations(feature_list), tee_lat, tee_lon, path_xy, tee_along_m,
+    )
+    water_obs = _classify_danger_observations(
+        _water_observations(feature_list), tee_lat, tee_lon, path_xy, tee_along_m,
+    )
+
+    max_cast_m = _CORRIDOR_MAX_CAST_YDS / _YARDS_PER_METER
+
+    samples: list[CorridorSample] = []
+    any_width_known = False
+    d = _CORRIDOR_SAMPLE_START_YDS
+    while d <= max_d:
+        s_m = tee_along_m + d / _YARDS_PER_METER
+        pt = _sample_point_and_heading(path_xy, cum_m, s_m)
+        if pt is None:
+            d += _CORRIDOR_SAMPLE_STEP_YDS
+            continue
+        px, py, ux, uy = pt
+        nx, ny = -uy, ux  # LEFT normal (module-pinned convention)
+
+        left_fairway: Optional[int] = None
+        right_fairway: Optional[int] = None
+        for ring_xy in fairway_rings:
+            if _point_in_ring_xy(px, py, ring_xy):
+                t_left = _cast_ray_to_ring(px, py, nx, ny, ring_xy, max_cast_m)
+                t_right = _cast_ray_to_ring(px, py, -nx, -ny, ring_xy, max_cast_m)
+                left_fairway = round(t_left * _YARDS_PER_METER) if t_left is not None else None
+                right_fairway = round(t_right * _YARDS_PER_METER) if t_right is not None else None
+                break
+
+        tree_left, tree_right = _side_edge_at(tree_obs, float(d), _TREE_MIN_OBS)
+        water_left, water_right = _side_edge_at(water_obs, float(d), _CORRIDOR_WATER_MIN_OBS)
+        left_danger, left_source = _combine_edge(tree_left, water_left)
+        right_danger, right_source = _combine_edge(tree_right, water_right)
+
+        left_yards = round(left_danger) if left_danger is not None else None
+        right_yards = round(right_danger) if right_danger is not None else None
+        width_yards = (
+            round(left_danger + right_danger)
+            if left_danger is not None and right_danger is not None
+            else None
+        )
+        if width_yards is not None:
+            any_width_known = True
+
+        samples.append(CorridorSample(
+            distance_yards=d,
+            left_yards=left_yards,
+            right_yards=right_yards,
+            width_yards=width_yards,
+            left_fairway_yards=left_fairway,
+            right_fairway_yards=right_fairway,
+            left_source=left_source,
+            right_source=right_source,
+        ))
+        d += _CORRIDOR_SAMPLE_STEP_YDS
+
+    if not any_width_known:
+        return None
+    return samples
+
+
+def corridor_sample_at(
+    corridor: Optional[list[CorridorSample]], d: float,
+) -> Optional[CorridorSample]:
+    """Nearest ``CorridorSample`` to along-path distance ``d`` (yards), or
+    ``None`` when ``corridor`` is empty/absent or the nearest sample is more
+    than 5y away (``d`` outside the sampled range). No interpolation — the
+    ±20y evidence window already smooths."""
+    if not corridor:
+        return None
+    nearest = min(corridor, key=lambda s: abs(s.distance_yards - d))
+    if abs(nearest.distance_yards - d) > 5:
+        return None
+    return nearest

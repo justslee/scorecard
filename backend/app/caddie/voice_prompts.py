@@ -9,7 +9,7 @@ Composes: personality character + persistent memory + current situation + behavi
 
 from typing import Optional
 
-from app.caddie.types import CaddiePersonality
+from app.caddie.types import CaddiePersonality, TeeShotNumbers
 from app.caddie.session import RoundSession
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
 from app.caddie.green_geometry import GREEN_GROUNDING_RULE
@@ -100,6 +100,46 @@ POSITIONING_SHOT_RULE = (
     "one). Pin-relative aim returns only on a shot the engine marks reachable."
 )
 
+# Numbers-coherence rule (owner incident 2026-07, Bethpage Black hole 1,
+# 466y par 4: the caddie said "leaves about 125" beside a 300y driver and a
+# 466y hole — three numbers from three sources that don't close — then
+# invented wind physics to defend them. Shared by BOTH mouths (build_realtime
+# _instructions below and the two stable_text blocks in routes/caddie.py) so
+# wording never drifts.
+NUMBERS_COHERENCE_RULE = (
+    "For a tee shot or positioning shot there is ONE set of true numbers: the "
+    "recommendation's tee-shot numbers block (hole yardage, plays-like, the "
+    "club's expected carry and total in today's conditions, and the leave). "
+    "Speak those numbers verbatim and no others — never quote a driver "
+    "distance, hole yardage, or leave that is not in that block, and never "
+    "derive your own. The leave you say MUST be the block's leave: hole "
+    "yardage minus the drive's expected total, the same numbers, closing "
+    "exactly. If the player challenges the arithmetic, re-derive it out loud "
+    "from the block and correct yourself ('466, driver totals about 276 "
+    "today, so 190 left — I misspoke earlier'). Admitting a wrong number and "
+    "restating the right one ALWAYS beats explaining the wrong one — never "
+    "invent wind, roll, or 'effective yards' to make mismatched numbers work. "
+    "And keep the direction of physics honest: a hole playing longer leaves "
+    "MORE after the drive, never less."
+)
+
+# Miss-side grounding rule (owner incidents: Bethpage Black 1 — "left is the
+# better miss" on a hole with trees BOTH sides; Bethpage Red 3 — "that bunker
+# right" fabricated in a driving zone whose real hazard was trees). Shared by
+# BOTH mouths so wording never drifts.
+MISS_SIDE_GROUNDING_RULE = (
+    "Never declare a better miss side the hazard data doesn't support. The "
+    "miss side you speak must be the recommendation's miss side, backed by "
+    "the hazards listed for THIS shot's landing distance — never your own "
+    "read of the hole. If the data shows trouble on both sides, say exactly "
+    "that ('trees both sides — no good miss, commit to the fairway'); never "
+    "pick a side to sound decisive. If one side has no mapped data, do not "
+    "call it safe — data absence is not safety. When you name a hazard on a "
+    "tee shot, it must be one whose distance puts it in play for THAT swing: "
+    "never relocate a greenside bunker into the driving zone, and never name "
+    "a hazard type the data doesn't list."
+)
+
 # Text-mouth tool instruction (caddie-tool-loop-parity): the classic text
 # caddie now carries the same six tools the Realtime orb has (canonical
 # registry in app/caddie/tools.py). Appended to BOTH text builders'
@@ -147,9 +187,93 @@ def build_realtime_instructions(
         + "\n" + OBSERVED_REALITY_RULE
         + "\n" + YARDAGE_GROUNDING_RULE
         + "\n" + POSITIONING_SHOT_RULE
+        + "\n" + NUMBERS_COHERENCE_RULE
+        + "\n" + MISS_SIDE_GROUNDING_RULE
     )
 
     return "\n\n".join(parts)
+
+
+# Data-independent par-vs-yardage sanity guard (owner incident: Bethpage RED
+# 3 shown "PAR 3 · 355 YDS" — no real par 3 plays 280+ yards from any normal
+# tee; the longest famous ones stay comfortably under that). Shared by BOTH
+# mouths — `_format_yardage_line` (routes/caddie.py) and `_situation_block`
+# below — so a suspect stored par is flagged the same way everywhere.
+PAR_SANITY_MIN_YARDS_FOR_PAR3: int = 280
+
+
+def format_par_sanity_note(par: Optional[int], yards: Optional[int]) -> str:
+    """Honest empty (`""`) unless the stored par/yardage combination is
+    physically implausible — never fabricates a par, just flags one that
+    can't be trusted."""
+    if par == 3 and yards is not None and yards > PAR_SANITY_MIN_YARDS_FOR_PAR3:
+        return (
+            f"— the card says par 3 but at {yards} yards this is a two-shot "
+            "hole; treat the par as suspect and never lean on it"
+        )
+    return ""
+
+
+def format_tee_numbers_line(n: TeeShotNumbers) -> str:
+    """The ONE spoken/written rendering of a `TeeShotNumbers` block — every
+    frame labeled, closing exactly (specs/caddie-numbers-coherence-plan.md
+    §2.3). Both mouths call this; neither restates the wording itself, so a
+    future edit can't drift them apart."""
+    club_display = CLUB_DISPLAY_NAMES.get(n.club, n.club)
+
+    basis_labels = {"gps": "GPS", "tee-card": "tee-card", "tee-geom": "tee", "card": "card"}
+    basis_clause = f" ({basis_labels[n.yardage_basis]} yardage)" if n.yardage_basis in basis_labels else ""
+
+    if n.drive_carry_yards is not None:
+        drive_clause = (
+            f"{club_display} — {n.club_stored_yards} stored, carries {n.drive_carry_yards} "
+            f"and totals {n.drive_total_yards} in these conditions"
+        )
+    else:
+        # competition_legal: no environmental physics anywhere in the block.
+        drive_clause = f"{club_display} — {n.club_stored_yards} stored (competition-legal, no adjustments)"
+
+    plays_like_clause = (
+        f"plays like {n.plays_like_yards} today"
+        if n.plays_like_yards != n.to_green_yards
+        else f"plays like {n.plays_like_yards}"
+    )
+
+    if n.leave_exact_yards <= 0:
+        # Residual sub-boundary case: the drive-total equation still closes
+        # (to_green - drive_total <= 0), but there's no honest "leaves X in"
+        # to speak — the drive reaches the green, full stop.
+        leave_clause = "that reaches the green"
+    else:
+        leave_clause = f"leaves about {n.leave_yards} in"
+        if n.leave_plays_like_yards is not None and n.leave_plays_like_yards != n.leave_yards:
+            leave_clause += f" (plays like ~{n.leave_plays_like_yards})"
+
+    line = (
+        f"Tee-shot numbers for hole {n.hole_number} (AUTHORITATIVE — they close: "
+        f"{n.to_green_yards} − {n.drive_total_yards} = {n.leave_exact_yards}): "
+        f"{n.to_green_yards} to the green{basis_clause}; {plays_like_clause}; "
+        f"{drive_clause}; {leave_clause}. Speak ONLY these numbers for this tee shot."
+    )
+
+    # Corridor-width club selection (specs/corridor-width-club-selection-plan
+    # .md §7) — append-only clause so the realtime mouth can re-derive under
+    # challenge, never invent. Every number here is a TeeShotNumbers field;
+    # omitted entirely (byte-identical `line` above) when the fields are None
+    # (v1/corridor-absent turns, pinned by test).
+    if n.corridor_pinch_width_yards is not None:
+        capped_from_display = (
+            CLUB_DISPLAY_NAMES.get(n.corridor_capped_from_club, n.corridor_capped_from_club)
+            if n.corridor_capped_from_club else n.corridor_capped_from_club
+        )
+        line += (
+            f" Corridor: pinches to ~{n.corridor_pinch_width_yards} at "
+            f"{n.corridor_pinch_distance_yards}; {capped_from_display}'s zone needs "
+            f"~{n.corridor_capped_from_window_yards}, {club_display}'s "
+            f"~{n.corridor_club_window_yards} fits."
+        )
+
+    return line
 
 
 def _memories_block(memories: Optional[list[CaddieMemory]]) -> str:
@@ -183,6 +307,9 @@ def _situation_block(session: Optional[RoundSession]) -> str:
     lines.append(f"Current hole: #{session.current_hole}")
     intel = session.hole_intel.get(session.current_hole)
     if intel:
+        par_sanity_note = format_par_sanity_note(intel.par, intel.yards)
+        if par_sanity_note:
+            lines.append(f"Hole {session.current_hole}, par {intel.par} {par_sanity_note}")
         if intel.hazards:
             hazards_line = format_hazards_line(session.current_hole, intel.hazards)
             if hazards_line:
@@ -197,10 +324,20 @@ def _situation_block(session: Optional[RoundSession]) -> str:
             lines.append(f"Green slope: {intel.green_slope.description}")
     if session.last_recommendation:
         rec = session.last_recommendation
-        lines.append(
-            f"Last recommendation: {rec.club} to {rec.target_yards}y, "
-            f"aim: {rec.aim_point.description}, miss: {rec.miss_side.preferred}"
-        )
+        if rec.tee_shot_numbers is not None:
+            # Positioning/tee shot with the one-solve numbers block — replaces
+            # the old bare "to {target_yards}y" line, whose three unconnected
+            # frames (leave / bag driver / physics total) were the root of
+            # the "125" incident (specs/caddie-numbers-coherence-plan.md §2.3).
+            lines.append(
+                f"Last recommendation: {rec.club}. {format_tee_numbers_line(rec.tee_shot_numbers)} "
+                f"aim: {rec.aim_point.description}, miss: {rec.miss_side.preferred}"
+            )
+        else:
+            lines.append(
+                f"Last recommendation: {rec.club} to {rec.target_yards}y, "
+                f"aim: {rec.aim_point.description}, miss: {rec.miss_side.preferred}"
+            )
     recent_shots = session.shot_history[-5:]
     if recent_shots:
         shots_str = "; ".join(
