@@ -3,6 +3,24 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING (cycle 102, 2026-07-11) — caddie-orb-sheet-zindex-overlap
+Owner feedback check: card #134 (v1.1.2) already Shipped + owner-approved, empty comment
+thread; no Needs-Review card; PR #135 has no comments → nothing preempts. Proceeding to the
+p3 backlog item `caddie-orb-sheet-zindex-overlap`.
+BUG CONFIRMED IN CODE (not yet fixed): `CaddieOrb` renders at `zIndex:50` fixed bottom-right and
+IS shown on `/round/new` + `/tournament/[id]/round/new` (shouldShowCaddieOrb). Their picker
+bottom sheets use backdrop `zIndex:40` + sheet `zIndex:41` — BELOW the orb — so the orb paints
+over / intercepts taps on the sheet's bottom-right region (handicap badge / add / "this is me").
+The caddie's own LooperSheet is `zIndex:60/61` (correctly above the orb); the picker sheets
+predate the orb and were never lifted. Intended order documented at tee-time/page.tsx:1735.
+Files: frontend/src/app/round/new/page.tsx:1168/1181; frontend/src/app/tournament/[id]/round/new/
+NewTournamentRoundClient.tsx:1247/1260; orb at frontend/src/components/CaddieOrb.tsx:123.
+Likely fix: raise picker backdrop+sheet above the orb (e.g. 40→52 / 41→53), below LooperSheet(60),
+so the orb tucks behind the modal scrim (dimmed, non-interactive). Pure CSS constants; no seam →
+no unit test; verify by visual drive.
+Awaiting: Plan agent (fable) → specs/caddie-orb-sheet-zindex-plan.md. On plan return → builder on
+integration/next → reviewer + qa + designer(BLOCKING) → land + PR#135 checklist + mark backlog done.
+
 ## tournament-settlement-honesty — DONE, builder (2026-07-11, NOTICEABLE — stake picker changed)
 Implemented `specs/tournament-settlement-honesty-plan.md` exactly on `integration/next` @1a37556
 (off b5c28b1). Two [[no-fake-data-fallbacks]] money mirages: (1) stableford/bbb/bb/scr/vegas/quota
