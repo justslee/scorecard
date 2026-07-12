@@ -15398,3 +15398,19 @@ book feel), all on head 1ba1d7a. On resume: collect all three verdicts; BLOCKING
 overlay / onMapReady gap / regression / design violation) -> re-dispatch builder then re-review; all
 green+clean -> update PR #137 checklist (+tee-shot-yardage-overlays NOTICEABLE) + progress, backlog targeted
 edit. CALLER INERT — do NOT ship/ping; keep accumulating PR #137.
+
+
+## VERDICTS IN (cycle 113, head 510c76f)
+qa PASS: lint/tsc clean, vitest 2412/2412 (21 new incl), build 19-page, voice 278/278; diff frontend-only
+(no backend gate). No preview URL for E2E; on-map tiles need owner device (sandbox Maps-key policy).
+reviewer(FABLE) SHIP: hand-verified green-center offset, dogleg plate on 2nd leg, carry orientation (the
+inversion fix real+complete — tee-first reversal + teeAlongM subtract), unrounded float walk, honesty
+(centroids skipped, synthetic hd.front/back never read, degenerate->EMPTY), onMapReady gating on every new
+addCircles/removeCircles, no regression (mappedHoles inert when absent), security nil (no /security-review
+needed). 4 NON-BLOCKING findings: (1) plate collinearity approx — add a self-check omitting a plate whose
+true dist-to-green-center deviates from its label > tol (mechanical honesty enforcement; needs ~30y+ OSM/
+GolfAPI green disagreement, bounded) — FAST FOLLOW; (2) mount/queue interleave orphan-circle (pre-existing
+class, narrow window) — LEAVE; (3) floor/ceiling applied to round5(front) -> +/-2.5y boundary drift — apply
+to RAW carry (trivial); (4) test6 min-carry vertex exactly on 10y deadband -> move to 12-15y (robustness).
+DECISION: fold #1 (plate self-check), #3 (raw-carry predicate), #4 (test6) into ONE builder pass BATCHED
+with designer verdict (pending). #2 left (pre-existing, out of scope). AWAITING designer (a8ad5ef).
