@@ -14246,3 +14246,15 @@ pass the buggy code too).
   with a clean gap, no coverage.
 - Commit `aeb388b`, pushed to `integration/next`. Silent item (bug fix restoring an already-broken
   interaction, no new user-facing capability) — rides along in bundle PR #135, no ping.
+
+## AWAITING — cycle 101 review (fix aeb388b, head 9281721)
+- Builder landed aeb388b: PlayerAutocomplete overlays now in-flow (diff matches plan exactly:
+  removed position:absolute/zIndex:60/top/left/right on both overlays, added marginTop:6).
+  Builder gates all green + Playwright drive confirmed Done clickable with suggestions AND no-match.
+- Dispatched in parallel: reviewer (correctness/regression, no /security-review — pure CSS),
+  qa (4 gates on head 9281721 + interaction drive), designer (BLOCKING — user-facing sheet).
+- On return: if all SHIP/PASS/APPROVE → update PR #135 checklist (item 4, classify: small-UX bug
+  fix; bug-fix restoring broken interaction, treat SILENT/small — bundle already has 3 noticeable
+  so no independent ping) + mark backlog player-autocomplete-overlap status "done" (targeted edit +
+  diff-check) + progress. Do NOT ship/ping (owner testing v1.1.2 separately; bundle accumulates).
+  If any BLOCKING → re-dispatch builder with the specific issue, re-review.
