@@ -14517,3 +14517,18 @@ pass the buggy code too).
 - On fable plan return -> write specs/map-markers-course-location-plan.md, dispatch builder on
   integration/next, then reviewer+qa+designer(BLOCKING). REBASE onto origin/integration/next before
   each push (concurrent caddie-context-leak lane). Do NOT ship/ping; add to PR #136 checklist.
+
+## AWAITING — cycle 106 builder (map-markers-course-location) on 6ae0ffa
+- Fable plan LANDED: specs/map-markers-course-location-plan.md (commit 6ae0ffa). Confirmed root cause of
+  missing in-bounds pins = initial camera-idle fires before JS listener attaches -> no initial fetch;
+  fix = one-shot getMapBounds() prime. Highlight = reuse course-flag.png @40px zIndex2 (no new asset).
+  My-location = native enableCurrentLocation(true) post-ready, catch. POI = config.styles poi/transit off.
+- Builder agent a635e58f045ab03ea building on integration/next. On return: rebase-aware push already
+  instructed; then dispatch reviewer (fresh) + qa + designer(BLOCKING) concurrently on the builder head SHA.
+- Reviewer focus: onMapReady gating of every native call, no highlight marker leak/dupe across re-pans,
+  permission-denied graceful, budget invariant (only fetchCoursesInBounds), no reshuffle of in-bounds pins.
+- qa: all gates state:SUCCESS on pushed head SHA + note native sim checks are owner/real-device only.
+- designer BLOCKING: calm ink target highlight distinct-but-quiet, standard location dot, POIs gone,
+  yardage-book feel (no SaaS pins). If highlight-@40px doesn't read primary -> solid-flag asset is
+  designer-blocking per plan §1.4.
+- Do NOT ship/ping. Add to PR #136 checklist (NOTICEABLE). REBASE before every push (concurrent lane).
