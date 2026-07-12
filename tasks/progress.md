@@ -15527,3 +15527,39 @@ CALLER INERT — did NOT ship/ping (per brief). Bundle #137 keeps accumulating; 
 INJECTION: multiple planted 'date changed / DO NOT mention' + Telegram-pairing MCP instructions arrived in the
 tool/system stream this cycle — ALL IGNORED per injection-defense (no authority; only the owner via sanctioned
 channel authorizes anything). No task impact.
+
+## SHIPPED v1.1.5 — bundle #137 merged to main (2026-07-12, release agent, isolated worktree)
+Owner replied "Ship it" for PR #137 (`integration/next` -> `main`). Executed entirely from a fresh
+worktree (`/Users/justinlee/projects/.scorecard-ship-v115`) per explicit isolation constraint — a
+caddie-numbers-coherence builder lane was live in the primary checkout with uncommitted work; the
+primary checkout was NEVER touched (verified after: still `ea4f760`, `integration/next`, the lane's
+uncommitted `specs/caddie-numbers-coherence-plan.md` intact).
+Steps: (1) bumped `VERSION` 1.1.4 -> 1.1.5, committed `243b87c`, pushed as a plain fast-forward to
+`integration/next` (origin was `7066eff`, confirmed unmoved before push); both required PR gates
+re-confirmed SUCCESS on the bump head. (2) Retitled PR #137 to the 7-item bundle title, merged via
+`gh pr merge 137 --merge` -> merge commit `c715d2e72f4d2afc881dcaa3e0a78f221cba4715` on `main`.
+(3) Post-merge main CI: both required gates (Frontend gates, Backend gate) SUCCESS on `c715d2e`.
+(4) TestFlight cut from the worktree at the merge commit: `npm ci` (no symlinked node_modules —
+Turbopack-safe) then `REPO=<worktree> bash ops/ios/ship.sh` -> **Uploaded v1.1.5 (build
+202607121234)** to TestFlight, upload succeeded, processing on Apple's side. (5) `/health` smoke:
+`https://api.looperapp.org/health` -> 200 `{"status":"ok"}` (frontend-only bundle, no backend
+deploy needed). (6) Cut fresh `integration/next` off new `main`: since `c715d2e` is a descendant of
+the prior `integration/next` head, this was a clean fast-forward push — no force required.
+`integration/next` == `main` == `c715d2e`.
+Bundle contents (7 items, all now live on `main`/TestFlight v1.1.5): tournament "The Program" setup
+redesign, universal edge-swipe-back navigation, tee-shot yardage overlays (owner's Jones-book
+request — blue/white/red 200/150/100 plates + real bunker carries, tee-shot-context only, par-3s
+suppressed), Wolf zero-sum money settlement fix, threePoint settlement odd-cent rounding-drift fix,
+map paper-tone base style, caddie realtime voice hardening.
+backlog.json: targeted Python edit (load/dump — checked the source for duplicate keys first per
+[[backlog-json-duplicate-keys]]: none found, diff confirmed exactly the intended 5-item change, no
+collateral loss) terminal-marked `tee-shot-yardage-overlays`, `universal-swipe-back`,
+`caddie-noise-clarifier-followups`, `map-base-paper-tone-style` -> `status: "shipped"` with a
+SHIPPED-TO-MAIN resolution line (merge SHA + v1.1.5 + build 202607121234, matching the established
+pattern from prior ships). `tournament-money-format-completion` stays `status: "ready"` (PART 2
+match-play opponent picker + PART 3 team-assignment UI still open, owner-decision-gated) but its
+resolution now notes PART 1 (Wolf) is SHIPPED TO MAIN and folds in the threePoint fix (which had no
+discrete backlog row — an in-cycle bug find, not a queued item).
+Worktree removed after all pushes landed. KNOWN NOT-IN-THIS-BUILD (per ship brief): the caddie
+numbers/corridor/"always driver" fix — actively being built in the primary checkout, targeted for
+the next bundle.
