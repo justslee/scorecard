@@ -29,7 +29,7 @@ import { useEffect, useRef, useState, useCallback, useMemo, type CSSProperties }
 // @capacitor/google-maps references HTMLElement at module evaluation time,
 // so it must NOT be imported at the top level (would crash SSR / static build).
 // We dynamic-import it inside the useEffect (client-only) instead.
-import type { GoogleMap } from "@capacitor/google-maps";
+import type { GoogleMap, Circle } from "@capacitor/google-maps";
 import {
   Navigation,
   Target,
@@ -71,6 +71,13 @@ import {
 import { fetchWeather } from "@/lib/caddie/api";
 import type { WeatherConditions } from "@/lib/caddie/types";
 import { T } from "@/components/yardage/tokens";
+import {
+  computeTeeShotOverlays,
+  teeShotOverlaysVisible,
+  type TeeShotOverlays,
+  type BunkerCarry,
+} from "@/lib/map/tee-shot-overlays";
+import type { HoleData } from "@/lib/courses/types";
 
 // The plugin registers a `<capacitor-google-map>` custom element (see the
 // plugin's map.js). On iOS its connectedCallback sets `overflow: scroll` and
@@ -151,7 +158,29 @@ export interface GoogleSatelliteMapProps {
    * hole appear rather than the map sliding.
    */
   cameraTransition?: "pan" | "cut";
+  /**
+   * Per-hole mapped geometry (par + GeoJSON features) — drives the tee-shot
+   * yardage-book overlays (200/150/100 plates + fairway bunker carries,
+   * specs/tee-shot-yardage-overlays-plan.md). Absent => the feature is
+   * entirely inert (CourseSearch / CourseScoutMap / /map/course pass
+   * nothing and are unaffected). Keyed by hole NUMBER, matching
+   * `currentHole` / `CourseCoordinates.holeNumber`.
+   */
+  mappedHoles?: ReadonlyMap<number, Pick<HoleData, "par" | "features">>;
 }
+
+// ── Tee-shot overlay constants (design language: specs/tee-shot-yardage-
+// overlays-plan.md §7 — reuse the existing tee palette, no new colors) ────────
+
+const EMPTY_TEE_SHOT_OVERLAYS: TeeShotOverlays = { markers: [], bunkers: [] };
+
+/** 200/150/100 plate fill colors — same palette as TEE_COLOR_RULES
+ *  (google-map-helpers.ts): blue / white / red. */
+const PLATE_FILL_BY_YARDS: Record<100 | 150 | 200, string> = {
+  200: "#2e5aa8",
+  150: "#f2efe6",
+  100: "#b23a2e",
+};
 
 // ── Yardage-book distance stat (matches the app's paper/ink theme) ────────────
 
@@ -210,6 +239,7 @@ export default function GoogleSatelliteMap({
   onSwitchToPaper,
   teeMarker = null,
   cameraTransition = "pan",
+  mappedHoles,
 }: GoogleSatelliteMapProps) {
   // Ref mirror so fitCameraToHole (stable identity, closed over by the camera
   // queue) reads the current value without re-creating.
@@ -238,6 +268,16 @@ export default function GoogleSatelliteMap({
   // so it reads the current position from this ref.
   const positionRef         = useRef<Position | null>(null);
 
+  // Tee-shot overlay circles (plates + bunker near-edge dots) — a SEPARATE id
+  // ref from holeCircleIdsRef so the per-GPS-tick clearHoleOverlays/
+  // addHoleOverlays refresh (mid-hole distance rings) never touches/flickers
+  // the plates, and mid-hole hiding of the plates never touches the tee dot.
+  const teeShotCircleIdsRef = useRef<string[]>([]);
+  // Last-drawn visibility boolean — native circles are only added/removed
+  // when this FLIPS (compared on every GPS tick), so GPS jitter inside the
+  // tee zone never causes redraw churn.
+  const teeShotVisibleRef   = useRef(false);
+
   // Keep currentHoleData in a ref so the click handler reads the latest value
   // without being re-registered on every hole change.
   const currentHoleRef = useRef(
@@ -250,6 +290,13 @@ export default function GoogleSatelliteMap({
   const [weather,   setWeather]   = useState<WeatherConditions | null>(null);
   // Tap-to-target readout (carry + distance to green for a tapped point).
   const [tapTarget, setTapTarget] = useState<TapTarget | null>(null);
+  // Bunker-carry DOM chips (§7) — mirrors teeShotVisibleRef into render state
+  // so the chips fade in/out; the native plate/dot circles are driven off the
+  // ref directly (no re-render needed for those).
+  const [teeShotChips, setTeeShotChips] = useState<{ visible: boolean; bunkers: BunkerCarry[] }>({
+    visible: false,
+    bunkers: [],
+  });
 
   const gpsWatcherRef = useRef<GPSWatcher | null>(null);
 
@@ -307,6 +354,32 @@ export default function GoogleSatelliteMap({
     };
   }, [position, currentHoleData]);
 
+  /**
+   * Tee-shot yardage-book geometry for the current hole (§8.3) — the ONLY
+   * place `computeTeeShotOverlays` is called. `mappedHoles` absent, or no
+   * entry for this hole, or no `currentHoleData` (no tee/green anchor yet)
+   * => EMPTY, so the feature is fully inert for callers that don't pass
+   * `mappedHoles` (CourseSearch / CourseScoutMap / /map/course).
+   */
+  const teeShotData = useMemo<TeeShotOverlays>(() => {
+    const h = mappedHoles?.get(currentHole);
+    if (!h || !currentHoleData) return EMPTY_TEE_SHOT_OVERLAYS;
+    return computeTeeShotOverlays({
+      features: h.features?.features ?? null,
+      tee: currentHoleData.tee ?? null,
+      green: currentHoleData.green,
+      par: h.par ?? null,
+    });
+  }, [mappedHoles, currentHole, currentHoleData]);
+
+  // Ref mirror so the camera-queue / GPS-tick closures (stable identities,
+  // created once) always read the LATEST computed overlays without needing
+  // to be re-created on every hole change.
+  const teeShotDataRef = useRef(teeShotData);
+  useEffect(() => {
+    teeShotDataRef.current = teeShotData;
+  }, [teeShotData]);
+
   // ── Overlay helpers ────────────────────────────────────────────────────────
 
   /**
@@ -357,6 +430,18 @@ export default function GoogleSatelliteMap({
   }, []);
 
   /**
+   * Remove the tee-shot plate + bunker-dot circles (if any). A SEPARATE id
+   * ref from holeCircleIdsRef (§8.2) — never touched by the per-GPS-tick
+   * clearHoleOverlays/addHoleOverlays refresh.
+   */
+  const clearTeeShotOverlays = useCallback(async () => {
+    const m = googleMapRef.current;
+    const ids = teeShotCircleIdsRef.current;
+    if (m && ids.length > 0) await m.removeCircles(ids).catch(() => {});
+    teeShotCircleIdsRef.current = [];
+  }, []);
+
+  /**
    * Per-hole overlays: the map stays clean satellite (no tee→green line, no
    * distance rings, no pins) EXCEPT for a single colored tee marker at the
    * round's chosen tee box (owner 2026-07-06). Distance lines are drawn only
@@ -392,6 +477,49 @@ export default function GoogleSatelliteMap({
   }, [teeMarker]);
 
   /**
+   * Draw the tee-shot yardage-book overlays (200/150/100 plates + bunker
+   * near-edge dots) for the CURRENT hole — reads `teeShotDataRef` (not a
+   * parameter) so callers created once (camera queue, GPS-tick handler)
+   * always draw the latest geometry. Native circles only — dynamic carry
+   * TEXT renders as DOM chips (§0 platform constraint: data-URL/canvas
+   * marker icons don't load on iOS).
+   */
+  const addTeeShotOverlays = useCallback(async () => {
+    const m = googleMapRef.current;
+    if (!m || !mapReadyRef.current) return;
+    const data = teeShotDataRef.current;
+
+    const circles: Circle[] = [];
+    for (const marker of data.markers) {
+      circles.push({
+        center: marker.position,
+        radius: 3,
+        fillColor: PLATE_FILL_BY_YARDS[marker.yards],
+        fillOpacity: 0.92,
+        strokeColor: "rgba(26,42,26,0.55)",
+        strokeWeight: 1,
+      });
+    }
+    for (const bunker of data.bunkers) {
+      circles.push({
+        center: bunker.nearEdge,
+        radius: 2,
+        fillColor: "#f2efe6",
+        fillOpacity: 0.9,
+        strokeColor: "rgba(26,42,26,0.55)",
+        strokeWeight: 1,
+      });
+    }
+
+    if (circles.length === 0) {
+      teeShotCircleIdsRef.current = [];
+      return;
+    }
+    const ids = await m.addCircles(circles).catch(() => [] as string[]);
+    teeShotCircleIdsRef.current = ids;
+  }, []);
+
+  /**
    * Frame the camera on the current hole's tee→green corridor.
    * Never includes GPS position (off-hole guard — v1.0.598 fix).
    *
@@ -422,9 +550,21 @@ export default function GoogleSatelliteMap({
   // Mirror the latest overlay callbacks into a ref so the queue's `run` closure
   // (created once, below) always calls the current versions without needing to
   // be re-created when e.g. `addHoleOverlays` changes identity (teeMarker dep).
-  const overlayFnsRef = useRef({ clearHoleOverlays, fitCameraToHole, addHoleOverlays });
+  const overlayFnsRef = useRef({
+    clearHoleOverlays,
+    fitCameraToHole,
+    addHoleOverlays,
+    clearTeeShotOverlays,
+    addTeeShotOverlays,
+  });
   useEffect(() => {
-    overlayFnsRef.current = { clearHoleOverlays, fitCameraToHole, addHoleOverlays };
+    overlayFnsRef.current = {
+      clearHoleOverlays,
+      fitCameraToHole,
+      addHoleOverlays,
+      clearTeeShotOverlays,
+      addTeeShotOverlays,
+    };
   });
 
   // Created once (useRef initial-value idiom, matches mapIdRef above) — `run`
@@ -441,8 +581,21 @@ export default function GoogleSatelliteMap({
       if (!googleMapRef.current || !mapReadyRef.current) return;
       const gpsOnHole = positionRef.current ? isGpsOnHole(positionRef.current, hd) : false;
       await overlayFnsRef.current.clearHoleOverlays();
+      await overlayFnsRef.current.clearTeeShotOverlays();
       await overlayFnsRef.current.fitCameraToHole(hd);
       await overlayFnsRef.current.addHoleOverlays(hd, gpsOnHole, positionRef.current);
+
+      // Tee-shot overlays ride the SAME serialized queue so a rapid multi-hole
+      // swipe never races two hole's plates onto the map at once.
+      const pos = positionRef.current;
+      const visible = teeShotOverlaysVisible({
+        position: pos ? { lat: pos.lat, lng: pos.lng } : null,
+        gpsOnHole,
+        tee: hd.tee ?? null,
+      });
+      teeShotVisibleRef.current = visible;
+      setTeeShotChips({ visible, bunkers: teeShotDataRef.current.bunkers });
+      if (visible) await overlayFnsRef.current.addTeeShotOverlays();
     })
   );
 
@@ -589,6 +742,15 @@ export default function GoogleSatelliteMap({
         if (currentHd && !centerOnly) {
           const gpsOnHole = false; // no GPS yet on mount
           await addHoleOverlays(currentHd, gpsOnHole, null);
+
+          const visible = teeShotOverlaysVisible({
+            position: null,
+            gpsOnHole: false,
+            tee: currentHd.tee ?? null,
+          });
+          teeShotVisibleRef.current = visible;
+          setTeeShotChips({ visible, bunkers: teeShotDataRef.current.bunkers });
+          if (visible) await addTeeShotOverlays();
         }
 
         // ── Click/tap-to-measure handler ─────────────────────────────────
@@ -737,6 +899,25 @@ export default function GoogleSatelliteMap({
       if (hd && !centerOnly) {
         await clearHoleOverlays();
         await addHoleOverlays(hd, onHole, pos);
+      }
+
+      // ── Tee-shot overlays: touch native circles ONLY on a visibility FLIP
+      // (§5/§11) — GPS jitter inside/outside the tee zone never redraws.
+      if (hd && !centerOnly) {
+        const visible = teeShotOverlaysVisible({
+          position: { lat: pos.lat, lng: pos.lng },
+          gpsOnHole: onHole,
+          tee: hd.tee ?? null,
+        });
+        if (visible !== teeShotVisibleRef.current) {
+          teeShotVisibleRef.current = visible;
+          setTeeShotChips({ visible, bunkers: teeShotDataRef.current.bunkers });
+          if (visible) {
+            await addTeeShotOverlays();
+          } else {
+            await clearTeeShotOverlays();
+          }
+        }
       }
 
       // ── Auto-detect hole ───────────────────────────────────────────────
@@ -944,6 +1125,54 @@ export default function GoogleSatelliteMap({
           </div>
         </div>
       )}
+
+      {/* Tee-shot bunker-carry chips — DOM (native map labels can't render
+          dynamic text on iOS, §0). Anchored to the RIGHT edge, opposite the
+          tap-to-target pill — the fairway/green run up the centre of the
+          down-the-fairway view, so both stay off the imagery. TEE-SHOT
+          CONTEXT ONLY (specs/tee-shot-yardage-overlays-plan.md §5/§7): fades
+          in/out as the golfer walks in/out of the tee zone. Read-only
+          (pointer-events none) — calm, less than a printed book page. */}
+      <AnimatePresence>
+        {!centerOnly && teeShotChips.visible && teeShotChips.bunkers.length > 0 && (
+          <motion.div
+            key="tee-shot-chips"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="absolute right-3 z-20 pointer-events-none"
+            style={{
+              top: inline ? 12 : "max(120px, calc(env(safe-area-inset-top) + 108px))",
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}
+          >
+            {teeShotChips.bunkers.map((b, i) => (
+              <div
+                key={i}
+                style={{
+                  background: T.paper,
+                  border: `1px solid ${T.hairline}`,
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  boxShadow: "0 4px 14px rgba(0,0,0,0.22)",
+                  textAlign: "center",
+                  minWidth: 64,
+                }}
+              >
+                <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
+                  {b.side === "C" ? "Carry" : `${b.side} Carry`}
+                </div>
+                <div style={{ fontFamily: T.serif, fontSize: 18, lineHeight: 1.15, color: T.ink }}>
+                  {b.front === b.back ? `${b.front}` : `${b.front} / ${b.back}`}
+                </div>
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Map canvas — MUST be the plugin's <capacitor-google-map> custom element,
           NOT a plain <div>: on iOS its connectedCallback builds the scroll-view

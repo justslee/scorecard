@@ -65,6 +65,7 @@ import { haptic } from "@/lib/haptics";
 import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
 import { useHoleCoordinates } from "@/lib/map/use-hole-coordinates";
+import { indexByHoleNumber } from "@/lib/hole-index";
 import { fetchAPI } from "@/lib/api";
 import { GPSWatcher } from "@/lib/gps";
 import { resolveOpeningShotDistance } from "@/lib/caddie/opening-shot";
@@ -389,6 +390,12 @@ export default function RoundPage() {
     for (const [holeNumber, anchor] of anchorByHole) m.set(holeNumber, anchor.tee);
     return m;
   }, [anchorByHole]);
+
+  // Mapped geometry indexed by hole number — drives the fullscreen blow-up
+  // map's tee-shot yardage-book overlays (specs/tee-shot-yardage-overlays-
+  // plan.md §8). Same source InlineHoleDiagram indexes internally
+  // (indexByHoleNumber); no new fetch — courseHoles is already in memory.
+  const mappedHolesIndex = useMemo(() => indexByHoleNumber(courseHoles), [courseHoles]);
 
   /**
    * Caddie session — the durable round brain (Postgres). Started once per
@@ -2453,6 +2460,7 @@ export default function RoundPage() {
           centerOnly={anchoredCoords.length === 0}
           fallbackCenter={mapCenter ?? roundAnchor ?? undefined}
           teeMarker={teeMarker}
+          mappedHoles={mappedHolesIndex}
         />
       )}
     </div>
