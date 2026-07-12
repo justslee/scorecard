@@ -15012,3 +15012,15 @@ builder implements on integration/next -> reviewer+qa+designer BLOCKING sign-off
 REBASE onto origin/integration/next before push (concurrent swipe-back-nav worktree — its turf
 is GLOBAL NAV; stay in tournament UI files). NOTICEABLE — accumulate in PR #137; DO NOT ship/ping.
 Caller INERT. Head: 762da22.
+
+## AWAITING (cycle 111) — builder on tournament-redesign ("The Program")
+Plan @b675ac3 (specs/tournament-redesign-plan.md). Designer concept "The Program" APPROVED as
+contract. Builder implementing on integration/next: setup page (cover plate + live name echo +
+double rule + ORDER OF PLAY itinerary + CARD OF ENTRY numbered rows + ghost entry lines + summary
++ colophon), new pure module frontend/src/lib/tournament-program.ts (+vitest), one double-rule
+touch in TournamentPageClient. Contrast rule: new text T.pencil not pencilSoft. Behavioral-unchanged
+enumerated. ON RETURN: dispatch reviewer (no-regression + a11y/contrast, no new dep) + qa (gates
+all SUCCESS on pushed head SHA) in parallel, then designer BLOCKING on RENDERED result (occasion +
+calm, not flashy; dead space filled; contrast). Iterate BLOCKING -> builder. Then add to PR #137
+checklist NOTICEABLE, update backlog, progress. REBASE before any push (swipe-back worktree). Caller
+INERT — no ship/ping. Head before builder: b675ac3.
