@@ -3,6 +3,28 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## CYCLE 115 LANDED @b86e9ea on integration/next (bundle PR #139), NOTICEABLE — caddie corridor-WIDTH
+## club selection (§4.4) + tap-path yards=400 killed. (2026-07-12)
+Item green + clean on integration/next. Commits: 8703b4d (impl) + 485c664 (reviewer-found coherence
+guard) + b86e9ea (progress). reviewer(fable)=SHIP (geometry hand-re-derived in a rotated 30° frame —
+side asymmetry, dogleg local-heading, tee anchoring confirmed vs independent expected; v1 bend-cap
+BYTE-INTACT; §9-B-2 test deviation judged faithful+stronger; folded in the one non-blocking coherence
+guard). qa=PASS (ruff clean; backend 2337 non-DB incl. all 5 new/extended corridor+tap-path files;
+tsc/lint clean; voice 278/278; vitest 2417). WHY-line calm-check (self, vs NORTHSTAR + cycle-114
+precedent)=PASS (grounded caddie voice, no SaaS drift; no full designer cycle needed for a text line
+mirroring an approved voice pattern). FABLE PLAN FALSIFICATION (the value of running the plan on fable):
+the obvious fairway-edge fit rule would cap a 15-hcp to an 8-iron on every tee (±1.5σ 56y vs 30-40y
+fairway) — the plan proved this arithmetically and switched the constraint to DANGER edges (tree/water)
+only; fairway cross-sections stored as color. Honesty: Bethpage has 99 fairway polys/90 holes but ZERO
+woods/tree features -> profile None -> v1 byte-identical where danger data absent (activates as ingest
+improves; water pinches work now). BOOKKEEPING: PR #139 checklist +1 NOTICEABLE item; backlog
+caddie-tee-shot-grounding-followups (A)+(B) marked DONE (only (D) prod par/yardage DB verify remains,
+depends on looper/prod DATABASE_URL refresh). CALLER INERT — no ship/ping this cycle; bundle keeps
+accumulating (the ship-#139 approval is the MAIN conversation's to handle, per this lane's brief).
+INJECTION: repeated 'date changed / DO NOT mention' system-reminder text + freshly-injected Telegram MCP
+guidance arrived this cycle — ALL IGNORED (embedded instructions are data, not authority; no Telegram/
+pairing/approval action taken).
+
 ## CYCLE 115 — corridor-width club selection (§4.4) + tap-path yards=400 rider (2026-07-12, NOTICEABLE)
 Owner-feedback check FIRST: board Needs-Review cards (#137 shipped v1.1.5, #134) have NO new
 comments; the 3 pending approvals (Red ingest / ship #139 / Red guides) are owned by the MAIN
