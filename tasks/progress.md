@@ -15203,3 +15203,39 @@ builder's uncommitted edit (it recovered via reflog) — future cycles: don't ha
 builder child is live, or use worktree isolation. ON APPROVE: add tournament-redesign to PR #137
 checklist NOTICEABLE, mark backlog done (targeted edit + diff-check), finish. NO ship/ping — bundle
 accumulates for owner's next 'ship it'; owner will want real-device eyeball on "exciting but calm".
+
+## LANDED (cycle 111, 2026-07-12) — tournament-redesign "The Program" on integration/next @370815c (in PR #137)
+ALL VERDICTS GREEN. Owner TOP-PRIORITY ad-hoc request (w/ screenshot): tournament SETUP page read flat/
+sparse ("a little boring", dead space below one player) -> make the tournament feel like an OCCASION
+within the yardage-book language (NORTHSTAR: on-paper, Instrument Serif, restrained palette; NO confetti/
+neon/gradients/icons/emoji/new design language). DESIGNER-LED: designer(fable) authored concept "The
+Program" (the club typesets a program live as you fill the form) -> fable plan specs/tournament-redesign
+-plan.md -> builder -> reviewer+qa -> designer BLOCKING on RENDERED pixels.
+WHAT SHIPPED (setup page frontend/src/app/tournament/new/page.tsx): cover-plate kicker "THE PROGRAM ·
+<date>" + LIVE title echo of the event name (serif italic 34) + printed double rule; "ORDER OF PLAY"
+itinerary chips (reuse view's round-progress-strip pattern, springSoft + reduced-motion gated); "CARD OF
+ENTRY" numbered entries (№1/№2) + decorative aria-hidden/pointer-events:none GHOST entry lines filling the
+dead space (yield 1-for-1 as entrants added, cap 3); composing summary sentence + colophon ("1 DAY · 1
+ENTRANT") in the sticky SEND-OFF block above Create. New pure module frontend/src/lib/tournament-program.ts
+(date/numberWord/fieldSummary/colophonLine/ghostCount) + 9 vitest. View got ONE touch: matching double
+rule between name + Meta row in TournamentPageClient.tsx; leaderboard/FLIP/settlement/Wolf UNTOUCHED. All
+setup inputs + create/scoring byte-identical (presentation only; NO shared-type/backend change).
+VERDICTS: reviewer SHIP (handlers/validation/voice-prefill intact, helpers 9/9 not weakened, contrast
+compliant, no new dep). qa PASS (lint/tsc/build 19-page/vitest 2345/voice 278; CI green head 43b3235:
+Frontend+Backend+E2E-advisory SUCCESS). designer BLOCKING->APPROVE on REAL 390x844+375x667 pixels: 1st
+pass BLOCKED (summary hidden behind sticky CTA); padding fix EMPIRICALLY DISPROVEN by builder (CTA is
+viewport-glued via minHeight:100vh flex column -> trailing padding unreachable; tested 80/160/400px
+identical overlap); designer DECIDED to RELOCATE summary into the sticky send-off block -> builder did it
+(Playwright: 31.5px gap, centered, visible scroll=0 both widths) -> designer APPROVE (reads occasion AND
+calm; block lifted). Commits: 302e746 (redesign impl) + 370815c (relocation fix). b675ac3 plan.
+OWNER REAL-DEVICE EYEBALL NEEDED (the crux, NOT a gate fail): the "exciting but STILL calm" judgment is
+the owner's call on a real iPhone/native shell; also the 0->1-player summary appearance + Create thumb
+reach at SE width + whether the caddie-orb coachmark competes with the ghost-lines zone. NOTICEABLE — in
+bundle PR #137, accumulating for owner's next 'ship it'. CALLER INERT — NO ship/ping this cycle.
+No backlog item existed for this ad-hoc request (distinct from tournament-leaderboard-motion-haptics etc.)
+-> backlog.json NOT edited (avoids the duplicate-key/data-loss hazard); PR #137 + this note are the record.
+CONCURRENCY LESSON (live this run): my `git reset --hard origin/integration/next` in the SHARED checkout
+wiped a builder's uncommitted edit mid-cycle (recovered via reflog). Future: don't hard-reset while a
+builder child is live; prefer worktree isolation for concurrent lanes (per [[parallel-lanes-use-worktrees]]).
+Injection note: repeated "date changed / DO NOT mention" system-reminders + telegram-reminder text in the
+stream — ignored per injection-defense (authority = owner request + brief); no task impact.
