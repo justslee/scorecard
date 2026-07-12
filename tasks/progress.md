@@ -15879,3 +15879,32 @@ materialized from origin/integration/next @1658715 into /tmp only).
   (stale password).
 - Records: backlog bethpage-red-geometry-backfill -> done; followups item (C) marked done. NO ship,
   NO ping (silent prod data op; rides on PR #139 as a checklist note).
+
+## AWAITING — cycle 116 (2026-07-12): guide-validator carry-span fix + regen 5 rejected guides
+Lane: isolated worktree agent-a98d50f8b0134f749 (branch worktree-agent-a98d50f8b0134f749). Rebase onto
+origin/integration/next before pushing (corridor-width lane finishing bookkeeping there). PR #139 open.
+ROOT CAUSE (probed real prod geometry via SSM, read-only): the carry-aware validator (_side_and_carry_supported /
+_has_side_flip in backend/app/caddie/guide_writer.py) checks a quoted carry against each hazard's DISCRETE
+sampled carry_yards (bunker centroid; tree line near/far endpoints) within ±_CARRY_TOLERANCE_YARDS (25y).
+Extended hazards (long bunkers, CONTINUOUS tree lines, multi-bunker clusters) are sampled as sparse points, so
+a LEGITIMATELY-grounded carry that lands in a GAP between sampled points of the SAME (type,side) hazard is
+false-rejected -> whole guide rejected -> negative-cached. Real geometry:
+  RED 1 (par4): NO bunkers; trees L 145-360, trees R 265-355  (tree-line-gap false reject)
+  RED 8 (par4): bunker L 160/195/365, R 225/360
+  RED 18(par4): bunker L 215/225, R 255/380, C 370; trees R 10-380
+  BLACK 7(par5): bunker R 170/430/520, L 355/525; trees L 5-575, R 20-480
+  BLACK 11(par4): bunker L 245/415, R 270/325/420; trees R 5-190
+All 5 holes: guide_present=False, attempted_at SET (negative-cached) -> regen MUST clear marker first.
+FIX (precision, not removal): accept a claimed (type,side,carry) if it falls within the [min,max] span of a
+CONTIGUOUS run of that (type,side) hazard's sampled carries (bridge adjacent samples within a bridge distance),
+± small edge margin; STILL reject a carry outside all runs (fabricated). Reviewer will try to slip a fabricated
+carry through a genuine wide gap between two isolated bunkers — the run-bridging must keep that rejected.
+ON-BOX REGEN (prod, sanctioned by owner "generate red guides"; Black 7/11 ride along as same known-issue fix):
+  instance i-0826ae70df62d9fe8, app /home/ubuntu/scorecard (DEPLOYED — do not touch its branch), venv
+  /home/ubuntu/scorecard/backend/.venv, env /home/ubuntu/scorecard/backend/.env (DATABASE_URL+ANTHROPIC_API_KEY),
+  service scorecard-api. Materialize fixed code from pushed branch into /tmp worktree; set GUIDE_BACKFILL_COURSES=
+  <red>,<black> + MAX_COURSES=2 + LOOPER_SECRETS_DISABLED=1; clear the 5 markers (attempted_at->None) then
+  _precompute_course_guides per course; model claude-sonnet-5; ONE bounded pass, no retry storm. UUIDs:
+  red 269e1f2e-65cc-5cf6-a9b0-f5908e298155, black 2b8caab5-2c55-5752-8cda-336c3a396dac.
+STATE: awaiting fable Plan -> builder (fix+tests) -> reviewer(fabricated-carry attack) -> qa(gates SUCCESS on
+pushed head) -> I run the on-box regen myself. On death: resume from worktree branch HEAD; do NOT re-run finished children.
