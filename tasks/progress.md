@@ -15072,3 +15072,14 @@ scoring/leaderboard/settlement/Wolf; a11y/WCAG contrast — new text must be T.p
 no new dep) + qa (gates all state:SUCCESS on head d9d8847 + CI on PR #137 + verify create-tournament
 works). THEN designer BLOCKING on RENDERED result. ON RETURN: green -> designer; BLOCKING -> builder.
 REBASE before push (swipe-back worktree). Caller INERT — no ship/ping.
+
+## AWAITING (cycle 111) — designer BLOCKING on RENDERED tournament-redesign
+reviewer SHIP (presentation-only, handlers/tests/types intact, contrast compliant, helpers 9/9,
+July 12 2026 renders real day=Sunday). qa PASS (local gates all green; CI PR #137 head 43b3235:
+Backend+Frontend+E2E-advisory all SUCCESS, 0 pending/fail; no live preview for click-through —
+CI E2E-advisory covers core journeys). Now designer judges the RENDERED setup page against "The
+Program" rubric: occasion+calm not flashy, dead space filled meaningfully, contrast, inputs look
+unchanged. Env note (from qa): static export + needs Clerk/backend, so a true live screenshot may
+not be renderable locally — designer to render if possible, else rigorous structural audit + flag
+what needs owner real-device eyes. ON RETURN: APPROVE -> add to PR #137 checklist NOTICEABLE, mark
+backlog, finish (NO ship/ping). BLOCKING -> builder. Head 43b3235.
