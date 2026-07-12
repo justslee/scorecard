@@ -15676,3 +15676,17 @@ or my item would slip into an already-approved bundle unlisted). Sequence once r
     checklist item 1 = this item NOTICEABLE with reviewer/qa verdicts.
  4. progress.md + backlog targeted edits; NO ship/ping (caller inert).
 ## AWAITING: reviewer(fable) correctness verdict on b7807b8 (resumed a239378787a6e4cb5); QA already PASS.
+
+## CYCLE 114 reviewer(fable) VERDICT: BLOCKING (1 defect; 7/8 areas verified sound & byte-intact:
+## physics parity, hardcoded-400 fix, miss-side, corridor bend-cap, par-sanity, prompt contract,
+## test coupling). Security half: clean (no HIGH/MED; yardage_basis allowlist-neutralized).
+## DEFECT: aim_point.py:435 leave_exact_yards = max(0, distance_yards - drive_total_yards).
+## Downhill-short repro (250y hole, driver-200 bag, -60ft): physics drive_total 254 >= hole 250,
+## but is_green_reachable judges still-air frame (plays-like 218 vs stored 200) -> "positioning",
+## so the authoritative block prints "250 - 254 = 0" (non-closing; truth -4) and says "out of reach,
+## leaves 0" while the drive reaches. Frame mismatch = the exact confabulation trigger this cycle kills.
+## Closure matrix has up40ft but NO downhill cell -> passed.
+## FIX (dispatched to builder): honest frame-align — a drive whose physics total reaches raw to_green
+## is reachable/approach (no positioning block); +signed leave_exact so equation always closes, floor
+## only spoken leave_yards; +down60ft closure cell; keep 7 sound areas byte-intact. Re-run + prove repro.
+## AWAITING: builder fix. Then quick reviewer re-verdict on the delta, then hold for #137 ship.
