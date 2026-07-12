@@ -66,9 +66,12 @@ import InlineHoleDiagram from "@/components/course/InlineHoleDiagram";
 import GoogleSatelliteMap from "@/components/GoogleSatelliteMap";
 import { useHoleCoordinates } from "@/lib/map/use-hole-coordinates";
 import { fetchAPI } from "@/lib/api";
-import { GPSWatcher } from "@/lib/gps";
+import { GPSWatcher, type Position } from "@/lib/gps";
 import { resolveOpeningShotDistance } from "@/lib/caddie/opening-shot";
 import { setCaddieLiveMode } from "@/lib/voice/live-mode-pref";
+// SPIKE (specs/passive-shot-tracking-spike.md) — dev-flag-gated, off by
+// default everywhere. See the mounted usage below for the flag check.
+import { PassiveShotDraftBanner } from "@/components/spike/PassiveShotDraftBanner";
 
 // Player accent colors (yardage-book palette — warm ink tones)
 const PLAYER_COLORS = ["#1a2a1a", "#6b3a1a", "#3a3a6a", "#6a3a3a", "#2a5a3a", "#5a2a5a"];
@@ -1147,14 +1150,25 @@ export default function RoundPage() {
   const [playerPos, setPlayerPos] = useState<{ lat: number; lng: number } | null>(null);
   const playerPosRef = useRef(playerPos);
   playerPosRef.current = playerPos;
+  // SPIKE (specs/passive-shot-tracking-spike.md) — dev-flag-gated draft
+  // classifier feed. Rides the SAME watcher above (zero marginal battery
+  // cost, no new permission); when the flag is off this setState is never
+  // called, so it's a structural no-op. Kept separate from playerPos so the
+  // existing rangefinder's ~3yd jitter filter is untouched — the classifier
+  // wants every fix, unfiltered, including accuracy/speed.
+  const [spikeDriftPos, setSpikeDriftPos] = useState<Position | null>(null);
   useEffect(() => {
     if (!roundActive || !mappedCourse) return;
     const watcher = new GPSWatcher(
       (pos) => {
         const prev = playerPosRef.current;
         // Re-render only on meaningful movement (~3yd) — GPS jitter isn't a walk.
-        if (prev && yardsDistance(prev, pos) < 3) return;
-        setPlayerPos({ lat: pos.lat, lng: pos.lng });
+        if (!prev || yardsDistance(prev, pos) >= 3) {
+          setPlayerPos({ lat: pos.lat, lng: pos.lng });
+        }
+        if (process.env.NEXT_PUBLIC_SPIKE_PASSIVE_SHOTS === "1") {
+          setSpikeDriftPos(pos);
+        }
       },
       () => setPlayerPos(null), // denied/unavailable → honest from-tee tiles
     );
@@ -2288,6 +2302,17 @@ export default function RoundPage() {
         onSetScore={handleSetScore}
         accent={accent}
       />
+
+      {/* SPIKE (specs/passive-shot-tracking-spike.md) — dev flag, off by
+          default everywhere. Draft-only: never writes a shot. Confirming
+          hands into the EXISTING "Ask caddie" pill below (setCaddieOpen),
+          not a new voice/write path. */}
+      {process.env.NEXT_PUBLIC_SPIKE_PASSIVE_SHOTS === "1" && (
+        <PassiveShotDraftBanner
+          position={spikeDriftPos}
+          onOpenCaddie={() => setCaddieOpen(true)}
+        />
+      )}
 
       <CaddieSheet
         open={caddieOpen}
