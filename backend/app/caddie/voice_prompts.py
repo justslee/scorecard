@@ -249,12 +249,31 @@ def format_tee_numbers_line(n: TeeShotNumbers) -> str:
         if n.leave_plays_like_yards is not None and n.leave_plays_like_yards != n.leave_yards:
             leave_clause += f" (plays like ~{n.leave_plays_like_yards})"
 
-    return (
+    line = (
         f"Tee-shot numbers for hole {n.hole_number} (AUTHORITATIVE — they close: "
         f"{n.to_green_yards} − {n.drive_total_yards} = {n.leave_exact_yards}): "
         f"{n.to_green_yards} to the green{basis_clause}; {plays_like_clause}; "
         f"{drive_clause}; {leave_clause}. Speak ONLY these numbers for this tee shot."
     )
+
+    # Corridor-width club selection (specs/corridor-width-club-selection-plan
+    # .md §7) — append-only clause so the realtime mouth can re-derive under
+    # challenge, never invent. Every number here is a TeeShotNumbers field;
+    # omitted entirely (byte-identical `line` above) when the fields are None
+    # (v1/corridor-absent turns, pinned by test).
+    if n.corridor_pinch_width_yards is not None:
+        capped_from_display = (
+            CLUB_DISPLAY_NAMES.get(n.corridor_capped_from_club, n.corridor_capped_from_club)
+            if n.corridor_capped_from_club else n.corridor_capped_from_club
+        )
+        line += (
+            f" Corridor: pinches to ~{n.corridor_pinch_width_yards} at "
+            f"{n.corridor_pinch_distance_yards}; {capped_from_display}'s zone needs "
+            f"~{n.corridor_capped_from_window_yards}, {club_display}'s "
+            f"~{n.corridor_club_window_yards} fits."
+        )
+
+    return line
 
 
 def _memories_block(memories: Optional[list[CaddieMemory]]) -> str:

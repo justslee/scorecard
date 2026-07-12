@@ -24,6 +24,7 @@ from app.caddie.green_geometry import GREEN_GROUNDING_RULE
 from app.caddie.hazards import (
     BEND_GROUNDING_RULE,
     HAZARD_GROUNDING_RULE,
+    extract_corridor_profile,
     extract_hole_bend,
     extract_hole_hazards,
     format_bend_line,
@@ -1300,6 +1301,11 @@ async def get_course_intel(
                         tee=hc.get("tee"),
                         green=hc.get("green"),
                     )
+                    intel.corridor = extract_corridor_profile(
+                        stored_features,
+                        tee=hc.get("tee"),
+                        green=hc.get("green"),
+                    )
 
             # Re-validate the persisted strategy guide at READ time (MED-2,
             # 2026-07-10 security review). Guides are cached FOREVER in the
@@ -1354,7 +1360,20 @@ async def get_recommendation(
             effective_yards=request.yards,
         )
 
-    distance = request.distance_yards or request.yards
+    # Honest distance-resolution ladder (specs/corridor-width-club-selection-
+    # plan.md §8) — replaces the `or`-fallback (which silently swallowed a
+    # legitimate distance_yards=0) with an explicit is-None ladder, and the
+    # old hardcoded `yards: int = 400` default (which could never be
+    # distinguished from a real 400y hole) with an honest error when no
+    # distance signal is present at all.
+    if request.distance_yards is not None:
+        distance = request.distance_yards
+    elif request.yards is not None:
+        distance = request.yards
+    elif request.hole_intelligence is not None and request.hole_intelligence.yards is not None:
+        distance = request.hole_intelligence.yards
+    else:
+        raise HTTPException(400, "No distance known for this hole — send distance_yards or yards.")
     weather = request.weather
 
     rec = generate_recommendation(

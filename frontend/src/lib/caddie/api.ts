@@ -120,7 +120,7 @@ export async function fetchRecommendation(params: {
     hole_number: params.hole_number,
     distance_yards: params.distance_yards,
     par: params.par || 4,
-    yards: params.yards || 400,
+    yards: params.yards,
     club_distances: params.club_distances || {},
     handicap: params.handicap,
     weather: params.weather,

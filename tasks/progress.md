@@ -28,10 +28,42 @@ so danger coverage is the real uncertainty; profile is None → v1 byte-identica
 routes/caddie.py /course-intel loop (has the FeatureCollection), consumed in aim_point.py positioning
 branch AFTER v1 bend-cap with take-the-shorter ceiling. Rider: RecommendationRequest.yards int=400 ->
 Optional[int]=None + honest 400-error ladder.
-## AWAITING: builder implementing specs/corridor-width-club-selection-plan.md on integration/next
-## (single lane, main checkout). On return: reviewer(fresh/adversarial) + qa gates; SHIP+PASS -> land,
-## update PR #139 checklist (NOTICEABLE), backlog followups done. BLOCKING -> re-dispatch builder.
-## Head at builder dispatch = <will be plan-commit SHA>. Caller INERT, no ship/ping this cycle.
+## DONE — corridor-width club selection (§4.4) implemented, builder (2026-07-12, integration/next, NOTICEABLE)
+Implemented the plan exactly (danger-edge fit rule, v1 byte-identical fallback unchanged — no
+re-plan). `backend/app/caddie/hazards.py`: new `extract_corridor_profile` (perpendicular
+cross-sections every 10y, tee-anchored, danger edges from `_tree_observations`/new
+`_water_observations` with min-obs 3/1, fairway edges as color via new `_point_in_ring_xy` +
+ray-cast helpers, all-or-nothing None gate) + `corridor_sample_at`. `types.py`: `CorridorSample`,
+`HoleIntelligence.corridor` (additive), 6 additive `TeeShotNumbers.corridor_*` fields. `aim_point.py`:
+`_club_fit_window_yds` (0.75×dispersion width), `_select_club_fitting_corridor` (bag-descending,
+ceiling = post-bend-cap total, unknown-width-never-rejects), wired into the positioning branch
+AFTER v1 bend-cap, BEFORE `leave_yards=...` — width note replaces v1 note only when it actually
+changed the club. `voice_prompts.py`: append-only corridor clause on `format_tee_numbers_line`.
+`routes/caddie.py`: wired `extract_corridor_profile` into `/course-intel`; killed the
+`yards: int = 400` rider fallback (`Optional[int]=None` + explicit is-None ladder +
+`HTTPException(400)` when every distance signal is absent). Frontend mirror in
+`caddie/types.ts`/`caddie/api.ts` (dropped `|| 400`); `CaddiePanel` line-113 display-side `?? 400`
+left alone (residual, flagged, out of scope per plan).
+One plan deviation (noted, minimal): §9-B-2's literal pinch numbers ("~30 at 270+, ~55 at <=220")
+can't actually exercise the width override against the plan's own `_BAG`/`_BEND` fixture (the
+bend-cap's ceiling structurally excludes the "270+" zone, and "~55 at <=220" is wide enough that
+the bend-capped club fits without a further cut, leaving v1's OWN note active — whose numbers
+include `bend.distance_yards`, not a `TeeShotNumbers` field, which would falsify the very
+numbers-only-from-payload assertion the test exists to pin). Test 2 instead pinches tight AT the
+bend-capped club's own landing distance and wide at a shorter club's landing, forcing an actual
+width override (hybrid->7iron) — same composition/invariants, genuinely exercises the new code.
+Honesty check (read-only): Bethpage fixture (`backend/tests/fixtures/bethpage_overpass.json`) has
+99 `golf=fairway`, ZERO `natural=wood`/`natural=tree`, 50 `natural=water` (mostly other holes' +
+2 real golf water hazards) — confirms the plan's honesty section exactly; danger-edge coverage is
+genuinely absent in this fixture, so `extract_corridor_profile` returns `None` on it and v1
+bend-cap remains the ceiling there — expected, not a gap, per the plan.
+Gates (local): `ruff check .` clean; `pytest tests -x -q` (excl. `tests/integration`, no local
+Postgres) 2336 passed, incl. new `test_corridor_profile.py` (7), `test_corridor_width_selection.py`
+(6), `test_recommend_tap_path.py` (5), extended `test_tee_shot_numbers.py` (+2); the existing
+`test_corridor_bend_cap.py` passes UNMODIFIED (6/6). Frontend: `npm run lint` clean, `tsc --noEmit`
+clean, voice-tests smoke 278/278, caddie vitest suites 101/101.
+## AWAITING: reviewer (fresh/adversarial) + qa gates on integration/next. SHIP+PASS -> land, update
+## PR #139 checklist (NOTICEABLE), backlog followups done. BLOCKING -> re-dispatch builder.
 
 ## DONE — caddie-numbers-coherence reviewer-BLOCKING fix, builder (2026-07-12, worktree branch, NOTICEABLE)
 Fixed the ONE reproducible defect the fable reviewer found in the numbers-coherence work below

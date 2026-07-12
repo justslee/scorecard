@@ -28,7 +28,8 @@ from app.caddie.club_selection import DEFAULT_CLUB_DISTANCES  # noqa: E402
 from app.caddie.session import RoundSession  # noqa: E402
 from app.caddie import tools as tools_mod  # noqa: E402
 from app.caddie.tools import shot_distance_payload  # noqa: E402
-from app.caddie.types import HoleIntelligence, WeatherConditions  # noqa: E402
+from app.caddie.types import HoleIntelligence, TeeShotNumbers, WeatherConditions  # noqa: E402
+from app.caddie.voice_prompts import format_tee_numbers_line  # noqa: E402
 
 
 def _hole(yards: int = 466, par: int = 4, elevation: float = 0.0) -> HoleIntelligence:
@@ -305,3 +306,56 @@ def test_downhill_short_hole_closure_matrix(elevation_ft, expect_reachable):
     # A positioning verdict now structurally implies the drive fell short.
     assert n.leave_exact_yards > 0
     assert n.drive_total_yards < n.to_green_yards
+
+
+# ── T-N7: format_tee_numbers_line corridor clause
+# (specs/corridor-width-club-selection-plan.md §7, §9-D) ───────────────────
+
+
+def _base_numbers(**overrides) -> TeeShotNumbers:
+    fields = dict(
+        hole_number=3, to_green_yards=400, plays_like_yards=400, club="hybrid",
+        club_stored_yards=200, drive_carry_yards=193, drive_total_yards=217,
+        leave_exact_yards=183, leave_yards=185,
+    )
+    fields.update(overrides)
+    return TeeShotNumbers(**fields)
+
+
+def test_corridor_fields_none_is_byte_identical_to_todays_string():
+    """No corridor fields set (every v1/reachable turn today) -> the line is
+    exactly what `format_tee_numbers_line` produced before this change —
+    no trailing clause, no extra characters."""
+    n = _base_numbers()
+    line = format_tee_numbers_line(n)
+    assert "Corridor" not in line
+    assert line == (
+        "Tee-shot numbers for hole 3 (AUTHORITATIVE — they close: "
+        "400 − 217 = 183): 400 to the green; plays like 400; "
+        "Hybrid — 200 stored, carries 193 and totals 217 in these conditions; "
+        "leaves about 185 in. Speak ONLY these numbers for this tee shot."
+    )
+
+
+def test_corridor_fields_set_appends_exact_numbers():
+    """Corridor fields set -> an append-only clause naming exactly those
+    numbers, nothing else invented."""
+    n = _base_numbers(
+        corridor_pinch_width_yards=30,
+        corridor_pinch_distance_yards=220,
+        corridor_capped_from_club="driver",
+        corridor_capped_from_window_yards=45,
+        corridor_club_window_yards=36,
+    )
+    line = format_tee_numbers_line(n)
+    # The base sentence is untouched (append-only, not a rewrite).
+    assert line.startswith(
+        "Tee-shot numbers for hole 3 (AUTHORITATIVE — they close: "
+        "400 − 217 = 183): 400 to the green; plays like 400; "
+        "Hybrid — 200 stored, carries 193 and totals 217 in these conditions; "
+        "leaves about 185 in. Speak ONLY these numbers for this tee shot."
+    )
+    assert (
+        " Corridor: pinches to ~30 at 220; Driver's zone needs ~45, "
+        "Hybrid's ~36 fits."
+    ) in line
