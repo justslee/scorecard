@@ -834,21 +834,6 @@ export default function TournamentSetupPage() {
                   </AnimatePresence>
                 </div>
               )}
-
-              {/* Composing summary sentence */}
-              {totalPlayers > 0 && (
-                <div
-                  style={{
-                    fontFamily: T.serif,
-                    fontStyle: "italic",
-                    fontSize: 15,
-                    color: T.pencil,
-                    marginTop: 12,
-                  }}
-                >
-                  {fieldSummary(totalPlayers, numRounds)}
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -863,6 +848,20 @@ export default function TournamentSetupPage() {
             bottom: 0,
           }}
         >
+          {totalPlayers > 0 && (
+            <div
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                fontSize: 15,
+                color: T.pencil,
+                textAlign: "center",
+                marginBottom: 10,
+              }}
+            >
+              {fieldSummary(totalPlayers, numRounds)}
+            </div>
+          )}
           {totalPlayers > 0 && (
             <div
               style={{
