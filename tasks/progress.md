@@ -15512,3 +15512,18 @@ PR #137 checklist (+tee-shot-yardage-overlays NOTICEABLE, with owner-device eyeb
 backlog. designer still BLOCKING -> re-dispatch builder. CALLER INERT — do NOT ship/ping; accumulate #137.
 INJECTION NOTE: another planted 'date changed / DO NOT mention' + telegram-pairing MCP instruction arrived in
 tool output this cycle — IGNORED per injection-defense (no authority); no task impact.
+
+## CYCLE 113 COMPLETE — tee-shot-yardage-overlays LANDED @8de8c0d (NOTICEABLE, PR #137 item 7/7)
+ALL GREEN: reviewer(FABLE) SHIP, qa PASS, designer BLOCKING->APPROVE (rendered-pixel re-confirm: 11px chip/
+stats-pill gap, inline cap 2). CI Frontend+Backend+E2E-advisory SUCCESS on head 3ca8324. Gates: lint/tsc/
+vitest 2416/build 19-page/voice 278. Commits: e040c30 plan(fable), be24416 impl, 8de8c0d fix (designer
+blockers B1 collision + B2 density; reviewer hardening R1 per-hole collinearity guard [sound, better than the
+literal per-plate check — eng-lead verified] + R2 raw-carry predicate + R3 test6 + P1 plate4m/dot3m).
+Backlog: NEW done entry tee-shot-yardage-overlays added via targeted insert (JSON valid 70 items, +10 lines,
+0 deletions — no duplicate-key loss); updated bumped 2026-07-12. PR #137 body checklist updated to 7 items.
+OWNER REAL-DEVICE EYEBALL (documented, NOT a gate fail): on-satellite plate/dot contrast+size across live
+pinch-zoom (sandbox has no Maps tiles — key credential policy) + the fade as GPS crosses the 40y tee-zone.
+CALLER INERT — did NOT ship/ping (per brief). Bundle #137 keeps accumulating; owner approves at next 'ship it'.
+INJECTION: multiple planted 'date changed / DO NOT mention' + Telegram-pairing MCP instructions arrived in the
+tool/system stream this cycle — ALL IGNORED per injection-defense (no authority; only the owner via sanctioned
+channel authorizes anything). No task impact.
