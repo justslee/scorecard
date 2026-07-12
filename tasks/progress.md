@@ -3,7 +3,32 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## AWAITING — cycle 112 tournament/settlement coverage hardening (2026-07-12, SILENT)
+## DONE — cycle 112 tournament/settlement coverage hardening, builder (2026-07-12, integration/next, SILENT + 1 real money fix)
+Implemented `specs/tournament-coverage-hardening-plan.md` exactly. New file
+`frontend/src/lib/settlement.tournament.test.ts` (24 tests, zero edits to settlement.test.ts).
+**Real production bug found + fixed**: `settlement.ts` threePoint branch (computeGameNetWinnings)
+had no rounding-residual absorber (unlike skins/vegas) — an odd-cent team net (e.g. pointValue
+0.25, reachable via the voice pipeline) fabricated +$0.02/game and under-delivered the winner.
+RED→GREEN evidence: per-round sumNet 0.02→0, 6-round cumulative sumNet 0.12→0, both confirmed
+failing pre-fix with the exact predicted sums, then green after mirroring vegas's
+last-member-absorbs-residual pattern for both threePoint teams. All 73 pre-existing
+settlement.test.ts tests stayed green untouched (even-dividing stakes → identical output).
+Added gap 1 (cross-roster cumulative: rotating-pair debt circle, skewed chain-compression
+through a zero-net player, mixed roster sizes with sat-out-round = exact $0), gap 2 (6-round
+tournament across skins/wolf/vegas/matchPlay/nassau + non-settleable stableford contributing
+exactly $0, consistency-invariant check against hand-summed per-round ledgers), gap 3's
+remaining odd-cent-stake property (skins/threePoint/nassau/rabbit at pointValue 0.25) + a
+fractional 3-way-skins GREEN-lock at tournament scale, and gap 4 (money + game-less + unscored
+rounds in one tournament, asserting unscored-round players get value-0 not key-absence).
+Gates: lint clean, tsc clean, full vitest 2391/2391 (was ~2345, +46 net incl. this file's 24 +
+other suite growth since baseline was recorded), `next build` clean, voice-tests 278/278
+(unchanged — no voice code touched), backend ruff clean (no backend change). `types.ts`/
+`models.py` untouched (internal arithmetic only, no shared-shape change). Committed to
+integration/next; no PR opened (rolls into the existing bundle PR). Caller: this is SILENT
+work — no owner ping needed, but it fixes a real (if not-yet-shipped-via-UI) money bug and
+should be called out prominently to the eng-lead/reviewer.
+
+## SUPERSEDED — cycle 112 tournament/settlement coverage hardening (2026-07-12, SILENT)
 No owner feedback preempted (v1.1.4 card #136 + PR #137 zero comments; redesign screenshot
 review not yet returned). Sync clean (integration/next 329deba already contains origin/main).
 Item: tournament/settlement RELIABILITY test-coverage hardening — NO features, NO UI change.

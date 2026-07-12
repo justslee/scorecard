@@ -191,7 +191,11 @@ export function computeGameNetWinnings(round: Round, game: Game): Record<string,
 
   // ─── Three-Point (2v2) ───────────────────────────────────────────────────
   // Each point difference moves pointValue between teams.
-  // Per-player share = team net / team size.
+  // Per-player share = team net / team size, with the last member of each
+  // team absorbing the rounding residual (same last-member-absorbs pattern
+  // as vegas's `distributeTeam` below) so the zero-sum invariant holds
+  // exactly at 2dp even when the team net has an odd number of cents
+  // (e.g. pointValue 0.25) or an unequal team size.
   if (game.format === 'threePoint' && results.threePoint) {
     const tp = results.threePoint;
     const teamA = tp.teamAId;
@@ -203,11 +207,23 @@ export function computeGameNetWinnings(round: Round, game: Game): Record<string,
     const teamAPlayers = game.teams?.find((t) => t.id === teamA)?.playerIds ?? [];
     const teamBPlayers = game.teams?.find((t) => t.id === teamB)?.playerIds ?? [];
 
+    const distributeTeam = (teamNet: number, members: string[]) => {
+      if (members.length === 0) return;
+      const n = members.length;
+      let runningSum = 0;
+      for (let i = 0; i < n - 1; i++) {
+        const share = r2(teamNet / n);
+        net[members[i]] = r2((net[members[i]] ?? 0) + share);
+        runningSum = r2(runningSum + share);
+      }
+      // Last member absorbs rounding residual so the team total is exact.
+      const last = members[n - 1];
+      net[last] = r2((net[last] ?? 0) + r2(teamNet - runningSum));
+    };
+
     if (teamAPlayers.length > 0 && teamBPlayers.length > 0) {
-      const shareA = r2(teamANet / teamAPlayers.length);
-      const shareB = r2(-teamANet / teamBPlayers.length);
-      for (const pid of teamAPlayers) net[pid] = r2((net[pid] ?? 0) + shareA);
-      for (const pid of teamBPlayers) net[pid] = r2((net[pid] ?? 0) + shareB);
+      distributeTeam(teamANet, teamAPlayers);
+      distributeTeam(r2(-teamANet), teamBPlayers);
     }
   }
 
