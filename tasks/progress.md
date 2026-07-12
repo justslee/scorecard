@@ -18,8 +18,14 @@ NewTournamentRoundClient.tsx:1247/1260; orb at frontend/src/components/CaddieOrb
 Likely fix: raise picker backdrop+sheet above the orb (e.g. 40→52 / 41→53), below LooperSheet(60),
 so the orb tucks behind the modal scrim (dimmed, non-interactive). Pure CSS constants; no seam →
 no unit test; verify by visual drive.
-Awaiting: Plan agent (fable) → specs/caddie-orb-sheet-zindex-plan.md. On plan return → builder on
-integration/next → reviewer + qa + designer(BLOCKING) → land + PR#135 checklist + mark backlog done.
+Plan (fable) DONE → specs/caddie-orb-sheet-zindex-plan.md. FIX LANDED @89450fa on integration/next:
+backdrop 40→52 / sheet 41→53 in both frontend/src/app/round/new/page.tsx and
+frontend/src/app/tournament/[id]/round/new/NewTournamentRoundClient.tsx (numeric CSS only). Now
+above orb(50), below LooperSheet(60); scrim dims/covers the orb. Plan §4 flagged 3 same-class z=50
+DOM-order ties (players modal, CourseSearch overlay, VRS backdrop) as a follow-up — NOT fixed here.
+Awaiting: reviewer + qa + designer(BLOCKING) all pinned to head 89450fa. Verdicts →
+SHIP+PASS+APPROVE: update PR#135 checklist, mark backlog item done, file the z=50-ties follow-up.
+BLOCKING → re-edit + re-review. Gate green = every required check state:SUCCESS on 89450fa.
 
 ## tournament-settlement-honesty — DONE, builder (2026-07-11, NOTICEABLE — stake picker changed)
 Implemented `specs/tournament-settlement-honesty-plan.md` exactly on `integration/next` @1a37556
