@@ -14499,3 +14499,21 @@ pass the buggy code too).
   closed-set/known to the frontend (GOLF_KEYTERMS mirror + "Player's clubs:"/"This hole:"/"Golf
   vocabulary:" signatures + keyword-overlap for the paraphrase). Keep STT biasing benefit intact.
 ## AWAITING fable Plan on caddie-context-leak -> specs/caddie-context-leak-plan.md. Then builder.
+
+## AWAITING — cycle 106 (map-markers-course-location) fable PLAN
+- TOP-PRIORITY owner v1.1.3 bug: map course-search pans to course but drops NO target marker,
+  NO my-location dot, in-bounds pins not visibly rendering, Google POI clutter shows through.
+- Scope (owner screenshots): (1) distinct highlight golf-flag on the searched (panTarget) course,
+  (2) native my-location dot (enableCurrentLocation, gated onMapReady, permission-denied graceful),
+  (3) verify/fix in-bounds pin rendering, (4) POI-suppression via GoogleMapConfig.styles (poi off).
+- Key files: frontend/src/components/CourseScoutMap.tsx (native map, onMapReady gate ~L206-220,
+  panTarget effect ~L260-267, pinToMarker ~L65, create config ~L187-201), CourseSearch.tsx
+  (panTarget ~L627, initialCenter ~L621, gpsCenter ~L401), scout-viewport.ts, backend
+  course_search.py (IN_BOUNDS_MAX_AREA_SQDEG=0.25 zoomIn gate ~L609).
+- Plugin @capacitor/google-maps 8.0.1 supports config.styles (native, since 4.3.0; mapId web-only)
+  + enableCurrentLocation(bool). course-flag.png IS mirrored to ios/App/App/public/assets and the
+  iconUrl:"assets/..." pattern works (satellite map uses it) -> icon path NOT the pin bug; leading
+  hypothesis = initial camera-idle never fires so no in-bounds fetch until first pan.
+- On fable plan return -> write specs/map-markers-course-location-plan.md, dispatch builder on
+  integration/next, then reviewer+qa+designer(BLOCKING). REBASE onto origin/integration/next before
+  each push (concurrent caddie-context-leak lane). Do NOT ship/ping; add to PR #136 checklist.
