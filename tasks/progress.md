@@ -14739,3 +14739,13 @@ SCOUT_MAP_STYLES→SCOUT_POI_SUPPRESSION byte-identical; add SCOUT_MAP_BASE_TONE
 SCOUT_MAP_STYLES=[...base,...suppression]) + scout-map-config.test.ts (re-scope + 2 new describe
 blocks incl. hex-format guard). On builder return → reviewer + qa + designer (BLOCKING), then land,
 open FRESH bundle PR (integration/next→main, NOTICEABLE), mark backlog done.
+
+## AWAITING update (cycle 108) — reviews dispatched @a610dc7 (head fe9de1f)
+Builder landed: scout-map-config.ts + .test.ts only (diff scoped, verified). Gates green locally
+(lint/tsc/vitest 2296/build/voice 278/ruff). Dispatched in parallel: reviewer (adversarial
+correctness: byte-identical suppression preserved, compose order, no marker/location/in-bounds
+regression, hex-only colors, no budget/behavior change), qa (gates on pushed head + sim screenshot),
+designer (BLOCKING — judge rendered paper/ink look, markers pop, labels legible; honesty clause §7).
+On all-green → land, open FRESH bundle PR (integration/next→main, NOTICEABLE), backlog done.
+BLOCKING issues → re-dispatch builder. Do NOT ship/ping (owner confirmation of the actual palette
+is a carried on-device gate, not this pass).
