@@ -15651,3 +15651,15 @@ OWNER ACTION (gated prod write — the actual fix): run against prod
   `uv run backend/scripts/ingest_osm_course.py --target-course Red --course-key osm-bethpage-red --course-name "Bethpage Red"`
 then verify `uv run backend/scripts/audit_course_coverage.py --target Red` and re-probe the DB once
 the `looper/prod` DATABASE_URL secret password is refreshed.
+
+## CYCLE 114 builder DONE @b7807b8 (rebased onto origin/integration/next 243b87c / v1.1.5)
+Builder impl b3920f9 -> rebased b7807b8. 25 files +2024/-43, 194 new backend tests. Local gates
+green per builder: ruff clean, pytest 2310 pass/95 skip(DB), lint/tsc clean, vitest 2413, voice 278.
+Root fix: recommend_payload yards Optional + resolves intel.yards (kills hardcoded-400 -> 125 bug);
+one-solve TeeShotNumbers (leave_exact = to_green - drive_total, closes exactly); NUMBERS_COHERENCE_RULE
++ MISS_SIDE_GROUNDING_RULE in both mouths; miss-side tie->center; corridor v1 bend-cap; par-sanity
+guard; guide-consumption regression lock. Deferred: §4.4 corridor-width, DB par verify (need staging).
+NOTE: earlier stray progress commits reached origin via the other lane's push; self-resolved.
+## AWAITING: reviewer(fable, adversarial) + qa (gates) on b7807b8. SHIP+PASS -> push worktree branch
+## to origin/integration/next, add PR #137 item 8 NOTICEABLE. BLOCKING -> re-dispatch builder.
+## CALLER INERT — no ship/ping, no VAD/mic change.
