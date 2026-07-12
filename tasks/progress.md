@@ -14473,3 +14473,21 @@ pass the buggy code too).
   null) while any overlay registered. Not gated on mode — CourseSearch covers the whole screen either
   way, orb is unreachable in list mode too, so suppress whenever mounted (simpler, robust, no ghost).
 ## AWAITING reviewer+qa+designer on 607899a (head 027c19c). SHIP+PASS+APPROVE -> open fresh bundle PR (NOTICEABLE), update progress+backlog. BLOCKING -> re-dispatch builder. Builder DONE 6 gates green.
+
+## Cycle 105 (2026-07-11, ISOLATED worktree) — caddie-context-leak [TOP-PRIORITY owner bug]
+- Owner-reported (2 screenshots, v1.1.3 LIVE caddie): the STT keyterm/priming context renders as a
+  USER bubble (dark, right-aligned) AND is treated as an utterance -> caddie replies "Didn't catch
+  that". Two variants: raw ("Golf vocabulary: birdie, bogey...") and a natural paraphrase.
+- ROOT CAUSE CONFIRMED (code refs): backend/app/caddie/keyterms.py build_transcription_prompt() ->
+  realtime_relay.py mint_ephemeral_session(transcription_prompt=) -> build_session_payload() sets it at
+  session.audio.input.transcription.prompt (CORRECT channel — a transcription HINT, never a conversation
+  item, never merged into instructions). The leak is downstream: gpt-4o-transcribe HALLUCINATES its own
+  prompt text back as the conversation.item.input_audio_transcription.completed transcript when VAD
+  false-triggers on silence/ambient noise. realtime.ts:598-617 renders ANY non-empty transcript as a
+  user bubble; the Realtime model (hearing the same noise) separately replies "Didn't catch that". The
+  natural-rephrase variant = paraphrase hallucination of the same prompt.
+- Fix direction: client-side filter in realtime.ts input_audio_transcription.completed handler that
+  drops a prompt-hallucination transcript (no bubble, no turn) — reliable because the prompt is
+  closed-set/known to the frontend (GOLF_KEYTERMS mirror + "Player's clubs:"/"This hole:"/"Golf
+  vocabulary:" signatures + keyword-overlap for the paraphrase). Keep STT biasing benefit intact.
+## AWAITING fable Plan on caddie-context-leak -> specs/caddie-context-leak-plan.md. Then builder.
