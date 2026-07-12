@@ -14443,4 +14443,4 @@ pass the buggy code too).
   caddie-context.ts module-level pub/sub) that CourseSearch opts into on mount; orb suppresses (returns
   null) while any overlay registered. Not gated on mode — CourseSearch covers the whole screen either
   way, orb is unreachable in list mode too, so suppress whenever mounted (simpler, robust, no ghost).
-## AWAITING Plan(fable) on specs/caddie-orb-map-mode-ghost-plan.md; then builder on integration/next.
+## AWAITING builder on integration/next implementing specs/caddie-orb-map-mode-ghost-plan.md; then reviewer+qa+designer. Plan(fable) DONE.
