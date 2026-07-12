@@ -14211,3 +14211,13 @@ brief) — owner separately testing v1.1.2; bundle keeps accumulating for the ne
 - Awaiting: Plan agent (fable) → specs/player-autocomplete-overlap-plan.md. On return: dispatch
   builder to implement on integration/next; then reviewer + qa + designer(BLOCKING); land; update
   PR #135 checklist + backlog item status; do NOT ship/ping (bundle keeps accumulating).
+
+## UPDATE — cycle 101 plan landed, builder dispatched
+- Plan (fable) done → specs/player-autocomplete-overlap-plan.md. Chose Option A: make both
+  PlayerAutocomplete overlays (suggestions + no-match) render IN-FLOW (drop position:absolute/
+  zIndex:60/top/left/right, add marginTop:6) so they push the Done button down and never cover it.
+  One file, one consumer. No jsdom unit test (node env, no hit-testing — would pass buggy code).
+- AWAITING: builder on integration/next implementing the plan (gates + Playwright interaction
+  drive of the Done button). On return: reviewer (fresh) + qa (gates state:SUCCESS on pushed head)
+  + designer (BLOCKING, user-facing sheet). Then update PR #135 checklist + backlog item status +
+  progress. Do NOT ship/ping (bundle keeps accumulating; owner testing v1.1.2 separately).
