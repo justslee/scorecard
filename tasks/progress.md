@@ -3,6 +3,46 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE @be24416 — cycle 113 tee-shot-yardage-overlays, builder (2026-07-12, integration/next, NOTICEABLE)
+Implemented specs/tee-shot-yardage-overlays-plan.md exactly (fable plan @e040c30). New pure module
+`frontend/src/lib/map/tee-shot-overlays.ts`: walks the hole's real OSM `golf=hole` centerline in
+UNROUNDED float meters (rounds once at the end — the pinned correctness fix vs. reusing
+yardsDistance/haversineYards, which both round per-segment) to place blue/white/red 200/150/100
+plates from GREEN CENTER; centerline REQUIRED (no chord fallback for plates — dogleg honesty, kills
+the Bethpage-Black-4 class of bug). Fairway bunker front/back carries from the SELECTED tee via a TS
+port of backend hazards.py's `_project_onto_polyline` (chord fallback on straight holes only,
+verified to AGREE with the path projection in test 6). Honest by construction: missing/degenerate
+centerline -> no plates; centroid-only (Point) bunkers SKIPPED entirely (no fabricated range);
+greenside(45y)/corridor(45y)/floor(100y)/ceiling(330y) predicate excludes non-tee-shot bunkers;
+capped at 4 by smallest lateral. Par-3 suppresses everything. 21 vitest cases (all 13 plan scenarios):
+straight-hole plate accuracy, dogleg (200 plate on 2nd leg, >20y off the straight chord — proves no
+chord fallback), too-short omission, degenerate/mis-tagged centerline -> [], reversed-LineString
+orientation invariance, bunker front/back chord-vs-path agreement, greenside/corridor/floor/ceiling
+exclusion, centroid skip, rounding + equal-edge (front===back), cap-4 sorted by front, par-3
+suppression (par:null NOT suppressed), and the 40y/41y visibility boundary.
+**Bug found + fixed during TDD** (before any code shipped): the centerline is oriented GREEN-first for
+plate placement, but reusing that order for the bunker-carry projection inverted the carry direction
+(cumulative distance FROM green, not from tee) — caught by 5 failing bunker tests, fixed by reversing
+back to tee-first before the carry projection.
+Wired into `GoogleSatelliteMap.tsx` behind a new optional `mappedHoles` prop (absent => fully inert —
+CourseSearch/CourseScoutMap/map-course pass nothing, unaffected). Plates = native `addCircles`
+(iOS can't load data-URL/canvas marker icons — verified `Map.swift:726`); bunker carry TEXT = DOM
+paper chips styled like the existing tap-target pill, right edge (opposite side), fades via
+AnimatePresence. Separate id ref (`teeShotCircleIdsRef`) + visibility ref
+(`teeShotVisibleRef`) isolate this from the existing per-GPS-tick hole-circle refresh (no flicker);
+plates ride the existing coalescing camera queue on hole change; native redraw fires ONLY on a GPS-tick
+visibility FLIP (never per-tick churn, no timers/hysteresis). Every native call gated on `mapReadyRef`.
+Wired `mappedHoles` through `InlineHoleDiagram.tsx` (its existing `holeIndex`) and
+`RoundPageClient.tsx`'s fullscreen blow-up (new `indexByHoleNumber(courseHoles)` memo — no new fetch).
+Gates (evidence): `npm run lint` clean · `npx tsc --noEmit` clean · `npx vitest run` **2412/2412**
+(incl. the new 21) · `npm run build` clean · voice-tests smoke **278/278**. Backend untouched (no
+ruff gate). NOT sandbox-verifiable: actual satellite-tile rendering + on-device GPS walk (Maps-key
+credential policy has historically blocked sandbox tile renders — a known lesson); the pure vitest
+suite is the primary correctness evidence per the plan; final tile-level visual sign-off needs the
+owner's device (TestFlight). Classified **NOTICEABLE** (owner top-priority, visible on the in-round
+satellite map on tee shots). Committed to `integration/next` @be24416, pushed. Caller: dispatch
+reviewer(fresh)+qa+designer next; do not ship/ping solo — this rides the existing bundle PR #137.
+
 ## LANDED @1ee8427 — cycle 112 tournament-settlement-coverage-hardening, eng-lead (2026-07-12, NOTICEABLE)
 No owner feedback preempted this cycle (v1.1.4 card #136 + PR #137 zero comments; redesign
 screenshot review not yet returned). Sync clean. **A real money bug was found + fixed** — the
