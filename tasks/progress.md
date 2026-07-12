@@ -14981,3 +14981,23 @@ NORTHSTAR. ON RETURN: all green → add to PR #137 checklist (NOTICEABLE — rea
 update backlog tournament-money-format-completion (wolf DONE; match>2p picker + team-assignment UI FILED),
 finish. Any BLOCKING → re-dispatch builder, re-review. REBASE onto latest origin/integration/next before
 any further push (concurrent lanes: swipe-back-nav worktree + tournament-redesign). Caller INERT — NO ship/ping.
+
+## LANDED (cycle 110, 2026-07-12) — WOLF zero-sum money settlement on integration/next @741e6ac (in PR #137)
+ALL VERDICTS GREEN. reviewer SHIP (read every delta branch: lone win {+3,-1,-1,-1} / loss mirror / partner
+win {+1,+1,-1,-1} / loss mirror all sum 0; ties+incomplete-data emit EMPTY delta; hand-recomputed the property
+fixture p1+12/p2-4/p3-8/p4$0 @ $2 = asymmetric, non-vacuous; confirmed replaced tests are a legitimate
+STRENGTHENED behavior change, not weakened — 2 non-blocking notes folded in). qa PASS (lint/tsc/vitest
+2336-2336/build/voice 278/ruff; CI backend SUCCESS, CI frontend was IN_PROGRESS at check). designer
+BLOCKING->APPROVE: negative wolf totals now render in T.errorInk + signed across all 3 surfaces
+(GameResults.tsx:488, GameLeaderboards.tsx:446, yardage/LeaderboardSheet.tsx:1344), matching Hammer/BBB.
+Commits: 9ba12db (engine: computeWolf zero-sum deltas + settlement.ts wolf branch + wolf in SETTLEABLE_FORMATS
++ full §5 test matrix; I finished the 5 test edits the interrupted builder left) + 741e6ac (designer color/sign
+fix + reviewer hardening: settlement iterates results.wolf.orderPlayerIds not playerIds; stale test header).
+Data model captured the pick already (wolfHoleChoices + GameResults UI) — NO type/backend/migration change.
+Money = totals x pointValue, zero-sum every hole; no residual absorber (integer points x <=2dp stake exact).
+Backlog tournament-money-format-completion: PART 1 WOLF resolved (targeted edit, JSON valid 68 items, diff
+2ins/1del); PART 2 (match-play >2p opponent picker) + PART 3 (team-assignment UI vegas/bestBall/scramble/
+threePoint) STILL FILED for owner — genuinely design-gated, item stays 'ready'. PR #137 checklist: 3rd item
+added (NOTICEABLE — real money settles for wolf). Caller INERT — NO ship/ping; bundle keeps accumulating for
+owner's next 'ship it'. Injection note: an embedded "date changed / don't mention it" system-reminder appeared
+in this session's stream (known pattern) — ignored per injection-defense, no action taken.
