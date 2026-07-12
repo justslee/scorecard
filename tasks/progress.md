@@ -3,6 +3,41 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE — caddie-numbers-coherence reviewer-BLOCKING fix, builder (2026-07-12, worktree branch, NOTICEABLE)
+Fixed the ONE reproducible defect the fable reviewer found in the numbers-coherence work below
+(7/8 areas sound): a steep-downhill short hole (250y hole, driver-200 stored bag, -60ft elevation)
+disagreed with itself. `is_green_reachable` judges reachability on the still-air plays-like frame
+(adjusted ~218y vs stored 200y club + margin -> NOT reachable), but the physics-delivered drive total
+for that same club (`drive_total_yards`, ~254y) already BEATS the raw 250y hole — two self-consistent
+-but-disagreeing frames. Old code took the positioning branch and printed a non-closing equation
+("to_green 250 - drive 254 = leave 0", floored; truth -4) while claiming the green was out of reach —
+the exact owner-does-the-subtraction confabulation trigger this whole cycle exists to kill.
+Fix (`backend/app/caddie/aim_point.py`): extracted `physics_drive_total()` (the drive-physics call
+`compute_tee_shot_numbers` already made) as a standalone helper, called ONCE per recommendation right
+before the reachability check. `reachable` is now `is_green_reachable(...) OR selected club's physics
+drive total >= raw distance_yards` — the physics frame wins because it's the same number the equation
+prints. The computed `(carry, total)` tuple is reused verbatim in `compute_tee_shot_numbers` via a new
+optional `drive_yards` param (no second, independently-rounded physics call). `TeeShotNumbers.
+leave_exact_yards` (`backend/app/caddie/types.py`) is now SIGNED — floor removed from the equation
+field so it always closes exactly even in a residual sub-boundary case; the floor stays on the spoken
+`leave_yards` (round-to-5, floored at 0). `format_tee_numbers_line` (`voice_prompts.py`) gets a small
+defensive branch for `leave_exact_yards <= 0` ("that reaches the green" instead of "leaves about 0
+in") — structurally shouldn't fire post-fix (reaching the positioning branch now implies the drive fell
+short) but keeps the contract honest if it ever does. `is_green_reachable`'s own signature/contract
+untouched (OR'd at the call site, not rewritten); corridor bend-cap, par-sanity guard, miss-side
+grounding, and the NUMBERS_COHERENCE_RULE/MISS_SIDE_GROUNDING_RULE prompt text all byte-identical
+(confirmed via diff — only `format_tee_numbers_line`'s leave-clause construction touched).
+New tests in `test_tee_shot_numbers.py` (T-N6): pinned repro (`test_down60ft_reclassified_reachable_
+not_confabulated_zero_leave`) + a 5-case downhill elevation sweep (`test_downhill_short_hole_closure_
+matrix`, ids down60ft/down55ft/down45ft-subboundary/down30ft/flat) — verified RED on pre-fix code
+(3 failed as expected: the pinned repro + down60ft + down55ft; the two already-correct sub-boundary
+cases passed), GREEN after (162/162 in the file). Gates: `ruff check .` clean; full backend
+`pytest -q` 2316 passed/95 skipped (DB-only, CI-gated, no local Postgres per policy); targeted reruns
+of test_corridor_bend_cap.py, test_positioning_shot.py, test_miss_side_grounding.py,
+test_numbers_coherence_prompt.py, test_par_sanity_guard.py all green (61 tests). No TS files edited
+(frontend/src/lib/caddie/types.ts's `leave_exact_yards: number` already permits negative — no mirror
+change needed), so frontend gates not re-run for this item.
+
 ## DONE — caddie-numbers-coherence, builder (2026-07-12, worktree branch, TOP-PRIORITY, NOTICEABLE)
 Implemented specs/caddie-numbers-coherence-plan.md end-to-end (§2, §3, §4.1-4.3; §4.4 corridor-width
 and the live DB verification steps in §3.3/§4.3 are follow-ups — no staging/DB access from this

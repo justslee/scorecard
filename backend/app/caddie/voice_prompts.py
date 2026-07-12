@@ -239,9 +239,15 @@ def format_tee_numbers_line(n: TeeShotNumbers) -> str:
         else f"plays like {n.plays_like_yards}"
     )
 
-    leave_clause = f"leaves about {n.leave_yards} in"
-    if n.leave_plays_like_yards is not None and n.leave_plays_like_yards != n.leave_yards:
-        leave_clause += f" (plays like ~{n.leave_plays_like_yards})"
+    if n.leave_exact_yards <= 0:
+        # Residual sub-boundary case: the drive-total equation still closes
+        # (to_green - drive_total <= 0), but there's no honest "leaves X in"
+        # to speak — the drive reaches the green, full stop.
+        leave_clause = "that reaches the green"
+    else:
+        leave_clause = f"leaves about {n.leave_yards} in"
+        if n.leave_plays_like_yards is not None and n.leave_plays_like_yards != n.leave_yards:
+            leave_clause += f" (plays like ~{n.leave_plays_like_yards})"
 
     return (
         f"Tee-shot numbers for hole {n.hole_number} (AUTHORITATIVE — they close: "

@@ -236,3 +236,72 @@ def test_headwind_leave_is_never_less_than_still_air():
     assert rec_still.tee_shot_numbers is not None
     assert rec_wind.tee_shot_numbers is not None
     assert rec_wind.tee_shot_numbers.leave_exact_yards >= rec_still.tee_shot_numbers.leave_exact_yards
+
+
+# ── T-N6: downhill short-hole frame-alignment (reviewer BLOCKING fix) ───────
+#
+# Reviewer repro (2026-07): a steep-downhill short hole — 250y hole, a
+# driver-200 (stored) bag, -60ft elevation. The physics drive
+# (`drive_total_yards`) lands ~254y, which is > the 250y hole — the hole IS
+# drivable. But the OLD `is_green_reachable` check judged reachability on
+# the still-air plays-like frame (adjusted ~218y vs the stored 200y club +
+# margin), which said NOT reachable, so the code took the positioning
+# branch and printed a non-closing equation: "to_green 250 - drive 254 =
+# leave 0" (floored; truth -4) while claiming the green was out of reach —
+# the exact owner-does-the-subtraction confabulation trigger this whole
+# cycle exists to kill. Fixed by reclassifying reachable whenever the
+# PHYSICS-delivered drive total for the selected club reaches the raw
+# to-green distance, even when the still-air frame disagrees.
+
+
+def test_down60ft_reclassified_reachable_not_confabulated_zero_leave():
+    """The reviewer's exact repro: 250y hole, driver-200 bag, -60ft
+    elevation. The selected club's physics drive total (254) beats the raw
+    hole distance (250), so this MUST classify reachable/approach — never a
+    positioning block claiming "green's out of reach ... leaves about 0 in"
+    while the drive total already reaches the green."""
+    hole = _hole(yards=250, par=3, elevation=-60.0)
+    rec = generate_recommendation(hole, 250, {"driver": 200}, handicap=15)
+
+    assert rec.shot_kind == "approach"
+    assert rec.tee_shot_numbers is None
+    assert rec.leave_yards is None
+    assert "out of reach" not in " ".join(rec.reasoning).lower()
+    assert "leaves about 0" not in rec.aim_point.description.lower()
+
+
+@pytest.mark.parametrize(
+    "elevation_ft,expect_reachable",
+    [
+        (-60.0, True),   # physics drive (254) >= hole (250) -> reclassified reachable
+        (-55.0, True),   # still clears the hole once elevation is consulted
+        (-45.0, False),  # sub-boundary: drive falls just short -> stays positioning
+        (-30.0, False),
+        (0.0, False),    # flat: nowhere close, unambiguous positioning shot
+    ],
+    ids=["down60ft", "down55ft", "down45ft-subboundary", "down30ft", "flat"],
+)
+def test_downhill_short_hole_closure_matrix(elevation_ft, expect_reachable):
+    """The missing closure-matrix cell: a 250y hole with a driver-200 bag
+    across a downhill elevation sweep, from squarely reclassified-reachable
+    (down60ft) through a sub-boundary case that still falls short (down45ft)
+    down to flat (unambiguous positioning). Every non-reachable cell must
+    close its equation EXACTLY with a genuinely positive leave — reaching
+    this branch at all now structurally implies the selected club's physics
+    drive fell short of the raw hole distance."""
+    hole = _hole(yards=250, par=3, elevation=elevation_ft)
+    rec = generate_recommendation(hole, 250, {"driver": 200}, handicap=15)
+
+    if expect_reachable:
+        assert rec.shot_kind == "approach"
+        assert rec.tee_shot_numbers is None
+        return
+
+    assert rec.shot_kind == "positioning"
+    n = rec.tee_shot_numbers
+    assert n is not None
+    # Gate (1) invariant, still signed — closes EXACTLY.
+    assert n.to_green_yards - n.drive_total_yards == n.leave_exact_yards
+    # A positioning verdict now structurally implies the drive fell short.
+    assert n.leave_exact_yards > 0
+    assert n.drive_total_yards < n.to_green_yards

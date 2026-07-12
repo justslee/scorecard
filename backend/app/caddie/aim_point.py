@@ -395,6 +395,40 @@ def compute_positioning_aim(
 # speaks the same closing arithmetic.
 
 
+def physics_drive_total(
+    hole: HoleIntelligence,
+    club: str,
+    club_dist: int,
+    weather: Optional[WeatherConditions],
+    shot_bearing: float,
+    competition_legal: bool,
+) -> tuple[Optional[int], int]:
+    """The physics-delivered drive for `club` in today's conditions.
+
+    Returns `(drive_carry_yards, drive_total_yards)` through the EXACT SAME
+    call shape as the `get_shot_distance` tool
+    (`tools.py::shot_distance_payload`) — the single source of truth for a
+    club's drive total. Every caller (reachability classification,
+    `compute_tee_shot_numbers`) goes through THIS function so the numbers
+    can never diverge from a second, independently-rounded physics call
+    (specs/caddie-numbers-coherence-plan.md §2.2 — a downhill-short-hole
+    frame mismatch between the reachability check and the drive-total
+    calculation was the exact confabulation trigger this closes).
+    """
+    if competition_legal:
+        # USGA-conforming: no environmental physics anywhere in the block —
+        # the drive total IS the stored number, still closes exactly.
+        return None, club_dist
+
+    cond, _ = physics.conditions_from_weather(
+        weather, shot_bearing,
+        elevation_delta_ft=hole.elevation_change_ft,
+        carry_hint_yards=float(club_dist),
+    )
+    result = physics.shot_distance_for_club(club, float(club_dist), cond)
+    return round(result.carry_yards), round(result.total_yards)
+
+
 def compute_tee_shot_numbers(
     hole: HoleIntelligence,
     distance_yards: int,
@@ -405,36 +439,35 @@ def compute_tee_shot_numbers(
     shot_bearing: float,
     competition_legal: bool,
     yardage_basis: Optional[str] = None,
+    drive_yards: Optional[tuple[Optional[int], int]] = None,
 ) -> "TeeShotNumbers":
     """The one authoritative numbers block for a positioning/tee shot.
 
-    Drive physics run through the EXACT SAME call shape as the
-    `get_shot_distance` tool (`tools.py::shot_distance_payload`) — physics
-    parity by construction, not convention. `leave_exact_yards` is the raw
-    closing arithmetic (`to_green_yards - drive_total_yards`, floored at 0);
-    `leave_yards` is its round-to-5 spoken form. `leave_plays_like_yards`
-    keeps today's plays-like-frame number as a labeled extra, never the
-    primary leave (specs/caddie-numbers-coherence-plan.md §2.2's documented
-    leave-frame redefinition — the raw frame is what the golfer's own
-    arithmetic checks, so it's the frame the caddie now speaks).
+    Drive physics run through `physics_drive_total` — the EXACT SAME call
+    shape as the `get_shot_distance` tool — physics parity by construction,
+    not convention. `drive_yards`, when provided, is the ALREADY-COMPUTED
+    `(carry, total)` pair from the reachability check upstream in
+    `generate_recommendation` — reused verbatim rather than recomputed, so
+    the drive numbers this block prints are byte-identical to the ones that
+    decided reachability (never a second, independently-rounded call that
+    could diverge). `leave_exact_yards` is the raw closing arithmetic
+    (`to_green_yards - drive_total_yards`, SIGNED — may be <= 0 on a
+    residual sub-boundary case); `leave_yards` is its round-to-5, floored-at-
+    0 spoken form. `leave_plays_like_yards` keeps today's plays-like-frame
+    number as a labeled extra, never the primary leave
+    (specs/caddie-numbers-coherence-plan.md §2.2's documented leave-frame
+    redefinition — the raw frame is what the golfer's own arithmetic checks,
+    so it's the frame the caddie now speaks).
     """
-    if competition_legal:
-        # USGA-conforming: no environmental physics anywhere in the block —
-        # the drive total IS the stored number, still closes exactly.
-        drive_carry_yards: Optional[int] = None
-        drive_total_yards = club_dist
+    if drive_yards is not None:
+        drive_carry_yards, drive_total_yards = drive_yards
     else:
-        cond, _ = physics.conditions_from_weather(
-            weather, shot_bearing,
-            elevation_delta_ft=hole.elevation_change_ft,
-            carry_hint_yards=float(club_dist),
+        drive_carry_yards, drive_total_yards = physics_drive_total(
+            hole, club, club_dist, weather, shot_bearing, competition_legal,
         )
-        result = physics.shot_distance_for_club(club, float(club_dist), cond)
-        drive_carry_yards = round(result.carry_yards)
-        drive_total_yards = round(result.total_yards)
 
-    leave_exact_yards = max(0, distance_yards - drive_total_yards)
-    leave_yards = round(leave_exact_yards / 5) * 5
+    leave_exact_yards = distance_yards - drive_total_yards
+    leave_yards = round(max(0, leave_exact_yards) / 5) * 5
     leave_plays_like_yards = round(max(0, adjusted_yards - club_dist) / 5) * 5
 
     return TeeShotNumbers(
@@ -555,12 +588,32 @@ def generate_recommendation(
     bias = "moderate" if is_tee_shot else "conservative"
     club, club_dist = select_club(adjusted_yards, clubs, bias=bias)
 
-    # Reachability classification (specs/caddie-shot-context-reachability-plan.md).
+    # Reachability classification (specs/caddie-shot-context-reachability-plan.md,
+    # specs/caddie-numbers-coherence-plan.md §2.2 frame-alignment fix).
     # Reachable → today's flag-relative path, byte-identical. Not reachable →
     # positioning shot: the flag doesn't exist for this swing, landing-zone
     # advice instead (owner incident 2026-07-06: pin-relative aim on an
     # unreachable 400y tee shot).
-    reachable = is_green_reachable(adjusted_yards, clubs, hole.green_depth_yards)
+    #
+    # A drive whose PHYSICS total reaches the raw to-green distance is
+    # reachable even when the still-air plays-like frame (`is_green_reachable`)
+    # says otherwise — e.g. a steep-downhill short hole where the physics
+    # elevation boost carries the selected club's drive past the green while
+    # the still-air check (which never sees elevation) still fails it. The
+    # physics frame is the truthful one: it's the same number the drive-total
+    # equation prints, so the two can never disagree about whether the hole
+    # is drivable (the exact confabulation trigger this closes — a drive
+    # total >= the hole with a printed "leaves 0" positioning block).
+    # Computed ONCE here and reused verbatim in `compute_tee_shot_numbers`
+    # below so the drive numbers stay parity-identical — never a second,
+    # independently-rounded physics call that could diverge.
+    selected_drive_yards = physics_drive_total(
+        hole, club, club_dist, weather, shot_bearing, competition_legal,
+    )
+    reachable = (
+        is_green_reachable(adjusted_yards, clubs, hole.green_depth_yards)
+        or selected_drive_yards[1] >= distance_yards
+    )
     max_reach = max((clubs or DEFAULT_CLUB_DISTANCES).values())
     leave_yards: Optional[int] = None
     tee_shot_numbers: Optional[TeeShotNumbers] = None
@@ -578,10 +631,12 @@ def generate_recommendation(
         # ONE authoritative numbers block (specs/caddie-numbers-coherence-plan
         # .md §2.2) — everything downstream (leave, aim, landing advice, the
         # P0/P1 reasoning lines) speaks THIS block's leave, never a
-        # separately-derived number.
+        # separately-derived number. `drive_yards` reuses the exact physics
+        # call that decided reachability above — same club, same conditions.
         tee_shot_numbers = compute_tee_shot_numbers(
             hole, distance_yards, adjusted_yards, club, club_dist,
             weather, shot_bearing, competition_legal, yardage_basis,
+            drive_yards=selected_drive_yards,
         )
 
         # Corridor v1 — bend-aware club cap (§4.1, bend-cap only; the full
