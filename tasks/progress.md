@@ -15151,3 +15151,46 @@ NOT a layout-mechanics change (sticky container untouched). Builder implementing
 Playwright at 390x844 AND 375x667: summary+colophon+button all visible at scroll=0, >=16px gap
 summary->button, centered no-clip. ON RETURN: green -> designer quick pixel re-confirm -> APPROVE ->
 PR #137 checklist NOTICEABLE + backlog + finish. REBASE before push. Caller INERT — no ship/ping.
+
+## tournament-setup: relocate composing summary — DONE, builder (2026-07-12, integration/next, NOTICEABLE)
+Implemented the designer's exact placement fix, commit `370815c` on `integration/next`
+(off `768c3e7`). Presentation-only content relocation in
+`frontend/src/app/tournament/new/page.tsx` — no touch to the sticky container's own layout
+mechanics (padding, gradient, position:sticky), per the designer's decision that the earlier
+padding-bump attempt (cycle 111) was the wrong fix (sticky CTA is viewport-glued from first
+paint; trailing paddingBottom is unreachable dead space at scroll=0).
+- Removed the composing-summary block (`fieldSummary(totalPlayers, numRounds)`, serif italic
+  15 `T.pencil`, `marginTop:12`) from the Players section (left `paddingBottom:80`, ghost
+  lines, and everything else in that section untouched).
+- Re-added it as a new guarded (`totalPlayers > 0`) sibling — FIRST child of the sticky CTA
+  block, immediately before the existing colophon — with exactly the two deltas the designer
+  specified: dropped `marginTop:12`, added `textAlign:"center"` + `marginBottom:10`; kept
+  `fontFamily:T.serif`, `fontStyle:"italic"`, `fontSize:15`, `color:T.pencil` byte-identical.
+  Colophon/error/button blocks are untouched (same styles, same `disabled`/`canCreate` logic).
+  Sticky send-off now reads: summary → colophon (`1 DAY · 1 ENTRANT`) → error (if any) → Create.
+- Concurrency note: another lane (this same eng-lead loop) was doing `git reset --hard
+  origin/integration/next` + committing progress updates on this SAME checkout mid-edit, which
+  silently wiped my first uncommitted Edit (confirmed via `git reflog` — `reset: moving to
+  origin/integration/next` between my edit and my first lint run). Re-synced to origin, redid
+  the edit, and committed it immediately (small, isolated commit) to close the race window
+  before running the rest of the gates. No data loss in the final result, but this is the
+  documented shared-checkout hazard from the "Parallel lanes use worktrees" memory — this repo
+  is NOT running lanes in separate worktrees, which is a real risk for other concurrent builder
+  invocations too.
+- Playwright re-verification (dev server, ungated route, no Clerk key needed) at both
+  390×844 and 375×667, name filled + 1 round (default) + 1 custom player added, scroll=0:
+  summary, colophon, and Create button ALL visible with zero scroll at both widths. Measured
+  gap (summary bottom → Create button top, spanning the colophon in between): **31.5px** at
+  both 390×844 and 375×667 (≥16px required). Summary horizontally centered exactly
+  (`offset: 0` from viewport center at both widths) and not clipped (`summaryBox.width: 346`
+  @390, `331` @375 — matches the expected ~331px available width at 375). No layout jank on
+  0→1 players: Create button `boundingBox` is pixel-identical (`y:766` @390×844) before and
+  after adding the first player — sticky block just adds content above without shifting the
+  button. Screenshots: `reloc-390x844.png`, `reloc-375x667.png`,
+  `reloc-transition-after.png` in the session scratchpad.
+- Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` succeeded (19/19
+  static pages), `npx tsx voice-tests/runner.ts --smoke` → `pass=278 fail=0 total=278`.
+- Touched only `frontend/src/app/tournament/new/page.tsx` (14 insertions, 15 deletions — net
+  1 fewer line, since the block moved rather than duplicated). No other file changed.
+- ON RETURN: designer quick pixel re-confirm → APPROVE → PR #137 checklist NOTICEABLE +
+  backlog + finish. Caller INERT — builder does not ship/notify per task instructions.
