@@ -15434,3 +15434,18 @@ Re-review after: designer BLOCKING re-confirm on rendered pixels (collision gone
 head; math additions are additive guards (can only omit MORE, never fabricate) + pinned tests -> eng-lead
 eyeballs the diff, no full fresh fable reviewer re-run for the bounded guard. AWAITING builder(batched fix).
 CALLER INERT — do NOT ship/ping; keep accumulating PR #137.
+## CYCLE 114 — caddie-numbers-coherence (TOP-PRIORITY owner bug; isolated worktree lane)
+Owner screenshots: Bethpage Black hole 1, par4 466y. Caddie quoted incoherent yardages
+(300/125/280/266 that never close: 466-300=166 not 125; "plays longer" -> LESS is backwards)
+and asserted "left is the better miss" though trees line BOTH sides.
+Root causes traced pre-plan:
+ - miss-side: aim_point.compute_positioning_miss_side ties break to "left" (`<=`) -> confident
+   "favor left" on trees-both-sides; no honest "no good miss" degradation.
+ - numbers: voice_prompts._situation_block feeds "Player clubs: Driver 300y" and a separate
+   "Last recommendation ... leaves about {leave_yards} in" text with NO closed-arithmetic
+   bundle + no rule binding leave = plays-like - drive. LLM freewheels driver totals.
+ - leave_yards origin: aim_point.generate_recommendation:411 leave=round((adjusted-club_dist)/5)*5.
+   125 unreproduced -> Plan(fable) must reproduce Bethpage-1 server-side.
+## AWAITING: Plan(fable) -> specs/caddie-numbers-coherence-plan.md. Next: builder implements,
+## then reviewer(fable)+qa. Rebase onto origin/integration/next before push; add to PR #137
+## as NOTICEABLE. CALLER INERT — no ship/ping, no VAD/mic change.
