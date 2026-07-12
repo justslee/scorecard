@@ -14688,3 +14688,17 @@ pass the buggy code too).
 - Board: "Looper — Product Board" Bundle #136 card moved to Shipped with merge SHA, TestFlight
   version/build, the 4-item list, how-to-test notes, and the known residual (caddie may still SPEAK
   "say again?" audio on noise — VAD-tuning, owner-gated, not fixed here).
+
+## AWAITING (cycle 108, 2026-07-12) — map-base-paper-tone-style
+Branch integration/next @ce99ebc (fresh recut off main @71f8910, bundle #136 shipped v1.1.4).
+Step-1 owner check: NO v1.1.4 feedback (Gmail approvals empty, no Needs Review card, no #136
+card comments, no Telegram). Nothing preempts → building map-base-paper-tone-style (backlog id,
+priority 6, low risk, NOTICEABLE map look). No open bundle PR — open fresh when this lands.
+Palette: T.paper #f4f1ea / paperDeep #ece7db / paperEdge #d9d2c0 / ink #1a2a1a / inkSoft #3a4a38
+/ pencil #6b6558 / pencilSoft #958d7d (frontend/src/components/yardage/tokens.ts).
+CourseScoutMap uses MapType.Normal + styles:SCOUT_MAP_STYLES (scout-map-config.ts). GoogleSatelliteMap
+uses MapType.Satellite with NO styles — HONESTY: paper-tone landscape/water can't repaint satellite
+imagery; only road/label overlays are styleable there.
+AWAITING: fable Plan agent → specs/map-paper-tone-plan.md. On plan return → dispatch builder on
+integration/next, then reviewer + qa + designer (designer BLOCKING). Compose (do not replace)
+SCOUT_MAP_STYLES; keep invariant test scope-lock.
