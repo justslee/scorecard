@@ -3,6 +3,45 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## caddie-voice-reliability-hardening — DONE, builder (2026-07-12, integration/next, mostly silent + 1 noticeable copy tweak)
+Implemented `specs/caddie-voice-reliability-hardening-plan.md` exactly, commit `d187254` on
+`integration/next` (off `b0a6d9c`). Client-side correctness/reliability pass on the Realtime
+caddie-voice rendering path — ZERO VAD/`turn_detection`/mic/gain/`noise_reduction`/
+`getUserMedia`/commit-timing surface touched (confirmed via `git diff --stat`; only comment-text
+matched "commit").
+- Edge 1 (attribution race, `realtime.ts`): `triggerItemByResponse` (single trigger, LIFO
+  `pop()`) → `triggerItemsByResponse` (candidate SET snapshotted from the whole
+  `pendingSpeechItems` at `response.created`) + new `classifyCandidates()` aggregate rule (ANY
+  real ⇒ real; ALL noinput ⇒ noinput; else pending). A phantom VAD blip landing between a real
+  turn's commit and its `response.created` can no longer steal sole attribution and swallow a
+  legit clarifier reply. Single-candidate behavior is bit-identical — `realtime-noinput.test.ts`
+  passes unchanged.
+- Edge 2 (map lifecycle): idempotent `finishResponse()` prunes a resolved response's candidate
+  `inputClassByItem` entries + its `triggerItemsByResponse` entry. Caps:
+  `MAX_INPUT_CLASS_ENTRIES=64` (evict-oldest, skip live candidates) in `realtime.ts`;
+  `MAX_TRACKED=128` on `MessageOrderTracker`'s three maps in `realtime-ordering.ts`.
+- Edge 3 (NOTICEABLE, user-facing copy): new `lib/caddie/live-copy.ts` —
+  `liveEmptyStateHint()` adds a `'speaking'` branch so the live-mode empty state never says
+  "…is listening" while the footer already says "Caddie speaking…" (a held clarifier can hold
+  that mismatch for up to ~2s). `LIVE_STATUS_LABEL` moved alongside it; `CaddieSheet.tsx`'s
+  `LiveVoiceBody` now consumes the helper, no layout changes.
+- Edge 4a: `response.done` id fallback chain extended with `evt.response?.id` (GA event shape) —
+  a dropped `output_audio_transcript.done` no longer strands a partial bubble forever.
+- Edge 4b: `handleEvent()` now no-ops if `this.dc` is null (post-cleanup) — a data-channel
+  message queued before `stop()` can no longer re-arm the 90s idle timer and fire a second
+  `stop()`/`'closed'`.
+Tests: new `realtime-attribution.test.ts` (A1/A2/A5/A6 confirmed RED pre-fix by reverting
+`realtime.ts`/`realtime-ordering.ts` via `git stash` and re-running; A3/A4/A7 regression guards
+GREEN both sides), new `realtime-lifecycle.test.ts` (L1/O1/4a/4b confirmed RED pre-fix; L2/L3
+pruning-vs-suppression guards), `+O1` in `realtime-ordering.test.ts`, new `live-copy.test.ts` +
+1 new `CaddieSheet.realtime.test.tsx` case (both confirmed RED pre-fix by temporarily reverting
+just the `'speaking'` branch). `realtime-noinput.test.ts` and `priming-echo.test.ts` — the
+regression harness — pass UNCHANGED, not edited. New `realtime-test-fakes.ts` holds shared fake
+WebRTC plumbing for the two new suites only.
+Gates (all green): lint clean; `tsc --noEmit` clean; vitest 117 files / 2322 tests passed;
+`next build` succeeded; voice-tests smoke 278/278; backend `ruff check .` all checks passed (zero
+backend files touched, confirmed via `git diff --stat -- backend/`, no local Postgres run).
+
 ## map-paper-tone — DONE, builder (2026-07-12, integration/next, NOTICEABLE — designer-blocking)
 Implemented `specs/map-paper-tone-plan.md` exactly, commit `a610dc7` on `integration/next`
 (off `e4d1f3f`). Retones the B2 scout map's base `MapType.Normal` Google Maps palette to the
