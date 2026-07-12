@@ -3,6 +3,212 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## caddie-orb-z50-ties — DONE, builder (cycle 103, 2026-07-11, small-UX bug fix / silent)
+Implemented `specs/caddie-orb-z50-ties-plan.md` exactly on `integration/next` @6ff2b0a (off
+84b5719, which was the fable plan commit). This is the follow-up audited/filed by the
+`caddie-orb-sheet-zindex-overlap` fix above: same bug class (page overlay at `zIndex:50` ties
+the omnipresent `CaddieOrb`, also 50, mounted after page content in root layout → orb wins the
+DOM-paint-order tie and its live-mic button intercepts taps), three more sites.
+Three one-line lifts to `zIndex:52` (above orb 50, below LooperSheet 60 — the `89450fa`
+convention):
+- `frontend/src/components/CourseSearch.tsx:661` — full-screen surface `motion.div` (header/
+  list/map children); REAL overlap — map pan/tap-to-add and the Add-card's top edge sat under
+  the orb's live mic circle.
+- `frontend/src/app/players/page.tsx:643` — PlayerModal outer container (backdrop + sheet
+  children); REAL overlap — Save/Add-Player button's top-right corner under the orb.
+- `frontend/src/components/VoiceRoundSetupRealtime.tsx:228` — backdrop only (sheet at `:255`
+  stays 60, already clears the orb); MINOR — wide-viewport scrim poke-through beside the
+  centered sheet, no control collision.
+Pure numeric CSS, 3 lines + 3 inline comments, no layout/logic/shared-type changes.
+Gates on 6ff2b0a: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` success,
+`voice-tests --smoke` 278/278. Grep-verified only the intended 3 lines changed (no other
+`zIndex: 50` in the three files touched). Pushed to `integration/next`; rides the existing
+bundle silently (small-UX/preventive fix, no ping per brief).
+
+## caddie-orb-sheet-zindex-overlap — DONE (cycle 102, 2026-07-11, small-UX bug fix / silent)
+Owner feedback check first: card #134 (v1.1.2) already Shipped + owner-approved, empty comment
+thread; no Needs-Review card; PR #135 no comments → nothing preempted. Then fixed the p3 orb-crux
+bug. BUG WAS REAL: `CaddieOrb` (`zIndex:50`, fixed bottom-right, root-layout after content) is
+shown on `/round/new` + `/tournament/[id]/round/new`; their picker sheets sat at backdrop `40` /
+sheet `41` (below the orb), so the orb painted over + intercepted taps on the sheet's lower content
+(this-is-me / handicap badges / GamePicker Done). LooperSheet is already 60/61.
+FIX @89450fa: backdrop 40→52 / sheet 41→53 in frontend/src/app/round/new/page.tsx and
+frontend/src/app/tournament/[id]/round/new/NewTournamentRoundClient.tsx — above orb(50), below
+LooperSheet(60). Scrim now dims/covers the orb (inert; tap there closes the sheet). Pure numeric
+CSS, no seam → no unit test. Plan (fable): specs/caddie-orb-sheet-zindex-plan.md.
+VERDICTS on head d837109 (code 89450fa): reviewer SHIP (no stacking-context trap; z-values correct;
+scope-clean; no bent tests) · qa PASS (lint/tsc/build + voice 278/278 green; Playwright drive
+/round/new phone+wide: orb occluded/dimmed-inert, backdrop-tap closes sheet & doesn't open caddie,
+orb still opens caddie when no sheet open; tournament route code-parity, no local DB) · designer
+APPROVE (reproduced bug via devtools, verified fix live phone+wide; orb identity untouched).
+Landed on integration/next; PR #135 checklist updated (5th item); backlog item marked done; filed
+follow-up `caddie-orb-z50-ties-audit` (3 same-class z=50 DOM-order ties: players modal, CourseSearch
+overlay, VRS backdrop — preventive, none currently broken). Silent/small-UX → rides bundle #135, no
+ping (per brief: keep accumulating #135, do NOT ship/ping). Bundle #135 still has 3 NOTICEABLE
+tournament items + 2 small-UX fixes awaiting the owner's single "ship it".
+
+## tournament-settlement-honesty — DONE, builder (2026-07-11, NOTICEABLE — stake picker changed)
+Implemented `specs/tournament-settlement-honesty-plan.md` exactly on `integration/next` @1a37556
+(off b5c28b1). Two [[no-fake-data-fallbacks]] money mirages: (1) stableford/bbb/bb/scr/vegas/quota
+showed a $ stake in the picker but `settlement.ts` never paid them out — a stableford-$5 game
+returned a fabricated all-zeros ledger instead of an honest "no money game" state; (2) match play
+(and wolf) with the wrong roster size silently dropped players 3+/non-4 from a money game the
+engine can't settle for more than 2 (wolf: not-exactly-4).
+- `settlement.ts`: exported `SETTLEABLE_FORMATS` (the exact 9 formats `computeGameNetWinnings`
+  settles) as the single source of truth; early-return `{}` for non-members; gated the
+  `moneyGames` filter and `hasMoneyGames` on it. **No per-format money math changed** — zero-sum
+  invariants byte-identical for all 9.
+- `round-games.ts`: derived `STAKE_GAME_IDS` = `{skins, match, nassau, wolf}` (settled ∩
+  picker-constructible; vegas excluded — team-only, no team-assignment UI exists); added
+  `ROSTER_REQUIREMENT {match:2, wolf:4}` + `gameSelectableForRoster`; `buildRoundGames` now only
+  writes `pointValue` for `STAKE_GAME_IDS` and SKIPS (never truncates) a game whose roster
+  requirement isn't met.
+- `GamePicker.tsx`: `takesStake` keys off `STAKE_GAME_IDS`; new optional `rosterSize` prop
+  disables unmet-requirement rows with calm sub-copy ("Match play is 1v1 — opponent picker
+  coming." / "Wolf needs a foursome."); quiet italic "Points game — no money settlement" note in
+  selected no-stake cards. Yardage tokens only, no new chrome.
+- Both round-creation consumers (`round/new/page.tsx`, `NewTournamentRoundClient.tsx`): default
+  stake only for stake-taking ids (round/new's stroke-play default drops its old mirage `$5`→`""`);
+  pass `rosterSize`; prune an invalid selection on a roster edit; summary stake suffix only for
+  stake-taking ids. **Deliberately breaks PR #135's byte-equivalent `/round/new` lock** — that lock
+  was preserving the dishonest default; `round-games.test.ts` updated intentionally per the plan,
+  not deleted.
+- Read-side honesty: `TournamentPageClient.tsx` "$X / pt" chips and `LeaderboardSheet.tsx` "· $X"
+  tab suffix now gate on `SETTLEABLE_FORMATS` — legacy persisted stableford-$5 rows stop
+  advertising money. `GameLeaderboards.tsx` checked — already honest (no `betSuffix` passed for
+  non-settleable format cards), no change needed.
+- Tests: `round-games.test.ts` (+8 new/updated — `STAKE_GAME_IDS` ⊆ `SETTLEABLE_FORMATS` drift
+  guard, matchPlay/wolf roster-skip, non-stake `pointValue===undefined` matrix), `settlement.test.ts`
+  (+ stableford-honesty block, threePoint zero-sum block — was untested, + displayed==settled block
+  for all 4 `STAKE_GAME_IDS` via `buildRoundGames`; the wolf case needed 2 holes with an
+  equal-and-opposite lone-wolf result since `computeWolf`'s lone mode only credits the current wolf
+  per hole and isn't zero-sum on a single hole — pre-existing engine behavior, out of scope, left
+  untouched), new `GamePicker.test.tsx` (stake-row visibility + roster-disabled behavior).
+- Gates: `npm run lint` clean, `tsc --noEmit` clean, voice-tests smoke 278/278, `vitest run`
+  2208/2208 (75 new/updated in the 3 touched suites), `npm run build` succeeds, backend
+  `ruff check .` clean (no backend files touched — no `types.ts`/`models.py` change). No local
+  Postgres used.
+- Flag for eng-lead: `computeWolf`'s "lone" mode (`games.ts:827-843`) credits only the current wolf
+  player per hole (±3), never debits the other three — so `settlement.ts`'s "wolf totals are
+  already zero-sum" comment is optimistic; a SINGLE decided lone-wolf hole is never zero-sum by
+  construction (locked pre-existing behavior, `games.test.ts:937-960`). Money still nets to zero
+  across enough holes/results in practice, and this is unrelated to the mirage/roster bugs this
+  plan targeted, so I left it untouched and worked around it in the new test — flagging in case
+  it's worth its own follow-up plan.
+
+## tournament-settlement-honesty — reviewer BLOCKING fixes, builder (2026-07-11, NOTICEABLE — wolf no longer shows a stake)
+Iterated on @1a37556 per adversarial-review findings on `integration/next` @2e17261 (off 2a14a89).
+The reviewer's flagged wolf follow-up (see prior entry above) turned out to be a real money bug,
+not just a note: `computeWolf` is NOT zero-sum — lone mode credits only the current wolf player
+(±pointValue) and debits no one; partner mode credits only the winning pair and debits no one. A
+lone-wolf win with pointValue:2 returned `{p1:6}` with zero debits — money invented from nothing.
+The old "displayed==settled" wolf test hid this by hand-balancing a win+loss pair across 2 holes
+so sumNet happened to net to 0.
+- **Fix (plan's escape hatch, not a re-plan):** removed `'wolf'` from `SETTLEABLE_FORMATS`
+  (`settlement.ts`) and deleted the dead wolf branch + its false "already zero-sum" comment.
+  `STAKE_GAME_IDS` is derived from `SETTLEABLE_FORMATS`, so it now resolves to exactly
+  `{skins, match, nassau}` — no hand-maintenance, confirmed by the updated invariant test.
+- Kept `ROSTER_REQUIREMENT.wolf = 4` — the wolf ENGINE still drops players for rosters != 4 on the
+  points leaderboard (games.ts:806-809), so the requirement is now a display-honesty guard, not a
+  money guard. Wolf renders the same honest no-stake note as any other non-settleable format.
+- Updated the wolf tests to the new honest behavior (not weakened — converted to assert honest-
+  empty, same as the stableford tests): `computeGameNetWinnings` returns `{}` for a wolf game with
+  pointValue, `computeNetSettlement(...).isEmpty === true`, `hasMoneyGames === false`.
+- **New insurance (reviewer's non-blocking suggestion, adopted):** a property test in
+  `settlement.test.ts` iterates `SETTLEABLE_FORMATS` (the exhaustive set, not a hand-picked
+  subset) and asserts zero-sum on a REAL decided multi-hole round for every member — this is what
+  would have caught the wolf bug at review time instead of adversarial review catching it after.
+- **Copy fixes (designer BLOCKING):** GamePicker's no-stake note said "Points game — no money
+  settlement" but rendered for stroke/vegas/bb/scr too (none are points games; stroke is the
+  `/round/new` default) — replaced with format-agnostic "No money on this one — nothing to
+  settle." (matches the existing "No money games in this tournament." idiom); added a stroke test.
+  Wolf's tag said "3–4 ply" contradicting its own "needs a foursome" disabled copy — now "Foursome".
+- **NIT fix (sunlight legibility, adopted):** GamePicker no longer dims the entire disabled card
+  (was `opacity: 0.5` on everything including the sub-copy explaining WHY it's disabled); only
+  border/background/check-icon dim now, label + sub-copy stay full opacity.
+- Files: `frontend/src/lib/settlement.ts`, `frontend/src/lib/settlement.test.ts`,
+  `frontend/src/lib/round-games.ts`, `frontend/src/lib/round-games.test.ts`,
+  `frontend/src/components/GamePicker.tsx`, `frontend/src/components/GamePicker.test.tsx`.
+- Gates: lint clean, `tsc --noEmit` clean, voice-tests 278/278, `vitest run` 2218/2218 (109 files;
+  85/85 across the 3 touched test files), `npm run build` clean, backend `ruff check .` clean (no
+  backend files touched). No local Postgres used.
+- Confirmed for eng-lead: `STAKE_GAME_IDS === {skins, match, nassau}`; wolf now returns honestly-
+  empty from `computeGameNetWinnings`/`computeNetSettlement`/`hasMoneyGames`. True zero-sum wolf
+  transfers remain a deferred follow-up per the plan (owner-shaped: needs a point-transfer redesign
+  for lone/partner modes, not just a display fix).
+
+## tournament-live-leaderboard — DONE, builder (2026-07-11, NOTICEABLE — scores now catch up on foreground)
+Implemented specs/tournament-live-leaderboard-plan.md exactly on `integration/next` @dc542df
+(off 5bfcbb2). When the tournament page regains foreground/visibility, it silently refetches
+member rounds + recomputes standings so scores entered elsewhere (another device/tab) appear —
+flowing through the existing FLIP re-sort motion + order-change haptics. No polling, no new UI
+chrome, no backend change.
+- `TournamentPageClient.tsx`: refactored `load()` into `fetchAndApply({initial})`. The
+  `initial:true` path is byte-for-byte the prior behavior (`setLoading`/`setNotFound`). The
+  silent (`initial:false`) path never touches `loading`/`notFound`, never blanks the list, and
+  keeps the last good state on a `null`/degraded/thrown fetch. `reqIdRef` (bumped in the `[id]`
+  effect's cleanup) + `refreshInFlightRef` single-flight guard staleness/races; a new
+  `visibilitychange` → visible listener (mirrors RoundPageClient's weather foreground catch-up,
+  reading a `latestRef` so it never closes over stale state) triggers the silent refresh, gated
+  by a 15s throttle.
+- New `frontend/src/lib/leaderboard-refresh.ts` (pure, no React): `shouldRefreshLeaderboard`
+  (15s min interval, mirrors but does NOT import `weather-freshness.ts`) + `isPlausibleRefresh`
+  (skips a commit when storage-api's local-cache fallback returns 0 members for a tournament
+  that previously had them — an API hiccup, not a real mass deletion). 9 deterministic table
+  tests in `leaderboard-refresh.test.ts` (null timestamp, just-under/at threshold, 4 plausibility
+  quadrants) — all pass.
+- Zero changes to `tournament-standings.ts`, `settlement.ts`, `types.ts`, `models.py`, or the
+  backend — pure client wiring over existing `Tournament`/`Round` shapes.
+- Gates: `npm run lint` clean, `tsc --noEmit` clean, voice-tests smoke 278/278, `vitest run`
+  2186/2186, `npm run build` succeeds, backend `ruff check .` no-op (untouched). No local
+  Postgres used — DB-backed tests deferred to CI as instructed.
+
+## tournament-per-round-format — DONE, builder (2026-07-11, NOTICEABLE — new picker UI + populated settlement)
+Implemented specs/tournament-per-round-format-plan.md exactly on `integration/next` @5bfcbb2
+(off a6c515c). Lets the golfer pick a game format + stake per TOURNAMENT round (not just a
+single-round-wide setting), so each round in a tournament can play a different format AND the
+already-tested-but-dormant `computeTournamentSettlement` (frontend/src/lib/settlement.ts) gets
+real data for the first time.
+- New `frontend/src/lib/round-games.ts` — pure module: `GameId`/`GameOption`/`GAME_OPTIONS`/
+  `GAME_ID_TO_FORMAT` moved verbatim out of `round/new/page.tsx`, plus `TOURNAMENT_GAME_IDS`/
+  `TOURNAMENT_GAME_OPTIONS` (only none/skins/match/nassau/stableford — team formats and wolf/bbb/
+  quota/stroke intentionally excluded per plan §5, no team-setup UI exists yet) and
+  `buildRoundGames(selected, playerIds, newId)` — the exact stake-parse/format-map semantics from
+  the old inline block, with an injectable id generator (wrapper arrow, never unbound
+  `crypto.randomUUID`) so the full `Game[]` shape is asserted in tests.
+- New `frontend/src/lib/round-games.test.ts` — 9 vitest cases (mapping table, stroke/none/quota
+  → nothing, stake parsing incl. `"$12.50"→12.5`/`"$0"→undefined`, playerIds passthrough,
+  `roundId===""`, label sourcing, order preserved, TOURNAMENT_GAME_OPTIONS contents).
+- New `frontend/src/components/GamePicker.tsx` — the picker cut verbatim out of `round/new/
+  page.tsx` (was a local function), now props-driven with one new `options?: GameOption[]` prop
+  (default `GAME_OPTIONS`) so the tournament flow can pass the smaller `TOURNAMENT_GAME_OPTIONS`
+  set without a fork.
+- `round/new/page.tsx` — byte-equivalent refactor onto the shared modules (deleted the local
+  `GameId`/`GAME_OPTIONS`/`GAME_ID_TO_FORMAT`/`GamePicker`; `gameObjects` build is now one
+  `buildRoundGames(...)` call). Confirmed via `tsc`/lint/build all green and the diff showing pure
+  deletions + one substituted call, no logic drift.
+- `NewTournamentRoundClient.tsx` — new optional "Game · Optional" paper card between Course and
+  Groups (default empty = today's no-games behavior, strictly opt-in), a bottom sheet reusing the
+  established `AnimatePresence`/`motion.div`/`T.springSoft` pattern hosting
+  `<GamePicker options={TOURNAMENT_GAME_OPTIONS}>` with the same toggle reducer as `/round/new`
+  (none exclusive, nassau→$20 else $5 default stake, `haptic("light")` on toggle), wired into
+  `createRound({ ..., games: buildRoundGames(selectedGames, players.map(p => p.id)) })`.
+- `TournamentPageClient.tsx` — two edits: (1) `roundGames` computed from `memberRounds[].games`
+  (excluding the synthetic `"settlement"` ledger format), rendered in the Games tab under the
+  existing tournament-games rows with a mono sub-line naming the round (courseName · round
+  index); (2) fixed the Settle-up gate from `{hasGames && (` to `{(hasGames || roundGames.length
+  > 0) && (` — previously a round with only per-round games (no tournament-level games) could
+  never surface Settle-up even though the settlement math already read `memberRounds[].games`.
+  Settlement math, reveal stagger, haptics all untouched per plan.
+- Gates: `npm run lint` clean, `npx tsc --noEmit` clean, voice-smoke 278/278, vitest
+  round-games.test.ts + settlement.test.ts + tournament-standings.test.ts → 63/63 passed,
+  `npm run build` green (Next.js 16 static export, all 19 routes generated).
+- No deviation from the plan. One judgment call within the plan's stated intent: the tournament
+  card's selection label shows `label + stake` per plan §4's example ("Skins $5 + Nassau $20"),
+  except the exclusive "None" selection is shown as bare "No stakes" (no stake suffix) since the
+  picker itself hides the stake row for that id — avoids a nonsensical "No stakes $5" render;
+  functionally inert either way since `buildRoundGames` always skips unmapped `none`.
+
 ## course-selection-b1 — DONE, builder (2026-07-11, SILENT — backend-only, no frontend wiring yet)
 Implemented specs/course-selection-b1-plan.md exactly on `integration/next` @c7a3252 (off 354f261).
 New `GET /api/courses/in-bounds?swLat&swLng&neLat&neLng` in `backend/app/routes/course_search.py`
@@ -13748,3 +13954,442 @@ note above (still applies — targets the new head).
   favorites star on map, pin-cap/zoom copy.
 - Did NOT ship/ping — silent accumulation continues per the standing note. Bundle #134 now: 3 NOTICEABLE
   (A3, caddie reachability, B2 map UI) + 1 SILENT (B1). Owner has NOT been asked to approve yet.
+
+## 2026-07-11 — release-manager: bundle #134 SHIPPED to main + TestFlight v1.1.2
+Owner replied "Ship it" — approved bundle PR #134 (`integration/next` → `main`). Guarded
+pre-flight re-verified before touching anything: PR head `8dd572b` unchanged since approval,
+all three gates SUCCESS on that head (Frontend gates, Backend gate, E2E smoke advisory), PR
+OPEN+MERGEABLE, `main` head `4bb474e` as expected.
+
+1. **Bumped VERSION 1.1.1 → 1.1.2** and committed to `integration/next` (`c67e8b1`, plain
+   fast-forward push) BEFORE building — this is the fix bundle #133 shipped for the "owner
+   didn't see the new version" TestFlight-sort bug, so it had to actually be exercised here.
+   Re-verified all three gates re-ran and passed SUCCESS on the new head (`c67e8b1`) before
+   merging — the push retriggered CI, so this was NOT a stale-gate merge.
+2. **Merged #134 → main**: `gh pr merge 134 --merge` → merge commit
+   `8a33dd061fcb407d0f9c4b58507737c18da02ecc`.
+3. **Post-merge main CI green**: both required checks (Frontend gates, Backend gate) SUCCESS
+   on the new main head, plus the auto-triggered `Deploy backend (SSM)` workflow SUCCESS —
+   no flake, no rerun needed.
+4. **Backend deployed** via the `Deploy backend (SSM)` GH Actions workflow (auto-triggered on
+   push to main, instance `i-0826ae70df62d9fe8`) — `/health` → `{"status":"ok"}` externally
+   (`https://api.looperapp.org/health`). Caller stays INERT: key-free SSM probe found
+   `VOICE_BOOKING_ENABLED` unset in prod `backend/.env`, so `get_live_transport()` raises at
+   the first gate before any Twilio credential is read. **Note for the owner**: unlike bundle
+   #133 (0 `TWILIO_*` keys present), this probe found `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`
+   now present in prod `.env` — functionally inert either way (the `VOICE_BOOKING_ENABLED`
+   gate is checked first and short-circuits), but the credential presence changed since the
+   last ship and is worth a look. `/api/courses/in-bounds` and `/api/tee-times/search` both
+   correctly reject unauthenticated curls (401 — `require_owner`-gated app-wide).
+5. **Cut TestFlight from new main** via `bash ops/ios/ship.sh` (checked out `main`@`8a33dd0`
+   into the working tree). Build succeeded: **v1.1.2 (build 202607111719)** — "Uploaded v1.1.2
+   (build 202607111719) to TestFlight". Polled App Store Connect (JWT ES256, key
+   `QG927KHTXR`) — `processingState: VALID`, not expired, confirmed within ~2 minutes.
+6. **Recut `integration/next`** off the new main head: `git merge origin/main --ff-only`
+   (local was at `c67e8b1`, fast-forwarded to `8a33dd0`), pushed. New head =
+   `8a33dd061fcb407d0f9c4b58507737c18da02ecc` (== main, fresh bundle starts empty).
+7. **Board + backlog**: Product Board card created fresh (none existed for #134 yet) —
+   "Bundle #134: caddie shot-context (out-of-reach tee shots) + map-based course search +
+   ambiguous-course clarify turn" → Shipped (merge SHA `8a33dd061`, TestFlight
+   `v1.1.2`/build `202607111719`, headline + silent riders + how-to-test). `backlog.json`
+   targeted-edited (no json.load/dump — duplicate-key lesson) to mark terminal with the merge
+   SHA: `course-selection-ux` a3_status (→ shipped bundle #134, "Remaining: B3" only), new
+   `b1_status` and `b2_status` keys added (both were DONE-but-unrecorded in backlog.json —
+   B1 @c7a3252, B2 @796f6d8, now marked shipped @8a33dd0). Diff checked: exactly those 3
+   status strings touched/added on the one `course-selection-ux` item, valid JSON (55 items,
+   same count as before), no key collapse. The caddie shot-context fix has no backlog line —
+   it's owner-feedback (the "aim 9 left of the flag on a 400y par 4" bug), not a backlog item.
+
+**What shipped in #134** (bundle: caddie shot-context + map-based course search +
+ambiguous-course clarify turn): on an out-of-reach tee shot the caddie now gives landing-zone
++ leave-yardage advice instead of pin-relative aim (fixes the owner-reported 400y-par-4 "aim
+9 left of the flag" bug; reachable shots byte-identical); course search gained a Map⇄List
+toggle with quiet ink golf-flag markers for real courses in the viewport and tap-to-add,
+backed by the new budget-safe cache-first `/api/courses/in-bounds` (B1, silent) route; the
+caddie now asks which course when a spoken name is ambiguous (A3), completing the
+Marine-Park-from-Pittsburgh voice-resolution arc started in bundle #133. Silent riders: B1
+backend, the VERSION-as-source-of-truth TestFlight sort fix (bumped 1.1.1→1.1.2 this ship).
+Both backend (caddie engine, in-bounds route) and frontend (20-file delta) changed.
+
+**Verification evidence**: PR #134 checks (`gh pr checks 134`) — Frontend/Backend/E2E all
+SUCCESS on both the pre-VERSION-bump head and the post-bump head. Post-merge main CI run
+`29168443461` — 3 jobs, all SUCCESS. Deploy run `29168443476` — SUCCESS, on-box
+`curl -fsS http://localhost:8000/health` embedded in the SSM command succeeded (script has
+`set -eu`, so a failing health check would have failed the whole command + set `SSM status`
+to non-Success). ASC build-processing poll (`poll_build.py`, ES256 JWT against
+`api.appstoreconnect.apple.com`) — `VALID` after 7 polls (~2 min).
+
+**Open item flagged, not blocking**: prod `backend/.env` now carries Twilio credentials it
+didn't carry as of bundle #133's ship. The call path stays inert only because
+`VOICE_BOOKING_ENABLED` is unset — if that flag is ever flipped without also verifying the
+`VOICE_BOOKING_PUBLIC_HOST` and dial-safety invariants in
+`backend/app/services/voice_booking/telephony.py`, the caller would go live. Recorded on the
+#134 board card for visibility; not a regression from this bundle's own changes (this bundle
+didn't touch `.env` or the voice_booking module), just an observation from the routine
+post-deploy probe.
+
+---
+
+## Cycle 98 — tournament per-round game-format slice (2026-07-11)
+**No preempting owner feedback**: board #134 card has no comments; no owner reply/feedback on
+the shipped v1.1.2 (cards #134/#132 comment threads empty). Only open PRs are unrelated spikes
+(#123/#126/#127). Fresh `integration/next` @ 052f4ff off main 8a33dd0; no open bundle PR yet.
+
+**Slice pulled (highest value/effort)**: per-round game-format selection in the TOURNAMENT
+round-creation flow. Verified gap: `/round/new` has a GamePicker (formats + stakes →
+`round.games`), but `NewTournamentRoundClient.tsx` `handleStartRound` creates tournament rounds
+with NO games. Consequence: (1) the owner's explicit "multi-round where each round is a
+different format" is impossible; (2) the already-built + tested cumulative settlement
+(`computeTournamentSettlement`, settlement.ts) is DEAD UI for tournaments — it reads round.games
+which are never populated. Wiring per-round formats activates both. Reuses proven engine
+(games.ts, settlement.ts already tested). NOTICEABLE (new picker UI + populated settlement).
+Plan: extract game-object construction from round/new into a shared pure helper
+(buildRoundGames) with deterministic unit tests (format map, stakes→pointValue, player
+population, "none" skip), refactor round/new to use it, add the picker to the tournament flow.
+
+Plan agent (fable) DONE — specs/tournament-per-round-format-plan.md written (verified backend
+already persists round.games at rounds.py:320-334; found + planned a fix for the tournament
+Settle-up gate that only fires for tournament-level games; team formats deferred, offers
+none/skins/match/nassau/stableford).
+
+Builder DONE — pushed 5bfcbb2 (impl) + 1de9285 (progress) to integration/next. All local gates
+green: lint clean, tsc clean, voice-smoke 278/278, vitest 63/63 (round-games 9/9), build OK.
+Files: round-games.ts(+test), GamePicker.tsx (shared), round/new/page.tsx refactor (byte-equiv),
+NewTournamentRoundClient.tsx (picker card+sheet), TournamentPageClient.tsx (settle-up gate fix).
+
+## Cycle 98 RESOLVED — tournament per-round formats GREEN (2026-07-11)
+All three reviews on head 1de9285 / 550c890 (code-identical, only progress.md differs):
+- reviewer: SHIP — buildRoundGames byte-equivalent to the original /round/new inline block
+  (diffed origin/main:page.tsx:391-405 vs round-games.ts:72-92); settlement.ts untouched, zero-sum
+  + attribution preserved (full tournament roster as playerIds, ids line up with standings);
+  settle-up gate stays honest-empty for non-money round games; team formats correctly excluded;
+  no /round/new regression; no injection surface. 53 tests green, tsc clean.
+- qa: PASS — lint clean, tsc clean, voice-smoke 278/278, vitest 63/63 (round-games 9/9), build
+  19/19 routes, backend ruff clean. Playwright E2E deferred (no live preview backend here).
+- designer: APPROVE — Game·Optional card matches Course-card grammar exactly; sheet chrome
+  pixel-identical to /round/new; one calm haptic('light') on toggle, no new celebration; copy
+  in-voice; team/dead options excluded from the tournament picker. No ship-blockers.
+
+FOLLOW-UPS (non-blocking, for a later cycle — captured, not shipped this slice):
+- stableford is offered with a $5 default stake but settles $0 (no stableford branch in
+  computeGameNetWinnings) → the "$5/pt" label on a $0-net format can mislead. Consider not
+  defaulting a stake for stableford (honesty; ties to the no-fake-data lesson). Non-money-incorrect.
+- match play with a >2-player tournament roster settles only playerIds[0] vs [1] (games.ts:739-741
+  fallback); others net $0. Parity with /round/new, zero-sum holds; more visible at tournament
+  roster sizes. Needs a team/opponent-selection UI (future slice, same as team formats).
+- designer polish: round-game rows list the full roster (always "everyone") → noisy for 8+ players;
+  "None — stroke play" vs picker "No stakes" label drift; picker option order (none-first) diverges
+  from /round/new; tournamentGames/roundGames row markup duplication (extract a <GameRow>).
+
+Bundle now has a TestFlight-NOTICEABLE change (new tournament game picker + activated settlement).
+Opening the fresh bundle PR (integration/next -> main). NOT shipping/pinging — caller handles
+owner approval separately. Next open PR = the bundle; this slice is its first checklist item.
+
+Bundle PR opened: https://github.com/justslee/scorecard/pull/135 (integration/next -> main).
+First checklist item = tournament per-round formats (NOTICEABLE). CI will run on the PR; not
+merging this cycle — caller handles owner approval separately (no ship/ping per brief).
+
+## Cycle 99 (2026-07-11) — Live-tracking tournament leaderboard
+No preempting owner feedback: PR #135 has no comments; v1.1.2 cards #134/#133 have no Notion
+comments. Nothing to pull in — continuing tournament build-out, accumulating on #135 (no ship/ping).
+
+SLICE PICKED: Live-tracking tournament leaderboard (NOTICEABLE, highest value — owner explicitly
+listed "live tracking"). Today TournamentPageClient loads member rounds once on mount ([id] dep);
+the leaderboard is a snapshot. Make it refetch member rounds + recompute standings on foreground/
+visibility regain (reuse the established visibilitychange pattern from RoundPageClient.tsx:702 and
+the existing FLIP re-sort motion + order-change haptics). No polling, no spinner on refresh (only
+initial load shows the skeleton). Reuses already-locked standings math (tournament-standings.ts) —
+no new money math; settlement.ts untouched.
+
+Plan (fable) done -> specs/tournament-live-leaderboard-plan.md. Scope: visibilitychange-only
+silent refresh, new pure lib/leaderboard-refresh.ts (shouldRefreshLeaderboard + isPlausibleRefresh)
++ test, refactor load()->fetchAndApply({initial}) with race/unmount guards; standings math reused
+(untouched). OUT: polling, capacitor appStateChange, any new UI chrome, backend/type changes.
+
+Builder DONE @dc542df (all gates green locally). leaderboard-refresh.ts (pure) + 9 tests +
+TournamentPageClient fetchAndApply refactor. NOTICEABLE.
+
+GREEN — reviewer SHIP + qa PASS + designer APPROVE on dc542df:
+- reviewer: SHIP — money-math/standings verbatim-preserved & untouched (only 3 frontend files
+  changed); race/single-flight/staleness/unmount guards correct; silent path never blanks a good
+  board nor flashes skeleton (all setLoading/setNotFound gated if(initial)); haptics no-op on
+  no-change refresh; leaderboard-refresh boundaries tested; no security surface.
+- qa: PASS — lint / tsc / voice-smoke 278/278 / vitest 2186/2186 (leaderboard-refresh 9/9) /
+  build emits /tournament/[id] / backend ruff clean & untouched. Playwright E2E deferred to CI.
+- designer: APPROVE — zero JSX/new chrome; skeleton/notFound structurally unreachable from silent
+  path; FLIP/haptics untouched, provably silent on a no-op. Calm, no SaaS live-indicator.
+
+PR #135 checklist updated: item 2 = tournament live leaderboard (NOTICEABLE). Bundle now has 2
+NOTICEABLE items (per-round game formats + live leaderboard). NOT shipping/pinging this cycle —
+caller handles owner approval; owner is separately testing v1.1.2. Bundle keeps accumulating.
+
+Non-blocking follow-ups carried: stableford $5-default-stake settles $0 (label honesty); match
+play >2 roster settles only first two (needs opponent/team UI); live-leaderboard silent path logs
+via console.error where comment says console.warn (log-level nit); optional native appStateChange
+trigger if device QA shows a missed foreground event.
+
+## Cycle 100 — Tournament settlement HONESTY (money correctness) [[no-fake-data-fallbacks]]
+Item: fix two flagged honesty gaps so the app never offers money it won't honor.
+1. Stableford stake mirage — picker defaults stableford to $5 (round-games consumers) and shows
+   "Stableford $5", but settlement.ts explicitly skips stableford (no monetary result) → settles
+   $0. Same root class also affects stroke/quota/bbb/bb/scr (stake shown, no settleable game);
+   tournament picker only exposes `stable` of these. Grounded: settlement.ts:13, round-games.ts
+   buildRoundGames:88, NewTournamentRoundClient:1276 (default '$5'), summary line 805.
+2. Match-play >2 roster — computeMatchPlay (games.ts:740-741) uses only playerIds[0]/[1];
+   buildRoundGames passes ALL round players → players 3+ silently net $0. Honest guardrail now
+   (prevent/label), full opponent-picker UI deferred as owner follow-up.
+
+## AWAITING — fable Plan agent → specs/tournament-settlement-honesty-plan.md
+Branch integration/next @ 4a17226 (clean). No owner v1.1.2 feedback preempting (checked board
+cards #134/#132, PR #135 comments — none). Keep accumulating PR #135; do NOT ship/ping.
+Next after plan lands: dispatch builder (deterministic money-math tests mandatory) → reviewer
+(fresh, adversarial: zero-sum, no dropped player, displayed==settled stake) → qa (gates SUCCESS on
+head SHA) → designer (BLOCKING if stake field/labels change). Land on integration/next, update PR
+#135 checklist, record deferred match-play-roster UI follow-up in backlog.json (targeted edit).
+
+## UPDATE — fable plan landed → specs/tournament-settlement-honesty-plan.md
+Fix chosen: Bug1 = HONEST-LABEL (single source of truth SETTLEABLE_FORMATS in settlement.ts;
+STAKE_GAME_IDS={skins,match,nassau,wolf} in round-games.ts; picker hides stake for non-settling
+formats; buildRoundGames never writes pointValue for them; read-side display gated too). Bug2 =
+PREVENT (ROSTER_REQUIREMENT {match:2,wolf:4}; picker disables + honest copy; buildRoundGames
+skips, never truncates). Plan also caught vegas (team-only/unconstructible → $0) and wolf roster≠4
+silent-drop — same class, folded in. Voice path verified clean (no change). Deliberately breaks
+PR#135 /round/new byte-equivalence (was locking dishonest behavior) — tests updated intentionally.
+## AWAITING — builder on specs/tournament-settlement-honesty-plan.md (branch integration/next @ 711fd41+spec)
+Builder implements the plan on integration/next, commits+pushes, does NOT open a per-item PR.
+Mandatory deterministic money tests. Next: reviewer (fresh) → qa (gates SUCCESS on head SHA) →
+designer (BLOCKING, stake field/label copy changes). Then update PR#135 checklist + backlog.json
+follow-up (match-play opponent-picker UI, team-assignment UI, wolf 3-player). Do NOT ship/ping.
+
+## AWAITING — reviewer + qa + designer on 1a37556 (branch integration/next @ c972c82)
+Builder landed 1a37556: SETTLEABLE_FORMATS single-source, STAKE_GAME_IDS={skins,match,nassau,wolf},
+picker hides stake for non-settling formats + disables roster-unmet rows, buildRoundGames skips
+(never truncates), read-side "$X/pt" chips gated. Gates green locally (lint/tsc/voice 278/vitest
+2208/build/ruff). Builder flagged pre-existing computeWolf lone-mode non-zero-sum-per-hole
+(games.ts:827-843, locked by games.test.ts:937-960) — out of scope, worked around in test.
+Outcomes: reviewer SHIP + qa PASS + designer APPROVE → update PR#135 checklist + backlog follow-up.
+Any BLOCKING → re-dispatch builder. Do NOT ship/ping (bundle keeps accumulating).
+
+## Review results (partial) on 1a37556
+- qa: PASS — 6/6 local gates (lint/tsc/voice 278/vitest 2208 incl. 75/75 money tests/build/ruff).
+  E2E deferred (no preview backend).
+- designer: BLOCKING — 2 copy fixes: (1) GamePicker.tsx "Points game — no money settlement" note
+  is wrong for stroke/vegas/bb/scr (shows on /round/new default stroke screen, contradicts "Lowest
+  total wins") → make format-agnostic e.g. "No money on this one — nothing to settle."; (2)
+  round-games.ts:40 Wolf tag "3–4 ply" contradicts new "Wolf needs a foursome." → change tag to
+  "Foursome"/"4 ply". Non-blocking nit: disabled-row opacity 0.5 fades explanatory sub-copy —
+  fade border/bg/icon only, keep text legible (sunlight Northstar).
+- reviewer: AWAITING.
+Plan: batch designer blockers (+opacity nit) with any reviewer blockers → single builder pass.
+
+## reviewer verdict on 1a37556: BLOCKING (money) + partial SHIP-quality
+- SHIP-quality: stableford stake-mirage kill + match/wolf roster-drop PREVENTION correct &
+  faithfully tested (early-return additive, per-format math byte-identical, builder guard
+  authoritative, prune effects in both consumers, drift guard real).
+- BLOCKING: wolf certified settleable/zero-sum but computeWolf FABRICATES points (lone win
+  wolf+3 debits no one; partner +1/+1 debits no one). Falsified: lone-wolf win pointValue:2 →
+  {p1:6,...} sum=+$6. New wolf "displayed==settled" test engineered around a balanced pair to
+  hide it. settlement.ts:132 comment "Wolf totals already zero-sum" is FALSE.
+
+## DECISION (eng-lead): take the plan's escape hatch — wolf points-only NOW, engine fix deferred
+Making computeWolf true-transfer (partner-mode pot distribution) is a real design question →
+its own plan, not a reactive fix. Honest now = drop wolf from money set.
+
+## AWAITING — builder ITERATION on 1a37556 (batch: 1 reviewer blocker + 2 designer blockers + 2 nits)
+Fixes: (A) reviewer — remove 'wolf' from SETTLEABLE_FORMATS (settlement.ts) + STAKE_GAME_IDS
+(round-games.ts); wolf becomes points-only (no stake, no fabricated money); keep
+ROSTER_REQUIREMENT.wolf=4 for display correctness; remove now-dead wolf settlement branch +
+false zero-sum comment; update wolf tests to honest-empty ({}) like stableford; STAKE_GAME_IDS
+invariant → {skins,match,nassau}. (A2) add per-format zero-sum PROPERTY test over
+SETTLEABLE_FORMATS on decided scores (prevents recurrence). (B) designer — GamePicker no-stake
+note → format-agnostic "No money on this one — nothing to settle."; (C) Wolf tag "3–4 ply" →
+"Foursome" (round-games.ts:40). (D nit) disabled-row: fade border/bg/icon only, keep text
+legible (sunlight). Then re-review (reviewer) + re-run gates (qa). Follow-up to backlog: wolf
+true-transfer engine + re-add to money set. Do NOT ship/ping.
+
+## AWAITING — re-review on 2e17261 (branch integration/next @ b0bb7a5)
+Builder iteration 2e17261: wolf removed from SETTLEABLE_FORMATS+STAKE_GAME_IDS (now {skins,match,
+nassau}), dead wolf branch+false comment deleted, wolf tests→honest-empty, NEW zero-sum property
+test over SETTLEABLE_FORMATS (8 fixtures), copy note→"No money on this one — nothing to settle.",
+wolf tag→"Foursome", disabled-row opacity spares label+sub-copy. Gates green 2218/2218 local.
+Re-dispatched: reviewer (confirm wolf honestly-empty + property test is real not tautological + no
+regression) + qa (gates SUCCESS on b0bb7a5) + designer (confirm 2 copy fixes + opacity APPROVE).
+All green → update PR#135 checklist + backlog follow-up (wolf true-transfer engine), commit, DONE.
+Any BLOCKING → back to builder. Do NOT ship/ping.
+
+## Cycle 100 GREEN — tournament settlement money HONESTY (NOTICEABLE)
+Head: 2e17261 (feature) on integration/next. All reviews green on the FINAL commit:
+- reviewer: SHIP — wolf money-fabrication blocker CLOSED (wolf removed from SETTLEABLE_FORMATS,
+  guard returns {}, dead branch + false "zero-sum" comment deleted, STAKE_GAME_IDS={skins,match,
+  nassau}); new zero-sum property test over SETTLEABLE_FORMATS proven GENUINE (falsified: fails
+  loudly if a non-zero-sum format re-added; all 8 fixtures move real money); wolf tests assert
+  honest-empty (not bent); no regression; per-format math for 8 settleable formats byte-identical.
+- qa: PASS — lint/tsc clean, voice-smoke 278/278, vitest 2218/2218 (85/85 money-honesty +
+  zero-sum property over 8 formats), build emits /tournament/[id] + /round/new, ruff clean
+  (backend untouched). Deployed-preview E2E: no per-PR preview workflow in repo infra; substituted
+  local Playwright drive on this head — app load + start-round + score-entry + GamePicker copy/tag/
+  opacity fixes all confirmed live. QA flagged pre-existing PlayerAutocomplete overlap bug.
+- designer: APPROVE — no-money note now format-agnostic "No money on this one — nothing to settle."
+  (correct for stroke/vegas/bb/scr default), Wolf tag "Foursome", disabled-row opacity spares
+  label+sub-copy (sunlight-legible); no new chrome/toasts/warning colors.
+
+Iteration trail: 1a37556 (initial) -> reviewer BLOCKING (wolf fabricates money) + designer
+BLOCKING (copy) -> 2e17261 (wolf points-only + copy/opacity) -> reviewer SHIP + qa PASS +
+designer APPROVE.
+
+PR #135 checklist updated: item 3 = settlement money honesty (NOTICEABLE). Bundle now has 3
+NOTICEABLE items. backlog.json: +tournament-money-format-completion (wolf true-transfer, match-play
+opponent picker, team-assignment UI — all gated on [[no-fake-data-fallbacks]]) and
++player-autocomplete-overlap (pre-existing bug). NOT shipping/pinging this cycle (per caller
+brief) — owner separately testing v1.1.2; bundle keeps accumulating for the next "ship it".
+
+## AWAITING — cycle 101 (player-autocomplete-overlap)
+- Sync clean: integration/next @ 1bb0744, main up-to-date, feature 2e17261 present. No owner
+  v1.1.2 feedback (checked board + PR #135 comments — none preempts). Picked backlog item
+  `player-autocomplete-overlap` (P4, minor, ready).
+- Root cause CONFIRMED: PlayerAutocomplete.tsx overlays (suggestions L285-416 + "no matches"
+  L419-460) are position:absolute zIndex:60 top:calc(100%+6px) — they float over the Done button
+  (round/new/page.tsx L1576, only ~16px below in flow) and intercept taps. "No matches" popover has
+  no onClick so tap is swallowed → Done unreachable while a row shows. PlayerAutocomplete has ONE
+  consumer (the player-picker sheet).
+- Awaiting: Plan agent (fable) → specs/player-autocomplete-overlap-plan.md. On return: dispatch
+  builder to implement on integration/next; then reviewer + qa + designer(BLOCKING); land; update
+  PR #135 checklist + backlog item status; do NOT ship/ping (bundle keeps accumulating).
+
+## UPDATE — cycle 101 plan landed, builder dispatched
+- Plan (fable) done → specs/player-autocomplete-overlap-plan.md. Chose Option A: make both
+  PlayerAutocomplete overlays (suggestions + no-match) render IN-FLOW (drop position:absolute/
+  zIndex:60/top/left/right, add marginTop:6) so they push the Done button down and never cover it.
+  One file, one consumer. No jsdom unit test (node env, no hit-testing — would pass buggy code).
+- AWAITING: builder on integration/next implementing the plan (gates + Playwright interaction
+  drive of the Done button). On return: reviewer (fresh) + qa (gates state:SUCCESS on pushed head)
+  + designer (BLOCKING, user-facing sheet). Then update PR #135 checklist + backlog item status +
+  progress. Do NOT ship/ping (bundle keeps accumulating; owner testing v1.1.2 separately).
+
+## player-autocomplete-overlap — DONE, builder (2026-07-11, silent — bug fix, no new UI)
+Implemented `specs/player-autocomplete-overlap-plan.md` Option A exactly, on `integration/next`
+@aeb388b (off 9421792). One file, ~8 style-property change, two edits: removed
+`position:'absolute'; zIndex:60; top:'calc(100% + 6px)'; left:0; right:0` and added
+`marginTop:6` on both the suggestions-dropdown style object and the "no matches" popover style
+object in `PlayerAutocomplete.tsx`. Both overlays now render in normal flow and push the Done
+button down instead of floating over it; nothing else touched (root `position:relative` wrapper,
+inner scroll list, keyboard nav, blur timeout, round/new/page.tsx all untouched, matching plan
+§3). No jsdom unit test added (plan's own honest assessment: node env has no hit-testing, would
+pass the buggy code too).
+- Gates (frontend/): `npm run lint` clean, `npx tsc --noEmit` clean, `voice-tests/runner.ts
+  --smoke` 278/278, `npm run build` succeeds (all 19 routes, incl. /round/new).
+- Verification: local dev server (`npm run dev`, no local Postgres used) + a throwaway
+  Playwright drive (not committed — script lived in scratch, deleted after) against
+  `localhost:3000/round/new`, saved-players fallback seeded via `localStorage['scorecard_players']`
+  since no backend was running. Drove real cases: (a) typed "Alex" → suggestions dropdown shows →
+  `boundingBox` overlap check confirms Done no longer overlaps the suggestions card → real
+  `page.click('Done')` succeeds (no pointer-intercept timeout) → sheet header detaches from DOM
+  (closed) ✅; (b) typed a brand-new name → no-match popover shows → same overlap check clean →
+  Done click succeeds → sheet closes ✅; (c) clicking a suggestion still selects the player and
+  auto-closes the sheet ✅. Screenshots confirm visually: suggestion/no-match card sits above Done
+  with a clean gap, no coverage.
+- Commit `aeb388b`, pushed to `integration/next`. Silent item (bug fix restoring an already-broken
+  interaction, no new user-facing capability) — rides along in bundle PR #135, no ping.
+
+## AWAITING — cycle 101 review (fix aeb388b, head 9281721)
+- Builder landed aeb388b: PlayerAutocomplete overlays now in-flow (diff matches plan exactly:
+  removed position:absolute/zIndex:60/top/left/right on both overlays, added marginTop:6).
+  Builder gates all green + Playwright drive confirmed Done clickable with suggestions AND no-match.
+- Dispatched in parallel: reviewer (correctness/regression, no /security-review — pure CSS),
+  qa (4 gates on head 9281721 + interaction drive), designer (BLOCKING — user-facing sheet).
+- On return: if all SHIP/PASS/APPROVE → update PR #135 checklist (item 4, classify: small-UX bug
+  fix; bug-fix restoring broken interaction, treat SILENT/small — bundle already has 3 noticeable
+  so no independent ping) + mark backlog player-autocomplete-overlap status "done" (targeted edit +
+  diff-check) + progress. Do NOT ship/ping (owner testing v1.1.2 separately; bundle accumulates).
+  If any BLOCKING → re-dispatch builder with the specific issue, re-review.
+
+## DONE — cycle 101 (player-autocomplete-overlap) LANDED
+- Fix aeb388b on integration/next (head now this commit). PlayerAutocomplete's two overlays
+  (suggestions + no-match) render in-flow (marginTop:6, dropped position:absolute/zIndex:60/top/
+  left/right) so the /round/new player-picker Done button is never covered.
+- reviewer: SHIP (pure CSS; no keyboard/blur/auto-close/scroll regressions; sole consumer /round/new).
+- qa: PASS — lint/tsc/voice-smoke 278/278/build all green on head 9281721; live Playwright drive:
+  Done reachable + non-overlapping with suggestions AND no-match showing; select-to-close intact.
+- designer: APPROVE — real-tap-on-viewport verified sheet closes + adds new player; calm/on-paper;
+  filed 3 non-blocking nits (2 backlogged: caddie-orb-sheet-zindex-overlap, autocomplete-overlay-
+  collapse-motion; 1 long-list scroll-clip cosmetic).
+- backlog.json (targeted edits, JSON-validated, 59 items, no data loss): player-autocomplete-overlap
+  -> status "done" + resolved note; added caddie-orb-sheet-zindex-overlap (p3) + autocomplete-overlay-
+  collapse-motion (p4).
+- PR #135 checklist updated: item 4 = add-player Done unblocked (small-UX bug fix). Follow-ups
+  section refreshed.
+- NOT shipped/pinged (per brief): owner is testing v1.1.2 (bundle #134) separately — no v1.1.2
+  feedback preempted this cycle (board + PR comments checked, none). Bundle PR #135 keeps
+  accumulating for the next "ship it" (3 noticeable tournament items + this small-UX fix).
+
+## AWAITING — cycle 103 (caddie-orb-z50-ties-audit) PLAN
+- No preempting owner feedback: board (Bundle #134 v1.1.2 = Shipped, no comments), PR #135 comments
+  (none), approvals Gmail (none). Proceeding to the z50-ties audit.
+- Analysis (matches backlog item's fable-plan findings, line #s re-verified on this head):
+  Orb = position:fixed zIndex:50 bottom-right, mounted in app/layout.tsx:66 AFTER {children}:64 ->
+  wins z=50 ties by DOM order. Three tied surfaces:
+  (1) CourseSearch.tsx:661 zIndex:50 full-screen (inset:0, 100dvh) — used /courses, /tee-time,
+      /round/new. REAL COLLISION + v1.1.2 LIVE (map course search owner is testing): orb paints
+      over + intercepts taps on the full-screen surface's bottom-right (map pins/tap-to-add).
+  (2) players/page.tsx:643 PlayerModal container zIndex:50 (full-screen flex, sheet bottom-anchored
+      maxWidth 520 / marginBottom 16 -> bottom-right reaches orb). REAL COLLISION on /players.
+  (3) VoiceRoundSetupRealtime.tsx:228 backdrop zIndex:50; sheet is z:60 (already ABOVE orb). Interactive
+      content SAFE (60>50); only the scrim ties -> orb pokes through/tappable over backdrop bottom-right.
+      MINOR/consistency (scrim should cover orb, matching last cycle's 89450fa pattern on same /round/new page).
+- Chosen fix (minimal, matches 89450fa convention 40<50<52<60): lift each tied surface 50 -> 52
+  (above orb, below LooperSheet/VRS-sheet 60). NOT a systemic z-token refactor (over-engineering for
+  3 one-line CSS changes; no existing token scale; omnipresent-orb invariant kept — orb still present,
+  just correctly under full-screen takeovers). NOT hide-orb-on-overlay (invasive global state).
+- AWAITING fable Plan -> specs/caddie-orb-z50-ties-plan.md. Then builder (3 z edits) -> reviewer
+  (fresh) -> qa (gates SUCCESS on pushed SHA) -> designer (BLOCKING). Land on integration/next,
+  update PR #135 + backlog (targeted edit + diff-check). Do NOT ship/ping (bundle accumulates).
+
+## AWAITING — cycle 103 builder (z50-ties fix)
+- Plan saved+committed: specs/caddie-orb-z50-ties-plan.md @ 84b5719. Verdicts: CourseSearch REAL
+  (v1.1.2 live map surface), PlayerModal REAL, VRS backdrop MINOR scrim-tie. Fix = lift all three
+  50->52 (above orb, below sheet 60). No stacking-context traps.
+- builder (ad62685) implementing the 3 one-line z edits + running gates on integration/next, pushing.
+- On builder return: reconcile from origin/integration/next (git log), pin the builder's pushed SHA;
+  then dispatch reviewer (fresh, z-order correctness/no stacking trap/no orb-summon or one-mic
+  regression), qa (gates all SUCCESS on pushed SHA + orb no longer covers each fixed surface),
+  designer (BLOCKING — crux orb + user-facing overlays). If all SHIP/PASS/APPROVE -> update PR #135
+  checklist (item 5) + mark backlog caddie-orb-z50-ties-audit done (targeted edit + diff-check) +
+  progress. Do NOT ship/ping (bundle accumulates; owner testing v1.1.2 separately).
+- If any BLOCKING -> re-dispatch builder with the specific issue, re-review.
+
+## AWAITING — cycle 103 reviews (z50-ties fix @ de5d392, fix commit 6ff2b0a)
+- Builder landed the 3-line z50->52 lift (CourseSearch:661, players/page:643, VRS backdrop:228;
+  VRS sheet stays 60). Gates green per builder (lint/tsc/build clean, voice 278/278). Diff verified.
+- Dispatched concurrently on de5d392: reviewer (a0fcaa1 — z-order/stacking-trap/co-open/orb-regression),
+  qa (a3fb36c — 4 gates SUCCESS on head SHA + elementFromPoint hit-test each surface), designer
+  (ad2d3f6 — BLOCKING, orb covered-not-floating, omnipresent-orb invariant, one-mic, yardage feel).
+- On all return: if reviewer SHIP + qa PASS + designer APPROVE -> update PR #135 checklist (add item
+  5, classify SILENT/small-UX preventive z-fix; bundle already has noticeable items -> no independent
+  ping) + mark backlog caddie-orb-z50-ties-audit status "done" + resolved note (targeted edit +
+  diff-check, NEVER json.load/dump) + progress DONE note. Do NOT ship/ping (owner testing v1.1.2;
+  bundle accumulates for next "ship it").
+- If any BLOCKING -> re-dispatch builder with specifics, re-review.
+
+## DONE — cycle 103 (caddie-orb-z50-ties-audit) LANDED @ 6ff2b0a
+- No preempting owner v1.1.2 feedback (board Bundle #134=Shipped no comments, PR#135 no comments,
+  approvals Gmail clear). Ran the z50-ties audit.
+- Fix 6ff2b0a on integration/next: lifted all three z=50 ties -> 52 (above orb 50, below sheet 60):
+  CourseSearch.tsx:661 (full-screen surface), players/page.tsx:643 (PlayerModal container),
+  VoiceRoundSetupRealtime.tsx:228 (backdrop; sheet stays 60). Plan(fable): specs/caddie-orb-z50-ties-plan.md.
+- reviewer SHIP (clean body-level stacking, no trap ancestors, backdrop<sheet, mutual-exclusion on
+  /round/new, no scope/test drift). qa PASS (4 gates green on de5d392: lint/tsc/build + voice 278/278;
+  Playwright elementFromPoint at orb center hits overlay/scrim not orb on PlayerModal + CourseSearch
+  LIST + VRS backdrop; native map mode not web-renderable). designer APPROVE to merge.
+- designer surfaced a DISTINCT residual (NOT a z-tie, NOT a regression): CourseSearch MAP mode frame is
+  background:transparent, so z52 routes taps to the map but can't visually occlude the opaque orb ->
+  orb still floats over the live map as a 'ghost button' + one-mic break. Proven via CSS repro. This is
+  the highest-priority v1.1.2 surface. Correctly OUT OF SCOPE for a CSS z-cycle (needs orb-suppression,
+  crux one-mic/omnipresence change) -> filed as new backlog item caddie-orb-map-mode-ghost (p4, ready,
+  needs its own fable plan + designer BLOCKING). Did NOT bolt it onto this cycle.
+- backlog.json (targeted edits, JSON-validated 61 items, diff +11/-1, no data loss):
+  caddie-orb-z50-ties-audit -> status done + resolved note; added caddie-orb-map-mode-ghost.
+- PR #135: added checklist item 6 (z50-ties, small-UX/preventive, SILENT) with the known map-mode
+  residual noted; follow-ups section updated (audit DONE, map-mode-ghost new).
+- CI on PR #135 all SUCCESS (Frontend, Backend, E2E) on head. NOT shipped/pinged: silent/preventive fix,
+  no noticeable change added; bundle keeps accumulating (3 noticeable tournament items + 2 small-UX
+  fixes) for the next owner "ship it". Owner testing v1.1.2 separately; no v1.1.2 feedback preempted.

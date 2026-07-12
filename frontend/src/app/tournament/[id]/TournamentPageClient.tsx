@@ -1,14 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { roundHref } from "@/lib/round-url";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getTournamentAsync, getRoundsAsync } from "@/lib/storage-api";
 import type { Tournament, Round, Game } from "@/lib/types";
-import { computeTournamentSettlement, hasMoneyGames } from "@/lib/settlement";
+import { computeTournamentSettlement, hasMoneyGames, SETTLEABLE_FORMATS } from "@/lib/settlement";
 import { haptic } from "@/lib/haptics";
+import {
+  shouldRefreshLeaderboard,
+  isPlausibleRefresh,
+} from "@/lib/leaderboard-refresh";
 import {
   computeStandings,
   sortStandings,
@@ -94,91 +98,196 @@ export default function TournamentPageClient() {
   // standings/settlement math below.
   const reduce = useReducedMotion();
 
+  // ── Live leaderboard refresh (specs/tournament-live-leaderboard-plan.md) ──
+  // `fetchAndApply({initial})` is the single fetch+compute body shared by the
+  // first load and the silent foreground refresh below it. `initial: true`
+  // preserves the prior `load()` behavior byte-for-byte in outcome
+  // (setLoading/setNotFound). `initial: false` NEVER touches loading/
+  // notFound, never blanks the list, and keeps the last good state on any
+  // degraded/failed fetch.
+  const refreshInFlightRef = useRef(false);
+  // Bumped per invocation and on every `[id]`-effect cleanup — the "capture
+  // requestId + id at call time, compare before every set*" pattern makes a
+  // stale (superseded by a newer id/refresh) commit inert, including after
+  // unmount.
+  const reqIdRef = useRef(0);
+  // Client receipt time of the last successful fetch (initial or silent) —
+  // throttles rapid foreground toggling; see leaderboard-refresh.ts.
+  const lastRefreshAtRef = useRef<number | null>(null);
+  // Mirrors latest loading/tournament/memberRounds so the visibilitychange
+  // listener (a DOM listener that must never close over a stale render) reads
+  // current values — same pattern as RoundPageClient's `weatherLatestRef`.
+  const latestRef = useRef({ loading, tournament, memberRounds });
+  useEffect(() => {
+    latestRef.current = { loading, tournament, memberRounds };
+  }, [loading, tournament, memberRounds]);
+
+  const fetchAndApply = useCallback(
+    async (opts: { initial: boolean }) => {
+      const { initial } = opts;
+      if (!initial) {
+        if (refreshInFlightRef.current) return;
+        refreshInFlightRef.current = true;
+      }
+      const requestId = ++reqIdRef.current;
+      const requestTournamentId = id;
+      const isCurrent = () =>
+        requestId === reqIdRef.current && requestTournamentId === id;
+
+      if (initial) setLoading(true);
+      try {
+        const t = await getTournamentAsync(requestTournamentId);
+        if (!isCurrent()) return;
+
+        if (!t) {
+          if (initial) {
+            setNotFound(true);
+          }
+          // Silent path: keep last good tournament/standings — `notFound` is
+          // initial-load-only, never set it from a foreground refresh.
+          lastRefreshAtRef.current = Date.now();
+          return;
+        }
+
+        if (t.roundIds.length === 0) {
+          setTournament(t);
+          if (!initial) {
+            // Genuinely no rounds — initial path already lands on the []
+            // defaults (skips the whole rounds block, same as before); on
+            // refresh, explicitly clear so a tournament emptied of rounds
+            // since the last load doesn't leave stale standings.
+            setMemberRounds([]);
+            setStandings([]);
+          }
+          lastRefreshAtRef.current = Date.now();
+          return;
+        }
+
+        // One GET /api/rounds then filter — avoids N round fetches.
+        const allRounds = await getRoundsAsync();
+        if (!isCurrent()) return;
+        const roundIdSet = new Set(t.roundIds);
+        // Belt-and-suspenders: also accept rounds whose tournamentId matches.
+        const members = allRounds
+          .filter((r) => roundIdSet.has(r.id) || r.tournamentId === requestTournamentId)
+          .sort(
+            (a, b) =>
+              new Date(a.createdAt).getTime() -
+              new Date(b.createdAt).getTime()
+          );
+
+        if (!initial) {
+          const previousMemberCount = latestRef.current.memberRounds.length;
+          if (!isPlausibleRefresh(t.roundIds.length, members.length, previousMemberCount)) {
+            // Degraded fetch — almost certainly storage-api's local-cache
+            // fallback after an API failure, not a real mass deletion. Keep
+            // last good standings.
+            console.warn(
+              "[TournamentPageClient] silent refresh looked degraded — skipping commit"
+            );
+            lastRefreshAtRef.current = Date.now();
+            return;
+          }
+        }
+
+        // Resolve names: backend playerNamesById first, round players as fallback.
+        const namesFromRounds: Record<string, string> = {};
+        for (const r of members) {
+          for (const p of r.players) {
+            if (!namesFromRounds[p.id]) namesFromRounds[p.id] = p.name;
+          }
+        }
+        const resolvedNames: Record<string, string> = {
+          ...namesFromRounds,
+          ...(t.playerNamesById ?? {}),
+        };
+
+        // Resolve per-player handicap the same way as names: first defined
+        // `handicap` found on a round-player record for that id. Only
+        // round.players[].handicap is used (see tournament-standings.ts
+        // header) — never estimateHandicapFromRounds (owner-only).
+        // NOTE: the backend serialises an unset handicap as `null` (not
+        // omitted), so we filter with `!= null` — a null must be treated as
+        // "no handicap" (honest "—"), never stored as a value (which would
+        // later Math.round(null) === 0 and fabricate a scratch golfer).
+        const playerHandicaps: Record<string, number> = {};
+        for (const r of members) {
+          for (const p of r.players) {
+            if (playerHandicaps[p.id] === undefined && p.handicap != null) {
+              playerHandicaps[p.id] = p.handicap;
+            }
+          }
+        }
+
+        // If tournament has no explicit playerIds, union from member rounds.
+        const effectivePlayerIds =
+          t.playerIds.length > 0
+            ? t.playerIds
+            : Array.from(
+                new Set(members.flatMap((r) => r.players.map((p) => p.id)))
+              );
+
+        const newStandings = computeStandings(
+          effectivePlayerIds,
+          resolvedNames,
+          playerHandicaps,
+          members
+        );
+
+        if (!isCurrent()) return;
+        // Commit order: tournament, then member rounds, then the derived
+        // standings that depend on both.
+        setTournament(t);
+        setMemberRounds(members);
+        setStandings(newStandings);
+        lastRefreshAtRef.current = Date.now();
+      } catch (e) {
+        console.error(
+          `[TournamentPageClient] ${initial ? "load" : "silent refresh"} failed:`,
+          e
+        );
+        // Silent path: console.warn-equivalent (console.error above) only —
+        // keep last good state, never setNotFound.
+        if (initial) setNotFound(true);
+      } finally {
+        if (initial) setLoading(false);
+        if (!initial) refreshInFlightRef.current = false;
+      }
+    },
+    [id]
+  );
+
   useEffect(() => {
     // Skip the static prerender placeholder — real id arrives on the client
     if (!id || id === "placeholder") return;
+    void fetchAndApply({ initial: true });
+    return () => {
+      // Bump so any in-flight fetch for this id (initial or a silent refresh
+      // that started before id changed/unmount) commits nothing further.
+      // Intentionally reads the LIVE ref value at cleanup time (not a
+      // snapshot) — this is a plain mutable counter, not a DOM node handle.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      reqIdRef.current++;
+    };
+  }, [id, fetchAndApply]);
 
-    async function load() {
-      setLoading(true);
-      try {
-        const t = await getTournamentAsync(id);
-        if (!t) {
-          setNotFound(true);
-          setLoading(false);
-          return;
-        }
-        setTournament(t);
-
-        if (t.roundIds.length > 0) {
-          // One GET /api/rounds then filter — avoids N round fetches.
-          const allRounds = await getRoundsAsync();
-          const roundIdSet = new Set(t.roundIds);
-          // Belt-and-suspenders: also accept rounds whose tournamentId matches.
-          const members = allRounds
-            .filter((r) => roundIdSet.has(r.id) || r.tournamentId === id)
-            .sort(
-              (a, b) =>
-                new Date(a.createdAt).getTime() -
-                new Date(b.createdAt).getTime()
-            );
-          setMemberRounds(members);
-
-          // Resolve names: backend playerNamesById first, round players as fallback.
-          const namesFromRounds: Record<string, string> = {};
-          for (const r of members) {
-            for (const p of r.players) {
-              if (!namesFromRounds[p.id]) namesFromRounds[p.id] = p.name;
-            }
-          }
-          const resolvedNames: Record<string, string> = {
-            ...namesFromRounds,
-            ...(t.playerNamesById ?? {}),
-          };
-
-          // Resolve per-player handicap the same way as names: first defined
-          // `handicap` found on a round-player record for that id. Only
-          // round.players[].handicap is used (see tournament-standings.ts
-          // header) — never estimateHandicapFromRounds (owner-only).
-          // NOTE: the backend serialises an unset handicap as `null` (not
-          // omitted), so we filter with `!= null` — a null must be treated as
-          // "no handicap" (honest "—"), never stored as a value (which would
-          // later Math.round(null) === 0 and fabricate a scratch golfer).
-          const playerHandicaps: Record<string, number> = {};
-          for (const r of members) {
-            for (const p of r.players) {
-              if (playerHandicaps[p.id] === undefined && p.handicap != null) {
-                playerHandicaps[p.id] = p.handicap;
-              }
-            }
-          }
-
-          // If tournament has no explicit playerIds, union from member rounds.
-          const effectivePlayerIds =
-            t.playerIds.length > 0
-              ? t.playerIds
-              : Array.from(
-                  new Set(members.flatMap((r) => r.players.map((p) => p.id)))
-                );
-
-          setStandings(
-            computeStandings(
-              effectivePlayerIds,
-              resolvedNames,
-              playerHandicaps,
-              members
-            )
-          );
-        }
-      } catch (e) {
-        console.error("[TournamentPageClient] load failed:", e);
-        setNotFound(true);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    load();
-  }, [id]);
+  // Background/foreground catch-up: silently refetch + recompute standings
+  // so scores entered elsewhere (another device, another tab) appear on
+  // return to this page. No polling — visibilitychange only, matching
+  // RoundPageClient's weather foreground catch-up. Never touches loading/
+  // notFound; a no-op refresh is invisible (orderSignature unchanged →
+  // haptics effect below early-returns, FLIP has nothing to move).
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const { loading: isLoading, tournament: currentTournament } = latestRef.current;
+      if (isLoading || currentTournament == null) return;
+      if (!shouldRefreshLeaderboard(lastRefreshAtRef.current, Date.now())) return;
+      void fetchAndApply({ initial: false });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [fetchAndApply]);
 
   // Sort standings: nulls last, then ascending by selected mode.
   // Hoisted above the loading/not-found early returns so the haptics effects
@@ -402,6 +511,12 @@ export default function TournamentPageClient() {
   const tournamentGames: Game[] = tournament.games ?? [];
   const hasGames = tournamentGames.length > 0;
   const hasMoneyGame = hasMoneyGames(memberRounds);
+  // Per-round games (specs/tournament-per-round-format-plan.md §4) — each
+  // tournament round can carry its own format; "settlement" is a synthetic
+  // persisted-settlement game row, not a real game, so it's excluded here.
+  const roundGames = memberRounds.flatMap((r) =>
+    (r.games ?? []).filter((g) => g.format !== "settlement")
+  );
   // sortedStandings / leader / tournamentSettlement are hoisted above (before
   // the early returns) so the order/settlement haptics effects can see them.
 
@@ -1326,87 +1441,187 @@ export default function TournamentPageClient() {
         {/* ── Games tab ─────────────────────────────────────────────────── */}
         {tab === "games" && (
           <div style={{ padding: "0 22px 40px" }}>
-            {!hasGames ? (
+            {!hasGames && roundGames.length === 0 ? (
               <EmptyState text="No games set up yet." />
             ) : (
-              tournamentGames.map((g: Game) => (
-                <div
-                  key={g.id}
-                  style={{
-                    padding: "14px 0",
-                    borderBottom: `1px dashed ${T.hairline}`,
-                  }}
-                >
+              <>
+                {tournamentGames.map((g: Game) => (
                   <div
+                    key={g.id}
                     style={{
-                      display: "flex",
-                      alignItems: "baseline",
-                      justifyContent: "space-between",
-                      marginBottom: 4,
+                      padding: "14px 0",
+                      borderBottom: `1px dashed ${T.hairline}`,
                     }}
                   >
                     <div
                       style={{
-                        fontFamily: T.serif,
-                        fontStyle: "italic",
-                        fontSize: 22,
-                        letterSpacing: -0.3,
-                        color: T.ink,
+                        display: "flex",
+                        alignItems: "baseline",
+                        justifyContent: "space-between",
+                        marginBottom: 4,
                       }}
                     >
-                      {g.name}
+                      <div
+                        style={{
+                          fontFamily: T.serif,
+                          fontStyle: "italic",
+                          fontSize: 22,
+                          letterSpacing: -0.3,
+                          color: T.ink,
+                        }}
+                      >
+                        {g.name}
+                      </div>
+                      {/* Fix #4: human-readable format label instead of raw camelCase */}
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 9,
+                          letterSpacing: 1.2,
+                          color: T.pencil,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {FORMAT_LABELS[g.format] ?? g.format}
+                      </div>
                     </div>
-                    {/* Fix #4: human-readable format label instead of raw camelCase */}
-                    <div
-                      style={{
-                        fontFamily: T.mono,
-                        fontSize: 9,
-                        letterSpacing: 1.2,
-                        color: T.pencil,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      {FORMAT_LABELS[g.format] ?? g.format}
-                    </div>
+                    {g.settings?.pointValue != null && SETTLEABLE_FORMATS.has(g.format) && (
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 9,
+                          letterSpacing: 1.2,
+                          color: T.pencilSoft,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        ${g.settings.pointValue} / pt
+                      </div>
+                    )}
+                    {g.playerIds.length > 0 && (
+                      <div
+                        style={{
+                          fontFamily: T.serif,
+                          fontStyle: "italic",
+                          fontSize: 13,
+                          color: T.pencil,
+                          marginTop: 4,
+                        }}
+                      >
+                        {g.playerIds
+                          .map(
+                            (pid) =>
+                              standings.find((s) => s.playerId === pid)?.name ??
+                              tournament.playerNamesById?.[pid] ??
+                              pid
+                          )
+                          .join(", ")}
+                      </div>
+                    )}
                   </div>
-                  {g.settings?.pointValue != null && (
+                ))}
+
+                {/* Per-round games (specs/tournament-per-round-format-plan.md §4) —
+                    each tournament round can carry its own format; the settlement
+                    engine already reads these, this just surfaces them. */}
+                {roundGames.map((g: Game) => {
+                  const round = memberRounds.find((r) =>
+                    (r.games ?? []).some((rg) => rg.id === g.id)
+                  );
+                  const roundIndex = round ? memberRounds.indexOf(round) + 1 : undefined;
+                  return (
                     <div
+                      key={g.id}
                       style={{
-                        fontFamily: T.mono,
-                        fontSize: 9,
-                        letterSpacing: 1.2,
-                        color: T.pencilSoft,
-                        textTransform: "uppercase",
+                        padding: "14px 0",
+                        borderBottom: `1px dashed ${T.hairline}`,
                       }}
                     >
-                      ${g.settings.pointValue} / pt
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "baseline",
+                          justifyContent: "space-between",
+                          marginBottom: 4,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontFamily: T.serif,
+                            fontStyle: "italic",
+                            fontSize: 22,
+                            letterSpacing: -0.3,
+                            color: T.ink,
+                          }}
+                        >
+                          {g.name}
+                        </div>
+                        <div
+                          style={{
+                            fontFamily: T.mono,
+                            fontSize: 9,
+                            letterSpacing: 1.2,
+                            color: T.pencil,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          {FORMAT_LABELS[g.format] ?? g.format}
+                        </div>
+                      </div>
+                      {g.settings?.pointValue != null && SETTLEABLE_FORMATS.has(g.format) && (
+                        <div
+                          style={{
+                            fontFamily: T.mono,
+                            fontSize: 9,
+                            letterSpacing: 1.2,
+                            color: T.pencilSoft,
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          ${g.settings.pointValue} / pt
+                        </div>
+                      )}
+                      {g.playerIds.length > 0 && (
+                        <div
+                          style={{
+                            fontFamily: T.serif,
+                            fontStyle: "italic",
+                            fontSize: 13,
+                            color: T.pencil,
+                            marginTop: 4,
+                          }}
+                        >
+                          {g.playerIds
+                            .map(
+                              (pid) =>
+                                standings.find((s) => s.playerId === pid)?.name ??
+                                tournament.playerNamesById?.[pid] ??
+                                pid
+                            )
+                            .join(", ")}
+                        </div>
+                      )}
+                      {/* Sub-line naming the round this format belongs to. */}
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 8.5,
+                          letterSpacing: 1,
+                          color: T.pencilSoft,
+                          marginTop: 4,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {round?.courseName ?? "Round"}
+                        {roundIndex ? ` · Round ${roundIndex}` : ""}
+                      </div>
                     </div>
-                  )}
-                  {g.playerIds.length > 0 && (
-                    <div
-                      style={{
-                        fontFamily: T.serif,
-                        fontStyle: "italic",
-                        fontSize: 13,
-                        color: T.pencil,
-                        marginTop: 4,
-                      }}
-                    >
-                      {g.playerIds
-                        .map(
-                          (pid) =>
-                            standings.find((s) => s.playerId === pid)?.name ??
-                            tournament.playerNamesById?.[pid] ??
-                            pid
-                        )
-                        .join(", ")}
-                    </div>
-                  )}
-                </div>
-              ))
+                  );
+                })}
+              </>
             )}
 
-            {hasGames && (
+            {(hasGames || roundGames.length > 0) && (
               <div style={{ marginTop: 28 }}>
                 <div
                   style={{

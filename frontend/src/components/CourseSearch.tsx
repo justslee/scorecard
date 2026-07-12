@@ -658,7 +658,8 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
           // Fixed to the visual viewport height — NEVER bound to content or
           // result count (this is the structural fix for the resize jank).
           height: "100dvh",
-          zIndex: 50,
+          // above CaddieOrb (50) so the full-screen surface covers it; below LooperSheet (60)
+          zIndex: 52,
           display: "flex",
           flexDirection: "column",
           // Map mode: the outer frame goes transparent (§1) — the map fills

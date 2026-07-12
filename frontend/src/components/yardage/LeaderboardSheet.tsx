@@ -16,6 +16,7 @@ import {
   type ThreePointResults,
   type GameResults,
 } from "@/lib/games";
+import { SETTLEABLE_FORMATS } from "@/lib/settlement";
 
 // ------------------------------------------------------------------
 // Helpers
@@ -56,7 +57,10 @@ function gameTabLabel(game: Game): string {
   };
   const base = names[game.format] ?? game.name;
   const val = game.settings?.pointValue;
-  return val ? `${base} · $${val}` : base;
+  // Only settled formats get a "· $X" suffix — legacy stableford-$5 rows
+  // (settlement.ts skips them) stop advertising money they never pay out
+  // (tournament-settlement-honesty-plan.md §3).
+  return val && SETTLEABLE_FORMATS.has(game.format) ? `${base} · $${val}` : base;
 }
 
 /** How many F9/B9 holes have at least one score entered. */

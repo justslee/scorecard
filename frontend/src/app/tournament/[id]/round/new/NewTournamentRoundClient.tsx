@@ -3,11 +3,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { roundHref, tournamentHref } from "@/lib/round-url";
 import { useParams, useRouter } from 'next/navigation';
-import { Course, Round, Player, PlayerGroup, Tournament } from '@/lib/types';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Course, Round, Player, PlayerGroup, Tournament, Game } from '@/lib/types';
 import { getCourses as localGetCourses, saveRound as localSaveRound } from '@/lib/storage';
 import { getTournamentAsync } from '@/lib/storage-api';
 import { createRound, getCourses as apiGetCourses } from '@/lib/api';
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from '@/components/yardage/tokens';
+import { haptic } from '@/lib/haptics';
+import GamePicker from '@/components/GamePicker';
+import { buildRoundGames, TOURNAMENT_GAME_OPTIONS, STAKE_GAME_IDS, gameSelectableForRoster, GameId } from '@/lib/round-games';
 
 // ── Inline icon — no lucide-react ────────────────────────────────────────────
 
@@ -212,6 +216,10 @@ export default function NewTournamentRoundPage() {
   const [selectedTeeId, setSelectedTeeId] = useState<string>('');
   const [courseError, setCourseError] = useState(false);
 
+  // Game format — per-round, optional (default = no games, honest empty settlement).
+  const [selectedGames, setSelectedGames] = useState<{ id: GameId; stake: string }[]>([]);
+  const [showGamePicker, setShowGamePicker] = useState(false);
+
   // Group management
   const [groups, setGroups] = useState<GroupDraft[]>([]);
   const [showGroupSetup, setShowGroupSetup] = useState(false);
@@ -236,6 +244,20 @@ export default function NewTournamentRoundPage() {
       .catch(() => setTournamentNotFound(true))
       .finally(() => setTournamentLoading(false));
   }, [tournamentId]);
+
+  // Prune a selected game whose roster requirement the tournament roster
+  // doesn't meet (e.g. match play needs exactly 2, tournament has 8 players)
+  // — the builder would silently skip it anyway; reflect that immediately
+  // rather than show a phantom selection (tournament-settlement-honesty-
+  // plan.md §3).
+  useEffect(() => {
+    if (!tournament) return;
+    const rosterSize = tournament.playerIds.length;
+    setSelectedGames((prev) => {
+      const next = prev.filter((s) => gameSelectableForRoster(s.id, rosterSize));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [tournament]);
 
   // ── Load courses: try API first, fall back to local cache ───────────────
   useEffect(() => {
@@ -420,6 +442,7 @@ export default function NewTournamentRoundPage() {
     });
 
     const selectedTee = teeOptions.find((t) => t.id === selectedTeeId);
+    const games: Game[] = buildRoundGames(selectedGames, players.map((p) => p.id));
 
     const playerGroups: PlayerGroup[] = groups.map(g => ({
       id: g.id,
@@ -438,6 +461,7 @@ export default function NewTournamentRoundPage() {
         players,
         holes: selectedTee?.holes ?? selectedCourse.holes,
         groups: playerGroups.length > 0 ? playerGroups : undefined,
+        games,
         tournamentId,
       });
 
@@ -735,6 +759,84 @@ export default function NewTournamentRoundPage() {
                 }}
               >
                 Tee boxes can change yardage and pars.
+              </div>
+            </div>
+
+            {/* ── Game ────────────────────────────────────────────────── */}
+            <div
+              style={{
+                border: `1px solid ${T.hairline}`,
+                borderRadius: 14,
+                padding: '12px 14px',
+                background: T.paper,
+                marginBottom: 16,
+              }}
+            >
+              <label
+                style={{
+                  display: 'block',
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.3,
+                  color: T.pencilSoft,
+                  textTransform: 'uppercase',
+                  marginBottom: 8,
+                }}
+              >
+                Game · Optional
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowGamePicker(true)}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  minHeight: 44,
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: T.serif,
+                    fontStyle: selectedGames.length === 0 ? 'italic' : 'normal',
+                    fontSize: 15,
+                    color: T.ink,
+                    letterSpacing: -0.2,
+                  }}
+                >
+                  {selectedGames.length === 0
+                    ? 'None — stroke play'
+                    : selectedGames
+                        .map((sel) => {
+                          const label = TOURNAMENT_GAME_OPTIONS.find((g) => g.id === sel.id)?.l ?? sel.id;
+                          // Only stake-taking formats ever show a $ suffix —
+                          // displayed stake == settled stake, always
+                          // (tournament-settlement-honesty-plan.md §3).
+                          return sel.id === 'none' || !STAKE_GAME_IDS.has(sel.id)
+                            ? label
+                            : `${label} ${sel.stake}`;
+                        })
+                        .join(' + ')}
+                </span>
+                <span style={{ fontFamily: T.mono, fontSize: 13, color: T.pencilSoft }}>{'›'}</span>
+              </button>
+              <div
+                style={{
+                  fontFamily: T.serif,
+                  fontStyle: 'italic',
+                  fontSize: 12,
+                  color: T.pencilSoft,
+                  marginTop: 6,
+                }}
+              >
+                Each round can play a different game.
               </div>
             </div>
 
@@ -1128,6 +1230,90 @@ export default function NewTournamentRoundPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Game picker bottom sheet ─────────────────────────────────────── */}
+      <AnimatePresence>
+        {showGamePicker && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowGamePicker(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.35)',
+                zIndex: 52, // above CaddieOrb (50) so the scrim dims/blocks it; below LooperSheet (60)
+              }}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={T.springSoft}
+              style={{
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 53,
+                background: T.paper,
+                borderRadius: '20px 20px 0 0',
+                padding: '12px 0 28px',
+                maxHeight: '80vh',
+                overflow: 'hidden',
+                boxShadow: '0 -20px 50px rgba(0,0,0,0.2)',
+                display: 'flex',
+                flexDirection: 'column',
+                maxWidth: 420,
+                margin: '0 auto',
+              }}
+            >
+              {/* Drag handle */}
+              <div
+                style={{
+                  width: 40,
+                  height: 4,
+                  borderRadius: 99,
+                  background: T.hairline,
+                  margin: '0 auto 10px',
+                }}
+              />
+              <GamePicker
+                accent={DEFAULT_ACCENT}
+                options={TOURNAMENT_GAME_OPTIONS}
+                selected={selectedGames}
+                rosterSize={tournament.playerIds.length}
+                onToggle={(id: GameId) => {
+                  haptic('light');
+                  setSelectedGames((prev) => {
+                    if (prev.some((s) => s.id === id)) {
+                      return prev.filter((s) => s.id !== id);
+                    }
+                    // Default stake only for formats settlement.ts actually
+                    // settles — anything else stays stakeless so the picker
+                    // never advertises money it won't pay out.
+                    const withDefault = {
+                      id,
+                      stake: !STAKE_GAME_IDS.has(id) ? '' : id === 'nassau' ? '$20' : '$5',
+                    };
+                    // "No stakes" is exclusive of everything else.
+                    if (id === 'none') return [withDefault];
+                    return [...prev.filter((s) => s.id !== 'none'), withDefault];
+                  });
+                }}
+                onStakeFor={(id: GameId, stake: string) => {
+                  setSelectedGames((prev) =>
+                    prev.map((s) => (s.id === id ? { ...s, stake } : s))
+                  );
+                }}
+                onDone={() => setShowGamePicker(false)}
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

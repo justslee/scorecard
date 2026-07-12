@@ -640,7 +640,8 @@ function PlayerModal({ player, onSave, onClose }: PlayerModalProps) {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 50,
+        // above CaddieOrb (50); scrim covers it, below LooperSheet (60)
+        zIndex: 52,
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
