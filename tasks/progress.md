@@ -14654,3 +14654,15 @@ pass the buggy code too).
   JSON-validated 67 items, diff +11/-1 (the -1 is b2_status gaining a comma), no data loss.
 - NOT shipped/pinged per brief — bundle accumulates (map-markers is NOTICEABLE and joins the prior
   noticeable items for the next owner "ship it"). Concurrent caddie-context-leak lane co-landed @6a68078.
+
+## AWAITING (cycle: passive-shot-tracking spike, 2026-07-12)
+Spike branch `spike/passive-shot-tracking` cut off main @71f8910 (NOT integration/next).
+Step 1: no preempting v1.1.4 owner feedback (no comments on #136/#135/#134 cards, no PR #137 comments).
+Dispatching Plan(fable) to frame the feasibility spike. Next: builder → investigation + gated GPS-delta/motion prototype; reviewer honesty check; qa gates; open SPIKE PR base main. Do NOT ship/ping. Do NOT touch integration/next / PR #137.
+
+## AWAITING update (passive-shot-tracking spike)
+Plan (fable) landed @3bf59fb. Builder dispatched on spike/passive-shot-tracking implementing specs/passive-shot-tracking-spike-plan.md.
+On builder completion: dispatch reviewer (honesty/grounding check) + qa (gates green). If BLOCKING → re-dispatch builder. When clean → open SPIKE PR base main (labeled feasibility spike), update progress. Do NOT ship/ping, do NOT touch integration/next or PR #137.
+
+## DONE (passive-shot-tracking spike, 2026-07-12)
+Spike LANDED on spike/passive-shot-tracking (base main) — NOT the bundle. Reviewer SHIP (verified Capacitor grep real, classifier tests meaningful, doctrine holds, no write path); QA GREEN (lint/tsc/build/voice 278-0/tests 2294/ruff). Tightened 2 honesty nitpicks (SNR floor, line citation). Verdict: GPS-delta drafts feasible NOW; phone-only swing detection DON'T build (torso/practice-swing problem, not just Hz); Watch = only true-detection path, deferred (no watchOS target); sensor carry infeasible/closed. Opening SPIKE PR. No ship/ping.
