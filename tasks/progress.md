@@ -3,6 +3,28 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## caddie-orb-z50-ties — DONE, builder (cycle 103, 2026-07-11, small-UX bug fix / silent)
+Implemented `specs/caddie-orb-z50-ties-plan.md` exactly on `integration/next` @6ff2b0a (off
+84b5719, which was the fable plan commit). This is the follow-up audited/filed by the
+`caddie-orb-sheet-zindex-overlap` fix above: same bug class (page overlay at `zIndex:50` ties
+the omnipresent `CaddieOrb`, also 50, mounted after page content in root layout → orb wins the
+DOM-paint-order tie and its live-mic button intercepts taps), three more sites.
+Three one-line lifts to `zIndex:52` (above orb 50, below LooperSheet 60 — the `89450fa`
+convention):
+- `frontend/src/components/CourseSearch.tsx:661` — full-screen surface `motion.div` (header/
+  list/map children); REAL overlap — map pan/tap-to-add and the Add-card's top edge sat under
+  the orb's live mic circle.
+- `frontend/src/app/players/page.tsx:643` — PlayerModal outer container (backdrop + sheet
+  children); REAL overlap — Save/Add-Player button's top-right corner under the orb.
+- `frontend/src/components/VoiceRoundSetupRealtime.tsx:228` — backdrop only (sheet at `:255`
+  stays 60, already clears the orb); MINOR — wide-viewport scrim poke-through beside the
+  centered sheet, no control collision.
+Pure numeric CSS, 3 lines + 3 inline comments, no layout/logic/shared-type changes.
+Gates on 6ff2b0a: `npm run lint` clean, `npx tsc --noEmit` clean, `npm run build` success,
+`voice-tests --smoke` 278/278. Grep-verified only the intended 3 lines changed (no other
+`zIndex: 50` in the three files touched). Pushed to `integration/next`; rides the existing
+bundle silently (small-UX/preventive fix, no ping per brief).
+
 ## caddie-orb-sheet-zindex-overlap — DONE (cycle 102, 2026-07-11, small-UX bug fix / silent)
 Owner feedback check first: card #134 (v1.1.2) already Shipped + owner-approved, empty comment
 thread; no Needs-Review card; PR #135 no comments → nothing preempted. Then fixed the p3 orb-crux
