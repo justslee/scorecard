@@ -271,7 +271,12 @@ describe("CourseSearch — Map⇄List mode (B2)", () => {
         { id: "top-1", name: "Bethpage Black", source: "osm", center: { lat: 40.74, lng: -73.46 } },
       ]);
     });
-    expect(capturedScoutMapProps?.panTarget).toEqual({ id: "top-1", center: { lat: 40.74, lng: -73.46 } });
+    expect(capturedScoutMapProps?.panTarget).toEqual({
+      id: "top-1",
+      name: "Bethpage Black",
+      source: "osm",
+      center: { lat: 40.74, lng: -73.46 },
+    });
 
     // A top hit WITHOUT a center → panTarget stays null, nothing throws.
     expect(() => {

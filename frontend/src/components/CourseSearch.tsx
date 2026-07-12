@@ -635,7 +635,7 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
   const topHit = searchResults[0];
   const panTarget =
     mode === "map" && query.length >= 2 && topHit?.center
-      ? { id: topHit.id, center: topHit.center }
+      ? { id: topHit.id, name: topHit.name, source: topHit.source, center: topHit.center }
       : null;
 
   /** The single B2 identity seam: a pin added from the map runs through the
