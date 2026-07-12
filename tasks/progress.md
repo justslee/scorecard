@@ -3,6 +3,46 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## DONE — caddie-numbers-coherence, builder (2026-07-12, worktree branch, TOP-PRIORITY, NOTICEABLE)
+Implemented specs/caddie-numbers-coherence-plan.md end-to-end (§2, §3, §4.1-4.3; §4.4 corridor-width
+and the live DB verification steps in §3.3/§4.3 are follow-ups — no staging/DB access from this
+builder run). Root cause of the "leaves about 125" incident (Bethpage Black hole 1, 466y): the
+realtime orb's `/session/recommend` dispatch solved the hardcoded `yards=400` default, never
+consulting `intel.yards` — fixed (`SessionRecommendRequest.yards`/`recommend_payload` now Optional,
+mirror the text-path no-fake-400 ladder, honest error when nothing is known; frontend `dispatchTool`
+now forwards the live session's resolved `holeYards`/`yardageBasis` via a new
+`RealtimeCaddieClient.setToolContext()` seam wired at all 4 client-acquisition sites in
+`useCaddieLiveSession`). New one-solve `TeeShotNumbers` block (`compute_tee_shot_numbers`,
+aim_point.py) computed ONCE on the positioning path — drive physics via the EXACT SAME
+`shot_distance_for_club` call `get_shot_distance` uses (parity by construction); leave now speaks the
+RAW-closing frame (`to_green - drive_total`, closes exactly) instead of the old plays-like-minus-
+stored-bag frame — a deliberate, plan-authorized redefinition that shifted 3 pinned leave values in
+test_positioning_shot.py (150->140, 40->30; comments cite the spec). One formatter
+`format_tee_numbers_line` feeds both mouths' "Last recommendation" line. Two new prompt-contract
+constants (`NUMBERS_COHERENCE_RULE`, `MISS_SIDE_GROUNDING_RULE`) wired into `build_realtime_
+instructions`, both `stable_text` blocks, and the eval registry (schema.py/checks.py + 3 new golden
+scenarios). Miss-side: `compute_positioning_miss_side` now degrades a true both-sides tie to
+`preferred="center"` / "no good miss, commit to the fairway" (was a bare `<=` tie-break spoken as a
+confident "favor the left side" — the Bethpage-1 bug); a clear winner that also has mapped trouble
+says so; aim/miss coherence guard nulls a lateral `landing_advice` clause when miss is "center".
+Corridor v1 (bend-cap only, §4.4 full corridor-width is the follow-up): a mapped corner with tree
+evidence guarding it, that the selected club's drive would fly through, caps club selection to the
+longest club landing short of the corner + reasoning explaining why. Par-sanity guard
+(`format_par_sanity_note`, data-independent): par 3 + >280y flags "two-shot hole, par suspect" in
+both mouths' context formatters. Guide-consumption wiring (already present) locked with a new
+regression test (T-G) so it can't silently break.
+New tests: test_tee_shot_numbers.py (156 cases: closure matrix + Bethpage-1 pin + fake-default-dead +
+physics parity + headwind-leaves-more inversion), test_miss_side_grounding.py (8), test_numbers_
+coherence_prompt.py (10), test_corridor_bend_cap.py (6), test_par_sanity_guard.py (10),
+test_guide_consumption.py (4) — 194 new backend tests, all green. Updated 3 pre-existing "brain-
+regression guard" pinned tests in test_caddie_caching.py/test_voice_stream.py to account for the two
+new deliberate additive prompt lines (same class of update as prior POSITIONING_SHOT_RULE additions).
+Gates: `ruff check .` clean; backend `pytest -q` 2310 passed/95 skipped (DB-only, CI-gated); frontend
+`npm run lint` clean, `npx tsc --noEmit` clean, `npx vitest run` 2413/2413, voice-tests smoke 278/278.
+Deferred/follow-up (noted in plan, not blocking): §3.3 Bethpage-1 hazard-log verification and §4.3
+Red-3 par DB trace both require live staging/DB access unavailable to this builder; §4.4 corridor-
+width club selection is next cycle's fully-specified follow-up.
+
 ## DONE @be24416 — cycle 113 tee-shot-yardage-overlays, builder (2026-07-12, integration/next, NOTICEABLE)
 Implemented specs/tee-shot-yardage-overlays-plan.md exactly (fable plan @e040c30). New pure module
 `frontend/src/lib/map/tee-shot-overlays.ts`: walks the hole's real OSM `golf=hole` centerline in

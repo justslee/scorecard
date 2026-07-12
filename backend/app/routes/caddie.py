@@ -33,10 +33,14 @@ from app.caddie.physics import PHYSICS_GROUNDING_RULE
 from app.caddie.guide_writer import format_guide_line, validate_guide
 from app.caddie.voice_prompts import (
     INPUT_GROUNDING_RULE,
+    MISS_SIDE_GROUNDING_RULE,
+    NUMBERS_COHERENCE_RULE,
     OBSERVED_REALITY_RULE,
     POSITIONING_SHOT_RULE,
     TOOL_USE_RULE,
     YARDAGE_GROUNDING_RULE,
+    format_par_sanity_note,
+    format_tee_numbers_line,
 )
 from app.caddie import tools as caddie_tools
 from app.caddie.tool_loop import run_caddie_turn
@@ -189,11 +193,22 @@ class SessionRecommendRequest(BaseModel):
     hole_number: int
     distance_yards: Optional[int] = None
     par: int = 4
-    yards: int = 400
+    # No-fake-data (specs/caddie-numbers-coherence-plan.md §2.1 — owner
+    # incident: a 466y hole solved as the old fake 400 default, the root
+    # cause of the "leaves about 125" incident). Honest None when the caller
+    # doesn't know the yardage yet — `recommend_payload` resolves the real
+    # ladder (distance_yards -> yards -> cached hole_intel.yards) and returns
+    # an honest error rather than solving a fabricated number.
+    yards: Optional[int] = None
     player_lat: Optional[float] = None
     player_lng: Optional[float] = None
     shot_bearing: Optional[float] = None  # degrees from north toward target
     competition_legal: bool = False  # True = USGA-conforming mode; zeroes all environmental distance adjustments
+    # Provenance of `yards` (or the resolved distance) — 'gps' | 'tee-card' |
+    # 'tee-geom' | 'card' | None. Plumbed into TeeShotNumbers.yardage_basis
+    # (specs/caddie-numbers-coherence-plan.md §2.2) so the spoken numbers
+    # block can label its source honestly.
+    yardage_basis: Optional[str] = None
 
 
 class SessionVoiceRequest(BaseModel):
@@ -593,6 +608,7 @@ async def session_recommend(request: SessionRecommendRequest, user_id: str = Dep
         yards=request.yards,
         shot_bearing=request.shot_bearing,
         competition_legal=request.competition_legal,
+        yardage_basis=request.yardage_basis,
     )
 
 
@@ -620,12 +636,19 @@ def _format_yardage_line(
     """
     hole_label = f"Hole {hole_number}, " if hole_number is not None else ""
     par_label = f"Par {par}" if par is not None else "Par unknown"
+    # Data-independent par-vs-yardage sanity guard (specs/caddie-numbers
+    # -coherence-plan.md §4.3, owner incident: Bethpage RED 3 shown "PAR 3 ·
+    # 355 YDS"). Checked against `hole_yards` (the stored tee/card number),
+    # never the live GPS-to-green distance, which reflects wherever the
+    # player currently stands, not the hole's total yardage.
+    par_sanity_note = format_par_sanity_note(par, hole_yards)
+    par_sanity_suffix = f" {par_sanity_note}" if par_sanity_note else ""
 
     if distance_to_green_yards is not None:
         return (
             f"{hole_label}{par_label} — Distance to the middle of the green, GPS from where "
             f"the player stands NOW: {distance_to_green_yards} yards. This is the player's "
-            f"real number — use it."
+            f"real number — use it.{par_sanity_suffix}"
         )
     if hole_yards is not None and yardage_basis in ("tee-card", "tee-geom", "card"):
         tee_clause = (
@@ -643,13 +666,13 @@ def _format_yardage_line(
             return (
                 f"{hole_label}{par_label} — at least {hole_yards} yards{tee_clause} "
                 f"(straight-line tee-to-green; the routed hole may play longer). "
-                f"Do not quote any other tee's yardage."
+                f"Do not quote any other tee's yardage.{par_sanity_suffix}"
             )
         return (
             f"{hole_label}{par_label} — {hole_yards} yards{tee_clause}. "
-            f"Do not quote any other tee's yardage."
+            f"Do not quote any other tee's yardage.{par_sanity_suffix}"
         )
-    return f"{hole_label}{par_label} — yardage unknown. Ask the player or say so; never guess."
+    return f"{hole_label}{par_label} — yardage unknown. Ask the player or say so; never guess.{par_sanity_suffix}"
 
 
 async def _build_session_voice_prompt(
@@ -755,10 +778,20 @@ async def _build_session_voice_prompt(
 
     if session.last_recommendation:
         rec = session.last_recommendation
-        context_parts.append(
-            f"Last recommendation: {rec.club} to {rec.target_yards}y, "
-            f"aim: {rec.aim_point.description}, miss: {rec.miss_side.preferred}"
-        )
+        if rec.tee_shot_numbers is not None:
+            # Positioning/tee shot — the one-solve numbers block replaces the
+            # old bare "to {target_yards}y" line (specs/caddie-numbers
+            # -coherence-plan.md §2.3); the twin substitution lives in
+            # voice_prompts.py::_situation_block so wording never drifts.
+            context_parts.append(
+                f"Last recommendation: {rec.club}. {format_tee_numbers_line(rec.tee_shot_numbers)} "
+                f"aim: {rec.aim_point.description}, miss: {rec.miss_side.preferred}"
+            )
+        else:
+            context_parts.append(
+                f"Last recommendation: {rec.club} to {rec.target_yards}y, "
+                f"aim: {rec.aim_point.description}, miss: {rec.miss_side.preferred}"
+            )
 
     # Recent shot history for context
     recent_shots = session.shot_history[-5:]
@@ -805,7 +838,9 @@ or known tendencies when relevant.
 {INPUT_GROUNDING_RULE}
 {OBSERVED_REALITY_RULE}
 {YARDAGE_GROUNDING_RULE}
-{POSITIONING_SHOT_RULE}"""
+{POSITIONING_SHOT_RULE}
+{NUMBERS_COHERENCE_RULE}
+{MISS_SIDE_GROUNDING_RULE}"""
 
     # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
     volatile_text = f"--- CURRENT SITUATION ---\n{context}"
@@ -840,6 +875,12 @@ async def session_voice(request: SessionVoiceRequest, user_id: str = Depends(cad
         current_yardage=request.distance_to_green_yards
         if request.distance_to_green_yards is not None
         else request.hole_yards,
+        # Provenance (specs/caddie-numbers-coherence-plan.md §2.2): live GPS
+        # always outranks — its basis is 'gps' regardless of what the caller
+        # separately labeled hole_yards' basis.
+        current_yardage_basis="gps"
+        if request.distance_to_green_yards is not None
+        else request.yardage_basis,
     )
 
     try:
@@ -995,6 +1036,9 @@ async def session_voice_stream(request: SessionVoiceRequest, user_id: str = Depe
         current_yardage=request.distance_to_green_yards
         if request.distance_to_green_yards is not None
         else request.hole_yards,
+        current_yardage_basis="gps"
+        if request.distance_to_green_yards is not None
+        else request.yardage_basis,
     )
 
     return StreamingResponse(
@@ -1454,7 +1498,9 @@ golf-focused. Never break character.
 {INPUT_GROUNDING_RULE}
 {OBSERVED_REALITY_RULE}
 {YARDAGE_GROUNDING_RULE}
-{POSITIONING_SHOT_RULE}"""
+{POSITIONING_SHOT_RULE}
+{NUMBERS_COHERENCE_RULE}
+{MISS_SIDE_GROUNDING_RULE}"""
 
     # BLOCK 1 — VOLATILE (per-hole CURRENT SITUATION): no cache_control.
     volatile_text = f"--- CURRENT SITUATION ---\n{context}"

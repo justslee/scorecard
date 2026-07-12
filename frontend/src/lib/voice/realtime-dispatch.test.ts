@@ -113,6 +113,18 @@ describe('dispatchTool — Realtime tool surface v1', () => {
     });
   });
 
+  it('get_recommendation forwards the ctx-resolved yardage + basis (specs/caddie-numbers-coherence-plan.md §2.1 — root cause of the "125" incident: the model omits distance_yards on a normal tee-shot call, so this is the ONLY number that anchors the engine solve to the real hole yardage instead of the backend default)', async () => {
+    const anchoredCtx = { roundId: 'round-42', holeYards: 466, yardageBasis: 'tee-card' as const };
+    await dispatchTool('get_recommendation', { hole_number: 1 }, anchoredCtx);
+    expect(sessionRecommend).toHaveBeenLastCalledWith({
+      round_id: 'round-42',
+      hole_number: 1,
+      distance_yards: undefined,
+      yards: 466,
+      yardage_basis: 'tee-card',
+    });
+  });
+
   it('get_conditions reads the session conditions (optional hole)', async () => {
     await dispatchTool('get_conditions', { hole_number: 5 }, ctx);
     expect(getSessionConditions).toHaveBeenCalledWith('round-42', 5);

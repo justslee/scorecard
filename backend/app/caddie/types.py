@@ -200,6 +200,37 @@ class AimPoint(BaseModel):
     bearing: Optional[float] = None
 
 
+# ── Tee-shot numbers (specs/caddie-numbers-coherence-plan.md §2.2) ──
+
+
+class TeeShotNumbers(BaseModel):
+    """ONE authoritative numbers block for a positioning/tee-shot turn.
+
+    Owner incident (2026-07, Bethpage Black hole 1, 466y par 4): the caddie
+    spoke a leave (125) solved from an unrelated wrong-input distance, a raw
+    bag driver number (300), and a physics carry/total (280/266) — three
+    truthful-in-isolation numbers from three sources that never had to agree.
+    This block is computed ONCE (``compute_tee_shot_numbers``,
+    app/caddie/aim_point.py) and is the only thing either mouth may speak for
+    a tee shot.
+
+    Invariant (tested): to_green_yards - drive_total_yards == leave_exact_yards,
+    EXACTLY, for every instance this engine produces.
+    """
+
+    hole_number: int
+    to_green_yards: int  # the raw distance the engine solved (466) — rec.raw_yards
+    yardage_basis: Optional[str] = None  # 'gps' | 'tee-card' | 'tee-geom' | 'card' | None (provenance label)
+    plays_like_yards: int  # rec.target_yards (physics plays-like of to_green_yards)
+    club: str  # selected club key ("driver")
+    club_stored_yards: int  # the bag number (300) — still-air stored distance
+    drive_carry_yards: Optional[int] = None  # physics carry under today's conditions (266); None in competition_legal
+    drive_total_yards: int  # physics total under today's conditions (276); == stored in competition_legal
+    leave_exact_yards: int  # to_green_yards - drive_total_yards, floored at 0 — closes EXACTLY
+    leave_yards: int  # round-to-5 of leave_exact (the calm spoken number)
+    leave_plays_like_yards: Optional[int] = None  # what that approach plays like (labeled extra, never the primary leave)
+
+
 # ── The Big Recommendation ──
 
 
@@ -223,6 +254,10 @@ class CaddieRecommendation(BaseModel):
     # JSONB from older rounds still validates (additive-field convention).
     shot_kind: str = "approach"  # "approach" | "positioning"
     leave_yards: Optional[int] = None  # positioning only: approach distance the drive leaves
+    # ONE authoritative numbers block for a positioning/tee shot (see
+    # TeeShotNumbers above) — None on reachable/approach turns and on any
+    # cached recommendation from before this field existed (additive).
+    tee_shot_numbers: Optional[TeeShotNumbers] = None
 
 
 # ── Caddie Personality ──

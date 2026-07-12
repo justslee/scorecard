@@ -41,6 +41,25 @@ export interface CaddieRecommendation {
   shot_kind?: 'approach' | 'positioning';
   /** positioning only: the approach distance the drive leaves. */
   leave_yards?: number | null;
+  /** ONE authoritative numbers block for a positioning/tee shot — mirrors
+   *  `backend/app/caddie/types.py::TeeShotNumbers` exactly
+   *  (specs/caddie-numbers-coherence-plan.md §2.2). `null`/absent on
+   *  reachable/approach turns and on any cached recommendation from before
+   *  this field existed. No UI change required for this cycle — CaddiePanel
+   *  keeps rendering `aim_point.description` as today. */
+  tee_shot_numbers?: {
+    hole_number: number;
+    to_green_yards: number;
+    yardage_basis?: string | null;
+    plays_like_yards: number;
+    club: string;
+    club_stored_yards: number;
+    drive_carry_yards?: number | null;
+    drive_total_yards: number;
+    leave_exact_yards: number;
+    leave_yards: number;
+    leave_plays_like_yards?: number | null;
+  } | null;
 }
 
 export interface WeatherConditions {

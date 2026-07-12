@@ -1,6 +1,7 @@
 """Aim point and miss-side analysis engine (DECADE-inspired)."""
 
 from typing import Optional
+from app.caddie import physics
 from app.caddie.types import (
     AimPoint,
     MissSide,
@@ -8,6 +9,7 @@ from app.caddie.types import (
     HoleIntelligence,
     PlayerStatistics,
     CaddieRecommendation,
+    TeeShotNumbers,
     WeatherConditions,
 )
 from app.caddie.club_selection import (
@@ -294,6 +296,14 @@ def compute_positioning_miss_side(zone: list[Hazard]) -> MissSide:
     green-side hazards. Prefers the lateral side with less risk in THIS
     shot's landing window; no in-zone hazard data degrades to an honest
     generic (nothing fabricated).
+
+    Owner incident (Bethpage Black hole 1, specs/caddie-numbers-coherence-plan
+    .md §1.4 / §3.1): trees mapped on BOTH sides of the drive zone, equal
+    severity — a bare `<=` tie-break spoke a confident "favor the left side"
+    when there was no good miss. A true both-sides tie now degrades honestly
+    to `preferred="center"` / "no good miss, commit to the fairway" instead
+    of picking a side to sound decisive. A clear winner that ALSO has mapped
+    trouble says so, rather than a clean "favor X" that hides X's own risk.
     """
     if not zone:
         return MissSide(
@@ -308,20 +318,43 @@ def compute_positioning_miss_side(zone: list[Hazard]) -> MissSide:
             return 0
         return max(scores.get(h.penalty_severity, 0) for h in hzds)
 
+    def types_desc(hzds: list[Hazard]) -> str:
+        return ", ".join(sorted({h.type for h in hzds}))
+
     left = [h for h in zone if h.line_side.lower() == "left"]
     right = [h for h in zone if h.line_side.lower() == "right"]
     left_score = severity_score(left)
     right_score = severity_score(right)
 
+    if left_score > 0 and right_score > 0 and left_score == right_score:
+        # Honest both-sides degradation — the Bethpage-1 fix. Never a
+        # one-sided preference when the data shows trouble on both sides.
+        return MissSide(
+            preferred="center",
+            description=(
+                f"Trouble both sides in the driving zone — {types_desc(left + right)} left "
+                "and right. No good miss; commit to the fairway."
+            ),
+            avoid="Don't favor either side — the fairway is the only safe ground",
+        )
+
     if left_score <= right_score:
-        preferred, worst_side, worst_hazards = "left", "right", right
+        preferred, worst_side, worst_hazards, pref_hazards = "left", "right", right, left
     else:
-        preferred, worst_side, worst_hazards = "right", "left", left
+        preferred, worst_side, worst_hazards, pref_hazards = "right", "left", left, right
 
     if worst_hazards:
-        types_desc = ", ".join(sorted({h.type for h in worst_hazards}))
-        avoid = f"Don't miss {worst_side} — {types_desc}"
-        description = f"Favor the {preferred} side off the tee — {worst_side} has trouble in the driving zone"
+        types_str = types_desc(worst_hazards)
+        avoid = f"Don't miss {worst_side} — {types_str}"
+        if pref_hazards:
+            # The preferred side is the LESSER risk, but it isn't safe —
+            # never a clean "favor X" that hides X's own mapped trouble.
+            description = (
+                f"Favor the {preferred} side — {worst_side} is worse ({types_str}), but "
+                f"{types_desc(pref_hazards)} {preferred} are in play too."
+            )
+        else:
+            description = f"Favor the {preferred} side off the tee — {worst_side} has trouble in the driving zone"
     else:
         avoid = f"Don't miss {worst_side}"
         description = f"Favor the {preferred} side off the tee"
@@ -353,6 +386,128 @@ def compute_positioning_aim(
     return AimPoint(description=description)
 
 
+# ── Tee-shot numbers (specs/caddie-numbers-coherence-plan.md §2.2) ─────────
+#
+# Owner incident (2026-07, Bethpage Black hole 1, 466y par 4): the caddie
+# spoke a leave of 125, a raw driver of 300, and a physics total of 280 —
+# three numbers from three unconnected sources that never had to agree. This
+# is the ONE place a positioning shot's numbers are computed, so every mouth
+# speaks the same closing arithmetic.
+
+
+def compute_tee_shot_numbers(
+    hole: HoleIntelligence,
+    distance_yards: int,
+    adjusted_yards: int,
+    club: str,
+    club_dist: int,
+    weather: Optional[WeatherConditions],
+    shot_bearing: float,
+    competition_legal: bool,
+    yardage_basis: Optional[str] = None,
+) -> "TeeShotNumbers":
+    """The one authoritative numbers block for a positioning/tee shot.
+
+    Drive physics run through the EXACT SAME call shape as the
+    `get_shot_distance` tool (`tools.py::shot_distance_payload`) — physics
+    parity by construction, not convention. `leave_exact_yards` is the raw
+    closing arithmetic (`to_green_yards - drive_total_yards`, floored at 0);
+    `leave_yards` is its round-to-5 spoken form. `leave_plays_like_yards`
+    keeps today's plays-like-frame number as a labeled extra, never the
+    primary leave (specs/caddie-numbers-coherence-plan.md §2.2's documented
+    leave-frame redefinition — the raw frame is what the golfer's own
+    arithmetic checks, so it's the frame the caddie now speaks).
+    """
+    if competition_legal:
+        # USGA-conforming: no environmental physics anywhere in the block —
+        # the drive total IS the stored number, still closes exactly.
+        drive_carry_yards: Optional[int] = None
+        drive_total_yards = club_dist
+    else:
+        cond, _ = physics.conditions_from_weather(
+            weather, shot_bearing,
+            elevation_delta_ft=hole.elevation_change_ft,
+            carry_hint_yards=float(club_dist),
+        )
+        result = physics.shot_distance_for_club(club, float(club_dist), cond)
+        drive_carry_yards = round(result.carry_yards)
+        drive_total_yards = round(result.total_yards)
+
+    leave_exact_yards = max(0, distance_yards - drive_total_yards)
+    leave_yards = round(leave_exact_yards / 5) * 5
+    leave_plays_like_yards = round(max(0, adjusted_yards - club_dist) / 5) * 5
+
+    return TeeShotNumbers(
+        hole_number=hole.hole_number,
+        to_green_yards=distance_yards,
+        yardage_basis=yardage_basis,
+        plays_like_yards=adjusted_yards,
+        club=club,
+        club_stored_yards=club_dist,
+        drive_carry_yards=drive_carry_yards,
+        drive_total_yards=drive_total_yards,
+        leave_exact_yards=leave_exact_yards,
+        leave_yards=leave_yards,
+        leave_plays_like_yards=leave_plays_like_yards,
+    )
+
+
+# ── Corridor v1 — bend-aware club cap (specs/caddie-numbers-coherence-plan.md
+# §4.1). Bend-cap ONLY: full corridor-width club selection (§4.4) is a
+# fully-specified follow-up, not built here. Owner incident (Bethpage RED 3):
+# "driver by default" flew through a mapped corner into trees the engine
+# already knew about (HoleIntelligence.bend) but never consulted for club.
+
+# Tolerance before a drive is judged to "overshoot" a mapped corner — small
+# enough to still catch a real fly-through, generous enough that a drive
+# landing essentially AT the corner doesn't false-positive.
+CORNER_OVERSHOOT_TOLERANCE_YDS: int = 10
+
+# A corridor cap never fires on a corner mapped closer than this — inside
+# this range the whole "which club reaches the corner" question is moot
+# (every club in a normal bag lands short of it anyway).
+CORNER_MIN_DISTANCE_YDS: int = 120
+
+# Tree evidence must sit within this many yards SHORT of the mapped corner to
+# count as "guarding" it — a stand well short of the corner isn't the hazard
+# that punishes flying through the bend itself.
+CORNER_TREE_LOOKBACK_YDS: int = 20
+
+_SEVERITY_RANK: dict[str, int] = {"mild": 1, "moderate": 2, "severe": 3, "death": 5}
+_MODERATE_RANK: int = _SEVERITY_RANK["moderate"]
+
+
+def _select_club_capped_at(
+    clubs: dict[str, int],
+    max_total_yards: float,
+    weather: Optional[WeatherConditions],
+    shot_bearing: float,
+    elevation_change_ft: float,
+    competition_legal: bool,
+) -> Optional[tuple[str, int]]:
+    """Longest club in the bag whose CONDITIONS TOTAL lands short of
+    `max_total_yards` — walks the bag descending, re-running
+    `shot_distance_for_club` per candidate (competition_legal walks stored
+    numbers, same USGA-conforming rule `compute_tee_shot_numbers` follows).
+    `None` when even the shortest club in the bag overshoots — no club helps,
+    so the caller keeps today's recommendation rather than fabricate a cap.
+    """
+    bag = clubs or DEFAULT_CLUB_DISTANCES
+    for candidate, dist in sorted(bag.items(), key=lambda x: x[1], reverse=True):
+        if competition_legal:
+            total = float(dist)
+        else:
+            cond, _ = physics.conditions_from_weather(
+                weather, shot_bearing,
+                elevation_delta_ft=elevation_change_ft,
+                carry_hint_yards=float(dist),
+            )
+            total = physics.shot_distance_for_club(candidate, float(dist), cond).total_yards
+        if total <= max_total_yards:
+            return candidate, dist
+    return None
+
+
 def generate_recommendation(
     hole: HoleIntelligence,
     distance_yards: int,
@@ -362,6 +517,7 @@ def generate_recommendation(
     player_stats: Optional[PlayerStatistics] = None,
     shot_bearing: float = 0.0,
     competition_legal: bool = False,
+    yardage_basis: Optional[str] = None,
 ) -> CaddieRecommendation:
     """Generate a complete caddie recommendation for a shot.
 
@@ -407,8 +563,8 @@ def generate_recommendation(
     reachable = is_green_reachable(adjusted_yards, clubs, hole.green_depth_yards)
     max_reach = max((clubs or DEFAULT_CLUB_DISTANCES).values())
     leave_yards: Optional[int] = None
-    if not reachable:
-        leave_yards = round(max(0, adjusted_yards - club_dist) / 5) * 5
+    tee_shot_numbers: Optional[TeeShotNumbers] = None
+    corridor_note: Optional[str] = None
 
     # Aim point / miss side / pin light — branch on reachability.
     zone: list[Hazard] = []
@@ -419,15 +575,69 @@ def generate_recommendation(
         miss = compute_miss_side(hole, player_stats)
         pin_light = classify_pin_position(hole)
     else:
+        # ONE authoritative numbers block (specs/caddie-numbers-coherence-plan
+        # .md §2.2) — everything downstream (leave, aim, landing advice, the
+        # P0/P1 reasoning lines) speaks THIS block's leave, never a
+        # separately-derived number.
+        tee_shot_numbers = compute_tee_shot_numbers(
+            hole, distance_yards, adjusted_yards, club, club_dist,
+            weather, shot_bearing, competition_legal, yardage_basis,
+        )
+
+        # Corridor v1 — bend-aware club cap (§4.1, bend-cap only; the full
+        # corridor-width follow-up is §4.4, not built here). A mapped corner
+        # with tree evidence guarding it, that this club's drive would fly
+        # through, caps the club to one that lands short of the corner —
+        # "driver by default" dies structurally for mapped corners.
+        bend = hole.bend
+        if (
+            bend is not None
+            and not bend.straight
+            and bend.distance_yards is not None
+            and bend.distance_yards >= CORNER_MIN_DISTANCE_YDS
+            and tee_shot_numbers.drive_total_yards > bend.distance_yards + CORNER_OVERSHOOT_TOLERANCE_YDS
+        ):
+            corner_trees = [
+                h for h in hole.hazards
+                if h.type == "trees"
+                and h.carry_yards >= bend.distance_yards - CORNER_TREE_LOOKBACK_YDS
+                and _SEVERITY_RANK.get(h.penalty_severity, 0) >= _MODERATE_RANK
+            ]
+            if corner_trees:
+                capped = _select_club_capped_at(
+                    clubs, float(bend.distance_yards - 5),
+                    weather, shot_bearing, hole.elevation_change_ft, competition_legal,
+                )
+                if capped is not None and capped[0] != club:
+                    old_club_display = CLUB_DISPLAY_NAMES.get(club, club)
+                    club, club_dist = capped
+                    new_club_display = CLUB_DISPLAY_NAMES.get(club, club)
+                    tee_shot_numbers = compute_tee_shot_numbers(
+                        hole, distance_yards, adjusted_yards, club, club_dist,
+                        weather, shot_bearing, competition_legal, yardage_basis,
+                    )
+                    corridor_note = (
+                        f"{old_club_display} runs through the corner at ~{bend.distance_yards} "
+                        f"into the trees — {new_club_display} keeps you short of it, leaves "
+                        f"about {tee_shot_numbers.leave_yards}."
+                    )
+
+        leave_yards = tee_shot_numbers.leave_yards
+
         # Driving-zone window around THIS shot's expected advance — not the
         # green-side frame. classify_pin_position is skipped: pin light is a
         # green concept and doesn't apply when the green isn't in play.
         zone = drive_zone_hazards(hole.hazards, float(club_dist))
+        miss = compute_positioning_miss_side(zone)
         landing_advice = decade_landing_advice(
             hole.hazards, float(club_dist), float(leave_yards), handicap=handicap,
         )
+        # Aim/miss coherence guard (§3.1): a "no good miss, commit to the
+        # fairway" verdict can never be undercut by a lateral landing-advice
+        # clause pointing to one side — aim and miss must never disagree.
+        if miss.preferred == "center":
+            landing_advice = None
         aim = compute_positioning_aim(leave_yards, landing_advice)
-        miss = compute_positioning_miss_side(zone)
 
     # Build reasoning as (priority, text) tuples; see prioritize_reasoning for
     # the full priority scheme.  Order of appends within a priority is preserved
@@ -467,6 +677,10 @@ def generate_recommendation(
             f"Green's out of reach ({adjusted_yards}y; your longest club is {max_reach}y)"
             f" — positioning shot, leaves about {leave_yards} in",
         ))
+        # P1 — corridor v1 bend-cap explanation (§4.1) — the club change and
+        # WHY, so the caddie never just silently plays a shorter club.
+        if corridor_note:
+            _r.append((1, corridor_note))
         # P1 — driving-zone DECADE landing advice + any dead-ahead cross hazard.
         if landing_advice:
             _r.append((1, landing_advice))
@@ -474,10 +688,13 @@ def generate_recommendation(
         if cross_line:
             _r.append((1, cross_line))
         # P2 — fairway-bend-in-window line (honest reuse of HoleBend; omitted
-        # when bend is None, per the unmapped-vs-straight discipline in hazards.py).
+        # when bend is None, per the unmapped-vs-straight discipline in
+        # hazards.py — and omitted when the corridor note above already named
+        # this exact corner, so the two lines don't repeat each other).
         bend = hole.bend
         if (
-            bend is not None
+            corridor_note is None
+            and bend is not None
             and not bend.straight
             and bend.distance_yards is not None
             and (club_dist - 60) <= bend.distance_yards <= (club_dist + 60)
@@ -595,4 +812,5 @@ def generate_recommendation(
         competition_legal=competition_legal,
         shot_kind="positioning" if not reachable else "approach",
         leave_yards=leave_yards if not reachable else None,
+        tee_shot_numbers=tee_shot_numbers,
     )

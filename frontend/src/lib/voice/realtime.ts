@@ -96,14 +96,22 @@ export interface RealtimeCaddieOptions {
 export async function dispatchTool(
   name: string,
   args: Record<string, unknown>,
-  ctx: { roundId: string },
+  ctx: { roundId: string; holeYards?: number | null; yardageBasis?: string | null },
 ): Promise<unknown> {
   switch (name) {
     case 'get_recommendation': {
+      // No-fake-data (specs/caddie-numbers-coherence-plan.md §2.1 — root
+      // cause of the "125" incident): the live session's resolved yardage +
+      // basis, the SAME numbers `buildHoleContextText` already anchors the
+      // model with, ride along so the engine's solve and the model's
+      // narration can never disagree — never the old fake `yards=400`
+      // backend default when the model omits distance_yards.
       return await sessionRecommend({
         round_id: ctx.roundId,
         hole_number: Number(args.hole_number),
         distance_yards: args.distance_yards != null ? Number(args.distance_yards) : undefined,
+        yards: ctx.holeYards ?? undefined,
+        yardage_basis: ctx.yardageBasis ?? undefined,
       });
     }
     case 'record_shot': {
@@ -246,6 +254,13 @@ export class RealtimeCaddieClient {
   // response.create messages WE sent (sendText / sendOpener / tool output)
   // whose response.created hasn't arrived yet — those are unconditional.
   private selfTriggeredResponses = 0;
+
+  // Live getter for this turn's resolved hole yardage + basis
+  // (specs/caddie-numbers-coherence-plan.md §2.1) — set via setToolContext()
+  // by the owning hook (useCaddieLiveSession's holeContextRef), read fresh on
+  // every tool dispatch so a hole change or a GPS fix mid-round is reflected
+  // immediately, without reconstructing the client.
+  private toolContextProvider: (() => { holeYards?: number | null; yardageBasis?: string | null }) | null = null;
 
   // Cost control: disconnect after 90s with no conversation activity. The
   // connection is an ephemeral burst — a later press simply reconnects.
@@ -540,6 +555,14 @@ export class RealtimeCaddieClient {
    *  client that the manager created with its own (minimal) handlers. */
   setEvents(events: RealtimeCaddieEvents): void {
     this.events = events;
+  }
+
+  /** Bind the live hole-yardage/basis getter (specs/caddie-numbers-coherence
+   *  -plan.md §2.1) — the owning surface's OWN resolved-yardage ref, so
+   *  `get_recommendation` dispatch always reads the current value, not a
+   *  snapshot taken at construction/adoption time. */
+  setToolContext(getCtx: () => { holeYards?: number | null; yardageBasis?: string | null }): void {
+    this.toolContextProvider = getCtx;
   }
 
   /** Re-emit the current status to whichever handler is bound RIGHT NOW — lets
@@ -952,7 +975,12 @@ export class RealtimeCaddieClient {
 
     let output: unknown;
     try {
-      output = await dispatchTool(name, args, { roundId: this.opts.roundId ?? '' });
+      const toolCtx = this.toolContextProvider?.() ?? {};
+      output = await dispatchTool(name, args, {
+        roundId: this.opts.roundId ?? '',
+        holeYards: toolCtx.holeYards,
+        yardageBasis: toolCtx.yardageBasis,
+      });
     } catch (e) {
       output = { error: e instanceof Error ? e.message : String(e) };
     }

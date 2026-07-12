@@ -223,6 +223,11 @@ export async function sessionRecommend(params: {
   distance_yards?: number;
   par?: number;
   yards?: number;
+  /** Provenance of `yards` — 'gps' | 'tee-card' | 'tee-geom' | 'card'. Plumbed
+   *  into the response's `tee_shot_numbers.yardage_basis`
+   *  (specs/caddie-numbers-coherence-plan.md §2.2) so the spoken numbers
+   *  block can label its source honestly. */
+  yardage_basis?: string;
 }): Promise<CaddieRecommendation> {
   const rec = await post<CaddieRecommendation>('/caddie/session/recommend', params);
   // Refresh the offline bundle's "last call" (tier-3 card) — fire-and-forget,
