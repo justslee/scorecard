@@ -14945,3 +14945,18 @@ to implement, then reviewer(adversarial zero-sum)/qa(gates on head SHA)/designer
 changes). Land on integration/next, add to PR #137 (NOTICEABLE — real money settles for wolf), update backlog
 (wolf done; match>2-player picker + team-assignment UI still FILED for owner), update progress.
 Caller INERT — NO ship/ping this cycle.
+
+## AWAITING (cycle 110) — builder dispatched on integration/next @6d24f61 (plan committed)
+Plan LANDED @6d24f61 (specs/tournament-wolf-settlement-plan.md, fable). Decision: Option A — make computeWolf
+per-hole pointsDelta zero-sum (lone ±3/∓1×3, partner ±1×2), settle money = totals × pointValue; add wolf to
+SETTLEABLE_FORMATS; register wolf property-test fixture (totals p1+12/p2-4/p3-8/p4$0 @ $2). Data model captures
+the pick (wolfHoleChoices + in-round GameResults UI) — NOT design-gated. Builder implementing §3 steps + §5 test
+matrix on integration/next, will commit+push.
+ON RETURN: reconcile from origin/integration/next (git log), confirm the pushed commit + gate output. If green →
+dispatch in parallel: reviewer (adversarial: zero-sum holds in EVERY wolf branch — lone win/loss, partner
+win/loss/tie, carryover if any; no money created; no player dropped; displayed==settled; no regression to other 7
+formats or shipped settlement-honesty), qa (all 6 gates state:SUCCESS on the pushed head SHA), designer (wolf
+points scoreboard now shows negative points for losers — user-facing, review vs NORTHSTAR). Any BLOCKING →
+re-dispatch builder, re-review. Then land into PR #137 checklist (NOTICEABLE — real money settles for wolf),
+update backlog tournament-money-format-completion (wolf DONE; match>2p picker + team-assignment UI still FILED for
+owner), update progress. Caller INERT — NO ship/ping this cycle.
