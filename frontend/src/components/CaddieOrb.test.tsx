@@ -55,6 +55,7 @@ vi.mock("framer-motion", () => {
 import CaddieOrb from "./CaddieOrb";
 import { onLooperOpen, type LooperOpenDetail } from "@/lib/looper-bus";
 import { setCaddieOrbState } from "@/lib/caddie-context";
+import { registerFullscreenOverlay } from "@/lib/fullscreen-overlay";
 
 // jsdom in this repo doesn't ship window.localStorage — stub a minimal
 // in-memory implementation so the one-time-intro guard in CaddieOrb (which
@@ -82,6 +83,10 @@ function makeLocalStorage() {
 describe("CaddieOrb", () => {
   let received: LooperOpenDetail[];
   let off: () => void;
+  // Suppression tests mint a fullscreen-overlay token; if a test forgets to
+  // unregister it (or fails before reaching its own cleanup), this catches
+  // the leak so module state never bleeds into the next test.
+  let pendingUnreg: (() => void) | null = null;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -91,6 +96,10 @@ describe("CaddieOrb", () => {
   });
   afterEach(() => {
     off();
+    if (pendingUnreg) {
+      pendingUnreg();
+      pendingUnreg = null;
+    }
     vi.useRealTimers();
     vi.unstubAllGlobals();
     cleanup();
@@ -141,5 +150,40 @@ describe("CaddieOrb", () => {
 
     act(() => setCaddieOrbState("idle"));
     expect(JSON.parse(orb.getAttribute("data-animate")!)).toEqual({ scale: 1, opacity: 1 });
+  });
+
+  it("suppresses (renders null) while a full-screen overlay is registered, and returns when it unregisters", () => {
+    render(<CaddieOrb />);
+    expect(screen.getByLabelText("Talk to your caddie")).toBeTruthy();
+
+    let unreg!: () => void;
+    act(() => {
+      unreg = registerFullscreenOverlay();
+    });
+    expect(screen.queryByLabelText("Talk to your caddie")).toBeNull();
+
+    act(() => unreg());
+    expect(screen.getByLabelText("Talk to your caddie")).toBeTruthy();
+  });
+
+  it("an overlay registered before mount defers (not burns) the one-time intro flag", () => {
+    let unreg!: () => void;
+    act(() => {
+      unreg = registerFullscreenOverlay();
+    });
+    pendingUnreg = unreg; // safety net if an assertion below throws
+
+    render(<CaddieOrb />);
+    // Suppressed: absent from the DOM, and the intro effect never ran.
+    expect(screen.queryByLabelText("Talk to your caddie")).toBeNull();
+    expect(window.localStorage.getItem("looper.caddieOrbIntroSeen")).toBeNull();
+
+    act(() => unreg());
+    pendingUnreg = null;
+    expect(screen.getByLabelText("Talk to your caddie")).toBeTruthy();
+
+    act(() => vi.advanceTimersByTime(0));
+    expect(screen.getByText("Your caddie moved here")).toBeTruthy();
+    expect(window.localStorage.getItem("looper.caddieOrbIntroSeen")).toBe("1");
   });
 });

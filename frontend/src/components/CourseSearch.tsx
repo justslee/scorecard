@@ -58,6 +58,7 @@ import { useLooperDictation } from "@/hooks/useLooperDictation";
 import { buildKeyterms } from "@/lib/voice/keyterms";
 import CourseScoutMap from "@/components/CourseScoutMap";
 import { pinToSearchResult } from "@/lib/course/pin-payload";
+import { registerFullscreenOverlay } from "@/lib/fullscreen-overlay";
 import type { InBoundsCourse } from "@/lib/golf-api";
 
 // Map mode toggle is gated on the Google Maps key — absent key ⇒ the toggle
@@ -568,6 +569,14 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
     };
   }, []);
 
+  // Full-screen overlay registration (specs/caddie-orb-map-mode-ghost-plan.md):
+  // this surface owns the screen in BOTH modes (opaque paper in list,
+  // transparent-over-native-map in map), so the omnipresent CaddieOrb
+  // suppresses itself while we're mounted. Mount-scoped, NOT mode-scoped —
+  // registered once per open, unregistered on close (register returns the
+  // unregister fn, which is this effect's cleanup).
+  useEffect(() => registerFullscreenOverlay(), []);
+
   // ---------------------------------------------------------------------------
   // Star toggle helpers
   // ---------------------------------------------------------------------------
@@ -626,7 +635,7 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
   const topHit = searchResults[0];
   const panTarget =
     mode === "map" && query.length >= 2 && topHit?.center
-      ? { id: topHit.id, center: topHit.center }
+      ? { id: topHit.id, name: topHit.name, source: topHit.source, center: topHit.center }
       : null;
 
   /** The single B2 identity seam: a pin added from the map runs through the
@@ -658,7 +667,12 @@ export default function CourseSearch({ onSelectCourse, onClose, onVoiceSearch, v
           // Fixed to the visual viewport height — NEVER bound to content or
           // result count (this is the structural fix for the resize jank).
           height: "100dvh",
-          // above CaddieOrb (50) so the full-screen surface covers it; below LooperSheet (60)
+          // z52: above the tab bar (40) and page scrims (40); below LooperSheet
+          // (60). No longer needs to out-stack CaddieOrb (50) for occlusion —
+          // the orb suppresses itself entirely (renders null) while this
+          // surface is mounted, via fullscreen-overlay.ts's registration
+          // effect above (a transparent map-mode frame can't occlude an
+          // opaque orb by z-index alone, so out-stacking wasn't enough).
           zIndex: 52,
           display: "flex",
           flexDirection: "column",

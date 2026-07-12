@@ -3,6 +3,132 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## caddie-noise-clarification-reply — DONE, eng-lead cycle 107 (2026-07-12, worktree lane agent-ab9b3b5a, NOTICEABLE)
+Landed @76d8c95 on integration/next (PR #136 bundle). Direct follow-on to caddie-context-leak:
+after the fake priming user-bubble was dropped (6a68078), a server-VAD false-trigger on ambient
+noise could still make the Realtime MODEL speak a LONE "Didn't catch that — say again?" clarifier
+with no user turn above it. Fix (client-only, SAFE — NO VAD/threshold/mic/noise_reduction change,
+owner-gated line respected): suppress the clarifier BUBBLE when the triggering turn provably had
+no real user input (empty transcript / isPrimingEcho / no real user turn). New pure module
+`frontend/src/lib/voice/noinput-clarifier.ts` (isNoInputClarifier closed-vocab+marker+digit-ban,
+couldBecomeClarifier; mirrors priming-echo.ts) + realtime.ts response<->input correlation +
+grace-timer-bounded hold/suppress/release state machine (handles the deltas-before-transcript
+race). Bias-to-keep: real/failed/typed turns never held. Accepted residual: caddie still SPEAKS
+"say again?" audio (response.cancel avoided); only the bubble is suppressed.
+Plan (fable): `specs/caddie-noise-clarification-reply-plan.md`.
+Reviews (all on head 76d8c95): reviewer SHIP (6 axes, no answer-swallow, no strand, no VAD drift,
+telemetry length-only), qa PASS (lint/tsc clean, vitest 2288/2288 incl. +36 new tests, build ok,
+voice-smoke 278/278), designer APPROVE (serves Northstar; audio-without-bubble tradeoff acceptable).
+Backlog: item done (+ resolution); non-blocking nits filed as `caddie-noise-clarifier-followups`
+(VAD-blip attribution edge, map pruning, status/empty-state copy). PR #136 checklist updated.
+NOT sandbox-verifiable (no live Realtime session) — owner/on-course pass confirms clean transcript.
+Bundle #136 now has 4 NOTICEABLE items (orb-ghost, context-leak, map-markers, noise-clarifier);
+SHIP is owner-gated and handled by the parent loop — THIS worktree lane stays INERT (no ship/ping).
+
+## map-markers-course-location — DONE, builder (2026-07-11, TOP-PRIORITY owner v1.1.3 bug fix / noticeable)
+Implemented `specs/map-markers-course-location-plan.md` exactly on `integration/next`, commit
+`9295bcd` (off `23c1a7c`, PR #136 rolling bundle). Fixes the owner-reported B2 map-mode bug:
+searching "Marine" panned but dropped no target marker, showed no my-location dot, in-bounds
+golf pins didn't visibly render on cold open, and Google POI clutter (museums/restaurants/IKEA)
+showed through.
+- **NEW** `frontend/src/lib/course/scout-map-config.ts` (zero DOM/plugin/React imports, mirrors
+  scout-viewport.ts): `deriveHighlightAction` (none/remove/add/replace decision table),
+  `highlightMarkerFor` (40x40 course-flag.png reuse — no new binary asset — zIndex 2, scaled
+  anchor), `boundsToBBox`, `SCOUT_MAP_STYLES` (poi/poi.business/transit labels off only; roads/
+  water/administrative/course-green geometry untouched). + `scout-map-config.test.ts` (all 5
+  deriveHighlightAction cases, marker shape, bbox mapping, style invariants incl. no blanket
+  `visibility:off`).
+- `CourseSearch.tsx` panTarget gains `name`/`source` from topHit (feeds the highlight marker
+  title + the synthesized `InBoundsCourse` in `markerIndexRef` so tap-card/Add reuses the
+  existing `pinToSearchResult` identity seam unchanged). `CourseSearch.test.tsx` updated shape
+  assertion + explicit name/source flow-through check.
+- `CourseScoutMap.tsx`: `styles: SCOUT_MAP_STYLES` added to the create config; new
+  `highlightRef` + a dedicated `highlightQueueRef` (createCameraQueue) serializing remove→add on
+  the single live highlight marker (rapid re-pans coalesce, no dupes/leaks); reworked the
+  panTarget effect — pans + requests the highlight, and on query-clear removes the highlight
+  without moving the camera (also resets `lastPanIdRef` so re-searching the same course re-pans,
+  fixing a latent staleness bug); one-shot initial-bounds prime (`getMapBounds()` →
+  `coordinatorRef.current.onCameraIdle`) right after `setOnCameraIdleListener` attaches, fixing
+  the root cause of "pins never rendered on cold open" (iOS's initial camera-idle fires before
+  the JS listener binds); native `enableCurrentLocation(true).catch(() => {})` after the map is
+  ready, before `setReady(true)`. Every native call stays gated on `mapReadyRef.current`; camera
+  moves remain `setCamera`-only (no `fitBounds`).
+- Budget invariant preserved — `grep -n "fetchAPI\|searchAll\|searchNearby\|Places\|golfApi"
+  CourseScoutMap.tsx` finds nothing new; the only data call remains `fetchCoursesInBounds`.
+Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npx vitest run` 2236/2236 passed (111
+files, incl. the 2 new/updated files: 21/21), `npm run build` success, `voice-tests --smoke`
+278/278, backend `ruff check .` clean (no backend files touched). Pushed to `integration/next`.
+**Unit-verified only** — pure decision/config logic. **NOT verifiable in this sandbox** (no iOS
+simulator/native plugin bridge): marker rendering, icon load, my-location dot, style application
+on-device, camera/idle timing. Needs the iOS-sim pass per `ios-simulator-map-testing` before
+"done" — this is a TOP-PRIORITY owner bug so the sim check should happen before/alongside the
+next bundle approval, not skipped.
+
+## caddie-orb-map-mode-ghost — DONE, builder (2026-07-11, small-UX bug fix / silent)
+Implemented `specs/caddie-orb-map-mode-ghost-plan.md` exactly on `integration/next`, commit
+`607899a` (off `a9be422`). This is the follow-up filed at the end of Bundle #135 (z-index
+out-stacking `6ff2b0a` couldn't fix it — CourseSearch's map-mode frame is `background:
+transparent` so an opaque, merely-out-stacked orb still PAINTED over the live native map as a
+dead second orb).
+- **NEW** `frontend/src/lib/fullscreen-overlay.ts` — pure `Set<symbol>` registry (mirrors
+  `caddie-context.ts`): `registerFullscreenOverlay()` / `isFullscreenOverlayActive()` /
+  `onFullscreenOverlayChange()`; notifies subscribers only on boolean `size>0` flips.
+- `CaddieOrb.tsx` — subscribes (`useState(isFullscreenOverlayActive)` + effect), computes
+  `visible = show && !overlayActive`; both the early return AND the one-time intro effect
+  (re-keyed `[show]`→`[visible]`, guard `!show`→`!visible`) switched to `visible` so the
+  `looper.caddieOrbIntroSeen` flag is DEFERRED (never burned) while suppressed.
+- `CourseSearch.tsx` — one mount-scoped `useEffect(() => registerFullscreenOverlay(), [])`
+  (register in BOTH list and map mode — mount-scoped, not mode-scoped); amended the stale z
+  comment (orb no longer needs out-stacking, it's truly absent).
+- Tests: new `fullscreen-overlay.test.ts` (5 pure cases: empty/register-unregister/ref-counting/
+  double-unregister-safety/flip-only-notify), `CaddieOrb.test.tsx` additions (suppression +
+  intro-flag-deferral), `CourseSearch.test.tsx` addition (register-on-mount, survives list⇄map
+  toggle, unregister-on-unmount).
+- Grep-verified `registerFullscreenOverlay` appears ONLY in `fullscreen-overlay.ts`,
+  `CourseSearch.tsx`, and the two test files — CourseSearch is the sole production registrant
+  (omnipresence intact everywhere else; PlayerModal/VRS-backdrop/picker-scrims untouched, still
+  dim/cover the orb as before).
+Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npm test` 2226/2226 passed (110 files),
+`npm run build` success, `voice-tests --smoke` 278/278, backend `ruff check .` clean (no backend
+files touched). Pushed to `integration/next`; rides the existing bundle silently (small-UX fix,
+no owner ping per brief).
+
+## Bundle #135 SHIPPED — 2026-07-11 (owner "Ship #135 now (v1.1.3)")
+Owner-authorized merge to `main`. Pre-flight re-verified before touching anything: `integration/next`
+head `8bb915d` unchanged since approval, PR #135 OPEN+MERGEABLE, both required gates SUCCESS.
+1. **VERSION bumped 1.1.2 → 1.1.3** on `integration/next` (commit `18d2fd8`), pushed; re-confirmed both
+   required gates SUCCESS on the new head before merging (Frontend + Backend).
+2. **Retitled + merged PR #135 → main**: "Bundle #135: tournament (per-round formats + live leaderboard
+   + settlement honesty) + orb/sheet tap-fixes (incl. live map surface)." Merge commit **`7b84ac0`**
+   on `main` (`gh pr merge 135 --merge`, no force anywhere). Post-merge CI on `7b84ac0` GREEN (both
+   required gates SUCCESS).
+3. **Backend**: zero backend files in the bundle diff (`git diff --stat` main-prev..7b84ac0 -- backend/`
+   empty) — `Deploy backend (SSM)` correctly did NOT auto-trigger. `https://api.looperapp.org/health` →
+   `{"status":"ok"}`. SSM key-free probe on `i-0826ae70df62d9fe8` (prod `.env`): `VOICE_BOOKING_ENABLED`
+   UNSET → caller stays INERT (Twilio keys present in prod don't matter, gate short-circuits first).
+4. **TestFlight cut from new main** (`bash ops/ios/ship.sh`, `main`@`7b84ac0`, VERSION=1.1.3, no
+   exit-70 needed): **v1.1.3 (build 202607112239)** — "Uploaded v1.1.3 (build 202607112239) to
+   TestFlight." Polled App Store Connect API (JWT ES256, key `QG927KHTXR`) — `processingState: VALID`,
+   not expired, confirmed within ~2 minutes.
+5. **Fresh `integration/next` cut** from new main: `git branch -f integration/next 7b84ac0`, pushed
+   (fast-forward, `18d2fd8..7b84ac0`). New head = `7b84ac061792ee30afb6d3109b8278950e98e192` (== main).
+   Stashes (`stash@{0..2}`) left untouched per instruction.
+6. **Board + backlog**: Product Board card #135 → Shipped (merge SHA `7b84ac0`, TestFlight v1.1.3 build
+   202607112239, 6-item list). `backlog.json` targeted-edited (no json.load/dump, JSON-validated
+   post-edit, 64 items): `player-autocomplete-overlap`, `caddie-orb-sheet-zindex-overlap`,
+   `caddie-orb-z50-ties-audit` flipped `done`→`shipped` + `resolution` added; three new terminal
+   entries added for the tournament work that had no prior backlog.json rows (`tournament-per-round-
+   format`, `tournament-live-leaderboard`, `tournament-settlement-honesty`, all `status: shipped` with
+   full resolution detail sourced from this file's cycle-100 entries) — durable record for work that
+   was dispatched ad hoc rather than off the tracked queue.
+- **6 items shipped**: tournament per-round game formats (activates cumulative settlement), tournament
+  live leaderboard (silent foreground refresh + existing FLIP re-sort), tournament settlement money
+  honesty (stableford/wolf stake mirages killed, match-play/wolf can't silently drop players, wolf
+  stake removed after reviewer falsified a fabricated +$6), add-player Done-button fix (autocomplete
+  overlay no longer covers Done), orb-sheet z-index fix (picker sheets/players modal/VRS scrim), orb
+  z50-ties fix (incl. the live map course-search tap bug from v1.1.2). Known residual NOT in this
+  bundle: `caddie-orb-map-mode-ghost` (orb still visually floats as a ghost button over the transparent
+  map — filed as a follow-up, needs its own plan).
 ## caddie-orb-z50-ties — DONE, builder (cycle 103, 2026-07-11, small-UX bug fix / silent)
 Implemented `specs/caddie-orb-z50-ties-plan.md` exactly on `integration/next` @6ff2b0a (off
 84b5719, which was the fable plan commit). This is the follow-up audited/filed by the
@@ -12327,7 +12453,9 @@ paper@88%+blur) — a port of globals.css .app-header pattern; covers all 4 tee-
 Item2 CourseRow: right col distance-only (aligned), muni→mono subline under name, minHeight44, dividers unchanged.
 Item3 courses.ts L106: guard r.city fallback with COUNTRY_SEGMENT_RE (+2 tests). Item4 (same file): conditional
 route header, distance/city on route rows, minHeight44 on sub-44pt rows. ZERO backend, ZERO logic change to f9953f2.
-## AWAITING builder — implement specs/teetime-prefs-ux-polish-plan.md on integration/next, commit+push, run gates.
+- LANDED @607899a on integration/next. reviewer SHIP (adversarial: sole registrant, ref-count flips sound, no over-suppression, intro-flag deferral correct, one-mic intact). qa PASS (6 gates on head cd83a07: lint/tsc/vitest 2226-pass/build/voice 278/278/ruff; + live Playwright /courses: orb count 1 before, 0 while CourseSearch open, 1 after close; native map mode iOS-sim-only, not sandbox-rendered). designer APPROVE (ghost truly gone via real return-null unmount, not a stacking trick; omnipresence + calm feel held).
+- backlog.json: caddie-orb-map-mode-ghost status ready->done + resolution (targeted edit, JSON valid 64 items, diff +2/-1, no data loss).
+- Classification NOTICEABLE (visible crux fix on the v1.1.3 map surface). Opening the FRESH bundle PR (integration/next -> main), the only prior open bundle PR (#135) already merged. Did NOT dispatch release-manager / ping owner this cycle: owner is actively testing v1.1.3, and a single small ghost-removal is thin for a TestFlight interruption -- it sits on the bundle as the first noticeable item and ships with the next owner "ship it" once more accumulates (per rare-by-design). Concurrent cycle-105 lane (caddie-context-leak) is mid-flight on this branch; its progress note (224822f) left intact.
 On return → reviewer (no-regression) + designer PASS (iOS-sim) + QA strict; then update PR #125 checklist.
 
 ## AWAITING review (cycle 54) — builder pushed 945de5c (feature) on integration/next; head 8b23bb3.
@@ -12369,7 +12497,9 @@ headline already immediate-flushes at markFirstAudio (6fcb40d, live all 3 days) 
 (eos_to_transcript / transcript_to_first_token) only riding markFirstAudio's flush. FIX = 2 guarded safeFlush()
 calls in markTranscript()/markFirstToken() via the existing injectable flush seam; KEEP terminal flush at markFirstAudio.
 Files: caddie-turn-timing.ts + its 2 test files ONLY. No change to CaddieSheet.tsx / useVoiceCaddie.ts / telemetry.ts / backend.
-## AWAITING builder — implement the plan on integration/next, commit+push, run all 6 gates. On return → reviewer + qa.
+- LANDED @607899a on integration/next. reviewer SHIP (adversarial: sole registrant, ref-count flips sound, no over-suppression, intro-flag deferral correct, one-mic intact). qa PASS (6 gates on head cd83a07: lint/tsc/vitest 2226-pass/build/voice 278/278/ruff; + live Playwright /courses: orb count 1 before, 0 while CourseSearch open, 1 after close; native map mode iOS-sim-only, not sandbox-rendered). designer APPROVE (ghost truly gone via real return-null unmount, not a stacking trick; omnipresence + calm feel held).
+- backlog.json: caddie-orb-map-mode-ghost status ready->done + resolution (targeted edit, JSON valid 64 items, diff +2/-1, no data loss).
+- Classification NOTICEABLE (visible crux fix on the v1.1.3 map surface). Opening the FRESH bundle PR (integration/next -> main), the only prior open bundle PR (#135) already merged. Did NOT dispatch release-manager / ping owner this cycle: owner is actively testing v1.1.3, and a single small ghost-removal is thin for a TestFlight interruption -- it sits on the bundle as the first noticeable item and ships with the next owner "ship it" once more accumulates (per rare-by-design). Concurrent cycle-105 lane (caddie-context-leak) is mid-flight on this branch; its progress note (224822f) left intact.
 
 ## CYCLE 56 — builder DONE. Feature 2d4b4c9 (caddie-turn-timing.ts + 2 test files) on integration/next; head 37790b1.
 All 6 gates green locally (lint/tsc/build/voice 274/vitest 34/ruff). SILENT telemetry-only, zero UI/behavior change.
@@ -12403,7 +12533,9 @@ On plan return → write specs/caddie-remove-seeded-question-plan.md, dispatch b
 Tests to re-point (NOT weaken): opening-turn.test.ts L36-45 (exact first-person strings); CaddieSheet.realtime.test.tsx
 L328-345 (sendText exact string + sendContext-before-opening ordering). SILENT bundle accumulation — no ship/no ping.
 
-## AWAITING builder — caddie-remove-seeded-question (cycle 58)
+- LANDED @607899a on integration/next. reviewer SHIP (adversarial: sole registrant, ref-count flips sound, no over-suppression, intro-flag deferral correct, one-mic intact). qa PASS (6 gates on head cd83a07: lint/tsc/vitest 2226-pass/build/voice 278/278/ruff; + live Playwright /courses: orb count 1 before, 0 while CourseSearch open, 1 after close; native map mode iOS-sim-only, not sandbox-rendered). designer APPROVE (ghost truly gone via real return-null unmount, not a stacking trick; omnipresence + calm feel held).
+- backlog.json: caddie-orb-map-mode-ghost status ready->done + resolution (targeted edit, JSON valid 64 items, diff +2/-1, no data loss).
+- Classification NOTICEABLE (visible crux fix on the v1.1.3 map surface). Opening the FRESH bundle PR (integration/next -> main), the only prior open bundle PR (#135) already merged. Did NOT dispatch release-manager / ping owner this cycle: owner is actively testing v1.1.3, and a single small ghost-removal is thin for a TestFlight interruption -- it sits on the bundle as the first noticeable item and ships with the next owner "ship it" once more accumulates (per rare-by-design). Concurrent cycle-105 lane (caddie-context-leak) is mid-flight on this branch; its progress note (224822f) left intact.
 Fable plan written → specs/caddie-remove-seeded-question-plan.md (committed). Builder dispatched on integration/next.
 Authorship decision: caddie OPENS itself (assistant-authored), no fabricated player utterance. buildOpeningTurnText
 → buildOpeningGreetingText (new copy) + buildOpeningGreetingInstruction (live wrapper). Classic: deterministic seed
@@ -14393,3 +14525,132 @@ pass the buggy code too).
 - CI on PR #135 all SUCCESS (Frontend, Backend, E2E) on head. NOT shipped/pinged: silent/preventive fix,
   no noticeable change added; bundle keeps accumulating (3 noticeable tournament items + 2 small-UX
   fixes) for the next owner "ship it". Owner testing v1.1.2 separately; no v1.1.2 feedback preempted.
+
+## Cycle 104 (2026-07-11) — caddie-orb-map-mode-ghost
+- Step1: NO owner v1.1.3 feedback preempts. #135 shipped (v1.1.3 build 202607112239, owner "Ship it");
+  its board card has no comments; no map/tournament feedback anywhere on board. Fresh integration/next
+  @25f198a off main 7b84ac0. No open bundle PR — open fresh one when this lands.
+- Picked caddie-orb-map-mode-ghost (p4, NOTICEABLE crux fix on the v1.1.3 map surface).
+- Investigation: CaddieOrb rendered globally in layout.tsx; visibility = shouldShowCaddieOrb(pathname)
+  only. CourseSearch (full-screen overlay z52) mounts conditionally on /tee-time, /courses, /round/new;
+  has mode "list"|"map"; map mode sets frame background:transparent (CourseSearch.tsx:667) so z52 can't
+  occlude the opaque orb -> ghost. Fix approach: full-screen-overlay registry module (mirrors
+  caddie-context.ts module-level pub/sub) that CourseSearch opts into on mount; orb suppresses (returns
+  null) while any overlay registered. Not gated on mode — CourseSearch covers the whole screen either
+  way, orb is unreachable in list mode too, so suppress whenever mounted (simpler, robust, no ghost).
+- LANDED @607899a on integration/next. reviewer SHIP (adversarial: sole registrant, ref-count flips sound, no over-suppression, intro-flag deferral correct, one-mic intact). qa PASS (6 gates on head cd83a07: lint/tsc/vitest 2226-pass/build/voice 278/278/ruff; + live Playwright /courses: orb count 1 before, 0 while CourseSearch open, 1 after close; native map mode iOS-sim-only, not sandbox-rendered). designer APPROVE (ghost truly gone via real return-null unmount, not a stacking trick; omnipresence + calm feel held).
+- backlog.json: caddie-orb-map-mode-ghost status ready->done + resolution (targeted edit, JSON valid 64 items, diff +2/-1, no data loss).
+- Classification NOTICEABLE (visible crux fix on the v1.1.3 map surface). Opening the FRESH bundle PR (integration/next -> main), the only prior open bundle PR (#135) already merged. Did NOT dispatch release-manager / ping owner this cycle: owner is actively testing v1.1.3, and a single small ghost-removal is thin for a TestFlight interruption -- it sits on the bundle as the first noticeable item and ships with the next owner "ship it" once more accumulates (per rare-by-design). Concurrent cycle-105 lane (caddie-context-leak) is mid-flight on this branch; its progress note (224822f) left intact.
+
+## Cycle 105 (2026-07-11, ISOLATED worktree) — caddie-context-leak [TOP-PRIORITY owner bug]
+- Owner-reported (2 screenshots, v1.1.3 LIVE caddie): the STT keyterm/priming context renders as a
+  USER bubble (dark, right-aligned) AND is treated as an utterance -> caddie replies "Didn't catch
+  that". Two variants: raw ("Golf vocabulary: birdie, bogey...") and a natural paraphrase.
+- ROOT CAUSE CONFIRMED (code refs): backend/app/caddie/keyterms.py build_transcription_prompt() ->
+  realtime_relay.py mint_ephemeral_session(transcription_prompt=) -> build_session_payload() sets it at
+  session.audio.input.transcription.prompt (CORRECT channel — a transcription HINT, never a conversation
+  item, never merged into instructions). The leak is downstream: gpt-4o-transcribe HALLUCINATES its own
+  prompt text back as the conversation.item.input_audio_transcription.completed transcript when VAD
+  false-triggers on silence/ambient noise. realtime.ts:598-617 renders ANY non-empty transcript as a
+  user bubble; the Realtime model (hearing the same noise) separately replies "Didn't catch that". The
+  natural-rephrase variant = paraphrase hallucination of the same prompt.
+- Fix direction: client-side filter in realtime.ts input_audio_transcription.completed handler that
+  drops a prompt-hallucination transcript (no bubble, no turn) — reliable because the prompt is
+  closed-set/known to the frontend (GOLF_KEYTERMS mirror + "Player's clubs:"/"This hole:"/"Golf
+  vocabulary:" signatures + keyword-overlap for the paraphrase). Keep STT biasing benefit intact.
+## AWAITING fable Plan on caddie-context-leak -> specs/caddie-context-leak-plan.md. Then builder.
+
+## AWAITING — cycle 106 (map-markers-course-location) fable PLAN
+- TOP-PRIORITY owner v1.1.3 bug: map course-search pans to course but drops NO target marker,
+  NO my-location dot, in-bounds pins not visibly rendering, Google POI clutter shows through.
+- Scope (owner screenshots): (1) distinct highlight golf-flag on the searched (panTarget) course,
+  (2) native my-location dot (enableCurrentLocation, gated onMapReady, permission-denied graceful),
+  (3) verify/fix in-bounds pin rendering, (4) POI-suppression via GoogleMapConfig.styles (poi off).
+- Key files: frontend/src/components/CourseScoutMap.tsx (native map, onMapReady gate ~L206-220,
+  panTarget effect ~L260-267, pinToMarker ~L65, create config ~L187-201), CourseSearch.tsx
+  (panTarget ~L627, initialCenter ~L621, gpsCenter ~L401), scout-viewport.ts, backend
+  course_search.py (IN_BOUNDS_MAX_AREA_SQDEG=0.25 zoomIn gate ~L609).
+- Plugin @capacitor/google-maps 8.0.1 supports config.styles (native, since 4.3.0; mapId web-only)
+  + enableCurrentLocation(bool). course-flag.png IS mirrored to ios/App/App/public/assets and the
+  iconUrl:"assets/..." pattern works (satellite map uses it) -> icon path NOT the pin bug; leading
+  hypothesis = initial camera-idle never fires so no in-bounds fetch until first pan.
+- On fable plan return -> write specs/map-markers-course-location-plan.md, dispatch builder on
+  integration/next, then reviewer+qa+designer(BLOCKING). REBASE onto origin/integration/next before
+  each push (concurrent caddie-context-leak lane). Do NOT ship/ping; add to PR #136 checklist.
+
+## AWAITING — cycle 106 builder (map-markers-course-location) on 6ae0ffa
+- Fable plan LANDED: specs/map-markers-course-location-plan.md (commit 6ae0ffa). Confirmed root cause of
+  missing in-bounds pins = initial camera-idle fires before JS listener attaches -> no initial fetch;
+  fix = one-shot getMapBounds() prime. Highlight = reuse course-flag.png @40px zIndex2 (no new asset).
+  My-location = native enableCurrentLocation(true) post-ready, catch. POI = config.styles poi/transit off.
+- Builder agent a635e58f045ab03ea building on integration/next. On return: rebase-aware push already
+  instructed; then dispatch reviewer (fresh) + qa + designer(BLOCKING) concurrently on the builder head SHA.
+- Reviewer focus: onMapReady gating of every native call, no highlight marker leak/dupe across re-pans,
+  permission-denied graceful, budget invariant (only fetchCoursesInBounds), no reshuffle of in-bounds pins.
+- qa: all gates state:SUCCESS on pushed head SHA + note native sim checks are owner/real-device only.
+- designer BLOCKING: calm ink target highlight distinct-but-quiet, standard location dot, POIs gone,
+  yardage-book feel (no SaaS pins). If highlight-@40px doesn't read primary -> solid-flag asset is
+  designer-blocking per plan §1.4.
+- Do NOT ship/ping. Add to PR #136 checklist (NOTICEABLE). REBASE before every push (concurrent lane).
+
+## Cycle 105 (2026-07-11, ISOLATED worktree) — caddie-context-leak LANDED @6a68078 [TOP-PRIORITY owner bug]
+- Owner-reported (2 screenshots, v1.1.3 LIVE caddie): STT keyterm/priming context rendered as a dark
+  right-aligned USER bubble AND "answered" ("Didn't catch that"). ROOT CAUSE: injection is CORRECT
+  (keyterms.py -> transcription.prompt only, never a conversation item / instructions); leak is
+  DOWNSTREAM — gpt-4o-transcribe hallucinates its own prompt back as the input transcript on VAD
+  noise-triggers (verbatim + paraphrase = the two owner variants); realtime.ts rendered any non-empty
+  transcript as a user bubble; model independently replied to the noise audio.
+- FIX (fable plan specs/caddie-context-leak-plan.md): new pure client classifier priming-echo.ts
+  isPrimingEcho() wired as a drop-guard in the input_audio_transcription.completed handler (before
+  onMessage + before order consumption — ordering-safe per realtime-ordering.ts), len-only
+  realtime_priming_echo_dropped telemetry. Drops iff A signature phrase (player's clubs / golf
+  vocabulary) OR B >=10 distinct GOLF_KEYTERMS (multi-word masked) OR C >=3 all-hazard segments.
+  Conservative: FNs render (safe), FPs effectively impossible. + backend rider: order-preserving hazard
+  dedupe in keyterms.py "This hole:" sentence.
+- reviewer SHIP (no security/correctness blocker; /security-review clean — regex from hardcoded consts +
+  escapeRegExp, no ReDoS, telemetry logs len not body, dedupe confined to transcription.prompt).
+  qa PASS (7 gates on head a0c52d2==6a68078 code: lint/tsc/build/voice278-278/vitest30-30/ruff/pytest
+  test_transcription_prompt 10-10; classifier tests assert both owner strings dropped + real turns
+  incl. adversarial dense-keyterm turn kept). designer APPROVE (pure subtraction — no new chrome where
+  the bubble was; bubble styling + legit/typed turns untouched).
+- Rebased onto origin/integration/next (parallel map-markers lane), dropped obsolete AWAITING
+  checkpoints, pushed FF abfe784..6a68078. 2 commits: eaab3e4 plan + 6a68078 fix (7 files, +364).
+- backlog.json (targeted edit, JSON-validated 66 items, +2, no data loss): caddie-context-leak -> done;
+  filed follow-up caddie-noise-clarification-reply (the lone "Didn't catch that" reply after a silent
+  drop — reviewer+designer flagged, plan §6 out-of-scope, VAD/owner-gated).
+- PR #136: adding checklist item (NOTICEABLE, caddie correctness). NOT shipped/pinged — caller inert;
+  accumulates on the bundle for the owner's next "ship it".
+
+## AWAITING — cycle 106 reviews (map-markers) on head 9a30d5d, review diff 9295bcd
+- Builder LANDED @9295bcd: scout-map-config.ts (pure)+test, CourseScoutMap.tsx (highlight marker via
+  dedicated createCameraQueue remove->add, styles POI-off, getMapBounds initial prime, enableCurrentLocation
+  post-ready), CourseSearch panTarget name/source. Gates all green (lint/tsc/vitest 2236/build/voice 278/ruff).
+  Budget grep clean. Functional-update setSelectedPin to avoid stale closure (builder note).
+- Dispatched CONCURRENTLY on 9295bcd: reviewer (fresh, adversarial), qa (gates on head SHA), designer (BLOCKING).
+- On all return: reviewer SHIP + qa PASS + designer APPROVE -> add PR #136 checklist item (NOTICEABLE map fix),
+  mark backlog b3/map item, progress DONE. Do NOT ship/ping (accumulate). Sim visual pass = owner/real-device
+  (flagged: native marker render/my-location dot/POI-visual not sandbox-verifiable).
+- Any BLOCKING -> re-dispatch builder with specifics, re-review. REBASE before each push (concurrent lane).
+
+## DONE — cycle 106 (map-markers-course-location) LANDED @ 9295bcd
+- TOP-PRIORITY owner v1.1.3 map bug fixed on integration/next (bundle PR #136). Fable plan
+  specs/map-markers-course-location-plan.md; builder @9295bcd.
+- Four parts: (1) target highlight = course-flag.png @40px zIndex2 via dedicated coalescing
+  createCameraQueue (remove->add serialized, exactly one marker on rapid re-pans; no new asset);
+  (2) my-location = native enableCurrentLocation(true) post-onMapReady, .catch -> denied silent;
+  (3) in-bounds pins ROOT CAUSE = iOS initial-settle idleAt fires before JS setOnCameraIdleListener
+  attaches -> no initial fetch; fix = one-shot getMapBounds()->onCameraIdle prime through existing
+  debounce/coverage/abort (no double-fetch, coordinator untouched); (4) POI suppression via
+  SCOUT_MAP_STYLES (poi/poi.business/transit labels off; roads/water/greens kept, invariant-tested).
+  panTarget now carries name+source. Budget invariant intact (only fetchCoursesInBounds).
+- reviewer SHIP (7 risk areas sound, tests strengthened). qa PASS (6 gates on head; PR CI Frontend+
+  Backend state:SUCCESS on 1b735f1; E2E advisory non-required). designer APPROVE (ink-flag hand reused,
+  calm dot, POI style scoped) + carried-forward on-device gate (plan §1.4: 40px must read primary in a
+  real cluster or the solid-T.ink fallback becomes blocking — owner TestFlight eyeball).
+- NATIVE-MAP visual (marker render, dot, POI look, camera/idle timing) NOT sandbox-verifiable; all
+  decision logic unit-verified. Owner/real-device pass required.
+- PR #136 checklist updated (map-markers item, NOTICEABLE). backlog.json: added course-selection-ux
+  b2_markers_status (done) + new item map-base-paper-tone-style (designer follow-up, p6 ready);
+  JSON-validated 67 items, diff +11/-1 (the -1 is b2_status gaining a comma), no data loss.
+- NOT shipped/pinged per brief — bundle accumulates (map-markers is NOTICEABLE and joins the prior
+  noticeable items for the next owner "ship it"). Concurrent caddie-context-leak lane co-landed @6a68078.

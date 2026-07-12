@@ -271,7 +271,12 @@ describe("CourseSearch — Map⇄List mode (B2)", () => {
         { id: "top-1", name: "Bethpage Black", source: "osm", center: { lat: 40.74, lng: -73.46 } },
       ]);
     });
-    expect(capturedScoutMapProps?.panTarget).toEqual({ id: "top-1", center: { lat: 40.74, lng: -73.46 } });
+    expect(capturedScoutMapProps?.panTarget).toEqual({
+      id: "top-1",
+      name: "Bethpage Black",
+      source: "osm",
+      center: { lat: 40.74, lng: -73.46 },
+    });
 
     // A top hit WITHOUT a center → panTarget stays null, nothing throws.
     expect(() => {
@@ -280,5 +285,39 @@ describe("CourseSearch — Map⇄List mode (B2)", () => {
       });
     }).not.toThrow();
     expect(capturedScoutMapProps?.panTarget).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Full-screen overlay registration (specs/caddie-orb-map-mode-ghost-plan.md §4.3)
+// ---------------------------------------------------------------------------
+
+describe("CourseSearch — full-screen overlay registration", () => {
+  afterEach(() => {
+    // Belt-and-suspenders: ensure any component rendered in this block is
+    // unmounted (running its registration effect's cleanup) even if an
+    // assertion above throws before the test's own unmount() call.
+    cleanup();
+  });
+
+  it("registers on mount, stays registered across list⇄map mode toggle (mount-scoped, not mode-scoped), unregisters on unmount", async () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_MAPS_KEY", "AIzaFakeKeyForTest");
+    vi.resetModules();
+    const { default: FreshCourseSearch } = await import("./CourseSearch");
+    const { isFullscreenOverlayActive } = await import("@/lib/fullscreen-overlay");
+
+    const { unmount } = render(<FreshCourseSearch onSelectCourse={vi.fn()} onClose={vi.fn()} />);
+    expect(isFullscreenOverlayActive()).toBe(true);
+
+    fireEvent.click(screen.getByTestId("course-search-mode-toggle"));
+    expect(screen.getByTestId("course-scout-map")).toBeTruthy();
+    expect(isFullscreenOverlayActive()).toBe(true); // still registered in map mode
+
+    fireEvent.click(screen.getByTestId("course-search-mode-toggle"));
+    expect(screen.getByTestId("course-search-scroll-region")).toBeTruthy();
+    expect(isFullscreenOverlayActive()).toBe(true); // still registered back in list mode
+
+    unmount();
+    expect(isFullscreenOverlayActive()).toBe(false);
   });
 });

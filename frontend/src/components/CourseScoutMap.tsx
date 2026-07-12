@@ -33,6 +33,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { T } from "@/components/yardage/tokens";
 import { fetchCoursesInBounds, sourceLabelFor, type InBoundsCourse } from "@/lib/golf-api";
 import { createScoutCoordinator, type ScoutCoordinator } from "@/lib/course/scout-viewport";
+import {
+  deriveHighlightAction,
+  highlightMarkerFor,
+  boundsToBBox,
+  SCOUT_MAP_STYLES,
+} from "@/lib/course/scout-map-config";
 import { createCameraQueue, type CameraQueue } from "@/lib/map/google-map-helpers";
 
 // See GoogleSatelliteMap.tsx for why the custom element (not a div) is
@@ -47,13 +53,23 @@ declare module "react" {
   }
 }
 
+/** Typed/voice query top hit that drives both the camera pan and the search
+ *  highlight marker (name/source feed the marker title + the synthesized
+ *  InBoundsCourse in markerIndexRef so the tap-card/Add flow works). */
+export interface PanTarget {
+  id: string;
+  name: string;
+  source: string;
+  center: { lat: number; lng: number };
+}
+
 export interface CourseScoutMapProps {
   /** Fires with the tapped pin when the golfer hits "Add" on the card. */
   onAddPin: (pin: InBoundsCourse) => void;
   /** Initial camera center (GPS fix, else a sensible fallback). */
   initialCenter: { lat: number; lng: number };
   /** Typed/voice query top hit — camera pans here when it changes. Never reshuffles anything. */
-  panTarget: { id: string; center: { lat: number; lng: number } } | null;
+  panTarget: PanTarget | null;
 }
 
 let _scoutMapCounter = 0;
@@ -98,6 +114,7 @@ export default function CourseScoutMap({ onAddPin, initialCenter, panTarget }: C
   const pendingPinsRef = useRef<InBoundsCourse[]>([]);
   const coordinatorRef = useRef<ScoutCoordinator | null>(null);
   const lastPanIdRef = useRef<string | null>(null);
+  const highlightRef = useRef<{ markerId: string; courseId: string } | null>(null);
 
   const [ready, setReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -126,6 +143,44 @@ export default function CourseScoutMap({ onAddPin, initialCenter, panTarget }: C
       ids.forEach((id, i) => {
         if (id && batch[i]) markerIndexRef.current.set(id, batch[i]);
       });
+    })
+  );
+
+  // Serialized highlight-marker application — a dedicated coalescing queue
+  // (separate from pinQueueRef, which batches the quiet in-bounds pins) so
+  // rapid re-pans ("Mar" → "Marine" → "Maria…") serialize remove→add with
+  // exactly one surviving highlight: no dupes, no leaked marker ids.
+  // `setSelectedPin` uses the functional-update form so this ref, created
+  // once at mount, never reads a stale `selectedPin` closure.
+  const highlightQueueRef = useRef<CameraQueue<PanTarget | null>>(
+    createCameraQueue<PanTarget | null>(async (target) => {
+      const m = googleMapRef.current;
+      if (!m || !mapReadyRef.current) return;
+
+      const action = deriveHighlightAction(highlightRef.current?.courseId ?? null, target?.id ?? null);
+
+      if (action === "remove" || action === "replace") {
+        const prev = highlightRef.current;
+        if (prev) {
+          markerIndexRef.current.delete(prev.markerId);
+          setSelectedPin((cur) => (cur?.id === prev.courseId ? null : cur));
+          await m.removeMarker(prev.markerId).catch(() => {});
+          highlightRef.current = null;
+        }
+      }
+
+      if ((action === "add" || action === "replace") && target) {
+        const id = await m.addMarker(highlightMarkerFor(target)).catch(() => null);
+        if (id) {
+          highlightRef.current = { markerId: id, courseId: target.id };
+          markerIndexRef.current.set(id, {
+            id: target.id,
+            name: target.name,
+            center: target.center,
+            source: target.source,
+          });
+        }
+      }
     })
   );
 
@@ -194,6 +249,7 @@ export default function CourseScoutMap({ onAddPin, initialCenter, panTarget }: C
               zoom: 12,
               mapTypeId: MapType.Normal,
               disableDefaultUI: true,
+              styles: SCOUT_MAP_STYLES,
             },
             forceCreate: true,
           },
@@ -229,6 +285,20 @@ export default function CourseScoutMap({ onAddPin, initialCenter, panTarget }: C
           });
         });
 
+        // The initial-settle idle fires before this listener attaches (iOS
+        // GMSMapViewDelegate idleAt) — prime the coordinator with the
+        // starting viewport once, through the same debounce/coverage path
+        // as a real pan, so pins render on cold open without waiting for
+        // the first user pan.
+        try {
+          const b = await gMap.getMapBounds();
+          if (!destroyed && mapReadyRef.current) {
+            coordinatorRef.current?.onCameraIdle(boundsToBBox(b));
+          }
+        } catch {
+          // first user pan covers it
+        }
+
         await gMap.setOnMarkerClickListener(({ markerId }) => {
           setSelectedPin(markerIndexRef.current.get(markerId) ?? null);
         });
@@ -236,6 +306,11 @@ export default function CourseScoutMap({ onAddPin, initialCenter, panTarget }: C
         await gMap.setOnMapClickListener(() => {
           setSelectedPin(null);
         });
+
+        // Standard subdued my-location dot. Permission denied / unavailable →
+        // no dot, no crash, no error surfaced (the one-shot GPS fix in
+        // CourseSearch usually means permission is already granted).
+        await gMap.enableCurrentLocation(true).catch(() => {});
 
         if (!destroyed) setReady(true);
       } catch (err) {
@@ -256,14 +331,22 @@ export default function CourseScoutMap({ onAddPin, initialCenter, panTarget }: C
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── panTarget effect: pan ONLY — never touches markers ─────────────────
+  // ── panTarget effect: pan + request the search highlight ────────────────
   useEffect(() => {
-    if (!ready || !panTarget) return;
+    if (!ready) return;
+    if (!panTarget) {
+      if (lastPanIdRef.current !== null) {
+        lastPanIdRef.current = null; // clear → retype same course re-pans
+        highlightQueueRef.current.request(null); // remove highlight, DO NOT move camera
+      }
+      return;
+    }
     if (lastPanIdRef.current === panTarget.id) return;
     lastPanIdRef.current = panTarget.id;
     const m = googleMapRef.current;
     if (!m || !mapReadyRef.current) return;
     m.setCamera({ coordinate: panTarget.center, zoom: 13, animate: true, animationDuration: 600 }).catch(() => {});
+    highlightQueueRef.current.request(panTarget);
   }, [ready, panTarget]);
 
   const handleAdd = useCallback(() => {
