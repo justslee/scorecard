@@ -14599,3 +14599,14 @@ pass the buggy code too).
   drop — reviewer+designer flagged, plan §6 out-of-scope, VAD/owner-gated).
 - PR #136: adding checklist item (NOTICEABLE, caddie correctness). NOT shipped/pinged — caller inert;
   accumulates on the bundle for the owner's next "ship it".
+
+## AWAITING — cycle 106 reviews (map-markers) on head 9a30d5d, review diff 9295bcd
+- Builder LANDED @9295bcd: scout-map-config.ts (pure)+test, CourseScoutMap.tsx (highlight marker via
+  dedicated createCameraQueue remove->add, styles POI-off, getMapBounds initial prime, enableCurrentLocation
+  post-ready), CourseSearch panTarget name/source. Gates all green (lint/tsc/vitest 2236/build/voice 278/ruff).
+  Budget grep clean. Functional-update setSelectedPin to avoid stale closure (builder note).
+- Dispatched CONCURRENTLY on 9295bcd: reviewer (fresh, adversarial), qa (gates on head SHA), designer (BLOCKING).
+- On all return: reviewer SHIP + qa PASS + designer APPROVE -> add PR #136 checklist item (NOTICEABLE map fix),
+  mark backlog b3/map item, progress DONE. Do NOT ship/ping (accumulate). Sim visual pass = owner/real-device
+  (flagged: native marker render/my-location dot/POI-visual not sandbox-verifiable).
+- Any BLOCKING -> re-dispatch builder with specifics, re-review. REBASE before each push (concurrent lane).
