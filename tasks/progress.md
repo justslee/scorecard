@@ -3,6 +3,24 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## LANDED @1ee8427 — cycle 112 tournament-settlement-coverage-hardening, eng-lead (2026-07-12, NOTICEABLE)
+No owner feedback preempted this cycle (v1.1.4 card #136 + PR #137 zero comments; redesign
+screenshot review not yet returned). Sync clean. **A real money bug was found + fixed** — the
+threePoint settlement branch fabricated +$0.02/game on odd-cent stakes (reachable via voice) and
+under-delivered the winner; fixed with a vegas-style last-member residual absorber (exact zero-sum
+all team sizes; even-stake output byte-identical → 73 existing tests untouched + green).
+Verdicts: reviewer **SHIP** (recomputed odd-cent by hand + against the real engine; reverted the
+fix and confirmed exactly the 3 gap-3 tests go RED while the other 9 stay green — assertions
+coupled to the real defect; 2v2 `{0.13,0.12,−0.12,−0.13}` & 3v2 `{0.03,0.03,0.04,−0.05,−0.05}`
+sum 0; scope clean, security nil) · qa **PASS** (lint/tsc/**vitest 2391/2391**/build/**voice
+278/278**/ruff; **CI Frontend + Backend both SUCCESS** on head 5039e2c). No designer (no UI/
+presentation surface — pure money-math). **Count correction:** builder's handoff said "24 tests";
+the new file `settlement.tournament.test.ts` actually has **12** (8 `it()` + a 4-format odd-cent
+property loop) — both qa and reviewer flagged it; the tests are real and green. PR #137 checklist
+updated → 6 items (this one classified **NOTICEABLE**: real user-facing money-correctness fix).
+Caller INERT — NOT shipped/pinged; bundle #137 keeps accumulating (no owner-noticeable-approval
+trigger pulled this cycle by design).
+
 ## DONE — cycle 112 tournament/settlement coverage hardening, builder (2026-07-12, integration/next, SILENT + 1 real money fix)
 Implemented `specs/tournament-coverage-hardening-plan.md` exactly. New file
 `frontend/src/lib/settlement.tournament.test.ts` (24 tests, zero edits to settlement.test.ts).
