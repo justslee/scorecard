@@ -15061,3 +15061,14 @@ all SUCCESS on pushed head SHA) in parallel, then designer BLOCKING on RENDERED 
 calm, not flashy; dead space filled; contrast). Iterate BLOCKING -> builder. Then add to PR #137
 checklist NOTICEABLE, update backlog, progress. REBASE before any push (swipe-back worktree). Caller
 INERT — no ship/ping. Head before builder: b675ac3.
+
+## AWAITING (cycle 111) — reviewer + qa on tournament-redesign @d9d8847
+Builder LANDED "The Program" @302e746 (+ progress d9d8847). Diff = 4 files: page.tsx +203/-8,
+TournamentPageClient +8 (double rule only), tournament-program.ts + .test.ts (new, 9 tests).
+Builder local gates green (lint/tsc/build/2345 tests/voice 278). One plan-deviation: post-mount
+setToday deferred via setTimeout(...,0) in effect (repo eslint react-hooks/set-state-in-effect;
+matches CaddieOrb.tsx:116) — no behavior change. Dispatched reviewer (no-regression to setup/create/
+scoring/leaderboard/settlement/Wolf; a11y/WCAG contrast — new text must be T.pencil not pencilSoft;
+no new dep) + qa (gates all state:SUCCESS on head d9d8847 + CI on PR #137 + verify create-tournament
+works). THEN designer BLOCKING on RENDERED result. ON RETURN: green -> designer; BLOCKING -> builder.
+REBASE before push (swipe-back worktree). Caller INERT — no ship/ping.
