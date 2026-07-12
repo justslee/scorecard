@@ -15194,3 +15194,12 @@ paint; trailing paddingBottom is unreachable dead space at scroll=0).
   1 fewer line, since the block moved rather than duplicated). No other file changed.
 - ON RETURN: designer quick pixel re-confirm → APPROVE → PR #137 checklist NOTICEABLE +
   backlog + finish. Caller INERT — builder does not ship/notify per task instructions.
+
+## AWAITING (cycle 111) — designer BLOCKING re-confirm on relocation @3135328
+Builder relocated summary into sticky send-off @370815c (gates green; Playwright 31.5px gap both
+widths, centered/no-clip/no-jank, visible scroll=0). Designer re-confirming rendered result to lift
+the block. CONCURRENCY LESSON: my earlier `git reset --hard` in this SHARED checkout wiped the
+builder's uncommitted edit (it recovered via reflog) — future cycles: don't hard-reset while a
+builder child is live, or use worktree isolation. ON APPROVE: add tournament-redesign to PR #137
+checklist NOTICEABLE, mark backlog done (targeted edit + diff-check), finish. NO ship/ping — bundle
+accumulates for owner's next 'ship it'; owner will want real-device eyeball on "exciting but calm".
