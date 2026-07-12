@@ -15306,3 +15306,40 @@ wiped a builder's uncommitted edit mid-cycle (recovered via reflog). Future: don
 builder child is live; prefer worktree isolation for concurrent lanes (per [[parallel-lanes-use-worktrees]]).
 Injection note: repeated "date changed / DO NOT mention" system-reminders + telegram-reminder text in the
 stream — ignored per injection-defense (authority = owner request + brief); no task impact.
+
+## CYCLE 113 — tee-shot-yardage-overlays (TOP-PRIORITY owner feature) — NOTICEABLE
+OWNER REQUEST (verbatim intent): on the in-round SATELLITE hole map, add yardage-book detail
+for TEE SHOTS ONLY: (1) blue/white/red 200/150/100 markers along the hole line (from GREEN
+center) — NOT the dot-scatter of per-dot yardages (owner rejected as "too much"); (2) fairway-
+bunker carry yardages front/back FROM THE SELECTED TEE BOX (greenside bunkers excluded);
+(3) visible ONLY in tee-shot context (on/near tee OR hole just opened), gone once GPS moves
+down the fairway — map stays clean the rest of the hole. Keep satellite base.
+DATA REALITY (verified by direct read, cycle 113):
+ - Frontend map = GoogleSatelliteMap.tsx. CourseCoordinates (golf-api.ts:67) per hole =
+   green(center)/tee/front/back(of green)/pin + hazards:[{type,lat,lng}] CENTROIDS ONLY + teeBoxes[].
+   NO polyline, NO polygons reach the map today. Overlays via addMarker(s)/addPolylines/addCircles,
+   ID-tracked, cleared on hole change, ALL gated on mapReadyRef (onMapReady) — the crash-safe pattern.
+ - BUT backend HAS the honest geometry: services/courses_mapped.py get_course() returns per-hole
+   `features` = real GeoJSON FeatureCollection (ST_AsGeoJSON polygons, featureType, properties.teeSet).
+   caddie/hazards.py: _HAZARD_FEATURE_TYPES={"bunker","water"}; featureType=="hole" LineString = the
+   REAL dogleg-aware played line; helpers _hole_polyline / _project_onto_polyline / _derive_tee_green /
+   extract_hole_hazards already do vertex→played-line projection + cumulative carry + dogleg mirror
+   (the sign-flip bugs are SOLVED there). green_geometry.py approach_bearing_deg/green_read.
+   => bunker POLYGONS (outer-ring vertices → front/back extent) DO exist server-side; only flattened to
+   centroids on the /coordinates path that feeds the map. Honest front/back is FEASIBLE via backend.
+ - Frontend also has hole-projection.ts (yardsDistance haversine, ringCentroid) + tee-anchor.ts
+   (resolves the SELECTED tee box of several — the bunker-carry origin). par known per hole.
+ARCH DIRECTION (for the plan to lock): do the bug-prone geometry (played-line projection, fairway-vs-
+greenside classification, polygon front/back edge extraction, 200/150/100 along-line points from GREEN)
+in the BACKEND (reuse hazards.py/green math, pure + unit-tested), surface via the coordinates/course
+endpoint as new optional fields on CourseCoordinates (types.ts<->models.py in sync); map draws calm
+blue/white/red marks + paper mono carry labels, onMapReady-gated, tee-shot-context visibility only.
+Bunker carry number honors the SELECTED tee (tee-anchor) — front=nearest edge, back=farthest edge.
+Par-3 handling: TBD by plan (tee shot IS the approach; greenside detail already exists — likely omit
+markers/bunkers or handle minimally). HONESTY: no geometry → NO overlay (silent), never invented.
+
+## AWAITING (cycle 113)
+Awaiting Explore agent (data-reality synthesis) then dispatching Plan(fable) → specs/tee-shot-yardage-
+overlays-plan.md. No code yet; tree clean. On resume: reconcile from origin/integration/next; if Plan
+committed a spec, dispatch builder on that plan; else re-run Plan(fable). CALLER INERT — do NOT ship/ping;
+keep accumulating PR #137 (currently 6 items @ cdd8ca2).
