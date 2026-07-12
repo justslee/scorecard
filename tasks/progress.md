@@ -3,6 +3,45 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## map-markers-course-location — DONE, builder (2026-07-11, TOP-PRIORITY owner v1.1.3 bug fix / noticeable)
+Implemented `specs/map-markers-course-location-plan.md` exactly on `integration/next`, commit
+`9295bcd` (off `23c1a7c`, PR #136 rolling bundle). Fixes the owner-reported B2 map-mode bug:
+searching "Marine" panned but dropped no target marker, showed no my-location dot, in-bounds
+golf pins didn't visibly render on cold open, and Google POI clutter (museums/restaurants/IKEA)
+showed through.
+- **NEW** `frontend/src/lib/course/scout-map-config.ts` (zero DOM/plugin/React imports, mirrors
+  scout-viewport.ts): `deriveHighlightAction` (none/remove/add/replace decision table),
+  `highlightMarkerFor` (40x40 course-flag.png reuse — no new binary asset — zIndex 2, scaled
+  anchor), `boundsToBBox`, `SCOUT_MAP_STYLES` (poi/poi.business/transit labels off only; roads/
+  water/administrative/course-green geometry untouched). + `scout-map-config.test.ts` (all 5
+  deriveHighlightAction cases, marker shape, bbox mapping, style invariants incl. no blanket
+  `visibility:off`).
+- `CourseSearch.tsx` panTarget gains `name`/`source` from topHit (feeds the highlight marker
+  title + the synthesized `InBoundsCourse` in `markerIndexRef` so tap-card/Add reuses the
+  existing `pinToSearchResult` identity seam unchanged). `CourseSearch.test.tsx` updated shape
+  assertion + explicit name/source flow-through check.
+- `CourseScoutMap.tsx`: `styles: SCOUT_MAP_STYLES` added to the create config; new
+  `highlightRef` + a dedicated `highlightQueueRef` (createCameraQueue) serializing remove→add on
+  the single live highlight marker (rapid re-pans coalesce, no dupes/leaks); reworked the
+  panTarget effect — pans + requests the highlight, and on query-clear removes the highlight
+  without moving the camera (also resets `lastPanIdRef` so re-searching the same course re-pans,
+  fixing a latent staleness bug); one-shot initial-bounds prime (`getMapBounds()` →
+  `coordinatorRef.current.onCameraIdle`) right after `setOnCameraIdleListener` attaches, fixing
+  the root cause of "pins never rendered on cold open" (iOS's initial camera-idle fires before
+  the JS listener binds); native `enableCurrentLocation(true).catch(() => {})` after the map is
+  ready, before `setReady(true)`. Every native call stays gated on `mapReadyRef.current`; camera
+  moves remain `setCamera`-only (no `fitBounds`).
+- Budget invariant preserved — `grep -n "fetchAPI\|searchAll\|searchNearby\|Places\|golfApi"
+  CourseScoutMap.tsx` finds nothing new; the only data call remains `fetchCoursesInBounds`.
+Gates: `npm run lint` clean, `npx tsc --noEmit` clean, `npx vitest run` 2236/2236 passed (111
+files, incl. the 2 new/updated files: 21/21), `npm run build` success, `voice-tests --smoke`
+278/278, backend `ruff check .` clean (no backend files touched). Pushed to `integration/next`.
+**Unit-verified only** — pure decision/config logic. **NOT verifiable in this sandbox** (no iOS
+simulator/native plugin bridge): marker rendering, icon load, my-location dot, style application
+on-device, camera/idle timing. Needs the iOS-sim pass per `ios-simulator-map-testing` before
+"done" — this is a TOP-PRIORITY owner bug so the sim check should happen before/alongside the
+next bundle approval, not skipped.
+
 ## caddie-orb-map-mode-ghost — DONE, builder (2026-07-11, small-UX bug fix / silent)
 Implemented `specs/caddie-orb-map-mode-ghost-plan.md` exactly on `integration/next`, commit
 `607899a` (off `a9be422`). This is the follow-up filed at the end of Bundle #135 (z-index
