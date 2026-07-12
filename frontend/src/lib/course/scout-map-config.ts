@@ -125,9 +125,9 @@ export const SCOUT_MAP_BASE_TONE: google.maps.MapTypeStyle[] = [
   // ── POI ground → paper; park/golf greenery → on-paper sage ────────
   // T.paperDeep — institutional footprints (schools/hospitals) melt into paper
   { featureType: "poi", elementType: "geometry", stylers: [{ color: "#ece7db" }] },
-  // T.paper shifted toward T.inkSoft's green hue at paper luminance —
+  // T.paper shifted toward T.inkSoft's green hue, deepened for a faster fairway read —
   // parks/fairways stay VISIBLY green (a golf map needs them) but calm
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#dde3d0" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#d3ddc4" }] },
 
   // ── Water → muted blue-gray, NOT stock Google blue ────────────────
   // T.accent's blue family desaturated ~85% and lifted to paper luminance
@@ -138,18 +138,18 @@ export const SCOUT_MAP_BASE_TONE: google.maps.MapTypeStyle[] = [
 
   // ── Roads → pale fills + pencil strokes; hierarchy = darkness ladder
   //    (highway darkest → local lightest; never one flat weight) ──────
-  // mid(T.paperDeep, T.paperEdge) — highways most present
-  { featureType: "road.highway", elementType: "geometry.fill", stylers: [{ color: "#e2dcce" }] },
+  // mid(T.paperDeep, T.paperEdge), darkened — highways most present, distinct from arterial
+  { featureType: "road.highway", elementType: "geometry.fill", stylers: [{ color: "#dbd4c3" }] },
   // T.paperEdge pulled 1/3 toward T.pencilSoft — a drawn edge, not neon
   { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#c2bbaa" }] },
-  // mid(T.paper, T.paperDeep)
-  { featureType: "road.arterial", elementType: "geometry.fill", stylers: [{ color: "#f0ece2" }] },
+  // mid(T.paper, T.paperDeep), pulled down — separated from local fill
+  { featureType: "road.arterial", elementType: "geometry.fill", stylers: [{ color: "#e9e3d5" }] },
   // T.paperEdge
   { featureType: "road.arterial", elementType: "geometry.stroke", stylers: [{ color: "#d9d2c0" }] },
   // T.paper lifted slightly toward white — locals quietest, just above paper
   { featureType: "road.local", elementType: "geometry.fill", stylers: [{ color: "#f8f7f2" }] },
-  // T.hairline flattened onto T.paper (12% ink over #f4f1ea)
-  { featureType: "road.local", elementType: "geometry.stroke", stylers: [{ color: "#dad9d1" }] },
+  // T.hairline flattened onto T.paper, lightened — clearly distinct from arterial stroke
+  { featureType: "road.local", elementType: "geometry.stroke", stylers: [{ color: "#e6e3da" }] },
 
   // ── Road labels → pencil on paper; colorful route shields off ─────
   // T.pencil
@@ -170,8 +170,8 @@ export const SCOUT_MAP_BASE_TONE: google.maps.MapTypeStyle[] = [
   { featureType: "administrative", elementType: "labels.text.stroke", stylers: [{ color: "#f4f1ea" }] },
   // T.ink — city names are the strongest text on the page
   { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#1a2a1a" }] },
-  // T.pencilSoft — neighborhood names recede
-  { featureType: "administrative.neighborhood", elementType: "labels.text.fill", stylers: [{ color: "#958d7d" }] },
+  // T.pencil — neighborhood names recede but clear AA on paper (~5.13:1)
+  { featureType: "administrative.neighborhood", elementType: "labels.text.fill", stylers: [{ color: "#6b6558" }] },
 ];
 
 /**

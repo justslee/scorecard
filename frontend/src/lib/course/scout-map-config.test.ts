@@ -154,4 +154,60 @@ describe("SCOUT_MAP_BASE_TONE invariants", () => {
     expect(lum(fillOf("road.highway"))).toBeLessThan(lum(fillOf("road.arterial")));
     expect(lum(fillOf("road.arterial"))).toBeLessThan(lum(fillOf("road.local")));
   });
+
+  it("road hierarchy is a real ladder: highway stroke darker than arterial darker than local", () => {
+    const strokeOf = (ft: string) =>
+      SCOUT_MAP_BASE_TONE.find(
+        (r) => r.featureType === ft && r.elementType === "geometry.stroke",
+      )?.stylers?.map((s) => (s as { color?: string }).color)[0] as string;
+    const lum = (hex: string) =>
+      parseInt(hex.slice(1, 3), 16) + parseInt(hex.slice(3, 5), 16) + parseInt(hex.slice(5, 7), 16);
+    expect(lum(strokeOf("road.highway"))).toBeLessThan(lum(strokeOf("road.arterial")));
+    expect(lum(strokeOf("road.arterial"))).toBeLessThan(lum(strokeOf("road.local")));
+  });
+
+  // WCAG relative-luminance contrast ratio between two hex colors. A ratio
+  // this small (~1.06:1, seen on the pre-fix arterial/local stroke pair) is
+  // imperceptible on a map — adjacent road tiers must clear a real step, not
+  // just a monotonic ordering. See designer review of a610dc7.
+  function contrastRatio(hexA: string, hexB: string): number {
+    const relLum = (hex: string) => {
+      const chan = (h: string) => {
+        const c = parseInt(h, 16) / 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+      };
+      const r = chan(hex.slice(1, 3));
+      const g = chan(hex.slice(3, 5));
+      const b = chan(hex.slice(5, 7));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [l1, l2] = [relLum(hexA), relLum(hexB)];
+    const [lighter, darker] = l1 >= l2 ? [l1, l2] : [l2, l1];
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+
+  it("road fill hierarchy clears a perceptible contrast step between every adjacent tier (WCAG ratio >= 1.10)", () => {
+    const fillOf = (ft: string) =>
+      SCOUT_MAP_BASE_TONE.find(
+        (r) => r.featureType === ft && r.elementType === "geometry.fill",
+      )?.stylers?.map((s) => (s as { color?: string }).color)[0] as string;
+    expect(contrastRatio(fillOf("road.highway"), fillOf("road.arterial"))).toBeGreaterThanOrEqual(1.1);
+    expect(contrastRatio(fillOf("road.arterial"), fillOf("road.local"))).toBeGreaterThanOrEqual(1.1);
+  });
+
+  it("road stroke hierarchy clears a perceptible contrast step between every adjacent tier (WCAG ratio >= 1.10) — fails on the pre-fix flat #d9d2c0/#dad9d1 pair", () => {
+    const strokeOf = (ft: string) =>
+      SCOUT_MAP_BASE_TONE.find(
+        (r) => r.featureType === ft && r.elementType === "geometry.stroke",
+      )?.stylers?.map((s) => (s as { color?: string }).color)[0] as string;
+    expect(contrastRatio(strokeOf("road.highway"), strokeOf("road.arterial"))).toBeGreaterThanOrEqual(1.1);
+    expect(contrastRatio(strokeOf("road.arterial"), strokeOf("road.local"))).toBeGreaterThanOrEqual(1.1);
+  });
+
+  it("administrative.neighborhood label clears WCAG AA (>= 4.5:1) against paper (#f4f1ea)", () => {
+    const neighborhoodFill = SCOUT_MAP_BASE_TONE.find(
+      (r) => r.featureType === "administrative.neighborhood" && r.elementType === "labels.text.fill",
+    )?.stylers?.map((s) => (s as { color?: string }).color)[0] as string;
+    expect(contrastRatio(neighborhoodFill, "#f4f1ea")).toBeGreaterThanOrEqual(4.5);
+  });
 });
