@@ -59,6 +59,7 @@ import { getCaddieLiveMode } from "@/lib/voice/live-mode-pref";
 import { useCaddieLiveSession } from "@/hooks/useCaddieLiveSession";
 import { buildOpeningGreetingText } from "@/lib/caddie/opening-turn";
 import type { RealtimeMessage, RealtimeStatus } from "@/lib/voice/realtime";
+import { LIVE_STATUS_LABEL, liveEmptyStateHint } from "@/lib/caddie/live-copy";
 import type {
   CaddieRecommendation,
   VoiceCaddieMessage,
@@ -203,15 +204,10 @@ function stripSpokenMarkdown(text: string): string {
   return text.replace(/\*\*/g, "").replace(/(^|\n)#+\s*/g, "$1");
 }
 
-const LIVE_STATUS_LABEL: Record<RealtimeStatus, string> = {
-  idle: "Connecting…",
-  connecting: "Connecting…",
-  connected: "Ready — go ahead",
-  listening: "Listening…",
-  speaking: "Caddie speaking…",
-  closed: "Ended",
-  error: "Couldn't connect",
-};
+// LIVE_STATUS_LABEL now lives in lib/caddie/live-copy.ts alongside
+// liveEmptyStateHint, so the two copy sources are testable together for the
+// "empty state never contradicts the footer" invariant
+// (specs/caddie-voice-reliability-hardening-plan.md §3).
 
 // ---------------------------------------------------------------------------
 // Component
@@ -1796,7 +1792,7 @@ function LiveVoiceBody({
             lineHeight: 1.5,
           }}
         >
-          Paused — tap resume below to keep talking.
+          {liveEmptyStateHint(status, paused, caddy.name)}
         </div>
       )}
       {messages.length === 0 && !paused && (
@@ -1810,9 +1806,7 @@ function LiveVoiceBody({
             lineHeight: 1.5,
           }}
         >
-          {status === "connecting" || status === "idle"
-            ? `Connecting to ${caddy.name}…`
-            : `Go ahead — ${caddy.name} is listening.`}
+          {liveEmptyStateHint(status, paused, caddy.name)}
         </div>
       )}
       {messages.map((m) => (

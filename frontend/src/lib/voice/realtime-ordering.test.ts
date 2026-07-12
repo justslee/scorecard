@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MessageOrderTracker, sortByOrder } from './realtime-ordering';
+import { MessageOrderTracker, sortByOrder, MAX_TRACKED } from './realtime-ordering';
 
 /**
  * Simulates the Realtime event stream feeding RealtimeCaddieClient.handleEvent,
@@ -192,6 +192,41 @@ describe('sortByOrder', () => {
     expect(out.map((x) => x.id)).toEqual(['a', 'b', 'c']);
     // original untouched
     expect(input.map((x) => x.id)).toEqual(['b', 'a', 'c']);
+  });
+});
+
+describe('MessageOrderTracker — bounded correlation maps (edge 2, O1)', () => {
+  it('O1: order maps bounded at MAX_TRACKED under sustained load, and recent reservations still resolve', () => {
+    const tracker = new MessageOrderTracker();
+
+    // 200 responses that are never "consumed" beyond orderForResponse's own
+    // insert — orderByResponseId must stay capped.
+    for (let i = 0; i < 200; i++) tracker.orderForResponse(`resp-${i}`);
+
+    // 200 phantom user turns whose item_id is NEVER looked up by a
+    // transcript (VAD false-starts) — orderByUserItemId must stay capped.
+    for (let i = 0; i < 200; i++) tracker.noteUserTurnStarted(`phantom-${i}`);
+
+    const priv = tracker as unknown as {
+      orderByResponseId: Map<string, number>;
+      orderByUserItemId: Map<string, number>;
+      pendingUserOrders: number[];
+    };
+    expect(priv.orderByResponseId.size).toBeLessThanOrEqual(MAX_TRACKED);
+    expect(priv.orderByUserItemId.size).toBeLessThanOrEqual(MAX_TRACKED);
+
+    // Eviction is oldest-first, so the most recently reserved slots (well
+    // within the cap) must still resolve to their ORIGINALLY reserved order
+    // (seq is deterministic: resp-199 was the 200th orderForResponse call ⇒
+    // order 200; phantom-199 was the 400th reservation overall ⇒ order 400).
+    // If either had been evicted, the lookup would miss and mint a FRESH
+    // order instead (>= 401) rather than returning the reserved slot.
+    expect(tracker.orderForResponse('resp-199')).toBe(200);
+    expect(tracker.orderForUserTranscript('phantom-199')).toBe(400);
+
+    // 200 FIFO (no-id) reservations must stay capped too.
+    for (let i = 0; i < 200; i++) tracker.noteUserTurnStarted();
+    expect(priv.pendingUserOrders.length).toBeLessThanOrEqual(MAX_TRACKED);
   });
 });
 

@@ -24,6 +24,24 @@ export interface Ordered {
   order: number;
 }
 
+/** Bound on `orderByResponseId` / `orderByUserItemId` / `pendingUserOrders` —
+ *  belt-and-braces for a session that runs long enough (or leaks enough
+ *  phantom/unconsumed reservations) to otherwise grow these for the whole
+ *  session lifetime. Evict-oldest; entries are consumed within a turn in
+ *  practice, so this is a pure cap with no behavior change for live turns
+ *  (specs/caddie-voice-reliability-hardening-plan.md §2). */
+export const MAX_TRACKED = 128;
+
+/** Evict the oldest entry (Map insertion order) once `map` exceeds
+ *  MAX_TRACKED. Pure bound, no id-aware skipping — unlike realtime.ts's
+ *  input-class cap, a stale reservation here is inert once its owner is
+ *  gone, so unconditional oldest-eviction is safe. */
+function evictOldest<K, V>(map: Map<K, V>): void {
+  if (map.size <= MAX_TRACKED) return;
+  const oldestKey = map.keys().next().value;
+  if (oldestKey !== undefined) map.delete(oldestKey);
+}
+
 /**
  * Hands out monotonic order keys keyed to when conversation items *begin*.
  *
@@ -57,8 +75,13 @@ export class MessageOrderTracker {
    */
   noteUserTurnStarted(itemId?: string): void {
     const order = ++this.seq;
-    if (itemId) this.orderByUserItemId.set(itemId, order);
-    else this.pendingUserOrders.push(order);
+    if (itemId) {
+      this.orderByUserItemId.set(itemId, order);
+      evictOldest(this.orderByUserItemId);
+    } else {
+      this.pendingUserOrders.push(order);
+      while (this.pendingUserOrders.length > MAX_TRACKED) this.pendingUserOrders.shift();
+    }
   }
 
   /**
@@ -97,6 +120,7 @@ export class MessageOrderTracker {
     if (existing !== undefined) return existing;
     const order = ++this.seq;
     this.orderByResponseId.set(responseId, order);
+    evictOldest(this.orderByResponseId);
     return order;
   }
 
