@@ -79,6 +79,11 @@ function uniformScores(playerId: string, strokes: number): Score[] {
   }));
 }
 
+/** Sum a per-hole points/money delta record — used to assert zero-sum invariants. */
+function sumDeltas(delta: Record<string, number>): number {
+  return Object.values(delta).reduce((s, v) => s + v, 0);
+}
+
 // ---------------------------------------------------------------------------
 // computeSkins
 // ---------------------------------------------------------------------------
@@ -923,7 +928,7 @@ describe('computeWolf', () => {
     expect(result.holes[4].wolfPlayerId).toBe('p1');  // hole 5 (wraps)
   });
 
-  it('lone wolf wins: wolf +3, others unchanged', () => {
+  it('lone wolf wins: wolf +3, each opponent -1 (zero-sum)', () => {
     const round = makeRound({
       players: makePlayers(ORDER),
       scores: [
@@ -937,13 +942,14 @@ describe('computeWolf', () => {
     const result = computeWolf(round, game);
 
     expect(result.holes[0].pointsDelta['p1']).toBe(3);
+    expect(sumDeltas(result.holes[0].pointsDelta)).toBe(0);
     expect(result.totals['p1']).toBe(3);
-    expect(result.totals['p2']).toBe(0);
-    expect(result.totals['p3']).toBe(0);
-    expect(result.totals['p4']).toBe(0);
+    expect(result.totals['p2']).toBe(-1);
+    expect(result.totals['p3']).toBe(-1);
+    expect(result.totals['p4']).toBe(-1);
   });
 
-  it('lone wolf loses: wolf -3, others unchanged', () => {
+  it('lone wolf loses: wolf -3, each opponent +1 (zero-sum)', () => {
     const round = makeRound({
       players: makePlayers(ORDER),
       scores: [
@@ -957,11 +963,49 @@ describe('computeWolf', () => {
     const result = computeWolf(round, game);
 
     expect(result.holes[0].pointsDelta['p1']).toBe(-3);
+    expect(sumDeltas(result.holes[0].pointsDelta)).toBe(0);
     expect(result.totals['p1']).toBe(-3);
+    expect(result.totals['p2']).toBe(1);
+    expect(result.totals['p3']).toBe(1);
+    expect(result.totals['p4']).toBe(1);
+  });
+
+  it('lone wolf tie: no points awarded (empty delta, not +0)', () => {
+    const round = makeRound({
+      players: makePlayers(ORDER),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 4 }, // wolf ties best-other
+        { playerId: 'p2', holeNumber: 1, strokes: 4 },
+        { playerId: 'p3', holeNumber: 1, strokes: 5 },
+        { playerId: 'p4', holeNumber: 1, strokes: 5 },
+      ],
+    });
+    const game = makeGame(wolfGame({ 1: { mode: 'lone' } }));
+    const result = computeWolf(round, game);
+
+    expect(Object.keys(result.holes[0].pointsDelta)).toHaveLength(0);
+    expect(result.totals['p1']).toBe(0);
     expect(result.totals['p2']).toBe(0);
   });
 
-  it('partner mode win: wolf + partner each +1', () => {
+  it('lone wolf with a missing opponent score: no points awarded (tightened guard)', () => {
+    const round = makeRound({
+      players: makePlayers(ORDER),
+      scores: [
+        { playerId: 'p1', holeNumber: 1, strokes: 3 },
+        { playerId: 'p2', holeNumber: 1, strokes: 4 },
+        { playerId: 'p3', holeNumber: 1, strokes: 4 },
+        // p4 has no score for hole 1 — only 2 of 3 opponents scored
+      ],
+    });
+    const game = makeGame(wolfGame({ 1: { mode: 'lone' } }));
+    const result = computeWolf(round, game);
+
+    expect(Object.keys(result.holes[0].pointsDelta)).toHaveLength(0);
+    expect(result.totals['p1']).toBe(0);
+  });
+
+  it('partner mode win: wolf + partner each +1, each opponent -1 (zero-sum)', () => {
     // p1 (wolf) partners with p3; their best ball 3 beats p2/p4 best ball 4
     const round = makeRound({
       players: makePlayers(ORDER),
@@ -977,13 +1021,14 @@ describe('computeWolf', () => {
 
     expect(result.holes[0].pointsDelta['p1']).toBe(1);
     expect(result.holes[0].pointsDelta['p3']).toBe(1);
+    expect(sumDeltas(result.holes[0].pointsDelta)).toBe(0);
     expect(result.totals['p1']).toBe(1);
     expect(result.totals['p3']).toBe(1);
-    expect(result.totals['p2']).toBe(0);
-    expect(result.totals['p4']).toBe(0);
+    expect(result.totals['p2']).toBe(-1);
+    expect(result.totals['p4']).toBe(-1);
   });
 
-  it('partner mode loss: opposing team each +1, wolf and partner unchanged', () => {
+  it('partner mode loss: opposing team each +1, wolf + partner each -1 (zero-sum)', () => {
     // p1 (wolf) + p3 lose to p2/p4
     const round = makeRound({
       players: makePlayers(ORDER),
@@ -997,10 +1042,11 @@ describe('computeWolf', () => {
     const game = makeGame(wolfGame({ 1: { mode: 'partner', partnerId: 'p3' } }));
     const result = computeWolf(round, game);
 
+    expect(sumDeltas(result.holes[0].pointsDelta)).toBe(0);
     expect(result.totals['p2']).toBe(1);
     expect(result.totals['p4']).toBe(1);
-    expect(result.totals['p1']).toBe(0);
-    expect(result.totals['p3']).toBe(0);
+    expect(result.totals['p1']).toBe(-1);
+    expect(result.totals['p3']).toBe(-1);
   });
 
   it('no choice made: no points awarded on that hole', () => {
@@ -1021,8 +1067,9 @@ describe('computeWolf', () => {
     expect(result.totals['p1']).toBe(0);
   });
 
-  it('tracks cumulative running totals across multiple holes', () => {
-    // hole 1: p1 lone wolf wins (+3); hole 2: p2 lone wolf wins (+3)
+  it('tracks cumulative running totals across multiple holes (zero-sum each hole and overall)', () => {
+    // hole 1: p1 lone wolf wins (+3, p2/p3/p4 -1 each)
+    // hole 2: p2 lone wolf wins (+3, p1/p3/p4 -1 each)
     const scores: Score[] = [
       { playerId: 'p1', holeNumber: 1, strokes: 3 },
       { playerId: 'p2', holeNumber: 1, strokes: 4 },
@@ -1037,11 +1084,19 @@ describe('computeWolf', () => {
     const game = makeGame(wolfGame({ 1: { mode: 'lone' }, 2: { mode: 'lone' } }));
     const result = computeWolf(round, game);
 
+    expect(sumDeltas(result.holes[0].pointsDelta)).toBe(0);
+    expect(sumDeltas(result.holes[1].pointsDelta)).toBe(0);
+
     expect(result.holes[0].totalsAfter['p1']).toBe(3);
-    expect(result.holes[1].totalsAfter['p1']).toBe(3); // unchanged on hole 2
-    expect(result.holes[1].totalsAfter['p2']).toBe(3); // p2 wins hole 2
-    expect(result.totals['p1']).toBe(3);
-    expect(result.totals['p2']).toBe(3);
+    expect(result.holes[1].totalsAfter['p1']).toBe(2); // p1 -1 on hole 2
+    expect(result.holes[1].totalsAfter['p2']).toBe(2); // p2 wins hole 2 (+3) minus -1 from hole 1
+    expect(result.totals['p1']).toBe(2);
+    expect(result.totals['p2']).toBe(2);
+    expect(result.totals['p3']).toBe(-2);
+    expect(result.totals['p4']).toBe(-2);
+    expect(
+      Object.values(result.totals).reduce((s, v) => s + v, 0)
+    ).toBe(0);
   });
 });
 

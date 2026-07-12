@@ -803,6 +803,14 @@ export function computeMatchPlay(round: Round, game: Game): MatchPlayResults {
 // -----------------
 // Wolf (4 players)
 // -----------------
+/**
+ * Every hole's `pointsDelta` sums to 0 — lone win: wolf +3 / each of the 3 opponents
+ * −1; lone loss: mirror; partner win: winners +1 each / losers −1 each; partner loss:
+ * mirror. Ties and any hole with incomplete data (missing pick, missing wolf score,
+ * or — for a lone hole — fewer than all 3 opponent scores) emit an EMPTY delta, not a
+ * `+0` entry. This is a money invariant: `settlement.ts` settles wolf by multiplying
+ * `totals` by `pointValue`, so a non-zero-sum `totals` would fabricate or destroy money.
+ */
 export function computeWolf(round: Round, game: Game): WolfResults {
   const order = game.settings.wolfOrderPlayerIds && game.settings.wolfOrderPlayerIds.length === 4
     ? game.settings.wolfOrderPlayerIds
@@ -831,15 +839,20 @@ export function computeWolf(round: Round, game: Game): WolfResults {
           .map(pid => scoreMaps.get(pid)?.get(holeNumber))
           .filter((v): v is number => typeof v === 'number');
 
-        if (otherScores.length) {
+        // Require all 3 opponent scores: you cannot debit a player −1 who has no
+        // score for the hole, and letting the payout vary with data completeness
+        // would make identical wins pay differently (tightened vs. the old
+        // "any available opponent" path — no existing test relied on the loose path).
+        if (otherScores.length === 3) {
           const otherBest = Math.min(...otherScores);
           if (wolfScore < otherBest) {
             delta[wolfPlayerId] = 3;
+            for (const pid of others) delta[pid] = -1;
           } else if (wolfScore > otherBest) {
             delta[wolfPlayerId] = -3;
-          } else {
-            delta[wolfPlayerId] = 0;
+            for (const pid of others) delta[pid] = 1;
           }
+          // tie — no entries (empty delta, not a +0 write)
         }
       } else if (choice.mode === 'partner') {
         const partnerId = choice.partnerId;
@@ -857,9 +870,13 @@ export function computeWolf(round: Round, game: Game): WolfResults {
             if (teamWolfBest < teamOtherBest) {
               delta[wolfPlayerId] = 1;
               delta[partnerId] = 1;
+              for (const pid of otherTeam) delta[pid] = -1;
             } else if (teamOtherBest < teamWolfBest) {
               for (const pid of otherTeam) delta[pid] = 1;
+              delta[wolfPlayerId] = -1;
+              delta[partnerId] = -1;
             }
+            // tie — no entries
           }
         }
       }

@@ -33,12 +33,12 @@ import { computeGameResults } from './games';
  * stake at all). Never let a format take a stake without a branch here, and
  * never add a branch here without adding the format to this set.
  *
- * `wolf` is deliberately NOT a member: the lone-wolf branch credited only the
- * wolf player (±pointValue) and debited no one, and partner-mode credited
- * only the winning pair — neither is zero-sum, so wolf was fabricating money
- * (a single lone-wolf win with pointValue:2 returned a +$6 record with no
- * debits). Wolf is points-only until the engine is fixed to true zero-sum
- * transfers (deferred follow-up) — see tournament-settlement-honesty-plan.md.
+ * `wolf` WAS deliberately excluded (see tournament-settlement-honesty-plan.md): the
+ * old lone-wolf branch credited only the wolf player and debited no one, and
+ * partner-mode credited only the winning pair — neither was zero-sum, so wolf was
+ * fabricating money. `computeWolf` (games.ts) was fixed to emit a true zero-sum
+ * `pointsDelta`/`totals` per hole (tournament-wolf-settlement-plan.md), so wolf is
+ * readmitted here, gated on the wolf zero-sum property-test fixture passing.
  */
 export const SETTLEABLE_FORMATS: ReadonlySet<GameFormat> = new Set([
   'skins',
@@ -49,6 +49,7 @@ export const SETTLEABLE_FORMATS: ReadonlySet<GameFormat> = new Set([
   'hammer',
   'rabbit',
   'defender',
+  'wolf',
 ]);
 
 /** A single minimized transfer that settles debt between two players. */
@@ -169,6 +170,18 @@ export function computeGameNetWinnings(round: Round, game: Game): Record<string,
       const loserId = winnerPlayerId === player1Id ? player2Id : player1Id;
       net[winnerPlayerId] = r2((net[winnerPlayerId] ?? 0) + pointValue);
       net[loserId] = r2((net[loserId] ?? 0) - pointValue);
+    }
+  }
+
+  // ─── Wolf ───────────────────────────────────────────────────────────────
+  // `computeWolf`'s per-hole `pointsDelta` is zero-sum by construction (see the
+  // doc comment on `computeWolf` in games.ts), so `totals` is zero-sum too —
+  // money = points × pointValue, exact at 2dp since totals are integers and
+  // pointValue has ≤2 decimal places. No last-player residual absorber is
+  // needed here (unlike skins/vegas, which divide a pot): do not add one.
+  if (game.format === 'wolf' && results.wolf) {
+    for (const pid of playerIds) {
+      net[pid] = r2((net[pid] ?? 0) + r2((results.wolf.totals[pid] ?? 0) * pointValue));
     }
   }
 
