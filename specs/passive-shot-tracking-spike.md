@@ -38,7 +38,7 @@ dead-on-arrival"). I grepped `frontend/node_modules/@capacitor/ios` directly rat
 assuming:
 
 ```
-frontend/node_modules/@capacitor/ios/Capacitor/Capacitor/WebViewDelegationHandler.swift:60-65
+frontend/node_modules/@capacitor/ios/Capacitor/Capacitor/WebViewDelegationHandler.swift:61-64
 
 open func webView(_ webView: WKWebView,
                   requestDeviceOrientationAndMotionPermissionFor origin: WKSecurityOrigin,
@@ -148,7 +148,8 @@ trees/buildings:
   tree cover / near structures).
 
 Signal-to-noise for a 100-280y (91-256m) displacement against ~5-20m of positional noise is
-roughly **10:1 to 50:1** — easily sufficient to **prompt a draft**, which is the entire bar
+roughly **4.5:1 (worst case: shortest 91m displacement vs. 20m noise) to 50:1** — easily
+sufficient to **prompt a draft**, which is the entire bar
 (the golfer supplies the actual club and confirms/edits by voice; the classifier never
 needs launch-monitor precision).
 

@@ -14663,3 +14663,6 @@ Dispatching Plan(fable) to frame the feasibility spike. Next: builder → invest
 ## AWAITING update (passive-shot-tracking spike)
 Plan (fable) landed @3bf59fb. Builder dispatched on spike/passive-shot-tracking implementing specs/passive-shot-tracking-spike-plan.md.
 On builder completion: dispatch reviewer (honesty/grounding check) + qa (gates green). If BLOCKING → re-dispatch builder. When clean → open SPIKE PR base main (labeled feasibility spike), update progress. Do NOT ship/ping, do NOT touch integration/next or PR #137.
+
+## DONE (passive-shot-tracking spike, 2026-07-12)
+Spike LANDED on spike/passive-shot-tracking (base main) — NOT the bundle. Reviewer SHIP (verified Capacitor grep real, classifier tests meaningful, doctrine holds, no write path); QA GREEN (lint/tsc/build/voice 278-0/tests 2294/ruff). Tightened 2 honesty nitpicks (SNR floor, line citation). Verdict: GPS-delta drafts feasible NOW; phone-only swing detection DON'T build (torso/practice-swing problem, not just Hz); Watch = only true-detection path, deferred (no watchOS target); sensor carry infeasible/closed. Opening SPIKE PR. No ship/ping.
