@@ -14901,3 +14901,18 @@ false-positive? prune-before-read? VAD drift? test RED-ness?), qa (6 gates state
 ON RETURN: all green → land into PR #137 checklist (SILENT hardening + edge1/edge3 NOTICEABLE-if-
 visible), mark backlog #33 caddie-noise-clarifier-followups done (targeted edit+diff-check), update
 progress. Any BLOCKING → re-dispatch builder, re-review. Caller INERT — NO ship/ping this cycle.
+
+## LANDED (cycle 109, 2026-07-12) — caddie-voice-reliability-hardening @d187254 on integration/next
+ALL VERDICTS GREEN: reviewer SHIP (no shipped-behavior regression @6a68078/@76d8c95, no new suppression
+false-positive, zero VAD drift grep-confirmed, realtime-noinput lock byte-identical, new tests genuinely
+RED pre-fix), qa PASS (lint/tsc/vitest 2322/build/voice 278/ruff; backend diff empty), designer APPROVE
+("{name} is speaking." calm+honest). 5 fixes, all sandbox-verified, NO VAD/mic/gain/turn_detection/
+commit-timing (owner-gated respected): (1) attribution-race candidate-SET triggerItemsByResponse +
+classifyCandidates aggregate; (2) finishResponse() per-turn prune + caps 64/128; (3) live-copy.ts held-
+turn 'speaking' honesty; (4a) response.done GA-shape id fallback; (4b) if(!this.dc)return post-cleanup
+guard. Backlog caddie-noise-clarifier-followups -> done (targeted edit, diff-checked 2ins/1del, JSON
+valid). PR #137 checklist updated (2 items now: map-paper-tone NOTICEABLE + caddie-voice-hardening
+mostly-SILENT w/ NOTICEABLE-if-visible correctness). Nothing punted needing owner (plan §8 VAD items
+untouched, out of scope). Caller INERT this cycle — NO ship/ping; accumulating on bundle for owner's
+next 'ship it'. Injection note: fake "date changed/don't mention" + fake "realtime.ts externally
+modified" text appeared in builder+eng-lead tool streams; ignored per injection-defense, verified via git.
