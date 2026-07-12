@@ -94,7 +94,7 @@ export function boundsToBBox(b: {
  * import needed (and none of these values touch the DOM or the plugin at
  * runtime; this is a plain data array).
  */
-export const SCOUT_MAP_STYLES: google.maps.MapTypeStyle[] = [
+export const SCOUT_POI_SUPPRESSION: google.maps.MapTypeStyle[] = [
   // All POI icons + names (museums, restaurants, hospitals, stores) — off.
   // labels only: park/golf GREEN GEOMETRY stays (a golf map needs its fairways).
   { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
@@ -102,4 +102,85 @@ export const SCOUT_MAP_STYLES: google.maps.MapTypeStyle[] = [
   { featureType: "poi.business", stylers: [{ visibility: "off" }] },
   // Transit stations/lines clutter.
   { featureType: "transit", stylers: [{ visibility: "off" }] },
+];
+
+/**
+ * Base-map paper/ink retone for the B2 scout map (MapType.Normal) — maps the
+ * yardage-book T.* palette (components/yardage/tokens.ts) onto Google's
+ * landscape/road/water/label layers so the map reads as printed paper, not
+ * stock Google. Values are inlined hex (GMSMapStyle can't parse rgba/oklch);
+ * each rule's comment names the token it derives from. Order matters:
+ * general featureTypes precede specific ones (later/specific rules win).
+ * See specs/map-paper-tone-plan.md.
+ */
+export const SCOUT_MAP_BASE_TONE: google.maps.MapTypeStyle[] = [
+  // ── Landscape → paper ─────────────────────────────────────────────
+  // T.paper
+  { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#f4f1ea" }] },
+  // T.paperDeep — natural terrain a shade deeper, keeps subtle texture
+  { featureType: "landscape.natural", elementType: "geometry", stylers: [{ color: "#ece7db" }] },
+  // paper↔paperDeep blend — urban blocks/building ground
+  { featureType: "landscape.man_made", elementType: "geometry", stylers: [{ color: "#f0ece2" }] },
+
+  // ── POI ground → paper; park/golf greenery → on-paper sage ────────
+  // T.paperDeep — institutional footprints (schools/hospitals) melt into paper
+  { featureType: "poi", elementType: "geometry", stylers: [{ color: "#ece7db" }] },
+  // T.paper shifted toward T.inkSoft's green hue at paper luminance —
+  // parks/fairways stay VISIBLY green (a golf map needs them) but calm
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#dde3d0" }] },
+
+  // ── Water → muted blue-gray, NOT stock Google blue ────────────────
+  // T.accent's blue family desaturated ~85% and lifted to paper luminance
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#c9d4d6" }] },
+  // T.pencil on T.paper — water names in pencil, paper halo
+  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#6b6558" }] },
+  { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#f4f1ea" }] },
+
+  // ── Roads → pale fills + pencil strokes; hierarchy = darkness ladder
+  //    (highway darkest → local lightest; never one flat weight) ──────
+  // mid(T.paperDeep, T.paperEdge) — highways most present
+  { featureType: "road.highway", elementType: "geometry.fill", stylers: [{ color: "#e2dcce" }] },
+  // T.paperEdge pulled 1/3 toward T.pencilSoft — a drawn edge, not neon
+  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#c2bbaa" }] },
+  // mid(T.paper, T.paperDeep)
+  { featureType: "road.arterial", elementType: "geometry.fill", stylers: [{ color: "#f0ece2" }] },
+  // T.paperEdge
+  { featureType: "road.arterial", elementType: "geometry.stroke", stylers: [{ color: "#d9d2c0" }] },
+  // T.paper lifted slightly toward white — locals quietest, just above paper
+  { featureType: "road.local", elementType: "geometry.fill", stylers: [{ color: "#f8f7f2" }] },
+  // T.hairline flattened onto T.paper (12% ink over #f4f1ea)
+  { featureType: "road.local", elementType: "geometry.stroke", stylers: [{ color: "#dad9d1" }] },
+
+  // ── Road labels → pencil on paper; colorful route shields off ─────
+  // T.pencil
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#6b6558" }] },
+  // T.paper halo keeps text legible over any fill
+  { featureType: "road", elementType: "labels.text.stroke", stylers: [{ color: "#f4f1ea" }] },
+  // T.inkSoft — highway names read a step stronger (hierarchy in labels too)
+  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#3a4a38" }] },
+  // Route shields (US-101 reds/blues) can't be recolored, only hidden —
+  // the one loud element paper can't absorb. Icons only; road text stays.
+  { featureType: "road", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+
+  // ── Administrative → ink/pencil ───────────────────────────────────
+  // T.paperEdge — boundaries as faint drawn lines
+  { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#d9d2c0" }] },
+  // T.inkSoft on T.paper
+  { featureType: "administrative", elementType: "labels.text.fill", stylers: [{ color: "#3a4a38" }] },
+  { featureType: "administrative", elementType: "labels.text.stroke", stylers: [{ color: "#f4f1ea" }] },
+  // T.ink — city names are the strongest text on the page
+  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#1a2a1a" }] },
+  // T.pencilSoft — neighborhood names recede
+  { featureType: "administrative.neighborhood", elementType: "labels.text.fill", stylers: [{ color: "#958d7d" }] },
+];
+
+/**
+ * The full B2 scout-map style: paper/ink base tone + the shipped POI/transit
+ * suppression. Base tone first, suppression last — suppression's
+ * visibility:"off" wins regardless, but keep the quieting rules terminal for
+ * readability. CourseScoutMap imports this name unchanged.
+ */
+export const SCOUT_MAP_STYLES: google.maps.MapTypeStyle[] = [
+  ...SCOUT_MAP_BASE_TONE,
+  ...SCOUT_POI_SUPPRESSION,
 ];
