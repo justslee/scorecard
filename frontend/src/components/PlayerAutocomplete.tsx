@@ -294,11 +294,7 @@ export default function PlayerAutocomplete({
             id={`player-suggestions-${index}`}
             role="listbox"
             style={{
-              position: 'absolute',
-              zIndex: 60,
-              top: 'calc(100% + 6px)',
-              left: 0,
-              right: 0,
+              marginTop: 6,
               borderRadius: 14,
               background: T.paper,
               border: `1px solid ${T.hairline}`,
@@ -425,11 +421,7 @@ export default function PlayerAutocomplete({
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.14, ease: 'easeOut' }}
             style={{
-              position: 'absolute',
-              zIndex: 60,
-              top: 'calc(100% + 6px)',
-              left: 0,
-              right: 0,
+              marginTop: 6,
               borderRadius: 14,
               background: T.paper,
               border: `1px solid ${T.hairline}`,
