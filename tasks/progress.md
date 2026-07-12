@@ -17,8 +17,21 @@ dispersion.py get_dispersion(club,handicap)->width_yards (2σ L-R spread) alread
 model — no new stats system. Fallback (corridor profile absent) MUST be v1 bend-cap byte-identical.
 HONESTY RISK to resolve in the plan: fairway polygons exist in OSM for SOME courses; if most holes lack
 them, scope down to bend-cap+trees rather than ship pseudo-precision (per brief).
-## AWAITING: Plan agent (fable) → specs/corridor-width-club-selection-plan.md. On return: save plan,
-## commit, dispatch builder on integration/next (worktree). Head at dispatch = 35738ef (PR #139 open).
+PLAN LANDED (fable) → specs/corridor-width-club-selection-plan.md. KEY CORRECTION the fable plan made
+(a real falsification, per the "Fable review falsified a wrong geometry fix" directive): the fit
+constraint is DANGER edges (tree/water lines) ONLY, never fairway edges — a fairway-edge rule caps
+every player to an 8-iron on every tee (±1.5σ dispersion window 56y for 15-hcp driver vs a 30-40y
+fairway = provably wrong golf). Fairway cross-sections are stored as color, never the constraint.
+Honesty finding: Bethpage fixture has 99 fairway polys/90 holes (good) but ZERO woods/tree features —
+so danger coverage is the real uncertainty; profile is None → v1 byte-identical where woods absent
+(no pseudo-precision). Model: new HoleIntelligence.corridor (additive/defaulted), computed in
+routes/caddie.py /course-intel loop (has the FeatureCollection), consumed in aim_point.py positioning
+branch AFTER v1 bend-cap with take-the-shorter ceiling. Rider: RecommendationRequest.yards int=400 ->
+Optional[int]=None + honest 400-error ladder.
+## AWAITING: builder implementing specs/corridor-width-club-selection-plan.md on integration/next
+## (single lane, main checkout). On return: reviewer(fresh/adversarial) + qa gates; SHIP+PASS -> land,
+## update PR #139 checklist (NOTICEABLE), backlog followups done. BLOCKING -> re-dispatch builder.
+## Head at builder dispatch = <will be plan-commit SHA>. Caller INERT, no ship/ping this cycle.
 
 ## DONE — caddie-numbers-coherence reviewer-BLOCKING fix, builder (2026-07-12, worktree branch, NOTICEABLE)
 Fixed the ONE reproducible defect the fable reviewer found in the numbers-coherence work below
