@@ -3,6 +3,43 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## tournament-redesign ("The Program") — DONE, builder (2026-07-12, integration/next, NOTICEABLE)
+Implemented `specs/tournament-redesign-plan.md` exactly, commit `302e746` on `integration/next`
+(off the caddie-voice-reliability-hardening commit). Design-led presentation redesign of the
+tournament SETUP page — "the club typesetting the program for the event" — plus one matching
+double-rule touch on the view page. Presentation only, zero behavioral change.
+- New pure helper module `frontend/src/lib/tournament-program.ts` (`numberWord`,
+  `formatProgramDate`, `fieldSummary`, `colophonLine`, `ghostCount`) + `tournament-program.test.ts`
+  (9 tests, matches the plan's exact cases incl. ≥10-digit fallback and the ghost formula).
+- `frontend/src/app/tournament/new/page.tsx`: cover plate (kicker "THE PROGRAM · <today>" via a
+  post-mount `today` state to avoid a hydration mismatch; title live-echoes the typed name, empty
+  → pencilSoft italic placeholder, typed → ink) + double rule; "Name" → "The event"
+  (byte-identical behavior); "Rounds" → "Order of play" + non-interactive itinerary chips
+  reusing the view page's round-strip look; "Field" → "Card of entry" with right-aligned №
+  entry numbers in selection order, 3 aria-hidden/pointer-events:none decorative ghost lines
+  that yield 1-for-1 as entrants are added (capped 3, zero at ≥4 players), and a composing
+  summary sentence; a mono colophon line ("2 DAYS · 3 ENTRANTS") above the Create button.
+  All motion gated on `useReducedMotion()` exactly like the view page's existing pattern.
+- `frontend/src/app/tournament/[id]/TournamentPageClient.tsx`: ONE insertion — the same double
+  rule between the tournament name and the Meta row (confirmed via `git diff` — nothing else
+  touched).
+- Contrast: every new informational text element uses `T.pencil` (not `pencilSoft`) except the
+  aria-hidden ghost lines and the 34px placeholder title (AA-large-text exempt), per the plan.
+- Deviation from plan: none in substance. One lint fix not spelled out in the plan — the
+  post-mount `setToday(new Date())` in a bare `useEffect` tripped the repo's
+  `react-hooks/set-state-in-effect` rule; deferred via `setTimeout(..., 0)` inside the effect
+  (same pattern already used in `CaddieOrb.tsx`), cleaned up on unmount. No behavior change —
+  `today` is still null for exactly one paint then set.
+- Stayed in tournament UI files only — did not touch global nav/layout/floating-island (a
+  concurrent swipe-back-nav lane owns that turf); `git status --short` confirmed only the 4
+  plan-listed files changed. `types.ts` / `models.py` untouched.
+Gates (all green, evidence captured in the session): `npm run lint` clean, `npx tsc --noEmit`
+clean, `npm run build` succeeded (static export, all tournament routes present), `npm run test`
+118 files / 2345 tests passed (includes the new suite), `npx tsx voice-tests/runner.ts --smoke`
+278/278 pass. Rebased onto `origin/integration/next` before pushing (fast-forward, no upstream
+commits landed during the build). NOT shipped/notified — bundle-owner (`eng-lead`) decides when
+to request approval.
+
 ## caddie-voice-reliability-hardening — DONE, builder (2026-07-12, integration/next, mostly silent + 1 noticeable copy tweak)
 Implemented `specs/caddie-voice-reliability-hardening-plan.md` exactly, commit `d187254` on
 `integration/next` (off `b0a6d9c`). Client-side correctness/reliability pass on the Realtime
