@@ -14659,3 +14659,7 @@ pass the buggy code too).
 Spike branch `spike/passive-shot-tracking` cut off main @71f8910 (NOT integration/next).
 Step 1: no preempting v1.1.4 owner feedback (no comments on #136/#135/#134 cards, no PR #137 comments).
 Dispatching Plan(fable) to frame the feasibility spike. Next: builder → investigation + gated GPS-delta/motion prototype; reviewer honesty check; qa gates; open SPIKE PR base main. Do NOT ship/ping. Do NOT touch integration/next / PR #137.
+
+## AWAITING update (passive-shot-tracking spike)
+Plan (fable) landed @3bf59fb. Builder dispatched on spike/passive-shot-tracking implementing specs/passive-shot-tracking-spike-plan.md.
+On builder completion: dispatch reviewer (honesty/grounding check) + qa (gates green). If BLOCKING → re-dispatch builder. When clean → open SPIKE PR base main (labeled feasibility spike), update progress. Do NOT ship/ping, do NOT touch integration/next or PR #137.
