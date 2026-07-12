@@ -72,6 +72,21 @@ clean, voice-tests smoke 278/278, caddie vitest suites 101/101.
 ## when fit.rejected_club is None, keep the current club (a rounding-tie candidate is not a corridor
 ## decision). Note #2 (water vertex-as-observation) = pre-existing observation model, NOT this change —
 ## filed as record only, not fixed here.
+## DONE — coherence-contract guard folded in, builder (2026-07-12, integration/next @485c664, SILENT)
+Fixed exactly note #1: `aim_point.py`'s corridor-width integration block (~L806-859) now only swaps
+the club when `fit.rejected_club is not None` (a genuine width rejection) — a rounding-tie candidate
+(`fit.club != club`, `rejected_club is None`) leaves the current post-bend-cap club, tee_shot_numbers,
+and any existing v1 corridor_note untouched. Also guarded the grounding-populate block
+(`fit.chosen_sample`) to only fire when `fit.club == club`, since in the blocked-swap case
+`chosen_sample` belongs to the un-applied candidate, not the kept club — would've leaked a mismatched
+width into "untouched" tee_shot_numbers otherwise (required by the fix's own "tee_shot_numbers
+untouched" clause, not scope creep). Added `test_07_rounding_tie_fit_does_not_swap_club_or_stale_the_
+note` to `test_corridor_width_selection.py`, pinned via a monkeypatched `_select_club_fitting_corridor`
+return (physics tie not reliably reproducible from a realistic bag, per fable). Gates: `ruff check .`
+clean; targeted 5-file suite 189/189 passed; full non-DB suite 2337/2337 passed;
+`test_corridor_bend_cap.py` byte-unmodified (confirmed via `git diff --stat`). Silent (internal
+coherence-contract correctness fix, no user-facing behavior change on realistic bags — the bug only
+fires on a sub-yard physics rounding tie fable could not construct from real data).
 ## AWAITING: builder tight follow-up — add the guard + a UNIT test pinning it (construct fit with
 ## rejected_club None & club != current directly; assert no swap, no stale note), re-run corridor +
 ## bend-cap tests + ruff. On green: land, update PR #139 checklist (NOTICEABLE), backlog followups done.
