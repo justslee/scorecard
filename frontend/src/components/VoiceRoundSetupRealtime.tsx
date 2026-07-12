@@ -225,7 +225,8 @@ export default function VoiceRoundSetupRealtime({
           inset: 0,
           background: "rgba(26,42,26,0.35)",
           backdropFilter: "blur(4px)",
-          zIndex: 50,
+          // above CaddieOrb (50) so the scrim dims/covers it; sheet below stays 60
+          zIndex: 52,
           // Swallow touch-move so the page underneath can't scroll (belt-and-braces
           // alongside the body lock above).
           touchAction: "none",
