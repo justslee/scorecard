@@ -14321,3 +14321,16 @@ pass the buggy code too).
 - AWAITING fable Plan -> specs/caddie-orb-z50-ties-plan.md. Then builder (3 z edits) -> reviewer
   (fresh) -> qa (gates SUCCESS on pushed SHA) -> designer (BLOCKING). Land on integration/next,
   update PR #135 + backlog (targeted edit + diff-check). Do NOT ship/ping (bundle accumulates).
+
+## AWAITING — cycle 103 builder (z50-ties fix)
+- Plan saved+committed: specs/caddie-orb-z50-ties-plan.md @ 84b5719. Verdicts: CourseSearch REAL
+  (v1.1.2 live map surface), PlayerModal REAL, VRS backdrop MINOR scrim-tie. Fix = lift all three
+  50->52 (above orb, below sheet 60). No stacking-context traps.
+- builder (ad62685) implementing the 3 one-line z edits + running gates on integration/next, pushing.
+- On builder return: reconcile from origin/integration/next (git log), pin the builder's pushed SHA;
+  then dispatch reviewer (fresh, z-order correctness/no stacking trap/no orb-summon or one-mic
+  regression), qa (gates all SUCCESS on pushed SHA + orb no longer covers each fixed surface),
+  designer (BLOCKING — crux orb + user-facing overlays). If all SHIP/PASS/APPROVE -> update PR #135
+  checklist (item 5) + mark backlog caddie-orb-z50-ties-audit done (targeted edit + diff-check) +
+  progress. Do NOT ship/ping (bundle accumulates; owner testing v1.1.2 separately).
+- If any BLOCKING -> re-dispatch builder with the specific issue, re-review.
