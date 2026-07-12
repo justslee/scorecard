@@ -33,12 +33,12 @@ import { computeGameResults } from './games';
  * stake at all). Never let a format take a stake without a branch here, and
  * never add a branch here without adding the format to this set.
  *
- * `wolf` is deliberately NOT a member: the lone-wolf branch credited only the
- * wolf player (±pointValue) and debited no one, and partner-mode credited
- * only the winning pair — neither is zero-sum, so wolf was fabricating money
- * (a single lone-wolf win with pointValue:2 returned a +$6 record with no
- * debits). Wolf is points-only until the engine is fixed to true zero-sum
- * transfers (deferred follow-up) — see tournament-settlement-honesty-plan.md.
+ * `wolf` WAS deliberately excluded (see tournament-settlement-honesty-plan.md): the
+ * old lone-wolf branch credited only the wolf player and debited no one, and
+ * partner-mode credited only the winning pair — neither was zero-sum, so wolf was
+ * fabricating money. `computeWolf` (games.ts) was fixed to emit a true zero-sum
+ * `pointsDelta`/`totals` per hole (tournament-wolf-settlement-plan.md), so wolf is
+ * readmitted here, gated on the wolf zero-sum property-test fixture passing.
  */
 export const SETTLEABLE_FORMATS: ReadonlySet<GameFormat> = new Set([
   'skins',
@@ -49,6 +49,7 @@ export const SETTLEABLE_FORMATS: ReadonlySet<GameFormat> = new Set([
   'hammer',
   'rabbit',
   'defender',
+  'wolf',
 ]);
 
 /** A single minimized transfer that settles debt between two players. */
@@ -172,9 +173,29 @@ export function computeGameNetWinnings(round: Round, game: Game): Record<string,
     }
   }
 
+  // ─── Wolf ───────────────────────────────────────────────────────────────
+  // `computeWolf`'s per-hole `pointsDelta` is zero-sum by construction (see the
+  // doc comment on `computeWolf` in games.ts), so `totals` is zero-sum too —
+  // money = points × pointValue, exact at 2dp since totals are integers and
+  // pointValue has ≤2 decimal places. No last-player residual absorber is
+  // needed here (unlike skins/vegas, which divide a pot): do not add one.
+  // Iterate the wolf's OWN rotation (the keys `totals` is built from) rather than
+  // `playerIds`: they are the same set for a well-formed game, but keying off the
+  // totals' own ids means a permuted or mismatched `wolfOrderPlayerIds` can never
+  // silently drop a player's total and break the zero-sum sum.
+  if (game.format === 'wolf' && results.wolf) {
+    for (const pid of results.wolf.orderPlayerIds) {
+      net[pid] = r2((net[pid] ?? 0) + r2((results.wolf.totals[pid] ?? 0) * pointValue));
+    }
+  }
+
   // ─── Three-Point (2v2) ───────────────────────────────────────────────────
   // Each point difference moves pointValue between teams.
-  // Per-player share = team net / team size.
+  // Per-player share = team net / team size, with the last member of each
+  // team absorbing the rounding residual (same last-member-absorbs pattern
+  // as vegas's `distributeTeam` below) so the zero-sum invariant holds
+  // exactly at 2dp even when the team net has an odd number of cents
+  // (e.g. pointValue 0.25) or an unequal team size.
   if (game.format === 'threePoint' && results.threePoint) {
     const tp = results.threePoint;
     const teamA = tp.teamAId;
@@ -186,11 +207,23 @@ export function computeGameNetWinnings(round: Round, game: Game): Record<string,
     const teamAPlayers = game.teams?.find((t) => t.id === teamA)?.playerIds ?? [];
     const teamBPlayers = game.teams?.find((t) => t.id === teamB)?.playerIds ?? [];
 
+    const distributeTeam = (teamNet: number, members: string[]) => {
+      if (members.length === 0) return;
+      const n = members.length;
+      let runningSum = 0;
+      for (let i = 0; i < n - 1; i++) {
+        const share = r2(teamNet / n);
+        net[members[i]] = r2((net[members[i]] ?? 0) + share);
+        runningSum = r2(runningSum + share);
+      }
+      // Last member absorbs rounding residual so the team total is exact.
+      const last = members[n - 1];
+      net[last] = r2((net[last] ?? 0) + r2(teamNet - runningSum));
+    };
+
     if (teamAPlayers.length > 0 && teamBPlayers.length > 0) {
-      const shareA = r2(teamANet / teamAPlayers.length);
-      const shareB = r2(-teamANet / teamBPlayers.length);
-      for (const pid of teamAPlayers) net[pid] = r2((net[pid] ?? 0) + shareA);
-      for (const pid of teamBPlayers) net[pid] = r2((net[pid] ?? 0) + shareB);
+      distributeTeam(teamANet, teamAPlayers);
+      distributeTeam(r2(-teamANet), teamBPlayers);
     }
   }
 

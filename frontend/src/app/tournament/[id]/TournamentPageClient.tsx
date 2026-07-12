@@ -588,6 +588,14 @@ export default function TournamentPageClient() {
             >
               {tournament.name}
             </div>
+            <div
+              style={{
+                marginTop: 14,
+                borderTop: `1px solid ${T.hairline}`,
+                height: 3,
+                borderBottom: `1px solid ${T.hairline}`,
+              }}
+            />
 
             <div style={{ display: "flex", gap: 18, marginTop: 18 }}>
               <Meta

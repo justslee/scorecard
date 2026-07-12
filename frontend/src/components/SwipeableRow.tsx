@@ -3,6 +3,7 @@
 import { ReactNode, useState, CSSProperties } from 'react';
 import { motion, useMotionValue, useTransform, PanInfo, animate } from 'framer-motion';
 import { T } from '@/components/yardage/tokens';
+import { isEdgeStart, readSafeAreaLeft } from './nav/backSwipeGesture';
 
 // ---------------------------------------------------------------------------
 // Inline icons — no lucide-react
@@ -135,6 +136,15 @@ export default function SwipeableRow({
           dragConstraints={{ left: 0, right: deleteThreshold + 50 }}
           dragElastic={{ left: 0, right: 0.5 }}
           onDragEnd={handleDragEnd}
+          // Claim the left edge for the global back-swipe (specs/universal-
+          // swipe-back-plan.md §8): an edge-start touch never becomes a row
+          // drag — stopping propagation here (capture phase, before framer's
+          // own bubble-registered pointerdown) keeps this row from moving
+          // under an edge flick, so it's back-swipe-only there. Starts ≥24px
+          // in are untouched and drag normally.
+          onPointerDownCapture={(e) => {
+            if (isEdgeStart(e.clientX, readSafeAreaLeft())) e.stopPropagation();
+          }}
           style={{ x }}
           className="relative z-10"
         >
@@ -145,6 +155,7 @@ export default function SwipeableRow({
       {/* Confirmation dialog — yardage-book style */}
       {showConfirm && (
         <motion.div
+          data-no-backswipe
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}

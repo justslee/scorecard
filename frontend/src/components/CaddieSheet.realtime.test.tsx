@@ -1066,4 +1066,29 @@ describe("CaddieSheet live mode — Slice E idle suspend/resume", () => {
     expect(screen.getByText("Paused — tap to resume")).toBeTruthy();
     expect(screen.queryByText(/is listening/i)).toBeNull();
   });
+
+  it("speaking with zero messages: empty state says the caddy is speaking, not listening (edge 3)", async () => {
+    // Regression for the held-turn empty-state honesty bug
+    // (specs/caddie-voice-reliability-hardening-plan.md §3): a held clarifier
+    // pushes status to 'speaking' (audio IS playing) while the transcript is
+    // still empty. The empty state must never contradict the footer's
+    // "Caddie speaking…" claim with a fake "is listening" one.
+    renderSheet();
+    await flush();
+
+    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => client.emitStatus("speaking"));
+    await flush();
+
+    expect(screen.queryByText(/is listening/i)).toBeNull();
+    expect(screen.getByText("The Strategist is speaking.")).toBeTruthy();
+    expect(screen.getByText("Caddie speaking…")).toBeTruthy();
+
+    // Back to 'connected' — the listening hint returns.
+    act(() => client.emitStatus("connected"));
+    await flush();
+
+    expect(screen.queryByText(/is speaking\.$/i)).toBeNull();
+    expect(screen.getByText("Go ahead — The Strategist is listening.")).toBeTruthy();
+  });
 });

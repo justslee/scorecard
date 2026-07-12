@@ -91,11 +91,11 @@ export const STAKE_GAME_IDS: ReadonlySet<GameId> = new Set(
  * engine silently drops players (matchPlay: games.ts:739-741 only ever reads
  * playerIds[0]/[1]; wolf: games.ts:806-809 cycles a 4-player order and falls
  * back to round.players.slice(0,4)) — a truncated game must be unrepresentable,
- * not just mislabeled. Match is also a `STAKE_GAME_IDS` member, so for match
- * this doubles as a money guard; wolf is no longer in `STAKE_GAME_IDS` (it
- * settles no money — see `SETTLEABLE_FORMATS` in settlement.ts), but the
- * requirement stays: a roster ≠ 4 still silently drops players from wolf's
- * points leaderboard, so this keeps that display honest too.
+ * not just mislabeled. Match and wolf are both `STAKE_GAME_IDS` members, so for
+ * both this doubles as a money guard: a roster ≠ 4 would silently drop players
+ * from wolf's zero-sum rotation, corrupting both the points leaderboard and the
+ * settled money (see `SETTLEABLE_FORMATS` in settlement.ts) — the exact-4
+ * requirement keeps that honest.
  */
 export const ROSTER_REQUIREMENT: Partial<Record<GameId, number>> = {
   match: 2,

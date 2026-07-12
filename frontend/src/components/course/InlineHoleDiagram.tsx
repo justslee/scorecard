@@ -312,6 +312,7 @@ export default function InlineHoleDiagram({
           onFallback={() => setGoogleMapFailed(true)}
           teeMarker={teeMarker}
           cameraTransition={cameraTransition}
+          mappedHoles={holeIndex}
         />
       </div>
     );

@@ -162,10 +162,12 @@ describe("buildRoundGames", () => {
     );
     expect(emitted).toHaveLength(1);
     expect(emitted[0].format).toBe("wolf");
+    // wolf is a STAKE_GAME_IDS member again (zero-sum engine) → the stake sticks.
+    expect(emitted[0].settings.pointValue).toBe(5);
   });
 
   it("emits pointValue === undefined for every non-stake id even when a $5 stake is selected — stableford settles $0, consistently", () => {
-    const nonStakeIds: GameId[] = ["stable", "bbb", "bb", "scr", "vegas", "wolf", "stroke", "quota", "none"];
+    const nonStakeIds: GameId[] = ["stable", "bbb", "bb", "scr", "vegas", "stroke", "quota", "none"];
     for (const id of nonStakeIds) {
       const games = buildRoundGames(
         [{ id, stake: "$5" }],
@@ -180,8 +182,8 @@ describe("buildRoundGames", () => {
 });
 
 describe("STAKE_GAME_IDS", () => {
-  it("equals exactly {skins, match, nassau} — wolf is NOT a member (its engine fabricates money, tournament-settlement-honesty-plan.md follow-up)", () => {
-    expect(new Set(STAKE_GAME_IDS)).toEqual(new Set(["skins", "match", "nassau"]));
+  it("equals exactly {skins, match, nassau, wolf} — wolf is a member again now that computeWolf is zero-sum (tournament-wolf-settlement-plan.md)", () => {
+    expect(new Set(STAKE_GAME_IDS)).toEqual(new Set(["skins", "match", "nassau", "wolf"]));
   });
 
   it("every member's mapped GameFormat is in SETTLEABLE_FORMATS — the two sets can never drift silently", () => {
