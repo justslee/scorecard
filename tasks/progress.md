@@ -15388,6 +15388,13 @@ range), cap 4; visibility = pure predicate (position null OR !gpsOnHole OR dist(
 redraw only on boolean flip; par-3 suppress all; carry TEXT = DOM paper chips (iOS iconUrl can't do
 data-URLs — verified Map.swift:726) styled like the tap-target pill, right edge; par from mapped
 HoleData.par (NO RoundPageClient par threading). 13 pinned vitest.
-Now AWAITING builder on the plan (integration/next). On resume: reconcile from origin/integration/next
--> git log for the builder's commit; if landed, dispatch reviewer(fresh)+qa+designer; else re-check builder.
-CALLER INERT — do NOT ship/ping; keep accumulating PR #137 (6 items @ cdd8ca2).
+Builder DONE @be24416 (progress @1ba1d7a). Gates green: lint/tsc clean, vitest 2412/2412 (incl 21 new
+tee-shot-overlays), build ok, voice 278/278. Builder caught+fixed a real carry-direction inversion via TDD
+(greenFirstCenterline orientation leaked into bunker projection -> reversed to tee-first; 5 tests RED->GREEN,
+no assertion weakened). Files: frontend/src/lib/map/tee-shot-overlays.ts(+test), GoogleSatelliteMap.tsx,
+InlineHoleDiagram.tsx, RoundPageClient.tsx.
+Now AWAITING reviewer(FABLE — trust-critical geometry) + qa(gates on head SHA) + designer(BLOCKING, yardage-
+book feel), all on head 1ba1d7a. On resume: collect all three verdicts; BLOCKING (math wrong / fabricated
+overlay / onMapReady gap / regression / design violation) -> re-dispatch builder then re-review; all
+green+clean -> update PR #137 checklist (+tee-shot-yardage-overlays NOTICEABLE) + progress, backlog targeted
+edit. CALLER INERT — do NOT ship/ping; keep accumulating PR #137.
