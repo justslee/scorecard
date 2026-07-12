@@ -15908,3 +15908,36 @@ ON-BOX REGEN (prod, sanctioned by owner "generate red guides"; Black 7/11 ride a
   red 269e1f2e-65cc-5cf6-a9b0-f5908e298155, black 2b8caab5-2c55-5752-8cda-336c3a396dac.
 STATE: awaiting fable Plan -> builder (fix+tests) -> reviewer(fabricated-carry attack) -> qa(gates SUCCESS on
 pushed head) -> I run the on-box regen myself. On death: resume from worktree branch HEAD; do NOT re-run finished children.
+
+## DONE — cycle 116 (2026-07-12): guide-validator carry-span fix SHIPPED in v1.1.6; regen 3/5
+LANDED: commit 5e4414b (fix+tests+regen script) merged to main in bundle PR #139 → **v1.1.6** (owner
+"ship it"; pinned head 5e4414b included this fix, gates SUCCESS). Plan specs/guide-validator-carry-span-plan.md
+(fable). reviewer(opus) SHIP — CONSTRUCTED a fabricated carry (BLACK-7 R{170,430,520} "right bunker at 300")
+and confirmed it is REJECTED at runtime (runs stay {170},{430},{520}; 300 ∉ any ±25 window); no bypass, no
+test weakening, regen script inert-by-default + capped. qa PASS — ruff clean, 137/137 targeted validator/regen
+tests, 2365 passed/95 skipped/0 failed broad offline; backend-only (no frontend touch). FIX: _side_and_carry_supported
+now accepts a claimed (type,side,carry) if it lies within [min-25,max+25] of a CONTIGUOUS RUN of that (type,side)'s
+sampled carries (bunker/water/ob bridge at _CARRY_BRIDGE_YARDS=60; trees bridge unconditionally into one [min,max]
+run — near/far pair brackets a continuous line). Strict SUPERSET of old accepts (single-sample run == old ±25),
+so zero existing guides/tests flip. _has_side_flip binding UNTOUCHED.
+REGEN (on-box, sanctioned; fixed code materialized from 5e4414b into /tmp worktree, app .env, LOOPER_SECRETS_DISABLED=1,
+claude-sonnet-5, one bounded pass): cleared the 5 negative-cache markers + re-researched.
+  RESULT 3/5 RECOVERED — RED now 18/18 (was 15): RED 1/8/18 all cached with GROUNDED text (RED 8 "left bunkers
+  at 160 and 195" = geom {160,195,365}; RED 18 "stacked left bunkers at 215 and 225" = {215,225}; RED 1 splits
+  the tree corridor 145/265). NO-REGRESSION verified: RED 15 + BLACK 16 guides intact.
+  BLACK 7/11 re-rejected → remain honest-empty (BLACK still 16/18). DIAGNOSED precisely (2 bounded no-write
+  research calls) — NOT the footprint class:
+    • BLACK 11 = deterministic false-reject in _has_side_flip NUMBER-BINDING (pre-existing, untouched by this fix):
+      the both-sides sentence "the 245-left bunker and the 270/325 right-side bunkers" binds right-side 325 to the
+      nearby LEFT bunker keyword's window; 325 isn't grounded on the left → whole guide rejects. The text is
+      actually correct golf (every number grounded to its true side) — the binding window can't tell two adjacent
+      cross-side bunker refs apart.
+    • BLACK 7 = STOCHASTIC — the regen candidate cited an ungrounded number; a fresh diagnostic candidate (no
+      specific bunker-carry number) PASSED. Borderline; left honest-empty (no retry storm).
+  Honest-empty is SAFE (caddie falls back to the grounded generic hazard line). Owner's ask = RED guides = 100%
+  complete (3/3). BLACK 7/11 were ride-along known-issue holes (Black already 16/18); trivial marginal spend.
+FOLLOW-UPS FILED (backlog): (1) _has_side_flip cross-side number-binding false-reject on both-sides multi-bunker
+sentences (BLACK 11 — the observed, precise cause); (2) large-single-bunker-footprint class (cycle-39 theory —
+per-bunker front/back-edge carry extraction in hazards.py; NOT reproduced this pass, lower confidence). Both need
+their own fable-plan + adversarial treatment (lessons.md: no inline validator/geometry fix).
+RECORDS-ONLY commit (no code) rebased onto recut integration/next @70e8a7f post-v1.1.6-ship.
