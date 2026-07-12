@@ -15941,3 +15941,43 @@ sentences (BLACK 11 — the observed, precise cause); (2) large-single-bunker-fo
 per-bunker front/back-edge carry extraction in hazards.py; NOT reproduced this pass, lower confidence). Both need
 their own fable-plan + adversarial treatment (lessons.md: no inline validator/geometry fix).
 RECORDS-ONLY commit (no code) rebased onto recut integration/next @70e8a7f post-v1.1.6-ship.
+
+## SHIPPED — v1.1.6 / Bundle #139 (2026-07-12): caddie grounded tee-shot brain + corridor-width club selection + guide-validator fix
+Owner replied "Ship it" — approved bundle PR #139 for merge. Executed entirely from an isolated
+worktree (/Users/justinlee/projects/.scorecard-ship-v116) per coordination — the primary checkout
+(other lanes mid-flight there) was never touched: no checkout/reset/branch op ran against it.
+- Pre-flight verified: origin/integration/next pinned @5e4414b, PR #139 OPEN+MERGEABLE, main@c715d2e,
+  both required gates SUCCESS on the pinned head — matched before touching anything.
+- VERSION bumped 1.1.5 -> 1.1.6 (commit 70e8a7f), pushed as a fast-forward to integration/next.
+  Both required gates (Frontend gates, Backend gate) SUCCESS on the bump head before merge.
+- PR #139 retitled: "Bundle #139: caddie grounded tee-shot brain (numbers that close + corridor-width
+  club selection + hazard-grounded miss-side + hole guides) + guide-validator fix". Merged -> main
+  @ 2f7f4869b0ed6af68bb767b4231c843358dc22fa.
+- Post-merge main CI: both required gates SUCCESS (Frontend gates, Backend gate); E2E smoke advisory
+  also green.
+- Backend deploy (SSM Run-Command, auto-triggered on push to main touching backend/**): SUCCESS.
+  /health -> {"status":"ok"}. Voice-booking caller confirmed INERT — VOICE_BOOKING_ENABLED verified
+  UNSET (key-free SSM probe) in both backend/.env and the running scorecard-api systemd unit's
+  environment.
+- TestFlight: v1.1.6, build 202607121638 — "Uploaded v1.1.6 (build 202607121638) to TestFlight —
+  processing on Apple's side now." (ship.sh exit clean, no retry needed).
+- Fresh integration/next: a validator lane concurrently landed a docs-only record commit (686fe02:
+  cycle-116 guide-validator regen notes, backlog.json + progress.md) on the OLD integration/next head
+  while this ship was in flight. Rather than discard it or force-push, merged 686fe02 into new
+  main@2f7f486 (git merge --no-ff, zero conflicts) producing fc8ced3, which IS a fast-forward from
+  origin/integration/next (686fe02 is an ancestor) — pushed cleanly, no force-push used anywhere in
+  this ship.
+- Records: Notion board card created "Bundle #139: caddie grounded tee-shot brain (...) + guide-
+  validator fix" -> Status Shipped, Type Major, Risk medium, PR link, full headline+silent+verification
+  notes + owner re-test how-to. Backlog: caddie-tee-shot-grounding-followups (A/B/C/D all now done,
+  including (D) Red 3 par-4 confirmed) marked status "done". bethpage-7-11-geometry-audit already
+  correctly "partially-resolved" from the validator lane's own commit (guide-validator fix shipped,
+  2 residual sub-class follow-ups — guide-validator-cross-side-binding, guide-validator-bunker-
+  footprint-span — remain "ready", correctly not closed). backlog.json validated (valid JSON, targeted
+  Edit + diff-check, not json.load/dump).
+- Worktree /Users/justinlee/projects/.scorecard-ship-v116 removed after this record was written.
+
+**OWNER PAUSED THE LOOP after this ship.** The hourly eng-lead cron trigger is cancelled; any
+in-flight builder/reviewer/qa lanes in their own worktrees are left to finish naturally (not killed).
+Resume = owner re-runs /loop (or equivalent) explicitly; do not auto-restart the eng-lead cycle until
+that happens. Next agent waking up: check for this note before dispatching new cycles.
