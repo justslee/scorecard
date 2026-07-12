@@ -14299,3 +14299,25 @@ pass the buggy code too).
 - NOT shipped/pinged (per brief): owner is testing v1.1.2 (bundle #134) separately — no v1.1.2
   feedback preempted this cycle (board + PR comments checked, none). Bundle PR #135 keeps
   accumulating for the next "ship it" (3 noticeable tournament items + this small-UX fix).
+
+## AWAITING — cycle 103 (caddie-orb-z50-ties-audit) PLAN
+- No preempting owner feedback: board (Bundle #134 v1.1.2 = Shipped, no comments), PR #135 comments
+  (none), approvals Gmail (none). Proceeding to the z50-ties audit.
+- Analysis (matches backlog item's fable-plan findings, line #s re-verified on this head):
+  Orb = position:fixed zIndex:50 bottom-right, mounted in app/layout.tsx:66 AFTER {children}:64 ->
+  wins z=50 ties by DOM order. Three tied surfaces:
+  (1) CourseSearch.tsx:661 zIndex:50 full-screen (inset:0, 100dvh) — used /courses, /tee-time,
+      /round/new. REAL COLLISION + v1.1.2 LIVE (map course search owner is testing): orb paints
+      over + intercepts taps on the full-screen surface's bottom-right (map pins/tap-to-add).
+  (2) players/page.tsx:643 PlayerModal container zIndex:50 (full-screen flex, sheet bottom-anchored
+      maxWidth 520 / marginBottom 16 -> bottom-right reaches orb). REAL COLLISION on /players.
+  (3) VoiceRoundSetupRealtime.tsx:228 backdrop zIndex:50; sheet is z:60 (already ABOVE orb). Interactive
+      content SAFE (60>50); only the scrim ties -> orb pokes through/tappable over backdrop bottom-right.
+      MINOR/consistency (scrim should cover orb, matching last cycle's 89450fa pattern on same /round/new page).
+- Chosen fix (minimal, matches 89450fa convention 40<50<52<60): lift each tied surface 50 -> 52
+  (above orb, below LooperSheet/VRS-sheet 60). NOT a systemic z-token refactor (over-engineering for
+  3 one-line CSS changes; no existing token scale; omnipresent-orb invariant kept — orb still present,
+  just correctly under full-screen takeovers). NOT hide-orb-on-overlay (invasive global state).
+- AWAITING fable Plan -> specs/caddie-orb-z50-ties-plan.md. Then builder (3 z edits) -> reviewer
+  (fresh) -> qa (gates SUCCESS on pushed SHA) -> designer (BLOCKING). Land on integration/next,
+  update PR #135 + backlog (targeted edit + diff-check). Do NOT ship/ping (bundle accumulates).
