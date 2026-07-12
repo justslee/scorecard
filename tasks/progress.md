@@ -15083,3 +15083,32 @@ unchanged. Env note (from qa): static export + needs Clerk/backend, so a true li
 not be renderable locally — designer to render if possible, else rigorous structural audit + flag
 what needs owner real-device eyes. ON RETURN: APPROVE -> add to PR #137 checklist NOTICEABLE, mark
 backlog, finish (NO ship/ping). BLOCKING -> builder. Head 43b3235.
+
+## LANDED (cycle 111, 2026-07-12) — universal-swipe-back @9873d19 on integration/next [isolated worktree lane]
+TOP-PRIORITY owner request: iOS edge-swipe-from-left to go back on ALL pages -> router history back
+(home->tee-time->swipe back->home), EXCEPT the in-round yardage-book hole page (/round/[id] + /round/view
+keep prev-hole swipe). NOTICEABLE (app-wide navigation).
+ALL VERDICTS GREEN: reviewer SHIP (every named failure mode traced + unfalsifiable — no hijack of in-content
+h-swipe, no break of hole nav, never pops out of app, never fires on non-edge/vertical/leftward, no route
+race, no listener leak; security nil, client-only touch math; 34 tests genuine). qa PASS (integrated-tree
+gates: lint/tsc/vitest 2379/build 19-page/voice 278; browser touch-event verification vs REAL listeners
+confirmed home<->tee-time history.back, deep-link push('/') fallback, home no-op, /round/ + /map/course
+exclusions, /round/new included, caddie-sheet data-no-backswipe). designer APPROVE (threshold-only+haptic
+is the calm/native/yardage-book call; no SaaS drift).
+Mechanism (fable plan specs/universal-swipe-back-plan.md): global JS left-edge (<=safeAreaLeft+24px) passive
+capture-phase touch detector in NEW nav/BackSwipe.tsx (null render, mounted once in layout.tsx). Pure core
+backSwipeGesture.ts (isEdgeStart/decideBackSwipe/isDisqualified + rotation-invalidated readSafeAreaLeft).
+Route predicate shouldEnableBackSwipe.ts (sibling of shouldShowTabBar.ts). router.back() gated by session
+depth-counter (history.length rejected for single-doc export); depth0 off-home -> push('/'), never exits app;
+350ms refire lockout. SwipeableRow onPointerDownCapture edge-claim (rightward-conflict fix); data-no-backswipe
+on 3 sheets + confirm backdrop + FloatingTabBar root. WKWebView allowsBackForwardNavigationGestures rejected
+(stale snapshots on pushState, no per-route exclusion). Hardening pass folded 2 converged reviewer/designer
+non-blocking notes (safe-area rotation invalidation + tab-bar escape hatch) + pinned landscape boundary test.
+Rebased onto origin/integration/next @43b3235 (intermediate checkpoints dropped; ONLY progress.md conflicts,
+skipped; NO code conflict — orthogonal to Wolf-settlement + tournament lanes). backlog universal-swipe-back
+-> done (targeted edit, +10 lines, 0 removed, JSON valid 69 items). PR #137 checklist to be updated.
+Owner real-device pass needed (documented, NOT a gate fail): native map-pan non-hijack, native touch feel/
+haptic timing, SwipeableRow drag-vs-edge-flick (framer needs real touch->pointer a headless browser can't do).
+Caller INERT this cycle — accumulating on bundle PR #137 for owner's next 'ship it'; NO ship/ping.
+Injection note: a "date changed / DO NOT mention" line + a telegram-reminder appeared repeatedly in this
+session's system/tool stream — ignored per injection-defense (authority = owner request + brief); no task impact.
