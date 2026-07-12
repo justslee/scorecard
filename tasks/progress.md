@@ -3,6 +3,32 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## map-paper-tone — DONE, builder (2026-07-12, integration/next, NOTICEABLE — designer-blocking)
+Implemented `specs/map-paper-tone-plan.md` exactly, commit `a610dc7` on `integration/next`
+(off `e4d1f3f`). Retones the B2 scout map's base `MapType.Normal` Google Maps palette to the
+yardage-book paper/ink look, composed with (not replacing) the already-shipped POI-suppression.
+- `frontend/src/lib/course/scout-map-config.ts`: renamed the existing 3-entry style array to
+  `SCOUT_POI_SUPPRESSION` (byte-identical entries); added `SCOUT_MAP_BASE_TONE` (landscape/
+  water/road-hierarchy/label paper+ink hex rules mapped from `tokens.ts` T.* palette, inlined
+  per the file's pure/DOM-free convention — no tokens.ts import); `SCOUT_MAP_STYLES` is now the
+  composed `[...SCOUT_MAP_BASE_TONE, ...SCOUT_POI_SUPPRESSION]`, so `CourseScoutMap.tsx`'s
+  import is unchanged (zero diff there).
+- `frontend/src/lib/course/scout-map-config.test.ts`: re-scoped the existing strict invariant
+  block to `SCOUT_POI_SUPPRESSION`; added `"SCOUT_MAP_STYLES (composed) invariants"` (order,
+  suppression rules survive, geometry never hidden except route-shield icons) and
+  `"SCOUT_MAP_BASE_TONE invariants"` (every rule has explicit featureType+elementType, every
+  color is opaque 6-digit hex — guards the silent-GMSMapStyle-parse-failure risk called out in
+  the plan — and road hierarchy is a real darkness ladder highway>arterial>local).
+- `GoogleSatelliteMap.tsx` deliberately untouched per plan §3 (JSON styling is a no-op on
+  satellite imagery; `MapType.Satellite` has no vector/label layer to style).
+Gates (all green): lint clean; `tsc --noEmit` clean; vitest 2296/2296 (target file 18/18, all
+new); `next build` succeeds; voice-tests smoke 278/278; backend `ruff check .` all checks
+passed (no backend diff — no local Postgres run, per policy).
+Not sandbox-verifiable: actual on-device GMS palette rendering (plan §6 iOS-sim screenshot +
+designer review + owner device confirmation still required before this clears the bar —
+plan's own "NORTHSTAR honesty clause" flags the risk that Google's renderer anti-aliasing
+could read as "muddy beige" rather than "paper" on-device).
+
 ## caddie-noise-clarification-reply — DONE, eng-lead cycle 107 (2026-07-12, worktree lane agent-ab9b3b5a, NOTICEABLE)
 Landed @76d8c95 on integration/next (PR #136 bundle). Direct follow-on to caddie-context-leak:
 after the fake priming user-bubble was dropped (6a68078), a server-VAD false-trigger on ambient
