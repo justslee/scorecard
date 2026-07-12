@@ -3,6 +3,26 @@
   "note": "Cycle 78 retro/grooming (2026-07-11): statuses normalized to enum; ~150 shipped/superseded items archived to backlog-archive.json. This file = LIVE queue only. Terminal record + all ship SHAs/PRs/TestFlight versions preserved in backlog-archive.json (see resolution fields).",
   "items": [
     {
+      "id": "caddie-context-leak",
+      "title": "TOP-PRIORITY owner bug: STT keyterm/priming context rendered as a user bubble in the LIVE caddie chat (and 'answered')",
+      "type": "major",
+      "priority": 5,
+      "risk": "medium",
+      "status": "done",
+      "resolved": "6a68078 (cycle 105, integration/next / PR #136). Root cause: the golf keyterm/priming string (backend/app/caddie/keyterms.py build_transcription_prompt) is injected CORRECTLY as an STT hint at session.audio.input.transcription.prompt (never a conversation item, never in session.instructions) -- the leak is DOWNSTREAM: gpt-4o-transcribe hallucinates its own transcription.prompt back as the input transcript when server VAD false-triggers on silence/ambient noise (verbatim OR paraphrased -- the owner's two variants). frontend/src/lib/voice/realtime.ts then rendered ANY non-empty transcript as a role:'user' bubble; the model, hearing the same noise, independently replied 'Didn't catch that'. Fix (fable plan specs/caddie-context-leak-plan.md): new pure client classifier frontend/src/lib/voice/priming-echo.ts isPrimingEcho(transcript) wired as a drop-guard in the input_audio_transcription.completed handler (before onMessage AND before orderForUserTranscript -- ordering-safe, reservations are identity-keyed per realtime-ordering.ts), with a len-only realtime_priming_echo_dropped telemetry breadcrumb. Classifier drops iff A: signature phrase /player'?s clubs/ or /golf vocabulary/ (present in both owner variants, never in real speech), B: >=10 distinct GOLF_KEYTERMS (multi-word masked so 'double bogey' != 'bogey'; worst plausible real turn ~7), or C: >=3 segments ALL bare hazard nouns. Conservative: false-negatives render (safe), false-positives effectively impossible. Belt-and-suspenders backend rider: order-preserving hazard dedupe within the 'This hole:' sentence in keyterms.py. reviewer SHIP (no security/correctness blocker; /security-review clean -- regex from hardcoded GOLF_KEYTERMS only, escapeRegExp, no ReDoS, telemetry logs len not body, dedupe stays confined to transcription.prompt). qa PASS (7 gates on head a0c52d2/6a68078: lint / tsc / build / voice 278-278 / vitest 30-30 [priming-echo + realtime-warm] / ruff / backend test_transcription_prompt 10-10; classifier tests assert BOTH owner strings dropped AND real turns kept incl. adversarial dense-keyterm turn). designer APPROVE (pure subtraction -- no new chrome/placeholder where the bubble was; bubble styling untouched; legit user/typed turns unaffected).",
+      "resolution": "LANDED on integration/next @6a68078 (bundle PR #136), NOTICEABLE. Awaits the owner's bundle 'ship it' -> TestFlight. Not independently pinged per bundle discipline.",
+      "why": "Owner-reported directly with 2 screenshots (v1.1.3, on-course LIVE caddie): the priming/context string ('Player's clubs: GW, LW... This hole: trees, trees... Golf vocabulary: birdie, bogey...') showed as a dark right-aligned user bubble and the caddie tried to answer it ('Didn't catch that -- say again?'). Core-feature correctness: the priming must bias STT recognition but NEVER enter the visible/processed conversation."
+    },
+    {
+      "id": "caddie-noise-clarification-reply",
+      "title": "Follow-up: lone 'Didn't catch that -- say again?' caddie reply fires on VAD false-triggers (noise), now with NO preceding user bubble",
+      "type": "minor",
+      "priority": 3,
+      "risk": "medium",
+      "status": "ready",
+      "why": "Flagged by BOTH reviewer and designer during caddie-context-leak review (cycle 105) as an explicitly-scoped-OUT residual of that fix (specs/caddie-context-leak-plan.md §6). The 'Didn't catch that' reply is the Realtime MODEL independently responding to committed noise-audio (input transcription is a side-channel; the model hears audio directly) -- a DIFFERENT system from the transcript-render leak that was fixed. Now that the fake priming user-bubble is correctly dropped, a VAD false-trigger on ambient noise can produce a lone caddie utterance with no user bubble above it -- reads as the caddie talking to itself (arguably MORE visually odd than before). Options (each its own plan): (a) tune server VAD so it doesn't fire on false-triggers -- the OPENAI_REALTIME_VAD=semantic_vad lever + server_vad threshold/noise_reduction knobs exist in realtime_relay.py but are owner-gated / explicitly hands-off in the context-leak fix; (b) suppress rendering (or generation) of a clarification reply that is a direct response to a turn we know was noise (e.g. no non-empty user transcript for that turn). User-facing caddie surface -> designer-gated. Do NOT touch VAD thresholds without an owner decision."
+    },
+    {
       "id": "tournament-money-format-completion",
       "title": "Follow-up: complete the deferred money-settling game formats (wolf true-transfer, opponent/team pickers)",
       "type": "minor",

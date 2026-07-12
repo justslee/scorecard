@@ -14532,3 +14532,31 @@ pass the buggy code too).
   yardage-book feel (no SaaS pins). If highlight-@40px doesn't read primary -> solid-flag asset is
   designer-blocking per plan §1.4.
 - Do NOT ship/ping. Add to PR #136 checklist (NOTICEABLE). REBASE before every push (concurrent lane).
+
+## Cycle 105 (2026-07-11, ISOLATED worktree) — caddie-context-leak LANDED @6a68078 [TOP-PRIORITY owner bug]
+- Owner-reported (2 screenshots, v1.1.3 LIVE caddie): STT keyterm/priming context rendered as a dark
+  right-aligned USER bubble AND "answered" ("Didn't catch that"). ROOT CAUSE: injection is CORRECT
+  (keyterms.py -> transcription.prompt only, never a conversation item / instructions); leak is
+  DOWNSTREAM — gpt-4o-transcribe hallucinates its own prompt back as the input transcript on VAD
+  noise-triggers (verbatim + paraphrase = the two owner variants); realtime.ts rendered any non-empty
+  transcript as a user bubble; model independently replied to the noise audio.
+- FIX (fable plan specs/caddie-context-leak-plan.md): new pure client classifier priming-echo.ts
+  isPrimingEcho() wired as a drop-guard in the input_audio_transcription.completed handler (before
+  onMessage + before order consumption — ordering-safe per realtime-ordering.ts), len-only
+  realtime_priming_echo_dropped telemetry. Drops iff A signature phrase (player's clubs / golf
+  vocabulary) OR B >=10 distinct GOLF_KEYTERMS (multi-word masked) OR C >=3 all-hazard segments.
+  Conservative: FNs render (safe), FPs effectively impossible. + backend rider: order-preserving hazard
+  dedupe in keyterms.py "This hole:" sentence.
+- reviewer SHIP (no security/correctness blocker; /security-review clean — regex from hardcoded consts +
+  escapeRegExp, no ReDoS, telemetry logs len not body, dedupe confined to transcription.prompt).
+  qa PASS (7 gates on head a0c52d2==6a68078 code: lint/tsc/build/voice278-278/vitest30-30/ruff/pytest
+  test_transcription_prompt 10-10; classifier tests assert both owner strings dropped + real turns
+  incl. adversarial dense-keyterm turn kept). designer APPROVE (pure subtraction — no new chrome where
+  the bubble was; bubble styling + legit/typed turns untouched).
+- Rebased onto origin/integration/next (parallel map-markers lane), dropped obsolete AWAITING
+  checkpoints, pushed FF abfe784..6a68078. 2 commits: eaab3e4 plan + 6a68078 fix (7 files, +364).
+- backlog.json (targeted edit, JSON-validated 66 items, +2, no data loss): caddie-context-leak -> done;
+  filed follow-up caddie-noise-clarification-reply (the lone "Didn't catch that" reply after a silent
+  drop — reviewer+designer flagged, plan §6 out-of-scope, VAD/owner-gated).
+- PR #136: adding checklist item (NOTICEABLE, caddie correctness). NOT shipped/pinged — caller inert;
+  accumulates on the bundle for the owner's next "ship it".
