@@ -14610,3 +14610,26 @@ pass the buggy code too).
   mark backlog b3/map item, progress DONE. Do NOT ship/ping (accumulate). Sim visual pass = owner/real-device
   (flagged: native marker render/my-location dot/POI-visual not sandbox-verifiable).
 - Any BLOCKING -> re-dispatch builder with specifics, re-review. REBASE before each push (concurrent lane).
+
+## DONE — cycle 106 (map-markers-course-location) LANDED @ 9295bcd
+- TOP-PRIORITY owner v1.1.3 map bug fixed on integration/next (bundle PR #136). Fable plan
+  specs/map-markers-course-location-plan.md; builder @9295bcd.
+- Four parts: (1) target highlight = course-flag.png @40px zIndex2 via dedicated coalescing
+  createCameraQueue (remove->add serialized, exactly one marker on rapid re-pans; no new asset);
+  (2) my-location = native enableCurrentLocation(true) post-onMapReady, .catch -> denied silent;
+  (3) in-bounds pins ROOT CAUSE = iOS initial-settle idleAt fires before JS setOnCameraIdleListener
+  attaches -> no initial fetch; fix = one-shot getMapBounds()->onCameraIdle prime through existing
+  debounce/coverage/abort (no double-fetch, coordinator untouched); (4) POI suppression via
+  SCOUT_MAP_STYLES (poi/poi.business/transit labels off; roads/water/greens kept, invariant-tested).
+  panTarget now carries name+source. Budget invariant intact (only fetchCoursesInBounds).
+- reviewer SHIP (7 risk areas sound, tests strengthened). qa PASS (6 gates on head; PR CI Frontend+
+  Backend state:SUCCESS on 1b735f1; E2E advisory non-required). designer APPROVE (ink-flag hand reused,
+  calm dot, POI style scoped) + carried-forward on-device gate (plan §1.4: 40px must read primary in a
+  real cluster or the solid-T.ink fallback becomes blocking — owner TestFlight eyeball).
+- NATIVE-MAP visual (marker render, dot, POI look, camera/idle timing) NOT sandbox-verifiable; all
+  decision logic unit-verified. Owner/real-device pass required.
+- PR #136 checklist updated (map-markers item, NOTICEABLE). backlog.json: added course-selection-ux
+  b2_markers_status (done) + new item map-base-paper-tone-style (designer follow-up, p6 ready);
+  JSON-validated 67 items, diff +11/-1 (the -1 is b2_status gaining a comma), no data loss.
+- NOT shipped/pinged per brief — bundle accumulates (map-markers is NOTICEABLE and joins the prior
+  noticeable items for the next owner "ship it"). Concurrent caddie-context-leak lane co-landed @6a68078.
