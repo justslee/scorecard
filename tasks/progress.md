@@ -14356,3 +14356,16 @@ pass the buggy code too).
   checklist (item 5) + mark backlog caddie-orb-z50-ties-audit done (targeted edit + diff-check) +
   progress. Do NOT ship/ping (bundle accumulates; owner testing v1.1.2 separately).
 - If any BLOCKING -> re-dispatch builder with the specific issue, re-review.
+
+## AWAITING — cycle 103 reviews (z50-ties fix @ de5d392, fix commit 6ff2b0a)
+- Builder landed the 3-line z50->52 lift (CourseSearch:661, players/page:643, VRS backdrop:228;
+  VRS sheet stays 60). Gates green per builder (lint/tsc/build clean, voice 278/278). Diff verified.
+- Dispatched concurrently on de5d392: reviewer (a0fcaa1 — z-order/stacking-trap/co-open/orb-regression),
+  qa (a3fb36c — 4 gates SUCCESS on head SHA + elementFromPoint hit-test each surface), designer
+  (ad2d3f6 — BLOCKING, orb covered-not-floating, omnipresent-orb invariant, one-mic, yardage feel).
+- On all return: if reviewer SHIP + qa PASS + designer APPROVE -> update PR #135 checklist (add item
+  5, classify SILENT/small-UX preventive z-fix; bundle already has noticeable items -> no independent
+  ping) + mark backlog caddie-orb-z50-ties-audit status "done" + resolved note (targeted edit +
+  diff-check, NEVER json.load/dump) + progress DONE note. Do NOT ship/ping (owner testing v1.1.2;
+  bundle accumulates for next "ship it").
+- If any BLOCKING -> re-dispatch builder with specifics, re-review.
