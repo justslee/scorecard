@@ -122,6 +122,7 @@ export function LooperSheetShell({
       {open && (
         <>
           <motion.div
+            data-no-backswipe
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -129,6 +130,7 @@ export function LooperSheetShell({
             style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(26,42,26,0.28)" }}
           />
           <motion.div
+            data-no-backswipe
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}

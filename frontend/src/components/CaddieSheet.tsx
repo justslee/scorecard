@@ -1194,6 +1194,7 @@ export default function CaddieSheet({
       {open && (
         <motion.div
           key="cs-backdrop"
+          data-no-backswipe
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -1216,6 +1217,7 @@ export default function CaddieSheet({
       {open && (
         <motion.div
           key="cs-sheet"
+          data-no-backswipe
           initial={{ y: "100%" }}
           animate={{ y: 0 }}
           exit={{ y: "100%" }}

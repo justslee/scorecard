@@ -215,6 +215,7 @@ export default function VoiceRoundSetupRealtime({
     <AnimatePresence>
       <motion.div
         key="vrsr-backdrop"
+        data-no-backswipe
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -235,6 +236,7 @@ export default function VoiceRoundSetupRealtime({
       />
       <motion.div
         key="vrsr-sheet"
+        data-no-backswipe
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}

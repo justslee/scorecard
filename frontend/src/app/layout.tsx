@@ -4,6 +4,7 @@ import AuthProvider from "@/components/AuthProvider";
 import FloatingTabBar from "@/components/nav/FloatingTabBar";
 import CaddieOrb from "@/components/CaddieOrb";
 import CaddieOrbSheet from "@/components/CaddieOrbSheet";
+import BackSwipe from "@/components/nav/BackSwipe";
 import "./globals.css";
 
 const serif = Instrument_Serif({
@@ -65,6 +66,7 @@ export default function RootLayout({
           <FloatingTabBar />
           <CaddieOrb />
           <CaddieOrbSheet />
+          <BackSwipe />
         </AuthProvider>
       </body>
     </html>
