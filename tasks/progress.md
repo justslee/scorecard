@@ -14960,3 +14960,24 @@ points scoreboard now shows negative points for losers — user-facing, review v
 re-dispatch builder, re-review. Then land into PR #137 checklist (NOTICEABLE — real money settles for wolf),
 update backlog tournament-money-format-completion (wolf DONE; match>2p picker + team-assignment UI still FILED for
 owner), update progress. Caller INERT — NO ship/ping this cycle.
+
+## LANDED impl (cycle 110) — wolf zero-sum settlement @9ba12db on origin/integration/next
+Builder was interrupted by the coordinator pause with ENGINE complete but 5 test edits unfinished
+(fixture not registered, §5.4 test not replaced, round-games.test not updated). I (eng-lead) finished
+those 5 edits directly per the plan's exact ground truth: registered SETTLEABLE_FORMAT_FIXTURES.wolf
+(5-hole asymmetric, totals p1+12/p2-4/p3-8/p4$0 @ $2 — recomputed rotation order[(h-1)%4], all picks
+legal, sum 0), replaced "wolf never carries a stake" with displayed→settled + no-picks-$0 + $0-stake
+tests, updated round-games.test STAKE_GAME_IDS={skins,match,nassau,wolf} + removed wolf from nonStakeIds
++ positive stake twin. Gates ALL GREEN: lint · tsc clean · vitest 2336/2336 (was 5 failing) · next build ·
+voice 278/278 · ruff. Pushed 86bb2d9..9ba12db (fast-forward; origin was still at my base, no other lane
+had pushed). Feature commit 9ba12db (6 files, +418/-75).
+
+## AWAITING (cycle 110) — reviewer + qa + designer on 9ba12db
+Dispatched in parallel. reviewer: adversarial zero-sum in EVERY wolf branch, no money created/dropped,
+displayed==settled, no regression to other 7 formats or shipped settlement-honesty. qa: all 6 gates
+state:SUCCESS on head 9ba12db (and CI on PR #137). designer: wolf points scoreboard now shows NEGATIVE
+points for hole losers (GameResults/GameLeaderboards/LeaderboardSheet) — confirm reads calm/correct vs
+NORTHSTAR. ON RETURN: all green → add to PR #137 checklist (NOTICEABLE — real money settles for wolf),
+update backlog tournament-money-format-completion (wolf DONE; match>2p picker + team-assignment UI FILED),
+finish. Any BLOCKING → re-dispatch builder, re-review. REBASE onto latest origin/integration/next before
+any further push (concurrent lanes: swipe-back-nav worktree + tournament-redesign). Caller INERT — NO ship/ping.
