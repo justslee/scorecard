@@ -3,6 +3,20 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING — cycle 112 tournament/settlement coverage hardening (2026-07-12, SILENT)
+No owner feedback preempted (v1.1.4 card #136 + PR #137 zero comments; redesign screenshot
+review not yet returned). Sync clean (integration/next 329deba already contains origin/main).
+Item: tournament/settlement RELIABILITY test-coverage hardening — NO features, NO UI change.
+REAL gaps found (evidence gathered): (1) cross-roster cumulative settlement — all existing
+computeTournamentSettlement tests use identical {p1,p2}; no different-roster-per-round test;
+(2) genuinely-mixed-format cumulative (existing "mixed" test is all matchPlay); stableford
+(non-settleable) contributes $0; (3) rounding-drift accumulation over N fractional rounds;
+(4) mixed money + game-less rounds in one tournament; (5) displayed==settled surface.
+Dispatched: Plan (fable) → specs/tournament-coverage-hardening-plan.md.
+AWAITING Plan → then builder (tests + any real-bug fix) on integration/next → reviewer → qa.
+On resume: reconcile from origin/integration/next log; do NOT re-run finished children.
+Caller INERT (do NOT ship/ping). Bundle #137 stays accumulating.
+
 ## tournament-redesign ("The Program") — DONE, builder (2026-07-12, integration/next, NOTICEABLE)
 Implemented `specs/tournament-redesign-plan.md` exactly, commit `302e746` on `integration/next`
 (off the caddie-voice-reliability-hardening commit). Design-led presentation redesign of the
