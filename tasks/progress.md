@@ -14369,3 +14369,27 @@ pass the buggy code too).
   diff-check, NEVER json.load/dump) + progress DONE note. Do NOT ship/ping (owner testing v1.1.2;
   bundle accumulates for next "ship it").
 - If any BLOCKING -> re-dispatch builder with specifics, re-review.
+
+## DONE — cycle 103 (caddie-orb-z50-ties-audit) LANDED @ 6ff2b0a
+- No preempting owner v1.1.2 feedback (board Bundle #134=Shipped no comments, PR#135 no comments,
+  approvals Gmail clear). Ran the z50-ties audit.
+- Fix 6ff2b0a on integration/next: lifted all three z=50 ties -> 52 (above orb 50, below sheet 60):
+  CourseSearch.tsx:661 (full-screen surface), players/page.tsx:643 (PlayerModal container),
+  VoiceRoundSetupRealtime.tsx:228 (backdrop; sheet stays 60). Plan(fable): specs/caddie-orb-z50-ties-plan.md.
+- reviewer SHIP (clean body-level stacking, no trap ancestors, backdrop<sheet, mutual-exclusion on
+  /round/new, no scope/test drift). qa PASS (4 gates green on de5d392: lint/tsc/build + voice 278/278;
+  Playwright elementFromPoint at orb center hits overlay/scrim not orb on PlayerModal + CourseSearch
+  LIST + VRS backdrop; native map mode not web-renderable). designer APPROVE to merge.
+- designer surfaced a DISTINCT residual (NOT a z-tie, NOT a regression): CourseSearch MAP mode frame is
+  background:transparent, so z52 routes taps to the map but can't visually occlude the opaque orb ->
+  orb still floats over the live map as a 'ghost button' + one-mic break. Proven via CSS repro. This is
+  the highest-priority v1.1.2 surface. Correctly OUT OF SCOPE for a CSS z-cycle (needs orb-suppression,
+  crux one-mic/omnipresence change) -> filed as new backlog item caddie-orb-map-mode-ghost (p4, ready,
+  needs its own fable plan + designer BLOCKING). Did NOT bolt it onto this cycle.
+- backlog.json (targeted edits, JSON-validated 61 items, diff +11/-1, no data loss):
+  caddie-orb-z50-ties-audit -> status done + resolved note; added caddie-orb-map-mode-ghost.
+- PR #135: added checklist item 6 (z50-ties, small-UX/preventive, SILENT) with the known map-mode
+  residual noted; follow-ups section updated (audit DONE, map-mode-ghost new).
+- CI on PR #135 all SUCCESS (Frontend, Backend, E2E) on head. NOT shipped/pinged: silent/preventive fix,
+  no noticeable change added; bundle keeps accumulating (3 noticeable tournament items + 2 small-UX
+  fixes) for the next owner "ship it". Owner testing v1.1.2 separately; no v1.1.2 feedback preempted.
