@@ -15663,3 +15663,16 @@ NOTE: earlier stray progress commits reached origin via the other lane's push; s
 ## AWAITING: reviewer(fable, adversarial) + qa (gates) on b7807b8. SHIP+PASS -> push worktree branch
 ## to origin/integration/next, add PR #137 item 8 NOTICEABLE. BLOCKING -> re-dispatch builder.
 ## CALLER INERT — no ship/ping, no VAD/mic change.
+
+## CYCLE 114 COORDINATION HOLD (release-manager shipping PR #137 -> main -> TestFlight v1.1.5 NOW)
+DO NOT push to origin/integration/next until the ship completes (head-moved guard would abort merge
+or my item would slip into an already-approved bundle unlisted). Sequence once reviewer verdict is in
+(fix any BLOCKING in-worktree first — the ship wait gives time):
+ 1. Poll: `gh pr view 137 --json state` == MERGED AND `git fetch` shows origin/integration/next recut
+    past the merge (no longer tips at my base 7066eff/243b87c — FF'd to new main head + records commit).
+ 2. Rebase my worktree branch onto FRESH origin/integration/next (plain FF), push.
+ 3. #137 is CLOSED by the ship -> OPEN a FRESH bundle PR integration/next->main, title
+    "Bundle: caddie grounded tee-shot brain (numbers coherence + corridor + trees + hole-guide)",
+    checklist item 1 = this item NOTICEABLE with reviewer/qa verdicts.
+ 4. progress.md + backlog targeted edits; NO ship/ping (caller inert).
+## AWAITING: reviewer(fable) correctness verdict on b7807b8 (resumed a239378787a6e4cb5); QA already PASS.
