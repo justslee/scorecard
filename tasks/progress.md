@@ -14835,3 +14835,16 @@ AWAITING: Plan agent on `fable` → specs/caddie-voice-reliability-hardening-pla
  → on plan return: dispatch builder to implement on integration/next; then reviewer + qa (+designer
    if copy changes). Land, add to PR #137 checklist (mostly SILENT hardening; VAD-blip+copy fixes
    NOTICEABLE-if-visible), mark backlog #33 done (targeted edit+diff-check). Caller INERT — NO ship/ping.
+
+## AWAITING update (cycle 109) — plan LANDED @cd7adff, builder dispatched
+Plan (fable) written to specs/caddie-voice-reliability-hardening-plan.md @cd7adff. Confirms ZERO
+VAD/mic/gain surface; punts turn_detection/noise_reduction/mic-constraint/commit-timing to owner (§8).
+5 fixes: (1) attribution-race candidate-SET triggerItemsByResponse + classifyCandidates aggregate
+(suppress only if ALL candidates noinput); (2) finishResponse() per-turn pruning + caps 64/128;
+(3) live-copy.ts held-turn 'speaking' empty-state honesty (USER-FACING → designer BLOCKING);
+(4a) response.done GA-shape id fallback; (4b) `if(!this.dc)return` post-cleanup guard.
+Builder dispatched on integration/next (does NOT open per-item PR). On builder return → reconcile
+from origin/integration/next (do NOT re-run builder): dispatch reviewer (adversarial, confirm no VAD
+drift + no suppression false-positive regression) + qa (gates state:SUCCESS on pushed head) in
+parallel; designer (BLOCKING, edge-3 copy). Then land into PR #137 checklist (mostly SILENT hardening;
+edge1+edge3 NOTICEABLE-if-visible), mark backlog #33 done. Caller INERT — NO ship/ping this cycle.
