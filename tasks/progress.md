@@ -14794,3 +14794,14 @@ ALSO: strengthen the road-ladder unit test to assert a MINIMUM perceptible lumin
 monotonic) for BOTH fill and stroke ladders, so green tests can't ship a flat hierarchy again.
 Builder iteration dispatched. On return → re-review (designer + quick reviewer/qa on the nudge diff),
 then land + open fresh bundle PR. head before iteration: 57033a5.
+
+## AWAITING update (cycle 108) — builder iteration landed @f781873, designer re-review dispatched
+WCAG fixes applied (all bars cleared, builder-recomputed): arterial↔local stroke 1.06→1.175:1
+(local stroke #dad9d1→#e6e3da), highway↔arterial fill 1.154:1 (#e2dcce→#dbd4c3), arterial↔local
+fill 1.193:1 (#f0ece2→#e9e3d5), neighborhood label 2.92→5.132:1 (#958d7d→#6b6558 T.pencil), poi.park
+→#d3ddc4. Ladder test strengthened: ≥1.10:1 min-step for BOTH fill+stroke ladders + ≥4.5:1 label AA
+(sanity: old flat stroke pair 1.064:1 would now fail). Gates green (vitest 2300, voice 278, lint/tsc/
+build/ruff). reviewer already SHIP on parent a610dc7; qa PASS. designer re-review dispatched on
+d29fad4. On designer APPROVE → open FRESH bundle PR (integration/next→main, NOTICEABLE map look),
+add checklist, mark backlog map-base-paper-tone-style done (targeted edit + diff-check). Carried gate:
+real-GMS on-device render (owner TestFlight) — do NOT ship/ping this cycle, accumulate on bundle.
