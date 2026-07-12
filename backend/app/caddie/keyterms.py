@@ -104,6 +104,10 @@ def build_transcription_prompt(session: Optional["RoundSession"]) -> Optional[st
         hazard_terms = [
             _HAZARD_TERMS[h.type] for h in intel.hazards if h.type in _HAZARD_TERMS
         ]
+        # Dedupe within this sentence, order-preserving: repeated identical
+        # hazards (e.g. three "trees" entries) add zero biasing value, just
+        # length and residual-echo weirdness (specs/caddie-context-leak-plan.md).
+        hazard_terms = list(dict.fromkeys(hazard_terms))
         if hazard_terms:
             parts.append("This hole: " + ", ".join(hazard_terms) + ".")
 

@@ -267,6 +267,39 @@ describe('RealtimeCaddieClient — withholdMic preload', () => {
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({ role: 'user', text: 'Pebble with Dan and Matt' });
     });
+
+    it('drops a priming-echo transcript AFTER attachMic() (never onMessage) but delivers a real transcript that follows it (specs/caddie-context-leak-plan.md)', async () => {
+      const onMessage = vi.fn();
+      const client = new RealtimeCaddieClient(
+        { mode: 'setup', personalityId: 'classic', withholdMic: true },
+        { onMessage },
+      );
+      await client.start();
+      await client.attachMic();
+
+      // gpt-4o-transcribe hallucinating transcription.prompt back on a VAD
+      // false-trigger — the exact owner-reported echo shape.
+      lastPc!.dataChannel!.emit({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item-echo',
+        transcript:
+          "Player's clubs: GW, LW, PW, SW, Driver. This hole: trees, trees, trees, bunker, bunker, trees, trees. " +
+          'Golf vocabulary: birdie, bogey, double bogey, eagle, albatross, mulligan, gimme, up and down, fairway, ' +
+          'tee box, pitching wedge, sand wedge, lob wedge, gap wedge, hybrid, 3-wood, 5-wood, driver, putter, ' +
+          'yardage, dogleg, carry, layup, pin high.',
+      });
+      expect(onMessage).not.toHaveBeenCalled();
+
+      lastPc!.dataChannel!.emit({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item-real',
+        transcript: 'what club for this bunker?',
+      });
+      expect(onMessage).toHaveBeenCalledTimes(1);
+      expect(onMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'user', text: 'what club for this bunker?' }),
+      );
+    });
   });
 
   describe('setEvents / emitCurrentStatus — adoption by a surface', () => {

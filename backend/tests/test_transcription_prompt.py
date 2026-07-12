@@ -152,6 +152,34 @@ def test_injection_confined_to_transcription_field():
     assert payload["session"]["audio"]["input"]["transcription"]["prompt"] == "XyzzyClub 7 Iron"
 
 
+def test_hazard_terms_deduped_within_this_hole_sentence():
+    """Repeated identical hazards (e.g. three "trees" entries) collapse to one
+    mention each, order-preserving — see specs/caddie-context-leak-plan.md."""
+    session = RoundSession(
+        round_id="r1",
+        user_id="u1",
+        current_hole=1,
+        hole_intel={
+            1: HoleIntelligence(
+                hole_number=1,
+                par=4,
+                hazards=[
+                    Hazard(type="trees", side="left"),
+                    Hazard(type="trees", side="right"),
+                    Hazard(type="trees", side="left"),
+                    Hazard(type="bunker", side="right"),
+                    Hazard(type="bunker", side="left"),
+                    Hazard(type="trees", side="right"),
+                    Hazard(type="trees", side="left"),
+                ],
+            )
+        },
+    )
+    p = build_transcription_prompt(session)
+    assert p is not None
+    assert "This hole: trees, bunker." in p
+
+
 def test_prompt_length_capped():
     """All 14 clubs + every mapped hazard type stays under the self-imposed cap."""
     session = RoundSession(

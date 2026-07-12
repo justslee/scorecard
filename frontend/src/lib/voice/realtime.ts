@@ -28,6 +28,7 @@ import {
 import { MessageOrderTracker } from '@/lib/voice/realtime-ordering';
 import { IdleTimer, REALTIME_IDLE_DISCONNECT_MS } from '@/lib/voice/idle-timer';
 import { voiceEvent } from '@/lib/voice/telemetry';
+import { isPrimingEcho } from '@/lib/voice/priming-echo';
 
 // ── Public types ─────────────────────────────────────────────────────────
 
@@ -603,6 +604,15 @@ export class RealtimeCaddieClient {
         const itemId = evt.item_id ? String(evt.item_id) : undefined;
         const id = itemId ?? `user-${Date.now()}`;
         const text = String(evt.transcript || '');
+        if (text && isPrimingEcho(text)) {
+          // gpt-4o-transcribe hallucinating transcription.prompt back as the
+          // transcript on a VAD false-trigger (specs/caddie-context-leak-plan.md)
+          // — drop before orderForUserTranscript. Ordering-safe: reservations
+          // are identity-keyed (realtime-ordering.ts), so the unconsumed
+          // speech_started slot for this item_id is simply never looked up.
+          voiceEvent('caddie', 'realtime_priming_echo_dropped', { detail: `len=${text.length}` });
+          break;
+        }
         if (text) {
           this.events.onMessage?.({
             id,
