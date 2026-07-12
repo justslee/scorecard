@@ -15141,3 +15141,13 @@ summary line + colophon + Create) — always visible, calm, strengthens the send
 ON RETURN: designer spec -> builder implements -> designer re-confirm pixels -> APPROVE -> PR #137 + backlog.
 REBASE before push (swipe-back lane landed @6ba9418; both lanes intact on branch). Caller INERT. Head:
 origin/integration/next.
+
+## AWAITING (cycle 111) — builder relocation fix (designer decision) @ origin head
+Designer DECISION: relocate the composing summary line OUT of the Players section INTO the sticky
+send-off block as first child, directly above the colophon (order: summary -> colophon -> error ->
+Create). Deltas: drop marginTop:12, add textAlign:center + marginBottom:10; keep serif/italic/15/
+T.pencil. Rejected alts (top-of-players / un-stick CTA / 2nd strip) — off-concept or behavior change.
+NOT a layout-mechanics change (sticky container untouched). Builder implementing + re-verifying via
+Playwright at 390x844 AND 375x667: summary+colophon+button all visible at scroll=0, >=16px gap
+summary->button, centered no-clip. ON RETURN: green -> designer quick pixel re-confirm -> APPROVE ->
+PR #137 checklist NOTICEABLE + backlog + finish. REBASE before push. Caller INERT — no ship/ping.
