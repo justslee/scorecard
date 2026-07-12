@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { tournamentHref } from "@/lib/round-url";
 import { useRouter } from "next/navigation";
 import { T, PAPER_NOISE } from "@/components/yardage/tokens";
@@ -13,11 +14,21 @@ import { buildKeyterms } from "@/lib/voice/keyterms";
 import { parseVoiceTranscript } from "@/lib/voice/pipeline";
 import type { VoiceParseResultValidated } from "@/lib/voice/schemas";
 import { tournamentTaskParse, tournamentPrefillFromParse } from "@/lib/tournament-prefill";
+import {
+  formatProgramDate,
+  fieldSummary,
+  colophonLine,
+  ghostCount,
+} from "@/lib/tournament-program";
 
 const NUM_ROUNDS = [1, 2, 3, 4] as const;
 
 export default function TournamentSetupPage() {
   const router = useRouter();
+  // Motion/haptics: NORTHSTAR-calm — subtle, purposeful, disabled visually
+  // under prefers-reduced-motion. Same gate pattern as the view page
+  // (TournamentPageClient.tsx:99).
+  const reduce = useReducedMotion();
 
   // ── form state ────────────────────────────────────────────────────────────
   const [name, setName] = useState("");
@@ -31,8 +42,19 @@ export default function TournamentSetupPage() {
   const [error, setError] = useState<string | null>(null);
   // Surface name-empty validation only after a submit attempt
   const [touched, setTouched] = useState(false);
+  // "The Program" cover-plate date. Gated to post-mount so the static export
+  // prerender never bakes the BUILD date into the HTML (would mismatch on
+  // hydration) — device-local timezone is correct by definition, it's the
+  // user's "today".
+  const [today, setToday] = useState<Date | null>(null);
 
   const customInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Defer the state update out of the effect body (react-hooks/set-state-in-effect).
+    const t = setTimeout(() => setToday(new Date()), 0);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     getPlayers()
@@ -132,6 +154,17 @@ export default function TournamentSetupPage() {
   const totalPlayers = selectedIds.size + customPlayers.length;
   const nameMissing = name.trim().length === 0;
   const playersMissing = totalPlayers === 0;
+
+  // ── entry numbers ("Card of entry") ─────────────────────────────────────
+  // Selection order: saved entrants first (JS Set preserves insertion order —
+  // togglePlayer add/delete keeps it), then customs in add order. Voice
+  // `apply` bulk-adds in parse order, so this stays correct there too.
+  // Program numbers, not IDs — they reflow on deselect/remove.
+  const entryNumberById = new Map<string, number>();
+  [...Array.from(selectedIds), ...customPlayers.map((c) => c.id)].forEach(
+    (pid, i) => entryNumberById.set(pid, i + 1)
+  );
+  const ghosts = ghostCount(totalPlayers);
   const canCreate = !nameMissing && !playersMissing && !creating;
 
   // ── submit ────────────────────────────────────────────────────────────────
@@ -262,20 +295,29 @@ export default function TournamentSetupPage() {
                 marginBottom: 2,
               }}
             >
-              New · Tournament
+              The Program{today ? ` · ${formatProgramDate(today)}` : ""}
             </div>
             <div
               style={{
                 fontFamily: T.serif,
                 fontStyle: "italic",
-                fontSize: 30,
-                letterSpacing: -0.6,
-                color: T.ink,
+                fontSize: 34,
+                letterSpacing: -0.8,
+                color: name.trim() ? T.ink : T.pencilSoft,
                 lineHeight: 1.05,
+                overflowWrap: "break-word",
               }}
             >
-              Set up a tournament.
+              {name.trim() || "Set up a tournament."}
             </div>
+            <div
+              style={{
+                marginTop: 12,
+                borderTop: `1px solid ${T.hairline}`,
+                height: 3,
+                borderBottom: `1px solid ${T.hairline}`,
+              }}
+            />
           </div>
 
           {/* ── Name ──────────────────────────────────────────────────── */}
@@ -298,7 +340,7 @@ export default function TournamentSetupPage() {
                   marginBottom: 6,
                 }}
               >
-                Name
+                The event
               </label>
               <input
                 id="tournament-name"
@@ -357,7 +399,7 @@ export default function TournamentSetupPage() {
                   marginBottom: 8,
                 }}
               >
-                Rounds
+                Order of play
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 {NUM_ROUNDS.map((n) => {
@@ -385,6 +427,56 @@ export default function TournamentSetupPage() {
                   );
                 })}
               </div>
+              {/* Itinerary preview — non-interactive; rounds are actually
+                  drawn later from the tournament page. */}
+              <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                <AnimatePresence initial={false}>
+                  {Array.from({ length: numRounds }, (_, i) => (
+                    <motion.div
+                      key={i}
+                      layout={reduce ? false : true}
+                      initial={reduce ? false : { opacity: 0, scale: 0.96 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={reduce ? undefined : { opacity: 0, scale: 0.96 }}
+                      transition={reduce ? { duration: 0 } : T.springSoft}
+                      style={{
+                        flex: 1,
+                        borderRadius: 12,
+                        border: `1px solid ${T.hairline}`,
+                        background: "transparent",
+                        padding: "10px 12px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 8.5,
+                          letterSpacing: 1.3,
+                          color: T.pencil,
+                          textTransform: "uppercase",
+                          marginBottom: 2,
+                        }}
+                      >
+                        Day {i + 1}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: T.serif,
+                          fontSize: 14,
+                          letterSpacing: -0.2,
+                          color: T.pencil,
+                          lineHeight: 1.1,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        Course to be drawn
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
             </div>
 
             {/* ── Players ──────────────────────────────────────────────── */}
@@ -406,7 +498,7 @@ export default function TournamentSetupPage() {
                     textTransform: "uppercase",
                   }}
                 >
-                  Field
+                  Card of entry
                 </div>
                 <div
                   style={{
@@ -525,6 +617,19 @@ export default function TournamentSetupPage() {
                             {p.name}
                           </div>
                         </div>
+                        {sel && (
+                          <div
+                            style={{
+                              fontFamily: T.mono,
+                              fontSize: 9,
+                              letterSpacing: 1.2,
+                              color: T.pencil,
+                              flexShrink: 0,
+                            }}
+                          >
+                            №{entryNumberById.get(p.id)}
+                          </div>
+                        )}
                         {p.handicap != null && (
                           <div
                             style={{
@@ -595,6 +700,17 @@ export default function TournamentSetupPage() {
                         }}
                       >
                         {cp.name}
+                      </div>
+                      <div
+                        style={{
+                          fontFamily: T.mono,
+                          fontSize: 9,
+                          letterSpacing: 1.2,
+                          color: T.pencil,
+                          flexShrink: 0,
+                        }}
+                      >
+                        №{entryNumberById.get(cp.id)}
                       </div>
                       <button
                         onClick={() => removeCustom(cp.id)}
@@ -677,6 +793,62 @@ export default function TournamentSetupPage() {
                   </button>
                 )}
               </div>
+
+              {/* Ghost entry lines — dead-space fill, decorative only. */}
+              {ghosts > 0 && (
+                <div aria-hidden style={{ pointerEvents: "none", marginTop: 6 }}>
+                  <AnimatePresence initial={false}>
+                    {Array.from({ length: ghosts }, (_, i) => (
+                      <motion.div
+                        key={totalPlayers + i + 1}
+                        layout={reduce ? false : true}
+                        initial={reduce ? false : { opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={reduce ? undefined : { opacity: 0 }}
+                        transition={reduce ? { duration: 0 } : T.springSoft}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          minHeight: 44,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontFamily: T.mono,
+                            fontSize: 9,
+                            letterSpacing: 1.2,
+                            color: T.pencilSoft,
+                          }}
+                        >
+                          №{totalPlayers + i + 1}
+                        </span>
+                        <span
+                          style={{
+                            flex: 1,
+                            borderBottom: `1px dashed ${T.hairlineSoft}`,
+                          }}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+
+              {/* Composing summary sentence */}
+              {totalPlayers > 0 && (
+                <div
+                  style={{
+                    fontFamily: T.serif,
+                    fontStyle: "italic",
+                    fontSize: 15,
+                    color: T.pencil,
+                    marginTop: 12,
+                  }}
+                >
+                  {fieldSummary(totalPlayers, numRounds)}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -691,6 +863,21 @@ export default function TournamentSetupPage() {
             bottom: 0,
           }}
         >
+          {totalPlayers > 0 && (
+            <div
+              style={{
+                fontFamily: T.mono,
+                fontSize: 9,
+                letterSpacing: 1.3,
+                color: T.pencil,
+                textAlign: "center",
+                marginBottom: 8,
+                textTransform: "uppercase",
+              }}
+            >
+              {colophonLine(numRounds, totalPlayers)}
+            </div>
+          )}
           {error && (
             <div
               style={{
