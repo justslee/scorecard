@@ -15414,3 +15414,23 @@ class, narrow window) — LEAVE; (3) floor/ceiling applied to round5(front) -> +
 to RAW carry (trivial); (4) test6 min-carry vertex exactly on 10y deadband -> move to 12-15y (robustness).
 DECISION: fold #1 (plate self-check), #3 (raw-carry predicate), #4 (test6) into ONE builder pass BATCHED
 with designer verdict (pending). #2 left (pre-existing, out of scope). AWAITING designer (a8ad5ef).
+
+## DESIGNER BLOCKING (cycle 113, head 510c76f) -> ITERATING
+designer BLOCKING (verified on rendered DOM at 390x844 + 375x667): (B1) inline chip stack (right-3 z-20
+top:12 in GoogleSatelliteMap) paints OVER RoundPageClient's existing "Hole stats" pill (Par/Yardage/Hcp,
+top:10 right:10 z:6) on the round-page card — obscures Par/Yardage on the tee. Plan §11 collision check
+only reasoned WITHIN GoogleSatelliteMap, missed the caller's sibling overlay. (B2) cap-4 chip stack fills
+~half the small inline card -> heavier than owner's "less than a book page" bar. NON-BLOCKING polish: 3m
+plate ~= 6-7px at zoom17 / 3px at zoom16 (near-invisible) -> bump plate 4m/dot 3m; white 150 plate + white
+bunker dot share #f2efe6 (two meanings one look) -> device eyeball; chip value 18px vs tap-pill 22px + tighter
+pad/radius diverges from plan's "exactly like tap pill" (intentional-for-density, acknowledge).
+BATCHED BUILDER FIX (one pass, head 510c76f): B1 collision (offset inline chip stack to clear the stats
+pill OR explicit chipTopOffset prop OR bottom-right anchor — pick cleanest, RE-RENDER to prove no overlap);
+B2 inline display cap = 2 (keep 4 fullscreen); reviewer#1 plate honesty self-check (omit a plate whose true
+straight dist to green CENTER deviates from its label > ~7-10y tol — mechanical no-fake-data + pinned test);
+reviewer#3 apply floor/ceiling to RAW carry pre-round5; reviewer#4 move test6 lateral to 12-15y; plate/dot
+size bump 4m/3m. Reviewer#2 (mount/queue interleave, pre-existing class) OUT OF SCOPE.
+Re-review after: designer BLOCKING re-confirm on rendered pixels (collision gone + density) + qa gates on new
+head; math additions are additive guards (can only omit MORE, never fabricate) + pinned tests -> eng-lead
+eyeballs the diff, no full fresh fable reviewer re-run for the bounded guard. AWAITING builder(batched fix).
+CALLER INERT — do NOT ship/ping; keep accumulating PR #137.
