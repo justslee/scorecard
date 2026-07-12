@@ -29,6 +29,33 @@ designer review + owner device confirmation still required before this clears th
 plan's own "NORTHSTAR honesty clause" flags the risk that Google's renderer anti-aliasing
 could read as "muddy beige" rather than "paper" on-device).
 
+## map-paper-tone-wcag-fix — DONE, builder (2026-07-12, integration/next, silent — test/copy-only until on-device confirm)
+Follow-up to the item above: designer review of `a610dc7` returned BLOCKING with quantitative
+WCAG findings (arterial↔local road stroke 1.06:1 — imperceptible; administrative.neighborhood
+label 2.92:1 — fails AA). Applied the plan's §7 fallback knobs, commit `f781873` on
+`integration/next` (off `91311a7`), scope limited to `SCOUT_MAP_BASE_TONE` per the brief — no
+`CourseScoutMap.tsx`/`GoogleSatelliteMap.tsx`/`tokens.ts` touched.
+- `scout-map-config.ts`: road.highway/arterial `geometry.fill` darkened/pulled down
+  (`#e2dcce→#dbd4c3`, `#f0ece2→#e9e3d5`); road.local `geometry.stroke` lightened
+  (`#dad9d1→#e6e3da`, was the 1.06:1 offender); `administrative.neighborhood`
+  `labels.text.fill` T.pencilSoft→T.pencil (`#958d7d→#6b6558`); optional `poi.park`
+  deepened (`#dde3d0→#d3ddc4`) for a faster fairway read (designer marked non-blocking,
+  included — trivial one-line change).
+- Recomputed WCAG ratios (relative-luminance method, all clear the bar first try — no
+  further nudging needed): highway↔arterial fill 1.154:1, arterial↔local fill 1.193:1,
+  highway↔arterial stroke 1.268:1 (unchanged), arterial↔local stroke 1.175:1 (was 1.064:1),
+  neighborhood label on paper 5.132:1 (was 2.92:1, now clears AA's 4.5:1).
+- `scout-map-config.test.ts`: added a stroke-ladder ordering assertion mirroring the existing
+  fill ladder, plus a WCAG-ratio (`>= 1.10:1`) minimum-perceptible-step assertion for both fill
+  and stroke ladders and a `>= 4.5:1` AA assertion for the neighborhood label. Sanity-checked
+  the new stroke-ratio test against the pre-fix `#d9d2c0`/`#dad9d1` pair (1.064:1) — it fails,
+  confirming this test would have caught the original bug. No existing assertion weakened.
+Gates (all green): lint clean; `tsc --noEmit` clean; vitest 114 files / 2300 tests passed
+(target file grows to 22, all new pass); `next build` succeeds; voice-tests smoke 278/278;
+backend `ruff check .` all checks passed (no backend diff — no local Postgres run, per policy).
+Still needs the same on-device/designer re-review as the parent item before it clears the
+NORTHSTAR "paper not muddy beige" bar visually — this fix is the WCAG-math half only.
+
 ## caddie-noise-clarification-reply — DONE, eng-lead cycle 107 (2026-07-12, worktree lane agent-ab9b3b5a, NOTICEABLE)
 Landed @76d8c95 on integration/next (PR #136 bundle). Direct follow-on to caddie-context-leak:
 after the fake priming user-bubble was dropped (6a68078), a server-VAD false-trigger on ambient
