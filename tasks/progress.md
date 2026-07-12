@@ -62,8 +62,19 @@ Postgres) 2336 passed, incl. new `test_corridor_profile.py` (7), `test_corridor_
 (6), `test_recommend_tap_path.py` (5), extended `test_tee_shot_numbers.py` (+2); the existing
 `test_corridor_bend_cap.py` passes UNMODIFIED (6/6). Frontend: `npm run lint` clean, `tsc --noEmit`
 clean, voice-tests smoke 278/278, caddie vitest suites 101/101.
-## AWAITING: reviewer (fresh/adversarial) + qa gates on integration/next. SHIP+PASS -> land, update
-## PR #139 checklist (NOTICEABLE), backlog followups done. BLOCKING -> re-dispatch builder.
+## CYCLE 115 VERDICTS on 8703b4d: reviewer(fable)=SHIP (geometry hand-re-derived in a ROTATED frame —
+## side asymmetry, dogleg local-heading, tee anchoring all confirmed vs independent expected values;
+## v1 bend-cap byte-intact; §9-B-2 test deviation judged faithful+stronger). qa=PASS (ruff clean,
+## 2336 backend unit + all 5 corridor/tap-path files green, tsc/lint clean, voice 278/278, vitest 2417).
+## FOLDING IN reviewer non-blocking note #1 (sacred coherence-contract edge): aim_point.py:812 can
+## silently swap club on a sub-yard rounded-total tie with rejected_club is None, leaving a STALE v1
+## bend-cap note (old club/leave) — the exact confabulation class this epic kills. Prescribed guard:
+## when fit.rejected_club is None, keep the current club (a rounding-tie candidate is not a corridor
+## decision). Note #2 (water vertex-as-observation) = pre-existing observation model, NOT this change —
+## filed as record only, not fixed here.
+## AWAITING: builder tight follow-up — add the guard + a UNIT test pinning it (construct fit with
+## rejected_club None & club != current directly; assert no swap, no stale note), re-run corridor +
+## bend-cap tests + ruff. On green: land, update PR #139 checklist (NOTICEABLE), backlog followups done.
 
 ## DONE — caddie-numbers-coherence reviewer-BLOCKING fix, builder (2026-07-12, worktree branch, NOTICEABLE)
 Fixed the ONE reproducible defect the fable reviewer found in the numbers-coherence work below
