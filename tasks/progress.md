@@ -3,6 +3,16 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## AWAITING — caddie-noise-clarification-reply (cycle 107, 2026-07-11, worktree lane agent-ab9b3b5a)
+Rebased onto origin/integration/next @34db008 (worktree was based on older 7b84ac0; rebased clean).
+Item: suppress the caddie's "Didn't catch that — say again?" clarifier when a turn produced NO
+real user input (empty transcript / dropped by isPrimingEcho / noise) — do NOT touch VAD
+thresholds (owner-gated). Plan (fable) saved: `specs/caddie-noise-clarification-reply-plan.md`
+(client-only hold/suppress state machine; pure predicate `isNoInputClarifier`; no VAD change).
+NOW: dispatching builder on integration/next. If I die, reconcile from branch: plan committed,
+no code yet. NEXT: builder → reviewer (adversarial) → qa (gates SUCCESS on head SHA) → designer
+(BLOCKING) → add to PR #136 checklist (NOTICEABLE) → backlog done (targeted edit). SHIP owner-gated.
+
 ## map-markers-course-location — DONE, builder (2026-07-11, TOP-PRIORITY owner v1.1.3 bug fix / noticeable)
 Implemented `specs/map-markers-course-location-plan.md` exactly on `integration/next`, commit
 `9295bcd` (off `23c1a7c`, PR #136 rolling bundle). Fixes the owner-reported B2 map-mode bug:
@@ -107,7 +117,6 @@ head `8bb915d` unchanged since approval, PR #135 OPEN+MERGEABLE, both required g
   z50-ties fix (incl. the live map course-search tap bug from v1.1.2). Known residual NOT in this
   bundle: `caddie-orb-map-mode-ghost` (orb still visually floats as a ghost button over the transparent
   map — filed as a follow-up, needs its own plan).
-
 ## caddie-orb-z50-ties — DONE, builder (cycle 103, 2026-07-11, small-UX bug fix / silent)
 Implemented `specs/caddie-orb-z50-ties-plan.md` exactly on `integration/next` @6ff2b0a (off
 84b5719, which was the fable plan commit). This is the follow-up audited/filed by the
