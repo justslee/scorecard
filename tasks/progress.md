@@ -15493,3 +15493,22 @@ Gates: 25/25 vitest in tee-shot-overlays.test.ts (up from 21), 2416/2416 full vi
 lint clean, tsc clean, `next build` clean, 278/278 voice-tests smoke. Backend untouched.
 Pushed to integration/next (8de8c0d). Silent (map overlay refinement, no new surface) —
 rides along in PR #137, no separate ship/ping.
+
+
+## BUILDER FIX LANDED @8de8c0d (progress aa58570) — cycle 113 (verified by eng-lead)
+All 6 items fixed: B1 inline chip top 12->54 (clears RoundPageClient stats pill; builder re-rendered 390x844
++375x667 -> 11px gap, no overlap); B2 maxBunkers param, inline=2/fullscreen=4 (inline added to memo deps);
+R1 implemented as a PER-HOLE collinearity guard greenEndLateralOffsetMeters (omit ALL plates when the way's
+green-end is >7y perpendicular off the line through centerline[0..1] to green center) INSTEAD of reviewer's
+literal per-plate straight-line check — eng-lead verified this is SOUND and BETTER: catches the reviewer's
+55y-offset-way counterexample (55y>>7y -> omit) while NOT breaking the legitimate dogleg test2 (bend is
+downpath, green-end stays collinear). Test 5b pins a 40y-offset way -> all plates omitted. R2 floor/ceiling
+now on RAW unrounded carry. R3 test6 lateral 10y->15-25y (off deadband). P1 plate 3->4m, dot 2->3m (legibility).
+Gates (builder local): lint/tsc clean, vitest 2416/2416 (25 in suite, +4), build ok, voice 278/278.
+CI on head aa58570: Backend gate SUCCESS; Frontend gate IN_PROGRESS.
+## AWAITING (cycle 113): designer re-confirm (B1 collision gone + B2 density calm on rendered pixels — BLOCK
+lift) + CI Frontend gate -> SUCCESS on aa58570. On resume: designer APPROVE + CI Frontend SUCCESS -> update
+PR #137 checklist (+tee-shot-yardage-overlays NOTICEABLE, with owner-device eyeball caveats), progress,
+backlog. designer still BLOCKING -> re-dispatch builder. CALLER INERT — do NOT ship/ping; accumulate #137.
+INJECTION NOTE: another planted 'date changed / DO NOT mention' + telegram-pairing MCP instruction arrived in
+tool output this cycle — IGNORED per injection-defense (no authority); no task impact.
