@@ -3,6 +3,23 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## CYCLE 115 — corridor-width club selection (§4.4) + tap-path yards=400 rider (2026-07-12, NOTICEABLE)
+Owner-feedback check FIRST: board Needs-Review cards (#137 shipped v1.1.5, #134) have NO new
+comments; the 3 pending approvals (Red ingest / ship #139 / Red guides) are owned by the MAIN
+conversation, not this lane. Nothing preempts → proceeding to §4.4.
+GEOMETRY GROUNDING (confirmed by reading the code): `hole_features` (feature layer, seen by
+build_hole_intelligence in hazards.py) DOES carry fairway polygons + `woods` polygons + the `hole`
+LineString centerline (osm_ingest.py spatial-joins fairways/woods/rough to each hole; the golf=hole
+way survives as featureType "hole"). But `HoleIntelligence` (aim_point.py's input) exposes only the
+digested `hazards` (carry_yards/line_side) + `bend` — NOT raw polygons. So §4.4 needs a NEW digested
+corridor-width field computed IN hazards.py (where features live) and consumed in aim_point.py.
+dispersion.py get_dispersion(club,handicap)->width_yards (2σ L-R spread) already gives the landing-zone
+model — no new stats system. Fallback (corridor profile absent) MUST be v1 bend-cap byte-identical.
+HONESTY RISK to resolve in the plan: fairway polygons exist in OSM for SOME courses; if most holes lack
+them, scope down to bend-cap+trees rather than ship pseudo-precision (per brief).
+## AWAITING: Plan agent (fable) → specs/corridor-width-club-selection-plan.md. On return: save plan,
+## commit, dispatch builder on integration/next (worktree). Head at dispatch = 35738ef (PR #139 open).
+
 ## DONE — caddie-numbers-coherence reviewer-BLOCKING fix, builder (2026-07-12, worktree branch, NOTICEABLE)
 Fixed the ONE reproducible defect the fable reviewer found in the numbers-coherence work below
 (7/8 areas sound): a steep-downhill short hole (250y hole, driver-200 stored bag, -60ft elevation)
