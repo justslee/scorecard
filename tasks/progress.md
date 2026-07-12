@@ -15725,3 +15725,13 @@ or my item would slip into an already-approved bundle unlisted). Sequence once r
 ## is reachable/approach (no positioning block); +signed leave_exact so equation always closes, floor
 ## only spoken leave_yards; +down60ft closure cell; keep 7 sound areas byte-intact. Re-run + prove repro.
 ## AWAITING: builder fix. Then quick reviewer re-verdict on the delta, then hold for #137 ship.
+
+## CYCLE 114 reviewer(fable) RE-VERDICT on fix delta db76587: SHIP.
+Frame-align eliminates non-closing class structurally (369 positioning blocks, 0 non-closing, 0
+leave_exact<=0 — positioning fires only when drive_total<distance). Physics parity byte-exact
+(273/285 == get_shot_distance). No reachability regression (OR only adds downhill-reachable).
+Corridor bend-cap intact. Tests additive (240 green). QA already PASS.
+NON-BLOCKING FOLLOWUP to file: stateless tap-path /caddie/recommend RecommendationRequest.yards=400
+default (always overridden by CaddiePanel real yards) — tiny cleanup, don't build now.
+## READY TO LAND — holding for PR#137 ship. On MERGED + integration/next recut: rebase, push,
+## open fresh bundle PR (item1 = caddie grounded tee-shot brain, NOTICEABLE), file followups, backlog.
