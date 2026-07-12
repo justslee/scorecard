@@ -12,6 +12,10 @@
 // round page's own floating "Ask caddie" pill (RoundPageClient.tsx, ~line
 // 2110) is the caddie invocation there, so this orb steps aside rather than
 // showing a second mic.
+//
+// Full-screen overlay suppression (specs/caddie-orb-map-mode-ghost-plan.md):
+// the orb also renders NOTHING while a registered full-screen overlay
+// (CourseSearch) owns the screen — see fullscreen-overlay.ts.
 import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,6 +25,7 @@ import { shouldShowTabBar } from '@/components/nav/shouldShowTabBar';
 import { openLooper, looperContextForPath } from '@/lib/looper-bus';
 import { haptic } from '@/lib/haptics';
 import { onCaddieOrbState } from '@/lib/caddie-context';
+import { isFullscreenOverlayActive, onFullscreenOverlayChange } from '@/lib/fullscreen-overlay';
 
 /** Long-press threshold — past this, the orb opens the caddie already listening. */
 const ORB_HOLD_MS = 350;
@@ -72,6 +77,15 @@ export default function CaddieOrb() {
       ? STICKY_CTA_CLEARANCE_PX
       : 0;
 
+  // Full-screen overlay suppression (specs/caddie-orb-map-mode-ghost-plan.md):
+  // while a registered overlay owns the screen the orb is truly ABSENT — a
+  // transparent overlay (CourseSearch map mode) cannot occlude it, so
+  // out-stacking is not enough. Lazy-initialized from the getter so there is
+  // no first-paint flash if an overlay is already live when the orb mounts.
+  const [overlayActive, setOverlayActive] = useState(isFullscreenOverlayActive);
+  useEffect(() => onFullscreenOverlayChange(setOverlayActive), []);
+  const visible = show && !overlayActive;
+
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heldFired = useRef(false);
   const downAt = useRef<{ x: number; y: number } | null>(null);
@@ -90,7 +104,7 @@ export default function CaddieOrb() {
   // One-time "Your caddie moved here" caption — first render where the orb
   // is shown, then never again. Guarded to useEffect for SSR safety.
   useEffect(() => {
-    if (!show) return;
+    if (!visible) return;
     if (typeof window === 'undefined') return;
     try {
       if (window.localStorage.getItem(INTRO_SEEN_KEY)) return;
@@ -106,9 +120,9 @@ export default function CaddieOrb() {
       clearTimeout(show2);
       clearTimeout(hide);
     };
-  }, [show]);
+  }, [visible]);
 
-  if (!show) return null;
+  if (!visible) return null;
 
   const clearHold = () => {
     if (holdTimer.current) clearTimeout(holdTimer.current);
