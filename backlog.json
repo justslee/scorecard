@@ -17,8 +17,9 @@
       "type": "minor",
       "priority": 4,
       "risk": "low",
-      "status": "done",
+      "status": "shipped",
       "resolved": "aeb388b (cycle 101, integration/next / PR #135) -- both PlayerAutocomplete overlays (suggestions dropdown + no-match popover) now render IN-FLOW: removed position:absolute/zIndex:60/top/left/right, added marginTop:6, so they push the Done button down instead of covering it and intercepting its taps. One file (PlayerAutocomplete.tsx), sole consumer /round/new. Reviewer SHIP, qa PASS (4 gates green on head 9281721 + live Playwright drive: Done reachable and non-overlapping in BOTH suggestions and no-match states; suggestion select-to-close intact), designer APPROVE (verified real tap on device viewport). Plan: specs/player-autocomplete-overlap-plan.md. Small-UX bug fix (restores a broken interaction; rides bundle PR #135, no independent ping).",
+      "resolution": "SHIPPED TO MAIN 2026-07-11 (bundle #135 merged @7b84ac0; owner 'Ship it'; TestFlight v1.1.3 build 202607112239).",
       "why": "Found by QA during cycle-100 local Playwright drive (NOT introduced by PR #135 -- pre-existing, out of that diff's scope). In the standalone add-player sheet (/round/new -> '+ Add' -> name input), typing a new name shows the \"'X' will be added as a new player\" suggestion row from PlayerAutocomplete.tsx (zIndex: 60) which visually overlaps and blocks pointer clicks on the 'Done' button beneath it until the suggestion is tapped or the input cleared. Real repro. Fix: reflow/gate the suggestion popover so it doesn't cover the primary action (or lift Done above it)."
     },
     {
@@ -27,8 +28,9 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "done",
+      "status": "shipped",
       "resolved": "89450fa (cycle 102, integration/next / PR #135) -- raised the picker bottom-sheet backdrop (zIndex 40->52) + sheet (41->53) on /round/new (frontend/src/app/round/new/page.tsx) AND /tournament/[id]/round/new (NewTournamentRoundClient.tsx) so they sit above the CaddieOrb (zIndex 50) but below the caddie's own LooperSheet (60/61). The full-screen scrim now dims/covers the orb while a picker is open (orb inert; a tap in the orb's spot hits the backdrop and closes the sheet, standard scrim behavior), so the orb no longer paints over / intercepts taps on the 'this is me' button or the suggestion-row handicap badges. Pure numeric CSS, no logic seam -> no unit test (jsdom computes no stacking; sibling fix aeb388b set the same precedent). Plan (fable): specs/caddie-orb-sheet-zindex-plan.md. Reviewer SHIP (z-values correct, no stacking-context trap [relative/auto-z ancestors], full-viewport scrim coverage, scope-clean, no bent tests). qa PASS (lint/tsc/build clean + voice 278/278 on head d837109; Playwright drive on /round/new: orb occluded behind opaque sheet on phone, dimmed-inert under scrim on wide, backdrop-tap closes sheet & does NOT open caddie, orb still opens caddie normally when no sheet open). designer APPROVE (reproduced the pre-fix overlap via devtools, then verified the fix live phone+wide; orb identity/placement untouched). Tournament route verified by code-parity only (no local DB to drive it). Small-UX bug fix in the omnipresent-orb crux area; rides bundle PR #135, no independent ping. Follow-up filed: caddie-orb-z50-ties-audit (3 same-class z=50 DOM-order ties elsewhere).",
+      "resolution": "SHIPPED TO MAIN 2026-07-11 (bundle #135 merged @7b84ac0; owner 'Ship it'; TestFlight v1.1.3 build 202607112239).",
       "why": "Flagged by designer during cycle-101 review of aeb388b (pre-existing, NOT caused by that diff). On /round/new the omnipresent Looper CaddieOrb (zIndex 50, kept visible here on purpose by shouldShowCaddieOrb.ts -- it's the page's voice invocation) visually overlaps the 'this is me' button and/or the last suggestion row's handicap badge in the player-picker bottom sheet (sheet is zIndex 41). Relevant because the orb is the owner's highest-priority crux ([[omnipresent-caddie-orb]]) -- it should sit cleanly, not clip sheet content. Fix options: raise the picker/bottom-sheet z-index above the orb while a sheet is open, OR hide/dim the orb while a modal sheet is open, OR add sheet-bottom clearance like STICKY_CTA_CLEARANCE_PX. Decide the calm approach; user-facing so designer-gated."
     },
     {
@@ -37,9 +39,10 @@
       "type": "minor",
       "priority": 5,
       "risk": "low",
-      "status": "done",
+      "status": "shipped",
       "why": "Found by the fable Plan agent (cycle 102, specs/caddie-orb-sheet-zindex-plan.md §4) while fixing caddie-orb-sheet-zindex-overlap. Same failure CLASS, different mechanism: three overlays sit at zIndex 50, TYING the CaddieOrb (also 50) -- the orb wins the tie only because it is a later DOM sibling (mounted in root layout after page content), so on orb-shown routes it can paint over / intercept taps on the overlay's lower-right on phones. Surfaces: (1) /players add/edit-player modal (frontend/src/app/players/page.tsx:643); (2) CourseSearch full-screen overlay (frontend/src/components/CourseSearch.tsx:661), used on /courses, /tee-time, /round/new; (3) VoiceRoundSetupRealtime backdrop (frontend/src/components/VoiceRoundSetupRealtime.tsx:228) -- on viewports >420px the orb sits outside the z60 sheet and above the tied z50 backdrop. NONE currently designer-flagged as visibly broken (unlike the picker-sheet bug, which was) -- this is preventive. Fix: lift each above the orb (52/53) as done for the picker sheets, OR adopt a shared z-token scale in yardage/tokens.ts so orb/sheet ordering is intentional rather than ad-hoc. Lower priority than the confirmed picker-sheet bug (now fixed @89450fa).",
-      "resolved": "6ff2b0a (cycle 103, integration/next / PR #135) -- lifted all three tied surfaces from zIndex 50 to 52 (above CaddieOrb 50, below LooperSheet/VRS-sheet 60): CourseSearch full-screen surface (CourseSearch.tsx:661), PlayerModal outer container (players/page.tsx:643), VoiceRoundSetupRealtime backdrop (VoiceRoundSetupRealtime.tsx:228; sheet stays 60). Pure numeric CSS, 3 lines. Plan (fable): specs/caddie-orb-z50-ties-plan.md. reviewer SHIP (clean body-level stacking, no trap ancestors, backdrop<sheet preserved, mutual-exclusion on /round/new, no scope/test drift). qa PASS (lint/tsc/build + voice 278/278 on de5d392; Playwright elementFromPoint at the orb center now hits the overlay/scrim not the orb button on PlayerModal + CourseSearch LIST mode + VRS backdrop). designer APPROVE (PlayerModal + CourseSearch list + VRS wide-viewport verified via hit-test+screenshot; omnipresent-orb identity/one-mic intact). All three z=50 ties resolved; tap-routing corrected on every surface including map mode. NOTE: the designer surfaced a DISTINCT residual (not a z-tie): CourseSearch MAP mode sets the frame background transparent, so z52 routes taps to the map but cannot visually OCCLUDE the opaque orb -> the orb still floats over the live map as a non-caddie 'ghost button'. Filed as follow-up caddie-orb-map-mode-ghost (needs orb-suppression, its own plan). Silent/preventive; rides bundle PR #135, no ping."
+      "resolved": "6ff2b0a (cycle 103, integration/next / PR #135) -- lifted all three tied surfaces from zIndex 50 to 52 (above CaddieOrb 50, below LooperSheet/VRS-sheet 60): CourseSearch full-screen surface (CourseSearch.tsx:661), PlayerModal outer container (players/page.tsx:643), VoiceRoundSetupRealtime backdrop (VoiceRoundSetupRealtime.tsx:228; sheet stays 60). Pure numeric CSS, 3 lines. Plan (fable): specs/caddie-orb-z50-ties-plan.md. reviewer SHIP (clean body-level stacking, no trap ancestors, backdrop<sheet preserved, mutual-exclusion on /round/new, no scope/test drift). qa PASS (lint/tsc/build + voice 278/278 on de5d392; Playwright elementFromPoint at the orb center now hits the overlay/scrim not the orb button on PlayerModal + CourseSearch LIST mode + VRS backdrop). designer APPROVE (PlayerModal + CourseSearch list + VRS wide-viewport verified via hit-test+screenshot; omnipresent-orb identity/one-mic intact). All three z=50 ties resolved; tap-routing corrected on every surface including map mode. NOTE: the designer surfaced a DISTINCT residual (not a z-tie): CourseSearch MAP mode sets the frame background transparent, so z52 routes taps to the map but cannot visually OCCLUDE the opaque orb -> the orb still floats over the live map as a non-caddie 'ghost button'. Filed as follow-up caddie-orb-map-mode-ghost (needs orb-suppression, its own plan). Silent/preventive; rides bundle PR #135, no ping.",
+      "resolution": "SHIPPED TO MAIN 2026-07-11 (bundle #135 merged @7b84ac0; owner 'Ship it'; TestFlight v1.1.3 build 202607112239)."
     },
     {
       "id": "caddie-orb-map-mode-ghost",
@@ -159,6 +162,39 @@
       "depends_on": [],
       "why": "AUDIT: ZERO framer-motion/haptics in all 3 tournament screens (owner explicitly asked where to add). Opportunities: FLIP layout re-sort of leaderboard rows on standings change (haptic light on moved row); leader crossfade+haptic success on new leader; overtake underline sweep+haptic medium; tab-bar layoutId pill slide+selection haptic; round active\u2192final stamp; settlement reveal stagger. Designer pass (NORTHSTAR calm \u2014 motion serves clarity, not flash). Files: TournamentPageClient.tsx.",
       "resolution": "SHIPPED TO MAIN 2026-07-11 (bundle #133 merged @4bb474e; owner 'Ship it'; TestFlight v1.0.1312 build 202607111242). Was: done-on-bundle-133 (motion+haptics landed 32c0ab8; strict-green)"
+    },
+    {
+      "id": "tournament-per-round-format",
+      "title": "Per-round game format + stake at tournament setup (not just a single-round-wide setting)",
+      "type": "major",
+      "priority": 2,
+      "risk": "low",
+      "status": "shipped",
+      "depends_on": [],
+      "why": "Lets the golfer pick a game format + stake per TOURNAMENT round (not a single-round-wide setting), so each round in a tournament can play a different format AND the already-tested-but-dormant computeTournamentSettlement gets real data for the first time.",
+      "resolution": "SHIPPED TO MAIN 2026-07-11 (bundle #135 merged @7b84ac0; owner 'Ship it'; TestFlight v1.1.3 build 202607112239). Implemented specs/tournament-per-round-format-plan.md on integration/next @5bfcbb2 (cycle, 2026-07-11): new frontend/src/lib/round-games.ts (buildRoundGames + TOURNAMENT_GAME_OPTIONS), frontend/src/components/GamePicker.tsx (props-driven, extracted from round/new/page.tsx byte-equivalent), NewTournamentRoundClient.tsx new opt-in \"Game · Optional\" card wired into createRound, TournamentPageClient.tsx renders per-round games in the Games tab + fixed Settle-up gate to also fire on per-round-only games. Gates: lint/tsc/voice-278/build clean, round-games+settlement+tournament-standings vitest 63/63. NOTICEABLE, activates the cumulative settlement engine. Note: distinct from the still-open tournament-per-round-format-course item (P3, adds per-round COURSE selection + Alembic schema migration — not built here)."
+    },
+    {
+      "id": "tournament-live-leaderboard",
+      "title": "Tournament live leaderboard — silent refresh on foreground, re-sorts via existing FLIP motion",
+      "type": "major",
+      "priority": 2,
+      "risk": "low",
+      "status": "shipped",
+      "depends_on": [],
+      "why": "AUDIT: NO live tracking — useEffect([id]) loads once; two phones don't see each other's scores without a manual reload.",
+      "resolution": "SHIPPED TO MAIN 2026-07-11 (bundle #135 merged @7b84ac0; owner 'Ship it'; TestFlight v1.1.3 build 202607112239). Implemented specs/tournament-live-leaderboard-plan.md on integration/next @dc542df (cycle, 2026-07-11): TournamentPageClient.tsx refactored load() into fetchAndApply({initial}) — the silent (initial:false) path never blanks the list/touches loading state, keeps last-good state on a null/degraded/thrown fetch, guarded by reqIdRef + refreshInFlightRef single-flight + a 15s throttle; new visibilitychange listener triggers the silent refresh on foreground (mirrors RoundPageClient's weather catch-up pattern). New pure frontend/src/lib/leaderboard-refresh.ts (shouldRefreshLeaderboard + isPlausibleRefresh, 9 deterministic tests). No polling/spinners — flows through the existing FLIP re-sort + haptics. Zero backend change. Gates: lint/tsc/voice-278/build clean, vitest 2186/2186. NOTICEABLE. This is the smaller tournament-live-tracking item still open on the backlog covers a broader (SSE/polling) epic."
+    },
+    {
+      "id": "tournament-settlement-honesty",
+      "title": "Tournament settlement money honesty — kill stableford/wolf stake mirages, stop silent player drops",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "shipped",
+      "depends_on": [],
+      "why": "[[no-fake-data-fallbacks]]: GamePicker showed a $ stake for formats settlement.ts never actually paid out (stableford-$5 returned a fabricated all-zeros ledger instead of an honest \"no money game\" state), and match-play/wolf with the wrong roster size silently dropped players 3+ from a money game the engine can't settle for that roster.",
+      "resolution": "SHIPPED TO MAIN 2026-07-11 (bundle #135 merged @7b84ac0; owner 'Ship it'; TestFlight v1.1.3 build 202607112239). Implemented specs/tournament-settlement-honesty-plan.md on integration/next @1a37556 + reviewer-BLOCKING follow-up @2e17261 (cycle 100, 2026-07-11): settlement.ts exports SETTLEABLE_FORMATS (the exact zero-sum-verified set) as single source of truth, early-returns {} for non-members; round-games.ts derives STAKE_GAME_IDS from it (skins/match/nassau — wolf REMOVED after reviewer falsified computeWolf as not zero-sum, a lone-wolf win fabricated +$6 with zero debits) + ROSTER_REQUIREMENT so an unmet-roster game is SKIPPED not silently truncated; GamePicker.tsx disables unmet-requirement rows with honest sub-copy, shows \"No money on this one — nothing to settle.\" for non-settleable formats; TournamentPageClient/LeaderboardSheet read-side chips gated the same way. New property test in settlement.test.ts iterates SETTLEABLE_FORMATS asserting zero-sum on a real decided round (the guard that would have caught the wolf bug at review time). Gates: lint/tsc/voice-278/build clean, vitest 2218/2218 (85/85 in the 3 touched suites), backend ruff clean (no backend files touched). NOTICEABLE — stake picker behavior changed. True zero-sum wolf transfers remain a deferred follow-up (tournament-money-format-completion, on the live queue)."
     },
     {
       "id": "teetime-availability-everywhere",

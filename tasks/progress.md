@@ -3,6 +3,43 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## Bundle #135 SHIPPED — 2026-07-11 (owner "Ship #135 now (v1.1.3)")
+Owner-authorized merge to `main`. Pre-flight re-verified before touching anything: `integration/next`
+head `8bb915d` unchanged since approval, PR #135 OPEN+MERGEABLE, both required gates SUCCESS.
+1. **VERSION bumped 1.1.2 → 1.1.3** on `integration/next` (commit `18d2fd8`), pushed; re-confirmed both
+   required gates SUCCESS on the new head before merging (Frontend + Backend).
+2. **Retitled + merged PR #135 → main**: "Bundle #135: tournament (per-round formats + live leaderboard
+   + settlement honesty) + orb/sheet tap-fixes (incl. live map surface)." Merge commit **`7b84ac0`**
+   on `main` (`gh pr merge 135 --merge`, no force anywhere). Post-merge CI on `7b84ac0` GREEN (both
+   required gates SUCCESS).
+3. **Backend**: zero backend files in the bundle diff (`git diff --stat` main-prev..7b84ac0 -- backend/`
+   empty) — `Deploy backend (SSM)` correctly did NOT auto-trigger. `https://api.looperapp.org/health` →
+   `{"status":"ok"}`. SSM key-free probe on `i-0826ae70df62d9fe8` (prod `.env`): `VOICE_BOOKING_ENABLED`
+   UNSET → caller stays INERT (Twilio keys present in prod don't matter, gate short-circuits first).
+4. **TestFlight cut from new main** (`bash ops/ios/ship.sh`, `main`@`7b84ac0`, VERSION=1.1.3, no
+   exit-70 needed): **v1.1.3 (build 202607112239)** — "Uploaded v1.1.3 (build 202607112239) to
+   TestFlight." Polled App Store Connect API (JWT ES256, key `QG927KHTXR`) — `processingState: VALID`,
+   not expired, confirmed within ~2 minutes.
+5. **Fresh `integration/next` cut** from new main: `git branch -f integration/next 7b84ac0`, pushed
+   (fast-forward, `18d2fd8..7b84ac0`). New head = `7b84ac061792ee30afb6d3109b8278950e98e192` (== main).
+   Stashes (`stash@{0..2}`) left untouched per instruction.
+6. **Board + backlog**: Product Board card #135 → Shipped (merge SHA `7b84ac0`, TestFlight v1.1.3 build
+   202607112239, 6-item list). `backlog.json` targeted-edited (no json.load/dump, JSON-validated
+   post-edit, 64 items): `player-autocomplete-overlap`, `caddie-orb-sheet-zindex-overlap`,
+   `caddie-orb-z50-ties-audit` flipped `done`→`shipped` + `resolution` added; three new terminal
+   entries added for the tournament work that had no prior backlog.json rows (`tournament-per-round-
+   format`, `tournament-live-leaderboard`, `tournament-settlement-honesty`, all `status: shipped` with
+   full resolution detail sourced from this file's cycle-100 entries) — durable record for work that
+   was dispatched ad hoc rather than off the tracked queue.
+- **6 items shipped**: tournament per-round game formats (activates cumulative settlement), tournament
+  live leaderboard (silent foreground refresh + existing FLIP re-sort), tournament settlement money
+  honesty (stableford/wolf stake mirages killed, match-play/wolf can't silently drop players, wolf
+  stake removed after reviewer falsified a fabricated +$6), add-player Done-button fix (autocomplete
+  overlay no longer covers Done), orb-sheet z-index fix (picker sheets/players modal/VRS scrim), orb
+  z50-ties fix (incl. the live map course-search tap bug from v1.1.2). Known residual NOT in this
+  bundle: `caddie-orb-map-mode-ghost` (orb still visually floats as a ghost button over the transparent
+  map — filed as a follow-up, needs its own plan).
+
 ## caddie-orb-z50-ties — DONE, builder (cycle 103, 2026-07-11, small-UX bug fix / silent)
 Implemented `specs/caddie-orb-z50-ties-plan.md` exactly on `integration/next` @6ff2b0a (off
 84b5719, which was the fable plan commit). This is the follow-up audited/filed by the
