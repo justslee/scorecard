@@ -16233,3 +16233,18 @@ ghost card on the round strip). NO code built, NO migration written (guarded). P
 silent-only (2 validator fixes). NO noticeable item landed this cycle → NO ship, NO owner ping.
 Landed this cycle (SILENT design/record only): specs/tournament-per-round-format-course-plan.md,
 backlog status→blocked, this progress note.
+
+## AWAITING — cycle 121 (tournament-per-round-format-course) BUILD — 2026-07-13
+OWNER UNBLOCKED both gates: (1) migration APPROVED (additive nullable JSONB tournaments.round_courses,
+new revision only — down_revision 013_caller_voice, file 0011_014_tournament_round_courses.py);
+(2) add-round UX APPROVED = the ghost card ("Day N · Course to be drawn") on the tournament round strip →
+/tournament/[id]/round/new. Build = fable spec specs/tournament-per-round-format-course-plan.md §1-§9
+verbatim. Classified NOTICEABLE (first noticeable on PR #140: per-round courses + round-creation entry fix).
+Branch base at dispatch: 35260bd on integration/next (== origin).
+Sequence: builder (on integration/next, commits+pushes, NO per-item PR) -> reviewer(fresh opus, adversarial:
+migration safety additive/reversible/no-lock, byte-identical single-course proof, types sync, no regression
+to per-round formats/standings/settlement/Program) -> qa (all gates state:SUCCESS on pushed head SHA; CI
+backend gate runs migration in postgis) -> designer BLOCKING (Program itinerary + ghost card extend occasion
+language, calm not clutter). On BLOCKING findings -> re-dispatch builder, re-review. Then PR #140 checklist
+(1 NOTICEABLE + 2 silent), progress+backlog updated. NO ship/ping this cycle (accumulate on #140).
+On resume: reconcile from origin/integration/next + builder's actual commits; do NOT re-run finished child.
