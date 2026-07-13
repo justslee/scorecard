@@ -16270,6 +16270,23 @@ replacement_entry) — production code correct, NOT changing it. On builder push
 Frontend + Backend BOTH state:SUCCESS on the NEW head SHA before proceeding. Then PR #140 checklist (1 NOTICEABLE
 + 2 silent) + progress + backlog; NO ship/ping (accumulate on #140).
 
+## DONE — cycle 121 (tournament-per-round-format-course) LANDED on bundle #140 — 2026-07-13
+Feature COMPLETE on integration/next @69e9246 (NOT merged to main — accumulating on bundle #140).
+Owner unblocked both cycle-120 stop-gates (additive migration + ghost-card entry). Built the fable spec verbatim.
+Landed: migration 0011_014_tournament_round_courses (additive nullable JSONB tournaments.round_courses,
+down_revision 013_caller_voice; applied cleanly on postgis in CI); types.ts<->models.py TournamentRoundCourse
+synced; new frontend/src/lib/tournament-course-plan.ts (+ test); setup Program itinerary per-day CourseSearch
+(byte-preserved untouched); round-creation upgraded to CourseSearch + anchor capture + plan pre-fill; ONE dashed
+ghost card on the round strip -> /tournament/view/round/new?id=... (fixes zero-in-app-navigation bug). Byte-identical
+single-course path proven; standings/settlement course-blind (extended tests). Honest follow-up filed
+(tournament-per-course-handicap). VERDICTS: designer DESIGN OK; reviewer(fresh opus) SHIP (1 test-expectation
+blocker found -> fixed in test_routes.py, production code untouched); qa PASS. GATE EVIDENCE: CI on head 69e9246
+(== PR #140 headRefOid) — Frontend gates SUCCESS, Backend gate SUCCESS (the real migration test on postgis),
+E2E smoke advisory SUCCESS. All three green on the pinned head. NOTE (shared-checkout hazard, [[parallel-lanes-use-worktrees]]):
+the builder's staged test fix got captured into eng-lead commit 69e9246 — harmless (correct content landed), builder
+told to stop. PR #140 now = 1 NOTICEABLE (per-round courses + entry fix) + 2 silent validator fixes. NO ship/ping
+this cycle per brief — bundle now READY for a TestFlight build + owner approval on a future eng-lead ship pass.
+
 ## BUILT — cycle 121 (tournament-per-round-format-course) builder pass — 2026-07-13
 Implemented specs/tournament-per-round-format-course-plan.md §1-§9 verbatim on integration/next.
 Migration: backend/migrations/versions/0011_014_tournament_round_courses.py — revision
