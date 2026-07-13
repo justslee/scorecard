@@ -16191,3 +16191,27 @@ BACKLOG: guide-validator-cross-type-number-binding -> done (targeted edit, JSON 
 residual class for the validator; hole-11 non-landing is now stochastic/verbosity-shaped.
 CLASSIFICATION: SILENT (backend validator correctness; regen = prod-data mutation under standing approval,
 already served by live prod). PR #140 stays silent-only. NO ship, NO owner ping (per brief).
+
+## AWAITING — cycle 120 (tournament-per-round-format-course: per-round COURSE) — 2026-07-13
+Branch integration/next @ 1fbe3ce (synced w/ main; PR #140 = 2 silent validator fixes). Clean tree.
+Step 1 owner-feedback check: NO pending approval, NO v1.1.6 field-test comments (#139 card no comments,
+PR #140 no comments). Cleared to build.
+Explore (a9f3c817) mapped the flow — KEY FINDINGS:
+  - Per-round FORMAT is NOT on Tournament; stored in `games` table keyed by round_id, chosen at
+    round-creation (NewTournamentRoundClient.handleStartRound). Tournament DB row has round_ids,
+    player_ids, num_rounds only — NO games/course/plan column.
+  - Per-round COURSE already persists per-round on the `rounds` table (course_id/name + anchor
+    course_lat/lng/mapped_course_id, migration 0009_012). So the ROUND side needs NO migration.
+  - GAP: tournament round-creation uses a legacy <select> (lines ~700-709) that does NOT capture
+    the anchor (courseLat/Lng/mappedCourseId) — unlike round/new which spreads anchorFromSelectedCourse.
+    Must upgrade to unified CourseSearch (frontend/src/components/CourseSearch.tsx).
+  - Program setup page (frontend/src/app/tournament/new/page.tsx) shows non-interactive itinerary
+    "Day N — Course to be drawn" (lines 432-479). Feature = make that per-day course assignable.
+  - OPEN ARCHITECTURE Q (fable Plan to adjudicate): where does the per-round course PLAN persist so
+    it survives setup->draw and pre-fills round N? Tournament has no plan storage. Options: (a) new
+    nullable JSONB col on tournaments = MIGRATION (guarded -> design+STOP+report), (b) reduced
+    no-migration design. Prefer no-migration; single-course path MUST stay byte-identical; standings
+    (tournament-standings.ts:81) already course-independent (per-round r.holes) = no math regression.
+AWAITING: fable Plan (specs/tournament-per-round-format-course-plan.md) -> migration verdict + design.
+  Then builder -> reviewer(fresh) -> qa(gates SUCCESS on head SHA) -> designer(BLOCKING, Program page).
+  Land on integration/next, PR #140 checklist (would become 1st NOTICEABLE item). NO ship/ping this cycle.
