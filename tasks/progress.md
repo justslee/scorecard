@@ -16357,7 +16357,11 @@ two-file pattern) — NO migration (plan §63 defers a DB table). Metric read vi
 report mode (operational, no new API/dashboard). Canary: pure shape-diff fn (CI-testable on
 good+drifted fixtures) + live-fetch script entrypoint (manual/cron, never CI).
 
-## AWAITING — cycle 122 Plan (fable) → specs/teetime-s4f-coverage-flywheel-plan.md
-Awaiting the Plan agent (fable) to confirm §2b/§9 shape, telemetry seam, no-migration storage,
-metric definition + read surface, canary design. On return → dispatch builder to implement on
-integration/next; then reviewer(fresh) + qa. Tree clean at 2d7c851; nothing uncommitted.
+## AWAITING — cycle 122 builder → implement specs/teetime-s4f-coverage-flywheel-plan.md
+Fable plan DONE + committed. Verdict: NO migration (file store reuse). Seam confirmed:
+router_provider._slots_for_course records a SearchOutcome per branch, fire-and-forget. New
+modules: search_telemetry.py (store+coverage_summary), schema_canary.py (pure check_shape),
+scripts/coverage_flywheel.py (report|sweep|canary). Awaiting builder on integration/next.
+On builder DONE → reviewer(fresh opus, correctness+search-path-inert+ethics) + qa (ruff +
+pytest non-DB local; CI backend gate SUCCESS on pushed head SHA). Then add to PR #140 (SILENT).
+NO ship/ping this cycle.
