@@ -16343,3 +16343,21 @@ Pushed to integration/next. NEXT: reviewer (fresh, adversarial) -> qa (gates on 
 backend gate incl. migration on postgis) -> designer (BLOCKING: Program itinerary + ghost card).
 NO ship/ping this cycle (builder does not self-approve; accumulates on PR #140 as the first
 NOTICEABLE item alongside the 2 already-silent validator fixes).
+
+## Cycle 122 — teetime-s4f-coverage-flywheel (SILENT infra, bundle-rider on PR #140)
+Step 1 owner-feedback check: PR #140 (only open bundle, 1 noticeable + 2 silent) has ZERO
+comments; prior bundles (#137 and earlier) all Shipped; no Needs-Review card for #140 yet
+(not sent for approval). No pending owner feedback → proceeded to S4f. NO ship/ping this cycle.
+
+Confirmed telemetry seam: backend/app/services/tee_times/router_provider.py `_slots_for_course` —
+`cap is None` (no capability row = the probe-feed queue) and the no-adapter/engine-disabled
+branch; per-course, must be fire-and-forget (never slow/fail search). Storage direction: file-
+backed JSON store under backend/data/ (match FileAvailabilityCallCacheStore / capability_store
+two-file pattern) — NO migration (plan §63 defers a DB table). Metric read via probe-script
+report mode (operational, no new API/dashboard). Canary: pure shape-diff fn (CI-testable on
+good+drifted fixtures) + live-fetch script entrypoint (manual/cron, never CI).
+
+## AWAITING — cycle 122 Plan (fable) → specs/teetime-s4f-coverage-flywheel-plan.md
+Awaiting the Plan agent (fable) to confirm §2b/§9 shape, telemetry seam, no-migration storage,
+metric definition + read surface, canary design. On return → dispatch builder to implement on
+integration/next; then reviewer(fresh) + qa. Tree clean at 2d7c851; nothing uncommitted.
