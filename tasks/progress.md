@@ -16018,3 +16018,10 @@ worktree (/Users/justinlee/projects/.scorecard-ship-v116) per coordination — t
 in-flight builder/reviewer/qa lanes in their own worktrees are left to finish naturally (not killed).
 Resume = owner re-runs /loop (or equivalent) explicitly; do not auto-restart the eng-lead cycle until
 that happens. Next agent waking up: check for this note before dispatching new cycles.
+
+## AWAITING — cycle 118 (2026-07-13): guide-validator-cross-side-binding fix
+Branch integration/next @a1d1648 (synced w/ main@2f7f486; no open bundle PR — open fresh when this lands).
+Owner feedback check: board #139 (Shipped) + diagnosed card comment threads BOTH empty; no v1.1.6 feedback; owner just resumed loop → proceed.
+DEFECT (cycle-116 diagnosis, high-confidence): _has_side_flip number-binding (backend/app/caddie/guide_writer.py ~L584-649) binds ALL plausible numbers within _SIDE_WINDOW_WORDS(6) of a hazard keyword to that keyword's SINGLE nearest_side. On a both-sides multi-bunker sentence ("the 245-left bunker and the 270/325 right-side bunkers", BLACK 11 bunker L245/415 R270/325/420) the first "bunker" (nearest_side=left) sweeps up right-clause 270/325 and requires them on LEFT → false-reject of a fully-grounded guide → Black 11 stuck honest-empty.
+FIX DIRECTION (fable-plan gated; FORBIDDEN to inline-fix): bind each number to the hazard-side phrase it grammatically belongs to (clause segmentation / nearest side-marker within its clause / explicit "N-left"/"right-side N" patterns), NOT proximity to the keyword's nearest_side. MUST NOT open a bypass: a genuine wrong-side smuggle ("bunker left at 245" when 245 is only a right hazard) still rejects; the cycle-115 co-located-false-number bypass ("265-yard right bunker sits 390") still rejects.
+STATE: dispatching fable Plan → builder(fix+tests) → reviewer(fresh, bypass attacks) → qa(gates SUCCESS on pushed head) → on-box regen Black 7+11 (sanctioned, 2 holes, one bounded pass) → land + fresh bundle PR. On death: resume from integration/next HEAD + this note; do NOT re-run finished children.
