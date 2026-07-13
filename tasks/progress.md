@@ -3,6 +3,50 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## CYCLE 118 DONE — guide-validator cross-side number binding fix (2026-07-13, backend-only, SILENT-ish)
+Implemented specs/guide-validator-cross-side-binding-plan.md (fable-approved) exactly, on
+integration/next (built on top of 63d26d1 which added the plan doc). ONE file changed:
+backend/app/caddie/guide_writer.py — `_has_side_flip` now attributes EACH bound yardage number
+to the side word grammatically nearest to THAT number among the hazard keyword's own
+(window-filtered, opposition-excluded) candidates (new `_attributed_side` helper), not to the
+keyword's single `nearest_side`. A distance tie between candidates of DIFFERENT side values
+still collapses to `nearest_side` (fail-closed, reproduces cycle-115 semantics exactly — no
+previously-rejected fabrication becomes acceptable). Added a NEW unconditional side-only check
+(keyword's own `nearest_side` vs `_acceptable_sides`, now run always, not just when no numbers
+bind) to close a reattribution escape the per-number change would otherwise open ("the right
+bunker and the 245 left bunker" on a left-only hole); per the plan's §2a proof this addition is
+behaviorally free on every previously-passing input. Steps 1-6 (window, opposition exclusion,
+hazard/side-first span logic, `nearest_side` computation) are byte-for-byte unchanged;
+`_carry_runs`/`_side_and_carry_supported`/`_acceptable_sides`/constants/patterns/type
+scan/injection scan/structural checks all untouched. Updated the `_has_side_flip` docstring, the
+L620-633 comment block (extended, cycle-115 rationale kept verbatim), and `validate_guide` rule-6
+docstring to describe the new attribution + unconditional side check.
+
+Fixes the false-reject that kept Bethpage BLACK 11's honest, correctly-grounded guide ("the
+245-left bunker and the 270/325 right-side bunkers", real geometry bunker L{245,415}
+R{270,325,420}) permanently rejected — every number in the text was grounded on its TRUE side,
+but the old single-nearest_side binding cross-checked 270/325 against "left" and (mirror
+occurrence) 245 against "right", rejecting the whole honest guide forever.
+
+Tests: added the plan's FULL §5 matrix to backend/tests/test_guide_writer.py — 23 new tests (R1,
+R4, R5, R6, R7 reject cases; P1-P5 pass cases; R2/R3/R8/R9 and P7-P12 as unedited pins of the
+existing regression tests they mirror; 3 direct `_attributed_side` helper tests) plus the new
+`_black11_like_both_sides()` fixture. Verified against the live predicates before writing
+assertions (ran validate_guide directly for every new case). Zero existing test lines touched
+(git diff confirms pure addition, 274 insertions / 0 deletions on the test file).
+
+Gates (backend/, no DB, offline): `ruff check .` clean. `uv run pytest tests/test_guide_writer.py
+tests/test_bethpage_validation.py tests/test_course_guides.py tests/test_regen_rejected_guides.py
+tests/test_guide_read_revalidation.py tests/test_session_guide_revalidate.py
+tests/test_guide_consumption.py` → 160 passed (137 baseline + 23 new), 0 failed, 0 flips.
+
+Committed to integration/next @12cec56 and pushed. Backend-only, no shared-shape (types.ts /
+models.py) change, no new UI — SILENT-ish per the plan (restores a previously honest-empty caddie
+guide once regenerated; regen of BLACK 7/11 is a separate on-box eng-lead step per the existing
+regen_rejected_guides.py runbook, out of this commit's scope, black UUID
+2b8caab5-2c55-5752-8cda-336c3a396dac). No owner ping — routine silent backend fix, rides the
+bundle.
+
 ## CYCLE 117 — woods/tree ingest: PREMISE FALSIFIED, brain already LIVE (2026-07-13, NO code change)
 Loop resumed by owner to do "woods/tree-polygon ingest to activate the corridor brain on Bethpage."
 Owner-feedback check FIRST: board card #139 (v1.1.6, Shipped) has NO comments; no newer card; PR #139
