@@ -16215,3 +16215,21 @@ Explore (a9f3c817) mapped the flow — KEY FINDINGS:
 AWAITING: fable Plan (specs/tournament-per-round-format-course-plan.md) -> migration verdict + design.
   Then builder -> reviewer(fresh) -> qa(gates SUCCESS on head SHA) -> designer(BLOCKING, Program page).
   Land on integration/next, PR #140 checklist (would become 1st NOTICEABLE item). NO ship/ping this cycle.
+
+## BLOCKED — cycle 120 (tournament-per-round-format-course) — 2026-07-13
+NOT BUILT. fable plan (specs/tournament-per-round-format-course-plan.md) verdict: MIGRATION REQUIRED —
+one additive nullable JSONB col `tournaments.round_courses`. The per-day course PLAN (courses for rounds
+that don't exist yet) has no home on the Tournament row; no-migration alts REJECTED with sound reasoning
+(localStorage evaporates on TestFlight reinstall = fake-persistence per [[no-fake-data-fallbacks]]; eager
+round pre-creation breaks byte-identical + per-round-FORMAT seam + round-strip/standings). Per brief +
+CLAUDE.md, migrations are guarded → designed the migration (§1) but did NOT write it; STOP + report.
+SECOND blocker discovered + verified: NO in-app navigation reaches /tournament/[id]/round/new
+(NewTournamentRoundClient imported ONLY by its own page.tsx; TournamentPageClient nav = home + open-existing
+only, no add-round affordance; standalone /round/new has no tournamentId). So the tournament round-creation
+surface — where shipped-v1.1.5 per-round FORMAT lives — is reachable only by direct URL, not from the app.
+OWNER DECISIONS NEEDED (recorded on backlog item, status→blocked): (1) approve the additive migration;
+(2) product-shape: how rounds get added to a tournament (plan proposes a calm 'Day N · Course to be drawn'
+ghost card on the round strip). NO code built, NO migration written (guarded). PR #140 unchanged =
+silent-only (2 validator fixes). NO noticeable item landed this cycle → NO ship, NO owner ping.
+Landed this cycle (SILENT design/record only): specs/tournament-per-round-format-course-plan.md,
+backlog status→blocked, this progress note.
