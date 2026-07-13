@@ -29,6 +29,7 @@ import pytest
 from app.caddie.guide_writer import (
     _MAX_FIELD_CHARS,
     _attributed_side,
+    _owns_number,
     _side_and_carry_supported,
     build_ground_truth_block,
     research_hole_guide,
@@ -1136,3 +1137,210 @@ def test_attributed_side_different_value_tie_collapses_to_nearest_side():
     candidates = [(0, "left"), (2, "right")]
     assert _attributed_side(1, candidates, "right") == "right"
     assert _attributed_side(1, candidates, "left") == "left"
+
+
+# ── Cross-type number binding (guide-validator-cross-type-number-binding-plan.md) ──
+#
+# THE incident (Bethpage BLACK 11 regen candidate, cycle-118 record): a
+# trees carry co-occurs with a "bunkers" phrase in one sentence, and the
+# real trees carry lands inside the "bunkers" keyword's 6-word window —
+# under the old per-type-only binding, that number was checked against
+# BUNKER geometry (wrong) instead of TREES geometry (its true owner), false-
+# rejecting an honest guide. This extends per-number binding across types:
+# a number is checked against the hazard-keyword occurrence nearest to it,
+# unless a strictly-nearer different-type occurrence exists (in which case
+# it's re-routed there instead); a cross-type distance TIE checks every
+# tied type (fail-closed). `trees` gets an ownership-only binding pattern
+# (no keyword in `_HAZARD_PATTERNS`/the type scan) so it can own and check
+# re-routed numbers without ever becoming a rejectable type claim itself.
+
+
+def _black11_like_with_trees() -> list[Hazard]:
+    return _black11_like_both_sides() + [
+        Hazard(type="trees", side="right", line_side="right", carry_yards=150),
+        Hazard(type="trees", side="right", line_side="right", carry_yards=190),
+    ]
+
+
+# ── MUST PASS ────────────────────────────────────────────────────────────
+
+
+def test_cross_type_p1_observed_trees_carry_in_bunker_window_now_passes():
+    """THE incident shape, verbatim. Tokens: lay(0) up(1) short(2) of(3)
+    the(4) bunkers,(5) with(6) trees(7) right(8) at(9) 190(10). 190 is
+    distance 5 from "bunkers"@5 (old code: checked vs bunker -> rejected,
+    since 190 isn't a bunker carry) but distance 3 from "trees"@7 -> owned
+    by trees -> (trees, right, 190) falls in the unconditional trees bridge
+    [125,215] -> passes."""
+    guide = _guide(
+        miss_side="Lay up short of the bunkers, with trees right at 190."
+    )
+    assert validate_guide(guide, _black11_like_with_trees()) is not None
+
+
+def test_cross_type_p2_mirror_order_passes():
+    """Order-independence: swapping clause order changes the word
+    distances such that 190 (now near "trees"@0, dist 3) is OUT of
+    "bunkers"@10's 6-word window (dist 7) entirely -> no cross-type
+    conflict, and the re-routing gate correctly leaves 190 unvalidated
+    (no checker-type occurrence ever had it in-window) -> passes, same
+    verdict as the original order."""
+    guide = _guide(
+        miss_side="Trees right at 190, then lay up short of the bunkers."
+    )
+    assert validate_guide(guide, _black11_like_with_trees()) is not None
+
+
+def test_cross_type_p3_combined_side_and_type_composition_passes():
+    """Full side x type composition. Tokens: the(0) 245-left(1) bunker(2)
+    and(3) the(4) 270/325(5) right-side(6) bunkers,(7) trees(8) right(9)
+    at(10) 190(11). 245 is owned by "bunker"@2 (attributed left, dist 0).
+    270/325@5 tie "bunker"@2 (dist 3) and "trees"@8 (dist 3) -> not a
+    steal -> still checked at BOTH bunker occurrences (same-type "bunker"@7
+    is dist 2, strictly nearer than trees@8's dist 3, so trees does NOT
+    check 270/325); attributed right at both bunker occurrences -> in the
+    bridged bunker-right run [245,350]. 190 is distance 4 from "bunkers"@7
+    and distance 3 from "trees"@8 -> owned by trees, re-routing gate
+    satisfied by "bunkers"@7 being in-window -> (trees, right, 190) in
+    [125,215]. Everything grounded -> passes."""
+    guide = _guide(
+        miss_side=(
+            "the 245-left bunker and the 270/325 right-side bunkers, "
+            "trees right at 190"
+        )
+    )
+    assert validate_guide(guide, _black11_like_with_trees()) is not None
+
+
+def test_cross_type_p4_no_trees_keyword_no_behavior_change_passes():
+    """cycle-118 P1 sentence, unedited, but on the richer trees+bunker
+    geometry: no trees KEYWORD appears in the text, so the trees type
+    contributes zero occurrences -> zero steals -> the cycle-118 verdict is
+    preserved verbatim even though trees geometry is now present."""
+    guide = _guide(
+        miss_side="the 245-left bunker and the 270/325 right-side bunkers"
+    )
+    assert validate_guide(guide, _black11_like_with_trees()) is not None
+
+
+# ── MUST REJECT ──────────────────────────────────────────────────────────
+
+
+def test_cross_type_r1_fabricated_number_still_rejects_at_owner():
+    """500 is stolen from "bunkers" by the strictly-nearer "trees" (same
+    token positions as P1, only the number differs) and fails against
+    trees' [125,215] run -> a fabricated number rejects wherever it ends
+    up checked (Lemma 1: the globally-nearest occurrence always checks)."""
+    guide = _guide(
+        miss_side="Lay up short of the bunkers, with trees right at 500."
+    )
+    assert validate_guide(guide, _black11_like_with_trees()) is None
+
+
+def test_cross_type_r2_wrong_type_claimed_number_rejects():
+    """Invariant 2: no trees keyword anywhere in the field -> 190 is owned
+    by "bunker"@2 (the only occurrence) -> checked as (bunker, right, 190)
+    -> outside both bunker-right runs [245,350]/[395,445] -> rejects, even
+    though 190 is a real trees carry on this hole. Claiming a trees number
+    for a bunker still rejects; a steal requires an EXPLICIT, strictly-
+    nearer, present-type keyword in the text."""
+    guide = _guide(miss_side="The right bunker at 190 catches drives.")
+    assert validate_guide(guide, _black11_like_with_trees()) is None
+
+
+def test_cross_type_r3_stolen_number_unsupported_by_owner_rejects():
+    """Same shape as P1, but 270 is a REAL bunker-right carry, NOT a trees
+    carry. It's still stolen by the strictly-nearer "trees" occurrence
+    (dist 3 vs bunkers' dist 5) and checked against trees geometry
+    ([125,215]) instead -> 270 isn't in that run -> rejects. This is the
+    accept->reject direction of Lemma 3: a more-correct proximity-grammar
+    rejection, not a masking of the number elsewhere."""
+    guide = _guide(
+        miss_side="Lay up short of the bunkers, with trees right at 270."
+    )
+    assert validate_guide(guide, _black11_like_with_trees()) is None
+
+
+def test_cross_type_r4_cross_type_tie_checks_every_tied_type():
+    """Tokens: the(0) bunkers(1) at(2) 200(3) near(4) trees(5) right(6).
+    200 is distance 2 from BOTH "bunkers"@1 and "trees"@5 -> a genuine
+    cross-type tie -> not a steal -> still checked at "bunkers"@1 against
+    bunker geometry (real bunker-right runs [245,350]) -> 200 isn't in that
+    run -> rejects, exactly as old single-type binding would have
+    (invariant 4: ties fail closed, never launder an accept)."""
+    guide = _guide(miss_side="The bunkers at 200 near trees right.")
+    hazards = [
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=270),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=325),
+        Hazard(type="trees", side="right", line_side="right", carry_yards=200),
+    ]
+    assert validate_guide(guide, hazards) is None
+
+
+def test_cross_type_r5_grounded_trees_phrase_does_not_launder_victims_own_claims():
+    """The trees steal of 190 would succeed (real trees-right carry), but
+    the bunker keyword's own claimed side is "left" (nearest_side, real
+    geometry is RIGHT-only) -> the unconditional side-only check on
+    "bunkers"@2 fires and rejects independently of any number pair -> a
+    grounded trees phrase elsewhere in the sentence can never launder the
+    victim occurrence's own flipped side claim (§3.5)."""
+    guide = _guide(
+        miss_side="the left bunkers at 245, with trees right at 190"
+    )
+    hazards = [
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=270),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=325),
+        Hazard(type="trees", side="right", line_side="right", carry_yards=150),
+        Hazard(type="trees", side="right", line_side="right", carry_yards=190),
+    ]
+    assert validate_guide(guide, hazards) is None
+
+
+def test_cross_type_r6_sideless_trees_phrase_cannot_steal():
+    """"Carry the trees at 190" has no side word within its 6-word window
+    (the only side word, "right", sits 7 words after "trees") -> the trees
+    occurrence is candidates-less and is dropped -> 190 stays checked
+    against "bunkers"@8 (bunker-right runs [245,350]/[395,445]) -> rejects,
+    pinning the fail-closed residual: a phrase that performs no check must
+    never take a number away from one that does (§3.6 / plan §5.1)."""
+    guide = _guide(
+        miss_side="Carry the trees at 190, short of the bunkers right at 270."
+    )
+    assert validate_guide(guide, _black11_like_with_trees()) is None
+
+
+def test_cross_type_r7_absent_type_keyword_cannot_shelter():
+    """"water" has no hazard of that type on this hole at all -> dead at
+    the type-only scan (rule 2, before `_has_side_flip` even runs), exactly
+    as before this plan -> also pins that an absent type never enters
+    `occurrences` and so can never shelter a number from a steal."""
+    guide = _guide(
+        miss_side="Bunkers right at 270, water right at 190 catch approach shots."
+    )
+    hazards = [Hazard(type="bunker", side="right", line_side="right", carry_yards=270)]
+    assert validate_guide(guide, hazards) is None
+
+
+# ── `_owns_number` direct-helper tests ──────────────────────────────────
+
+
+def test_owns_number_strictly_nearer_different_type_steals():
+    occurrences = [("bunker", 2, [], "x"), ("trees", 4, [], "x")]  # d=3 vs d=1
+    assert _owns_number(5, 2, "bunker", occurrences) is False
+
+
+def test_owns_number_cross_type_tie_is_not_a_steal():
+    occurrences = [("bunker", 2, [], "x"), ("trees", 8, [], "x")]  # d=3 vs d=3
+    assert _owns_number(5, 2, "bunker", occurrences) is True
+
+
+def test_owns_number_same_type_never_shadows():
+    """A nearer occurrence of the SAME type is excluded from the steal
+    predicate entirely -- it never shadows another same-type occurrence."""
+    occurrences = [("bunker", 2, [], "x"), ("bunker", 4, [], "x")]
+    assert _owns_number(5, 2, "bunker", occurrences) is True
+
+
+def test_owns_number_empty_different_type_field_owns():
+    occurrences = [("trees", 0, [], "x")]
+    assert _owns_number(3, 0, "trees", occurrences) is True
