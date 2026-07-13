@@ -16124,3 +16124,31 @@ for a type still rejects when that type's keyword is the number's nearest.
 AWAITING: Fable plan (specs/guide-validator-cross-type-number-binding-plan.md). NEXT: builder on plan ->
 reviewer(fresh) -> qa gates on pushed SHA -> regen Black 7+11 (SSM, bounded) -> land on integration/next,
 add to PR #140 checklist. Baseline pinned: tests/test_guide_writer.py 97 pass / 160 validator-suite total.
+
+## DONE — cycle 119 builder (guide-validator-cross-type-number-binding) — 2026-07-13
+Implemented the plan exactly, on integration/next (commit d4c3db5, pushed). backend/app/caddie/guide_writer.py
+only: added `_TREES_BINDING_PATTERN`/`_NUMBER_BINDING_PATTERNS` (ownership-only pattern for trees — NOT added
+to `_HAZARD_KEYWORD_TO_TYPE`/`_HAZARD_PATTERNS`, so `validate_guide`'s type scan is byte-identical) and
+`_owns_number` (strictly-nearer different-type occurrence steals; cross-type tie is NOT a steal; same-type
+never shadows). Restructured `_has_side_flip`'s per-field body: build ALL present-type checking occurrences
+once (candidates/nearest_side computation relocated verbatim), then loop occurrences — checker types
+(water/bunker/ob) still run the unconditional cycle-118 side-only check, `trees` (ownership-only) does not;
+each in-window number skips via `_owns_number` if stolen, and a re-routed trees number is validated only when
+some checker-type occurrence would have checked it too (re-routing-only gate — a number no checker-type
+window ever reached stays exactly as unvalidated as before). Docstrings extended (not replaced): CROSS-TYPE
+paragraph added to `_has_side_flip` after the cross-side paragraph; L688-716 comment block extended in place;
+`validate_guide` rule 6 gets two added sentences. `_has_side_flip`/`validate_guide` signatures unchanged.
+Verified every planned test's token-index math against the live regexes with a throwaway script BEFORE
+writing the tests (all matched plan predictions, including the P2 "mirror order" case where the number falls
+fully out of the bunker window so nothing checks it either way — still nets a PASS, just via a different path
+than the plan's one-line gloss). Added 15 tests to test_guide_writer.py (P1-P4 must-pass, R1-R7 must-reject,
+4 `_owns_number` unit tests) — pure-add, verified via `git diff --numstat` (208 insertions, 0 deletions).
+GATES (local, no DB): `ruff check .` clean. `uv run pytest` on the 7-file validator suite (test_guide_writer,
+test_bethpage_validation, test_course_guides, test_regen_rejected_guides, test_guide_read_revalidation,
+test_session_guide_revalidate, test_guide_consumption) = 175/175 (160 baseline + 15 new, 0 modified, 0 flips);
+test_guide_writer.py alone 112/112 (97 baseline + 15 new). `git diff --stat` touches only
+backend/app/caddie/guide_writer.py + backend/tests/test_guide_writer.py, as scoped.
+CLASSIFICATION: SILENT (backend validator correctness; no shared shapes/API surface changed; no frontend
+gate implicated per plan §6). NEXT: reviewer (fresh context) -> qa gates on pushed SHA d4c3db5 -> on-box
+regen Black 7+11 (SSM, bounded, per plan §4 gate 4 — eng-lead scope) -> fold into PR #140 checklist. NO ship,
+NO owner ping (silent work, per brief).
