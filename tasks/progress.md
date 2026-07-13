@@ -16109,3 +16109,18 @@ sub-classes now closed; two residuals remain).
 CLASSIFICATION: SILENT (backend validator correctness; no app UI change; 7/11 unchanged on device this pass).
 Fresh bundle PR (integration/next -> main) opened this cycle (no open bundle PR existed at start, a1d1648).
 NO ship, NO owner ping (per brief + silent work).
+
+## AWAITING — cycle 119 (guide-validator-cross-type-number-binding) — 2026-07-13
+Synced integration/next (main@2f7f486, no new commits); no owner v1.1.6 feedback on board/PR #140.
+PR #140 = open silent bundle (cross-side fix only). This cycle: TYPE dimension of the binding bug.
+DEFECT: `_has_side_flip` binds every in-window number to the current canonical_type's keyword and checks
+it vs THAT type's geometry (guide_writer.py ~717-729). A number grammatically belonging to a DIFFERENT
+present type's phrase (trees carry "190 right" near a "bunkers" window) is checked vs bunker geometry ->
+false-reject of grounded text. Fix = mirror `_attributed_side` for TYPES: attribute each number to the
+NEAREST hazard-keyword occurrence (across all present types); check it only vs that occurrence's type;
+cross-type distance TIE collapses fail-closed (checked vs every tied type = reproduces old, no new accept).
+No bypass: every number still checked vs >=1 type; fabricated numbers reject wherever checked; a false claim
+for a type still rejects when that type's keyword is the number's nearest.
+AWAITING: Fable plan (specs/guide-validator-cross-type-number-binding-plan.md). NEXT: builder on plan ->
+reviewer(fresh) -> qa gates on pushed SHA -> regen Black 7+11 (SSM, bounded) -> land on integration/next,
+add to PR #140 checklist. Baseline pinned: tests/test_guide_writer.py 97 pass / 160 validator-suite total.
