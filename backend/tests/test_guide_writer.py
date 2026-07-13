@@ -28,6 +28,7 @@ import pytest
 
 from app.caddie.guide_writer import (
     _MAX_FIELD_CHARS,
+    _attributed_side,
     _side_and_carry_supported,
     build_ground_truth_block,
     research_hole_guide,
@@ -862,3 +863,276 @@ def test_validate_guide_accepts_common_mistake_at_the_cap():
     """LOW-3 boundary: an item exactly at the cap still passes."""
     guide = _guide(common_mistakes=["x" * _MAX_FIELD_CHARS])
     assert validate_guide(guide, []) is not None
+
+
+# ── Cross-side number binding (guide-validator-cross-side-binding-plan.md) ──
+#
+# THE incident: Bethpage BLACK 11 (par 4), real geometry bunker LEFT
+# {245, 415} / RIGHT {270, 325, 420}. Grounded, honest text ("the 245-left
+# bunker and the 270/325 right-side bunkers") false-rejected forever under
+# the old "bind ALL in-window numbers to the keyword's single `nearest_side`"
+# rule: the "bunker" keyword's own nearest_side is "left", so 270/325 got
+# checked as (bunker, left, 270/325) and failed; the mirror "bunkers"
+# keyword's nearest_side is "right", so 245 got checked as (bunker, right,
+# 245) and failed too — even though every number in the text is grounded on
+# its TRUE side. Per-number attribution (`_attributed_side`) checks each
+# number against the side word nearest to THAT number instead, closing the
+# false-reject while a distance TIE between different side values still
+# collapses to `nearest_side` (fail-closed to cycle-115 semantics), so no
+# previously-rejected fabrication becomes acceptable.
+
+
+def _black11_like_both_sides() -> list[Hazard]:
+    return [
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=245),
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=415),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=270),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=325),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=420),
+    ]
+
+
+# ── MUST REJECT ──────────────────────────────────────────────────────────
+
+
+def test_cross_side_r1_true_side_flip_with_number_still_rejects():
+    """A single side word bound to a number: 245 attributes to "left" (the
+    only candidate) but the real bunker on this hole is RIGHT-only — both
+    the pair check and the now-unconditional side-only check fail."""
+    guide = _guide(miss_side="bunker left at 245 catches drives")
+    hazards = [Hazard(type="bunker", side="right", line_side="right", carry_yards=245)]
+    assert validate_guide(guide, hazards) is None
+
+
+def test_cross_side_r2_cycle_115_co_located_tie_break_laundering_unedited():
+    """Existing test (`test_carry_check_rejects_tie_break_laundering`) as the
+    plan's R2 row, unedited: single side word in the field -> attribution is
+    identical to `nearest_side` for every number -> old behavior verbatim."""
+    guide = _guide(miss_side="The 265-yard right bunker sits 390 off the tee.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is None
+
+
+def test_cross_side_r3_number_stuffing_bypass_unedited():
+    """Existing test (`test_carry_check_rejects_number_stuffing_bypass`) as
+    the plan's R3 row, unedited: the second keyword occurrence's own 390
+    attributes to "left" (the only nearby side word for that occurrence) and
+    fails against the real right-only-at-390 geometry."""
+    guide = _guide(
+        miss_side="The right bunker at 390 is fine; the left bunker at 390 is not."
+    )
+    assert validate_guide(guide, _hole4_like_bunkers()) is None
+
+
+def test_cross_side_r4_wrong_side_number_in_legitimate_both_sides_sentence():
+    """Both-sided sentence shape, but 300 is WRONG for the left bunker (real
+    left runs are [220,270] and [390,440] once carry-span bridging is
+    applied) — 300 attributes to "left" and correctly still rejects."""
+    guide = _guide(miss_side="the 300-left bunker and the 270 right-side bunkers")
+    assert validate_guide(guide, _black11_like_both_sides()) is None
+
+
+def test_cross_side_r5_cross_clause_smuggle_still_rejects():
+    """380 attributes to "right" (nearest side word) but the real right
+    bunkers are at 270/325/420 — a bridged run [270,350] and a lone-point
+    run [420] (95y gap, not bridged) — 380 falls in neither window."""
+    guide = _guide(miss_side="the 245-left bunker, and a bunker at 380 right")
+    assert validate_guide(guide, _black11_like_both_sides()) is None
+
+
+def test_cross_side_r6_reattribution_escape_pinned_by_unconditional_side_check():
+    """THE case the new unconditional side-only check exists for: 245
+    attributes to "left" and passes (real bunker is left-only at 245), but
+    the keyword's OWN `nearest_side` ("bunker"@2 -> "right", distance 1) is a
+    real side-flip that no per-number pair ever checks. Without step 7's
+    unconditional check this would wrongly PASS."""
+    guide = _guide(miss_side="the right bunker and the 245 left bunker")
+    hazards = [Hazard(type="bunker", side="left", line_side="left", carry_yards=245)]
+    assert validate_guide(guide, hazards) is None
+
+
+def test_cross_side_r7_distance_tie_collapses_to_nearest_side_and_rejects():
+    """"left"@0 and "right"@4" are both distance 2 from 390@2 — a genuine
+    tie between DIFFERENT side values collapses to `nearest_side`
+    ("bunker"@5 -> nearest is "right"@4, distance 1). Checked pair is
+    (right, 390); real right bunker is at 200 -> rejects, exactly as the old
+    all-numbers-on-nearest_side code would have."""
+    guide = _guide(miss_side="left rough 390 by right bunker")
+    hazards = [
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=390),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=200),
+    ]
+    assert validate_guide(guide, hazards) is None
+
+
+def test_cross_side_r8_side_with_wrong_distance_unedited():
+    """Existing test (`test_carry_check_rejects_side_with_wrong_distance`) as
+    the plan's R8 row, unedited."""
+    guide = _guide(miss_side="The right bunker at 265 catches drives off the tee.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is None
+
+
+def test_cross_side_r9_genuine_gap_fabrication_unedited():
+    """Existing carry-span test
+    (`test_carry_span_rejects_fabricated_carry_in_genuine_bunker_gap`) as the
+    plan's R9 row, unedited."""
+    guide = _guide(miss_side="Carry the right bunker at 300 off the tee.")
+    assert validate_guide(guide, _black7_right_like_bunkers()) is None
+
+
+# ── MUST PASS ────────────────────────────────────────────────────────────
+
+
+def test_cross_side_p1_black11_verbatim_incident_now_passes():
+    """THE incident, verbatim: both hazard-keyword occurrences pass once
+    each number is checked against the side word nearest to IT."""
+    guide = _guide(
+        miss_side="the 245-left bunker and the 270/325 right-side bunkers"
+    )
+    result = validate_guide(guide, _black11_like_both_sides())
+    assert result is not None
+    assert result.miss_side == guide.miss_side
+
+
+def test_cross_side_p2_black11_mirror_order_passes():
+    """Order-independence: swapping clause order must not change the
+    result."""
+    guide = _guide(
+        miss_side="the 270/325 right-side bunkers and the 245-left bunker"
+    )
+    assert validate_guide(guide, _black11_like_both_sides()) is not None
+
+
+def test_cross_side_p3_black11_embedded_in_longer_sentence_passes():
+    """245 sits at word-distance 6 from "bunkers" (the second keyword) —
+    exactly at the `_SIDE_WINDOW_WORDS` boundary, inclusive."""
+    guide = _guide(
+        play_line=(
+            "Favor the gap between the 245-left bunker and the 270/325 "
+            "right-side bunkers."
+        )
+    )
+    assert validate_guide(guide, _black11_like_both_sides()) is not None
+
+
+def test_cross_side_p4_red8_list_and_not_segmented_as_a_clause_boundary():
+    """RED 8-like list-"and" shape: "left bunkers at 160 and 195" is ONE
+    claim naming two numbers for the SAME left-side hazard, not two
+    clauses — per-number attribution must not segment on "and" (that was
+    Option 1, explicitly rejected in the plan). Both 160 and 195 attribute
+    to the sole "left" side word and pass against the real left-side carries."""
+    guide = _guide(miss_side="left bunkers at 160 and 195 guard the drive")
+    hazards = [
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=160),
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=195),
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=365),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=225),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=360),
+    ]
+    assert validate_guide(guide, hazards) is not None
+
+
+def test_cross_side_p5_distance_tie_companion_passes_when_attribution_supported():
+    """Companion to R7 with the geometry swapped: same tie -> collapses to
+    `nearest_side` ("right") -> checked pair is (right, 390), and this time
+    the real right bunker IS at 390 -> passes."""
+    guide = _guide(miss_side="left rough 390 by right bunker")
+    hazards = [
+        Hazard(type="bunker", side="left", line_side="left", carry_yards=200),
+        Hazard(type="bunker", side="right", line_side="right", carry_yards=390),
+    ]
+    assert validate_guide(guide, hazards) is not None
+
+
+def test_cross_side_p7_range_binds_first_number_unedited():
+    """Existing test (`test_carry_check_range_binds_first_number`) as the
+    plan's P7 row, unedited — exercises the center-group path via a single
+    side word (no cross-side ambiguity to attribute)."""
+    guide = _guide(miss_side="Bunkers right at 470-495, dead center in play.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
+def test_cross_side_p8_out_of_window_number_never_binds_unedited():
+    """Existing test
+    (`test_carry_check_number_outside_window_falls_back_to_side_only`) as the
+    plan's P8 row, unedited."""
+    guide = _guide(
+        miss_side=(
+            "The right bunker catches the drive off the tee; by the way the "
+            "green sits at roughly 265 on the card."
+        )
+    )
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
+def test_cross_side_p9_no_number_side_only_path_still_passes_unedited():
+    """Existing test (`test_carry_check_no_number_claims_unchanged_pass`) as
+    the plan's P9 row, unedited — pins the no-number path runs verbatim
+    (side-only check, now unconditional but behaviorally identical here)."""
+    guide = _guide(miss_side="Right-side bunkers guard the landing area.")
+    assert validate_guide(guide, _hole4_like_bunkers()) is not None
+
+
+def test_cross_side_p10_opposition_phrasing_unedited():
+    """Existing opposition tests
+    (`test_side_check_does_not_over_reject_miss_right_of_hazard_phrasing`,
+    `test_side_check_still_rejects_hazard_right_of_phrasing`) as the plan's
+    P10 row, unedited — an opposition-excluded side word can neither anchor
+    `nearest_side` nor govern (attribute) a number."""
+    assert validate_guide(
+        _guide(miss_side="Miss right of the fairway bunker."), _left_bunker()
+    ) is not None
+    assert validate_guide(
+        _guide(miss_side="A deep bunker right of the fairway catches drives."),
+        _left_bunker(),
+    ) is None
+
+
+def test_cross_side_p11_implausible_number_not_bound_unedited():
+    """Existing test (`test_carry_check_implausible_number_not_bound`) as
+    the plan's P11 row, unedited."""
+    guide = _guide(miss_side="Bunker left on hole 12 catches a pulled drive.")
+    assert validate_guide(guide, _left_bunker()) is not None
+
+
+def test_cross_side_p12_single_sample_tolerance_edges_unedited():
+    """Existing test
+    (`test_carry_span_single_sample_window_identical_to_old_tolerance`) as
+    the plan's P12 row, unedited — tolerance math is untouched by this
+    plan."""
+    hazards = _left_bunker()  # bunker L {245}
+    assert validate_guide(
+        _guide(miss_side="The left bunker at 220 pinches the drive."), hazards
+    ) is not None
+    assert validate_guide(
+        _guide(miss_side="The left bunker at 270 pinches the drive."), hazards
+    ) is not None
+    assert validate_guide(
+        _guide(miss_side="The left bunker at 195 pinches the drive."), hazards
+    ) is None
+    assert validate_guide(
+        _guide(miss_side="The left bunker at 295 pinches the drive."), hazards
+    ) is None
+
+
+# ── `_attributed_side` direct-helper tests ──────────────────────────────
+
+
+def test_attributed_side_unique_nearest_wins():
+    candidates = [(1, "left"), (6, "right")]
+    assert _attributed_side(1, candidates, "left") == "left"
+    assert _attributed_side(6, candidates, "left") == "right"
+
+
+def test_attributed_side_same_value_repeated_is_not_a_tie():
+    """Two occurrences of the SAME side word tying with themselves must not
+    be treated as an ambiguous tie — `tied_sides` collapses duplicate side
+    VALUES to one element, so `len(tied_sides) == 1` and that side wins
+    directly, without falling back to `nearest_side`."""
+    candidates = [(0, "left"), (2, "left")]
+    assert _attributed_side(1, candidates, "right") == "left"
+
+
+def test_attributed_side_different_value_tie_collapses_to_nearest_side():
+    candidates = [(0, "left"), (2, "right")]
+    assert _attributed_side(1, candidates, "right") == "right"
+    assert _attributed_side(1, candidates, "left") == "left"

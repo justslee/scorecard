@@ -496,6 +496,35 @@ def _side_and_carry_supported(
     return False
 
 
+def _attributed_side(
+    n_idx: int, candidates: list[tuple[int, str]], nearest_side: str
+) -> str:
+    """The side a bound number `n_idx` grammatically claims, per
+    guide-validator-cross-side-binding-plan.md §3 step 9: the side word
+    NEAREST TO THAT NUMBER among the keyword's own (already window-filtered,
+    opposition-excluded) `candidates` — not the keyword's single
+    `nearest_side` — so "245-left" binds 245 to "left" even when the same
+    field also has a "right" side word elsewhere in the keyword's window
+    ("the 245-left bunker and the 270/325 right-side bunkers").
+
+    A distance TIE between two candidates of DIFFERENT side VALUES collapses
+    to `nearest_side` (the keyword's own binding) rather than picking either
+    tied side arbitrarily — this is a fail-closed choice, not a convenience
+    one: it reproduces exactly the cycle-115 pair the old all-numbers-on-
+    nearest_side code checked, so a genuinely ambiguous number can never
+    admit an accept the old code would have rejected ("The 265-yard right
+    bunker sits 390 off the tee." — if 265 and a same-window "left" word were
+    ever equidistant, collapsing to `nearest_side` keeps checking (right,
+    265), not a laundered (left, 265)). Two occurrences of the SAME side word
+    tying with themselves collapse too (`tied_sides` is a set of side
+    VALUES), so that case is not treated as an ambiguous tie at all — the tie
+    only fires across genuinely different side values.
+    """
+    best = min(abs(c_idx - n_idx) for c_idx, _ in candidates)
+    tied_sides = {side for c_idx, side in candidates if abs(c_idx - n_idx) == best}
+    return tied_sides.pop() if len(tied_sides) == 1 else nearest_side
+
+
 def _has_side_flip(
     text_fields: list[str], hazards_by_type: dict[str, list[tuple[str, int]]]
 ) -> bool:
@@ -521,31 +550,53 @@ def _has_side_flip(
     is excluded from consideration (see `_SIDE_OPPOSITION_PATTERN`).
 
     CARRY-AWARE EXTENSION (carry-aware-side-validation-plan.md, span rule per
-    guide-validator-carry-span-plan.md): once a side claim is bound for a
+    guide-validator-carry-span-plan.md; per-number attribution per
+    guide-validator-cross-side-binding-plan.md): once a side is bound for a
     hazard-keyword occurrence, this ALSO looks for every plausible yardage
     number (`_CARRY_NUMBER_PATTERN`, distance to the HAZARD keyword — never to
     the side word, never "any number in the field") within the same window.
-    No bound number -> the side-only check runs exactly as before. One or
-    more bound numbers -> EVERY one of them must fall within
-    `_CARRY_TOLERANCE_YARDS` of a CONTIGUOUS RUN of same-type, claimed-side
-    (or 'center') stored carries (`_side_and_carry_supported`) or the whole
-    guide rejects. Runs, not bare samples, because a stored `carry_yards` is
-    a discrete sample of an extended feature (a bunker/water/ob polygon's
-    centroid, or one end of a tree line's near/far bracket) — same-(type,
-    side) samples within `_CARRY_BRIDGE_YARDS` of each other (unconditionally
-    for `trees`, which stores only the two bracket ends of one line) are
-    merged into one run before the margin is applied, so a legitimately-
-    grounded carry that falls between two samples of the SAME feature is not
-    false-rejected. This still closes the original gap where a real side-set
-    (e.g. bunkers on both left AND right of one hole) let a WRONG number ride
-    along with a real side word — a number outside every run's window is
-    still fabricated and still rejects. Binding ALL in-window numbers (not
-    just the single nearest) is itself fail-closed against an ambiguity
-    bypass: a "nearest, ties prefer after" pick let a co-located FALSE number
-    equidistant BEFORE the keyword hide behind a TRUE one after it ("The
-    265-yard right bunker sits 390 off the tee." — both 265 and 390 are
-    distance 2 from "bunker"; picking only 390 accepted the false 265 claim).
-    EACH hazard-keyword occurrence still binds its own side and its own
+    EVERY in-window plausible number is still checked — the cycle-115
+    all-numbers invariant is intact, unchanged from before: a "nearest, ties
+    prefer after" pick once let a co-located FALSE number equidistant BEFORE
+    the keyword hide behind a TRUE one after it ("The 265-yard right bunker
+    sits 390 off the tee." — both 265 and 390 are distance 2 from "bunker";
+    picking only 390 accepted the false 265 claim), so nothing in-window is
+    ever dropped.
+
+    What changed is the side each bound number is checked AGAINST. Each
+    number is attributed to the side word NEAREST TO THAT NUMBER among the
+    keyword's own (window-filtered, opposition-excluded) candidate side
+    words — the side the number grammatically claims — rather than to the
+    keyword's single `nearest_side` (`_attributed_side`). A distance TIE
+    between candidates of DIFFERENT side values collapses to `nearest_side`
+    (the old binding), so a genuinely ambiguous number can never gain a new
+    accept the old fail-closed code would have rejected. This is what lets a
+    legitimately BOTH-SIDED sentence pass without cross-contamination — the
+    motivating incident, Bethpage BLACK 11: "the 245-left bunker and the
+    270/325 right-side bunkers" against real geometry bunker L{245,415}
+    R{270,325,420} — every number is grounded on its true side, but the old
+    single-`nearest_side` binding checked 270/325 against "left" (and 245
+    against "right" from the second occurrence) and false-rejected the whole,
+    honest guide (guide-validator-cross-side-binding-plan.md).
+
+    The keyword's OWN `nearest_side` is now ALSO always checked against
+    `_acceptable_sides`, independently of whether any number binds (not only
+    in the no-number branch as before). Without this, per-number attribution
+    opens a reattribution escape: "the right bunker and the 245 left bunker"
+    on a left-only hole — `nearest_side` for the first "bunker" occurrence is
+    "right" (a real side-flip), but 245 attributes to "left" and passes,
+    leaving the flipped "right bunker" claim unchecked by any number pair.
+    This addition is provably free on every previously-passing input (plan
+    §2a): `_side_and_carry_supported` can only return True for a side that is
+    itself in `_acceptable_sides` (directly, or via the "center" group,
+    which only ever adds sides already in `_acceptable_sides`), so any
+    passing per-number pair check already implies its side passes the
+    side-only check — the new unconditional check changes nothing for guides
+    that were already accepted, and only ever adds a REJECT where none of
+    the bound numbers' attributed sides happen to cover the keyword's own,
+    genuinely-flipped `nearest_side`.
+
+    EACH hazard-keyword occurrence still binds its own candidates and its own
     number(s) independently, so a truthful "right bunker at 390" elsewhere in
     the field can never launder a co-located false "left bunker at 390" or
     "right bunker at 265".
@@ -618,6 +669,22 @@ def _has_side_flip(
                     candidates, key=lambda hit: (abs(hit[0] - hz_idx), hit[0] < hz_idx)
                 )
 
+                # The keyword's OWN side-only check now runs UNCONDITIONALLY
+                # (guide-validator-cross-side-binding-plan.md §3 step 7),
+                # not only in the no-numbers branch below. Per-number
+                # attribution (below) lets a bound number pass on a side
+                # OTHER than the keyword's own `nearest_side` — without this,
+                # a reattribution escape opens: "the right bunker and the
+                # 245 left bunker" on a left-only hole binds 245 to "left"
+                # (passes) while the keyword's own flipped "right" claim is
+                # never checked by any pair. Provably free on every input
+                # that already passed under the old code (plan §2a): a
+                # passing pair check always implies its side is in
+                # `_acceptable_sides`, so this can only ever ADD a reject,
+                # never remove one, on previously-accepted guides.
+                if nearest_side not in _acceptable_sides(canonical_type, sides_by_type):
+                    return True
+
                 # Bind ALL plausible numbers in-window to THIS hazard-keyword
                 # occurrence — distance is to the hazard keyword, never to
                 # the side word, and never "any number in the field" (each
@@ -631,22 +698,35 @@ def _has_side_flip(
                 # claim). Requiring EVERY in-window number to be supported
                 # closes that: an occurrence with two candidate numbers must
                 # have BOTH match real geometry, or it rejects.
+                #
+                # guide-validator-cross-side-binding-plan.md extends this:
+                # each bound number is now checked against the side word
+                # NEAREST TO THAT NUMBER among this keyword's own candidates
+                # (`_attributed_side`), not against the keyword's single
+                # `nearest_side` — so two adjacent, correctly-attributed,
+                # opposite-side claims for the same hazard type no longer
+                # cross-contaminate (Bethpage BLACK 11: "the 245-left bunker
+                # and the 270/325 right-side bunkers" against real geometry
+                # bunker L{245,415} R{270,325,420} — every number was
+                # grounded on its true side, but the old single-nearest_side
+                # binding checked 270/325 against "left" and false-rejected
+                # the whole, honest guide). A distance tie between candidates
+                # of DIFFERENT side values still collapses to `nearest_side`
+                # (the old binding), so this never admits an accept the
+                # cycle-115 code would have rejected.
                 number_candidates = [
                     hit for hit in number_hits if abs(hit[0] - hz_idx) <= _SIDE_WINDOW_WORDS
                 ]
                 if not number_candidates:
-                    # No bound number -> current side-only behavior verbatim.
-                    if nearest_side not in _acceptable_sides(canonical_type, sides_by_type):
-                        return True
+                    # No bound number -> side-only check above already ran.
                     continue
 
-                if any(
-                    not _side_and_carry_supported(
-                        canonical_type, nearest_side, carry, hazards_by_type
-                    )
-                    for _, carry in number_candidates
-                ):
-                    return True
+                for n_idx, carry in number_candidates:
+                    attributed = _attributed_side(n_idx, candidates, nearest_side)
+                    if not _side_and_carry_supported(
+                        canonical_type, attributed, carry, hazards_by_type
+                    ):
+                        return True
     return False
 
 
@@ -678,28 +758,38 @@ def validate_guide(guide: HoleStrategyGuide, hazards: list[Hazard]) -> Optional[
        type-correct but side-flipped claim ("right-side bunkers" when our
        geometry has them on the left) -> REJECT, same as an invented type.
        A hazard whose real side is "center" (on-line) accepts either lateral
-       claim. CARRY-AWARE: when that side claim also co-occurs with a nearby,
-       plausible yardage number (carry-aware-side-validation-plan.md), the
-       (side, carry) PAIR must fall within `_CARRY_TOLERANCE_YARDS` of a
-       CONTIGUOUS RUN of same-type, same-side stored carries
-       (`_side_and_carry_supported`; guide-validator-carry-span-plan.md) —
-       same-side samples of one type within `_CARRY_BRIDGE_YARDS` (60) of
-       each other are treated as one extended feature (bunker/water/ob), and
-       a `trees` side's near/far sample pair bridges unconditionally (it IS
-       the bracket of one continuous line), so a legitimate carry falling
-       BETWEEN two samples of the same real feature is not false-rejected.
-       This still catches a type- and side-plausible but numerically-wrong
-       claim on a hole with hazards of the same type on BOTH sides (e.g. real
-       bunkers left AND right, but the claimed number matches neither run),
-       and still rejects a number that lands in a genuine GAP between two
-       separate features on the same side. A side claim with no bound number
-       keeps the side-only behavior above verbatim. A side word separated from the
-       hazard keyword by an opposition phrase ("away from", "avoid",
-       "clear of") describes the MISS direction, not the hazard's location,
-       and is never checked (a "best miss is right, away from the [left]
-       bunker" style guide is correct golf advice, not a side-flip). Runs
-       after the type scan (2/3) so an already-wrong type is still rejected
-       the same way it always was.
+       claim. The keyword's own claimed side is now ALWAYS checked against
+       `_acceptable_sides`, independent of any bound number (see below).
+       CARRY-AWARE: when a hazard-keyword occurrence also has a nearby,
+       plausible yardage number in its window (carry-aware-side-validation-
+       plan.md), EVERY such number is checked as a (side, carry) PAIR against
+       `_side_and_carry_supported` (guide-validator-carry-span-plan.md), and
+       must fall within `_CARRY_TOLERANCE_YARDS` of a CONTIGUOUS RUN of
+       same-type stored carries on ITS OWN side — same-side samples of one
+       type within `_CARRY_BRIDGE_YARDS` (60) of each other are treated as
+       one extended feature (bunker/water/ob), and a `trees` side's near/far
+       sample pair bridges unconditionally (it IS the bracket of one
+       continuous line), so a legitimate carry falling BETWEEN two samples
+       of the same real feature is not false-rejected. Per
+       guide-validator-cross-side-binding-plan.md, "its own side" for each
+       bound number is the side word GRAMMATICALLY NEAREST TO THAT NUMBER
+       among the keyword's own candidate side words (`_attributed_side`) —
+       not the keyword's single `nearest_side` — so a legitimately
+       both-sided sentence for one hazard type ("the 245-left bunker and the
+       270/325 right-side bunkers", against real geometry bunker
+       L{245,415} R{270,325,420}) no longer cross-contaminates: each number
+       is checked on the side it actually claims. A distance tie between
+       candidates of different side values collapses to the keyword's
+       `nearest_side` (unchanged, fail-closed). This still catches a type-
+       and side-plausible but numerically-wrong claim on a hole with hazards
+       of the same type on both sides, and still rejects a number that lands
+       in a genuine GAP between two separate features on the same side. A
+       side word separated from the hazard keyword by an opposition phrase
+       ("away from", "avoid", "clear of") describes the MISS direction, not
+       the hazard's location, and is never checked (a "best miss is right,
+       away from the [left] bunker" style guide is correct golf advice, not
+       a side-flip). Runs after the type scan (2/3) so an already-wrong type
+       is still rejected the same way it always was.
 
     Returns `guide` unchanged on PASS, `None` on REJECT — the caller omits
     (no write, no placeholder; [[no-fake-data-fallbacks]]).
