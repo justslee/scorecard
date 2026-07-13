@@ -16173,3 +16173,21 @@ qa PASS: ruff clean; 175/175 validator suite (160 baseline + 15 new, 0 edits, 0 
 CI on PR #140 head: Backend gate SUCCESS + Frontend gates SUCCESS + E2E smoke advisory SUCCESS (all green).
 Item green+clean on integration/next @ d4c3db5. No designer (silent, non-user-facing).
 NEXT: on-box Black 7+11 regen (bounded, key-free), then update PR #140 checklist + backlog + progress.
+
+## DONE — cycle 119 (guide-validator-cross-type-number-binding) — 2026-07-13
+FIX LANDED + PROVEN on integration/next (code d4c3db5; fable plan specs/guide-validator-cross-type-number-binding-plan.md).
+RULE: _has_side_flip attributes each in-window carry number to the hazard-keyword occurrence grammatically NEAREST
+to it across ALL present types (new _owns_number: strictly-nearer DIFFERENT-type occurrence steals; cross-type TIE
+is NOT a steal -> checked vs every tied type = fail-closed). Fable correction that made it work: trees has NO
+keyword in _HAZARD_KEYWORD_TO_TYPE, so added an OWNERSHIP-ONLY _TREES_BINDING_PATTERN used solely inside
+_has_side_flip (NOT in the type scan -> honest tree mentions on OSM-sparse holes never newly rejected).
+GATES: reviewer(fresh opus) SHIP (type scan byte-identical, tests pure-add/unweakened, occurrence-hoist a pure
+relocation, no bypass reproducible); qa PASS (ruff clean; 175/175 = 160 baseline + 15 new; pure-add diff);
+CI PR #140 all gates SUCCESS (backend + frontend + e2e advisory).
+REGEN (sanctioned, bounded cap=2, key-free SSM, d4c3db5 worktree, deploy untouched main@2f7f486, worktree removed):
+Black 16/18 -> 17/18. HOLE 7 RECOVERED (persisted; play_line 231<240, a cross-type trees+bunker sentence = the
+fix's motivating shape). HOLE 11 re-attempted, candidate re-rejected -> honest-empty (SAFE). Honest 17/18 (not 18).
+BACKLOG: guide-validator-cross-type-number-binding -> done (targeted edit, JSON re-validated 77 items). No new
+residual class for the validator; hole-11 non-landing is now stochastic/verbosity-shaped.
+CLASSIFICATION: SILENT (backend validator correctness; regen = prod-data mutation under standing approval,
+already served by live prod). PR #140 stays silent-only. NO ship, NO owner ping (per brief).
