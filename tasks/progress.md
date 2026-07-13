@@ -16161,3 +16161,15 @@ AWAITING: reviewer(fresh, adversarial) + qa(gates on pushed SHA) on d4c3db5/ae49
   BLOCKING -> re-dispatch builder with findings, re-review.
 Then eng-lead: on-box Black 7+11 regen (SSM i-0826..., black UUID 2b8caab5-2c55-5752-8cda-336c3a396dac,
 key-free, bounded no retry storm). PR #140 stays SILENT-only; NO ship, NO owner ping.
+
+## GATES GREEN — cycle 119 (guide-validator-cross-type-number-binding) — 2026-07-13
+reviewer(fresh, adversarial) SHIP: type scan byte-identical (trees NOT in type scan), tests pure-add/
+unweakened, occurrence-hoisting is pure relocation, no bypass reproducible under targeted probes
+(window-boundary <=6/<7 + strict-< tie, fabricated-stolen-by-trees rejects at owner, side-flip still
+caught by unconditional nearest_side check). Did NOT run /security-review /code-review skills (they diff
+whole branch-vs-main, not the isolated commit; internal validator logic, no auth/endpoint/dep/user-facing
+surface) — did equivalent manual adversarial falsification on d4c3db5 directly. Accepted.
+qa PASS: ruff clean; 175/175 validator suite (160 baseline + 15 new, 0 edits, 0 flips); test diff pure-add.
+CI on PR #140 head: Backend gate SUCCESS + Frontend gates SUCCESS + E2E smoke advisory SUCCESS (all green).
+Item green+clean on integration/next @ d4c3db5. No designer (silent, non-user-facing).
+NEXT: on-box Black 7+11 regen (bounded, key-free), then update PR #140 checklist + backlog + progress.
