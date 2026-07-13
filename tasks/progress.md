@@ -16249,6 +16249,15 @@ language, calm not clutter). On BLOCKING findings -> re-dispatch builder, re-rev
 (1 NOTICEABLE + 2 silent), progress+backlog updated. NO ship/ping this cycle (accumulate on #140).
 On resume: reconcile from origin/integration/next + builder's actual commits; do NOT re-run finished child.
 
+### AWAITING review stage — builder DONE @ 5f13452 (pushed) — 2026-07-13
+Builder landed the full feature at 5f13452 on integration/next (migration 0011_014_tournament_round_courses,
+revision 014_tournament_round_courses / down_revision 013_caller_voice; shapes synced; setup UX; draw pre-fill;
+ghost-card entry; all tests). Local gates GREEN (lint, tsc, build, vitest 2429, voice 278/278, ruff). DB-backed
+backend tests deferred to CI (no local Postgres). Dispatched in PARALLEL on 5f13452: reviewer(fresh opus adversarial),
+qa(gates state:SUCCESS on 5f13452 head SHA + CI backend gate runs migration on postgis), designer(BLOCKING:
+Program itinerary + ghost card). Outcomes: SHIP+PASS+design-OK -> update PR #140 checklist (1 NOTICEABLE + 2 silent),
+progress+backlog, NO ship/ping. Any BLOCKING -> re-dispatch builder (SendMessage a4c19c360db9be92c), re-review.
+
 ## BUILT — cycle 121 (tournament-per-round-format-course) builder pass — 2026-07-13
 Implemented specs/tournament-per-round-format-course-plan.md §1-§9 verbatim on integration/next.
 Migration: backend/migrations/versions/0011_014_tournament_round_courses.py — revision
