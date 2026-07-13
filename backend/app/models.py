@@ -179,6 +179,19 @@ class RoundUpdate(BaseModel):
 
 
 # ============ Tournaments ============
+class TournamentRoundCourse(BaseModel):
+    courseId: str
+    courseName: str
+    courseLat: Optional[float] = Field(default=None, ge=-90, le=90)
+    courseLng: Optional[float] = Field(default=None, ge=-180, le=180)
+    # Must be a UUID: this lands in a Postgres UUID column — validate at the
+    # edge (422) instead of erroring in the DB layer (500).
+    mappedCourseId: Optional[str] = Field(
+        default=None,
+        pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+    )
+
+
 class Tournament(BaseModel):
     id: str
     name: str
@@ -189,12 +202,17 @@ class Tournament(BaseModel):
     games: list[Game] = []
     createdAt: str
     updatedAt: str
+    # Per-day course plan from setup. None when the owner never touched
+    # per-round courses (byte-identical guarantee) and on all pre-feature
+    # tournaments.
+    roundCourses: Optional[list[Optional[TournamentRoundCourse]]] = None
 
 
 class TournamentCreate(BaseModel):
     name: str
     numRounds: Optional[int] = None
     playerIds: list[str] = []
+    roundCourses: Optional[list[Optional[TournamentRoundCourse]]] = None
 
 
 class TournamentUpdate(BaseModel):
@@ -203,6 +221,7 @@ class TournamentUpdate(BaseModel):
     roundIds: Optional[list[str]] = None
     playerIds: Optional[list[str]] = None
     games: Optional[list[Game]] = None
+    roundCourses: Optional[list[Optional[TournamentRoundCourse]]] = None
 
 
 # ============ Courses ============

@@ -406,3 +406,92 @@ class TestRoundCourseAnchor:
         assert body["courseLat"] is None
         assert body["courseLng"] is None
         assert body["mappedCourseId"] is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. TOURNAMENT PER-DAY COURSE PLAN — round_courses round-trips (byte-identical
+#    when absent)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestTournamentRoundCourses:
+    """The per-day course plan (tournament-per-round-format-course-plan §1/§2)
+    round-trips verbatim when present, and stays NULL — the exact pre-feature
+    semantics — when the client never sends the field."""
+
+    async def test_tournament_round_courses_roundtrip(self, client):
+        set_auth(TEST_OWNER_ID)
+
+        mapped_entry = {
+            "courseId": "9f2b7c1e-1111-5222-8333-444455556666",
+            "courseName": "Bethpage Black",
+            "courseLat": 40.7452,
+            "courseLng": -73.4565,
+            "mappedCourseId": "9f2b7c1e-1111-5222-8333-444455556666",
+        }
+
+        r = await client.post(
+            "/api/tournaments",
+            json={
+                "name": "Bethpage Trip",
+                "numRounds": 2,
+                "roundCourses": [mapped_entry, None],
+            },
+        )
+        assert r.status_code == 200, f"create failed: {r.text}"
+        body = r.json()
+        assert body["roundCourses"] == [mapped_entry, None]
+        tournament_id = body["id"]
+
+        # Survives a fresh fetch.
+        r2 = await client.get(f"/api/tournaments/{tournament_id}")
+        assert r2.status_code == 200
+        assert r2.json()["roundCourses"] == [mapped_entry, None]
+
+        # PUT replaces it wholesale.
+        replacement_entry = {
+            "courseId": "course-red-002",
+            "courseName": "Bethpage Red",
+        }
+        r3 = await client.put(
+            f"/api/tournaments/{tournament_id}",
+            json={"roundCourses": [mapped_entry, replacement_entry]},
+        )
+        assert r3.status_code == 200, f"update failed: {r3.text}"
+        assert r3.json()["roundCourses"] == [mapped_entry, replacement_entry]
+
+        r4 = await client.get(f"/api/tournaments/{tournament_id}")
+        assert r4.json()["roundCourses"] == [mapped_entry, replacement_entry]
+
+    async def test_tournament_round_courses_null_when_omitted(self, client):
+        """The byte-identical guarantee: a client that never sends roundCourses
+        gets NULL back, exactly today's pre-feature semantics."""
+        set_auth(TEST_OWNER_ID)
+        r = await client.post(
+            "/api/tournaments", json={"name": "No Plan Trip", "numRounds": 1}
+        )
+        assert r.status_code == 200, f"create failed: {r.text}"
+        assert r.json()["roundCourses"] is None
+
+        r2 = await client.get(f"/api/tournaments/{r.json()['id']}")
+        assert r2.json()["roundCourses"] is None
+
+    async def test_tournament_round_courses_invalid_mapped_course_id_rejected(
+        self, client
+    ):
+        set_auth(TEST_OWNER_ID)
+        r = await client.post(
+            "/api/tournaments",
+            json={
+                "name": "Bad Plan Trip",
+                "numRounds": 1,
+                "roundCourses": [
+                    {
+                        "courseId": "course-1",
+                        "courseName": "Some Course",
+                        "mappedCourseId": "not-a-uuid",
+                    }
+                ],
+            },
+        )
+        assert r.status_code == 422

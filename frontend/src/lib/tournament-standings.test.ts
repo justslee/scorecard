@@ -311,3 +311,49 @@ describe("gross / toPar standings are unaffected by playerHandicaps", () => {
     expect(withoutHandicaps.find((s) => s.playerId === "a")!.totalStrokes).toBe(72);
   });
 });
+
+describe("per-round COURSE plan — standings are course-blind", () => {
+  // tournament-per-round-format-course-plan.md §8: computeStandings consumes
+  // only r.scores + r.holes + handicap — no course identity anywhere. Two
+  // member rounds with different courseId/courseName but identical
+  // holes/scores must produce identical standings to the same-course case.
+  it("two rounds with different courses but identical holes/scores produce identical standings", () => {
+    const r1 = makeRound({
+      id: "r1",
+      courseId: "c1",
+      courseName: "Same Course",
+      players: makePlayers(["p1", "p2"]),
+      scores: [
+        ...makeScores("p1", Array<number>(18).fill(4)), // 72
+        ...makeScores("p2", Array<number>(18).fill(5)), // 90
+      ],
+    });
+    const r2 = makeRound({
+      id: "r2",
+      courseId: "c1",
+      courseName: "Same Course",
+      players: makePlayers(["p1", "p2"]),
+      scores: [
+        ...makeScores("p1", Array<number>(18).fill(5)), // 90
+        ...makeScores("p2", Array<number>(18).fill(4)), // 72
+      ],
+    });
+    const sameCourseStandings = computeStandings(
+      ["p1", "p2"],
+      { p1: "P1", p2: "P2" },
+      { p1: 10, p2: 5 },
+      [r1, r2]
+    );
+
+    const r1DifferentCourse = { ...r1, courseId: "black", courseName: "Bethpage Black" };
+    const r2DifferentCourse = { ...r2, courseId: "red", courseName: "Bethpage Red" };
+    const differentCourseStandings = computeStandings(
+      ["p1", "p2"],
+      { p1: "P1", p2: "P2" },
+      { p1: 10, p2: 5 },
+      [r1DifferentCourse, r2DifferentCourse]
+    );
+
+    expect(differentCourseStandings).toEqual(sameCourseStandings);
+  });
+});

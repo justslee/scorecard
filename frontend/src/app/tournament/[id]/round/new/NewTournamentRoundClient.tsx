@@ -2,16 +2,21 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { roundHref, tournamentHref } from "@/lib/round-url";
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Course, Round, Player, PlayerGroup, Tournament, Game } from '@/lib/types';
-import { getCourses as localGetCourses, saveRound as localSaveRound } from '@/lib/storage';
+import { Round, Player, PlayerGroup, Tournament, Game, HoleInfo, createDefaultCourse } from '@/lib/types';
+import { saveRound as localSaveRound } from '@/lib/storage';
 import { getTournamentAsync } from '@/lib/storage-api';
-import { createRound, getCourses as apiGetCourses } from '@/lib/api';
+import { createRound } from '@/lib/api';
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from '@/components/yardage/tokens';
 import { haptic } from '@/lib/haptics';
 import GamePicker from '@/components/GamePicker';
 import { buildRoundGames, TOURNAMENT_GAME_OPTIONS, STAKE_GAME_IDS, gameSelectableForRoster, GameId } from '@/lib/round-games';
+import CourseSearch from '@/components/CourseSearch';
+import { anchorFromSelectedCourse } from '@/lib/round-anchor';
+import { fetchMappedCourse } from '@/lib/courses/mapped-course-api';
+import { namesMatch } from '@/lib/course/tee-anchor';
+import { nextDayIndex, selectionFromPlanEntry } from '@/lib/tournament-course-plan';
 
 // ── Inline icon — no lucide-react ────────────────────────────────────────────
 
@@ -54,6 +59,30 @@ interface GroupDraft {
   teeTime: string;
   playerIds: string[];
 }
+
+// Standard-tee model, same idiom as round/new/page.tsx.
+type TeeId = 'black' | 'blue' | 'white' | 'gold' | 'red';
+
+interface SelectedCourse {
+  id: number | string;
+  name: string;
+  clubName?: string;
+  location?: string;
+  holes?: number; // hole count from GolfAPI (not HoleInfo[])
+  par?: number;
+  /** Source from CourseSearch — "mapped" means id is a mapped-course UUID. */
+  source?: string;
+  /** Geographic centre from the search result — becomes the round's course anchor. */
+  center?: { lat: number; lng: number };
+}
+
+const TEE_OPTIONS: { id: TeeId; l: string; c: string; yds: number }[] = [
+  { id: 'black', l: 'Black · Championship', c: '#1a1a1a', yds: 7244 },
+  { id: 'blue', l: 'Blue · Back', c: '#3a4a8a', yds: 6845 },
+  { id: 'white', l: 'White · Middle', c: '#eae5d6', yds: 6473 },
+  { id: 'gold', l: 'Gold · Forward', c: '#b8763a', yds: 5984 },
+  { id: 'red', l: 'Red', c: '#b84a3a', yds: 5412 },
+];
 
 // ── Sortable player item — yardage-book paper surface ───────────────────────
 function SortablePlayer({
@@ -205,15 +234,19 @@ const inputStyle: React.CSSProperties = {
 export default function NewTournamentRoundPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const tournamentId = params?.id;
+  const search = useSearchParams();
+  // Static-export path trick (round-url.ts tournamentRoundNewHref): the real
+  // dynamic segment is a placeholder ("view"); resolve the actual id from the
+  // ?id= query first, falling back to the (placeholder) route param.
+  const tournamentId = search?.get('id') ?? params?.id;
 
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [tournamentLoading, setTournamentLoading] = useState(true);
   const [tournamentNotFound, setTournamentNotFound] = useState(false);
 
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [selectedCourseId, setSelectedCourseId] = useState<string>('');
-  const [selectedTeeId, setSelectedTeeId] = useState<string>('');
+  const [selectedCourse, setSelectedCourse] = useState<SelectedCourse | null>(null);
+  const [showCourseSearch, setShowCourseSearch] = useState(false);
+  const [tee, setTee] = useState<TeeId>('white');
   const [courseError, setCourseError] = useState(false);
 
   // Game format — per-round, optional (default = no games, honest empty settlement).
@@ -232,14 +265,27 @@ export default function NewTournamentRoundPage() {
   // ── Load tournament (API-backed via storage-api) ────────────────────────
   useEffect(() => {
     if (!tournamentId) {
-      setTournamentLoading(false);
-      setTournamentNotFound(true);
-      return;
+      // Defer the state update out of the effect body (react-hooks/set-state-in-effect).
+      const t = setTimeout(() => {
+        setTournamentLoading(false);
+        setTournamentNotFound(true);
+      }, 0);
+      return () => clearTimeout(t);
     }
     getTournamentAsync(tournamentId)
       .then((t) => {
-        if (!t) setTournamentNotFound(true);
-        else setTournament(t);
+        if (!t) {
+          setTournamentNotFound(true);
+          return;
+        }
+        setTournament(t);
+        // Pre-fill from the per-day course plan (specs/
+        // tournament-per-round-format-course-plan.md §5b): drawing Day 2 of
+        // the Bethpage trip opens with "Bethpage Red" already in the course
+        // slot — mapped id and centre intact. No plan / no entry for this
+        // day → null → identical to today's "pick it yourself" default.
+        const entry = t.roundCourses?.[nextDayIndex(t)] ?? null;
+        if (entry) setSelectedCourse(selectionFromPlanEntry(entry));
       })
       .catch(() => setTournamentNotFound(true))
       .finally(() => setTournamentLoading(false));
@@ -253,18 +299,15 @@ export default function NewTournamentRoundPage() {
   useEffect(() => {
     if (!tournament) return;
     const rosterSize = tournament.playerIds.length;
-    setSelectedGames((prev) => {
-      const next = prev.filter((s) => gameSelectableForRoster(s.id, rosterSize));
-      return next.length === prev.length ? prev : next;
-    });
+    // Defer the state update out of the effect body (react-hooks/set-state-in-effect).
+    const t = setTimeout(() => {
+      setSelectedGames((prev) => {
+        const next = prev.filter((s) => gameSelectableForRoster(s.id, rosterSize));
+        return next.length === prev.length ? prev : next;
+      });
+    }, 0);
+    return () => clearTimeout(t);
   }, [tournament]);
-
-  // ── Load courses: try API first, fall back to local cache ───────────────
-  useEffect(() => {
-    apiGetCourses()
-      .then(setCourses)
-      .catch(() => setCourses(localGetCourses()));
-  }, []);
 
   // ── Player list from tournament ─────────────────────────────────────────
   const allPlayers = useMemo(() => {
@@ -285,19 +328,6 @@ export default function NewTournamentRoundPage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
-
-  const selectedCourse = useMemo(
-    () => courses.find((c) => c.id === selectedCourseId) || null,
-    [courses, selectedCourseId]
-  );
-
-  const teeOptions = selectedCourse?.tees ?? [];
-
-  useEffect(() => {
-    if (!selectedCourse) return;
-    setSelectedTeeId(teeOptions.length > 0 ? teeOptions[0].id : '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCourseId]);
 
   // ── Group helpers ────────────────────────────────────────────────────────
   const autoGenerateGroups = () => {
@@ -441,7 +471,6 @@ export default function NewTournamentRoundPage() {
       };
     });
 
-    const selectedTee = teeOptions.find((t) => t.id === selectedTeeId);
     const games: Game[] = buildRoundGames(selectedGames, players.map((p) => p.id));
 
     const playerGroups: PlayerGroup[] = groups.map(g => ({
@@ -451,15 +480,48 @@ export default function NewTournamentRoundPage() {
       playerIds: g.playerIds,
     }));
 
+    // Build default course hole layout, then snapshot the golfer's selected
+    // tee's real per-hole card yardages when the course is mapped — same
+    // pattern as round/new/page.tsx:327-365.
+    const defaultCourse = createDefaultCourse(selectedCourse.name);
+    let holeList: HoleInfo[] =
+      selectedCourse.holes === 9 ? defaultCourse.holes.slice(0, 9) : defaultCourse.holes;
+    const teeLabel = TEE_OPTIONS.find((t) => t.id === tee)?.l.split(' · ')[0] ?? 'White';
+    if (selectedCourse.source === 'mapped' && selectedCourse.id) {
+      try {
+        const mapped = await fetchMappedCourse(String(selectedCourse.id));
+        const snapshot: HoleInfo[] = mapped.holes
+          .filter((h) => selectedCourse.holes !== 9 || h.number <= 9)
+          .sort((a, b) => a.number - b.number)
+          .map((h) => {
+            let yards: number | undefined;
+            for (const [key, y] of Object.entries(h.yardages)) {
+              if (namesMatch(key, teeLabel)) {
+                yards = y;
+                break;
+              }
+            }
+            return { number: h.number, par: h.par, yards, handicap: h.handicap };
+          });
+        if (snapshot.length > 0) holeList = snapshot;
+      } catch {
+        // Offline — honest pars-only default, never fabricated yards.
+      }
+    }
+
     try {
       // POST /api/rounds — backend assigns its own UUID and appends to tournament.round_ids
       const created: Round = await createRound({
-        courseId: selectedCourse.id,
+        courseId: String(selectedCourse.id),
         courseName: selectedCourse.name,
-        teeId: selectedTee?.id,
-        teeName: selectedTee?.name,
+        // Course anchor: lets the round screen render the satellite map
+        // directly — closes the standing bug that tournament rounds carried
+        // no anchor (tournament-per-round-format-course-plan.md §5c).
+        ...anchorFromSelectedCourse(selectedCourse),
+        teeId: tee,
+        teeName: teeLabel,
         players,
-        holes: selectedTee?.holes ?? selectedCourse.holes,
+        holes: holeList,
         groups: playerGroups.length > 0 ? playerGroups : undefined,
         games,
         tournamentId,
@@ -697,16 +759,36 @@ export default function NewTournamentRoundPage() {
               >
                 Course
               </label>
-              <select
-                value={selectedCourseId}
-                onChange={(e) => { setSelectedCourseId(e.target.value); setCourseError(false); }}
-                style={selectStyle}
+              <button
+                type="button"
+                onClick={() => setShowCourseSearch(true)}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  minHeight: 44,
+                }}
               >
-                <option value="" disabled>Select a course…</option>
-                {courses.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                <span
+                  style={{
+                    fontFamily: T.serif,
+                    fontStyle: selectedCourse ? 'normal' : 'italic',
+                    fontSize: 15,
+                    color: T.ink,
+                    letterSpacing: -0.2,
+                  }}
+                >
+                  {selectedCourse?.name ?? 'Select a course…'}
+                </span>
+                <span style={{ fontFamily: T.mono, fontSize: 13, color: T.pencilSoft }}>{'›'}</span>
+              </button>
 
               {courseError && (
                 <div
@@ -722,33 +804,29 @@ export default function NewTournamentRoundPage() {
                 </div>
               )}
 
-              {teeOptions.length > 0 && (
-                <>
-                  <label
-                    style={{
-                      display: 'block',
-                      fontFamily: T.mono,
-                      fontSize: 9,
-                      letterSpacing: 1.3,
-                      color: T.pencilSoft,
-                      textTransform: 'uppercase',
-                      marginTop: 12,
-                      marginBottom: 8,
-                    }}
-                  >
-                    Tee Box
-                  </label>
-                  <select
-                    value={selectedTeeId}
-                    onChange={(e) => setSelectedTeeId(e.target.value)}
-                    style={selectStyle}
-                  >
-                    {teeOptions.map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                </>
-              )}
+              <label
+                style={{
+                  display: 'block',
+                  fontFamily: T.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.3,
+                  color: T.pencilSoft,
+                  textTransform: 'uppercase',
+                  marginTop: 12,
+                  marginBottom: 8,
+                }}
+              >
+                Tee Box
+              </label>
+              <select
+                value={tee}
+                onChange={(e) => setTee(e.target.value as TeeId)}
+                style={selectStyle}
+              >
+                {TEE_OPTIONS.map((t) => (
+                  <option key={t.id} value={t.id}>{t.l}</option>
+                ))}
+              </select>
               <div
                 style={{
                   fontFamily: T.mono,
@@ -1312,6 +1390,22 @@ export default function NewTournamentRoundPage() {
               />
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* ── CourseSearch overlay — no onVoiceSearch: this page has no
+           Realtime voice-setup panel, so built-in dictation is the mic path. ── */}
+      <AnimatePresence>
+        {showCourseSearch && (
+          <CourseSearch
+            voiceSearch
+            onSelectCourse={(course) => {
+              setSelectedCourse(course);
+              setShowCourseSearch(false);
+              setCourseError(false);
+            }}
+            onClose={() => setShowCourseSearch(false)}
+          />
         )}
       </AnimatePresence>
     </div>

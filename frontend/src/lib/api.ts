@@ -12,6 +12,7 @@
 import type {
   Round,
   Tournament,
+  TournamentRoundCourse,
   Player,
   Score,
   HoleInfo,
@@ -353,6 +354,7 @@ export interface TournamentCreate {
   name: string;
   numRounds?: number;
   playerIds?: string[];
+  roundCourses?: (TournamentRoundCourse | null)[];
 }
 
 export interface TournamentUpdate {
@@ -361,6 +363,7 @@ export interface TournamentUpdate {
   roundIds?: string[];
   playerIds?: string[];
   games?: Game[];
+  roundCourses?: (TournamentRoundCourse | null)[];
 }
 
 export async function getTournaments(): Promise<Tournament[]> {

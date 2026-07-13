@@ -16248,3 +16248,60 @@ backend gate runs migration in postgis) -> designer BLOCKING (Program itinerary 
 language, calm not clutter). On BLOCKING findings -> re-dispatch builder, re-review. Then PR #140 checklist
 (1 NOTICEABLE + 2 silent), progress+backlog updated. NO ship/ping this cycle (accumulate on #140).
 On resume: reconcile from origin/integration/next + builder's actual commits; do NOT re-run finished child.
+
+## BUILT — cycle 121 (tournament-per-round-format-course) builder pass — 2026-07-13
+Implemented specs/tournament-per-round-format-course-plan.md §1-§9 verbatim on integration/next.
+Migration: backend/migrations/versions/0011_014_tournament_round_courses.py — revision
+"014_tournament_round_courses", down_revision "013_caller_voice" (re-verified head). Additive
+nullable JSONB `tournaments.round_courses`; upgrade adds column, downgrade drops it. No backfill.
+Shapes synced: frontend/src/lib/types.ts (TournamentRoundCourse + Tournament.roundCourses),
+frontend/src/lib/api.ts (TournamentCreate/Update), backend/app/models.py (TournamentRoundCourse
+Pydantic model w/ RoundCreate's exact anchor validation copied), backend/app/db/models.py (ORM
+column, same commit as migration), backend/app/routes/tournaments.py (create/update/
+_build_full_tournament all wired).
+New helper module frontend/src/lib/tournament-course-plan.ts (planEntryFromSelection,
+selectionFromPlanEntry, applyDayCourseSelection, buildRoundCoursesPayload, nextDayIndex,
+planCourseNameForDay) — reuses round-anchor.ts, no forked anchor logic.
+Setup UX (tournament/new/page.tsx): itinerary Day cards are now tappable buttons opening the
+unified CourseSearch overlay; untouched cards byte-preserve today's "Course to be drawn" look.
+Round-creation flow (NewTournamentRoundClient.tsx): legacy <select> replaced with unified
+CourseSearch + TEE_OPTIONS tee select + anchor capture (closes the standing bug that tournament
+rounds carried no course anchor); pre-fills from the day's plan entry via nextDayIndex/
+selectionFromPlanEntry; id resolved query-first (useSearchParams) for the new entry point.
+Entry point: round-url.ts gained tournamentRoundNewHref; tournament/[id]/round/new/page.tsx
+generateStaticParams now returns [{id:"view"}] (was the unreachable "placeholder") wrapped in
+Suspense; TournamentPageClient round strip gate widened + ONE ghost card ("Day N+1 · upcoming" /
+course-from-plan-or-"Course to be drawn") appended when memberRounds.length < numRounds, routing
+to the draw page.
+Standings/settlement left untouched (course-blind) per §8; filed honest follow-up backlog item
+"tournament-per-course-handicap" via a targeted edit (no json.load/dump — duplicate-key file).
+Tests: NEW frontend/src/lib/tournament-course-plan.test.ts (10 tests: byte-identical undefined
+gate, applyDayCourseSelection fill-all/override, 3 round-trip identity cases, slicing,
+nextDayIndex/planCourseNameForDay defensive indexing). EXTENDED tournament-standings.test.ts +
+settlement.tournament.test.ts with course-variance-is-inert cases. EXTENDED backend
+test_routes.py with TestTournamentRoundCourses (roundtrip, PUT-replace, omitted-field-stays-null,
+invalid mappedCourseId -> 422) — DB-backed, not run locally (no local Postgres); CI backend gate
+runs it against postgis.
+One real (non-plan) fix required to pass the frontend lint gate: eslint-plugin-react-hooks 7.0.1's
+new `set-state-in-effect` rule started flagging two pre-existing, unmodified-by-this-plan effects
+in NewTournamentRoundClient.tsx (the tournament-load guard clause and the roster-prune effect)
+once the file's `selectedCourse` became real useState instead of a derived useMemo. Root cause
+not fully isolated (whole-file heuristic, not tied to the flagged lines' own content) but the
+existing codebase convention for this exact rule (setTimeout deferral, already used in
+tournament/new/page.tsx and PlayerAutocomplete.tsx) resolves it with zero behavior change —
+applied the same pattern to both effects; not a spec deviation.
+Gates (this pass, local): lint PASS · tsc --noEmit PASS · vitest run PASS (123 files / 2429 tests,
+incl. all new/extended tournament-course-plan / tournament-standings / settlement.tournament
+tests) · next build PASS (confirms /tournament/view/round/new is now a real static path) ·
+voice-tests smoke PASS (278/278) · backend ruff check PASS. DB-backed backend integration tests
+(incl. the new roundtrip test + the migration itself) NOT run locally (no local Postgres per
+standing rule) — CI backend gate is the verification path.
+Byte-identical guarantee: proven by
+tournament-course-plan.test.ts ("returns undefined when no day was set") + the setup page's
+untouched-cards styling + the omitted-field POST path (buildRoundCoursesPayload undefined ->
+roundCourses key never sent -> column stays NULL -> GET returns roundCourses:null, mirrored in
+the new backend test_tournament_round_courses_null_when_omitted).
+Pushed to integration/next. NEXT: reviewer (fresh, adversarial) -> qa (gates on pushed SHA, CI
+backend gate incl. migration on postgis) -> designer (BLOCKING: Program itinerary + ghost card).
+NO ship/ping this cycle (builder does not self-approve; accumulates on PR #140 as the first
+NOTICEABLE item alongside the 2 already-silent validator fixes).

@@ -919,6 +919,16 @@
       "risk": "low",
       "status": "ready",
       "why": "Prod smoke (2026-07-11) noted: guide_writer.py:278 re-serializes assistant content via model_dump(mode='json') in the pause_turn continuation loop; when the model returns code_execution/text_editor_code_execution server-tool blocks (not web_search), pydantic emits PydanticSerializationUnexpectedValue warnings. NON-FATAL (the smoke hole finished first-turn), but a hole needing a real pause_turn continuation with those block types may not re-serialize cleanly. Fix: resume with the SDK block objects directly rather than a manual model_dump. Low priority."
+    },
+    {
+      "id": "tournament-per-course-handicap",
+      "title": "True per-course handicap adjustment for tournaments with different courses per round",
+      "type": "minor",
+      "priority": 6,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": [],
+      "why": "specs/tournament-per-round-format-course-plan.md §8 (per-round COURSE plan, cycle 120): standings/settlement are deliberately course-blind — computeStandings applies one manually-set handicap per player to every round regardless of which course it was played on. A true course-handicap adjustment (course rating/slope → different course handicap at Bethpage Black vs Bethpage Red) needs rating/slope data the app doesn't store today. Honest follow-up, NOT built as part of the course-plan feature — do not silently \"adjust\" net scores without real rating data."
     }
   ],
   "ui_decision_social_course": "OWNER OVERRIDE (2026-06-28, IMG_2960): build a floating 'island' pill bottom tab bar (Instagram-style \u2014 rounded, hovers above the bottom edge, NOT edge-to-edge SaaS) for navigating the future features. This supersedes the earlier 'no bottom tab' recommendation. Build it in the yardage-book aesthetic (on-paper, restrained, calm \u2014 not generic SaaS) and HIDE it on immersive screens (active round / voice / GPS) where the app should disappear. Likely tabs: Round/Home \u00b7 Partners \u00b7 Courses (+ profile). This is the 'minimal home dock' path from the plan, now promoted to the chosen approach + extended to a persistent floating tab. A new card 'nav-floating-island-tab' tracks the build."

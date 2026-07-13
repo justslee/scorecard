@@ -213,6 +213,19 @@ export interface Round {
   updatedAt: string;
 }
 
+/**
+ * One day's planned course in a tournament (index = day − 1). Mirrors the
+ * rounds course-anchor columns so drawing that day can reconstruct the full
+ * CourseSearch selection (anchor + mapped identity). null = "Course to be drawn".
+ */
+export interface TournamentRoundCourse {
+  courseId: string;
+  courseName: string;
+  courseLat?: number;
+  courseLng?: number;
+  mappedCourseId?: string;
+}
+
 export interface Tournament {
   id: string;
   name: string;
@@ -227,6 +240,12 @@ export interface Tournament {
   playerNamesById?: Record<string, string>;
   /** Tournament-level games (skins, nassau, etc.) that span all rounds */
   games?: Game[];
+  /**
+   * Per-day course plan from setup. Absent/undefined when the owner never
+   * touched per-round courses (byte-identical guarantee) and on all
+   * pre-feature tournaments.
+   */
+  roundCourses?: (TournamentRoundCourse | null)[];
 }
 
 export interface GolferProfile {
