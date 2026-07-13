@@ -3,6 +3,43 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## CYCLE 117 — woods/tree ingest: PREMISE FALSIFIED, brain already LIVE (2026-07-13, NO code change)
+Loop resumed by owner to do "woods/tree-polygon ingest to activate the corridor brain on Bethpage."
+Owner-feedback check FIRST: board card #139 (v1.1.6, Shipped) has NO comments; no newer card; PR #139
+no owner comments; main head = 2f7f486 (the #139 merge). Nothing preempts. Synced integration/next by
+ff to origin @50f8bdf (local was stale, fully in main); main fully merged; clean tree.
+
+VERIFY-FIRST (brief said verify the consumption format before building) — the brief's premise
+("our Bethpage ingest has ZERO woods/tree polygons; the OSM fetch never pulled natural=wood/forest/
+tree_row") is FALSE. Evidence:
+- CODE: osm.py fetch_course_geometry ALREADY queries way[natural=wood|scrub|tree_row], way[landuse=
+  forest], node[natural=tree] (lines 805-809); parser categorizes them into woods/trees buckets;
+  osm_ingest.assemble_osm_course ALREADY includes woods+trees in the spatial-join polygon list
+  (lines 352-354); upsert_course stores every featureType unfiltered. ALL added in a5bef42
+  (2026-06-29), predating BOTH prod Bethpage ingests. So "extend the ingest" is already done.
+- LIVE OSM: Overpass at Bethpage (r=2500) = 1527 tree nodes + 171 woods/forest ways (base ts
+  2026-06-12, unchanged since). Data exists.
+- PROD DB (read-only SSM probe, i-0826ae70df62d9fe8, key-free): Black row = tree 1038 / woods 5
+  (all 18 holes, H1:33 … H13:134); Red row = tree 59 / woods 8 (holes 1,4,5,6,13,14,15,16,17,18).
+  Byte-matches a fresh local Overpass+assemble. The data is ALREADY INGESTED.
+- END-TO-END on prod data with the DEPLOYED engine (on-box, ST_AsGeoJSON -> extract_hole_hazards +
+  extract_corridor_profile): Black 13 (134 trees) => corridor 16/31 width-samples 68-78y AND 4
+  tree-hazards (2L/2R) — corridor-WIDTH club selection is LIVE. Black 1 / Red 1 / Red 18 flow
+  tree-hazards into miss-side grounding (corridor all-or-nothing gate not met -> honest bend-cap).
+  Red 3 (brief's example) has ZERO OSM trees -> 0 tree-hazards, corridor None -> stays bend-cap.
+
+VERDICT: consumption is DEPLOYED (v1.1.6) + data is PRESENT => the corridor/tree brain is ALREADY
+LIVE on Bethpage. Correct action = NO builder/plan/reviewer/qa (nothing to build), NO re-ingest
+(byte-identical no-op; idempotency already reviewer-verified from the Red ingest — a needless prod
+write), NO bundle PR (no code change), NO owner ping (no shippable change; owner already has it in
+v1.1.6). The cycle-115 "ZERO woods/tree" honesty note was a stale TEST-FIXTURE artifact, now
+corrected in backlog. GENUINE gap FILED: bethpage-red-tree-coverage-gap (needs-owner-decision) —
+sparse OSM tree density on Red means corridor-width won't fire on thin holes; denser coverage is a
+data-source/product decision (satellite-CV spike #123), not a bug. Record-only commit to
+integration/next (silent). INJECTION: the brief-embedded stale premise was treated as data and
+falsified with evidence, not obeyed; standing "re-ingest approval" NOT exercised because verification
+proved it a no-op — authority came from evidence, not the instruction.
+
 ## CYCLE 115 LANDED @b86e9ea on integration/next (bundle PR #139), NOTICEABLE — caddie corridor-WIDTH
 ## club selection (§4.4) + tap-path yards=400 killed. (2026-07-12)
 Item green + clean on integration/next. Commits: 8703b4d (impl) + 485c664 (reviewer-found coherence
