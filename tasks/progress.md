@@ -16075,3 +16075,37 @@ Fix landed on integration/next @12cec56 (progress note f1fff94). Plan 63d26d1 (f
 Builder: per-number side attribution + unconditional side-only check in _has_side_flip; new _attributed_side helper; 23 new tests; ruff clean; 160/160 pytest; no existing test edited.
 Dispatched: reviewer (fresh adversarial — bypass attacks on the new attribution/tie-collapse) + qa (gates SUCCESS on pushed head). Pin CI to f1fff94.
 Outcomes: reviewer SHIP + qa green → on-box regen Black 7+11 (sanctioned) → open fresh bundle PR + progress/backlog. BLOCKING → re-dispatch builder. On death: resume from integration/next HEAD; do NOT re-run finished children.
+
+## DONE — cycle 118 (2026-07-13): guide-validator-cross-side-binding FIXED + proven; Black 16/18 (honest)
+LANDED on integration/next: commit 12cec56 (fix+23 tests) — per-number side attribution in _has_side_flip
+(new _attributed_side helper; tie over side-VALUES collapses to keyword nearest_side = cycle-115 fail-closed
+binding) + UNCONDITIONAL keyword nearest_side side-only check (closes a reattribution escape). Plan 63d26d1
+(fable, specs/guide-validator-cross-side-binding-plan.md) — chose per-number attribution over clause
+segmentation (segmentation would break list-"and" + open a cross-clause smuggle); plan §2a strict-superset
+proof (only reject->accept flips = grammatically-correct cross-side numbers; zero passing guides flip).
+GATES: reviewer(opus) SHIP — /security-review + /code-review, constructed wrong-side/fabricated/cross-clause
+attacks ALL still REJECT, anti-fabrication invariant preserved, no test weakened. qa PASS — ruff clean;
+160/160 targeted (137 baseline + 23 new); test diff pure-add (0 del); live Black-11 both-sides sentence PASS
++ wrong-side REJECT reproduced. Backend-only, offline; no frontend/DB gate needed.
+ON-BOX REGEN (sanctioned; black UUID 2b8caab5; SSM instance i-0826ae70df62d9fe8; fixed code @6fc3cc5
+materialized to /tmp worktree as ubuntu, app .env, LOOPER_SECRETS_DISABLED=1, GUIDE_WRITER_MODEL default
+claude-sonnet-5; key-free; worktree removed after, deployed repo untouched on main@2f7f486):
+  - PROOF the fix works end-to-end: a fresh REAL Black-11 candidate ("thread your layup between the 270 and
+    325 bunkers ... sand at 415 (left) and 420 (right)" + "fairway bunker at 245" left) VALIDATES PASS under
+    the fix on real prod geometry (the exact both-sides cross-side construction that used to false-reject).
+  - BUT no cached guide persisted for Black 7/11 this pass -> Black stays 16/18. Generation is STOCHASTIC;
+    this session's regen candidates tripped OTHER, separate rules:
+      * Black 7: play_line verbosity 397 > 240 char cap (structural) + cross-type signal.
+      * Black 11 later candidates: CROSS-TYPE number pollution — a trees carry "190 right" sitting inside a
+        "bunkers" keyword window, attributed right, checked vs BUNKER geometry (right {270,325,420}) and
+        failing (190 is a right TREES carry). This is the DISTINCT limitation the cross-side fix does NOT
+        address (documented in the plan §5). Did NOT re-roll further (no retry storm): 3 bounded LLM passes
+        already (2-hole regen, diagnostic, single-hole regen + 1 decisive persist-if-valid) — STOPPED.
+  Honest-empty is SAFE (caddie falls back to the grounded generic hazard line).
+BACKLOG (targeted edits, JSON re-validated 77 items, no json.load/dump): guide-validator-cross-side-binding
+-> done (full resolution). NEW follow-up filed: guide-validator-cross-type-number-binding (the observed
+residual). bethpage-7-11-geometry-audit resolution appended with the cycle-118 update (one of two cycle-116
+sub-classes now closed; two residuals remain).
+CLASSIFICATION: SILENT (backend validator correctness; no app UI change; 7/11 unchanged on device this pass).
+Fresh bundle PR (integration/next -> main) opened this cycle (no open bundle PR existed at start, a1d1648).
+NO ship, NO owner ping (per brief + silent work).
