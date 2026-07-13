@@ -448,10 +448,17 @@ class TestTournamentRoundCourses:
         assert r2.status_code == 200
         assert r2.json()["roundCourses"] == [mapped_entry, None]
 
-        # PUT replaces it wholesale.
+        # PUT replaces it wholesale. TournamentRoundCourse declares all five
+        # fields (no response_model_exclude_none on this endpoint family), so
+        # a partial entry round-trips with the unset optional anchor fields
+        # serialized as explicit nulls — same shape as the round-anchor tests
+        # (test_anchor_is_optional_and_null_for_legacy_clients).
         replacement_entry = {
             "courseId": "course-red-002",
             "courseName": "Bethpage Red",
+            "courseLat": None,
+            "courseLng": None,
+            "mappedCourseId": None,
         }
         r3 = await client.put(
             f"/api/tournaments/{tournament_id}",

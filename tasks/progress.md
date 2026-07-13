@@ -16258,6 +16258,18 @@ qa(gates state:SUCCESS on 5f13452 head SHA + CI backend gate runs migration on p
 Program itinerary + ghost card). Outcomes: SHIP+PASS+design-OK -> update PR #140 checklist (1 NOTICEABLE + 2 silent),
 progress+backlog, NO ship/ping. Any BLOCKING -> re-dispatch builder (SendMessage a4c19c360db9be92c), re-review.
 
+### AWAITING builder test-fix @ 8713e1f -> re-verify CI — 2026-07-13
+Review stage COMPLETE, all three converge: designer DESIGN OK (setup itinerary + ghost card + draw page,
+byte-preservation confirmed). reviewer SHIP-with-1-BLOCKING (production code + migration + types + byte-identical
++ security all SOUND; single blocker = test-expectation bug). qa FAIL on same single item: local gates 6/6 PASS,
+CI Frontend SUCCESS + E2E advisory SUCCESS on 8713e1f, CI Backend FAILURE — migration APPLIED CLEANLY on postgis
+(2500/2501 passed), only failure = test_tournament_round_courses_roundtrip PUT assertion (partial entry round-trips
+with explicit null anchor fields; response_model=Tournament backfills nulls — test expected 2 keys, got 5).
+Builder (a4c19c360db9be92c) fixing the test expectation ONLY (add courseLat/courseLng/mappedCourseId: None to
+replacement_entry) — production code correct, NOT changing it. On builder push: re-run backend CI gate, assert
+Frontend + Backend BOTH state:SUCCESS on the NEW head SHA before proceeding. Then PR #140 checklist (1 NOTICEABLE
++ 2 silent) + progress + backlog; NO ship/ping (accumulate on #140).
+
 ## BUILT — cycle 121 (tournament-per-round-format-course) builder pass — 2026-07-13
 Implemented specs/tournament-per-round-format-course-plan.md §1-§9 verbatim on integration/next.
 Migration: backend/migrations/versions/0011_014_tournament_round_courses.py — revision
