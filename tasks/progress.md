@@ -3,6 +3,40 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## CYCLE 123 DONE — S4f coverage flywheel: telemetry seam + metric + schema canary + sweep (2026-07-13, backend/ops-only, SILENT, bundle-rider on #140)
+Implemented specs/teetime-s4f-coverage-flywheel-plan.md (fable-approved, backlog id
+teetime-s4f-coverage-flywheel) on integration/next @ bcedbb8. Zero user-facing surface, zero
+change to search results — the only search-path change is one fire-and-forget record call.
+
+Four deliverables: (1) `search_telemetry.py` — injectable file-backed telemetry store (mirrors
+`availability_call_cache.py`): `SearchedCourseRecord` (dedup key = course_id), `SearchOutcome`
+enum, `FileSearchTelemetryStore` (debounced 30s flush + immediate on a new course, MAX_COURSES=500
+LRU-by-last_seen eviction, fail-soft), module singleton, pure `coverage_summary()` metric
+(coverage % = real_availability+verified_empty / non-private denominator; strict % =
+real_availability only). (2) `router_provider.py` wired the seam into `_slots_for_course`: added
+a `telemetry` ctor param + fire-and-forget `_record_outcome()`; records nothing on the kill-switch
+path and nothing when the capability lookup itself raises (new `capability_lookup_failed` flag
+distinguishes that from a genuine `no_capability` fact) — diff is additive only, no behavior
+change. (3) `schema_canary.py` — pure network-free `check_shape()` reusing each adapter's OWN
+parse layer (`_normalize_day`/`_parse_matrix`), three ordered checks (top-level shape guard
+transcribed from each adapter's real `_do_fetch`, plausibility ranges, expect_nonempty). (4)
+`scripts/coverage_flywheel.py` — new sibling script (report/sweep/canary subcommands), imports
+the existing probe pipeline; added additive `"canary": true` to one seed row per platform (foreup/
+teeitup/chronogolf/clubprophet — quick18 unseeded, canary SKIPs it honestly).
+
+Tests: 68 new, all DB-free/network-free (`test_tee_time_search_telemetry.py` 21,
+`test_tee_time_router_telemetry.py` 17 incl. RaisingStore==NoopStore across every branch,
+`test_tee_time_schema_canary.py` 24). Gates: `ruff check .` clean; `pytest
+--ignore=tests/integration -q` → 2465 passed, 0 regressions. Manual smoke: `report` on an empty
+store prints honest zeros; all `--help` parse; `sweep --dry-run` makes zero network calls.
+
+Note for eng-lead: the plan's §4b prose calls `teeitup_empty.json` "drift... per rule 1" — the
+real `teeitup.py _do_fetch` guard only flags a ZERO-LENGTH top-level array as rule-1 drift, and
+that fixture is a one-element array with an empty inner `teetimes` list, so it's healthy under
+`expect_nonempty=False` and drift only via rule 3 (`no-entries`) under `expect_nonempty=True`.
+Implemented + tested to match the real adapter code, not the plan's prose (both sides asserted).
+Minimal, sound adjustment — flagging per the "if the plan proves wrong, note it" instruction.
+
 ## CYCLE 118 DONE — guide-validator cross-side number binding fix (2026-07-13, backend-only, SILENT-ish)
 Implemented specs/guide-validator-cross-side-binding-plan.md (fable-approved) exactly, on
 integration/next (built on top of 63d26d1 which added the plan doc). ONE file changed:
