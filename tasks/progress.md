@@ -16477,3 +16477,22 @@ reviewer a0325d5 (sanity: no behavior change, no honesty regression, motion gate
 in parallel. Also verifying CI SUCCESS on pushed head. On ALL green → #140 checklist += 2 SILENT, backlog
 both nits→done, update progress. NO ship/ping (bundle already has its noticeable; accumulates). On any
 BLOCKING → re-dispatch builder with the fix, re-review. On resume: reconcile from origin/integration/next.
+
+## Cycle 124 DONE — batched polish nits landed on bundle #140 (2 SILENT bundle-riders)
+Impl @e4ced85 (+ progress commits). Two designer-filed nits cleared together as one honest pass:
+1. autocomplete-overlay-collapse-motion — PlayerAutocomplete suggestions + no-match overlays animate
+   height:0<->auto (0.2s easeOut) alongside opacity/y(/scale), reduced-motion-gated (useReducedMotion:
+   initial=false / transition duration:0 when reduce); overflow:'hidden' added to no-match card; inner
+   maxHeight:240 scroll div untouched. Done button settles instead of snapping.
+2. teetime-searching-copy-polish — confirm-copy.ts: the 'who books it' fact stated ONCE in subCopy
+   (unchanged, all needs_human branches); stripped from 2 duplicating looperLine branches (foreup
+   real-time + book_on_site). call branch + ctaLabel unchanged. Honesty preserved ('Found' not 'Held').
+   Old page.tsx verb-mixing copy was already refactored away (re-scoped in the resolution).
+Process: designer LED concept (motion spec + copy before/after) → builder applied both as ONE commit →
+designer verified rendered DESIGN OK (BLOCKING) → reviewer(fresh) SHIP (purely presentational, aria
+unchanged, no honesty regression, tests tightened not weakened) → qa PASS (lint/tsc/confirm-copy 49/49/
+full unit 2429/2429/build/voice 278/278). backlog both items status ready->done (targeted edits, JSON
+validated 78 items intact, no duplicate-key collapse). PR #140 checklist += 2 SILENT; silent count 3->5.
+NO ship/ping: bundle #140 = 1 noticeable (tournament per-round course) + 5 silent; accumulates until the
+next eng-lead ship pass builds TestFlight from #140 for owner approval. Verifying CI SUCCESS (Frontend +
+Backend) on final head before ending.

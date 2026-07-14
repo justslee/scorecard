@@ -152,7 +152,8 @@
       "type": "minor",
       "priority": 4,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
+      "resolution": "DONE cycle 124 (2026-07-13), bundle #140 @e4ced85 (SILENT polish). Both overlay motion.divs (suggestions + no-matches) now animate height:0<->auto alongside opacity/y(/scale), 0.2s easeOut, reduced-motion-gated via useReducedMotion() (initial=false / transition duration:0 when reduce); overflow:'hidden' added to the no-matches card so the collapse contracts smoothly without clipping the box-shadow; inner maxHeight:240 scroll div untouched. Done button now settles instead of snapping. designer DESIGN OK + reviewer SHIP (purely presentational, aria unchanged) + qa PASS.",
       "why": "Non-blocking polish flagged by designer during cycle-101 review of the in-flow overlay fix (aeb388b). AnimatePresence animates only opacity/y (0.14s); the height change is an instant reflow, so when a multi-row suggestion list collapses straight to the single-line no-match card (typing fast), the Done button snaps upward (~190px measured with 8 saved players) rather than settling smoothly -- a minor miss against the Northstar quiet-motion brief. Fix: wrap the in-flow overlay container in a `motion.div layout` or animate maxHeight so the reflow is calm. Low priority; the functional bug is already fixed."
     },
     {
@@ -857,7 +858,8 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
+      "status": "done",
+      "resolution": "DONE cycle 124 (2026-07-13), bundle #140 @e4ced85 (SILENT polish). Designer drafted the before/after. The old page.tsx route/real-slot verb-mixing copy ('Pulling up how to book.' vs 'Setting it up.') was already refactored away; the still-live redundancy was in confirm-copy.ts — the 'who books it' fact appeared twice on every needs_human result (looperLine + subCopy). Fix: stated ONCE in subCopy ('You book direct — the course takes the reservation.', unchanged, renders on every needs_human branch); stripped from the two duplicating looperLine branches (foreup real-time -> 'Found <time> at <course>.'; book_on_site -> 'Found <course>, <dist> mi away[ — for a time in your <window> window].'). call branch + ctaLabel unchanged. Honesty preserved: 'Found' not 'Held', fact never dropped. 2 confirm-copy.test.ts blocks tightened to exact strings (not weakened). designer DESIGN OK + reviewer SHIP (no honesty regression, subCopy unconditional on all needs_human branches) + qa PASS.",
       "notes": "Designer (cycle 43) nits 2+3 on the S1 path (non-blocking): (2) looperLine 'they take the reservation, book it on the course site' + subCopy 'You book direct \u2014 the course takes the reservation' say the same thing back-to-back (reads SaaS-legal); shorten looperLine to the fact only. (3) route path says 'Pulling up how to book.' vs real-slot 'Setting it up.' \u2014 unify to one caddie verb. confirm-copy.ts:56, page.tsx:914-916. Item 1 (time format) already fixed in 3ce8bd5.",
       "why": " | SCOPED 2026-07-10: cosmetic copy on the tee-time 'searching\u2026' state; no recorded defect, needs a concrete before/after from the owner or a designer pass to be worth a cycle. Low value solo."
     },
