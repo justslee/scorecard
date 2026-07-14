@@ -16416,3 +16416,19 @@ not wired — entrypoint + docs are the deliverable).
 NO ship/ping this cycle: PR #140 already holds 1 noticeable (tournament per-round course) + now 3
 silent items; all accumulate until the next eng-lead ship pass builds a TestFlight from #140 for
 owner approval. Next cycle: pick next READY backlog item.
+
+## AWAITING — cycle 124 (BATCHED nits, SILENT): designer concept → builder → review/qa
+Two designer-filed nits batched into one honest pass on integration/next (head 0585126). Both SILENT (polish).
+1. autocomplete-overlay-collapse-motion — PlayerAutocomplete.tsx: add calm height transition so
+   suggestions→no-match collapse doesn't snap the Done button up. App idiom: AnimatePresence height:0↔auto
+   (HoleCard/CaddieSheet), reduced-motion-gated via useReducedMotion() (tournament/new pattern).
+2. teetime-searching-copy-polish — confirm-copy.ts: the STILL-LIVE issue is the DOUBLE reservation
+   disclaimer (looperLine "they take the reservation — book on the course site" + subCopy "You book
+   direct — the course takes the reservation") on every needs_human result. (Old page.tsx verb-mixing
+   copy already refactored away.) Designer drafting concrete before/after; honesty invariant: the
+   "we don't book it" fact stays ONCE, "Found" not "Held".
+Flow: designer(a30d1a03414392357) leads concept → builder applies both on integration/next → designer
+verifies rendered (BLOCKING) → reviewer quick sanity (no behavior change, no honesty regression, motion
+reduced-motion-gated) → qa gates (all state:SUCCESS on pushed head SHA; update voice/copy fixtures ONLY
+if copy legitimately changed, never weaken). Land on #140, checklist += 2 SILENT. NO ship/ping this cycle.
+On resume: reconcile from origin/integration/next log; if builder already pushed, pin CI to that head, don't rebuild.
