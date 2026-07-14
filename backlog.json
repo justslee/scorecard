@@ -887,9 +887,9 @@
       "type": "major",
       "priority": 4,
       "risk": "medium",
-      "status": "ready",
+      "status": "done",
       "depends_on": [],
-      "why": "Bundle-rider. Log searched courses with no capability row \u2192 feed the probe script; '% of searched courses returning real availability' metric; monthly re-probe sweep; per-engine schema-drift canary. Plan \u00a72b,\u00a79."
+      "why": "DONE cycle 122 (@bcedbb8, SILENT bundle-rider on PR #140, reviewer SHIP + qa PASS, CI SUCCESS on head 1c14f98). search_telemetry.py records a fire-and-forget SearchOutcome per _slots_for_course branch (no_capability = probe-feed queue); coverage_summary metric + coverage_flywheel.py {report,sweep,canary} operational entrypoint (no dashboard/API, no migration \u2014 file store per plan \u00a72a); schema_canary.check_shape reuses each adapter's own parse layer. Plan specs/teetime-s4f-coverage-flywheel-plan.md. Non-blocking follow-ups: shlex.quote the display-only suggested-probe command string in coverage_flywheel.py; external scheduling of the sweep/canary is ops/owner (intentionally not wired). Original: Bundle-rider. Log searched courses with no capability row \u2192 feed the probe script; '% of searched courses returning real availability' metric; monthly re-probe sweep; per-engine schema-drift canary. Plan \u00a72b,\u00a79."
     },
     {
       "id": "caller-voice-clone-pipeline",
