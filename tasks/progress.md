@@ -16467,3 +16467,13 @@ commit, runs lint/tsc/vitest/build/voice-smoke, pushes. On builder DONE → desi
 (BLOCKING) + reviewer quick sanity + qa gates (all state:SUCCESS on pushed head SHA). Then #140 checklist
 += 2 SILENT, backlog both→done. NO ship/ping. On resume: git log origin/integration/next; if builder
 pushed, pin CI to that head, don't rebuild.
+
+## AWAITING — cycle 124 review stage (3 agents parallel on e4ced85 / head ba339c1)
+Builder DONE: polish e4ced85 + progress ba339c1 pushed to integration/next. Local gates green
+(lint/tsc/vitest 49/build/voice 278). Diff verified matches designer concept exactly (motion height-gated
+both blocks + overflow:hidden on no-match card; copy fact stripped from 2 looperLine branches, subCopy/
+call/ctaLabel untouched; 2 test blocks stricter not weaker). Now: designer-verify ad0ec118 (BLOCKING) +
+reviewer a0325d5 (sanity: no behavior change, no honesty regression, motion gated) + qa ae7695e (gates)
+in parallel. Also verifying CI SUCCESS on pushed head. On ALL green → #140 checklist += 2 SILENT, backlog
+both nits→done, update progress. NO ship/ping (bundle already has its noticeable; accumulates). On any
+BLOCKING → re-dispatch builder with the fix, re-review. On resume: reconcile from origin/integration/next.
