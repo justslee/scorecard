@@ -16496,3 +16496,13 @@ validated 78 items intact, no duplicate-key collapse). PR #140 checklist += 2 SI
 NO ship/ping: bundle #140 = 1 noticeable (tournament per-round course) + 5 silent; accumulates until the
 next eng-lead ship pass builds TestFlight from #140 for owner approval. Verifying CI SUCCESS (Frontend +
 Backend) on final head before ending.
+
+## 2026-07-13 — LOOP PAUSED by owner (second pause)
+Owner paused the hourly eng-lead loop after cycle 124. State at pause: bundle PR #140 OPEN and
+COMPLETE (1 noticeable: tournament per-round courses + round-creation entry fix; 5 silent:
+validator cross-side + cross-type, coverage flywheel, collapse-motion polish, tee-time copy
+de-dup) — all green, formally offered to the owner as v1.1.7; approval pending. Backlog at floor:
+all remaining items owner-gated (Red tree data / satellite-CV, Twilio caller, Venmo, match-play +
+team pickers, per-course handicap, VAD audio, DATABASE_URL secret refresh). v1.1.6 field test
+verdict still pending. Resume = owner says so → re-arm the hourly cron + first cycle checks the
+board.
