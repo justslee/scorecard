@@ -16432,3 +16432,16 @@ verifies rendered (BLOCKING) → reviewer quick sanity (no behavior change, no h
 reduced-motion-gated) → qa gates (all state:SUCCESS on pushed head SHA; update voice/copy fixtures ONLY
 if copy legitimately changed, never weaken). Land on #140, checklist += 2 SILENT. NO ship/ping this cycle.
 On resume: reconcile from origin/integration/next log; if builder already pushed, pin CI to that head, don't rebuild.
+
+## AWAITING — cycle 124 builder in flight (designer concept DONE)
+Designer concept complete. NIT1 motion spec: animate height:0↔auto (0.2s easeOut) on BOTH
+PlayerAutocomplete overlays (suggestions already overflow:hidden; add overflow:hidden to no-match
+card), reduced-motion-gated via useReducedMotion() (initial=false / transition duration:0 when reduce).
+NIT2 copy: strip "they take the reservation — book on the course site" from the 2 book_on_site/foreup
+looperLine branches (fact stays ONCE in subCopy "You book direct — the course takes the reservation");
+call-route + ctaLabel + subCopy unchanged. 2 confirm-copy.test.ts blocks updated to new exact looperLine
++ ctaLabel (never weakened). Builder aa3773ccb8f78367f applying both on integration/next as ONE SILENT
+commit, runs lint/tsc/vitest/build/voice-smoke, pushes. On builder DONE → designer verifies rendered
+(BLOCKING) + reviewer quick sanity + qa gates (all state:SUCCESS on pushed head SHA). Then #140 checklist
++= 2 SILENT, backlog both→done. NO ship/ping. On resume: git log origin/integration/next; if builder
+pushed, pin CI to that head, don't rebuild.
