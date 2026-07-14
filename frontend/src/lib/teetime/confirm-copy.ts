@@ -65,7 +65,8 @@ export function confirmCopy(slot: TeeTimeSlot, bookingResult: BookingResult | nu
       // A real provider (foreup) slot with a known time — still a needs_human
       // deep-link handoff (S2 owns in-app booking), but honest enough to say
       // the real time out loud instead of falling back to the routing copy.
-      looperLine = `Found ${formatTime12hOrEmpty(slot.time)} at ${slot.courseName} — they take the reservation, book it on the course site.`;
+      // (Who books it is said once, in subCopy below — not repeated here.)
+      looperLine = `Found ${formatTime12hOrEmpty(slot.time)} at ${slot.courseName}.`;
     } else if (slot.route === "call") {
       looperLine = askWindow
         ? `Found ${slot.courseName}. No online booking — call the pro shop for a time in your ${askWindow} window.`
@@ -73,9 +74,10 @@ export function confirmCopy(slot: TeeTimeSlot, bookingResult: BookingResult | nu
     } else {
       // "book_on_site" (or an unset route on a needs_human result — treat as
       // the honest default: we found the course, they take the reservation).
+      // (Who books it is said once, in subCopy below — not repeated here.)
       looperLine = askWindow
-        ? `Found ${slot.courseName}, ${slot.distanceMiles} mi away. They take the reservation — book on the course site for a time in your ${askWindow} window.`
-        : `Found ${slot.courseName}, ${slot.distanceMiles} mi away. They take the reservation — book on the course site.`;
+        ? `Found ${slot.courseName}, ${slot.distanceMiles} mi away — for a time in your ${askWindow} window.`
+        : `Found ${slot.courseName}, ${slot.distanceMiles} mi away.`;
     }
   } else {
     const teeTime = formatTime12hOrEmpty(slot.time);

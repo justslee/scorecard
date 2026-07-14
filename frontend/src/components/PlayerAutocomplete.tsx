@@ -7,7 +7,7 @@
  */
 
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { T, DEFAULT_ACCENT } from '@/components/yardage/tokens';
 import { SavedPlayer, Player } from '@/lib/types';
 
@@ -62,6 +62,7 @@ export default function PlayerAutocomplete({
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
 
   // Stable ID for custom (non-saved) players based on position
   const customPlayerId = `custom-player-${index}`;
@@ -287,10 +288,10 @@ export default function PlayerAutocomplete({
           <motion.div
             ref={listRef}
             key="suggestions"
-            initial={{ opacity: 0, y: -6, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.98 }}
-            transition={{ duration: 0.14, ease: 'easeOut' }}
+            initial={reduce ? false : { opacity: 0, y: -6, scale: 0.98, height: 0 }}
+            animate={{ opacity: 1, y: 0, scale: 1, height: 'auto' }}
+            exit={reduce ? { opacity: 0, height: 0 } : { opacity: 0, y: -6, scale: 0.98, height: 0 }}
+            transition={reduce ? { duration: 0 } : { duration: 0.2, ease: 'easeOut' }}
             id={`player-suggestions-${index}`}
             role="listbox"
             style={{
@@ -416,10 +417,10 @@ export default function PlayerAutocomplete({
         {isOpen && inputValue.trim() && suggestions.length === 0 && (
           <motion.div
             key="no-matches"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.14, ease: 'easeOut' }}
+            initial={reduce ? false : { opacity: 0, y: -6, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: 'auto' }}
+            exit={reduce ? { opacity: 0, height: 0 } : { opacity: 0, y: -6, height: 0 }}
+            transition={reduce ? { duration: 0 } : { duration: 0.2, ease: 'easeOut' }}
             style={{
               marginTop: 6,
               borderRadius: 14,
@@ -430,6 +431,7 @@ export default function PlayerAutocomplete({
               display: 'flex',
               alignItems: 'center',
               gap: 10,
+              overflow: 'hidden',
             }}
           >
             <div style={{ color: T.pencilSoft }}>

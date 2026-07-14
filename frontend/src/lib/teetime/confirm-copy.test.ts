@@ -60,11 +60,11 @@ describe("confirmCopy — no 'Held' anywhere", () => {
 });
 
 describe("confirmCopy — route-driven language", () => {
-  it("book_on_site: looper line + CTA point to the course site", () => {
+  it("book_on_site: looper line names the course + distance; CTA points to the course site", () => {
     const slot: TeeTimeSlot = { ...BASE_SLOT, route: "book_on_site" };
     const result: BookingResult = { status: "needs_human", bookingUrl: slot.bookingUrl };
     const copy = confirmCopy(slot, result);
-    expect(copy.looperLine.toLowerCase()).toContain("book on the course site");
+    expect(copy.looperLine).toBe(`Found ${slot.courseName}, ${slot.distanceMiles} mi away.`);
     expect(copy.ctaLabel).toBe("Book on the course site →");
   });
 
@@ -131,7 +131,8 @@ describe("confirmCopy — needs_human with a real known time (foreup)", () => {
     const slot: TeeTimeSlot = { ...BASE_SLOT, time: "", route: "book_on_site" };
     const result: BookingResult = { status: "needs_human", bookingUrl: slot.bookingUrl };
     const copy = confirmCopy(slot, result);
-    expect(copy.looperLine.toLowerCase()).toContain("book on the course site");
+    expect(copy.looperLine).toBe(`Found ${slot.courseName}, ${slot.distanceMiles} mi away.`);
+    expect(copy.ctaLabel).toBe("Book on the course site →");
     expect(copy.looperLine).not.toContain("AM");
     expect(copy.looperLine).not.toContain("PM");
   });
