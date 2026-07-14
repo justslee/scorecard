@@ -3,6 +3,28 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## CYCLE 124 DONE — two designer-approved polish nits: autocomplete collapse motion + tee-time double disclaimer (2026-07-13, frontend-only, SILENT)
+Committed directly to `integration/next` @ e4ced85 (no separate PR — bundle rider).
+
+1. **autocomplete-overlay-collapse-motion** (`frontend/src/components/PlayerAutocomplete.tsx`):
+   the suggestions dropdown and no-matches card now animate `height` alongside
+   opacity/y/scale (reduced-motion-gated via `useReducedMotion`), matching the
+   HoleCard/CaddieSheet/tournament-new idiom — fixes the Done button snapping up
+   instantly when suggestions collapse straight to the no-match card.
+2. **teetime-searching-copy-polish** (`frontend/src/lib/teetime/confirm-copy.ts`):
+   the "who books it" fact on a needs_human tee-time result appeared twice
+   (looperLine + subCopy) — now stated once, in subCopy (unchanged, renders on
+   every needs_human branch). Updated the two looperLine branches that duplicated
+   it (foreup real-time, book_on_site w/ and w/o askWindow). Honesty preserved,
+   fact de-duplicated not dropped. Updated the two confirm-copy.test.ts assertions
+   that referenced the old stale substring to the exact new strings (no assertion
+   weakened — only the two affected `it()` blocks touched).
+
+Gates (all green): `npm run lint` clean; `npx tsc --noEmit` clean; `npx vitest run
+src/lib/teetime/confirm-copy.test.ts` → 49 passed; `npm run build` succeeds; `npx tsx
+voice-tests/runner.ts --smoke` → 278/278 pass. No PlayerAutocomplete test file exists
+(not created — out of scope for this polish pass).
+
 ## CYCLE 123 DONE — S4f coverage flywheel: telemetry seam + metric + schema canary + sweep (2026-07-13, backend/ops-only, SILENT, bundle-rider on #140)
 Implemented specs/teetime-s4f-coverage-flywheel-plan.md (fable-approved, backlog id
 teetime-s4f-coverage-flywheel) on integration/next @ bcedbb8. Zero user-facing surface, zero
