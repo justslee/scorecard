@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { roundHref } from "@/lib/round-url";
+import { roundHref, tournamentRoundNewHref } from "@/lib/round-url";
+import { planCourseNameForDay } from "@/lib/tournament-course-plan";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { getTournamentAsync, getRoundsAsync } from "@/lib/storage-api";
@@ -616,7 +617,7 @@ export default function TournamentPageClient() {
         </div>
 
         {/* ── Round progress strip ───────────────────────────────────────── */}
-        {hasRounds && (
+        {(hasRounds || (tournament.numRounds ?? 0) > 0) && (
           <div style={{ padding: "0 22px 14px" }}>
             <div style={{ display: "flex", gap: 6 }}>
               {memberRounds.map((r, i) => {
@@ -699,6 +700,52 @@ export default function TournamentPageClient() {
                   </button>
                 );
               })}
+              {/* Ghost card — the NEXT day only (calm, not a dashboard):
+                  entry point into the round-creation flow (specs/
+                  tournament-per-round-format-course-plan.md §6). */}
+              {memberRounds.length < (tournament.numRounds ?? 0) && (
+                <button
+                  onClick={() => router.push(tournamentRoundNewHref(tournament.id))}
+                  style={{
+                    flex: 1,
+                    borderRadius: 12,
+                    padding: "10px 12px",
+                    border: `1px dashed ${T.hairline}`,
+                    background: "transparent",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    minHeight: 44,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontFamily: T.mono,
+                      fontSize: 8.5,
+                      letterSpacing: 1.3,
+                      color: T.pencilSoft,
+                      textTransform: "uppercase",
+                      marginBottom: 2,
+                    }}
+                  >
+                    Day {memberRounds.length + 1} · upcoming
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: T.serif,
+                      fontSize: 14,
+                      letterSpacing: -0.2,
+                      color: T.pencil,
+                      lineHeight: 1.1,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {planCourseNameForDay(tournament, memberRounds.length) ?? "Course to be drawn"}
+                  </div>
+                </button>
+              )}
             </div>
           </div>
         )}

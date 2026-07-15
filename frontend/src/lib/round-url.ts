@@ -23,3 +23,8 @@ export function roundHref(id: string): string {
 export function tournamentHref(id: string): string {
   return `/tournament/${ROUND_VIEW_SEGMENT}?id=${encodeURIComponent(id)}`;
 }
+
+/** Same static-path + query-id trick for adding a round to a tournament. */
+export function tournamentRoundNewHref(id: string): string {
+  return `/tournament/${ROUND_VIEW_SEGMENT}/round/new?id=${encodeURIComponent(id)}`;
+}

@@ -4,6 +4,7 @@
     {
       "platform": "foreup",
       "course_id": null,
+      "canary": true,
       "foreup_booking_id": "20410",
       "schedule_id": "4467",
       "booking_url": "https://foreupsoftware.com/index.php/booking/20410/4467",

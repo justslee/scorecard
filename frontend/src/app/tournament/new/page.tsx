@@ -20,6 +20,8 @@ import {
   colophonLine,
   ghostCount,
 } from "@/lib/tournament-program";
+import CourseSearch, { type CourseSelectPayload } from "@/components/CourseSearch";
+import { applyDayCourseSelection, buildRoundCoursesPayload } from "@/lib/tournament-course-plan";
 
 const NUM_ROUNDS = [1, 2, 3, 4] as const;
 
@@ -33,6 +35,15 @@ export default function TournamentSetupPage() {
   // ── form state ────────────────────────────────────────────────────────────
   const [name, setName] = useState("");
   const [numRounds, setNumRounds] = useState<1 | 2 | 3 | 4>(1);
+  // Per-day course plan (fixed length 4 = max NUM_ROUNDS; render/submit always
+  // slice to numRounds, so toggling 3→2→3 days preserves choices calmly).
+  const [dayCourses, setDayCourses] = useState<(CourseSelectPayload | null)[]>([
+    null,
+    null,
+    null,
+    null,
+  ]);
+  const [pickingDay, setPickingDay] = useState<number | null>(null);
   const [apiPlayers, setApiPlayers] = useState<SavedPlayer[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [customPlayers, setCustomPlayers] = useState<{ id: string; name: string }[]>([]);
@@ -191,10 +202,12 @@ export default function TournamentSetupPage() {
         ...persistedCustom.map((p) => p.id),
       ];
 
+      const roundCourses = buildRoundCoursesPayload(dayCourses, numRounds);
       const created = await createTournament({
         name: name.trim(),
         numRounds,
         playerIds: allPlayerIds,
+        ...(roundCourses ? { roundCourses } : {}),
       });
 
       // Build playerNamesById for the local cache so the detail page can resolve
@@ -427,13 +440,15 @@ export default function TournamentSetupPage() {
                   );
                 })}
               </div>
-              {/* Itinerary preview — non-interactive; rounds are actually
-                  drawn later from the tournament page. */}
+              {/* Itinerary preview — tappable; pick a course per day. Rounds
+                  are actually drawn later from the tournament page. */}
               <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
                 <AnimatePresence initial={false}>
                   {Array.from({ length: numRounds }, (_, i) => (
-                    <motion.div
+                    <motion.button
                       key={i}
+                      type="button"
+                      onClick={() => setPickingDay(i)}
                       layout={reduce ? false : true}
                       initial={reduce ? false : { opacity: 0, scale: 0.96 }}
                       animate={{ opacity: 1, scale: 1 }}
@@ -445,6 +460,10 @@ export default function TournamentSetupPage() {
                         border: `1px solid ${T.hairline}`,
                         background: "transparent",
                         padding: "10px 12px",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        font: "inherit",
+                        minHeight: 44,
                       }}
                     >
                       <div
@@ -464,16 +483,16 @@ export default function TournamentSetupPage() {
                           fontFamily: T.serif,
                           fontSize: 14,
                           letterSpacing: -0.2,
-                          color: T.pencil,
+                          color: dayCourses[i] ? T.ink : T.pencil,
                           lineHeight: 1.1,
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                         }}
                       >
-                        Course to be drawn
+                        {dayCourses[i]?.name ?? "Course to be drawn"}
                       </div>
-                    </motion.div>
+                    </motion.button>
                   ))}
                 </AnimatePresence>
               </div>
@@ -937,6 +956,22 @@ export default function TournamentSetupPage() {
           </button>
         </div>
       </div>
+
+      {/* ── CourseSearch overlay (per-day course plan) ── */}
+      <AnimatePresence>
+        {pickingDay !== null && (
+          <CourseSearch
+            voiceSearch
+            onSelectCourse={(course) => {
+              setDayCourses((prev) =>
+                applyDayCourseSelection(prev, pickingDay, course)
+              );
+              setPickingDay(null);
+            }}
+            onClose={() => setPickingDay(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -275,6 +275,10 @@ class Tournament(Base):
     # carry tournament_id FK for the canonical join.
     round_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     player_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # Per-day course plan from tournament setup (list, index = day-1; entries
+    # mirror the rounds course-anchor shape, or null = "to be drawn"). Nullable,
+    # additive — NULL = no plan, the exact semantics of every pre-feature row.
+    round_courses: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

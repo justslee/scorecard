@@ -632,3 +632,29 @@ describe('computeTournamentSettlement — money + game-less + unscored rounds to
     assertConservation(ledger);
   });
 });
+
+// ─── Per-round COURSE plan — settlement is course-blind (§8) ───────────────────
+// tournament-per-round-format-course-plan.md §8: computeTournamentSettlement
+// settles per-round game ledgers, also course-blind. Per-round course variance
+// must introduce NO math change.
+
+describe('computeTournamentSettlement — per-round course variance is inert', () => {
+  it('rounds sitting on different courses settle identically to the same-course fixture', () => {
+    const sameCourse = [
+      decidedMatchPlayRound('r1', 10, 'p1', 'p2'),
+      decidedMatchPlayRound('r2', 10, 'p2', 'p1'),
+    ];
+
+    const differentCourses = [
+      { ...decidedMatchPlayRound('r1', 10, 'p1', 'p2'), courseId: 'black', courseName: 'Bethpage Black' },
+      { ...decidedMatchPlayRound('r2', 10, 'p2', 'p1'), courseId: 'red', courseName: 'Bethpage Red' },
+    ];
+
+    const sameCourseLedger = computeTournamentSettlement(sameCourse);
+    const differentCoursesLedger = computeTournamentSettlement(differentCourses);
+
+    expect(differentCoursesLedger.netByPlayer).toEqual(sameCourseLedger.netByPlayer);
+    expect(differentCoursesLedger.transfers).toEqual(sameCourseLedger.transfers);
+    assertConservation(differentCoursesLedger);
+  });
+});

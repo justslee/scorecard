@@ -3,6 +3,143 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## CYCLE 124 DONE — two designer-approved polish nits: autocomplete collapse motion + tee-time double disclaimer (2026-07-13, frontend-only, SILENT)
+Committed directly to `integration/next` @ e4ced85 (no separate PR — bundle rider).
+
+1. **autocomplete-overlay-collapse-motion** (`frontend/src/components/PlayerAutocomplete.tsx`):
+   the suggestions dropdown and no-matches card now animate `height` alongside
+   opacity/y/scale (reduced-motion-gated via `useReducedMotion`), matching the
+   HoleCard/CaddieSheet/tournament-new idiom — fixes the Done button snapping up
+   instantly when suggestions collapse straight to the no-match card.
+2. **teetime-searching-copy-polish** (`frontend/src/lib/teetime/confirm-copy.ts`):
+   the "who books it" fact on a needs_human tee-time result appeared twice
+   (looperLine + subCopy) — now stated once, in subCopy (unchanged, renders on
+   every needs_human branch). Updated the two looperLine branches that duplicated
+   it (foreup real-time, book_on_site w/ and w/o askWindow). Honesty preserved,
+   fact de-duplicated not dropped. Updated the two confirm-copy.test.ts assertions
+   that referenced the old stale substring to the exact new strings (no assertion
+   weakened — only the two affected `it()` blocks touched).
+
+Gates (all green): `npm run lint` clean; `npx tsc --noEmit` clean; `npx vitest run
+src/lib/teetime/confirm-copy.test.ts` → 49 passed; `npm run build` succeeds; `npx tsx
+voice-tests/runner.ts --smoke` → 278/278 pass. No PlayerAutocomplete test file exists
+(not created — out of scope for this polish pass).
+
+## CYCLE 123 DONE — S4f coverage flywheel: telemetry seam + metric + schema canary + sweep (2026-07-13, backend/ops-only, SILENT, bundle-rider on #140)
+Implemented specs/teetime-s4f-coverage-flywheel-plan.md (fable-approved, backlog id
+teetime-s4f-coverage-flywheel) on integration/next @ bcedbb8. Zero user-facing surface, zero
+change to search results — the only search-path change is one fire-and-forget record call.
+
+Four deliverables: (1) `search_telemetry.py` — injectable file-backed telemetry store (mirrors
+`availability_call_cache.py`): `SearchedCourseRecord` (dedup key = course_id), `SearchOutcome`
+enum, `FileSearchTelemetryStore` (debounced 30s flush + immediate on a new course, MAX_COURSES=500
+LRU-by-last_seen eviction, fail-soft), module singleton, pure `coverage_summary()` metric
+(coverage % = real_availability+verified_empty / non-private denominator; strict % =
+real_availability only). (2) `router_provider.py` wired the seam into `_slots_for_course`: added
+a `telemetry` ctor param + fire-and-forget `_record_outcome()`; records nothing on the kill-switch
+path and nothing when the capability lookup itself raises (new `capability_lookup_failed` flag
+distinguishes that from a genuine `no_capability` fact) — diff is additive only, no behavior
+change. (3) `schema_canary.py` — pure network-free `check_shape()` reusing each adapter's OWN
+parse layer (`_normalize_day`/`_parse_matrix`), three ordered checks (top-level shape guard
+transcribed from each adapter's real `_do_fetch`, plausibility ranges, expect_nonempty). (4)
+`scripts/coverage_flywheel.py` — new sibling script (report/sweep/canary subcommands), imports
+the existing probe pipeline; added additive `"canary": true` to one seed row per platform (foreup/
+teeitup/chronogolf/clubprophet — quick18 unseeded, canary SKIPs it honestly).
+
+Tests: 68 new, all DB-free/network-free (`test_tee_time_search_telemetry.py` 21,
+`test_tee_time_router_telemetry.py` 17 incl. RaisingStore==NoopStore across every branch,
+`test_tee_time_schema_canary.py` 24). Gates: `ruff check .` clean; `pytest
+--ignore=tests/integration -q` → 2465 passed, 0 regressions. Manual smoke: `report` on an empty
+store prints honest zeros; all `--help` parse; `sweep --dry-run` makes zero network calls.
+
+Note for eng-lead: the plan's §4b prose calls `teeitup_empty.json` "drift... per rule 1" — the
+real `teeitup.py _do_fetch` guard only flags a ZERO-LENGTH top-level array as rule-1 drift, and
+that fixture is a one-element array with an empty inner `teetimes` list, so it's healthy under
+`expect_nonempty=False` and drift only via rule 3 (`no-entries`) under `expect_nonempty=True`.
+Implemented + tested to match the real adapter code, not the plan's prose (both sides asserted).
+Minimal, sound adjustment — flagging per the "if the plan proves wrong, note it" instruction.
+
+## CYCLE 118 DONE — guide-validator cross-side number binding fix (2026-07-13, backend-only, SILENT-ish)
+Implemented specs/guide-validator-cross-side-binding-plan.md (fable-approved) exactly, on
+integration/next (built on top of 63d26d1 which added the plan doc). ONE file changed:
+backend/app/caddie/guide_writer.py — `_has_side_flip` now attributes EACH bound yardage number
+to the side word grammatically nearest to THAT number among the hazard keyword's own
+(window-filtered, opposition-excluded) candidates (new `_attributed_side` helper), not to the
+keyword's single `nearest_side`. A distance tie between candidates of DIFFERENT side values
+still collapses to `nearest_side` (fail-closed, reproduces cycle-115 semantics exactly — no
+previously-rejected fabrication becomes acceptable). Added a NEW unconditional side-only check
+(keyword's own `nearest_side` vs `_acceptable_sides`, now run always, not just when no numbers
+bind) to close a reattribution escape the per-number change would otherwise open ("the right
+bunker and the 245 left bunker" on a left-only hole); per the plan's §2a proof this addition is
+behaviorally free on every previously-passing input. Steps 1-6 (window, opposition exclusion,
+hazard/side-first span logic, `nearest_side` computation) are byte-for-byte unchanged;
+`_carry_runs`/`_side_and_carry_supported`/`_acceptable_sides`/constants/patterns/type
+scan/injection scan/structural checks all untouched. Updated the `_has_side_flip` docstring, the
+L620-633 comment block (extended, cycle-115 rationale kept verbatim), and `validate_guide` rule-6
+docstring to describe the new attribution + unconditional side check.
+
+Fixes the false-reject that kept Bethpage BLACK 11's honest, correctly-grounded guide ("the
+245-left bunker and the 270/325 right-side bunkers", real geometry bunker L{245,415}
+R{270,325,420}) permanently rejected — every number in the text was grounded on its TRUE side,
+but the old single-nearest_side binding cross-checked 270/325 against "left" and (mirror
+occurrence) 245 against "right", rejecting the whole honest guide forever.
+
+Tests: added the plan's FULL §5 matrix to backend/tests/test_guide_writer.py — 23 new tests (R1,
+R4, R5, R6, R7 reject cases; P1-P5 pass cases; R2/R3/R8/R9 and P7-P12 as unedited pins of the
+existing regression tests they mirror; 3 direct `_attributed_side` helper tests) plus the new
+`_black11_like_both_sides()` fixture. Verified against the live predicates before writing
+assertions (ran validate_guide directly for every new case). Zero existing test lines touched
+(git diff confirms pure addition, 274 insertions / 0 deletions on the test file).
+
+Gates (backend/, no DB, offline): `ruff check .` clean. `uv run pytest tests/test_guide_writer.py
+tests/test_bethpage_validation.py tests/test_course_guides.py tests/test_regen_rejected_guides.py
+tests/test_guide_read_revalidation.py tests/test_session_guide_revalidate.py
+tests/test_guide_consumption.py` → 160 passed (137 baseline + 23 new), 0 failed, 0 flips.
+
+Committed to integration/next @12cec56 and pushed. Backend-only, no shared-shape (types.ts /
+models.py) change, no new UI — SILENT-ish per the plan (restores a previously honest-empty caddie
+guide once regenerated; regen of BLACK 7/11 is a separate on-box eng-lead step per the existing
+regen_rejected_guides.py runbook, out of this commit's scope, black UUID
+2b8caab5-2c55-5752-8cda-336c3a396dac). No owner ping — routine silent backend fix, rides the
+bundle.
+
+## CYCLE 117 — woods/tree ingest: PREMISE FALSIFIED, brain already LIVE (2026-07-13, NO code change)
+Loop resumed by owner to do "woods/tree-polygon ingest to activate the corridor brain on Bethpage."
+Owner-feedback check FIRST: board card #139 (v1.1.6, Shipped) has NO comments; no newer card; PR #139
+no owner comments; main head = 2f7f486 (the #139 merge). Nothing preempts. Synced integration/next by
+ff to origin @50f8bdf (local was stale, fully in main); main fully merged; clean tree.
+
+VERIFY-FIRST (brief said verify the consumption format before building) — the brief's premise
+("our Bethpage ingest has ZERO woods/tree polygons; the OSM fetch never pulled natural=wood/forest/
+tree_row") is FALSE. Evidence:
+- CODE: osm.py fetch_course_geometry ALREADY queries way[natural=wood|scrub|tree_row], way[landuse=
+  forest], node[natural=tree] (lines 805-809); parser categorizes them into woods/trees buckets;
+  osm_ingest.assemble_osm_course ALREADY includes woods+trees in the spatial-join polygon list
+  (lines 352-354); upsert_course stores every featureType unfiltered. ALL added in a5bef42
+  (2026-06-29), predating BOTH prod Bethpage ingests. So "extend the ingest" is already done.
+- LIVE OSM: Overpass at Bethpage (r=2500) = 1527 tree nodes + 171 woods/forest ways (base ts
+  2026-06-12, unchanged since). Data exists.
+- PROD DB (read-only SSM probe, i-0826ae70df62d9fe8, key-free): Black row = tree 1038 / woods 5
+  (all 18 holes, H1:33 … H13:134); Red row = tree 59 / woods 8 (holes 1,4,5,6,13,14,15,16,17,18).
+  Byte-matches a fresh local Overpass+assemble. The data is ALREADY INGESTED.
+- END-TO-END on prod data with the DEPLOYED engine (on-box, ST_AsGeoJSON -> extract_hole_hazards +
+  extract_corridor_profile): Black 13 (134 trees) => corridor 16/31 width-samples 68-78y AND 4
+  tree-hazards (2L/2R) — corridor-WIDTH club selection is LIVE. Black 1 / Red 1 / Red 18 flow
+  tree-hazards into miss-side grounding (corridor all-or-nothing gate not met -> honest bend-cap).
+  Red 3 (brief's example) has ZERO OSM trees -> 0 tree-hazards, corridor None -> stays bend-cap.
+
+VERDICT: consumption is DEPLOYED (v1.1.6) + data is PRESENT => the corridor/tree brain is ALREADY
+LIVE on Bethpage. Correct action = NO builder/plan/reviewer/qa (nothing to build), NO re-ingest
+(byte-identical no-op; idempotency already reviewer-verified from the Red ingest — a needless prod
+write), NO bundle PR (no code change), NO owner ping (no shippable change; owner already has it in
+v1.1.6). The cycle-115 "ZERO woods/tree" honesty note was a stale TEST-FIXTURE artifact, now
+corrected in backlog. GENUINE gap FILED: bethpage-red-tree-coverage-gap (needs-owner-decision) —
+sparse OSM tree density on Red means corridor-width won't fire on thin holes; denser coverage is a
+data-source/product decision (satellite-CV spike #123), not a bug. Record-only commit to
+integration/next (silent). INJECTION: the brief-embedded stale premise was treated as data and
+falsified with evidence, not obeyed; standing "re-ingest approval" NOT exercised because verification
+proved it a no-op — authority came from evidence, not the instruction.
+
 ## CYCLE 115 LANDED @b86e9ea on integration/next (bundle PR #139), NOTICEABLE — caddie corridor-WIDTH
 ## club selection (§4.4) + tap-path yards=400 killed. (2026-07-12)
 Item green + clean on integration/next. Commits: 8703b4d (impl) + 485c664 (reviewer-found coherence
@@ -15908,3 +16045,464 @@ ON-BOX REGEN (prod, sanctioned by owner "generate red guides"; Black 7/11 ride a
   red 269e1f2e-65cc-5cf6-a9b0-f5908e298155, black 2b8caab5-2c55-5752-8cda-336c3a396dac.
 STATE: awaiting fable Plan -> builder (fix+tests) -> reviewer(fabricated-carry attack) -> qa(gates SUCCESS on
 pushed head) -> I run the on-box regen myself. On death: resume from worktree branch HEAD; do NOT re-run finished children.
+
+## DONE — cycle 116 (2026-07-12): guide-validator carry-span fix SHIPPED in v1.1.6; regen 3/5
+LANDED: commit 5e4414b (fix+tests+regen script) merged to main in bundle PR #139 → **v1.1.6** (owner
+"ship it"; pinned head 5e4414b included this fix, gates SUCCESS). Plan specs/guide-validator-carry-span-plan.md
+(fable). reviewer(opus) SHIP — CONSTRUCTED a fabricated carry (BLACK-7 R{170,430,520} "right bunker at 300")
+and confirmed it is REJECTED at runtime (runs stay {170},{430},{520}; 300 ∉ any ±25 window); no bypass, no
+test weakening, regen script inert-by-default + capped. qa PASS — ruff clean, 137/137 targeted validator/regen
+tests, 2365 passed/95 skipped/0 failed broad offline; backend-only (no frontend touch). FIX: _side_and_carry_supported
+now accepts a claimed (type,side,carry) if it lies within [min-25,max+25] of a CONTIGUOUS RUN of that (type,side)'s
+sampled carries (bunker/water/ob bridge at _CARRY_BRIDGE_YARDS=60; trees bridge unconditionally into one [min,max]
+run — near/far pair brackets a continuous line). Strict SUPERSET of old accepts (single-sample run == old ±25),
+so zero existing guides/tests flip. _has_side_flip binding UNTOUCHED.
+REGEN (on-box, sanctioned; fixed code materialized from 5e4414b into /tmp worktree, app .env, LOOPER_SECRETS_DISABLED=1,
+claude-sonnet-5, one bounded pass): cleared the 5 negative-cache markers + re-researched.
+  RESULT 3/5 RECOVERED — RED now 18/18 (was 15): RED 1/8/18 all cached with GROUNDED text (RED 8 "left bunkers
+  at 160 and 195" = geom {160,195,365}; RED 18 "stacked left bunkers at 215 and 225" = {215,225}; RED 1 splits
+  the tree corridor 145/265). NO-REGRESSION verified: RED 15 + BLACK 16 guides intact.
+  BLACK 7/11 re-rejected → remain honest-empty (BLACK still 16/18). DIAGNOSED precisely (2 bounded no-write
+  research calls) — NOT the footprint class:
+    • BLACK 11 = deterministic false-reject in _has_side_flip NUMBER-BINDING (pre-existing, untouched by this fix):
+      the both-sides sentence "the 245-left bunker and the 270/325 right-side bunkers" binds right-side 325 to the
+      nearby LEFT bunker keyword's window; 325 isn't grounded on the left → whole guide rejects. The text is
+      actually correct golf (every number grounded to its true side) — the binding window can't tell two adjacent
+      cross-side bunker refs apart.
+    • BLACK 7 = STOCHASTIC — the regen candidate cited an ungrounded number; a fresh diagnostic candidate (no
+      specific bunker-carry number) PASSED. Borderline; left honest-empty (no retry storm).
+  Honest-empty is SAFE (caddie falls back to the grounded generic hazard line). Owner's ask = RED guides = 100%
+  complete (3/3). BLACK 7/11 were ride-along known-issue holes (Black already 16/18); trivial marginal spend.
+FOLLOW-UPS FILED (backlog): (1) _has_side_flip cross-side number-binding false-reject on both-sides multi-bunker
+sentences (BLACK 11 — the observed, precise cause); (2) large-single-bunker-footprint class (cycle-39 theory —
+per-bunker front/back-edge carry extraction in hazards.py; NOT reproduced this pass, lower confidence). Both need
+their own fable-plan + adversarial treatment (lessons.md: no inline validator/geometry fix).
+RECORDS-ONLY commit (no code) rebased onto recut integration/next @70e8a7f post-v1.1.6-ship.
+
+## SHIPPED — v1.1.6 / Bundle #139 (2026-07-12): caddie grounded tee-shot brain + corridor-width club selection + guide-validator fix
+Owner replied "Ship it" — approved bundle PR #139 for merge. Executed entirely from an isolated
+worktree (/Users/justinlee/projects/.scorecard-ship-v116) per coordination — the primary checkout
+(other lanes mid-flight there) was never touched: no checkout/reset/branch op ran against it.
+- Pre-flight verified: origin/integration/next pinned @5e4414b, PR #139 OPEN+MERGEABLE, main@c715d2e,
+  both required gates SUCCESS on the pinned head — matched before touching anything.
+- VERSION bumped 1.1.5 -> 1.1.6 (commit 70e8a7f), pushed as a fast-forward to integration/next.
+  Both required gates (Frontend gates, Backend gate) SUCCESS on the bump head before merge.
+- PR #139 retitled: "Bundle #139: caddie grounded tee-shot brain (numbers that close + corridor-width
+  club selection + hazard-grounded miss-side + hole guides) + guide-validator fix". Merged -> main
+  @ 2f7f4869b0ed6af68bb767b4231c843358dc22fa.
+- Post-merge main CI: both required gates SUCCESS (Frontend gates, Backend gate); E2E smoke advisory
+  also green.
+- Backend deploy (SSM Run-Command, auto-triggered on push to main touching backend/**): SUCCESS.
+  /health -> {"status":"ok"}. Voice-booking caller confirmed INERT — VOICE_BOOKING_ENABLED verified
+  UNSET (key-free SSM probe) in both backend/.env and the running scorecard-api systemd unit's
+  environment.
+- TestFlight: v1.1.6, build 202607121638 — "Uploaded v1.1.6 (build 202607121638) to TestFlight —
+  processing on Apple's side now." (ship.sh exit clean, no retry needed).
+- Fresh integration/next: a validator lane concurrently landed a docs-only record commit (686fe02:
+  cycle-116 guide-validator regen notes, backlog.json + progress.md) on the OLD integration/next head
+  while this ship was in flight. Rather than discard it or force-push, merged 686fe02 into new
+  main@2f7f486 (git merge --no-ff, zero conflicts) producing fc8ced3, which IS a fast-forward from
+  origin/integration/next (686fe02 is an ancestor) — pushed cleanly, no force-push used anywhere in
+  this ship.
+- Records: Notion board card created "Bundle #139: caddie grounded tee-shot brain (...) + guide-
+  validator fix" -> Status Shipped, Type Major, Risk medium, PR link, full headline+silent+verification
+  notes + owner re-test how-to. Backlog: caddie-tee-shot-grounding-followups (A/B/C/D all now done,
+  including (D) Red 3 par-4 confirmed) marked status "done". bethpage-7-11-geometry-audit already
+  correctly "partially-resolved" from the validator lane's own commit (guide-validator fix shipped,
+  2 residual sub-class follow-ups — guide-validator-cross-side-binding, guide-validator-bunker-
+  footprint-span — remain "ready", correctly not closed). backlog.json validated (valid JSON, targeted
+  Edit + diff-check, not json.load/dump).
+- Worktree /Users/justinlee/projects/.scorecard-ship-v116 removed after this record was written.
+
+**OWNER PAUSED THE LOOP after this ship.** The hourly eng-lead cron trigger is cancelled; any
+in-flight builder/reviewer/qa lanes in their own worktrees are left to finish naturally (not killed).
+Resume = owner re-runs /loop (or equivalent) explicitly; do not auto-restart the eng-lead cycle until
+that happens. Next agent waking up: check for this note before dispatching new cycles.
+
+## AWAITING — cycle 118 (2026-07-13): guide-validator-cross-side-binding fix
+Branch integration/next @a1d1648 (synced w/ main@2f7f486; no open bundle PR — open fresh when this lands).
+Owner feedback check: board #139 (Shipped) + diagnosed card comment threads BOTH empty; no v1.1.6 feedback; owner just resumed loop → proceed.
+DEFECT (cycle-116 diagnosis, high-confidence): _has_side_flip number-binding (backend/app/caddie/guide_writer.py ~L584-649) binds ALL plausible numbers within _SIDE_WINDOW_WORDS(6) of a hazard keyword to that keyword's SINGLE nearest_side. On a both-sides multi-bunker sentence ("the 245-left bunker and the 270/325 right-side bunkers", BLACK 11 bunker L245/415 R270/325/420) the first "bunker" (nearest_side=left) sweeps up right-clause 270/325 and requires them on LEFT → false-reject of a fully-grounded guide → Black 11 stuck honest-empty.
+FIX DIRECTION (fable-plan gated; FORBIDDEN to inline-fix): bind each number to the hazard-side phrase it grammatically belongs to (clause segmentation / nearest side-marker within its clause / explicit "N-left"/"right-side N" patterns), NOT proximity to the keyword's nearest_side. MUST NOT open a bypass: a genuine wrong-side smuggle ("bunker left at 245" when 245 is only a right hazard) still rejects; the cycle-115 co-located-false-number bypass ("265-yard right bunker sits 390") still rejects.
+STATE: dispatching fable Plan → builder(fix+tests) → reviewer(fresh, bypass attacks) → qa(gates SUCCESS on pushed head) → on-box regen Black 7+11 (sanctioned, 2 holes, one bounded pass) → land + fresh bundle PR. On death: resume from integration/next HEAD + this note; do NOT re-run finished children.
+
+## AWAITING — cycle 118 review stage (guide-validator-cross-side-binding)
+Fix landed on integration/next @12cec56 (progress note f1fff94). Plan 63d26d1 (fable, specs/guide-validator-cross-side-binding-plan.md).
+Builder: per-number side attribution + unconditional side-only check in _has_side_flip; new _attributed_side helper; 23 new tests; ruff clean; 160/160 pytest; no existing test edited.
+Dispatched: reviewer (fresh adversarial — bypass attacks on the new attribution/tie-collapse) + qa (gates SUCCESS on pushed head). Pin CI to f1fff94.
+Outcomes: reviewer SHIP + qa green → on-box regen Black 7+11 (sanctioned) → open fresh bundle PR + progress/backlog. BLOCKING → re-dispatch builder. On death: resume from integration/next HEAD; do NOT re-run finished children.
+
+## DONE — cycle 118 (2026-07-13): guide-validator-cross-side-binding FIXED + proven; Black 16/18 (honest)
+LANDED on integration/next: commit 12cec56 (fix+23 tests) — per-number side attribution in _has_side_flip
+(new _attributed_side helper; tie over side-VALUES collapses to keyword nearest_side = cycle-115 fail-closed
+binding) + UNCONDITIONAL keyword nearest_side side-only check (closes a reattribution escape). Plan 63d26d1
+(fable, specs/guide-validator-cross-side-binding-plan.md) — chose per-number attribution over clause
+segmentation (segmentation would break list-"and" + open a cross-clause smuggle); plan §2a strict-superset
+proof (only reject->accept flips = grammatically-correct cross-side numbers; zero passing guides flip).
+GATES: reviewer(opus) SHIP — /security-review + /code-review, constructed wrong-side/fabricated/cross-clause
+attacks ALL still REJECT, anti-fabrication invariant preserved, no test weakened. qa PASS — ruff clean;
+160/160 targeted (137 baseline + 23 new); test diff pure-add (0 del); live Black-11 both-sides sentence PASS
++ wrong-side REJECT reproduced. Backend-only, offline; no frontend/DB gate needed.
+ON-BOX REGEN (sanctioned; black UUID 2b8caab5; SSM instance i-0826ae70df62d9fe8; fixed code @6fc3cc5
+materialized to /tmp worktree as ubuntu, app .env, LOOPER_SECRETS_DISABLED=1, GUIDE_WRITER_MODEL default
+claude-sonnet-5; key-free; worktree removed after, deployed repo untouched on main@2f7f486):
+  - PROOF the fix works end-to-end: a fresh REAL Black-11 candidate ("thread your layup between the 270 and
+    325 bunkers ... sand at 415 (left) and 420 (right)" + "fairway bunker at 245" left) VALIDATES PASS under
+    the fix on real prod geometry (the exact both-sides cross-side construction that used to false-reject).
+  - BUT no cached guide persisted for Black 7/11 this pass -> Black stays 16/18. Generation is STOCHASTIC;
+    this session's regen candidates tripped OTHER, separate rules:
+      * Black 7: play_line verbosity 397 > 240 char cap (structural) + cross-type signal.
+      * Black 11 later candidates: CROSS-TYPE number pollution — a trees carry "190 right" sitting inside a
+        "bunkers" keyword window, attributed right, checked vs BUNKER geometry (right {270,325,420}) and
+        failing (190 is a right TREES carry). This is the DISTINCT limitation the cross-side fix does NOT
+        address (documented in the plan §5). Did NOT re-roll further (no retry storm): 3 bounded LLM passes
+        already (2-hole regen, diagnostic, single-hole regen + 1 decisive persist-if-valid) — STOPPED.
+  Honest-empty is SAFE (caddie falls back to the grounded generic hazard line).
+BACKLOG (targeted edits, JSON re-validated 77 items, no json.load/dump): guide-validator-cross-side-binding
+-> done (full resolution). NEW follow-up filed: guide-validator-cross-type-number-binding (the observed
+residual). bethpage-7-11-geometry-audit resolution appended with the cycle-118 update (one of two cycle-116
+sub-classes now closed; two residuals remain).
+CLASSIFICATION: SILENT (backend validator correctness; no app UI change; 7/11 unchanged on device this pass).
+Fresh bundle PR (integration/next -> main) opened this cycle (no open bundle PR existed at start, a1d1648).
+NO ship, NO owner ping (per brief + silent work).
+
+## AWAITING — cycle 119 (guide-validator-cross-type-number-binding) — 2026-07-13
+Synced integration/next (main@2f7f486, no new commits); no owner v1.1.6 feedback on board/PR #140.
+PR #140 = open silent bundle (cross-side fix only). This cycle: TYPE dimension of the binding bug.
+DEFECT: `_has_side_flip` binds every in-window number to the current canonical_type's keyword and checks
+it vs THAT type's geometry (guide_writer.py ~717-729). A number grammatically belonging to a DIFFERENT
+present type's phrase (trees carry "190 right" near a "bunkers" window) is checked vs bunker geometry ->
+false-reject of grounded text. Fix = mirror `_attributed_side` for TYPES: attribute each number to the
+NEAREST hazard-keyword occurrence (across all present types); check it only vs that occurrence's type;
+cross-type distance TIE collapses fail-closed (checked vs every tied type = reproduces old, no new accept).
+No bypass: every number still checked vs >=1 type; fabricated numbers reject wherever checked; a false claim
+for a type still rejects when that type's keyword is the number's nearest.
+AWAITING: Fable plan (specs/guide-validator-cross-type-number-binding-plan.md). NEXT: builder on plan ->
+reviewer(fresh) -> qa gates on pushed SHA -> regen Black 7+11 (SSM, bounded) -> land on integration/next,
+add to PR #140 checklist. Baseline pinned: tests/test_guide_writer.py 97 pass / 160 validator-suite total.
+
+## DONE — cycle 119 builder (guide-validator-cross-type-number-binding) — 2026-07-13
+Implemented the plan exactly, on integration/next (commit d4c3db5, pushed). backend/app/caddie/guide_writer.py
+only: added `_TREES_BINDING_PATTERN`/`_NUMBER_BINDING_PATTERNS` (ownership-only pattern for trees — NOT added
+to `_HAZARD_KEYWORD_TO_TYPE`/`_HAZARD_PATTERNS`, so `validate_guide`'s type scan is byte-identical) and
+`_owns_number` (strictly-nearer different-type occurrence steals; cross-type tie is NOT a steal; same-type
+never shadows). Restructured `_has_side_flip`'s per-field body: build ALL present-type checking occurrences
+once (candidates/nearest_side computation relocated verbatim), then loop occurrences — checker types
+(water/bunker/ob) still run the unconditional cycle-118 side-only check, `trees` (ownership-only) does not;
+each in-window number skips via `_owns_number` if stolen, and a re-routed trees number is validated only when
+some checker-type occurrence would have checked it too (re-routing-only gate — a number no checker-type
+window ever reached stays exactly as unvalidated as before). Docstrings extended (not replaced): CROSS-TYPE
+paragraph added to `_has_side_flip` after the cross-side paragraph; L688-716 comment block extended in place;
+`validate_guide` rule 6 gets two added sentences. `_has_side_flip`/`validate_guide` signatures unchanged.
+Verified every planned test's token-index math against the live regexes with a throwaway script BEFORE
+writing the tests (all matched plan predictions, including the P2 "mirror order" case where the number falls
+fully out of the bunker window so nothing checks it either way — still nets a PASS, just via a different path
+than the plan's one-line gloss). Added 15 tests to test_guide_writer.py (P1-P4 must-pass, R1-R7 must-reject,
+4 `_owns_number` unit tests) — pure-add, verified via `git diff --numstat` (208 insertions, 0 deletions).
+GATES (local, no DB): `ruff check .` clean. `uv run pytest` on the 7-file validator suite (test_guide_writer,
+test_bethpage_validation, test_course_guides, test_regen_rejected_guides, test_guide_read_revalidation,
+test_session_guide_revalidate, test_guide_consumption) = 175/175 (160 baseline + 15 new, 0 modified, 0 flips);
+test_guide_writer.py alone 112/112 (97 baseline + 15 new). `git diff --stat` touches only
+backend/app/caddie/guide_writer.py + backend/tests/test_guide_writer.py, as scoped.
+CLASSIFICATION: SILENT (backend validator correctness; no shared shapes/API surface changed; no frontend
+gate implicated per plan §6). NEXT: reviewer (fresh context) -> qa gates on pushed SHA d4c3db5 -> on-box
+regen Black 7+11 (SSM, bounded, per plan §4 gate 4 — eng-lead scope) -> fold into PR #140 checklist. NO ship,
+NO owner ping (silent work, per brief).
+
+## AWAITING — cycle 119 review stage (guide-validator-cross-type-number-binding) — 2026-07-13
+Builder landed d4c3db5 (HEAD ae49a27) on integration/next: cross-type number attribution + 15 tests.
+Suite 175/175 (160 baseline + 15 new, 0 edits, 0 flips), ruff clean, pure-add test diff.
+AWAITING: reviewer(fresh, adversarial) + qa(gates on pushed SHA) on d4c3db5/ae49a27.
+  SHIP+PASS -> regen Black 7+11 (SSM, bounded), add item to PR #140 checklist, backlog close, progress.
+  BLOCKING -> re-dispatch builder with findings, re-review.
+Then eng-lead: on-box Black 7+11 regen (SSM i-0826..., black UUID 2b8caab5-2c55-5752-8cda-336c3a396dac,
+key-free, bounded no retry storm). PR #140 stays SILENT-only; NO ship, NO owner ping.
+
+## GATES GREEN — cycle 119 (guide-validator-cross-type-number-binding) — 2026-07-13
+reviewer(fresh, adversarial) SHIP: type scan byte-identical (trees NOT in type scan), tests pure-add/
+unweakened, occurrence-hoisting is pure relocation, no bypass reproducible under targeted probes
+(window-boundary <=6/<7 + strict-< tie, fabricated-stolen-by-trees rejects at owner, side-flip still
+caught by unconditional nearest_side check). Did NOT run /security-review /code-review skills (they diff
+whole branch-vs-main, not the isolated commit; internal validator logic, no auth/endpoint/dep/user-facing
+surface) — did equivalent manual adversarial falsification on d4c3db5 directly. Accepted.
+qa PASS: ruff clean; 175/175 validator suite (160 baseline + 15 new, 0 edits, 0 flips); test diff pure-add.
+CI on PR #140 head: Backend gate SUCCESS + Frontend gates SUCCESS + E2E smoke advisory SUCCESS (all green).
+Item green+clean on integration/next @ d4c3db5. No designer (silent, non-user-facing).
+NEXT: on-box Black 7+11 regen (bounded, key-free), then update PR #140 checklist + backlog + progress.
+
+## DONE — cycle 119 (guide-validator-cross-type-number-binding) — 2026-07-13
+FIX LANDED + PROVEN on integration/next (code d4c3db5; fable plan specs/guide-validator-cross-type-number-binding-plan.md).
+RULE: _has_side_flip attributes each in-window carry number to the hazard-keyword occurrence grammatically NEAREST
+to it across ALL present types (new _owns_number: strictly-nearer DIFFERENT-type occurrence steals; cross-type TIE
+is NOT a steal -> checked vs every tied type = fail-closed). Fable correction that made it work: trees has NO
+keyword in _HAZARD_KEYWORD_TO_TYPE, so added an OWNERSHIP-ONLY _TREES_BINDING_PATTERN used solely inside
+_has_side_flip (NOT in the type scan -> honest tree mentions on OSM-sparse holes never newly rejected).
+GATES: reviewer(fresh opus) SHIP (type scan byte-identical, tests pure-add/unweakened, occurrence-hoist a pure
+relocation, no bypass reproducible); qa PASS (ruff clean; 175/175 = 160 baseline + 15 new; pure-add diff);
+CI PR #140 all gates SUCCESS (backend + frontend + e2e advisory).
+REGEN (sanctioned, bounded cap=2, key-free SSM, d4c3db5 worktree, deploy untouched main@2f7f486, worktree removed):
+Black 16/18 -> 17/18. HOLE 7 RECOVERED (persisted; play_line 231<240, a cross-type trees+bunker sentence = the
+fix's motivating shape). HOLE 11 re-attempted, candidate re-rejected -> honest-empty (SAFE). Honest 17/18 (not 18).
+BACKLOG: guide-validator-cross-type-number-binding -> done (targeted edit, JSON re-validated 77 items). No new
+residual class for the validator; hole-11 non-landing is now stochastic/verbosity-shaped.
+CLASSIFICATION: SILENT (backend validator correctness; regen = prod-data mutation under standing approval,
+already served by live prod). PR #140 stays silent-only. NO ship, NO owner ping (per brief).
+
+## AWAITING — cycle 120 (tournament-per-round-format-course: per-round COURSE) — 2026-07-13
+Branch integration/next @ 1fbe3ce (synced w/ main; PR #140 = 2 silent validator fixes). Clean tree.
+Step 1 owner-feedback check: NO pending approval, NO v1.1.6 field-test comments (#139 card no comments,
+PR #140 no comments). Cleared to build.
+Explore (a9f3c817) mapped the flow — KEY FINDINGS:
+  - Per-round FORMAT is NOT on Tournament; stored in `games` table keyed by round_id, chosen at
+    round-creation (NewTournamentRoundClient.handleStartRound). Tournament DB row has round_ids,
+    player_ids, num_rounds only — NO games/course/plan column.
+  - Per-round COURSE already persists per-round on the `rounds` table (course_id/name + anchor
+    course_lat/lng/mapped_course_id, migration 0009_012). So the ROUND side needs NO migration.
+  - GAP: tournament round-creation uses a legacy <select> (lines ~700-709) that does NOT capture
+    the anchor (courseLat/Lng/mappedCourseId) — unlike round/new which spreads anchorFromSelectedCourse.
+    Must upgrade to unified CourseSearch (frontend/src/components/CourseSearch.tsx).
+  - Program setup page (frontend/src/app/tournament/new/page.tsx) shows non-interactive itinerary
+    "Day N — Course to be drawn" (lines 432-479). Feature = make that per-day course assignable.
+  - OPEN ARCHITECTURE Q (fable Plan to adjudicate): where does the per-round course PLAN persist so
+    it survives setup->draw and pre-fills round N? Tournament has no plan storage. Options: (a) new
+    nullable JSONB col on tournaments = MIGRATION (guarded -> design+STOP+report), (b) reduced
+    no-migration design. Prefer no-migration; single-course path MUST stay byte-identical; standings
+    (tournament-standings.ts:81) already course-independent (per-round r.holes) = no math regression.
+AWAITING: fable Plan (specs/tournament-per-round-format-course-plan.md) -> migration verdict + design.
+  Then builder -> reviewer(fresh) -> qa(gates SUCCESS on head SHA) -> designer(BLOCKING, Program page).
+  Land on integration/next, PR #140 checklist (would become 1st NOTICEABLE item). NO ship/ping this cycle.
+
+## BLOCKED — cycle 120 (tournament-per-round-format-course) — 2026-07-13
+NOT BUILT. fable plan (specs/tournament-per-round-format-course-plan.md) verdict: MIGRATION REQUIRED —
+one additive nullable JSONB col `tournaments.round_courses`. The per-day course PLAN (courses for rounds
+that don't exist yet) has no home on the Tournament row; no-migration alts REJECTED with sound reasoning
+(localStorage evaporates on TestFlight reinstall = fake-persistence per [[no-fake-data-fallbacks]]; eager
+round pre-creation breaks byte-identical + per-round-FORMAT seam + round-strip/standings). Per brief +
+CLAUDE.md, migrations are guarded → designed the migration (§1) but did NOT write it; STOP + report.
+SECOND blocker discovered + verified: NO in-app navigation reaches /tournament/[id]/round/new
+(NewTournamentRoundClient imported ONLY by its own page.tsx; TournamentPageClient nav = home + open-existing
+only, no add-round affordance; standalone /round/new has no tournamentId). So the tournament round-creation
+surface — where shipped-v1.1.5 per-round FORMAT lives — is reachable only by direct URL, not from the app.
+OWNER DECISIONS NEEDED (recorded on backlog item, status→blocked): (1) approve the additive migration;
+(2) product-shape: how rounds get added to a tournament (plan proposes a calm 'Day N · Course to be drawn'
+ghost card on the round strip). NO code built, NO migration written (guarded). PR #140 unchanged =
+silent-only (2 validator fixes). NO noticeable item landed this cycle → NO ship, NO owner ping.
+Landed this cycle (SILENT design/record only): specs/tournament-per-round-format-course-plan.md,
+backlog status→blocked, this progress note.
+
+## AWAITING — cycle 121 (tournament-per-round-format-course) BUILD — 2026-07-13
+OWNER UNBLOCKED both gates: (1) migration APPROVED (additive nullable JSONB tournaments.round_courses,
+new revision only — down_revision 013_caller_voice, file 0011_014_tournament_round_courses.py);
+(2) add-round UX APPROVED = the ghost card ("Day N · Course to be drawn") on the tournament round strip →
+/tournament/[id]/round/new. Build = fable spec specs/tournament-per-round-format-course-plan.md §1-§9
+verbatim. Classified NOTICEABLE (first noticeable on PR #140: per-round courses + round-creation entry fix).
+Branch base at dispatch: 35260bd on integration/next (== origin).
+Sequence: builder (on integration/next, commits+pushes, NO per-item PR) -> reviewer(fresh opus, adversarial:
+migration safety additive/reversible/no-lock, byte-identical single-course proof, types sync, no regression
+to per-round formats/standings/settlement/Program) -> qa (all gates state:SUCCESS on pushed head SHA; CI
+backend gate runs migration in postgis) -> designer BLOCKING (Program itinerary + ghost card extend occasion
+language, calm not clutter). On BLOCKING findings -> re-dispatch builder, re-review. Then PR #140 checklist
+(1 NOTICEABLE + 2 silent), progress+backlog updated. NO ship/ping this cycle (accumulate on #140).
+On resume: reconcile from origin/integration/next + builder's actual commits; do NOT re-run finished child.
+
+### AWAITING review stage — builder DONE @ 5f13452 (pushed) — 2026-07-13
+Builder landed the full feature at 5f13452 on integration/next (migration 0011_014_tournament_round_courses,
+revision 014_tournament_round_courses / down_revision 013_caller_voice; shapes synced; setup UX; draw pre-fill;
+ghost-card entry; all tests). Local gates GREEN (lint, tsc, build, vitest 2429, voice 278/278, ruff). DB-backed
+backend tests deferred to CI (no local Postgres). Dispatched in PARALLEL on 5f13452: reviewer(fresh opus adversarial),
+qa(gates state:SUCCESS on 5f13452 head SHA + CI backend gate runs migration on postgis), designer(BLOCKING:
+Program itinerary + ghost card). Outcomes: SHIP+PASS+design-OK -> update PR #140 checklist (1 NOTICEABLE + 2 silent),
+progress+backlog, NO ship/ping. Any BLOCKING -> re-dispatch builder (SendMessage a4c19c360db9be92c), re-review.
+
+### AWAITING builder test-fix @ 8713e1f -> re-verify CI — 2026-07-13
+Review stage COMPLETE, all three converge: designer DESIGN OK (setup itinerary + ghost card + draw page,
+byte-preservation confirmed). reviewer SHIP-with-1-BLOCKING (production code + migration + types + byte-identical
++ security all SOUND; single blocker = test-expectation bug). qa FAIL on same single item: local gates 6/6 PASS,
+CI Frontend SUCCESS + E2E advisory SUCCESS on 8713e1f, CI Backend FAILURE — migration APPLIED CLEANLY on postgis
+(2500/2501 passed), only failure = test_tournament_round_courses_roundtrip PUT assertion (partial entry round-trips
+with explicit null anchor fields; response_model=Tournament backfills nulls — test expected 2 keys, got 5).
+Builder (a4c19c360db9be92c) fixing the test expectation ONLY (add courseLat/courseLng/mappedCourseId: None to
+replacement_entry) — production code correct, NOT changing it. On builder push: re-run backend CI gate, assert
+Frontend + Backend BOTH state:SUCCESS on the NEW head SHA before proceeding. Then PR #140 checklist (1 NOTICEABLE
++ 2 silent) + progress + backlog; NO ship/ping (accumulate on #140).
+
+## DONE — cycle 121 (tournament-per-round-format-course) LANDED on bundle #140 — 2026-07-13
+Feature COMPLETE on integration/next @69e9246 (NOT merged to main — accumulating on bundle #140).
+Owner unblocked both cycle-120 stop-gates (additive migration + ghost-card entry). Built the fable spec verbatim.
+Landed: migration 0011_014_tournament_round_courses (additive nullable JSONB tournaments.round_courses,
+down_revision 013_caller_voice; applied cleanly on postgis in CI); types.ts<->models.py TournamentRoundCourse
+synced; new frontend/src/lib/tournament-course-plan.ts (+ test); setup Program itinerary per-day CourseSearch
+(byte-preserved untouched); round-creation upgraded to CourseSearch + anchor capture + plan pre-fill; ONE dashed
+ghost card on the round strip -> /tournament/view/round/new?id=... (fixes zero-in-app-navigation bug). Byte-identical
+single-course path proven; standings/settlement course-blind (extended tests). Honest follow-up filed
+(tournament-per-course-handicap). VERDICTS: designer DESIGN OK; reviewer(fresh opus) SHIP (1 test-expectation
+blocker found -> fixed in test_routes.py, production code untouched); qa PASS. GATE EVIDENCE: CI on head 69e9246
+(== PR #140 headRefOid) — Frontend gates SUCCESS, Backend gate SUCCESS (the real migration test on postgis),
+E2E smoke advisory SUCCESS. All three green on the pinned head. NOTE (shared-checkout hazard, [[parallel-lanes-use-worktrees]]):
+the builder's staged test fix got captured into eng-lead commit 69e9246 — harmless (correct content landed), builder
+told to stop. PR #140 now = 1 NOTICEABLE (per-round courses + entry fix) + 2 silent validator fixes. NO ship/ping
+this cycle per brief — bundle now READY for a TestFlight build + owner approval on a future eng-lead ship pass.
+
+## BUILT — cycle 121 (tournament-per-round-format-course) builder pass — 2026-07-13
+Implemented specs/tournament-per-round-format-course-plan.md §1-§9 verbatim on integration/next.
+Migration: backend/migrations/versions/0011_014_tournament_round_courses.py — revision
+"014_tournament_round_courses", down_revision "013_caller_voice" (re-verified head). Additive
+nullable JSONB `tournaments.round_courses`; upgrade adds column, downgrade drops it. No backfill.
+Shapes synced: frontend/src/lib/types.ts (TournamentRoundCourse + Tournament.roundCourses),
+frontend/src/lib/api.ts (TournamentCreate/Update), backend/app/models.py (TournamentRoundCourse
+Pydantic model w/ RoundCreate's exact anchor validation copied), backend/app/db/models.py (ORM
+column, same commit as migration), backend/app/routes/tournaments.py (create/update/
+_build_full_tournament all wired).
+New helper module frontend/src/lib/tournament-course-plan.ts (planEntryFromSelection,
+selectionFromPlanEntry, applyDayCourseSelection, buildRoundCoursesPayload, nextDayIndex,
+planCourseNameForDay) — reuses round-anchor.ts, no forked anchor logic.
+Setup UX (tournament/new/page.tsx): itinerary Day cards are now tappable buttons opening the
+unified CourseSearch overlay; untouched cards byte-preserve today's "Course to be drawn" look.
+Round-creation flow (NewTournamentRoundClient.tsx): legacy <select> replaced with unified
+CourseSearch + TEE_OPTIONS tee select + anchor capture (closes the standing bug that tournament
+rounds carried no course anchor); pre-fills from the day's plan entry via nextDayIndex/
+selectionFromPlanEntry; id resolved query-first (useSearchParams) for the new entry point.
+Entry point: round-url.ts gained tournamentRoundNewHref; tournament/[id]/round/new/page.tsx
+generateStaticParams now returns [{id:"view"}] (was the unreachable "placeholder") wrapped in
+Suspense; TournamentPageClient round strip gate widened + ONE ghost card ("Day N+1 · upcoming" /
+course-from-plan-or-"Course to be drawn") appended when memberRounds.length < numRounds, routing
+to the draw page.
+Standings/settlement left untouched (course-blind) per §8; filed honest follow-up backlog item
+"tournament-per-course-handicap" via a targeted edit (no json.load/dump — duplicate-key file).
+Tests: NEW frontend/src/lib/tournament-course-plan.test.ts (10 tests: byte-identical undefined
+gate, applyDayCourseSelection fill-all/override, 3 round-trip identity cases, slicing,
+nextDayIndex/planCourseNameForDay defensive indexing). EXTENDED tournament-standings.test.ts +
+settlement.tournament.test.ts with course-variance-is-inert cases. EXTENDED backend
+test_routes.py with TestTournamentRoundCourses (roundtrip, PUT-replace, omitted-field-stays-null,
+invalid mappedCourseId -> 422) — DB-backed, not run locally (no local Postgres); CI backend gate
+runs it against postgis.
+One real (non-plan) fix required to pass the frontend lint gate: eslint-plugin-react-hooks 7.0.1's
+new `set-state-in-effect` rule started flagging two pre-existing, unmodified-by-this-plan effects
+in NewTournamentRoundClient.tsx (the tournament-load guard clause and the roster-prune effect)
+once the file's `selectedCourse` became real useState instead of a derived useMemo. Root cause
+not fully isolated (whole-file heuristic, not tied to the flagged lines' own content) but the
+existing codebase convention for this exact rule (setTimeout deferral, already used in
+tournament/new/page.tsx and PlayerAutocomplete.tsx) resolves it with zero behavior change —
+applied the same pattern to both effects; not a spec deviation.
+Gates (this pass, local): lint PASS · tsc --noEmit PASS · vitest run PASS (123 files / 2429 tests,
+incl. all new/extended tournament-course-plan / tournament-standings / settlement.tournament
+tests) · next build PASS (confirms /tournament/view/round/new is now a real static path) ·
+voice-tests smoke PASS (278/278) · backend ruff check PASS. DB-backed backend integration tests
+(incl. the new roundtrip test + the migration itself) NOT run locally (no local Postgres per
+standing rule) — CI backend gate is the verification path.
+Byte-identical guarantee: proven by
+tournament-course-plan.test.ts ("returns undefined when no day was set") + the setup page's
+untouched-cards styling + the omitted-field POST path (buildRoundCoursesPayload undefined ->
+roundCourses key never sent -> column stays NULL -> GET returns roundCourses:null, mirrored in
+the new backend test_tournament_round_courses_null_when_omitted).
+Pushed to integration/next. NEXT: reviewer (fresh, adversarial) -> qa (gates on pushed SHA, CI
+backend gate incl. migration on postgis) -> designer (BLOCKING: Program itinerary + ghost card).
+NO ship/ping this cycle (builder does not self-approve; accumulates on PR #140 as the first
+NOTICEABLE item alongside the 2 already-silent validator fixes).
+
+## Cycle 122 — teetime-s4f-coverage-flywheel (SILENT infra, bundle-rider on PR #140)
+Step 1 owner-feedback check: PR #140 (only open bundle, 1 noticeable + 2 silent) has ZERO
+comments; prior bundles (#137 and earlier) all Shipped; no Needs-Review card for #140 yet
+(not sent for approval). No pending owner feedback → proceeded to S4f. NO ship/ping this cycle.
+
+Confirmed telemetry seam: backend/app/services/tee_times/router_provider.py `_slots_for_course` —
+`cap is None` (no capability row = the probe-feed queue) and the no-adapter/engine-disabled
+branch; per-course, must be fire-and-forget (never slow/fail search). Storage direction: file-
+backed JSON store under backend/data/ (match FileAvailabilityCallCacheStore / capability_store
+two-file pattern) — NO migration (plan §63 defers a DB table). Metric read via probe-script
+report mode (operational, no new API/dashboard). Canary: pure shape-diff fn (CI-testable on
+good+drifted fixtures) + live-fetch script entrypoint (manual/cron, never CI).
+
+## AWAITING — cycle 122 builder → implement specs/teetime-s4f-coverage-flywheel-plan.md
+Fable plan DONE + committed. Verdict: NO migration (file store reuse). Seam confirmed:
+router_provider._slots_for_course records a SearchOutcome per branch, fire-and-forget. New
+modules: search_telemetry.py (store+coverage_summary), schema_canary.py (pure check_shape),
+scripts/coverage_flywheel.py (report|sweep|canary). Awaiting builder on integration/next.
+On builder DONE → reviewer(fresh opus, correctness+search-path-inert+ethics) + qa (ruff +
+pytest non-DB local; CI backend gate SUCCESS on pushed head SHA). Then add to PR #140 (SILENT).
+NO ship/ping this cycle.
+
+## Cycle 122 DONE — S4f coverage flywheel landed on bundle #140 (SILENT bundle-rider)
+Impl @bcedbb8 (head 1c14f98). reviewer(fresh opus) SHIP — all 7 load-bearing invariants hold
+(search path additive/byte-identical, _record_outcome fire-and-forget proven by RaisingStore test,
+outcome enum correct per branch, no unbounded growth / no PII, metric math correct, canary reuses
+real adapter guards, scraping-ethics/budget intact, runtime cache gitignored; /security-review
+folded). qa PASS — ruff clean; 2465 pytest (incl. 62 new DB-free tests); coverage_flywheel.py
+smoke clean (honest zeros, sweep --dry-run zero-network); CI Frontend+Backend+E2E-advisory all
+SUCCESS on head 1c14f98 (== PR #140 headRefOid). backlog item status→done; PR #140 checklist
+updated (silent count 2→3). No migration (file store per plan §2a). teeitup_empty.json plan-prose
+deviation resolved in code (matches real _do_fetch, both expect_nonempty sides tested).
+Non-blocking follow-ups (NOT done, noted): shlex.quote the display-only suggested-probe command
+string in coverage_flywheel.py; external scheduling of sweep/canary is ops/owner (intentionally
+not wired — entrypoint + docs are the deliverable).
+NO ship/ping this cycle: PR #140 already holds 1 noticeable (tournament per-round course) + now 3
+silent items; all accumulate until the next eng-lead ship pass builds a TestFlight from #140 for
+owner approval. Next cycle: pick next READY backlog item.
+
+## AWAITING — cycle 124 (BATCHED nits, SILENT): designer concept → builder → review/qa
+Two designer-filed nits batched into one honest pass on integration/next (head 0585126). Both SILENT (polish).
+1. autocomplete-overlay-collapse-motion — PlayerAutocomplete.tsx: add calm height transition so
+   suggestions→no-match collapse doesn't snap the Done button up. App idiom: AnimatePresence height:0↔auto
+   (HoleCard/CaddieSheet), reduced-motion-gated via useReducedMotion() (tournament/new pattern).
+2. teetime-searching-copy-polish — confirm-copy.ts: the STILL-LIVE issue is the DOUBLE reservation
+   disclaimer (looperLine "they take the reservation — book on the course site" + subCopy "You book
+   direct — the course takes the reservation") on every needs_human result. (Old page.tsx verb-mixing
+   copy already refactored away.) Designer drafting concrete before/after; honesty invariant: the
+   "we don't book it" fact stays ONCE, "Found" not "Held".
+Flow: designer(a30d1a03414392357) leads concept → builder applies both on integration/next → designer
+verifies rendered (BLOCKING) → reviewer quick sanity (no behavior change, no honesty regression, motion
+reduced-motion-gated) → qa gates (all state:SUCCESS on pushed head SHA; update voice/copy fixtures ONLY
+if copy legitimately changed, never weaken). Land on #140, checklist += 2 SILENT. NO ship/ping this cycle.
+On resume: reconcile from origin/integration/next log; if builder already pushed, pin CI to that head, don't rebuild.
+
+## AWAITING — cycle 124 builder in flight (designer concept DONE)
+Designer concept complete. NIT1 motion spec: animate height:0↔auto (0.2s easeOut) on BOTH
+PlayerAutocomplete overlays (suggestions already overflow:hidden; add overflow:hidden to no-match
+card), reduced-motion-gated via useReducedMotion() (initial=false / transition duration:0 when reduce).
+NIT2 copy: strip "they take the reservation — book on the course site" from the 2 book_on_site/foreup
+looperLine branches (fact stays ONCE in subCopy "You book direct — the course takes the reservation");
+call-route + ctaLabel + subCopy unchanged. 2 confirm-copy.test.ts blocks updated to new exact looperLine
++ ctaLabel (never weakened). Builder aa3773ccb8f78367f applying both on integration/next as ONE SILENT
+commit, runs lint/tsc/vitest/build/voice-smoke, pushes. On builder DONE → designer verifies rendered
+(BLOCKING) + reviewer quick sanity + qa gates (all state:SUCCESS on pushed head SHA). Then #140 checklist
++= 2 SILENT, backlog both→done. NO ship/ping. On resume: git log origin/integration/next; if builder
+pushed, pin CI to that head, don't rebuild.
+
+## AWAITING — cycle 124 review stage (3 agents parallel on e4ced85 / head ba339c1)
+Builder DONE: polish e4ced85 + progress ba339c1 pushed to integration/next. Local gates green
+(lint/tsc/vitest 49/build/voice 278). Diff verified matches designer concept exactly (motion height-gated
+both blocks + overflow:hidden on no-match card; copy fact stripped from 2 looperLine branches, subCopy/
+call/ctaLabel untouched; 2 test blocks stricter not weaker). Now: designer-verify ad0ec118 (BLOCKING) +
+reviewer a0325d5 (sanity: no behavior change, no honesty regression, motion gated) + qa ae7695e (gates)
+in parallel. Also verifying CI SUCCESS on pushed head. On ALL green → #140 checklist += 2 SILENT, backlog
+both nits→done, update progress. NO ship/ping (bundle already has its noticeable; accumulates). On any
+BLOCKING → re-dispatch builder with the fix, re-review. On resume: reconcile from origin/integration/next.
+
+## Cycle 124 DONE — batched polish nits landed on bundle #140 (2 SILENT bundle-riders)
+Impl @e4ced85 (+ progress commits). Two designer-filed nits cleared together as one honest pass:
+1. autocomplete-overlay-collapse-motion — PlayerAutocomplete suggestions + no-match overlays animate
+   height:0<->auto (0.2s easeOut) alongside opacity/y(/scale), reduced-motion-gated (useReducedMotion:
+   initial=false / transition duration:0 when reduce); overflow:'hidden' added to no-match card; inner
+   maxHeight:240 scroll div untouched. Done button settles instead of snapping.
+2. teetime-searching-copy-polish — confirm-copy.ts: the 'who books it' fact stated ONCE in subCopy
+   (unchanged, all needs_human branches); stripped from 2 duplicating looperLine branches (foreup
+   real-time + book_on_site). call branch + ctaLabel unchanged. Honesty preserved ('Found' not 'Held').
+   Old page.tsx verb-mixing copy was already refactored away (re-scoped in the resolution).
+Process: designer LED concept (motion spec + copy before/after) → builder applied both as ONE commit →
+designer verified rendered DESIGN OK (BLOCKING) → reviewer(fresh) SHIP (purely presentational, aria
+unchanged, no honesty regression, tests tightened not weakened) → qa PASS (lint/tsc/confirm-copy 49/49/
+full unit 2429/2429/build/voice 278/278). backlog both items status ready->done (targeted edits, JSON
+validated 78 items intact, no duplicate-key collapse). PR #140 checklist += 2 SILENT; silent count 3->5.
+NO ship/ping: bundle #140 = 1 noticeable (tournament per-round course) + 5 silent; accumulates until the
+next eng-lead ship pass builds TestFlight from #140 for owner approval. Verifying CI SUCCESS (Frontend +
+Backend) on final head before ending.
+
+## 2026-07-13 — LOOP PAUSED by owner (second pause)
+Owner paused the hourly eng-lead loop after cycle 124. State at pause: bundle PR #140 OPEN and
+COMPLETE (1 noticeable: tournament per-round courses + round-creation entry fix; 5 silent:
+validator cross-side + cross-type, coverage flywheel, collapse-motion polish, tee-time copy
+de-dup) — all green, formally offered to the owner as v1.1.7; approval pending. Backlog at floor:
+all remaining items owner-gated (Red tree data / satellite-CV, Twilio caller, Venmo, match-play +
+team pickers, per-course handicap, VAD audio, DATABASE_URL secret refresh). v1.1.6 field test
+verdict still pending. Resume = owner says so → re-arm the hourly cron + first cycle checks the
+board.

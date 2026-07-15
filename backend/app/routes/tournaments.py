@@ -101,6 +101,7 @@ async def _build_full_tournament(
         games=games,
         createdAt=row.created_at.isoformat() if row.created_at else "",
         updatedAt=row.updated_at.isoformat() if row.updated_at else "",
+        roundCourses=row.round_courses,
     )
 
 
@@ -162,6 +163,11 @@ async def create_tournament(
         num_rounds=data.numRounds,
         player_ids=list(data.playerIds),
         round_ids=[],
+        round_courses=(
+            [rc.model_dump(exclude_none=True) if rc else None for rc in data.roundCourses]
+            if data.roundCourses is not None
+            else None
+        ),
         created_at=now,
         updated_at=now,
     )
@@ -198,6 +204,12 @@ async def update_tournament(
         if data.playerIds is not None:
             row.player_ids = data.playerIds
             flag_modified(row, "player_ids")
+        if data.roundCourses is not None:
+            row.round_courses = [
+                rc.model_dump(exclude_none=True) if rc else None
+                for rc in data.roundCourses
+            ]
+            flag_modified(row, "round_courses")
 
         # Wholesale-replace tournament-scoped games when supplied
         if data.games is not None:

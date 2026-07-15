@@ -45,6 +45,12 @@ couldn't confirm anything — voicemail/no_answer/unclear) returns the exact
 same honest "call" entry as before. Only kicks in while the foreUP kill
 switch is on (`TEETIME_FOREUP_ENABLED=0` still reverts to byte-identical S0,
 per the original invariant above).
+
+S4f (specs/teetime-s4f-coverage-flywheel-plan.md §1) adds ONE fire-and-forget
+side effect to `_slots_for_course`: every per-course outcome it already
+classifies is recorded to `search_telemetry.py` — never raises into this
+path, never awaits, never changes a returned slot. See `_record_outcome`
+below; the outcome mapping is documented at each call site.
 """
 
 from __future__ import annotations
@@ -67,6 +73,7 @@ from .base import BookingDetails, BookingResult, TeeTimeProvider, TeeTimeQuery, 
 from .capability_store import CourseBookingCapability, load_all_capabilities, match_capability
 from .foreup import ForeUpProvider
 from .routing import CourseFinder, RoutingTeeTimeProvider, build_route_entry
+from .search_telemetry import SearchOutcome, SearchTelemetryStore, default_search_telemetry_store
 
 log = logging.getLogger(__name__)
 
@@ -119,6 +126,7 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         voice: TeeTimeProvider | None = None,
         voice_enabled: bool | None = None,
         availability_cache: AvailabilityCallCacheStore | None = None,
+        telemetry: SearchTelemetryStore | None = None,
     ) -> None:
         super().__init__(find_courses)
         self._foreup = foreup or ForeUpProvider()
@@ -165,6 +173,12 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         # calls). Defaults to the file-backed store shared with the trigger
         # endpoint (routes/tee_times.py) — injectable for tests.
         self._availability_cache = availability_cache or FileAvailabilityCallCacheStore()
+        # S4f coverage flywheel (fire-and-forget per-course outcome
+        # telemetry). Defaults to the MODULE-LEVEL singleton — not a fresh
+        # per-instance store — because `routes/tee_times.py:_get_provider()`
+        # constructs a new `RoutedTeeTimeProvider()` per request; a
+        # per-instance store would defeat in-memory dedup/debounce.
+        self._telemetry = telemetry or default_search_telemetry_store()
 
     @property
     def name(self) -> str:
@@ -174,21 +188,31 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         self, course: dict, query: TeeTimeQuery, distance: float
     ) -> list[TeeTimeSlot]:
         if not self._foreup_enabled:
+            # Kill switch reverts to byte-identical S0 — no telemetry (S4f
+            # plan §1a): recording a disabled system would poison the metric.
             return await super()._slots_for_course(course, query, distance)
 
+        capability_lookup_failed = False
         try:
             caps: tuple[CourseBookingCapability, ...] = self._capabilities()
             cap = match_capability(course, caps)
         except Exception:
             log.warning("router_provider: capability lookup failed — falling back to S0", exc_info=True)
             cap = None
+            capability_lookup_failed = True
 
         if cap is None:
+            if not capability_lookup_failed:
+                # A genuine "no known capability" fact — this IS the S4f
+                # probe-feed queue. (An internal lookup failure above is NOT
+                # a coverage fact, so it records nothing.)
+                self._record_outcome(course, "no_capability")
             return await self._with_availability_cache(
                 course, query, await super()._slots_for_course(course, query, distance)
             )
 
         if cap.is_private:
+            self._record_outcome(course, "private", platform=cap.platform)
             return []  # capability fact record supersedes the name-list filter
 
         adapter = self._adapters.get(cap.platform)
@@ -197,6 +221,8 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         ):
             # No adapter for this platform, or the engine is disabled via
             # TEETIME_ENGINES — behave exactly like "no capability match".
+            # Reported separately from no_capability: probing can't help here.
+            self._record_outcome(course, "no_adapter", platform=cap.platform)
             return await self._with_availability_cache(
                 course, query, await super()._slots_for_course(course, query, distance)
             )
@@ -210,14 +236,17 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
             real_slots = None
 
         if real_slots:
+            self._record_outcome(course, "real_availability", platform=cap.platform)
             return real_slots
 
         if real_slots == []:
             # Verified empty — omit the course rather than imply availability.
+            self._record_outcome(course, "verified_empty", platform=cap.platform)
             return []
 
         # real_slots is None — couldn't check. Degrade to the S0 route entry,
         # but point it at the best real deep-link/phone we have.
+        self._record_outcome(course, "couldnt_check", platform=cap.platform)
         entry = build_route_entry(course, query, distance)
         if entry is None:
             return []
@@ -225,6 +254,17 @@ class RoutedTeeTimeProvider(RoutingTeeTimeProvider):
         entry.phone = cap.phone or entry.phone
         entry.route = "book_on_site"
         return [entry]
+
+    def _record_outcome(
+        self, course: dict, outcome: SearchOutcome, platform: str | None = None
+    ) -> None:
+        """Fire-and-forget (S4f plan §1b): NEVER raises, never awaits, never
+        alters the result. The store's own `_save` already swallows failures
+        — this is belt-and-suspenders."""
+        try:
+            self._telemetry.record(course, outcome, platform=platform)
+        except Exception:
+            log.debug("search_telemetry: record failed (ignored)", exc_info=True)
 
     async def _with_availability_cache(
         self, course: dict, query: TeeTimeQuery, entries: list[TeeTimeSlot]
