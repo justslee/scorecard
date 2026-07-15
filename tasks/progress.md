@@ -16628,3 +16628,36 @@ gates were green). The loop resumes normal operation: each cycle checks the boar
 the next ready item, and the owner's v1.1.6/v1.1.7 field-test feedback preempts. These ship
 records were merged from the stray `records/bundle-140-ship-v117` branch onto `integration/next`
 (they had been committed off-branch at ship time).
+
+## 2026-07-15 — CONSOLIDATION RETRO (post v1.1.1→v1.1.7 burst; SILENT, rides PR #141)
+Reflection + grooming only — no builders dispatched, no product code touched.
+
+**Shipped burst (8 builds, ~25 cycles, ~100–190k tokens/cycle):** v1.1.1 (version-sort re-cut)
+→ v1.1.7. Through-line = the caddie becoming an engine-grounded brain (mock-178 →
+out-of-reach-flag → context-leak → phantom-clarifier → numbers-coherence #139 → corridor-width),
+plus tee-shot yardage-book overlays on the satellite map (#137), the tournament suite
+(live/net/settlement/per-round-course, incl. 3 money-honesty fixes), universal iOS swipe-back,
+the omnipresent-orb polish (#132 follow-ons), guide-validator false-reject fixes (cross-side →
+cross-type → carry-span), and the Bethpage Red prod ingest + guides. Notable: the biggest wins
+were *falsifying* briefs (woods-already-ingested #117; fairway-edge fit premise) before building.
+
+**Lessons (tasks/lessons.md):** added the 2026-07-15 block — caddie "say only what the engine can
+prove" contract; verify-first / falsify-the-brief; release-manager execute-inline-once-green; and
+the two shipping-hygiene rules (VERSION-file per release, all concurrent lanes worktree-isolated).
+Cross-linked [[caddie-numbers-coherence]], [[caddie-shot-context-reachability]],
+[[no-fake-data-fallbacks]], [[testflight-version-sort]], [[parallel-lanes-use-worktrees]],
+[[ship-gate-verification]].
+
+**Grooming (targeted text surgery + json-verified, NO load/dump round-trip):** backlog.json
+78→50 live (+1 new card = 51); 28 shipped-to-main terminal items moved to backlog-archive.json
+(160→188). guide-pauseturn-reserialize-hardening kept live (rides OPEN #141). Filed
+`prod-database-url-secret-refresh` (owed infra, was orphaned inside two archived Red items).
+File verified clean (0 duplicate keys) before + after; every kept/moved item byte-identical.
+
+**Owner-decision queue (unblocks the most value on return):** (1) v1.1.6/v1.1.7 FIELD-TEST verdict
+(the whole loop is waiting on it). (2) Tee-time coverage: browser-XHR harness vs Twilio caller —
+infra-blocked, needs direction. (3) Corridor brain on sparse courses: Red satellite tree-detection
+CV (spike PR #123) vs accept OSM density. (4) Venmo/payments for settlement. (5) Match-play + team
+pickers (tournament). (6) Multi-user epic greenlight. (7) Rotate the stale looper/prod
+Secrets Manager DATABASE_URL. Loop is genuinely idle — backlog at its floor, every remaining
+item owner-gated / blocked-on-infra / speculative.
