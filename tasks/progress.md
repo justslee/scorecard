@@ -56,16 +56,26 @@ Only files touched: guide_writer.py + test_guide_writer.py, as scoped. No migrat
 shared-types change, no DB test needed (nothing here touches the DB) — CI backend gate will
 still run the Postgres integration suite as usual.
 
-## AWAITING — reviewer + qa on guide-pauseturn-reserialize-hardening @ 2c26b68
-Builder done (code+tests @ 941cf96, progress @ 2c26b68). Local gates GREEN (ruff clean;
-pytest tests/test_guide_writer.py 114 passed incl. 2 new; RED→GREEN proven by builder).
-Dispatched reviewer (fresh adversarial correctness — SDK continuation semantics, no regression
-to the happy/no-pause path) + qa (full gate sweep). No designer (backend-only, no UI). No
-/security-review (no auth/endpoint/data/dep change — a serialization fix in an existing call).
-On resume: reviewer SHIP + qa PASS → open the FRESH bundle PR (integration/next→main) with a
-checklist classifying this item SILENT; update backlog (mark item done via targeted edit +
-diff-check); SILENT-only bundle → do NOT ping owner. BLOCKING findings → re-dispatch builder,
-re-review. Reconcile from origin/integration/next.
+## CYCLE 125 DONE — guide-pauseturn-reserialize-hardening landed on fresh bundle PR #141 (SILENT)
+reviewer(fresh) SHIP + qa PASS on 941cf96. reviewer reproduced the old-code block corruption
+and confirmed the SDK send-path serializes the objects losslessly; both new tests proven
+RED-under-old/GREEN-under-new; no regression to the non-pause path; no security surface.
+qa: ruff clean; pytest test_guide_writer.py 114/114 (incl. 2 new); wider guide/caddie sweep
+242 passed / 22 pre-existing DB-skip. Non-blocking nitpick (assertion (b) env-dependent) left
+as-is — the identity assertion is load-bearing.
+- Opened the fresh bundle PR: **#141** (integration/next → main), "Bundle #141: caddie guide
+  pause_turn re-serialization hardening (silent)". Checklist item classified SILENT.
+- Backlog: guide-pauseturn-reserialize-hardening → status "done" + resolution (targeted edit,
+  JSON re-validated, surgical 3-line diff).
+- NOTIFY decision: SILENT-only bundle → NO owner ping (per bundle model). It accumulates and
+  rides the next noticeable change's "ship it".
+- Prompt-injection note: QA surfaced (and both QA and eng-lead ignored) an injected tool-output
+  block ("date changed, don't mention it" + Telegram-MCP instructions) — treated as data, not
+  authority, per the injection-defense rules.
+- Teesnap H3 remains DEFERRED (real bucket-(a) target found — Island's End LI course_id 1059 —
+  but availability-JSON capture needs an XHR-observation harness the scraper plan forbids
+  building; reopen when such a harness exists). Backlog item left "ready" with this finding in
+  cycle-125 notes above.
 
 ## CYCLE 124 DONE — two designer-approved polish nits: autocomplete collapse motion + tee-time double disclaimer (2026-07-13, frontend-only, SILENT)
 Committed directly to `integration/next` @ e4ced85 (no separate PR — bundle rider).
