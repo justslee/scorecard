@@ -273,10 +273,12 @@ async def research_hole_guide(
             finished = True
             break
         # Resume the server-tool loop: re-send with the paused assistant turn
-        # appended (Anthropic's documented pause_turn continuation pattern).
-        messages = messages + [
-            {"role": "assistant", "content": [c.model_dump(mode="json") for c in result.content]}
-        ]
+        # appended, passing result.content (the SDK block objects) DIRECTLY
+        # as the assistant content — Anthropic's documented pause_turn
+        # continuation pattern. A manual `model_dump(mode="json")`
+        # re-serialization corrupts server-tool blocks that aren't in the
+        # non-beta ContentBlock union (guide-pauseturn-reserialize-hardening).
+        messages = messages + [{"role": "assistant", "content": result.content}]
 
     # Cost-guard logging (owner approved ~$1.5/course scale, not a runaway) —
     # per-hole spend, auditable from the log, read straight off the response

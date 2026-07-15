@@ -1344,3 +1344,213 @@ def test_owns_number_same_type_never_shadows():
 def test_owns_number_empty_different_type_field_owns():
     occurrences = [("trees", 0, [], "x")]
     assert _owns_number(3, 0, "trees", occurrences) is True
+
+
+# ── pause_turn continuation hardening (guide-pauseturn-reserialize-hardening) ─
+#
+# `research_hole_guide`'s pause_turn continuation re-sends the paused
+# assistant turn on the next call. The old code manually re-serialized it
+# (`[c.model_dump(mode="json") for c in result.content]`), which corrupts any
+# server-tool content block that isn't in the non-beta `ContentBlock` union
+# (e.g. `bash_code_execution_tool_result` deserializes to a `TextBlock` with
+# `text=None`, and re-dumping that emits a polluted wire dict). The fix
+# passes `result.content` — the SDK block objects — through untouched, per
+# Anthropic's documented pause_turn continuation pattern.
+
+
+@pytest.mark.asyncio
+async def test_pause_turn_continuation_resends_sdk_block_objects_directly(monkeypatch):
+    """RED/GREEN driver: on the continuation call, the assistant `content`
+    must be the ORIGINAL `result.content` list by object identity, with
+    every element being the original SDK block object (not a re-serialized
+    dict) — including a non-union server-tool block that the old
+    `model_dump(mode="json")` round-trip corrupts."""
+    import warnings
+    from types import SimpleNamespace
+    from typing import cast
+
+    from anthropic._models import construct_type
+    from anthropic.types import ServerToolUseBlock, ThinkingBlock
+    from anthropic.types.content_block import ContentBlock
+
+    from app.caddie import guide_writer
+
+    paused_content = [
+        ThinkingBlock(type="thinking", thinking="planning search", signature="sig"),
+        ServerToolUseBlock(
+            type="server_tool_use",
+            id="srvtoolu_1",
+            name="web_search",
+            input={"query": "bethpage black hole 4 strategy"},
+        ),
+        # A server-tool block NOT in the non-beta ContentBlock union —
+        # deserialized exactly the way the SDK does it (construct_type
+        # against ContentBlock), which yields a TextBlock-typed object with
+        # text=None carrying the raw fields. This is the block class the
+        # old model_dump round-trip corrupts.
+        construct_type(
+            value={
+                "type": "bash_code_execution_tool_result",
+                "tool_use_id": "srvtoolu_2",
+                "content": {
+                    "type": "bash_code_execution_result",
+                    "stdout": "",
+                    "stderr": "",
+                    "return_code": 0,
+                    "content": [],
+                },
+            },
+            type_=cast(type, ContentBlock),
+        ),
+    ]
+
+    paused_result = SimpleNamespace(
+        stop_reason="pause_turn",
+        content=paused_content,
+        parsed_output=None,
+        usage=SimpleNamespace(
+            input_tokens=1000,
+            output_tokens=200,
+            server_tool_use=SimpleNamespace(web_search_requests=1),
+        ),
+    )
+    final_result = SimpleNamespace(
+        stop_reason="end_turn",
+        content=[],
+        parsed_output=guide_writer._WriterOutput(play_line="Favor center-left off the tee."),
+        usage=SimpleNamespace(
+            input_tokens=500,
+            output_tokens=100,
+            server_tool_use=SimpleNamespace(web_search_requests=0),
+        ),
+    )
+    responses = [paused_result, final_result]
+    calls: list = []
+
+    class FakeMessages:
+        async def parse(self, **kwargs):
+            calls.append(kwargs["messages"])
+            return responses[len(calls) - 1]
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.messages = FakeMessages()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(guide_writer.anthropic, "AsyncAnthropic", FakeClient)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        guide = await guide_writer.research_hole_guide(4, 4, 461, None, None, [])
+
+    # (a) direct SDK-object resend — the RED/GREEN driver.
+    assert len(calls) == 2
+    first_call, second_call = calls
+    assert second_call[-1]["role"] == "assistant"
+    assert second_call[-1]["content"] is paused_content
+    for block in second_call[-1]["content"]:
+        assert not isinstance(block, dict)
+    assert any(block is paused_content[i] for i, block in enumerate(second_call[-1]["content"]))
+    # History preserved — no extra "continue" user turn appended.
+    assert second_call[0] is first_call[0]
+
+    # (b) no pydantic serialization warnings.
+    assert not any(
+        "PydanticSerializationUnexpectedValue" in str(w.message)
+        or "Pydantic serializer warnings" in str(w.message)
+        for w in caught
+    )
+
+    # (c) well-formed result.
+    assert isinstance(guide, guide_writer.HoleStrategyGuide)
+    assert guide.play_line == "Favor center-left off the tee."
+    assert guide.schema_version == 1
+    assert guide.generated_at
+    assert guide.model
+
+
+@pytest.mark.asyncio
+async def test_pause_turn_multiple_continuations_accumulate_usage_and_messages(
+    monkeypatch, caplog
+):
+    """Multiple pause_turn continuations under the `_MAX_CONTINUATIONS` cap:
+    the message list must grow monotonically (each assistant turn appended
+    by identity) and the cost-guard log must report SUMMED usage across ALL
+    calls, including the paused ones."""
+    import logging
+    from types import SimpleNamespace
+
+    from app.caddie import guide_writer
+
+    content_1 = [SimpleNamespace(kind="pause-1")]
+    content_2 = [SimpleNamespace(kind="pause-2")]
+
+    result_1 = SimpleNamespace(
+        stop_reason="pause_turn",
+        content=content_1,
+        parsed_output=None,
+        usage=SimpleNamespace(
+            input_tokens=100,
+            output_tokens=20,
+            server_tool_use=SimpleNamespace(web_search_requests=1),
+        ),
+    )
+    result_2 = SimpleNamespace(
+        stop_reason="pause_turn",
+        content=content_2,
+        parsed_output=None,
+        usage=SimpleNamespace(
+            input_tokens=200,
+            output_tokens=30,
+            server_tool_use=SimpleNamespace(web_search_requests=2),
+        ),
+    )
+    result_3 = SimpleNamespace(
+        stop_reason="end_turn",
+        content=[],
+        parsed_output=guide_writer._WriterOutput(play_line="Favor center-left off the tee."),
+        usage=SimpleNamespace(
+            input_tokens=300,
+            output_tokens=40,
+            server_tool_use=SimpleNamespace(web_search_requests=0),
+        ),
+    )
+    responses = [result_1, result_2, result_3]
+    calls: list = []
+
+    class FakeMessages:
+        async def parse(self, **kwargs):
+            calls.append(kwargs["messages"])
+            return responses[len(calls) - 1]
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.messages = FakeMessages()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(guide_writer.anthropic, "AsyncAnthropic", FakeClient)
+
+    caplog.set_level(logging.INFO, logger="looper.guide_writer")
+    guide = await guide_writer.research_hole_guide(4, 4, 461, None, None, [])
+
+    assert len(calls) == 3
+    third_call = calls[2]
+    assert len(third_call) == 3  # user + 2 assistant turns
+    assert third_call[0]["role"] == "user"
+    assert third_call[1]["role"] == "assistant"
+    assert third_call[1]["content"] is content_1
+    assert third_call[2]["role"] == "assistant"
+    assert third_call[2]["content"] is content_2
+
+    assert guide.play_line == "Favor center-left off the tee."
+
+    # Cost-guard log: SUMMED usage across all 3 responses.
+    total_input = 100 + 200 + 300
+    total_output = 20 + 30 + 40
+    total_searches = 1 + 2 + 0
+    cost_records = [r for r in caplog.records if "guide writer hole=" in r.getMessage()]
+    assert len(cost_records) == 1
+    message = cost_records[0].getMessage()
+    assert f"input_tokens={total_input}" in message
+    assert f"output_tokens={total_output}" in message
+    assert f"web_searches={total_searches}" in message
