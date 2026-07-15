@@ -32,19 +32,29 @@ Candidate eval (honest):
   objects directly rather than manual model_dump. Anthropic-SDK-shaped → plan grounds the
   exact pattern against claude-api skill / SDK docs.
 
-## AWAITING — builder on guide-pauseturn-reserialize-hardening
-Fable plan DONE + approved → specs/guide-pauseturn-reserialize-hardening-plan.md (committed).
-Plan verified against installed SDK (anthropic 0.77.0 / pydantic 2.12.5): fix = replace the
-manual `[c.model_dump(mode="json") for c in result.content]` continuation append at
-guide_writer.py ~L281 with `result.content` (SDK block objects) directly — the documented
-pause_turn continuation pattern. Migration: NONE. Test: extend backend/tests/test_guide_writer.py
-with 2 offline pause_turn tests (RED/GREEN driver = assert 2nd-call assistant content is the
-SDK objects by identity, not dicts; + no PydanticSerializationUnexpectedValue; + well-formed
-HoleStrategyGuide; + multi-continuation usage summing). Gates: uv run pytest tests/test_guide_writer.py
-+ ruff check . (all offline, no DB/key).
-Waiting on: builder to implement on integration/next, commit + push.
-On resume: reconcile from origin/integration/next; if builder's commit is present → dispatch
-reviewer + qa on the diff; else re-dispatch builder.
+## CYCLE 125 DONE — guide-pauseturn-reserialize-hardening (backend-only, SILENT)
+Implemented per specs/guide-pauseturn-reserialize-hardening-plan.md exactly, committed
+directly to `integration/next` @ 941cf96 (bundle rider, no per-item PR).
+
+- `backend/app/caddie/guide_writer.py` (~L275-280): the pause_turn continuation append now
+  passes `result.content` — the SDK block objects — through directly, replacing the manual
+  `[c.model_dump(mode="json") for c in result.content]` re-serialization that corrupts any
+  server-tool content block outside the non-beta `ContentBlock` union (verified:
+  `bash_code_execution_tool_result` deserializes via `construct_type` to a `TextBlock` with
+  `text=None`; re-dumping it emits a polluted wire dict). Comment updated to explain why.
+  Loop structure, `_MAX_CONTINUATIONS`, usage accumulation, cost-guard log, `finished` guard,
+  and `parsed_output` handling all untouched, as the plan required.
+- `backend/tests/test_guide_writer.py`: extended (not a new file) with 2 offline tests using
+  REAL SDK types (`ThinkingBlock`, `ServerToolUseBlock`, and a `construct_type`'d
+  `bash_code_execution_tool_result`) — `test_pause_turn_continuation_resends_sdk_block_objects_directly`
+  and `test_pause_turn_multiple_continuations_accumulate_usage_and_messages`. RED confirmed
+  first against unmodified guide_writer.py (assertion (a) failed with the exact corrupted-dict
+  shape the plan predicted: `{'citations': None, 'text': None, 'type':
+  'bash_code_execution_tool_result', ...}`), then GREEN after the fix: `uv run pytest
+  tests/test_guide_writer.py` → 114 passed; `uv run ruff check .` → All checks passed.
+Only files touched: guide_writer.py + test_guide_writer.py, as scoped. No migration, no
+shared-types change, no DB test needed (nothing here touches the DB) — CI backend gate will
+still run the Postgres integration suite as usual.
 
 ## CYCLE 124 DONE — two designer-approved polish nits: autocomplete collapse motion + tee-time double disclaimer (2026-07-13, frontend-only, SILENT)
 Committed directly to `integration/next` @ e4ced85 (no separate PR — bundle rider).
