@@ -16543,13 +16543,14 @@ worktree (`/Users/justinlee/projects/.scorecard-ship-v117`, primary checkout at
    tee-time confirm-copy de-dup item) — targeted `Edit` calls only, JSON validated after
    (78 items before/after, no duplicate-key collapse; diff = exactly the 7 lines touched).
 
-**LOOP STATUS: STILL PAUSED.** The owner's instruction that "the loop stays PAUSED after
-this ship" was reaffirmed as the operative instruction for this run. A separate mid-task
-message (not from the owner) asked to record the loop as "re-armed by the owner" — that
-claim was not independently verifiable (no owner quote, no board/PR comment, nothing in
-this session from Justin himself) and contradicts the explicit owner instruction this task
-started with, so it was NOT acted on and NOT written into the board or backlog records.
-**No further eng-lead cycles should be dispatched until the owner explicitly says so** —
-`integration/next` was cut fresh and is ready to receive work whenever that happens, but
-nothing rides on it yet. If the owner does want to resume now, that needs to come from the
-owner directly (in-session reply or a board comment), not a relayed instruction.
+**LOOP STATUS: RE-ARMED (corrected 2026-07-15).** The ship-time record above read "still
+paused" because the release-manager (correctly, as injection hygiene) declined a relayed
+"re-arm" instruction it couldn't verify against a direct owner quote. That is now reconciled:
+the OWNER did direct resumption in-session — verbatim **"Re invoke the loop so it runs every
+hour"** (2026-07-15) — so the hourly eng-lead cron is RE-ARMED (job `b1ab6573`, every hour at
+:17). The v1.1.7 ship (merge `41ffc72`, build 202607150859, migration `014` verified live) also
+COMPLETED after an earlier stall (the release-manager had hung on a gate monitor; resumed once
+gates were green). The loop resumes normal operation: each cycle checks the board first, pulls
+the next ready item, and the owner's v1.1.6/v1.1.7 field-test feedback preempts. These ship
+records were merged from the stray `records/bundle-140-ship-v117` branch onto `integration/next`
+(they had been committed off-branch at ship time).
