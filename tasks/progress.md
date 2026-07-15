@@ -32,12 +32,19 @@ Candidate eval (honest):
   objects directly rather than manual model_dump. Anthropic-SDK-shaped → plan grounds the
   exact pattern against claude-api skill / SDK docs.
 
-## AWAITING — Fable Plan agent on guide-pauseturn-reserialize-hardening
-Waiting on: Plan (fable) to produce specs/guide-pauseturn-reserialize-hardening-plan.md
-(approach + exact SDK continuation fix + offline test strategy simulating a pause_turn
-continuation with server-tool blocks + migration verdict = none expected).
-On resume: if plan exists → dispatch builder on it; else re-dispatch Plan. Branch head to
-reconcile from: origin/integration/next.
+## AWAITING — builder on guide-pauseturn-reserialize-hardening
+Fable plan DONE + approved → specs/guide-pauseturn-reserialize-hardening-plan.md (committed).
+Plan verified against installed SDK (anthropic 0.77.0 / pydantic 2.12.5): fix = replace the
+manual `[c.model_dump(mode="json") for c in result.content]` continuation append at
+guide_writer.py ~L281 with `result.content` (SDK block objects) directly — the documented
+pause_turn continuation pattern. Migration: NONE. Test: extend backend/tests/test_guide_writer.py
+with 2 offline pause_turn tests (RED/GREEN driver = assert 2nd-call assistant content is the
+SDK objects by identity, not dicts; + no PydanticSerializationUnexpectedValue; + well-formed
+HoleStrategyGuide; + multi-continuation usage summing). Gates: uv run pytest tests/test_guide_writer.py
++ ruff check . (all offline, no DB/key).
+Waiting on: builder to implement on integration/next, commit + push.
+On resume: reconcile from origin/integration/next; if builder's commit is present → dispatch
+reviewer + qa on the diff; else re-dispatch builder.
 
 ## CYCLE 124 DONE — two designer-approved polish nits: autocomplete collapse motion + tee-time double disclaimer (2026-07-13, frontend-only, SILENT)
 Committed directly to `integration/next` @ e4ced85 (no separate PR — bundle rider).
