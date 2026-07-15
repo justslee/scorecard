@@ -3,6 +3,42 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## CYCLE 125 — RE-ARMED 2026-07-15. Item: guide-pauseturn-reserialize-hardening (backend, SILENT)
+Owner-feedback check FIRST: board has no field-test feedback card after #140/v1.1.7
+(latest card = Bundle #140, Shipped, no comments); no in-session owner message. Nothing
+preempts. Started fresh integration/next state @ 7c1dbb2 (= main 41ffc72 + ship records);
+no open bundle PR (only 4 spike PRs #123/#126/#127/#138).
+
+Candidate eval (honest):
+- `teetime-h3-teesnap-adapter` — DEFERRED this cycle. A real NY-metro target DOES exist
+  (Island's End Golf Club, Long Island — islandsendgolf.teesnap.net, course_id 1059; also
+  Shore Gate NJ, Mark Twain, Arrowhead, Belden Hill). Probe confirmed bucket-(a): HTTP 200,
+  sets XSRF-TOKEN + laravel_session cookies via CloudFront (JFK POP), Apache/Laravel, NO
+  anti-bot wall (no Cloudflare/Turnstile challenge). BUT the customer availability JSON path
+  is NOT cleanly capturable over httpx: all guessed /customer/teesheet* endpoints 403 (HTML,
+  not JSON), and the compiled React bundles are rewrite-gated (919B error). The real endpoint
+  needs live browser-XHR observation, which the scraper plan explicitly forbids building
+  (no Playwright/Chromium). probe_booking_capability.py has NO probe_teesnap routine yet.
+  Building the adapter against a guessed/synthetic fixture = the untestable adapter the brief
+  bars. FILED de-risked: target real + bucket-(a) confirmed; blocking gap = availability-JSON
+  capture needs an XHR-observation harness. Reopen when such a capture harness exists.
+- CHOSEN: `guide-pauseturn-reserialize-hardening` (backlog priority 5, minor, low-risk).
+  Bounded, fully offline-verifiable, hardens the caddie strategy-guide path (owner core).
+  Exact issue: guide_writer.py ~L281 pause_turn continuation does
+  `{"role":"assistant","content":[c.model_dump(mode="json") for c in result.content]}` —
+  emits PydanticSerializationUnexpectedValue for server-tool blocks (code_execution /
+  text_editor server-tool result) and may not re-serialize cleanly for a real continuation.
+  Fix direction (per Anthropic SDK pause_turn pattern): append result.content SDK block
+  objects directly rather than manual model_dump. Anthropic-SDK-shaped → plan grounds the
+  exact pattern against claude-api skill / SDK docs.
+
+## AWAITING — Fable Plan agent on guide-pauseturn-reserialize-hardening
+Waiting on: Plan (fable) to produce specs/guide-pauseturn-reserialize-hardening-plan.md
+(approach + exact SDK continuation fix + offline test strategy simulating a pause_turn
+continuation with server-tool blocks + migration verdict = none expected).
+On resume: if plan exists → dispatch builder on it; else re-dispatch Plan. Branch head to
+reconcile from: origin/integration/next.
+
 ## CYCLE 124 DONE — two designer-approved polish nits: autocomplete collapse motion + tee-time double disclaimer (2026-07-13, frontend-only, SILENT)
 Committed directly to `integration/next` @ e4ced85 (no separate PR — bundle rider).
 
