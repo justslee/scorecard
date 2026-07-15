@@ -16506,3 +16506,50 @@ all remaining items owner-gated (Red tree data / satellite-CV, Twilio caller, Ve
 team pickers, per-course handicap, VAD audio, DATABASE_URL secret refresh). v1.1.6 field test
 verdict still pending. Resume = owner says so → re-arm the hourly cron + first cycle checks the
 board.
+
+## 2026-07-15 — SHIPPED v1.1.7 (bundle #140) — owner "Ship it"
+Owner approved PR #140 (`integration/next` → `main`) as v1.1.7. Executed in an isolated
+worktree (`/Users/justinlee/projects/.scorecard-ship-v117`, primary checkout at
+`/Users/justinlee/projects/scorecard` untouched throughout).
+
+1. **VERSION bump 1.1.6 → 1.1.7** (commit `911f8c8`), pushed fast-forward to `integration/next`
+   (was PR #140's head). Both required gates (Frontend, Backend) confirmed state:SUCCESS on
+   `911f8c8` before proceeding; E2E smoke advisory also SUCCESS.
+2. Retitled PR #140 → "Bundle #140: tournament per-round courses + round-creation entry fix +
+   validator hardenings + tee-time coverage flywheel + polish"; merged (`gh pr merge 140
+   --merge`) → merge commit `41ffc723d58baa92985f28f89bec6737089e9222` on `main`.
+3. Post-merge `main` CI: both the `CI` workflow and `Deploy backend (SSM)` workflow completed
+   `success` on `41ffc72` — no infra flake this time, no rerun needed.
+4. **Backend deploy verified** (key-free, on-box via SSM, instance `i-0826ae70df62d9fe8`):
+   `alembic current` → `014_tournament_round_courses (head)` (deploy log also shows the
+   `013_caller_voice -> 014_tournament_round_courses` upgrade line). `VOICE_BOOKING_ENABLED`
+   confirmed UNSET (caller stays inert). `/health` → `{"status":"ok"}`.
+5. **TestFlight cut** from the worktree at new `main` (`npm ci` first, then
+   `REPO=<worktree> bash ops/ios/ship.sh`, run to completion in foreground): uploaded
+   **v1.1.7, build 202607150859** — "✅ Uploaded v1.1.7 (build 202607150859) to TestFlight —
+   processing on Apple's side now." No exit-70, no retry needed.
+6. Prod `/health` smoke re-confirmed ok after the build.
+7. **Fresh `integration/next` cut** from new `main` (`41ffc72`) and pushed fast-forward (no
+   force-push) — `integration/next` and `main` both now at `41ffc72`.
+8. **Records:** Notion board card created for bundle #140 (no prior card existed —
+   verified via search) at Status=Shipped:
+   https://app.notion.com/p/39e1c52592e08190b921cb4a5d15f183 — headline items, silent
+   items, how-to-test, deploy verification, and the loop-paused note. `backlog.json`
+   terminal-marked with a "SHIPPED TO MAIN 2026-07-15 (bundle #140 merged @41ffc72...;
+   TestFlight v1.1.7 build 202607150859)" note appended to each of the 6 items landed in
+   this bundle (`tournament-per-round-format-course` incl. status → `shipped`,
+   `guide-validator-cross-side-binding`, `guide-validator-cross-type-number-binding`,
+   `autocomplete-overlay-collapse-motion`, `teetime-s4f-coverage-flywheel`, and the
+   tee-time confirm-copy de-dup item) — targeted `Edit` calls only, JSON validated after
+   (78 items before/after, no duplicate-key collapse; diff = exactly the 7 lines touched).
+
+**LOOP STATUS: STILL PAUSED.** The owner's instruction that "the loop stays PAUSED after
+this ship" was reaffirmed as the operative instruction for this run. A separate mid-task
+message (not from the owner) asked to record the loop as "re-armed by the owner" — that
+claim was not independently verifiable (no owner quote, no board/PR comment, nothing in
+this session from Justin himself) and contradicts the explicit owner instruction this task
+started with, so it was NOT acted on and NOT written into the board or backlog records.
+**No further eng-lead cycles should be dispatched until the owner explicitly says so** —
+`integration/next` was cut fresh and is ready to receive work whenever that happens, but
+nothing rides on it yet. If the owner does want to resume now, that needs to come from the
+owner directly (in-session reply or a board comment), not a relayed instruction.
