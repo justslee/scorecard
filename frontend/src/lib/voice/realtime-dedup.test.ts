@@ -415,3 +415,37 @@ describe('RealtimeCaddieClient — R7: per-response tool-batch coalescing (Part 
     client.stop();
   });
 });
+
+describe('RealtimeCaddieClient — detached-live end() mid-mint (specs/caddie-detach-and-language-pin-plan.md §B6 T4)', () => {
+  it('end() mid-mint (setEvents({})+stop): resolved mint does not resurrect pc, no late message reaches the detached handlers; double-stop idempotent', async () => {
+    // Mirrors the exact composition useDetachedCaddieLive.end() performs on
+    // top of useCaddieLiveSession's public stop() — detach handlers before
+    // stopping the transport, same belt as fallBack()/the effect cleanup use
+    // throughout realtime.ts's own teardown paths (R1 above pins the
+    // underlying abort-guard root cause this composes on top of).
+    const d = deferred<{ client_secret: string }>();
+    (startSetupSession as ReturnType<typeof vi.fn>).mockImplementationOnce(() => d.promise);
+
+    const onMessage = vi.fn();
+    const onStatus = vi.fn();
+    const client = new RealtimeCaddieClient({ mode: 'setup', personalityId: 'classic' }, { onMessage, onStatus });
+    const startP = client.start(); // mint in flight — end() fires before it resolves
+
+    client.setEvents({});
+    client.stop();
+    // Double-stop idempotent — a race between an explicit end() and the
+    // inner hook's own `!active` teardown belt calling stop() again must
+    // never throw or re-emit.
+    expect(() => client.stop()).not.toThrow();
+
+    // The mint now resolves — a resurrection bug would sail on and build a
+    // full second live connection nobody references.
+    d.resolve({ client_secret: 'secret-setup' });
+    await startP;
+    await flushMicrotasks();
+
+    expect(getAllPcs()).toHaveLength(0); // resolved mint did not resurrect a pc
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(onMessage).not.toHaveBeenCalled(); // no late message reaches the (detached) handlers
+  });
+});

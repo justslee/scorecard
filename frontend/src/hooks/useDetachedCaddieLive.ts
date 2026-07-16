@@ -126,9 +126,13 @@ export function useDetachedCaddieLive({
 
   // Fallback auto-release (preserves "next open retries live"): only when
   // the sheet is CLOSED — while open, CaddieSheet renders the classic
-  // fallback body in place without releasing liveOn.
+  // fallback body in place without releasing liveOn. Deferred out of the
+  // effect body (react-hooks/set-state-in-effect — matches the established
+  // pattern elsewhere in this codebase, e.g. app/tournament/new/page.tsx).
   useEffect(() => {
-    if (session.fellBack && !sheetOpen) setLiveOn(false);
+    if (!(session.fellBack && !sheetOpen)) return;
+    const t = setTimeout(() => setLiveOn(false), 0);
+    return () => clearTimeout(t);
   }, [session.fellBack, sheetOpen]);
 
   return {

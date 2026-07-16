@@ -87,11 +87,25 @@ function baseOptions(overrides: Partial<UseDetachedCaddieLiveOptions> = {}): Use
   };
 }
 
-/** Drains pending microtasks (async continuations past a mocked `await`). */
+/** Drains pending microtasks (async continuations past a mocked `await`),
+ *  plus one macrotask tick — the fallback auto-release effect defers its
+ *  setState via `setTimeout(..., 0)` (react-hooks/set-state-in-effect),
+ *  which a microtask-only flush never reaches. Fake-timer aware: under
+ *  `vi.useFakeTimers()` a real `setTimeout` never resolves on its own, so
+ *  advance the fake clock instead of awaiting a real one. */
 async function flush(times = 8) {
   for (let i = 0; i < times; i++) {
     await act(async () => {
       await Promise.resolve();
+    });
+  }
+  if (vi.isFakeTimers()) {
+    await act(async () => {
+      vi.advanceTimersByTime(0);
+    });
+  } else {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
   }
 }

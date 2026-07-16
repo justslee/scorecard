@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { T, PAPER_NOISE, DEFAULT_ACCENT } from "@/components/yardage/tokens";
 import { HOLES } from "@/components/yardage/HoleIllustration";
 import HoleCard from "@/components/yardage/HoleCard";
@@ -18,7 +18,9 @@ import {
   getGolferProfile,
 } from "@/lib/storage";
 import CaddieSheet from "@/components/CaddieSheet";
-import { useCaddiePersona } from "@/lib/caddie/persona";
+import { useCaddiePersona, captionPersonaName } from "@/lib/caddie/persona";
+import { useDetachedCaddieLive } from "@/hooks/useDetachedCaddieLive";
+import { liveStatusLabel } from "@/lib/caddie/live-copy";
 import { buildClubMap } from "@/lib/caddie/clubs";
 import {
   startSession as startCaddieSession,
@@ -41,7 +43,7 @@ import {
   addScore as apiAddScore,
   completeRound as apiCompleteRound,
 } from "@/lib/api";
-import { hapticCelebration } from "@/lib/haptics";
+import { hapticCelebration, hapticWarning } from "@/lib/haptics";
 import { shotPointForPath } from "@/lib/hole-shot-point";
 import { resolveCourseKey } from "@/lib/course-review-key";
 import { getRecentCourses } from "@/lib/golf-api";
@@ -867,7 +869,7 @@ export default function RoundPage() {
     currentHole,
     onDegradeToText: () => {
       setVoiceOpen(false);
-      setCaddieOpen(true);
+      openCaddieSheet();
     },
     onOffline: () => {
       setVoiceOpen(false);
@@ -880,13 +882,22 @@ export default function RoundPage() {
   // already warm (the mic stays withheld until that real press). Fires once,
   // on the transition to available; useVoiceCaddie.warm() is itself
   // idempotent so re-firing this effect is harmless. See lib/voice/warm-session.ts.
+  // The reactive effect itself is declared further below (after
+  // `detachedCaddieLive` exists — one-mic guard, §B4) since it needs
+  // `detachedCaddieLive.liveOn` in its dependency array.
   const { warm: warmVoice } = voice;
-  useEffect(() => {
-    if (caddieSessionActive && !isLocalRound) warmVoice();
-  }, [caddieSessionActive, isLocalRound, warmVoice]);
 
-  /** Orb / mic press: hold-to-talk. Opens whichever surface the ladder picks. */
+  /** Orb / mic press: hold-to-talk. Opens whichever surface the ladder picks.
+   *  One-mic invariant (specs/caddie-detach-and-language-pin-plan.md §B4):
+   *  while a detached live caddie session is running, redirect to reopening
+   *  the sheet instead of tearing the intentional session down by starting a
+   *  second, competing mic burst (realtime.ts's singleton cap would silently
+   *  kill the live session otherwise). */
   const handleVoicePress = () => {
+    if (detachedCaddieLive.liveOn) {
+      setCaddieOpen(true);
+      return;
+    }
     const surface = voice.press();
     if (surface === "voice") setVoiceOpen(true);
   };
@@ -1108,6 +1119,10 @@ export default function RoundPage() {
     } finally {
       // Round is over — drop any live voice burst immediately (cost control).
       voice.stop();
+      // ...and any detached live caddie session too (specs/caddie-detach-and
+      // -language-pin-plan.md §B5 true-stop paths) — a live conversation
+      // must not keep running past the round it belonged to.
+      detachedCaddieLive.end();
       // End the caddie session — triggers cross-round memory summarization +
       // learning aggregation server-side. Fire-and-forget; never blocks recap.
       if (caddieSessionActive) {
@@ -1328,6 +1343,86 @@ export default function RoundPage() {
   const shotPoint = shotPointForPath(hole.path);
 
   // ---------------------------------------------------------------------------
+  // Detached live caddie session (specs/caddie-detach-and-language-pin-plan.md,
+  // Item B) — owned HERE, not by CaddieSheet, so a live conversation survives
+  // the sheet closing. Called unconditionally (before the loading/!round
+  // early returns below) — rules-of-hooks. `sheetOpen`/`eligible` gate the
+  // wrapper's own auto-release + start() eligibility; the live session
+  // itself is otherwise independent of whether the sheet is open.
+  // ---------------------------------------------------------------------------
+  const detachedCaddieLive = useDetachedCaddieLive({
+    roundId,
+    personaId,
+    holeNumber: currentHole,
+    holePar,
+    holeYards: resolvedYardage.yards,
+    yardageBasis: resolvedYardage.basis,
+    teeName: round?.teeName ?? null,
+    resolveOpeningShot: caddieSessionActive && !isLocalRound ? resolveOpeningShot : undefined,
+    sheetOpen: caddieOpen,
+    eligible: caddieSessionActive && !isLocalRound,
+  });
+
+  // Preload the orb's Realtime session (see `warmVoice` above) — excludes
+  // `detachedCaddieLive.liveOn` (one-mic invariant, §B4): warming a second
+  // burst while the detached live session is running would silently kill it
+  // via realtime.ts's singleton cap. Re-warms automatically once the live
+  // session ends (liveOn back in the deps array).
+  useEffect(() => {
+    if (caddieSessionActive && !isLocalRound && !detachedCaddieLive.liveOn) warmVoice();
+  }, [caddieSessionActive, isLocalRound, warmVoice, detachedCaddieLive.liveOn]);
+
+  // Fallback-continuity SEEDING effect (specs/caddie-detach-and-language-pin
+  // -plan.md §B2) — lives HERE (the owner), not in CaddieSheet, so it runs
+  // even while the sheet is CLOSED: without this, a live session that
+  // degrades to the classic path while the golfer has the sheet closed
+  // would lose its transcript the instant `useDetachedCaddieLive`'s
+  // auto-release effect flips `liveOn` off (which wipes the inner hook's
+  // `messages`). One-shot per live activation, guarded by
+  // `seededFallbackRef`, reset when the live session ends.
+  const seededFallbackRef = useRef(false);
+  useEffect(() => {
+    if (!(detachedCaddieLive.liveOn && detachedCaddieLive.session.fellBack)) return;
+    if (seededFallbackRef.current) return;
+    if (detachedCaddieLive.session.messages.length === 0) return;
+    if (caddieHistory.length > 0) return; // already has history — no dup
+    seededFallbackRef.current = true;
+    const seeded: VoiceCaddieMessage[] = detachedCaddieLive.session.messages
+      .filter((m) => !m.partial && m.text.trim().length > 0)
+      .map((m) => ({ role: m.role, content: m.text }));
+    setCaddieHistory(seeded);
+  }, [
+    detachedCaddieLive.liveOn,
+    detachedCaddieLive.session.fellBack,
+    detachedCaddieLive.session.messages,
+    caddieHistory.length,
+  ]);
+  useEffect(() => {
+    if (!detachedCaddieLive.liveOn) seededFallbackRef.current = false;
+  }, [detachedCaddieLive.liveOn]);
+
+  /** Opens the caddie sheet, stopping any other live/warm mic session first
+   *  (one-mic invariant) and starting/continuing the detached live session.
+   *  ALL open paths (the pill, the degrade-to-text handoff) go through this
+   *  — the single place that composes "stop the other mic, start/resume
+   *  live, show the sheet." */
+  const openCaddieSheet = useCallback(() => {
+    voice.stop();
+    detachedCaddieLive.start();
+    setCaddieOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detachedCaddieLive.start]);
+
+  // ── Pill live-pulse state (specs/caddie-detach-and-language-pin-plan.md
+  // §B3) — hooks declared here (before the loading/!round early returns
+  // below), the pure derivations that consume them are computed right above
+  // the pill's JSX further down. ──
+  const reduceMotion = useReducedMotion();
+  const [pillEndConfirming, setPillEndConfirming] = useState(false);
+  const pillHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pillEndHoldFiredRef = useRef(false);
+
+  // ---------------------------------------------------------------------------
   // Loading / not-found states
   // ---------------------------------------------------------------------------
 
@@ -1414,6 +1509,26 @@ export default function RoundPage() {
 
   // First player ID — used for "has this hole been played" chip indicator.
   const firstPlayerId = players[0]?.id ?? "";
+
+  // ── Pill live-pulse derivations (specs/caddie-detach-and-language-pin-plan
+  // .md §B3) — S5: pulse EXCLUSIVELY while genuinely active (connected/
+  // listening/speaking); `connecting` gets the LIVE label with no pulse; the
+  // resting pill (liveOn false) is untouched (byte-identical "Ask caddie"). ──
+  const personaLabel = captionPersonaName(caddy.name);
+  const pillIsLive = detachedCaddieLive.isLive;
+  const pillIsSuspended = detachedCaddieLive.isSuspended;
+  const pillStatus = detachedCaddieLive.session.status;
+  const pillConnecting = pillIsLive && (pillStatus === "connecting" || pillStatus === "idle");
+  const pillPulsing = pillIsLive && !pillConnecting && !pillIsSuspended;
+  // connected + listening share the calmer 2.6s cadence; speaking is a
+  // touch brisker (1.8s) — the designer's two-cadence spec (§B3).
+  const pillPulseDuration = pillStatus === "speaking" ? 1.8 : 2.6;
+  // Long-press-to-end threshold — longer than CaddieOrb's ORB_HOLD_MS (350ms)
+  // so an ordinary tap-to-reopen never misfires into an end.
+  const PILL_END_HOLD_MS = 480;
+  // "Release to end" confirm-window flash before the session actually ends —
+  // never a silent kill on a single long-press.
+  const PILL_END_CONFIRM_MS = 500;
 
   // ---------------------------------------------------------------------------
   // Main render
@@ -2173,21 +2288,65 @@ export default function RoundPage() {
               Pill/orb interplay (specs/omnipresent-caddie-orb-plan.md §1): this
               pill IS the caddie invocation on the round page —
               shouldShowCaddieOrb('/round/[id]') is false, so the omnipresent
-              CaddieOrb hides here on purpose. One mic, never two. */}
+              CaddieOrb hides here on purpose. One mic, never two.
+              Live pulsing anchor (specs/caddie-detach-and-language-pin-plan.md
+              §B3): while a detached live session is running, ONLY the ink
+              medallion pulses (paper/border stay flat, S5: resting pill is
+              byte-identical, connecting never pulses) and a tap reopens the
+              sheet without stopping the session. Long-press ends it. */}
           <motion.button
-            aria-label="Ask caddie"
+            aria-label={
+              pillIsLive
+                ? "Ask caddie — live, hold to end"
+                : "Ask caddie"
+            }
             onClick={() => {
-              // One mic at a time: stop any live/warm orb session before the
-              // sheet's dictation path opens its own stream (the degrade path
-              // already does this; the manual open must too).
+              if (pillEndHoldFiredRef.current) {
+                // The long-press already ended the session — the trailing
+                // pointerup's click must not also reopen the sheet.
+                pillEndHoldFiredRef.current = false;
+                return;
+              }
+              if (pillIsLive) {
+                // Session already live+detached — reopen only, no voice.stop()
+                // (that stop is for a cold classic-path start, not a live tap).
+                setCaddieOpen(true);
+                return;
+              }
               voice.stop();
-              setCaddieOpen(true);
+              openCaddieSheet();
+            }}
+            onPointerDown={() => {
+              if (!pillIsLive) return;
+              pillEndHoldFiredRef.current = false;
+              pillHoldTimerRef.current = setTimeout(() => {
+                pillHoldTimerRef.current = null;
+                pillEndHoldFiredRef.current = true;
+                hapticWarning();
+                setPillEndConfirming(true);
+                setTimeout(() => {
+                  setPillEndConfirming(false);
+                  detachedCaddieLive.end();
+                }, PILL_END_CONFIRM_MS);
+              }, PILL_END_HOLD_MS);
+            }}
+            onPointerUp={() => {
+              if (pillHoldTimerRef.current) {
+                clearTimeout(pillHoldTimerRef.current);
+                pillHoldTimerRef.current = null;
+              }
+            }}
+            onPointerLeave={() => {
+              if (pillHoldTimerRef.current) {
+                clearTimeout(pillHoldTimerRef.current);
+                pillHoldTimerRef.current = null;
+              }
             }}
             whileTap={{ scale: 0.97 }}
             style={{
               padding: "14px 18px",
               borderRadius: 99,
-              border: `1px solid ${T.hairline}`,
+              border: `1px solid ${pillIsLive ? `${accent}55` : T.hairline}`,
               background: T.paper,
               color: T.ink,
               cursor: "pointer",
@@ -2202,8 +2361,19 @@ export default function RoundPage() {
               minWidth: 0,
             }}
           >
-            {/* Looper ink-orb medallion — matches LooperOrb identity (FloatingTabBar.tsx) at pill scale */}
-            <span
+            {/* Looper ink-orb medallion — matches LooperOrb identity (FloatingTabBar.tsx)
+                at pill scale. ONLY this pulses while live (never the pill chrome). */}
+            <motion.span
+              animate={
+                pillPulsing && !reduceMotion
+                  ? { scale: [1, 1.06, 1] }
+                  : { scale: 1 }
+              }
+              transition={
+                pillPulsing && !reduceMotion
+                  ? { duration: pillPulseDuration, repeat: Infinity, ease: "easeInOut" }
+                  : { duration: 0 }
+              }
               style={{
                 width: 20,
                 height: 20,
@@ -2222,8 +2392,24 @@ export default function RoundPage() {
               }}
             >
               L
+            </motion.span>
+            <span
+              style={{
+                fontFamily: T.serif,
+                fontStyle: "italic",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {pillEndConfirming
+                ? "Release to end"
+                : pillIsSuspended
+                  ? "Paused — tap to resume"
+                  : pillIsLive
+                    ? liveStatusLabel(detachedCaddieLive.session.status, personaLabel)
+                    : "Ask caddie"}
             </span>
-            <span style={{ fontFamily: T.serif, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Ask caddie</span>
           </motion.button>
 
           {/* Enter Score — solid pill */}
@@ -2315,6 +2501,9 @@ export default function RoundPage() {
         personas={personas}
         onSelectPersona={selectPersona}
         resolveOpeningShot={caddieSessionActive && !isLocalRound ? resolveOpeningShot : undefined}
+        live={detachedCaddieLive.session}
+        liveOn={detachedCaddieLive.liveOn}
+        onEndLive={detachedCaddieLive.end}
       />
 
       {/* key forces a fresh unmount+remount on each open, resetting all state */}
