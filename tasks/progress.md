@@ -17474,6 +17474,18 @@ Land on integration/next (HOLD push if #141 recuts; add to bundle PR or fresh on
 Fable plan DONE -> specs/map-marker-craft-plan.md (committed). Treatment: ink pin + paper-flag cutout,
 2 tiers (quiet course-flag.png 22x27.5 anchor{11,26.125}; highlight course-flag-highlight.png 36x45
 anchor{18,42.75} zIndex2), drop `title` (kills stock info-window; existing bottom tap-card = name surface).
-NOTE: work is in the WORKTREE (not shared checkout) per parallel-lanes-use-worktrees. AWAITING builder.
-NEXT: builder -> reviewer(fable, geometry) -> qa(gates on pushed head) -> designer BLOCKING sim screenshots.
+NOTE: work is in the WORKTREE (not shared checkout) per parallel-lanes-use-worktrees.
+
+Builder DONE (2026-07-16) @27a1c81 on branch worktree-agent-a85b704b9130fa351 (NOT pushed/merged yet).
+Implemented plan exactly: render-course-flag.mjs reworked into a 2-asset loop (SCALE 4, 128x160,
+IHDR post-write assert) -> both PNGs regenerated + committed. scout-map-config.ts: PIN_VIEWBOX/PIN_TIP +
+pure pinIconGeometry(height) helper; QUIET_PIN_ICON = pinIconGeometry(27.5). highlightMarkerFor rewritten
+to course-flag-highlight.png + pinIconGeometry(45) + zIndex 2, `title` field deleted from HighlightMarker.
+CourseScoutMap.tsx: pinToMarker now `{ coordinate, ...QUIET_PIN_ICON }`, no title; PanTarget/header
+comments updated. Test file updated (highlightMarkerFor exact-object, no title) + new geometry-invariant
++ title-absence tests (27 total, all pass). Gates all green: lint clean, tsc clean, vitest 27/27,
+`next build` clean, voice-tests smoke 278/278. Eyeballed both PNGs (Read tool) — ink balloon + paper
+cutout + pennant color diff (pencil vs flag-red) + baked shadow, transparent bg, all present.
+NEXT: reviewer(fable, geometry) -> qa(gates on pushed head) -> designer BLOCKING sim screenshots
+(native anchor/tap/no-info-window verification per plan §4(e) — NOT done, web build can't exercise it).
 Land on integration/next by ff (HOLD push if origin/integration/next recut by #141 ship). Do NOT ship/ping.
