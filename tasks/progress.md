@@ -17966,22 +17966,33 @@ Landed via clean fast-forward (origin/integration/next e9391ec was ancestor). PR
 (NOTICEABLE). Backlog tap-target-gps-origin -> done. NOT shipping/pinging this cycle (owner decisions
 pending in main session; release-manager handles TestFlight later).
 
-## AWAITING — red9-relation-bunker-assembly (SILENT ingest correctness) — 2026-07-16
-Follow-up from tonight's guide-safe prod re-ingest: the extended osm.py query FETCHED Red-9's
+## LANDED on integration/next — red9-relation-bunker-assembly (SILENT ingest correctness) — 2026-07-16
+Follow-up from the guide-safe prod re-ingest: the extended osm.py query FETCHED Red-9's
 waste complex (relation[golf=bunker] id 19545022, MultiPolygon) but per-hole bunker counts came
-out byte-identical — the spatial-join assembly DROPS relation-multipolygon bunkers.
-DROP POINT: backend/app/services/course_spatial.py assign_features_to_holes else-branch (~L412-415)
-— a MultiPolygon falls through Point/Polygon -> (None,None,inf) -> build_course_feature_collection
-(~L615) filters it (course_name None). FIX (fable plan specs/red9-relation-bunker-assembly-plan.md):
-add a MultiPolygon branch picking the largest member ring (shoelace) as representative outer_ring,
-centroid via _ring_centroid, reuse existing Tier1/2/3 + bunker corridor cap (150m) UNCHANGED so the
-complex lands on hole 9 like a way-bunker. Fetch+parse+consumers already MultiPolygon-correct.
-AWAITING: builder implements the plan on integration/next (helper _ring_area + elif branch + doc
-touch-ups + TestMultiPolygonBunkerAssignment tests incl. regression pin), commits + pushes.
-  builder done -> reviewer (fresh: assignment correctness — complex lands on hole 9 not a
-  neighbour; no way-bunker regression; no cross-hole spam) + qa (ruff + pytest test_course_spatial
-  + test_osm_parsing local; CI postgis runs DB ingest tests; all gates SUCCESS on pushed head).
-  reviewer SHIP + qa PASS -> update PR #143 checklist (SILENT), fill backlog resolution, keep
-  red9-relation-bunker-rerun ready (owner standing auth). NOT shipping/pinging (SILENT; owner
-  decisions pending in main session). On resume, reconcile from origin/integration/next — do NOT
-  re-run a finished child.
+out byte-identical — the spatial-join assembly was DROPPING relation-multipolygon bunkers.
+Fix commit 89769b1 implements specs/red9-relation-bunker-assembly-plan.md exactly:
+backend/app/services/course_spatial.py — new `_ring_area` helper (unscaled shoelace magnitude;
+docstring states no lat-scaling is needed since it only ranks same-latitude members) + a new
+`elif geom_type == "MultiPolygon":` branch in assign_features_to_holes that picks the largest
+usable member (outer ring non-empty, >=4 pts) as the representative ring via `_ring_area`, sets
+`clon, clat` via the existing `_ring_centroid`, then falls through UNCHANGED into Tier 1
+(centerline overlap) / Tier 2 (vertex voting) / Tier 3 (centroid-nearest) and the existing 150 m
+bunker corridor cap. No-usable-member case still drops (None, None, inf) as before. Doc touch-ups
+only on the `polygons` docstring + Tier-1 header comment. No changes to
+build_course_feature_collection's woods/rough filter, osm_ingest.assemble_osm_course, or osm.py
+(verified out of scope per the plan).
+Tests: backend/tests/test_course_spatial.py TestMultiPolygonBunkerAssignment (6 tests) — RED->GREEN
+assignment to hole 9 + under-cap distance + geometry.type=="MultiPolygon" preserved on emission;
+multi-member largest-wins (small decoy nearer the neighbour hole does NOT steal the assignment);
+degenerate-guard (all members unusable -> inf); regression pin (pre-existing way-bunker assignments
+byte-identical with/without the new MultiPolygon bunker appended). Sanity-checked RED->GREEN by
+stashing the fix: 4/6 new tests fail against the old dispatch (bunker drops to None/inf), 2/6
+(degenerate + regression, which don't depend on the fix) still pass — confirms the tests actually
+pin the bug. test_osm_parsing.py's existing relation/natural=sand `geometry.type=="MultiPolygon"`
+assertions (lines 675, 699) already present — no addition needed.
+Gates (local, no DB — CI's postgis job runs the DB-backed ingest tests):
+  ruff check .        -> All checks passed!
+  pytest test_course_spatial.py test_osm_parsing.py -q -> 167 passed
+Pushed to origin/integration/next @89769b1 (ff from a737b92, no conflicts).
+NOT shipping/pinging — SILENT (ingest correctness only; visible payoff needs the Red-only data
+re-run, backlog `red9-relation-bunker-rerun`, still gated on owner standing auth).
