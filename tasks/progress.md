@@ -16673,7 +16673,18 @@ noticeable item. Do NOT ship/ping this cycle.
 attribution (triggerItemsByResponse), heldResponses/no-input clarifier; transcript render in
 CaddieSheet.tsx / CaddieOrbSheet.tsx / useRealtimeCaddie.ts.
 
-## AWAITING — fable Plan agent on the traced double-emit root cause @ base 875999a
-- Plan output → specs/caddie-realtime-double-emit-plan.md (traced mechanism + id-keyed dedup + test harness).
-- On return: dispatch builder to implement plan on integration/next; then reviewer+qa+designer(BLOCKING).
-- Do NOT re-run a finished child on resume; reconcile from origin/integration/next log.
+**Plan (fable) DONE** → specs/caddie-realtime-double-emit-plan.md. ROOT CAUSE: ZOMBIE second
+Realtime session — stop() during the mint await does NOT cancel startInner(), which resurrects a
+full live mic-open billed connection (realtime.ts:291-313, no post-await abort check; cap cleared
+at 592 never re-checked). Its handlers are never detached (useCaddieLiveSession fallBack/!active/
+cleanup lack setEvents({})) so onMessage=bare upsert feeds BOTH sessions' turns into ONE messages
+list → 2 transcripts (variants) + 2 independent tool solves. Secondary #2: multi-tool runTool fires
+one response.create per function_call_arguments.done → N answers (fix = per-response_id tool batch).
+Fix = Part A abort flag + post-await re-checks (terminal stop); Part B detach handlers + onMessage
+gate; Part C id-keyed dedup (processedUserItems/finalizedResponses/toolBatch, instance-scoped →
+reconnect-safe). No VAD/threshold changes. Secondary Hole-3 = pre-ingest-round caveat (file separate).
+
+## AWAITING — builder implementing the plan on integration/next @ base d35970e
+- On return: reviewer (adversarial: does dedup ever DROP a legit rapid follow-up? re-break
+  priming/no-input/attribution? id-keying across reconnect?) + qa (gates SUCCESS on pushed head) +
+  designer BLOCKING (caddie chat surface). Reconcile from origin/integration/next log on resume.
