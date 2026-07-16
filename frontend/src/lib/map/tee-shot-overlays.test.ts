@@ -90,6 +90,18 @@ function makeBunkerPoint(p: LatLng): GeoJSON.Feature {
   };
 }
 
+/** MultiPolygon bunker feature — one outer ring per member, `rings` given as
+ *  a list of point lists (each auto-closed). The shape a `golf=bunker`/
+ *  `natural=sand` OSM RELATION parses into (v1.1.9 Item 2). */
+function makeBunkerMultiPolygon(rings: LatLng[][]): GeoJSON.Feature {
+  const coords = rings.map((points) => [[...points, points[0]].map((p) => [p.lng, p.lat])]);
+  return {
+    type: 'Feature',
+    properties: { featureType: 'bunker' },
+    geometry: { type: 'MultiPolygon', coordinates: coords },
+  };
+}
+
 /** Identical to `makeBunkerPolygon` but `featureType: "fairway"`. */
 function makeFairwayPolygon(points: LatLng[]): GeoJSON.Feature {
   const ring = [...points, points[0]].map((p) => [p.lng, p.lat]);
@@ -480,24 +492,31 @@ describe('10. rounding to nearest 5 + equal-edge (front === back)', () => {
   });
 });
 
-// ── 11. Cap at 4 by smallest lateral, sorted by front ───────────────────────
+// ── 11. Cap at 6 by smallest lateral, sorted by front ───────────────────────
+//
+// v1.1.9 field-test fix (Item 2): BUNKER_CAP raised 4 -> 6 (bundled letter
+// assets A-F already exist) so a heavily-bunkered hole (Bethpage Red-9)
+// doesn't silently drop in-play bunkers. Cap/ordering behavior itself is
+// unchanged — only the survivor COUNT moved.
 
-describe('11. cap at 4 — keeps the 4 smallest-lateral bunkers, sorted ascending by front', () => {
-  it('6 qualifying bunkers -> 4 survive', () => {
+describe('11. cap at 6 — keeps the 6 smallest-lateral bunkers, sorted ascending by front', () => {
+  it('8 qualifying bunkers (a tight, heavily-bunkered course fixture) -> 6 survive, no spam', () => {
     const tee: LatLng = { lat: 40.3, lng: -73.5 };
     const green = northOf(tee, 450);
     const holeFeature = makeHoleLine([tee, green]);
     const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
 
-    // (carry, lateral) pairs — the 4 with SMALLEST |lateral| are 210(5),
-    // 150(10), 270(15), 240(20); excluded: 120(30), 180(25).
+    // (carry, lateral) pairs — the 6 with SMALLEST |lateral| are 210(5),
+    // 150(10), 270(15), 240(20), 300(25), 180(30); excluded: 120(35), 325(40).
     const pairs: Array<[number, number]> = [
-      [120, 30],
-      [150, 10],
-      [180, 25],
       [210, 5],
-      [240, 20],
+      [150, 10],
       [270, 15],
+      [240, 20],
+      [300, 25],
+      [180, 30],
+      [120, 35],
+      [325, 40],
     ];
     const bunkers = pairs.map(([carry, lateral]) =>
       makeBunkerPolygon([
@@ -509,8 +528,8 @@ describe('11. cap at 4 — keeps the 4 smallest-lateral bunkers, sorted ascendin
     );
 
     const result = fairwayBunkerCarries({ features: [holeFeature, ...bunkers], tee, green });
-    expect(result).toHaveLength(4);
-    expect(result.map((b) => b.front)).toEqual([150, 210, 240, 270]);
+    expect(result).toHaveLength(6);
+    expect(result.map((b) => b.front)).toEqual([150, 180, 210, 240, 270, 300]);
   });
 
   it('maxBunkers: 2 (inline display cap) -> keeps only the 2 smallest-lateral bunkers, sorted by front', () => {
@@ -520,15 +539,17 @@ describe('11. cap at 4 — keeps the 4 smallest-lateral bunkers, sorted ascendin
     const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
 
     // Same fixture as above — the 2 SMALLEST |lateral| are 210(5) and
-    // 150(10); everything else, including 240(20) and 270(15) which survive
-    // the default cap of 4, is dropped at a display cap of 2.
+    // 150(10); everything else, including bunkers that survive the default
+    // cap of 6, is dropped at a display cap of 2.
     const pairs: Array<[number, number]> = [
-      [120, 30],
-      [150, 10],
-      [180, 25],
       [210, 5],
-      [240, 20],
+      [150, 10],
       [270, 15],
+      [240, 20],
+      [300, 25],
+      [180, 30],
+      [120, 35],
+      [325, 40],
     ];
     const bunkers = pairs.map(([carry, lateral]) =>
       makeBunkerPolygon([
@@ -986,20 +1007,22 @@ describe('15. bunker letter assignment — shared legend/marker key', () => {
     }
   });
 
-  it('cap behavior, contiguous — default cap (4) -> A,B,C,D with no gaps; maxBunkers: 2 -> A,B', () => {
+  it('cap behavior, contiguous — default cap (6) -> A,B,C,D,E,F with no gaps; maxBunkers: 2 -> A,B', () => {
     const tee: LatLng = { lat: 40.3, lng: -73.5 };
     const green = northOf(tee, 450);
     const holeFeature = makeHoleLine([tee, green]);
     const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
 
-    // Same six-bunker fixture as describe 11.
+    // Same eight-bunker fixture as describe 11 (2 excluded by the cap of 6).
     const pairs: Array<[number, number]> = [
-      [120, 30],
-      [150, 10],
-      [180, 25],
       [210, 5],
-      [240, 20],
+      [150, 10],
       [270, 15],
+      [240, 20],
+      [300, 25],
+      [180, 30],
+      [120, 35],
+      [325, 40],
     ];
     const bunkers = pairs.map(([carry, lateral]) =>
       makeBunkerPolygon([
@@ -1011,7 +1034,7 @@ describe('15. bunker letter assignment — shared legend/marker key', () => {
     );
 
     const defaultCap = fairwayBunkerCarries({ features: [holeFeature, ...bunkers], tee, green });
-    expect(defaultCap.map((b) => b.letter)).toEqual(['A', 'B', 'C', 'D']);
+    expect(defaultCap.map((b) => b.letter)).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
 
     const inlineCap = fairwayBunkerCarries({
       features: [holeFeature, ...bunkers],
@@ -1020,5 +1043,149 @@ describe('15. bunker letter assignment — shared legend/marker key', () => {
       maxBunkers: 2,
     });
     expect(inlineCap.map((b) => b.letter)).toEqual(['A', 'B']);
+  });
+});
+
+// ── 16. MultiPolygon bunker (v1.1.9 field-test fix, Item 2 — Fix A) ────────────
+//
+// A golf=bunker/natural=sand OSM RELATION (e.g. a waste-bunker complex —
+// confirmed live via an Overpass probe against Bethpage Red-9's bbox: a real
+// golf=bunker multipolygon relation exists there, invisible to the previous
+// way-only ingest query) now parses as a GeoJSON MultiPolygon. The union of
+// every member's outer ring is treated as ONE bunker candidate.
+
+describe('16. MultiPolygon bunker — one complex, one honest front/back span, never one chip per member', () => {
+  it('two adjacent members spanning 230-260y yield exactly ONE BunkerCarry with the UNION front/back', () => {
+    const tee: LatLng = { lat: 40.1, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+    const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
+
+    // Member 1: front edge of the complex, carry 230-245, lateral 20-25.
+    const member1 = [
+      corner(230, 20),
+      corner(230, 25),
+      corner(245, 25),
+      corner(245, 20),
+    ];
+    // Member 2: back edge of the complex, carry 250-260, lateral 15-20 —
+    // adjacent to member 1, same waste complex, mapped as a second outer ring.
+    const member2 = [
+      corner(250, 15),
+      corner(250, 20),
+      corner(260, 20),
+      corner(260, 15),
+    ];
+    const bunker = makeBunkerMultiPolygon([member1, member2]);
+
+    const result = fairwayBunkerCarries({ features: [holeFeature, bunker], tee, green });
+
+    expect(result).toHaveLength(1); // ONE complex -> ONE chip, never one per member
+    expect(result[0].front).toBe(230); // min across BOTH members
+    expect(result[0].back).toBe(260); // max across BOTH members
+    expect(result[0].side).toBe('R'); // east of a due-north hole
+  });
+
+  it('a MultiPolygon whose members are all out of the [floor,ceiling] window is excluded, same as a Polygon would be', () => {
+    const tee: LatLng = { lat: 40.05, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+    const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
+
+    // Both members sit at ~60y carry — below the 100y BUNKER_FLOOR_YARDS.
+    const member1 = [corner(58, 10), corner(58, 14), corner(62, 14), corner(62, 10)];
+    const member2 = [corner(60, 5), corner(60, 9), corner(64, 9), corner(64, 5)];
+    const bunker = makeBunkerMultiPolygon([member1, member2]);
+
+    const result = fairwayBunkerCarries({ features: [holeFeature, bunker], tee, green });
+    expect(result).toEqual([]);
+  });
+
+  it('a degenerate MultiPolygon (empty/missing member rings) is skipped, never crashes', () => {
+    const tee: LatLng = { lat: 40.02, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+
+    const degenerate: GeoJSON.Feature = {
+      type: 'Feature',
+      properties: { featureType: 'bunker' },
+      geometry: { type: 'MultiPolygon', coordinates: [] },
+    };
+
+    const result = fairwayBunkerCarries({ features: [holeFeature, degenerate], tee, green });
+    expect(result).toEqual([]);
+  });
+});
+
+// ── 17. Fairway-adjacency lateral admit (v1.1.9 field-test fix, Item 2 — Fix B) ─
+//
+// NOT a blanket lateral raise (would invite cross-hole spam on a straight
+// centerline) — a bunker whose own near edge sits INSIDE a mapped fairway
+// ring is admitted regardless of the 45y CORRIDOR_MAX_LATERAL_YARDS ceiling
+// (real on a dogleg, where a straight-chord lateral overstates how far
+// off-line an edge-of-fairway bunker actually is).
+
+describe('17. fairway-adjacency lateral admit — a mapped fairway ring can rescue an out-of-corridor bunker', () => {
+  it('admitted when its near edge sits inside a wide/dogleg fairway ring', () => {
+    const tee: LatLng = { lat: 40.2, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+    const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
+
+    // 58-62y lateral -> exceeds the 45y CORRIDOR_MAX_LATERAL_YARDS ceiling.
+    const bunker = makeBunkerPolygon([
+      corner(198, 58),
+      corner(198, 62),
+      corner(202, 62),
+      corner(202, 58),
+    ]);
+    // A wide dogleg fairway whose ring genuinely contains the bunker's near
+    // edge — the honest signal the admit is gated on.
+    const wideFairway = makeFairwayPolygon([
+      corner(150, -70),
+      corner(150, 70),
+      corner(250, 70),
+      corner(250, -70),
+    ]);
+
+    const withoutFairway = fairwayBunkerCarries({ features: [holeFeature, bunker], tee, green });
+    expect(withoutFairway).toEqual([]); // no fairway geometry -> genuinely out of corridor
+
+    const withFairway = fairwayBunkerCarries({
+      features: [holeFeature, bunker, wideFairway],
+      tee,
+      green,
+    });
+    expect(withFairway).toHaveLength(1);
+    expect(withFairway[0].front).toBe(200); // 198 rounds to nearest 5
+  });
+
+  it('still excluded when a fairway ring exists but does NOT reach the bunker (narrow, hugs the centerline)', () => {
+    const tee: LatLng = { lat: 40.2, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+    const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
+
+    const bunker = makeBunkerPolygon([
+      corner(198, 58),
+      corner(198, 62),
+      corner(202, 62),
+      corner(202, 58),
+    ]);
+    // Narrow fairway (+/-10y) that does NOT reach the bunker's 58-62y edge —
+    // the admit must NOT fire just because SOME fairway geometry exists.
+    const narrowFairway = makeFairwayPolygon([
+      corner(150, -10),
+      corner(150, 10),
+      corner(250, 10),
+      corner(250, -10),
+    ]);
+
+    const result = fairwayBunkerCarries({
+      features: [holeFeature, bunker, narrowFairway],
+      tee,
+      green,
+    });
+    expect(result).toEqual([]);
   });
 });
