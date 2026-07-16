@@ -17469,3 +17469,11 @@ tap-card already carries the name. Realistic label = bake into highlight marker 
 Stage: designer concept DONE (ink pin + paper flag cutout, drop title, keep tap-card). AWAITING Plan(fable) aea3e0e... on specs/map-marker-craft-plan.md (anchor geometry focus).
 (regen asset via render-course-flag.mjs pattern + wire) -> reviewer -> qa -> designer BLOCKING screenshots.
 Land on integration/next (HOLD push if #141 recuts; add to bundle PR or fresh one if #141 shipped).
+
+## AWAITING (map-marker lane — WORKTREE agent-a85b704b9130fa351, base 168a095/origin+notes)
+Fable plan DONE -> specs/map-marker-craft-plan.md (committed). Treatment: ink pin + paper-flag cutout,
+2 tiers (quiet course-flag.png 22x27.5 anchor{11,26.125}; highlight course-flag-highlight.png 36x45
+anchor{18,42.75} zIndex2), drop `title` (kills stock info-window; existing bottom tap-card = name surface).
+NOTE: work is in the WORKTREE (not shared checkout) per parallel-lanes-use-worktrees. AWAITING builder.
+NEXT: builder -> reviewer(fable, geometry) -> qa(gates on pushed head) -> designer BLOCKING sim screenshots.
+Land on integration/next by ff (HOLD push if origin/integration/next recut by #141 ship). Do NOT ship/ping.
