@@ -17501,3 +17501,14 @@ title-removal safe (tap via markerId); no queue/budget/prime regression; tests l
 (#6b6558 quiet / #c1332c highlight). qa PASS: 6/6 gates (deterministic render, lint, tsc, vitest 27/27, build,
 voice 278/278). AWAITING designer BLOCKING visual verdict (in-sandbox composite of marker art vs Google craft +
 NORTHSTAR; native on-device placement/tap DEFERRED — no Xcode here, reviewer pixel-probe covers anchor).
+
+## DONE map-marker craft (owner v1.1.8 screenshots) — bundle #141, @27a1c81 (NOTICEABLE)
+Redesigned CourseScoutMap markers: weighted ink-pin + paper-flag cutout (Google silhouette, ink/paper,
+not a red teardrop), 2 tiers (quiet course-flag.png 22x27.5 anchor{11,26.125}; highlight
+course-flag-highlight.png 36x45 anchor{18,42.75} zIndex2, T.flag pennant), baked shadow. KILLED stock
+info-window by dropping marker title on both tiers (name via existing bottom tap-card). render script emits
+2x 128x160 PNGs w/ IHDR assert. Plan(fable) specs/map-marker-craft-plan.md. Gates: reviewer(fable) SHIP
+(anchor 0.5/0.95 verified 3 ways incl pixel-decode), qa PASS 6/6, designer APPROVE (retina composite reads
+finished like Google in our voice). DEFERRED to owner device: native placement across zoom + tap-only-card.
+LANDED: fast-forward push worktree branch -> integration/next (origin was cc9094d, unmoved; #141 not recut).
+PR #141 checklist updated. NO ship/ping (rides the next noticeable ship). Cosmetic nits logged, non-blocking.
