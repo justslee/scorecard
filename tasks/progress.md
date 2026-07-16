@@ -18008,3 +18008,20 @@ pushed head; backend heavy — CI postgis runs DB ingest tests).
   reviewer SHIP + qa PASS -> update PR #143 checklist (SILENT), fill backlog red9-relation-bunker-assembly
   resolution=done-on-bundle, keep red9-relation-bunker-rerun ready. NOT shipping/pinging (SILENT).
   BLOCKING findings -> re-dispatch builder, re-review. On resume reconcile from origin/integration/next @285dc72.
+
+## LANDED on integration/next — red9-relation-bunker-assembly (SILENT ingest correctness) — 2026-07-16
+Fix @89769b1. course_spatial.assign_features_to_holes now handles MultiPolygon (relation) bunkers:
+new _ring_area (abs shoelace, no lat-scaling) + a MultiPolygon elif picking the largest usable member
+ring as the representative outer_ring, then the existing Tier1/2/3 + bunker corridor cap (150m) run
+UNCHANGED -> the Red-9 waste complex (relation id 19545022) lands on hole 9 like a way-bunker. Fixes the
+byte-identical-counts symptom from tonight's re-ingest (fetch+parse+consumers were already MultiPolygon-
+correct; only the spatial join dropped it). Point/Polygon paths byte-identical; degenerate keeps the drop.
++TestMultiPolygonBunkerAssignment (6 tests, RED->GREEN 4/6 fail on old dispatch).
+VERDICTS: reviewer SHIP (hand-verified geometry: main member straddles hole-9 centerline ~89m vs hole-8
+0 overlap -> Tier1 fires on hole 9; largest-member 16x decoy; dist<<150m cap; no regression; no cross-hole
+spam; 2 non-blocking test-strength notes). qa PASS (ruff clean, 167/167 targeted, 2534/2534 non-DB; DB
+ingest tests gated to CI postgis). Landed via clean fast-forward. PR #143 checklist updated (SILENT).
+Backlog red9-relation-bunker-assembly -> done-on-bundle; red9-relation-bunker-rerun filed ready (owner
+standing Red re-ingest auth, can co-run with map-fieldtest-red11-reingest). NOT shipping/pinging this cycle
+(SILENT; owner decisions pending in main session; release-manager verifies CI-green + ships the bundle later).
+CI: pull_request run 29537908292 in_progress on head 5c3e6bc (backend postgis gate runs the DB ingest tests).
