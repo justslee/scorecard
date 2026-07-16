@@ -698,6 +698,131 @@ describe('createCameraQueue — coalescing serializer for rapid hole changes', (
   });
 });
 
+// ── createCameraQueue — priority-aware coalescing via `shouldReplace` ─────────
+// (review fix on the Item 3 queue-sharing design: plain last-write-wins let a
+// lower-priority 'gps' request silently evict an already-pending 'hole'
+// request, dropping the hole's camera reframe + tee-shot redraw — see
+// GoogleSatelliteMap's `shouldReplace` predicate and its docstring on
+// createCameraQueue.)
+
+describe('createCameraQueue — priority-aware coalescing (shouldReplace)', () => {
+  type Target = { reason: 'hole' | 'gps'; label: string };
+
+  /** GoogleSatelliteMap's exact predicate: a 'gps' request must never evict
+   *  a pending 'hole' request; every other combination still replaces. */
+  const holeBeatsGps = (pending: Target, incoming: Target): boolean =>
+    !(pending.reason === 'hole' && incoming.reason === 'gps');
+
+  it('a pending hole request survives a gps request that arrives mid-flight — the trailing run executes the HOLE request, not gps', async () => {
+    const calls: Target[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<Target>(async (t) => {
+      calls.push(t);
+      if (t.label === 'first') await d1.promise;
+    }, holeBeatsGps);
+
+    queue.request({ reason: 'hole', label: 'first' }); // starts immediately, in flight
+    queue.request({ reason: 'hole', label: 'pending-hole' }); // becomes pending
+    queue.request({ reason: 'gps', label: 'should-be-dropped' }); // must NOT evict pending-hole
+
+    expect(calls).toEqual([{ reason: 'hole', label: 'first' }]);
+
+    d1.resolve();
+    await flush();
+
+    // The trailing run is the HOLE request — the gps request that arrived
+    // after it was dropped, never evicting the pending hole-change.
+    expect(calls).toEqual([
+      { reason: 'hole', label: 'first' },
+      { reason: 'hole', label: 'pending-hole' },
+    ]);
+  });
+
+  it('gps-replaces-gps still coalesces as before (a newer gps request replaces an older pending gps request)', async () => {
+    const calls: Target[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<Target>(async (t) => {
+      calls.push(t);
+      if (t.label === 'first') await d1.promise;
+    }, holeBeatsGps);
+
+    queue.request({ reason: 'gps', label: 'first' }); // in flight
+    queue.request({ reason: 'gps', label: 'stale-gps' }); // becomes pending
+    queue.request({ reason: 'gps', label: 'latest-gps' }); // replaces stale-gps
+
+    d1.resolve();
+    await flush();
+
+    expect(calls).toEqual([
+      { reason: 'gps', label: 'first' },
+      { reason: 'gps', label: 'latest-gps' }, // stale-gps never ran
+    ]);
+  });
+
+  it('hole-replaces-gps still coalesces as before (a hole request replaces a pending gps request)', async () => {
+    const calls: Target[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<Target>(async (t) => {
+      calls.push(t);
+      if (t.label === 'first') await d1.promise;
+    }, holeBeatsGps);
+
+    queue.request({ reason: 'gps', label: 'first' }); // in flight
+    queue.request({ reason: 'gps', label: 'stale-gps' }); // becomes pending
+    queue.request({ reason: 'hole', label: 'hole-change' }); // replaces stale-gps (higher priority)
+
+    d1.resolve();
+    await flush();
+
+    expect(calls).toEqual([
+      { reason: 'gps', label: 'first' },
+      { reason: 'hole', label: 'hole-change' },
+    ]);
+  });
+
+  it('hole-replaces-hole still coalesces as before (a newer hole request replaces an older pending hole request)', async () => {
+    const calls: Target[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<Target>(async (t) => {
+      calls.push(t);
+      if (t.label === 'first') await d1.promise;
+    }, holeBeatsGps);
+
+    queue.request({ reason: 'hole', label: 'first' }); // in flight
+    queue.request({ reason: 'hole', label: 'hole-1' }); // becomes pending
+    queue.request({ reason: 'hole', label: 'hole-2' }); // replaces hole-1
+
+    d1.resolve();
+    await flush();
+
+    expect(calls).toEqual([
+      { reason: 'hole', label: 'first' },
+      { reason: 'hole', label: 'hole-2' },
+    ]);
+  });
+
+  it('with no shouldReplace supplied, defaults to plain last-write-wins (pre-existing behavior unchanged)', async () => {
+    const calls: Target[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<Target>(async (t) => {
+      calls.push(t);
+      if (t.label === 'first') await d1.promise;
+    });
+
+    queue.request({ reason: 'hole', label: 'first' });
+    queue.request({ reason: 'hole', label: 'pending-hole' });
+    queue.request({ reason: 'gps', label: 'evicts-without-shouldReplace' });
+
+    d1.resolve();
+    await flush();
+
+    expect(calls).toEqual([
+      { reason: 'hole', label: 'first' },
+      { reason: 'gps', label: 'evicts-without-shouldReplace' }, // no priority guard -> plain last-write-wins
+    ]);
+  });
+});
+
 // ── Item 3 regression (v1.1.9 field-test fix) — GPS-tick overlay refresh
 // routed through createCameraQueue, so holeMarkerIdsRef has a single writer
 // and a hole-change chain can never orphan a marker the GPS-tick chain's
