@@ -211,3 +211,28 @@ deps, no new design language.
 4. `GoogleSatelliteMap.tsx` marker size/icon + chip rewrite.
 5. Tests.
 6. Gates; commit code + PNGs together.
+
+## Post-implementation note — legibility rework (designer BLOCKING → PASS)
+The first render (d604c30) used a small corner coin (COIN_R_FILL 15 @ (74,24)) that was ILLEGIBLE at the
+true 26px CSS render size (coin ≈8px, sub-pixel stroke that smeared — B/D collapsed). Fixed in 9c4cade:
+coin enlarged (COIN_R_FILL 15→24), recentered to (58,40) so the ring stays fully inside the 96px canvas
+(the old center clipped), glyph box scaled ~1.53×, STROKE_R 1.5→3.0 (≥1.5px final stroke). `render(None)`
+fallback stayed byte-identical. Verified legible at true size via 26px/52px downsample proofs (designer
+independently re-downscaled and PASSED). LESSON: the assets test only checks 96×96 IHDR — it does NOT
+catch true-render-size legibility. Always eyeball a downsample to the actual `iconSize` before shipping a
+generated marker glyph.
+
+## NON-BLOCKING watch item (designer, future tweak — do NOT fix now)
+The enlarged coin now dominates the icon silhouette over the sand-bean shape. If the owner ever wants the
+bunker identity stronger at a glance, a future tweak: `COIN_R_FILL` 24→~20–21 and/or a wider bean arc.
+Ships as-is; this is a taste tweak, not a defect.
+
+## DEFERRED sibling item (separate backlog entry: bunker-plate-zoom-fixed-screen-dot)
+The 200/150/100 yardage plates render as native `Circle`s with `radius: 4` METERS (ground-anchored), so
+they visually balloon in screen px at close zoom — this is what the owner's screenshot showed as "large
+plain circles." Designer + Fable both judge a fixed small SCREEN-space dot (icon-marker idiom, like the
+bunker/tee glyphs) the correct yardage-book treatment. It's a Circle→icon MECHANISM swap (not trivial) and
+PRE-EXISTING (not introduced by this lane), so it is intentionally OUT OF SCOPE here and filed separately.
+Verdict on the owner's item-4 question: NOT a zoom artifact of this change and NOT a new regression — it is
+the shipped plate implementation's inherent behavior (ground radius), a real sizing issue worth a dedicated,
+reviewed follow-up.
