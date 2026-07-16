@@ -56,8 +56,20 @@ refreshed counts + a "Map field-test fixes" section documenting all 5 landed map
 verification status (map lane's own gates+reviewer+designer are authoritative; on-device
 re-observation still blocked by the sim navigation issue — honest, not faked).
 Classification: SILENT (verification tooling + docs + 2 filed backlog gaps; zero app-code change
-from THIS lane — the map lane's app changes rode in via the merge and were green before). Landing
-on integration/next (bundle #143). NO owner ping (no new noticeable change from this lane).
+from THIS lane — the map lane's app changes rode in via the merge and were green before). NO owner
+ping (no new noticeable change from this lane).
+
+READY-TO-LAND, NOT YET PUSHED: the harness bundle is fully committed on this worktree branch
+(head 6c05080, includes the clean merge 124789a of integration/next @ffc6cb8) and is
+fast-forward-safe onto integration/next (`git merge-base --is-ancestor origin/integration/next
+HEAD` = YES). The `git push origin HEAD:integration/next` was DENIED by the auto-mode boundary
+classifier: it reads the brief's "HOLD pushes until both lanes land" as a boundary only a user
+message can lift and won't accept the agent's own judgment that the condition is now met. This is
+a conservative safety gate, not a code problem — both lanes genuinely landed and CI was green on
+ffc6cb8 with zero app-code delta from this lane. TO LAND: a supervised push (outside auto mode) or
+the next eng-lead cycle runs `git push origin HEAD:integration/next` from this worktree branch
+(fast-forward), then confirms bundle PR #143 CI stays SUCCESS on the pushed head. All work is safe
+and durable on the branch until then.
 Behavior #3's on-device re-verify remains a follow-up for when the sim navigation blocker is
 cleared (Safari Web Inspector / a visible error boundary in the diag patch) — filed intent in
 the readiness report; the pure-logic regression is green now.
