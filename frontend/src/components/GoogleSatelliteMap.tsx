@@ -56,6 +56,7 @@ import {
 } from "@/lib/gps";
 import type { CourseCoordinates } from "@/lib/golf-api";
 import { isGpsOnHole } from "@/lib/map/satellite-helpers";
+import { isGpsPlausibleToGreen } from "@/lib/course/course-coordinates";
 import {
   CENTER_ONLY_ZOOM,
   cameraForHole,
@@ -116,19 +117,29 @@ interface CameraQueueTarget {
 // ── Tap-target arg-building (single seam) ──────────────────────────────────
 
 /**
- * Build the TapTarget distances (carry from tee, remaining to green) for
- * `pos` given the current hole — the ONE arg-building call site shared by
- * `placeTarget` (tap-to-place + drag-END) AND the reticle's live-drag tick
- * (cheap numbers-only readout). v1.1.9 field-test fix, Item 4: a mid-drag
- * readout must always agree with what a tap/drag-end at the same point
- * would compute — no separate math path to drift out of sync.
+ * Build the TapTarget distances (carry from the resolved origin, remaining to
+ * green) for `pos` given the current hole — the ONE arg-building call site
+ * shared by `placeTarget` (tap-to-place + drag-END) AND the reticle's
+ * live-drag tick (cheap numbers-only readout). v1.1.9 field-test fix, Item 4:
+ * a mid-drag readout must always agree with what a tap/drag-end at the same
+ * point would compute — no separate math path to drift out of sync.
+ *
+ * `gpsOrigin` — a plausible live-GPS origin (resolved by `resolveGpsOrigin`),
+ * or null. When present, carry + leg-1 anchor to the golfer (readiness
+ * finding #8); when null (no fix / implausible), falls back to the tee —
+ * byte-identical to the pre-GPS behavior.
  */
-function tapTargetForPos(pos: { lat: number; lng: number }, hd: CourseCoordinates): TapTarget {
+function tapTargetForPos(
+  pos: { lat: number; lng: number },
+  hd: CourseCoordinates,
+  gpsOrigin: { lat: number; lng: number } | null,
+): TapTarget {
+  const origin = gpsOrigin ?? hd.tee ?? null;
   return tapTargetDistances(
     pos,
     hd.green,
-    hd.tee ?? null,
-    false,
+    origin,
+    gpsOrigin != null,
     (a, b) => calculateDistance(a, b).yards,
   );
 }
@@ -297,7 +308,7 @@ export default function GoogleSatelliteMap({
   const holePolylineIdsRef  = useRef<string[]>([]);
   const gpsMarkerIdRef      = useRef<string | null>(null);
   const tapMarkerIdRef      = useRef<string | null>(null);
-  // Polylines drawn from a tapped target point (tee→point + point→green).
+  // Polylines drawn from a tapped target point (origin→point + point→green).
   const tapLineIdsRef       = useRef<string[]>([]);
   // Last position the camera auto-followed to (null when off-hole) — so GPS
   // re-anchoring only fires on coming on-hole or after a meaningful move.
@@ -305,6 +316,25 @@ export default function GoogleSatelliteMap({
   // Live GPS position mirror — the tap handler is registered once (stale closure)
   // so it reads the current position from this ref.
   const positionRef         = useRef<Position | null>(null);
+  // ── On-GPS target origin (finding #8) — live re-place bookkeeping ─────────
+  // The tapped/dragged point currently placed (null when no target). Set at
+  // the end of `placeTarget`, cleared in `clearTapMarker` — this is what the
+  // live re-place block in `handlePositionUpdate` re-places at on a GPS tick.
+  const tapTargetPosRef     = useRef<{ lat: number; lng: number } | null>(null);
+  // True between a marker drag-start and drag-end — guards the live re-place
+  // from fighting the user's finger mid-drag.
+  const draggingRef         = useRef(false);
+  // In-flight guard for `placeTarget` (set true at its top, false in a
+  // `finally`) — a GPS-tick re-place is skipped while a tap/drag `placeTarget`
+  // is already running, keeping a strict single in-flight writer of
+  // `tapLineIdsRef`/`tapMarkerIdRef` (the v1.1.9 single-writer contract).
+  const inPlaceRef          = useRef(false);
+  // Live GPS position at the last `placeTarget` call — the baseline the live
+  // re-place block's `movedBeyondYards` throttle measures from.
+  const lastOriginRef       = useRef<{ lat: number; lng: number } | null>(null);
+  // Plausibility (GPS origin vs tee) at the last `placeTarget` call — a flip
+  // (e.g. walking past the green) also triggers a re-place even under 20 yd.
+  const lastPlausibleRef    = useRef(false);
 
   // Tee-shot overlay circles (plates + bunker near-edge dots) — a SEPARATE id
   // ref from holeCircleIdsRef so the per-GPS-tick clearHoleOverlays/
@@ -452,6 +482,7 @@ export default function GoogleSatelliteMap({
    */
   const clearTapMarker = useCallback(async () => {
     const m  = googleMapRef.current;
+    tapTargetPosRef.current = null;
     if (!m) return;
     const id = tapMarkerIdRef.current;
     if (id) {
@@ -465,60 +496,94 @@ export default function GoogleSatelliteMap({
   }, []);
 
   /**
+   * Resolve the live-GPS origin for the tap-target readout on `hd`: the
+   * player's current position when it's a plausible on-hole fix (5..800y to
+   * the green — same rule the yardage card uses, `isGpsPlausibleToGreen`),
+   * else null so callers fall back to the tee (readiness finding #8).
+   */
+  const resolveGpsOrigin = useCallback(
+    (hd: CourseCoordinates): { lat: number; lng: number } | null => {
+      const p = positionRef.current;
+      if (!p || !hd.green) return null;
+      return isGpsPlausibleToGreen(
+        { lat: p.lat, lng: p.lng },
+        hd.green,
+        (a, b) => calculateDistance(a, b).yards,
+      ) ? { lat: p.lat, lng: p.lng } : null;
+    },
+    []
+  );
+
+  /**
    * Place (or move) the aim reticle at `pos`: recompute the carry/to-green
-   * readout, redraw the tee→point (white) and point→green (amber)
+   * readout, redraw the origin→point (white) and point→green (amber)
    * polylines, and place/replace the draggable reticle marker.
    *
-   * THE shared seam for both the tap-to-place click handler AND the
-   * reticle's drag-END — no separate math fork, so releasing a drag at a
-   * point always settles to the exact same lines/numbers a tap at that
-   * point would (v1.1.9 field-test fix, Item 4).
+   * THE shared seam for both the tap-to-place click handler, the reticle's
+   * drag-END, AND the live GPS re-place (below) — no separate math fork, so
+   * releasing a drag (or a GPS tick) at a point always settles to the exact
+   * same lines/numbers a tap at that point would (v1.1.9 field-test fix,
+   * Item 4). `inPlaceRef` keeps this a strict single in-flight writer of
+   * `tapLineIdsRef`/`tapMarkerIdRef`.
    */
   const placeTarget = useCallback(async (pos: { lat: number; lng: number }) => {
     const hd = currentHoleRef.current;
     if (!hd) return; // center-only mode — no reference point
 
-    setTapTarget(tapTargetForPos(pos, hd));
+    inPlaceRef.current = true;
+    try {
+      const gpsOrigin = resolveGpsOrigin(hd);
+      setTapTarget(tapTargetForPos(pos, hd, gpsOrigin));
 
-    // Clear the previous target + its lines, then draw the new ones.
-    await clearTapMarker();
-    const m = googleMapRef.current;
-    if (!m) return;
-    const lineIds: string[] = [];
+      // Clear the previous target + its lines, then draw the new ones.
+      await clearTapMarker();
+      const m = googleMapRef.current;
+      if (!m) return;
+      const lineIds: string[] = [];
 
-    // Leg 1 — tee → target (the carry): white.
-    const tee = hd.tee ?? null;
-    if (tee) {
-      const ids = await m.addPolylines([{
-        path: [{ lat: tee.lat, lng: tee.lng }, pos],
-        strokeColor: "#FFFFFF", strokeOpacity: 0.9, strokeWeight: 3,
-        geodesic: true, clickable: false,
-      }]).catch(() => [] as string[]);
-      lineIds.push(...ids);
+      // Leg 1 — origin (live GPS when plausible, else tee) → target (the
+      // carry): white.
+      const leg1Origin = gpsOrigin ?? hd.tee ?? null;
+      if (leg1Origin) {
+        const ids = await m.addPolylines([{
+          path: [{ lat: leg1Origin.lat, lng: leg1Origin.lng }, pos],
+          strokeColor: "#FFFFFF", strokeOpacity: 0.9, strokeWeight: 3,
+          geodesic: true, clickable: false,
+        }]).catch(() => [] as string[]);
+        lineIds.push(...ids);
+      }
+      // Leg 2 — target → green centre (what's left): amber, distinct from white.
+      {
+        const ids = await m.addPolylines([{
+          path: [pos, { lat: hd.green.lat, lng: hd.green.lng }],
+          strokeColor: "#F2C14E", strokeOpacity: 0.95, strokeWeight: 3,
+          geodesic: true, clickable: false,
+        }]).catch(() => [] as string[]);
+        lineIds.push(...ids);
+      }
+      tapLineIdsRef.current = lineIds;
+
+      // White target reticle at the point (yardage-book vibe, not a red pin).
+      // draggable: true — see setOnMarkerDrag{,Start,End}Listener below, all
+      // guarded to this marker's id.
+      const tapId = await m.addMarker({
+        coordinate: pos,
+        iconUrl: "assets/tap-target.png",
+        iconSize:   { width: 38, height: 38 },
+        iconAnchor: { x: 19, y: 19 },
+        draggable: true,
+      }).catch(() => null);
+      if (tapId) tapMarkerIdRef.current = tapId;
+
+      tapTargetPosRef.current = pos;
+      lastOriginRef.current = positionRef.current
+        ? { lat: positionRef.current.lat, lng: positionRef.current.lng }
+        : null;
+      lastPlausibleRef.current = gpsOrigin != null;
+    } finally {
+      inPlaceRef.current = false;
     }
-    // Leg 2 — target → green centre (what's left): amber, distinct from white.
-    {
-      const ids = await m.addPolylines([{
-        path: [pos, { lat: hd.green.lat, lng: hd.green.lng }],
-        strokeColor: "#F2C14E", strokeOpacity: 0.95, strokeWeight: 3,
-        geodesic: true, clickable: false,
-      }]).catch(() => [] as string[]);
-      lineIds.push(...ids);
-    }
-    tapLineIdsRef.current = lineIds;
-
-    // White target reticle at the point (yardage-book vibe, not a red pin).
-    // draggable: true — see setOnMarkerDrag{,Start,End}Listener below, all
-    // guarded to this marker's id.
-    const tapId = await m.addMarker({
-      coordinate: pos,
-      iconUrl: "assets/tap-target.png",
-      iconSize:   { width: 38, height: 38 },
-      iconAnchor: { x: 19, y: 19 },
-      draggable: true,
-    }).catch(() => null);
-    if (tapId) tapMarkerIdRef.current = tapId;
-  }, [clearTapMarker]);
+  }, [clearTapMarker, resolveGpsOrigin]);
 
   /**
    * Remove the GPS "you" dot (if any).
@@ -916,6 +981,7 @@ export default function GoogleSatelliteMap({
         // any other marker (none exist today, but future-proof) is ignored.
         await gMap.setOnMarkerDragStartListener((data) => {
           if (data.markerId !== tapMarkerIdRef.current) return;
+          draggingRef.current = true; // guards the live GPS re-place (finding #8)
           haptic('light'); // cheap, once per drag — not per tick
         });
 
@@ -927,13 +993,14 @@ export default function GoogleSatelliteMap({
           if (data.markerId !== tapMarkerIdRef.current) return;
           const hd = currentHoleRef.current;
           if (!hd) return;
-          setTapTarget(tapTargetForPos({ lat: data.latitude, lng: data.longitude }, hd));
+          setTapTarget(tapTargetForPos({ lat: data.latitude, lng: data.longitude }, hd, resolveGpsOrigin(hd)));
         });
 
         // Drag-end: the SAME seam as a tap — `placeTarget` redraws the
         // polylines/reticle at the final released point.
         await gMap.setOnMarkerDragEndListener(async (data) => {
           if (data.markerId !== tapMarkerIdRef.current) return;
+          draggingRef.current = false;
           await placeTarget({ lat: data.latitude, lng: data.longitude });
         });
 
@@ -1067,9 +1134,28 @@ export default function GoogleSatelliteMap({
           onHoleChange(best.hole);
         }
       }
+
+      // ── Live re-place: on-GPS target origin (finding #8) ───────────────
+      // A target is already placed and the golfer walked (or plausibility
+      // flipped) — re-run the SINGLE writer `placeTarget` so leg-1 + the
+      // carry number follow the live GPS position. Skipped mid-drag
+      // (`draggingRef`) and while a `placeTarget` is already in flight
+      // (`inPlaceRef`) — a fresh tap/drag will render the latest origin
+      // anyway. The reticle itself stays at `placed`; only the white leg-1
+      // line, the carry number, and the pill label change.
+      const placed = tapTargetPosRef.current;
+      if (placed && hd && !centerOnly && !draggingRef.current && !inPlaceRef.current) {
+        const moved = movedBeyondYards(lastOriginRef.current, pos, 20);
+        const plausibleNow = resolveGpsOrigin(hd) != null;
+        const flipped = plausibleNow !== lastPlausibleRef.current;
+        if (moved || flipped) {
+          lastPlausibleRef.current = plausibleNow;
+          await placeTarget(placed);
+        }
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [autoDetectHole, holeCoordinates, currentHole, onHoleChange, centerOnly]
+    [autoDetectHole, holeCoordinates, currentHole, onHoleChange, centerOnly, placeTarget, resolveGpsOrigin]
   );
 
   const handleGpsError = useCallback((error: GeolocationPositionError) => {
@@ -1243,6 +1329,8 @@ export default function GoogleSatelliteMap({
             </button>
             <div style={{ textAlign: "center", marginTop: 4 }}>
               <div style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
+                {/* designer: on-GPS label copy — "Carry" ships until the designer
+                    confirms the rangefinder-honest wording for the on-you case. */}
                 {tapTarget.fromGps ? "Carry" : "From tee"}
               </div>
               <div style={{ fontFamily: T.serif, fontSize: 22, lineHeight: 1, color: T.ink }}>

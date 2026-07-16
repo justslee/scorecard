@@ -977,6 +977,84 @@ describe('Item 4 — draggable aim reticle shares ONE seam (placeTarget) between
   });
 });
 
+// ── Readiness finding #8 — leg-1/carry anchors to live GPS when on-hole ───────
+//
+// `tapTargetForPos` and `placeTarget` are component-bound (touch refs/state/
+// plugin), so — same as the Item 4 tests above — these are structural/grep
+// assertions on the source proving the wiring CONTRACT the plan requires:
+// a resolved GPS origin flows into `tapTargetForPos` (carry/fromGps) and into
+// leg-1's polyline, the live re-place path re-runs the SAME single writer
+// (`placeTarget`), and it never adds a second writer to the tapLine/reticle
+// id space (the v1.1.9 single-writer contract — the plan's biggest risk).
+
+describe('Readiness finding #8 — on-GPS target origin', () => {
+  const src = readFileSync(
+    join(__dirname, '..', '..', 'components', 'GoogleSatelliteMap.tsx'),
+    'utf-8'
+  );
+
+  it('tapTargetForPos falls back to the tee when gpsOrigin is null, and flags fromGps only when a GPS origin is present', () => {
+    const start = src.indexOf('function tapTargetForPos(');
+    const end = src.indexOf('\n}', start);
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start, end);
+    expect(body).toContain('const origin = gpsOrigin ?? hd.tee ?? null;');
+    expect(body).toContain('gpsOrigin != null,');
+  });
+
+  it('placeTarget resolves the GPS origin once and threads it into both the carry readout and leg-1 (no drift between the number and the line)', () => {
+    const start = src.indexOf('const placeTarget = useCallback');
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf('}, [clearTapMarker, resolveGpsOrigin]);', start);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    expect(body).toContain('const gpsOrigin = resolveGpsOrigin(hd);');
+    expect(body).toContain('setTapTarget(tapTargetForPos(pos, hd, gpsOrigin));');
+    expect(body).toContain('const leg1Origin = gpsOrigin ?? hd.tee ?? null;');
+  });
+
+  it('the live-drag tick resolves the SAME gpsOrigin (via resolveGpsOrigin) as placeTarget — no separate math path', () => {
+    const start = src.indexOf('setOnMarkerDragListener');
+    const end = src.indexOf('setOnMarkerDragEndListener');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    expect(body).toContain('tapTargetForPos({ lat: data.latitude, lng: data.longitude }, hd, resolveGpsOrigin(hd))');
+  });
+
+  it('placeTarget is a single in-flight writer (inPlaceRef set true at the top, false in a finally)', () => {
+    const start = src.indexOf('const placeTarget = useCallback');
+    const end = src.indexOf('}, [clearTapMarker, resolveGpsOrigin]);', start);
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start, end);
+    expect(body).toContain('inPlaceRef.current = true;');
+    expect(body).toContain('} finally {\n      inPlaceRef.current = false;\n    }');
+  });
+
+  it('the live re-place block in handlePositionUpdate re-runs the SAME single writer (placeTarget) — not a second writer of the tapLine/reticle id space, and is skipped mid-drag or while a placeTarget is already in flight', () => {
+    const start = src.indexOf('const handlePositionUpdate');
+    const end = src.indexOf('const handleGpsError');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    expect(body).toContain('const placed = tapTargetPosRef.current;');
+    expect(body).toContain('!draggingRef.current && !inPlaceRef.current');
+    expect(body).toContain('await placeTarget(placed);');
+    // Must NOT route the re-place through the camera queue or touch
+    // tapLineIdsRef/tapMarkerIdRef directly — placeTarget is the only writer.
+    expect(body).not.toContain('tapLineIdsRef.current =');
+    expect(body).not.toContain('cameraQueueRef.current.request({ hd, reason: \'gps\', pos: placed');
+  });
+
+  it('the live re-place throttle reuses movedBeyondYards (no new threshold invented) and also fires on a plausibility flip', () => {
+    const start = src.indexOf('const handlePositionUpdate');
+    const end = src.indexOf('const handleGpsError');
+    const body = src.slice(start, end);
+    expect(body).toContain('movedBeyondYards(lastOriginRef.current, pos, 20)');
+    expect(body).toContain('const flipped = plausibleNow !== lastPlausibleRef.current;');
+  });
+});
+
 // ── teeColorFor / teeMarkerIconUrl (colored tee marker) ───────────────────────
 
 describe('teeColorFor — tee-name → canonical marker colour', () => {

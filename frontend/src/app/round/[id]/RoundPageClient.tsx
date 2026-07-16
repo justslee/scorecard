@@ -53,7 +53,7 @@ import { roundCourseAnchor } from "@/lib/round-anchor";
 import type { WeatherConditions } from "@/lib/caddie/types";
 import { bearingDeg, relativeWind, compassFrom } from "@/lib/map/wind";
 import { shouldRefreshOnDemand, WeatherRefreshScheduler } from "@/lib/map/weather-freshness";
-import { computeFCBDistances } from "@/lib/course/course-coordinates";
+import { computeFCBDistances, isGpsPlausibleToGreen } from "@/lib/course/course-coordinates";
 import { buildFcbTiles, effectiveFcbSource } from "@/lib/course/fcb-tiles";
 import { fcbSourceCaption } from "@/lib/caddie/fcb-labels";
 import { displayPar } from "@/lib/hole/par-sanity";
@@ -1192,10 +1192,7 @@ export default function RoundPage() {
   // of it. Anything else (home testing, wrong hole selected) reads from tee.
   const posOnHole =
     playerPos && holeCoordsForTiles?.green
-      ? (() => {
-          const d = yardsDistance(playerPos, holeCoordsForTiles.green);
-          return d >= 5 && d <= 800;
-        })()
+      ? isGpsPlausibleToGreen(playerPos, holeCoordsForTiles.green)
       : false;
   const fcbLive = posOnHole && playerPos ? computeFCBDistances(playerPos, holeCoordsForTiles!) : null;
   // Which stored tee box (if any) resolveTeeAnchor picked for this hole —
