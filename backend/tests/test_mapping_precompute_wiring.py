@@ -83,7 +83,14 @@ async def test_put_mapped_schedules_elevation_then_guides(monkeypatch):
 
     bg = BackgroundTasks()
     body = routes_mod.CourseIn(**_course_body())
-    result = await routes_mod.put_mapped("course-1", body, background_tasks=bg)
+    # put_mapped's path course_id (distinct from body.id, which the route
+    # overwrites internally) must be a real UUID — the courses table's id
+    # column is uuid-typed; put_mapped now 404s on an unparseable one (P0
+    # slice-1 hardening, see courses_mapped.py's _looks_like_uuid guard).
+    # fake_upsert_course's stubbed return value is unaffected either way.
+    result = await routes_mod.put_mapped(
+        "33333333-3333-4333-8333-333333333333", body, background_tasks=bg
+    )
 
     assert result["course"]["id"] == "course-1"
     assert calls == []
@@ -131,7 +138,11 @@ async def test_put_mapped_schedules_nothing_when_upsert_returns_none(monkeypatch
 
     bg = BackgroundTasks()
     body = routes_mod.CourseIn(**_course_body())
-    result = await routes_mod.put_mapped("course-1", body, background_tasks=bg)
+    # See the sibling scheduling-order test above for why this must be a
+    # real UUID now (P0 slice-1's _looks_like_uuid guard on put_mapped).
+    result = await routes_mod.put_mapped(
+        "44444444-4444-4444-8444-444444444444", body, background_tasks=bg
+    )
 
     assert result["course"] is None
     await bg()

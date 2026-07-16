@@ -34,6 +34,7 @@ from app.caddie.voice_prompts import (
     POSITIONING_SHOT_RULE,
     TOOL_USE_RULE,
     YARDAGE_GROUNDING_RULE,
+    output_language_rule,
 )
 from app.routes import caddie as caddie_routes
 
@@ -198,6 +199,7 @@ golf-focused. Never break character.
 You have memory of the entire round conversation and prior rounds. Reference earlier holes/shots
 or known tendencies when relevant.
 
+{output_language_rule}
 {hazard_rule}
 {bend_rule}
 {physics_rule}
@@ -230,6 +232,7 @@ tee is irrelevant (don't mention it); talk about what's in play at THEIR landing
 driver doesn't care about a bunker at 370. If they're just chatting, be personable but keep it
 golf-focused. Never break character.
 
+{output_language_rule}
 {hazard_rule}
 {bend_rule}
 {physics_rule}
@@ -272,6 +275,7 @@ async def test_session_voice_prompt_content_identical_to_old_template_modulo_ord
         # yardage signal on this request → the shared formatter's honest
         # "unknown" branch, never the old bare "Current hole: #4".
         context="Hole 4, Par unknown — yardage unknown. Ask the player or say so; never guess.",
+        output_language_rule=output_language_rule(),
         hazard_rule=HAZARD_GROUNDING_RULE,
         bend_rule=BEND_GROUNDING_RULE,
         physics_rule=PHYSICS_GROUNDING_RULE,
@@ -306,6 +310,7 @@ async def test_voice_prompt_content_identical_to_old_template_modulo_order(monke
         # shared yardage-context formatter's provenance-labeled "card" wording,
         # never the old bare "Current hole: #1, Par 4, 400 yards".
         context="Hole 1, Par 4 — 400 yards. Do not quote any other tee's yardage.",
+        output_language_rule=output_language_rule(),
         hazard_rule=HAZARD_GROUNDING_RULE,
         bend_rule=BEND_GROUNDING_RULE,
         physics_rule=PHYSICS_GROUNDING_RULE,

@@ -14,17 +14,32 @@ Also provides:
   GET /{course_id}/golf-coords -> {"holeData": [...]}  (stored GolfAPI coords, 0 API calls)
 """
 
+import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.services import courses_mapped as store
+from app.services.clerk_auth import require_owner
 from app.services.course_elevation import _precompute_course_elevations
 from app.services.course_guides import _precompute_course_guides
 from app.services.golfapi_cache import FileCacheStore
 
 router = APIRouter(prefix="/api/courses/mapped", tags=["courses-mapped"])
+
+
+def _looks_like_uuid(value: str) -> bool:
+    """Guard before any query against the uuid-typed ``public.courses.id``
+    column — an unparseable id can never match a row, but without this
+    pre-filter asyncpg raises a DataError on the malformed uuid literal
+    (-> unhandled 500) instead of a clean 404. Mirrors the same pre-filter
+    already used by courses_mapped.py's ``courses_by_ids()``."""
+    try:
+        uuid.UUID(value)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 class TeeSetIn(BaseModel):
@@ -51,6 +66,15 @@ class CourseIn(BaseModel):
 
 # NOTE: declare static sub-paths (/nearby, /{id}/golf-coords) BEFORE the dynamic
 # /{course_id} route so they are not captured by the path parameter.
+#
+# CARVE-OUT (multi-user P0 slice 1, specs/multiuser-p0-authz-flip-slice1.md §2):
+# the three write handlers below (create_mapped/put_mapped/delete_mapped) stay
+# explicit Depends(require_owner), NOT the router-level require_member the rest
+# of the app moved to. This table mutates GLOBAL PostGIS geometry with no
+# owner column — a stranger must never overwrite or delete course geometry.
+# The GET handlers stay member-reachable (read-only, no per-owner data). In
+# owner mode this Depends is redundant-but-harmless (require_member already
+# byte-identically gates the whole router); in open mode it is the real guard.
 @router.get("")
 async def list_mapped(search: Optional[str] = Query(None)):
     return {"courses": await store.list_courses(search)}
@@ -65,7 +89,7 @@ async def nearby_mapped(
     return {"courses": await store.nearby_courses(lat, lng, radiusMeters or 50000)}
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_owner)])
 async def create_mapped(body: CourseIn, background_tasks: BackgroundTasks = None):  # type: ignore[assignment]
     if not body.id or not body.name:
         raise HTTPException(400, "Missing id or name")
@@ -100,14 +124,18 @@ async def get_golf_coords(course_id: str):
 
 @router.get("/{course_id}")
 async def get_mapped(course_id: str):
+    if not _looks_like_uuid(course_id):
+        raise HTTPException(404, "Not found")
     course = await store.get_course(course_id)
     if not course:
         raise HTTPException(404, "Not found")
     return {"course": course}
 
 
-@router.put("/{course_id}")
+@router.put("/{course_id}", dependencies=[Depends(require_owner)])
 async def put_mapped(course_id: str, body: CourseIn, background_tasks: BackgroundTasks = None):  # type: ignore[assignment]
+    if not _looks_like_uuid(course_id):
+        raise HTTPException(404, "Not found")
     data = body.model_dump()
     data["id"] = course_id  # path id wins, mirroring the old route
     course = await store.upsert_course(data)
@@ -123,7 +151,9 @@ async def put_mapped(course_id: str, body: CourseIn, background_tasks: Backgroun
     return {"course": course}
 
 
-@router.delete("/{course_id}")
+@router.delete("/{course_id}", dependencies=[Depends(require_owner)])
 async def delete_mapped(course_id: str):
+    if not _looks_like_uuid(course_id):
+        raise HTTPException(404, "Not found")
     await store.delete_course(course_id)
     return {"ok": True}

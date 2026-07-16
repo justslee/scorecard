@@ -9,12 +9,14 @@ token if one is present, otherwise return "anonymous". Production deployments
 MUST set CLERK_JWKS_URL.
 """
 
+import logging
 import os
 from typing import Optional
 import jwt
 from jwt import PyJWKClient
 from fastapi import Depends, Header, HTTPException
 
+log = logging.getLogger("looper.clerk_auth")
 
 CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL")
 CLERK_ISSUER = os.getenv("CLERK_ISSUER")
@@ -36,6 +38,17 @@ def _extract_bearer(authorization: Optional[str]) -> Optional[str]:
     return None
 
 
+def _authorized_parties() -> Optional[list[str]]:
+    """CLERK_AUTHORIZED_PARTIES, comma-separated, read dynamically (not a module
+    constant) so tests can toggle it per-test. None when unset — the azp check
+    is backward-compatible opt-in (§3.8 SHOULD-FIX #2)."""
+    raw = os.getenv("CLERK_AUTHORIZED_PARTIES")
+    if not raw:
+        return None
+    parties = [p.strip() for p in raw.split(",") if p.strip()]
+    return parties or None
+
+
 def _verified_user_id(token: str) -> str:
     signing_key = _jwks_client.get_signing_key_from_jwt(token).key
     options = {"verify_aud": False}
@@ -46,6 +59,16 @@ def _verified_user_id(token: str) -> str:
         issuer=CLERK_ISSUER if CLERK_ISSUER else None,
         options=options,
     )
+
+    # azp fail-closed hardening: when CLERK_AUTHORIZED_PARTIES is configured,
+    # reject a token whose azp claim is absent or not on the allowlist. When
+    # unset (today's owner-mode prod), behavior is unchanged.
+    authorized_parties = _authorized_parties()
+    if authorized_parties is not None:
+        azp = payload.get("azp")
+        if not azp or azp not in authorized_parties:
+            raise HTTPException(401, "Token azp not authorized for this deployment")
+
     sub = payload.get("sub")
     if not sub:
         raise HTTPException(401, "JWT missing sub claim")
@@ -100,6 +123,107 @@ async def require_owner(user_id: str = Depends(current_user_id)) -> str:
     if OWNER_CLERK_USER_ID and user_id != OWNER_CLERK_USER_ID:
         raise HTTPException(403, "Forbidden: this deployment is owner-only.")
     return user_id
+
+
+def _access_mode() -> str:
+    """APP_ACCESS_MODE, read dynamically (not a module constant) so tests can
+    toggle it per-test without reimporting this module. "owner" (default) is
+    byte-identical to today's require_owner gate; "open" admits any verified
+    Clerk identity, relying on per-row scoping to isolate tenants."""
+    return (os.getenv("APP_ACCESS_MODE") or "owner").strip().lower()
+
+
+def _owner_id() -> Optional[str]:
+    """OWNER_CLERK_USER_ID, read dynamically (see _access_mode)."""
+    return os.getenv("OWNER_CLERK_USER_ID")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DEFERRED — must close before APP_ACCESS_MODE=open ships to prod (P0 multi-user
+# epic, specs/multi-user-epic-plan.md). require_member's own gate is complete
+# in this slice; these are separate, already-known gaps in OTHER code that stay
+# safe only because the flag defaults OFF. Do not consider any of these closed
+# by this slice:
+#   - hole_pins → per-user (§3.3.1) — needs a schema migration (banned this
+#     slice); today pins are effectively global/shared.
+#   - availability/OCR async job stamp-and-match (§3.3.2) — request_availability_
+#     call is owner-only in this slice (see the carve-out below), so no
+#     non-owner jobs exist yet; must close before genericizing past the owner.
+#   - caddie_personas author-scoping (§3.3.4) — persona authoring is not yet
+#     scoped per-author.
+#   - user_session(user_id) centralization — the RLS seam; a large mechanical
+#     refactor, its own future slice. ci_scripts/scoping_lint.py is the interim
+#     structural guard against new unscoped tenant queries.
+# ─────────────────────────────────────────────────────────────────────────────
+async def require_member(user_id: str = Depends(current_user_id)) -> str:
+    """FastAPI dependency: the multi-user authz gate (P0 slice 1).
+
+    mode="owner" (default, unset APP_ACCESS_MODE): BYTE-IDENTICAL to
+    require_owner today — owner passes, everyone else 403s, and an unset
+    OWNER_CLERK_USER_ID passes everyone through unchanged. Prod ships with the
+    flag unset, so this slice changes NOTHING in production.
+
+    mode="open": any verified Clerk `sub` passes this gate; per-row scoping
+    (owner_id/user_id columns, already in place for the resources this slice's
+    isolation suite covers) is what isolates one member's data from another.
+    A denylist/revocation check for a banned member is a LATER slice — noted,
+    not built here.
+    """
+    mode = _access_mode()
+    if mode == "open":
+        return user_id
+    # owner mode (default): BYTE-IDENTICAL to require_owner today.
+    owner = _owner_id()
+    if owner and user_id != owner:
+        raise HTTPException(403, "Forbidden: this deployment is owner-only.")
+    return user_id
+
+
+def _assert_boot_config() -> None:
+    """Refuse to boot in an unsafe auth configuration.
+
+    Called from the FastAPI startup event — deliberately NOT at import time.
+    An import-time raise would break the ASGITransport test-app fixture (it
+    imports app.main without ever triggering FastAPI's startup event), so the
+    guard would fire in the test process and break every test collection.
+
+    open mode requires:
+      - CLERK_JWKS_URL set (§3.1's existing open-mode guard) and
+        ALLOW_ANONYMOUS unset — an anonymous/unverified caller must never be
+        treated as a distinct member identity.
+      - CLERK_ISSUER and CLERK_AUTHORIZED_PARTIES both set (§3.8 SHOULD-FIX
+        #2) — open mode is multi-party by definition, so token provenance
+        must be pinned to this deployment's own Clerk instance + client(s).
+
+    owner mode (default): no boot guard fires — but if CLERK_JWKS_URL is
+    configured (a real deployment) and OWNER_CLERK_USER_ID is unset, that is
+    today's silent fail-open (every verified Clerk user passes require_owner/
+    require_member) — log it loudly rather than leave it silent.
+    """
+    mode = _access_mode()
+    jwks_url = os.getenv("CLERK_JWKS_URL")
+    allow_anonymous = os.getenv("ALLOW_ANONYMOUS") == "1"
+
+    if mode == "open":
+        if not jwks_url or allow_anonymous:
+            raise RuntimeError(
+                "APP_ACCESS_MODE=open requires CLERK_JWKS_URL set and "
+                "ALLOW_ANONYMOUS unset — refusing to boot with anonymous "
+                "callers able to pass as distinct members."
+            )
+        if not os.getenv("CLERK_ISSUER") or not os.getenv("CLERK_AUTHORIZED_PARTIES"):
+            raise RuntimeError(
+                "APP_ACCESS_MODE=open requires CLERK_ISSUER and "
+                "CLERK_AUTHORIZED_PARTIES set — refusing to boot without "
+                "pinned token provenance for a multi-party deployment."
+            )
+    elif jwks_url and not os.getenv("OWNER_CLERK_USER_ID"):
+        log.warning(
+            "APP_ACCESS_MODE=owner (default) with CLERK_JWKS_URL configured but "
+            "OWNER_CLERK_USER_ID unset: require_owner/require_member fail OPEN — "
+            "every verified Clerk user passes. Set OWNER_CLERK_USER_ID to lock "
+            "this deployment to one user."
+        )
 
 
 async def optional_user_id(authorization: Optional[str] = Header(default=None)) -> Optional[str]:

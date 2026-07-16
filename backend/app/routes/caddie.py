@@ -43,6 +43,7 @@ from app.caddie.voice_prompts import (
     YARDAGE_GROUNDING_RULE,
     format_par_sanity_note,
     format_tee_numbers_line,
+    output_language_rule,
 )
 from app.caddie import tools as caddie_tools
 from app.caddie.tool_loop import run_caddie_turn
@@ -832,6 +833,7 @@ golf-focused. Never break character.
 You have memory of the entire round conversation and prior rounds. Reference earlier holes/shots
 or known tendencies when relevant.
 
+{output_language_rule()}
 {HAZARD_GROUNDING_RULE}
 {BEND_GROUNDING_RULE}
 {PHYSICS_GROUNDING_RULE}
@@ -1511,6 +1513,7 @@ tee is irrelevant (don't mention it); talk about what's in play at THEIR landing
 driver doesn't care about a bunker at 370. If they're just chatting, be personable but keep it
 golf-focused. Never break character.
 
+{output_language_rule()}
 {HAZARD_GROUNDING_RULE}
 {BEND_GROUNDING_RULE}
 {PHYSICS_GROUNDING_RULE}

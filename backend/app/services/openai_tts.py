@@ -34,6 +34,14 @@ async def synthesize_speech(text: str, voice_id: Optional[str]) -> bytes:
     Raises HTTPException(500) if OPENAI_API_KEY is not configured, or on any
     OpenAI transport failure (status >= 400). Text is clamped to ~4096 chars
     and empty/whitespace-only input raises a 400 (nothing to say).
+
+    Output language note (specs/caddie-detach-and-language-pin-plan.md Item A):
+    `/v1/audio/speech` has no language parameter — TTS speaks whatever text it
+    is given, verbatim, in whatever language that text is written in. Output
+    language is therefore implicit from `text`, which is already pinned to
+    English by `output_language_rule()` (app/caddie/voice_prompts.py) via the
+    `app/caddie/language.py::desired_language()` seam. Do not add a "language"
+    key to the payload below — no such field exists on this endpoint.
     """
     if not OPENAI_API_KEY:
         raise HTTPException(500, "OPENAI_API_KEY not configured")

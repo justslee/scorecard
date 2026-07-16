@@ -958,11 +958,18 @@ async def _run_availability_call(job_id: str, transport: Any, ctx: VoiceBookingC
 
 @router.post("/availability-call", response_model=AvailabilityCallStatusOut)
 async def request_availability_call(
-    req: AvailabilityCallRequest, _owner_id: str = Depends(current_user_id)
+    req: AvailabilityCallRequest, _owner_id: str = Depends(require_owner)
 ) -> AvailabilityCallStatusOut:
     """User-initiated ONLY — a search never reaches this endpoint. Ships dark:
     with no Twilio keys / VOICE_BOOKING_ENABLED (the CI/default state) this
-    returns status="not_enabled" immediately and enqueues nothing."""
+    returns status="not_enabled" immediately and enqueues nothing.
+
+    CARVE-OUT (multi-user P0 slice 1): owner-only even after the require_member
+    flip — this places a real outbound Twilio call that can speak the OWNER's
+    VOICE_BOOKING_OWNER_NUMBER (see the dial-safety invariant above). The
+    per-user-callback genericization needed to open this to every member is a
+    later slice.
+    """
     factory = _availability_call_transport_factory or telephony.get_live_transport
     try:
         transport = factory()

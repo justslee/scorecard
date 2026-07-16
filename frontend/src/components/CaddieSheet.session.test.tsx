@@ -192,6 +192,26 @@ import {
 } from "@/lib/caddie/api";
 import { transcribeBlob } from "@/lib/voice/deepgram";
 import type { CaddieRecommendation } from "@/lib/caddie/types";
+import type { UseCaddieLiveSessionResult } from "@/hooks/useCaddieLiveSession";
+
+// This suite exercises the CLASSIC (tap-to-talk/text) path exclusively — the
+// live Realtime session is now owned by RoundPageClient
+// (specs/caddie-detach-and-language-pin-plan.md, Item B) and passed into
+// CaddieSheet as props. `liveOn: false` here keeps `liveActive` false on
+// every render (deterministically — no dependence on a real mint racing to
+// fail in jsdom), rendering the classic body exactly as this file expects.
+function makeLiveStub(): UseCaddieLiveSessionResult {
+  return {
+    liveState: "connecting",
+    fellBack: false,
+    messages: [],
+    status: "idle",
+    muted: false,
+    toggleMute: vi.fn(),
+    resume: vi.fn(),
+    stop: vi.fn(),
+  };
+}
 
 const sessionRecommendMock = vi.mocked(sessionRecommend);
 const talkToCaddieMock = vi.mocked(talkToCaddie);
@@ -329,6 +349,9 @@ function buildProps(
       },
     ],
     onSelectPersona: vi.fn(),
+    live: makeLiveStub(),
+    liveOn: false,
+    onEndLive: vi.fn(),
     ...overrides,
   };
 }

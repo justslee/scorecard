@@ -57,8 +57,7 @@ import { createSentenceStream } from "@/lib/caddie/sentence-stream";
 import { useSheetTTS } from "@/hooks/useSheetTTS";
 import { getSheetTtsEnabled, setSheetTtsEnabled } from "@/lib/voice/tts-pref";
 import { createCaddieTurnTimer } from "@/lib/voice/caddie-turn-timing";
-import { getCaddieLiveMode } from "@/lib/voice/live-mode-pref";
-import { useCaddieLiveSession } from "@/hooks/useCaddieLiveSession";
+import type { UseCaddieLiveSessionResult } from "@/hooks/useCaddieLiveSession";
 import { buildOpeningGreetingText } from "@/lib/caddie/opening-turn";
 import type { RealtimeMessage, RealtimeStatus } from "@/lib/voice/realtime";
 import { liveStatusLabel, liveEmptyStateHint } from "@/lib/caddie/live-copy";
@@ -115,6 +114,23 @@ export interface CaddieSheetProps {
    *  turn, or null when there is no GPS fix / no green coords / it times out.
    *  Parent owns GPS + course coords; the sheet stays GPS-free. */
   resolveOpeningShot?: () => Promise<{ distanceYards: number; fromTee?: boolean } | null>;
+  /**
+   * DETACHED live session (specs/caddie-detach-and-language-pin-plan.md, Item
+   * B) — CaddieSheet is now an ATTACHER, not the owner: RoundPageClient owns
+   * the live Realtime session via `useDetachedCaddieLive` and passes it in.
+   * Closing the sheet no longer stops `live` — only `onEndLive` does. `live`
+   * is a stable stub (`liveOn` always false) when the round isn't eligible,
+   * so this render path is byte-identical to today whenever live never
+   * activates.
+   */
+  live: UseCaddieLiveSessionResult;
+  /** True from a user-triggered live start until an explicit end (or a
+   *  fallback-while-closed auto-release) — NOT tied to the sheet being open. */
+  liveOn: boolean;
+  /** Ends the live session (mic cut + gate flip) — wired to the live
+   *  footer's END affordance. Does NOT close the sheet by itself; callers
+   *  that want both call `onEndLive()` then `onClose()`. */
+  onEndLive: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +250,9 @@ export default function CaddieSheet({
   personas,
   onSelectPersona,
   resolveOpeningShot,
+  live,
+  liveOn,
+  onEndLive,
 }: CaddieSheetProps) {
   // Live GPS distance to the middle of the green — only meaningful when the
   // resolver's basis is 'gps' (specs/caddie-yardage-gps-selected-tee-plan.md
@@ -247,34 +266,20 @@ export default function CaddieSheet({
   useBodyScrollLock(open);
   const [mode, setMode] = useState<Mode>("voice");
 
-  // Live mode (Realtime transport) — behind `looper.caddieLiveMode`, default
-  // OFF (specs/caddie-realtime-slice-c1-plan.md). `sessionActive` already
-  // folds in `!isLocalRound` (RoundPageClient.tsx), so no extra prop is
-  // needed here. Fully offline at open skips the mint entirely (§9 edge case).
-  const wantLive = open && sessionActive && getCaddieLiveMode();
-  const live = useCaddieLiveSession({
-    active: wantLive && navigator.onLine,
-    roundId,
-    personaId,
-    // specs/caddie-stale-hole-live-plan.md §3.7 — so the live session can
-    // silently re-anchor to the correct hole on connect and on hole change.
-    holeNumber,
-    holePar,
-    holeYards,
-    yardageBasis,
-    teeName,
-    resolveOpeningShot,
-  });
+  // Live mode (Realtime transport) — DETACHED from the sheet
+  // (specs/caddie-detach-and-language-pin-plan.md, Item B): `live`/`liveOn`
+  // are owned by RoundPageClient via `useDetachedCaddieLive` and passed in as
+  // props. CaddieSheet is an ATTACHER — it renders from whatever session is
+  // handed to it and never mints/tears one down itself.
+  //
   // Eligible for live AND hasn't fallen back this activation — gates both
-  // the render swap and the classic effects below. MUST also require
-  // navigator.onLine: offline-at-open means the hook never activates and
-  // never sets fellBack, so without this the sheet renders a dead
-  // "Connecting…" body with the classic path gated off (reviewer-caught,
-  // spec §9 never-dead).
-  const liveActive = wantLive && navigator.onLine && !live.fellBack;
+  // the render swap and the classic effects below. `open` still gates the
+  // RENDER (a detached-but-live session shows the live footer/body only
+  // while the sheet is actually open).
+  const liveActive = open && liveOn && !live.fellBack;
   // Live was attempted but degraded (mint-timeout / connect-fail / mic-deny)
   // — render the classic voice UI plus a calm, honest mode label.
-  const showFallbackIndicator = wantLive && live.fellBack;
+  const showFallbackIndicator = liveOn && live.fellBack;
   // Ref mirror so callbacks defined before `live` exists (handlePlaybackEnd,
   // below) can read the current value without being recreated on every
   // liveActive flip — mirrors the ttsEnabledRef/loopDroppedOutRef pattern.
@@ -284,37 +289,26 @@ export default function CaddieSheet({
   }, [liveActive]);
 
   // ── Slice D — fallback continuity (specs/caddie-realtime-slice-d-plan.md §4) ──
-  // The live hook never wipes `messages` on fallback (fallBack() preserves
-  // them), but classic VoiceBody renders from `convHistory`, not
-  // `live.messages` — so without this, the preserved live transcript is
-  // invisible the moment the sheet swaps to the classic tap-to-talk body.
-  // One-shot seed guarded so it fires exactly once per activation.
-  const seededFallbackRef = useRef(false);
-  // True whenever this activation has shown ANY live transcript — suppresses
-  // the classic auto-open effect below so a fallback after a mid-round drop
-  // never re-greets on top of the preserved conversation.
+  // The fallback SEEDING effect (writing `live.messages` into `convHistory`
+  // when the live session degrades) now lives in the OWNER (RoundPageClient)
+  // — it must run even while the sheet is CLOSED, or the transcript is lost
+  // the instant `useDetachedCaddieLive`'s auto-release effect flips `liveOn`
+  // off (which wipes the inner hook's `messages`). Only the LOCAL "have we
+  // shown any live transcript this activation" tracking stays here — it
+  // guards CaddieSheet's own classic auto-open effect below from re-greeting
+  // on top of a preserved conversation.
   const liveTranscriptSeenRef = useRef(false);
   useEffect(() => {
     if (live.messages.length > 0) liveTranscriptSeenRef.current = true;
   }, [live.messages.length]);
+  // Reset per live-session (not per open) — `liveOn` persists across a sheet
+  // close, so this correctly stays true across a close+reopen of the SAME
+  // activation and only resets once the live session truly ends.
   useEffect(() => {
-    if (!showFallbackIndicator) return;
-    if (seededFallbackRef.current) return;
-    if (live.messages.length === 0) return;
-    if (convHistory.length > 0) return; // already has history — no dup
-    seededFallbackRef.current = true;
-    const seeded: VoiceCaddieMessage[] = live.messages
-      .filter((m) => !m.partial && m.text.trim().length > 0)
-      .map((m) => ({ role: m.role, content: m.text }));
-    onUpdateConvHistory(seeded);
-  }, [showFallbackIndicator, live.messages, convHistory.length, onUpdateConvHistory]);
-  // Reset on sheet close / wantLive going false so the next activation starts clean.
-  useEffect(() => {
-    if (!wantLive) {
-      seededFallbackRef.current = false;
+    if (!liveOn) {
       liveTranscriptSeenRef.current = false;
     }
-  }, [wantLive]);
+  }, [liveOn]);
 
   // Voice mode state
   const [isListening, setIsListening] = useState(false);
@@ -1182,14 +1176,13 @@ export default function CaddieSheet({
   // typing in, not merely started (designer: premature-affordance drift).
   const showMic = mode === "voice" && phase !== "transcribing" && phase !== "thinking" && !isStreaming;
 
-  // Stop the live client BEFORE the parent flips `open` false — cuts the mic
-  // instantly rather than waiting a render cycle for `wantLive`/`active` to
-  // go false and the hook's own cleanup to run.
+  // Close DETACHES only — the core behavioral change of
+  // specs/caddie-detach-and-language-pin-plan.md Item B. The live session
+  // (owned by RoundPageClient) keeps running after the sheet closes; only an
+  // explicit END (LiveFooter's onEnd -> onEndLive) stops it.
   const handleClose = useCallback(() => {
-    live.stop();
     onClose();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onClose, live.stop]);
+  }, [onClose]);
 
   return (
     <AnimatePresence>
@@ -1674,6 +1667,10 @@ export default function CaddieSheet({
               onToggleMute={live.toggleMute}
               paused={live.liveState === "suspended"}
               onResume={live.resume}
+              onEnd={() => {
+                onEndLive();
+                onClose();
+              }}
             />
           ) : (
             showMic && (
@@ -1851,6 +1848,36 @@ function LiveMicIcon({ size = 20, stroke = "currentColor", muted = false }: { si
 // No tap-to-start/stop mic in live mode — server VAD runs it (§5).
 // ---------------------------------------------------------------------------
 
+/** Quiet text-only End affordance — mirrors the mono/uppercase small-button
+ *  language already used for "Clear conversation" elsewhere in this file. No
+ *  new icon language, no alarm color — ending live mode is a normal action,
+ *  not an error. The primary end path is the pill's long-press
+ *  (specs/caddie-detach-and-language-pin-plan.md §B3); this is the
+ *  in-sheet equivalent for when the golfer is already looking at the
+ *  transcript. */
+function EndLiveButton({ onEnd }: { onEnd: () => void }) {
+  return (
+    <button
+      onClick={onEnd}
+      aria-label="End live session"
+      style={{
+        padding: "0 4px",
+        border: "none",
+        background: "transparent",
+        color: T.pencilSoft,
+        fontFamily: T.mono,
+        fontSize: 9,
+        letterSpacing: 1.2,
+        textTransform: "uppercase",
+        cursor: "pointer",
+        flexShrink: 0,
+      }}
+    >
+      End
+    </button>
+  );
+}
+
 function LiveFooter({
   status,
   personaName,
@@ -1858,6 +1885,7 @@ function LiveFooter({
   onToggleMute,
   paused,
   onResume,
+  onEnd,
 }: {
   status: RealtimeStatus;
   /** Cross-surface identity name (`captionPersonaName(caddy.name)`) —
@@ -1871,6 +1899,9 @@ function LiveFooter({
    *  instead of the stale/dead status + mute controls. */
   paused: boolean;
   onResume: () => void;
+  /** Ends the live session entirely (mic cut + gate flip), then closes the
+   *  sheet — specs/caddie-detach-and-language-pin-plan.md §B2. */
+  onEnd: () => void;
 }) {
   if (paused) {
     // Honest, calm suspended state — NOT an error (T.pencil, not
@@ -1918,6 +1949,7 @@ function LiveFooter({
         >
           <LiveMicIcon stroke={T.ink} />
         </button>
+        <EndLiveButton onEnd={onEnd} />
       </div>
     );
   }
@@ -1967,6 +1999,7 @@ function LiveFooter({
       >
         <LiveMicIcon muted={muted} stroke={muted ? T.warningInk : listening ? DEFAULT_ACCENT : T.ink} />
       </button>
+      <EndLiveButton onEnd={onEnd} />
     </div>
   );
 }

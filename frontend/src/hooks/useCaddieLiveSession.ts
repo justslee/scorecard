@@ -639,6 +639,19 @@ export function useCaddieLiveSession({
   const stop = useCallback(() => {
     clearMintDeadline();
     clearReconnectDeadline();
+    // Detach BEFORE stop() — same belt as fallBack()/suspend()/the `!active`
+    // branch/the effect cleanup (specs/caddie-realtime-double-emit-plan.md
+    // §2 Part B). Without this, a connected client's stop() synchronously
+    // emits onStatus('closed') while `events` is still bound; with
+    // everConnectedRef true and recent activity, the still-attached
+    // onStatus handler misreads that as an unexpected drop and calls
+    // startReconnect() — minting a brand-new client (full getUserMedia) that
+    // this function's own `clientRef.current = null` below then orphans past
+    // every teardown belt. A caller-invoked stop() is always a deliberate,
+    // terminal end — it must never resurrect a live mic
+    // (specs/caddie-detach-and-language-pin-plan.md, post-end orphaned-mic
+    // fix).
+    clientRef.current?.setEvents({});
     clientRef.current?.stop();
     clientRef.current = null;
   }, [clearMintDeadline, clearReconnectDeadline]);

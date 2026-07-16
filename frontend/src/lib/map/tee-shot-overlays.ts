@@ -57,6 +57,11 @@ export interface BunkerCarry {
   side: 'L' | 'R' | 'C';
   /** Ring vertex with min carry — anchor for the native dot. */
   nearEdge: LatLng;
+  /** Legend key: 'A' for the smallest front carry, then 'B', 'C'… in the
+   *  final ascending-front display order. '' when index exceeds the bundled
+   *  asset range A-F (unreachable today: BUNKER_CAP = 4) — renders as the
+   *  plain bean marker and a coin-less chip. */
+  letter: string;
 }
 
 export interface TeeShotOverlays {
@@ -641,7 +646,13 @@ export function fairwayBunkerCarries(args: {
   const capped = candidates.slice(0, maxBunkers);
   capped.sort((a, b) => a.front - b.front);
 
-  return capped.map(({ front, back, side, nearEdge }) => ({ front, back, side, nearEdge }));
+  return capped.map(({ front, back, side, nearEdge }, i) => ({
+    front,
+    back,
+    side,
+    nearEdge,
+    letter: i < 6 ? String.fromCharCode(65 + i) : '', // A-F bundled; '' = graceful fallback
+  }));
 }
 
 /**

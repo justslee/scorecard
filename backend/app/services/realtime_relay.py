@@ -14,6 +14,7 @@ from typing import Optional
 import httpx
 from fastapi import HTTPException
 
+from app.caddie.language import desired_language
 from app.caddie.tools import realtime_tools
 from app.caddie.types import VALID_REALTIME_VOICES
 
@@ -134,7 +135,7 @@ def build_session_payload(
     # Realtime schema (developers.openai.com client_secrets Python SDK reference,
     # 2025). Allowed types: "near_field" (phone / headset) | "far_field" (laptop).
     # "near_field" is correct for a mobile app where the phone is held to the ear.
-    transcription: dict = {"model": transcribe_model, "language": "en"}
+    transcription: dict = {"model": transcribe_model, "language": desired_language().code}
     # transcription.prompt confirmed at session.audio.input.transcription.prompt
     # in the GA Realtime API reference (AudioTranscription object, 2025): free
     # text for gpt-4o-transcribe (list-of-keywords semantics for whisper-1; not
@@ -157,16 +158,26 @@ def build_session_payload(
                     # Server-side noise suppression applied before VAD and the model.
                     # Reduces false-positive VAD triggers from background noise.
                     "noise_reduction": {"type": "near_field"},
-                    # language pinned to English: without it the transcriber
+                    # language pinned via the desired_language() seam
+                    # (app/caddie/language.py): without it the transcriber
                     # auto-detects per utterance and short/ambient audio lands on
                     # the wrong language (owner repro: a reply chip in Korean).
-                    # Owner direction 2026-07-06: default English; a per-user
-                    # language setting comes later with onboarding.
+                    # Owner direction 2026-07-06/2026-07-16 (hard contract):
+                    # English always; a per-user language setting comes later
+                    # with onboarding — that feature only changes the seam fn.
                     "transcription": transcription,
                     "turn_detection": turn_detection,
                 },
                 # speed: brisk on-course delivery (owner ask); realtime
                 # supports 0.25-1.5, default 1.0.
+                #
+                # NOTE: the GA Realtime session schema has NO output-language
+                # or output-locale field anywhere under audio.output — output
+                # language is not a session parameter. The mechanism for
+                # pinning spoken output language is the instructions text
+                # (output_language_rule() in voice_prompts.py), not a payload
+                # field. Do not invent one here — an unrecognized field
+                # hard-fails the mint.
                 "output": {"voice": clamp_realtime_voice(voice_id), "speed": 1.15},
             },
             "tools": tools if tools is not None else DEFAULT_TOOLS,
