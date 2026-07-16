@@ -3,7 +3,20 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
-## 2026-07-16 AWAITING — multiuser-p0-migrations-revocation (slice 3), SILENT/dark, on integration/next @ bb2b9ec base
+## 2026-07-16 DONE — multiuser-p0-migrations-revocation (slice 3), SILENT/dark, landed @ f4eda94 (bundle PR opened fresh)
+Reviewer SHIP (no HIGH/MED — forge/replay/revocation-bypass/owner-drift/injection/endpoint-exposure/
+AUTH_BYPASS-guard all attacked & safe; /security-review no findings). qa PASS (10 gates + AUTH_BYPASS
+negative correct; 2593 backend non-DB + 33 clerk/webhook tests + frontend lint/tsc/build/voice-278 +
+caddie-experience-241 green on f4eda94; DB-backed integration tests -> CI backend gate). NO designer
+(dark backend). Migrations DESIGNED not written (guarded) — backfill A / tighten B / revoked_users
+CREATE all deferred to the open-mode flip PR (present for owner approval then; NO STOP now, revocation
+inert in owner mode). Durable revoked_users table REQUIRED before APP_ACCESS_MODE=open (interim store
+is in-process). Fresh bundle PR (integration/next -> main) opened this cycle = SILENT-only, no owner
+ping (dark). NEXT: slice 4 multiuser-p0-keychain-token — deps (slice 1 #142 + slice 3 now) satisfied,
+READY to pick up next cycle. Backlog: slice 3 -> done-on-bundle (targeted edit, JSON validated, count
+94 unchanged). ORIGINAL AWAITING record below (superseded):
+
+## 2026-07-16 AWAITING(superseded) — multiuser-p0-migrations-revocation (slice 3), SILENT/dark, on integration/next @ bb2b9ec base
 Owner feedback checked FIRST: no cards in Needs Review; Bundle #143 (v1.1.10 weekend Red build)
 Shipped today, only our own ship-comment on it — owner plays Bethpage Red this weekend so NO field
 feedback exists yet to preempt. Board clean. No open bundle PR (opening fresh when slice 3 lands).
