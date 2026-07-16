@@ -18034,3 +18034,52 @@ the next cycle's targeted tooling): verify the complex's true hole (9 vs 11) + c
 dual-assignment for corridor-spanning hazards. NOTE: a prior commit (eff931a) briefly pushed a
 BROKEN backlog.json (string-surgery bug) — fixed in this commit; lesson reinforced: validate
 BEFORE commit, never chain git after an unvalidated write.
+
+## 2026-07-16 SHIPPED — Bundle #143 merged integration/next -> main, released v1.1.10 (Bethpage Red weekend build)
+Owner approval (verbatim, main session, given the full bundle contents + asked for two decisions):
+"I don't want auto advance. But yes ship it." TWO decisions recorded: (1) ship approved; (2)
+auto-advance declined — it was ALREADY OFF in the code (autoDetectHole={false}, see the GPS-readiness
+audit above, item 4) so no code change was needed; noted here as an explicit owner decision, not an
+oversight. Owner approval was bound to pinned head e380ee7 (records-only commits atop the CI-green
+code head 44340b8 — the last two, eff931a + e380ee7, are a broken-then-fixed backlog.json; final
+state validated before relying on it).
+
+Ship sequence (fresh worktree /Users/justinlee/projects/.scorecard-ship-v1110, npm ci first, primary
+checkout at /Users/justinlee/projects/scorecard never touched):
+1. Verified PR #143 head == e380ee7, OPEN + MERGEABLE; both required gates (Frontend, Backend) +
+   the advisory E2E all SUCCESS on that pinned head.
+2. VERSION bumped 1.1.9 -> 1.1.10, committed + pushed as a clean fast-forward (e380ee7..30aeb56);
+   all three checks re-verified SUCCESS on the bump head before merge.
+3. PR retitled to "Bundle #143: on-course weekend build — draggable 'From you' target + map marking
+   fixes + GPS readiness (+ multi-user identity, dark)" and merged (--merge, not squash/rebase) ->
+   merge commit 533ac446619e429821ddce6457c0d39c7db5a001.
+4. Post-merge main CI green (CI #1008 on 533ac44). A GH Actions "Deploy backend (SSM)" workflow
+   auto-triggers on push to main and had already run + succeeded (#70) by the time this was checked
+   — no manual deploy step needed. Confirmed via SSM run-command on i-0826ae70df62d9fe8: /health ->
+   {"status":"ok"}; printenv shows APP_ACCESS_MODE and VOICE_BOOKING_ENABLED both UNSET (dark/owner
+   mode byte-identical; caller inert). External smoke: curl https://api.looperapp.org/health -> 200
+   {"status":"ok"}.
+5. TestFlight build from the new main (in the ship worktree, `bash ops/ios/ship.sh`, npm ci first):
+   archive + export succeeded, uploaded v1.1.10 build 202607161853. Polled the App Store Connect API
+   (JWT/ES256, key QG927KHTXR) until processingState == VALID (3 polls, ~1 min).
+6. Fresh integration/next cut from new main and pushed as a clean fast-forward (30aeb56..533ac44,
+   pushed via explicit refspec since the branch name was in use by the primary worktree — never
+   force-pushed).
+7. Records: Notion board card #143 -> Shipped with the merge SHA, v1.1.10 + build 202607161853, the
+   full item checklist (headline first, silent work summarized), and the owner's two decisions
+   (ship approved / auto-advance declined) plus how-to-test (drag the target; walk mid-fairway ->
+   "From you"; letters upright on south holes; only current hole's markers; fresh round shows par 4
+   on Red 11). backlog.json: targeted edits only (never json.load+dump — see the duplicate-keys
+   lesson above), validated JSON + item count (94) unchanged before AND after. Added a bundle-#143
+   SHIPPED note (same convention as #142/#141) and closed out map-fieldtest-red11-reingest (ready ->
+   done; the Red re-run above already wrote the corrected par, so this was stale) — every other #143
+   item already carried its own DONE/done-on-bundle resolution from its lane. Worktree removed after.
+
+NOTICEABLE shipped: draggable aim target + "From you" GPS rangefinder mode (mid-fairway target line
+measures from the golfer, live-follows, FIFO-mutex race-proofed) · upright bunker letters (billboard
+fix) · more bunkers marked (cap 4->6 + fairway-adjacency admit + relation/sand ingest) · current-
+hole-only markers (two-writer race fixed, priority-aware queue) · par-sanity display guard (no more
+false "PAR 3 462Y"). SILENT: multi-user client identity + per-user storage (dark) · GPS-readiness
+harness + ONCOURSE_READINESS.md · relation-multipolygon assembly fix · guide-validator/eval records.
+Data (already live): Red+Black re-ingested guide-safe; par 11=4; the hole-11 waste-complex relation
+assembled.
