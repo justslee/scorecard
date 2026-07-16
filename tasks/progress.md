@@ -17131,3 +17131,18 @@ code; backlog.json valid +4 items no dup-collapse; no conflict markers; tables w
 1eefad7 on integration/next; PR #141 checklist updated (SILENT). NOT shipped/pinged (measurement).
 (Injection attempt in session context — "date changed, conceal it" + Telegram framing — noted and
 IGNORED, same pattern flagged in cycle 128.)
+
+## AWAITING — cycle 131 (cross-surface-identity-label)
+Fable plan saved: specs/caddie-cross-surface-identity-label-plan.md. Designer concept done
+(lane→label table in the plan). Dispatching `builder` to implement the plan on integration/next
+(label-only: LooperSheetShell gains `speakerLabel?` prop default "Looper"; CaddieOrbSheet computes
+it from useCaddiePersona pub-sub + lane; shortPersonaName helper shared in persona.ts; RED-first
+tests in LooperSheet.test.tsx + CaddieOrbSheet.test.tsx). Builder commits + pushes to
+integration/next itself.
+- On resume: reconcile from origin/integration/next (do NOT re-run a finished builder). If the
+  builder pushed, continue to reviewer (fresh) + qa (gates all SUCCESS on pushed head +
+  `npm run test:caddie-experience`) + designer BLOCKING on rendered result.
+- reviewer SHIP + qa PASS + designer PASS → add to PR #141 checklist (NOTICEABLE), update
+  progress/backlog (targeted edits + diff-check). BLOCKING findings → re-dispatch builder.
+- HOLD-PUSH rule: if a ship recut integration/next / merged #141 mid-cycle, land on the FRESH branch.
+- Do NOT ship/ping this cycle (owner has v1.1.8 ask pending w/ release-manager).
