@@ -31,10 +31,22 @@ const realtimeMock = vi.hoisted(() => {
     opts: Record<string, unknown>;
     events: Events;
     currentStatus = "connecting";
+    stopped = false;
     start = vi.fn(async () => {});
     attachMic = vi.fn(async () => {});
     setMuted = vi.fn();
-    stop = vi.fn();
+    // Mirrors the REAL RealtimeCaddieClient.stop() (realtime.ts): terminal,
+    // and synchronously emits onStatus('closed') via whatever `events` is
+    // CURRENTLY bound at call time — exactly the mechanism the orphaned-mic
+    // regression (post-end zombie mic) depends on: a caller that stops a
+    // connected client WITHOUT detaching first lets this synchronous
+    // 'closed' re-enter the still-attached onStatus handler.
+    stop = vi.fn(() => {
+      if (this.stopped) return;
+      this.stopped = true;
+      this.currentStatus = "closed";
+      this.events.onStatus?.("closed");
+    });
     sendText = vi.fn();
     sendContext = vi.fn();
     sendOpener = vi.fn();
@@ -191,6 +203,54 @@ describe("useDetachedCaddieLive — start/stop lifecycle", () => {
     // Gate flip also drives the inner hook's own `!active` teardown belt —
     // messages/status reset for the next activation.
     expect(result.current.session.messages).toEqual([]);
+  });
+
+  it("end() does NOT resurrect a client — post-end orphaned-mic regression (setEvents({}) detaches before stop(), so the synchronous 'closed' emission can't re-enter onStatus -> startReconnect)", async () => {
+    // Reproduces the exact production shape: a CONNECTED client with RECENT
+    // activity (mic attached, a message just landed) — the conditions under
+    // which useCaddieLiveSession's onStatus handler classifies a 'closed'
+    // as an unexpected DROP (not idle) and calls startReconnect(), UNLESS
+    // the client's handlers were detached first. Before the fix, this test
+    // fails: instances.length becomes 2 (a resurrected, live-mic client) and
+    // client.setEvents is never called before client.stop().
+    const { result } = renderHook((props) => useDetachedCaddieLive(props), {
+      initialProps: baseOptions(),
+    });
+
+    act(() => result.current.start());
+    await flush();
+    const client = realtimeMock.FakeRealtimeCaddieClient.instances[0];
+    act(() => client.emitStatus("connected"));
+    await flush();
+    // Recent activity — the same signal (onStatus 'connected'/'listening'/
+    // 'speaking', or a message) that makes the hook's clean-idle-vs-drop
+    // classifier read "not idle" (i.e. classifiable as a resurrecting drop
+    // if the reconnect cascade were allowed to fire at all).
+    act(() => {
+      client.emitMessage({ id: "m1", role: "user", text: "What club from 150?", partial: false, order: 1 });
+    });
+    await flush();
+
+    act(() => result.current.end());
+    await flush();
+
+    // The load-bearing assertion: setEvents({}) fired BEFORE the call that
+    // triggers stop()'s synchronous 'closed' emission (proven by call order,
+    // not just "was called" — the whole bug is about ORDERING).
+    const setEventsOrder = client.setEvents.mock.invocationCallOrder;
+    const stopOrder = client.stop.mock.invocationCallOrder;
+    expect(setEventsOrder.length).toBeGreaterThan(0);
+    expect(stopOrder.length).toBeGreaterThan(0);
+    expect(Math.min(...setEventsOrder)).toBeLessThan(Math.min(...stopOrder));
+    // detach was to `{}` specifically (no lingering onStatus/onMessage).
+    expect(client.setEvents).toHaveBeenCalledWith({});
+
+    // No resurrection: exactly ONE client ever constructed across the whole
+    // lifecycle — no startReconnect-minted second client, no second
+    // getUserMedia-equivalent attachMic call.
+    expect(realtimeMock.FakeRealtimeCaddieClient.instances).toHaveLength(1);
+    expect(client.attachMic).toHaveBeenCalledTimes(1); // never re-attached
+    expect(result.current.liveOn).toBe(false);
   });
 
   it("fellBack while closed releases liveOn (next open retries live fresh)", async () => {
