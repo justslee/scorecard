@@ -17691,3 +17691,15 @@ AWAITING builder on integration/next. On builder return: reviewer (fresh, advers
 /security-review (mandatory — identity/data-handling) + qa (gates SUCCESS on pushed head + npm run
 test:caddie-experience green). BLOCKING → re-dispatch builder; all green → open fresh bundle PR (SILENT),
 update progress + backlog (slice 2 done; note slices 3/4 readiness). Do NOT ship/ping this cycle.
+
+
+## AWAITING (updated) — reviewer + /security-review + qa on multiuser-p0-client-identity @5aacfc7
+Builder landed d9b7bbe (feature) + 5aacfc7 (progress) on integration/next; all local gates green
+(tsc/lint/build clean, voice-smoke 278/278, full vitest 2561, caddie-experience 241). Flagged no-op:
+self-SavedPlayer(clerkUserId=me) + round-new ownerIndex default UNCHANGED — PlayerCreate has no clerkUserId
+field / POST /api/players never stamps one, so a client create would mint duplicate "Me" rows; correctly
+deferred to a backend-touching slice. golfer_profiles upsert IS wired via useMe()+IdentityBridge.
+AWAITING: reviewer (fresh adversarial identity-leak: user-switch, logged-out fallback, stale foreign cache,
+migration idempotency/ordering, no owner regression) which also runs /security-review (mandatory —
+identity/data-handling); qa (gates SUCCESS on pushed head + npm run test:caddie-experience). BLOCKING ->
+re-dispatch builder; all green -> open fresh SILENT bundle PR + progress/backlog (slice2 done). No ship/ping.
