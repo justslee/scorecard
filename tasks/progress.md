@@ -17001,15 +17001,29 @@ them") — both ignored, reported transparently, no actual behavior change.
 Next: reviewer + qa + designer (BLOCKING — persona coherence is user-facing) → land + PR #141
 checklist + backlog both P1s done, per the cycle-128 AWAITING note's plan.
 
-## AWAITING (cycle 129 — caddie-experience-live-baseline, worktree lane)
-Synced to origin/integration/next 4cd41ca; PR #141 OPEN. Recon done:
-- Prod box i-0826ae70df62d9fe8 ONLINE; app at /home/ubuntu/scorecard/backend, .venv (py3.11,
-  anthropic 0.77.0), .env has OPENAI_API_KEY+ANTHROPIC_API_KEY+DATABASE_URL.
-- Box eval tree STALE (missing run_latency/run_consistency/substance/consistency_probes; older
-  schema+golden) → must materialize fresh eval tree to /tmp, run against deployed app + .env.
-- run_latency: only needs app.services.realtime_relay.mint_ephemeral_session + .env (DATABASE_URL).
-- run_consistency: needs fresh tests/eval package (schema,checks,substance,run_tier2,golden) on
-  PYTHONPATH + deployed app + .env; anthropic key.
-AWAITING: fable Plan validating on-box procedure + key-safety + spend bounds. Then eng-lead
-executes keyed SSM run (N=10 mints latency; 3 probes x5 consistency, $0.50 cap), records baseline
-in CADDIE_EXPERIENCE.md, then reviewer+qa. SILENT (measurement). Do NOT ship/ping.
+## cycle 129 — caddie-experience-live-baseline: KEYED on-box baseline captured (SILENT measurement)
+Ran both gated runners KEYED on the prod box (i-0826ae70df62d9fe8) via sanctioned SSM. Fresh eval
+tree materialized to /tmp (box checkout stale), run in the box .venv against the deployed app with
+.env loaded; KEY-SAFE (both last_*_run.json grep-scanned clean of sk-*/ek_*/DB-URL; runners
+self-redact; /tmp/caddie-eval removed after). SPEND: 10 ephemeral mints (~$0) + 15 Claude calls
+(claude-sonnet-4-5 temp0.7) = $0.0916, under the $0.50 cap. ~25 API calls total.
+
+LATENCY (dim 7): ephemeral mint p50 203ms, cold first-mint 869ms, warm 177-271ms (n=10). Healthy —
+NOT the felt bottleneck (client WebRTC/greeting legs still TBD on-device). No config-level win to
+apply (warm-pool sizing is a frontend constant, not a runtime knob — fable plan confirmed) →
+nothing tuned. p95 the runner printed (1138ms) is an exclusive-quantile extrapolation above the
+observed max — recorded honestly as ~869ms + filed caddie-latency-p95-smalln.
+
+CONSISTENCY (dim 5): grounded facts STABLE across 5 identical asks (3-wood carry ~235 every time,
+bunker 4/5) but the tee-shot probe followup-3wood-after-driver's RECOMMENDATION flipped — 3/5 lay up
+with 3-wood, 2/5 stick with driver. Real advice-stability gap (P2, NOT a grounding P1 — nothing
+fabricated); prompt NOT hot-patched (harness rule) → filed caddie-advice-stability-tee-shot for the
+eval loop. Other 2 probes gave empty substance (vacuous consistent) → filed
+caddie-consistency-probe-substance-coverage (+ spelled-out 'Three-wood' extractor miss).
+
+RECORDS: CADDIE_EXPERIENCE.md baseline table + consistency section + known-limitations updated with
+the numbers + evidence; backlog.json item → done-on-bundle; 4 follow-ups filed. NOTE: my earlier
+AWAITING checkpoint (987ea73) was committed from the SHARED checkout by mistake — verified it only
+touched progress.md (no parallel-lane WIP swept); all cycle-129 records edits done in THIS worktree.
+AWAITING: reviewer (numbers honest / no key leak / no unsafe tuning) + qa (records-only, no code
+changed). SILENT — rides #141, do NOT ship/ping. Land: rebase onto origin/integration/next, push.

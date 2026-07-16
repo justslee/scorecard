@@ -75,16 +75,30 @@ printed or persisted.
 
 ### Baseline table
 
-**TBD — requires a keyed, on-box run.** `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are both
-unset in this environment; no live baseline can or will be captured this pass, and no number is
-fabricated. Fill in after running the gated tools above with real keys:
+**Baseline captured 2026-07-15 — keyed on-box run** (prod box `i-0826ae70df62d9fe8`, gated
+runners materialized to `/tmp` against the deployed `app`, real `.env` keys, key-free by
+construction — every relayed report grep-scanned clean of `sk-*`/`ek_*`/DB URLs). The
+backend-controllable leg (ephemeral mint round-trip) is measured. The other three rows require a
+TestFlight on-device run (WebRTC connect + greeting are client-side) and stay honestly `TBD` —
+out of the on-box scope of this item; filed as `caddie-latency-ondevice-ttfa`.
 
 | Metric | p50 | p95 | Captured |
 |---|---|---|---|
-| Turn latency (`caddie.eos_to_first_audio`) | TBD | TBD | — |
-| Cold open → greeting | TBD | TBD | — |
-| Warm open → greeting | TBD | TBD | — |
-| Ephemeral mint round-trip (`run_latency.py`) | TBD | TBD | — |
+| Turn latency (`caddie.eos_to_first_audio`) | TBD | TBD | — (on-device) |
+| Cold open → greeting | TBD | TBD | — (on-device) |
+| Warm open → greeting | TBD | TBD | — (on-device) |
+| Ephemeral mint round-trip (`run_latency.py`) | **203 ms** | **~869 ms†** | 2026-07-15, prod box, n=10 |
+
+Raw mint round-trips (ms), n=10: `869.1, 222.3, 177.4, 186.6, 270.8, 233.7, 200.2, 177.9,
+206.0, 188.2`. The **first (cold) mint was 869 ms**; every subsequent (warm-process) mint clustered
+**177–271 ms**. The mint leg is healthy and is NOT the loading bottleneck a user feels — the
+felt cold-open latency lives in the client WebRTC-connect + greeting legs (the three `TBD` rows).
+
+† `run_latency.py` computes p95 as `statistics.quantiles(..., n=20)[18]` (default *exclusive*
+method), which **extrapolates above the observed max** on small n — it reported `1138.3 ms`, higher
+than the largest actual sample (869 ms). The honest p95 upper bound is the observed cold mint,
+**~869 ms**. Minor harness-refinement filed (`caddie-latency-p95-smalln`): use the inclusive method
+or report the observed max for n<20 so the number never exceeds a real measurement.
 
 ## Reliability — glitch coverage (dim 6, new)
 
@@ -118,6 +132,39 @@ SAME scenario: clubs must be identical, hazard sets identical, yardage spread wi
 a sample simply omitting a number others state is *reported*, not failed. See
 `backend/tests/eval/README.md`'s "Consistency probe" section for the full design and the gated
 live sampler (`run_consistency.py`).
+
+### Consistency baseline (2026-07-15, keyed on-box run — claude-sonnet-4-5, temp 0.7, n=5/probe)
+
+`run_consistency.py` over the 3 shipped probes, $0.092 spent, report key-free (grep-scanned
+clean). **Verdict: mixed — grounded facts are stable; the final recommendation is not.**
+
+| Probe | consistent | What the extractor saw |
+|---|---|---|
+| `club-call-150y-mid-iron` | True (vacuous) | club=None, yardages=[], hazards=[] on all 5 — no extractable substance, so "consistent" carries **no signal** |
+| `plays-like-uphill-club-call` | True (vacuous) | same — empty substance on all 5 |
+| `followup-3wood-after-driver` (tee shot) | **False** | grounded numbers stable (carry ~235 in all 5), but the *advice direction flips* |
+
+**The real finding (`followup-3wood-after-driver`, "what about my 3-wood instead?"):** across 5
+identical asks the **grounded facts held** — the 3-wood carry was **~235 every time**, and the
+right-side fairway bunker was named in 4/5 (phrasing-omitted in 1). The variance flagged by the
+report was two parts artifact + one part real:
+- `distinct_clubs=2` is an **extractor artifact**: sample 0 spelled it "Three-wood" (the regex
+  matches "3-wood"/"3 wood"), so its club read as `None`. All 5 answers do recommend a 3-wood.
+- `yardage_spread_max=225` is the **documented bare-number artifact**: the extractor grabbed
+  mixed quantities (leave/carry/gap: 15, 30, 160, 235, 240…) as if comparable. The physics carry
+  (~235) is actually consistent.
+- **The genuine inconsistency the extractor does NOT capture:** the caddie's *recommendation
+  direction* flipped — **3/5 endorse laying up with the 3-wood** ("that's the call" / "safe play")
+  while **2/5 say stick with driver** ("I'd stick with driver here" / "Stick with driver and favor
+  left"). Same question, opposite advice. That is the consistency dimension the owner cares about.
+
+Filed as `caddie-advice-stability-tee-shot` (**P2, not a grounding P1** — no fact/hazard was
+fabricated or drifted; it is judgment variance under temp 0.7). Per the harness rule the prompt
+was **not hot-patched**; a fix (e.g. lower temperature on the shipped realtime path, or a firmer
+decision rubric) must go through the eval loop with a before/after on this exact probe. Two
+harness-refinements also filed: (1) `_parse_mentioned_club` should match the spelled-out
+"three-wood"/"three wood" form; (2) the two vacuous-consistent probes need answers that actually
+state a club so their verdict isn't empty — `caddie-consistency-probe-substance-coverage`.
 
 ## Non-robotic voice (dim 4)
 
@@ -176,5 +223,10 @@ one-line manifest edit, not a re-plan.
   3-digit wind heading in degrees) as a documented tradeoff, not a silent gap.
 - Perceptual "sounds robotic" and the realtime mouth's live conversation-consistency are gated
   judge/on-device properties, not deterministic — see the dim-4 and dim-5 sections above.
-- No live baseline latency numbers exist yet in this repo state (no API keys in this
-  environment) — the table above is honestly `TBD`, never fabricated.
+- Latency baseline: the **backend mint leg is now measured** (2026-07-15 keyed on-box run — p50
+  203 ms, cold ~869 ms; table above). The three client-side rows (turn latency, cold/warm
+  open→greeting) still require a TestFlight on-device capture and remain honestly `TBD` (filed
+  `caddie-latency-ondevice-ttfa`) — never fabricated.
+- Consistency baseline (2026-07-15): grounded facts held across identical asks, but the tee-shot
+  probe's *recommendation direction* flipped 3/5 vs 2/5 (filed `caddie-advice-stability-tee-shot`,
+  P2). Two of three probes yielded empty substance (vacuous "consistent") — coverage gap filed.

@@ -100,8 +100,49 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle",
       "why": "CADDIE-EXPERIENCE dims 5/7. Cycle 127 shipped the harness (CADDIE_EXPERIENCE.md, backend/tests/eval/run_latency.py + run_consistency.py) but could capture NO baseline -- no OPENAI/ANTHROPIC keys in the agent env (the baseline table ships honestly as TBD). ACTION (on-box, keyed, bounded spend per the runners' --budget caps): run `CADDIE_EVAL_LIVE=1 run_consistency --budget-usd 0.50` (grounded-answer variance across N identical asks) and `run_latency --n 5` (ephemeral-mint p50/p95), plus the on-device cold-vs-warm time-to-first-audio procedure documented in CADDIE_EXPERIENCE.md (read the caddie.eos_to_first_audio telemetry log lines). Fill the baseline table so future cycles regress-check against real numbers. Report spend as counts, key-free.",
+      "resolution": "DONE on bundle #141 2026-07-15 (cycle 129, integration/next, SILENT measurement). Ran both gated runners KEYED on-box via sanctioned SSM (prod box i-0826ae70df62d9fe8): fresh eval tree materialized to /tmp (box checkout stale), run in the box .venv against the deployed app with .env loaded, key-free (both last_*_run.json grep-scanned clean of sk-*/ek_*/DB-URL before relaying; runners self-redact client_secret/value). SPEND: latency 10 ephemeral mints (~$0 tokens); consistency 3 probes x n=5 = 15 Claude calls (claude-sonnet-4-5, temp 0.7) = $0.0916, under the $0.50 cap. LATENCY baseline (dim 7): ephemeral mint round-trip p50 203ms, cold first-mint 869ms, warm 177-271ms -- healthy, NOT the felt-loading bottleneck (that's the client WebRTC/greeting legs, still TBD on-device). CONSISTENCY (dim 5): grounded facts STABLE across identical asks (3-wood carry ~235 every time, bunker named 4/5) but the tee-shot probe's RECOMMENDATION DIRECTION flipped -- 3/5 endorse laying up with the 3-wood, 2/5 say stick with driver on identical input. Filed caddie-advice-stability-tee-shot (P2, NOT a grounding P1 -- no fact fabricated/drifted; judgment variance under temp; prompt NOT hot-patched per the harness rule). Two other probes gave empty substance (vacuous consistent). CADDIE_EXPERIENCE.md baseline table + consistency section filled with the numbers + evidence. Follow-ups filed: caddie-latency-ondevice-ttfa, caddie-advice-stability-tee-shot, caddie-consistency-probe-substance-coverage, caddie-latency-p95-smalln.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-advice-stability-tee-shot",
+      "title": "Caddie flips its recommendation across identical asks (tee-shot lay-up vs stick with driver)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dim 5 (consistency) + dim 2 (smart). Found by the 2026-07-15 keyed consistency baseline (cycle 129). On followup-3wood-after-driver ('what about my 3-wood instead?', n=5 identical asks, claude-sonnet-4-5 temp 0.7) the GROUNDED facts held (3-wood carry ~235 every sample, right bunker named 4/5) but the caddie's actual RECOMMENDATION DIRECTION flipped: 3/5 endorse laying up with the 3-wood ('that's the call' / 'safe play'), 2/5 say stick with driver ('I'd stick with driver here' / 'Stick with driver and favor left'). Same question -> opposite advice, which is exactly the consistency the owner cares about. This is judgment variance under sampling temperature, NOT a grounding/hallucination bug (nothing was fabricated). ACTION via the eval loop (do NOT hot-patch): candidate fixes to A/B on THIS probe with before/after -- lower temperature on the shipped realtime path, and/or a firmer decision rubric in the prompt so the lay-up-vs-hold call is deterministic given the numbers. Evidence: CADDIE_EXPERIENCE.md consistency-baseline section + last_consistency_run.json (gitignored, re-runnable on-box).",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-latency-ondevice-ttfa",
+      "title": "Capture the on-device cold/warm time-to-first-audio latency (the felt loading leg)",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dim 7 (minimal loading). The 2026-07-15 baseline measured the backend-controllable ephemeral-mint leg (p50 203ms, healthy) but the THREE client-side rows the user actually feels stay TBD -- turn latency (caddie.eos_to_first_audio), cold open->greeting, warm open->greeting -- because WebRTC connect + greeting are client-side and need a TestFlight on-device run, not an on-box SSM run. ACTION (on device): follow the latency methodology in CADDIE_EXPERIENCE.md -- 5 cold opens + 5 warm opens on TestFlight, read the caddie-turn/caddie-rt telemetry log lines (POST /api/voice/telemetry), report p50/p95 per surface; if a clean open->greeting bracket isn't achievable from existing markers, add ONE consumer-side marker in useCaddieLiveSession.ts/CaddieSheet.tsx (never realtime.ts). Fill the remaining 3 baseline rows.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-consistency-probe-substance-coverage",
+      "title": "Two consistency probes extract empty substance (vacuous 'consistent') + spelled-out club miss",
+      "type": "minor",
+      "priority": 4,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dim 5 harness-refinement, found by the 2026-07-15 keyed baseline. (1) club-call-150y-mid-iron and plays-like-uphill-club-call both extracted club=None/yardages=[]/hazards=[] on all 5 samples, so their consistent=True carries NO signal -- the probe scenarios or the extractor need answers that actually state a club/number to be a real check. (2) substance.py _parse_mentioned_club misses the SPELLED-OUT form: a caddie answer of 'Three-wood ...' read as club=None while '3-wood' matched, inflating distinct_clubs. ACTION: extend _parse_mentioned_club/_build_club_mention_patterns to match spelled-out 'three-wood'/'three wood' (and siblings), and either pick probe scenarios that force a stated club or make the extractor fall back so a club-bearing answer is never missed. Keep test_substance_teeth.py green + add a teeth case for the spelled-out form.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-latency-p95-smalln",
+      "title": "run_latency p95 extrapolates above the observed max on small n",
+      "type": "minor",
+      "priority": 5,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dim 7 harness-refinement, found by the 2026-07-15 baseline. run_latency.py computes p95 as statistics.quantiles(latencies_ms, n=20)[18] (default 'exclusive' method), which EXTRAPOLATES above the largest observed sample on small n -- with n=10 it reported p95=1138ms while the actual max sample was 869ms, i.e. a 'p95' higher than any real measurement. ACTION: for n<20 use method='inclusive' or clamp/report the observed max so the reported p95 never exceeds a measured value; add a tiny unit assertion (p95 <= max(samples)). Cosmetic-but-honest fix; does not change the healthy p50.",
       "depends_on": []
     },
     {
