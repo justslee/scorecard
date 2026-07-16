@@ -586,10 +586,11 @@ async def test_build_voice_prompt_no_memory_no_profile_stays_clean(monkeypatch):
     assert caddie_routes.OBSERVED_REALITY_RULE in system[0]["text"]
     assert caddie_routes.YARDAGE_GROUNDING_RULE in system[0]["text"]
     assert caddie_routes.POSITIONING_SHOT_RULE in system[0]["text"]
-    # NUMBERS_COHERENCE_RULE and MISS_SIDE_GROUNDING_RULE (appended after
-    # POSITIONING_SHOT_RULE, specs/caddie-numbers-coherence-plan.md §2.4/§3.2)
-    # now close the STABLE block.
-    assert system[0]["text"].rstrip().endswith(caddie_routes.MISS_SIDE_GROUNDING_RULE)
+    # NUMBERS_COHERENCE_RULE and MISS_SIDE_GROUNDING_RULE stay in the STABLE
+    # block; DECISION_GROUNDING_RULE (appended after MISS_SIDE_GROUNDING_RULE,
+    # specs/caddie-advice-stability-tee-shot-plan.md) now CLOSES it.
+    assert caddie_routes.MISS_SIDE_GROUNDING_RULE in system[0]["text"]
+    assert system[0]["text"].rstrip().endswith(caddie_routes.DECISION_GROUNDING_RULE)
     assert "--- PLAYER MEMORY ---" not in flat
     assert "handicap" not in flat.lower()
 
@@ -612,10 +613,11 @@ async def test_build_voice_prompt_degrades_when_memory_fetch_raises(monkeypatch)
     assert caddie_routes.OBSERVED_REALITY_RULE in system[0]["text"]
     assert caddie_routes.YARDAGE_GROUNDING_RULE in system[0]["text"]
     assert caddie_routes.POSITIONING_SHOT_RULE in system[0]["text"]
-    # NUMBERS_COHERENCE_RULE and MISS_SIDE_GROUNDING_RULE (appended after
-    # POSITIONING_SHOT_RULE, specs/caddie-numbers-coherence-plan.md §2.4/§3.2)
-    # now close the STABLE block.
-    assert system[0]["text"].rstrip().endswith(caddie_routes.MISS_SIDE_GROUNDING_RULE)
+    # NUMBERS_COHERENCE_RULE and MISS_SIDE_GROUNDING_RULE stay in the STABLE
+    # block; DECISION_GROUNDING_RULE (appended after MISS_SIDE_GROUNDING_RULE,
+    # specs/caddie-advice-stability-tee-shot-plan.md) now CLOSES it.
+    assert caddie_routes.MISS_SIDE_GROUNDING_RULE in system[0]["text"]
+    assert system[0]["text"].rstrip().endswith(caddie_routes.DECISION_GROUNDING_RULE)
     assert "--- PLAYER MEMORY ---" not in flat
     assert messages[-1] == {"role": "user", "content": "hi"}
 
