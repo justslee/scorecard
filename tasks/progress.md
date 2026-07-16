@@ -3,6 +3,30 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## CYCLE 132 DONE — caddie-transcript-render-unify landed on integration/next (NOTICEABLE — visual)
+Builder implemented specs/caddie-transcript-render-unify-plan.md verbatim, ordered sequence §8.
+New `frontend/src/components/yardage/Transcript.tsx` (ConversationTurn + Transcript) — the ONE
+shared calm yardage-book turn primitive (flat mono caption + serif body, no chat bubbles).
+Migrated all four live surfaces in plan order: LooperSheetShell (base idiom, tests unedited) →
+CaddieSheet LiveVoiceBody (deleted the SaaS bubble markup — alignSelf/radius-14/ink-paperDeep
+fills; kept id-keyed `key: m.id`, 1:1 adapter, no filter/sort/dedup; `partial` -> `streaming`
+per the designer's opacity-1+pulse override, not `muted`) → CaddieSheet VoiceBody (history
+flattens onto Transcript; current-turn AnimatePresence block + all its keys/CTAs/
+ListeningIndicator kept byte-identical) → VoiceSheet (local `Turn` deleted, medallion extracted
+to a file-local `Medallion` in Voice.tsx, Waveform moved to the captionTrailing slot, "SAID"
+chip killed). Every caption now uses captionPersonaName(caddy.name) (live mode gains captions).
+PulseDot gained an optional `size` prop (default 22, backward compatible).
+Dead-code rider folded in (both checks passed): deleted CaddiePanel.tsx, CaddieModal.tsx,
+CaddieNotesCard.tsx, useRealtimeCaddie.ts — re-verified grep showed zero live imports outside
+those four files (all other repo mentions were comments); no .test.tsx existed for any of them.
+BLOCKING diff gate held: zero changes to realtime.ts/realtime-ordering.ts/
+useCaddieLiveSession.ts/lib/types.ts/backend/app/models.py — the caddie-realtime-double-emit
+fix untouched. Gates: tsc clean, eslint clean, next build clean, full vitest 128 files/2496
+tests green, test:caddie-experience 17 files/239 tests green (new Transcript.test.tsx
+registered, dims [3,8]), voice-tests smoke 278/278, backend ruff clean with zero backend diff.
+Committed @2f9201e, pushed to integration/next. Noticeable — kills the SaaS chat-bubble look
+in CaddieSheet live mode, the one surface that broke the yardage-book feel.
+
 ## CYCLE 130 — 2026-07-15. Item: caddie-advice-stability-tee-shot (NOTICEABLE — advice consistency)
 Owner-feedback check FIRST: PR #141 (open bundle, integration/next @1b639be) has 0 comments;
 board Needs Review cards (#105/#115/#119) are stale older bundles, none tied to v1.1.8; no
