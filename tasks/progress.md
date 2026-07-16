@@ -17996,3 +17996,15 @@ Gates (local, no DB — CI's postgis job runs the DB-backed ingest tests):
 Pushed to origin/integration/next @89769b1 (ff from a737b92, no conflicts).
 NOT shipping/pinging — SILENT (ingest correctness only; visible payoff needs the Red-only data
 re-run, backlog `red9-relation-bunker-rerun`, still gated on owner standing auth).
+
+## AWAITING UPDATE — red9-relation-bunker-assembly @285dc72 — reviewer + qa — 2026-07-16
+Builder landed the fix @89769b1 (course_spatial.py: _ring_area helper + MultiPolygon elif branch
+picking largest member ring -> existing Tier1/2/3; +TestMultiPolygonBunkerAssignment 6 tests; RED->GREEN
+proven: 4/6 fail on old dispatch). Builder gates: ruff clean, pytest test_course_spatial+test_osm_parsing
+167/167. Pushed head 285dc72.
+AWAITING: reviewer (fresh) — assignment correctness (complex lands on hole 9 not a neighbour; largest-member
+rule sound; no way-bunker regression; no cross-hole spam; degenerate guard) + qa (gates all SUCCESS on
+pushed head; backend heavy — CI postgis runs DB ingest tests).
+  reviewer SHIP + qa PASS -> update PR #143 checklist (SILENT), fill backlog red9-relation-bunker-assembly
+  resolution=done-on-bundle, keep red9-relation-bunker-rerun ready. NOT shipping/pinging (SILENT).
+  BLOCKING findings -> re-dispatch builder, re-review. On resume reconcile from origin/integration/next @285dc72.
