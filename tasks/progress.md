@@ -17319,3 +17319,21 @@ no visual regression, deleted code truly dead) + qa (all gates SUCCESS on pushed
 suites) in parallel → designer BLOCKING on rendered screenshots across all 4 surfaces. SHIP+PASS+PASS →
 PR #141 checklist (NOTICEABLE) + backlog done-on-bundle. BLOCKING → re-dispatch builder. HOLD push if
 integration/next recut mid-cycle. Do NOT ship/ping.
+
+## Cycle 132 update — builder landed @23a9a62, invariants verified; reviewer+qa dispatched
+Builder implemented the plan across all 4 surfaces + folded the dead-code rider (deleted CaddiePanel/
+CaddieModal/CaddieNotesCard/useRealtimeCaddie — net -1758/+463). New shared frontend/src/components/
+yardage/Transcript.tsx (ConversationTurn + Transcript). Builder gates: tsc/lint/build clean, full
+vitest 2496, test:caddie-experience 239, voice 278/278, backend ruff clean + zero backend diff. Builder
+resolved one plan/test tension: quote glyph rendered as a SIBLING of a dedicated <span>{text}</span> so
+realtime/glitch textContent asserts stay green unedited.
+Eng-lead re-verified from the branch: BLOCKING diff-gate EMPTY — git diff c78c423..23a9a62 --
+realtime.ts realtime-ordering.ts useCaddieLiveSession.ts types.ts models.py => zero changes.
+
+## AWAITING
+reviewer (fresh adversarial: dedup/ordering/one-mic preserved on the live path, no visual regression,
+deleted code truly dead + no dangling imports) + qa (all gates SUCCESS on pushed head 23a9a62 + full
+caddie suites) running IN PARALLEL. On both green → designer BLOCKING on rendered screenshots across all
+4 surfaces (VoiceSheet / LooperSheet orb / CaddieSheet classic / CaddieSheet live). SHIP+PASS+PASS(des)
+→ PR #141 checklist (NOTICEABLE) + backlog done-on-bundle. BLOCKING → re-dispatch builder + re-review.
+HOLD push if integration/next recut. Do NOT ship/ping.
