@@ -3,6 +3,51 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-16 IN-PROGRESS — GPS/on-course readiness verification (isolated worktree, HOLD pushes)
+Owner directive (2026-07-16): verify every GPS-dependent behavior works before he plays
+Bethpage Red this weekend; test + make production-ready. Lane: audit + reusable sim harness
++ honest readiness report. HOLDING all pushes until both active lanes land (map field-test
+v119 not yet landed as of this note; multi-user slice 2 landed @d9b7bbe). Do NOT ship/ping.
+
+GPS-CONSUMER INVENTORY (audited, file:line) — 8 behaviors:
+1. You-dot + camera follow: GoogleSatelliteMap.tsx handlePositionUpdate 883-962 (>20yd re-frame).
+2. Yardage card tracks GPS (OWNER'S EXPLICIT EXAMPLE): RoundPageClient.tsx 1166-1210 —
+   dedicated GPSWatcher, posOnHole 5-800y gate, fcbLive → F/C/B tiles. CONFIRMED wired.
+3. Tee-shot overlay 40yd tee zone: tee-shot-overlays.ts teeShotOverlaysVisible 696-706.
+4. Auto-advance/hole-detect: logic EXISTS in GoogleSatelliteMap 948-958 (nearest green <250y)
+   but is DISABLED on the round page (autoDetectHole={false} — InlineHoleDiagram:306 + fullscreen
+   RoundPageClient:2658). Walking to the next tee does NOT advance the hole. FILE as product
+   decision (do not silently flip — risk of mis-jumps between adjacent greens on a tight course).
+5. Caddie GPS grounding: resolveHoleYardage 1260-1266 → CaddieSheet:261 sends
+   distance_to_green_yards only when basis==='gps' → backend caddie.py _format_yardage_line
+   620-655 ("player's real number — use it"). CONFIRMED end-to-end.
+6. Untethered live session grounding: useDetachedCaddieLive.ts / useCaddieLiveSession.ts:305.
+7. Wind/elev/plays-like: RoundPageClient 1274-1301 (hole-keyed) + plays-like recomputes on
+   whole-yard GPS move (usePhysicsPlaysLike, basis=Math.round). Correct.
+8. Tap-target from-tee line: GoogleSatelliteMap tap 782-824 hardcodes origin=tee/fromGps=false
+   even when GPS on-hole — helper tapTargetDistances SUPPORTS a GPS origin. Bounded GAP. FILE
+   (map hot file — do not fix here; the map lane owns GoogleSatelliteMap.tsx).
+
+HARNESS FEASIBILITY: iPhone 17 sim booted (UDID D4DB2397-...), Xcode 26.4; simctl location
+set/start(waypoint interpolation)/clear all work. Bethpage Red geometry (18 "Red N" golf=hole
+centerlines + 96 greens/215 tees/99 fairways/270 bunkers) is in backend/tests/fixtures/
+bethpage_overpass.json — reconstructable offline.
+BLOCKER (verified live): prod mapped-course GETs (/api/courses/mapped/*) now 401 anonymously —
+the recent multi-user require_member router gate broke the old public path the 2026-07-01 sim
+recipe relied on (Clerk unset → no token). Workaround baked into the plan: reconstruct a
+Bethpage Red mapped-course fixture OFFLINE from the overpass fixture + a diagnostic-only shim
+short-circuiting fetchMappedCourse (reverted, never committed). On-device run is BEST-EFFORT;
+pure-logic vitest gates (course-coordinates/fcb, tee-shot-overlays, google-map-helpers,
+caddie/hole-yardage) + code audit are the AUTHORITATIVE backing. Simulated GPS is always
+perfect-accuracy → real jitter/accuracy/tree-canopy loss are NOT-VERIFIABLE (only Saturday);
+only the `simctl location clear` loss→from-tee-fallback path is sim-checkable.
+
+## AWAITING — Fable Plan agent (ab132a3897e1a75a9) writing specs/oncourse-gps-readiness-plan.md
+On completion: checkpoint, dispatch builder for the harness (ops/harness/oncourse-sim/ +
+ONCOURSE_READINESS.md) NEW files only, then reviewer + qa, then poll map lane, re-verify #3
+(stray-marker race) after it lands, land everything on a rebased integration/next. Do NOT
+push until both lanes land.
+
 ## 2026-07-16 DONE — multiuser-p0-client-identity landed on integration/next (SILENT)
 Builder implemented specs/multi-user-epic-plan.md §3.5 (client identity, storage
 namespacing, offline-leak fix) per the multiuser-p0-client-identity backlog item.
