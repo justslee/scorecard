@@ -63,11 +63,32 @@
       "type": "major",
       "priority": 2,
       "risk": "medium",
-      "status": "ready",
+      "status": "done-on-bundle",
+      "done_note": "Landed on integration/next @d9b7bbe (SILENT bundle #143). Built pieces 1,3,4 of \u00a73.5 + namespacing: lib/identity(-core).ts + useMe()/IdentityBridge (golfer_profiles upsert wired), per-user localStorage namespacing across the 5 data keys + pref stores (persona, personalities, tts, live-mode, map-view, favorites) with idempotent legacy migration + scorecard_migrated_v1, offline foreign-cache-leak fix in storage-api.ts, clearCurrentUserStorage() in settings. Byte-identical for the owner (proven by tests). DEFERRED (backend-blocked, filed as followup multiuser-p0-self-savedplayer): self-SavedPlayer(clerkUserId=me) creation + round-new ownerIndex default \u2014 PlayerCreate/POST /api/players have no clerkUserId field, so a client create would mint duplicate 'Me' rows; needs a small server change (accept optional clerkUserId validated ==current_user_id). Reviewer/security-review: no HIGH/MED, nothing blocking; 1 LOW hardening (clear scorecard_last_user_id on signOut / gate pref reads on useMe().isLoaded to kill a transient same-device pref read on native) \u2014 NOT required for this dark slice, close before APP_ACCESS_MODE=open flip. qa PASS (6 gates + 25 isolation tests). Verdicts on head d9b7bbe.",
       "depends_on": [],
       "why": "specs/multi-user-epic-plan.md \u00a73.5 \u2014 the client foundation (the real multi-user work). (1) lib/identity.ts + useMe() (wraps useUser(); ensure the golfer_profiles row + a self SavedPlayer with clerkUserId=me exist on sign-in). (2) 'this is me' default: round setup defaults ownerIndex to the roster player whose clerkUserId===me (pill stays as a rare override; no visual change). (3) Per-user localStorage namespacing: key(name)=scorecard_${userId}_${name} across the 5 data keys (storage.ts:5-9) AND pref stores (caddie persona, favorites, tts, live-mode, map-view); one-time migrate legacy un-namespaced keys into the current user's namespace (device data is definitionally the owner's today) + scorecard_migrated_v1 flag; settings 'clear data' clears only the current namespace (today's localStorage.clear() nukes other users). (4) Offline-fallback identity leak: storage-api.ts picks API-vs-local via !!window.Clerk?.session (identity-blind) \u2014 persist scorecard_last_user_id, serve ONLY that user's namespace offline, never another user's cache. Byte-identical for the owner (single account). User-facing capability -> designer NORTHSTAR review; gates lint+tsc+build+voice-smoke + new storage unit tests (namespacing, user-switch sees empty, offline refuses foreign cache)."
     },
     {
+      "id": "multiuser-p0-self-savedplayer",
+      "title": "P0: self-SavedPlayer(clerkUserId=me) + round-new ownerIndex default (backend+client)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": ["multiuser-p0-client-identity"],
+      "why": "specs/multi-user-epic-plan.md §3.5 pieces (1b)+(2), deferred from multiuser-p0-client-identity because PlayerCreate/POST /api/players (backend/app/models.py:61-74) have no clerkUserId field to stamp, so a client-only self-player create would mint duplicate 'Me' rows per device/sign-in. Scope: (a) backend — accept optional clerkUserId in PlayerCreate, server-VALIDATE it == current_user_id (never trust the client value), unique-per-owner so it's idempotent; keep types.ts<->models.py in sync. (b) client — useMe() ensures exactly one self SavedPlayer with clerkUserId=me exists on sign-in (idempotent); round-new defaults ownerIndex to the roster player whose clerkUserId===me (pill stays a rare override, no visual change). Byte-identical for the owner. Isolation test: two accounts each get their own single self-player, never cross-linked."
+    },
+    {
+      "id": "multiuser-p0-signout-namespace-clear",
+      "title": "P0 hardening: clear scorecard_last_user_id + current namespace on Clerk signOut (pre-open-flip)",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "depends_on": ["multiuser-p0-client-identity"],
+      "why": "security-review LOW finding on multiuser-p0-client-identity (2026-07-16): nothing clears scorecard_last_user_id on sign-out, so on native (where window.Clerk.user.id often never hydrates) a same-device account switch can transiently resolve pref-store reads (persona/favorites/map-view) to the PRIOR user's namespace for one render before IdentityBridge's effect reconciles. No server data crosses tenants (API path is current_user_id-scoped) and it self-corrects, so NOT blocking for the dark slice — but MUST close before APP_ACCESS_MODE=open. Fix: on Clerk signOut clear scorecard_last_user_id (and optionally the current namespace), and/or gate pref-store reads on useMe().isLoaded. Test: signOut then a synchronous pref read returns the default/empty, never the prior user's value."
+    },
+   {
       "id": "multiuser-p0-keychain-token",
       "title": "P0: native JWT -> iOS Keychain (drop plaintext Capacitor Preferences token)",
       "type": "minor",

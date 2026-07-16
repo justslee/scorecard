@@ -17703,3 +17703,35 @@ AWAITING: reviewer (fresh adversarial identity-leak: user-switch, logged-out fal
 migration idempotency/ordering, no owner regression) which also runs /security-review (mandatory —
 identity/data-handling); qa (gates SUCCESS on pushed head + npm run test:caddie-experience). BLOCKING ->
 re-dispatch builder; all green -> open fresh SILENT bundle PR + progress/backlog (slice2 done). No ship/ping.
+
+## DONE — cycle multiuser-p0-client-identity (slice 2, SILENT) landed on integration/next @d9b7bbe
+Owner feedback FIRST: none pending (no cedar/sage voice verdict, no map-pin verdict on board/PR; #142 card
+Shipped, sole comment = release ship-it record). Nothing preempted.
+BUILT (specs/multi-user-epic-plan.md §3.5): lib/identity-core.ts (sync getCurrentUserId: window.Clerk.user.id
+-> scorecard_last_user_id -> null, framework-free), lib/identity.ts (useMe() + <IdentityBridge/> mounted before
+<AuthGate> in AuthProvider; golfer_profiles upsert via existing PUT /api/profile/golfer), lib/storage-keys.ts
+(storageKey(name)=scorecard_<uid>_<name>, anon fallback; idempotent migrateLegacyKeysIfNeeded no-op-until-uid-
+known + never-clobber + scorecard_migrated_v1; clearCurrentUserStorage). Namespaced the 5 data keys + persona/
+personalities/tts/live-mode/map-view/favorites; GolfAPI cache left device-global. storage-api.ts offline path
+documented+tested to only ever serve last-user namespace or empty. settings 'clear cache' -> clearCurrentUser
+Storage() (was localStorage.clear() which nuked all users). Migration ordering: storageKey() runs migration
+first so read-path and migration-path derive the namespace identically (the anti-data-loss guard).
+DEFERRED (flagged, not guessed): self-SavedPlayer(clerkUserId=me) + round-new ownerIndex default UNCHANGED —
+PlayerCreate has no clerkUserId field; a client create would mint duplicate 'Me' rows. Filed backlog
+multiuser-p0-self-savedplayer (backend+client). ownerIndex stays 0 => byte-identical.
+VERDICTS on head d9b7bbe:
+- reviewer + /security-review (MANDATORY, identity/data-handling): NO HIGH/MED, nothing blocking. 1 LOW/
+  informational hardening — scorecard_last_user_id not cleared on signOut => transient same-device prior-user
+  PREF read (persona/favorites/map-view) for one render on native before IdentityBridge reconciles; no server
+  data crosses tenants (API is current_user_id-scoped), self-corrects. NOT required for the dark slice; filed
+  multiuser-p0-signout-namespace-clear, MUST close before APP_ACCESS_MODE=open flip.
+- qa: PASS — lint/tsc/build clean, voice-smoke 278/278, full vitest 133 files/2561 tests, caddie-experience
+  17 files/241 tests; the 3 identity-isolation test files (25/25) independently verified to genuinely exercise
+  user-switch-sees-empty + offline-refuses-foreign-cache against the real storage.ts/storage-api.ts APIs.
+- designer: N/A — no visible surface changed (ownerIndex/pill unchanged, byte-identical).
+CLASSIFICATION: SILENT (dark-adjacent client plumbing; migration is a no-op transformation, byte-identical).
+Fresh bundle PR opened (integration/next -> main), bundle #143, SILENT-only so far -> NOT awaiting owner
+approval; accumulates until a NOTICEABLE change lands, then rides the next 'ship it'.
+NEXT: slice 3/4 both ready — multiuser-p0-migrations-revocation (backfill/tighten migration design + Clerk
+webhook receiver + revoked_users + azp/issuer boot guards) and multiuser-p0-keychain-token (native JWT ->
+iOS Keychain). Plus 2 new small followups: multiuser-p0-self-savedplayer, multiuser-p0-signout-namespace-clear.
