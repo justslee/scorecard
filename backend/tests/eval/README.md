@@ -55,7 +55,74 @@ golden/caddie_advice.jsonl — the golden set (one JSON object per line)
 test_golden_tier1.py       — parametrized pytest loader, runs every tier1 check
 test_harness_has_teeth.py  — mutant tests proving each check family can go RED
 run_tier2.py                — on-demand live runner (NOT collected by pytest)
+
+test_realtime_session_config.py — dim-4 voice-config pins (voice validity, speed 1.15)
+substance.py                — pure club/yardage/hazard extractor for the consistency probe
+test_substance_teeth.py     — extractor + variance-diff teeth (RED-proofs)
+golden/consistency_probes.jsonl — which golden scenarios the consistency probe re-samples
+run_consistency.py          — on-demand LIVE consistency probe (NOT collected by pytest)
+run_latency.py               — on-demand LIVE ephemeral-mint latency probe (NOT collected by pytest)
+test_gated_tools.py          — filename-glob pins + gate-refusal tests for both LIVE runners above
 ```
+
+## Multi-turn context-retention (dims 2/3, added by the caddie-experience harness)
+
+`Situation.history: list[HistoryTurn]` seeds prior conversation turns into the synthetic
+`RoundSession.conversation_history` (`checks.build_round_session`) so the REAL
+`_build_session_voice_prompt` (`routes/caddie.py`) renders them into `messages` exactly as a
+real multi-turn round would. The `history_renders_in_order` tier1 check
+(`checks.check_history_renders_in_order`) asserts every seeded turn appears in the assembled
+`messages` list, in order, with exact role+content, strictly before the current transcript
+(which must be last) — offline, no LLM call. **Text-mouth only**: the realtime mouth's
+conversation history lives server-side in the OpenAI Realtime session itself, not assertable
+from a pure prompt-string check — that surface is covered by the frontend ordering/lifecycle
+suites (`realtime-ordering.test.ts`, `CaddieSheet.realtime.test.tsx`) and, for a live read, the
+gated consistency probe below.
+
+## Consistency probe (dim 5) — pure extractor now, gated live sampler later
+
+`substance.py` extracts an `AnswerSubstance` (club / yardages / hazard types — phrasing
+stripped away) from a caddie answer, reusing the SAME club-mention regex family
+`checks._parse_mentioned_club` already uses (one extraction path, not two that could drift).
+`substance_variance` diffs N samples of the SAME scenario: clubs must be identical, hazard sets
+identical, yardage spread within tolerance; a sample simply omitting a number others state is
+*reported*, not failed (phrasing variance is expected — magnitude disagreement is the failure).
+
+`golden/consistency_probes.jsonl` names which existing golden scenario ids to re-sample, how
+many times (`n`), and the yardage tolerance. `run_consistency.py` is the gated live sampler —
+same three independent CI guards as `run_tier2.py` (filename doesn't match `test_*.py`,
+refuses without `ANTHROPIC_API_KEY` + `CADDIE_EVAL_LIVE=1`, no CI workflow step invokes it).
+Zero judge calls (pure post-processing on live answers), so cost is candidate-call cost only:
+
+```bash
+cd backend && CADDIE_EVAL_LIVE=1 uv run python -m tests.eval.run_consistency --budget-usd 0.50
+```
+
+Writes `last_consistency_run.json` (gitignored, key-free — answers + substance + counts + $
+only). Exit codes: `0` = every probe consistent, `1` = at least one probe inconsistent, `2` =
+gate refusal, `3` = budget-cap abort.
+
+## Latency (dim 7) — methodology + gated tool
+
+Turn latency (question-end → answer-start) is already measured in production by
+`caddie.eos_to_first_audio` (surfaces `caddie-turn`/`caddie-rt` telemetry events, immediate
+flush — `frontend/src/lib/voice/caddie-turn-timing.ts`); read backend telemetry log lines
+(`POST /api/voice/telemetry`) for p50/p95 per surface. Cold-vs-warm time-to-first-audio needs
+an on-box TestFlight run (5 cold + 5 warm opens) bracketed by the existing `live_resume` /
+`opening_shot` / `resolved_live` markers — see the root `CADDIE_EXPERIENCE.md` for the full
+methodology and the (currently empty, honest) baseline table.
+
+The ONE leg of cold-open latency this backend fully controls is the ephemeral-mint round-trip
+(`mint_ephemeral_session`, POST to OpenAI's Realtime `client_secrets` endpoint) —
+`run_latency.py` measures it directly, gated the same way as the other live tools:
+
+```bash
+cd backend && CADDIE_EVAL_LIVE=1 uv run python -m tests.eval.run_latency --n 5
+```
+
+Requires `OPENAI_API_KEY` + `CADDIE_EVAL_LIVE=1`. The response's ephemeral `client_secret` is
+redacted before any print or JSON write — this tool reports latency numbers, never a usable
+session credential. Writes `last_latency_run.json` (gitignored, key-free).
 
 ## Adding a scenario
 
