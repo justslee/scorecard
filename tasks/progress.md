@@ -17494,3 +17494,10 @@ Land on integration/next by ff (HOLD push if origin/integration/next recut by #1
 Builder DONE @27a1c81: 2-tier ink pin + paper-flag cutout, dropped title both tiers, 6 gates green locally.
 NEXT: reviewer(fable geometry) SHIP -> designer BLOCKING sim screenshots -> land on integration/next (ff, HOLD if recut).
 BLOCKING/issues -> re-dispatch builder. Native sim render verify still owed to designer. Do NOT ship/ping.
+
+## reviewer(fable) SHIP + qa PASS on 27a1c81 (map-marker lane)
+reviewer SHIP: anchor (0.5,0.95) verified 3 ways incl. pixel-decode of committed PNGs; tip lands on coordinate;
+title-removal safe (tap via markerId); no queue/budget/prime regression; tests lock geometry; pennant hex exact
+(#6b6558 quiet / #c1332c highlight). qa PASS: 6/6 gates (deterministic render, lint, tsc, vitest 27/27, build,
+voice 278/278). AWAITING designer BLOCKING visual verdict (in-sandbox composite of marker art vs Google craft +
+NORTHSTAR; native on-device placement/tap DEFERRED — no Xcode here, reviewer pixel-probe covers anchor).
