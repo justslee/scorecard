@@ -3,6 +3,49 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-16 BUILDER DONE — map-fieldtest-v119 (5/5 NOTICEABLE items, branch fix/map-fieldtest-v119 @ 085a704)
+All 5 plan items implemented against `specs/map-fieldtest-v119-plan.md`, one commit per item, pushed to
+`origin/fix/map-fieldtest-v119` (tracks `integration/next`, NOT merged there yet — eng-lead to land).
+- #1 upside-down bunker letters: `isFlat:false` on lettered bunker badges + tee dot (billboard, one
+  convention); extracted pure `buildBunkerMarkers()` seam (`frontend/src/lib/map/marker-options.ts`). (028363d)
+- #2 missing big bunkers Red-9: **live Overpass probe against Red-9's bbox CONFIRMED a real
+  `relation["golf"="bunker"]` multipolygon exists there** (id 19545022, outer+inner way members) — the
+  way-only ingest query silently missed it (structural cause). Also confirmed several 350-660m² way-bunkers
+  sit outside the 45y lateral / cap=4 windows (windows/cap cause). BOTH bind. Fix A: `osm.py` query +
+  `_parse_course_geometry_response` now ingest relations + `natural=sand`, `_parse_relation_to_multipolygon`
+  helper (outer-only, mirrors `_parse_boundary_geometry`); both geometry consumers accept MultiPolygon
+  (frontend `fairwayBunkerCarries` — union of member rings = ONE candidate; backend `hazards.py
+  _feature_point` — largest-member centroid via new `_ring_shoelace_area`). Fix B: `BUNKER_CAP` 4→6
+  (assets A-F already exist); fairway-adjacency lateral admit (NOT a blanket raise) via
+  `latLngInRing`/`fairwayRingsFromFeatures`. Updated 2 pre-existing tests that encoded the OLD cap=4 value
+  (plan-mandated change, not a weakened assertion) + added MultiPolygon/relation/fairway-admit test coverage
+  both sides. (085a704)
+- #3 stray other-hole tee markers (holes 8/11): root cause CONFIRMED — two-writer race on
+  `holeMarkerIdsRef` (GPS-tick's un-serialized clear/add raced the camera queue's own clear/add). Fixed by
+  routing BOTH through the queue via a discriminated `{hd, reason:'hole'|'gps', pos}` payload — single
+  writer. (1b02e16)
+- #4 draggable aim reticle: extracted shared `placeTarget(pos)` seam used by tap-click AND drag-end (no
+  math fork); `draggable:true` + drag-start/live/end listeners, guarded to `tapMarkerIdRef`; light haptic on
+  drag-start only. Honest fallback: kept existing `tap-target.png` art as-is — no new "grab affordance"
+  asset shipped (would need an image-gen pass); flagged for designer follow-up rather than fabricated.
+  (6a60f68)
+- #5 Red-11 "PAR 3 · 462Y": display-side `displayPar(par, yards)` guard (`frontend/src/lib/hole/par-sanity.ts`,
+  threshold 280 kept in lockstep with backend `PAR_SANITY_MIN_YARDS_FOR_PAR3`) wired into the round header —
+  suppresses the false "3" instead of asserting it. **PRIMARY fix (re-ingest Red on staging to write the
+  correct par=4) NOT done here — no DB access from this environment; flagged as an operational follow-up for
+  the release step, covered by the owner's standing Red re-ingest approval.** Caddie's own
+  `format_par_sanity_note` guard confirmed (by reading) already fires for Red-11 — no change needed there.
+  (a143a60)
+
+Gates (all green, evidence in-session): frontend `npm run lint` clean, `npx tsc --noEmit` clean, full
+`npx vitest run` 132 files / 2561 tests passed, `npx tsx voice-tests/runner.ts --smoke` 278/278 passed;
+backend `ruff check .` clean, full `pytest tests/` (no local Postgres, per policy) 2571 passed / 121 skipped
+(DB-marked, will run in CI) / 0 failed.
+NEXT: reviewer (adversarial + `/code-review` on #2/#4 per plan) + qa in parallel → designer (BLOCKING: #1
+upright-on-south-hole check, #4 affordance gap flagged above) → rebase onto latest `origin/integration/next`
+(re-check `GoogleSatelliteMap.tsx` head — shared hot file with the concurrent multiuser-p0-client-identity
+lane) → land into the bundle. Do NOT ship/ping — eng-lead owns the bundle PR.
+
 ## 2026-07-16 SHIPPED — Bundle #141 (v1.1.8, build 202607161143)
 Owner approval chain (verbatim, in-session, per the owner's explicit standing-process
 direction): (1) "Ship it" at head 2a424d7 (caddie-experience bundle); (2) the map-marker
