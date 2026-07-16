@@ -17896,3 +17896,9 @@ AWAITING: Plan agent on fable -> specs/oncourse-gps-target-origin-plan.md.
 On resume: reconcile from branch (git log), do NOT re-dispatch a finished child. Land = push to
 origin/integration/next (fetch+ff-merge first, never force), add to PR #143 checklist (NOTICEABLE),
 close backlog finding #8. NOT shipping/pinging this cycle (owner decisions pending in main session).
+
+## AWAITING UPDATE — builder dispatched on oncourse-gps-target-origin — 2026-07-16
+Plan committed @6142f41 (specs/oncourse-gps-target-origin-plan.md). Builder now in flight
+implementing it on this worktree branch (commits locally, does NOT push / open PR).
+On resume: check `git log` on this worktree branch for the builder's commit(s); if present,
+do NOT re-dispatch — go straight to reviewer+qa+designer. If absent, re-dispatch builder.
