@@ -88,7 +88,12 @@ const BUNKER_FLOOR_YARDS = 100;
 const BUNKER_CEILING_YARDS = 330;
 const GREENSIDE_MIN_YARDS = 45;
 const CORRIDOR_MAX_LATERAL_YARDS = 45;
-const BUNKER_CAP = 4;
+/** 4 -> 6 (v1.1.9 field-test fix, Item 2): bundled letter assets A-F already
+ *  exist and letter assignment already covers `i < 6` — raising the cap
+ *  stops silently dropping in-play bunkers on a heavily-bunkered hole
+ *  (Red-9). Left the corridor/floor/ceiling/greenside windows themselves
+ *  unchanged — this only raises how many PASSING candidates survive. */
+const BUNKER_CAP = 6;
 const TEE_ZONE_RADIUS_YARDS = 40;
 /** Mechanical honesty guard for plate placement (see
  *  `greenEndLateralOffsetMeters` / `distanceMarkersFromGreen`): ALL plates
@@ -555,6 +560,11 @@ export function fairwayBunkerCarries(args: {
     return { carryM: ux * hx + uy * hy, lateralM: ux * hy - uy * hx };
   };
 
+  // Mapped fairway rings (if any) — used ONLY for the Fix-B fairway-adjacency
+  // lateral admit below, reusing the exact same fairway ring extraction the
+  // plate-centering path already uses (fairwayRingsFromFeatures).
+  const fairways = fairwayRingsFromFeatures(features);
+
   interface Candidate {
     front: number;
     back: number;
@@ -569,16 +579,27 @@ export function fairwayBunkerCarries(args: {
     const geom = f.geometry;
     // Point-only (centroid) bunkers are SKIPPED entirely — a single centroid
     // cannot honestly answer "can I carry it" (honesty rule, §4).
-    if (!geom || geom.type !== 'Polygon') continue;
+    if (!geom || (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon')) continue;
 
-    const ring = (geom as GeoJSON.Polygon).coordinates[0];
-    if (!ring || ring.length === 0) continue;
-    const isClosed =
-      ring.length > 1 &&
-      ring[0][0] === ring[ring.length - 1][0] &&
-      ring[0][1] === ring[ring.length - 1][1];
-    const verts = isClosed ? ring.slice(0, -1) : ring;
-    if (verts.length < 3) continue; // not a real polygon shape
+    // Outer ring(s) for this bunker feature — a Polygon has exactly one; a
+    // MultiPolygon (a golf=bunker/natural=sand OSM RELATION — e.g. a waste
+    // complex, v1.1.9 Item 2) contributes one ring per member. Mirrors
+    // `fairwayRingsFromFeatures`'s MultiPolygon handling. The min/max carry
+    // below is computed over the UNION of every ring's vertices, so one
+    // waste complex yields exactly ONE candidate (one A/B chip with an
+    // honest front/back span across the whole complex) — never one chip per
+    // member.
+    const rings: GeoJSON.Position[][] = [];
+    if (geom.type === 'Polygon') {
+      const ring = (geom as GeoJSON.Polygon).coordinates[0];
+      if (ring) rings.push(ring);
+    } else {
+      const coords = (geom as GeoJSON.MultiPolygon).coordinates;
+      for (const member of coords ?? []) {
+        if (member && member[0]) rings.push(member[0]);
+      }
+    }
+    if (rings.length === 0) continue;
 
     let minCarryM = Infinity;
     let maxCarryM = -Infinity;
@@ -586,27 +607,39 @@ export function fairwayBunkerCarries(args: {
     let minCarryLateralYards = 0;
     let minGreenDistYards = Infinity;
     let minAbsLateralYards = Infinity;
+    let sawVertex = false;
 
-    for (const [lng, lat] of verts) {
-      const p: LatLng = { lat, lng };
-      const [hx, hy] = toXY(p);
-      const { carryM, lateralM } = classify(hx, hy);
+    for (const ring of rings) {
+      if (!ring || ring.length === 0) continue;
+      const isClosed =
+        ring.length > 1 &&
+        ring[0][0] === ring[ring.length - 1][0] &&
+        ring[0][1] === ring[ring.length - 1][1];
+      const verts = isClosed ? ring.slice(0, -1) : ring;
+      if (verts.length < 3) continue; // not a real polygon shape
 
-      if (carryM < minCarryM) {
-        minCarryM = carryM;
-        minCarryVertex = p;
-        minCarryLateralYards = lateralM / METRES_PER_YARD;
+      for (const [lng, lat] of verts) {
+        sawVertex = true;
+        const p: LatLng = { lat, lng };
+        const [hx, hy] = toXY(p);
+        const { carryM, lateralM } = classify(hx, hy);
+
+        if (carryM < minCarryM) {
+          minCarryM = carryM;
+          minCarryVertex = p;
+          minCarryLateralYards = lateralM / METRES_PER_YARD;
+        }
+        if (carryM > maxCarryM) maxCarryM = carryM;
+
+        const greenDistYards = metersBetween(p, green) / METRES_PER_YARD;
+        if (greenDistYards < minGreenDistYards) minGreenDistYards = greenDistYards;
+
+        const absLatYards = Math.abs(lateralM / METRES_PER_YARD);
+        if (absLatYards < minAbsLateralYards) minAbsLateralYards = absLatYards;
       }
-      if (carryM > maxCarryM) maxCarryM = carryM;
-
-      const greenDistYards = metersBetween(p, green) / METRES_PER_YARD;
-      if (greenDistYards < minGreenDistYards) minGreenDistYards = greenDistYards;
-
-      const absLatYards = Math.abs(lateralM / METRES_PER_YARD);
-      if (absLatYards < minAbsLateralYards) minAbsLateralYards = absLatYards;
     }
 
-    if (minCarryVertex === null) continue;
+    if (!sawVertex || minCarryVertex === null) continue;
 
     // Round FIRST, then clamp — matches backend `_round_to_5` then `max(0, …)`.
     const frontYards = Math.max(0, round5(minCarryM / METRES_PER_YARD));
@@ -622,7 +655,17 @@ export function fairwayBunkerCarries(args: {
     if (rawFrontYards < BUNKER_FLOOR_YARDS) continue;
     if (rawFrontYards > BUNKER_CEILING_YARDS) continue;
     if (minGreenDistYards < GREENSIDE_MIN_YARDS) continue; // greenside
-    if (minAbsLateralYards > CORRIDOR_MAX_LATERAL_YARDS) continue; // out of corridor
+    if (minAbsLateralYards > CORRIDOR_MAX_LATERAL_YARDS) {
+      // Fix B — fairway-adjacency admit: NOT a blanket lateral raise (would
+      // invite cross-hole spam on a straight centerline). A bunker whose own
+      // near edge (`minCarryVertex`, the same point becoming `nearEdge`
+      // below) sits INSIDE a mapped fairway ring is in play regardless of
+      // its distance from the reconstructed centerline — real on a dogleg,
+      // where a straight-chord lateral overstates how far off-line an
+      // edge-of-fairway bunker actually is.
+      const nearEdgeInFairway = fairways.some((ring) => latLngInRing(minCarryVertex!, ring));
+      if (!nearEdgeInFairway) continue; // genuinely out of corridor
+    }
 
     const side: 'L' | 'R' | 'C' =
       minCarryLateralYards > LATERAL_DEADBAND_YARDS
