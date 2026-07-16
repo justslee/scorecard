@@ -233,3 +233,56 @@ class TestAzpHardening:
         with pytest.raises(HTTPException) as exc:
             clerk_auth._verified_user_id("fake-token")
         assert exc.value.status_code == 401
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Revocation (P0 slice 3) — require_member consults app.services.revocation in
+# OPEN mode ONLY. Owner mode must short-circuit BEFORE the revocation check —
+# proven directly here, not just asserted in a docstring.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestRevocation:
+    @pytest.fixture(autouse=True)
+    def _clean_revocation(self):
+        from app.services import revocation
+        revocation._debug_clear()
+        yield
+        revocation._debug_clear()
+
+    async def test_open_mode_revoked_user_is_forbidden(self, monkeypatch):
+        from app.services import revocation
+        monkeypatch.setenv("APP_ACCESS_MODE", "open")
+        revocation.revoke("banned-sub", reason="user.banned", source="test")
+        with pytest.raises(HTTPException) as exc:
+            await clerk_auth.require_member(user_id="banned-sub")
+        assert exc.value.status_code == 403
+
+    async def test_open_mode_non_revoked_user_passes(self, monkeypatch):
+        monkeypatch.setenv("APP_ACCESS_MODE", "open")
+        result = await clerk_auth.require_member(user_id="clean-sub")
+        assert result == "clean-sub"
+
+    async def test_owner_mode_revoked_owner_id_still_passes_byte_identical(self, monkeypatch):
+        """Owner mode must NEVER consult the revocation store. Even if the
+        owner's OWN id were somehow marked revoked, owner mode still passes
+        them through unchanged — proves the short-circuit sits BEFORE the
+        revocation check (require_member's docstring), not just that
+        revocation happens to agree in the common case."""
+        from app.services import revocation
+        owner_sub = "the-owner-sub"
+        monkeypatch.delenv("APP_ACCESS_MODE", raising=False)  # unset -> "owner"
+        monkeypatch.setenv("OWNER_CLERK_USER_ID", owner_sub)
+        revocation.revoke(owner_sub, reason="test-poison", source="test")
+
+        result = await clerk_auth.require_member(user_id=owner_sub)
+        assert result == owner_sub
+
+    async def test_owner_mode_non_owner_403s_regardless_of_revocation_state(self, monkeypatch):
+        """A non-owner is rejected by the owner-only gate itself, not by
+        revocation — proven by NOT revoking them and still getting a 403."""
+        monkeypatch.delenv("APP_ACCESS_MODE", raising=False)
+        monkeypatch.setenv("OWNER_CLERK_USER_ID", "the-owner-sub")
+        with pytest.raises(HTTPException) as exc:
+            await clerk_auth.require_member(user_id="someone-else-sub")
+        assert exc.value.status_code == 403

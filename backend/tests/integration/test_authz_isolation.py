@@ -132,7 +132,12 @@ class TestRouterWiring:
     for co-location with the rest of this acceptance suite — it makes zero DB
     calls itself."""
 
-    _OPEN_PATHS = {"/health", "/", "/api/config-status"}
+    # /api/webhooks/clerk (P0 slice 3): deliberately NOT require_member —
+    # Clerk calls it server-to-server with no user session; Svix signature
+    # verification IS its auth (app/routes/webhooks.py), fail-closed if
+    # CLERK_WEBHOOK_SECRET is unset. See test_webhooks_clerk.py for its own
+    # dedicated signature/replay/fail-closed test suite.
+    _OPEN_PATHS = {"/health", "/", "/api/config-status", "/api/webhooks/clerk"}
     # The documented carve-outs (multiuser-p0-authz-flip-slice1.md §2): these
     # routes ALSO carry require_member (router-level, applied uniformly) but
     # additionally require require_owner — that's the actual guard once
