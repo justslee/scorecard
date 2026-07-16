@@ -17913,3 +17913,12 @@ build+voice+vitest in worktree), designer (BLOCKING: on-GPS label copy "Carry" v
   All SHIP/PASS + designer copy chosen -> land: push worktree branch -> integration/next (fetch+ff,
   never force), update PR #143 checklist (NOTICEABLE), close backlog finding #8.
   BLOCKING issue -> re-dispatch builder, re-review. NOT shipping/pinging (owner decisions pending, main session).
+
+## AWAITING UPDATE — reviewer only; qa+designer done — 2026-07-16
+qa: PASS (lint/tsc/build 19 routes/voice 278-278/vitest 766-766). designer: APPROVE-WITH-COPY
+"From you" (mirrors fcb-labels from-tee/from-you) — APPLIED @8685ed7 (lint+tsc clean).
+STILL AWAITING: reviewer (a0591a2b) — correctness/single-writer race verdict on 60765e4.
+  reviewer SHIP -> land: fetch origin/integration/next, ff-merge my branch commits, push to
+  integration/next (never force), update PR #143 checklist (NOTICEABLE), close backlog #8.
+  reviewer BLOCKING -> re-dispatch builder, re-review. Head to land: 8685ed7 (60765e4 code +
+  8685ed7 copy). NOT shipping/pinging (owner decisions pending, main session).
