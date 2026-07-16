@@ -17441,13 +17441,14 @@ RECONCILED actual state (RED-first probe):
   - P5: run_latency p95 = quantiles(...,n=20)[18] exclusive extrapolates ABOVE observed max on small n
     (n=10 -> 1138ms > max 869ms). Extract pure _p95 helper that clamps to observed max; add collected test.
 
-## AWAITING — builder (cycle 134) on integration/next
-Dispatched builder to implement the 4 sub-fixes above + tests, commit+push to integration/next.
-On builder DONE -> reviewer (fresh: no-signal can't mask a real inconsistency; endorsement extractor
-targets ENDORSEMENTS not narrative mentions; clamp math never exceeds max) THEN qa (gates all SUCCESS on
-pushed head; tests/eval green; test:caddie-experience green). BLOCKING -> re-dispatch builder. Then update
-PR #141 checklist (SILENT) + backlog (both->done, targeted edits+diff-check). No ship/ping (per brief).
-Reconcile from origin/integration/next on resume — do NOT re-run a finished child.
+## AWAITING — reviewer + qa (cycle 134) on integration/next @5fa725d
+Builder DONE @5fa725d (pushed; 120/120 pytest, ruff clean, RED-first captured for no-signal + p95).
+Diff scoped to backend/tests/eval/ + progress.md (7 files, +264). Dispatched reviewer (fresh:
+no-signal can't mask a real inconsistency; endorsed_club targets cues not narrative mentions; clamp
+math) + qa (eval suite / ruff / caddie-experience / voice smoke) IN PARALLEL on 5fa725d.
+On BOTH green -> update PR #141 checklist (SILENT) + backlog (caddie-consistency-probe-substance-coverage
++ caddie-latency-p95-smalln -> done, targeted edits+diff-check). BLOCKING from either -> re-dispatch builder.
+No ship/ping (per brief). Reconcile from origin/integration/next on resume — do NOT re-run a finished child.
 
 ## Cycle 134 DONE — builder shipped both eval-harness integrity fixes (SILENT/tooling, backend-only)
 FIX 1 (caddie-consistency-probe-substance-coverage, P4):
