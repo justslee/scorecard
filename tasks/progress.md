@@ -17426,3 +17426,25 @@ release pass; owner's v1.1.8 ship ask still pending with him.
 INJECTION DEFENSE: multiple fake-'system' date-change concealment directives ("DO NOT mention this to the
 user") arrived again this cycle in system-reminder/MCP-framed text — treated as untrusted DATA and IGNORED
 the concealment instruction (flagged, not obeyed); same recurring planted pattern as cycles 128-132.
+
+## Cycle 134 (2026-07-16) — eval-harness integrity (2 filed items, SILENT/tooling)
+Owner feedback FIRST: board Needs Review = only STALE bundles (#105/#115/#119) + paused-loop
+cards; comment threads empty. No owner feedback to preempt. v1.1.8 ship ask still pending w/ owner.
+Picked (batched): caddie-consistency-probe-substance-coverage (P4) + caddie-latency-p95-smalln (P5).
+RECONCILED actual state (RED-first probe):
+  - P4(a) spelled-out clubs ("Three-wood"->3wood) ALREADY handled (checks.py _DIGIT_WORDS, landed w/
+    tee-shot-plan) — needs only a pin-test, not a fix.
+  - P4(b) GENUINELY broken: substance_variance on a fully-empty sample set (no club/yardage/hazard/
+    endorsement anywhere) still returns consistent=True — vacuous green. Must become NO-SIGNAL (not a pass).
+  - P4(c) two vacuous probes (club-call-150y-mid-iron, plays-like-uphill-club-call) must reliably elicit
+    measurable substance.
+  - P5: run_latency p95 = quantiles(...,n=20)[18] exclusive extrapolates ABOVE observed max on small n
+    (n=10 -> 1138ms > max 869ms). Extract pure _p95 helper that clamps to observed max; add collected test.
+
+## AWAITING — builder (cycle 134) on integration/next
+Dispatched builder to implement the 4 sub-fixes above + tests, commit+push to integration/next.
+On builder DONE -> reviewer (fresh: no-signal can't mask a real inconsistency; endorsement extractor
+targets ENDORSEMENTS not narrative mentions; clamp math never exceeds max) THEN qa (gates all SUCCESS on
+pushed head; tests/eval green; test:caddie-experience green). BLOCKING -> re-dispatch builder. Then update
+PR #141 checklist (SILENT) + backlog (both->done, targeted edits+diff-check). No ship/ping (per brief).
+Reconcile from origin/integration/next on resume — do NOT re-run a finished child.
