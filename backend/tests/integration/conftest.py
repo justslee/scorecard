@@ -140,7 +140,7 @@ async def _db():
                     "TRUNCATE TABLE scores, games, round_players, player_groups,"
                     " rounds, course_reviews, players, golfer_profiles, tournaments,"
                     " tee_time_bookings, caddie_sessions, caddie_messages, shots,"
-                    " player_profiles,"
+                    " player_profiles, caddie_memories, scoring_courses,"
                     " hole_features, hole_yardages, holes, tee_sets, courses"
                     " RESTART IDENTITY CASCADE"
                 )
@@ -165,23 +165,40 @@ async def client(_db):
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
 
-def set_auth(user_id: str | None) -> None:
+def set_auth(user_id: str | None, gate: bool = False) -> None:
     """Inject or clear Clerk auth dependency overrides on the FastAPI app.
 
     Call set_auth(TEST_OWNER_ID) to authenticate as that user for the next
     request(s); call set_auth(None) to restore the no-override (unauthenticated)
     state so that subsequent "fails-closed" assertions are correct.
+
+    gate=False (default, used by the existing row-scoping/IDOR suite):
+    overrides current_user_id, require_owner, AND require_member all -> uid.
+    Identity is injected and the gate dependencies are bypassed entirely —
+    matches today's belt-and-suspenders behavior (row-scoping is the real
+    guard under test), so existing tests keep passing unchanged.
+
+    gate=True (flip-regression tests ONLY, see test_authz_isolation.py): only
+    current_user_id is overridden -> uid; require_member/require_owner are
+    left REAL so the actual gate logic (APP_ACCESS_MODE / OWNER_CLERK_USER_ID,
+    set via monkeypatch.setenv and read dynamically) is exercised end-to-end.
     """
     from app.main import app
-    from app.services.clerk_auth import current_user_id, require_owner
+    from app.services.clerk_auth import current_user_id, require_member, require_owner
 
     if user_id is None:
         app.dependency_overrides.pop(current_user_id, None)
         app.dependency_overrides.pop(require_owner, None)
+        app.dependency_overrides.pop(require_member, None)
     else:
         uid = user_id  # close over value, not name
         app.dependency_overrides[current_user_id] = lambda: uid
-        app.dependency_overrides[require_owner] = lambda: uid
+        if gate:
+            app.dependency_overrides.pop(require_owner, None)
+            app.dependency_overrides.pop(require_member, None)
+        else:
+            app.dependency_overrides[require_owner] = lambda: uid
+            app.dependency_overrides[require_member] = lambda: uid
 
 
 @pytest.fixture(autouse=True)

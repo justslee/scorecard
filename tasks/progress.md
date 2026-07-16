@@ -17562,3 +17562,11 @@ info-window by dropping marker title on both tiers (name via existing bottom tap
 finished like Google in our voice). DEFERRED to owner device: native placement across zoom + tap-only-card.
 LANDED: fast-forward push worktree branch -> integration/next (origin was cc9094d, unmoved; #141 not recut).
 PR #141 checklist updated. NO ship/ping (rides the next noticeable ship). Cosmetic nits logged, non-blocking.
+
+## LANDED — multiuser-p0-authz-flip slice 1 (require_member foundation) on integration/next
+- Cycle (lane agent-aa3a8b37), 2026-07-16. SILENT/dark: APP_ACCESS_MODE default `owner` = byte-identical to today; prod behavior unchanged until the owner flips it.
+- Flip: require_member replaces require_owner at the main.py chokepoint (17 routers). Carve-outs stay require_owner: courses_mapped POST/PUT/DELETE (global geometry — BLOCKING find), tee_times request_availability_call, caller-voice GET/PUT + rehearsal. Hardenings: azp/issuer fail-closed + open-mode boot guards; conftest require_member override; CI scoping-lint (routes/+services/+caddie/).
+- Acceptance: test_authz_isolation.py (23 tests) — per-router A/B isolation in open mode, 404-not-403 enumeration property, flip-regression (owner-mode 403s non-owner / open-mode both pass), carve-out negatives. reviewer SHIP (adversarial /security-review + /code-review, verified on real Postgres; 1 BLOCKING B1 + S1 found & fixed) · qa PASS · builder 6919c61.
+- Filed multiuser epic backlog: multiuser-epic tracker + 4 P0 slices (this one lands; migrations-revocation, client-identity, keychain-token ready) + P1/P2 (blocked-on-P0). Spec: specs/multi-user-epic-plan.md.
+- DEFERRED must-close-before-APP_ACCESS_MODE=open: hole_pins per-user (needs migration), availability job stamp-and-match, caddie_personas author-scoping, user_session centralization. Safe while flag OFF.
+- NEXT (slice 2): multiuser-p0-client-identity — lib/identity.ts + useMe(), per-user localStorage namespacing (+legacy migration), offline-fallback identity-leak fix. Byte-identical for owner; designer NORTHSTAR review.

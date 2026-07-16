@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from app.services.clerk_auth import require_owner
+from app.services.clerk_auth import _assert_boot_config, require_member
 from app.services.secrets import load_secrets_into_env
 
 import logging
@@ -57,34 +57,42 @@ from app.routes import course_reviews  # noqa: E402
 from app.routes import scorecard  # noqa: E402
 from app.routes import tee_times  # noqa: E402
 
-# Every data router is owner-only: require the configured owner's verified Clerk
-# identity. /health and / (defined below) stay open for load-balancer checks.
-_owner_only = [Depends(require_owner)]
+# Every data router requires a verified Clerk member identity. In the default
+# APP_ACCESS_MODE=owner (unset in prod today) require_member is byte-identical
+# to the old require_owner gate — only the configured owner passes. Flipping
+# APP_ACCESS_MODE=open (a later, deliberate rollout step) admits any verified
+# member; per-row scoping isolates their data (see clerk_auth.require_member's
+# docstring for the deferred gaps that must close first). A few routes mutate
+# GLOBAL state or place real outbound calls and stay require_owner even after
+# the flip — see the explicit Depends(require_owner) carve-outs in
+# courses_mapped.py's write handlers and tee_times.py's request_availability_
+# call. /health and / (defined below) stay open for load-balancer checks.
+_member = [Depends(require_member)]
 
-app.include_router(players.router, dependencies=_owner_only)
-app.include_router(rounds.router, dependencies=_owner_only)
-app.include_router(tournaments.router, dependencies=_owner_only)
-app.include_router(profile.router, dependencies=_owner_only)
+app.include_router(players.router, dependencies=_member)
+app.include_router(rounds.router, dependencies=_member)
+app.include_router(tournaments.router, dependencies=_member)
+app.include_router(profile.router, dependencies=_member)
 # Specific /api/courses/* routers MUST be registered before the catch-all
 # courses.router (GET /api/courses/{course_id}); Starlette is first-match-wins,
 # so otherwise /{course_id} shadows /search, /nearby, /mapped/*.
-app.include_router(course_search.router, dependencies=_owner_only)
-app.include_router(courses_mapped.router, dependencies=_owner_only)
+app.include_router(course_search.router, dependencies=_member)
+app.include_router(courses_mapped.router, dependencies=_member)
 # Two-segment /api/courses/{course_key}/reviews sub-resource — MUST precede catch-all.
-app.include_router(course_reviews.router, dependencies=_owner_only)
-app.include_router(course_reviews.reviews_router, dependencies=_owner_only)  # B3 — /api/reviews/mine
-app.include_router(courses.router, dependencies=_owner_only)
-app.include_router(voice.router, dependencies=_owner_only)
+app.include_router(course_reviews.router, dependencies=_member)
+app.include_router(course_reviews.reviews_router, dependencies=_member)  # B3 — /api/reviews/mine
+app.include_router(courses.router, dependencies=_member)
+app.include_router(voice.router, dependencies=_member)
 # Migrated from Next.js + new caddie system
-app.include_router(golf.router, dependencies=_owner_only)
-app.include_router(voice_advanced.router, dependencies=_owner_only)
-app.include_router(caddie.router, dependencies=_owner_only)
-app.include_router(memory.router, dependencies=_owner_only)
-app.include_router(realtime.router, dependencies=_owner_only)
-app.include_router(shots.router, dependencies=_owner_only)
-app.include_router(pins.router, dependencies=_owner_only)
-app.include_router(scorecard.router, dependencies=_owner_only)
-app.include_router(tee_times.router, dependencies=_owner_only)
+app.include_router(golf.router, dependencies=_member)
+app.include_router(voice_advanced.router, dependencies=_member)
+app.include_router(caddie.router, dependencies=_member)
+app.include_router(memory.router, dependencies=_member)
+app.include_router(realtime.router, dependencies=_member)
+app.include_router(shots.router, dependencies=_member)
+app.include_router(pins.router, dependencies=_member)
+app.include_router(scorecard.router, dependencies=_member)
+app.include_router(tee_times.router, dependencies=_member)
 
 from app.routes import voice_booking_ws  # noqa: E402
 # DELIBERATELY NOT _owner_only: Twilio's media stream cannot carry owner auth.
@@ -102,6 +110,11 @@ async def startup():
     """
     import asyncio
     from app.caddie.session import sessions
+
+    # Refuse to boot in an unsafe auth configuration (APP_ACCESS_MODE=open
+    # without JWKS/issuer/authorized-parties pinned). Deliberately NOT called
+    # at import time — see _assert_boot_config's docstring.
+    _assert_boot_config()
 
     # Periodic cleanup of expired round sessions (every 30 min)
     async def cleanup_loop():

@@ -96,6 +96,8 @@ jobs:
         run: uv sync
       - name: Lint (ruff)
         run: uv run ruff check .   # ruff is pinned in pyproject dev group
+      - name: Scoping lint (unscoped tenant queries)
+        run: uv run python ci_scripts/scoping_lint.py
       - name: Unit + route/integration tests (pytest)
         run: uv run pytest         # pure-logic + tests/integration/ (Postgres service above)
 
