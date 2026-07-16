@@ -38,8 +38,9 @@
       "type": "minor",
       "priority": 2,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle",
       "why": "CADDIE-EXPERIENCE dim 8. Integration audit (2026-07-15) found CaddieModal.tsx is imported nowhere; it is the only importer of CaddiePanel.tsx (1327 lines), the only importer of CaddieNotesCard.tsx -- all three are DEAD. CaddiePanel uses a DIFFERENT transport (useRealtimeCaddie), a different persona picker (local PERSONALITIES), and zinc/emerald dark-SaaS styling (bg-zinc-800/50, text-emerald-400) that directly violates the yardage-book NORTHSTAR aesthetic -- a 1300-line divergent implementation any engineer (or agent) will mistake for the live round-page caddie. ACTION: delete all three AFTER confirming CaddieNotesCard's 'Caddie's notes on you' memory UI is intentionally gone (it is currently unreachable, so that feature silently no longer surfaces) or rehome it. Trivial deletion; the only judgment is the memory-notes intent.",
+      "resolution": "DONE on bundle #141 2026-07-16 (cycle 132, SILENT rider folded into caddie-transcript-render-unify, commit 2f9201e). Builder re-ran the grep confirming CaddieModal/CaddiePanel/CaddieNotesCard/useRealtimeCaddie had zero live imports (all other repo hits were comments) and accepted the judgment that CaddieNotesCard's unreachable 'Caddie's notes on you' memory UI is intentionally gone; deleted all four files (net -1758/+463 for the whole change, ~1561 of that the dead-code sweep). tsc --noEmit clean proves no dangling imports; reviewer confirmed the deletion safe. Removes the 5th (dead) divergent SaaS caddie renderer.",
       "depends_on": []
     },
     {
@@ -80,8 +81,42 @@
       "type": "minor",
       "priority": 3,
       "risk": "low",
-      "status": "ready",
+      "status": "done-on-bundle",
       "why": "CADDIE-EXPERIENCE dims 3/8 + NORTHSTAR. The same 'user turn / caddie turn' list renders three ways: map orb (VoiceSheet, Voice.tsx:122) centered stacked You-label + serif + medallion; round 'Ask caddie' live mode (CaddieSheet.tsx:1815-1826) left/right CHAT BUBBLES; orb sheet (LooperSheet.tsx:280) left-aligned stacked You/Looper labels. The chat-bubble style is the most SaaS-y of the three and cuts against the yardage-book feel (a code comment at CaddieSheet.tsx:1759 even notes it was restyled from a bubble list). The caddie conversation looks like a different app on each surface. ACTION: consolidate on ONE shared turn component in the calm yardage-book idiom. Bounded but real work; designer must sign off.",
+      "resolution": "DONE on bundle #141 2026-07-16 (cycle 132, integration/next, NOTICEABLE). Recon found FOUR live renderers (audit undercounted by one): VoiceSheet Turn (yardage/Voice.tsx, round map orb, medallion+waveform), LooperSheetShell (omnipresent orb, flat serif stack — the cleanest idiom), CaddieSheet VoiceBody (classic in-round, carded), CaddieSheet LiveVoiceBody (round Realtime, SaaS chat bubbles — the violator). FIX: new shared frontend/src/components/yardage/Transcript.tsx exporting ConversationTurn (slots: leading medallion, captionTrailing waveform; size book|display) + thin Transcript list container, normalized turn {key,speaker,text,streaming?,muted?}. Base = LooperSheet flat mono-caption+serif-body idiom (+ VoiceSheet user-turn weight); chat bubbles + classic cards + SAID chip + accent-colored caption all deleted; medallion kept VoiceSheet-only via slot; captionPersonaName everywhere (live mode GAINED per-turn captions). HARD INVARIANT preserved: the primitive renders EXACTLY the given array, in order, keyed by the caller's key — no sort/dedup/filter/re-key; LiveVoiceBody adapter 1:1 key=m.id, so the caddie-realtime-double-emit dedup/ordering fix is untouched (git diff proved realtime.ts/realtime-ordering.ts/useCaddieLiveSession.ts/types.ts/models.py byte-identical). VoiceBody slice(0,-2)+separate current-turn AnimatePresence card kept verbatim (all keys). Streaming reconciliation: designer overrode Fable's muted:partial->0.7 with streaming:partial (opacity 1 + caption pulse). Plan(Fable): specs/caddie-transcript-render-unify-plan.md; designer LED the concept. New Transcript.test.tsx (order-as-given, caller-key identity, no-dedup, streaming/muted, slots; registered in caddie-experience-suite dims[3,8]). Commit 2f9201e. Reviewer SHIP (invariant holds, no test weakened, /code-review []=clean, security N/A). QA PASS (lint/tsc/build clean, vitest 2496/2496, test:caddie-experience 239/239, voice 278/278, 9 locked caddie suites byte-identical, backend ruff clean+zero diff, invariant diff-gate empty). Designer PASS (ships) — rendered all 4 surfaces at 390x844: bubbles/cards/SAID/accent-caption gone, medallion VoiceSheet-only, captions persona-consistent (STRATEGIST everywhere), reads as ONE product. Folded a SILENT dead-code rider (see caddie-dead-code-removal) + a SILENT backend-guard fix (see caddie-voice-prompt-guard-decision-rule). Filed 2 non-blocking follow-ups: caddie-classic-current-turn-quote-glyph (D4 deferral), caddie-setup-realtime-bubbles-unify (out-of-scope 5th renderer). Rides #141; no ship/ping this cycle.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-classic-current-turn-quote-glyph",
+      "title": "CaddieSheet classic current-turn user question stays mono/small, not the shared serif-italic idiom",
+      "type": "minor",
+      "priority": 4,
+      "risk": "low",
+      "status": "ready",
+      "why": "Designer non-blocking follow-up from cycle 132 (caddie-transcript-render-unify). The unify plan §3.3 (D4) deliberately deferred the classic VoiceBody current-turn quoted transcript line (CaddieSheet.tsx ~:2094-2107) — it still renders the user's question in the old mono/small treatment while the HISTORY turns above it (and every other surface) now use the shared serif-italic-with-quote-glyph ConversationTurn idiom. Within that one surface the 'one idiom' isn't 100% true. ACTION: route the current-turn user question through the shared user-turn treatment (or make a deliberate call that the live-dictation line stays mono). Trivial, pure frontend. Not blocking — the rest of the surface already reads coherent.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-setup-realtime-bubbles-unify",
+      "title": "VoiceRoundSetupRealtime (round/new setup) still renders the old SaaS chat bubbles",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "why": "Designer + Fable-plan follow-up from cycle 132 (caddie-transcript-render-unify). VoiceRoundSetupRealtime.tsx (the first-tee round-setup voice screen, live at /round/new) is the 5th conversation renderer — it still has the old left/right alignSelf chat-bubble markup (the very list LiveVoiceBody was originally restyled FROM). Explicitly out of scope for cycle 132 (plan §1) so the high-traffic in-round surfaces landed first, but a golfer still hits the SaaS-bubble idiom on that one setup screen. ACTION: migrate it onto the shared frontend/src/components/yardage/Transcript.tsx ConversationTurn primitive (now that it exists) so setup matches the unified idiom. Bounded; designer sign-off.",
+      "depends_on": [
+        "caddie-transcript-render-unify"
+      ]
+    },
+    {
+      "id": "caddie-voice-prompt-guard-decision-rule",
+      "title": "Stale voice-prompt guard suites broke bundle #141 backend CI after DECISION_GROUNDING_RULE landed",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "done-on-bundle",
+      "why": "Discovered by cycle-132 QA: PR #141's Backend CI gate was RED with 4 real pytest failures (NOT the container-init flake), pre-existing on integration/next and unrelated to the frontend transcript work (zero backend diff from it). Root cause: the advice-stability item (caddie-advice-stability-tee-shot, e3026b5, earlier in the SAME bundle) intentionally appended DECISION_GROUNDING_RULE to close the stable voice-prompt block (routes/caddie.py:846,:1525; voice_prompts.py:216 — reviewer-approved, shipped) but two guard suites predated it and were never updated by that item's QA, so they asserted the block ended with MISS_SIDE_GROUNDING_RULE / that the modulo-order template set matched an older rule list. A stale-test regression, latent until this cycle ran the full backend gate.",
+      "resolution": "FIXED 2026-07-16 (cycle 132, SILENT bundle-health rider, test-only, commit 03a427f). test_caddie_caching.py: added {decision_rule}=DECISION_GROUNDING_RULE to _OLD_SESSION_TEMPLATE + _OLD_STATELESS_TEMPLATE and both modulo-order .format() calls (import added). test_voice_stream.py: the two 'stable-block closer' asserts now check the block ENDS with DECISION_GROUNDING_RULE (still asserting MISS_SIDE_GROUNDING_RULE present). NOT a weakening — mirrors an intentional, reviewer-approved product change the advice-stability QA missed running these two files. Verified locally: the 4 formerly-failing tests pass, both files green (31/31), ruff clean; diff scoped to exactly the 2 test files (no product code). CI Backend gate went SUCCESS on the pushed head, unblocking the bundle (and the owner's pending v1.1.8 ship). Lesson: an item that changes _build_voice_prompt content MUST run test_caddie_caching.py + test_voice_stream.py, not only tests/eval + pin tests.",
       "depends_on": []
     },
     {
