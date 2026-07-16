@@ -1,19 +1,25 @@
 'use client';
 
 import { Round, Course, Tournament, TeeOption, HoleInfo, GolferProfile, SavedPlayer } from './types';
+import { storageKey } from './storage-keys';
 
-const ROUNDS_KEY = 'scorecard_rounds';
-const COURSES_KEY = 'scorecard_courses';
-const TOURNAMENTS_KEY = 'scorecard_tournaments';
-const PROFILE_KEY = 'scorecard_profile';
-const PLAYERS_KEY = 'scorecard_players';
+// Per-user namespaced (specs/multi-user-epic-plan.md §3.5,
+// multiuser-p0-client-identity) — each call derives `scorecard_<uid>_<name>`
+// for the CURRENT user (storageKey() also runs the one-time legacy migration
+// on first call). Computed per-call, not cached, so a user switch on one
+// device immediately reads/writes the new user's namespace.
+const ROUNDS_KEY = () => storageKey('rounds');
+const COURSES_KEY = () => storageKey('courses');
+const TOURNAMENTS_KEY = () => storageKey('tournaments');
+const PROFILE_KEY = () => storageKey('profile');
+const PLAYERS_KEY = () => storageKey('players');
 
 // -----------------
 // Rounds
 // -----------------
 export function getRounds(): Round[] {
   if (typeof window === 'undefined') return [];
-  const data = localStorage.getItem(ROUNDS_KEY);
+  const data = localStorage.getItem(ROUNDS_KEY());
   const parsed: Round[] = data ? JSON.parse(data) : [];
 
   // Migration/defaults: older rounds won't have games.
@@ -40,12 +46,12 @@ export function saveRound(round: Round): void {
     rounds.unshift(round);
   }
 
-  localStorage.setItem(ROUNDS_KEY, JSON.stringify(rounds));
+  localStorage.setItem(ROUNDS_KEY(), JSON.stringify(rounds));
 }
 
 export function deleteRound(id: string): void {
   const rounds = getRounds().filter(r => r.id !== id);
-  localStorage.setItem(ROUNDS_KEY, JSON.stringify(rounds));
+  localStorage.setItem(ROUNDS_KEY(), JSON.stringify(rounds));
 
   // Also unlink from tournaments (best-effort)
   const tournaments = getTournaments();
@@ -58,7 +64,7 @@ export function deleteRound(id: string): void {
     }
   });
   if (changed) {
-    localStorage.setItem(TOURNAMENTS_KEY, JSON.stringify(tournaments));
+    localStorage.setItem(TOURNAMENTS_KEY(), JSON.stringify(tournaments));
   }
 }
 
@@ -67,7 +73,7 @@ export function deleteRound(id: string): void {
 // -----------------
 export function getCourses(): Course[] {
   if (typeof window === 'undefined') return [];
-  const data = localStorage.getItem(COURSES_KEY);
+  const data = localStorage.getItem(COURSES_KEY());
   if (!data) {
     // Return some sample courses
     return getDefaultCourses();
@@ -85,7 +91,7 @@ export function saveCourse(course: Course): void {
     courses.push(course);
   }
 
-  localStorage.setItem(COURSES_KEY, JSON.stringify(courses));
+  localStorage.setItem(COURSES_KEY(), JSON.stringify(courses));
 }
 
 function withTeeOptions(course: Omit<Course, 'tees'> & { holes: HoleInfo[] }): Course {
@@ -169,7 +175,7 @@ function getDefaultCourses(): Course[] {
 // -----------------
 export function getTournaments(): Tournament[] {
   if (typeof window === 'undefined') return [];
-  const data = localStorage.getItem(TOURNAMENTS_KEY);
+  const data = localStorage.getItem(TOURNAMENTS_KEY());
   return data ? JSON.parse(data) : [];
 }
 
@@ -188,12 +194,12 @@ export function saveTournament(tournament: Tournament): void {
     tournaments.unshift(tournament);
   }
 
-  localStorage.setItem(TOURNAMENTS_KEY, JSON.stringify(tournaments));
+  localStorage.setItem(TOURNAMENTS_KEY(), JSON.stringify(tournaments));
 }
 
 export function deleteTournament(id: string): void {
   const tournaments = getTournaments().filter(t => t.id !== id);
-  localStorage.setItem(TOURNAMENTS_KEY, JSON.stringify(tournaments));
+  localStorage.setItem(TOURNAMENTS_KEY(), JSON.stringify(tournaments));
 }
 
 export function addRoundToTournament(tournamentId: string, roundId: string): void {
@@ -229,13 +235,13 @@ export function addPlayerToTournament(tournamentId: string, player: { id: string
 // -----------------
 export function getGolferProfile(): GolferProfile | null {
   if (typeof window === 'undefined') return null;
-  const data = localStorage.getItem(PROFILE_KEY);
+  const data = localStorage.getItem(PROFILE_KEY());
   return data ? (JSON.parse(data) as GolferProfile) : null;
 }
 
 export function saveGolferProfile(profile: GolferProfile): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  localStorage.setItem(PROFILE_KEY(), JSON.stringify(profile));
 }
 
 // -----------------
@@ -243,7 +249,7 @@ export function saveGolferProfile(profile: GolferProfile): void {
 // -----------------
 export function getSavedPlayers(): SavedPlayer[] {
   if (typeof window === 'undefined') return [];
-  const data = localStorage.getItem(PLAYERS_KEY);
+  const data = localStorage.getItem(PLAYERS_KEY());
   return data ? JSON.parse(data) : [];
 }
 
@@ -268,10 +274,10 @@ export function saveSavedPlayer(player: SavedPlayer): void {
     players.unshift(player);
   }
 
-  localStorage.setItem(PLAYERS_KEY, JSON.stringify(players));
+  localStorage.setItem(PLAYERS_KEY(), JSON.stringify(players));
 }
 
 export function deleteSavedPlayer(id: string): void {
   const players = getSavedPlayers().filter(p => p.id !== id);
-  localStorage.setItem(PLAYERS_KEY, JSON.stringify(players));
+  localStorage.setItem(PLAYERS_KEY(), JSON.stringify(players));
 }

@@ -1,19 +1,27 @@
 /**
- * Course favorites — localStorage-based persistence for single-user builds.
+ * Course favorites — localStorage-based persistence, per-user namespaced
+ * (specs/multi-user-epic-plan.md §3.5). The shape is intentionally portable
+ * so a backend swap (PUT /api/favorites) only touches this file.
  *
- * Multi-user is sequenced later; localStorage is the correct scope now.
- * The shape is intentionally portable so a backend swap (PUT /api/favorites)
- * only touches this file.
- *
- * Key: "looper_course_favorites"
+ * Key: `storageKey("course_favorites")` = `scorecard_<uid>_course_favorites`
+ * (legacy bare key was "looper_course_favorites" — one-time migrated, see
+ * lib/storage-keys.ts).
  * Value: JSON-encoded FavoriteCourse[]
  *
  * Design note: The read/write layer accepts an optional `storage` parameter so
  * pure-logic unit tests can inject an in-memory store without needing a browser
- * environment — no jsdom or localStorage mock required.
+ * environment — no jsdom or localStorage mock required. The key is
+ * still derived per-call (not cached) so a user switch on one device reads
+ * the new namespace immediately; for injected (non-window) stores in tests
+ * this always resolves to the same "anon" namespace, which is fine — the
+ * store is isolated per test regardless of the literal key string.
  */
 
-const KEY = "looper_course_favorites";
+import { storageKey } from "./storage-keys";
+
+function favoritesKey(): string {
+  return storageKey("course_favorites");
+}
 
 export interface FavoriteCourse {
   /** The course's canonical id (UUID for mapped/OSM; prefixed string for GolfAPI). */
@@ -62,7 +70,7 @@ function defaultStore(): KVStore {
 /** Read the raw favorites array from storage. Returns [] on any parse error. */
 export function readFavorites(store: KVStore = defaultStore()): FavoriteCourse[] {
   try {
-    const raw = store.getItem(KEY);
+    const raw = store.getItem(favoritesKey());
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as FavoriteCourse[]) : [];
@@ -74,7 +82,7 @@ export function readFavorites(store: KVStore = defaultStore()): FavoriteCourse[]
 /** Write favorites array to storage. */
 function writeFavorites(favorites: FavoriteCourse[], store: KVStore): void {
   try {
-    store.setItem(KEY, JSON.stringify(favorites));
+    store.setItem(favoritesKey(), JSON.stringify(favorites));
   } catch {
     // Storage full or blocked — silently ignore.
   }
@@ -150,7 +158,7 @@ export function toggleFavorite(
  */
 export function clearFavorites(store: KVStore = defaultStore()): void {
   try {
-    store.removeItem(KEY);
+    store.removeItem(favoritesKey());
   } catch {
     // ignore
   }

@@ -10,6 +10,21 @@
  *
  * Profile (GolferProfile): backed by GET/PUT /api/profile/golfer.
  * localStorage is used as an explicit offline cache (write-through on save).
+ *
+ * Identity of the offline/local path (multiuser-p0-client-identity,
+ * specs/multi-user-epic-plan.md §3.5): every `localCache.*` call below goes
+ * through storage.ts, whose 5 data keys are namespaced via
+ * `storageKey(name) = scorecard_${getCurrentUserId() ?? "anon"}_${name}`
+ * (lib/storage-keys.ts / lib/identity.ts). `getCurrentUserId()` resolves to
+ * (1) the live `window.Clerk.user.id` when hydrated, else (2) the persisted
+ * `scorecard_last_user_id` (written on every sign-in by `useMe()`), else (3)
+ * a stable "anon" namespace. So a signed-out/offline read here can ONLY ever
+ * serve: the last user who was actually signed in on this device, or the
+ * anon namespace if nobody ever was — never a DIFFERENT foreign user's
+ * cache, because there is no code path that derives a namespace from
+ * anything other than that same two-step resolution. When neither applies
+ * (fresh device, never signed in) the anon namespace is simply empty —
+ * that's the "serve empty, never another user's cache" contract.
  */
 
 import * as api from './api';

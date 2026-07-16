@@ -33,7 +33,10 @@ describe("live-mode-pref (default ON)", () => {
   });
 
   it("garbage values read as ON (never lock the owner out of live mode)", () => {
-    store.set("looper.caddieLiveMode", "banana");
+    // Namespaced key (multiuser-p0-client-identity): no signed-in user in
+    // this test env → "anon" namespace, same as the legacy bare key before
+    // namespacing.
+    store.set("scorecard_anon_caddie_live_mode", "banana");
     expect(getCaddieLiveMode()).toBe(true);
   });
 });

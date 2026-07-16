@@ -633,9 +633,14 @@ describe("CaddieOrbSheet — persona threading", () => {
   // Owner crux: ONE coherent caddie presence (voice + name + greeting) across
   // every surface — the orb must never silently discard the golfer's chosen
   // persona (specs/caddie-orb-persona-consistency-plan.md §1.7).
+  //
+  // "scorecard_anon_caddie_persona" is the namespaced localStorage key
+  // (multiuser-p0-client-identity, specs/multi-user-epic-plan.md §3.5) —
+  // no signed-in user in this test env (window.Clerk unset, no persisted
+  // scorecard_last_user_id) resolves to the "anon" namespace.
 
   it("selected persona reaches the streaming converse call", async () => {
-    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    window.localStorage.setItem("scorecard_anon_caddie_persona", "hype");
     talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
       opts.onToken("Let's go.");
       return "Let's go.";
@@ -651,7 +656,7 @@ describe("CaddieOrbSheet — persona threading", () => {
   });
 
   it("selected persona reaches the JSON fallback", async () => {
-    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    window.localStorage.setItem("scorecard_anon_caddie_persona", "hype");
     talkToCaddieStreamMock.mockImplementationOnce(async () => {
       throw new MockBeforeFirstByteError();
     });
@@ -667,7 +672,7 @@ describe("CaddieOrbSheet — persona threading", () => {
   });
 
   it("TTS speaks in the selected persona's voice", async () => {
-    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    window.localStorage.setItem("scorecard_anon_caddie_persona", "hype");
     talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
       opts.onToken("Let's go.");
       return "Let's go.";
@@ -702,7 +707,7 @@ describe("CaddieOrbSheet — persona threading", () => {
   });
 
   it("server preference wins over localStorage (documented resolution order, end-to-end through the orb)", async () => {
-    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    window.localStorage.setItem("scorecard_anon_caddie_persona", "hype");
     getCaddieProfileMock.mockResolvedValueOnce({
       handicap: null,
       preferred_personality_id: "professor",
@@ -739,7 +744,7 @@ describe("CaddieOrbSheet — speakerLabel (cross-surface identity label)", () =>
   // the short persona name.
 
   it("general/converse lane + non-classic persona: reply caption shows the short persona name", async () => {
-    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    window.localStorage.setItem("scorecard_anon_caddie_persona", "hype");
     talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
       opts.onToken("Let's go get it.");
       return "Let's go get it.";
@@ -754,7 +759,7 @@ describe("CaddieOrbSheet — speakerLabel (cross-surface identity label)", () =>
   });
 
   it("task lane + non-classic persona: reply caption stays 'Looper'", async () => {
-    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    window.localStorage.setItem("scorecard_anon_caddie_persona", "hype");
     const applySpy = vi.fn((): TaskAck => ({ line: "Saturday morning — on it.", dispatched: true }));
     registerTask({ parse: vi.fn(async () => taskParse({ hasSignal: true, confidence: 0.9 })), apply: applySpy });
 
@@ -769,7 +774,7 @@ describe("CaddieOrbSheet — speakerLabel (cross-surface identity label)", () =>
   });
 
   it("classic persona (explicit): reply caption stays 'Looper'", async () => {
-    window.localStorage.setItem("looper.caddiePersonaId", "classic");
+    window.localStorage.setItem("scorecard_anon_caddie_persona", "classic");
     talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
       opts.onToken("Sure thing.");
       return "Sure thing.";
@@ -862,7 +867,7 @@ describe("CaddieOrbSheet — long custom persona name: hint name matches caption
         traits: [],
       },
     ]);
-    window.localStorage.setItem("looper.caddiePersonaId", "custom-long");
+    window.localStorage.setItem("scorecard_anon_caddie_persona", "custom-long");
     talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
       opts.onToken("Let's go get it.");
       return "Let's go get it.";

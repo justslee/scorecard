@@ -8,6 +8,7 @@ import ClerkTokenBridge from "@/components/ClerkTokenBridge";
 import AuthGate from "@/components/AuthGate";
 import { setAuthDiag } from "@/lib/auth-diag";
 import { getNativeToken, setNativeToken } from "@/lib/native-token-store";
+import { IdentityBridge } from "@/lib/identity";
 
 // Yardage-book appearance: warm paper / dark-ink palette to match the rest of
 // the app. Uses Clerk's CSS-variable layer so the built-in widgets (sign-in,
@@ -210,6 +211,13 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           non-component code (api.ts / deepgram.ts) can fetch JWTs without
           relying on window.Clerk (which doesn't hydrate on capacitor://). */}
       <ClerkTokenBridge />
+      {/* Mounts useMe() for the whole app (multiuser-p0-client-identity):
+          persists scorecard_last_user_id on sign-in (the storage/namespacing
+          fallback for platforms where window.Clerk never hydrates — see
+          ClerkTokenBridge above) and best-effort ensures the golfer_profiles
+          row exists. Placed BEFORE AuthGate so its effect commits before any
+          newly-mounted page reads namespaced storage. Renders no UI. */}
+      <IdentityBridge />
       {/* Gate: shows PaperLoading while Clerk initialises, the sign-in form
           when no session is present, and children once the session is active.
           Auth routes (/sign-in, /sign-up) always pass through to avoid loops. */}

@@ -10,6 +10,7 @@
  */
 
 import type { CourseCoordinates } from '@/lib/golf-api';
+import { storageKey } from '@/lib/storage-keys';
 
 // ── Map base style ────────────────────────────────────────────────────────────
 
@@ -296,8 +297,14 @@ export function isGpsOnHole(
 
 // ── Map view preference (localStorage) ───────────────────────────────────────
 
-/** localStorage key for the user's map view preference. */
-export const MAP_VIEW_PREF_KEY = 'looper_map_view_pref';
+/**
+ * localStorage key for the user's map view preference. Per-user namespaced
+ * (specs/multi-user-epic-plan.md §3.5) — a FUNCTION, not a constant, so it's
+ * computed per call and a user switch on one device reads the new namespace.
+ */
+export function mapViewPrefKey(): string {
+  return storageKey('map_view_pref');
+}
 
 /**
  * User's preferred map view — persisted across sessions.
@@ -319,7 +326,7 @@ export type MapViewPref = 'holediagram' | 'satellite';
 export function getMapViewPref(): MapViewPref {
   try {
     if (typeof window === 'undefined') return 'satellite';
-    const v = localStorage.getItem(MAP_VIEW_PREF_KEY);
+    const v = localStorage.getItem(mapViewPrefKey());
     if (v === 'holediagram') return 'holediagram';
   } catch {
     // localStorage unavailable (sandboxed iframe, private browsing, etc.)
@@ -335,7 +342,7 @@ export function getMapViewPref(): MapViewPref {
 export function setMapViewPref(pref: MapViewPref): void {
   try {
     if (typeof window === 'undefined') return;
-    localStorage.setItem(MAP_VIEW_PREF_KEY, pref);
+    localStorage.setItem(mapViewPrefKey(), pref);
   } catch {
     // localStorage unavailable — preference is ephemeral this session.
   }

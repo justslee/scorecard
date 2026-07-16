@@ -12,12 +12,18 @@
  * can be forced with `?liveMode=0` / this key set to "0".
  */
 
-const STORAGE_KEY = "looper.caddieLiveMode";
+import { storageKey } from "../storage-keys";
+
+// Per-user namespaced (specs/multi-user-epic-plan.md §3.5) — computed per
+// call, not cached, so a user switch on one device reads the new namespace.
+function liveModeStorageKey(): string {
+  return storageKey("caddie_live_mode");
+}
 
 export function getCaddieLiveMode(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return window.localStorage.getItem(STORAGE_KEY) !== "0";
+    return window.localStorage.getItem(liveModeStorageKey()) !== "0";
   } catch {
     return true;
   }
@@ -26,7 +32,7 @@ export function getCaddieLiveMode(): boolean {
 export function setCaddieLiveMode(enabled: boolean): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, enabled ? "1" : "0");
+    window.localStorage.setItem(liveModeStorageKey(), enabled ? "1" : "0");
   } catch {
     // Private mode / quota — non-fatal, just doesn't persist this device.
   }
