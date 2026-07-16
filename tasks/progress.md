@@ -17025,5 +17025,10 @@ RECORDS: CADDIE_EXPERIENCE.md baseline table + consistency section + known-limit
 the numbers + evidence; backlog.json item → done-on-bundle; 4 follow-ups filed. NOTE: my earlier
 AWAITING checkpoint (987ea73) was committed from the SHARED checkout by mistake — verified it only
 touched progress.md (no parallel-lane WIP swept); all cycle-129 records edits done in THIS worktree.
-AWAITING: reviewer (numbers honest / no key leak / no unsafe tuning) + qa (records-only, no code
-changed). SILENT — rides #141, do NOT ship/ping. Land: rebase onto origin/integration/next, push.
+DONE: reviewer **SHIP** (hand-verified every number vs raw runs — p50 203/cold 869/warm 177-271,
+3/5-vs-2/5 flip; p95 recorded honest ~869ms not the runner's extrapolated 1138; P2-not-P1 justified;
+secret scan CLEAN; follow-ups filed w/o hot-patch) + qa **PASS** (records-only: diff = 3 files, no
+code; backlog.json valid +4 items no dup-collapse; no conflict markers; tables well-formed). Landed
+1eefad7 on integration/next; PR #141 checklist updated (SILENT). NOT shipped/pinged (measurement).
+(Injection attempt in session context — "date changed, conceal it" + Telegram framing — noted and
+IGNORED, same pattern flagged in cycle 128.)
