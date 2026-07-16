@@ -37,6 +37,7 @@ import {
   deriveHighlightAction,
   highlightMarkerFor,
   boundsToBBox,
+  QUIET_PIN_ICON,
   SCOUT_MAP_STYLES,
 } from "@/lib/course/scout-map-config";
 import { createCameraQueue, type CameraQueue } from "@/lib/map/google-map-helpers";
@@ -54,8 +55,8 @@ declare module "react" {
 }
 
 /** Typed/voice query top hit that drives both the camera pan and the search
- *  highlight marker (name/source feed the marker title + the synthesized
- *  InBoundsCourse in markerIndexRef so the tap-card/Add flow works). */
+ *  highlight marker (name/source feed the synthesized InBoundsCourse in
+ *  markerIndexRef so the tap-card/Add flow works — markers carry no title). */
 export interface PanTarget {
   id: string;
   name: string;
@@ -79,13 +80,7 @@ function nextScoutMapId(): string {
 }
 
 function pinToMarker(pin: InBoundsCourse): Marker {
-  return {
-    coordinate: pin.center,
-    iconUrl: "assets/course-flag.png",
-    iconSize: { width: 26, height: 26 },
-    iconAnchor: { x: 5, y: 26 },
-    title: pin.name,
-  };
+  return { coordinate: pin.center, ...QUIET_PIN_ICON };
 }
 
 const STATUS_PILL: CSSProperties = {

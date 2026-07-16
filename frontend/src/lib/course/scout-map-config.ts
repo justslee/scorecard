@@ -9,6 +9,35 @@
 
 import type { BBox } from "@/lib/golf-api";
 
+/** Source geometry of the committed pin SVG (scripts/render-course-flag.mjs):
+ *  viewBox 0 0 32 40; the visual tip is at (16, 38) — NOT the viewBox
+ *  bottom (2 units of baked shadow room). Anchoring at {w/2, h} would
+ *  float the pin 5% above the course coordinate. */
+export const PIN_VIEWBOX = { width: 32, height: 40 };
+export const PIN_TIP = { x: 16, y: 38 };
+
+/** Displayed size + tip anchor for a pin of the given height (pt).
+ *  Multiply-then-divide keeps the committed heights (27.5, 45) exact. */
+export function pinIconGeometry(height: number): {
+  iconSize: { width: number; height: number };
+  iconAnchor: { x: number; y: number };
+} {
+  const width = (height * PIN_VIEWBOX.width) / PIN_VIEWBOX.height;
+  return {
+    iconSize: { width, height },
+    iconAnchor: {
+      x: (PIN_TIP.x * width) / PIN_VIEWBOX.width,
+      y: (PIN_TIP.y * height) / PIN_VIEWBOX.height,
+    },
+  };
+}
+
+/** Quiet in-bounds pin icon (shared by CourseScoutMap.pinToMarker). */
+export const QUIET_PIN_ICON = {
+  iconUrl: "assets/course-flag.png",
+  ...pinIconGeometry(27.5), // -> 22×27.5, anchor {11, 26.125}
+};
+
 /** Decision table for the search-highlight marker's remove/add/replace lifecycle. */
 export type HighlightAction = "none" | "remove" | "add" | "replace";
 
@@ -38,14 +67,14 @@ export interface HighlightMarker {
   iconSize: { width: number; height: number };
   iconAnchor: { x: number; y: number };
   zIndex: number;
-  title: string;
 }
 
 /**
- * Build the highlight marker for the searched (panTarget) course. Reuses
- * course-flag.png (no new binary asset) at 1.5x the quiet in-bounds pin's
- * size (26px → 40px) with a proportionally scaled anchor, sitting above the
- * quiet pin layer via zIndex.
+ * Build the highlight marker for the searched (panTarget) course.
+ * course-flag-highlight.png (T.flag pennant), 45pt tall with the tip-locked
+ * anchor from pinIconGeometry, sitting above the quiet pin layer via zIndex.
+ * `target.name` is no longer read here — the name reaches the tap-card
+ * through the synthesized InBoundsCourse in markerIndexRef (CourseScoutMap).
  *
  * Pure function — no side effects, headless-testable.
  */
@@ -55,11 +84,9 @@ export function highlightMarkerFor(target: {
 }): HighlightMarker {
   return {
     coordinate: target.center,
-    iconUrl: "assets/course-flag.png",
-    iconSize: { width: 40, height: 40 },
-    iconAnchor: { x: 8, y: 40 },
+    iconUrl: "assets/course-flag-highlight.png",
+    ...pinIconGeometry(45), // -> 36×45, anchor {18, 42.75}
     zIndex: 2,
-    title: target.name,
   };
 }
 
