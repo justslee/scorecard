@@ -3,6 +3,34 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## CYCLE 130 — 2026-07-15. Item: caddie-advice-stability-tee-shot (NOTICEABLE — advice consistency)
+Owner-feedback check FIRST: PR #141 (open bundle, integration/next @1b639be) has 0 comments;
+board Needs Review cards (#105/#115/#119) are stale older bundles, none tied to v1.1.8; no
+#141/v1.1.8 card exists yet. v1.1.8 ship ask just sent, no reply. Nothing preempts.
+Synced integration/next @1b639be (ff from origin; main merged clean, up to date).
+
+ROOT-CAUSE dug before planning:
+- The consistency defect (baseline 3/5 lay-up vs 2/5 driver on identical tee-shot ask) is
+  measured by run_consistency.py over `followup-3wood-after-driver`, sampling
+  `_build_candidate_messages` (run_tier2.py:132) at temp 0.7.
+- KEY: `build_round_session` (checks.py:89) seeds ONLY conversation_history — it does NOT
+  populate `session.last_recommendation`. So `_situation_block` (voice_prompts.py:288, gated
+  on `session.last_recommendation`) renders NO engine recommendation / NO tee_shot_numbers /
+  NO rec.club for the current shot. The model free-decides the CALL at temp 0.7 → the flip.
+  NUMBERS_COHERENCE_RULE is vacuous here (no numbers block to anchor to).
+- GA Realtime `build_session_payload` (realtime_relay.py:78) sets NO temperature (param
+  removed in GA) → the temp-lowering option is weak/unavailable for the realtime mouth,
+  favoring the payload-anchor mechanism (brief option 1) as primary.
+- Engine already computes the decision: CaddieRecommendation.club + tee_shot_numbers +
+  aggressiveness + miss_side (types.py:270), corridor-width club selection in club_selection.py.
+
+## AWAITING fable Plan @1b639be — specs/caddie-advice-stability-tee-shot-plan.md.
+Plan decides: payload-anchor vs temp vs both; the CALL-grounding prompt-contract wording
+(extend the numbers doctrine to the DECISION); whether the eval probe/harness must seed an
+engine recommendation so the anchor bites; before/after eval plan (N=5 consistency probe,
+acceptance 5/5 same reco + facts grounded; goldens still pass so caddie still reconsiders).
+On plan return → dispatch builder on the plan. If ship recut mid-cycle → HOLD push, re-land on fresh branch.
+
 ## CYCLE 125 — RE-ARMED 2026-07-15. Item: guide-pauseturn-reserialize-hardening (backend, SILENT)
 Owner-feedback check FIRST: board has no field-test feedback card after #140/v1.1.7
 (latest card = Bundle #140, Shipped, no comments); no in-session owner message. Nothing
