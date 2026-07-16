@@ -19,6 +19,8 @@ import {
   greenFirstCenterline,
   distanceMarkersFromGreen,
   fairwayBunkerCarries,
+  fairwayRingsFromFeatures,
+  latLngInRing,
   computeTeeShotOverlays,
   teeShotOverlaysVisible,
   type LatLng,
@@ -88,6 +90,16 @@ function makeBunkerPoint(p: LatLng): GeoJSON.Feature {
   };
 }
 
+/** Identical to `makeBunkerPolygon` but `featureType: "fairway"`. */
+function makeFairwayPolygon(points: LatLng[]): GeoJSON.Feature {
+  const ring = [...points, points[0]].map((p) => [p.lng, p.lat]);
+  return {
+    type: 'Feature',
+    properties: { featureType: 'fairway' },
+    geometry: { type: 'Polygon', coordinates: [ring] },
+  };
+}
+
 /** A straight hole: green center -> (offsetYards south) green edge (the
  *  `golf=hole` way's stored endpoint) -> (pathYards further south) tee. The
  *  hole LineString is stored TEE-FIRST (OSM convention). */
@@ -118,6 +130,25 @@ function perpDistanceYards(point: LatLng, a: LatLng, b: LatLng): number {
   const len = Math.hypot(bx, by) || 1;
   const cross = Math.abs(bx * py - by * px) / len;
   return cross / YD;
+}
+
+/** Along-segment distance (yards) from `a` to the projection of `point` onto
+ *  the infinite line through a->b — same flat-earth test frame as
+ *  `perpDistanceYards`. Used to prove a fairway-centering shift is PURELY
+ *  lateral (along-hole progress unchanged). */
+function alongDistanceYards(point: LatLng, a: LatLng, b: LatLng): number {
+  const LAT_M = 111_320;
+  const midLat = (a.lat + b.lat) / 2;
+  const cosLat = Math.cos((midLat * Math.PI) / 180);
+  const toXY = (p: LatLng): [number, number] => [
+    (p.lng - a.lng) * LAT_M * cosLat,
+    (p.lat - a.lat) * LAT_M,
+  ];
+  const [bx, by] = toXY(b);
+  const [px, py] = toXY(point);
+  const len = Math.hypot(bx, by) || 1;
+  const along = (bx * px + by * py) / len;
+  return along / YD;
 }
 
 // ── 1. Straight 400y hole: plate accuracy + green-center offset ────────────
@@ -569,5 +600,326 @@ describe('13. teeShotOverlaysVisible', () => {
     const at41 = northOf(tee, 41);
     expect(teeShotOverlaysVisible({ position: at40, gpsOnHole: true, tee })).toBe(true);
     expect(teeShotOverlaysVisible({ position: at41, gpsOnHole: true, tee })).toBe(false);
+  });
+});
+
+// ── 14a. Fairway-centered plates — straight hole, offset fairway ───────────
+
+describe('14a. fairway-centered plates on a straight hole — offset fairway', () => {
+  it('plates shift ~10y west into the fairway center; distance-to-green stays true; differs from uncentered', () => {
+    const { green, tee, holeFeature } = buildStraightHole(400, 10);
+    const centerline = greenFirstCenterline([holeFeature], green)!;
+    const corner = (alongYd: number, eastYd: number) => eastOf(southOf(green, alongYd), eastYd);
+
+    // Along 60->360y south of green, lateral [-35y, +15y] east -> center -10y (10y west).
+    const fairway = makeFairwayPolygon([
+      corner(60, -35),
+      corner(60, 15),
+      corner(360, 15),
+      corner(360, -35),
+    ]);
+
+    const uncentered = distanceMarkersFromGreen(centerline, green);
+    const centered = distanceMarkersFromGreen(
+      centerline,
+      green,
+      [100, 150, 200],
+      fairwayRingsFromFeatures([fairway]),
+    );
+
+    expect(centered.map((m) => m.yards)).toEqual([100, 150, 200]);
+
+    for (let i = 0; i < centered.length; i++) {
+      const m = centered[i];
+      const raw = uncentered[i];
+
+      // (i) ~10y west of the tee->green chord (== the centerline here).
+      const perp = perpDistanceYards(m.position, tee, green);
+      expect(Math.abs(perp - 10)).toBeLessThan(0.5);
+      expect(m.position.lng).toBeLessThan(raw.position.lng); // west = smaller lng
+
+      // (ii) distance-to-green stays true within the second-order bound
+      // (sqrt(100^2+10^2) = 100.5 at the 100 plate).
+      const actualYards = metersBetween(m.position, green) / YD;
+      expect(Math.abs(actualYards - m.yards)).toBeLessThan(1);
+
+      // (iii) differs from the 2-arg (uncentered) call.
+      const driftYards = metersBetween(m.position, raw.position) / YD;
+      expect(driftYards).toBeGreaterThan(5);
+    }
+  });
+});
+
+// ── 14b. Dogleg — centered using the LOCAL leg heading, not the chord ──────
+
+describe('14b. fairway-centered plate on a dogleg — LOCAL leg heading, not the tee->green chord', () => {
+  it('the 200 plate shifts ~6y north (leg-2 normal) with a negligible east-west component', () => {
+    const green: LatLng = { lat: 40.65, lng: -73.5 };
+    const corner = southOf(green, 130); // leg 1: green -> corner, 130y south
+    const tee = eastOf(corner, 300); // leg 2: corner -> tee, 300y east
+    const holeFeature = makeHoleLine([tee, corner, green]);
+    const centerline = greenFirstCenterline([holeFeature], green)!;
+
+    // Along leg 2 (20->280y east of corner), lateral [-6y south, +18y north] -> center +6y north.
+    const corner2 = (alongYd: number, northYd: number) => northOf(eastOf(corner, alongYd), northYd);
+    const fairway = makeFairwayPolygon([
+      corner2(20, -6),
+      corner2(20, 18),
+      corner2(280, 18),
+      corner2(280, -6),
+    ]);
+
+    const uncentered = distanceMarkersFromGreen(centerline, green);
+    const centered = distanceMarkersFromGreen(
+      centerline,
+      green,
+      [100, 150, 200],
+      fairwayRingsFromFeatures([fairway]),
+    );
+
+    const raw200 = uncentered.find((m) => m.yards === 200)!;
+    const c200 = centered.find((m) => m.yards === 200)!;
+
+    // (i) lateral distance from the corner->tee (leg-2) line ~6y.
+    const lateral = perpDistanceYards(c200.position, corner, tee);
+    expect(Math.abs(lateral - 6)).toBeLessThan(0.5);
+
+    // (ii) displacement ~6y, due NORTH — a tee->green-chord perpendicular
+    // would have a large east-west component; this proves the LOCAL heading.
+    const driftYards = metersBetween(c200.position, raw200.position) / YD;
+    expect(Math.abs(driftYards - 6)).toBeLessThan(0.5);
+    expect(c200.position.lat).toBeGreaterThan(raw200.position.lat); // north = larger lat
+    const lngDriftYards =
+      (Math.abs(c200.position.lng - raw200.position.lng) *
+        111_320 *
+        Math.cos((green.lat * Math.PI) / 180)) /
+      YD;
+    expect(lngDriftYards).toBeLessThan(0.1);
+
+    // (iii) along-leg progress preserved — the shift is purely lateral.
+    const alongCentered = alongDistanceYards(c200.position, corner, tee);
+    const alongRaw = alongDistanceYards(raw200.position, corner, tee);
+    expect(Math.abs(alongCentered - alongRaw)).toBeLessThan(0.5);
+  });
+});
+
+// ── 14c. No fairway -> byte-identical to the 2-arg call ─────────────────────
+
+describe('14c. no fairway -> byte-identical to the 2-arg call', () => {
+  it('empty fairways array and a features list with no fairway feature both match the 2-arg call exactly', () => {
+    const { green, holeFeature } = buildStraightHole(400, 10);
+    const centerline = greenFirstCenterline([holeFeature], green)!;
+
+    const baseline = distanceMarkersFromGreen(centerline, green);
+    const withEmptyFairways = distanceMarkersFromGreen(centerline, green, [100, 150, 200], []);
+    const withNoFairwayFeature = distanceMarkersFromGreen(
+      centerline,
+      green,
+      [100, 150, 200],
+      fairwayRingsFromFeatures([holeFeature]),
+    );
+
+    expect(withEmptyFairways).toEqual(baseline);
+    expect(withNoFairwayFeature).toEqual(baseline);
+  });
+});
+
+// ── 14d. Perpendicular misses / gap too large -> fallback ───────────────────
+
+describe('14d. perpendicular misses / gap too large -> fallback to the centerline plate', () => {
+  it('d1: fairway entirely 30-60y east (gap 30 > the 20y cap) -> every plate equals the uncentered plate exactly', () => {
+    const { green, holeFeature } = buildStraightHole(400, 10);
+    const centerline = greenFirstCenterline([holeFeature], green)!;
+    const corner = (alongYd: number, eastYd: number) => eastOf(southOf(green, alongYd), eastYd);
+
+    const fairway = makeFairwayPolygon([
+      corner(60, 30),
+      corner(60, 60),
+      corner(360, 60),
+      corner(360, 30),
+    ]);
+
+    const uncentered = distanceMarkersFromGreen(centerline, green);
+    const centered = distanceMarkersFromGreen(
+      centerline,
+      green,
+      [100, 150, 200],
+      fairwayRingsFromFeatures([fairway]),
+    );
+
+    expect(centered).toEqual(uncentered);
+  });
+
+  it('d2: fairway along-range covers only the 200-plate station -> 100/150 miss (fallback), 200 centers', () => {
+    const { green, holeFeature } = buildStraightHole(400, 10);
+    const centerline = greenFirstCenterline([holeFeature], green)!;
+    const corner = (alongYd: number, eastYd: number) => eastOf(southOf(green, alongYd), eastYd);
+
+    // Along-range starts at 195y — safely above the ~100y/~150y plate
+    // stations (their perpendicular cross-section never reaches this
+    // along-range at all, proving the cast is perpendicular-only, never an
+    // along-hole search) and safely below the ~200y plate station.
+    const fairway = makeFairwayPolygon([
+      corner(195, -10),
+      corner(195, 10),
+      corner(360, 10),
+      corner(360, -10),
+    ]);
+
+    const uncentered = distanceMarkersFromGreen(centerline, green);
+    const centered = distanceMarkersFromGreen(
+      centerline,
+      green,
+      [100, 150, 200],
+      fairwayRingsFromFeatures([fairway]),
+    );
+
+    expect(centered[0]).toEqual(uncentered[0]); // 100 -> miss
+    expect(centered[1]).toEqual(uncentered[1]); // 150 -> miss
+    expect(centered[2]).not.toEqual(uncentered[2]); // 200 -> centers
+  });
+});
+
+// ── 14e. Result proven INSIDE the fairway ────────────────────────────────────
+
+describe('14e. every fairway-centered plate is proven INSIDE the fairway ring', () => {
+  it('straight-hole (14a), dogleg (14b), and off-fairway-snap (14f) plates all satisfy latLngInRing', () => {
+    // 14a fixture — all three plates centered (station sits inside the ring).
+    const straight = buildStraightHole(400, 10);
+    const straightCenterline = greenFirstCenterline([straight.holeFeature], straight.green)!;
+    const straightCorner = (alongYd: number, eastYd: number) =>
+      eastOf(southOf(straight.green, alongYd), eastYd);
+    const straightRing: LatLng[] = [
+      straightCorner(60, -35),
+      straightCorner(60, 15),
+      straightCorner(360, 15),
+      straightCorner(360, -35),
+    ];
+    const straightCentered = distanceMarkersFromGreen(
+      straightCenterline,
+      straight.green,
+      [100, 150, 200],
+      fairwayRingsFromFeatures([makeFairwayPolygon(straightRing)]),
+    );
+    for (const m of straightCentered) {
+      expect(latLngInRing(m.position, straightRing)).toBe(true);
+    }
+
+    // 14b fixture — only the 200 plate is centered (on leg 2).
+    const green: LatLng = { lat: 40.65, lng: -73.5 };
+    const corner = southOf(green, 130);
+    const tee = eastOf(corner, 300);
+    const holeFeature = makeHoleLine([tee, corner, green]);
+    const centerline = greenFirstCenterline([holeFeature], green)!;
+    const corner2 = (alongYd: number, northYd: number) => northOf(eastOf(corner, alongYd), northYd);
+    const doglegRing: LatLng[] = [
+      corner2(20, -6),
+      corner2(20, 18),
+      corner2(280, 18),
+      corner2(280, -6),
+    ];
+    const doglegCentered = distanceMarkersFromGreen(
+      centerline,
+      green,
+      [100, 150, 200],
+      fairwayRingsFromFeatures([makeFairwayPolygon(doglegRing)]),
+    );
+    const dogleg200 = doglegCentered.find((m) => m.yards === 200)!;
+    expect(latLngInRing(dogleg200.position, doglegRing)).toBe(true);
+
+    // 14f fixture — off-fairway snap, all three plates centered.
+    const snap = buildStraightHole(400, 10);
+    const snapCenterline = greenFirstCenterline([snap.holeFeature], snap.green)!;
+    const snapCorner = (alongYd: number, eastYd: number) => eastOf(southOf(snap.green, alongYd), eastYd);
+    const snapRing: LatLng[] = [
+      snapCorner(60, 5),
+      snapCorner(60, 45),
+      snapCorner(360, 45),
+      snapCorner(360, 5),
+    ];
+    const snapCentered = distanceMarkersFromGreen(
+      snapCenterline,
+      snap.green,
+      [100, 150, 200],
+      fairwayRingsFromFeatures([makeFairwayPolygon(snapRing)]),
+    );
+    for (const m of snapCentered) {
+      expect(latLngInRing(m.position, snapRing)).toBe(true);
+    }
+  });
+});
+
+// ── 14f. Off-fairway snap (Bethpage "drifts off" case) ──────────────────────
+
+describe('14f. off-fairway snap — station just outside the fairway, within the 20y cap', () => {
+  it('the 150 plate snaps to the fairway span midpoint (25y east) and lands inside the fairway', () => {
+    const { green, holeFeature } = buildStraightHole(400, 10);
+    const centerline = greenFirstCenterline([holeFeature], green)!;
+    const corner = (alongYd: number, eastYd: number) => eastOf(southOf(green, alongYd), eastYd);
+
+    // Lateral span [+5y, +45y] east — the station (lateral 0) is 5y outside
+    // the fairway, within the 20y snap cap.
+    const ring: LatLng[] = [corner(60, 5), corner(60, 45), corner(360, 45), corner(360, 5)];
+    const fairway = makeFairwayPolygon(ring);
+
+    const centered = distanceMarkersFromGreen(
+      centerline,
+      green,
+      [100, 150, 200],
+      fairwayRingsFromFeatures([fairway]),
+    );
+    const raw = distanceMarkersFromGreen(centerline, green);
+    const plate150 = centered.find((m) => m.yards === 150)!;
+    const raw150 = raw.find((m) => m.yards === 150)!;
+
+    // Span midpoint (5+45)/2 = 25y east — the station snaps the full 25y
+    // into the fairway, not just to the near edge.
+    const shiftYards = metersBetween(plate150.position, raw150.position) / YD;
+    expect(Math.abs(shiftYards - 25)).toBeLessThan(0.5);
+    expect(plate150.position.lng).toBeGreaterThan(raw150.position.lng); // east = larger lng
+    expect(latLngInRing(plate150.position, ring)).toBe(true);
+  });
+});
+
+// ── 14g. Split fairway (MultiPolygon) — containing-span beats nearest-gap ──
+
+describe('14g. split fairway (MultiPolygon) — containing-span rule beats nearest-gap', () => {
+  it('station inside the first polygon centers there; the second, non-containing polygon is ignored', () => {
+    const { green, holeFeature } = buildStraightHole(400, 10);
+    const centerline = greenFirstCenterline([holeFeature], green)!;
+    const corner = (alongYd: number, eastYd: number) => eastOf(southOf(green, alongYd), eastYd);
+
+    // Lateral [-25, +5] -- contains the station (lateral 0).
+    const ringA: LatLng[] = [corner(60, -25), corner(60, 5), corner(360, 5), corner(360, -25)];
+    // Lateral [+15, +40] -- does not contain the station.
+    const ringB: LatLng[] = [corner(60, 15), corner(60, 40), corner(360, 40), corner(360, 15)];
+
+    const multiPolygon: GeoJSON.Feature = {
+      type: 'Feature',
+      properties: { featureType: 'fairway' },
+      geometry: {
+        type: 'MultiPolygon',
+        coordinates: [
+          [[...ringA, ringA[0]].map((p) => [p.lng, p.lat])],
+          [[...ringB, ringB[0]].map((p) => [p.lng, p.lat])],
+        ],
+      },
+    };
+
+    const fairways = fairwayRingsFromFeatures([multiPolygon]);
+    expect(fairways).toHaveLength(2);
+
+    const centered = distanceMarkersFromGreen(centerline, green, [100, 150, 200], fairways);
+    const raw = distanceMarkersFromGreen(centerline, green);
+
+    for (let i = 0; i < centered.length; i++) {
+      const m = centered[i];
+      // Midpoint of ringA's span: (-25+5)/2 = -10y (west).
+      const shiftYards = metersBetween(m.position, raw[i].position) / YD;
+      expect(Math.abs(shiftYards - 10)).toBeLessThan(0.5);
+      expect(m.position.lng).toBeLessThan(raw[i].position.lng); // west
+      expect(latLngInRing(m.position, ringA)).toBe(true);
+      expect(latLngInRing(m.position, ringB)).toBe(false);
+    }
   });
 });

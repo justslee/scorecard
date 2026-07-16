@@ -42,7 +42,9 @@ export interface LatLng {
 
 export interface DistanceMarker {
   yards: 100 | 150 | 200;
-  /** Interpolated point ON the hole centerline. */
+  /** At the plate's distance station — laterally centered in the fairway
+   *  when fairway geometry allows it, else the interpolated point ON the
+   *  hole centerline. */
   position: LatLng;
 }
 
@@ -92,6 +94,15 @@ const TEE_ZONE_RADIUS_YARDS = 40;
  *  enough to tolerate normal centerline curvature. */
 const PLATE_HONESTY_TOLERANCE_YARDS = 7;
 
+/** Perpendicular cast cap, each side — mirrors backend _CORRIDOR_MAX_CAST_YDS
+ *  (hazards.py:128). Bounds work and degenerate-geometry runaway. */
+const FAIRWAY_CAST_CAP_YARDS = 100;
+/** Max gap between a plate's centerline station and the nearest fairway
+ *  cross-section span before we refuse to re-center (honesty guard: a
+ *  centerline >20y off the mapped fairway is suspect data — leave the plate
+ *  where the honest centerline math put it). */
+const FAIRWAY_SNAP_MAX_GAP_YARDS = 20;
+
 // ── Internals (exported for tests) ─────────────────────────────────────────────
 
 /**
@@ -121,6 +132,188 @@ function round5(yards: number): number {
 /** True Feature[] geometry-type narrowing helper (loose GeoJSON typing). */
 function featureType(f: GeoJSON.Feature): unknown {
   return (f.properties ?? {})['featureType'];
+}
+
+/**
+ * Outer rings of every featureType==="fairway" Polygon/MultiPolygon —
+ * mirrors backend `extract_corridor_profile`'s ring collection
+ * (hazards.py:1056-1082): Polygon -> coordinates[0]; MultiPolygon -> each
+ * member's outer ring as an independent polygon; closing vertex deduped;
+ * rings with <3 vertices dropped.
+ */
+export function fairwayRingsFromFeatures(features: GeoJSON.Feature[]): LatLng[][] {
+  const rings: LatLng[][] = [];
+
+  for (const f of features) {
+    if (featureType(f) !== 'fairway') continue;
+    const geom = f.geometry;
+    if (!geom) continue;
+
+    const ringsLngLat: GeoJSON.Position[][] = [];
+    if (geom.type === 'Polygon') {
+      const coords = (geom as GeoJSON.Polygon).coordinates;
+      if (coords && coords[0]) ringsLngLat.push(coords[0]);
+    } else if (geom.type === 'MultiPolygon') {
+      const coords = (geom as GeoJSON.MultiPolygon).coordinates;
+      for (const member of coords ?? []) {
+        if (member && member[0]) ringsLngLat.push(member[0]);
+      }
+    } else {
+      continue;
+    }
+
+    for (const ring of ringsLngLat) {
+      if (!ring || ring.length === 0) continue;
+      const isClosed =
+        ring.length > 1 &&
+        ring[0][0] === ring[ring.length - 1][0] &&
+        ring[0][1] === ring[ring.length - 1][1];
+      const verts = isClosed ? ring.slice(0, -1) : ring;
+      if (verts.length < 3) continue; // not a real polygon shape
+      rings.push(verts.map(([lng, lat]) => ({ lat, lng })));
+    }
+  }
+
+  return rings;
+}
+
+/**
+ * Even-odd point-in-ring test on LatLng, evaluated in a local
+ * equirectangular frame anchored at p (cosLat = cos(p.lat)) — TS port of
+ * backend `_point_in_ring_xy` (hazards.py:816). Exported for tests and used
+ * as the final "midpoint inside fairway" guard.
+ */
+export function latLngInRing(p: LatLng, ring: ReadonlyArray<LatLng>): boolean {
+  const n = ring.length;
+  if (n < 3) return false;
+
+  const cosLat = Math.cos((p.lat * Math.PI) / 180);
+  const toXY = (q: LatLng): [number, number] => [
+    (q.lng - p.lng) * LAT_M * cosLat,
+    (q.lat - p.lat) * LAT_M,
+  ];
+
+  let inside = false;
+  let j = n - 1;
+  for (let i = 0; i < n; i++) {
+    const [xi, yi] = toXY(ring[i]);
+    const [xj, yj] = toXY(ring[j]);
+    if (yi > 0 !== yj > 0) {
+      const xIntersect = ((xj - xi) * (0 - yi)) / (yj - yi) + xi;
+      if (0 < xIntersect) inside = !inside;
+    }
+    j = i;
+  }
+  return inside;
+}
+
+/**
+ * Lateral fairway midpoint on the perpendicular cross-section through
+ * `station`, or null (caller falls back to `station`). segA->segB is the
+ * centerline segment the station lies on — its direction is the LOCAL hole
+ * heading (dogleg-correct, never a tee->green chord).
+ */
+export function fairwayCenterAtStation(
+  station: LatLng,
+  segA: LatLng,
+  segB: LatLng,
+  fairways: ReadonlyArray<ReadonlyArray<LatLng>>,
+): LatLng | null {
+  if (!fairways || fairways.length === 0) return null;
+
+  const P = station;
+  const cosLat = Math.cos((P.lat * Math.PI) / 180);
+  const toXY = (q: LatLng): [number, number] => [
+    (q.lng - P.lng) * LAT_M * cosLat,
+    (q.lat - P.lat) * LAT_M,
+  ];
+
+  const [ax, ay] = toXY(segA);
+  const [bx, by] = toXY(segB);
+  const dx = bx - ax;
+  const dy = by - ay;
+  const L = Math.hypot(dx, dy);
+  if (L <= 0) return null; // degenerate segment at the station
+
+  const ux = dx / L;
+  const uy = dy / L; // local hole heading (sign irrelevant: a line, not a ray)
+  const nx = -uy;
+  const ny = ux; // left-perpendicular (module-pinned convention, hazards.py:1105)
+
+  const maxCastM = FAIRWAY_CAST_CAP_YARDS * METRES_PER_YARD;
+  const maxGapM = FAIRWAY_SNAP_MAX_GAP_YARDS * METRES_PER_YARD;
+
+  interface Span {
+    tLo: number;
+    tHi: number;
+    ringIdx: number;
+  }
+
+  let containingSpan: Span | null = null;
+  let bestGapSpan: Span | null = null;
+  let bestGap = Infinity;
+
+  for (let ringIdx = 0; ringIdx < fairways.length; ringIdx++) {
+    const ring = fairways[ringIdx];
+    const nVerts = ring.length;
+    if (nVerts < 3) continue;
+    const ringXY = ring.map(toXY);
+
+    // Line-edge intersection (two-sided version of backend
+    // `_ray_segment_distance`, hazards.py:838; Cramer's rule on
+    // `P + t*n = a + s*(b-a)` with P at the origin), closed wrap-around.
+    const ts: number[] = [];
+    for (let i = 0; i < nVerts; i++) {
+      const [ex0, ey0] = ringXY[i];
+      const [ex1, ey1] = ringXY[(i + 1) % nVerts];
+      const ex = ex1 - ex0;
+      const ey = ey1 - ey0;
+      const det = ex * ny - ey * nx;
+      if (Math.abs(det) < 1e-9) continue; // parallel — skip
+      const t = (ex * ey0 - ey * ex0) / det;
+      const s = (nx * ey0 - ny * ex0) / det;
+      // Half-open 0 <= s < 1 prevents double-counting shared vertices.
+      if (s >= 0 && s < 1 && Math.abs(t) <= maxCastM) ts.push(t);
+    }
+
+    if (ts.length === 0) continue;
+    if (ts.length % 2 !== 0) continue; // odd crossing count (tangency) — skip this ring
+
+    ts.sort((a, b) => a - b);
+    for (let i = 0; i + 1 < ts.length; i += 2) {
+      const tLo = ts[i];
+      const tHi = ts[i + 1];
+      if (tLo <= 0 && 0 <= tHi) {
+        // Station is INSIDE this fairway ring on this cross-section — wins
+        // outright. First ring in array order wins over any other span.
+        if (containingSpan === null) containingSpan = { tLo, tHi, ringIdx };
+      } else {
+        const gap = tLo > 0 ? tLo : -tHi;
+        if (gap < bestGap) {
+          bestGap = gap;
+          bestGapSpan = { tLo, tHi, ringIdx };
+        }
+      }
+    }
+
+    if (containingSpan) break; // first-in-array-order containing ring wins
+  }
+
+  const selected =
+    containingSpan ?? (bestGapSpan && bestGap <= maxGapM ? bestGapSpan : null);
+  if (selected === null) return null;
+
+  const m = (selected.tLo + selected.tHi) / 2;
+  const Q: LatLng = {
+    lat: P.lat + (m * ny) / LAT_M,
+    lng: P.lng + (m * nx) / (LAT_M * cosLat),
+  };
+
+  // Final guard: numerical-edge insurance and the spec's explicit "never
+  // outside the fairway" promise.
+  if (!latLngInRing(Q, fairways[selected.ringIdx])) return null;
+
+  return Q;
 }
 
 /**
@@ -204,6 +397,7 @@ export function distanceMarkersFromGreen(
   centerline: LatLng[],
   greenCenter: LatLng,
   distancesYds: readonly number[] = [100, 150, 200],
+  fairways?: ReadonlyArray<ReadonlyArray<LatLng>>,
 ): DistanceMarker[] {
   if (!centerline || centerline.length < 2) return [];
 
@@ -226,12 +420,17 @@ export function distanceMarkersFromGreen(
 
       if (cum + segLen >= targetM) {
         const t = (targetM - cum) / segLen;
+        const position = {
+          lat: a.lat + t * (b.lat - a.lat),
+          lng: a.lng + t * (b.lng - a.lng),
+        };
+        const centered =
+          fairways && fairways.length > 0
+            ? fairwayCenterAtStation(position, a, b, fairways)
+            : null;
         markers.push({
           yards: targetYd as 100 | 150 | 200,
-          position: {
-            lat: a.lat + t * (b.lat - a.lat),
-            lng: a.lng + t * (b.lng - a.lng),
-          },
+          position: centered ?? position,
         });
         break;
       }
@@ -466,7 +665,9 @@ export function computeTeeShotOverlays(args: {
   if (!features) return EMPTY;
 
   const centerline = greenFirstCenterline(features, args.green);
-  const markers = centerline ? distanceMarkersFromGreen(centerline, args.green) : [];
+  const markers = centerline
+    ? distanceMarkersFromGreen(centerline, args.green, [100, 150, 200], fairwayRingsFromFeatures(features))
+    : [];
 
   const bunkers = args.tee
     ? fairwayBunkerCarries({ features, tee: args.tee, green: args.green, maxBunkers: args.maxBunkers })
