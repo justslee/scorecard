@@ -375,6 +375,65 @@ async def test_shot_distance_in_band_goes_red_when_engine_unavailable(monkeypatc
     assert not checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed
 
 
+# ── 5d. History-renders-in-order mutants (caddie-experience-harness §2.5) ──
+
+
+async def test_history_renders_in_order_goes_red_on_a_dropped_turn(monkeypatch):
+    """A history turn silently dropped from the assembled `messages` list —
+    the check must PASS on the real messages and FAIL when the first seeded
+    turn is removed."""
+    scenario = _scenario("followup-3wood-after-driver")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(check=Tier1CheckName.HISTORY_RENDERS_IN_ORDER)
+
+    real_result = checks_mod.TIER1_CHECKS[check.check.value](ctx, check)
+    assert real_result.passed, "sanity: the real assembled messages carry the full seeded history in order"
+
+    mutant_ctx = dataclasses.replace(ctx, text_messages=ctx.text_messages[1:])  # drop the first history turn
+    mutant_result = checks_mod.TIER1_CHECKS[check.check.value](mutant_ctx, check)
+    assert not mutant_result.passed, "check must go RED when a history turn is dropped"
+
+
+async def test_history_renders_in_order_goes_red_on_a_swapped_pair(monkeypatch):
+    """Two adjacent history turns swapped — order must matter, not just
+    membership."""
+    scenario = _scenario("followup-3wood-after-driver")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(check=Tier1CheckName.HISTORY_RENDERS_IN_ORDER)
+    assert checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed
+
+    swapped = list(ctx.text_messages)
+    swapped[0], swapped[1] = swapped[1], swapped[0]
+    mutant_ctx = dataclasses.replace(ctx, text_messages=swapped)
+    mutant_result = checks_mod.TIER1_CHECKS[check.check.value](mutant_ctx, check)
+    assert not mutant_result.passed, "check must go RED when two history turns are swapped"
+
+
+async def test_history_renders_in_order_goes_red_when_transcript_moves_before_history(monkeypatch):
+    """The current transcript must be LAST — a mutant that moves it to the
+    front (as if the model saw the question before the context that grounds
+    it) must go RED."""
+    scenario = _scenario("followup-3wood-after-driver")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(check=Tier1CheckName.HISTORY_RENDERS_IN_ORDER)
+    assert checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed
+
+    reordered = [ctx.text_messages[-1]] + ctx.text_messages[:-1]  # current transcript moved to the front
+    mutant_ctx = dataclasses.replace(ctx, text_messages=reordered)
+    mutant_result = checks_mod.TIER1_CHECKS[check.check.value](mutant_ctx, check)
+    assert not mutant_result.passed, "check must go RED when the current transcript is no longer last"
+
+
+async def test_history_renders_in_order_passes_on_the_real_assembled_messages(monkeypatch):
+    """A second, independently-seeded scenario (4 history turns) — the real
+    assembled messages must pass cleanly, not just the 2-turn scenario
+    above."""
+    scenario = _scenario("context-retention-prior-club-result")
+    ctx = await _build_prompts(scenario, monkeypatch)
+    check = Tier1Check(check=Tier1CheckName.HISTORY_RENDERS_IN_ORDER)
+    assert checks_mod.TIER1_CHECKS[check.check.value](ctx, check).passed
+
+
 # ── 6. Registry closure — no dead checks (plan §7 item 6) ──────────────────
 
 # Tier-1 checks whose "goes red" behavior is proven by an internal mutant
@@ -387,6 +446,7 @@ TIER1_CHECKS_EXERCISED_BY_TEETH = {
     Tier1CheckName.VALIDATE_GUIDE_REJECTS.value,
     Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS.value,
     Tier1CheckName.SHOT_DISTANCE_IN_BAND.value,
+    Tier1CheckName.HISTORY_RENDERS_IN_ORDER.value,
 }
 
 

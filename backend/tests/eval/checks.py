@@ -21,7 +21,7 @@ prompt-wording edits don't rot the eval.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 from app.caddie.club_selection import CLUB_DISPLAY_NAMES
@@ -35,7 +35,7 @@ from app.caddie.hazards import (
     format_hazards_line,
 )
 from app.caddie.physics import PHYSICS_GROUNDING_RULE, elevation_only_plays_like
-from app.caddie.session import RoundSession
+from app.caddie.session import RoundSession, VoiceCaddieMessage
 from app.caddie.tools import carries_payload, shot_distance_payload
 from app.caddie.types import GreenSlope, Hazard, HoleIntelligence, HoleStrategyGuide, WeatherConditions
 from app.caddie.voice_prompts import (
@@ -128,6 +128,14 @@ def build_round_session(scenario: Scenario) -> RoundSession:
         club_distances=dict(scenario.situation.player.club_distances),
         weather=weather,
         hole_intel={hole.number: intel},
+        # Multi-turn context-retention (plan §2): seeded prior turns, in
+        # order — `_build_session_voice_prompt` renders these verbatim into
+        # `messages` (session.py:60's VoiceCaddieMessage shape), exactly what
+        # a real caller's round history would look like.
+        conversation_history=[
+            VoiceCaddieMessage(role=turn.role, content=turn.content)
+            for turn in scenario.situation.history
+        ],
     )
 
 
@@ -153,15 +161,23 @@ class Tier1Context:
     # payloads (carries_tool_matches_hazards builds the RoundSession from it).
     # Optional so hand-built contexts in the teeth tests stay valid.
     scenario: Optional[Scenario] = None
+    # Multi-turn context-retention (plan §2): the REAL `messages` list
+    # `_build_session_voice_prompt` returns (conversation_history[-20:] +
+    # the current transcript) — text-mouth only; the realtime mouth's
+    # history lives server-side, not assertable offline (see checks.py
+    # docstring / README.md's doc note).
+    text_messages: list[dict] = field(default_factory=list)
 
 
 def build_tier1_context(
     scenario: Scenario, *, text_prompt: str, text_situation_block: str, realtime_prompt: str,
+    text_messages: Optional[list[dict]] = None,
 ) -> Tier1Context:
     """Assembles the pure half of the context (hazards/ground-truth block).
-    The caller supplies the two prompt strings because building them
-    requires the DB-touching (monkeypatched) `_build_session_voice_prompt` —
-    this module stays free of any pytest/monkeypatch concern."""
+    The caller supplies the two prompt strings (and the real `messages` list)
+    because building them requires the DB-touching (monkeypatched)
+    `_build_session_voice_prompt` — this module stays free of any
+    pytest/monkeypatch concern."""
     hazards = resolve_hazards(scenario.situation.hole)
     hazards_line = format_hazards_line(scenario.situation.hole.number, hazards)
     return Tier1Context(
@@ -172,6 +188,7 @@ def build_tier1_context(
         text_situation_block=text_situation_block,
         realtime_prompt=realtime_prompt,
         scenario=scenario,
+        text_messages=text_messages or [],
     )
 
 
@@ -364,6 +381,51 @@ def check_shot_distance_in_band(ctx: Tier1Context, check: Tier1Check) -> CheckRe
     return CheckResult(ok, f"{field}={value} outside physics band [{lo}, {hi}]" if not ok else "ok")
 
 
+def check_history_renders_in_order(ctx: Tier1Context, check: Tier1Check) -> CheckResult:
+    """Multi-turn context-retention (plan §2): every seeded `history` turn
+    must appear in the REAL text-mouth `messages` list, in the same relative
+    order, with exact role+content (no rewording/drop/reorder), all strictly
+    BEFORE the final message — which must be the current transcript, role
+    'user', content unchanged. Fail-closed: history non-empty but
+    `text_messages` empty is a failure, not a vacuous pass."""
+    if ctx.scenario is None:
+        return CheckResult(False, "context carries no scenario — cannot check history")
+    history = ctx.scenario.situation.history
+    if not history:
+        return CheckResult(True, "no seeded history — trivially in order")
+    messages = ctx.text_messages
+    if not messages:
+        return CheckResult(False, "history is non-empty but text_messages is empty (fail-closed)")
+
+    cursor = 0
+    positions: list[int] = []
+    for turn in history:
+        found: Optional[int] = None
+        for i in range(cursor, len(messages)):
+            m = messages[i]
+            if m.get("role") == turn.role and m.get("content") == turn.content:
+                found = i
+                break
+        if found is None:
+            return CheckResult(
+                False,
+                f"history turn {turn.role}:{turn.content!r} missing or out of order in text_messages",
+            )
+        positions.append(found)
+        cursor = found + 1
+
+    if positions and positions[-1] >= len(messages) - 1:
+        return CheckResult(False, "a history turn appears at or after the final transcript position")
+
+    last = messages[-1]
+    if last.get("role") != "user" or last.get("content") != ctx.scenario.situation.question:
+        return CheckResult(
+            False,
+            f"final message must be the CURRENT user transcript unchanged, got {last!r}",
+        )
+    return CheckResult(True, "ok")
+
+
 TIER1_CHECKS: dict[str, Callable[[Tier1Context, Tier1Check], CheckResult]] = {
     Tier1CheckName.PROMPT_CONTAINS_RULE.value: check_prompt_contains_rule,
     Tier1CheckName.PROMPT_CONTAINS_LITERAL.value: check_prompt_contains_literal,
@@ -376,6 +438,7 @@ TIER1_CHECKS: dict[str, Callable[[Tier1Context, Tier1Check], CheckResult]] = {
     Tier1CheckName.CONTEXT_CONTAINS.value: check_context_contains,
     Tier1CheckName.CARRIES_TOOL_MATCHES_HAZARDS.value: check_carries_tool_matches_hazards,
     Tier1CheckName.SHOT_DISTANCE_IN_BAND.value: check_shot_distance_in_band,
+    Tier1CheckName.HISTORY_RENDERS_IN_ORDER.value: check_history_renders_in_order,
 }
 
 

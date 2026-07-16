@@ -311,8 +311,12 @@ class CaddiePersonality(BaseModel):
     voice_style: VoiceStyle = VoiceStyle()
     response_style: str = "conversational"  # brief | detailed | conversational
     traits: list[str] = []
-    # OpenAI Realtime tuning
-    voice_id: Optional[str] = None  # alloy | ash | ballad | coral | echo | fable | onyx | nova | sage | shimmer | verse
+    # OpenAI Realtime tuning. Valid Realtime `audio.output.voice` enum values
+    # ONLY (confirmed against the GA Realtime session schema) — "fable",
+    # "onyx", and "nova" are legacy OpenAI TTS (v1/audio/speech) voices that
+    # the Realtime API REJECTS with an enum error at mint time; they must
+    # never appear here. See backend/tests/eval/test_realtime_session_config.py.
+    voice_id: Optional[str] = None  # alloy | ash | ballad | coral | echo | sage | shimmer | verse | marin | cedar
     realtime_instructions: Optional[str] = None  # Spoken-style instructions; falls back to system_prompt
 
 
