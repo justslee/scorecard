@@ -17965,3 +17965,23 @@ RoundPageClient.tsx, GoogleSatelliteMap.tsx, google-map-helpers.ts(+test).
 Landed via clean fast-forward (origin/integration/next e9391ec was ancestor). PR #143 checklist updated
 (NOTICEABLE). Backlog tap-target-gps-origin -> done. NOT shipping/pinging this cycle (owner decisions
 pending in main session; release-manager handles TestFlight later).
+
+## AWAITING — red9-relation-bunker-assembly (SILENT ingest correctness) — 2026-07-16
+Follow-up from tonight's guide-safe prod re-ingest: the extended osm.py query FETCHED Red-9's
+waste complex (relation[golf=bunker] id 19545022, MultiPolygon) but per-hole bunker counts came
+out byte-identical — the spatial-join assembly DROPS relation-multipolygon bunkers.
+DROP POINT: backend/app/services/course_spatial.py assign_features_to_holes else-branch (~L412-415)
+— a MultiPolygon falls through Point/Polygon -> (None,None,inf) -> build_course_feature_collection
+(~L615) filters it (course_name None). FIX (fable plan specs/red9-relation-bunker-assembly-plan.md):
+add a MultiPolygon branch picking the largest member ring (shoelace) as representative outer_ring,
+centroid via _ring_centroid, reuse existing Tier1/2/3 + bunker corridor cap (150m) UNCHANGED so the
+complex lands on hole 9 like a way-bunker. Fetch+parse+consumers already MultiPolygon-correct.
+AWAITING: builder implements the plan on integration/next (helper _ring_area + elif branch + doc
+touch-ups + TestMultiPolygonBunkerAssignment tests incl. regression pin), commits + pushes.
+  builder done -> reviewer (fresh: assignment correctness — complex lands on hole 9 not a
+  neighbour; no way-bunker regression; no cross-hole spam) + qa (ruff + pytest test_course_spatial
+  + test_osm_parsing local; CI postgis runs DB ingest tests; all gates SUCCESS on pushed head).
+  reviewer SHIP + qa PASS -> update PR #143 checklist (SILENT), fill backlog resolution, keep
+  red9-relation-bunker-rerun ready (owner standing auth). NOT shipping/pinging (SILENT; owner
+  decisions pending in main session). On resume, reconcile from origin/integration/next — do NOT
+  re-run a finished child.

@@ -26,6 +26,29 @@
       "resolution": ""
     },
     {
+      "id": "red9-relation-bunker-assembly",
+      "title": "Spatial join DROPS relation-multipolygon bunkers (Red-9 waste complex fetched but assembled away)",
+      "type": "minor",
+      "priority": 1,
+      "risk": "medium",
+      "status": "in-progress",
+      "noticeable": false,
+      "why": "Follow-up from tonight's guide-safe prod re-ingest (2026-07-16). The map-fieldtest-v119 Fix A extended the fetch (osm.py query relation[golf=bunker] + way/relation[natural=sand]) and the parser (_parse_relation_to_multipolygon -> bunkers bucket, MultiPolygon geometry) and the consumers (tee-shot-overlays.ts, hazards.py accept MultiPolygon) — but NOT the spatial-join assembly. The re-ingest FETCHED the Red-9 waste complex (relation[golf=bunker] id 19545022; 732 polygon features vs ~700) yet per-hole bunker counts came out byte-identical: the assembly DROPS it. EXACT DROP POINT: backend/app/services/course_spatial.py assign_features_to_holes geometry-type dispatch else-branch (~L412-415) — a MultiPolygon falls through Point/Polygon and is set (None,None,inf), then build_course_feature_collection (~L615) filters it out because course_name is None. FIX: add a MultiPolygon branch — pick the largest member ring (shoelace) as the representative outer_ring, centroid via _ring_centroid, then reuse the existing Tier 1/2/3 assignment + bunker corridor cap (150m) UNCHANGED, so the complex lands on hole 9 like a way-bunker. natural=sand ways already flow through the Polygon path. SILENT (ingest correctness); the visible payoff needs the data re-run (red9-relation-bunker-rerun).",
+      "resolution": "",
+      "followups": ["red9-relation-bunker-rerun"]
+    },
+    {
+      "id": "red9-relation-bunker-rerun",
+      "title": "Red-only staging RE-INGEST to land hole-9's waste-bunker complex (owner standing auth)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "noticeable": true,
+      "why": "Ops follow-up to red9-relation-bunker-assembly (the code fix). Once the spatial-join MultiPolygon fix lands, a Bethpage RED-only re-ingest using the proven guide-safe pattern (same as tonight's 2026-07-16 re-run) writes hole 9's giant sand/waste complex (relation[golf=bunker] id 19545022) into the stored features so it renders on the map. ~10 minutes. Covered by the owner's STANDING Red re-ingest authorization (same authorization as map-fieldtest-red11-reingest — the two can be run together in one Red re-ingest pass). Requires prod/DB access this eng-lead worktree does NOT have; deferred to a release/ops pass in the main session. VERIFY after: Red-9 bunker count increases (waste complex present), other Red holes byte-identical (no cross-hole spam), Red-11 par corrected if co-run.",
+      "resolution": ""
+    },
+    {
       "id": "map-reticle-grab-affordance",
       "title": "Aim reticle: subtle grab affordance on drag-start (discoverability polish)",
       "type": "minor",
