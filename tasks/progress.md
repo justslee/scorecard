@@ -24,12 +24,20 @@ ROOT-CAUSE dug before planning:
 - Engine already computes the decision: CaddieRecommendation.club + tee_shot_numbers +
   aggressiveness + miss_side (types.py:270), corridor-width club selection in club_selection.py.
 
-## AWAITING fable Plan @1b639be — specs/caddie-advice-stability-tee-shot-plan.md.
-Plan decides: payload-anchor vs temp vs both; the CALL-grounding prompt-contract wording
-(extend the numbers doctrine to the DECISION); whether the eval probe/harness must seed an
-engine recommendation so the anchor bites; before/after eval plan (N=5 consistency probe,
-acceptance 5/5 same reco + facts grounded; goldens still pass so caddie still reconsiders).
-On plan return → dispatch builder on the plan. If ship recut mid-cycle → HOLD push, re-land on fresh branch.
+Plan RETURNED (fable) + saved @ specs/caddie-advice-stability-tee-shot-plan.md. Mechanism =
+PAYLOAD-ANCHOR: new shared DECISION_GROUNDING_RULE (extends "only say what engine can prove"
+from NUMBERS to the CALL) in build_realtime_instructions + both routes/caddie.py stable_text
+blocks; PLUS seed the engine recommendation into build_round_session (new Situation.seed_recommendation
+flag) so the eval mirrors production (follow-up turns provably carry last_recommendation). Temp
+REJECTED (GA Realtime has no temp param; probe hardcodes 0.7 → temp change unfalsifiable). New
+falsifiable endorsed_club direction extractor in substance.py; acceptance = 5/5 endorsed_club=driver,
+distinct_endorsements=1 on AFTER keyed run; 3 multi-turn goldens still green (caddie still reconsiders).
+
+## AWAITING builder @1730fd7 on specs/caddie-advice-stability-tee-shot-plan.md.
+Builder implements the plan on integration/next, commits + pushes. On return → reviewer (fresh
+adversarial: does anchor make caddie rigid / regress numbers-coherence/miss-side) + qa (gates
+all SUCCESS on pushed head SHA + npm run test:caddie-experience + the AFTER consistency evidence).
+If ship recut mid-cycle → HOLD push, re-land on fresh branch.
 
 ## CYCLE 125 — RE-ARMED 2026-07-15. Item: guide-pauseturn-reserialize-hardening (backend, SILENT)
 Owner-feedback check FIRST: board has no field-test feedback card after #140/v1.1.7
