@@ -497,7 +497,10 @@ export default function GoogleSatelliteMap({
    * a bundled PNG glyph (distinct shape from the round plates — a white
    * circle read as "just another plate", specs/tee-shot-overlays-center-
    * and-style-plan.md Part B) via the same bundled-icon idiom as the tee
-   * marker (data-URL/canvas icons don't load on iOS). Dynamic carry TEXT
+   * marker (data-URL/canvas icons don't load on iOS) — a per-letter bundled
+   * PNG (`bunker-marker-{a..f}.png`, keyed by `BunkerCarry.letter`) stamps an
+   * ink coin badge on the bean so the marker and its legend chip share the
+   * same key (specs/lettered-bunker-legend-plan.md). Dynamic carry TEXT
    * still renders as DOM chips (§0 platform constraint).
    */
   const addTeeShotOverlays = useCallback(async () => {
@@ -519,9 +522,9 @@ export default function GoogleSatelliteMap({
 
     const markers: Marker[] = data.bunkers.map((bunker) => ({
       coordinate: bunker.nearEdge,
-      iconUrl: bunkerMarkerIconUrl(),
-      iconSize: { width: 22, height: 22 },
-      iconAnchor: { x: 11, y: 11 },
+      iconUrl: bunkerMarkerIconUrl(bunker.letter),
+      iconSize: { width: 26, height: 26 }, // 22 -> 26: room for the coin badge
+      iconAnchor: { x: 13, y: 13 },
       isFlat: true,
       zIndex: 4, // under the tee marker's zIndex 5
     }));
@@ -1176,31 +1179,41 @@ export default function GoogleSatelliteMap({
           >
             {teeShotChips.bunkers.map((b, i) => (
               <div
-                key={i}
+                key={b.letter || i}
                 style={{
                   background: T.paper,
                   border: `1px solid ${T.hairline}`,
                   borderRadius: 10,
                   padding: "6px 10px",
                   boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
-                  textAlign: "center",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
                   minWidth: 64,
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                  {/* Sand-bean swatch — binds the chip to the map's bunker glyph,
-                      same asymmetric silhouette as bunker-marker.png. */}
-                  <svg width="12" height="12" viewBox="0 0 96 96" aria-hidden="true" style={{ flexShrink: 0 }}>
-                    <circle cx="38" cy="52" r="20" fill="#d9c492" stroke={T.ink} strokeWidth="8" />
-                    <circle cx="58" cy="46" r="15" fill="#d9c492" stroke={T.ink} strokeWidth="8" />
-                  </svg>
-                  <span style={{ fontFamily: T.mono, fontSize: 8, letterSpacing: 1, color: T.pencil, textTransform: "uppercase" }}>
-                    {b.side === "C" ? "Carry" : `${b.side} Carry`}
+                {b.letter !== "" && (
+                  <span
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 9,
+                      background: T.ink,
+                      color: T.paper,
+                      fontFamily: T.sans,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      lineHeight: "18px",
+                      textAlign: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {b.letter}
                   </span>
-                </div>
-                <div style={{ fontFamily: T.serif, fontSize: 18, lineHeight: 1.15, color: T.ink }}>
+                )}
+                <span style={{ fontFamily: T.serif, fontSize: 18, lineHeight: 1.15, color: T.ink }}>
                   {b.front === b.back ? `${b.front}` : `${b.front} / ${b.back}`}
-                </div>
+                </span>
               </div>
             ))}
           </motion.div>

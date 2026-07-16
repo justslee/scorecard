@@ -923,3 +923,102 @@ describe('14g. split fairway (MultiPolygon) — containing-span rule beats neare
     }
   });
 });
+
+// ── 15. Bunker letter assignment (specs/lettered-bunker-legend-plan.md) ────
+
+describe('15. bunker letter assignment — shared legend/marker key', () => {
+  it('stable assignment — repeated calls on the same features produce identical letters; A is the min-front bunker', () => {
+    const tee: LatLng = { lat: 40.4, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+    const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
+
+    // 3 qualifying bunkers, distinct fronts, all well within the corridor/cap.
+    const pairs: Array<[number, number]> = [
+      [270, 15],
+      [150, 5],
+      [210, 10],
+    ];
+    const bunkers = pairs.map(([carry, lateral]) =>
+      makeBunkerPolygon([
+        corner(carry - 1, lateral - 1),
+        corner(carry - 1, lateral + 1),
+        corner(carry + 1, lateral + 1),
+        corner(carry + 1, lateral - 1),
+      ])
+    );
+
+    const first = fairwayBunkerCarries({ features: [holeFeature, ...bunkers], tee, green });
+    const second = fairwayBunkerCarries({ features: [holeFeature, ...bunkers], tee, green });
+
+    expect(first.map((b) => b.letter)).toEqual(second.map((b) => b.letter));
+    expect(first.map((b) => b.front)).toEqual([150, 210, 270]); // ascending
+    expect(first[0].letter).toBe('A'); // smallest front carry
+  });
+
+  it('legend<->marker agreement — letter[i] === A+i for every i, and front is non-decreasing', () => {
+    const tee: LatLng = { lat: 40.35, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+    const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
+
+    const pairs: Array<[number, number]> = [
+      [240, 20],
+      [150, 10],
+      [270, 15],
+      [210, 5],
+    ];
+    const bunkers = pairs.map(([carry, lateral]) =>
+      makeBunkerPolygon([
+        corner(carry - 1, lateral - 1),
+        corner(carry - 1, lateral + 1),
+        corner(carry + 1, lateral + 1),
+        corner(carry + 1, lateral - 1),
+      ])
+    );
+
+    const result = fairwayBunkerCarries({ features: [holeFeature, ...bunkers], tee, green });
+    for (let i = 0; i < result.length; i++) {
+      expect(result[i].letter).toBe(String.fromCharCode(65 + i));
+    }
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i].front).toBeGreaterThanOrEqual(result[i - 1].front);
+    }
+  });
+
+  it('cap behavior, contiguous — default cap (4) -> A,B,C,D with no gaps; maxBunkers: 2 -> A,B', () => {
+    const tee: LatLng = { lat: 40.3, lng: -73.5 };
+    const green = northOf(tee, 450);
+    const holeFeature = makeHoleLine([tee, green]);
+    const corner = (alongYd: number, latYd: number) => eastOf(northOf(tee, alongYd), latYd);
+
+    // Same six-bunker fixture as describe 11.
+    const pairs: Array<[number, number]> = [
+      [120, 30],
+      [150, 10],
+      [180, 25],
+      [210, 5],
+      [240, 20],
+      [270, 15],
+    ];
+    const bunkers = pairs.map(([carry, lateral]) =>
+      makeBunkerPolygon([
+        corner(carry - 1, lateral - 1),
+        corner(carry - 1, lateral + 1),
+        corner(carry + 1, lateral + 1),
+        corner(carry + 1, lateral - 1),
+      ])
+    );
+
+    const defaultCap = fairwayBunkerCarries({ features: [holeFeature, ...bunkers], tee, green });
+    expect(defaultCap.map((b) => b.letter)).toEqual(['A', 'B', 'C', 'D']);
+
+    const inlineCap = fairwayBunkerCarries({
+      features: [holeFeature, ...bunkers],
+      tee,
+      green,
+      maxBunkers: 2,
+    });
+    expect(inlineCap.map((b) => b.letter)).toEqual(['A', 'B']);
+  });
+});

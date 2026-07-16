@@ -28,6 +28,7 @@ import {
   createCameraQueue,
   teeColorFor,
   teeMarkerIconUrl,
+  bunkerMarkerIconUrl,
 } from './google-map-helpers';
 
 /** Flush pending microtasks so queued `.then()` chains settle in tests. */
@@ -755,5 +756,19 @@ describe('teeMarkerIconUrl — bundled marker asset path', () => {
   it('builds the relative asset path for each canonical slug', () => {
     expect(teeMarkerIconUrl('black')).toBe('assets/tee-marker-black.png');
     expect(teeMarkerIconUrl('neutral')).toBe('assets/tee-marker-neutral.png');
+  });
+});
+
+describe('bunkerMarkerIconUrl — lettered bunker marker asset path', () => {
+  it('maps a valid letter (case-insensitive) to its lettered asset path', () => {
+    expect(bunkerMarkerIconUrl('A')).toBe('assets/bunker-marker-a.png');
+    expect(bunkerMarkerIconUrl('f')).toBe('assets/bunker-marker-f.png');
+  });
+
+  it('falls back to the plain bean marker for empty/out-of-range/multi-char/whitespace input', () => {
+    expect(bunkerMarkerIconUrl('')).toBe('assets/bunker-marker.png');
+    expect(bunkerMarkerIconUrl('G')).toBe('assets/bunker-marker.png');
+    expect(bunkerMarkerIconUrl('AB')).toBe('assets/bunker-marker.png');
+    expect(bunkerMarkerIconUrl(' ')).toBe('assets/bunker-marker.png');
   });
 });
