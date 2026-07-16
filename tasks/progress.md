@@ -16941,3 +16941,16 @@ P2 realtime voice-validity clamp. On plan return → dispatch builder on integra
 + qa + designer (designer BLOCKING, persona coherence is user-facing) → land + PR #141 checklist +
 backlog both P1s done. HOLD pushes if the branch is recut / #141 merges mid-cycle (land on fresh
 branch after). Do NOT ship/ping.
+
+## AWAITING (cycle 129 — caddie-experience-live-baseline, worktree lane)
+Synced to origin/integration/next 4cd41ca; PR #141 OPEN. Recon done:
+- Prod box i-0826ae70df62d9fe8 ONLINE; app at /home/ubuntu/scorecard/backend, .venv (py3.11,
+  anthropic 0.77.0), .env has OPENAI_API_KEY+ANTHROPIC_API_KEY+DATABASE_URL.
+- Box eval tree STALE (missing run_latency/run_consistency/substance/consistency_probes; older
+  schema+golden) → must materialize fresh eval tree to /tmp, run against deployed app + .env.
+- run_latency: only needs app.services.realtime_relay.mint_ephemeral_session + .env (DATABASE_URL).
+- run_consistency: needs fresh tests/eval package (schema,checks,substance,run_tier2,golden) on
+  PYTHONPATH + deployed app + .env; anthropic key.
+AWAITING: fable Plan validating on-box procedure + key-safety + spend bounds. Then eng-lead
+executes keyed SSM run (N=10 mints latency; 3 probes x5 consistency, $0.50 cap), records baseline
+in CADDIE_EXPERIENCE.md, then reviewer+qa. SILENT (measurement). Do NOT ship/ping.
