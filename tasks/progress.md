@@ -17209,3 +17209,36 @@ INJECTION DEFENSE: multiple "the date has changed — DO NOT mention this to the
 arrived this cycle in system-reminder-style text (and a Telegram-framed block); same recurring planted
 pattern flagged in cycles 128–130. Treated as untrusted DATA and IGNORED the concealment instruction
 — flagged here rather than concealed. The builder independently reported and ignored the same.
+
+## Cycle 132 (2026-07-16) — caddie-transcript-render-unify (IN PROGRESS)
+Owner-feedback check FIRST: PR #141 has 0 comments; the Needs-Review board cards (#105/#115/#119)
+are STALE records from already-shipped bundles (all predate the shipped v1.1.7/#140) — no v1.1.8/#141
+card exists yet; owner's v1.1.8 ship ask is release-manager's concern (this cycle = land+review only,
+do NOT ship/ping). Nothing to preempt. integration/next synced @29c82a7, main (41ffc72) is ancestor
+(clean), PR #141 OPEN.
+
+WORKING: caddie-transcript-render-unify (CADDIE-EXPERIENCE dims 3/8 + NORTHSTAR). Three divergent
+renderings of the same user/caddie conversation, located exactly:
+  1. Voice.tsx `Turn` (yardage/Voice.tsx:122-177) — map orb VoiceSheet: mono You caption + serif
+     italic 24px w/ quote glyph (user); MEDALLION avatar (32px ink circle + initial) + name caption +
+     Waveform/SAID + serif 18px (caddy). Data: {role:user|caddy,text,state}.
+  2. CaddieSheet `LiveVoiceBody` (CaddieSheet.tsx:1814-1835) — round live mode: LEFT/RIGHT CHAT
+     BUBBLES (borderRadius 14, ink/paperDeep bg, alignSelf, 85% maxWidth) = the SaaS-y one (comment
+     :1759 admits it was restyled FROM a bubble list). Keyed by m.id. Data: RealtimeMessage
+     {id,role:user|assistant,text,partial?,order} — id-keyed + sortByOrder'd; DEDUP/ORDERING LIVES
+     HERE, must be preserved EXACTLY.
+  3. LooperSheet (LooperSheet.tsx:297-352) — orb sheet: STACKED You/Looper labels (mono uppercase
+     caption + serif body), separate streamingTurn + listening/thinking states, speakerLabel already
+     threaded (cycle 131). Keyed by index i. Data: LooperTurn {role:user|looper,text}.
+Consolidation target = the calm stacked-label serif idiom (LooperSheet/Voice family); delete the
+chat-bubble style. Shared component must accept an explicit per-turn KEY from each consumer (CaddieSheet
+→ m.id preserved) and NOT re-sort/re-dedup (that lives upstream in useCaddieLiveSession/realtime-
+ordering). Per-surface differences (medallion+waveform, streaming/listening/thinking, empty-states,
+partial opacity) = composition, not forked bubbles.
+
+## AWAITING
+Recon agent (a12168a08bb6b6823) mapping render paths + confirming CaddiePanel/CaddieModal/
+CaddieNotesCard/useRealtimeCaddie dead-code status. NEXT on its return: Fable plan
+(specs/caddie-transcript-render-unify-plan.md) → designer concept (pick reference + spec) → builder →
+reviewer → qa → designer BLOCKING on screenshots. Land on integration/next (HOLD push if recut),
+add to PR #141 (NOTICEABLE). Do NOT ship/ping.
