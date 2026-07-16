@@ -1421,6 +1421,16 @@ export default function RoundPage() {
   const [pillEndConfirming, setPillEndConfirming] = useState(false);
   const pillHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pillEndHoldFiredRef = useRef(false);
+  /** Shared cleanup for onPointerUp/onPointerLeave/onPointerCancel — clears
+   *  the pending long-press-to-end hold timer. Wired to all three so an OS
+   *  gesture/scroll (pointercancel, not up/leave, on some mobile browsers)
+   *  can't leave a stray end-timer running. */
+  const clearPillHold = useCallback(() => {
+    if (pillHoldTimerRef.current) {
+      clearTimeout(pillHoldTimerRef.current);
+      pillHoldTimerRef.current = null;
+    }
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Loading / not-found states
@@ -1519,7 +1529,12 @@ export default function RoundPage() {
   const pillIsSuspended = detachedCaddieLive.isSuspended;
   const pillStatus = detachedCaddieLive.session.status;
   const pillConnecting = pillIsLive && (pillStatus === "connecting" || pillStatus === "idle");
-  const pillPulsing = pillIsLive && !pillConnecting && !pillIsSuspended;
+  // Pulse PAUSES during the long-press "Release to end" confirm window
+  // (pillEndConfirming, defined below near the hold-timer state) — the
+  // concept couples them: a still-pulsing medallion next to "Release to
+  // end" would visually disagree with the label about whether the session
+  // is still normally live or about to end.
+  const pillPulsing = pillIsLive && !pillConnecting && !pillIsSuspended && !pillEndConfirming;
   // connected + listening share the calmer 2.6s cadence; speaking is a
   // touch brisker (1.8s) — the designer's two-cadence spec (§B3).
   const pillPulseDuration = pillStatus === "speaking" ? 1.8 : 2.6;
@@ -2330,18 +2345,13 @@ export default function RoundPage() {
                 }, PILL_END_CONFIRM_MS);
               }, PILL_END_HOLD_MS);
             }}
-            onPointerUp={() => {
-              if (pillHoldTimerRef.current) {
-                clearTimeout(pillHoldTimerRef.current);
-                pillHoldTimerRef.current = null;
-              }
-            }}
-            onPointerLeave={() => {
-              if (pillHoldTimerRef.current) {
-                clearTimeout(pillHoldTimerRef.current);
-                pillHoldTimerRef.current = null;
-              }
-            }}
+            onPointerUp={clearPillHold}
+            onPointerLeave={clearPillHold}
+            // Some mobile browsers fire pointercancel (not pointerup/leave)
+            // when an OS gesture/scroll interrupts the press — without this,
+            // that leaves a stray hold-timer running toward an end nobody
+            // asked for.
+            onPointerCancel={clearPillHold}
             whileTap={{ scale: 0.97 }}
             style={{
               padding: "14px 18px",
