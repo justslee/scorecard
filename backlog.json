@@ -1,7 +1,119 @@
 {
   "updated": "2026-07-15",
-  "note": "Cycle 126 (2026-07-15): OWNER P0 caddie-realtime-double-emit LANDED @e75ae2f on bundle #141 (NOTICEABLE — first ship-worthy item in the bundle; SHIP/PASS/PASS from reviewer/qa/designer); filed 2 non-blocking follow-ups (caddie-realtime-deadcode-detach, caddie-hole-context-preingest-mismatch). Bundle #141 now = 1 noticeable + 1 silent, ship-worthy on the next release pass. Prior consolidation retro/grooming (2026-07-15, after the v1.1.1->v1.1.7 shipping burst): 28 shipped-to-main terminal items archived to backlog-archive.json (188 archived total); backlog 78->50 live. guide-pauseturn-reserialize-hardening kept live (rides the STILL-OPEN bundle #141 — terminal-mark on ship). Filed prod-database-url-secret-refresh (owed infra). This file = LIVE queue only; terminal record + all ship SHAs/PRs/TestFlight versions preserved in backlog-archive.json (see resolution fields). Cycle-78 note (2026-07-11): statuses normalized to enum; ~150 items archived.",
+  "note": "Cycle 126 (2026-07-15): OWNER P0 caddie-realtime-double-emit LANDED @e75ae2f on bundle #141 (NOTICEABLE — first ship-worthy item in the bundle; SHIP/PASS/PASS from reviewer/qa/designer); filed 2 non-blocking follow-ups (caddie-realtime-deadcode-detach, caddie-hole-context-preingest-mismatch). Bundle #141 now = 1 noticeable + 1 silent, ship-worthy on the next release pass. Prior consolidation retro/grooming (2026-07-15, after the v1.1.1->v1.1.7 shipping burst): 28 shipped-to-main terminal items archived to backlog-archive.json (188 archived total); backlog 78->50 live. guide-pauseturn-reserialize-hardening kept live (rides the STILL-OPEN bundle #141 — terminal-mark on ship). Filed prod-database-url-secret-refresh (owed infra). This file = LIVE queue only; terminal record + all ship SHAs/PRs/TestFlight versions preserved in backlog-archive.json (see resolution fields). Cycle-78 note (2026-07-11): statuses normalized to enum; ~150 items archived. Cycle-127 note (2026-07-15): filed 11 CADDIE-EXPERIENCE items (owner crux directive) from the measurement-harness pass — 8 integration-audit incoherences (headline: caddie-orb-persona-consistency), the owner-gated audible voice A/B (caddie-voice-cedar-default-ab), the prod persona-voice DB audit, and the live-baseline capture.",
   "items": [
+    {
+      "id": "caddie-orb-persona-consistency",
+      "title": "Omnipresent caddie orb discards the user's chosen persona (always 'classic')",
+      "type": "major",
+      "priority": 1,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dim 8 (well-integrated), the single highest-impact incoherence from the 2026-07-15 integration audit. CaddieOrbSheet.tsx hardcodes personality_id:'classic' in both talkToCaddieStream (:202) and the talkToCaddie fallback (:215), and the TTS voice is hardcoded 'classic' at LooperSheet.tsx:109. The backend /caddie/voice route fully honors personality_id, so this is a pure frontend omission. Effect: a golfer who picks The Hype Man / The Strategist on the round page gets that persona on-course, but the moment they tap the ever-present orb on Home / Partners / My Card they SILENTLY get The Classic Caddie in a different voice. Also affects the My Card converse lane (same path). FIX: consume useCaddiePersona() (the round-page standard) in CaddieOrbSheet and thread personaId into both API calls and the TTS speak()/tts.speak calls. The most visible cross-surface identity break.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-persona-db-voice-audit",
+      "title": "Verify prod caddie_personas rows carry no invalid Realtime voice_id (complete the fable fix in prod)",
+      "type": "minor",
+      "priority": 1,
+      "risk": "low",
+      "status": "needs-owner-input",
+      "why": "CADDIE-EXPERIENCE dim 6 (reliability). Cycle 127 fixed The Professor's invalid voice_id 'fable' -> 'cedar' in the CODE fallback (personalities.py). But personas live in the caddie_personas Postgres table (migration 003); personalities.py is only the SSR/dev fallback. If a seeded prod row still carries voice_id='fable' (or any non-Realtime voice), The Professor's LIVE realtime session still errors in prod despite the code fix. ACTION: audit caddie_personas.voice_id against the valid Realtime set {alloy,ash,ballad,coral,echo,sage,shimmer,verse,marin,cedar} and repoint any invalid row (fable->cedar). Owner/DB-gated (needs a prod DB write; the looper/prod Secrets Manager DATABASE_URL is also stale per prod-database-url-secret-refresh). Low effort once DB access is available.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-voice-cedar-default-ab",
+      "title": "OWNER A/B by ear: default caddie voice sage->cedar + speed 1.15->~1.0 (less robotic)",
+      "type": "major",
+      "priority": 2,
+      "risk": "low",
+      "status": "needs-owner-input",
+      "why": "CADDIE-EXPERIENCE dim 4 (non-robotic voice). Voice research (2026-07-15): the current default caddie voice is 'sage' at speed 1.15; OpenAI's newer Realtime voices 'cedar' (natural/conversational) and 'marin' (professional/clear) are the biggest natural-speech improvement and are a PURE one-field session-config swap with NO latency or cost penalty (realtime_relay.py OPENAI_REALTIME_DEFAULT_VOICE + audio.output.speed). Also: speed 1.15 pushes faster than natural; ~1.0 + a 'relaxed conversational pace' instruction reads less robotic. This changes what the owner HEARS on the main (Classic) caddie, so it is owner-gated and audible-on-TestFlight only. ACTION: build a TestFlight build that swaps Classic default sage->cedar (and optionally nudges speed) so the owner judges by ear; keep behind the personality config. Deferred from cycle 127 (which landed only the correctness fable fix). NOTICEABLE.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-dead-code-removal",
+      "title": "Delete dead caddie surfaces CaddiePanel/CaddieModal/CaddieNotesCard (~1300 lines, SaaS styling)",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dim 8. Integration audit (2026-07-15) found CaddieModal.tsx is imported nowhere; it is the only importer of CaddiePanel.tsx (1327 lines), the only importer of CaddieNotesCard.tsx -- all three are DEAD. CaddiePanel uses a DIFFERENT transport (useRealtimeCaddie), a different persona picker (local PERSONALITIES), and zinc/emerald dark-SaaS styling (bg-zinc-800/50, text-emerald-400) that directly violates the yardage-book NORTHSTAR aesthetic -- a 1300-line divergent implementation any engineer (or agent) will mistake for the live round-page caddie. ACTION: delete all three AFTER confirming CaddieNotesCard's 'Caddie's notes on you' memory UI is intentionally gone (it is currently unreachable, so that feature silently no longer surfaces) or rehome it. Trivial deletion; the only judgment is the memory-notes intent.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-cross-surface-identity-label",
+      "title": "Assistant is named 'Looper' on the orb but by persona name on the round page",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dim 8. LooperSheetShell labels every assistant turn 'Looper' (LooperSheet.tsx:292,320; header kicker :176), while CaddieSheet / VoiceSheet label the same assistant with the persona name + 'On the bag' (CaddieSheet.tsx:1337). Effect: the caddie the user named/chose appears to be a different entity ('Looper') in the orb. Mostly cosmetic (thread the persona display name into the shell) but only meaningful once caddie-orb-persona-consistency lands (the orb must actually USE the chosen persona first).",
+      "depends_on": [
+        "caddie-orb-persona-consistency"
+      ]
+    },
+    {
+      "id": "caddie-setup-persona-blind",
+      "title": "Round-setup caddie is persona-blind in both voice and character",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dim 8. VoiceRoundSetupRealtime.tsx:149,169 hardcode personalityId:'classic', and build_setup_instructions() (setup_voice.py:70-94) contains NO persona character at all (a generic 'You are Looper's caddie... like a friend on the first tee'). So even if the frontend sent the real persona, setup would only vary voice_id, never character (strategist's clipped numbers, hype's energy, professor's teaching all vanish during setup). The FIRST voice interaction of every round is a different caddie than the one the user configured. ACTION: pass personaId through and blend persona character into build_setup_instructions -- OR make a deliberate product decision that setup is always neutral and make that consistent everywhere.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-transcript-render-unify",
+      "title": "Three different transcript renderings for the same caddie conversation",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dims 3/8 + NORTHSTAR. The same 'user turn / caddie turn' list renders three ways: map orb (VoiceSheet, Voice.tsx:122) centered stacked You-label + serif + medallion; round 'Ask caddie' live mode (CaddieSheet.tsx:1815-1826) left/right CHAT BUBBLES; orb sheet (LooperSheet.tsx:280) left-aligned stacked You/Looper labels. The chat-bubble style is the most SaaS-y of the three and cuts against the yardage-book feel (a code comment at CaddieSheet.tsx:1759 even notes it was restyled from a bubble list). The caddie conversation looks like a different app on each surface. ACTION: consolidate on ONE shared turn component in the calm yardage-book idiom. Bounded but real work; designer must sign off.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-opening-greeting-normalize",
+      "title": "Opening greeting exists on the round pill but nowhere else (map orb + orb lanes silent)",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "needs-owner-decision",
+      "why": "CADDIE-EXPERIENCE dims 3/8. CaddieSheet proactively greets with distance-to-pin ('About 152 to the pin... Want a read?', opening-turn.ts:18) in both classic and live modes, but the map orb (useVoiceCaddie) sends NO opener and the orb general/converse lanes show only a static hint and never speak first. One caddie entry point volunteers a read; the other two sit silent on the same hole. Whether the orb SHOULD greet is a product call, but today the difference is accidental (a byproduct of which hook/shell each surface happens to use). ACTION: owner decides the intended greeting behavior per surface, then normalize.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-loading-copy-align",
+      "title": "Loading/status copy diverges across caddie surfaces",
+      "type": "minor",
+      "priority": 3,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dim 7 (minimal loading, consistency). For the same 'waiting on the caddie' moment the user sees different words: LIVE_STATUS_LABEL 'Connecting.../Ready -- go ahead/Caddie speaking...' (live-copy.ts:19) vs LooperSheetShell 'Looper is thinking...' / 'One sec...' (LooperSheet.tsx:362,430) vs offline 'Off the grid - from your book'. The live-copy comment (live-copy.ts:17) even notes it only mirrors VoiceRoundSetupRealtime's STATUS_LABEL -- the orb text lane was never brought into that mirror. Low-impact, roughly one-liner to align the vocabulary into a single source.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-experience-live-baseline",
+      "title": "Fill the caddie-experience BASELINE table: run the gated latency+consistency tools with keys",
+      "type": "minor",
+      "priority": 2,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dims 5/7. Cycle 127 shipped the harness (CADDIE_EXPERIENCE.md, backend/tests/eval/run_latency.py + run_consistency.py) but could capture NO baseline -- no OPENAI/ANTHROPIC keys in the agent env (the baseline table ships honestly as TBD). ACTION (on-box, keyed, bounded spend per the runners' --budget caps): run `CADDIE_EVAL_LIVE=1 run_consistency --budget-usd 0.50` (grounded-answer variance across N identical asks) and `run_latency --n 5` (ephemeral-mint p50/p95), plus the on-device cold-vs-warm time-to-first-audio procedure documented in CADDIE_EXPERIENCE.md (read the caddie.eos_to_first_audio telemetry log lines). Fill the baseline table so future cycles regress-check against real numbers. Report spend as counts, key-free.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-reconnect-holechange-doublesend",
+      "title": "Hole change inside the realtime reconnect window can double-send sendContext",
+      "type": "minor",
+      "priority": 4,
+      "risk": "low",
+      "status": "ready",
+      "why": "CADDIE-EXPERIENCE dim 1 (no dupes) minor follow-up, found by the cycle-127 glitch-test build. In useCaddieLiveSession.ts a hole change that lands inside the reconnect window can legitimately fire sendContext twice on the new client (both calls are CORRECT and never stale -- verified by the glitch test, so this is not user-broken, just a redundant call that costs a little). ACTION: coalesce the re-anchor so exactly one sendContext fires for the settled hole after a reconnect. Low priority; keep the glitch-test coverage green.",
+      "depends_on": []
+    },
     {
       "id": "tee-shot-overlays-center-and-style",
       "title": "OWNER field-test polish: fairway-center the 200/150/100 plates + distinct bunker glyph",
