@@ -112,11 +112,32 @@ export interface CaddiePersonaState {
   selectPersona: (id: string) => void;
 }
 
+// Cross-instance sync: the picker lives ONLY on the round page's CaddieSheet
+// today (RoundPageClient -> CaddieSheet), while the omnipresent orb host
+// (CaddieOrbSheet, mounted once in layout.tsx) mounts its OWN hook instance.
+// A `storage` event fires only in OTHER tabs, never the tab that wrote it, so
+// it can't converge the same-tab "change persona on the round page, then talk
+// to the orb on Home" path. This tiny module-level pub-sub (same pattern as
+// looper-bus.ts's onLooperOpen / caddie-context.ts's onCaddieContextChange)
+// lets every mounted instance converge on whichever one resolves last.
+const personaListeners = new Set<(id: string) => void>();
+
+function notifyPersonaChange(id: string): void {
+  for (const l of personaListeners) l(id);
+}
+
 export function useCaddiePersona(): CaddiePersonaState {
   const [personaId, setPersonaId] = useState<string>(
     () => readLocalPersonaId() || DEFAULT_PERSONA_ID,
   );
   const [personas, setPersonas] = useState<CaddiePersonalityInfo[]>(BUILTIN_PERSONAS);
+
+  useEffect(() => {
+    personaListeners.add(setPersonaId);
+    return () => {
+      personaListeners.delete(setPersonaId);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +158,7 @@ export function useCaddiePersona(): CaddiePersonaState {
         );
         setPersonaId(resolved);
         writeLocalPersonaId(resolved);
+        notifyPersonaChange(resolved);
       }
     })();
     return () => {
@@ -147,6 +169,7 @@ export function useCaddiePersona(): CaddiePersonaState {
   const selectPersona = useCallback((id: string) => {
     setPersonaId(id);
     writeLocalPersonaId(id);
+    notifyPersonaChange(id);
     updateCaddieProfile(id).catch(() => {
       // Offline / transient — localStorage keeps the choice for this device.
     });

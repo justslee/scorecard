@@ -16,6 +16,7 @@ import { LooperSheetShell, type LooperTurn, type LooperPhase } from "@/component
 import { useLooperDictation } from "@/hooks/useLooperDictation";
 import { buildKeyterms } from "@/lib/voice/keyterms";
 import { talkToCaddie, talkToCaddieStream, BeforeFirstByteError } from "@/lib/caddie/api";
+import { useCaddiePersona } from "@/lib/caddie/persona";
 import { useStreamBuffer } from "@/lib/caddie/stream-buffer";
 import { onLooperOpen } from "@/lib/looper-bus";
 import { haptic } from "@/lib/haptics";
@@ -30,6 +31,13 @@ import {
 } from "@/lib/caddie-context";
 
 export default function CaddieOrbSheet() {
+  // Source of truth for the golfer's chosen persona (persona.ts §resolution
+  // order); mounting the hook here — the layout-mounted, single omnipresent
+  // host — is what makes every off-round surface speak/reply in the SAME
+  // persona chosen on the round page, instead of silently defaulting to
+  // classic (persona.ts's module-level pub-sub converges this instance with
+  // any other mounted instance, e.g. the round page's own).
+  const { personaId, caddy } = useCaddiePersona();
   const [open, setOpen] = useState(false);
   // The task ctx id the OPEN session is bound to; null = general lane.
   const [boundId, setBoundId] = useState<CaddieTaskId | null>(null);
@@ -199,7 +207,7 @@ export default function CaddieOrbSheet() {
           responseText = await talkToCaddieStream(
             {
               transcript: finalText,
-              personality_id: "classic",
+              personality_id: personaId,
               hole_number: null,
               conversation_history: history,
               stats_context: statsContext,
@@ -212,7 +220,7 @@ export default function CaddieOrbSheet() {
           setStreamingText(null);
           const res = await talkToCaddie({
             transcript: finalText,
-            personality_id: "classic",
+            personality_id: personaId,
             hole_number: null, // off-course — never pretend to be on a hole
             conversation_history: history,
             stats_context: statsContext,
@@ -238,7 +246,7 @@ export default function CaddieOrbSheet() {
         if (!isStale()) setThinking(false);
       }
     },
-    [answerBuffer, appendTurn],
+    [answerBuffer, appendTurn, personaId],
   );
 
   // ── Mic handler — lanes + gates ──
@@ -376,7 +384,9 @@ export default function CaddieOrbSheet() {
       emptyHint={
         activeTask?.copy.hint ??
         activeConverse?.copy.hint ??
-        "Tee times, courses, your game — ask me anything."
+        (personaId === "classic"
+          ? "Tee times, courses, your game — ask me anything."
+          : `${caddy.name} here — tee times, courses, your game. Ask me anything.`)
       }
       turns={turns}
       phase={phase}
@@ -384,6 +394,7 @@ export default function CaddieOrbSheet() {
       error={error ?? dictation.micError}
       onMicTap={() => void handleMicTap()}
       streamingTurn={streamingText}
+      personaId={personaId}
     />
   );
 }

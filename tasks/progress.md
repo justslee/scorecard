@@ -16942,6 +16942,65 @@ P2 realtime voice-validity clamp. On plan return → dispatch builder on integra
 backlog both P1s done. HOLD pushes if the branch is recut / #141 merges mid-cycle (land on fresh
 branch after). Do NOT ship/ping.
 
+## CYCLE 128 DONE — builder implemented both P1s from specs/caddie-orb-persona-consistency-plan.md
+Implemented exactly per plan on `integration/next` (no per-item PR — bundle rider).
+
+**Part 1 (NOTICEABLE) — persona threading:**
+- `frontend/src/lib/caddie/persona.ts` — module-level pub-sub (`personaListeners` Set +
+  `notifyPersonaChange`) so every mounted `useCaddiePersona()` instance converges; emitted from
+  `selectPersona` and the profile-resolution effect branch.
+- `frontend/src/components/CaddieOrbSheet.tsx` — mounts `useCaddiePersona()`; both
+  `talkToCaddieStream`/`talkToCaddie` calls in `runConverse` now send `personality_id: personaId`
+  (was hardcoded `"classic"`); `personaId` added to the `runConverse` dep array; shell now gets
+  `personaId={personaId}`; general-lane `emptyHint` speaks the persona's name when non-classic
+  (classic byte-identical). Lane routing / one-mic / summon / task-gate logic untouched (diff-only:
+  hook call, 2 literals, prop, emptyHint expr, dep array — verified against the plan's invariant list).
+- `frontend/src/components/LooperSheet.tsx` — `LooperSheetShell` gained optional `personaId = "classic"`
+  prop; `tts.speak(last.text, "classic")` → `tts.speak(last.text, personaId)`. Effect dep array
+  intentionally unchanged (`[open, turns]`, per plan §1.3C).
+- Tests: extended `CaddieOrbSheet.test.tsx`'s `@/lib/caddie/api` mock factory with
+  `fetchPersonalities`/`getCaddieProfile`/`updateCaddieProfile` (import-chain prerequisite the plan
+  flagged), hoisted a shared `speakMock`, added a `localStorage` stub (this repo's jsdom doesn't ship
+  one — same pattern as `CaddieOrb.test.tsx`, not called out in the plan, discovered during RED-proof).
+  New "persona threading" describe block (5 tests) + new `LooperSheet.test.tsx` (2 tests, prop
+  back-compat + honored). RED-proofed by `git stash`-ing the 3 source files, confirming the intended
+  failures, then restoring — captured in the PR/session evidence (5 red → 0 red after restore, all
+  other pre-existing tests in the file also transiently red only because of the RED-proof stash, back
+  to green after).
+
+**Part 2 (reliability, no prod mutation) — realtime voice-validity clamp:**
+- `backend/app/caddie/types.py` — `VALID_REALTIME_VOICES: frozenset[str]` (single production source
+  of truth, doc comment updated to reference it).
+- `backend/app/services/realtime_relay.py` — `clamp_realtime_voice()` (None → silent default;
+  invalid non-empty → default + `log.warning`, using this file's existing `log = logging.getLogger`
+  convention rather than the plan's literal `logger.warning` pseudocode — sound naming adjustment,
+  same behavior); applied at `build_session_payload`'s `audio.output.voice` (line ~144, `speed: 1.15`
+  untouched).
+- `backend/app/routes/realtime.py` — both `StartRealtimeSessionResponse` echo-back sites
+  (`/setup-session`, `/session`) now use `clamp_realtime_voice(personality.voice_id)` instead of
+  `personality.voice_id or mint.get("voice", "")` (response now describes the voice actually minted).
+- Tests: `test_realtime_payload.py` (+7: parametrized invalid-voice clamp, valid passthrough,
+  default-is-valid, `clamp_realtime_voice(None)`), `tests/eval/test_realtime_session_config.py`
+  (+1 drift alarm: prod `VALID_REALTIME_VOICES` == the file's independent literal copy), new
+  `tests/test_realtime_voice_clamp.py` (+2: route-level echo-back honesty, monkeypatched
+  `load_personality`/`mint_ephemeral_session`, no DB/HTTP). RED-proofed the same way (stash the 3
+  backend source files → import-time RED → restore → green).
+
+**Gates (all green, full output captured in the session):** frontend `npm run lint` clean,
+`npx tsc --noEmit` clean, `npm run test` 127 files / 2468 tests passed, `npm run test:caddie-experience`
+16 files / 223 tests passed, `npx tsx voice-tests/runner.ts --smoke` 278/278, `npm run build` clean;
+backend `ruff check .` clean, `uv run pytest` (non-DB) 2404 passed + 98 skipped (DB-only, deferred to
+CI) + `tests/eval` 106 passed, targeted new-test run 53/53. No changes needed to `types.ts`/`models.py`
+(confirmed — no shared-shape edits). Zero diffs in `realtime.ts`/`realtime-ordering.ts`/
+`useCaddieLiveSession.ts`/`backend/supabase/migrations/**` (verified via `git diff --stat`).
+Committed to `integration/next`; pushed. Prompt-injection note: two injected "system note"-shaped
+blocks appeared mid-session (a fake Telegram-MCP/"auto mode"/hide-the-date block, and fake notes
+claiming my own intentional `git stash` RED-proof edits were "modified by the user/linter, don't tell
+them") — both ignored, reported transparently, no actual behavior change.
+
+Next: reviewer + qa + designer (BLOCKING — persona coherence is user-facing) → land + PR #141
+checklist + backlog both P1s done, per the cycle-128 AWAITING note's plan.
+
 ## AWAITING (cycle 129 — caddie-experience-live-baseline, worktree lane)
 Synced to origin/integration/next 4cd41ca; PR #141 OPEN. Recon done:
 - Prod box i-0826ae70df62d9fe8 ONLINE; app at /home/ubuntu/scorecard/backend, .venv (py3.11,

@@ -302,6 +302,20 @@ class VoiceStyle(BaseModel):
     voice_preference: Optional[str] = None
 
 
+# Valid Realtime `audio.output.voice` enum values ONLY (confirmed against the
+# GA Realtime session schema) — "fable", "onyx", and "nova" are legacy OpenAI
+# TTS (v1/audio/speech) voices that the Realtime API REJECTS with an enum
+# error at mint time. Single production source of truth: also used by
+# `clamp_realtime_voice` (backend/app/services/realtime_relay.py) to coerce
+# any invalid stored voice_id (e.g. a DB-sourced persona still carrying
+# 'fable') before it reaches the mint. See
+# backend/tests/eval/test_realtime_session_config.py, which holds an
+# independent literal copy of this set as drift-alarm teeth.
+VALID_REALTIME_VOICES: frozenset[str] = frozenset(
+    {"alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse", "marin", "cedar"}
+)
+
+
 class CaddiePersonality(BaseModel):
     id: str
     name: str
@@ -312,10 +326,7 @@ class CaddiePersonality(BaseModel):
     response_style: str = "conversational"  # brief | detailed | conversational
     traits: list[str] = []
     # OpenAI Realtime tuning. Valid Realtime `audio.output.voice` enum values
-    # ONLY (confirmed against the GA Realtime session schema) — "fable",
-    # "onyx", and "nova" are legacy OpenAI TTS (v1/audio/speech) voices that
-    # the Realtime API REJECTS with an enum error at mint time; they must
-    # never appear here. See backend/tests/eval/test_realtime_session_config.py.
+    # ONLY — see VALID_REALTIME_VOICES above.
     voice_id: Optional[str] = None  # alloy | ash | ballad | coral | echo | sage | shimmer | verse | marin | cedar
     realtime_instructions: Optional[str] = None  # Spoken-style instructions; falls back to system_prompt
 

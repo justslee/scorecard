@@ -55,6 +55,7 @@ export function LooperSheetShell({
   error,
   onMicTap,
   streamingTurn,
+  personaId = "classic",
 }: {
   open: boolean;
   onClose: () => void;
@@ -73,6 +74,13 @@ export function LooperSheetShell({
    * renders nothing extra, so nothing changes for them.
    */
   streamingTurn?: string | null;
+  /**
+   * The golfer's selected caddie persona id — selects the SPOKEN voice only
+   * (TTS), display-inert (no visible chrome changes here). Optional, default
+   * "classic" so any consumer that omits it is behavior-identical to before
+   * this prop existed.
+   */
+  personaId?: string;
 }) {
   useBodyScrollLock(open);
 
@@ -106,7 +114,7 @@ export function LooperSheetShell({
     lastSpokenIndexRef.current = lastIdx;
     const last = turns[lastIdx];
     if (last && last.role === "looper" && last.text) {
-      tts.speak(last.text, "classic");
+      tts.speak(last.text, personaId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, turns]);

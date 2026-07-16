@@ -115,3 +115,17 @@ def test_reintroducing_an_invalid_voice_goes_red():
 
 def test_default_voice_is_a_valid_realtime_voice():
     assert OPENAI_REALTIME_DEFAULT_VOICE in VALID_REALTIME_VOICES
+
+
+def test_valid_voice_constant_matches_closed_set():
+    """Drift alarm (specs/caddie-orb-persona-consistency-plan.md §2.2): this
+    file's local literal `VALID_REALTIME_VOICES` is a deliberate INDEPENDENT
+    copy — the point of these teeth is that importing the production constant
+    here would let a bad edit to that constant self-certify. This test is the
+    one place that cross-checks the two: the production
+    `app.caddie.types.VALID_REALTIME_VOICES` (single source of truth for the
+    runtime clamp in `realtime_relay.clamp_realtime_voice`) must equal this
+    local set exactly, so the two never silently diverge."""
+    from app.caddie.types import VALID_REALTIME_VOICES as PROD_VALID_REALTIME_VOICES
+
+    assert PROD_VALID_REALTIME_VOICES == VALID_REALTIME_VOICES
