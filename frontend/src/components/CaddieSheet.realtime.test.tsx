@@ -1122,7 +1122,14 @@ describe("CaddieSheet live mode — Slice E idle suspend/resume", () => {
     // (specs/caddie-voice-reliability-hardening-plan.md §3): a held clarifier
     // pushes status to 'speaking' (audio IS playing) while the transcript is
     // still empty. The empty state must never contradict the footer's
-    // "Caddie speaking…" claim with a fake "is listening" one.
+    // "{name} is speaking…" claim with a fake "is listening" one.
+    //
+    // Persona-named footer (cycle-133 nit 2, specs/caddie-coherence-polish-
+    // plan.md §2): the footer used to say the generic "Caddie speaking…"
+    // while the hint below it said "The Strategist is speaking." — two
+    // honest-states claims that disagreed on the caddy's own name. Both are
+    // now resolved via `captionPersonaName(caddy.name)` ("The Strategist" ->
+    // "Strategist"), matching the transcript's `speakerLabel`.
     renderSheet();
     await flush();
 
@@ -1131,14 +1138,14 @@ describe("CaddieSheet live mode — Slice E idle suspend/resume", () => {
     await flush();
 
     expect(screen.queryByText(/is listening/i)).toBeNull();
-    expect(screen.getByText("The Strategist is speaking.")).toBeTruthy();
-    expect(screen.getByText("Caddie speaking…")).toBeTruthy();
+    expect(screen.getByText("Strategist is speaking.")).toBeTruthy();
+    expect(screen.getByText("Strategist is speaking…")).toBeTruthy();
 
     // Back to 'connected' — the listening hint returns.
     act(() => client.emitStatus("connected"));
     await flush();
 
     expect(screen.queryByText(/is speaking\.$/i)).toBeNull();
-    expect(screen.getByText("Go ahead — The Strategist is listening.")).toBeTruthy();
+    expect(screen.getByText("Go ahead — Strategist is listening.")).toBeTruthy();
   });
 });

@@ -13,24 +13,40 @@
 
 import type { RealtimeStatus } from '@/lib/voice/realtime';
 
-/** Live-mode (Realtime) status → calm footer copy
- *  (specs/caddie-realtime-slice-c1-plan.md §5). Mirrors
- *  VoiceRoundSetupRealtime's STATUS_LABEL. */
-export const LIVE_STATUS_LABEL: Record<RealtimeStatus, string> = {
+/** Every status label except `speaking` needs no persona name — `speaking`
+ *  is resolved separately by `liveStatusLabel` below
+ *  (specs/caddie-coherence-polish-plan.md §2: a generic "Caddie speaking…"
+ *  two lines above a persona-named transcript caption is exactly the
+ *  two-honest-states-disagree bug this module exists to prevent). */
+type NameFreeStatus = Exclude<RealtimeStatus, 'speaking'>;
+
+/** Live-mode (Realtime) status → calm footer copy, for every NAME-FREE
+ *  status (specs/caddie-realtime-slice-c1-plan.md §5). `speaking` is
+ *  deliberately absent — see `liveStatusLabel`. VoiceRoundSetupRealtime's
+ *  STATUS_LABEL spreads this in directly (one source of truth, no fork). */
+export const LIVE_STATUS_LABEL: Record<NameFreeStatus, string> = {
   idle: 'Connecting…',
   connecting: 'Connecting…',
   connected: 'Ready — go ahead',
   listening: 'Listening…',
-  speaking: 'Caddie speaking…',
   closed: 'Ended',
   error: "Couldn't connect",
 };
 
+/** Status → calm footer copy, resolving the persona name into `speaking`
+ *  (the one status whose copy needs a name — specs/caddie-coherence-polish-
+ *  plan.md §2 loading table). Name-free statuses fall through to
+ *  `LIVE_STATUS_LABEL` unchanged. */
+export function liveStatusLabel(status: RealtimeStatus, name: string): string {
+  if (status === 'speaking') return `${name} is speaking…`;
+  return LIVE_STATUS_LABEL[status];
+}
+
 /**
  * The empty-transcript hint shown in the live-mode body before any messages
- * exist. Must agree with `LIVE_STATUS_LABEL[status]` — in particular, while
- * the footer says "Caddie speaking…" (status === 'speaking', audio IS
- * playing), the empty state must not claim the caddy "is listening".
+ * exist. Must agree with `liveStatusLabel(status, name)` — in particular,
+ * while the footer says "{name} is speaking…" (status === 'speaking', audio
+ * IS playing), the empty state must not claim the caddy "is listening".
  *
  * `closed`/`error` need no dedicated branch here: `paused` flips true on
  * suspend before either status is reached live, and the classic-mode

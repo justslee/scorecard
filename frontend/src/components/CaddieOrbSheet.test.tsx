@@ -798,6 +798,98 @@ describe("CaddieOrbSheet — speakerLabel (cross-surface identity label)", () =>
   });
 });
 
+describe("CaddieOrbSheet — converse no-re-greet invariant (specs/caddie-coherence-polish-plan.md §1)", () => {
+  // The converse emptyHint renders only when turns.length === 0. Turns
+  // persist across a RE-SUMMON while the sheet is already open (see the
+  // "reset-on-open only on closed→open" describe above — pre-existing
+  // coverage that pins the SESSION-continuity behavior); this test adds the
+  // piece that block didn't check: the emptyHint specifically must never
+  // reappear once turns.length > 0, mirroring the round page's already-
+  // canonical no-re-greet contract (CaddieSheet.tsx:845).
+  //
+  // NOTE (verified against the actual code, not assumed): a full close() ->
+  // reopen goes through `resetSession()` on the closed→open transition and
+  // deliberately starts a FRESH conversation (turns cleared, hint legitimately
+  // reappears) — that is pre-existing, intentional session-boundary behavior,
+  // not a re-greet regression, and changing it would be a real session-
+  // persistence behavior change out of scope for this copy-only nit.
+  it("turns survive a re-summon while already open; the empty hint never reappears once turns.length > 0", async () => {
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("An answer.");
+      return "An answer.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    // Empty-hint visible pre-conversation.
+    expect(screen.getByText("Tee times, courses, your game — ask me anything.")).toBeTruthy();
+
+    await speak("first question");
+    await waitFor(() => expect(talkToCaddieStreamMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("first question")).toBeTruthy();
+    expect(await screen.findByText("An answer.")).toBeTruthy();
+    // The hint is gone once a turn exists.
+    expect(screen.queryByText("Tee times, courses, your game — ask me anything.")).toBeNull();
+
+    // Re-summon while STILL open (not a close/reopen) — must not reset.
+    act(() => openLooper({ context: "general", listening: false }));
+
+    // The prior conversation survives — no re-greet.
+    expect(screen.getByText("first question")).toBeTruthy();
+    expect(screen.getByText("An answer.")).toBeTruthy();
+    expect(screen.queryByText("Tee times, courses, your game — ask me anything.")).toBeNull();
+  });
+});
+
+describe("CaddieOrbSheet — long custom persona name: hint name matches caption name (specs/caddie-coherence-polish-plan.md §1/§4)", () => {
+  it("emptyHint's persona name is the SAME truncated form as the reply caption's speakerLabel", async () => {
+    // > 16 chars so captionPersonaName's word-boundary truncation kicks in —
+    // exercises the exact overflow case NIT 1 fixes (CaddieOrbSheet.tsx:401
+    // used to interpolate the untruncated caddy.name, disagreeing with the
+    // caption's captionPersonaName(caddy.name) at :389/:753-equivalent).
+    getCaddieProfileMock.mockResolvedValueOnce({
+      handicap: null,
+      preferred_personality_id: null,
+      rounds_analyzed: 0,
+    });
+    vi.mocked((await import("@/lib/caddie/api")).fetchPersonalities).mockResolvedValueOnce([
+      {
+        id: "custom-long",
+        name: "Sunday Money Maker Supreme",
+        description: "Custom",
+        avatar: "🏌️",
+        response_style: "conversational",
+        traits: [],
+      },
+    ]);
+    window.localStorage.setItem("looper.caddiePersonaId", "custom-long");
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Let's go get it.");
+      return "Let's go get it.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+
+    // Let persona resolution (fetchPersonalities + profile, Promise.allSettled) settle.
+    await waitFor(() => expect(getCaddieProfileMock).toHaveBeenCalled());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const hint = await screen.findByText(/here — tee times, courses, your game\. Ask me anything\./);
+    const hintName = hint.textContent?.split(" here —")[0];
+    expect(hintName).toBe("Sunday Money…"); // captionPersonaName truncation, word-boundary + ellipsis
+    expect(hintName!.length).toBeLessThanOrEqual(17);
+
+    await speak("what's a good warmup?");
+    expect(await screen.findByText("Let's go get it.")).toBeTruthy();
+    // Same resolved name attributes the reply caption — never disagree.
+    expect(screen.getByText(hintName!)).toBeTruthy();
+  });
+});
+
 describe("CaddieOrbSheet — no cross-page leakage guard", () => {
   it("getCaddieContext reflects the exclusive registry the host reads", () => {
     expect(getCaddieContext()).toBeNull();

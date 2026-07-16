@@ -61,7 +61,7 @@ import { getCaddieLiveMode } from "@/lib/voice/live-mode-pref";
 import { useCaddieLiveSession } from "@/hooks/useCaddieLiveSession";
 import { buildOpeningGreetingText } from "@/lib/caddie/opening-turn";
 import type { RealtimeMessage, RealtimeStatus } from "@/lib/voice/realtime";
-import { LIVE_STATUS_LABEL, liveEmptyStateHint } from "@/lib/caddie/live-copy";
+import { liveStatusLabel, liveEmptyStateHint } from "@/lib/caddie/live-copy";
 import type {
   CaddieRecommendation,
   VoiceCaddieMessage,
@@ -1669,6 +1669,7 @@ export default function CaddieSheet({
           {mode === "voice" && liveActive ? (
             <LiveFooter
               status={live.status}
+              personaName={captionPersonaName(caddy.name)}
               muted={live.muted}
               onToggleMute={live.toggleMute}
               paused={live.liveState === "suspended"}
@@ -1796,7 +1797,7 @@ function LiveVoiceBody({
             lineHeight: 1.5,
           }}
         >
-          {liveEmptyStateHint(status, paused, caddy.name)}
+          {liveEmptyStateHint(status, paused, captionPersonaName(caddy.name))}
         </div>
       )}
       {messages.length === 0 && !paused && (
@@ -1810,7 +1811,7 @@ function LiveVoiceBody({
             lineHeight: 1.5,
           }}
         >
-          {liveEmptyStateHint(status, paused, caddy.name)}
+          {liveEmptyStateHint(status, paused, captionPersonaName(caddy.name))}
         </div>
       )}
       {/* render as-is — messages arrive PRE-SORTED by `order` from
@@ -1852,12 +1853,17 @@ function LiveMicIcon({ size = 20, stroke = "currentColor", muted = false }: { si
 
 function LiveFooter({
   status,
+  personaName,
   muted,
   onToggleMute,
   paused,
   onResume,
 }: {
   status: RealtimeStatus;
+  /** Cross-surface identity name (`captionPersonaName(caddy.name)`) —
+   *  resolves the `speaking` status label so it never disagrees with the
+   *  transcript's `speakerLabel` (specs/caddie-coherence-polish-plan.md §2). */
+  personaName: string;
   muted: boolean;
   onToggleMute: () => void;
   /** True when `liveState === "suspended"` (Slice E) — the socket is
@@ -1940,7 +1946,7 @@ function LiveFooter({
           textTransform: "uppercase",
         }}
       >
-        {LIVE_STATUS_LABEL[status]}
+        {liveStatusLabel(status, personaName)}
       </div>
       <button
         onClick={onToggleMute}
