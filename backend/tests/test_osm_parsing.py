@@ -8,6 +8,7 @@ import pytest
 
 from app.services.osm import (
     _parse_course_geometry_response,
+    _parse_relation_to_multipolygon,
     _parse_way_to_linestring,
     _parse_way_to_polygon,
 )
@@ -549,3 +550,220 @@ class TestTerrainFeatures:
         assert len(result["trees"]) == 1
         # But only the Black hole should appear.
         assert len(result["holes"]) == 1
+
+
+# ── Bunker relations + natural=sand (v1.1.9 field-test fix, Item 2) ───────────
+#
+# Overpass response shape for the two new query clauses
+# (relation["golf"="bunker"], way/relation["natural"="sand"]):
+#   - A golf=bunker MULTIPOLYGON relation with an outer ring (waste complex)
+#     and an inner ring (grass island) — mirrors the real Bethpage Red-9
+#     relation confirmed live via an Overpass probe (id 19545022): outer +
+#     inner way members, tags golf=bunker, type=multipolygon.
+#   - A natural=sand WAY (waste bunker mapped as a simple polygon, no relation).
+#   - A natural=sand RELATION (waste complex mapped as a multipolygon, no
+#     golf=bunker tag at all — OSM sometimes tags waste areas this way).
+#   - A relation with no usable outer-ring geometry -> must be skipped.
+#   - A relation that is neither golf=bunker nor natural=sand (the query
+#     never requests other relation types, but the parser must still ignore
+#     one defensively rather than mis-classify it).
+_BUNKER_RELATION_FIXTURE: dict = {
+    "elements": [
+        {
+            "type": "relation",
+            "id": 700001,
+            "tags": {"golf": "bunker", "type": "multipolygon"},
+            "members": [
+                {
+                    "type": "way",
+                    "ref": 700101,
+                    "role": "outer",
+                    "geometry": [
+                        {"lat": 40.75, "lon": -73.50},
+                        {"lat": 40.75, "lon": -73.499},
+                        {"lat": 40.751, "lon": -73.499},
+                        {"lat": 40.751, "lon": -73.50},
+                    ],
+                },
+                {
+                    "type": "way",
+                    "ref": 700102,
+                    "role": "inner",
+                    "geometry": [
+                        {"lat": 40.7503, "lon": -73.4996},
+                        {"lat": 40.7503, "lon": -73.4994},
+                        {"lat": 40.7505, "lon": -73.4994},
+                        {"lat": 40.7505, "lon": -73.4996},
+                    ],
+                },
+            ],
+        },
+        {
+            "type": "way",
+            "id": 700002,
+            "tags": {"natural": "sand"},
+            "geometry": [
+                {"lat": 40.76, "lon": -73.51},
+                {"lat": 40.76, "lon": -73.509},
+                {"lat": 40.761, "lon": -73.509},
+                {"lat": 40.761, "lon": -73.51},
+            ],
+        },
+        {
+            "type": "relation",
+            "id": 700003,
+            "tags": {"natural": "sand", "type": "multipolygon"},
+            "members": [
+                {
+                    "type": "way",
+                    "ref": 700301,
+                    "role": "outer",
+                    "geometry": [
+                        {"lat": 40.77, "lon": -73.52},
+                        {"lat": 40.77, "lon": -73.519},
+                        {"lat": 40.771, "lon": -73.519},
+                        {"lat": 40.771, "lon": -73.52},
+                    ],
+                },
+            ],
+        },
+        {
+            "type": "relation",
+            "id": 700004,
+            "tags": {"golf": "bunker", "type": "multipolygon"},
+            "members": [
+                {"type": "way", "ref": 700401, "role": "outer"},  # no "geometry" key
+            ],
+        },
+        {
+            "type": "relation",
+            "id": 700005,
+            "tags": {"leisure": "golf_course", "type": "multipolygon"},
+            "members": [
+                {
+                    "type": "way",
+                    "ref": 700501,
+                    "role": "outer",
+                    "geometry": [
+                        {"lat": 40.78, "lon": -73.53},
+                        {"lat": 40.78, "lon": -73.529},
+                        {"lat": 40.781, "lon": -73.529},
+                        {"lat": 40.781, "lon": -73.53},
+                    ],
+                },
+            ],
+        },
+    ]
+}
+
+
+class TestBunkerRelationsAndSand:
+    """golf=bunker relations + natural=sand ways/relations -> bunkers bucket
+    (specs/map-fieldtest-v119-plan.md Item 2 — the ingest query previously
+    only asked for way["golf"="bunker"], missing a waste complex mapped as a
+    multipolygon relation or natural=sand — confirmed live via an Overpass
+    probe against Bethpage Red-9's bbox)."""
+
+    def test_bunker_relation_yields_one_feature(self):
+        result = _parse_course_geometry_response(_BUNKER_RELATION_FIXTURE)
+        rel_features = [f for f in result["bunkers"] if f["properties"]["osm_id"] == "relation/700001"]
+        assert len(rel_features) == 1
+
+    def test_bunker_relation_geometry_is_multipolygon(self):
+        result = _parse_course_geometry_response(_BUNKER_RELATION_FIXTURE)
+        feat = next(f for f in result["bunkers"] if f["properties"]["osm_id"] == "relation/700001")
+        assert feat["geometry"]["type"] == "MultiPolygon"
+
+    def test_bunker_relation_feature_type_is_bunker(self):
+        result = _parse_course_geometry_response(_BUNKER_RELATION_FIXTURE)
+        feat = next(f for f in result["bunkers"] if f["properties"]["osm_id"] == "relation/700001")
+        assert feat["properties"]["featureType"] == "bunker"
+
+    def test_bunker_relation_multipolygon_has_only_the_outer_ring(self):
+        # Inner ring (the grass island) is intentionally dropped — same
+        # outer-only convention as _parse_boundary_geometry.
+        result = _parse_course_geometry_response(_BUNKER_RELATION_FIXTURE)
+        feat = next(f for f in result["bunkers"] if f["properties"]["osm_id"] == "relation/700001")
+        assert len(feat["geometry"]["coordinates"]) == 1  # one member polygon (outer only)
+
+    def test_natural_sand_way_lands_in_bunkers_bucket(self):
+        result = _parse_course_geometry_response(_BUNKER_RELATION_FIXTURE)
+        feat = next(f for f in result["bunkers"] if f["properties"]["osm_id"] == "way/700002")
+        assert feat["properties"]["featureType"] == "bunker"
+        assert feat["geometry"]["type"] == "Polygon"
+
+    def test_natural_sand_relation_lands_in_bunkers_bucket_as_multipolygon(self):
+        result = _parse_course_geometry_response(_BUNKER_RELATION_FIXTURE)
+        feat = next(f for f in result["bunkers"] if f["properties"]["osm_id"] == "relation/700003")
+        assert feat["properties"]["featureType"] == "bunker"
+        assert feat["geometry"]["type"] == "MultiPolygon"
+
+    def test_relation_with_no_outer_geometry_is_skipped(self):
+        result = _parse_course_geometry_response(_BUNKER_RELATION_FIXTURE)
+        ids = {f["properties"]["osm_id"] for f in result["bunkers"]}
+        assert "relation/700004" not in ids
+
+    def test_unrelated_relation_type_is_ignored(self):
+        result = _parse_course_geometry_response(_BUNKER_RELATION_FIXTURE)
+        all_ids = {
+            f["properties"]["osm_id"]
+            for bucket in result.values()
+            for f in bucket
+        }
+        assert "relation/700005" not in all_ids
+
+    def test_total_bunker_count(self):
+        # 1 valid golf=bunker relation + 1 natural=sand way + 1 natural=sand
+        # relation = 3 (the no-geometry relation and the unrelated relation
+        # are both skipped).
+        result = _parse_course_geometry_response(_BUNKER_RELATION_FIXTURE)
+        assert len(result["bunkers"]) == 3
+
+
+# ── _parse_relation_to_multipolygon (pure helper) ──────────────────────────────
+
+class TestParseRelationToMultipolygon:
+    def test_outer_only_relation_returns_multipolygon(self):
+        el = _BUNKER_RELATION_FIXTURE["elements"][0]
+        result = _parse_relation_to_multipolygon(el)
+        assert result is not None
+        assert result["type"] == "MultiPolygon"
+        assert len(result["coordinates"]) == 1  # inner ring dropped
+
+    def test_relation_with_no_outer_members_returns_none(self):
+        el = {"type": "relation", "id": 1, "members": [{"role": "inner", "geometry": []}]}
+        assert _parse_relation_to_multipolygon(el) is None
+
+    def test_relation_with_degenerate_outer_ring_returns_none(self):
+        el = {
+            "type": "relation",
+            "id": 2,
+            "members": [
+                {"role": "outer", "geometry": [{"lat": 0, "lon": 0}, {"lat": 0, "lon": 1}]},
+            ],
+        }
+        assert _parse_relation_to_multipolygon(el) is None
+
+    def test_multiple_outer_members_produce_multiple_polygons(self):
+        el = {
+            "type": "relation",
+            "id": 3,
+            "members": [
+                {
+                    "role": "outer",
+                    "geometry": [
+                        {"lat": 0, "lon": 0}, {"lat": 0, "lon": 1},
+                        {"lat": 1, "lon": 1}, {"lat": 1, "lon": 0},
+                    ],
+                },
+                {
+                    "role": "outer",
+                    "geometry": [
+                        {"lat": 10, "lon": 10}, {"lat": 10, "lon": 11},
+                        {"lat": 11, "lon": 11}, {"lat": 11, "lon": 10},
+                    ],
+                },
+            ],
+        }
+        result = _parse_relation_to_multipolygon(el)
+        assert len(result["coordinates"]) == 2

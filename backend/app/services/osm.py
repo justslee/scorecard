@@ -131,6 +131,39 @@ def _parse_way_to_linestring(geom: list[dict]) -> Optional[dict]:
     return {"type": "LineString", "coordinates": coords}
 
 
+def _parse_relation_to_multipolygon(el: dict) -> Optional[dict]:
+    """Convert an Overpass ``relation`` element's ``role: "outer"`` members into
+    a GeoJSON MultiPolygon — one member ring per polygon.
+
+    Same outer-only pattern as :func:`_parse_boundary_geometry`'s relation
+    branch (inner rings/holes-in-the-polygon are intentionally ignored; a
+    waste-bunker complex's grass island doesn't need modelling for carry
+    purposes, matching that existing convention). Extracted as its own
+    function (rather than only inline in ``_parse_boundary_geometry``) so
+    ``_parse_course_geometry_response`` can reuse it for ``golf=bunker`` /
+    ``natural=sand`` relations (specs/map-fieldtest-v119-plan.md Item 2 —
+    the ingest query previously only asked for ``way["golf"="bunker"]``, so
+    a waste complex mapped as a multipolygon relation was invisible).
+
+    Returns ``None`` if the relation has no usable outer-ring geometry.
+    """
+    outers = [
+        m for m in el.get("members", [])
+        if m.get("role") == "outer" and m.get("geometry")
+    ]
+    polys: list[list[list[list[float]]]] = []
+    for m in outers:
+        ring = [[p["lon"], p["lat"]] for p in m["geometry"]]
+        if len(ring) < 4:
+            continue
+        if ring[0] != ring[-1]:
+            ring.append(ring[0])
+        polys.append([ring])
+    if not polys:
+        return None
+    return {"type": "MultiPolygon", "coordinates": polys}
+
+
 def _parse_course_geometry_response(
     data: dict,
     course_name_filter: Optional[str] = None,
@@ -201,6 +234,29 @@ def _parse_course_geometry_response(
                 })
             continue
 
+        # ── Bunker/waste-complex relations → MultiPolygon (v1.1.9 Item 2) ──────
+        # The only relations this query requests are golf=bunker and
+        # natural=sand (both queried as `relation[...]` in fetch_course_geometry)
+        # — a multipolygon-mapped waste bunker complex, invisible to the
+        # way-only query this replaced. A waste/sand area is a bunker for
+        # carry purposes, so it lands in the same `bunkers` bucket as an
+        # ordinary way bunker — one feature, one MultiPolygon geometry (both
+        # geometry consumers — tee-shot-overlays.ts, hazards.py — accept
+        # MultiPolygon, mirroring the existing fairway MultiPolygon handling).
+        if el_type == "relation":
+            if tags.get("golf") == "bunker" or tags.get("natural") == "sand":
+                multipolygon = _parse_relation_to_multipolygon(el)
+                if multipolygon is not None:
+                    bunkers.append({
+                        "type": "Feature",
+                        "geometry": multipolygon,
+                        "properties": {
+                            "featureType": "bunker",
+                            "osm_id": f"relation/{el['id']}",
+                        },
+                    })
+            continue
+
         if el_type != "way":
             continue
 
@@ -243,7 +299,7 @@ def _parse_course_geometry_response(
 
         elif (
             golf_tag in ("green", "fairway", "tee", "bunker", "water_hazard", "lateral_water_hazard")
-            or natural_tag == "water"
+            or natural_tag in ("water", "sand")
         ):
             polygon = _parse_way_to_polygon(geom)
             if polygon is None:
@@ -258,7 +314,9 @@ def _parse_course_geometry_response(
             elif golf_tag == "tee":
                 feature_type = "tee"
                 bucket = tees
-            elif golf_tag == "bunker":
+            elif golf_tag == "bunker" or natural_tag == "sand":
+                # natural=sand (a waste bunker) is a bunker for carry
+                # purposes — same bucket as golf=bunker (v1.1.9 Item 2).
                 feature_type = "bunker"
                 bucket = bunkers
             else:  # water_hazard, lateral_water_hazard, natural=water
@@ -797,6 +855,9 @@ async def fetch_course_geometry(
   way["golf"="fairway"](around:{radius_m},{lat},{lng});
   way["golf"="tee"](around:{radius_m},{lat},{lng});
   way["golf"="bunker"](around:{radius_m},{lat},{lng});
+  relation["golf"="bunker"](around:{radius_m},{lat},{lng});
+  way["natural"="sand"](around:{radius_m},{lat},{lng});
+  relation["natural"="sand"](around:{radius_m},{lat},{lng});
   way["natural"="water"](around:{radius_m},{lat},{lng});
   way["golf"="water_hazard"](around:{radius_m},{lat},{lng});
   way["golf"="lateral_water_hazard"](around:{radius_m},{lat},{lng});

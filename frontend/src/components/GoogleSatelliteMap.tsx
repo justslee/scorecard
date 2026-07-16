@@ -65,11 +65,12 @@ import {
   createCameraQueue,
   teeColorFor,
   teeMarkerIconUrl,
-  bunkerMarkerIconUrl,
   type CameraQueue,
   type TapTarget,
 } from "@/lib/map/google-map-helpers";
+import { buildBunkerMarkers } from "@/lib/map/marker-options";
 import { fetchWeather } from "@/lib/caddie/api";
+import { haptic } from "@/lib/haptics";
 import type { WeatherConditions } from "@/lib/caddie/types";
 import { T } from "@/components/yardage/tokens";
 import {
@@ -94,6 +95,42 @@ declare module "react" {
       "capacitor-google-map": DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement>;
     }
   }
+}
+
+// ── Camera queue payload ────────────────────────────────────────────────────
+
+/**
+ * Discriminated request shape for `cameraQueueRef` (see its docstring below)
+ * — 'hole' = hole-change/resume (full clear→frame→add + tee-shot overlays),
+ * 'gps' = a GPS-tick overlay refresh (clear→add of the hole overlays only,
+ * no camera move). Making BOTH request types flow through the same
+ * serialized queue is the v1.1.9 Item 3 fix for the stray other-hole tee
+ * marker (single writer of `holeMarkerIdsRef`).
+ */
+interface CameraQueueTarget {
+  hd: CourseCoordinates;
+  reason: 'hole' | 'gps';
+  pos: Position | null;
+}
+
+// ── Tap-target arg-building (single seam) ──────────────────────────────────
+
+/**
+ * Build the TapTarget distances (carry from tee, remaining to green) for
+ * `pos` given the current hole — the ONE arg-building call site shared by
+ * `placeTarget` (tap-to-place + drag-END) AND the reticle's live-drag tick
+ * (cheap numbers-only readout). v1.1.9 field-test fix, Item 4: a mid-drag
+ * readout must always agree with what a tap/drag-end at the same point
+ * would compute — no separate math path to drift out of sync.
+ */
+function tapTargetForPos(pos: { lat: number; lng: number }, hd: CourseCoordinates): TapTarget {
+  return tapTargetDistances(
+    pos,
+    hd.green,
+    hd.tee ?? null,
+    false,
+    (a, b) => calculateDistance(a, b).yards,
+  );
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -428,6 +465,62 @@ export default function GoogleSatelliteMap({
   }, []);
 
   /**
+   * Place (or move) the aim reticle at `pos`: recompute the carry/to-green
+   * readout, redraw the tee→point (white) and point→green (amber)
+   * polylines, and place/replace the draggable reticle marker.
+   *
+   * THE shared seam for both the tap-to-place click handler AND the
+   * reticle's drag-END — no separate math fork, so releasing a drag at a
+   * point always settles to the exact same lines/numbers a tap at that
+   * point would (v1.1.9 field-test fix, Item 4).
+   */
+  const placeTarget = useCallback(async (pos: { lat: number; lng: number }) => {
+    const hd = currentHoleRef.current;
+    if (!hd) return; // center-only mode — no reference point
+
+    setTapTarget(tapTargetForPos(pos, hd));
+
+    // Clear the previous target + its lines, then draw the new ones.
+    await clearTapMarker();
+    const m = googleMapRef.current;
+    if (!m) return;
+    const lineIds: string[] = [];
+
+    // Leg 1 — tee → target (the carry): white.
+    const tee = hd.tee ?? null;
+    if (tee) {
+      const ids = await m.addPolylines([{
+        path: [{ lat: tee.lat, lng: tee.lng }, pos],
+        strokeColor: "#FFFFFF", strokeOpacity: 0.9, strokeWeight: 3,
+        geodesic: true, clickable: false,
+      }]).catch(() => [] as string[]);
+      lineIds.push(...ids);
+    }
+    // Leg 2 — target → green centre (what's left): amber, distinct from white.
+    {
+      const ids = await m.addPolylines([{
+        path: [pos, { lat: hd.green.lat, lng: hd.green.lng }],
+        strokeColor: "#F2C14E", strokeOpacity: 0.95, strokeWeight: 3,
+        geodesic: true, clickable: false,
+      }]).catch(() => [] as string[]);
+      lineIds.push(...ids);
+    }
+    tapLineIdsRef.current = lineIds;
+
+    // White target reticle at the point (yardage-book vibe, not a red pin).
+    // draggable: true — see setOnMarkerDrag{,Start,End}Listener below, all
+    // guarded to this marker's id.
+    const tapId = await m.addMarker({
+      coordinate: pos,
+      iconUrl: "assets/tap-target.png",
+      iconSize:   { width: 38, height: 38 },
+      iconAnchor: { x: 19, y: 19 },
+      draggable: true,
+    }).catch(() => null);
+    if (tapId) tapMarkerIdRef.current = tapId;
+  }, [clearTapMarker]);
+
+  /**
    * Remove the GPS "you" dot (if any).
    */
   const clearGpsMarker = useCallback(async () => {
@@ -477,7 +570,11 @@ export default function GoogleSatelliteMap({
           iconUrl: teeMarkerIconUrl(slug),
           iconSize: { width: 30, height: 30 },
           iconAnchor: { x: 15, y: 15 }, // centered — a dot, not a pin
-          isFlat: true,
+          // Billboard, not flat-to-ground — one honest convention with the
+          // bunker badges (buildBunkerMarkers): only native circles lie flat.
+          // Cosmetically a no-op (symmetric disc) but keeps the marker
+          // orientation model uniform (v1.1.9 field-test fix, Item 1).
+          isFlat: false,
           zIndex: 5,
         })
         .catch(() => null);
@@ -520,14 +617,10 @@ export default function GoogleSatelliteMap({
       });
     }
 
-    const markers: Marker[] = data.bunkers.map((bunker) => ({
-      coordinate: bunker.nearEdge,
-      iconUrl: bunkerMarkerIconUrl(bunker.letter),
-      iconSize: { width: 26, height: 26 }, // 22 -> 26: room for the coin badge
-      iconAnchor: { x: 13, y: 13 },
-      isFlat: true,
-      zIndex: 4, // under the tee marker's zIndex 5
-    }));
+    // Pure seam (buildBunkerMarkers, marker-options.ts) so the marker option
+    // shape — including isFlat: false (billboard, see its docstring) — is
+    // unit-assertable without a native map.
+    const markers: Marker[] = buildBunkerMarkers(data.bunkers);
 
     if (circles.length > 0) {
       const ids = await m.addCircles(circles).catch(() => [] as string[]);
@@ -595,8 +688,21 @@ export default function GoogleSatelliteMap({
   // Created once (useRef initial-value idiom, matches mapIdRef above) — `run`
   // only closes over refs, so re-evaluating the initializer on later renders
   // and discarding it is harmless.
-  const cameraQueueRef = useRef<CameraQueue<CourseCoordinates>>(
-    createCameraQueue<CourseCoordinates>(async (hd) => {
+  //
+  // Discriminated payload (v1.1.9 field-test fix — Item 3, stray other-hole
+  // tee markers on holes 8/11): `reason` distinguishes a hole-change/resume
+  // request ('hole' — full clear→frame→add, including tee-shot overlays)
+  // from a GPS-tick overlay refresh ('gps' — clear→add ONLY, no camera move,
+  // no tee-shot churn). Previously the GPS tick ran its own un-serialized
+  // clearHoleOverlays→addHoleOverlays chain in `handlePositionUpdate`,
+  // racing the queue's own clear→add on `holeMarkerIdsRef`: interleaved
+  // awaits could let a queue-chain marker resolve AFTER the GPS chain
+  // overwrote the ref, orphaning it on-map with no future clear tracking it
+  // — the stray tee marker seen on holes 8/11. Routing BOTH paths through
+  // this single serialized queue makes `holeMarkerIdsRef` single-writer, so
+  // no two chains can ever interleave a write.
+  const cameraQueueRef = useRef<CameraQueue<CameraQueueTarget>>(
+    createCameraQueue<CameraQueueTarget>(async ({ hd, reason, pos }) => {
       // Belt+braces readiness gate: the queue itself is DOM/plugin-agnostic and
       // doesn't know about map readiness. A request that lands before
       // onMapReady (or after the map is torn down) no-ops here rather than
@@ -604,15 +710,27 @@ export default function GoogleSatelliteMap({
       // appStateChange listener below re-requests the current hole once the
       // app resumes to the foreground and the map IS ready.
       if (!googleMapRef.current || !mapReadyRef.current) return;
-      const gpsOnHole = positionRef.current ? isGpsOnHole(positionRef.current, hd) : false;
+      const gpsOnHole = pos ? isGpsOnHole(pos, hd) : false;
+
+      if (reason === 'gps') {
+        // GPS-tick refresh: single-writer clear+add of the hole overlays
+        // ONLY — no camera move (the GPS follow camera is a separate,
+        // already-serial `setCamera` call in `handlePositionUpdate`; it
+        // doesn't touch `holeMarkerIdsRef`) and no tee-shot polyline churn
+        // (that's a separate visibility-flip branch, also unaffected by
+        // this race — different id refs).
+        await overlayFnsRef.current.clearHoleOverlays();
+        await overlayFnsRef.current.addHoleOverlays(hd, gpsOnHole, pos);
+        return;
+      }
+
       await overlayFnsRef.current.clearHoleOverlays();
       await overlayFnsRef.current.clearTeeShotOverlays();
       await overlayFnsRef.current.fitCameraToHole(hd);
-      await overlayFnsRef.current.addHoleOverlays(hd, gpsOnHole, positionRef.current);
+      await overlayFnsRef.current.addHoleOverlays(hd, gpsOnHole, pos);
 
       // Tee-shot overlays ride the SAME serialized queue so a rapid multi-hole
       // swipe never races two hole's plates onto the map at once.
-      const pos = positionRef.current;
       const visible = teeShotOverlaysVisible({
         position: pos ? { lat: pos.lat, lng: pos.lng } : null,
         gpsOnHole,
@@ -621,7 +739,14 @@ export default function GoogleSatelliteMap({
       teeShotVisibleRef.current = visible;
       setTeeShotChips({ visible, bunkers: teeShotDataRef.current.bunkers });
       if (visible) await overlayFnsRef.current.addTeeShotOverlays();
-    })
+    },
+    // Priority-aware coalescing (review fix): a GPS-tick refresh must never
+    // evict an already-pending hole-change — the 'gps' branch above
+    // deliberately skips fitCameraToHole/tee-shot overlays, so if it evicted
+    // a pending 'hole' request the trailing run would drop the new hole's
+    // camera reframe and tee-shot redraw entirely. A pending 'gps' can still
+    // be replaced by a newer 'gps' or by a 'hole'.
+    (pending, incoming) => !(pending.reason === 'hole' && incoming.reason === 'gps'))
   );
 
   // ── Map initialisation ─────────────────────────────────────────────────────
@@ -779,58 +904,37 @@ export default function GoogleSatelliteMap({
         }
 
         // ── Click/tap-to-measure handler ─────────────────────────────────
+        // Same seam as drag-end below (`placeTarget`) — no separate math
+        // path (v1.1.9 Item 4).
         await gMap.setOnMapClickListener(async (ev) => {
           if (!googleMapRef.current || !mapReadyRef.current) return;
+          await placeTarget({ lat: ev.latitude, lng: ev.longitude });
+        });
+
+        // ── Drag listeners for the aim reticle (v1.1.9 Item 4) ────────────
+        // All guarded to `markerId === tapMarkerIdRef.current` so a drag of
+        // any other marker (none exist today, but future-proof) is ignored.
+        await gMap.setOnMarkerDragStartListener((data) => {
+          if (data.markerId !== tapMarkerIdRef.current) return;
+          haptic('light'); // cheap, once per drag — not per tick
+        });
+
+        // Live tick: cheap path ONLY — recompute the carry/to-green numbers
+        // via the SAME arg-building seam as `placeTarget` (`tapTargetForPos`).
+        // Do NOT redraw polylines here (remove+add per tick is too heavy);
+        // they settle to the final position on drag-end.
+        await gMap.setOnMarkerDragListener((data) => {
+          if (data.markerId !== tapMarkerIdRef.current) return;
           const hd = currentHoleRef.current;
-          const tapPos = { lat: ev.latitude, lng: ev.longitude };
+          if (!hd) return;
+          setTapTarget(tapTargetForPos({ lat: data.latitude, lng: data.longitude }, hd));
+        });
 
-          if (!hd) return; // center-only mode — no reference point
-
-          // Two measured legs from the tapped target: tee → point ("From tee")
-          // and point → green center ("To green"). Same turf fn as the panel.
-          const tee    = hd.tee ?? null;
-          const target = tapTargetDistances(
-            tapPos,
-            hd.green,
-            tee,
-            false,
-            (a, b) => calculateDistance(a, b).yards,
-          );
-          setTapTarget(target);
-
-          // Clear the previous target + its lines, then draw the new ones.
-          await clearTapMarker();
-          const m = googleMapRef.current!;
-          const lineIds: string[] = [];
-
-          // Leg 1 — tee → target (the carry): white.
-          if (tee) {
-            const ids = await m.addPolylines([{
-              path: [{ lat: tee.lat, lng: tee.lng }, tapPos],
-              strokeColor: "#FFFFFF", strokeOpacity: 0.9, strokeWeight: 3,
-              geodesic: true, clickable: false,
-            }]).catch(() => [] as string[]);
-            lineIds.push(...ids);
-          }
-          // Leg 2 — target → green centre (what's left): amber, distinct from white.
-          {
-            const ids = await m.addPolylines([{
-              path: [tapPos, { lat: hd.green.lat, lng: hd.green.lng }],
-              strokeColor: "#F2C14E", strokeOpacity: 0.95, strokeWeight: 3,
-              geodesic: true, clickable: false,
-            }]).catch(() => [] as string[]);
-            lineIds.push(...ids);
-          }
-          tapLineIdsRef.current = lineIds;
-
-          // White target reticle at the tapped point (yardage-book vibe, not a red pin).
-          const tapId = await m.addMarker({
-            coordinate: tapPos,
-            iconUrl: "assets/tap-target.png",
-            iconSize:   { width: 38, height: 38 },
-            iconAnchor: { x: 19, y: 19 },
-          }).catch(() => null);
-          if (tapId) tapMarkerIdRef.current = tapId;
+        // Drag-end: the SAME seam as a tap — `placeTarget` redraws the
+        // polylines/reticle at the final released point.
+        await gMap.setOnMarkerDragEndListener(async (data) => {
+          if (data.markerId !== tapMarkerIdRef.current) return;
+          await placeTarget({ lat: data.latitude, lng: data.longitude });
         });
 
         setIsLoading(false);
@@ -874,7 +978,7 @@ export default function GoogleSatelliteMap({
 
     if (!currentHoleData || centerOnly) return;
 
-    cameraQueueRef.current.request(currentHoleData);
+    cameraQueueRef.current.request({ hd: currentHoleData, reason: 'hole', pos: positionRef.current });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentHoleData]);
 
@@ -921,9 +1025,16 @@ export default function GoogleSatelliteMap({
       }
 
       // ── Refresh hole overlays so FCB/distance rings reflect new GPS ────
+      // Routed through the SAME serialized camera queue as the hole-change
+      // path (v1.1.9 Item 3 fix) — a direct clear→add call here, racing the
+      // queue's own clear→add on hole change, was a two-writer race on
+      // `holeMarkerIdsRef` that orphaned a marker on-map with no tracked id
+      // to clear it (the stray other-hole tee marker on holes 8/11). The
+      // queue's 'gps' branch does the clear+add ONLY — no camera move (that
+      // stays the separate `setCamera` call above) and no tee-shot churn
+      // (handled by the visibility-flip block below, a different id ref).
       if (hd && !centerOnly) {
-        await clearHoleOverlays();
-        await addHoleOverlays(hd, onHole, pos);
+        cameraQueueRef.current.request({ hd, reason: 'gps', pos });
       }
 
       // ── Tee-shot overlays: touch native circles ONLY on a visibility FLIP
@@ -998,7 +1109,7 @@ export default function GoogleSatelliteMap({
       if (!mapReadyRef.current) return; // not ready yet — nothing to re-frame
       if (centerOnly) return; // no per-hole framing in center-only mode
       const hd = currentHoleRef.current;
-      if (hd) cameraQueueRef.current.request(hd);
+      if (hd) cameraQueueRef.current.request({ hd, reason: 'hole', pos: positionRef.current });
     }).then((h) => {
       if (cancelled) { h.remove(); return; }
       handle = h;

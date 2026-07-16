@@ -166,11 +166,38 @@ def _round_to_5(value: float) -> int:
     return int(round(value / 5.0)) * 5
 
 
+def _ring_shoelace_area(ring: list[list[float]]) -> float:
+    """Unsigned planar shoelace "area" in raw lon/lat units — NOT a true
+    geographic area (no projection), but a stable relative-size proxy for
+    picking the largest member ring of a MultiPolygon. Good enough at
+    golf-hole scale, where every member sits within a few hundred metres of
+    the others, so degree-scale distortion is effectively uniform across
+    members being compared."""
+    vertices = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+    n = len(vertices)
+    if n < 3:
+        return 0.0
+    total = 0.0
+    for i in range(n):
+        x1, y1 = vertices[i]
+        x2, y2 = vertices[(i + 1) % n]
+        total += x1 * y2 - x2 * y1
+    return abs(total) / 2.0
+
+
 def _feature_point(feature: dict) -> Optional[tuple[float, float]]:
     """Return the (lon, lat) representative point for a GeoJSON Feature.
 
     Points are used directly; Polygons use their outer-ring centroid
-    (_ring_centroid — same helper the spatial-join step uses).
+    (_ring_centroid — same helper the spatial-join step uses). MultiPolygons
+    (v1.1.9 Item 2 — a golf=bunker/natural=sand relation, e.g. a waste-bunker
+    complex, now flows through the ingest pipeline as a MultiPolygon) use the
+    centroid of the LARGEST member's outer ring (by `_ring_shoelace_area`),
+    so a small satellite patch in the same relation never overrides the main
+    complex's location. Mirrors the frontend's MultiPolygon handling
+    (tee-shot-overlays.ts `fairwayBunkerCarries`) — both surfaces must accept
+    the same geometry shapes so the caddie and the map never disagree about
+    which bunkers exist.
     """
     geom = feature.get("geometry") or {}
     gtype = geom.get("type")
@@ -179,6 +206,19 @@ def _feature_point(feature: dict) -> Optional[tuple[float, float]]:
         return float(coords[0]), float(coords[1])
     if gtype == "Polygon" and coords and coords[0]:
         return _ring_centroid(coords[0])
+    if gtype == "MultiPolygon" and coords:
+        best_ring: Optional[list[list[float]]] = None
+        best_area = -1.0
+        for member in coords:
+            if not member or not member[0]:
+                continue
+            ring = member[0]
+            area = _ring_shoelace_area(ring)
+            if area > best_area:
+                best_area = area
+                best_ring = ring
+        if best_ring:
+            return _ring_centroid(best_ring)
     return None
 
 

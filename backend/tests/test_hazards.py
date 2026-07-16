@@ -143,6 +143,26 @@ def _point_feature(feature_type: str, lon: float, lat: float) -> dict:
     }
 
 
+def _multipolygon_feature(feature_type: str, members: list[tuple[float, float, float]]) -> dict:
+    """MultiPolygon Feature from `(center_lon, center_lat, half_deg)` member
+    specs — mirrors `_square_polygon` but as multiple rings in one Feature,
+    the shape a `golf=bunker`/`natural=sand` OSM RELATION now parses into
+    (v1.1.9 Item 2 — was previously invisible to the way-only ingest query)."""
+    coords = []
+    for center_lon, center_lat, half_deg in members:
+        lo_lon, hi_lon = center_lon - half_deg, center_lon + half_deg
+        lo_lat, hi_lat = center_lat - half_deg, center_lat + half_deg
+        ring = [
+            [lo_lon, lo_lat], [hi_lon, lo_lat], [hi_lon, hi_lat], [lo_lon, hi_lat], [lo_lon, lo_lat],
+        ]
+        coords.append([ring])
+    return {
+        "type": "Feature",
+        "geometry": {"type": "MultiPolygon", "coordinates": coords},
+        "properties": {"featureType": feature_type},
+    }
+
+
 def _hole_linestring(lon: float, tee_lat: float, green_lat: float) -> dict:
     return {
         "type": "Feature",
@@ -332,6 +352,42 @@ class TestExtractHoleHazards:
             features.append(_point_feature("bunker", lon, lat))
         hazards = extract_hole_hazards(_fc(*features), cap=5)
         assert len(hazards) == 5
+
+    def test_multipolygon_bunker_yields_a_hazard_not_silently_dropped(self):
+        """v1.1.9 Item 2 — a golf=bunker/natural=sand OSM relation now flows
+        through ingest as a MultiPolygon feature; _feature_point must not
+        silently drop it (mirrors the frontend's fairwayBunkerCarries
+        MultiPolygon handling — both surfaces must agree on inclusion)."""
+        tee_feat, green_feat, _, _ = _base_hole_features()
+
+        # Main complex: 245y downrange, 20y left, LARGE (half_deg 10x the
+        # tiny satellite below) — must win the "largest member" centroid.
+        main_lon, main_lat = _point_north_east(_TEE_LON, _TEE_LAT, 245, -20)
+        # Tiny satellite patch far off to the side — must NOT win; if it did,
+        # the hazard would land far off the 245y/left expectation below.
+        tiny_lon, tiny_lat = _point_north_east(_TEE_LON, _TEE_LAT, 100, 80)
+
+        bunker = _multipolygon_feature("bunker", [
+            (main_lon, main_lat, 0.0005),
+            (tiny_lon, tiny_lat, 0.00001),
+        ])
+
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, bunker))
+        assert len(hazards) == 1
+        h = hazards[0]
+        assert h.type == "bunker"
+        assert h.line_side == "left"
+        assert abs(h.carry_yards - 245) <= 5
+
+    def test_multipolygon_with_no_usable_rings_is_skipped_not_crashed(self):
+        degenerate = {
+            "type": "Feature",
+            "geometry": {"type": "MultiPolygon", "coordinates": [[[]], []]},
+            "properties": {"featureType": "bunker"},
+        }
+        tee_feat, green_feat, _, _ = _base_hole_features()
+        hazards = extract_hole_hazards(_fc(tee_feat, green_feat, degenerate))
+        assert hazards == []
 
 
 # ── Bearing-swept regression matrix (hazard-side-flip incident, item 1) ────────

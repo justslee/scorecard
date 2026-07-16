@@ -6,6 +6,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   yardsToMeters,
   METRES_PER_YARD,
@@ -693,6 +695,285 @@ describe('createCameraQueue — coalescing serializer for rapid hole changes', (
     await flush();
 
     expect(calls).toEqual([1, 2]); // 2 still runs despite 1 rejecting
+  });
+});
+
+// ── createCameraQueue — priority-aware coalescing via `shouldReplace` ─────────
+// (review fix on the Item 3 queue-sharing design: plain last-write-wins let a
+// lower-priority 'gps' request silently evict an already-pending 'hole'
+// request, dropping the hole's camera reframe + tee-shot redraw — see
+// GoogleSatelliteMap's `shouldReplace` predicate and its docstring on
+// createCameraQueue.)
+
+describe('createCameraQueue — priority-aware coalescing (shouldReplace)', () => {
+  type Target = { reason: 'hole' | 'gps'; label: string };
+
+  /** GoogleSatelliteMap's exact predicate: a 'gps' request must never evict
+   *  a pending 'hole' request; every other combination still replaces. */
+  const holeBeatsGps = (pending: Target, incoming: Target): boolean =>
+    !(pending.reason === 'hole' && incoming.reason === 'gps');
+
+  it('a pending hole request survives a gps request that arrives mid-flight — the trailing run executes the HOLE request, not gps', async () => {
+    const calls: Target[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<Target>(async (t) => {
+      calls.push(t);
+      if (t.label === 'first') await d1.promise;
+    }, holeBeatsGps);
+
+    queue.request({ reason: 'hole', label: 'first' }); // starts immediately, in flight
+    queue.request({ reason: 'hole', label: 'pending-hole' }); // becomes pending
+    queue.request({ reason: 'gps', label: 'should-be-dropped' }); // must NOT evict pending-hole
+
+    expect(calls).toEqual([{ reason: 'hole', label: 'first' }]);
+
+    d1.resolve();
+    await flush();
+
+    // The trailing run is the HOLE request — the gps request that arrived
+    // after it was dropped, never evicting the pending hole-change.
+    expect(calls).toEqual([
+      { reason: 'hole', label: 'first' },
+      { reason: 'hole', label: 'pending-hole' },
+    ]);
+  });
+
+  it('gps-replaces-gps still coalesces as before (a newer gps request replaces an older pending gps request)', async () => {
+    const calls: Target[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<Target>(async (t) => {
+      calls.push(t);
+      if (t.label === 'first') await d1.promise;
+    }, holeBeatsGps);
+
+    queue.request({ reason: 'gps', label: 'first' }); // in flight
+    queue.request({ reason: 'gps', label: 'stale-gps' }); // becomes pending
+    queue.request({ reason: 'gps', label: 'latest-gps' }); // replaces stale-gps
+
+    d1.resolve();
+    await flush();
+
+    expect(calls).toEqual([
+      { reason: 'gps', label: 'first' },
+      { reason: 'gps', label: 'latest-gps' }, // stale-gps never ran
+    ]);
+  });
+
+  it('hole-replaces-gps still coalesces as before (a hole request replaces a pending gps request)', async () => {
+    const calls: Target[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<Target>(async (t) => {
+      calls.push(t);
+      if (t.label === 'first') await d1.promise;
+    }, holeBeatsGps);
+
+    queue.request({ reason: 'gps', label: 'first' }); // in flight
+    queue.request({ reason: 'gps', label: 'stale-gps' }); // becomes pending
+    queue.request({ reason: 'hole', label: 'hole-change' }); // replaces stale-gps (higher priority)
+
+    d1.resolve();
+    await flush();
+
+    expect(calls).toEqual([
+      { reason: 'gps', label: 'first' },
+      { reason: 'hole', label: 'hole-change' },
+    ]);
+  });
+
+  it('hole-replaces-hole still coalesces as before (a newer hole request replaces an older pending hole request)', async () => {
+    const calls: Target[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<Target>(async (t) => {
+      calls.push(t);
+      if (t.label === 'first') await d1.promise;
+    }, holeBeatsGps);
+
+    queue.request({ reason: 'hole', label: 'first' }); // in flight
+    queue.request({ reason: 'hole', label: 'hole-1' }); // becomes pending
+    queue.request({ reason: 'hole', label: 'hole-2' }); // replaces hole-1
+
+    d1.resolve();
+    await flush();
+
+    expect(calls).toEqual([
+      { reason: 'hole', label: 'first' },
+      { reason: 'hole', label: 'hole-2' },
+    ]);
+  });
+
+  it('with no shouldReplace supplied, defaults to plain last-write-wins (pre-existing behavior unchanged)', async () => {
+    const calls: Target[] = [];
+    const d1 = deferred<void>();
+    const queue = createCameraQueue<Target>(async (t) => {
+      calls.push(t);
+      if (t.label === 'first') await d1.promise;
+    });
+
+    queue.request({ reason: 'hole', label: 'first' });
+    queue.request({ reason: 'hole', label: 'pending-hole' });
+    queue.request({ reason: 'gps', label: 'evicts-without-shouldReplace' });
+
+    d1.resolve();
+    await flush();
+
+    expect(calls).toEqual([
+      { reason: 'hole', label: 'first' },
+      { reason: 'gps', label: 'evicts-without-shouldReplace' }, // no priority guard -> plain last-write-wins
+    ]);
+  });
+});
+
+// ── Item 3 regression (v1.1.9 field-test fix) — GPS-tick overlay refresh
+// routed through createCameraQueue, so holeMarkerIdsRef has a single writer
+// and a hole-change chain can never orphan a marker the GPS-tick chain's
+// clear() didn't know about (the stray other-hole tee marker seen on holes
+// 8/11 — specs/map-fieldtest-v119-plan.md Item 3). ───────────────────────────
+
+describe('createCameraQueue — hole-change + GPS-refresh requests share one writer (Item 3 fix)', () => {
+  /** Simulates the component's `holeMarkerIdsRef`: a fake clear+add pair
+   *  that mutates a shared "currently on the map" id set, driven by
+   *  whichever `run` call is in flight — same shape as the real
+   *  clearHoleOverlays -> addHoleOverlays pair. `await flush()` between
+   *  clear and add stands in for the native round-trip where the real bug's
+   *  two un-serialized chains used to interleave. */
+  function makeTracker() {
+    const onMap = new Set<string>();
+    let nextId = 0;
+    return {
+      onMap,
+      async clearAndAdd(label: string): Promise<string> {
+        onMap.clear();
+        await flush();
+        const id = `${label}-${nextId++}`;
+        onMap.add(id);
+        return id;
+      },
+    };
+  }
+
+  it('a hole-change request immediately followed by a GPS-refresh request never orphans an id — the queue serializes, last write wins', async () => {
+    const tracker = makeTracker();
+    const queue = createCameraQueue<{ reason: 'hole' | 'gps'; label: string }>(async (t) => {
+      await tracker.clearAndAdd(t.label);
+    });
+
+    queue.request({ reason: 'hole', label: 'hole-change' }); // starts immediately, in flight
+    queue.request({ reason: 'gps', label: 'gps-tick' }); // arrives mid-flight — coalesced, NOT started concurrently
+
+    await flush(); // let the in-flight 'hole' run's clearAndAdd() resolve
+    await flush(); // let the single coalesced trailing 'gps' run execute + resolve
+
+    // Exactly one id survives, and it's the LAST run's — never a leftover
+    // from the first run that a concurrent second clear() didn't track (the
+    // orphan-marker bug this fix closes).
+    expect(tracker.onMap.size).toBe(1);
+    expect([...tracker.onMap][0].startsWith('gps-tick-')).toBe(true);
+  });
+
+  it('no run ever sees more than one id tracked at once — clear+add pairs never overlap', async () => {
+    const tracker = makeTracker();
+    const sizesAfterEachRun: number[] = [];
+    const queue = createCameraQueue<string>(async (label) => {
+      await tracker.clearAndAdd(label);
+      sizesAfterEachRun.push(tracker.onMap.size);
+    });
+
+    queue.request('hole-1');
+    queue.request('gps-2'); // coalesced
+    queue.request('gps-3'); // coalesces over gps-2 — only the trailing target runs
+    await flush();
+    await flush();
+
+    // Exactly 2 runs executed (hole-1, then trailing gps-3); each left
+    // exactly one tracked id — never two, i.e. never an orphan.
+    expect(sizesAfterEachRun).toEqual([1, 1]);
+  });
+});
+
+describe('Item 3 regression — handlePositionUpdate no longer calls clearHoleOverlays/addHoleOverlays directly', () => {
+  it('the GPS-tick handler routes its overlay refresh through cameraQueueRef.current.request({ reason: "gps", ... }) instead of calling clear/addHoleOverlays directly', () => {
+    const src = readFileSync(
+      join(__dirname, '..', '..', 'components', 'GoogleSatelliteMap.tsx'),
+      'utf-8'
+    );
+    const start = src.indexOf('const handlePositionUpdate');
+    const end = src.indexOf('const handleGpsError');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+
+    expect(body).not.toContain('clearHoleOverlays()');
+    expect(body).not.toContain('addHoleOverlays(hd');
+    expect(body).toContain("cameraQueueRef.current.request({ hd, reason: 'gps', pos })");
+  });
+});
+
+// ── Item 4 (draggable aim reticle) — one shared seam, no math fork ────────────
+//
+// `placeTarget` is component-bound (touches refs/state/plugin), so it can't
+// be unit-tested directly here. Instead these are structural/grep-level
+// assertions on the source that prove the shared-seam CONTRACT the plan
+// requires: the tap-click handler and drag-END handler both call the same
+// `placeTarget` function (not a duplicated/forked math path), and the only
+// place `tapTargetDistances` is invoked with the {pos, green, tee, false,
+// distanceFn} arg pattern is the single `tapTargetForPos` helper that both
+// `placeTarget` (tap + drag-end) and the live-drag tick funnel through — so
+// a mid-drag readout is guaranteed to agree with what a tap/drag-end at the
+// same point computes (specs/map-fieldtest-v119-plan.md Item 4 gate).
+
+describe('Item 4 — draggable aim reticle shares ONE seam (placeTarget) between tap and drag-end', () => {
+  const src = readFileSync(
+    join(__dirname, '..', '..', 'components', 'GoogleSatelliteMap.tsx'),
+    'utf-8'
+  );
+
+  it('the map click handler calls placeTarget(...) — no separate inline math', () => {
+    const start = src.indexOf('setOnMapClickListener');
+    const end = src.indexOf('setOnMarkerDragStartListener');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    expect(body).toContain('await placeTarget({ lat: ev.latitude, lng: ev.longitude });');
+  });
+
+  it('the drag-end handler calls the SAME placeTarget(...) — drag-end math === tap math for the same point', () => {
+    const start = src.indexOf('setOnMarkerDragEndListener');
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start, start + 400);
+    expect(body).toContain('await placeTarget({ lat: data.latitude, lng: data.longitude });');
+  });
+
+  it('the live-drag tick does NOT redraw polylines (no addPolylines call between DragListener and DragEndListener)', () => {
+    const start = src.indexOf('setOnMarkerDragListener');
+    const end = src.indexOf('setOnMarkerDragEndListener');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    expect(body).not.toContain('addPolylines');
+  });
+
+  it('tapTargetDistances is invoked from exactly ONE arg-building call site (tapTargetForPos) — the shared seam both placeTarget and the live-drag tick funnel through', () => {
+    const occurrences = src.split('tapTargetDistances(').length - 1;
+    // The import statement lists the bare identifier (no trailing "("), so
+    // this counts only actual call sites — must be exactly 1.
+    expect(occurrences).toBe(1);
+    expect(src).toContain('function tapTargetForPos(');
+  });
+
+  it('every tapTargetForPos( call site is the pure arg-building helper, used by both placeTarget and the live-drag listener', () => {
+    const callSites = src.split('tapTargetForPos(').length - 1;
+    // 1 function definition + 2 call sites (inside placeTarget, inside the
+    // live-drag listener).
+    expect(callSites).toBe(3);
+  });
+
+  it('drag callbacks are guarded to the tap marker id — a drag of any other marker is ignored', () => {
+    const start = src.indexOf('setOnMarkerDragStartListener');
+    const end = src.indexOf('setIsLoading(false);', start);
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start, end);
+    const guardCount = (body.match(/data\.markerId !== tapMarkerIdRef\.current/g) ?? []).length;
+    expect(guardCount).toBe(3); // dragStart, drag (live), dragEnd
   });
 });
 
