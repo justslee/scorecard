@@ -17398,14 +17398,14 @@ below solo-cycle worthiness; together one honest pass). Land on integration/next
 land-and-review only — DO NOT ship/ping. Owner feedback checked first: no actionable #141/v1.1.8 card
 in Needs Review (stale #105/#115/#119 cards long superseded, main past #140); bundle not yet offered.
 
-## AWAITING — designer concept (a19018329946269b4)
-Designer producing the greeting + loading vocabulary table (the builder's contract; this nit is
-copy-alignment, fable-plan omitted per the brief's explicit designer→builder→reviewer→qa→designer
-process — the vocabulary table IS the plan). On return: dispatch builder to implement against the
-table on integration/next; then reviewer (fresh — no regression to dedup/ordering/persona-label,
-greeting can't double-fire on reconnect) → qa (gates SUCCESS on pushed head) → designer BLOCKING.
-Key anchors located: greeting src = frontend/src/lib/caddie/opening-turn.ts (round) +
-CaddieOrbSheet.tsx:~401 (converse emptyHint); loading = frontend/src/lib/caddie/live-copy.ts
-(LIVE_STATUS_LABEL + liveEmptyStateHint, "Caddie speaking…" generic clashes w/ persona captions),
-VoiceRoundSetupRealtime.tsx forked STATUS_LABEL, LooperSheet.tsx "One sec…"/"is thinking…".
-If either nit turns out bigger than a nit (session-open restructure), do the small one + re-file the other.
+## AWAITING — builder (a6578d6315a335568) on integration/next @759a057
+Designer concept DONE (both nits confirmed copy-layer only, no session-open restructure) → written to
+specs/caddie-coherence-polish-plan.md (@759a057). Builder implementing: NIT1 CaddieOrbSheet.tsx:401
+caddy.name->captionPersonaName + turns-persist invariant comment/test; NIT2 live-copy.ts speaking
+label persona-named + liveEmptyStateHint call sites (CaddieSheet.tsx:1799,1813) raw name->captionPersonaName,
+VoiceRoundSetupRealtime STATUS_LABEL dedupe (spread LIVE_STATUS_LABEL, idle="Tap to start",
+speaking="Looper speaking…"). RED-flip pinned tests live-copy.test.ts:89 + CaddieSheet.realtime.test.tsx:1135.
+INVARIANT: zero diff to realtime.ts/realtime-ordering.ts/useCaddieLiveSession/types.ts/models.py.
+On builder push -> reviewer (fresh: no dedup/ordering/persona-label regression; greeting can't double-fire
+on reconnect; mind no-input-clarifier interactions) + qa (gates SUCCESS on pushed head) in parallel ->
+designer BLOCKING on rendered result. Then PR #141 checklist + backlog (both items done) + progress. NO ship/ping.
