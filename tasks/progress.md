@@ -17881,3 +17881,18 @@ FOLLOW-UPS filed: map-fieldtest-red11-reingest (staging data), map-reticle-grab-
 NOT shipping/pinging this cycle per brief — release-manager handles TestFlight later; GPS-readiness
 lane will exercise these 5 in its simulated-round pass. #2's MultiPolygon relation/natural=sand
 ingest changes need a Red re-ingest to actually surface the giant complex in prod data.
+
+## AWAITING — oncourse-gps-target-origin (readiness finding #8, NOTICEABLE) — 2026-07-16
+LANE: isolated worktree agent-a72b66a942e7094b6 @ e9391ec (origin/integration/next); primary
+checkout is at ancestor 5befb67 (just behind — clean ff). Fix = wire the tap/drag target line
++ carry number to originate at the live GPS position when plausibly on-hole (else tee, byte-
+identical). Plumbing already exists (tapTargetDistances origin+fromGps; pill renders
+fromGps?"Carry":"From tee"); gap is tapTargetForPos (GoogleSatelliteMap.tsx ~126) + placeTarget
+leg-1 (~490) hard-coding hd.tee. Reuse the yardage-card 5-800y gate (RoundPageClient posOnHole
+~1193) as ONE shared helper. Live-update via handlePositionUpdate (single-writer tapLine ids;
+no camera-queue second writer).
+AWAITING: Plan agent on fable -> specs/oncourse-gps-target-origin-plan.md.
+  DONE -> dispatch builder on the plan; commit on this worktree branch; then reviewer+qa+designer(BLOCKING).
+On resume: reconcile from branch (git log), do NOT re-dispatch a finished child. Land = push to
+origin/integration/next (fetch+ff-merge first, never force), add to PR #143 checklist (NOTICEABLE),
+close backlog finding #8. NOT shipping/pinging this cycle (owner decisions pending in main session).
