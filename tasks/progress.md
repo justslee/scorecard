@@ -16690,13 +16690,25 @@ Part C processedUserItems/finalizedResponses/toolBatch (instance-scoped). RED→
 (6/14 failed pre-fix). Gates green: lint/tsc/build clean, voice-tests 278/0, vitest 144/144 (10
 suites, guards unmodified).
 
-## AWAITING — reviewer + qa + designer (BLOCKING) on e75ae2f
-- reviewer: adversarial — does dedup ever DROP a legit rapid follow-up? re-break priming-echo/
-  no-input-clarifier/attribution/ordering? id-keying correct across reconnect? abort-silent-return safe?
-- qa: run all gates, assert green on pushed head e75ae2f; verify single-emit on repro orderings.
-- designer: BLOCKING review of caddie chat surface (one clean turn, no stray bubbles) vs NORTHSTAR.
-- On return: if all green → update PR #141 checklist (first NOTICEABLE item), progress+backlog, STOP
-  (do NOT ship/ping this cycle per brief). BLOCKING issue → re-dispatch builder. Reconcile from origin log.
+**Cycle 126 COMPLETE — caddie-realtime-double-emit landed @e75ae2f on bundle #141 (NOTICEABLE).**
+- reviewer(fresh adversarial): **SHIP** — server-id keys (item_id/response_id) never drop a legit
+  rapid follow-up (R4 pins it); shipped guards (priming-echo/no-input-clarifier/attribution/ordering)
+  behaviorally unchanged (dedup sits above, only rejects exact-id repeats; finalizedResponses written
+  only at existing resolution points); instance-scoped state cleared in cleanup() => reconnect-safe;
+  aborts leak nothing (dc/pc/tracks/sink all closed, silent no-error return, callers resolve via
+  .finally); tool-batch never-worse-than-today; no security surface; 106/106 green.
+- qa: **PASS** — lint/tsc/build clean, voice-tests 278/0, vitest 144/144 (10 suites unmodified),
+  backend ruff clean; CI PR#141 Frontend+Backend gates SUCCESS on e75ae2f. (E2E advisory gate = no
+  per-PR Vercel preview infra exists — pre-existing gap, not a defect; todo.md §D.)
+- designer: **PASS** — one clean turn per utterance, no stray/empty/misordered bubbles; render path
+  untouched, tests pin single-turn rendering (Gap-2 + close-during-connect: zombie msg renders NOTHING).
+- Non-blocking follow-ups FILED in backlog: caddie-realtime-deadcode-detach (dead useRealtimeCaddie/
+  CaddieModal path lacks detach), caddie-hole-context-preingest-mismatch (Hole-3 header/caddie number
+  mismatch — likely pre-ingest-round caveat; owner starts fresh round to confirm).
+- PR #141 checklist updated (first NOTICEABLE item). Per brief: **did NOT ship/ping** — bundle is now
+  ship-worthy (1 noticeable + 1 silent) and will be offered to the owner on the next release pass.
+- CI head note: 31173c9/this progress commit are docs-only on top of the fix e75ae2f; required gates
+  green on e75ae2f.
 
 ## Cycle 126b (2026-07-15) — builder DONE: caddie double-emit fix implemented, committed to
 ## integration/next @ base 51133b1

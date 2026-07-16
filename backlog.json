@@ -1,7 +1,39 @@
 {
   "updated": "2026-07-15",
-  "note": "Consolidation retro/grooming (2026-07-15, after the v1.1.1->v1.1.7 shipping burst): 28 shipped-to-main terminal items archived to backlog-archive.json (188 archived total); backlog 78->50 live. guide-pauseturn-reserialize-hardening kept live (rides the STILL-OPEN bundle #141 — terminal-mark on ship). Filed prod-database-url-secret-refresh (owed infra). This file = LIVE queue only; terminal record + all ship SHAs/PRs/TestFlight versions preserved in backlog-archive.json (see resolution fields). Cycle-78 note (2026-07-11): statuses normalized to enum; ~150 items archived.",
+  "note": "Cycle 126 (2026-07-15): OWNER P0 caddie-realtime-double-emit LANDED @e75ae2f on bundle #141 (NOTICEABLE — first ship-worthy item in the bundle; SHIP/PASS/PASS from reviewer/qa/designer); filed 2 non-blocking follow-ups (caddie-realtime-deadcode-detach, caddie-hole-context-preingest-mismatch). Bundle #141 now = 1 noticeable + 1 silent, ship-worthy on the next release pass. Prior consolidation retro/grooming (2026-07-15, after the v1.1.1->v1.1.7 shipping burst): 28 shipped-to-main terminal items archived to backlog-archive.json (188 archived total); backlog 78->50 live. guide-pauseturn-reserialize-hardening kept live (rides the STILL-OPEN bundle #141 — terminal-mark on ship). Filed prod-database-url-secret-refresh (owed infra). This file = LIVE queue only; terminal record + all ship SHAs/PRs/TestFlight versions preserved in backlog-archive.json (see resolution fields). Cycle-78 note (2026-07-11): statuses normalized to enum; ~150 items archived.",
   "items": [
+    {
+      "id": "caddie-realtime-double-emit",
+      "title": "OWNER P0: live caddie chat duplicates every turn (zombie 2nd Realtime session)",
+      "type": "major",
+      "priority": 1,
+      "risk": "medium",
+      "status": "done",
+      "why": "Owner-reported (2 screenshots, v1.1.6/v1.1.7): the LIVE 'on the bag' realtime caddie double-emits BOTH the user turn AND the caddie response per single spoken question (Screenshot A hole-3 verbatim-dup user bubble + two distinct answers; Screenshot B hole-2 transcription-VARIANT dup -> two independent engine solves). #139 numbers-coherence intact; defect is the double-emit -> doubles OpenAI cost/question + feels broken. NOTICEABLE (caddie correctness).",
+      "spec": "specs/caddie-realtime-double-emit-plan.md",
+      "resolution": "LANDED on integration/next (bundle PR #141) cycle 126 (2026-07-15), NOTICEABLE, @e75ae2f. Fable plan traced ROOT CAUSE = a ZOMBIE second Realtime session: stop() during the mint await did NOT cancel startInner() (realtime.ts:291-313, no post-await abort check; the singleton cap cleared at 592 was never re-checked), so a slow mint (>3s course-LTE deadline -> fallBack, or sheet-close during Connecting) resumed after resolve into a full live mic-open BILLED RTCPeerConnection that no reference pointed at; its handlers were never detached (useCaddieLiveSession fallBack/!active/cleanup lacked setEvents({}), onMessage = bare upsert gated only on mountedRef) so BOTH sessions' turns flowed into ONE messages list -> 2 independent VAD commits + 2 gpt-4o-transcribe passes (verbatim OR variants) + 2 independent grounded tool solves. Secondary #2: runTool fired one response.create per function_call_arguments.done -> N answers on multi-tool turns. FIX: Part A `aborted` flag + post-await re-checks in startInner (post-mint load-bearing, silent realtime_start_aborted breadcrumb, no 'error' emit) making a stopped client TERMINAL (also fixes warm-pool + orb zombies free); Part B setEvents({}) detach before every stop() in fallBack/!active/cleanup + useVoiceCaddie.teardownClient + onMessage gated on cancelled||fellBack; Part C id-keyed ADDITIVE dedup — processedUserItems (per item_id, final-only commit preserved), finalizedResponses (per response id, blocks late-delta/2nd-done), per-response_id toolBatch coalescing to exactly ONE response.create; all instance-scoped + cleared in cleanup() => reconnect id-reset structurally safe; keys are server ids never text so rapid identical follow-ups KEPT. No VAD/mic/threshold change, no backend, no shared-types change. Tests: new realtime-dedup.test.ts (R1-R10, 14 tests) — R1 stop-during-mint no-resurrect / R3 duplicate .completed -> one user turn / R7 multi-tool -> one response.create all RED-first proven (6/14 failed pre-fix) then GREEN; getAllPcs()+deferred() added to fakes; CaddieSheet.realtime.test.tsx Gap-2 strengthened + close-during-connect detach test (a zombie/old-client message renders NOTHING in the DOM). Gates: lint/tsc/build clean, voice-tests 278/0, vitest 144/144 (10 suites, guards unmodified), backend ruff clean; CI PR#141 Frontend+Backend gates SUCCESS on e75ae2f. reviewer(fresh adversarial) SHIP (server-id keys never drop a legit turn; shipped guards priming-echo/no-input/attribution/ordering behaviorally unchanged; aborts leak nothing; tool coalescing never-worse-than-today; no security surface; 106/106). qa PASS. designer PASS (one clean turn, no stray/empty/misordered bubbles). Rides bundle #141 to owner on the next ship (NOTICEABLE — first ship-worthy item in the bundle). Non-blocking follow-ups filed: caddie-realtime-deadcode-detach, caddie-hole-context-preingest-mismatch.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-realtime-deadcode-detach",
+      "title": "Follow-up: useRealtimeCaddie.ts (dead CaddieModal/CaddiePanel path) lacks the zombie-session detach fix",
+      "type": "minor",
+      "priority": 5,
+      "risk": "low",
+      "status": "ready",
+      "why": "Flagged non-blocking by designer during caddie-realtime-double-emit review (cycle 126). frontend/src/hooks/useRealtimeCaddie.ts (consumed only by CaddiePanel.tsx / CaddieModal.tsx) did NOT receive the Part B setEvents({})-before-stop() detach that useCaddieLiveSession/useVoiceCaddie got — the same zombie-session shape is theoretically still present there. Confirmed DEAD CODE: grep found zero <CaddieModal usages anywhere in the app, so it is not user-reachable and not a ship-blocker. ACTION: either delete the dead useRealtimeCaddie/CaddieModal path, or apply the same detach guard, so the bug can't be reintroduced if the path is ever reconnected. Root-cause fix already shipped in realtime.ts (Part A abort flag) covers the client-level resurrection regardless, so this is defense-in-depth only.",
+      "depends_on": []
+    },
+    {
+      "id": "caddie-hole-context-preingest-mismatch",
+      "title": "Investigate: live caddie hole-context source mismatch on pre-re-ingest rounds (Hole-3 header PAR 3 355y vs caddie 466y par 4)",
+      "type": "minor",
+      "priority": 4,
+      "risk": "low",
+      "status": "ready",
+      "why": "Secondary finding from the caddie-realtime-double-emit screenshots (cycle 126). Screenshot A's hole-3 header said 'PAR 3 · 355 YDS' while the caddie spoke '466y par 4'. Fable plan (specs/caddie-realtime-double-emit-plan.md §8) traced it: the header + client-side anchor use the SAME frontend-resolved round-snapshot facts (holeNumber/holePar/holeYards -> buildHoleContextText), but the caddie's spoken numbers are grounded by the BACKEND caddie session's course data (build_realtime_instructions situation block + session tool payloads). LIKELY the pre-ingest-round caveat: the owner's existing rounds predate the Bethpage re-ingest, so the round's stored hole facts (header) and the re-ingested course rows the backend session reads (caddie) disagree (hole numbering/pars shifted). NOT part of the de-dup fix (correctly out of scope). ACTION: owner starts a FRESH round on re-ingested Bethpage -> if header+caddie agree it's confirmed the pre-ingest caveat (no code fix, close). If they still disagree it's a live context-plumbing bug -> file with the finding. Also worth one telemetry check: did the client's silent sendContext role:'system' anchor get rejected (realtime_dc_error breadcrumb)?",
+      "depends_on": []
+    },
     {
       "id": "prod-database-url-secret-refresh",
       "title": "Owed infra: refresh the stale looper/prod Secrets Manager DATABASE_URL password",
