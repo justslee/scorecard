@@ -9,11 +9,15 @@ round 200/150/100 yardage plates (specs/tee-shot-overlays-center-and-style-
 plan.md, Part B). An asymmetric, non-round silhouette works at a glance over
 any satellite imagery and for colorblind users, not just a color swap.
 
-The lettered variants (A-F) additionally stamp an ink coin with a reversed-out
-paper letter on the C2 lobe — the legend key shared with `BunkerCarry.letter`
-(specs/lettered-bunker-legend-plan.md). `render(None)` reproduces the plain
-bean (with stipples) byte-identical to the original single-PNG generator;
-`render('A')`..`render('F')` drop the stipples and add the coin + letter.
+The lettered variants (A-F) additionally stamp a large ink coin with a
+reversed-out paper letter over the bean — the legend key shared with
+`BunkerCarry.letter` (specs/lettered-bunker-legend-plan.md). The coin is sized
+to read at the TRUE 26x26 display size (roughly a quarter of this 96px
+canvas), so it dominates the marker; the sand bean peeks out at the
+lower-left as the secondary "this is sand" cue. `render(None)` reproduces the
+plain bean (with stipples) byte-identical to the original single-PNG
+generator; `render('A')`..`render('F')` drop the stipples and add the coin +
+letter.
 
 python3 stdlib only (zlib for PNG compression) — no image library dependency,
 mirrors `generate-tee-markers.py`'s `coverage`, `over`, `_chunk`, `write_png`
@@ -48,17 +52,26 @@ R2 = 15.0
 STIPPLES = [(36.0, 50.0), (48.0, 47.0), (58.0, 44.0)]
 STIPPLE_R = 2.5
 
-# ── Letter coin (stamped on the C2 lobe top) ────────────────────────────────
-COIN_C = (74.0, 24.0)  # overlaps the C2 lobe (58,46,r15) top
-COIN_R_FILL = 15.0
+# ── Letter coin (stamped over the bean, dominant element) ───────────────────
+# Sized so the letter reads at the TRUE 26x26 display size (scale ~0.27x of
+# this 96px canvas) — the coin must be a legible MAJORITY of the marker, not
+# a small badge on the bean (specs/lettered-bunker-legend-plan.md fixup:
+# 96px-source review missed illegibility at final render size). Centered near
+# the canvas middle (not the C2 lobe) so the outer ring (R_FILL + RIM = 28)
+# stays fully inside the 96px canvas with margin; the sand bean peeks out at
+# the lower-left as the secondary "this is sand" cue — the coin is now the
+# primary element by design.
+COIN_C = (58.0, 40.0)
+COIN_R_FILL = 24.0
 COIN_RIM = 4.0  # == the bean outline's coverage(sd, 4.0)
 PAPER = (0xF4, 0xF1, 0xEA)  # T.paper
 
 # ── Procedural stroke font A-F ──────────────────────────────────────────────
-# Normalized box x in [0,1] L->R, y in [0,1] top->baseline (y down).
-GW = 8.5
-GH = 11.0
-STROKE_R = 1.5  # ~3px stroke
+# Normalized box x in [0,1] L->R, y in [0,1] top->baseline (y down). Scaled up
+# with the coin (was 8.5x11 / STROKE_R 1.5 — sub-pixel at 26px final size).
+GW = 13.0
+GH = 17.0
+STROKE_R = 3.0  # final rendered stroke >= ~1.5px at the 26px display size
 
 LETTER_SEGMENTS = {
     "A": [((0.0, 1.0), (0.5, 0.0)), ((0.5, 0.0), (1.0, 1.0)), ((0.19, 0.62), (0.81, 0.62))],
