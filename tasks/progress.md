@@ -39,6 +39,44 @@ adversarial: does anchor make caddie rigid / regress numbers-coherence/miss-side
 all SUCCESS on pushed head SHA + npm run test:caddie-experience + the AFTER consistency evidence).
 If ship recut mid-cycle → HOLD push, re-land on fresh branch.
 
+## CYCLE 130 — builder DONE @e3026b5 (integration/next, pushed). Implemented the plan exactly:
+- voice_prompts.py: new DECISION_GROUNDING_RULE constant (verbatim plan §3.2 wording, all 4 pin
+  phrases present), appended LAST in build_realtime_instructions' Behavior block after
+  MISS_SIDE_GROUNDING_RULE.
+- routes/caddie.py: imported + interpolated `{DECISION_GROUNDING_RULE}` into BOTH stable_text
+  blocks (_build_session_voice_prompt, _build_voice_prompt) — pin-test-counted, exactly 2.
+- Eval harness fidelity: schema.py Situation.seed_recommendation flag + DECISION_GROUNDING_RULE
+  in _VALID_RULE_NAMES; checks.py::build_round_session computes a REAL engine recommendation via
+  generate_recommendation (fail-closed ValueError if hole.yards is None) when the flag is set.
+  Golden followup-3wood-after-driver now seeds — VERIFIED the engine actually selects "driver"
+  for the 470y/driver-250/3wood-235 scenario (ran generate_recommendation directly), so the new
+  golden pin `"Last recommendation: driver"` is real, not hand-tweaked.
+- substance.py: endorsed_club falsifiable extractor (closed cue lexicon + nearest-club-by-
+  distance resolution) + distinct_endorsements folded into substance_variance's `consistent`
+  (all-None stays consistent, vacuous probes unaffected); run_consistency.py surfaces both in
+  its JSON report. checks.py::_build_club_mention_patterns hardened with spelled-number aliases
+  (three-wood/three wood/etc.) so "Three-wood" no longer reads club=None.
+- New tests/test_decision_grounding_prompt.py (mirrors test_numbers_coherence_prompt.py, incl.
+  the engine-decision-is-echoed contract test); test_substance_teeth.py extended with the
+  3-lay-up/2-driver fixtures reproducing the BEFORE 3/2 flip as a red, plus 5/5-green and
+  all-None-consistent cases.
+- Collateral fix (flagged, not hidden): DECISION_GROUNDING_RULE's own quoted reference to the
+  label ("...carries a recommendation ('Last recommendation')...") is now always present in
+  build_realtime_instructions output, breaking 2 pre-existing test_realtime_grounding.py bare-
+  substring guards (test_no_session_instructions_unchanged, test_last_recommendation_absent_no_line).
+  Tightened both to check the actual dynamic "Last recommendation:" LINE (colon) instead of the
+  bare phrase — the real invariant (no fabricated recommendation content) still holds via
+  _situation_block, which is unchanged and still asserted directly elsewhere in that file.
+- Optional nicety done: caddie-experience-suite.ts lists test_decision_grounding_prompt.py under
+  dims [2, 5].
+Gates (all green, pasted in session): `pytest tests/eval tests/test_decision_grounding_prompt.py
+tests/test_numbers_coherence_prompt.py tests/test_realtime_grounding.py tests/test_positioning_prompt.py`
+= 155 passed; `ruff check .` = all checks passed; full non-DB backend suite = 1843 passed (bonus,
+no collateral regressions); `npm run test:caddie-experience` = 223 passed (16 files); frontend
+`lint` + `tsc --noEmit` clean (touched caddie-experience-suite.ts). No frontend types/API shape
+change (backend-internal, confirmed). Gated live run_consistency.py NOT run (owner-run, on-box,
+needs API keys) — next: reviewer + qa on e3026b5, then AFTER keyed measurement.
+
 ## CYCLE 125 — RE-ARMED 2026-07-15. Item: guide-pauseturn-reserialize-hardening (backend, SILENT)
 Owner-feedback check FIRST: board has no field-test feedback card after #140/v1.1.7
 (latest card = Bundle #140, Shipped, no comments); no in-session owner message. Nothing
