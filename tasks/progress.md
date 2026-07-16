@@ -17727,3 +17727,15 @@ NEXT after builder: reviewer(adversarial + /code-review on #2/#4) + qa(gates) in
 designer(BLOCKING: #1 upright on south hole, #4 affordance) → rebase onto origin/integration/next
 → add to bundle PR (NOTICEABLE). Do NOT ship/ping. On resume: reconcile from branch
 origin/fix/map-fieldtest-v119, check builder's commits, do NOT re-run finished children.
+
+## AWAITING UPDATE (map-fieldtest-v119) — builder done, review in flight
+Builder DONE: 5/5 items on fix/map-fieldtest-v119 @ ff91c9e (028363d,1b02e16,6a60f68,a143a60,085a704),
+all local gates green (fe 2561 tests + 278/278 voice smoke; be 2571 pass, ruff clean). #2 Overpass
+probe verdict: BOTH causes bind (real relation[golf=bunker] multipolygon id 19545022 invisible to
+old way-only query + windows/cap). #4 honest gap: kept tap-target.png art (no new grab affordance) —
+designer to rule. #5 displayPar guard shipped; primary Red re-ingest DEFERRED to staging ops.
+DISPATCHED in parallel: reviewer(a2af613e3d9a122b1, adversarial + /code-review #2/#4),
+qa(af3acefa7c23e13d0, gates), designer(af28b7fa32e719406, BLOCKING #1/#4).
+NEXT: collect 3 verdicts → BLOCKING→re-dispatch builder+re-review; all green→rebase onto
+origin/integration/next → add to bundle PR (NOTICEABLE, open if none) → progress/backlog →
+STOP (do NOT ship/ping; release-manager handles TestFlight later). #5 re-ingest = ops follow-up.
