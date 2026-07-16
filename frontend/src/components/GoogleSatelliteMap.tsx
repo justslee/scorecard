@@ -64,6 +64,7 @@ import {
   movedBeyondYards,
   tapTargetDistances,
   createCameraQueue,
+  createSerialRunner,
   teeColorFor,
   teeMarkerIconUrl,
   type CameraQueue,
@@ -324,11 +325,24 @@ export default function GoogleSatelliteMap({
   // True between a marker drag-start and drag-end — guards the live re-place
   // from fighting the user's finger mid-drag.
   const draggingRef         = useRef(false);
-  // In-flight guard for `placeTarget` (set true at its top, false in a
-  // `finally`) — a GPS-tick re-place is skipped while a tap/drag `placeTarget`
-  // is already running, keeping a strict single in-flight writer of
-  // `tapLineIdsRef`/`tapMarkerIdRef` (the v1.1.9 single-writer contract).
+  // In-flight flag for `placeTarget` (set true at its top, false in a
+  // `finally`). NOT the enforcement mechanism for the single-writer contract
+  // (that's `tapWriterRunnerRef` below, which every writer of
+  // `tapLineIdsRef`/`tapMarkerIdRef` is serialized through) — this flag is
+  // purely an optimization the live GPS re-place block reads to skip
+  // queuing a redundant walk-update while a tap/drag `placeTarget` is
+  // already running (it'll render the latest origin anyway).
   const inPlaceRef          = useRef(false);
+  // Strict FIFO mutex serializing every writer of `tapLineIdsRef` /
+  // `tapMarkerIdRef` (the v1.1.9 single-writer contract): `placeTarget`'s
+  // three callers — tap, reticle drag-end, and the live GPS re-place — and
+  // `clearTapMarker` (hole-change effect, the "×" pill button) all route
+  // through this ONE runner so their native await chains can never
+  // interleave and orphan each other's polylines/reticle on the map
+  // (readiness finding #8 reviewer fix — the one-directional `inPlaceRef`
+  // flag alone did not stop this: it was set/read only by the GPS caller,
+  // so a tap/drag/clear firing mid-flight of another still raced).
+  const tapWriterRunnerRef  = useRef(createSerialRunner());
   // Live GPS position at the last `placeTarget` call — the baseline the live
   // re-place block's `movedBeyondYards` throttle measures from.
   const lastOriginRef       = useRef<{ lat: number; lng: number } | null>(null);
@@ -479,19 +493,39 @@ export default function GoogleSatelliteMap({
 
   /**
    * Remove the tap target marker + its two distance lines (if any).
+   *
+   * Routed through `tapWriterRunnerRef` — the same serial mutex `placeTarget`
+   * uses — so a concurrent hole-change clear / "×" pill clear can never race
+   * a chained `placeTarget`'s writes to `tapLineIdsRef`/`tapMarkerIdRef`.
+   * `placeTarget` itself calls this with `skipQueue: true`: it is ALREADY
+   * running as a queued task on that same runner, so re-enqueuing here would
+   * deadlock (this call can't start until the enclosing task finishes, and
+   * the enclosing task awaits this call to finish).
    */
-  const clearTapMarker = useCallback(async () => {
-    const m  = googleMapRef.current;
-    tapTargetPosRef.current = null;
-    if (!m) return;
-    const id = tapMarkerIdRef.current;
-    if (id) {
-      await m.removeMarker(id).catch(() => {});
-      tapMarkerIdRef.current = null;
-    }
-    if (tapLineIdsRef.current.length > 0) {
-      await m.removePolylines(tapLineIdsRef.current).catch(() => {});
-      tapLineIdsRef.current = [];
+  const clearTapMarker = useCallback(async (opts?: { skipQueue?: boolean }) => {
+    const doClear = async () => {
+      const m = googleMapRef.current;
+      tapTargetPosRef.current = null;
+      if (!m) return;
+      const id = tapMarkerIdRef.current;
+      if (id) {
+        await m.removeMarker(id).catch(() => {});
+        tapMarkerIdRef.current = null;
+      }
+      if (tapLineIdsRef.current.length > 0) {
+        await m.removePolylines(tapLineIdsRef.current).catch(() => {});
+        tapLineIdsRef.current = [];
+      }
+      // Reset the drag guard too — if the reticle marker is removed mid-drag
+      // (e.g. a hole change clears it out from under the user's finger), the
+      // drag-END handler's id guard bails out early and never resets this,
+      // permanently disabling the live-GPS re-place until remount otherwise.
+      draggingRef.current = false;
+    };
+    if (opts?.skipQueue) {
+      await doClear();
+    } else {
+      await tapWriterRunnerRef.current.run(doClear);
     }
   }, []);
 
@@ -523,66 +557,74 @@ export default function GoogleSatelliteMap({
    * drag-END, AND the live GPS re-place (below) — no separate math fork, so
    * releasing a drag (or a GPS tick) at a point always settles to the exact
    * same lines/numbers a tap at that point would (v1.1.9 field-test fix,
-   * Item 4). `inPlaceRef` keeps this a strict single in-flight writer of
-   * `tapLineIdsRef`/`tapMarkerIdRef`.
+   * Item 4). The whole body below runs as ONE task on `tapWriterRunnerRef`
+   * (see that ref's comment) — a strict FIFO mutex — so a second call to
+   * `placeTarget` (or `clearTapMarker`) that arrives while this one is still
+   * mid-flight WAITS instead of interleaving its ref writes with this one's
+   * (readiness finding #8 reviewer fix; keeps this a strict single in-flight
+   * writer of `tapLineIdsRef`/`tapMarkerIdRef`).
    */
   const placeTarget = useCallback(async (pos: { lat: number; lng: number }) => {
     const hd = currentHoleRef.current;
     if (!hd) return; // center-only mode — no reference point
 
-    inPlaceRef.current = true;
-    try {
-      const gpsOrigin = resolveGpsOrigin(hd);
-      setTapTarget(tapTargetForPos(pos, hd, gpsOrigin));
+    await tapWriterRunnerRef.current.run(async () => {
+      inPlaceRef.current = true;
+      try {
+        const gpsOrigin = resolveGpsOrigin(hd);
+        setTapTarget(tapTargetForPos(pos, hd, gpsOrigin));
 
-      // Clear the previous target + its lines, then draw the new ones.
-      await clearTapMarker();
-      const m = googleMapRef.current;
-      if (!m) return;
-      const lineIds: string[] = [];
+        // Clear the previous target + its lines, then draw the new ones.
+        // `skipQueue: true` — we're already the queued task; re-enqueuing
+        // onto `tapWriterRunnerRef` here would deadlock (see clearTapMarker).
+        await clearTapMarker({ skipQueue: true });
+        const m = googleMapRef.current;
+        if (!m) return;
+        const lineIds: string[] = [];
 
-      // Leg 1 — origin (live GPS when plausible, else tee) → target (the
-      // carry): white.
-      const leg1Origin = gpsOrigin ?? hd.tee ?? null;
-      if (leg1Origin) {
-        const ids = await m.addPolylines([{
-          path: [{ lat: leg1Origin.lat, lng: leg1Origin.lng }, pos],
-          strokeColor: "#FFFFFF", strokeOpacity: 0.9, strokeWeight: 3,
-          geodesic: true, clickable: false,
-        }]).catch(() => [] as string[]);
-        lineIds.push(...ids);
+        // Leg 1 — origin (live GPS when plausible, else tee) → target (the
+        // carry): white.
+        const leg1Origin = gpsOrigin ?? hd.tee ?? null;
+        if (leg1Origin) {
+          const ids = await m.addPolylines([{
+            path: [{ lat: leg1Origin.lat, lng: leg1Origin.lng }, pos],
+            strokeColor: "#FFFFFF", strokeOpacity: 0.9, strokeWeight: 3,
+            geodesic: true, clickable: false,
+          }]).catch(() => [] as string[]);
+          lineIds.push(...ids);
+        }
+        // Leg 2 — target → green centre (what's left): amber, distinct from white.
+        {
+          const ids = await m.addPolylines([{
+            path: [pos, { lat: hd.green.lat, lng: hd.green.lng }],
+            strokeColor: "#F2C14E", strokeOpacity: 0.95, strokeWeight: 3,
+            geodesic: true, clickable: false,
+          }]).catch(() => [] as string[]);
+          lineIds.push(...ids);
+        }
+        tapLineIdsRef.current = lineIds;
+
+        // White target reticle at the point (yardage-book vibe, not a red pin).
+        // draggable: true — see setOnMarkerDrag{,Start,End}Listener below, all
+        // guarded to this marker's id.
+        const tapId = await m.addMarker({
+          coordinate: pos,
+          iconUrl: "assets/tap-target.png",
+          iconSize:   { width: 38, height: 38 },
+          iconAnchor: { x: 19, y: 19 },
+          draggable: true,
+        }).catch(() => null);
+        if (tapId) tapMarkerIdRef.current = tapId;
+
+        tapTargetPosRef.current = pos;
+        lastOriginRef.current = positionRef.current
+          ? { lat: positionRef.current.lat, lng: positionRef.current.lng }
+          : null;
+        lastPlausibleRef.current = gpsOrigin != null;
+      } finally {
+        inPlaceRef.current = false;
       }
-      // Leg 2 — target → green centre (what's left): amber, distinct from white.
-      {
-        const ids = await m.addPolylines([{
-          path: [pos, { lat: hd.green.lat, lng: hd.green.lng }],
-          strokeColor: "#F2C14E", strokeOpacity: 0.95, strokeWeight: 3,
-          geodesic: true, clickable: false,
-        }]).catch(() => [] as string[]);
-        lineIds.push(...ids);
-      }
-      tapLineIdsRef.current = lineIds;
-
-      // White target reticle at the point (yardage-book vibe, not a red pin).
-      // draggable: true — see setOnMarkerDrag{,Start,End}Listener below, all
-      // guarded to this marker's id.
-      const tapId = await m.addMarker({
-        coordinate: pos,
-        iconUrl: "assets/tap-target.png",
-        iconSize:   { width: 38, height: 38 },
-        iconAnchor: { x: 19, y: 19 },
-        draggable: true,
-      }).catch(() => null);
-      if (tapId) tapMarkerIdRef.current = tapId;
-
-      tapTargetPosRef.current = pos;
-      lastOriginRef.current = positionRef.current
-        ? { lat: positionRef.current.lat, lng: positionRef.current.lng }
-        : null;
-      lastPlausibleRef.current = gpsOrigin != null;
-    } finally {
-      inPlaceRef.current = false;
-    }
+    });
   }, [clearTapMarker, resolveGpsOrigin]);
 
   /**

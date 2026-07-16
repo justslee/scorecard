@@ -28,6 +28,7 @@ import {
   movedBeyondYards,
   tapTargetDistances,
   createCameraQueue,
+  createSerialRunner,
   teeColorFor,
   teeMarkerIconUrl,
   bunkerMarkerIconUrl,
@@ -890,6 +891,100 @@ describe('createCameraQueue — hole-change + GPS-refresh requests share one wri
   });
 });
 
+// ── createSerialRunner (strict FIFO mutex — readiness finding #8 reviewer fix) ─
+//
+// Unlike createCameraQueue (which coalesces/drops superseded requests), this
+// runner must run EVERY enqueued task, in order, one at a time — the property
+// `placeTarget`'s tap/drag-end/GPS-re-place callers and `clearTapMarker` rely
+// on: none of them may ever be silently dropped, and no two of them may ever
+// have native awaits mid-flight at the same time (which is exactly how the
+// v1.1.9-class orphan-line bug happens: two concurrent runs both write the
+// same tapLineIdsRef/tapMarkerIdRef and the last writer strands the other's
+// polylines/reticle with no tracked id left to clear them).
+
+describe('createSerialRunner — strict FIFO mutex for the tap-target writer refs', () => {
+  it('runs a single queued task to completion', async () => {
+    const calls: number[] = [];
+    const runner = createSerialRunner();
+    await runner.run(async () => { calls.push(1); });
+    expect(calls).toEqual([1]);
+  });
+
+  it('a second task queued while the first is mid-flight does NOT start until the first resolves — no interleaving', async () => {
+    const started: number[] = [];
+    const finished: number[] = [];
+    const d1 = deferred<void>();
+    const runner = createSerialRunner();
+
+    const p1 = runner.run(async () => {
+      started.push(1);
+      await d1.promise; // simulates a native await window (removeMarker/addPolylines/...)
+      finished.push(1);
+    });
+    await flush(); // let task 1 actually reach its await — it is now mid-flight
+
+    const p2 = runner.run(async () => {
+      started.push(2); // must NOT appear until task 1 has fully finished
+      finished.push(2);
+    });
+    await flush(); // give task 2 a chance to run if it were (incorrectly) not serialized
+
+    // Task 1 is still mid-flight (blocked on d1); task 2 must be held, not
+    // started concurrently — this is the exact race the bug report describes:
+    // a GPS re-place suspended mid-native-await while a tap fires concurrently.
+    expect(started).toEqual([1]);
+
+    d1.resolve();
+    await p1;
+    await p2;
+
+    // Strict sequential order: task 2 never starts before task 1 finishes.
+    expect(started).toEqual([1, 2]);
+    expect(finished).toEqual([1, 2]);
+  });
+
+  it('every queued task eventually runs — nothing is dropped or coalesced (unlike createCameraQueue)', async () => {
+    const ran: number[] = [];
+    const runner = createSerialRunner();
+    const d1 = deferred<void>();
+
+    const p1 = runner.run(async () => { await d1.promise; ran.push(1); });
+    const p2 = runner.run(async () => { ran.push(2); });
+    const p3 = runner.run(async () => { ran.push(3); });
+    const p4 = runner.run(async () => { ran.push(4); });
+
+    d1.resolve();
+    await Promise.all([p1, p2, p3, p4]);
+
+    // All four ran, in call order — none coalesced away.
+    expect(ran).toEqual([1, 2, 3, 4]);
+  });
+
+  it('each caller gets back its OWN task result, not some other queued task\'s', async () => {
+    const runner = createSerialRunner();
+    const d1 = deferred<void>();
+
+    const p1 = runner.run(async () => { await d1.promise; return 'first'; });
+    const p2 = runner.run(async () => 'second');
+
+    d1.resolve();
+    await expect(p1).resolves.toBe('first');
+    await expect(p2).resolves.toBe('second');
+  });
+
+  it('a rejected task does not poison the chain — later-queued tasks still run', async () => {
+    const ran: string[] = [];
+    const runner = createSerialRunner();
+
+    const p1 = runner.run(async () => { throw new Error('boom'); });
+    const p2 = runner.run(async () => { ran.push('second'); });
+
+    await expect(p1).rejects.toThrow('boom');
+    await p2;
+    expect(ran).toEqual(['second']);
+  });
+});
+
 describe('Item 3 regression — handlePositionUpdate no longer calls clearHoleOverlays/addHoleOverlays directly', () => {
   it('the GPS-tick handler routes its overlay refresh through cameraQueueRef.current.request({ reason: "gps", ... }) instead of calling clear/addHoleOverlays directly', () => {
     const src = readFileSync(
@@ -1022,13 +1117,43 @@ describe('Readiness finding #8 — on-GPS target origin', () => {
     expect(body).toContain('tapTargetForPos({ lat: data.latitude, lng: data.longitude }, hd, resolveGpsOrigin(hd))');
   });
 
-  it('placeTarget is a single in-flight writer (inPlaceRef set true at the top, false in a finally)', () => {
+  // NOTE: this used to assert `inPlaceRef` alone made placeTarget a "single
+  // in-flight writer" — that was overclaiming (grep-only, never exercised
+  // concurrency) and the flag is in fact one-directional: it's read only by
+  // the GPS re-place caller, so a concurrent tap/drag-end/clearTapMarker call
+  // was never actually blocked by it (the reviewer-found race). The REAL
+  // enforcement is `tapWriterRunnerRef` — see the `createSerialRunner` describe
+  // block above for behavioral (non-grep) proof that it serializes correctly.
+  // This test now only proves the WIRING: placeTarget's whole body (including
+  // the inPlaceRef set/finally-clear, kept as a GPS-tick redundant-work
+  // optimization) executes as one task on that runner.
+  it('placeTarget routes its whole body through tapWriterRunnerRef.current.run(...) — the actual single-writer enforcement; inPlaceRef (set true at the top, false in a finally) is only a redundant-work optimization for the GPS re-place caller', () => {
     const start = src.indexOf('const placeTarget = useCallback');
     const end = src.indexOf('}, [clearTapMarker, resolveGpsOrigin]);', start);
     expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
     const body = src.slice(start, end);
+    expect(body).toContain('await tapWriterRunnerRef.current.run(async () => {');
     expect(body).toContain('inPlaceRef.current = true;');
-    expect(body).toContain('} finally {\n      inPlaceRef.current = false;\n    }');
+    expect(body).toContain('} finally {\n        inPlaceRef.current = false;\n      }');
+  });
+
+  it('clearTapMarker also routes through the SAME tapWriterRunnerRef — a hole-change clear / "×" pill clear can never race a chained placeTarget over tapLineIdsRef/tapMarkerIdRef', () => {
+    const start = src.indexOf('const clearTapMarker = useCallback');
+    const end = src.indexOf('const resolveGpsOrigin = useCallback', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    expect(body).toContain('await tapWriterRunnerRef.current.run(doClear);');
+  });
+
+  it('placeTarget calls clearTapMarker with skipQueue:true (it is already the queued task on tapWriterRunnerRef — re-enqueuing would deadlock against itself)', () => {
+    const start = src.indexOf('const placeTarget = useCallback');
+    const end = src.indexOf('}, [clearTapMarker, resolveGpsOrigin]);', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = src.slice(start, end);
+    expect(body).toContain('await clearTapMarker({ skipQueue: true });');
   });
 
   it('the live re-place block in handlePositionUpdate re-runs the SAME single writer (placeTarget) — not a second writer of the tapLine/reticle id space, and is skipped mid-drag or while a placeTarget is already in flight', () => {

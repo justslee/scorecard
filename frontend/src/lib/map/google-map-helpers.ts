@@ -428,6 +428,53 @@ export function createCameraQueue<T>(
   };
 }
 
+// ── Serial runner — strict FIFO mutex (unlike the coalescing camera queue) ────
+
+export interface SerialRunner {
+  /**
+   * Enqueue `task`. If nothing is in flight, runs it immediately. If a
+   * previous `run()` call's task is still in flight, WAITS for it (and every
+   * other already-queued task ahead of it) to settle before starting —
+   * strictly one task in flight at a time, in call order. Unlike
+   * `createCameraQueue`, NOTHING is dropped or coalesced: every enqueued task
+   * eventually runs, and each caller gets its own task's resolved value/error
+   * back (not some other task's).
+   */
+  run<T>(task: () => Promise<T>): Promise<T>;
+}
+
+/**
+ * Strict FIFO async mutex.
+ *
+ * `placeTarget` (GoogleSatelliteMap) is the single writer of the tap-target
+ * marker/line id refs, but it has THREE callers that can each be mid-flight
+ * when another fires — a tap, a reticle drag-end, and a live GPS re-place —
+ * plus `clearTapMarker` (hole-change, the "×" pill button), which writes the
+ * SAME id refs. A one-directional in-flight flag (set true at the top of
+ * `placeTarget`, checked only by the GPS caller) does not stop a concurrent
+ * tap/drag-end/clear from interleaving: two native await chains can both be
+ * mid-flight, and whichever's `tapLineIdsRef`/`tapMarkerIdRef` write lands
+ * LAST wins — orphaning the other's polylines/reticle on the map with no
+ * tracked id left to clear them (the v1.1.9 orphan-line class of bug).
+ * Routing every caller's body through ONE `SerialRunner.run()` makes them
+ * queue instead: task N cannot start (and so cannot write those refs) until
+ * task N-1 has fully settled.
+ *
+ * Pure function — no side effects, headless-testable.
+ */
+export function createSerialRunner(): SerialRunner {
+  let chain: Promise<unknown> = Promise.resolve();
+  return {
+    run<T>(task: () => Promise<T>): Promise<T> {
+      const result = chain.then(() => task());
+      // Never let a rejected task poison the chain for later-queued tasks —
+      // each caller still observes its own task's rejection via `result`.
+      chain = result.then(() => undefined, () => undefined);
+      return result;
+    },
+  };
+}
+
 // ── Tee marker colour ──────────────────────────────────────────────────────────
 
 /**
