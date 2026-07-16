@@ -731,6 +731,73 @@ describe("CaddieOrbSheet — persona threading", () => {
   });
 });
 
+describe("CaddieOrbSheet — speakerLabel (cross-surface identity label)", () => {
+  // Designer's authoritative lane→label semantics
+  // (specs/caddie-cross-surface-identity-label-plan.md §"Designer's lane→label
+  // semantics"): task lane is always "Looper" (the app doing a job); converse/
+  // general lane with a non-classic persona attributes the reply caption to
+  // the short persona name.
+
+  it("general/converse lane + non-classic persona: reply caption shows the short persona name", async () => {
+    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Let's go get it.");
+      return "Let's go get it.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("what's a good warmup?");
+
+    expect(await screen.findByText("Let's go get it.")).toBeTruthy();
+    expect(screen.getByText("Hype Man")).toBeTruthy();
+  });
+
+  it("task lane + non-classic persona: reply caption stays 'Looper'", async () => {
+    window.localStorage.setItem("looper.caddiePersonaId", "hype");
+    const applySpy = vi.fn((): TaskAck => ({ line: "Saturday morning — on it.", dispatched: true }));
+    registerTask({ parse: vi.fn(async () => taskParse({ hasSignal: true, confidence: 0.9 })), apply: applySpy });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "tee-time", listening: false }));
+    await speak("saturday morning");
+
+    expect(await screen.findByText("Saturday morning — on it.")).toBeTruthy();
+    // Both the kicker and this reply caption read "Looper" for the task lane.
+    expect(screen.getAllByText("Looper").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("Hype Man")).toBeNull();
+  });
+
+  it("classic persona (explicit): reply caption stays 'Looper'", async () => {
+    window.localStorage.setItem("looper.caddiePersonaId", "classic");
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Sure thing.");
+      return "Sure thing.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("what's my handicap trend");
+
+    expect(await screen.findByText("Sure thing.")).toBeTruthy();
+    expect(screen.getAllByText("Looper").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("unresolved/logged-out (no persona seeded): reply caption stays 'Looper'", async () => {
+    talkToCaddieStreamMock.mockImplementationOnce(async (_params, opts) => {
+      opts.onToken("Sure.");
+      return "Sure.";
+    });
+
+    render(<CaddieOrbSheet />);
+    act(() => openLooper({ context: "general", listening: false }));
+    await speak("tell me a golf fact");
+
+    expect(await screen.findByText("Sure.")).toBeTruthy();
+    expect(screen.getAllByText("Looper").length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe("CaddieOrbSheet — no cross-page leakage guard", () => {
   it("getCaddieContext reflects the exclusive registry the host reads", () => {
     expect(getCaddieContext()).toBeNull();

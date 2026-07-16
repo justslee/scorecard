@@ -56,6 +56,7 @@ export function LooperSheetShell({
   onMicTap,
   streamingTurn,
   personaId = "classic",
+  speakerLabel = "Looper",
 }: {
   open: boolean;
   onClose: () => void;
@@ -81,6 +82,14 @@ export function LooperSheetShell({
    * this prop existed.
    */
   personaId?: string;
+  /**
+   * Who's talking, for the reply caption / streaming caption / thinking
+   * pulse — speaker attribution, NOT the app wordmark (the kicker stays
+   * literal "Looper" regardless). Optional, default "Looper" so any consumer
+   * that omits it is behavior-identical to before this prop existed.
+   * Presentational only — no persona logic lives in this shell.
+   */
+  speakerLabel?: string;
 }) {
   useBodyScrollLock(open);
 
@@ -297,7 +306,7 @@ export function LooperSheetShell({
                       marginBottom: 3,
                     }}
                   >
-                    {t.role === "user" ? "You" : "Looper"}
+                    {t.role === "user" ? "You" : speakerLabel}
                   </div>
                   <div
                     style={{
@@ -325,7 +334,7 @@ export function LooperSheetShell({
                       marginBottom: 3,
                     }}
                   >
-                    Looper
+                    {speakerLabel}
                   </div>
                   <div
                     style={{
@@ -367,7 +376,7 @@ export function LooperSheetShell({
                       textTransform: "uppercase",
                     }}
                   >
-                    Looper is thinking…
+                    {`${speakerLabel} is thinking…`}
                   </span>
                 </div>
               )}

@@ -63,10 +63,18 @@ export const BUILTIN_PERSONAS: CaddiePersonalityInfo[] = [
   },
 ];
 
+/** Strips a leading "The " (case-insensitive) from a persona's display name
+ *  — e.g. "The Hype Man" → "Hype Man". Shared by the Caddy adapter below and
+ *  any surface that needs the short form (e.g. the Looper sheet's speaker
+ *  attribution captions). */
+export function shortPersonaName(name: string): string {
+  return name.replace(/^The\s+/i, '').trim();
+}
+
 /** Display adapter: backend persona → the yardage-book Caddy shape the round
  *  screen + sheet already render (medallion initial, name, tag line). */
 export function personaToCaddy(p: CaddiePersonalityInfo): Caddy {
-  const short = p.name.replace(/^The\s+/i, '').trim();
+  const short = shortPersonaName(p.name);
   return {
     id: p.id,
     name: p.name,

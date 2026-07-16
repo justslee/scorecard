@@ -8,7 +8,7 @@
 
 import * as React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup, act } from "@testing-library/react";
+import { render, screen, cleanup, act } from "@testing-library/react";
 
 // Same cached-Proxy pattern as CaddieOrbSheet.test.tsx — strip animation so
 // AnimatePresence mounts/updates synchronously and component identity stays
@@ -106,5 +106,61 @@ describe("LooperSheetShell — personaId prop", () => {
     });
 
     expect(speakMock).toHaveBeenCalledWith("Let's go get it.", "hype");
+  });
+});
+
+describe("LooperSheetShell — speakerLabel prop", () => {
+  it("reply caption renders the given speakerLabel", () => {
+    const turns: LooperTurn[] = [{ role: "looper", text: "Here's your answer." }];
+    render(<LooperSheetShell {...baseProps} turns={turns} speakerLabel="Hype Man" />);
+
+    expect(screen.getByText("Hype Man")).toBeTruthy();
+  });
+
+  it("streaming caption renders the given speakerLabel", () => {
+    render(
+      <LooperSheetShell {...baseProps} turns={[]} streamingTurn="…" speakerLabel="Hype Man" />,
+    );
+
+    expect(screen.getByText("Hype Man")).toBeTruthy();
+  });
+
+  it("thinking pulse renders the given speakerLabel", () => {
+    render(
+      <LooperSheetShell {...baseProps} turns={[]} phase="thinking" speakerLabel="Hype Man" />,
+    );
+
+    expect(screen.getByText("Hype Man is thinking…")).toBeTruthy();
+  });
+
+  it("back-compat: omitted speakerLabel renders 'Looper' at all three sites", () => {
+    // Kicker is always "Looper" too, so a reply/streaming render legitimately
+    // shows TWO exact "Looper" text nodes (kicker + caption) — assert count.
+    const turns: LooperTurn[] = [{ role: "looper", text: "Here's your answer." }];
+    const { rerender } = render(<LooperSheetShell {...baseProps} turns={turns} />);
+    expect(screen.getAllByText("Looper")).toHaveLength(2);
+
+    rerender(<LooperSheetShell {...baseProps} turns={[]} streamingTurn="…" />);
+    expect(screen.getAllByText("Looper")).toHaveLength(2);
+
+    rerender(<LooperSheetShell {...baseProps} turns={[]} phase="thinking" />);
+    expect(screen.getByText("Looper is thinking…")).toBeTruthy();
+  });
+
+  it("kicker stays 'Looper' (wordmark invariant) even when speakerLabel is set", () => {
+    const turns: LooperTurn[] = [{ role: "looper", text: "Here's your answer." }];
+    render(<LooperSheetShell {...baseProps} turns={turns} speakerLabel="Hype Man" />);
+
+    // Reply caption shows "Hype Man"; the kicker must still show "Looper".
+    expect(screen.getByText("Looper")).toBeTruthy();
+    expect(screen.getByText("Hype Man")).toBeTruthy();
+  });
+
+  it("user turn caption stays 'You' regardless of speakerLabel", () => {
+    const turns: LooperTurn[] = [{ role: "user", text: "What's my handicap?" }];
+    render(<LooperSheetShell {...baseProps} turns={turns} speakerLabel="Hype Man" />);
+
+    expect(screen.getByText("You")).toBeTruthy();
+    expect(screen.queryByText("Hype Man")).toBeNull();
   });
 });

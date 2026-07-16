@@ -16,7 +16,7 @@ import { LooperSheetShell, type LooperTurn, type LooperPhase } from "@/component
 import { useLooperDictation } from "@/hooks/useLooperDictation";
 import { buildKeyterms } from "@/lib/voice/keyterms";
 import { talkToCaddie, talkToCaddieStream, BeforeFirstByteError } from "@/lib/caddie/api";
-import { useCaddiePersona } from "@/lib/caddie/persona";
+import { useCaddiePersona, shortPersonaName } from "@/lib/caddie/persona";
 import { useStreamBuffer } from "@/lib/caddie/stream-buffer";
 import { onLooperOpen } from "@/lib/looper-bus";
 import { haptic } from "@/lib/haptics";
@@ -376,6 +376,22 @@ export default function CaddieOrbSheet() {
   const activeConverse: CaddieConverseContext | null =
     activeCtx?.kind === "converse" ? activeCtx : null;
 
+  // Cross-surface identity label (specs/caddie-cross-surface-identity-label-
+  // plan.md §3): who the reply caption / streaming caption / thinking pulse
+  // attribute the reply to. Task lane is the app doing a job on the golfer's
+  // behalf — honestly "Looper", not the caddie persona conversing. Classic
+  // maps to "Looper" too (the app's own caddie name, matching the empty-hint
+  // treatment). Only converse/general + a non-classic persona shows the
+  // short persona name, truncated for the tiny mono captions.
+  const CAPTION_MAX = 16;
+  const shortName = shortPersonaName(caddy.name);
+  const speakerLabel =
+    activeTask != null || personaId === "classic"
+      ? "Looper"
+      : shortName.length > CAPTION_MAX
+      ? `${shortName.slice(0, CAPTION_MAX)}…`
+      : shortName;
+
   return (
     <LooperSheetShell
       open={open}
@@ -395,6 +411,7 @@ export default function CaddieOrbSheet() {
       onMicTap={() => void handleMicTap()}
       streamingTurn={streamingText}
       personaId={personaId}
+      speakerLabel={speakerLabel}
     />
   );
 }
