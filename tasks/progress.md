@@ -3,6 +3,44 @@
 The team writes here so work survives context resets and usage-limit pauses.
 Format: date — done / in-progress / blocked.
 
+## 2026-07-16 DONE — multiuser-p0-client-identity landed on integration/next (SILENT)
+Builder implemented specs/multi-user-epic-plan.md §3.5 (client identity, storage
+namespacing, offline-leak fix) per the multiuser-p0-client-identity backlog item.
+Byte-identical for the owner — client-only plumbing, no backend touched.
+
+New: `lib/identity-core.ts` (sync `getCurrentUserId()`, framework-free so pure-logic
+modules stay React-free), `lib/identity.ts` (`useMe()` + `<IdentityBridge/>`, mounted in
+AuthProvider.tsx before AuthGate — persists `scorecard_last_user_id` on sign-in, the
+reliable path since `window.Clerk` frequently never hydrates on native; best-effort
+ensures the `golfer_profiles` row via the existing upsert PUT), `lib/storage-keys.ts`
+(`storageKey(name)`, one-time `migrateLegacyKeysIfNeeded()`, `clearCurrentUserStorage()`).
+Namespaced storage.ts's 5 data keys + every personal pref store (caddie persona/
+personality, tts, live-mode, map-view, course-favorites); GolfAPI course cache stays
+device-global per spec. Fixed settings "clear cache" to scope to the current user only
+(was a bare `localStorage.clear()` that would nuke every signed-in user's cache on a
+shared device). Documented storage-api.ts's offline-fallback resolution chain so it can
+only ever serve the last-known user's cache or empty, never a foreign one.
+
+**Deliberate no-op flagged for eng-lead:** self-SavedPlayer creation with
+`clerkUserId===me` (§3.5) is NOT implemented — `PlayerCreate`/`PlayerUpdate`
+(backend/app/models.py:61-74) have no `clerkUserId` field and `POST /api/players` never
+stamps one, so a client-side create would be unidentifiable and mint a duplicate "Me" row
+on every sign-in on every device. Needs a small, explicitly-scoped backend addition
+(accept optional `clerkUserId` in `PlayerCreate`, server-validated `== current_user_id`)
+before this half of the plan can land. The "this is me" pill / `ownerIndex` default in
+`app/round/new/page.tsx` are UNCHANGED for the same reason (no reliable self-player
+marker to default onto yet) — full detail in the in-file comment block, `lib/identity.ts`.
+
+Tests: 3 new files (storage-keys.test.ts, storage.test.ts, storage-api.test.ts) covering
+key derivation, the core user-switch-sees-empty leak test, offline-fallback-refuses-
+foreign-cache, migration idempotency/ordering/never-clobber, byte-identical-after-
+migration. Updated 3 existing pref-store tests to assert the new namespaced key (no
+assertions weakened/deleted). Gates: tsc/eslint/build clean, full vitest 133 files/2561
+tests green, test:caddie-experience 17/241 green, voice-tests smoke 278/278.
+
+Committed @d9b7bbe, pushed to integration/next. Silent (no owner-visible change) —
+rides along in the next bundle.
+
 ## 2026-07-16 SHIPPED — Bundle #141 (v1.1.8, build 202607161143)
 Owner approval chain (verbatim, in-session, per the owner's explicit standing-process
 direction): (1) "Ship it" at head 2a424d7 (caddie-experience bundle); (2) the map-marker
