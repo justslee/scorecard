@@ -739,7 +739,14 @@ export default function GoogleSatelliteMap({
       teeShotVisibleRef.current = visible;
       setTeeShotChips({ visible, bunkers: teeShotDataRef.current.bunkers });
       if (visible) await overlayFnsRef.current.addTeeShotOverlays();
-    })
+    },
+    // Priority-aware coalescing (review fix): a GPS-tick refresh must never
+    // evict an already-pending hole-change — the 'gps' branch above
+    // deliberately skips fitCameraToHole/tee-shot overlays, so if it evicted
+    // a pending 'hole' request the trailing run would drop the new hole's
+    // camera reframe and tee-shot redraw entirely. A pending 'gps' can still
+    // be replaced by a newer 'gps' or by a 'hole'.
+    (pending, incoming) => !(pending.reason === 'hole' && incoming.reason === 'gps'))
   );
 
   // ── Map initialisation ─────────────────────────────────────────────────────
