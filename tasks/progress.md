@@ -17735,3 +17735,5 @@ approval; accumulates until a NOTICEABLE change lands, then rides the next 'ship
 NEXT: slice 3/4 both ready — multiuser-p0-migrations-revocation (backfill/tighten migration design + Clerk
 webhook receiver + revoked_users + azp/issuer boot guards) and multiuser-p0-keychain-token (native JWT ->
 iOS Keychain). Plus 2 new small followups: multiuser-p0-self-savedplayer, multiuser-p0-signout-namespace-clear.
+
+BUNDLE PR: #143 https://github.com/justslee/scorecard/pull/143 (SILENT, integration/next -> main; accumulating, not shipping this cycle). CI will run on the PR head 6085fc3; no merge/ship/ping this cycle per brief.
