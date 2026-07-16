@@ -293,6 +293,33 @@ def _ring_centroid(ring: list[list[float]]) -> tuple[float, float]:
     return sum(lons) / len(lons), sum(lats) / len(lats)
 
 
+def _ring_area(ring: list[list[float]]) -> float:
+    """Return the absolute planar (shoelace) area magnitude of a GeoJSON ring.
+
+    Uses raw lon/lat degrees with NO latitude scaling.  This is only used to
+    *rank* the member polygons of a single ``MultiPolygon`` complex against
+    each other — those members share the same latitude, so an unscaled
+    magnitude orders them correctly.  Do not "fix" this to scale by
+    ``cos(lat)``; it is unnecessary for ranking and would just add cost.
+
+    Args:
+        ring: List of ``[lon, lat]`` pairs as in GeoJSON ``coordinates[0]``.
+
+    Returns:
+        Non-negative shoelace magnitude in degrees².
+    """
+    vertices = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
+    if len(vertices) < 3:
+        return 0.0
+    total = 0.0
+    n = len(vertices)
+    for i in range(n):
+        x1, y1 = vertices[i][0], vertices[i][1]
+        x2, y2 = vertices[(i + 1) % n][0], vertices[(i + 1) % n][1]
+        total += x1 * y2 - x2 * y1
+    return abs(total) / 2.0
+
+
 # ── LineString distance with matching mode ────────────────────────────────────
 
 
@@ -374,7 +401,8 @@ def assign_features_to_holes(
                   tag, added to hole Features by ``_parse_course_geometry_response``)
                   and ``ref`` (hole number string).
         polygons: GeoJSON Feature list where each feature has
-                  ``geometry.type == "Polygon"`` and ``properties.featureType``
+                  ``geometry.type == "Polygon"`` or ``"MultiPolygon"`` and
+                  ``properties.featureType``
                   (``"green" | "tee" | "fairway" | "bunker" | "water"``).
 
     Returns:
@@ -409,6 +437,27 @@ def assign_features_to_holes(
                 continue
             outer_ring = rings[0]
             clon, clat = _ring_centroid(outer_ring)
+        elif geom_type == "MultiPolygon":
+            # Relation-sourced complex bunkers/sand areas (e.g. OSM
+            # relation[golf=bunker]) arrive as ONE Feature with a list of member
+            # polygons.  Pick the largest usable member as the representative
+            # polygon and fall through into the same Tier 1/2/3 logic below —
+            # do not duplicate it here.
+            members = coords_raw
+            best_member_ring: Optional[list[list[float]]] = None
+            best_member_area = -1.0
+            for member in members:
+                if not member or not member[0] or len(member[0]) < 4:
+                    continue
+                area = _ring_area(member[0])
+                if area > best_member_area:
+                    best_member_area = area
+                    best_member_ring = member[0]
+            if best_member_ring is None:
+                assignments[osm_id] = (None, None, float("inf"))
+                continue
+            outer_ring = best_member_ring
+            clon, clat = _ring_centroid(outer_ring)
         else:
             # Unsupported geometry type (e.g. LineString, missing) — skip.
             assignments[osm_id] = (None, None, float("inf"))
@@ -417,7 +466,8 @@ def assign_features_to_holes(
         mode = _match_mode(feature_type)
         cos_lat = math.cos(math.radians(clat))
 
-        # ── Tier 1 (Polygon only): centerline-through-polygon overlap ─────────
+        # ── Tier 1 (Polygon / MultiPolygon representative ring): ──────────────
+        # centerline-through-polygon overlap
         #
         # Assign to the hole whose centerline (golf=hole LineString) has the
         # greatest length of intersection running THROUGH the polygon.  A
