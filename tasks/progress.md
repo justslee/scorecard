@@ -17146,3 +17146,38 @@ integration/next itself.
   progress/backlog (targeted edits + diff-check). BLOCKING findings → re-dispatch builder.
 - HOLD-PUSH rule: if a ship recut integration/next / merged #141 mid-cycle, land on the FRESH branch.
 - Do NOT ship/ping this cycle (owner has v1.1.8 ask pending w/ release-manager).
+
+## CYCLE 131 — builder DONE: caddie-cross-surface-identity-label landed on integration/next
+Synced integration/next @6124568 (ff, up to date). Implemented specs/caddie-cross-surface-identity-
+label-plan.md exactly — pure frontend, label-only, no VAD/mic/dedup/TTS behavior change, no shared-
+type or backend edits.
+
+RED-FIRST (as required): wrote the new speakerLabel test cases BEFORE touching source. Against
+today's hardcode: LooperSheet.test.tsx 5 new cases RED (reply/streaming/thinking caption not wired,
+plus a kicker-invariant guard that legitimately multi-matched "Looper" pre-fix), 3 GREEN (back-compat
+count-assertion + the two existing personaId tests + user-stays-"You"); CaddieOrbSheet.test.tsx 1 RED
+(converse+non-classic persona case), 3 already GREEN pre-fix (task-lane/classic/unresolved already
+read "Looper" today — matches the designer's table, those cells don't change). Fixed one test-design
+bug found during RED capture (back-compat assertion needed `getAllByText(...).toHaveLength(2)`, not
+`getByText`, since the kicker legitimately also reads "Looper" — not a spec weakening, a query-
+scoping fix caught by the RED run itself).
+
+Source: lib/caddie/persona.ts extracted `shortPersonaName()` (the existing "The "-strip derivation),
+personaToCaddy refactored to use it — single source, no other persona.ts change. LooperSheet.tsx
+(LooperSheetShell) gained optional `speakerLabel` prop (default "Looper"), wired to reply caption/
+streaming caption/thinking pulse only; kicker (~L183) untouched (wordmark invariant) — confirmed via
+diff. CaddieOrbSheet.tsx computes `speakerLabel` right after activeTask/activeConverse derivation per
+plan §3 (task lane or classic → "Looper"; else short persona name, 16ch+ellipsis truncation) and
+passes it through; round-page CaddieSheet untouched.
+
+GREEN after: LooperSheet.test.tsx + CaddieOrbSheet.test.tsx 36/36. Gates: lint clean, `tsc --noEmit`
+clean, `next build` succeeds, voice-tests smoke 278/278, `npm run test:caddie-experience` 227/227 (16
+files), full `npm test` 2478/2478 (127 files), backend `ruff check .` clean (no-op, confirmed no
+backend diff). No Postgres/docker spun up.
+
+Committed 6a27cbb on integration/next, pushed to origin/integration/next (confirmed:
+origin/integration/next @6a27cbb matches local HEAD). No embedded/injected instructions encountered
+in tool output this cycle.
+
+Next: reviewer (fresh) + qa (gates on pushed head) + designer BLOCKING, per the AWAITING checkpoint's
+plan — then add to PR #141 checklist (NOTICEABLE) if all pass.
